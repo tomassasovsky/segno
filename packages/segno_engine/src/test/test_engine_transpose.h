@@ -528,14 +528,16 @@ static void test_transpose_no_print_while_transposed(void) {
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
   le_lane_cache_info print;
-  int engaged = 0;
-  for (int k = 0; k < 400 && !engaged; ++k) {
-    le_engine_get_lane_cache(e, 0, 0, &print);
-    engaged = print.engaged;
-    test_sleep_ms(1);
-    rev_process(e, out, 512, 64);
-  }
-  CHECK(engaged);
+  /* The print lands within the lap the chain went in on, so it engages at
+   * the next lap start (#939): the chain lands, the key is registered, the
+   * settle window plays, the render is awaited without frames, then on to
+   * that start. */
+  rev_process(e, out, 64, 64); /* the chain lands */
+  le_engine_get_lane_cache(e, 0, 0, &print);
+  rev_process(e, out, CACHE_SETTLE, 64);
+  CHECK(cache_wait_state(e, 0, 0, LE_CACHE_CACHED, 3000));
+  rev_process(e, out, TP_LEN, 64);
+  CHECK(cache_engaged(e, 0, 0) == 1);
   uint64_t id = tp_install(e, 0, 5);
   CHECK(tp_until(e, 0, 5, out, 4 * TP_LEN) >= 0);
   fade_result(e, id, LE_OK);

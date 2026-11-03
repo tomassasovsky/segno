@@ -316,7 +316,9 @@ static void le_source_len_log(le_engine* e, le_track* t, uint64_t frame) {
 /* A printed Pre render never plays through a non-identity head (reversed or
  * at another rate): disengage every print so the live chains take over
  * through the settled-bypass re-enable path [B7]; a forward 1x track
- * re-engages at its next lap start. */
+ * re-engages at a later lap start, once the live chains' runs match the
+ * prints again (le_run_matches_print: a turn back within a lap does, laps
+ * played reversed or at another rate do not, #939). */
 static void le_track_disengage_prints(le_track* t) {
   store_i32(&t->a_track_cache_active, 0);
   for (int l = 0; l < LE_MAX_LANES; ++l) {
@@ -7712,50 +7714,59 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
  * re-enters through the enable machinery's clean settled-bypass re-enable
  * edge (reset + staggered ring clear + warmup + ramp [B7]), which is what
  * makes the fallback click-free while the documented tail-drop happens.
- * Cost when the cache is idle: one relaxed pointer load per lane. The
- * fingerprint recompute (le_lane_pre_fx_fingerprint — pure atomic loads +
- * FNV math, RT-safe) runs only while an entry is published. */
+ *
+ * The same pass follows the live chain's RUN (#939): the key fields above
+ * are compared against the ones the run began under, and a change marks the
+ * run restarted (le_lane::run), so the engage step knows how many laps
+ * the live chain has played with the material and chain a print reproduces.
+ * Cost: a handful of loads per lane, plus the fingerprint refold
+ * (le_lane_pre_fx_fingerprint — pure atomic loads + FNV math, RT-safe) only
+ * when the lane's chain-edit generation (a_fx_gen) or loop-top hop position
+ * moved. */
 static inline void snapshot_lane_cache(
     le_engine* e, int tc, const int32_t* lane_n,
     const le_wet_entry* cache_ent[][LE_MAX_LANES]) {
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
+    const uint32_t rev =
+        atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+    const uint32_t hop = le_fx_hop_position(
+        atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed),
+        e->sample_rate);
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &tr->lanes[l];
       cache_ent[t][l] = NULL;
-      const le_wet_entry* w =
-          atomic_load_explicit(&ln->a_wet, memory_order_acquire);
-      int ok = w != NULL;
-      if (ok) {
-        /* The full key check via the ONE shared predicate — with the
-         * fingerprint term served from the audio-local verdict cache while
-         * the lane's chain-edit generation (a_fx_gen) is unchanged, so a
-         * cached steady state costs one relaxed load instead of a ~40-load
-         * FNV refold per buffer. Any chain edit bumps the generation and
-         * forces the full refold the same buffer. */
-        const uint32_t rev =
-            atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
-        const uint32_t vol =
-            atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
-        const int32_t len = load_i32(&ln->a_len);
-        const uint32_t gen =
-            atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
-        const uint32_t hop = le_fx_hop_position(
-            atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed),
-            e->sample_rate);
-        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen &&
-            hop == ln->cache_fp_hop) {
-          ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
-        } else {
-          ok = le_wet_entry_key_matches(
-              w, rev, le_lane_pre_fx_fingerprint(e, t, l), vol, len);
-          if (ok) { /* remember the verdict for this {entry, gen, hop} */
-            ln->cache_fp_entry = w;
-            ln->cache_fp_gen = gen;
-            ln->cache_fp_hop = hop;
-          }
+      const uint32_t vol =
+          atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
+      const int32_t len = load_i32(&ln->a_len);
+      /* Acquire: pairs with le_lane_fx_gen_bump's release, so the refold
+       * below reads the edit the generation names. */
+      const uint32_t gen =
+          atomic_load_explicit(&ln->a_fx_gen, memory_order_acquire);
+      /* The run (#939). The fingerprint is refolded only when its cheap
+       * proxies moved: a generation bump (every chain edit, Post ones
+       * included, so the refold decides) or the hop position it folds. */
+      if (rev != ln->run_rev || vol != ln->run_vol || len != ln->run_len) {
+        ln->run_rev = rev;
+        ln->run_vol = vol;
+        ln->run_len = len;
+        ln->run.restart = 1;
+      }
+      if (gen != ln->run_gen || hop != ln->run_hop) {
+        const uint64_t fp = le_lane_pre_fx_fingerprint(e, t, l);
+        ln->run_gen = gen;
+        ln->run_hop = hop;
+        if (fp != ln->run_fp) {
+          ln->run_fp = fp;
+          ln->run.restart = 1;
         }
       }
+      /* The full key check via the ONE shared predicate, against the key
+       * the run just took. */
+      const le_wet_entry* w =
+          atomic_load_explicit(&ln->a_wet, memory_order_acquire);
+      const int ok =
+          w != NULL && le_wet_entry_key_matches(w, rev, ln->run_fp, vol, len);
       if (ok) {
         cache_ent[t][l] = w;
       } else if (load_i32(&ln->a_cache_active)) {
@@ -7770,17 +7781,31 @@ static inline void snapshot_lane_cache(
  * memo. A track's key spans every part's chain, level, pan and mute as well
  * as its own Pre run, so a memo would need a generation bump on some fifteen
  * setters and a single missed one would play a render that no longer
- * describes the track. The refold is gated on a published entry instead, so a
- * track with no print — every track until something is put on its Pre run —
- * costs one relaxed load. */
+ * describes the track. The refold is gated on the track having a Pre run it
+ * could print instead (le_track_pre_printable), so any other track — every
+ * track until something is put on its Pre run — costs a few relaxed loads.
+ *
+ * The refold also follows the track chain's RUN (#939), as the lane pass
+ * does: a key change marks it restarted (le_track::bus_run). It runs
+ * while that Pre run exists, published print or not, because the run has to
+ * be known from its start: a print published several laps after the key
+ * last changed must find that out at its loop top. */
 static inline void snapshot_track_cache(le_engine* e, int tc,
                                         const le_wet_entry* track_ent[]) {
+  const int cache_on =
+      atomic_load_explicit(&e->a_fx_cache_cap, memory_order_relaxed) > 0;
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
     track_ent[t] = NULL;
     const le_wet_entry* w =
         atomic_load_explicit(&tr->a_track_wet, memory_order_acquire);
-    if (w == NULL) {
+    if (!cache_on || load_i32(&tr->bus.a_fx_pre_count) <= 0 ||
+        !le_track_pre_printable(e, t)) {
+      /* Nothing it could print (the cache off, no Pre run, or a part with a
+       * Post entry or a plugin): no refold, and any print still published
+       * no longer describes the track. The key a printable run later has
+       * differs from this zero, so that run begins then. */
+      tr->bus_run_fp = 0;
       if (load_i32(&tr->a_track_cache_active)) {
         store_i32(&tr->a_track_cache_active, 0);
       }
@@ -7788,11 +7813,25 @@ static inline void snapshot_track_cache(le_engine* e, int tc,
     }
     const uint32_t rev =
         atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+    const int32_t len = load_i32(&tr->lanes[0].a_len);
+    const uint64_t fp = le_track_pre_fingerprint(e, t);
+    if (fp != tr->bus_run_fp || rev != tr->bus_run_rev ||
+        len != tr->bus_run_len) {
+      tr->bus_run_fp = fp;
+      tr->bus_run_rev = rev;
+      tr->bus_run_len = len;
+      tr->bus_run.restart = 1;
+    }
+    if (w == NULL) {
+      if (load_i32(&tr->a_track_cache_active)) {
+        store_i32(&tr->a_track_cache_active, 0);
+      }
+      continue;
+    }
     /* Unity stands in for the volume term: every part's level is inside the
      * rendered combination, so there is no separate one to key on. */
-    const int ok = le_wet_entry_key_matches(w, rev, le_track_pre_fingerprint(e, t),
-                                            f32_to_bits(1.0f),
-                                            load_i32(&tr->lanes[0].a_len));
+    const int ok =
+        le_wet_entry_key_matches(w, rev, fp, f32_to_bits(1.0f), len);
     if (ok) {
       track_ent[t] = w;
     } else if (load_i32(&tr->a_track_cache_active)) {
@@ -8277,6 +8316,67 @@ static inline void sync_division_positions_frame(le_engine* e, int tc,
     trk_len[t] = len;
     trk_pos[t] = pos % len;
   }
+}
+
+/* Whether a live chain's [run] lets a print engage at this loop top of its
+ * track [tr] (#939).
+ *
+ * A print reproduces a chain that began one lap before the loop top it
+ * swaps in at: its render plays the loop twice from a fresh chain and keeps
+ * the second pass. The live chain it displaces began wherever its key last
+ * changed. The two match when the live chain began less than one lap away
+ * from the print's: on the lap before this top (one top crossed, this one),
+ * as an edit early in a lap does, or part way through the lap before that
+ * (two crossed, not begun on a top), as an edit late in a lap does when its
+ * print is only ready after the next top. Anything older has played a whole
+ * lap more than the print's chain — an echo built up over more passes, a
+ * phase that never decays — and swapping the print in would step at the
+ * loop top, so that chain keeps playing live. That is what keeps the cache
+ * off on a loop shorter than the settle window plus the render: the print is
+ * only ready laps after the edit. A run that began while the track was
+ * silent began, in effect, at its launch: a loop top. */
+static inline int le_run_matches_print(const le_track* tr,
+                                       const le_chain_run* run) {
+  if (run->restart) return 0; /* a key change this block: not begun yet */
+  const uint32_t laps = tr->laps - run->lap0; /* wrap-safe, like the count */
+  return laps == 1u || (laps == 2u && !run->at_top);
+}
+
+/* Begins [run] at this frame of track [tr]: [sounding] and [rp] are the
+ * track's state and read index this frame. A run begun while the track is
+ * silent begins, in effect, at its launch: a loop top. */
+static inline void le_chain_run_begin(le_chain_run* run, const le_track* tr,
+                                      int sounding, int32_t rp) {
+  run->lap0 = tr->laps;
+  run->at_top = !sounding || rp == 0;
+  run->restart = 0;
+}
+
+/* Follows [run] past this frame's engage step (#939): begins it when the
+ * chain returns to live play from a print ([live]). A block-start key change
+ * begins it before the engage step instead (le_chain_run_begin on
+ * [restart]), so a print never engages in the frame its key changed. */
+static inline void le_chain_run_step(le_chain_run* run, const le_track* tr,
+                                     int sounding, int32_t rp, int live) {
+  if (live && !run->live) le_chain_run_begin(run, tr, sounding, rp);
+  run->live = live;
+}
+
+/* The whole-track print's twin of le_run_matches_print (#939). It displaces
+ * the track chain and every part's chain, so each must match it; a part
+ * already playing its own print, or with no chain, plays what the print was
+ * rendered from. */
+static inline int le_track_print_run_matches(
+    le_track* tr, int32_t lanes, const le_wet_entry** lane_ent,
+    const int32_t* lane_fx_count) {
+  if (!le_run_matches_print(tr, &tr->bus_run)) return 0;
+  for (int32_t l = 0; l < lanes; ++l) {
+    le_lane* ln = &tr->lanes[l];
+    if (lane_fx_count[l] == 0) continue;
+    if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
+    if (!le_run_matches_print(tr, &ln->run)) return 0;
+  }
+  return 1;
 }
 
 /* Per-frame capture + additive playback mix: snapshots each track's per-lane
@@ -8855,6 +8955,25 @@ static inline void mix_tracks_frame(
      * They keep being read for metering. */
     const le_wet_entry* tce = track_cache_ent[t];
     const int32_t trk_rp = seg_base[t] + trk_pos[t];
+    /* The laps this track has played (#939): one per wrap from a frame that
+     * was sounding too, so a launch from a stop starts a lap rather than
+     * finishing one. A run of a live chain counts its laps
+     * against this, and runs restarted by the block-start key checks take
+     * their start here, after this frame's wrap. */
+    if (sounding) {
+      /* A wrap is the read index moving back against its direction: it
+       * need not land on 0 (2x on an odd length steps past it). */
+      if (tr->lap_rp >= 0 &&
+          (tr->head.reversed ? trk_rp > tr->lap_rp : trk_rp < tr->lap_rp)) {
+        ++tr->laps;
+      }
+      tr->lap_rp = trk_rp;
+    } else {
+      tr->lap_rp = -1;
+    }
+    if (tr->bus_run.restart) {
+      le_chain_run_begin(&tr->bus_run, tr, sounding, trk_rp);
+    }
     /* The engine frame the current lap began at (#941), the clock a print
      * is rendered and keyed against: this frame less the read index, on a
      * forward lap at an integral rate. It moves only at a lap top (a wrap, a
@@ -8888,7 +9007,8 @@ static inline void mix_tracks_frame(
     if (tce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
         le_head_is_integral(&tr->head) &&
         (tr->transpose_st == 0 || e->transpose_bypass) &&
-        !load_i32(&tr->a_track_cache_active) && trk_rp == 0) {
+        !load_i32(&tr->a_track_cache_active) && trk_rp == 0 &&
+        le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t])) {
       store_i32(&tr->a_track_cache_active, 1);
       for (int l = 0; l < lane_n[t]; ++l) {
         le_lane* el = &e->tracks[t].lanes[l];
@@ -8906,6 +9026,9 @@ static inline void mix_tracks_frame(
     }
     const int track_printed =
         tce != NULL && load_i32(&tr->a_track_cache_active);
+    /* Dropping the print hands the track chain back to live play through the
+     * re-enable edge: its run starts here (#939). */
+    le_chain_run_step(&tr->bus_run, tr, sounding, trk_rp, !track_printed);
     if (track_printed) {
       /* The engage edge can land mid-buffer, so mask the printed slots'
        * effective bits for the rest of it too — a force-bypassed slot whose
@@ -9096,6 +9219,9 @@ static inline void mix_tracks_frame(
        * tail/LFO continuity) for playback nobody hears. */
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
+      if (ln->run.restart) { /* a block-start key change (#939) */
+        le_chain_run_begin(&ln->run, tr, sounding, rp);
+      }
       /* The lane twin of the track's lap-top hop check above (#941). */
       if (rp == 0 && wce != NULL &&
           !le_wet_entry_hop_matches(wce, e->fx_clock_base + f, e->sample_rate)) {
@@ -9106,7 +9232,8 @@ static inline void mix_tracks_frame(
       if (wce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
           le_head_is_integral(&tr->head) &&
           (tr->transpose_st == 0 || e->transpose_bypass) &&
-          !load_i32(&ln->a_cache_active) && rp == 0) {
+          !load_i32(&ln->a_cache_active) && rp == 0 &&
+          le_run_matches_print(tr, &ln->run)) {
         store_i32(&ln->a_cache_active, 1);
         for (int s = 0; s < fx_pre_count[t][l]; ++s) {
           le_fx_enable_force_bypass(&ln->fx, s);
@@ -9116,6 +9243,9 @@ static inline void mix_tracks_frame(
         }
       }
       const int printed = wce != NULL && load_i32(&ln->a_cache_active);
+      /* The lane chain plays live unless its own print or the track's has
+       * it bypassed; a return to live play begins its run (#939). */
+      le_chain_run_step(&ln->run, tr, sounding, rp, !printed && !track_printed);
       float wl;
       float wr;
       if (printed) {
@@ -9974,14 +10104,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
   /* Loop-stage wet cache (part 2), snapshotted once per buffer (see
    * snapshot_lane_cache): the per-lane published-entry pointer + full key
-   * verdict. NULL everywhere until a render publishes — one relaxed load per
-   * lane of dormant cost. */
+   * verdict, NULL everywhere until a render publishes, and each live chain's
+   * run (#939): a few relaxed loads per lane, the fingerprint refolded only
+   * after a chain edit. */
   const le_wet_entry* cache_ent[LE_MAX_TRACKS][LE_MAX_LANES];
   snapshot_lane_cache(e, tc, lane_n, cache_ent);
 
   /* Each track's whole-track print (slice 3e), same shape, one entry per
-   * track. NULL everywhere until a render publishes — one relaxed load per
-   * track of dormant cost. */
+   * track, NULL everywhere until a render publishes. A track whose Pre run
+   * could print has its key refolded every buffer to follow the track
+   * chain's run (#939); any other track costs a few relaxed loads. */
   const le_wet_entry* track_cache_ent[LE_MAX_TRACKS];
   snapshot_track_cache(e, tc, track_cache_ent);
   le_transpose_select(e, tc, lane_n, perf_frame_base);
