@@ -34564,6 +34564,55 @@ static void test_stop_drains_a_track_tail_with_plain_parts(void) {
 
 /* ---- per-entry channel handling and level (slice 3e) ---- */
 
+/* A slot touches only the buffers its kind runs on or an earlier kind left
+ * there (#1522): the control thread may be preparing others for a coming
+ * retype while the slot runs its present kind. */
+static void test_fx_slot_touches_only_published_buffers(void) {
+  printf("test_fx_slot_touches_only_published_buffers\n");
+  const int sr = 48000;
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  if (fx == NULL) return;
+  /* A Delay lands on slot 0 and leaves audio in its rings; the slot runs a
+   * Drive now, and Cut clears what the Delay left. */
+  CHECK(le_fx_prepare(fx, 0, LE_FX_DELAY, sr) == LE_OK);
+  le_fx_entry_reset(fx, 0, LE_FX_DELAY);
+  fx->delay[0][0][7] = 0.5f;
+  fx->delay[0][1][7] = 0.5f;
+  le_fx_entry_reset(fx, 0, LE_FX_DRIVE);
+  le_fx_entry_clear_rings(fx, 0, sr, LE_FX_DRIVE);
+  CHECK(fx->delay[0][0][7] == 0.0f && fx->delay[0][1][7] == 0.0f);
+  /* Slot 1 runs a Drive while an Octaver is prepared for it: neither its
+   * rings nor its vocoder buffers are touched until the Octaver lands. */
+  le_fx_entry_reset(fx, 1, LE_FX_DRIVE);
+  CHECK(le_fx_prepare(fx, 1, LE_FX_OCTAVER, sr) == LE_OK);
+  fx->delay[1][0][7] = 0.5f;
+  fx->oct[1][0].out[7] = 0.5f;
+  le_fx_entry_reset(fx, 1, LE_FX_DRIVE);
+  le_fx_entry_clear_rings(fx, 1, sr, LE_FX_DRIVE);
+  CHECK(fx->delay[1][0][7] == 0.5f);
+  CHECK(fx->oct[1][0].out[7] == 0.5f);
+  le_fx_entry_reset(fx, 1, LE_FX_OCTAVER);
+  CHECK(fx->oct[1][0].out[7] == 0.0f);
+  le_fx_entry_clear_rings(fx, 1, sr, LE_FX_OCTAVER);
+  CHECK(fx->delay[1][0][7] == 0.0f);
+  /* A Reverb runs on its first ring alone: a second one prepared for a
+   * Delay to come is left alone. */
+  CHECK(le_fx_prepare(fx, 2, LE_FX_REVERB, sr) == LE_OK);
+  le_fx_entry_reset(fx, 2, LE_FX_REVERB);
+  CHECK(le_fx_prepare(fx, 2, LE_FX_DELAY, sr) == LE_OK);
+  fx->delay[2][0][7] = 0.5f;
+  fx->delay[2][1][7] = 0.5f;
+  le_fx_entry_clear_rings(fx, 2, sr, LE_FX_REVERB);
+  CHECK(fx->delay[2][0][7] == 0.0f);
+  CHECK(fx->delay[2][1][7] == 0.5f);
+  /* Freed rings are known no more. */
+  le_fx_free_delay(fx, 0);
+  CHECK(fx->ring_known[0] == 0);
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
 /* Every choice, on one entry, measured. A unity DRIVE (p0 = 0 -> 1x pre-gain,
  * p1 = 1 -> unity level) passes tanhf(x), so the wet value is hand-computable
  * and the channel arithmetic around it is the only thing under test.
@@ -40914,6 +40963,7 @@ int main(void) {
   test_output_fx_ch_out_2_wet_pair();
   test_output_fx_ch_out_4_is_bus_0();
   test_stop_drains_a_track_tail_with_plain_parts();
+  test_fx_slot_touches_only_published_buffers();
   test_fx_entry_channels_and_level();
   test_fx_entry_channels_leave_with_a_bypass();
   test_fx_entry_channel_setter_guards();

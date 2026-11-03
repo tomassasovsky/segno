@@ -95,7 +95,7 @@ static void base_recipe(le_fx_recipe* r, int c) {
 /* One run at [sr]. */
 static void run_at(int sr) {
   printf("test_fx_workers_races at %d Hz\n", sr);
-  g_seed = 0x1515u; /* the same op sequence at every rate */
+  g_seed = 0x1515u; /* the same seed at every rate */
   atomic_store(&g_done, 0);
   atomic_store(&g_blocks, 0);
   le_engine* e = le_engine_create();

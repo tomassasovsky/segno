@@ -1947,6 +1947,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           cut_silenced = 1;
           cut_gain = 0.0f; /* at once, as the callback cuts (#1400) */
           for (int i = 0; i < LE_FX_MAX; ++i) {
+            /* An empty slot is left alone, as the callback's Cut leaves it
+             * (le_fx_state_clear_tails). */
+            if (chain.type[i] == LE_FX_NONE) continue;
             le_fx_entry_reset(fx, i, chain.type[i]);
             le_fx_entry_clear_rings(fx, i, m->sample_rate, chain.type[i]);
           }
@@ -2139,9 +2142,12 @@ static int le_pr_render_master(const le_pr_manifest* m,
         chain.chain_enabled = cmd->arg_f != 0;
       else if (cmd->code == LE_CMD_CUT_SOUND)
         for (int i = 0; i < LE_FX_MAX; ++i) {
-            le_fx_entry_reset(fx, i, chain.type[i]);
-            le_fx_entry_clear_rings(fx, i, m->sample_rate, chain.type[i]);
-          }
+          /* An empty slot is left alone, as the callback's Cut leaves it
+           * (le_fx_state_clear_tails). */
+          if (chain.type[i] == LE_FX_NONE) continue;
+          le_fx_entry_reset(fx, i, chain.type[i]);
+          le_fx_entry_clear_rings(fx, i, m->sample_rate, chain.type[i]);
+        }
     }
     int32_t effective[LE_FX_MAX];
     for (int i = 0; i < LE_FX_MAX; ++i) effective[i] = chain.chain_enabled && chain.enabled[i];

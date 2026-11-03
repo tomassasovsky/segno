@@ -1745,6 +1745,17 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
   fx->rev_sr[s] = 0; /* the lines are worked out again (le_rev_geometry) */
 }
 
+/* The delay rings [type] runs on (defined with the vtable). */
+static int le_fx_ring_count(int32_t type);
+
+/* Whether delay[slot][c] is one this thread may read for a slot running a
+ * kind with [rings] rings: one of the kind's, or one the slot's earlier
+ * kinds left (ring_known). */
+static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
+                               int rings) {
+  return c < rings || ((fx->ring_known[slot] >> c) & 1u) != 0;
+}
+
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay read head, one-pole memory, the octaver phase-vocoder runtime
  * when [type] is of its family, reverb lines) so a freshly engaged effect
@@ -1759,17 +1770,6 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
  * buffers (~9 KB/channel; the frame scratch is not cleared, see
  * le_octaver_state::analysed). That is bounded and fires only on a discrete type-change
  * event (never per sample), consistent with the existing reverb-line clears. */
-/* The delay rings [type] runs on (defined with the vtable). */
-static int le_fx_ring_count(int32_t type);
-
-/* Whether delay[slot][c] is one this thread may read for a slot running a
- * kind with [rings] rings: one of the kind's, or one the slot's earlier
- * kinds left (ring_known). */
-static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
-                               int rings) {
-  return c < rings || ((fx->ring_known[slot] >> c) & 1u) != 0;
-}
-
 /* The Mode delay's line (defined with its kernel). */
 static void le_mdly_reset(struct le_fx_line* line);
 static void le_mdly_clear(struct le_fx_line* line);

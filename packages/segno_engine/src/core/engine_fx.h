@@ -345,9 +345,9 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
  * may be preparing those buffers for a coming retype while the slot runs
  * another kind (#1522), and the kind's delay rings, when allocated, become
  * known to the calling thread (le_fx_state::ring_known). A live slot's
- * buffers are prepared before its kind lands, so a render that replays a
- * landing prepares first too. Does NOT allocate/free the delay ring or
- * octaver heap buffers (the control thread owns those). Of the
+ * buffers are prepared before its kind lands, so perf_render, which replays
+ * retypes and Cuts, prepares first too. Does NOT allocate/free the delay
+ * ring or octaver heap buffers (the control thread owns those). Of the
  * enable-crossfade runtime it clears only the DRAIN state: a retyped slot has
  * no tail to drain, and a stale budget would let the next re-enable edge skip
  * its clean reset and read the previous type's ring. The ramp itself is left
