@@ -13,6 +13,7 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
@@ -126,6 +127,10 @@ class DestinationHarness {
   /// The idle dim owner, real so a test can read what was saved.
   late IdleDimCubit idle;
 
+  /// The console LEDs' owner (#1564), real, on the same pedal repository as
+  /// the pedal cubit.
+  late ConsoleLedsCubit leds;
+
   /// The outputs the Displays page reads presence from.
   final FakeDisplayOutputs outputs = FakeDisplayOutputs();
 
@@ -211,9 +216,9 @@ class DestinationHarness {
     brightness = DisplayBrightnessCubit(settings: settings);
     idle = IdleDimCubit(settings: settings);
     final tracks = TracksCubit(settings: settings);
-    final pedal = PedalCubit(
-      pedal: PedalRepository(pedalLink ?? NoopPedalLink()),
-    );
+    final pedalRepository = PedalRepository(pedalLink ?? NoopPedalLink());
+    final pedal = PedalCubit(pedal: pedalRepository);
+    leds = ConsoleLedsCubit(settings: settings, pedal: pedalRepository);
     final facts = ConsoleFactsCubit(
       client: factsClient ?? FakeConsoleFactsClient(latency: Duration.zero),
       settings: settings,
@@ -223,6 +228,7 @@ class DestinationHarness {
     addTearDown(() => unawaited(brightness.close()));
     addTearDown(() => unawaited(idle.close()));
     addTearDown(() => unawaited(tracks.close()));
+    addTearDown(() => unawaited(leds.close()));
     addTearDown(() => unawaited(pedal.close()));
     addTearDown(() => unawaited(facts.close()));
 
@@ -249,6 +255,7 @@ class DestinationHarness {
             BlocProvider.value(value: idle),
             BlocProvider.value(value: tracks),
             BlocProvider.value(value: pedal),
+            BlocProvider.value(value: leds),
             BlocProvider.value(value: facts),
             ...extraProviders(),
           ],

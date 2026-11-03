@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:pedal_repository/src/pedal_ambient_light.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_color.dart';
 import 'package:pedal_repository/src/pedal_ctrl.dart';
@@ -54,12 +55,28 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// |      | when the hold fires and the clear is accepted (the board     |
 /// |      | flashes the pill to confirm it); 0 without a button          |
 ///
-/// [ClearHoldMessage] is optional: it does not change [protocolVersion],
-/// because a board that does not know [typeClearHold] drops it at the type
-/// byte and keeps rendering the state frame (#1534). Two payload bytes keep
-/// that drop clean: a stray sync byte in the payload has only the checksum
-/// behind it, so the frame that follows lands in the type or length slot and
-/// is parsed, never swallowed.
+/// ### Ambient payload (board → segno), [ambientPayloadLength] bytes
+///
+/// | byte | meaning                                                      |
+/// |------|--------------------------------------------------------------|
+/// | 0    | [PedalLightSensor] index                                     |
+/// | 1    | the reading, `2^(level / 16)` ADC counts; 0 without a sensor |
+///
+/// ### LED level payload (segno → board), [ledLevelPayloadLength] byte
+///
+/// | byte | meaning                                                      |
+/// |------|--------------------------------------------------------------|
+/// | 0    | how bright the pills and ring are, 1..255 of full (255)      |
+///
+/// [ClearHoldMessage], [AmbientLightMessage] and [LedLevelMessage] are
+/// optional: none of them changes [protocolVersion], because a side that does
+/// not know the type drops the frame at its type byte and carries on (#1534,
+/// #1564). An older board keeps rendering the state frame at full
+/// brightness; an older app never hears of the sensor. The payloads keep
+/// that drop clean: a sync byte can only be the last payload byte, with only
+/// the checksum behind it (for the one-byte LED level a fixed `0xB0`, no
+/// type), so the frame that follows lands in the type or length slot and is
+/// parsed, never swallowed.
 abstract final class PedalLinkCodec {
   /// The frame start byte.
   static const sync = 0xA5;
@@ -113,6 +130,13 @@ abstract final class PedalLinkCodec {
   /// The number of payload bytes in a [PdStatusMessage].
   static const pdStatusPayloadLength = 8;
 
+  /// See [typeButton]. `[sensor, level]` — the light sensor on J22, once a
+  /// second after the hello (#1564).
+  static const typeAmbient = 0x07;
+
+  /// The number of payload bytes in an [AmbientLightMessage].
+  static const ambientPayloadLength = 2;
+
   /// The one message type segno → board.
   static const typeState = 0x10;
 
@@ -124,6 +148,16 @@ abstract final class PedalLinkCodec {
 
   /// The number of payload bytes in a [ClearHoldMessage].
   static const clearHoldPayloadLength = 2;
+
+  /// The third message type segno → board, [LedLevelMessage].
+  static const typeLedLevel = 0x14;
+
+  /// The number of payload bytes in a [LedLevelMessage].
+  static const ledLevelPayloadLength = 1;
+
+  /// [LedLevelMessage.level] at full brightness, and the level a board
+  /// shows before it is told one.
+  static const ledLevelFull = 255;
 
   /// How often segno sends [ClearHoldMessage] while a clear hold runs, in
   /// milliseconds (`PEDAL_LINK_CLEAR_HOLD_MS`): once per board render.
@@ -159,6 +193,8 @@ abstract final class PedalLinkCodec {
     typePdStatus => pdStatusPayloadLength,
     typeState => statePayloadLength,
     typeClearHold => clearHoldPayloadLength,
+    typeAmbient => ambientPayloadLength,
+    typeLedLevel => ledLevelPayloadLength,
     _ => null,
   };
 
@@ -194,6 +230,11 @@ abstract final class PedalLinkCodec {
           ..._le16(supply.maxMilliamps),
         ],
       ),
+      AmbientLightMessage(:final light) => (
+        typeAmbient,
+        <int>[light.sensor.index, light.level],
+      ),
+      LedLevelMessage(:final level) => (typeLedLevel, <int>[level]),
       StateMessage(:final frame) => (typeState, encodeStatePayload(frame)),
       ClearHoldMessage(:final button, :final progress) => (
         typeClearHold,
@@ -273,6 +314,18 @@ abstract final class PedalLinkCodec {
             maxMilliamps: payload[6] | payload[7] << 8,
           ),
         );
+      case typeAmbient:
+        final sensor = PedalLightSensor.values.elementAtOrNull(payload[0]);
+        if (sensor == null ||
+            (sensor == PedalLightSensor.none && payload[1] != 0)) {
+          return null;
+        }
+        return AmbientLightMessage(
+          PedalAmbientLight(sensor: sensor, level: payload[1]),
+        );
+      case typeLedLevel:
+        if (payload[0] == 0) return null;
+        return LedLevelMessage(payload[0]);
       case typeState:
         final frame = decodeStatePayload(payload);
         return frame == null ? null : StateMessage(frame);

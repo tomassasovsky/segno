@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
 import 'package:pub_semver/pub_semver.dart';
+import 'package:settings_repository/src/console_led_settings.dart';
 import 'package:settings_repository/src/display_role.dart';
 import 'package:settings_repository/src/fade_durations.dart';
 
@@ -792,6 +793,67 @@ class SettingsRepository {
     }
     return _store.setInt(_idleDimKey, seconds);
   }
+
+  static const String _ledBrightnessKey = 'console_leds.brightness';
+  static const String _ledAutomaticKey = 'console_leds.automatic';
+  static const String _ledOffsetKey = 'console_leds.offset';
+  static const String _ledDarkKey = 'console_leds.dark_reading';
+  static const String _ledBrightKey = 'console_leds.bright_reading';
+
+  /// The console's LED brightness and its automatic setting (#1564). Unset
+  /// fields read as [ConsoleLedSettings]' defaults: full brightness, manual,
+  /// as the console has always been. Stored values are clamped into range,
+  /// and a calibration whose points are too close reads as the default one.
+  Future<ConsoleLedSettings> loadConsoleLeds() async {
+    const defaults = ConsoleLedSettings();
+    final dark =
+        await _store.getInt(_ledDarkKey) ??
+        ConsoleLedSettings.defaultDarkReading;
+    final bright =
+        await _store.getInt(_ledBrightKey) ??
+        ConsoleLedSettings.defaultBrightReading;
+    final calibrated =
+        dark >= 0 &&
+        bright <= 255 &&
+        bright - dark >= ConsoleLedSettings.minCalibrationSpan;
+    return ConsoleLedSettings(
+      brightness:
+          (await _store.getDouble(_ledBrightnessKey) ?? defaults.brightness)
+              .clamp(
+                ConsoleLedSettings.minBrightness,
+                ConsoleLedSettings.maxBrightness,
+              ),
+      automatic: await _store.getBool(_ledAutomaticKey) ?? defaults.automatic,
+      offset: (await _store.getDouble(_ledOffsetKey) ?? defaults.offset).clamp(
+        -1.0,
+        1.0,
+      ),
+      darkReading: calibrated ? dark : defaults.darkReading,
+      brightReading: calibrated ? bright : defaults.brightReading,
+    );
+  }
+
+  /// Saves [settings].
+  Future<void> saveConsoleLeds(ConsoleLedSettings settings) async {
+    await _store.setDouble(_ledBrightnessKey, settings.brightness);
+    await _store.setBool(_ledAutomaticKey, value: settings.automatic);
+    await _store.setDouble(_ledOffsetKey, settings.offset);
+    await _store.setInt(_ledDarkKey, settings.darkReading);
+    await _store.setInt(_ledBrightKey, settings.brightReading);
+  }
+
+  static const String _ledReadingKey = 'console_leds.last_reading';
+
+  /// The last light-sensor reading the console saw (#1564), or `null` for
+  /// none: Automatic holds it at launch until the board reports.
+  Future<int?> loadConsoleLedReading() async {
+    final reading = await _store.getInt(_ledReadingKey);
+    return reading != null && reading >= 0 && reading <= 255 ? reading : null;
+  }
+
+  /// Saves the last light-sensor reading.
+  Future<void> saveConsoleLedReading(int reading) =>
+      _store.setInt(_ledReadingKey, reading);
 
   static const String _bluetoothRetiredNoticeKey = 'bluetooth.retired_notice';
 

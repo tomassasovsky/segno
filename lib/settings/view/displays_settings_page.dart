@@ -10,6 +10,7 @@ import 'package:segno/appliance/display_brightness_edit.dart';
 import 'package:segno/appliance/display_presence_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/console_leds/view/console_leds_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/high_contrast_cubit.dart';
 import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
@@ -27,7 +28,8 @@ import 'package:touch_calibration_client/touch_calibration_client.dart';
 
 /// Settings > Displays (pen 30): a card per panel, Track display first, each
 /// with its own brightness; Dim while idle under them; and the screen
-/// settings the console already had in one Display options row.
+/// settings the console already had in one Display options row. Console LEDs
+/// in the title row opens the pills' and ring's brightness (#1564).
 ///
 /// Presence is read while the page is open, so a panel unplugged in front of
 /// the player says so here.
@@ -92,6 +94,17 @@ class _DisplaysSettingsPageState extends State<DisplaysSettingsPage> {
                 titleLeft: 100,
                 onBack: _back,
                 onStage: _stage,
+                // The console's pills and ring (#1564): light output like
+                // the panels, on a page of their own.
+                actions: LoopOutlinedButton(
+                  key: const Key('displays_console_leds'),
+                  width: 280,
+                  label: l10n.consoleLedsTitle,
+                  onTap: () {
+                    _edits.cancel();
+                    Navigator.push(context, ConsoleLedsPage.route());
+                  },
+                ),
                 children: const [
                   Positioned(
                     left: 100,

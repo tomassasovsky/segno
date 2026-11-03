@@ -78,6 +78,7 @@ abstract final class AppNoticeId {
   static const fxPreset = 'fxPreset';
   static const brightnessSave = 'brightnessSave';
   static const idleDimSave = 'idleDimSave';
+  static const consoleLedsSave = 'consoleLedsSave';
 }
 
 /// Retry on a must-act recovery: runs [recover] and, when it worked, ends

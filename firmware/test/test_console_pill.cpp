@@ -1,5 +1,7 @@
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
+#include <utility>
 
 #include "../console_board/console_board.ino"
 #include "stusb4500_sim.h"
@@ -15,6 +17,14 @@ static void receive(pedal_state state, uint32_t now, bool corrupt = false) {
   if (corrupt) bytes[size - 1] ^= 1;
   for (size_t i = 0; i < size; ++i) fake_arduino::received.push_back(bytes[i]);
   at(now);
+}
+
+// One channel of a single-channel pixel at `level` of 255, as scalePixel
+// renders it.
+static uint32_t onePixel(uint8_t value, uint8_t level) {
+  uint8_t r = value, g = 0, b = 0;
+  ring_link::scalePixel(r, g, b, level);
+  return r;
 }
 
 static void expectAllDark() {
@@ -130,6 +140,135 @@ static void pdStatusFollowsHello() {
     found = true;
   }
   assert(found);
+}
+
+// The last LEVEL the console sent the ring, or -1 for none.
+static int lastRingLevel() {
+  ring_link::Parser parser;
+  int level = -1;
+  for (const auto &frame : ringLink.sent) {
+    for (const uint8_t byte : frame) {
+      uint8_t type;
+      const uint8_t *payload;
+      if (parser.push(byte, type, payload) && type == ring_link::LEVEL) level = payload[0];
+    }
+  }
+  assert(parser.dropped == 0);
+  return level;
+}
+
+static void receiveLedLevel(uint8_t level, uint32_t now) {
+  uint8_t bytes[PEDAL_LINK_MAX_FRAME];
+  const size_t size = pedal_link_encode_led_level(level, bytes);
+  assert(size == 5);
+  for (size_t i = 0; i < size; ++i) fake_arduino::received.push_back(bytes[i]);
+  at(now);
+}
+
+// LED_LEVEL (#1564): the pills and the ring fade to the app's level, under
+// the idle dim, and go back to full when the app's frames stop. Without one
+// the board shows what it always has.
+static void ledLevel() {
+  uint32_t now = 600000;
+  pedal_state state = {};
+  state.master_gain = 255;
+  state.active_button_mask = 1;
+  state.pedal_colors[0] = {255, 0, 0};
+  receive(state, now += 20);
+  assert(ind.shown[59] == (191u << 16));
+  ringLink.sent.clear();
+  receiveLedLevel(128, now += 1);
+  at(now += RENDER_MS);  // one render: one fade step, not a jump
+  assert(ind.shown[59] == (onePixel(191, 255 - LED_FADE_STEP) << 16));
+  assert(lastRingLevel() == 255 - LED_FADE_STEP);
+  for (int i = 0; i < 60; ++i) at(now += RENDER_MS);
+  assert(ind.shown[59] == (onePixel(191, 128) << 16));
+  assert(lastRingLevel() == 128);
+  // The idle dim applies on top of the level.
+  state.dimmed = 1;
+  receive(state, now += 20);
+  assert(ind.shown[59] ==
+         (onePixel(191, ring_link::outputLevel(128, true)) << 16));
+  state.dimmed = 0;
+  receive(state, now += 20);
+  // A level of 0 is refused and changes nothing.
+  const uint8_t zero[] = {PEDAL_LINK_SYNC, PEDAL_LINK_TYPE_LED_LEVEL, 1, 0,
+                          PEDAL_LINK_TYPE_LED_LEVEL ^ 1};
+  for (const uint8_t byte : zero) fake_arduino::received.push_back(byte);
+  for (int i = 0; i < 10; ++i) at(now += RENDER_MS);
+  assert(ind.shown[59] == (onePixel(191, 128) << 16));
+  // The app is gone: dark. A level that arrives before the next frame takes
+  // effect at once, so a reconnect never flashes full and fades down.
+  at(now += 5001);
+  expectAllDark();
+  receiveLedLevel(64, now += 1);
+  receive(state, now += 20);
+  assert(ind.shown[59] == (onePixel(191, 64) << 16));
+  // Without one the next app gets full, as firmware 2.6 showed.
+  at(now += 5001);
+  expectAllDark();
+  receive(state, now += 20);
+  assert(ind.shown[59] == (191u << 16));
+  ringLink.sent.clear();
+  at(now += 120);
+  assert(lastRingLevel() == 255);
+}
+
+// The last AMBIENT the board sent, as {sensor, level}, or {-1, -1}.
+static std::pair<int, int> lastAmbient() {
+  pedal_link_parser parser;
+  pedal_link_parser_init(&parser);
+  std::pair<int, int> last = {-1, -1};
+  for (const auto &frame : fake_arduino::sent) {
+    for (const uint8_t byte : frame) {
+      uint8_t type, length;
+      const uint8_t *payload;
+      if (!pedal_link_parser_push(&parser, byte, &type, &payload, &length) ||
+          type != PEDAL_LINK_TYPE_AMBIENT) continue;
+      pedal_ambient ambient;
+      assert(pedal_link_decode_ambient(payload, length, &ambient));
+      last = {ambient.sensor, ambient.level};
+    }
+  }
+  assert(parser.dropped == 0);
+  return last;
+}
+
+static void runFor(unsigned long duration) {
+  const unsigned long end = fake_arduino::now + duration;
+  while (fake_arduino::now < end) at(fake_arduino::now + 10);
+}
+
+// AMBIENT (#1564): nothing on J22 is reported as no sensor from the first
+// hello on; a sensor plugged in is found by two probes and reported once it
+// has a second of light. The probe's pulls never reach a sample.
+static void ambientLight() {
+  fake_arduino::floating[PIN_AMBIENT] = true;
+  fake_arduino::now = 900000;
+  setup();
+  fake_arduino::sent.clear();
+  runFor(PEDAL_LINK_HELLO_MS + 20);
+  assert(lastAmbient() == std::make_pair((int)PEDAL_AMBIENT_NONE, 0));
+  assert(!fake_arduino::pullUp[PIN_AMBIENT] || g_ambientPhase != AMBIENT_SAMPLING);
+
+  // A lead with the sensor reading 300 counts, and the 2.2 k holding the
+  // pull-up to about 170 counts above that.
+  fake_arduino::floating[PIN_AMBIENT] = false;
+  fake_arduino::analog[PIN_AMBIENT] = 300;
+  fake_arduino::loaded[PIN_AMBIENT] = 170;
+  runFor(2 * AMBIENT_PROBE_MS + 2 * PEDAL_LINK_HELLO_MS + 100);
+  const auto reading = lastAmbient();
+  assert(reading.first == PEDAL_AMBIENT_READING);
+  assert(std::abs(reading.second - 132) <= 1);  // 16 * log2(300)
+
+  // Pulled out again: two probes later, no sensor.
+  fake_arduino::floating[PIN_AMBIENT] = true;
+  fake_arduino::sent.clear();
+  runFor(2 * AMBIENT_PROBE_MS + PEDAL_LINK_HELLO_MS + 100);
+  assert(lastAmbient() == std::make_pair((int)PEDAL_AMBIENT_NONE, 0));
+  fake_arduino::floating[PIN_AMBIENT] = false;
+  fake_arduino::analog[PIN_AMBIENT] = 0;
+  fake_arduino::loaded[PIN_AMBIENT] = 0;
 }
 
 // A trigger that was not answering is asked again only every tenth hello,
@@ -630,7 +769,7 @@ int main() {
   // come back on the next undimmed frame.
   state.dimmed = 1;
   receive(state, now += 20);
-  assert(ind.shown[59] == ((uint32_t)ring_link::dimChannel(191) << 16));
+  assert(ind.shown[59] == (onePixel(191, ring_link::DIM_LEVEL) << 16));
   assert(lastRingState().flags & ring_link::FLAG_DIMMED);
   state.dimmed = 0;
   receive(state, now += 20);
@@ -655,5 +794,7 @@ int main() {
   ringStateForwarding();
   pdStatusFollowsHello();
   lateTrigger();
-  puts("Console v3 ten pills, Song queue fill, clear-hold fill and flash and ring state: all physical groups, host activity, limits, dimming, PD status and lifecycle pass");
+  ledLevel();
+  ambientLight();
+  puts("Console v3 ten pills, Song queue fill, clear-hold fill and flash, ring state, LED level and light sensor: all physical groups, host activity, limits, dimming, PD status and lifecycle pass");
 }

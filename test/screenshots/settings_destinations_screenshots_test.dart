@@ -5,7 +5,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/console_leds/view/console_leds_page.dart';
 import 'package:segno/settings/settings.dart';
 
 import '../helpers/screenshot_fonts.dart';
@@ -32,6 +35,9 @@ void main() {
     'device': openDeviceSettings,
     'network': openNetworkSettings,
     'displays': openDisplaySettings,
+    // Displays > Console LEDs (#1564), on a board that reports no sensor.
+    'console_leds': () =>
+        segnoNavigatorKey.currentState!.push(ConsoleLedsPage.route()),
     'storage': openStorageSettings,
     'updates': openUpdateSettings,
   };
@@ -63,4 +69,28 @@ void main() {
       );
     }, skip: !rendersScreenshots);
   }
+
+  // Console LEDs with a sensor reading 1024 of 4095, in Automatic.
+  testWidgets('console_leds_sensor', (tester) async {
+    final link = FakePedalLink();
+    final harness = DestinationHarness();
+    await harness.pump(tester, pedalLink: link);
+    link
+      ..hello(firmwareMajor: 2, firmwareMinor: 7)
+      ..emit(
+        const AmbientLightMessage(
+          PedalAmbientLight(sensor: PedalLightSensor.reading, level: 160),
+        ),
+      );
+    await tester.pump();
+    await harness.leds.setAutomatic(automatic: true);
+    segnoNavigatorKey.currentState!.push(ConsoleLedsPage.route());
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/settings_console_leds_sensor.png'),
+    );
+    // The board falls silent so its hello watchdog does not outlive the test.
+    await tester.pump(const Duration(seconds: 4));
+  }, skip: !rendersScreenshots);
 }
