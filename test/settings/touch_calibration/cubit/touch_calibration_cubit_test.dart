@@ -143,6 +143,50 @@ void main() {
       });
     });
 
+    test('a failed read releases it: nothing was applied', () {
+      fakeAsync((async) {
+        client.failRead = true;
+        final c = cubit()..start();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.failed);
+        expect(calibrating(), isEmpty);
+      });
+    });
+
+    test('Cancel while reading ends the session: no target follows', () {
+      fakeAsync((async) {
+        client.readGate = Completer<void>();
+        final c = cubit()..start();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.loading);
+        c.cancel();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.reverted);
+        expect(calibrating(), isEmpty);
+        client.readGate!.complete();
+        async.flushMicrotasks();
+        expect(c.state.phase, TouchCalibrationPhase.reverted);
+        expect(c.state.target, isNull);
+      });
+    });
+
+    test('leaving during a Cancel holds it until that revert lands', () {
+      fakeAsync((async) {
+        final c = cubit();
+        capture(async, c);
+        client.restoreGate = Completer<void>();
+        c.cancel();
+        async.flushMicrotasks();
+        _close(async, c);
+        expect(client.inForce, isNotNull);
+        expect(calibrating(), hasLength(1));
+        client.restoreGate!.complete();
+        async.flushMicrotasks();
+        expect(client.inForce, isNull);
+        expect(calibrating(), isEmpty);
+      });
+    });
+
     test('refuses to start under a latency measurement, and says why', () {
       fakeAsync((async) {
         final measuring = guards.enter(
@@ -385,6 +429,9 @@ void main() {
         'restore readout',
       ]);
       expect(client.inForce, isNull);
+      // No countdown outlives the cubit to emit after it closed.
+      async.elapse(const Duration(seconds: 60));
+      expect(async.periodicTimerCount, 0);
     });
   });
 

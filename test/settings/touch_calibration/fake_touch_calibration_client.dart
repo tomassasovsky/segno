@@ -14,9 +14,13 @@ class FakeTouchCalibrationClient implements TouchCalibrationClient {
   TouchMatrix? inForce;
 
   final calls = <String>[];
+  bool failRead = false;
   bool failApply = false;
   bool failWrite = false;
   bool failRestore = false;
+
+  /// When set, a read waits for it before it answers.
+  Completer<void>? readGate;
 
   /// When set, an apply waits for it before it takes effect.
   Completer<void>? applyGate;
@@ -33,6 +37,8 @@ class FakeTouchCalibrationClient implements TouchCalibrationClient {
   @override
   Future<TouchMatrix?> read(TouchScreen screen) async {
     calls.add('read ${screen.name}');
+    await readGate?.future;
+    if (failRead) throw StateError('udev is wedged');
     return stored;
   }
 

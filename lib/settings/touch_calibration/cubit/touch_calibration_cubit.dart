@@ -36,8 +36,9 @@ enum TouchCalibrationPhase {
   /// The calibration could not be read or saved.
   failed,
 
-  /// Another operation the calibration must not overlap is running (a
-  /// latency measurement, a device change, a take): nothing was started.
+  /// Another operation the guard table says the calibration must not
+  /// overlap is running (a cable test, a device change, a performance
+  /// recording): nothing was started.
   refused,
 }
 
@@ -100,9 +101,12 @@ class TouchCalibrationState extends Equatable {
 /// the apply it undoes.
 ///
 /// The calibration holds [GuardKind.calibration] from [start] until it is
-/// kept, reverted or left, so an update, a device change or a latency
-/// measurement cannot start in the middle of it (#1375). One that the guard
-/// table refuses starts nothing and says what is running.
+/// kept, reverted or left, so a device change, a session being opened, a
+/// performance recording or a cable test cannot start in the middle of it
+/// (#1375). A restart or an update install still may (the guard table lets
+/// a restart cancel a calibration): what was only tried is gone after the
+/// reboot. One that the guard table refuses starts nothing and says what is
+/// running.
 class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   /// Creates a [TouchCalibrationCubit] for [screen].
   TouchCalibrationCubit({
@@ -183,10 +187,15 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
     try {
       _previous = await _client.read(_screen);
     } on Object {
-      if (!isClosed) emit(const TouchCalibrationState(phase: .failed));
+      // Nothing was applied, so nothing needs the guard any more.
+      if (isClosed || state.phase != .loading) return;
+      _releaseGuard();
+      emit(const TouchCalibrationState(phase: .failed));
       return;
     }
-    if (!isClosed) _capture();
+    // Cancelled, or left, while it was read: that already ended the session.
+    if (isClosed || state.phase != .loading) return;
+    _capture();
   }
 
   void _capture() {
@@ -383,6 +392,9 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   @override
   Future<void> close() async {
     _countdown?.cancel();
+    // A revert or an apply already running finishes first: a Cancel's revert
+    // has cleared [_applied] before it lands, and puts it back if it fails.
+    await _helper;
     // Leaving the page by any other way than Keep must not leave an untried
     // calibration behind.
     try {
@@ -391,6 +403,10 @@ class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
       // Nothing left to tell: the page is gone. The previous calibration is
       // still on /data for the next boot.
     }
+    // An apply that landed while this waited may have started the test's
+    // countdown.
+    _countdown?.cancel();
+    // Only now is nothing untried in force.
     _releaseGuard();
     return super.close();
   }
