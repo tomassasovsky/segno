@@ -316,28 +316,16 @@ typedef struct le_fx_snapshot {
 
 /* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
  * per entry when its type changes. svf_* are the state-variable filter
- * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
+ * integrators; lfo is an LFO phase (0..1, TREMOLO depth); delay is a
  * lazily allocated ring
  * (the control thread allocates before posting the command) of fx_delay_frames
- * samples (shared by DELAY, ECHO, and the OCTAVER's input FIFO); fx_lp is a
- * generic one-pole low-pass memory (ECHO feedback damping, OCTAVER tone). The
+ * samples (DELAY's, the OCTAVER's input FIFO, and the lines of the kinds
+ * that keep the rest of their state in a kind block: ECHO and the reverbs);
+ * fx_lp is a generic one-pole low-pass memory (OCTAVER tone). The
  * OCTAVER's phase-vocoder working set lives in the `oct` sub-state (its heap
  * buffers are control-thread allocated alongside the delay ring). A slot is only
  * ever one type at a time, so these reuse freely. Each lane and each live
  * monitor lane owns one of these, running its own non-destructive chain. */
-/* Reverb (LE_FX_REVERB) is a Schroeder/Freeverb network: a bank of parallel
- * damped comb filters summed into a chain of series allpass diffusers. It runs
- * LE_REV_BANKS of those in parallel — a left and a right whose delay lines are
- * offset by the Freeverb "stereo spread" so their tails decorrelate, turning a
- * mono input into a wide stereo tail. All the lines are packed into the slot's
- * single `delay` ring at fixed offsets; rev_comb_pos / rev_ap_pos are the
- * per-line write heads (left bank first, then right) and rev_comb_lp the
- * per-comb damping (one-pole low-pass) memory, one per phase: at 96 kHz the
- * network is the 48 kHz one on alternate samples (rev_ph counts them). */
-#define LE_REV_COMBS 8
-#define LE_REV_APS 4
-#define LE_REV_BANKS 2
-#define LE_REV_PHASES 2
 
 /* ---- Resumable YIN difference-function pass -------------------------------
  *
@@ -592,8 +580,7 @@ typedef struct le_fx_kinds {
  * l == r and is audibly unchanged. The delay-ringed effects (DELAY / ECHO /
  * OCTAVER) own a ring per channel (delay[slot][0] and [1]); the REVERB packs its
  * two stereo banks into the single ring delay[slot][0] (delay[slot][1] stays
- * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
- * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
+ * NULL) — see fx_reverb_rkprocess. */
 /* The musical time an effect chain runs at (#887 part 10, Architecture 7):
  * the beat, in quarter notes, of FX clock frame [anchor_clock], and the
  * quarter notes each frame advances, so the beat at clock c is
@@ -802,23 +789,6 @@ typedef struct le_fx_state {
   uint32_t oct_frame[LE_FX_MAX];
   uint32_t oct_n0[LE_FX_MAX];
   int32_t oct_run[LE_FX_MAX];
-  int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
-  float rev_comb_lp[LE_FX_MAX][LE_REV_PHASES][LE_REV_COMBS * LE_REV_BANKS];
-  int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
-  int32_t rev_ph[LE_FX_MAX];
-  /* At rates other than 48 and 96 kHz each line's fraction of a sample: a
-   * first-order all-pass's last input and output, combs then allpasses. */
-  float rev_frac[LE_FX_MAX][(LE_REV_COMBS + LE_REV_APS) * LE_REV_BANKS][2];
-  /* The damping pole kept for the setting and rate it was worked out at,
-   * and each line's samples and all-pass at rev_sr (le_rev_geometry). */
-  float rev_damp_p[LE_FX_MAX], rev_damp[LE_FX_MAX];
-  int32_t rev_damp_sr[LE_FX_MAX];
-  int32_t rev_sr[LE_FX_MAX];
-  int32_t rev_len[LE_FX_MAX][(LE_REV_COMBS + LE_REV_APS) * LE_REV_BANKS];
-  float rev_fa[LE_FX_MAX][(LE_REV_COMBS + LE_REV_APS) * LE_REV_BANKS];
-  /* The echo's loop step at echo_sr (fx_echo). */
-  float echo_step[LE_FX_MAX];
-  int32_t echo_sr[LE_FX_MAX];
   /* The Slicer's runtime (fx_slicer_process). */
   le_fx_slice_state slice[LE_FX_MAX];
   /* The Mode delay's line (fx_mode_delay_process): its own seconds-long

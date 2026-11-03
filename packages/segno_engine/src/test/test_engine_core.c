@@ -17723,11 +17723,12 @@ static void test_fx_reverb_builds_a_tail(void) {
   process_const(e, 0.0f, 64, out);
   for (int i = 0; i < 64; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
-  /* Full wet: the first reflected sample is still silent (shortest comb line is
+  /* Full wet: once the mix lands (the kind's next update, within
+   * LE_FX_UPDATE_FRAMES), the output is still silent (shortest comb line is
    * far longer than the blocks processed so far). */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* mix = fully wet */
   process_const(e, 0.0f, 64, out);
-  CHECK(fabsf(out[0]) < 1e-6f);
+  for (int i = LE_FX_UPDATE_FRAMES; i < 64; ++i) CHECK(fabsf(out[i]) < 1e-6f);
 
   /* Process ~12.8 k more frames: a real tail appears, stays finite, and never
    * blows up despite the comb feedback. */
