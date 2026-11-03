@@ -325,8 +325,10 @@ A take that ends at a dropped frame (`"stopped_early": "slow_storage"` in
 `performance.json`, #1198) holds no entry past that frame, the frame its
 audio ends at, however the drain cycles fell (#1549). The drain writes an
 entry only once it has counted every block before the entry's frame, so it has
-seen any drop before it. After any early stop, nothing logged past the stop
-frame is written.
+seen any drop before it. Other early stops do not cap the log this exactly:
+after a `reserve_reached` stop the cycle that found the reserve may already
+have written entries past it, and a `disk_full` stop writes whatever its last
+pass can.
 
 ### Callback-applied source images (codes 322–323)
 
