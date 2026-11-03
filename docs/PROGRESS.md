@@ -72,7 +72,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1563 | The UI thread's idle and playing CPU: engine threads named (the audio thread read as io.flutter.ui), playhead out of the looper state, live values in their own layers and paused under a covering page | build | auto | `claude/ui-thread-cpu-1563` |
 | #1547 | Every effect the same at any sample rate and block size: parts 1 (the matrix test) and 2 (oversampling) merged; part 3a (filter responses at 44.1 and 96 kHz, the console's oversampling costs) in review; 3b tails, 3c pitch (#1467), 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3a` |
 
 ---
