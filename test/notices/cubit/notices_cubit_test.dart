@@ -135,6 +135,19 @@ void main() {
         });
       });
 
+      test('a newer word on a waiting cause replaces its queued copy', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('bluetooth', explains: true))
+            ..show(_notice('refused', tone: NoticeTone.warning))
+            ..show(_notice('bluetooth', explains: true));
+          expect(cubit.state.message?.notice.id, 'bluetooth');
+          async.elapse(const Duration(seconds: 10));
+          expect(cubit.state.message, isNull);
+          unawaited(cubit.close());
+        });
+      });
+
       test('clearing the explanation on screen brings up the next', () {
         fakeAsync((async) {
           final cubit = NoticesCubit()

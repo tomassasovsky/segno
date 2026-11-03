@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:clock/clock.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/notices/model/notice.dart';
 
@@ -24,10 +25,13 @@ part 'notices_state.dart';
 /// While the Power screen is up ([setHeld]) passing messages are dropped,
 /// and the must-act ones and the one-time explanations wait behind it.
 class NoticesCubit extends Cubit<NoticesState> {
-  /// Creates a [NoticesCubit] with nothing on screen. [stopwatch] times
-  /// each message's age; a test passes one on its fake clock.
+  /// Creates a [NoticesCubit] with nothing on screen.
+  ///
+  /// [stopwatch] times each message's age. The default runs on the zone's
+  /// clock, which a test fakes; the app passes [Stopwatch.new], the
+  /// monotonic one the console's clock steps cannot bend.
   NoticesCubit({Stopwatch Function()? stopwatch})
-    : _stopwatch = stopwatch ?? Stopwatch.new,
+    : _stopwatch = stopwatch ?? (() => clock.stopwatch()),
       super(const NoticesState());
 
   final Stopwatch Function() _stopwatch;
@@ -59,6 +63,8 @@ class NoticesCubit extends Cubit<NoticesState> {
       'A message that goes by itself is never critical; raise it instead.',
     );
     if (_standing(notice.id)) return;
+    // The newest word on a cause replaces any copy still waiting.
+    _waiting.removeWhere((waiting) => waiting.id == notice.id);
     if (state.held) {
       if (notice.explains) _wait(notice);
       return;
