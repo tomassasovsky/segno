@@ -477,7 +477,7 @@ static void test_fade_clear_pressure_and_frozen(void) {
     CHECK(le_engine_clear_restore_pending(e, 0) == frozen);
     // These are valid stale no-op reports. Fill after posting (which drains).
     const le_command benign = {.code = LE_EVT_TAKE_CANCELLED,
-                               .lanei = {LE_MAX_TRACKS - 1, 0, 0}};
+                               .restore = {.channel = LE_MAX_TRACKS - 1}};
     int filled = 0; while (le_ring_push(&e->evt_ring, benign)) ++filled;
     CHECK(filled > 0);
     drain(e);

@@ -227,6 +227,12 @@ field by field, matching the session manifest's own migration style.
 `state` is one of the native `le_track_state` names: `empty`, `recording`,
 `overdubbing`, `playing`, `stopped`.
 
+`anchorLap` (#854) is the lap the take was played on
+(`le_track_snapshot.anchor_lap`), written only when nonzero. The offline
+renderer places an arm-time image of several base loops at the segment the
+take sounded at arm, `(iteration - anchorLap) mod multiple`, as the callback
+reads it; absent reads as 0, the placement every capture before #854 used.
+
 ### `lanes[]` entries — the ER diagram's `LANE_SNAPSHOT` + `FX_ENTRY`
 
 ```jsonc

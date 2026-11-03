@@ -40,6 +40,9 @@ class _FakeTrack {
 
   /// The span a retime left on the take (#1179); 0 is the clock in force.
   int spanFrames = 0;
+
+  /// The lap the take was played on (#854).
+  int anchorLap = 0;
   final List<_FakeLane> lanes = [_FakeLane()];
 
   int get liveIndex => undoCount;
@@ -345,6 +348,7 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
           solo: t.solo,
           reversed: t.reversed,
           spanFrames: t.spanFrames,
+          anchorLap: t.anchorLap,
           lanes: [
             for (final lane in t.lanes)
               LaneSnapshot(
@@ -402,6 +406,14 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
 
   /// Leaves [span] on track [channel]'s take, as a retime does (#1179).
   void seedSpan(int channel, int span) => _tracks[channel].spanFrames = span;
+
+  @override
+  EngineResult importAnchor(int channel, int anchorLap) => EngineResult.ok;
+
+  /// Puts track [channel]'s take on lap [anchor], as recording it there
+  /// does (#854).
+  void seedAnchor(int channel, int anchor) =>
+      _tracks[channel].anchorLap = anchor;
 
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) {

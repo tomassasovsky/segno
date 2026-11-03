@@ -229,6 +229,33 @@ void main() {
   );
 
   test(
+    'a take of several loops keeps the lap it was played on through save '
+    'and load (#854)',
+    () async {
+      expect(looper.record(), EngineResult.ok);
+      engine.pump(frames: loopFrames, input: 0.25);
+      expect(looper.record(), EngineResult.ok); // the one-loop master
+      engine.pump(frames: loopFrames); // into the master's second lap
+      expect(looper.record(channel: 1), EngineResult.ok);
+      for (var lap = 0; lap < 2; lap++) {
+        engine.pump(frames: loopFrames, input: 0.75);
+      }
+      expect(looper.record(channel: 1), EngineResult.ok);
+      engine.pump(frames: 0);
+      final before = engine.snapshot().tracks[1];
+      expect(before.multiple, greaterThan(1));
+      expect(before.anchorLap, 1);
+
+      await saveThenLoad('${tempDir.path}/anchor');
+
+      final after = engine.snapshot().tracks[1];
+      expect(after.multiple, before.multiple);
+      expect(after.anchorLap, 1);
+    },
+    skip: skip,
+  );
+
+  test(
     'fuzz: random overdub/undo histories all round-trip identically',
     () async {
       // Seeded for reproducibility; on failure the shape is in each reason.

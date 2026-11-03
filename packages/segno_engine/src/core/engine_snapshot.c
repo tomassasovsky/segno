@@ -128,6 +128,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->follow_override = load_i32(&tr->a_follow_override);
   out->pitch_override = load_i32(&tr->a_pitch_override);
   out->span_frames = load_i32(&tr->a_span_clock); /* #1179 Part 4b */
+  out->anchor_lap = active ? load_i32(&tr->a_anchor) : 0; /* #854 */
   {
     /* The tempo ratio's pitch on what sounds: the source's length over the
      * span it plays across (the take's own while dry). */

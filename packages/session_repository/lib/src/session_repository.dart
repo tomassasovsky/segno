@@ -1732,6 +1732,7 @@ class SessionRepository {
           lengthFrames: track.lengthFrames,
           fadeAmount: track.fade.amount,
           reversed: track.reversed,
+          anchorLap: track.anchorLap,
           lanes: [
             for (var l = 0; l < track.lanes.length; l++)
               SessionLane(
@@ -2134,6 +2135,7 @@ class SessionRepository {
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
           spanFrames: _spanOf(snapshot, track),
+          anchorLap: track.anchorLap,
           fadeAmount: track.fade.amount,
           reversed: track.reversed,
           lanes: lanes,

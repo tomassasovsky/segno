@@ -1357,6 +1357,12 @@ typedef struct le_track_snapshot {
    * laid down against once a retime moved the clock (0: the clock in force).
    * A Session saves it so a recall reads every take at its own ratio. */
   int32_t span_frames;
+  /* Trailing (#854): the take's as-played anchor — the master lap, counted
+   * from the rig's lap 0 and reduced modulo `multiple`, that the take's
+   * first lap plays on. A take of one base loop, a Sync division and an
+   * EMPTY track read 0. Kept through Stop-all, a reopen and undo-restore; a
+   * Session saves it and gives it back with le_engine_import_anchor. */
+  int32_t anchor_lap;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -4454,6 +4460,16 @@ LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
  * Control thread. */
 LE_EXPORT int32_t le_engine_import_span(le_engine* engine, int32_t channel,
                                         int32_t span_frames);
+
+/* Sets the lap an imported take was played on (#854), as a Session saved it
+ * from le_track_snapshot.anchor_lap. Track `channel` must be EMPTY with lane
+ * 0 imported (LE_ERR_INVALID otherwise, and for a negative lap); 0 clears
+ * it. le_engine_commit_session reduces it modulo the multiple it parks the
+ * take at, so Play starts the take where it sat against the others. Call
+ * after the take's lanes are imported (a lane-0 import starts a new take and
+ * clears it) and before the commit. Control thread. */
+LE_EXPORT int32_t le_engine_import_anchor(le_engine* engine, int32_t channel,
+                                          int32_t anchor_lap);
 
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple

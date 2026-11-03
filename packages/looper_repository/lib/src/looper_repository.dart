@@ -4706,7 +4706,8 @@ class LooperRepository {
     }
     // Audio & tempo (#1179): the recorded pair is both or neither, at a tempo
     // the engine takes, beside a session tempo it retimes to; spans and
-    // overrides name real tracks. Refused here, before the rig is cleared.
+    // overrides name real tracks, and no take's lap (#854) is negative.
+    // Refused here, before the rig is cleared.
     final recordedSet =
         rig.recordedTempoBpm != 0 || rig.recordedLengthFrames != 0;
     if ((recordedSet &&
@@ -4715,7 +4716,7 @@ class LooperRepository {
                 rig.recordedTempoBpm > 300 ||
                 rig.recordedLengthFrames <= 0 ||
                 rig.tempoSource == TempoSource.none)) ||
-        rig.tracks.any((t) => t.spanFrames < 0) ||
+        rig.tracks.any((t) => t.spanFrames < 0 || t.anchorLap < 0) ||
         rig.trackFollowTempoOverrides.keys.any((c) => c < 0 || c >= 8) ||
         rig.trackPitchModeOverrides.keys.any((c) => c < 0 || c >= 8)) {
       throw StateError('session audio and tempo cannot be restored');
@@ -5333,6 +5334,19 @@ class LooperRepository {
           if (!spanned.isOk) {
             throw StateError(
               'failed to restore track ${track.channel} span: ${spanned.name}',
+            );
+          }
+        }
+        // The lap the take was played on (#854); the import cleared it.
+        if (track.anchorLap > 0) {
+          final anchored = _engine.importAnchor(
+            track.channel,
+            track.anchorLap,
+          );
+          if (!anchored.isOk) {
+            throw StateError(
+              'failed to restore track ${track.channel} anchor: '
+              '${anchored.name}',
             );
           }
         }

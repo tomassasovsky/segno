@@ -711,6 +711,21 @@ void main() {
     expect([for (final t in bundle.session.tracks) t.reversed], [true, false]);
   });
 
+  test('save captures the lap each take was played on (#854)', () async {
+    final source = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..seedTrack(
+        1,
+        Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]),
+        multiple: 2,
+      )
+      ..seedAnchor(1, 1);
+    final dir = '${tempDir.path}/s';
+    await repoFor(source).save(dir, settings: const SessionSettings());
+    final bundle = await repoFor(FakeSessionEngine()).read(dir);
+    expect([for (final t in bundle.session.tracks) t.anchorLap], [0, 1]);
+  });
+
   group('Audio & tempo capture (#1179)', () {
     test("a retimed rig saves its recorded pair and every take's span: "
         "the engine's span, the clock in force for a take laid down "

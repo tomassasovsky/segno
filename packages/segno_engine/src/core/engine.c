@@ -719,7 +719,9 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->pending_trigger = 0;
     tr->record_pos = 0;
     tr->record_start = 0;
-    tr->start_iter = 0;
+    /* A retained take keeps the lap it was played on from the new lap 0
+     * (#854); a reset one is a single base loop, so this reads 0. */
+    le_track_anchor_set(tr, le_track_anchor(tr));
     tr->od_gain = 0.0f;
     /* The audibility fades (#1400): a new device session starts with
      * nothing sounding, so no fade carries over and the gates are set on

@@ -103,6 +103,7 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
    * buffer/config we are filling here. */
   if (lane == 0) {
     store_i32(&t->a_import_span, 0); /* a new take: no span until told */
+    store_i32(&t->a_import_anchor, 0); /* nor an anchor (#854) */
     t->redo_count = 0;
     t->empty_len = 0;
     store_i32(&t->a_redo_depth, 0);
@@ -167,6 +168,25 @@ int32_t le_engine_import_span(le_engine* engine, int32_t channel,
     return LE_ERR_INVALID;
   }
   store_i32(&t->a_import_span, span_frames);
+  return LE_OK;
+}
+
+/* Published only, like the span: the commit reduces it by the multiple it
+ * parks the take at and places the take there. */
+int32_t le_engine_import_anchor(le_engine* engine, int32_t channel,
+                                int32_t anchor_lap) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (anchor_lap < 0) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY ||
+      load_i32(&t->lanes[0].a_len) <= 0) {
+    return LE_ERR_INVALID;
+  }
+  store_i32(&t->a_import_anchor, anchor_lap);
   return LE_OK;
 }
 
@@ -330,7 +350,10 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
     atomic_store_explicit(&t->lane_count, lane + 1, memory_order_release);
   }
   /* A new take's first image: no span until le_engine_import_span (#1179). */
-  if (lane == 0 && ordinal == 0) store_i32(&t->a_import_span, 0);
+  if (lane == 0 && ordinal == 0) {
+    store_i32(&t->a_import_span, 0);
+    store_i32(&t->a_import_anchor, 0); /* #854 */
+  }
   le_lane* ln = &t->lanes[lane];
   /* Undo/redo layers are quantized to the loop length (as the live rig sizes
    * them); no path record-grows an imported slot, so full max_loop_frames is

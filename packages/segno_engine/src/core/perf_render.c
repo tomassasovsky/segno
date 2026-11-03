@@ -1133,7 +1133,16 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * capture and manifest I/O — deleted with no fallback (events.log v4). The
    * mid-cycle layer-retire rotation (#255) shared this "segment restarts its
    * image at index 0" root cause. A pre-4 capture has no fact and anchors at
-   * phase 0 — unsupported, per the version bump. */
+   * phase 0 — unsupported, per the version bump.
+   *
+   * The sub-cycle is counted from the take's own anchor (#854): a take of
+   * multiple k played from lap `anchorLap` (the arm snapshot's, absent = 0)
+   * reads segment (iteration - anchorLap) mod k, as the callback does. */
+  const le_json_value* arm_track = le_pr_find_track(m->arm_tracks, channel);
+  const int64_t arm_anchor =
+      arm_track != NULL
+          ? (int64_t)le_json_number(le_json_get(arm_track, "anchorLap"), 0)
+          : 0;
   const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
   if (arm_lane != NULL &&
       le_json_bool(le_json_get(arm_lane, "deferred"), 0) == 0) {
@@ -1146,11 +1155,20 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         int32_t frames = 0;
         float* image = le_pr_read_wav_mono(path, &frames);
         if (image != NULL) {
+          /* The anchor's laps, taken off modulo the image so the phase
+           * stays non-negative (le_pr_append_segment reduces it). */
+          const uint64_t anchor_frames =
+              frames > 0 && arm_anchor > 0
+                  ? (uint64_t)(arm_anchor * m->perf_arm_master_len) %
+                        (uint64_t)frames
+                  : 0;
           const uint64_t arm_phase =
               m->perf_arm_present
                   ? (uint64_t)m->perf_arm_iteration *
                             (uint64_t)m->perf_arm_master_len +
-                        (uint64_t)m->perf_arm_position
+                        (uint64_t)m->perf_arm_position +
+                        (anchor_frames > 0 ? (uint64_t)frames - anchor_frames
+                                           : 0)
                   : 0;
           le_pr_append_segment(&build, 0, arm_phase, image, frames);
         } else {

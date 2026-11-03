@@ -1466,6 +1466,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult importAnchor(int channel, int anchorLap) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_import_anchor(_engine, channel, anchorLap),
+    );
+  }
+
+  @override
   EngineResult commitSession(int baseFrames, {required int loopBeats}) {
     _checkAlive();
     return EngineResult.fromCode(

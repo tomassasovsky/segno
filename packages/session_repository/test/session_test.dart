@@ -310,6 +310,62 @@ void main() {
     });
   });
 
+  group('the lap each take was played on (schema 17, #854)', () {
+    SessionTrack track({required int multiple, int anchorLap = 0}) =>
+        SessionTrack(
+          channel: 1,
+          multiple: multiple,
+          lengthFrames: multiple * 2400,
+          fadeAmount: 1,
+          reversed: false,
+          anchorLap: anchorLap,
+          lanes: const [
+            SessionLane(
+              lane: 0,
+              volume: 1,
+              muted: false,
+              outputMask: 3,
+              inputChannel: 0,
+              layers: [SessionLayer(file: 'track1_lane0_L0.wav')],
+              history: TrackHistory.none,
+            ),
+          ],
+        );
+
+    test('round-trips', () {
+      final played = track(multiple: 4, anchorLap: 2);
+      final json = jsonDecode(jsonEncode(played.toJson()));
+      final back = SessionTrack.fromJson(json as Map<String, dynamic>);
+      expect(back, played);
+      expect(back.anchorLap, 2);
+      expect(back.hashCode, played.hashCode);
+      expect(back, isNot(track(multiple: 4, anchorLap: 1)));
+    });
+
+    test('refuses a lap outside the take, or none', () {
+      final good = track(multiple: 4).toJson();
+      for (final bad in <Object?>[null, -1, 4, 1.5, '1']) {
+        expect(
+          () => SessionTrack.fromJson({...good, 'anchorLap': bad}),
+          throwsFormatException,
+          reason: 'anchorLap: $bad',
+        );
+      }
+      // A take of one base loop, or a Sync division, plays from lap 0.
+      expect(
+        () => SessionTrack.fromJson({
+          ...track(multiple: 1).toJson(),
+          'anchorLap': 1,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        SessionTrack.fromJson({...good, 'anchorLap': 3}).anchorLap,
+        3,
+      );
+    });
+  });
+
   group('Session', () {
     test('round-trips through JSON (including jsonEncode/decode)', () {
       final json = jsonDecode(jsonEncode(session.toJson()));
@@ -447,10 +503,10 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v16) and the grid in beats', () {
+    test('serializes the manifest version (v17) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 16);
+      expect(json['version'], 17);
       // Constructed with bars only, the beats are the bars' (#1168).
       expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);
