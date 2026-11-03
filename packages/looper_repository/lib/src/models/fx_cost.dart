@@ -74,20 +74,17 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// clipper, 4x and 2x the Vinyl, 2x and 1x the Distortion; engine_fx.c,
 /// le_os_stages).
 ///
-/// Estimated: each is the console's charge before oversampling (96 kHz:
-/// Overdrive 122, Distortion 227 and Vinyl 97 measured on the console, the
-/// Amp+Cab's 376 from CI arm64 x 1.75) times what oversampling multiplied
-/// the kind's own cost by on the macOS host (M4 Pro, one instance, ns per
-/// frame against the same kind at 96 kHz before): the Overdrive 7.1 and
-/// 4.5, the Distortion 1.9 and 1.2, the Vinyl 6.5 and 3.0 (its DC blocker
-/// and its dry share's own way down included), the Amp+Cab 2.3 and 1.8.
-/// The console's own table (`bench_fx_cpu --table` at 48 and 96 kHz) is
-/// owed and replaces these.
+/// Measured on the console (Pi 5, build .212, SCHED_FIFO 70, `bench_fx_cpu
+/// --paced --cpu 3 --table --blocks 2000 --period 32`) at 48 kHz for `low`
+/// and 96 kHz for `high`. These are 32-frame periods, where the other
+/// kinds' figures are 64-frame ones: per-block work spread over fewer frames,
+/// so at 64 frames they charge a little more than they cost. The Amp+Cab
+/// charges more at 96 kHz, where its cabinet runs twice the taps.
 const Map<TrackEffectType, ({int low, int high})> kFxOversampledCostNs = {
-  TrackEffectType.overdrive: (low: 863, high: 551),
-  TrackEffectType.distortion: (low: 437, high: 275),
-  TrackEffectType.vinyl: (low: 630, high: 290),
-  TrackEffectType.ampCab: (low: 861, high: 684),
+  TrackEffectType.overdrive: (low: 786, high: 442),
+  TrackEffectType.distortion: (low: 395, high: 243),
+  TrackEffectType.vinyl: (low: 357, high: 189),
+  TrackEffectType.ampCab: (low: 557, high: 659),
 };
 
 /// What a kind on the hop charges, in microseconds a block: its frame's work

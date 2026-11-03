@@ -256,6 +256,11 @@ frequency, for the same stored values.
 
 ## At rates other than 48 kHz (#1436)
 
+Since #1547, 96 kHz no longer uses a table: it runs the 48 kHz design on
+alternate samples, two interleaved states, which is the 48 kHz response
+exactly below 24 kHz. What follows about 96 kHz describes the tables this
+replaced. 44.1 kHz still uses its table.
+
 The bands above are designed at the running rate. At 48 kHz that is exact.
 At another rate, the same design drifts from the measured response near the
 top of the audio band. The 48 kHz response is compressed toward its 24 kHz

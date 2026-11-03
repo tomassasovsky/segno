@@ -66,7 +66,6 @@ void main() {
         expect(fxEntryCostNs(fx, sampleRate: 48000), ns.low, reason: '$type');
         expect(fxEntryCostNs(fx, sampleRate: 88200), ns.high, reason: '$type');
         expect(fxEntryCostNs(fx), ns.high, reason: '$type'); // 96 kHz
-        expect(ns.low, greaterThanOrEqualTo(ns.high), reason: '$type');
         expect(kFxKindCostNs.containsKey(type), isFalse, reason: '$type');
       }
       // A kind that does not oversample charges the same at every rate.
@@ -138,7 +137,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,402 ns a frame at 96 kHz,
+    // Ed's Rack, the plan's unit (section 7): 3,268 ns a frame at 96 kHz,
     // 2,665 in the plan, before its Overdrive and Amp+Cab ran oversampled
     // (#1547).
     final rack = [
@@ -173,7 +172,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the plan's table assumes", () {
-      expect(rackNs, 3402);
+      expect(rackNs, 3268);
       expect(fxBudgetNs(96000), 7192);
     });
 

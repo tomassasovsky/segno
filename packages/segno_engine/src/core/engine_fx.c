@@ -81,6 +81,22 @@ static inline void le_svf_tick(float x, float a1, float a2, float a3,
   *ic2 = 2.0f * (*v2) - *ic2;
 }
 
+/* At 96 kHz the EQ's bands and the other kinds' filter sections (#1547)
+ * run their 48 kHz designs on every other sample, each of the two
+ * interleaved phases with its own state: that is H48(z^2), which below
+ * 24 kHz is exactly the 48 kHz response, including its compression toward
+ * 24 kHz. Above 24 kHz it mirrors what is below: it passes what a signal
+ * holds there at the gain the 48 kHz design has at the mirror image, so a
+ * curve's output first passes a half-band (le_hb). Only linear sections run
+ * this way: a nonlinear kernel would run as two unrelated ones (the LPF and
+ * the Degrade run at 48 kHz instead). The phases count the engine's frames,
+ * so a section's state never swaps phase; a new rate clears them.
+ * LE_RS_PH is the most phases a section runs. */
+#define LE_RS_PH 2
+static inline int le_rs_phases(int sr) { return sr == 96000 ? 2 : 1; }
+/* The rate a section is designed at: 48 kHz at 96 kHz, else the rate. */
+static inline int le_rs_design_rate(int sr) { return sr == 96000 ? 48000 : sr; }
+
 /* The bilinear prewarp of a corner [hz] at [sr]: tan(pi hz / sr), the
  * corner held under 0.45 of the rate. The Looper X kinds' TPT filters
  * design from it (the built-in resonant filter keeps its own float form). */
@@ -2612,8 +2628,7 @@ static const struct {
     {2425.0, 6.08, 0.853, 0.0, -4.81},     /* RESO HI */
 };
 
-/* A one-pole low- or high-pass, bilinear: y = b0 (x + x1) - a1 y1 (low) or
- * b0 (x - x1) - a1 y1 (high). */
+/* A one-pole high-pass, bilinear: y = b0 (x - x1) - a1 y1. */
 typedef struct le_mdly_pole {
   float b0, a1, x1, y1;
 } le_mdly_pole;
@@ -2622,13 +2637,6 @@ static void le_mdly_pole_set(le_mdly_pole* f, double hz, int sr, int high) {
   const double k = le_prewarp(hz, sr);
   f->b0 = (float)(high ? 1.0 / (1.0 + k) : k / (1.0 + k));
   f->a1 = (float)((k - 1.0) / (k + 1.0));
-}
-
-static inline float le_mdly_pole_lp(le_mdly_pole* f, float x) {
-  const float y = f->b0 * (x + f->x1) - f->a1 * f->y1;
-  f->x1 = x;
-  f->y1 = y;
-  return y;
 }
 
 static inline float le_mdly_pole_hp(le_mdly_pole* f, float x) {
@@ -2648,71 +2656,46 @@ static inline float le_mdly_limit(float x, float knee, float ceil) {
 
 /* A biquad, transposed direct form II. */
 typedef struct le_mdly_bq {
-  float b0, b1, b2, a1, a2, z1, z2;
+  float b0, b1, b2, a1, a2, z1[LE_RS_PH], z2[LE_RS_PH]; /* per phase (le_rs_phases) */
 } le_mdly_bq;
 
-static inline float le_mdly_bq_run(le_mdly_bq* f, float x) {
-  const float y = f->b0 * x + f->z1;
-  f->z1 = f->b1 * x - f->a1 * y + f->z2;
-  f->z2 = f->b2 * x - f->a2 * y;
+static inline float le_mdly_bq_run(le_mdly_bq* f, float x, int ph) {
+  const float y = f->b0 * x + f->z1[ph];
+  f->z1[ph] = f->b1 * x - f->a1 * y + f->z2[ph];
+  f->z2[ph] = f->b2 * x - f->a2 * y;
   return y;
 }
 
 /* The voicing [v] as a biquad at [sr]: an RBJ peak, a one-pole low-pass, or
  * the identity. */
+static void le_mdly_bq_rbj(le_mdly_bq* f, int kind, double hz, double q,
+                           double db, int sr);
 static void le_mdly_voice_set(le_mdly_bq* f, int v, int sr) {
-  const double rate = (double)(sr > 0 ? sr : 48000);
-  f->b0 = 1.0f;
-  f->b1 = f->b2 = f->a1 = f->a2 = 0.0f;
   if (LE_MDLY_VOICE[v].peak_db != 0.0) {
-    const double A = pow(10.0, LE_MDLY_VOICE[v].peak_db / 40.0);
-    const double w0 = 2.0 * 3.14159265358979323846 *
-                      LE_MDLY_VOICE[v].peak_hz / rate;
-    const double al = sin(w0) / (2.0 * LE_MDLY_VOICE[v].peak_q);
-    const double a0 = 1.0 + al / A;
-    f->b0 = (float)((1.0 + al * A) / a0);
-    f->b1 = (float)(-2.0 * cos(w0) / a0);
-    f->b2 = (float)((1.0 - al * A) / a0);
-    f->a1 = (float)(-2.0 * cos(w0) / a0);
-    f->a2 = (float)((1.0 - al / A) / a0);
+    le_mdly_bq_rbj(f, 0, LE_MDLY_VOICE[v].peak_hz, LE_MDLY_VOICE[v].peak_q,
+                   LE_MDLY_VOICE[v].peak_db, sr);
   } else if (LE_MDLY_VOICE[v].damp_hz > 0.0) {
-    const double k = le_prewarp(LE_MDLY_VOICE[v].damp_hz, sr);
-    f->b0 = f->b1 = (float)(k / (1.0 + k));
-    f->a1 = (float)((k - 1.0) / (k + 1.0));
+    le_mdly_bq_rbj(f, 3, LE_MDLY_VOICE[v].damp_hz, 0.707, 0.0, sr);
+  } else {
+    le_mdly_bq_rbj(f, 5, 0.0, 1.0, 0.0, sr);
   }
 }
 
-/* RBJ sections at [rate] into [f]: a peak of [db] at [hz], Q [q]; a
- * low-pass or high-pass at [hz], Q [q]; a bilinear one-pole low-pass or
- * high-pass at [hz]; or the identity. The state is kept. */
+/* A section at [rate] into [f]: an RBJ peak of [db] at [hz], Q [q] (kind
+ * 0); a low-pass (1) or high-pass (2) at [hz], Q [q]; a bilinear one-pole
+ * low-pass (3) or high-pass (4) at [hz]; or the identity (5), each with its
+ * 48 kHz response (le_rate_design). The state is kept. */
+static void le_rate_design(int kind, double hz, double db, double q, int sr,
+                           double c[5]);
 static void le_mdly_bq_rbj(le_mdly_bq* f, int kind, double hz, double q,
                            double db, int sr) {
-  const double rate = (double)(sr > 0 ? sr : 48000);
-  if (hz > 0.45 * rate) hz = 0.45 * rate;
-  const double w0 = 2.0 * 3.14159265358979323846 * hz / rate;
-  const double c = cos(w0);
-  const double al = sin(w0) / (2.0 * q);
-  double b0, b1, b2, a0, a1, a2;
-  if (kind == 0) { /* peak */
-    const double A = pow(10.0, db / 40.0);
-    b0 = 1.0 + al * A; b1 = -2.0 * c; b2 = 1.0 - al * A;
-    a0 = 1.0 + al / A; a1 = -2.0 * c; a2 = 1.0 - al / A;
-  } else if (kind == 1) { /* low-pass */
-    b0 = (1.0 - c) / 2.0; b1 = 1.0 - c; b2 = b0;
-    a0 = 1.0 + al; a1 = -2.0 * c; a2 = 1.0 - al;
-  } else if (kind == 2) { /* high-pass */
-    b0 = (1.0 + c) / 2.0; b1 = -(1.0 + c); b2 = b0;
-    a0 = 1.0 + al; a1 = -2.0 * c; a2 = 1.0 - al;
-  } else if (kind == 3 || kind == 4) { /* one-pole low- or high-pass */
-    const double k = le_prewarp(hz, sr);
-    b0 = kind == 3 ? k / (1.0 + k) : 1.0 / (1.0 + k);
-    b1 = kind == 3 ? b0 : -b0; b2 = 0.0;
-    a0 = 1.0; a1 = (k - 1.0) / (k + 1.0); a2 = 0.0;
-  } else {
-    b0 = 1.0; b1 = b2 = a1 = a2 = 0.0; a0 = 1.0;
-  }
-  f->b0 = (float)(b0 / a0); f->b1 = (float)(b1 / a0); f->b2 = (float)(b2 / a0);
-  f->a1 = (float)(a1 / a0); f->a2 = (float)(a2 / a0);
+  static const int as_rate[5] = {2 /* LE_EQ_LOMID */, 5 /* LE_EQ_HIGHCUT */,
+                                 0 /* LE_EQ_LOWCUT */, 6 /* LE_RS_LP1 */,
+                                 7 /* LE_RS_HP1 */};
+  double c[5] = {1.0, 0.0, 0.0, 0.0, 0.0};
+  if (kind >= 0 && kind < 5) le_rate_design(as_rate[kind], hz, db, q, sr, c);
+  f->b0 = (float)c[0]; f->b1 = (float)c[1]; f->b2 = (float)c[2];
+  f->a1 = (float)c[3]; f->a2 = (float)c[4];
 }
 
 /* The Drum Rack's delay (#891 s6rev 22-27, #1473): a one-pole low-pass at
@@ -2742,9 +2725,8 @@ static void le_mdly_bq_rbj(le_mdly_bq* f, int kind, double hz, double q,
  *
  * The damping table is fitted at 48 kHz, and its default's corner sits at
  * the 0.45-of-the-rate clamp: the section is mostly the bilinear warp. At
- * other rates it is the same analog filter, so 96 kHz keeps the 48 kHz
- * response within 0.4 dB to 10 kHz at the default (1.1 dB at Damp 100 %),
- * where the same corner and Q would lose 7 dB. */
+ * other rates le_rate_design gives it that 48 kHz response, as it does
+ * every section here. */
 #define LE_MDLY_DUB_PEAK_DB 11.02
 #define LE_MDLY_DUB_PEAK_POW 2.72 /* 6.0 dB at Reso 80 %, 11.0 at 100 % */
 #define LE_MDLY_DUB_PEAK_Q0 0.69
@@ -2786,8 +2768,10 @@ typedef struct le_fx_line {
   float ramp_d[4][5]; /* per frame: voice[0], voice[1], voice2[0], voice2[1] */
   le_mdly_bq ramp_to[4]; /* where it lands */
   int32_t etap, etap_old; /* the early tap, frames, and the one fading out */
-  le_mdly_pole hp[2], lp_out[2], lp_loop, dc;
+  le_mdly_pole hp[2], dc;
+  le_mdly_bq lp_out[2], lp_loop; /* one-poles, as biquads (le_rate_design) */
   int32_t timing; /* the last frame's: plain, L/R or GRV */
+  int32_t ph, nph; /* the sections' phase this frame (le_rs_phases) */
   float loop_g;
   float ring[];
 } le_fx_line;
@@ -2801,13 +2785,6 @@ static void le_mdly_reset(le_fx_line* line) {
 
 static float le_mdly_clamp01(float v) {
   return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
-}
-
-/* The corner at [sr] of the same analog filter as [hz] at 48 kHz. */
-static double le_mdly_hz_from_48k(double hz, int sr) {
-  const double pi = 3.14159265358979323846;
-  const double rate = (double)(sr > 0 ? sr : 48000);
-  return rate / pi * atan(48000.0 / rate * tan(pi * hz / 48000.0));
 }
 
 static void le_mdly_own_voice_set(le_fx_line* line, int v, const float* s,
@@ -2836,8 +2813,7 @@ static void le_mdly_own_voice_set(le_fx_line* line, int v, const float* s,
   const double reso = (double)le_mdly_clamp01(s[3]);
   const double rf = 100.0 * pow(100.0, (double)le_mdly_clamp01(s[4]));
   for (int c = 0; c < 2; ++c) {
-    le_mdly_bq_rbj(&line->voice[c], 1, le_mdly_hz_from_48k(lp_hz, sr), lp_q,
-                   0.0, sr);
+    le_mdly_bq_rbj(&line->voice[c], 1, lp_hz, lp_q, 0.0, sr);
     le_mdly_bq_rbj(&line->voice2[c], 0, rf,
                    LE_MDLY_DUB_PEAK_Q0 + LE_MDLY_DUB_PEAK_Q1 * reso,
                    LE_MDLY_DUB_PEAK_DB * pow(reso, LE_MDLY_DUB_PEAK_POW), sr);
@@ -2913,11 +2889,20 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     if (fresh) line->ramp = 0; /* a new voicing or rate lands at once */
     if (line->sr != rate) {
       line->k = le_fx_smooth_k(rate);
-      le_mdly_pole_set(&line->lp_loop, LE_MDLY_LOOP_LP_HZ, rate, 0);
+      line->nph = le_rs_phases(rate);
+      line->ph = 0;
+      le_mdly_bq* sec[9] = {&line->voice[0],  &line->voice[1],  &line->voice2[0],
+                            &line->voice2[1], &line->out_hp[0], &line->out_hp[1],
+                            &line->lp_out[0], &line->lp_out[1], &line->lp_loop};
+      for (int i = 0; i < 9; ++i) {
+        memset(sec[i]->z1, 0, sizeof(sec[i]->z1));
+        memset(sec[i]->z2, 0, sizeof(sec[i]->z2));
+      }
+      le_mdly_bq_rbj(&line->lp_loop, 3, LE_MDLY_LOOP_LP_HZ, 0.707, 0.0, rate);
       le_mdly_pole_set(&line->dc, LE_MDLY_DC_HZ, rate, 1);
       for (int c = 0; c < 2; ++c) {
         le_mdly_pole_set(&line->hp[c], LE_MDLY_HP_HZ, rate, 1);
-        le_mdly_pole_set(&line->lp_out[c], LE_MDLY_OUT_LP_HZ, rate, 0);
+        le_mdly_bq_rbj(&line->lp_out[c], 3, LE_MDLY_OUT_LP_HZ, 0.707, 0.0, rate);
       }
     }
     if (own) {
@@ -3005,8 +2990,10 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   const int32_t want_e = (int32_t)(want * early + 0.5);
   /* It starts clean, at its place, when it comes into use. */
   if (timing != 0 && line->timing == 0) {
-    line->voice[1].z1 = line->voice[1].z2 = 0.0f;
-    line->voice2[1].z1 = line->voice2[1].z2 = 0.0f;
+    memset(line->voice[1].z1, 0, sizeof(line->voice[1].z1));
+    memset(line->voice[1].z2, 0, sizeof(line->voice[1].z2));
+    memset(line->voice2[1].z1, 0, sizeof(line->voice2[1].z1));
+    memset(line->voice2[1].z2, 0, sizeof(line->voice2[1].z2));
     line->etap = line->etap_old = (int32_t)(line->tap * early + 0.5);
   }
   line->timing = timing;
@@ -3026,6 +3013,8 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   /* The taps, on time and early, crossfading from the old times to the
    * new (a new Time, or a new Ratio). */
   const float t_new = line->xf > 0 ? 1.0f - (float)line->xf / (float)xf_n : 1.0f;
+  const int ph = line->ph;
+  if (++line->ph >= line->nph) line->ph = 0;
   float tp = le_mdly_read(line, line->tap);
   float te = 0.0f;
   if (timing != 0) te = le_mdly_read(line, line->etap);
@@ -3037,12 +3026,13 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     --line->xf;
   }
   const float vp = le_mdly_limit(
-      le_mdly_bq_run(&line->voice2[0], le_mdly_bq_run(&line->voice[0], tp)),
+      le_mdly_bq_run(&line->voice2[0], le_mdly_bq_run(&line->voice[0], tp, ph), ph),
       LE_MDLY_ECHO_KNEE, LE_MDLY_ECHO_CEIL);
   const float ve =
       timing != 0
           ? le_mdly_limit(le_mdly_bq_run(&line->voice2[1],
-                                         le_mdly_bq_run(&line->voice[1], te)),
+                                         le_mdly_bq_run(&line->voice[1], te, ph),
+                                         ph),
                           LE_MDLY_ECHO_KNEE, LE_MDLY_ECHO_CEIL)
           : 0.0f;
 
@@ -3051,7 +3041,7 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
    * limited again; the input goes in as it is. */
   const float back = le_mdly_limit(
       line->fb * line->loop_g *
-          le_mdly_pole_lp(&line->lp_loop, le_mdly_pole_hp(&line->dc, vp)),
+          le_mdly_bq_run(&line->lp_loop, le_mdly_pole_hp(&line->dc, vp), ph),
       LE_MDLY_FB_KNEE, LE_MDLY_FB_CEIL);
   line->ring[line->pos] = 0.5f * (*l + *r) + back;
   line->pos = line->pos + 1 >= line->cap ? 0 : line->pos + 1;
@@ -3080,11 +3070,11 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     wr = gr * (ve + LE_MDLY_DUB_CROSS * vp);
   }
   if (own) {
-    wl = line->out_g * le_mdly_bq_run(&line->out_hp[0], wl);
-    wr = line->out_g * le_mdly_bq_run(&line->out_hp[1], wr);
+    wl = line->out_g * le_mdly_bq_run(&line->out_hp[0], wl, ph);
+    wr = line->out_g * le_mdly_bq_run(&line->out_hp[1], wr, ph);
   }
-  wl = le_mdly_pole_lp(&line->lp_out[0], le_mdly_pole_hp(&line->hp[0], wl));
-  wr = le_mdly_pole_lp(&line->lp_out[1], le_mdly_pole_hp(&line->hp[1], wr));
+  wl = le_mdly_bq_run(&line->lp_out[0], le_mdly_pole_hp(&line->hp[0], wl), ph);
+  wr = le_mdly_bq_run(&line->lp_out[1], le_mdly_pole_hp(&line->hp[1], wr), ph);
   const float m = line->mix;
   const float wet = m <= 0.5f ? 4.0f * m * m : 1.0f;
   const float dry = m <= 0.5f ? 1.0f : 1.0f - (2.0f * m - 1.0f) * (2.0f * m - 1.0f);
@@ -3560,7 +3550,8 @@ enum { LE_EQ_LAYOUT_SHELVES, LE_EQ_LAYOUT_CUTS, LE_EQ_LAYOUT_BELLS };
 typedef struct le_eq_band {
   double b0, b1, b2, a1, a2; /* a0-normalized */
   float mix;                 /* a cut's amount (1 for a shelf or bell) */
-  double z[2][2];            /* transposed direct form II, per channel */
+  double z[2][LE_RS_PH][2];  /* transposed direct form II, per channel and
+                              * phase */
 } le_eq_band;
 
 typedef struct le_fx_eq {
@@ -3584,6 +3575,7 @@ typedef struct le_fx_eq {
    * as the settings ask. They change shape only at 0 dB (fx_eq_update). */
   int32_t shelves;
   int32_t tgt_shelves;
+  int32_t ph, nph; /* the phase this frame runs, of le_rs_phases */
 } le_fx_eq;
 
 /* The value of descriptor row [d] at setting v, in its own unit. */
@@ -3702,8 +3694,9 @@ void le_eq_bell_for_test(double hz, double db, double q, int sr, double c[5]) {
  * the 48 kHz magnitude response over 20 Hz to 20 kHz, and stores how its
  * coefficients differ from the plain design below. A band adds the
  * difference, interpolated over the grid, to its plain design: a table
- * lookup, no fitting. 48 kHz needs none, and other rates run the plain
- * design. */
+ * lookup, no fitting. 48 kHz needs none; 96 kHz runs the 48 kHz design
+ * itself on alternate samples (le_eq_band, #1547), which is exact; other
+ * rates run the plain design. */
 typedef struct le_eq_rate_table {
   int32_t nf, nq, ng;     /* grid points per axis */
   double f0, df;          /* ln f0 at the first point, and the step */
@@ -3719,11 +3712,8 @@ enum { LE_EQR_BELL, LE_EQR_HS, LE_EQR_LP, LE_EQR_HP, LE_EQR_NONE };
 static const le_eq_rate_table* le_eq_rate_table_for(int shape, int sr) {
   static const le_eq_rate_table* const t44[4] = {
       &LE_EQR_BELL_44100, &LE_EQR_HS_44100, &LE_EQR_LP_44100, &LE_EQR_HP_44100};
-  static const le_eq_rate_table* const t96[4] = {
-      &LE_EQR_BELL_96000, &LE_EQR_HS_96000, &LE_EQR_LP_96000, &LE_EQR_HP_96000};
   if (shape == LE_EQR_NONE) return NULL;
   if (sr == 44100) return t44[shape];
-  if (sr == 96000) return t96[shape];
   return NULL;
 }
 
@@ -3756,9 +3746,8 @@ static void le_eq_rate_axis(double v, double v0, double dv, int32_t n,
  * or no further out than the plain design where that already is. Each bound
  * is linear in s, so s moves continuously with the settings and a glide
  * never steps (tool/eq_rate_fit.py guarded() is the same). */
-static void le_eq_rate_correct(int shape, double hz, double db, double q,
-                               int sr, double c[5]) {
-  const le_eq_rate_table* t = le_eq_rate_table_for(shape, sr);
+static void le_rate_apply(const le_eq_rate_table* t, double hz, double db,
+                          double q, double c[5]) {
   if (t == NULL) return;
   int32_t i[3];
   double w[3];
@@ -3792,11 +3781,139 @@ static void le_eq_rate_correct(int shape, double hz, double db, double q,
   for (int k = 0; k < 5; ++k) c[k] += s * d[k];
 }
 
+static void le_eq_rate_correct(int shape, double hz, double db, double q,
+                               int sr, double c[5]) {
+  le_rate_apply(le_eq_rate_table_for(shape, sr), hz, db, q, c);
+}
+
+/* ---- The other kinds' filters at rates other than 48 kHz (#1547) ----
+ *
+ * The kinds are fitted to the Looper X at 48 kHz too, and their filters
+ * are the same bilinear designs as the EQ's bands: at 96 kHz they run
+ * brighter near the top of the band than at 48 kHz, at 44.1 kHz darker
+ * (the effects matrix's response check). le_rate_design gives a kind's
+ * section at the running rate corrected to its 48 kHz response, as the
+ * EQ's bands are: the bells and high shelves through the EQ's own tables
+ * (an RBJ peak is a bell at a wider Q), the cuts at any Q and the
+ * one-poles through tool/rate_fit.py's (engine_fx_rate.inc). The low
+ * shelves need none (their corners sit low). That is at 44.1 kHz; 96 kHz
+ * runs the 48 kHz designs on alternate samples (le_rs_phases), which is
+ * exact, where a corrected biquad comes only within a dB or two of a
+ * one-pole's 48 kHz response. At 48 kHz, and at other rates, it is the
+ * plain design. */
+#include "engine_fx_rate.inc"
+
+/* le_rate_design's kinds past le_eq_design's: the bilinear one-poles, as
+ * biquads. */
+enum { LE_RS_LP1 = LE_EQ_HIGHCUT + 1, LE_RS_HP1 };
+
+static const le_eq_rate_table* le_rf_table(int kind, int sr) {
+  if (sr == 44100) {
+    switch (kind) {
+      case LE_EQ_LOWCUT: return &LE_RF_HPQ_44100;
+      case LE_EQ_HIGHCUT: return &LE_RF_LPQ_44100;
+      case LE_RS_LP1: return &LE_RF_LP1_44100;
+      case LE_RS_HP1: return &LE_RF_HP1_44100;
+      default: return NULL;
+    }
+  }
+  return NULL;
+}
+
+/* Whether [v] lies on an axis of [n] points from [v0] in steps of [dv] (a
+ * one-point axis takes anything). */
+static int le_rate_on_axis(double v, double v0, double dv, int32_t n) {
+  if (n < 2) return 1;
+  const double tol = 1e-6 * fabs(dv);
+  return v >= v0 - tol && v <= v0 + (double)(n - 1) * dv + tol;
+}
+
+/* le_rate_apply where table [t] covers the settings; elsewhere [c] stays
+ * the plain design, rather than taking the correction fitted for the
+ * grid's edge (a +23 dB bell corrected as an 18 dB one). */
+static void le_rate_apply_on_grid(const le_eq_rate_table* t, double hz,
+                                  double db, double q, double c[5]) {
+  if (t == NULL || !le_rate_on_axis(log(hz), t->f0, t->df, t->nf) ||
+      !le_rate_on_axis(log(q), t->q0, t->dq, t->nq) ||
+      !le_rate_on_axis(db, t->g0, t->dg, t->ng)) {
+    return;
+  }
+  le_rate_apply(t, hz, db, q, c);
+}
+
+/* [kind]'s section (an LE_EQ_* design, or LE_RS_LP1 / LE_RS_HP1 at [hz])
+ * at [sr], with the response it has at 48 kHz: at 96 kHz the 48 kHz
+ * design, which the kind runs on alternate samples (le_rs_phases). */
+static void le_rate_design(int kind, double hz, double db, double q, int sr,
+                           double c[5]) {
+  sr = le_rs_design_rate(sr);
+  if (kind == LE_RS_LP1 || kind == LE_RS_HP1) {
+    const double k = le_prewarp(hz, sr);
+    const double b0 = kind == LE_RS_HP1 ? 1.0 / (1.0 + k) : k / (1.0 + k);
+    c[0] = b0;
+    c[1] = kind == LE_RS_HP1 ? -b0 : b0;
+    c[2] = 0.0;
+    c[3] = (k - 1.0) / (k + 1.0);
+    c[4] = 0.0;
+    le_rate_apply_on_grid(le_rf_table(kind, sr), hz, 0.0, LE_EQ_CUT_Q, c);
+    return;
+  }
+  const le_eq_rate_table* bells = le_eq_rate_table_for(LE_EQR_BELL, sr);
+  if (bells != NULL && (kind == LE_EQ_LOMID || kind == LE_EQ_HIMID)) {
+    /* The RBJ peak at 48 kHz is the bell at Q q 10^(|db| / 40) /
+     * cos(w0 / 2) there (le_eq_bell): that bell, corrected. */
+    const double qb = q * pow(10.0, fabs(db) / 40.0) /
+                      cos(3.14159265358979323846 * (hz < 23520.0 ? hz : 23520.0) /
+                          48000.0);
+    if (le_rate_on_axis(log(hz), bells->f0, bells->df, bells->nf) &&
+        le_rate_on_axis(log(qb), bells->q0, bells->dq, bells->nq) &&
+        le_rate_on_axis(db, bells->g0, bells->dg, bells->ng)) {
+      le_eq_bell(hz, db, qb, sr, c);
+      le_rate_apply(bells, hz, db, qb, c);
+      return;
+    }
+  }
+  le_eq_design(kind, hz, db, q, sr, c);
+  if (kind == LE_EQ_HIGH) {
+    le_rate_apply_on_grid(le_eq_rate_table_for(LE_EQR_HS, sr), hz, db, q, c);
+  } else {
+    le_rate_apply_on_grid(le_rf_table(kind, sr), hz, db, q, c);
+  }
+}
+
+/* Exposed for the native tests: [kind]'s section as le_rate_design gives
+ * it, and the ladder's correction. */
+void le_rate_design_for_test(int kind, double hz, double db, double q, int sr,
+                             double c[5]);
+void le_ladder_correction_for_test(double hz, double k, int sr, double c[5]);
+
+/* The LPF kind's ladder (fx_lpf_*) at [sr], corner [hz] and feedback [k]:
+ * the correction biquad that runs after it, so the two have the ladder's
+ * 48 kHz response; the identity at 48 kHz, and at 96 kHz, where the ladder
+ * runs at 48 kHz (le_lpf_halved).
+ * An oscillating ladder takes the correction of the edge, k = 3.99. */
+static void le_ladder_correction(double hz, double k, int sr, double c[5]) {
+  c[0] = 1.0;
+  c[1] = c[2] = c[3] = c[4] = 0.0;
+  const le_eq_rate_table* t = sr == 44100 ? &LE_RF_LADDER_44100 : NULL;
+  le_rate_apply(t, hz, 0.0, k < 3.99 ? (k > 0.2 ? k : 0.2) : 3.99, c);
+}
+
+void le_rate_design_for_test(int kind, double hz, double db, double q, int sr,
+                             double c[5]) {
+  le_rate_design(kind, hz, db, q, sr, c);
+}
+
+void le_ladder_correction_for_test(double hz, double k, int sr, double c[5]) {
+  le_ladder_correction(hz, k, sr, c);
+}
+
 /* The EQ kind's design of band [b] (LE_EQB_*): the cuts, the outer bands as
  * shelves or bells, and the mid bells, each corrected to its 48 kHz
  * response at the running rate where a table has it. */
 static void le_eq_band_design(int b, int shelves, double hz, double db,
                               double q, int sr, double c[5]) {
+  sr = le_rs_design_rate(sr); /* 96 kHz runs the 48 kHz design (le_eq_band) */
   int shape = LE_EQR_BELL;
   switch (b) {
     case LE_EQB_LOWCUT:
@@ -3849,6 +3966,11 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
   const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_EQ_PARAMS_N, sr, settle);
   if (!f) return;
   const int new_rate = (f & LE_FX_DYN_NEW_RATE) != 0; /* every design moves */
+  if (new_rate) {
+    q->nph = le_rs_phases(sr);
+    q->ph = 0;
+    for (int b = 0; b < LE_EQ_BANDS; ++b) memset(q->band[b].z, 0, sizeof(q->band[b].z));
+  }
   /* The targets change only with the settings; a glide reuses them. */
   if (f & LE_FX_DYN_CHANGED) {
     le_eq_targets(p, q->tgt_hz, q->tgt_db, q->tgt_lnq, &q->tgt_shelves);
@@ -3911,13 +4033,15 @@ static void fx_eq_kprocess(void* ks, float* l, float* r) {
     if (!(q->active & (1u << b))) continue;
     le_eq_band* f = &q->band[b];
     for (int c = 0; c < 2; ++c) {
+      double* z = f->z[c][q->ph];
       const double in = x[c];
-      const double y = f->b0 * in + f->z[c][0];
-      f->z[c][0] = f->b1 * in - f->a1 * y + f->z[c][1];
-      f->z[c][1] = f->b2 * in - f->a2 * y;
+      const double y = f->b0 * in + z[0];
+      z[0] = f->b1 * in - f->a1 * y + z[1];
+      z[1] = f->b2 * in - f->a2 * y;
       x[c] = f->mix >= 1.0f ? y : in + f->mix * (y - in);
     }
   }
+  if (++q->ph >= q->nph) q->ph = 0;
   *l = (float)x[0];
   *r = (float)x[1];
 }
@@ -4377,6 +4501,23 @@ static inline float le_ring_read(const float* ring, uint32_t mask, uint32_t w,
   return a + fr * (b - a);
 }
 
+/* le_ring_read on the frames of one phase of [nph] (le_rs_phases): [delay]
+ * frames back, read between the frames nph apart, as the 48 kHz kernel
+ * reads its own at 96 kHz. At least nph back, so it reads only what
+ * earlier frames wrote. */
+static inline float le_ring_read_ph(const float* ring, uint32_t mask,
+                                    uint32_t w, float delay, int nph) {
+  if (nph <= 1) return le_ring_read(ring, mask, w, delay);
+  float d = delay / (float)nph;
+  if (d < 1.0f) d = 1.0f;
+  const float whole = floorf(d);
+  const float fr = d - whole;
+  const uint32_t near = (w - (uint32_t)nph * (uint32_t)whole) & mask;
+  const float a = ring[near];
+  const float b = ring[(near - (uint32_t)nph) & mask];
+  return a + fr * (b - a);
+}
+
 /* A triangle wave of phase [ph] in 0..1, from -1 through +1 and back. */
 static inline float le_tri(float ph) {
   return ph < 0.5f ? 4.0f * ph - 1.0f : 3.0f - 4.0f * ph;
@@ -4800,10 +4941,11 @@ typedef struct le_fx_mod {
   float pha_a[4], pha_da[4];
   float pha_z[2][4];
   int32_t pha_left; /* samples until the next corner */
-  /* flanger: the repeats' high-pass and low-pass, first-order (bilinear),
-   * each the half-sum or half-difference of an allpass and its input */
-  float fla_hp, fla_lp; /* the allpasses' coefficients */
-  float fla_hz[2], fla_lz[2];
+  /* flanger: the repeats' high-pass and low-pass, bilinear one-poles run
+   * as biquads (le_rate_design) */
+  float fla_hp[5], fla_lp[5];
+  float fla_hz[2][LE_RS_PH][2], fla_lz[2][LE_RS_PH][2];
+  int32_t ph, nph; /* their phase this frame (le_rs_phases) */
   /* tremolo */
   float trm_g;
   float trm_ka, trm_kr;
@@ -4881,8 +5023,15 @@ static void fx_mod_update(void* ks, const float* p, int sr, int settle) {
     q->base = (float)(LE_CHO_BASE_MS * 1e-3 * rate);
     q->max_delay = (float)(LE_MOD_RING - 2u);
     le_cho_lowpass(q->cho_lp, rate);
-    q->fla_hp = le_ap1_coef(LE_FLA_HP_HZ, rate);
-    q->fla_lp = le_ap1_coef(LE_FLA_LP_HZ, rate);
+    q->nph = le_rs_phases(rate);
+    q->ph = 0;
+    memset(q->fla_hz, 0, sizeof(q->fla_hz));
+    memset(q->fla_lz, 0, sizeof(q->fla_lz));
+    double c[5];
+    le_rate_design(LE_RS_HP1, LE_FLA_HP_HZ, 0.0, 0.0, rate, c);
+    for (int i = 0; i < 5; ++i) q->fla_hp[i] = (float)c[i];
+    le_rate_design(LE_RS_LP1, LE_FLA_LP_HZ, 0.0, 0.0, rate, c);
+    for (int i = 0; i < 5; ++i) q->fla_lp[i] = (float)c[i];
     q->trm_ka = (float)(1.0 - exp(-1.0 / (LE_TRM_ATTACK_S * rate)));
     q->trm_kr = (float)(1.0 - exp(-1.0 / (LE_TRM_RELEASE_S * rate)));
   }
@@ -4971,10 +5120,11 @@ static void le_mod_flanger(le_fx_mod* q, const float* x, float* y) {
   for (int ch = 0; ch < 2; ++ch) {
     /* The delay is at least a sample (le_mod_targets), so this reads only
      * what earlier samples wrote. */
-    const float v = le_ring_read(q->fring[ch], LE_FLA_RING - 1u, q->w, delay);
+    const float v =
+        le_ring_read_ph(q->fring[ch], LE_FLA_RING - 1u, q->w, delay, q->nph);
     /* The repeat: high-passed, then low-passed. */
-    const float hp = 0.5f * (v - le_ap1_tick(q->fla_hp, &q->fla_hz[ch], v));
-    const float lp = 0.5f * (hp + le_ap1_tick(q->fla_lp, &q->fla_lz[ch], hp));
+    const float hp = le_biquad_tick(q->fla_hp, q->fla_hz[ch][q->ph], v);
+    const float lp = le_biquad_tick(q->fla_lp, q->fla_lz[ch][q->ph], hp);
     q->fring[ch][at] = x[ch] + LE_FLA_FB * lp;
     y[ch] = dry * x[ch] + wet * v;
   }
@@ -5026,6 +5176,7 @@ static void fx_mod_kprocess(void* ks, float* l, float* r) {
     q->fring[1][fat] = x[1];
   }
   q->w++;
+  if (++q->ph >= q->nph) q->ph = 0;
   *l = y[0];
   *r = y[1];
 }
@@ -5317,6 +5468,41 @@ static inline float le_os_down(le_os* o, int ch, float* in) {
   return in[0];
 }
 
+/* At 96 kHz a 48 kHz design run on alternate samples (le_rs_phases) passes
+ * what lies above 24 kHz at its mirror image's gain: a low-pass passes
+ * 40 kHz as it passes 8. A curve's harmonics reach there, so the waveshapers
+ * with such sections after the curve first pass its output through the
+ * oversampler's half-band at the full rate (le_os_coefs over 48 kHz: flat
+ * to 20 kHz), H(z) = (A0(z^2) + z^-1 A1(z^2)) / 2. Each path runs on the
+ * frame's phase's own states; A1's output is used a frame later. Nothing
+ * at other rates (n 0). */
+typedef struct le_hb {
+  float c[LE_OS_MAX_COEFS];
+  int32_t n;
+  le_os_path p[2][LE_RS_PH]; /* per channel and phase */
+  float a1[2];               /* A1's last output, per channel */
+} le_hb;
+
+static void le_hb_design(le_hb* h, int sr) {
+  memset(h, 0, sizeof(*h));
+  if (le_rs_phases(sr) > 1) h->n = le_os_coefs(le_rs_design_rate(sr), 0, h->c);
+}
+
+static inline float le_hb_tick(le_hb* h, int ch, int ph, float x) {
+  if (h->n == 0) return x;
+  le_os_path* p = &h->p[ch][ph];
+  const float y = 0.5f * (le_os_path_run(h->c, h->n, 0, p, x) + h->a1[ch]);
+  h->a1[ch] = le_os_path_run(h->c, h->n, 1, p, x);
+  return y;
+}
+
+/* The frames le_hb delays a signal at low frequencies at [sr]: one way of
+ * the oversampler's first stage over 48 kHz, which le_os_latency counts in
+ * 48 kHz frames up and down, the same figure. */
+static int le_hb_latency(int sr) {
+  return le_rs_phases(sr) > 1 ? le_os_latency(le_rs_design_rate(sr), 1) : 0;
+}
+
 /* The oversampling stages a waveshaper of [type] runs at [sr]: the
  * smallest factor at which every factory setting keeps its aliasing at
  * least 61 dB under its output, a dB inside the effects matrix's 60
@@ -5355,12 +5541,22 @@ static int le_os_stages(int32_t type, int sr) {
   }
 }
 
-/* The latency of a kind that oversamples, for the effect table. */
+static int le_cab_pre(int sr);
+
+/* The latency of a kind that oversamples, for the effect table: the
+ * oversampler's; at 96 kHz the half-band its curve's output passes on the
+ * way to the 48 kHz sections (le_hb; the Vinyl has none, the Amp+Cab two,
+ * one after each curve); and the frames
+ * the Amp+Cab's resampled cabinet starts late (le_cab_pre). */
 static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
                             int sr) {
   (void)fx;
   (void)slot;
-  return le_os_latency(sr, le_os_stages(type, sr));
+  int lat = le_os_latency(sr, le_os_stages(type, sr));
+  if (type != LE_FX_VINYL) lat += le_hb_latency(sr);
+  if (type == LE_FX_AMP_CAB) lat += le_hb_latency(sr); /* its first curve's */
+  if (type == LE_FX_AMP_CAB) lat += le_cab_pre(sr);
+  return lat;
 }
 
 /* ---- Overdrive (LE_FX_OVERDRIVE, #887 part 7) ----
@@ -5428,11 +5624,14 @@ typedef struct le_fx_overdrive {
   le_fx_glide g;    /* the clipped part's gain over its ceiling, G / c */
   float tone_lhz;   /* the tone corner now, log2 Hz */
   float tone_tgt;
-  float hp_g1, tone_g1, lp2_g1;
+  float hp_g1;
   float pk[5];      /* the 680 Hz rise, RBJ, a0-normalized */
-  float s_hp[2], s_tone[2], s_lp2[2];
-  float z_pk[2][2];
+  float tone[5], lp2[5]; /* the tone corner and the 11 kHz pole, one-poles */
+  float s_hp[2];
+  float z_pk[2][LE_RS_PH][2], z_tone[2][LE_RS_PH][2], z_lp2[2][LE_RS_PH][2];
+  int32_t ph, nph; /* the sections' phase this frame (le_rs_phases) */
   le_os os; /* the curve's oversampling */
+  le_hb hb; /* at 96 kHz, the curve's output under 24 kHz */
 } le_fx_overdrive;
 
 static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
@@ -5442,11 +5641,18 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
   const double rate = (double)(sr > 0 ? sr : 48000);
   if (f & LE_FX_DYN_NEW_RATE) {
     le_os_design(&o->os, sr, le_os_stages(LE_FX_OVERDRIVE, sr));
+    le_hb_design(&o->hb, sr);
+    o->nph = le_rs_phases(sr);
+    memset(o->z_pk, 0, sizeof(o->z_pk));
+    memset(o->z_tone, 0, sizeof(o->z_tone));
+    memset(o->z_lp2, 0, sizeof(o->z_lp2));
+    o->ph = 0;
     o->hp_g1 = le_onepole_g1(LE_OD_HP_HZ, sr);
-    o->lp2_g1 = le_onepole_g1(LE_OD_LP2_HZ, sr);
     double c[5];
-    le_eq_design(LE_EQ_LOMID, LE_OD_PEAK_HZ, LE_OD_PEAK_DB, LE_OD_PEAK_Q,
-                 (int)rate, c);
+    le_rate_design(LE_RS_LP1, LE_OD_LP2_HZ, 0.0, 0.0, (int)rate, c);
+    for (int i = 0; i < 5; ++i) o->lp2[i] = (float)c[i];
+    le_rate_design(LE_EQ_LOMID, LE_OD_PEAK_HZ, LE_OD_PEAK_DB, LE_OD_PEAK_Q,
+                   (int)rate, c);
     for (int i = 0; i < 5; ++i) o->pk[i] = (float)c[i];
   }
   const float d = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
@@ -5459,7 +5665,9 @@ static void fx_overdrive_update(void* ks, const float* p, int sr, int settle) {
       &o->g, (float)(LE_OD_G0 * exp(LE_OD_GK * d) / LE_OD_C), k);
   if (o->tone_lhz != o->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
     le_fx_step_toward(&o->tone_lhz, o->tone_tgt, k);
-    o->tone_g1 = le_onepole_g1(exp2((double)o->tone_lhz), sr);
+    double c[5];
+    le_rate_design(LE_RS_LP1, exp2((double)o->tone_lhz), 0.0, 0.0, sr, c);
+    for (int i = 0; i < 5; ++i) o->tone[i] = (float)c[i];
   }
   moving |= o->tone_lhz != o->tone_tgt;
   o->h.moving = moving;
@@ -5477,15 +5685,16 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
       const float u = LE_OD_K * x + LE_OD_C * tanhf(g * x);
       os[i] = (tanhf(LE_OD_A * (u + LE_OD_B)) - LE_OD_OFF) * (1.0f / LE_OD_A);
     }
-    float v = le_os_down(&o->os, ch, os);
+    float v = le_hb_tick(&o->hb, ch, o->ph, le_os_down(&o->os, ch, os));
     /* The tone filter: the 17 Hz high-pass, the 680 Hz rise, the tone
      * corner and the 11 kHz pole. */
     v = v - le_onepole_lp(&o->s_hp[ch], o->hp_g1, v);
-    v = le_biquad_tick(o->pk, o->z_pk[ch], v);
-    v = le_onepole_lp(&o->s_tone[ch], o->tone_g1, v);
-    v = le_onepole_lp(&o->s_lp2[ch], o->lp2_g1, v);
+    v = le_biquad_tick(o->pk, o->z_pk[ch][o->ph], v);
+    v = le_biquad_tick(o->tone, o->z_tone[ch][o->ph], v);
+    v = le_biquad_tick(o->lp2, o->z_lp2[ch][o->ph], v);
     io[ch] = -(LE_OD_P / (float)LE_OD_TONE_1K) * v; /* inverted, as captured */
   }
+  if (++o->ph >= o->nph) o->ph = 0;
   *l = io[0];
   *r = io[1];
 }
@@ -5551,18 +5760,40 @@ static const le_cab_bank* le_cab_bank_find(int32_t sr) {
   return NULL;
 }
 
-/* Builds the bank for [sr] once (control thread). Each 48 kHz response is
- * resampled through its spectrum: the rate's impulse response is the
- * inverse transform of the 48 kHz bins (everything below 24 kHz, on their
- * own spacing) at the rate's sample times, scaled by 48000 / sr so the
- * cabinet's gain does not change with the rate. Nothing is added above
- * 24 kHz, where every cabinet is already 40 dB or more down. At 48 kHz that
- * is the response itself, and at 96 kHz one zero-padded inverse FFT (about
- * a millisecond); other rates sum the bins directly (tens of ms, once).
- * Past 96 kHz the response is cut at LE_CAB_MAX_PARTS partitions, with a
- * fade over its last quarter. */
-static le_rfft_plan le_cab_fft48;
-static le_rfft_plan le_cab_fft96;
+#define LE_CAB_SINC_HW 32    /* resampling kernel half-width, 48 kHz taps */
+#define LE_CAB_SINC_HZ 21000.0 /* its cutoff, under 44.1 kHz's Nyquist */
+#define LE_CAB_SINC_BETA 8.0  /* its Kaiser window */
+
+/* I0, the modified Bessel function of the first kind, for the Kaiser
+ * window: the power series, to float precision. */
+static double le_bessel_i0(double x) {
+  double sum = 1.0, term = 1.0;
+  for (int k = 1; k < 64 && term > 1e-12 * sum; ++k) {
+    const double h = x / (2.0 * k);
+    term *= h * h;
+    sum += term;
+  }
+  return sum;
+}
+
+/* The samples a resampled cabinet starts late at [sr] (le_cab_bank_get):
+ * about 0.09 ms, none at 48 and 96 kHz. */
+static int le_cab_pre(int sr) {
+  return sr == 48000 || sr == 96000 ? 0 : (int)(4.0 * sr / 48000.0 + 0.5);
+}
+
+/* Builds the bank for [sr] once (control thread). At 48 kHz each row is the
+ * captured response itself. At 96 kHz the 48 kHz response runs on every
+ * other sample (taps at the even positions, le_rs_phases), which is that
+ * response exactly below 24 kHz. Other rates resample the 48 kHz response
+ * with a Kaiser-windowed sinc cut at 21 kHz, scaled by 48000 / sr so the
+ * cabinet's gain does not change with the rate. The kernel rings before the
+ * response's sharp onset, so the resampled response starts le_cab_pre
+ * samples late, keeping that ringing rather than dropping it, which left the
+ * deep 10-16 kHz region up to 2 dB off at 44.1 kHz (#1547); the Amp+Cab
+ * reports them as latency. Past 96 kHz the
+ * response is cut at LE_CAB_MAX_PARTS partitions, with a fade over its last
+ * quarter. */
 static const le_cab_bank* le_cab_bank_get(int32_t sr) {
   if (sr <= 0) sr = 48000;
   const le_cab_bank* found = le_cab_bank_find(sr);
@@ -5581,87 +5812,84 @@ static const le_cab_bank* le_cab_bank_get(int32_t sr) {
     return found;
   }
   const int n48 = LE_CAB_TAPS48;
-  const int half = n48 / 2;
   const int max_taps = LE_CAB_B * (LE_CAB_MAX_PARTS + 1);
-  int m = (int)((double)n48 * (double)sr / 48000.0 + 0.5);
+  const double r = 48000.0 / (double)sr; /* 48 kHz taps per output sample */
+  const int pre = le_cab_pre(sr);
+  int m = sr == 48000   ? n48
+          : sr == 96000 ? 2 * n48
+                        : pre + (int)ceil((n48 + LE_CAB_SINC_HW) / r);
   const int cut = m > max_taps; /* past 96 kHz the tail is cut */
   if (cut) m = max_taps;
   le_cab_bank* b = (le_cab_bank*)calloc(1, sizeof(*b));
-  float* h = (float*)malloc(sizeof(float) * (size_t)m);
-  double* acc = (double*)malloc(sizeof(double) * (size_t)m);
-  float xr[LE_CAB_TAPS48 / 2 + 1], xi[LE_CAB_TAPS48 / 2 + 1];
-  if (b == NULL || h == NULL || acc == NULL ||
-      !le_rfft_plan_init(&le_cab_fft, 2 * LE_CAB_B) ||
-      !le_rfft_plan_init(&le_cab_fft48, n48)) {
+  /* every row's response at the rate, row after row */
+  float* h = (float*)malloc(sizeof(float) * (size_t)m * LE_CAB_ROWS);
+  if (b == NULL || h == NULL || !le_rfft_plan_init(&le_cab_fft, 2 * LE_CAB_B)) {
     free(b);
     free(h);
-    free(acc);
     pthread_mutex_unlock(&le_cab_banks_mu);
     return NULL;
   }
   b->sr = sr;
   b->parts = (m - LE_CAB_B + LE_CAB_B - 1) / LE_CAB_B;
   if (b->parts > LE_CAB_MAX_PARTS) b->parts = LE_CAB_MAX_PARTS;
-  const double step = 2.0 * 3.14159265358979323846 * 48000.0 /
-                      ((double)n48 * (double)sr); /* one bin, one sample */
+  if (sr == 48000) {
+    for (int row = 0; row < LE_CAB_ROWS; ++row) {
+      memcpy(h + (size_t)row * m, LE_CAB_IR48[row], sizeof(float) * (size_t)n48);
+    }
+  } else if (sr == 96000) {
+    for (int row = 0; row < LE_CAB_ROWS; ++row) {
+      float* hr = h + (size_t)row * m;
+      for (int t = 0; t < n48; ++t) {
+        hr[2 * t] = LE_CAB_IR48[row][t];
+        hr[2 * t + 1] = 0.0f;
+      }
+    }
+  } else {
+    /* Each output tap's kernel weights, worked out once for every row. */
+    const double fc = 2.0 * LE_CAB_SINC_HZ / 48000.0; /* of the 48 kHz rate */
+    const double i0b = le_bessel_i0(LE_CAB_SINC_BETA);
+    double kw[2 * LE_CAB_SINC_HW + 1];
+    for (int t = 0; t < m; ++t) {
+      const double x = (double)(t - pre) * r; /* in 48 kHz taps */
+      int n0 = (int)ceil(x - LE_CAB_SINC_HW);
+      int n1 = (int)floor(x + LE_CAB_SINC_HW);
+      if (n0 < 0) n0 = 0;
+      if (n1 > n48 - 1) n1 = n48 - 1;
+      for (int n = n0; n <= n1; ++n) {
+        const double d = x - (double)n, u = d / LE_CAB_SINC_HW;
+        const double a = 3.14159265358979323846 * fc * d;
+        const double sinc = a == 0.0 ? 1.0 : sin(a) / a;
+        const double w = le_bessel_i0(LE_CAB_SINC_BETA * sqrt(1.0 - u * u));
+        kw[n - n0] = fc * sinc * w / i0b * r;
+      }
+      for (int row = 0; row < LE_CAB_ROWS; ++row) {
+        const float* h48 = LE_CAB_IR48[row];
+        double acc = 0.0;
+        for (int n = n0; n <= n1; ++n) acc += (double)h48[n] * kw[n - n0];
+        h[(size_t)row * m + t] = (float)acc;
+      }
+    }
+  }
   float frame[2 * LE_CAB_B];
-  const int fft96 = !cut && m == 2 * n48 && 2 * n48 <= LE_FFT_MAX_N &&
-                    le_rfft_plan_init(&le_cab_fft96, 2 * n48);
   for (int row = 0; row < LE_CAB_ROWS; ++row) {
-    if (m == n48) {
-      memcpy(h, LE_CAB_IR48[row], sizeof(float) * (size_t)n48);
-    } else if (fft96) {
-      /* The 48 kHz bins, zero-padded to twice the length: 24 kHz becomes an
-       * inner bin, so it carries half its weight; le_rfft_inv's 1 / 2n48
-       * is the 48000 / sr scale. */
-      static float zr[LE_FFT_MAX_N / 2 + 1], zi[LE_FFT_MAX_N / 2 + 1];
-      le_rfft_fwd(&le_cab_fft48, LE_CAB_IR48[row], xr, xi);
-      memset(zr, 0, sizeof(zr));
-      memset(zi, 0, sizeof(zi));
-      for (int k = 0; k <= half; ++k) {
-        const float w = k == half ? 0.5f : 1.0f;
-        zr[k] = w * xr[k];
-        zi[k] = w * xi[k];
-      }
-      le_rfft_inv(&le_cab_fft96, zr, zi, h);
-    } else {
-    le_rfft_fwd(&le_cab_fft48, LE_CAB_IR48[row], xr, xi);
-    for (int t = 0; t < m; ++t) acc[t] = 0.0;
-    for (int k = 0; k <= half; ++k) {
-      /* bin k at the rate's sample times, by a rotating phasor */
-      const double w = (k == 0 || k == half) ? 1.0 : 2.0;
-      const double cr = cos(step * (double)k), ci = sin(step * (double)k);
-      double zr = 1.0, zi = 0.0;
-      const double ar = w * (double)xr[k], ai = w * (double)xi[k];
-      for (int t = 0; t < m; ++t) {
-        acc[t] += ar * zr - ai * zi;
-        const double nr = zr * cr - zi * ci;
-        zi = zr * ci + zi * cr;
-        zr = nr;
-      }
-    }
-    /* le_rfft_fwd is unscaled: 1 / n48, and 48000 / sr for the rate */
-    const double scale = 48000.0 / ((double)n48 * (double)sr);
-    for (int t = 0; t < m; ++t) h[t] = (float)(acc[t] * scale);
-    }
+    float* hr = h + (size_t)row * m;
     if (cut) {
-      const int r = m / 4;
-      for (int t = m - r; t < m; ++t) {
-        const double c = cos(1.5707963267948966 * (double)(t - (m - r)) / r);
-        h[t] *= (float)(c * c);
+      const int q = m / 4;
+      for (int t = m - q; t < m; ++t) {
+        const double c = cos(1.5707963267948966 * (double)(t - (m - q)) / q);
+        hr[t] *= (float)(c * c);
       }
     }
-    for (int t = 0; t < LE_CAB_B; ++t) b->head[row][t] = t < m ? h[t] : 0.0f;
+    for (int t = 0; t < LE_CAB_B; ++t) b->head[row][t] = t < m ? hr[t] : 0.0f;
     for (int p = 0; p < b->parts; ++p) {
       for (int t = 0; t < 2 * LE_CAB_B; ++t) {
         const int k = LE_CAB_B + p * LE_CAB_B + t;
-        frame[t] = t < LE_CAB_B && k < m ? h[k] : 0.0f;
+        frame[t] = t < LE_CAB_B && k < m ? hr[k] : 0.0f;
       }
       le_rfft_fwd(&le_cab_fft, frame, b->re[row][p], b->im[row][p]);
     }
   }
   free(h);
-  free(acc);
   atomic_store_explicit(&le_cab_banks[slot], b, memory_order_release);
   pthread_mutex_unlock(&le_cab_banks_mu);
   return b;
@@ -5774,7 +6002,11 @@ typedef struct le_fx_amp {
   float pre_hp[5], pre_pk1[5], pre_pk2[5], dc_b0, dc_a1;
   float m_ls[5], m_pk[5], m_hs[5], d_hs[5];
   float post_hp_b0, post_hp_a1, t_bass[5], t_treb[5], lp1[5], lp2[5];
-  float z_pre[3][2], z_dc[2], z_m[3][2], z_dhs[2], z_post_hp[2], z_tone[2][2], z_lp[2][2];
+  /* the sections' state per phase (le_rs_phases); the one-pole couplings
+   * run at the rate */
+  float z_pre[3][LE_RS_PH][2], z_dc[2], z_m[3][LE_RS_PH][2], z_dhs[LE_RS_PH][2],
+      z_post_hp[2], z_tone[2][LE_RS_PH][2], z_lp[2][LE_RS_PH][2];
+  int32_t ph, nph;
   /* the cabinet: head history (doubled), the block being filled, the
    * frequency-domain delay line, and the tail each running cabinet adds to
    * the next block */
@@ -5786,12 +6018,14 @@ typedef struct le_fx_amp {
   float fre[LE_CAB_MAX_PARTS][LE_CAB_NB], fim[LE_CAB_MAX_PARTS][LE_CAB_NB];
   float wr[LE_CAB_NB], wi[LE_CAB_NB], tmp[2 * LE_CAB_B];
   le_os os; /* the clipper's oversampling (mono: channel 0) */
+  le_hb hbq; /* at 96 kHz, the first curve's output under 24 kHz */
+  le_hb hb;  /* and the clipper's */
 } le_fx_amp;
 
 static void le_amp_design(int kind, double hz, double db, double q, int sr,
                           float c[5]) {
   double d[5];
-  le_eq_design(kind, hz, db, q, sr, d);
+  le_rate_design(kind, hz, db, q, sr, d);
   for (int i = 0; i < 5; ++i) c[i] = (float)d[i];
 }
 
@@ -5826,6 +6060,10 @@ static void le_amp_reset(le_fx_amp* a) {
   memset(a->fre, 0, sizeof(a->fre));
   memset(a->fim, 0, sizeof(a->fim));
   le_os_clear(&a->os);
+  memset(a->hbq.p, 0, sizeof(a->hbq.p));
+  memset(a->hbq.a1, 0, sizeof(a->hbq.a1));
+  memset(a->hb.p, 0, sizeof(a->hb.p));
+  memset(a->hb.a1, 0, sizeof(a->hb.a1));
   a->hp = a->j = a->fpos = 0;
   a->xf = 0;
   a->cab_from = a->cab;
@@ -5847,6 +6085,15 @@ static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
     a->sr = sr;
     a->k = le_fx_smooth_k(sr);
     le_os_design(&a->os, sr, le_os_stages(LE_FX_AMP_CAB, sr));
+    le_hb_design(&a->hb, sr);
+    le_hb_design(&a->hbq, sr);
+    a->nph = le_rs_phases(sr);
+    memset(a->z_pre, 0, sizeof(a->z_pre));
+    memset(a->z_m, 0, sizeof(a->z_m));
+    memset(a->z_dhs, 0, sizeof(a->z_dhs));
+    memset(a->z_tone, 0, sizeof(a->z_tone));
+    memset(a->z_lp, 0, sizeof(a->z_lp));
+    a->ph = 0;
     le_amp_design(LE_EQ_LOWCUT, LE_AMP_HP_HZ, 0.0, LE_AMP_HP_Q, sr, a->pre_hp);
     le_amp_design(LE_EQ_LOMID, LE_AMP_PK1_HZ, LE_AMP_PK1_DB, LE_AMP_PK1_Q, sr,
                   a->pre_pk1);
@@ -6013,16 +6260,18 @@ static void fx_amp_cab_process(le_fx_state* fx, int slot, int sr, int cap,
   }
   --a->tick;
   const float x = 0.5f * (fx_sanitize(*l) + fx_sanitize(*r));
-  float u = le_biquad_tick(a->pre_hp, a->z_pre[0], x);
-  u = le_biquad_tick(a->pre_pk1, a->z_pre[1], u);
-  u = le_biquad_tick(a->pre_pk2, a->z_pre[2], u);
+  const int ph = a->ph;
+  if (++a->ph >= a->nph) a->ph = 0;
+  float u = le_biquad_tick(a->pre_hp, a->z_pre[0][ph], x);
+  u = le_biquad_tick(a->pre_pk1, a->z_pre[1][ph], u);
+  u = le_biquad_tick(a->pre_pk2, a->z_pre[2][ph], u);
   u *= a->ga_lin;
-  float v = u + a->kq * u * u;
+  float v = le_hb_tick(&a->hbq, 0, ph, u + a->kq * u * u);
   v = le_amp_hp1_tick(a->dc_b0, a->dc_a1, a->z_dc, v);
-  v = le_biquad_tick(a->m_ls, a->z_m[0], v);
-  v = le_biquad_tick(a->m_pk, a->z_m[1], v);
-  v = le_biquad_tick(a->m_hs, a->z_m[2], v);
-  v = le_biquad_tick(a->d_hs, a->z_dhs, v);
+  v = le_biquad_tick(a->m_ls, a->z_m[0][ph], v);
+  v = le_biquad_tick(a->m_pk, a->z_m[1][ph], v);
+  v = le_biquad_tick(a->m_hs, a->z_m[2][ph], v);
+  v = le_biquad_tick(a->d_hs, a->z_dhs[ph], v);
   float os[1 << LE_OS_MAX_STAGES];
   const int n = le_os_up(&a->os, 0, v * a->mpre_lin * a->gb_lin, os);
   for (int i = 0; i < n; ++i) {
@@ -6030,12 +6279,12 @@ static void fx_amp_cab_process(le_fx_state* fx, int slot, int sr, int cap,
     os[i] = w >= 0.0f ? LE_AMP_CLIP_POS * le_amp_knee(w / LE_AMP_CLIP_POS)
                       : LE_AMP_CLIP_NEG * le_amp_knee(w / LE_AMP_CLIP_NEG);
   }
-  float y = le_os_down(&a->os, 0, os);
+  float y = le_hb_tick(&a->hb, 0, ph, le_os_down(&a->os, 0, os));
   y = le_amp_hp1_tick(a->post_hp_b0, a->post_hp_a1, a->z_post_hp, y);
-  y = le_biquad_tick(a->t_bass, a->z_tone[0], y);
-  y = le_biquad_tick(a->t_treb, a->z_tone[1], y);
-  y = le_biquad_tick(a->lp1, a->z_lp[0], y);
-  y = le_biquad_tick(a->lp2, a->z_lp[1], y);
+  y = le_biquad_tick(a->t_bass, a->z_tone[0][ph], y);
+  y = le_biquad_tick(a->t_treb, a->z_tone[1][ph], y);
+  y = le_biquad_tick(a->lp1, a->z_lp[0][ph], y);
+  y = le_biquad_tick(a->lp2, a->z_lp[1][ph], y);
   y = le_amp_cab(a, y * a->out_lin);
   *l = y;
   *r = y;
@@ -6071,7 +6320,11 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
  *   3.344 v^2 + 6.512 v^3, through the four fitted gains (rising
  *   throughout); the output level falls with drive, 1.451 - 0.482 v.
  * - The cabinet and the amp's voicing after the curve: nine sections fitted
- *   within 0.8 dB rms from 45 Hz to 18 kHz.
+ *   within 0.8 dB rms from 45 Hz to 18 kHz. That fit held at 96 kHz; at
+ *   48 kHz, where the Looper X runs, the same sections fell 2.4 dB under
+ *   the capture at 7.5 kHz and 6 dB at 11.4 kHz. They are
+ *   refitted at 48 kHz to the 96 kHz fit's response, within 0.07 dB from
+ *   45 Hz to 18 kHz (#1547), and the other rates follow 48 kHz.
  * The Lo-Fi Rack's Dist Tone has no capture: it tilts a 2 kHz shelf
  * +-6 dB, flat at 50 % (#891). */
 /* The drive's law is the Studio Rack's Dist's; the Lo-Fi Rack's Dist is
@@ -6096,11 +6349,11 @@ static const struct {
   int kind;
   double hz, db, q;
 } LE_DIST_CAB[LE_DIST_SECTIONS] = {
-    {LE_EQ_LOWCUT, 51.72, 0.0, 1.9413},  {LE_EQ_HIGHCUT, 5935.5, 0.0, 0.5584},
-    {LE_EQ_HIGHCUT, 6353.9, 0.0, 0.8313}, {LE_EQ_LOMID, 314.57, 9.102, 0.2376},
-    {LE_EQ_LOMID, 835.28, -3.605, 3.7532}, {LE_EQ_LOMID, 1113.0, 1.233, 7.0801},
-    {LE_EQ_LOMID, 720.80, -1.553, 5.1893}, {LE_EQ_LOMID, 2660.4, 7.255, 0.9623},
-    {LE_EQ_LOMID, 6429.4, 12.876, 2.2105},
+    {LE_EQ_LOWCUT, 51.74, 0.0, 1.9454},   {LE_EQ_HIGHCUT, 19519.1, 0.0, 1.6499},
+    {LE_EQ_HIGHCUT, 2546.2, 0.0, 0.4000}, {LE_EQ_LOMID, 313.62, 9.114, 0.2394},
+    {LE_EQ_LOMID, 835.00, -3.591, 3.7963}, {LE_EQ_LOMID, 1112.85, 1.243, 7.1632},
+    {LE_EQ_LOMID, 720.77, -1.541, 5.3833}, {LE_EQ_LOMID, 2709.65, 10.279, 0.7815},
+    {LE_EQ_LOMID, 6416.11, 22.886, 1.0974},
 };
 
 typedef struct le_fx_distortion {
@@ -6114,8 +6367,10 @@ typedef struct le_fx_distortion {
   int32_t shelf_on;
   float cab[LE_DIST_SECTIONS][5];
   float shelf[5];
-  float z[LE_DIST_SECTIONS + 1][2][2]; /* [section][channel][state] */
+  float z[LE_DIST_SECTIONS + 1][2][LE_RS_PH][2]; /* [section][channel][phase][state] */
+  int32_t ph, nph; /* the sections' phase this frame (le_rs_phases) */
   le_os os; /* the curve's oversampling */
+  le_hb hb; /* at 96 kHz, the curve's output under 24 kHz */
 } le_fx_distortion;
 
 /* |H(e^jw)| of one a0-normalized biquad. */
@@ -6135,11 +6390,17 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
     le_os_design(&q->os, sr, le_os_stages(LE_FX_DISTORTION, sr));
+    le_hb_design(&q->hb, sr);
+    q->nph = le_rs_phases(sr);
+    memset(q->z, 0, sizeof(q->z));
+    q->ph = 0;
     double mag = 1.0;
-    const double w1k = 2.0 * 3.14159265358979323846 * 1000.0 / rate;
+    /* The sections are designed at le_rs_design_rate. */
+    const double w1k =
+        2.0 * 3.14159265358979323846 * 1000.0 / le_rs_design_rate(rate);
     for (int s = 0; s < LE_DIST_SECTIONS; ++s) {
       double c[5];
-      le_eq_design(LE_DIST_CAB[s].kind, LE_DIST_CAB[s].hz, LE_DIST_CAB[s].db,
+      le_rate_design(LE_DIST_CAB[s].kind, LE_DIST_CAB[s].hz, LE_DIST_CAB[s].db,
                    LE_DIST_CAB[s].q, rate, c);
       for (int i = 0; i < 5; ++i) q->cab[s][i] = (float)c[i];
       mag *= le_biquad_mag(c, w1k);
@@ -6166,7 +6427,8 @@ static void fx_distortion_update(void* ks, const float* p, int sr, int settle) {
     q->shelf_on = on;
     if (on) {
       double c[5];
-      le_eq_design(LE_EQ_HIGH, LE_DIST_TONE_HZ, q->tone_db, 0.70710678, rate, c);
+      le_rate_design(LE_EQ_HIGH, LE_DIST_TONE_HZ, q->tone_db, 0.70710678, rate,
+                     c);
       for (int i = 0; i < 5; ++i) q->shelf[i] = (float)c[i];
     }
   }
@@ -6190,15 +6452,18 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
       os[i] = w / powf(1.0f + powf(fabsf(w / c), LE_DIST_KNEE),
                        1.0f / LE_DIST_KNEE);
     }
-    float v = le_os_down(&q->os, ch, os);
+    float v = le_hb_tick(&q->hb, ch, q->ph, le_os_down(&q->os, ch, os));
     for (int s = 0; s < LE_DIST_SECTIONS; ++s) {
-      v = le_biquad_tick(q->cab[s], q->z[s][ch], v);
+      v = le_biquad_tick(q->cab[s], q->z[s][ch][q->ph], v);
     }
     /* The tone shelf, skipped while flat (the Studio Rack's, and the
      * default); its memory clears so it starts clean when it comes back. */
-    if (q->shelf_on) v = le_biquad_tick(q->shelf, q->z[LE_DIST_SECTIONS][ch], v);
+    if (q->shelf_on) {
+      v = le_biquad_tick(q->shelf, q->z[LE_DIST_SECTIONS][ch][q->ph], v);
+    }
     io[ch] = level * v;
   }
+  if (++q->ph >= q->nph) q->ph = 0;
   *l = io[0];
   *r = io[1];
 }
@@ -6453,7 +6718,10 @@ static void fx_vinyl_kprocess(void* ks, float* l, float* r) {
  *   2.4 dB rms below 0.8 of the hold, with the +3 dB rise just under the
  *   corner); at 50 % the corner fits at 0.89 of the hold (3.0 dB rms), and
  *   in between it moves in log, 0.194 x 4.59^(2 filter), off at 100 %;
- * - the mix crossfades dry to held (0 % bit-exact dry).
+ * - the mix crossfades dry to held (0 % bit-exact dry at 44.1 and 48 kHz).
+ * At 96 kHz all of it runs at 48 kHz between two half-bands
+ * (le_deg_halved), 27 frames (0.28 ms) late, so it holds and images as at
+ * 48 kHz.
  * Two differences stay: the Looper X's hold droops less than a
  * sample-and-hold does (1 kHz on a 1581 Hz hold: -3.1 dB, here -6.8), and
  * its held path runs about 10 samples late, which combs a 50 % mix (-4.2 dB
@@ -6473,6 +6741,10 @@ static const le_fx_param_desc LE_FX_DEGRADE_PARAMS[] = {
 #define LE_DEG_Q1 0.91
 #define LE_DEG_Q2 1.83
 
+#define LE_DEG_FIR_M 22     /* the way down's half-length and delay (even) */
+#define LE_DEG_FIR_BETA 5.65 /* its Kaiser window */
+#define LE_DEG_HIST 64       /* its history, a power of two past 2 M + 1 */
+
 typedef struct le_fx_degrade {
   le_fx_dyn_head h;
   float last[LE_DEG_PARAMS_N];
@@ -6484,13 +6756,97 @@ typedef struct le_fx_degrade {
   le_fx_glide amount; /* 1 filtering, 0 off (filter at 100 %) */
   float c1[5], c2[5];
   float z1[2][2], z2[2][2];
+  /* At 96 kHz the kernel runs at 48 kHz (le_deg_halved): each pair of
+   * frames goes down through a linear-phase half-band (le_deg_down), and
+   * its one output back up through the oversampler's (le_os, one stage
+   * over 48 kHz), played over the next pair. */
+  int32_t halved, odd;
+  float fir[LE_DEG_FIR_M / 2]; /* the half-band's odd taps, h[1], h[3], ... */
+  float hist[2][LE_DEG_HIST];
+  int32_t hpos;
+  /* The glides' values (step, mix, amount) for the kernel's last
+   * LE_DEG_FIR_M / 2 frames: they reach it as late as the input does. */
+  float ctl[LE_DEG_FIR_M / 2][3];
+  int32_t cpos;
+  le_os os;
+  float out2[2][2];
 } le_fx_degrade;
+
+/* Whether the Degrade runs its kernel at half the rate [sr]: at 96 kHz,
+ * where per-phase holds (le_rs_phases) mixed the two phases' images
+ * differently from 48 kHz's one hold (1.5 dB at 16 kHz, #1547). */
+static int le_deg_halved(int sr) { return sr == 96000; }
+
+/* The frames the Degrade delays everything at [sr]: at 96 kHz the way down
+ * (LE_DEG_FIR_M), the oversampler's way up (half its le_os_latency, at
+ * 48 kHz) and the pair it waits for. */
+static int le_deg_latency(int sr) {
+  return le_deg_halved(sr) ? LE_DEG_FIR_M + le_os_latency(sr / 2, 1) + 2 : 0;
+}
+
+/* The way down's taps into [q]: a Kaiser-windowed half-band, flat to
+ * 20 kHz and 58 dB down from 28 kHz at 96 kHz. Linear phase, and its delay
+ * a whole number of 48 kHz samples, so what the hold samples are the
+ * input's own 48 kHz samples, as at 48 kHz: a minimum-phase way down
+ * shifted them, and with them the hold's images (1.2 dB at 50 Hz). */
+static void le_deg_down_design(le_fx_degrade* q) {
+  const double i0b = le_bessel_i0(LE_DEG_FIR_BETA);
+  double sum = 0.0;
+  for (int i = 0; i < LE_DEG_FIR_M / 2; ++i) {
+    const int k = 2 * i + 1;
+    const double u = (double)k / (LE_DEG_FIR_M + 1);
+    const double w = le_bessel_i0(LE_DEG_FIR_BETA * sqrt(1.0 - u * u)) / i0b;
+    const double h = ((i & 1) ? -1.0 : 1.0) / (3.14159265358979323846 * k) * w;
+    q->fir[i] = (float)h;
+    sum += 2.0 * h;
+  }
+  /* The odd taps carry half the DC gain, the centre (1/2) the other. */
+  for (int i = 0; i < LE_DEG_FIR_M / 2; ++i) q->fir[i] *= (float)(0.5 / sum);
+}
+
+/* Channel [ch]'s way down, its newest frame just written: the 48 kHz
+ * sample LE_DEG_FIR_M frames back. */
+static float le_deg_down(const le_fx_degrade* q, int ch) {
+  const float* x = q->hist[ch];
+  const int mask = LE_DEG_HIST - 1;
+  const int c = q->hpos - LE_DEG_FIR_M;
+  float y = 0.5f * x[c & mask];
+  for (int i = 0; i < LE_DEG_FIR_M / 2; ++i) {
+    const int k = 2 * i + 1;
+    y += q->fir[i] * (x[(c - k) & mask] + x[(c + k) & mask]);
+  }
+  return y;
+}
+
+static int fx_degrade_latency_vt(const le_fx_state* fx, int slot, int32_t type,
+                                 int sr) {
+  (void)fx;
+  (void)slot;
+  (void)type;
+  return le_deg_latency(sr);
+}
 
 static void fx_degrade_update(void* ks, const float* p, int sr, int settle) {
   le_fx_degrade* q = (le_fx_degrade*)ks;
   const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_DEG_PARAMS_N, sr, settle);
   if (!f) return;
-  const int rate = sr > 0 ? sr : 48000;
+  const int sr_in = sr > 0 ? sr : 48000;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    q->halved = le_deg_halved(sr_in);
+    q->odd = 0;
+    if (q->halved) {
+      le_os_design(&q->os, sr_in / 2, 1);
+      le_deg_down_design(q);
+    }
+    memset(q->hist, 0, sizeof(q->hist));
+    q->hpos = 0;
+    memset(q->ctl, 0, sizeof(q->ctl));
+    q->cpos = 0;
+    memset(q->out2, 0, sizeof(q->out2));
+  }
+  /* The rate the kernel runs at: a hold at or above it holds every
+   * sample. */
+  const int rate = q->halved ? sr_in / 2 : sr_in;
   const float k = settle ? 1.0f : q->h.k;
   const le_fx_param_desc* d = LE_FX_DEGRADE_PARAMS;
   const double hz = le_fx_desc_value(&d[0], p[0]);
@@ -6509,25 +6865,22 @@ static void fx_degrade_update(void* ks, const float* p, int sr, int settle) {
   if (q->lp_l2 != q->lp_tgt || (f & LE_FX_DYN_NEW_RATE)) {
     le_fx_step_toward(&q->lp_l2, q->lp_tgt, k);
     double c[5];
-    le_eq_design(LE_EQ_HIGHCUT, exp2((double)q->lp_l2), 0.0, LE_DEG_Q1, rate, c);
+    le_rate_design(LE_EQ_HIGHCUT, exp2((double)q->lp_l2), 0.0, LE_DEG_Q1, rate, c);
     for (int i = 0; i < 5; ++i) q->c1[i] = (float)c[i];
-    le_eq_design(LE_EQ_HIGHCUT, exp2((double)q->lp_l2), 0.0, LE_DEG_Q2, rate, c);
+    le_rate_design(LE_EQ_HIGHCUT, exp2((double)q->lp_l2), 0.0, LE_DEG_Q2, rate, c);
     for (int i = 0; i < 5; ++i) q->c2[i] = (float)c[i];
   }
   moving |= q->lp_l2 != q->lp_tgt;
   q->h.moving = moving;
 }
 
-static void fx_degrade_kprocess(void* ks, float* l, float* r) {
-  le_fx_degrade* q = (le_fx_degrade*)ks;
-  const float step = le_fx_glide_next(&q->step);
-  const float m = le_fx_glide_next(&q->mix);
-  const float amount = le_fx_glide_next(&q->amount);
-  const float x[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+/* One frame of the kernel at its rate: [x] in, [y] out. The glides have
+ * already moved for it. */
+static void le_deg_tick(le_fx_degrade* q, float step, float m, float amount,
+                        const float* x, float* y) {
   q->ph += (double)step;
   const int take = q->ph >= 1.0;
   if (take) q->ph -= 1.0;
-  float y[2];
   for (int ch = 0; ch < 2; ++ch) {
     if (take) q->held[ch] = x[ch];
     float wet = q->held[ch];
@@ -6536,14 +6889,50 @@ static void fx_degrade_kprocess(void* ks, float* l, float* r) {
        * back. */
       q->z1[ch][0] = q->z1[ch][1] = q->z2[ch][0] = q->z2[ch][1] = 0.0f;
     } else {
-      const float lp = le_biquad_tick(
-          q->c2, q->z2[ch], le_biquad_tick(q->c1, q->z1[ch], wet));
+      const float lp =
+          le_biquad_tick(q->c2, q->z2[ch], le_biquad_tick(q->c1, q->z1[ch], wet));
       wet = amount >= 1.0f ? lp : wet + amount * (lp - wet);
     }
     y[ch] = x[ch] + m * (wet - x[ch]);
   }
-  *l = y[0];
-  *r = y[1];
+}
+
+static void fx_degrade_kprocess(void* ks, float* l, float* r) {
+  le_fx_degrade* q = (le_fx_degrade*)ks;
+  const float step = le_fx_glide_next(&q->step);
+  const float m = le_fx_glide_next(&q->mix);
+  const float amount = le_fx_glide_next(&q->amount);
+  const float x[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  if (!q->halved) {
+    float y[2];
+    le_deg_tick(q, step, m, amount, x, y);
+    *l = y[0];
+    *r = y[1];
+    return;
+  }
+  /* Halved: the pair's first frame waits; on its second the kernel runs
+   * once, and its output comes back up for the next pair. The input reaches
+   * the kernel LE_DEG_FIR_M / 2 of its frames late, and so do the glides,
+   * so it runs exactly as at 48 kHz, that much later: the hold takes the
+   * same samples (its images depend on where they fall). */
+  const int i = q->odd;
+  q->hpos = (q->hpos + 1) & (LE_DEG_HIST - 1);
+  q->hist[0][q->hpos] = x[0];
+  q->hist[1][q->hpos] = x[1];
+  *l = q->out2[0][i];
+  *r = q->out2[1][i];
+  q->odd = !i;
+  if (i == 0) return;
+  float xd[2], yd[2];
+  for (int ch = 0; ch < 2; ++ch) xd[ch] = le_deg_down(q, ch);
+  float* c = q->ctl[q->cpos];
+  const float was[3] = {c[0], c[1], c[2]};
+  c[0] = step;
+  c[1] = m;
+  c[2] = amount;
+  q->cpos = q->cpos + 1 < LE_DEG_FIR_M / 2 ? q->cpos + 1 : 0;
+  le_deg_tick(q, was[0], was[1], was[2], xd, yd);
+  for (int ch = 0; ch < 2; ++ch) le_os_up(&q->os, ch, yd[ch], q->out2[ch]);
 }
 
 /* ---- LPF (LE_FX_LPF) ----
@@ -6644,7 +7033,36 @@ typedef struct le_fx_lpf {
   float gh;    /* the high-pass one-pole's G */
   float s[2][4];
   float sh[2];
+  float cor[5];      /* after the ladder: its 48 kHz response (le_rate_design) */
+  float cor_inc[5];  /* its step a frame toward the update's, while g_n runs */
+  float z_cor[2][2];
+  int32_t cor_on;    /* whether the rate has a correction (44.1 kHz) */
+  /* At 96 kHz the kernel runs at 48 kHz (le_lpf_halved): each pair of
+   * frames goes down through the oversampler's half-band, and its one
+   * output back up, played over the next pair. A nonlinear ladder cannot
+   * run as two interleaved 48 kHz ones (le_rs_phases): oscillating, each
+   * would settle at its own phase. */
+  int32_t halved, odd;
+  le_os os;
+  float in2[2][2], out2[2][2];
 } le_fx_lpf;
+
+/* Whether the LPF runs its kernel at half the rate [sr]: at 96 kHz. */
+static int le_lpf_halved(int sr) { return sr == 96000; }
+
+/* The frames the LPF delays everything at [sr]: at 96 kHz the half-band's
+ * way down and up (le_os_latency, at 48 kHz) and the pair it waits for. */
+static int le_lpf_latency(int sr) {
+  return le_lpf_halved(sr) ? 2 * le_os_latency(sr / 2, 1) + 2 : 0;
+}
+
+static int fx_lpf_latency_vt(const le_fx_state* fx, int slot, int32_t type,
+                             int sr) {
+  (void)fx;
+  (void)slot;
+  (void)type;
+  return le_lpf_latency(sr);
+}
 
 /* The fastest the LFO's offset moves, octaves a second: above the fastest
  * sweep (1/16 at 300 BPM, Depth 100 %: about 900), so a sweep runs as
@@ -6690,8 +7108,22 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
     q->tgt = (float)log2(ratio * le_fx_desc_value(&LE_FX_LPF_PARAMS[0], p[0]));
     q->ktgt = (float)(LE_LPF_K0 + LE_LPF_K1 * pow(v, LE_LPF_K_POW));
   }
+  /* The rate the kernel runs at. */
+  const int kr = le_lpf_halved(sr) ? sr / 2 : sr;
+  /* Kernel frames to the next update. */
+  const int ticks = le_lpf_halved(sr) ? LE_FX_UPDATE_FRAMES / 2 : LE_FX_UPDATE_FRAMES;
   if (f & LE_FX_DYN_NEW_RATE) {
-    const double gh = le_prewarp(LE_LPF_HP_HZ, sr);
+    q->halved = le_lpf_halved(sr);
+    q->odd = 0;
+    if (q->halved) le_os_design(&q->os, kr, 1);
+    memset(q->in2, 0, sizeof(q->in2));
+    memset(q->out2, 0, sizeof(q->out2));
+    memset(q->s, 0, sizeof(q->s));
+    q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
+    q->sh[0] = q->sh[1] = 0.0f;
+    memset(q->z_cor, 0, sizeof(q->z_cor));
+    q->cor_on = sr == 44100;
+    const double gh = le_prewarp(LE_LPF_HP_HZ, kr);
     q->gh = (float)(gh / (1.0 + gh));
     q->lfo_max = (float)(LE_LPF_LFO_MAX_OCT_S * (double)LE_FX_UPDATE_FRAMES /
                          (double)sr);
@@ -6733,21 +7165,30 @@ static void fx_lpf_update(void* ks, const float* p, int sr, int settle) {
   }
   if (q->l2 != l2_was || q->k != k_was || q->lfo != lfo_was || settle ||
       (f & LE_FX_DYN_CHANGED) || q->g_n > 0) {
-    const double g = le_prewarp(exp2((double)(q->l2 + q->lfo)), sr);
+    const double hz = exp2((double)(q->l2 + q->lfo));
+    const double g = le_prewarp(hz, kr);
     const double G = g / (1.0 + g);
+    double c[5];
+    le_ladder_correction(hz, (double)q->k, sr, c);
     if (settle || (f & LE_FX_DYN_NEW_RATE)) {
       le_lpf_coefs(q, G);
       q->g_inc = 0.0f;
       q->g_n = 0;
     } else {
-      /* The samples up to the next update ramp G onto it. */
-      q->g_inc = (float)((G - (double)q->g) / (double)LE_FX_UPDATE_FRAMES);
-      q->g_n = LE_FX_UPDATE_FRAMES;
+      /* The samples up to the next update ramp G onto it, and the
+       * correction with it. */
+      q->g_inc = (float)((G - (double)q->g) / (double)ticks);
+      q->g_n = ticks;
       if (q->g + q->g_inc == q->g) { /* closer than a step can show */
         le_lpf_coefs(q, G);
         q->g_inc = 0.0f;
         q->g_n = 0;
       }
+    }
+    for (int i = 0; i < 5; ++i) {
+      q->cor_inc[i] =
+          q->g_n > 0 ? (float)((c[i] - (double)q->cor[i]) / q->g_n) : 0.0f;
+      if (q->g_n == 0) q->cor[i] = (float)c[i];
     }
   }
   const int moving = le_fx_glide_step(&q->amount, p[0] >= 1.0f ? 0.0f : 1.0f, k);
@@ -6759,28 +7200,27 @@ static void fx_lpf_beat(void* ks, double beat) {
   ((le_fx_lpf*)ks)->beat = beat;
 }
 
-static void fx_lpf_kprocess(void* ks, float* l, float* r) {
-  le_fx_lpf* q = (le_fx_lpf*)ks;
-  const float amount = le_fx_glide_next(&q->amount);
-  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+/* One frame of the kernel at its rate, [io] in and out. */
+static void le_lpf_tick(le_fx_lpf* q, float amount, float* io) {
   if (amount <= 0.0f) {
     /* Off: the identity, with the filter's memory cleared (but for the
      * seed) so it starts clean when it comes back, and any ramp of G
      * landed so the updates go idle. */
     if (q->g_n > 0) {
       le_lpf_coefs(q, (double)(q->g + q->g_inc * (float)q->g_n));
+      for (int i = 0; i < 5; ++i) q->cor[i] += q->cor_inc[i] * (float)q->g_n;
       q->g_inc = 0.0f;
       q->g_n = 0;
     }
     memset(q->s, 0, sizeof(q->s));
+    memset(q->z_cor, 0, sizeof(q->z_cor));
     q->s[0][0] = q->s[1][0] = LE_LPF_SEED;
     q->sh[0] = q->sh[1] = 0.0f;
-    *l = io[0];
-    *r = io[1];
     return;
   }
   if (q->g_n > 0) {
     le_lpf_coefs(q, (double)(q->g + q->g_inc));
+    for (int i = 0; i < 5; ++i) q->cor[i] += q->cor_inc[i];
     --q->g_n;
   }
   const float G = q->g;
@@ -6805,10 +7245,34 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
       s[i] = o + vv;
       u = o;
     }
+    if (q->cor_on) u = le_biquad_tick(q->cor, q->z_cor[ch], u);
     io[ch] = amount >= 1.0f ? u : io[ch] + amount * (u - io[ch]);
   }
-  *l = io[0];
-  *r = io[1];
+}
+
+static void fx_lpf_kprocess(void* ks, float* l, float* r) {
+  le_fx_lpf* q = (le_fx_lpf*)ks;
+  const float amount = le_fx_glide_next(&q->amount);
+  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  if (!q->halved) {
+    le_lpf_tick(q, amount, io);
+    *l = io[0];
+    *r = io[1];
+    return;
+  }
+  /* Halved: the pair's first frame waits; on its second the kernel runs
+   * once, and its output comes back up for the next pair. */
+  const int i = q->odd;
+  q->in2[0][i] = io[0];
+  q->in2[1][i] = io[1];
+  *l = q->out2[0][i];
+  *r = q->out2[1][i];
+  q->odd = !i;
+  if (i == 0) return;
+  float x[2];
+  for (int ch = 0; ch < 2; ++ch) x[ch] = le_os_down(&q->os, ch, q->in2[ch]);
+  le_lpf_tick(q, amount, x);
+  for (int ch = 0; ch < 2; ++ch) le_os_up(&q->os, ch, x[ch], q->out2[ch]);
 }
 
 /* ---- Spring (LE_FX_SPRING, #887 part 8) ----
@@ -8200,10 +8664,11 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_VINYL] = {NULL, fx_os_latency_vt, NULL, LE_FX_VINYL_PARAMS,
                      LE_FX_F_FREE_RUNNING,
                      sizeof(le_fx_vinyl), fx_vinyl_update, fx_vinyl_kprocess},
-    [LE_FX_DEGRADE] = {NULL, NULL, NULL, LE_FX_DEGRADE_PARAMS,
+    [LE_FX_DEGRADE] = {NULL, fx_degrade_latency_vt, NULL, LE_FX_DEGRADE_PARAMS,
                        LE_FX_F_FREE_RUNNING, sizeof(le_fx_degrade),
                        fx_degrade_update, fx_degrade_kprocess},
-    [LE_FX_LPF] = {NULL, NULL, NULL, LE_FX_LPF_PARAMS, LE_FX_F_FREE_RUNNING,
+    [LE_FX_LPF] = {NULL, fx_lpf_latency_vt, NULL, LE_FX_LPF_PARAMS,
+                   LE_FX_F_FREE_RUNNING,
                    sizeof(le_fx_lpf), fx_lpf_update, fx_lpf_kprocess, NULL,
                    fx_lpf_beat},
     /* The spring drains its tail on bypass, as the delay and reverb do. */
@@ -8492,9 +8957,9 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
   switch (type) {
     case LE_FX_VINYL:
       return p[2] > 0.0f; /* the noise */
-    case LE_FX_DEGRADE: /* holding (below the rate), and heard */
+    case LE_FX_DEGRADE: /* holding (below its kernel's rate), and heard */
       return le_fx_desc_value(&LE_FX_DEGRADE_PARAMS[0], p[0]) <
-                 (double)(sr > 0 ? sr : 48000) &&
+                 (double)(le_deg_halved(sr) ? sr / 2 : sr > 0 ? sr : 48000) &&
              p[2] > 0.0f;
     case LE_FX_DOUBLER:
       return 1; /* even at 0 % mix its copy wanders within 1 ms */

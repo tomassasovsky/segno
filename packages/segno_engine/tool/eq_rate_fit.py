@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generates src/core/engine_fx_eq_rate.inc: per-rate corrections that make
-the EQ kind's bands reproduce the Looper X's 48 kHz responses at 44.1 and
-96 kHz (#1436).
+the EQ kind's bands reproduce the Looper X's 48 kHz responses at 44.1 kHz
+(#1436). At 96 kHz the engine runs the 48 kHz designs on alternate samples,
+which is their response exactly below 24 kHz, and needs no table (#1547).
 
 The EQ's bands are measured at 48 kHz (docs/plan/2026-10-23-looperx-eq-
 measured.md). At another rate the same design differs near the top of the
@@ -26,18 +27,9 @@ How each fit stays valid:
 - A fit is judged on a grid eight times denser than the one it is fitted
   on, so a notch or peak between the fitting points counts. A grid point
   keeps the plain design (no correction) unless its fit beats it.
-- Above 24 kHz (at 96 kHz) the 48 kHz response says nothing. A fit is
-  penalised there for rising more than 3 dB above the larger of the 48 kHz
-  response at 24 kHz and at 20 kHz (for the high cut, at least -15 dB), and
-  rejected past 6 dB (ultra_cap) unless the plain design is already that
-  high there, so a correction never boosts or rings in the ultrasonic band
-  (checked up to the Nyquist frequency). Between 20 and 24 kHz, outside the
-  scored band, it is rejected for rising 3 dB above both the 48 kHz
-  response and the plain design.
 - After the grid is built, the corrections around any cell where the
   interpolated design, at 27 points inside the cell, is worse than the
-  plain design by more than 0.1 dB, or breaks that bound, are dropped
-  (prune), until none is.
+  plain design by more than 0.1 dB are dropped (prune), until none is.
 
 Usage: python3 eq_rate_fit.py > ../src/core/engine_fx_eq_rate.inc
 (needs numpy and scipy; takes a few minutes).
@@ -46,16 +38,15 @@ import sys
 import numpy as np
 from scipy.optimize import least_squares
 
-RATES = (44100, 96000)
+RATES = (44100,)
 NF = 64  # fit points, 20 Hz to 20 kHz (or 0.49 fs)
 NE = 480  # scoring points: a fit is judged where it was not fitted too
-NU = 64  # points from 24 kHz to the Nyquist frequency, for the bound there
 MARGIN = 0.9999  # how close to the stability edge a correction may move a pole
 
 # The grids: (shape, log f0 range and points per octave, Q range and count,
 # gain range and count). Shapes as le_eq_band_design: 'bell', 'hs' (the
 # high shelf), 'lp' and 'hp' (the cuts, Q 1/sqrt(2)). The low shelf (at
-# most 1 kHz) needs none: its plain design is within 0.15 dB at 96 kHz; nor
+# most 1 kHz) needs none: its plain design is within 0.04 dB at 44.1 kHz; nor
 # do bells below 100 Hz (within 0.04 dB).
 GRIDS = {
     'bell': dict(f=(100.0, 20000.0, 6), q=(0.4, 10.0, 9), g=(-18.0, 18.0, 13)),
@@ -168,31 +159,14 @@ def guarded(plain, d):
     return plain + max(s, 0.0) * d
 
 
-def guide(shape, f0, db, q, sr):
-    """Above 24 kHz (at rates that have it) the 48 kHz response says
-    nothing; these points keep the fit from rising there (fit()), so the
-    ultrasonic band is neither boosted nor resonant."""
-    if sr <= 48000:
-        return np.zeros(0), np.zeros(0)
-    f = np.linspace(24000.0, 0.45 * sr, 8)  # (fit(); ultrasonic_ok checks to Nyquist)
-    t48 = mag_db(design(shape, f0, db, q, 48000), np.array([23990.0]), 48000)[0]
-    return f, np.full(len(f), max(t48, -40.0))
-
-
 def fit(shape, f0, db, q, sr, neighbours):
     f, t = target(shape, f0, db, q, sr)
     plain = design(shape, f0, db, q, sr)
     e_plain = score(plain, shape, f0, db, q, sr)
-    fg, tg = guide(shape, f0, db, q, sr)
-    cap = ultra_cap(shape, t, tg) - 3.0  # where the penalty starts
     v = uof(f, sr) ** 2
-    vg = uof(fg, sr) ** 2
 
     def residual(y, w):
-        r = w * (amag_db(y, v) - t)
-        if len(fg) and shape != 'lp':  # a low-pass fit falls there anyway
-            r = np.concatenate([r, np.maximum(amag_db(y, vg) - cap, 0.0)])
-        return r
+        return w * (amag_db(y, v) - t)
     xp = from_digital(plain)
     xz = xp.copy()  # the plain design with its zeros at 24 kHz
     xz[1] = xz[0] - np.log(uof(24000.0, sr) ** 2)
@@ -208,8 +182,6 @@ def fit(shape, f0, db, q, sr, neighbours):
             w = w * (1 + e / (e.max() + 1e-12))
         c = to_digital(x)
         e = score(c, shape, f0, db, q, sr)
-        if len(fg) and not ultrasonic_ok(shape, sr, c, f0, db, q):
-            continue  # it would boost or ring above 24 kHz
         if e < best[0] - 1e-4:
             best = (e, c)
     return best[1] - plain, best[1], best[0], e_plain
@@ -268,41 +240,11 @@ def corrected(shape, sr, axes_, D, f0, q, g):
     return guarded(design(shape, f0, g, q, sr), d)
 
 
-def ultra_cap(shape, t, tg):
-    """The most a corrected band may rise to above 24 kHz: 6 dB over the
-    larger of the 48 kHz response at 24 kHz and at 20 kHz; for the high cut,
-    which falls toward its 24 kHz zero, at least -9 dB (still a cut)."""
-    top = max(float(tg.max()) if len(tg) else -1e9, float(t[-1]))
-    if shape == 'lp':
-        top = max(top, -15.0)
-    return top + 6.0
-
-
-def ultrasonic_ok(shape, sr, c, f0, g, q):
-    """Whether design c stays, above the scored band, under its bound: from
-    20 to 24 kHz, 3 dB over the larger of the 48 kHz response and the plain
-    design; from 24 kHz to the Nyquist frequency, under ultra_cap or the
-    plain design where that is higher."""
-    if sr <= 48000:
-        return True
-    f, t = target(shape, f0, g, q, sr)
-    fg, tg = guide(shape, f0, g, q, sr)
-    fb = np.linspace(20000.0, 23990.0, 24)
-    plain = design(shape, f0, g, q, sr)
-    lim = np.maximum(mag_db(design(shape, f0, g, q, 48000), fb, 48000), mag_db(plain, fb, sr)) + 3.0
-    if np.any(mag_db(c, fb, sr) > lim):
-        return False
-    fu = np.linspace(24000.0, 0.5 * sr, NU)  # to the Nyquist frequency itself
-    own = mag_db(plain, fu, sr)
-    return bool(np.all(mag_db(c, fu, sr) <= np.maximum(own, ultra_cap(shape, t, tg)) + 0.01))
-
-
 def prune(shape, sr, axes_, D):
     """Drops the corrections around any cell where the design the engine
     runs (the plain design plus the interpolated correction), at 27 points
     inside the cell, is more than 0.1 dB worse than the plain design on the
-    dense scoring grid, or rises past the bound above 24 kHz; until no cell
-    does."""
+    dense scoring grid; until no cell does."""
     lf, lq, gs = axes_
     rng = [range(max(len(ax) - 1, 1)) for ax in axes_]
     fr = (0.25, 0.5, 0.75)
@@ -324,8 +266,7 @@ def prune(shape, sr, axes_, D):
                                 g = gs[k] + e * (gs[k + 1] - gs[k]) if len(gs) > 1 else gs[0]
                                 c = corrected(shape, sr, axes_, D, f0, q, g)
                                 plain = design(shape, f0, g, q, sr)
-                                if (score(c, shape, f0, g, q, sr) > score(plain, shape, f0, g, q, sr) + 0.1
-                                        or not ultrasonic_ok(shape, sr, c, f0, g, q)):
+                                if score(c, shape, f0, g, q, sr) > score(plain, shape, f0, g, q, sr) + 0.1:
                                     bad = True
                                     break
                             if bad:
