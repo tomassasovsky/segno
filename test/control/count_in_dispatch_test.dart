@@ -437,24 +437,32 @@ void main() {
       expect(r.stored, (0, false));
     });
 
-    check(
-      '$name capture refuses Held; eligible physical release '
-      'keeps its semantics',
-      (r) {
-        r
-          ..bind()
-          ..capture(TrackState.recording);
-        press(r, high: true);
-        expect(r.live, (1, false));
-        r.capture(TrackState.empty);
-        // No retry of the refused Held occurs on eligibility change.
-        expect(r.live, (1, false));
-        press(r, high: false);
-        // An External physical Released edge is independently authored. MIDI
-        // momentary release only cleans an accepted MIDI hold.
-        expect(r.live, (external ? 0 : 1, false));
-      },
-    );
+    // A refused Held voids its whole gesture: the Released exists to undo the
+    // press, and a press that never applied has nothing to undo (#1153).
+    for (final edited in [false, true]) {
+      check(
+        '$name capture refuses Held, so its Released does nothing'
+        '${edited ? ' after an ordinary edit' : ''}',
+        (r) {
+          if (edited) r.ordinary(4);
+          r
+            ..bind()
+            ..capture(TrackState.recording);
+          final before = r.live;
+          expect(before, (edited ? 4 : 1, false));
+          press(r, high: true);
+          expect(r.live, before);
+          r.capture(TrackState.empty);
+          // No retry of the refused Held occurs on eligibility change.
+          expect(r.live, before);
+          press(r, high: false);
+          expect(r.live, before);
+          expect(r.durable, before);
+          r.retire();
+          expect(r.live, before);
+        },
+      );
+    }
 
     check('$name release during capture remains owed until eligible', (r) {
       r.bind();
@@ -551,7 +559,7 @@ void main() {
     expect(r.live, (1, false));
   });
 
-  check('refused newer External hold does not gain priority over MIDI', (r) {
+  check('refused newer External hold voids its Released after MIDI', (r) {
     r
       ..bind(high: 1, low: 1 / 3)
       ..note(127);
@@ -561,11 +569,10 @@ void main() {
     r.note(0);
     expect(r.live, (1, false));
     r.external(high: false);
-    // This new physical Released edge is distinct from rejected-held priority.
-    expect(r.live, (0, false));
+    expect(r.live, (1, false));
   });
 
-  check('disconnect applies authored Released after a refused External Held', (
+  check('disconnect after a refused External Held writes no Released', (
     r,
   ) {
     r.fakeEngine.refuse = true;
@@ -580,8 +587,8 @@ void main() {
       ),
     );
     r.pump();
-    expect(r.live, (0, false));
-    expect(r.durable, (0, false));
+    expect(r.live, (1, false));
+    expect(r.durable, (1, false));
   });
 
   check(

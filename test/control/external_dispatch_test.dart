@@ -700,49 +700,56 @@ void main() {
         },
       );
     }
-    check(
-      '${midi ? 'MIDI' : 'External'} refused press '
-      'preserves ordinary mix intent',
-      button(
-        [],
-        parameters: [
-          ExternalParameter(
-            target: const TrackPanTarget(0),
-            active: .9,
-            inactive: .2,
-            condition: ExternalValueCondition.heldReleased,
-          ),
-        ],
-      ),
-      (r) {
-        unawaited(r.mix.setTrackPan(.25));
-        r.settle();
-        r.store.failMix = true;
-        if (midi) {
-          r
-            ..bindMidi(
-              target: const TrackPanTarget(0).canonicalString(),
-              low: -.6,
-              high: .8,
-            )
-            ..midiValue(127);
-        } else {
-          r
-            ..sample(255)
-            ..settle();
-        }
-        expect(looper.mixSettingsSnapshot.trackPans[0], .25);
-        r.store.failMix = false;
-        if (midi) {
-          r.midiValue(0);
-        } else {
-          r
-            ..sample(0)
-            ..settle();
-        }
-        expect(looper.mixSettingsSnapshot.trackPans[0], .25);
-      },
-    );
+    // A refused Held voids its whole gesture, so its Released does nothing
+    // (#1153), whether or not an ordinary edit came first.
+    for (final edited in [false, true]) {
+      check(
+        '${midi ? 'MIDI' : 'External'} refused press voids its Released'
+        '${edited ? ' and preserves ordinary mix intent' : ''}',
+        button(
+          [],
+          parameters: [
+            ExternalParameter(
+              target: const TrackPanTarget(0),
+              active: .9,
+              inactive: .2,
+              condition: ExternalValueCondition.heldReleased,
+            ),
+          ],
+        ),
+        (r) {
+          if (edited) {
+            unawaited(r.mix.setTrackPan(.25));
+            r.settle();
+          }
+          final before = looper.mixSettingsSnapshot.trackPans[0] ?? 0;
+          r.store.failMix = true;
+          if (midi) {
+            r
+              ..bindMidi(
+                target: const TrackPanTarget(0).canonicalString(),
+                low: -.6,
+                high: .8,
+              )
+              ..midiValue(127);
+          } else {
+            r
+              ..sample(255)
+              ..settle();
+          }
+          expect(looper.mixSettingsSnapshot.trackPans[0] ?? 0, before);
+          r.store.failMix = false;
+          if (midi) {
+            r.midiValue(0);
+          } else {
+            r
+              ..sample(0)
+              ..settle();
+          }
+          expect(looper.mixSettingsSnapshot.trackPans[0] ?? 0, before);
+        },
+      );
+    }
   }
 
   check(
