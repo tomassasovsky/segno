@@ -164,7 +164,7 @@ setup
 run_verb poweroff
 status=$?
 check "exits 0" 0 "$status"
-check "full argv" "start poweroff.target" \
+check "full argv" "start --no-block poweroff.target" \
     "$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')"
 teardown
 

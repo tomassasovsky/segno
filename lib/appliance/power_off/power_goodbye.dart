@@ -9,19 +9,26 @@ import 'package:segno/visualizer/performance_readout.dart';
 /// screens.
 const Color kPowerGoodbyeFill = Color(0xFF08080A);
 
-/// What the Track display shows for [state] (pen 32): the pointer to the main
-/// screen while the power panel or Save As is up, then the save and the
-/// terminal faces. A refusal leaves the readout alone: a take may be running.
-ReadoutGoodbye readoutGoodbyeOf(PowerState state) => switch (state.phase) {
+/// What the Track display shows for [state] (pen 32). It keeps the track
+/// display through Power options, Save As, a refusal and a fast save, and
+/// takes over only once a save is slow or the goodbye comes (owner, #1553).
+/// Restarting shows only while [installsUpdate]; a plain restart is the bare
+/// Plymouth field on its way to the boot splash.
+ReadoutGoodbye readoutGoodbyeOf(
+  PowerState state, {
+  required bool installsUpdate,
+}) => switch (state.phase) {
+  PowerPhase.saving => state.slow ? ReadoutGoodbye.saving : ReadoutGoodbye.none,
+  PowerPhase.goodbye => switch (state.action) {
+    PowerAction.restart when installsUpdate => ReadoutGoodbye.restarting,
+    PowerAction.restart => ReadoutGoodbye.blank,
+    PowerAction.shutDown || null => ReadoutGoodbye.safeToSwitchOff,
+  },
+  PowerPhase.idle ||
+  PowerPhase.refuse ||
   PowerPhase.options ||
   PowerPhase.saveAs ||
-  PowerPhase.saveFailed => ReadoutGoodbye.options,
-  PowerPhase.saving => ReadoutGoodbye.saving,
-  PowerPhase.goodbye =>
-    state.action == PowerAction.restart
-        ? ReadoutGoodbye.restarting
-        : ReadoutGoodbye.safeToSwitchOff,
-  PowerPhase.idle || PowerPhase.refuse => ReadoutGoodbye.none,
+  PowerPhase.saveFailed => ReadoutGoodbye.none,
 };
 
 /// The step's line, as the Saving face lists it: what it does while it runs
@@ -44,10 +51,12 @@ String powerStepLabel(
 /// The main screen's full-screen Saving, Safe to switch off and Restarting
 /// faces (pen 32). Non-interactive; draws nothing in any other phase.
 ///
-/// Saving lists [PowerState.steps] and ticks them off as the save reaches
-/// them. The terminal faces name the saved session and the console's local
-/// time of the save. Restarting carries no icon (owner, #1543) and adds
-/// [stagedUpdate] when one installs during the restart. [unplugToApply] adds,
+/// Saving shows only once the save is slow ([PowerState.slow], #1553); it
+/// lists [PowerState.steps] and ticks them off as the save reaches them. The
+/// terminal faces name the saved session and the console's local time of the
+/// save. Restarting shows only when [stagedUpdate] installs during the
+/// restart, and carries no icon (owner, #1543). A plain restart is the bare
+/// Plymouth field, on its way to the boot splash. [unplugToApply] adds,
 /// under Safe to switch off, that unplugging for five seconds lets the
 /// console take the charger's full power (#1352).
 class PowerGoodbye extends StatelessWidget {
@@ -74,11 +83,20 @@ class PowerGoodbye extends StatelessWidget {
     final Widget content;
     switch (state.phase) {
       case PowerPhase.saving:
+        if (!state.slow) return const SizedBox.shrink();
         content = _SavingFace(state: state);
       case PowerPhase.goodbye:
-        content = state.action == PowerAction.restart
-            ? _RestartingFace(state: state, stagedUpdate: stagedUpdate)
-            : _SafeToSwitchOffFace(state: state, unplugToApply: unplugToApply);
+        content = switch ((state.action, stagedUpdate)) {
+          (PowerAction.restart, final version?) => _RestartingFace(
+            state: state,
+            version: version,
+          ),
+          (PowerAction.restart, null) => const SizedBox.shrink(),
+          _ => _SafeToSwitchOffFace(
+            state: state,
+            unplugToApply: unplugToApply,
+          ),
+        };
       case PowerPhase.idle:
       case PowerPhase.refuse:
       case PowerPhase.options:
@@ -250,12 +268,12 @@ class _SafeToSwitchOffFace extends StatelessWidget {
   }
 }
 
-/// "Restarting", the saved line and the installing line. No icon.
+/// "Restarting", the saved line and the update it installs. No icon.
 class _RestartingFace extends StatelessWidget {
-  const _RestartingFace({required this.state, required this.stagedUpdate});
+  const _RestartingFace({required this.state, required this.version});
 
   final PowerState state;
-  final String? stagedUpdate;
+  final String version;
 
   @override
   Widget build(BuildContext context) {
@@ -281,15 +299,13 @@ class _RestartingFace extends StatelessWidget {
             style: sub,
           ),
         ],
-        if (stagedUpdate case final version?) ...[
-          const SizedBox(height: 8),
-          AppText(
-            l10n.powerInstallingUpdate(version),
-            key: const Key('power_installing_update'),
-            textAlign: TextAlign.center,
-            style: sub,
-          ),
-        ],
+        const SizedBox(height: 8),
+        AppText(
+          l10n.powerInstallingUpdate(version),
+          key: const Key('power_installing_update'),
+          textAlign: TextAlign.center,
+          style: sub,
+        ),
       ],
     );
   }
@@ -308,10 +324,10 @@ String? _savedLine(BuildContext context, PowerState state) {
 }
 
 /// The Track display's power faces (pen 32), mirrored from the main window
-/// through [PerformanceReadout]: a pointer to the main screen while the power
-/// panel is up, then Saving with the current step, then Safe to switch off or
-/// Restarting. No Segno logo (owner, #1543). Draws nothing for
-/// [ReadoutGoodbye.none].
+/// through [PerformanceReadout]: Saving with the current step when the save
+/// is slow, then Safe to switch off, Restarting while an update installs, or
+/// the bare field of a plain restart. No Segno logo (owner, #1543). Draws
+/// nothing for [ReadoutGoodbye.none].
 ///
 /// Proportional like `ConsoleReadoutView`: every figure is the 1024x600
 /// design's, times the limiting-axis scale against it.
@@ -370,25 +386,8 @@ class _ReadoutContent extends StatelessWidget {
     final headline = _style(surface.textPrimary, 44 * s, FontWeight.w600);
     switch (readout.goodbye) {
       case ReadoutGoodbye.none:
+      case ReadoutGoodbye.blank:
         return const SizedBox.shrink();
-      case ReadoutGoodbye.options:
-        return Column(
-          key: const Key('readout_goodbye_options'),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.power_settings_new,
-              size: 64 * s,
-              color: surface.textSecondary,
-            ),
-            SizedBox(height: 24 * s),
-            AppText(
-              l10n.powerOnMainScreen,
-              textAlign: TextAlign.center,
-              style: _style(surface.textSecondary, 36 * s),
-            ),
-          ],
-        );
       case ReadoutGoodbye.saving:
         final step = readout.savingStep;
         return Column(

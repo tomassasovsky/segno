@@ -76,6 +76,24 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Power screens only when they say something (#1553)
+
+- Saving shows only once the save has run 500 ms (`PowerCubit.slowSave`,
+  `PowerState.slow`); a faster save goes straight to the goodbye. Every save
+  logs `power: saved in N ms` to tune the threshold.
+- Restarting shows only while a staged update installs. A plain restart is
+  the bare Plymouth field on both screens (`ReadoutGoodbye.blank`), on its
+  way to the boot splash.
+- The Track display keeps the track display through Power options, Save As,
+  a refusal, a failed save and a fast save; the pointer face and its string
+  are gone.
+- `segno-update-ctl poweroff` queues the halt with `--no-block` and exits 0,
+  as `systemctl reboot` does, so an accepted shutdown no longer logs
+  `power: helper failed`. The app also accepts a helper that announced the
+  reset and was then killed by a signal. Real failures still log.
+- Design: Penpot page 32 still shows the #1543 states; its update waits on
+  the Penpot connection.
+
 ## November 2026 Power screens on both displays (#1543)
 
 - Power options, the refusals and "Segno is staying on" rise as a 760 px

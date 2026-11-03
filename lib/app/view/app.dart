@@ -1069,7 +1069,11 @@ class _AppViewState extends State<_AppView> {
       bank: control.activeBank,
       lossLine:
           audioLossLine(_l10n, context.read<AudioSetupCubit>().state) ?? '',
-      goodbye: readoutGoodbyeOf(power),
+      goodbye: readoutGoodbyeOf(
+        power,
+        installsUpdate:
+            stagedUpdateVersion(context.read<UpdateCubit>().state) != null,
+      ),
       savingStep: power.step,
       savingProgress: power.progress,
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(

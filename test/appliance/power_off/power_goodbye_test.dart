@@ -12,13 +12,17 @@ import '../../helpers/helpers.dart';
 void main() {
   final savedAt = DateTime(2026, 11, 2, 21, 47);
 
-  PowerState saving(PowerStep step, {String? session = 'friday-set'}) =>
-      PowerState(
-        phase: PowerPhase.saving,
-        action: PowerAction.shutDown,
-        step: step,
-        session: session,
-      );
+  PowerState saving(
+    PowerStep step, {
+    String? session = 'friday-set',
+    bool slow = true,
+  }) => PowerState(
+    phase: PowerPhase.saving,
+    action: PowerAction.shutDown,
+    step: step,
+    session: session,
+    slow: slow,
+  );
 
   PowerState goodbye(PowerAction action, {String? session = 'friday-set'}) =>
       PowerState(
@@ -32,6 +36,14 @@ void main() {
 
   group(PowerGoodbye, () {
     group('Saving', () {
+      testWidgets('a fast save shows no face (#1553)', (tester) async {
+        await tester.pumpApp(
+          PowerGoodbye(state: saving(PowerStep.writeSession, slow: false)),
+        );
+        expect(find.byKey(const Key('power_goodbye')), findsNothing);
+        expect(find.byKey(const Key('power_saving')), findsNothing);
+      });
+
       testWidgets('names the session and ticks off the steps reached', (
         tester,
       ) async {
@@ -179,16 +191,17 @@ void main() {
         expect(find.byKey(const Key('power_unplug_to_apply')), findsNothing);
       });
 
-      testWidgets('no installing line without a staged update', (
-        tester,
-      ) async {
+      testWidgets('a plain restart is the bare field, no Restarting face '
+          '(#1553)', (tester) async {
         await tester.pumpApp(
           PowerGoodbye(state: goodbye(PowerAction.restart)),
         );
-        expect(
-          find.byKey(const Key('power_installing_update')),
-          findsNothing,
+        final box = tester.widget<ColoredBox>(
+          find.byKey(const Key('power_goodbye')),
         );
+        expect(box.color, kPowerGoodbyeFill);
+        expect(find.byKey(const Key('power_restarting')), findsNothing);
+        expect(find.byType(Text), findsNothing);
       });
     });
 
@@ -221,16 +234,17 @@ void main() {
           ),
         );
 
-    testWidgets('points to the main screen while the panel is up', (
-      tester,
-    ) async {
+    testWidgets('a plain restart is the bare field', (tester) async {
       await pumpFace(
         tester,
-        const PerformanceReadout(goodbye: ReadoutGoodbye.options),
+        const PerformanceReadout(goodbye: ReadoutGoodbye.blank),
       );
-      expect(find.byKey(const Key('readout_goodbye_options')), findsOneWidget);
-      expect(find.byIcon(Icons.power_settings_new), findsOneWidget);
-      expect(find.text('Power options on the main screen'), findsOneWidget);
+      final box = tester.widget<ColoredBox>(
+        find.byKey(const Key('readout_goodbye')),
+      );
+      expect(box.color, kPowerGoodbyeFill);
+      expect(find.byType(Text), findsNothing);
+      expect(find.byType(Icon), findsNothing);
     });
 
     testWidgets('Saving shows the current step and the bar', (tester) async {
@@ -279,47 +293,43 @@ void main() {
   });
 
   group('readoutGoodbyeOf', () {
-    test('the panel and Save As point to the main screen', () {
-      for (final phase in [
-        PowerPhase.options,
-        PowerPhase.saveAs,
-        PowerPhase.saveFailed,
+    ReadoutGoodbye of(PowerState state, {bool installsUpdate = false}) =>
+        readoutGoodbyeOf(state, installsUpdate: installsUpdate);
+
+    test('the track display stays through the panel, Save As, a refusal '
+        'and a fast save (#1553)', () {
+      for (final state in [
+        const PowerState(),
+        const PowerState(phase: PowerPhase.options),
+        const PowerState(
+          phase: PowerPhase.saveAs,
+          action: PowerAction.shutDown,
+        ),
+        const PowerState(
+          phase: PowerPhase.saveFailed,
+          action: PowerAction.shutDown,
+        ),
+        const PowerState(phase: PowerPhase.refuse, refusal: PowerRefusal.take),
+        saving(PowerStep.saveSettings, slow: false),
       ]) {
-        expect(
-          readoutGoodbyeOf(
-            PowerState(phase: phase, action: PowerAction.shutDown),
-          ),
-          ReadoutGoodbye.options,
-        );
+        expect(of(state), ReadoutGoodbye.none, reason: '$state');
       }
     });
 
-    test('the save and the goodbye map to their faces', () {
+    test('a slow save and the goodbye take over', () {
+      expect(of(saving(PowerStep.saveSettings)), ReadoutGoodbye.saving);
       expect(
-        readoutGoodbyeOf(saving(PowerStep.saveSettings)),
-        ReadoutGoodbye.saving,
-      );
-      expect(
-        readoutGoodbyeOf(goodbye(PowerAction.shutDown)),
+        of(goodbye(PowerAction.shutDown)),
         ReadoutGoodbye.safeToSwitchOff,
-      );
-      expect(
-        readoutGoodbyeOf(goodbye(PowerAction.restart)),
-        ReadoutGoodbye.restarting,
       );
     });
 
-    test('idle and a refusal leave the readout alone', () {
-      expect(readoutGoodbyeOf(const PowerState()), ReadoutGoodbye.none);
+    test('Restarting only while an update installs', () {
       expect(
-        readoutGoodbyeOf(
-          const PowerState(
-            phase: PowerPhase.refuse,
-            refusal: PowerRefusal.take,
-          ),
-        ),
-        ReadoutGoodbye.none,
+        of(goodbye(PowerAction.restart), installsUpdate: true),
+        ReadoutGoodbye.restarting,
       );
+      expect(of(goodbye(PowerAction.restart)), ReadoutGoodbye.blank);
     });
   });
 }

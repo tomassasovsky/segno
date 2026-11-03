@@ -234,8 +234,7 @@ void main() {
       );
     });
 
-    testWidgets('the pointer to the power panel dims with the panel; the '
-        'save and goodbye faces stay above the dim, and the readout is '
+    testWidgets('the power faces stay above the dim, and the readout is '
         'never remounted', (tester) async {
       final frame = ValueNotifier<WaveformFrame>(
         (samples: Float32List(0), progress: 0, selectedTrack: ''),
@@ -253,13 +252,6 @@ void main() {
 
       Finder dimmed(Finder face) =>
           find.ancestor(of: face, matching: find.byType(ColorFiltered));
-
-      readout.value = const PerformanceReadout(
-        brightness: 0.3,
-        goodbye: ReadoutGoodbye.options,
-      );
-      await tester.pump();
-      expect(dimmed(find.byType(ReadoutGoodbyeFace)), findsOneWidget);
 
       readout.value = const PerformanceReadout(
         brightness: 0.3,

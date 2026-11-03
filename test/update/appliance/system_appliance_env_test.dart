@@ -71,6 +71,63 @@ void main() {
     }
   });
 
+  group('a reset the system accepted is not a failure (#1553)', () {
+    for (final (verb, reset, line) in [
+      (
+        'poweroff',
+        (SystemApplianceEnv env) => env.powerOff(),
+        'segno-update-ctl: powering off',
+      ),
+      (
+        'reboot',
+        (SystemApplianceEnv env) => env.reboot(),
+        'segno-update-ctl: no update staged; plain reboot',
+      ),
+    ]) {
+      test('$verb: killed by the reset it announced returns', () async {
+        final env = SystemApplianceEnv(
+          helperPath: stub('#!/bin/sh\necho "$line" >&2\nkill -TERM \$\$\n'),
+        );
+        await reset(env);
+      });
+
+      test('$verb: killed before announcing a reset still fails', () async {
+        final env = SystemApplianceEnv(
+          helperPath: stub('#!/bin/sh\nkill -TERM \$\$\n'),
+        );
+        await expectLater(reset(env), throwsA(isA<ProcessException>()));
+      });
+
+      test('$verb: a refusal after the announcement still fails', () async {
+        final env = SystemApplianceEnv(
+          helperPath: stub(
+            '#!/bin/sh\necho "$line" >&2\n'
+            'echo "Failed to start poweroff.target: Access denied" >&2\n'
+            'exit 1\n',
+          ),
+        );
+        await expectLater(reset(env), throwsA(isA<ProcessException>()));
+      });
+    }
+
+    test('resetAnnounced reads only the last line', () {
+      expect(resetAnnounced('segno-update-ctl: powering off\n'), isTrue);
+      expect(
+        resetAnnounced(
+          'segno-update-ctl: rebooting into the staged slot\n\n',
+        ),
+        isTrue,
+      );
+      expect(
+        resetAnnounced(
+          'segno-update-ctl: powering off\nFailed to start: Access denied\n',
+        ),
+        isFalse,
+      );
+      expect(resetAnnounced(''), isFalse);
+    });
+  });
+
   group('raucInstalling', () {
     test('runs the install-state verb and reads its answer', () async {
       final argsFile = '${dir.path}/args.txt';
