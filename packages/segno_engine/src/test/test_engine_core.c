@@ -11227,6 +11227,60 @@ static void test_perf_ring_overflow_ends_the_take(void) {
   le_engine_destroy(e);
 }
 
+/* The event log ends where the audio does (#1549): a take that drops a frame
+ * holds no entry logged past it, from either log ring. The disarm
+ * here comes before any drain cycle, so the drain first sees the drop on its
+ * last pass, after every entry is in the rings. That pass used to write all
+ * of them, while a cycle that ran between the drop and the disarm stopped
+ * the take and left the later ones unwritten. */
+static void test_perf_drop_ends_the_event_log(void) {
+  printf("test_perf_drop_ends_the_event_log\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  float big_out[32];
+  process_const(e, 0.0f, 3, big_out);
+  /* Before the drop: one entry on each ring, at frame 3. */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(le_engine_set_limiter(e, 1, 0.5f) == LE_OK);
+  process_const(e, 0.0f, 29, big_out); /* frames 7 to 31 drop */
+  /* After the drop: one more on each, at frame 32. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  CHECK(le_engine_set_limiter(e, 0, 0.5f) == LE_OK);
+  process_const(e, 0.0f, 1, big_out);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_first_drop_frame == 7);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_SLOW_STORAGE);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  unsigned char buf[4096];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES && n < sizeof(buf));
+  const size_t count = log_entry_count(n);
+  le_perf_log_entry entry;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    CHECK(entry.frame <= 7);
+  }
+  CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0) == 3);
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_SET_LIMITER, &entry) >= 0);
+  CHECK(entry.frame == 3 && entry.cmd.arg_i == 1);
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_PLAY, 0) == 0);
+  CHECK(count_log_entries_for_channel(buf, count, LE_PLOG_SET_LIMITER, 0) == 0);
+  le_engine_destroy(e);
+}
+
 /* #710, honesty half: the zero-fill counter reaches the SNAPSHOT while the
  * capture is still armed — the app latches its glitch flag from the armed
  * poll, so a counter that only surfaced in the sidecar (which the app reads
@@ -26267,12 +26321,12 @@ static void test_perf_render_golden_octaver_nonzero_track(void) {
  *     (i.e. the channel was EMPTY at arm), so an arm-image and a fresh
  *     RECORD_END are mutually exclusive in the render's own model. There is
  *     no render-observable way to exercise this fix through that pipeline.
- *   - The live master-tap ring (master.pcm) is sized for LE_PERF_CAPTURE_
- *     SECONDS of REAL wall-clock audio; a synchronous, no-sleep native test
- *     that blasts through thousands of frames in microseconds starves the
- *     background drain thread of real time to keep it drained and silently
- *     overruns it (a_perf_overruns) -- an environment artifact, not a
- *     symptom of this bug.
+ *   - The capture ring is sized for seconds of REAL wall-clock audio, and a
+ *     synchronous, no-sleep native test blasts through thousands of frames
+ *     in microseconds, faster than the drain thread empties it. Since #1198
+ *     a dropped frame ends the take, and since #1549 no entry logged past
+ *     it is written, so the take arms the largest ring, which holds the
+ *     whole test, and asserts that nothing was dropped.
  *
  * Every "true" timing value below is read straight from the live engine's
  * own snapshots (never hand-derived arithmetic reproducing the engine's own
@@ -26294,7 +26348,8 @@ static void test_perf_render_quantized_round_down_truncation_log_frame(void) {
 
   le_engine* e = le_engine_create();
   le_engine_configure(e, sr, 1, 1, 20000);
-  CHECK(perf_arm_dir(e, dir) == LE_OK); /* arm from silence, nothing recorded yet */
+  /* Arm from silence, nothing recorded yet. */
+  CHECK(perf_arm_dir_long(e, dir) == LE_OK);
   drain(e);
 
   /* Track 0 defines a SILENT 3000-frame master (tg_record_defining_loop always
@@ -26348,6 +26403,9 @@ static void test_perf_render_quantized_round_down_truncation_log_frame(void) {
   CHECK(behind == 184);
   const uint64_t end_frame_true = raw_before_finalize - (uint64_t)behind;
 
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_overruns == 0);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_NONE);
   CHECK(le_perf_disarm(e) == LE_OK); /* flushes events.log fully before this returns */
 
   /* Read events.log directly: 12-byte header ("PLEV" + version + sample_rate),
@@ -27743,7 +27801,12 @@ static void test_song_queue_one_shot(void) {
  * count-in starts on the take's first sample (#1077, #1323), so two sections
  * sound once the take closes. A request then waits on the lowest sounding
  * one, and the handoff stops both on its lap edge. A section whose Once lap
- * ends on that same sample is stopped and logged once. */
+ * ends on that same sample is stopped and logged once.
+ *
+ * The capture takes the largest ring: the test pumps 2100 frames, past the
+ * 2047 a default ring holds at 1 kHz, faster than real time. In a default
+ * ring the take ends at its first dropped frame, before the handoff, so the
+ * handoff's entries are not written (#1549). */
 static void test_song_queue_several_sounding(void) {
   printf("test_song_queue_several_sounding\n");
   le_engine* e = sm_make_song_engine(1000);
@@ -27751,7 +27814,7 @@ static void test_song_queue_several_sounding(void) {
   sm_record_section(e, 2, 240, 0.8f);
   for (int c = 1; c < 3; ++c) CHECK(le_engine_stop_track(e, c) == LE_OK);
   drain(e);
-  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  CHECK(perf_arm_dir_long(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* a 2000-frame bar */
   CHECK(record_start_count(e, 1) == LE_OK);
@@ -27804,12 +27867,18 @@ static void test_song_queue_several_sounding(void) {
   CHECK(load_i32(&e->tracks[3].a_state) == LE_TRACK_STOPPED);
   CHECK(load_i32(&e->tracks[2].a_state) == LE_TRACK_PLAYING);
   CHECK(e->tracks[2].free_clock.position == 0);
+  /* The take ran to the disarm: a take that stops early writes no entry
+   * logged past its stop. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_overruns == 0);
+  CHECK(s.perf_stop_reason == LE_PERF_STOP_NONE);
   CHECK(le_perf_disarm(e) == LE_OK);
   char path[600];
   snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
   unsigned char buf[16384];
   const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  CHECK(n < sizeof(buf)); /* the whole log was read */
   const size_t count = log_entry_count(n);
   const uint64_t at = frame_of_log_entry_for_channel(buf, count, LE_CMD_PLAY, 2);
   CHECK(count_log_entries_for_channel(buf, count, LE_CMD_PLAY, 2) == 1);
@@ -40332,6 +40401,7 @@ int main(void) {
   test_perf_drain_writes_master_pcm_byte_identical();
   test_perf_drain_silence_fills_tap_gap();
   test_perf_ring_overflow_ends_the_take();
+  test_perf_drop_ends_the_event_log();
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
   test_perf_zero_fill_short_write_does_not_desync_file();

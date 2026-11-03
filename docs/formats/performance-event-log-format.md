@@ -321,6 +321,15 @@ flag), since an append-only log has no "torn" state to guard against beyond
 a possibly-incomplete final entry, which a reader detects by simply running
 out of bytes mid-record (fewer than 28 bytes remaining) and discarding it.
 
+A take that ends at a dropped frame (`"stopped_early": "slow_storage"` in
+`performance.json`, #1198) holds no entry past that frame, the frame its
+audio ends at, however the drain cycles fell (#1549). The drain writes an
+entry only once it has counted every block before the entry's frame, so it has
+seen any drop before it. Other early stops do not cap the log this exactly:
+after a `reserve_reached` stop the cycle that found the reserve may already
+have written entries past it, and a `disk_full` stop writes whatever its last
+pass can.
+
 ### Callback-applied source images (codes 322–323)
 
 `322` (`LE_PLOG_SOURCE_APPLIED`) names the immutable image that became a
