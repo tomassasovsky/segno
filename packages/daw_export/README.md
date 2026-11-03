@@ -37,9 +37,8 @@ void exportCapture(String captureDir) {
   start of the capture; each lane's loop file becomes a session-view clip.
 - Volume and mute gestures from `events.log` become automation lanes. Volume
   curves are thinned (`thinVolumeAutomation`); mute steps are kept as logged.
-- When a channel's lanes share one chain of built-in effects, the track gets
-  Segno VST3 devices and uses the dry stem, so effects are not applied twice.
-  Otherwise `DawTrack.deviceChainFallbackReason` says why no chain was written.
+- Effects reach Live only as audio, in the wet stem. The set carries no
+  devices; `fx-chains.txt` records each lane's chain as text.
 - The tempo comes from the manifest; `kFallbackTempoBpm` (120) is used when
   it has none. A missing or corrupt manifest makes `read` and `render` return
   null instead of throwing.

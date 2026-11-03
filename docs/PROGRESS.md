@@ -2119,8 +2119,8 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   the `vst3-plugins-linux` job, the `segno_dsp_core` library that existed only
   to share `engine_fx.c` with it, and the C++ atomics shim in
   `engine_private.h` that only the plugins needed. Hosting third-party
-  VST3/CLAP plugins (`src/host/`) is unaffected. The `.als` export still
-  writes Segno VST3 devices for a shared chain; removing that is #1587.
+  VST3/CLAP plugins (`src/host/`) is unaffected. The `.als` export's
+  device chains, which named these plugins, went in #1587.
 - **Performance recording** (12-part plan). Captures a full live performance
   to disk, sample-accurately: RT-safe audio-thread taps write into lock-free
   rings, a control-thread drain thread streams them to a per-run event log
@@ -2141,16 +2141,12 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   Live 12 `.als`** project: one audio track per non-empty track/live-input
   stem, arrangement-view clips at capture start, session-view loop clips per
   lane, and volume/mute **automation envelopes** thinned from the event log.
-  Its newest piece (device-chain export) resolves a channel's per-lane
-  effects into a single **real Segno VST3 device chain** embedded in the
-  `.als` when every lane agrees on one representable chain, falling back to
-  the wet-bounce stem export otherwise (mixed lanes, a third-party plugin, or
-  an unrepresented effect type). **Known gap:** `PerformanceRepository.arm()`
-  is not yet called with real per-lane chains at either call site
-  (`performance_recorder_cubit.dart`, `control_cubit.dart`), so the shipped
-  app always takes the wet-bounce fallback today — wiring real chains
-  through is a small separate follow-up. Also **note:** the presentation
-  layer (`PerformanceRecorderCubit`, `export_device_chain_summary.dart`)
+  Effects reach Live only as audio: every track uses its wet stem (dry when
+  the wet render is missing), and `fx-chains.txt` records each lane's chain
+  as text. The device-chain export that once wrote Segno VST3 devices, and
+  the capture dialog's EXPORT card that reported on it, were removed in
+  #1587 with the plugins (#940). **Note:** the presentation
+  layer (`PerformanceRecorderCubit`, `PerformanceCompletionSheet`)
   currently imports `daw_export` and does its own file I/O directly rather
   than going through `performance_repository` — an accepted, documented
   layering shortcut, not yet folded into the repository.
@@ -2256,7 +2252,7 @@ settings + access, banks + A/B, performance keyboard, functional-settings,
 tags, routing-chip toggle + picker, capture re-assign, tap-to-trace
 dim/clear, output gate + a11y, no-active-outputs notice, responsive
 stacking, contextual dock**, session menu, **performance recorder UI +
-pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
+pedal arm/disarm**, **DAW export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
 

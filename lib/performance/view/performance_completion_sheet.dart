@@ -10,7 +10,6 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_completion_cubit.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
-import 'package:segno/performance/view/export_device_chain_summary.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -304,10 +303,6 @@ class _PerformanceCompletionSheetState
               message: banner,
               tone: tone,
             ),
-          ],
-          if (state.tracks.isNotEmpty) ...[
-            const SizedBox(height: 19),
-            ExportDeviceChainSummary(tracks: state.tracks),
           ],
           const SizedBox(height: 19),
           // A Wrap, not a Row: the reveal label is platform text ("Show in
