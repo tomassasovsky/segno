@@ -510,12 +510,11 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
  * the formants stay fixed in frequency; moving them, the magnitude goes over
  * as it is, envelope and all. [drop_dc] also drops a region whose peak
  * lands below bin 1 (the second voice's, two octaves down; the first voice
- * keeps the shipped octaver's behaviour). [whole_phase]: where two regions
- * land on one bin, the louder before the low band takes its share sets the
- * phase (the first voice), not the louder after (the second; see below). */
+ * keeps the shipped octaver's behaviour). [by_owner]: the low band takes
+ * its share of each bin by the partial that owns it (the first voice), not
+ * of each region's bins wherever they land (the second; see below). */
 static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
-                             float* re, float* im, int drop_dc,
-                             int whole_phase) {
+                             float* re, float* im, int drop_dc, int by_owner) {
   /* The Dual Octaver's low band (#1467) plays this share of each region
    * below the crossover: the band's weight times what it passes at the
    * region's peak, its boost over the crossover's low-pass there
@@ -533,10 +532,12 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
   float syn_mag[LE_PV_BINS];
   float syn_phase[LE_PV_BINS];
   float syn_best[LE_PV_BINS];
+  float syn_keep[LE_PV_BINS]; /* by_owner: the share the bin's owner keeps */
   for (int k = 0; k < LE_PV_BINS; ++k) {
     syn_mag[k] = 0.0f;
     syn_phase[k] = sum_phase[k];
     syn_best[k] = -1.0f;
+    syn_keep[k] = 1.0f;
   }
   /* Peak-region shifting with identity phase locking (Laroche and Dolson,
    * 1999): each spectral peak moves to its shifted frequency carrying the
@@ -547,17 +548,19 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
    * halfway after the previous peak to halfway before the next; where two
    * regions land on one bin, the louder source sets its phase.
    *
-   * Louder as it came in, before the low band took its share (#1580): a
-   * region the band has taken nearly all of is still the bin's partial,
-   * and its phase stays on that partial's track from frame to frame. Judged
-   * after the share, the bin's phase went to whichever faint neighbour
-   * edged out the partial's remainder, a contest the slightest change in
-   * the input decided; the remainder then summed with the band's voice at
-   * a phase that moved with it, and the Dual Octaver's level at 44.1 and
-   * 96 kHz strayed up to 3.9 dB from 48 kHz's. The second voice keeps the
-   * contest after the share: judged before it, a top band 40 dB down
-   * moved 4 dB at 96 kHz on Octave 2 (Bass Octave Layer), and its own
-   * residue there is the vocoder's (it strays as far with the band off). */
+   * With [by_owner], the first voice is shifted whole, as the plain
+   * octaver's is, and the low band then takes its share of each bin in the
+   * proportion it takes of the partial that set the bin's phase, its owner
+   * (#1580). Taking the share of each region before the contest left a
+   * handed-over partial's remainder close in level to a neighbour's lobe,
+   * so the slightest change in the input decided which set the bin's
+   * phase; the bin then summed with the band's voice at a phase that moved
+   * with it, and the Dual Octaver's level at 44.1 and 96 kHz strayed up to
+   * 3.9 dB from 48 kHz's. Judging the contest on the whole partials but
+   * still taking the share region by region was steady, but left a
+   * neighbour's lobe turning at the handed-over partial's phase: 1.3 dB
+   * too much down voice on a 110 Hz bass. The second voice keeps the share
+   * by region (its residue at 96 kHz is its own, #1616). */
   int peaks[LE_PV_BINS];
   int np = 0;
   for (int q = 0; q < LE_PV_BINS; ++q) {
@@ -596,16 +599,17 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     for (int k = start; k < end; ++k) {
       const int j = k + shift;
       if (j < 0 || j >= LE_PV_BINS) continue;
-      const float m = keep * mag[k]; /* mag[k] exactly, kept whole */
+      /* mag[k] exactly, kept whole */
+      const float m = by_owner ? mag[k] : keep * mag[k];
       float fg = 1.0f;
       if (!o->frame_formants_move) {
         fg = env[j] / (env[k] + 1e-9f);
         if (fg > LE_PV_FORMANT_MAX) fg = LE_PV_FORMANT_MAX;
       }
       syn_mag[j] += m * fg;
-      const float loud = whole_phase ? mag[k] : m;
-      if (loud > syn_best[j]) {
-        syn_best[j] = loud;
+      if (m > syn_best[j]) {
+        syn_best[j] = m;
+        syn_keep[j] = keep;
         syn_phase[j] =
             le_wrap_pi(peak_phase + (in_phase[k] - in_phase[peak]));
       }
@@ -613,6 +617,7 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     start = end;
   }
   for (int b = 0; b < LE_PV_BINS; ++b) {
+    if (by_owner) syn_mag[b] *= syn_keep[b];
     sum_phase[b] = syn_phase[b];
     re[b] = syn_mag[b] * cosf(syn_phase[b]);
     im[b] = syn_mag[b] * sinf(syn_phase[b]);

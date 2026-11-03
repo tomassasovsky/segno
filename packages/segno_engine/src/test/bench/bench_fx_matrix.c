@@ -241,8 +241,8 @@ typedef struct {
 static const mx_known k_known[] = {
     /* The Dual Octaver's Octave 2 at 96 kHz (Bass Octave Layer, at 60 %):
      * its vocoder voice, two octaves down, strays at the notes' onsets. Not
-     * the low band: with the band off it strays further (6.2 dB). The
-     * hand-over's part is #1580. */
+     * the low band: with the band off it strays further (6.2 dB). #1616;
+     * the hand-over's part went with #1580. */
     {"dualoct", MX_ENVELOPE, 96000, 4.0},
     {NULL, 0, 0, 0.0},
 };
