@@ -2970,6 +2970,15 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.mixerResetConfirmBody), findsOneWidget);
+      // The title and the confirm button both name the action.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('console_confirm_confirm')),
+          matching: find.text(l10n.mixerReset),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.mixerReset), findsNWidgets(2));
       await tester.tap(find.byKey(const Key('console_confirm_cancel')));
       await tester.pumpAndSettle();
       verifyNever(() => bloc.add(const LooperMixerReset()));
