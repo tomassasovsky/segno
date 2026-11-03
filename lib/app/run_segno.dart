@@ -301,11 +301,16 @@ Future<void> runSegno(
       BootReadiness(
         notify: notify,
         firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
-        audio: () => bootAudioOf(
-          running: looper.state.status.isConnected,
-          config: looper.lastEngineConfig ?? audioRecoveryConfig,
-          devices: looper.devices,
-        ),
+        audio: () {
+          final status = looper.state.status;
+          return bootAudioOf(
+            running: status.isConnected,
+            devicePresent: status.devicePresent,
+            config: looper.lastEngineConfig ?? audioRecoveryConfig,
+            devices: looper.devices,
+          );
+        },
+        audioFrames: looper.readFramesProcessed,
         readoutConnected: () async =>
             readoutConnector != null &&
             (await displayOutputs.isConnected(readoutConnector) ?? false),

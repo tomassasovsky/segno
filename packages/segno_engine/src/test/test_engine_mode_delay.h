@@ -10,7 +10,7 @@ static le_fx_state* md_state_at(const le_fx_tempo* t, int sr) {
   CHECK(fx != NULL);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   CHECK(le_fx_prepare(fx, 0, LE_FX_MODE_DELAY, sr) == LE_OK);
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_MODE_DELAY);
   fx->tempo = t;
   fx->clocked = 1;
   return fx;
@@ -268,9 +268,9 @@ static void test_mode_delay_clear_reads_nothing_old(void) {
     for (int i = at - 2000; i < at; ++i) heard = fmaxf(heard, fabsf(y[i]));
     CHECK(heard > 0.01f); /* the echo was sounding */
     if (k == 0) {
-      le_fx_entry_reset(fx, 0);
+      le_fx_entry_reset(fx, 0, LE_FX_MODE_DELAY);
     } else {
-      le_fx_entry_clear_rings(fx, 0, MD_SR);
+      le_fx_entry_clear_rings(fx, 0, MD_SR, LE_FX_MODE_DELAY);
     }
     md_run(fx, p, z, y, NULL, n);
     float peak = 0.0f;

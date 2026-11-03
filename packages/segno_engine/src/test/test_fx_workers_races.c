@@ -7,15 +7,19 @@
  * chain on each, so every period is a round the workers share. The control
  * thread meanwhile posts what a player does to those chains as fast as it
  * can: parameter edits, stomps, retypes, a chain switched off and on, a
- * monitor muted and unmuted; and it polls the snapshot and the workers'
- * telemetry the way the UI and a bench do.
+ * monitor muted and unmuted, Cut all sound; and it polls the snapshot and
+ * the workers' telemetry the way the UI and a bench do.
  *
  * What it proves, under ThreadSanitizer (the native-tests-tsan job runs it
  * through NATIVE_TESTS_ONLY=races): no data race between a worker running a
  * monitor chain and the callback's command drain that edits it, between a
  * round's jobs and the callback's mix of their output, or between either and
- * the control thread. And, in the plain suite, that every period finishes
- * and the workers really shared the rounds.
+ * the control thread. The retypes include the octaver family, whose
+ * buffers the control thread prepares into the live chain state while a
+ * slot still runs another kind (#1522), and the whole run repeats at
+ * 44.1 kHz, where a running octaver reads its resampler table every sample.
+ * And, in the plain suite, that every period finishes and the workers really
+ * shared the rounds.
  *
  * Deterministic op sequence (fixed seed); the interleaving is not.
  */
@@ -29,7 +33,6 @@
 #include "engine_fx.h" /* le_fx_defaults */
 #include "segno_engine_api.h"
 
-#define SR 48000
 #define PERIOD 64
 #define PERIODS 10000
 #define INPUTS 4
@@ -89,10 +92,14 @@ static void base_recipe(le_fx_recipe* r, int c) {
   }
 }
 
-int main(void) {
-  printf("test_fx_workers_races\n");
+/* One run at [sr]. */
+static void run_at(int sr) {
+  printf("test_fx_workers_races at %d Hz\n", sr);
+  g_seed = 0x1515u; /* the same seed at every rate */
+  atomic_store(&g_done, 0);
+  atomic_store(&g_blocks, 0);
   le_engine* e = le_engine_create();
-  CHECK(le_engine_configure(e, SR, INPUTS, 2, SR) == LE_OK);
+  CHECK(le_engine_configure(e, sr, INPUTS, 2, sr) == LE_OK);
   CHECK(le_engine_set_fx_workers(e, 2, NULL) == LE_OK);
   le_fx_recipe r[INPUTS];
   uint32_t rev = 1;
@@ -106,21 +113,23 @@ int main(void) {
   pthread_t audio;
   CHECK(pthread_create(&audio, NULL, audio_thread, e) == 0);
 
-  /* No kind of the octaver family among the retypes: preparing one on a
-   * slot that never held one writes its buffer pointers into the live chain
-   * state, which the chain's entry reset reads (le_pv_reset_runtime) — a
-   * race between the control thread and whichever thread runs the chain,
-   * the callback as much as a worker, that predates the workers. */
-  static const int32_t retypes[] = {LE_FX_DRIVE, LE_FX_DELAY, LE_FX_CHORUS,
-                                    LE_FX_TREMOLO, LE_FX_PUMPER, LE_FX_REVERB};
-  int posted = 0, refused = 0, polls = 0;
+  /* The octaver family among them: preparing one on a slot that never held
+   * one writes its buffer pointers into the live chain state, which a reset
+   * of the slot as its present kind must leave alone (#1522). */
+  static const int32_t retypes[] = {
+      LE_FX_DRIVE,   LE_FX_DELAY,   LE_FX_CHORUS,       LE_FX_TREMOLO,
+      LE_FX_PUMPER,  LE_FX_REVERB,  LE_FX_OCTAVER,      LE_FX_WHAMMY,
+      LE_FX_DUAL_OCTAVER, LE_FX_SMART_TUNE};
+  const int retype_count = (int)(sizeof(retypes) / sizeof(retypes[0]));
+  int posted = 0, refused = 0, polls = 0, mutes = 0, cuts = 0;
+  long last_cut = -50;
   uint64_t next_instance = 1000;
   le_snapshot snap;
   le_fx_workers_telemetry tm;
   while (!atomic_load_explicit(&g_done, memory_order_acquire)) {
     const int c = (int)(next_rand() % INPUTS);
     const int s = (int)(next_rand() % 4);
-    switch (next_rand() % 6) {
+    switch (next_rand() % 7) {
       case 0: /* a parameter edit */
         r[c].params[s][0] = (float)(next_rand() % 1000) / 1000.0f;
         break;
@@ -128,7 +137,7 @@ int main(void) {
         r[c].slot_enabled[s] = !r[c].slot_enabled[s];
         break;
       case 2: { /* a retype: a new entry, so its state resets */
-        const int32_t k = retypes[next_rand() % 6];
+        const int32_t k = retypes[next_rand() % (uint32_t)retype_count];
         r[c].type[s] = k;
         le_fx_defaults(k, r[c].params[s]);
         r[c].instance[s] = ++next_instance;
@@ -138,9 +147,30 @@ int main(void) {
         r[c].enabled = !r[c].enabled;
         break;
       case 4: /* the monitor muted or unmuted: a round with fewer jobs */
-        CHECK(le_engine_set_monitor_input_mute(e, c, (int32_t)(next_rand() &
-                                                               1u)) == LE_OK);
+        /* The edits fill the command ring faster than a slow callback (the
+         * resampled pitch kinds under a sanitizer) drains it, and a full
+         * ring refuses the mute as it refuses an edit. */
+        if (le_engine_set_monitor_input_mute(e, c,
+                                             (int32_t)(next_rand() & 1u)) ==
+            LE_OK) {
+          ++mutes;
+        } else {
+          ++refused;
+        }
         break;
+      case 5: { /* Cut all sound: every chain's tails, as their kinds stand */
+        /* At most one every 50 periods: a Cut clears every ring at once, and
+         * a stream of them would stall the callback. */
+        const long now = atomic_load_explicit(&g_blocks, memory_order_relaxed);
+        if (now - last_cut < 50) continue;
+        if (le_engine_cut_sound(e) == LE_OK) {
+          ++cuts;
+          last_cut = now;
+        } else {
+          ++refused;
+        }
+        break;
+      }
       default: /* the UI's poll and a bench's read */
         le_engine_get_snapshot(e, &snap);
         le_engine_get_fx_workers_telemetry(e, &tm);
@@ -157,9 +187,10 @@ int main(void) {
   }
   CHECK(pthread_join(audio, NULL) == 0);
   le_engine_get_fx_workers_telemetry(e, &tm);
-  printf("  %ld periods, %d edits posted, %d refused, %d polls, %llu rounds, "
+  printf("  %ld periods, %d edits posted, %d mutes, %d cuts, %d refused, "
+         "%d polls, %llu rounds, "
          "%llu jobs on the callback, %llu and %llu on the workers\n",
-         (long)atomic_load(&g_blocks), posted, refused, polls,
+         (long)atomic_load(&g_blocks), posted, mutes, cuts, refused, polls,
          (unsigned long long)tm.rounds, (unsigned long long)tm.callback_jobs,
          (unsigned long long)tm.worker[0].jobs,
          (unsigned long long)tm.worker[1].jobs);
@@ -168,8 +199,15 @@ int main(void) {
   /* The interleaving is the scheduler's; these only prove the race was
    * exercised, with margins no machine should miss. */
   CHECK(posted >= 100);
+  CHECK(mutes >= 10);
+  CHECK(cuts >= 10);
   CHECK(tm.rounds >= 1000);
   le_engine_destroy(e);
+}
+
+int main(void) {
+  run_at(48000);
+  run_at(44100);
   if (g_failures) {
     printf("%d CHECK(S) FAILED\n", g_failures);
     return 1;

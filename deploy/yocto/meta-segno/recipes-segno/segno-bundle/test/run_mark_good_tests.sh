@@ -227,7 +227,29 @@ teardown
 echo "interface present, engine refused through the window"
 setup
 printf 'alive 1 readout 1 audio refused\nalive 10 readout 9 audio refused\n' > "$work/StatusText"
-expect_refused 'not running on the interface'
+expect_refused 'audio engine is not running'
+teardown
+
+echo "engine running, its callback stalled through the window (#1519)"
+setup
+printf 'alive 1 readout 1 audio stalled\nalive 10 readout 9 audio stalled\n' > "$work/StatusText"
+expect_refused 'callback is stalled'
+teardown
+setup
+printf 'alive 1 readout 1 audio refused\nalive 10 readout 9 audio stalled\n' > "$work/StatusText"
+expect_refused 'audio engine is not running'
+teardown
+
+echo "audio stalled for a moment"
+setup
+printf 'alive 1 readout 1 audio stalled\nalive 10 readout 9 audio ok\n' > "$work/StatusText"
+run_mark_good; rc=$?
+check "one stalled sample does not throw the build away" 0 "$rc"
+teardown
+setup
+printf 'alive 1 readout 1 audio ok\nalive 10 readout 9 audio stalled\n' > "$work/StatusText"
+run_mark_good; rc=$?
+check "nor at the end of the window" 0 "$rc"
 teardown
 
 echo "audio refused for a moment (an Apply, a reconnect)"
