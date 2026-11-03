@@ -24,8 +24,7 @@ fullscreen = true
 
   [view.args]
   dart = ['--segno-screen=main']
-  # Skia: Impeller draws the Material icon font as tofu on this stack (#897).
-  engine = ['--enable-impeller=false']
+  engine = ['--enable-impeller=true']
 
   [view.backend]
   type = 'drm-kms-egl'
@@ -65,7 +64,7 @@ pixel_ratio = 1.6
 
   [view.args]
   dart = ['--segno-screen=readout']
-  engine = ['--enable-impeller=false']
+  engine = ['--enable-impeller=true']
 
   [view.backend]
   type = 'drm-kms-egl'

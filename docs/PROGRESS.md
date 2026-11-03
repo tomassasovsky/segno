@@ -72,7 +72,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1555 | Retest Impeller on the console: on-device screen capture (`segno-capture`) in review; the owner's look at both renderers next | in-review | merge-gate | `claude/screen-capture-1555` |
 | #1547 | Every effect the same at any sample rate and block size: parts 1, 2 and 3a (filter responses) merged; part 3b (the tails: echo, reverbs, spring) in review; 3c pitch (#1467), 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3b` |
 
 ---
