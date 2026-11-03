@@ -2823,6 +2823,7 @@
     "consoleLedsNoteAutomatic": "Los LEDs siguen la luz que hay sobre la consola. El control los hace más brillantes o más tenues que eso.",
     "consoleLedsNoteManual": "Automático ajusta los LEDs según el sensor de luz de la consola.",
     "consoleLedsNoteNoSensor": "Automático necesita un sensor de luz en J22 de la placa de la consola. No hay ninguno.",
+    "consoleLedsNoteHolding": "La placa de la consola todavía no informó la luz. Los LEDs mantienen la última lectura hasta que lo haga.",
     "consoleLedsNoteNotReported": "La placa de la consola no informó un sensor de luz. Automático necesita el firmware del controlador 2.7 o posterior y un sensor en J22.",
     "consoleLedsNoteAboveRange": "El sensor de luz está al tope de su rango. Poné una resistencia de carga más chica y volvé a calibrar.",
     "consoleLedsSensorPanel": "Sensor de luz",
@@ -2836,5 +2837,5 @@
     "consoleLedsBrightRow": "Sala iluminada",
     "consoleLedsNowRow": "LEDs ahora",
     "consoleLedsCalibrate": "Calibrar",
-    "consoleLedsCalibrateNote": "En una sala oscura, con las luces como en el escenario, esperá 10 segundos y tocá Sala oscura. Después hacé lo mismo en una sala iluminada. Cada uno toma la Lectura de la derecha, y está disponible cuando esa lectura es al menos el doble o la mitad del otro punto."
+    "consoleLedsCalibrateNote": "En una sala oscura, con las luces como en el escenario, esperá 10 segundos y tocá Sala oscura. Después hacé lo mismo en una sala iluminada. Cada uno toma la Lectura de la derecha. Sala oscura necesita la mitad de la lectura de Sala iluminada o menos, y Sala iluminada el doble de la de Sala oscura o más."
 }

@@ -172,6 +172,39 @@ void main() {
     await silence(tester);
   });
 
+  testWidgets('the slider previews, saves on release, and Back drops it', (
+    tester,
+  ) async {
+    await open(tester);
+    LoopSlider slider() => tester.widget<LoopSlider>(
+      find.byKey(const Key('console_leds_brightness')),
+    );
+    slider().onChanged(0);
+    // One pump delivers the cubit's state, the second rebuilds.
+    await tester.pump();
+    await tester.pump();
+    expect(
+      harness.leds.state.shown.brightness,
+      ConsoleLedSettings.minBrightness,
+    );
+    expect((await harness.settings.loadConsoleLeds()).brightness, 1);
+    expect(
+      tester
+          .widget<AppText>(find.byKey(const Key('console_leds_readout')))
+          .data,
+      '20%',
+    );
+    slider().onEditCancel!(1);
+    await tester.pump();
+    await tester.pump();
+    expect(harness.leds.state.shown.brightness, 1);
+    slider().onChanged(0.5);
+    slider().onChangeEnd!(0.5);
+    await tester.pumpAndSettle();
+    expect((await harness.settings.loadConsoleLeds()).brightness, 0.6);
+    await silence(tester);
+  });
+
   testWidgets('a sensor at the top of its range asks for a smaller resistor', (
     tester,
   ) async {

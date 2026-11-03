@@ -842,6 +842,19 @@ class SettingsRepository {
     await _store.setInt(_ledBrightKey, settings.brightReading);
   }
 
+  static const String _ledReadingKey = 'console_leds.last_reading';
+
+  /// The last light-sensor reading the console saw (#1564), or `null` for
+  /// none: Automatic holds it at launch until the board reports.
+  Future<int?> loadConsoleLedReading() async {
+    final reading = await _store.getInt(_ledReadingKey);
+    return reading != null && reading >= 0 && reading <= 255 ? reading : null;
+  }
+
+  /// Saves the last light-sensor reading.
+  Future<void> saveConsoleLedReading(int reading) =>
+      _store.setInt(_ledReadingKey, reading);
+
   static const String _bluetoothRetiredNoticeKey = 'bluetooth.retired_notice';
 
   /// Whether the app has told this install that its Bluetooth pairings will

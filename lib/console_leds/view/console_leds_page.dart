@@ -160,7 +160,8 @@ class _BrightnessColumn extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final state = context.watch<ConsoleLedsCubit>().state;
-    final settings = state.settings;
+    // A slider draft shows here as it does on the LEDs.
+    final settings = state.shown;
     final automatic = settings.automatic;
     // The slider sets what the LEDs follow now: the offset while Automatic
     // follows the sensor, else the manual brightness in force.
@@ -175,6 +176,7 @@ class _BrightnessColumn extends StatelessWidget {
     }
 
     final note = switch (state.light?.sensor) {
+      null when state.holding => l10n.consoleLedsNoteHolding,
       null => l10n.consoleLedsNoteNotReported,
       PedalLightSensor.none => l10n.consoleLedsNoteNoSensor,
       PedalLightSensor.aboveRange => l10n.consoleLedsNoteAboveRange,
@@ -258,12 +260,14 @@ class _BrightnessColumn extends StatelessWidget {
             key: Key('console_leds_${offsetSlider ? 'offset' : 'brightness'}'),
             width: _width,
             value: travel,
-            keyboardStep: offsetSlider ? 1 / (2 * _offsetPoints) : 0.0125,
+            keyboardStep: offsetSlider
+                ? 1 / (2 * _offsetPoints)
+                : 0.01 / _range,
             semanticLabel: label,
             semanticValueBuilder: offsetSlider ? shift : percent,
             onChanged: preview,
             onChangeEnd: commit,
-            onEditCancel: preview,
+            onEditCancel: (_) => context.read<ConsoleLedsCubit>().cancelDraft(),
             onDoubleTap: () => _edit(
               context,
               (cubit) => offsetSlider

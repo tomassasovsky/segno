@@ -8306,6 +8306,10 @@
     "@consoleLedsNoteNoSensor": {
         "description": "Note when the console board reports no light sensor."
     },
+    "consoleLedsNoteHolding": "The console board has not reported the light yet. The LEDs hold the last reading until it does.",
+    "@consoleLedsNoteHolding": {
+        "description": "Note while Automatic follows the last light reading because the console board has not reported one since it reconnected."
+    },
     "consoleLedsNoteNotReported": "The console board has not reported a light sensor. Automatic needs controller firmware 2.7 or later and a sensor on J22.",
     "@consoleLedsNoteNotReported": {
         "description": "Note when the console board says nothing about a light sensor: it is disconnected or its firmware predates the sensor."
@@ -8363,7 +8367,7 @@
     "@consoleLedsCalibrate": {
         "description": "Heading of the light sensor calibration section."
     },
-    "consoleLedsCalibrateNote": "In a dark room, with the lights as they are on stage, wait 10 seconds and tap Dark room. Then do the same in a bright room. Each takes the Reading on the right, and is available while that reading is at least a doubling from the other point.",
+    "consoleLedsCalibrateNote": "In a dark room, with the lights as they are on stage, wait 10 seconds and tap Dark room. Then do the same in a bright room. Each takes the Reading on the right. Dark room needs half the Bright room reading or less, and Bright room twice the Dark room reading or more.",
     "@consoleLedsCalibrateNote": {
         "description": "How to calibrate the light sensor."
     }

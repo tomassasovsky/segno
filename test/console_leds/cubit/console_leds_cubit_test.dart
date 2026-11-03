@@ -103,18 +103,55 @@ void main() {
       });
 
       test(
-        'Automatic with nothing heard yet starts at the dark point',
+        'Automatic with nothing ever heard holds the manual brightness',
         () async {
           await settings.saveConsoleLeds(
-            const ConsoleLedSettings(automatic: true),
+            const ConsoleLedSettings(brightness: 0.8, automatic: true),
           );
           await cubit.load();
           expect(cubit.state.light, isNull);
-          expect(cubit.state.followingLight, isTrue);
-          expect(cubit.state.brightness, consoleLedCurve.floor);
-          expect(pedal.ledLevel, ledLevelOf(consoleLedCurve.floor));
+          expect(cubit.state.followingLight, isFalse);
+          expect(pedal.ledLevel, ledLevelOf(0.8));
         },
       );
+
+      test('the last run reading is held until the board reports', () async {
+        await settings.saveConsoleLeds(
+          const ConsoleLedSettings(automatic: true),
+        );
+        await settings.saveConsoleLedReading(
+          ConsoleLedSettings.defaultDarkReading,
+        );
+        await cubit.load();
+        expect(cubit.state.holding, isTrue);
+        // A console starting on a dark stage starts dim.
+        expect(pedal.ledLevel, ledLevelOf(consoleLedCurve.floor));
+        link.emit(AmbientLightMessage(_reading(170)));
+        await pumpEventQueue();
+        expect(cubit.state.holding, isFalse);
+        expect(pedal.ledLevel, PedalLinkCodec.ledLevelFull);
+        expect(await settings.loadConsoleLedReading(), 170);
+      });
+
+      test('no sensor holds over a gap in the link', () async {
+        await settings.saveConsoleLeds(
+          const ConsoleLedSettings(brightness: 0.6, automatic: true),
+        );
+        await cubit.load();
+        link.emit(const AmbientLightMessage(PedalAmbientLight.none));
+        await pumpEventQueue();
+        final sent = levelsSent().length;
+        link.hello(firmwareMinor: 7);
+        await pumpEventQueue();
+        expect(cubit.state.light, isNull);
+        expect(cubit.state.followingLight, isFalse);
+        expect(pedal.ledLevel, ledLevelOf(0.6));
+        // Only the hello's replay of the same level, no dip.
+        expect(
+          levelsSent().skip(sent).map((m) => m.level).toSet(),
+          {ledLevelOf(0.6)},
+        );
+      });
     });
 
     group('with a sensor', () {
@@ -154,14 +191,24 @@ void main() {
 
       test('a slider preview applies without saving; a commit saves', () async {
         cubit.previewOffset(-0.4);
-        expect(cubit.state.settings.offset, -0.4);
+        expect(cubit.state.shown.offset, -0.4);
+        expect(cubit.state.settings.offset, 0);
         expect((await settings.loadConsoleLeds()).offset, 0);
+        cubit.cancelDraft();
+        expect(cubit.state.shown.offset, 0);
         await cubit.setOffset(-0.4);
         expect((await settings.loadConsoleLeds()).offset, -0.4);
         await cubit.setAutomatic(automatic: false);
         cubit.previewBrightness(0.5);
         expect(pedal.ledLevel, ledLevelOf(0.5));
         expect((await settings.loadConsoleLeds()).brightness, 1);
+      });
+
+      test('a draft never reaches the save of another change', () async {
+        cubit.previewOffset(-0.4);
+        await cubit.setAutomatic(automatic: false);
+        expect((await settings.loadConsoleLeds()).offset, 0);
+        expect(cubit.state.draft, isNull);
       });
 
       test('the offset makes them brighter or darker', () async {

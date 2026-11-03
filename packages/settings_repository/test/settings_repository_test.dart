@@ -1620,6 +1620,14 @@ void main() {
       expect(settings.offset, 1);
     });
 
+    test('the last reading round-trips; an odd one reads as none', () async {
+      expect(await repository.loadConsoleLedReading(), isNull);
+      await repository.saveConsoleLedReading(120);
+      expect(await repository.loadConsoleLedReading(), 120);
+      await store.setInt('console_leds.last_reading', 999);
+      expect(await repository.loadConsoleLedReading(), isNull);
+    });
+
     test(
       'a calibration with its points too close reads as the default',
       () async {
