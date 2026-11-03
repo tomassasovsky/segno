@@ -121,25 +121,39 @@ class StageTopBar extends StatelessWidget {
 
 /// The bar's centre: the session name, or a message in its place (#1562).
 ///
-/// The Track and Wave views' cards say their own tracks' messages, so the
-/// bar says only the other bank's. The Mixer's strips are all controls and
-/// only ring, so there the bar says every track's.
+/// A track's message is said on its card when the card is on screen and
+/// free to say it, and here otherwise: the other bank's tracks, a card the
+/// Track view gives to a queued action's cue, and every track on the
+/// Mixer, whose strips are all controls and only ring.
 class _StageMessage extends StatelessWidget {
   const _StageMessage();
 
   @override
   Widget build(BuildContext context) {
-    final mixer = context.select<TracksCubit, bool>(
-      (cubit) => cubit.state.stageView == StageView.mixer,
+    final view = context.select<TracksCubit, StageView>(
+      (cubit) => cubit.state.stageView,
     );
     final bank = context.select<ControlCubit, int>(
       (cubit) => cubit.state.activeBank,
     );
+    // One bit per channel whose card says its own message: an int, so a
+    // meter tick that changes none of them rebuilds nothing.
+    final cards = context.select<LooperBloc, int>((bloc) {
+      if (view == StageView.mixer) return 0;
+      final looper = bloc.state;
+      var mask = 0;
+      for (final track in looper.tracks) {
+        final channel = track.channel;
+        if (channel ~/ ControlState.tracksPerBank != bank) continue;
+        final cue = track.pending || looper.songWaitingSection == channel;
+        if (view == StageView.track && cue) continue;
+        mask |= 1 << channel;
+      }
+      return mask;
+    });
     return NoticeBarMessage(
       fallback: const _SessionName(),
-      trackCards: mixer
-          ? null
-          : (channel) => channel ~/ ControlState.tracksPerBank == bank,
+      trackCards: (channel) => cards & (1 << channel) != 0,
     );
   }
 }

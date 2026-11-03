@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
-import 'package:clock/clock.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/notices/model/notice.dart';
 
@@ -25,15 +24,23 @@ part 'notices_state.dart';
 /// While the Power screen is up ([setHeld]) passing messages are dropped and
 /// the must-act ones wait behind it.
 class NoticesCubit extends Cubit<NoticesState> {
-  /// Creates a [NoticesCubit] with nothing on screen.
-  NoticesCubit() : super(const NoticesState());
+  /// Creates a [NoticesCubit] with nothing on screen. [stopwatch] times
+  /// each message's age; a test passes one on its fake clock.
+  NoticesCubit({Stopwatch Function()? stopwatch})
+    : _stopwatch = stopwatch ?? Stopwatch.new,
+      super(const NoticesState());
+
+  final Stopwatch Function() _stopwatch;
 
   int _serial = 0;
   Timer? _messageTimer;
   final _trackTimers = <int, Timer>{};
 
-  ShownNotice _shown(Notice notice) =>
-      ShownNotice(notice: notice, serial: ++_serial, shownAt: clock.now());
+  ShownNotice _shown(Notice notice) => ShownNotice(
+    notice: notice,
+    serial: ++_serial,
+    age: _stopwatch()..start(),
+  );
 
   /// Shows [notice] in the top bar for its [Notice.duration].
   ///

@@ -156,8 +156,9 @@ class _NoticeBand extends StatelessWidget {
           opticalOffset: Offset.zero,
           child: Row(
             children: [
-              // The main bar's marks: the tone's icon, the dot for a
-              // critical message, nothing for the rest.
+              // The tone's marks: its icon, the dot for a critical message,
+              // nothing for the rest. A notice's own icon stays on the main
+              // bar; the screen link carries the tone, not glyphs.
               if (icon != null) ...[
                 Icon(icon, size: text.fontSize, color: colors.mark),
                 SizedBox(width: spacing.md * s),
