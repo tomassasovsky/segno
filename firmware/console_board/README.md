@@ -19,7 +19,7 @@ runs the encoder and the ring. segno runs the behavior machine.
 | CTRL1 / CTRL2 ring | GP20 / GP21 | Each jack's ring through 4.7 kΩ (R19/R20). The B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B`; its first press on a jack the board has not yet seen a switch on is held 200 ms, so a plug brushing the contact cannot fake it |
 | CTRL1 / CTRL2 present | GP19 / GP22 | The Neutrik NJ6FD-V's ring-normal contact through 4.7 kΩ (R21/R22): high only while the jack is empty, **present = low** against the internal pull-down. Read through `console_presence.h`, which keeps the pad's input buffer off between samples (RP2350-E9). An empty jack reports CTRL kind `NONE` and is classified afresh on the next plug |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
-| Light sensor | GP28 | ADC2 on J22 pin 5, optional (#1564): a TEPT5600 phototransistor from J22's +3V3 (pin 1), its load resistor (2.2 kΩ as fitted) and 100 nF to ground (pin 6) at the J22 end of the lead. Nothing fitted reads as no sensor: see [Light sensor](#light-sensor-and-led-level-firmware-27) |
+| Light sensor | GP28 | ADC2 on J22 pin 5, optional (#1564): a TEPT5600 phototransistor from J22's +3V3 (pin 1) through 100 Ω, its load resistor (2.2 kΩ as fitted) and 100 nF to ground (pin 6), all at the J22 end of the lead. Nothing fitted reads as no sensor: see [Light sensor](#light-sensor-and-led-level-firmware-27) |
 | PD trigger I2C | GP0 / GP1 | J23: I2C0, 100 kHz, to the STUSB4500 on the SparkFun PD board (its own pull-ups). Provisioned at boot and read once a second: see [PD trigger](#pd-trigger-firmware-23) |
 
 ## The ring carrier
