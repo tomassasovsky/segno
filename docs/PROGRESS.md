@@ -86,9 +86,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Clock LFOs (`le_clock_lfo`, engine_fx.c): the tremolo and the echo's wow
   take frac(rate x frame / sr) from `le_fx_now`. A rate move keeps the
   phase continuous through an offset that slides back to 0 at 0.25 cycles a
-  second (`LE_LFO_RELOCK_CPS`); while it slides the lane's run waits
-  (`le_fx_lfo_relocking`). A state nobody clocks (the VST3 processors)
-  counts its own frames, as before.
+  second, or half the LFO rate when slower (`LE_LFO_RELOCK_CPS`); while it
+  slides, the lane's run waits (`le_fx_lfo_relocking`). A state nobody
+  clocks (the VST3 processors) counts its own frames, as before.
 - Such an LFO prints only on a loop it fits a whole number of times (within
   `LE_LFO_LAP_TOL`, 1e-6 cycles): otherwise each lap sounds different and it
   plays live, reported FREE_RUNNING (`le_fx_entry_lfo_drifts`). Its print is

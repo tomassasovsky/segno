@@ -291,8 +291,9 @@ static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
  *
  * A rate move would make a pure clock phase jump (rate times a frame count
  * in the millions), so the move keeps the phase continuous through an offset
- * and the offset then slides back to 0 at LE_LFO_RELOCK_CPS cycles a second
- * (the LFO runs that much fast or slow for at most 2 s). While it slides the
+ * and the offset then slides back to 0 at LE_LFO_RELOCK_CPS cycles a second,
+ * or half the LFO's rate when that is less (the LFO runs that much fast or
+ * slow for at most 2 s, 10 s at the slowest tremolo). While it slides the
  * slot is relocking (le_fx_lfo_relocking) and the wet cache counts the live
  * chain's run from when it is back on the clock. A slot's lfo[slot][0] is the
  * offset in cycles and lfo[slot][1] the rate it was set for (0: none yet, a
@@ -332,7 +333,11 @@ static double le_clock_lfo(le_fx_state* fx, int slot, double rate, int sr) {
     *set = (float)rate;
   }
   if (*offset != 0.0f) {
-    const float step = (float)(LE_LFO_RELOCK_CPS / hz);
+    /* Never faster than half the LFO itself, so a slow one slows down
+     * rather than running backwards while it relocks. */
+    const double cps =
+        rate * 0.5 < LE_LFO_RELOCK_CPS ? rate * 0.5 : LE_LFO_RELOCK_CPS;
+    const float step = (float)(cps / hz);
     *offset = fabsf(*offset) <= step ? 0.0f
               : *offset > 0.0f       ? *offset - step
                                      : *offset + step;
