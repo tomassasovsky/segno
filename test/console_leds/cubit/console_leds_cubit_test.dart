@@ -42,19 +42,17 @@ void main() {
   Iterable<LedLevelMessage> levelsSent() => link.sent.whereType();
 
   group('ConsoleLedsCubit', () {
-    test(
-      'a console never set is full and manual, and sends no level',
-      () async {
-        await cubit.load();
-        expect(cubit.state.settings, const ConsoleLedSettings());
-        expect(cubit.state.ledLevel, PedalLinkCodec.ledLevelFull);
-        // The board shows full by itself: nothing changes on the wire, not
-        // even on the next hello.
-        link.hello();
-        await pumpEventQueue();
-        expect(levelsSent(), isEmpty);
-      },
-    );
+    test('a console never set is full and manual, full on the wire', () async {
+      await cubit.load();
+      expect(cubit.state.settings, const ConsoleLedSettings());
+      expect(cubit.state.ledLevel, PedalLinkCodec.ledLevelFull);
+      // Full is what the board shows anyway. It is still said, once and on
+      // every hello, so a board an earlier run left dimmed comes back.
+      expect(levelsSent(), const [LedLevelMessage(255)]);
+      link.hello();
+      await pumpEventQueue();
+      expect(levelsSent(), const [LedLevelMessage(255), LedLevelMessage(255)]);
+    });
 
     test('a manual brightness goes to the board and is saved', () async {
       await cubit.setBrightness(0.5);

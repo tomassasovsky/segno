@@ -111,7 +111,11 @@ void main() {
     await tester.tap(find.byKey(const Key('console_leds_automatic')));
     await tester.pumpAndSettle();
     expect(harness.leds.state.settings.automatic, isFalse);
-    expect(link.sent.whereType<LedLevelMessage>(), isEmpty);
+    // The board stays at full, as it always was.
+    expect(
+      link.sent.whereType<LedLevelMessage>().map((m) => m.level).toSet(),
+      {PedalLinkCodec.ledLevelFull},
+    );
     await silence(tester);
   });
 
