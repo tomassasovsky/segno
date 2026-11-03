@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -2038,6 +2039,60 @@ void main() {
   });
 
   group('Playback & overdub', () {
+    // The centre of the drawn heading and, when shown, its origin tag.
+    double labelCentre(WidgetTester tester, String title) {
+      final label = find.ancestor(
+        of: find.text(title),
+        matching: find.byType(LoopFieldLabel),
+      );
+      final texts = find
+          .descendant(of: label, matching: find.byType(AppText))
+          .evaluate()
+          .map((e) => tester.getRect(find.byWidget(e.widget)));
+      final top = texts.map((r) => r.top).reduce(math.min);
+      final bottom = texts.map((r) => r.bottom).reduce(math.max);
+      return (top + bottom) / 2;
+    }
+
+    testWidgets('each label is centred on its control (#1590 LOOP-1)', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        state: const LooperState(
+          tracks: [
+            Track(),
+            Track(channel: 1, oneShotOverride: false, overdubDecayOverride: 0),
+          ],
+        ),
+        initial: LoopSettingsPageId.playback,
+      );
+      final l10n = l10nOf(tester);
+      void expectCentred() {
+        expect(
+          labelCentre(tester, l10n.loopPlaybackLabel),
+          moreOrLessEquals(
+            tester.getCenter(find.byKey(const Key('loop_playback_loop'))).dy,
+          ),
+        );
+        expect(
+          labelCentre(tester, l10n.loopDecayLabel),
+          moreOrLessEquals(
+            tester.getCenter(find.byKey(const Key('loop_decay_slider'))).dy,
+          ),
+        );
+      }
+
+      // Defaults: the heading alone.
+      expectCentred();
+      // A track with overrides: the heading and its Custom tag, centred as
+      // one block.
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.loopOriginCustom), findsNWidgets(2));
+      expectCentred();
+    });
+
     testWidgets('matching explicit overrides remain Custom per field', (
       tester,
     ) async {

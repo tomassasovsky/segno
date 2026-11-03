@@ -394,6 +394,10 @@ class _FormatRow extends StatelessWidget {
   final InputsState names;
   final bool locked;
 
+  /// Wide enough for "Separate mono" at the row's 22 px, so neither label is
+  /// scaled down to fit its button.
+  static const double _choiceWidth = 400;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -420,14 +424,14 @@ class _FormatRow extends StatelessWidget {
               onSelected: (v) => context.read<LooperBloc>().add(
                 LooperInputPairChanged(lower, paired: v),
               ),
-              width: 345,
+              width: _choiceWidth,
               height: 74,
-              gap: 5,
+              gap: context.spacing.sm,
               fontSize: 22,
             ),
           ),
           Positioned(
-            left: 713,
+            left: 328 + _choiceWidth + 40,
             top: 22,
             child: paired
                 ? RoutingPairMembers(

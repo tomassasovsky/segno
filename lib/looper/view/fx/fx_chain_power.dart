@@ -98,7 +98,7 @@ class FxChainPower extends StatelessWidget {
           (false, l10n.toggleOff),
           (true, l10n.toggleOn),
         ]) ...[
-          if (value) const SizedBox(width: 5),
+          if (value) SizedBox(width: context.spacing.sm),
           LoopChoiceButton(
             key: Key(value ? 'fx_chain_power_on' : 'fx_chain_power_off'),
             label: label,
