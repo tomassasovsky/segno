@@ -77,7 +77,7 @@ void main() {
       expect(fxEntryCostNs(delay, period: 32), fxEntryCostNs(delay));
       expect(
         fxBudgetNs(96000, period: 32),
-        8333 - (kFxBaseCostUs * 1000 / 32).ceil(),
+        8333 - fxBaseNs(32),
       );
     });
 
@@ -98,7 +98,11 @@ void main() {
     });
 
     test("the budget is 80 % of a frame less the engine's own cost", () {
-      final base = (kFxBaseCostUs * 1000 / 64).ceil();
+      // The engine's own block: 76 us over 64 frames, 44 over 32.
+      expect(fxBaseNs(64), 1188);
+      expect(fxBaseNs(32), 1375);
+      expect(fxBaseNs(256), fxBaseNs(64));
+      final base = fxBaseNs(64);
       // 96 kHz: 10417 ns a frame, 8333 of them for the worst block.
       expect(fxBudgetNs(96000), 8333 - base);
       // Half the rate, twice the time a frame.
@@ -161,7 +165,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,275 ns a frame at 96 kHz
+    // Ed's Rack, the plan's unit (section 7): 3,288 ns a frame at 96 kHz
     // on the console's own table (#1508), 2,665 in the plan.
     final rack = [
       for (final type in [
@@ -195,8 +199,16 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 3275);
+      expect(rackNs, 3288);
       expect(fxBudgetNs(96000), 7145);
+    });
+
+    test("three of Ed's Racks fit the callback alone at the owner's 48 kHz "
+        '/ 32', () {
+      final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
+      final budget = fxBudgetNs(48000, period: 32);
+      expect(3 * ns, lessThanOrEqualTo(budget));
+      expect(4 * ns, greaterThan(budget));
     });
 
     test('with no workers the load is every chain summed', () {
