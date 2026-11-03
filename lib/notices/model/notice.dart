@@ -56,6 +56,7 @@ class Notice {
     this.action,
     this.secondary,
     this.explains = false,
+    this.detailed = false,
   });
 
   /// The cause.
@@ -87,10 +88,16 @@ class Notice {
   /// A one-time explanation, which stays the longest.
   final bool explains;
 
+  /// A message whose [body] is detail to read in full, however long: it
+  /// stays as long as an explanation, and where the top bar has no room for
+  /// the detail the readout's band says it whole (#1562).
+  final bool detailed;
+
   /// How long a message that goes by itself stays: four seconds, six for a
-  /// warning, eight with an action, ten for a one-time explanation.
+  /// warning, eight with an action, ten for a one-time explanation or a
+  /// detailed message.
   Duration get duration {
-    if (explains) return const Duration(seconds: 10);
+    if (explains || detailed) return const Duration(seconds: 10);
     if (action != null) return const Duration(seconds: 8);
     if (tone == NoticeTone.warning) return const Duration(seconds: 6);
     return const Duration(seconds: 4);

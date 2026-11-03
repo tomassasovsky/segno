@@ -4487,6 +4487,124 @@ void main() {
       },
     );
 
+    testWidgets(
+      "the interface's own MIDI ports go and come back with it, said once "
+      '(#860)',
+      (tester) async {
+        le.EngineSnapshot snapshot({required bool devicePresent}) =>
+            le.EngineSnapshot(
+              isRunning: true,
+              sampleRate: 48000,
+              bufferFrames: 128,
+              framesProcessed: 0,
+              xrunCount: 0,
+              inputRms: 0,
+              inputPeak: 0,
+              outputRms: 0,
+              latencyState: le.LatencyState.idle,
+              measuredLatencyMs: -1,
+              devicePresent: devicePresent,
+            );
+        final ticker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(ticker.close()));
+        // The host lists the interface by its card name; the engine calls it
+        // by ALSA's generic one.
+        engine.devices = const [
+          le.AudioDevice(
+            id: 'out-1',
+            name: 'Scarlett 4i4 USB',
+            isDefault: false,
+            isInput: false,
+          ),
+        ];
+        final pinned = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(pinned.dispose);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        pinned.startEngine(
+          const EngineConfig(
+            playbackDeviceId: 'out-1',
+            bufferFrames: kWarmUpBufferFrames,
+          ),
+        );
+
+        const port = MidiDevice(
+          id: 'Scarlett 4i4 USB',
+          name: 'Scarlett 4i4 USB MIDI 1',
+        );
+        var enumerated = const <MidiDevice>[port];
+        final source = _MockMidiSource();
+        when(source.enumerate).thenAnswer((_) => enumerated);
+        when(() => source.activity).thenAnswer(
+          (_) => const Stream<RawControllerInput>.empty(),
+        );
+        when(() => source.messages).thenAnswer(
+          (_) => const Stream<MidiInputMessage>.empty(),
+        );
+        when(() => source.open(any())).thenReturn(0);
+        when(source.close).thenReturn(0);
+        final midi = MidiDeviceRepository(
+          source: source,
+          settings: settings,
+          pollInterval: Duration.zero,
+        );
+        await midi.select('Scarlett 4i4 USB');
+
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(pinned),
+            repository: pinned,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: _RecordingWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+          ),
+        );
+        watchNotices(tester);
+        await tester.pumpAndSettle();
+        ticker.add(null);
+        await tester.pump();
+
+        // Unplugged: the MIDI port goes first, then the interface. The
+        // interface's must-act message is the one thing said.
+        enumerated = const [];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        engine.nextSnapshot = snapshot(devicePresent: false);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          noticesOf(tester).state.banner?.notice.id,
+          AppNoticeId.deviceLost,
+        );
+        expect(noticeUp(tester, AppNoticeId.midiLost), isFalse);
+
+        // Plugged back in: the interface first, then its port. One
+        // confirmation.
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        enumerated = const [port];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(noticeSaid(AppNoticeId.deviceRestored), isTrue);
+        expect(noticeSaid(AppNoticeId.midiRestored), isFalse);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isFalse);
+
+        await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await midi.dispose();
+      },
+    );
+
     /// Takes the failure toast back down before this test's tree goes away.
     ///
     /// `_showWaveformWindowFailedBanner` raises it with no `autoCloseDuration`,

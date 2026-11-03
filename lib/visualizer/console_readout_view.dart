@@ -104,9 +104,10 @@ class ConsoleReadoutView extends StatelessWidget {
 }
 
 /// The main screen's message across the readout's top margin (#1562): the
-/// tone's tint and rule, the dot or icon, and the sentence. It fills the
-/// margin and no more, so nothing on the readout moves for it, and it takes
-/// no touch: the readout stays inert.
+/// tone's tint and rule, the dot or icon, and the sentence. A one-line
+/// sentence fills the margin and no more; a longer one, whose detail the top
+/// bar had no room for, is said whole over the readout below. Nothing on the
+/// readout moves for it, and it takes no touch: the readout stays inert.
 class _NoticeBand extends StatelessWidget {
   const _NoticeBand({required this.notice, required this.s});
 
@@ -128,9 +129,13 @@ class _NoticeBand extends StatelessWidget {
       container: true,
       child: Container(
         key: const Key('console_readout_notice'),
-        height: theme.readoutBandHeight * s,
+        // The top margin's height for one line; a sentence too long for one
+        // line grows the band over the readout below, for as long as the
+        // message is up, so it is said whole (#1562).
+        constraints: BoxConstraints(minHeight: theme.readoutBandHeight * s),
         padding: EdgeInsets.symmetric(
           horizontal: ConsoleReadoutView.sideInset * s,
+          vertical: context.spacing.xs * s,
         ),
         decoration: BoxDecoration(
           color: colors.tint,
@@ -166,6 +171,7 @@ class _NoticeBand extends StatelessWidget {
                 child: NoticeSentence(
                   key: const Key('console_readout_notice_text'),
                   scale: s,
+                  wraps: true,
                   title: notice.title,
                   titleStyle: text.copyWith(color: surface.textPrimary),
                   body: notice.body,

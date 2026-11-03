@@ -10,6 +10,10 @@ import 'package:segno/theme/theme.dart';
 /// has no room for it, it is left out rather than cut, and only a title too
 /// long for the room is cut short. So a message never ends in a cut-off
 /// second part, in a wide bar or a narrow one.
+///
+/// Where the surface can grow ([wraps]: the readout's band), a sentence too
+/// long for one line is said whole instead, wrapped over as many lines as
+/// it needs, so nothing a message says is lost.
 class NoticeSentence extends StatelessWidget {
   /// Creates a [NoticeSentence].
   const NoticeSentence({
@@ -20,6 +24,7 @@ class NoticeSentence extends StatelessWidget {
     this.source,
     this.sourceStyle,
     this.scale = 1,
+    this.wraps = false,
     super.key,
   });
 
@@ -45,6 +50,13 @@ class NoticeSentence extends StatelessWidget {
   /// follow its type.
   final double scale;
 
+  /// Whether a sentence too long for one line wraps whole rather than
+  /// leaving its body out.
+  final bool wraps;
+
+  /// The wrapped sentence's line height.
+  static const double _wrappedLineHeight = 1.3;
+
   @override
   Widget build(BuildContext context) {
     final gap = context.spacing.lg * scale;
@@ -59,10 +71,30 @@ class NoticeSentence extends StatelessWidget {
             ? 0.0
             : math.min(width(source, sourceStyle), constraints.maxWidth / 3) +
                   gap;
-        final showsBody =
-            body != null &&
-            lead + width(title, titleStyle) + gap + width(body, bodyStyle) <=
-                constraints.maxWidth;
+        final oneLine =
+            lead +
+                width(title, titleStyle) +
+                (body == null ? 0 : gap + width(body, bodyStyle)) <=
+            constraints.maxWidth;
+        if (wraps && !oneLine) {
+          // Spaced for reading over several lines, and the gaps as spaces:
+          // a wrapped paragraph has no room for a fixed gap at a line start.
+          TextStyle? spaced(TextStyle? style) =>
+              style?.copyWith(height: _wrappedLineHeight);
+          return AppText.rich(
+            TextSpan(
+              children: [
+                if (source != null)
+                  TextSpan(text: '$source  ', style: spaced(sourceStyle)),
+                TextSpan(text: title, style: spaced(titleStyle)),
+                if (body != null)
+                  TextSpan(text: '  $body', style: spaced(bodyStyle)),
+              ],
+            ),
+            key: const Key('notice_sentence_wrapped'),
+          );
+        }
+        final showsBody = body != null && oneLine;
         return Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.baseline,

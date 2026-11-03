@@ -3,9 +3,10 @@
  * dyn_state, dyn_free, eq_measured_db). */
 
 /* The decay of [h] (n samples at sr) from [from_s] to [to_s], as the time to
- * fall 60 dB: a line through the energies of 20 ms windows, in dB. */
-static double verb_t60(const float* h, int sr, double from_s, double to_s) {
-  const int win = sr / 50;
+ * fall 60 dB: a line through the energies of [win_s] windows, in dB. */
+static double verb_t60_win(const float* h, int sr, double from_s, double to_s,
+                           double win_s) {
+  const int win = (int)(win_s * sr + 0.5);
   double sx = 0, sy = 0, sxx = 0, sxy = 0;
   int n = 0;
   for (int a = (int)(from_s * sr); a + win <= (int)(to_s * sr); a += win) {
@@ -20,33 +21,63 @@ static double verb_t60(const float* h, int sr, double from_s, double to_s) {
   return -60.0 / slope;
 }
 
+/* verb_t60_win in 20 ms windows. */
+static double verb_t60(const float* h, int sr, double from_s, double to_s) {
+  return verb_t60_win(h, sr, from_s, to_s, 0.020);
+}
+
 /* ---- Spring ---- */
 
-/* The spring reproduces what its Phase 0 captures measured (#891, s3/6 and
- * s3/7): the decay at Time 2.00 and 7.9 s, the 38 ms echo, and the
- * band-limited wet spectrum, at 48 kHz, the Looper X's rate (96 kHz runs
- * the same tank, #1547). At 0 % mix it is the identity. */
-static void test_spring_matches_the_capture(void) {
-  printf("test_spring_matches_the_capture\n");
-  const int sr = 48000; /* the Looper X's rate */
-  const int n = 3 * sr;
+/* The spring's decay from [from_s] to [to_s] in windows a 38 ms trip long:
+ * its echoes come every trip with little between them, so 20 ms windows
+ * alternate between an echo and the gap. */
+static double spring_t60(const float* h, int sr, double from_s, double to_s) {
+  return verb_t60_win(h, sr, from_s, to_s, 0.038);
+}
+
+/* The spring's impulse response at [sr], Time [time] s and Mix [mix],
+ * [n] samples, its first sample (the dry spike) zeroed. */
+static float* spring_ir(int sr, double time, float mix, int n) {
   float* in = (float*)calloc((size_t)n, sizeof(float));
   float* h = (float*)calloc((size_t)n, sizeof(float));
   in[0] = 1.0f;
   float p[LE_FX_PARAMS] = {0};
-  p[0] = dyn_setting(LE_FX_SPRING, 0, 2.0);
-  p[1] = 1.0f;
+  p[0] = dyn_setting(LE_FX_SPRING, 0, time);
+  p[1] = mix;
   le_fx_state* fx = dyn_state(LE_FX_SPRING, sr);
   uint32_t clock = 0;
   dyn_run(fx, LE_FX_SPRING, p, sr, in, h, NULL, n, &clock);
   dyn_free(fx);
-  h[0] = 0.0f; /* the dry spike */
-  /* Measured the same way on the capture's impulse response (0.3 to 1.0 s
-   * after it): 1.82 s at Time 2.00 s, 4.79 s at 7.9 s. */
-  const double t2 = verb_t60(h, sr, 0.3, 1.0);
-  printf("  Time 2.00 s: decay %.2f s (capture 1.82)\n", t2);
-  CHECK(fabs(t2 - 1.82) < 0.1 * 1.82);
+  h[0] = 0.0f;
+  free(in);
+  return h;
+}
 
+/* The spring against its captures at Mix 28.9 % (#891 s3/6 and s3/7,
+ * s16spring; #1547), at 48 kHz, the Looper X's rate: the decay at every
+ * whole second of Time, read the same way on the captures (0.3 to 1.0 s),
+ * and at bar 0.90 (7.94 s by the taper, the s3/7 capture's 8 s); at
+ * Time 2 s the 38 ms echo and the band-limited wet spectrum; at 44.1 and
+ * 96 kHz the same decay. At 0 % mix it is the identity. */
+static void test_spring_matches_the_capture(void) {
+  printf("test_spring_matches_the_capture\n");
+  const int sr = 48000; /* the Looper X's rate */
+  const int n = 3 * sr;
+  const float mix = 0.289f;
+  /* Time and the captures' decay; 7.94 s plays 8 s, as on the device. */
+  const double cap[11][2] = {{1.0, 1.30}, {2.0, 1.82}, {3.0, 2.28},
+                             {4.0, 2.73}, {5.0, 3.20}, {6.0, 3.70},
+                             {7.0, 4.24}, {8.0, 4.85}, {9.0, 5.54},
+                             {10.0, 6.32}, {7.94, 4.85}};
+  for (int c = 0; c < 11; ++c) {
+    float* h = spring_ir(sr, cap[c][0], mix, n);
+    const double t = spring_t60(h, sr, 0.3, 1.0);
+    printf("  Time %.2f s: decay %.2f s (capture %.2f)\n", cap[c][0], t, cap[c][1]);
+    CHECK(fabs(t - cap[c][1]) < 0.03 * cap[c][1]);
+    free(h);
+  }
+
+  float* h = spring_ir(sr, 2.0, 1.0f, n);
   /* The 38 ms echo: the envelope's autocorrelation peaks there. */
   {
     const int m = (int)(0.6 * sr);
@@ -100,53 +131,38 @@ static void test_spring_matches_the_capture(void) {
     printf("  %.0f Hz: %.1f dB (capture %.1f)\n", want[i][0], got, want[i][1]);
     CHECK(fabs(got - want[i][1]) < (want[i][1] < -40.0 ? 8.0 : 4.0));
   }
+  free(h);
 
-  /* Time 7.9 s: longer, within the model's known difference. */
-  p[0] = dyn_setting(LE_FX_SPRING, 0, 7.94);
-  memset(h, 0, sizeof(float) * (size_t)n);
-  fx = dyn_state(LE_FX_SPRING, sr);
-  clock = 0;
-  dyn_run(fx, LE_FX_SPRING, p, sr, in, h, NULL, n, &clock);
-  dyn_free(fx);
-  h[0] = 0.0f;
-  const double t8 = verb_t60(h, sr, 0.3, 1.0);
-  /* Broadband, the model holds a little more low end at long Times (it
-   * matches the capture within 0.4 s in each of four bands, by the fit's
-   * scratch analysis): 23 % longer at 48 kHz (5.89 s). This test ran at
-   * 96 kHz until 96 kHz ran the 48 kHz tank (#1547), and read 17 % there. */
-  printf("  Time 7.9 s: decay %.2f s (capture 4.79)\n", t8);
-  CHECK(fabs(t8 - 4.79) < 0.25 * 4.79);
-  /* At 96 kHz the tank is the 48 kHz one on alternate samples (#1547): the
-   * same decay, within what the 96 kHz input's half-band (le_hb) takes off
-   * the impulse's top octave (1 %). */
+  /* 44.1 and 96 kHz run the same tank (#1547): the same decay at 8 s, within
+   * what 96 kHz's input half-band (le_hb) takes off the impulse's top
+   * octave. */
   {
-    const int sr96 = 96000;
-    const int n96 = 3 * sr96;
-    float* in96 = (float*)calloc((size_t)n96, sizeof(float));
-    float* h96 = (float*)calloc((size_t)n96, sizeof(float));
-    in96[0] = 1.0f;
-    le_fx_state* fx96 = dyn_state(LE_FX_SPRING, sr96);
-    uint32_t clock96 = 0;
-    dyn_run(fx96, LE_FX_SPRING, p, sr96, in96, h96, NULL, n96, &clock96);
-    dyn_free(fx96);
-    h96[0] = 0.0f;
-    const double t96 = verb_t60(h96, sr96, 0.3, 1.0);
-    printf("  Time 7.9 s at 96 kHz: decay %.2f s\n", t96);
-    CHECK(fabs(t96 - t8) < 0.03 * t8);
-    free(in96);
-    free(h96);
+    float* h48 = spring_ir(sr, 8.0, mix, n);
+    const double t48 = spring_t60(h48, sr, 0.3, 1.0);
+    free(h48);
+    const int rates[2] = {44100, 96000};
+    for (int k = 0; k < 2; ++k) {
+      float* hr = spring_ir(rates[k], 8.0, mix, 3 * rates[k]);
+      const double tr = spring_t60(hr, rates[k], 0.3, 1.0);
+      printf("  Time 8 s at %d Hz: decay %.2f s (48 kHz %.2f)\n", rates[k], tr, t48);
+      CHECK(fabs(tr - t48) < 0.03 * t48);
+      free(hr);
+    }
   }
 
   /* At 0 % mix: the identity. */
+  float* in = (float*)calloc((size_t)n, sizeof(float));
+  float* out = (float*)calloc((size_t)n, sizeof(float));
   for (int i = 0; i < n; ++i) in[i] = 0.3f * sinf(0.01f * i);
-  p[1] = 0.0f;
-  fx = dyn_state(LE_FX_SPRING, sr);
-  clock = 0;
-  dyn_run(fx, LE_FX_SPRING, p, sr, in, h, NULL, sr / 10, &clock);
+  float p[LE_FX_PARAMS] = {0};
+  p[0] = dyn_setting(LE_FX_SPRING, 0, 2.0);
+  le_fx_state* fx = dyn_state(LE_FX_SPRING, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_SPRING, p, sr, in, out, NULL, sr / 10, &clock);
   dyn_free(fx);
-  for (int i = 0; i < sr / 10; ++i) CHECK(h[i] == in[i]);
+  for (int i = 0; i < sr / 10; ++i) CHECK(out[i] == in[i]);
   free(in);
-  free(h);
+  free(out);
 }
 
 /* At the longest Time, with noise in the loop, the spring stays finite and

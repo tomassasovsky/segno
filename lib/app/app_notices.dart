@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:midi_device_repository/midi_device_repository.dart'
+    show MidiConnection;
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/notices/notices.dart';
 
 /// The ids of the app's notices (#1562): one per cause, so a cause shows one
@@ -109,3 +112,35 @@ void showStorageFailed(BuildContext context, String id) =>
         title: (l10n) => l10n.storageActionFailed,
       ),
     );
+
+/// Whether a MIDI device's loss or return ([connection]) is the audio
+/// interface's own (#860): its own ports go and come back with it, so the
+/// interface's message says it once.
+///
+/// The MIDI device carries the interface's name ("Scarlett 4i4 USB MIDI 1"
+/// under "Scarlett 4i4 USB"), and the interface is gone ([audio]) or went
+/// or came back moments ago ([audioJustChanged]). Another controller is its
+/// own cause whatever the timing, and so is any device while the
+/// interface's name is unknown. Only a MIDI device with no name at all is
+/// judged by the timing alone.
+bool midiIsInterfacesOwn(
+  MidiConnection connection,
+  AudioSetupState audio, {
+  required bool audioJustChanged,
+}) {
+  // The card's name: a host may add the device's function after a comma.
+  final interface = audio.connectivityDeviceName.split(',').first.trim();
+  final names = [
+    connection.connectivityDeviceName,
+    connection.selectedName,
+    connection.selectedId,
+  ].where((name) => name.isNotEmpty);
+  if (names.isEmpty) return audioJustChanged;
+  if (interface.isEmpty) return false;
+  if (!names.any((name) => name.startsWith(interface))) return false;
+  final gone = switch (audio.deviceConnectivity) {
+    DeviceConnectivity.lost || DeviceConnectivity.waiting => true,
+    _ => false,
+  };
+  return gone || audioJustChanged;
+}

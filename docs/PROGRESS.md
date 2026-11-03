@@ -73,7 +73,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
-| #1547 | Every effect the same at any sample rate and block size: parts 1, 2, 3a (filter responses) and 3b (tails) merged; part 3c (pitch: the octaver kinds run at 48 kHz at every rate, #1467) in review; 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3c` |
+| #1547 | Every effect the same at any sample rate and block size: parts 1, 2, 3a (filter responses), 3b (tails) and the Spring refit to its captures merged; part 3c (pitch: the octaver kinds run at 48 kHz at every rate, #1467) in review; 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3c` |
 
 ---
 
@@ -125,6 +125,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   red (the device running at other settings, a storage action that did
   nothing, the Library's refused open and listen). The Storage and MIDI
   pages' one-line amber notes stay the pen's.
+- Polish (`claude/notices-polish-1562`): the audio interface's own MIDI
+  ports are said once, with it (`midiIsInterfacesOwn`: the same name, or
+  within 5 s of the interface going or coming back); the lost interface is
+  named from the host's catalog ("Scarlett 4i4 USB"), never the engine's
+  generic ALSA "Playback Device", else "Audio interface"; a sentence the
+  top bar has no room for is said whole on the readout, whose band grows
+  over the readout for it, and a `detailed` message (a converted session's
+  changes) stays 10 s.
 
 ## November 2026 Automatic LED brightness from a light sensor (#1564)
 
