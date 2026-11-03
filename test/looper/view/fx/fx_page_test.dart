@@ -841,6 +841,22 @@ void main() {
 
       expect(find.byKey(const Key('fx_chain_empty')), findsOneWidget);
     });
+
+    testWidgets('the cards start at the page inset, like everything above '
+        'them (#1590 SET-4)', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      expect(tester.getRect(find.byKey(const Key('fx_card_t1'))).left, 36);
+      final strip = tester.getRect(find.byType(FxChainStrip));
+      expect(strip.left, 36);
+      expect(strip.right, 1920 - 36);
+    });
+
+    testWidgets('the empty line starts at the page inset too (#1590 SET-4)', (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(1));
+      expect(tester.getRect(find.byKey(const Key('fx_chain_empty'))).left, 36);
+    });
   });
 
   group('power', () {
@@ -1319,6 +1335,18 @@ void main() {
           effects: any(named: 'effects'),
         ),
       );
+    });
+
+    testWidgets("the grid starts at the title's left edge (#1590 SET-3)", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+
+      final title = tester.getRect(find.text(l10nOf(tester).fxAddTitle).last);
+      final first = tester.getRect(find.byKey(const Key('fx_library_saved')));
+      expect(first.left, title.left);
+      expect(first.left, 36);
     });
 
     testWidgets('a build with no catalogue says so instead of drawing an '
@@ -2412,6 +2440,10 @@ void main() {
       expect(selected(tester, 'fx_chain_power_on'), isFalse);
       expect(find.byKey(const Key('fx_chain_off_notice')), findsOneWidget);
       expect(find.text(l10n.fxChainOffInputConsequence), findsOneWidget);
+      // The band spans the chain area, the page's 36 inset each side.
+      final band = tester.getRect(find.byKey(const Key('fx_chain_off_notice')));
+      expect(band.left, 36);
+      expect(band.right, 1920 - 36);
       // The racks under the band stay dimmed.
       expect(
         tester.widget<FxChainStrip>(find.byType(FxChainStrip)).chainEnabled,

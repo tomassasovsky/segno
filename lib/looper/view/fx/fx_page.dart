@@ -879,7 +879,7 @@ class _FxViewState extends State<FxView> {
           Positioned(
             left: 36,
             top: 196,
-            right: 30,
+            right: 36,
             height: _stripHeight(destination.kind),
             child: _SourceStrip(destination: destination),
           ),
@@ -896,9 +896,9 @@ class _FxViewState extends State<FxView> {
             ),
           ),
           Positioned(
-            left: 32,
+            left: 36,
             top: _chainTop(destination.kind),
-            right: 32,
+            right: 36,
             bottom: 24,
             child: _DestinationChain(
               destination: destination,
@@ -1377,14 +1377,11 @@ class _DestinationChain extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!chainEnabled) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: FxChainOffNotice(
-              message: fxChainOffConsequence(context.l10n, address.stage),
-              onTurnOn: () => _FxViewState._notifyEditResult(
-                context,
-                context.read<FxCubit>().setChainEnabled(address, enabled: true),
-              ),
+          FxChainOffNotice(
+            message: fxChainOffConsequence(context.l10n, address.stage),
+            onTurnOn: () => _FxViewState._notifyEditResult(
+              context,
+              context.read<FxCubit>().setChainEnabled(address, enabled: true),
             ),
           ),
           const SizedBox(height: 12),
