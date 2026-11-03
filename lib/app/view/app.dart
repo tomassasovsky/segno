@@ -368,7 +368,7 @@ class _AppState extends State<App> {
           action: retryNoticeAction(
             _notices,
             notice.id,
-            () async => (await owner.recover()).isOk,
+            () async => (await owner.recover()).isOk && owner.ready,
           ),
         ),
       );
@@ -532,7 +532,7 @@ class _AppState extends State<App> {
           action: retryNoticeAction(
             _notices,
             AppNoticeId.mixSettings,
-            () async => (await mix.recover()).isOk,
+            () async => (await mix.recover()).isOk && !mix.recoveryRequired,
           ),
         ),
       );
@@ -1301,10 +1301,12 @@ class _AppViewState extends State<_AppView> {
       return;
     }
     final version = '${manifest.version}';
+    final updates = context.read<UpdateCubit>();
+    // Not a one-time explanation: it is said at each start until it is
+    // installed or put off, so it never waits in their queue.
     _notices.show(
       Notice(
         id: AppNoticeId.update,
-        explains: true,
         icon: LucideIcons.download,
         title: (l10n) => l10n.updateBannerTitle(version),
         action: NoticeAction(
@@ -1318,9 +1320,7 @@ class _AppViewState extends State<_AppView> {
         secondary: NoticeAction(
           key: const Key(AppNoticeId.updateNotNow),
           label: (l10n) => l10n.updateBannerNotNow,
-          onPressed: () => unawaited(
-            context.read<UpdateCubit>().dismiss(manifest.version),
-          ),
+          onPressed: () => unawaited(updates.dismiss(manifest.version)),
         ),
       ),
     );

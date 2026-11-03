@@ -59,6 +59,8 @@ class NoticesCubit extends Cubit<NoticesState> {
       'A message that goes by itself is never critical; raise it instead.',
     );
     if (_standing(notice.id)) return;
+    // The newest word on a cause replaces any copy still waiting.
+    _waiting.removeWhere((waiting) => waiting.id == notice.id);
     if (state.held) {
       if (notice.explains) _wait(notice);
       return;

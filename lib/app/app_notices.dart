@@ -81,9 +81,10 @@ abstract final class AppNoticeId {
   static const consoleLedsSave = 'consoleLedsSave';
 }
 
-/// Retry on a must-act recovery: runs [recover] and, when it worked, ends
-/// the message [id] in [notices], unless a newer failure raised it again
-/// while the retry ran.
+/// Retry on a must-act recovery: runs [recover] and ends the message [id]
+/// in [notices] when it says the condition is over. [recover] reads the
+/// owner's state after its attempt, so a failure raised while it ran keeps
+/// the message, and a success after it clears it.
 NoticeAction retryNoticeAction(
   NoticesCubit notices,
   String id,
@@ -91,18 +92,11 @@ NoticeAction retryNoticeAction(
 ) => NoticeAction(
   key: Key('${id}_${AppNoticeId.retry}'),
   label: (l10n) => l10n.powerRetry,
-  onPressed: () {
-    ShownNotice? standing() => notices.state.banners
-        .where((shown) => shown.notice.id == id)
-        .firstOrNull;
-    final retried = standing();
-    unawaited(
-      recover().then((recovered) {
-        if (!recovered || notices.isClosed) return;
-        if (standing() == retried) notices.clear(id);
-      }),
-    );
-  },
+  onPressed: () => unawaited(
+    recover().then((recovered) {
+      if (recovered && !notices.isClosed) notices.clear(id);
+    }),
+  ),
 );
 
 /// A write that threw: nothing on the disk changed, so it is a warning

@@ -42,18 +42,27 @@ void main() {
       expect(notices.state.banners, hasLength(1));
     });
 
-    test('keeps a newer failure raised while the retry ran', () async {
+    test('of two quick presses, the one that finds the owner ready clears '
+        'it', () async {
       notices.raise(_recovery());
-      final done = Completer<bool>();
+      final first = Completer<bool>();
+      final second = Completer<bool>();
       retryNoticeAction(
         notices,
         AppNoticeId.mixSettings,
-        () => done.future,
+        () => first.future,
       ).onPressed();
+      retryNoticeAction(
+        notices,
+        AppNoticeId.mixSettings,
+        () => second.future,
+      ).onPressed();
+      // The first attempt fails and raises the recovery again.
+      first.complete(false);
       notices.raise(_recovery());
-      done.complete(true);
+      second.complete(true);
       await pumpEventQueue();
-      expect(notices.state.banners, hasLength(1));
+      expect(notices.state.banners, isEmpty);
     });
   });
 }

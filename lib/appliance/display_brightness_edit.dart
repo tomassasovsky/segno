@@ -27,12 +27,14 @@ void editDisplayBrightness(
 ) {
   final cubit = context.read<DisplayBrightnessCubit>();
   final notices = context.read<NoticesCubit>();
+  // Each panel's level is its own write, so its own message.
+  final id = '${AppNoticeId.brightnessSave}_${role.name}';
   unawaited(() async {
     try {
       await cubit.setBrightness(role, value);
-      notices.clear(AppNoticeId.brightnessSave);
+      notices.clear(id);
     } on Object {
-      notices.show(displaySaveFailedNotice(AppNoticeId.brightnessSave));
+      notices.show(displaySaveFailedNotice(id));
     }
   }());
 }
