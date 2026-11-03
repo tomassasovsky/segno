@@ -4507,6 +4507,16 @@ void main() {
             );
         final ticker = StreamController<void>.broadcast();
         addTearDown(() => unawaited(ticker.close()));
+        // The host lists the interface by its card name; the engine calls it
+        // by ALSA's generic one.
+        engine.devices = const [
+          le.AudioDevice(
+            id: 'out-1',
+            name: 'Scarlett 4i4 USB',
+            isDefault: false,
+            isInput: false,
+          ),
+        ];
         final pinned = LooperRepository(engine: engine, ticker: ticker.stream);
         addTearDown(pinned.dispose);
         engine.nextSnapshot = snapshot(devicePresent: true);

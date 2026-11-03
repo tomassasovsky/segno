@@ -100,7 +100,36 @@ void main() {
       );
     });
 
-    test('anything within moments of the interface is its', () {
+    test('another controller is its own cause, even within moments', () {
+      expect(midiIsInterfacesOwn(pedal, lost, audioJustChanged: true), isFalse);
+    });
+
+    test("the interface's ports within moments of its return are its", () {
+      expect(
+        midiIsInterfacesOwn(
+          scarlettMidi,
+          const AudioSetupState(connectivityDeviceName: 'Scarlett 4i4 USB'),
+          audioJustChanged: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test("a host's function suffix on the card name still matches", () {
+      expect(
+        midiIsInterfacesOwn(
+          scarlettMidi,
+          const AudioSetupState(
+            deviceConnectivity: DeviceConnectivity.lost,
+            connectivityDeviceName: 'Scarlett 4i4 USB, USB Audio',
+          ),
+          audioJustChanged: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('with no name to compare, the timing alone decides', () {
       expect(
         midiIsInterfacesOwn(
           pedal,
@@ -108,6 +137,14 @@ void main() {
           audioJustChanged: true,
         ),
         isTrue,
+      );
+      expect(
+        midiIsInterfacesOwn(
+          pedal,
+          const AudioSetupState(),
+          audioJustChanged: false,
+        ),
+        isFalse,
       );
     });
 

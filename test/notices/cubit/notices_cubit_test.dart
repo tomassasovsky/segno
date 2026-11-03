@@ -62,6 +62,21 @@ void main() {
         );
       });
 
+      test(
+        'a detailed message cut short by a press is said again after it',
+        () {
+          fakeAsync((async) {
+            final cubit = NoticesCubit()
+              ..show(Notice(id: 'session', title: (_) => 'a', detailed: true))
+              ..show(_notice('refused', tone: NoticeTone.warning));
+            expect(cubit.state.message?.notice.id, 'refused');
+            async.elapse(const Duration(seconds: 6));
+            expect(cubit.state.message?.notice.id, 'session');
+            unawaited(cubit.close());
+          });
+        },
+      );
+
       test('a detailed message does not wait in the explanations queue', () {
         fakeAsync((async) {
           final cubit = NoticesCubit()

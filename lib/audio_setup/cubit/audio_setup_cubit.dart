@@ -105,7 +105,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// the last device name seen while present, so a disconnect banner can name
   /// the device even after the snapshot stops reporting it.
   bool? _lastDevicePresent;
-  String _lastPresentDeviceName = '';
+  /// The pin the interface last answered to while present, and its name.
+  (String, String) _lastPresent = ('', '');
+
+  String get _lastPresentDeviceName => _lastPresent.$2;
 
   // ------------------------------------------------------------- the draft
 
@@ -651,19 +654,30 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     return outcome;
   }
 
-  /// The pinned interface's name as the player knows it: the host's
-  /// catalog entry for the pin ("Scarlett 4i4 USB"), not the engine's
-  /// `engineName`, which on ALSA is the generic "Playback Device". The
-  /// engine's name when the catalog has no entry, the last one known when
-  /// neither has one.
-  String _interfaceName(String engineName) {
-    final ids = {state.playbackDeviceId, state.captureDeviceId}..remove('');
-    for (final device in state.devices) {
-      if (ids.contains(device.id) && device.name.isNotEmpty) {
+  /// The interface [pins] pin, as the player knows it: the host's catalog
+  /// entry for the pin, playback first ("Scarlett 4i4 USB"), not the
+  /// engine's `engineName`, which on ALSA is the generic "Playback Device".
+  /// Without a catalog entry, the name it last had while present, and only
+  /// then the engine's. [devices] is the catalog to read: a fresh one when
+  /// the interface has just appeared, whose entry the picker's last scan
+  /// may not hold.
+  String _interfaceName(
+    String engineName, {
+    AudioSetupState? pins,
+    List<AudioDevice>? devices,
+  }) {
+    final config = pins ?? state;
+    final id = config.playbackDeviceId.isNotEmpty
+        ? config.playbackDeviceId
+        : config.captureDeviceId;
+    for (final device in devices ?? state.devices) {
+      if (id.isNotEmpty && device.id == id && device.name.isNotEmpty) {
         return device.name;
       }
     }
-    return engineName.isNotEmpty ? engineName : _lastPresentDeviceName;
+    final (lastId, lastName) = _lastPresent;
+    if (lastId == id && lastName.isNotEmpty) return lastName;
+    return engineName;
   }
 
   /// The name the host gives the interface [config] pins, or its id.
@@ -725,8 +739,16 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       deviceConnectivity: carried == DeviceConnectivity.restored
           ? DeviceConnectivity.none
           : carried,
-      connectivityDeviceName: _interfaceName(live.deviceName),
+      connectivityDeviceName: _interfaceName(live.deviceName, pins: next),
     );
+    if (live.devicePresent) {
+      _lastPresent = (
+        next.playbackDeviceId.isNotEmpty
+            ? next.playbackDeviceId
+            : next.captureDeviceId,
+        settled.connectivityDeviceName,
+      );
+    }
     emit(settled);
     unawaited(_settings.saveAudioConfig(_storedConfig(settled)));
   }
@@ -876,7 +898,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       emit(
         state.copyWith(
           deviceConnectivity: lost,
-          connectivityDeviceName: _interfaceName(status.deviceName),
+          connectivityDeviceName: _lastPresentDeviceName,
         ),
       );
     }
@@ -949,7 +971,16 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final present = status.devicePresent;
     final previous = _lastDevicePresent;
     _lastDevicePresent = present;
-    if (present) _lastPresentDeviceName = _interfaceName(status.deviceName);
+    // Named when it appears, from a fresh catalog: not on every tick.
+    if (present && previous != true) {
+      final id = state.playbackDeviceId.isNotEmpty
+          ? state.playbackDeviceId
+          : state.captureDeviceId;
+      _lastPresent = (
+        id,
+        _interfaceName(status.deviceName, devices: _repository.devices()),
+      );
+    }
     if (present && state.deviceConnectivity == DeviceConnectivity.waiting) {
       // The awaited interface is here and running: the strip has nothing
       // left to say, and a "reconnected" toast for a first start would be a

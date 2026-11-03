@@ -949,8 +949,13 @@ class _AppViewState extends State<_AppView> {
   final Stopwatch _audioChanged = clock.stopwatch();
   DeviceConnectivity _audioConnectivity = DeviceConnectivity.none;
 
-  /// Running since a MIDI loss or return was last said.
+  /// Running since a MIDI loss or return was last said, and whose it was.
   final Stopwatch _midiSaid = clock.stopwatch();
+  MidiConnection? _midiSaidFor;
+
+  /// The interface's own MIDI loss was folded into its message, so the
+  /// port's return is folded into the interface's too, however late.
+  bool _midiLossFolded = false;
 
   static bool _within(Stopwatch since) =>
       since.isRunning && since.elapsed <= _sameCauseWindow;
@@ -1208,7 +1213,13 @@ class _AppViewState extends State<_AppView> {
           ..start();
         // A MIDI message just said was this interface's own ports: the
         // interface's message takes its place rather than following it.
-        if (_within(_midiSaid)) {
+        final said = _midiSaidFor;
+        if (said != null &&
+            _within(_midiSaid) &&
+            midiIsInterfacesOwn(said, state, audioJustChanged: true)) {
+          if (said.connectivity == MidiConnectivity.lost) {
+            _midiLossFolded = true;
+          }
           _notices
             ..clear(AppNoticeId.midiLost)
             ..clear(AppNoticeId.midiRestored);
@@ -1258,18 +1269,20 @@ class _AppViewState extends State<_AppView> {
   /// the same device by name or arrives within [_sameCauseWindow] of it.
   void _showMidiConnectivity(MidiSetupState state) {
     final connection = state.connection;
-    if (connection.connectivity != MidiConnectivity.none &&
-        _interfacesOwn(connection)) {
-      if (connection.connectivity == MidiConnectivity.restored) {
-        _notices.clear(AppNoticeId.midiLost);
-      }
-      return;
-    }
     switch (connection.connectivity) {
+      case MidiConnectivity.lost when _interfacesOwn(connection):
+        _midiLossFolded = true;
+        return;
+      case MidiConnectivity.restored
+          when _midiLossFolded || _interfacesOwn(connection):
+        _midiLossFolded = false;
+        _notices.clear(AppNoticeId.midiLost);
+        return;
       case MidiConnectivity.lost:
         _midiSaid
           ..reset()
           ..start();
+        _midiSaidFor = connection;
         _notices.show(
           Notice(
             id: AppNoticeId.midiLost,
@@ -1285,6 +1298,7 @@ class _AppViewState extends State<_AppView> {
         _midiSaid
           ..reset()
           ..start();
+        _midiSaidFor = connection;
         _notices
           ..clear(AppNoticeId.midiLost)
           ..show(

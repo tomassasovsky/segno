@@ -114,26 +114,31 @@ void showStorageFailed(BuildContext context, String id) =>
     );
 
 /// Whether a MIDI device's loss or return ([connection]) is the audio
-/// interface's own (#860): the interface went or came back moments ago
-/// ([audioJustChanged]), or it is gone now ([audio]) and the MIDI device
-/// carries its name ("Scarlett 4i4 USB MIDI 1" under "Scarlett 4i4 USB").
-/// Its own ports go and come back with it, so the interface's message says
-/// it once.
+/// interface's own (#860): its own ports go and come back with it, so the
+/// interface's message says it once.
+///
+/// The MIDI device carries the interface's name ("Scarlett 4i4 USB MIDI 1"
+/// under "Scarlett 4i4 USB"), and the interface is gone ([audio]) or went
+/// or came back moments ago ([audioJustChanged]). Another controller is its
+/// own cause whatever the timing. Only when either name is unknown does the
+/// timing alone decide.
 bool midiIsInterfacesOwn(
   MidiConnection connection,
   AudioSetupState audio, {
   required bool audioJustChanged,
 }) {
-  if (audioJustChanged) return true;
+  // The card's name: a host may add the device's function after a comma.
+  final interface = audio.connectivityDeviceName.split(',').first.trim();
+  final names = [
+    connection.connectivityDeviceName,
+    connection.selectedName,
+    connection.selectedId,
+  ].where((name) => name.isNotEmpty);
+  if (interface.isEmpty || names.isEmpty) return audioJustChanged;
+  if (!names.any((name) => name.startsWith(interface))) return false;
   final gone = switch (audio.deviceConnectivity) {
     DeviceConnectivity.lost || DeviceConnectivity.waiting => true,
     _ => false,
   };
-  final interface = audio.connectivityDeviceName;
-  if (!gone || interface.isEmpty) return false;
-  return [
-    connection.connectivityDeviceName,
-    connection.selectedName,
-    connection.selectedId,
-  ].any((midi) => midi.isNotEmpty && midi.startsWith(interface));
+  return gone || audioJustChanged;
 }
