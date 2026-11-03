@@ -1,18 +1,14 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/looper/cubit/meter_cubit.dart';
+import 'package:segno/looper/view/live_value.dart';
 
 /// Builds a meter from one live value of the engine's levels (#1301).
 ///
-/// Owns a [MeterCubit] for as long as it is in the tree, so a meter follows
-/// the levels only while it is on screen, and only a change in the value
-/// [select] picks rebuilds [builder].
-///
-/// [select] is read once, when the cubit is created. A caller whose
-/// selection depends on something that can change (the channel it shows)
-/// gives this widget a key built from it, so a new selection gets a new
-/// cubit.
+/// A [LiveValue] over `LooperRepository.meterLevels`: only a change in the
+/// value [select] picks rebuilds [builder], and only while the meter is
+/// drawn. A caller whose selection depends on something that can change
+/// (the channel it shows) gives this widget a key built from it.
 class LiveMeter<T extends Object> extends StatelessWidget {
   /// Creates a [LiveMeter].
   const LiveMeter({required this.select, required this.builder, super.key});
@@ -25,12 +21,12 @@ class LiveMeter<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => MeterCubit<T>(
-        repository: context.read<LooperRepository>(),
-        select: select,
-      ),
-      child: BlocBuilder<MeterCubit<T>, T>(builder: builder),
+    final repository = context.read<LooperRepository>();
+    return LiveValue<MeterLevels, T>(
+      values: repository.meterLevels,
+      latest: () => repository.meters,
+      select: select,
+      builder: builder,
     );
   }
 }

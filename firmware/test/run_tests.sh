@@ -19,21 +19,26 @@ trap 'rm -rf "$OUT"' EXIT
   "$ROOT/firmware/console_board/pedal_link.c" -o "$OUT/pedal_link.o"
 "$CC" -std=c99 -Wall -Wextra -Werror -O1 -c \
   "$ROOT/firmware/console_board/pd_trigger.c" -o "$OUT/pd_trigger.o"
+"$CC" -std=c99 -Wall -Wextra -Werror -O1 -c \
+  "$ROOT/firmware/console_board/ambient_light.c" -o "$OUT/ambient_light.o"
+"$CC" -std=c99 -Wall -Wextra -Werror -O1 -I "$ROOT/firmware/console_board" \
+  "$ROOT/firmware/test/test_ambient_light.c" "$OUT/ambient_light.o" "$OUT/pedal_link.o" -lm -o "$OUT/ambient_light"
+"$OUT/ambient_light"
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 -I "$ROOT/firmware/console_board" \
   "$ROOT/firmware/test/test_pd_trigger.cpp" "$OUT/pd_trigger.o" -o "$OUT/pd_trigger"
 "$OUT/pd_trigger"
 RING_INC=(-I "$ROOT/firmware/test/stubs" -I "$ROOT/firmware/libraries/SegnoRing/src")
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" \
-  "$ROOT/firmware/test/test_console_ctrl.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" \
-  -o "$OUT/console_ctrl"
+  "$ROOT/firmware/test/test_console_ctrl.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" "$OUT/ambient_light.o" \
+  -lm -o "$OUT/console_ctrl"
 "$OUT/console_ctrl"
 
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" \
   -I "$ROOT/firmware/console_board" \
-  "$ROOT/firmware/test/test_console_pill.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" \
-  -o "$OUT/console_pill"
+  "$ROOT/firmware/test/test_console_pill.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" "$OUT/ambient_light.o" \
+  -lm -o "$OUT/console_pill"
 "$OUT/console_pill"
 
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
@@ -48,8 +53,8 @@ RING_INC=(-I "$ROOT/firmware/test/stubs" -I "$ROOT/firmware/libraries/SegnoRing/
 
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" \
-  "$ROOT/firmware/test/test_console_bridge.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" \
-  -o "$OUT/console_bridge"
+  "$ROOT/firmware/test/test_console_bridge.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" "$OUT/ambient_light.o" \
+  -lm -o "$OUT/console_bridge"
 "$OUT/console_bridge"
 
 # The ring updater against the Pi's update engine, which lives with the
@@ -60,6 +65,6 @@ RING_FLASH="$ROOT/deploy/yocto/meta-segno/recipes-segno/segno-console-board/file
   -c "$RING_FLASH/ring_flash.c" -o "$OUT/ring_flash.o"
 "$CXX" -std=c++17 -Wall -Wextra -Werror -O1 \
   "${RING_INC[@]}" -I "$ROOT/firmware/console_board" -I "$RING_FLASH" \
-  "$ROOT/firmware/test/test_ring_update.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" "$OUT/ring_flash.o" \
-  -o "$OUT/ring_update"
+  "$ROOT/firmware/test/test_ring_update.cpp" "$OUT/pedal_link.o" "$OUT/pd_trigger.o" "$OUT/ambient_light.o" "$OUT/ring_flash.o" \
+  -lm -o "$OUT/ring_update"
 "$OUT/ring_update"

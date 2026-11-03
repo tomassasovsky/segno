@@ -483,6 +483,82 @@ void main() {
     });
   });
 
+  group('light sensor and LED level frames (#1564)', () {
+    test('ambient carries the sensor and the level', () {
+      const message = AmbientLightMessage(
+        PedalAmbientLight(sensor: PedalLightSensor.reading, level: 160),
+      );
+      final bytes = PedalLinkCodec.encode(message);
+      expect(bytes, [
+        0xA5,
+        PedalLinkCodec.typeAmbient,
+        2,
+        1,
+        160,
+        PedalLinkCodec.typeAmbient ^ 2 ^ 1 ^ 160,
+      ]);
+      expect(PedalLinkParser().push(bytes), [message]);
+    });
+
+    test('ambient refuses an unknown sensor or a level without one', () {
+      expect(PedalLinkCodec.decode(PedalLinkCodec.typeAmbient, [3, 0]), isNull);
+      expect(PedalLinkCodec.decode(PedalLinkCodec.typeAmbient, [0, 1]), isNull);
+      expect(PedalLinkCodec.decode(PedalLinkCodec.typeAmbient, [1]), isNull);
+      expect(
+        PedalLinkCodec.decode(PedalLinkCodec.typeAmbient, [0, 0]),
+        const AmbientLightMessage(PedalAmbientLight.none),
+      );
+    });
+
+    test('the level reads back as ADC counts', () {
+      expect(
+        const PedalAmbientLight(
+          sensor: PedalLightSensor.reading,
+          level: 160,
+        ).counts,
+        1024,
+      );
+      expect(
+        const PedalAmbientLight(sensor: PedalLightSensor.reading).counts,
+        1,
+      );
+      expect(PedalAmbientLight.none.counts, 0);
+    });
+
+    test('LED level is one byte and refuses dark', () {
+      final bytes = PedalLinkCodec.encode(const LedLevelMessage(128));
+      expect(bytes, [
+        0xA5,
+        PedalLinkCodec.typeLedLevel,
+        1,
+        128,
+        PedalLinkCodec.typeLedLevel ^ 1 ^ 128,
+      ]);
+      expect(PedalLinkParser().push(bytes), [const LedLevelMessage(128)]);
+      expect(PedalLinkCodec.decode(PedalLinkCodec.typeLedLevel, [0]), isNull);
+    });
+
+    test('a parser that does not know the types keeps the next frame', () {
+      // What an older board or app does with them: drops them at the type
+      // byte. With a sync byte as the last payload byte the frame behind
+      // still parses.
+      const button = ButtonMessage(PedalButton.undo, pressed: true);
+      for (final message in const [
+        AmbientLightMessage(
+          PedalAmbientLight(sensor: PedalLightSensor.reading, level: 0xA5),
+        ),
+        LedLevelMessage(0xA5),
+      ]) {
+        final frame = PedalLinkCodec.encode(message)..[1] = 0x7E;
+        final out = PedalLinkParser().push([
+          ...frame,
+          ...PedalLinkCodec.encode(button),
+        ]);
+        expect(out, [button], reason: '$message');
+      }
+    });
+  });
+
   group('CTRL frames', () {
     test('carry jack, contact, kind and value', () {
       const message = CtrlMessage(

@@ -25,6 +25,8 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "prefault",
+    "checkpt",
     "oversample",
     "numpy",
     "scipy",
@@ -1251,6 +1253,7 @@
     "virtualenv",
     "virtualenvs",
     "Vishay",
+    "TEPT",
     "vocaltuner",
     "vocoder",
     "VREF",

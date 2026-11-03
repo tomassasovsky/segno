@@ -91,7 +91,6 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
 LooperState _stateWith(
   List<Track> tracks, {
   int masterLengthFrames = 48000,
-  int masterPositionFrames = 0,
   int sampleRate = 48000,
   bool countingIn = false,
   LooperMode looperMode = LooperMode.multi,
@@ -103,7 +102,6 @@ LooperState _stateWith(
   transport: TransportState(
     deviceRunning: true,
     masterLengthFrames: masterLengthFrames,
-    masterPositionFrames: masterPositionFrames,
     countingIn: countingIn,
     looperMode: looperMode,
     primaryTrack: primaryTrack,
@@ -188,7 +186,6 @@ void main() {
     /// the push (the cubit's reducer subscription) see the same snapshot.
     void setEngine(
       List<Track> tracks, {
-      int masterPositionFrames = 0,
       LooperMode looperMode = LooperMode.multi,
       int songQueuedTrack = -1,
       bool songQueueRecord = false,
@@ -196,7 +193,6 @@ void main() {
     }) {
       final state = _stateWith(
         tracks,
-        masterPositionFrames: masterPositionFrames,
         looperMode: looperMode,
         songQueuedTrack: songQueuedTrack,
         songQueueRecord: songQueueRecord,

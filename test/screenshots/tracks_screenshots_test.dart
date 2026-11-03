@@ -132,6 +132,10 @@ void main() {
     when(
       () => repository.meterLevels,
     ).thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.playhead).thenReturn(const Playhead());
+    when(
+      () => repository.playheads,
+    ).thenAnswer((_) => const Stream<Playhead>.empty());
     when(
       () => repository.cancelArm(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
