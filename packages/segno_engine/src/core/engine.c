@@ -818,6 +818,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
   engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
+  engine->fx_hop_period = le_fx_hop_period(sample_rate);
 
   /* Backing player (#1200): a buffer queued in the ring dies with it below,
    * so free it first; the loaded and staged buffers survive a retained
@@ -1385,6 +1386,9 @@ le_engine* le_engine_create(void) {
   /* The audibility gains (#1400) start at their gates on the first frame each
    * track is mixed. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
+  /* The octaver's hop period before any configure (a rate of 0 reads as
+   * 48 kHz), so a key folded before then divides by a real period. */
+  engine->fx_hop_period = le_fx_hop_period(0);
   /* No take has dropped a frame (#1198): 0 would name frame 0. */
   atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
                         memory_order_relaxed);

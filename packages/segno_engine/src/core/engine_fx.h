@@ -126,7 +126,9 @@ extern "C" {
  * position again at [sr]: LE_PV_HOP at LE_OCT_RATE; at another rate, the
  * fewest frames that span a whole number of hops of the kernel's 48 kHz
  * ticks and start them at the same place in a frame (fx_octaver_run puts
- * tick k in the frame at k sr / 48 kHz): 512 at 96 kHz, 1176 at 44.1. */
+ * tick k in the frame at k sr / 48 kHz): 512 at 96 kHz, 1176 at 44.1. The
+ * engine works its own out when it is configured (le_engine::fx_hop_period),
+ * so the audio thread never runs this GCD. */
 static inline uint32_t le_fx_hop_period(int sr) {
   if (sr <= 0) sr = LE_OCT_RATE;
   const uint64_t n = (uint64_t)LE_PV_HOP * (uint64_t)sr;
@@ -140,17 +142,19 @@ static inline uint32_t le_fx_hop_period(int sr) {
   return (uint32_t)(n / a);
 }
 
-/* Engine frame [top]'s position on the octaver's hop at [sr] (#941). */
-static inline uint32_t le_fx_hop_position(uint32_t top, int sr) {
-  return top % le_fx_hop_period(sr);
+/* Engine frame [top]'s position on the octaver's hop, whose period is
+ * [period] frames (le_fx_hop_period, #941). */
+static inline uint32_t le_fx_hop_position(uint32_t top, uint32_t period) {
+  return top % period;
 }
 
 /* Whether [ent] may play from a lap that began at engine frame [top] (#941):
  * always for a print without an octaver, and for one with an octaver only on
  * the hop position it was rendered from. */
 static inline int le_wet_entry_hop_matches(const le_wet_entry* ent,
-                                           uint32_t top, int sr) {
-  return ent->hop_tag == 0 || ent->hop_tag == le_fx_hop_position(top, sr) + 1u;
+                                           uint32_t top, uint32_t period) {
+  return ent->hop_tag == 0 ||
+         ent->hop_tag == le_fx_hop_position(top, period) + 1u;
 }
 
 static inline int32_t le_fx_hop_mask(uint32_t p) {
@@ -202,20 +206,16 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 /* --- PSOLA octaver (mode p3 >= 0.5) tuning ---------------------------------- */
 #define LE_PSOLA_AHOP 256    /* re-run pitch detection every this many samples */
 #define LE_PSOLA_MAXLAG 800  /* the YIN detector's longest lag (le_yin_begin) */
-/* Pitch detection (#913). A coarse YIN pass runs on the window decimated by
- * D = ceil(rate / LE_PSOLA_RATE), 1..LE_PSOLA_DMAX (2 at 44.1 and 48 kHz, 4 at
- * 96 kHz, 8 at 192 kHz): LE_PSOLA_DWIN decimated samples, 33 ms or more,
- * searched from LE_PSOLA_MIN_HZ to LE_PSOLA_MAX_HZ at every rate up to
- * 192 kHz. A narrow pass over the last LE_PSOLA_RAW device samples refines a
- * voiced one to a device sample, as the tuner does. A pass starts every
- * max(1, D / 2) hops, about every 5 ms at every rate, and averages
- * LE_PSOLA_WORK_PER_TICK / max(1, D / 2) iterations a tick (a credit, carried
- * tick to tick), so it spreads over its hops instead of landing in one
- * callback: a whole pass is at most ~202k (the decimation, 160k of coarse
- * lags, the device-rate copy and up to 33k of refinement at 192 kHz) against
- * 256 x 896 = 229k a span. A 64-frame callback carries at most 64 x 896 =
- * 57k of it (at 48 kHz; 29k at 96 kHz), plus one lag of overshoot. */
-#define LE_PSOLA_RATE 24000 /* LE_PSOLA_DMAX is in engine_private.h */
+/* Pitch detection (#913), at the kernel's LE_OCT_RATE. A coarse YIN pass
+ * runs on the window decimated by LE_PSOLA_DECIM (24 kHz): LE_PSOLA_DWIN
+ * decimated samples, 33 ms, searched from LE_PSOLA_MIN_HZ to
+ * LE_PSOLA_MAX_HZ. A narrow pass over the last LE_PSOLA_RAW samples refines
+ * a voiced one to a kernel sample, as the tuner does. A pass starts every
+ * hop, about every 5 ms, and averages LE_PSOLA_WORK_PER_TICK iterations a
+ * tick (a credit, carried tick to tick), so it spreads over its hop instead
+ * of landing in one callback. A 64-frame callback carries at most
+ * 64 x 896 = 57k of it, plus one lag of overshoot. */
+#define LE_PSOLA_DECIM 2
 #define LE_PSOLA_DWIN 800
 #define LE_PSOLA_MIN_HZ 60
 #define LE_PSOLA_MAX_HZ 1000
@@ -233,18 +233,16 @@ static inline le_psola_pass* le_ps(le_octaver_state* o) {
 /* Grain half-width cap. A grain is laid around LE_PV_N / 2 ahead of the read
  * pointer in the LE_PV_N-long OLA accumulator, so its half-width must stay
  * under LE_PV_N / 2: 500 keeps grains overlapping for periods up to 1000
- * samples (48 Hz at 48 kHz, 96 Hz at 96 kHz). A longer period, which the
- * detector reaches at 96 kHz and up, is rebuilt from grains that no longer
- * meet; covering it would take a longer latency. */
+ * samples (48 Hz), past the detector's longest (LE_PSOLA_MIN_HZ). */
 #define LE_PSOLA_THMAX 500
 /* How far behind the head PSOLA reads its input, so its latency matches the
  * split phase vocoder's (LE_PV_LATENCY). */
 #define LE_PSOLA_LAG (LE_PV_LATENCY - LE_PV_N)
-/* The deepest FIFO read of either mode (PSOLA's pitch window at the largest
- * decimation, which lies past the dry tap and the PV window): a smaller ring
- * would wrap onto recent input, so fx_octaver passes such a slot through
- * dry. */
-#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_DMAX * LE_PSOLA_DWIN)
+/* The deepest FIFO read of either mode (PSOLA's refinement window, which
+ * lies past its decimated pitch window, the dry tap and the PV window): a
+ * smaller ring would wrap onto recent input, so fx_octaver passes such a
+ * slot through dry. */
+#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_RAW)
 
 /* --- The Dual Octaver's low band (#1467) -------------------------------------
  * The vocoder's 1024-point frame cannot part a bass note from the octave
@@ -257,7 +255,7 @@ static inline le_psola_pass* le_ps(le_octaver_state* o) {
  * grains, resampled so the formants move with the pitch, as the vocoder's
  * do here). The vocoder hands over the regions below the crossover in the
  * same proportion, so the two bands sum to one voice. Detection is YIN on
- * the band decimated to about LE_OCT_LOW_RATE, from LE_OCT_LOW_MIN_HZ to
+ * the band decimated by LE_OCT_LOW_DECIM, from LE_OCT_LOW_MIN_HZ to
  * LE_OCT_LOW_MAX_HZ (1.25 x the crossover; the band fades out by 1.15 x);
  * a band it hears no pitch in (silence, a chord) fades out and the vocoder
  * plays it as before. The taps centre on the octaver's latency less the
@@ -273,7 +271,7 @@ static inline le_psola_pass* le_ps(le_octaver_state* o) {
  * the 82 and 110 Hz harmonic tones (the capture: -11.3 and -6.0 dB; 200 Hz
  * gave -9.0 and -13.2, 250 Hz -7.4 and -9.9, 300 Hz -6.7 and -8.1). */
 #define LE_OCT_LOW_HZ 250.0
-#define LE_OCT_LOW_RATE 3000
+#define LE_OCT_LOW_DECIM 16 /* 3 kHz */
 #define LE_OCT_LOW_MIN_HZ 60
 #define LE_OCT_LOW_FULL_HZ 89.0f
 #define LE_OCT_LOW_MAX_HZ 312
