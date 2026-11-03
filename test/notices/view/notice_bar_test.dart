@@ -16,9 +16,9 @@ const double _interCapHeight = 1490 / 2048;
 
 /// A top bar built the way the stage's is: two side groups and the centre.
 class _Bar extends StatelessWidget {
-  const _Bar({this.showsTrackMessages = false});
+  const _Bar({this.trackCards});
 
-  final bool showsTrackMessages;
+  final bool Function(int channel)? trackCards;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -37,7 +37,7 @@ class _Bar extends StatelessWidget {
                 height: 60,
               ),
               centre: NoticeBarMessage(
-                showsTrackMessages: showsTrackMessages,
+                trackCards: trackCards,
                 fallback: AppText(
                   'Night set',
                   key: const Key('session'),
@@ -109,7 +109,7 @@ void main() {
 
   Future<void> pumpBar(
     WidgetTester tester, {
-    bool showsTrackMessages = false,
+    bool Function(int channel)? trackCards,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -120,7 +120,7 @@ void main() {
         create: (_) => TracksCubit(
           settings: SettingsRepository(store: FakeKeyValueStore()),
         ),
-        child: _Bar(showsTrackMessages: showsTrackMessages),
+        child: _Bar(trackCards: trackCards),
       ),
       notices: notices,
     );
@@ -250,6 +250,24 @@ void main() {
       line = tester.getRect(find.byKey(const Key('notice_bar_time_left')));
       expect(line.width, moreOrLessEquals(row.width / 2, epsilon: 0.5));
       expect(line.center.dx, moreOrLessEquals(row.center.dx));
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+    });
+
+    testWidgets('a bar built while a message goes by picks its line up '
+        'where it is', (tester) async {
+      await pumpBar(tester);
+      notices.show(_saved());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      // Another screen's bar: a fresh one, half the time gone.
+      await tester.pumpWidget(const SizedBox());
+      await pumpBar(tester);
+      await tester.pump();
+      final row = tester.getRect(find.byKey(const Key('notice_bar_saved')));
+      final line = tester.getRect(
+        find.byKey(const Key('notice_bar_time_left')),
+      );
+      expect(line.width, moreOrLessEquals(row.width / 2, epsilon: 0.5));
       await tester.pumpAndSettle(const Duration(seconds: 3));
     });
 
@@ -445,7 +463,7 @@ void main() {
 
     testWidgets('a bar whose screen has no track cards says them after the '
         "track's name", (tester) async {
-      await pumpBar(tester, showsTrackMessages: true);
+      await pumpBar(tester);
       notices.showOnTrack(1, refused());
       await _fadeIn(tester);
       expect(
@@ -459,12 +477,27 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 7));
     });
 
-    testWidgets('the stage bar leaves them to the cards', (tester) async {
-      await pumpBar(tester);
+    testWidgets('the stage bar leaves them to the cards on screen', (
+      tester,
+    ) async {
+      await pumpBar(tester, trackCards: (channel) => channel < 4);
       notices.showOnTrack(1, refused());
       await _fadeIn(tester);
       expect(find.byKey(const Key('session')), findsOneWidget);
       await tester.pump(const Duration(seconds: 7));
+    });
+
+    testWidgets("and says the other bank's, whose cards are not", (
+      tester,
+    ) async {
+      await pumpBar(tester, trackCards: (channel) => channel < 4);
+      notices.showOnTrack(5, refused());
+      await _fadeIn(tester);
+      expect(
+        find.textContaining('TRACK 6', findRichText: true),
+        findsOneWidget,
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 7));
     });
   });
 }

@@ -75,6 +75,12 @@ void main() {
         }).notice,
         const ReadoutNotice(title: 'Saved', tone: NoticeTone.neutral),
       );
+      expect(
+        PerformanceReadout.fromMap(const {
+          'notice': {'title': 'Saved', 'body': 3, 'track': false},
+        }).notice,
+        const ReadoutNotice(title: 'Saved', tone: NoticeTone.neutral),
+      );
     });
 
     test('a garbled selected track decodes to none, never throws', () {

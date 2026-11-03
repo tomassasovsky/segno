@@ -1073,24 +1073,15 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// What the readout's band says (#1562): the top bar's must-act message,
-  /// unless a passing message is newer, in the same order the main screen
-  /// shows them; a track's message says the track's name first.
+  /// What the readout's band says (#1562): what a top bar with no track
+  /// cards says, in the same order; a track's message says the track's name
+  /// first.
   ReadoutNotice? _readoutNotice() {
     final notices = context.read<NoticesCubit>().state;
     final l10n = _l10n;
-    final message = notices.held ? null : notices.message;
-    final track = notices.latestTrackMessage;
-    final ShownNotice? passing;
-    int? channel;
-    if (track != null &&
-        (message == null || track.shown.serial > message.serial)) {
-      passing = track.shown;
-      channel = track.channel;
-    } else {
-      passing = message;
-    }
-    final shown = passing ?? notices.banner;
+    final passing = notices.passing();
+    final channel = passing?.channel;
+    final shown = passing?.shown ?? notices.banner;
     if (shown == null) return null;
     final notice = shown.notice;
     return ReadoutNotice(

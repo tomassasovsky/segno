@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/track_column.dart' show PrimaryCrown;
+import 'package:segno/notices/model/notice.dart' show NoticeTone;
 import 'package:segno/notices/view/notice_palette.dart';
 import 'package:segno/notices/view/notice_sentence.dart';
 import 'package:segno/theme/theme.dart';
@@ -144,17 +145,22 @@ class _NoticeBand extends StatelessWidget {
           opticalOffset: Offset.zero,
           child: Row(
             children: [
-              if (icon == null)
+              // The main bar's marks: the tone's icon, the dot for a
+              // critical message, nothing for the rest.
+              if (icon != null) ...[
+                Icon(icon, size: text.fontSize, color: colors.mark),
+                SizedBox(width: spacing.lg * s),
+              ] else if (notice.tone == NoticeTone.critical) ...[
                 DecoratedBox(
+                  key: const Key('console_readout_notice_dot'),
                   decoration: BoxDecoration(
                     color: colors.mark,
                     shape: BoxShape.circle,
                   ),
                   child: SizedBox.square(dimension: theme.readoutDotSize * s),
-                )
-              else
-                Icon(icon, size: text.fontSize, color: colors.mark),
-              SizedBox(width: spacing.lg * s),
+                ),
+                SizedBox(width: spacing.lg * s),
+              ],
               Flexible(
                 child: NoticeSentence(
                   key: const Key('console_readout_notice_text'),

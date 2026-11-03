@@ -72,9 +72,8 @@ class StageTopBar extends StatelessWidget {
                 const _CpuLoad(),
               ],
             ),
-            // The session name, or a message in its place (#1562). The
-            // track cards say their own tracks' messages here.
-            centre: const NoticeBarMessage(fallback: _SessionName()),
+            // The session name, or a message in its place (#1562).
+            centre: const _StageMessage(),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -116,6 +115,31 @@ class StageTopBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The bar's centre: the session name, or a message in its place (#1562).
+///
+/// The Track and Wave views' cards say their own tracks' messages, so the
+/// bar says only the other bank's. The Mixer's strips are all controls and
+/// only ring, so there the bar says every track's.
+class _StageMessage extends StatelessWidget {
+  const _StageMessage();
+
+  @override
+  Widget build(BuildContext context) {
+    final mixer = context.select<TracksCubit, bool>(
+      (cubit) => cubit.state.stageView == StageView.mixer,
+    );
+    final bank = context.select<ControlCubit, int>(
+      (cubit) => cubit.state.activeBank,
+    );
+    return NoticeBarMessage(
+      fallback: const _SessionName(),
+      trackCards: mixer
+          ? null
+          : (channel) => channel ~/ ControlState.tracksPerBank == bank,
     );
   }
 }

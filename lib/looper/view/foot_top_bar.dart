@@ -63,7 +63,7 @@ class FootTopBar extends StatelessWidget {
               ),
               icon: const Icon(Icons.chevron_left),
             ),
-            centre: const NoticeBarMessage(showsTrackMessages: true),
+            centre: const NoticeBarMessage(),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
