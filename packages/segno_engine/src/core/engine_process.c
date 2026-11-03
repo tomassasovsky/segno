@@ -7711,20 +7711,30 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
  * move (le_fx_lfo_relocking, #1620). Audio thread. */
 static inline int le_pre_lfo_relocking(const le_fx_state* fx,
                                        _Atomic int32_t* a_type,
+                                       _Atomic int32_t* a_enabled,
+                                       _Atomic int32_t* a_chain_enabled,
                                        _Atomic int32_t* a_pre,
                                        _Atomic int32_t* a_count) {
+  /* Only a slot that plays: a bypassed one, or a chain switched off, is not
+   * ticked, so its offset waits where it was and the print (of the chain
+   * without it) does not depend on it. */
+  if (!load_i32(a_chain_enabled)) return 0;
   int32_t pre = load_i32(a_pre);
   const int32_t count = load_i32(a_count);
   if (pre > count) pre = count;
   if (pre > LE_FX_MAX) pre = LE_FX_MAX;
   for (int32_t s = 0; s < pre; ++s) {
-    if (le_fx_lfo_relocking(fx, s, load_i32(&a_type[s]))) return 1;
+    if (load_i32(&a_enabled[s]) &&
+        le_fx_lfo_relocking(fx, s, load_i32(&a_type[s]))) {
+      return 1;
+    }
   }
   return 0;
 }
 
 static inline int le_lane_lfo_relocking(le_lane* ln) {
-  return le_pre_lfo_relocking(&ln->fx, ln->a_fx_type, &ln->a_fx_pre_count,
+  return le_pre_lfo_relocking(&ln->fx, ln->a_fx_type, ln->a_fx_enabled,
+                              &ln->a_fx_chain_enabled, &ln->a_fx_pre_count,
                               &ln->a_fx_count);
 }
 
@@ -7771,13 +7781,16 @@ static inline void snapshot_lane_cache(
       /* The run (#939). The fingerprint is refolded only when its cheap
        * proxies moved: a generation bump (every chain edit, Post ones
        * included, so the refold decides) or the hop position it folds. */
-      if (rev != ln->run_rev || vol != ln->run_vol || len != ln->run_len) {
+      const int len_moved = len != ln->run_len;
+      if (rev != ln->run_rev || vol != ln->run_vol || len_moved) {
         ln->run_rev = rev;
         ln->run_vol = vol;
         ln->run_len = len;
         ln->run.restart = 1;
       }
-      if (gen != ln->run_gen || top != ln->run_top) {
+      /* The length too: a clock LFO's key folds the top's place on the
+       * lap grid (#1620). */
+      if (gen != ln->run_gen || top != ln->run_top || len_moved) {
         const uint64_t fp = le_lane_pre_fx_fingerprint(e, t, l);
         ln->run_gen = gen;
         ln->run_top = top;
@@ -7852,6 +7865,7 @@ static inline void snapshot_track_cache(le_engine* e, int tc,
       tr->bus_run.restart = 1;
     }
     if (le_pre_lfo_relocking(&tr->bus.fx, tr->bus.a_fx_type,
+                             tr->bus.a_fx_enabled, &tr->bus.a_fx_chain_enabled,
                              &tr->bus.a_fx_pre_count, &tr->bus.a_fx_count)) {
       tr->bus_run.restart = 1; /* back on the clock first (#1620) */
     }
@@ -9002,12 +9016,32 @@ static inline void mix_tracks_frame(
      * against this, and runs restarted by the block-start key checks take
      * their start here, after this frame's wrap. */
     if (sounding) {
-      /* A wrap is the read index moving back against its direction: it
-       * need not land on 0 (2x on an odd length steps past it). */
-      if (tr->lap_rp >= 0 &&
-          (tr->head.reversed ? trk_rp > tr->lap_rp : trk_rp < tr->lap_rp)) {
-        ++tr->laps;
+      /* Forward at 1x from a whole-sample origin: the head a print plays
+       * through (the engage step's own test). */
+      const int identity =
+          !tr->head.reversed && le_head_is_integral(&tr->head);
+      int jump = 0;
+      if (tr->lap_rp >= 0 && trk_rp != tr->lap_rp) {
+        /* A wrap is the read index moving back against its direction: it
+         * need not land on 0 (2x on an odd length steps past it). */
+        if (tr->head.reversed ? trk_rp > tr->lap_rp : trk_rp < tr->lap_rp) {
+          ++tr->laps;
+        }
+        /* At forward 1x the index steps by one, wrapping at the length; any
+         * other move there is a jump. */
+        const int32_t tlen = load_i32(&tr->lanes[0].a_len);
+        jump = identity && tr->lap_identity && tlen > 0 &&
+               trk_rp != (tr->lap_rp + 1 >= tlen ? 0 : tr->lap_rp + 1);
       }
+      /* What a chain holds after a jump, or after laps played reversed or at
+       * another rate, is not a lap of the loop, so every run on the track
+       * begins again: at the jump, or where the head is back at forward 1x
+       * (#1620). A print then waits for a complete lap from there. */
+      if (jump || (identity && tr->lap_rp >= 0 && !tr->lap_identity)) {
+        tr->bus_run.restart = 1;
+        for (int l = 0; l < LE_MAX_LANES; ++l) tr->lanes[l].run.restart = 1;
+      }
+      tr->lap_identity = identity;
       tr->lap_rp = trk_rp;
     } else {
       tr->lap_rp = -1;

@@ -418,13 +418,9 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr);
  * on where that top sits on the loop's lap grid. */
 int le_fx_type_clock_lfo(int32_t type);
 
-/* The most an LFO may miss a whole number of cycles in a lap, in cycles, and
- * still print: its print loops one lap, so at each loop top the LFO steps
- * back by the miss. */
-#define LE_LFO_LAP_TOL 1e-6
-
 /* Whether an entry of [type] at settings [p], heard, runs a clock LFO that
- * does not complete a whole number of cycles (within LE_LFO_LAP_TOL) in a
+ * does not complete a whole number of cycles (within a tolerance per kind,
+ * engine_fx.c) in a
  * loop of [len] frames at [sr]: each lap of it sounds different, so it plays
  * live, like a free-running modulator (#1620). Any thread. */
 int le_fx_entry_lfo_drifts(int32_t type, const float* p, int32_t len, int sr);

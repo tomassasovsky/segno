@@ -91,11 +91,18 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   slides, the lane's run waits (`le_fx_lfo_relocking`). A state nobody
   clocks (the VST3 processors) counts its own frames, as before.
 - Such an LFO prints only on a loop it fits a whole number of times (within
-  `LE_LFO_LAP_TOL`, 1e-6 cycles): otherwise each lap sounds different and it
+  3e-5 cycles for the tremolo, 5e-7 for the echo's wow, what keeps the step
+  at each loop top under 1e-4): otherwise each lap sounds different and it
   plays live, reported FREE_RUNNING (`le_fx_entry_lfo_drifts`). Its print is
   keyed on the top's place on the lap grid (`le_fx_lap_position`, folded
   into the fingerprint, `le_wet_entry::lap_tag` at the lap top), as an
   octaver's is on the hop position.
+- What a chain plays reversed or at another rate is not a lap of the loop,
+  so every run on the track begins again where the head is back at forward
+  1x (and at any jump of the read index there, which Play on a playing track
+  does not make today). A lane back at Normal after a reverse or speed turn
+  therefore prints again after a complete lap, where #939 left it live
+  until its next edit.
 - Remaining step at the swap per kind (`test_cache_midlap_edit_steps`, a sine
   loop): 0 for the memoryless and short-state kinds; a delay or reverb
   differs by the part of its tail older than a lap; the octaver and Smart
@@ -116,8 +123,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - In practice: a print is ready about 250 ms (`LE_CACHE_SETTLE_MS`) plus a
   few 16 ms scheduler ticks plus its render after the edit, so on a loop
   shorter than that the cache stays off; longer loops print as before. The
-  same rule holds the whole-track print, and a lane back at forward 1x after
-  laps reversed or at another speed plays live until its next edit.
+  same rule holds the whole-track print.
 - Tests: the every-kind parity sweep adds a 2560-frame loop per kind (the
   print is ready five laps after the chain went in) and
   `test_whole_track_print_stays_live_on_a_short_loop` covers the track

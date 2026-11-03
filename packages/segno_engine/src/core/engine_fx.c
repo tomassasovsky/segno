@@ -351,8 +351,10 @@ static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
  * slow for at most 2 s, 10 s at the slowest tremolo). While it slides the
  * slot is relocking (le_fx_lfo_relocking) and the wet cache counts the live
  * chain's run from when it is back on the clock. A slot's lfo[slot][0] is the
- * offset in cycles and lfo[slot][1] the rate it was set for (0: none yet, a
- * fresh slot, which starts on the clock). */
+ * offset in cycles and lfo_rate[slot] the rate it was set for (0: none yet,
+ * a fresh slot, which starts on the clock); lfo_frame[slot] is the last frame
+ * (to catch the 32-bit clock wrapping) or, for a state nobody clocks, its
+ * own count. */
 #define LE_LFO_RELOCK_CPS 0.25
 
 /* The tremolo's rate at settings [p], Hz. */
@@ -363,6 +365,15 @@ static double le_tremolo_rate(const float* p) {
 /* The echo's wow rate, Hz: fixed. */
 #define LE_ECHO_WOW_HZ 0.7
 
+/* The most a clock LFO may miss a whole number of cycles in a lap and still
+ * print (le_fx_entry_lfo_drifts): its print loops one lap, so at each loop
+ * top the LFO steps back by the miss. The tremolo's gain moves pi x depth
+ * per cycle at most, so 3e-5 cycles is under 1e-4 of gain; the echo's wow
+ * moves its read by 2 pi x 4 ms a cycle, so 5e-7 cycles keeps the read
+ * within 8e-4 frames, under 1e-4 on a full-scale 1 kHz tone. */
+#define LE_TREMOLO_LAP_TOL 3e-5
+#define LE_ECHO_LAP_TOL 5e-7
+
 /* frac(x), in [0, 1). */
 static inline double le_frac(double x) { return x - floor(x); }
 
@@ -371,22 +382,29 @@ static inline double le_frac(double x) { return x - floor(x); }
  * advances (once per frame: call it once per slot per sample). */
 static double le_clock_lfo(le_fx_state* fx, int slot, double rate, int sr) {
   const double hz = (double)(sr > 0 ? sr : 48000);
-  const uint32_t now = fx->clock_src != NULL || fx->clocked
-                           ? le_fx_now(fx)
-                           : fx->lfo_frame[slot]++;
+  const int clocked = fx->clock_src != NULL || fx->clocked;
+  const uint32_t now = clocked ? le_fx_now(fx) : fx->lfo_frame[slot]++;
   const double t = (double)now / hz;
   float* offset = &fx->lfo[slot][0];
-  float* set = &fx->lfo[slot][1];
-  if (*set != (float)rate) {
-    if (*set > 0.0f) {
+  double* set = &fx->lfo_rate[slot];
+  if (*set != rate) {
+    if (*set > 0.0) {
       /* Continuous through the move: the old phase, from the new rate. */
-      const double was = le_frac((double)*set * t + (double)*offset);
+      const double was = le_frac(*set * t + (double)*offset);
       double o = was - le_frac(rate * t);
       o -= floor(o + 0.5); /* the shorter way round, in [-0.5, 0.5) */
       *offset = (float)o;
     }
-    *set = (float)rate;
+    *set = rate;
+  } else if (clocked && now < fx->lfo_frame[slot] &&
+             fx->lfo_frame[slot] - now > 0x80000000u) {
+    /* The 32-bit clock wrapped (a day at 48 kHz): the clock phase jumps by
+     * frac(rate * 2^32 / sr), so carry the old phase across and relock. */
+    double o = (double)*offset + le_frac(rate * 4294967296.0 / hz);
+    o -= floor(o + 0.5);
+    *offset = (float)o;
   }
+  if (clocked) fx->lfo_frame[slot] = now;
   if (*offset != 0.0f) {
     /* Never faster than half the LFO itself, so a slow one slows down
      * rather than running backwards while it relocks. */
@@ -415,7 +433,11 @@ int le_fx_entry_lfo_drifts(int32_t type, const float* p, int32_t len, int sr) {
   if (type == LE_FX_ECHO && p[2] > 0.0f) rate = LE_ECHO_WOW_HZ;
   if (rate <= 0.0 || len <= 0) return 0;
   const double cycles = rate * (double)len / (double)(sr > 0 ? sr : 48000);
-  return fabs(cycles - floor(cycles + 0.5)) > LE_LFO_LAP_TOL;
+  /* The miss each lap is the step at each loop top: held to LE_LFO_LAP_STEP
+   * of output, through each kind's sensitivity to its phase. */
+  const double tol = type == LE_FX_TREMOLO ? LE_TREMOLO_LAP_TOL
+                                           : LE_ECHO_LAP_TOL;
+  return fabs(cycles - floor(cycles + 0.5)) > tol;
 }
 
 /* Tremolo: sine LFO amplitude modulation, on the engine clock. p0 = rate
@@ -1901,6 +1923,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
       atomic_load_explicit(&fx->amp[slot], memory_order_acquire);
   if (amp != NULL) le_amp_reset(amp);
   fx->lfo_frame[slot] = 0;
+  fx->lfo_rate[slot] = 0.0;
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
     fx->svf_ic2[slot][chan] = 0.0f;
