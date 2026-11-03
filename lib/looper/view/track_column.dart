@@ -221,17 +221,14 @@ class TrackColumn extends StatelessWidget {
     // bloc does not hold draws one track's facts under another's level — a
     // mis-wiring that renders perfectly and is invisible in a screenshot.
     //
-    // Compared as `SteadyTrack`, not by `listEquals` on the prop lists: the
-    // comparison has to be Equatable-deep, because `_project` builds a fresh
-    // `lanes` literal every poll and a shallow list compare would call two
-    // value-equal projections one tick apart different — rejecting the
-    // tick-stale instance this widget is DESIGNED to be handed. Steady, so a
-    // stale `peak` stays legal, which is the whole point of the split.
+    // Compared with Equatable's deep `==`, not by identity: `_project` builds
+    // a fresh `lanes` literal every poll, and two value-equal projections are
+    // the same track.
     assert(
       () {
         final live = bloc.state.tracks.where((t) => t.channel == track.channel);
         if (live.length != 1) return false;
-        return SteadyTrack(live.first) == SteadyTrack(track);
+        return live.first == track;
       }(),
       'TrackColumn was given a Track the ambient LooperBloc does not hold '
       '(channel ${track.channel}). A column is a live view of that bloc, not '

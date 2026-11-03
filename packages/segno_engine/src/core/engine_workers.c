@@ -30,9 +30,6 @@
  * in and locked as they start. The futex is private, so its key never walks
  * the page tables, and its word is in that same memory.
  */
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE 1 /* pthread_setname_np */
-#endif
 #include "engine_workers.h"
 
 #include <pthread.h>
@@ -217,15 +214,9 @@ static void* le_fx_worker_main(void* arg) {
   le_engine* e = w->e;
   le_fx_par* p = &e->fx_par;
   le_fx_worker_tm* tm = &e->fx_worker_tm[w->index];
-  /* Named, so top -H, the profiler and the benches can tell the workers
-   * apart (segno-fx-0 ..). */
   char name[16];
   snprintf(name, sizeof(name), "segno-fx-%d", (int)w->index);
-#if defined(__APPLE__)
-  (void)pthread_setname_np(name);
-#else
-  (void)pthread_setname_np(pthread_self(), name);
-#endif
+  le_platform_name_thread(name);
   if (!le_platform_fx_worker_setup(w->core, w->rt)) {
     atomic_store_explicit(&w->a_state, -1, memory_order_release);
     return NULL;

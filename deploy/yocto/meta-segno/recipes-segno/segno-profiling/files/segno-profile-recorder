@@ -19,16 +19,16 @@
 #                   waiting for a core
 #   load1, mem_available_kb  system-wide
 #
-# The audio thread inherits the io.flutter.ui name, so ui_pct and ui_preempt_s
-# skip SCHED_FIFO and SCHED_RR threads; rt_pct counts it. The engine's other
-# native threads (render, cache, restore) inherit the name too and run
-# SCHED_OTHER, so they count in ui_pct until the engine names them.
+# The engine names its own threads (segno-audio, segno-fx-N, segno-cache and
+# so on, #1563), so the io.flutter.ui threads are the Dart UI isolates alone.
+# Before it did, they all inherited the name of the UI thread that started
+# them, and the audio thread's time read as UI time.
 #
 # Every 15 minutes, a folded-stack profile of the main screen's Dart UI
 # isolate (stacks-<time>.folded, segno-prof stack, 1000 samples 10 ms apart):
-# the io.flutter.ui thread that is not real-time with the lowest tid, the
-# oldest, which is the first engine's, the main screen's (#1318). Lowest by
-# number: the threads are listed in text order, where 1003 comes before 987.
+# the io.flutter.ui thread with the lowest tid, the oldest, which is the
+# first engine's, the main screen's (#1318). Lowest by number: the threads
+# are listed in text order, where 1003 comes before 987.
 #
 # Files older than 30 days are deleted. Experimental images only: the unit
 # checks the channel before starting this. Not /data/profile: that is where
@@ -99,7 +99,7 @@ while :; do
       d = $3 - ticks[$1]
       total += d
       if ($1 == pid) main = d
-      if ($2 == "io.flutter.ui" && $4 != 1 && $4 != 2) {
+      if ($2 == "io.flutter.ui") {
         ui += d
         preempt += $5 - nv[$1]
       }
@@ -125,7 +125,7 @@ while :; do
 
   [ $(( tick % stack_every )) -eq 0 ] && stack_due=1
   if [ "$stack_due" = 1 ]; then
-    ui=$(awk '$2 == "io.flutter.ui" && $4 != 1 && $4 != 2 &&
+    ui=$(awk '$2 == "io.flutter.ui" &&
       (first == "" || $1 + 0 < first + 0) { first = $1 }
       END { if (first != "") print first }' "$state/threads")
     # Right after the app starts its UI thread may not exist yet (at boot this

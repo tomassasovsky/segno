@@ -59,6 +59,7 @@
 #include "engine_render.h" /* the recipe job on this worker */
 #include "engine_core.h"    /* le_lanes_active, le_engine_drain_events */
 #include "engine_fx.h"      /* fx_apply_chain, le_fx_prepare, seed/bypass */
+#include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_private.h" /* le_engine, le_wet_entry, load/store helpers */
 #include "segno_engine_api.h"
 #include "../stretch/le_stretch.h" /* Transpose's source renders (#1179) */
@@ -1877,6 +1878,7 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
 
 static void le_ca_worker_main(void* arg) {
   le_engine* e = (le_engine*)arg;
+  le_platform_name_thread("segno-cache");
   le_flush_denormals(); /* renders round as the callback does */
   struct le_fx_cache* c = e->cache; /* stable: shutdown joins before free */
 #if defined(__linux__)

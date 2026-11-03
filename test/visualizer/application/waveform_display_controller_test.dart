@@ -19,6 +19,7 @@ class _Window implements WaveformWindowService {
   int closeFailures = 0;
   Completer<void>? closing;
   final frames = <String>[];
+  final progresses = <double>[];
   final readouts = <PerformanceReadout>[];
 
   @override
@@ -64,6 +65,7 @@ class _Window implements WaveformWindowService {
   @override
   Future<void> pushWaveform(Float32List samples, double progress, String name) {
     frames.add(name);
+    progresses.add(progress);
     final failure = failingFrame;
     failingFrame = null;
     return failure?.future ?? Future<void>.value();
@@ -83,16 +85,23 @@ void main() {
   late _Looper repository;
   late _Window window;
   late StreamController<LooperState> states;
+  late StreamController<Playhead> playheads;
   setUp(() {
     repository = _Looper();
     window = _Window();
     states = StreamController<LooperState>.broadcast();
+    playheads = StreamController<Playhead>.broadcast();
     when(() => repository.looperState).thenAnswer((_) => states.stream);
+    when(() => repository.playheads).thenAnswer((_) => playheads.stream);
+    when(() => repository.playhead).thenReturn(const Playhead());
     when(() => repository.lastState).thenReturn(
       const LooperState(tracks: [Track(), Track(channel: 1)]),
     );
   });
-  tearDown(() => states.close());
+  tearDown(() async {
+    await states.close();
+    await playheads.close();
+  });
 
   WaveformDisplayController build() => WaveformDisplayController(
     repository: repository,
@@ -183,6 +192,7 @@ void main() {
             expect(window.closes, 1);
             expect(errors, isEmpty);
             expect(states.hasListener, isFalse);
+            expect(playheads.hasListener, isFalse);
             clock.elapse(const Duration(seconds: 1));
             expect(window.frames, ['Track 1']);
             expect(window.readouts, isEmpty);
@@ -294,6 +304,52 @@ void main() {
         ..elapse(const Duration(milliseconds: 100));
       expect(window.frames, ['Track 1', 'Track 2']);
       expect(window.readouts.last.selected!.channel, 1);
+      unawaited(display.close());
+      clock.flushMicrotasks();
+    });
+  });
+
+  test('a moving playhead sends frames at most once per frame interval, '
+      'the last with the latest position', () {
+    fakeAsync((clock) {
+      final display = build()..start(enabled: true);
+      clock.flushMicrotasks();
+      expect(window.progresses, [0]);
+
+      // Three polls inside one interval: the first waits for the gate, and
+      // only the latest position goes out when it opens.
+      for (final position in [0.1, 0.2, 0.3]) {
+        when(
+          () => repository.playhead,
+        ).thenReturn(Playhead(tracks: [position, 0]));
+        playheads.add(Playhead(tracks: [position, 0]));
+        clock.flushMicrotasks();
+      }
+      expect(window.progresses, [0]);
+      clock.elapse(const Duration(milliseconds: 40));
+      expect(window.progresses, [0, 0.3]);
+
+      unawaited(display.close());
+      clock.flushMicrotasks();
+      expect(playheads.hasListener, isFalse);
+    });
+  });
+
+  test("another track's playhead sends no frame", () {
+    fakeAsync((clock) {
+      final display = build()..start(enabled: true);
+      clock.flushMicrotasks();
+      expect(window.frames, ['Track 1']);
+
+      // Track 2 plays; the selected track 1 stands still.
+      for (final position in [0.1, 0.2, 0.3]) {
+        playheads.add(Playhead(tracks: [0, position]));
+        clock
+          ..flushMicrotasks()
+          ..elapse(const Duration(milliseconds: 40));
+      }
+      expect(window.frames, ['Track 1']);
+
       unawaited(display.close());
       clock.flushMicrotasks();
     });

@@ -2607,7 +2607,7 @@ void main() {
               status: EngineStatus(isConnected: true),
               transport: TransportState(
                 looperMode: LooperMode.band,
-                masterPositionFrames: 10,
+                currentBeat: 1,
               ),
             ),
           ),

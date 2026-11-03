@@ -143,6 +143,10 @@ void main() {
     addTearDown(meterLevels.close);
     when(() => repository.meters).thenReturn(const MeterLevels());
     when(() => repository.meterLevels).thenAnswer((_) => meterLevels.stream);
+    when(() => repository.playhead).thenReturn(const Playhead());
+    when(
+      () => repository.playheads,
+    ).thenAnswer((_) => const Stream<Playhead>.empty());
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -1428,18 +1432,16 @@ void main() {
     testWidgets('a value-equal Track from an EARLIER poll is accepted', (
       tester,
     ) async {
-      // The instance a column is handed is a tick old by design: the slot
-      // above it only rebuilds when the STEADY facts change, so it keeps
-      // passing the projection from whichever poll last changed them, while
-      // `_project` builds a fresh `lanes` list literal every tick. The guard
-      // therefore has to be Equatable-deep — a shallow compare of the prop
-      // lists calls two value-equal projections different and red-screens the
-      // stage on the next theme rebuild.
+      // The slot above a column rebuilds only when its track changes, so it
+      // keeps passing the projection from whichever poll last changed it,
+      // while `_project` builds a fresh `lanes` list literal every poll. The
+      // guard therefore has to be Equatable-deep — a shallow compare of the
+      // prop lists calls two value-equal projections different and
+      // red-screens the stage on the next theme rebuild.
       // `List.of`, not a literal: a const literal would be canonicalised into
       // the same instance both times and make this test vacuous, which is
       // exactly what the analyzer would rather have here.
-      Track projected({required int position}) => Track(
-        positionFrames: position,
+      Track projected() => Track(
         lanes: List.of(const [Lane(inputChannel: 0)]),
         effects: List.of([BuiltInEffect(type: TrackEffectType.drive)]),
       );
@@ -1448,10 +1450,9 @@ void main() {
         tester,
         name: 'DRUMS',
         mode: InteractionMode.record,
-        track: projected(position: 0),
-        // Same facts, new lists, and a playhead that has moved since —
-        // exactly what the rig looks like one poll later.
-        liveTrack: projected(position: 480),
+        track: projected(),
+        // Same facts, new lists: what the rig looks like one poll later.
+        liveTrack: projected(),
       );
 
       expect(tester.takeException(), isNull);
