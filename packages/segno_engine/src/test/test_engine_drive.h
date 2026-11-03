@@ -125,10 +125,11 @@ static void test_distortion_matches_the_capture(void) {
 }
 
 /* The cabinet's response, with the curve near linear, is the 4x12"
- * capture's (s4/16) within 1.5 dB, relative to 1 kHz. */
+ * capture's (s4/16) within 1.5 dB, relative to 1 kHz, at 48 kHz, the
+ * Looper X's rate. */
 static void test_distortion_cabinet(void) {
   printf("test_distortion_cabinet\n");
-  const int sr = 96000;
+  const int sr = 48000;
   const int n = 1 << 15;
   float* in = (float*)calloc((size_t)n, sizeof(float));
   float* h = (float*)calloc((size_t)n, sizeof(float));
@@ -224,7 +225,8 @@ static void test_drive_on_a_lane(void) {
 /* The oversampled drives report their latency (#1547), and the snapshot
  * sums a chain's slots: an Overdrive after an octaver adds to the
  * octaver's, a bypassed one adds nothing, and the Distortion, which runs
- * at 1x at 96 kHz, adds nothing there. */
+ * at 1x at 96 kHz, adds there only the few frames of the half-band that
+ * keeps its curve's harmonics off its 48 kHz cabinet (le_hb). */
 static void test_drive_latency_sums_in_a_chain(void) {
   printf("test_drive_latency_sums_in_a_chain\n");
   le_engine* e = make_configured_engine(); /* 48 kHz */
@@ -257,7 +259,8 @@ static void test_drive_latency_sums_in_a_chain(void) {
   le_engine_set_monitor_input_fx_count(e, 0, 1);
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.fx_added_latency_frames == 0);
+  printf("  the Distortion at 96 kHz: %d frames\n", s.fx_added_latency_frames);
+  CHECK(s.fx_added_latency_frames > 0 && s.fx_added_latency_frames < 8);
   le_engine_destroy(e);
 }
 

@@ -412,7 +412,107 @@ static void test_degrade(void) {
   free(out);
 }
 
+/* At 96 kHz the Degrade runs its kernel at 48 kHz (#1547): not holding
+ * (50 kHz) and with the filter off, its impulse comes out the latency it
+ * reports late and its response is flat to 16 kHz; at 44.1 and 48 kHz it
+ * reports none and passes its input as it is. */
+static void test_degrade_halved(void) {
+  printf("test_degrade_halved\n");
+  const int rates[3] = {44100, 48000, 96000};
+  for (int k = 0; k < 3; ++k) {
+    const int sr = rates[k];
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = 1.0f; /* 50 kHz */
+    p[1] = 1.0f;
+    p[2] = 1.0f;
+    const int n = 4096;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* h = (float*)calloc((size_t)n, sizeof(float));
+    in[0] = 1e-3f;
+    le_fx_state* fx = dyn_state(LE_FX_DEGRADE, sr);
+    const int lat = le_fx_added_latency(fx, 0, LE_FX_DEGRADE, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_DEGRADE, p, sr, in, h, NULL, n, &clock);
+    dyn_free(fx);
+    int peak = 0;
+    for (int i = 1; i < n; ++i) {
+      if (fabsf(h[i]) > fabsf(h[peak])) peak = i;
+    }
+    const double at1k = lofi_db(LE_FX_DEGRADE, p, sr, 1000.0);
+    const double at16k = lofi_db(LE_FX_DEGRADE, p, sr, 16000.0);
+    printf("  %d Hz: latency %d, impulse at %d, 1 kHz %.3f dB, 16 kHz %.3f dB\n",
+           sr, lat, peak, at1k, at16k);
+    CHECK(sr == 96000 ? lat > 0 : lat == 0);
+    CHECK(abs(peak - lat) <= 1);
+    CHECK(fabs(at1k) < 0.02);
+    CHECK(fabs(at16k - at1k) < 0.1);
+    free(in);
+    free(h);
+  }
+}
+
 /* ---- LPF ---- */
+
+/* At 96 kHz the LPF runs its kernel at 48 kHz (#1547): off (its cutoff at
+ * the top), its impulse comes out the latency it reports late and its
+ * response is flat to 16 kHz; at 44.1 and 48 kHz it reports none. And
+ * oscillating at 96 kHz it rings at the level it rings at 48 kHz. */
+static void test_lpf_halved(void) {
+  printf("test_lpf_halved\n");
+  const int rates[3] = {44100, 48000, 96000};
+  for (int k = 0; k < 3; ++k) {
+    const int sr = rates[k];
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = 1.0f;
+    const int n = 4096;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* h = (float*)calloc((size_t)n, sizeof(float));
+    in[0] = 1e-3f;
+    le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
+    const int lat = le_fx_added_latency(fx, 0, LE_FX_LPF, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_LPF, p, sr, in, h, NULL, n, &clock);
+    dyn_free(fx);
+    int peak = 0;
+    for (int i = 1; i < n; ++i) {
+      if (fabsf(h[i]) > fabsf(h[peak])) peak = i;
+    }
+    const double at1k = lofi_db(LE_FX_LPF, p, sr, 1000.0);
+    const double at16k = lofi_db(LE_FX_LPF, p, sr, 16000.0);
+    printf("  %d Hz: latency %d, impulse at %d, 1 kHz %.3f dB, 16 kHz %.3f dB\n",
+           sr, lat, peak, at1k, at16k);
+    CHECK(sr == 96000 ? lat > 0 : lat == 0);
+    CHECK(abs(peak - lat) <= 1);
+    CHECK(fabs(at1k) < 0.02);
+    CHECK(fabs(at16k - at1k) < 0.1);
+    free(in);
+    free(h);
+  }
+  /* Oscillating in silence: the same peak at 48 and 96 kHz. */
+  double peak_at[2];
+  for (int k = 0; k < 2; ++k) {
+    const int sr = k == 0 ? 48000 : 96000;
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = dyn_setting(LE_FX_LPF, 0, 632.0);
+    p[1] = 1.0f;
+    const int n = 2 * sr;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* out = (float*)calloc((size_t)n, sizeof(float));
+    le_fx_state* fx = dyn_state(LE_FX_LPF, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_LPF, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    float pk = 0.0f;
+    for (int i = n / 2; i < n; ++i) pk = fabsf(out[i]) > pk ? fabsf(out[i]) : pk;
+    peak_at[k] = pk;
+    free(in);
+    free(out);
+  }
+  printf("  oscillating: peak %.3f at 48 kHz, %.3f at 96 kHz\n", peak_at[0],
+         peak_at[1]);
+  CHECK(peak_at[0] > 0.1 && fabs(peak_at[1] - peak_at[0]) < 0.05 * peak_at[0]);
+}
+
 
 /* The ladder's small-signal response against the Looper X's noise
  * responses (#1445) at cutoffs of 112, 632 and 3557 Hz, resonance 0 and
@@ -643,10 +743,13 @@ static void test_lofi_offline_equals_live(void) {
   v[2] = 0.0f;
   CHECK(!le_fx_entry_free_running(LE_FX_VINYL, v, 48000));
   le_fx_defaults(LE_FX_DEGRADE, v);
-  /* 50 kHz: not holding at 48 kHz, holding every other sample at 96. */
+  /* 50 kHz: not holding at 48 kHz, nor at 96, where the kernel runs at
+   * 48 (#1547). */
   CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 48000));
-  CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v, 96000));
+  CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 96000));
+  /* 46 kHz: holding at 96 kHz (its kernel at 48), not at 44.1. */
   v[0] = dyn_setting(LE_FX_DEGRADE, 0, 46000.0);
+  CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v, 96000));
   CHECK(!le_fx_entry_free_running(LE_FX_DEGRADE, v, 44100));
   v[0] = 0.4f;
   CHECK(le_fx_entry_free_running(LE_FX_DEGRADE, v, 48000));
@@ -681,6 +784,8 @@ static void run_lofi_tests(void) {
   test_vinyl_limiter_release();
   test_vinyl_noise();
   test_degrade();
+  test_degrade_halved();
+  test_lpf_halved();
   test_lpf_response();
   test_lpf_oscillates();
   test_lofi_cache();

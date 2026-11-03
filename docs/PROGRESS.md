@@ -72,7 +72,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1547 | Every effect the same at any sample rate and block size: part 1 (the matrix test) merged; part 2 (oversampling the Overdrive, Distortion, Vinyl and Amp+Cab, the Vinyl's DC out) in review; console cost table owed; part 3 (the rest) next | in-review | auto | `claude/fx-invariance-1547-p2` |
+| #1547 | Every effect the same at any sample rate and block size: parts 1 (the matrix test) and 2 (oversampling) merged; part 3a (filter responses at 44.1 and 96 kHz, the console's oversampling costs) in review; 3b tails, 3c pitch (#1467), 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3a` |
 
 ---
 
@@ -1427,7 +1427,13 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   `bash packages/segno_engine/src/test/bench/bench_fx_matrix.sh` (about 2.5
   minutes on an M4 Pro, `--kind NAME` for one kind, `--detail` for every
   setting's figures); `run_native_tests.sh` runs its `--ci` subset, one
-  setting a kind. What fails today is the `k_known` list in
+  setting a kind. At 96 kHz the kinds' filter sections run their 48 kHz
+  designs on alternate samples (`le_rs_phases` in `engine_fx.c`), exact
+  below 24 kHz; at 44.1 kHz they take fitted corrections from
+  `src/core/engine_fx_eq_rate.inc` (the EQ, `tool/eq_rate_fit.py`) and
+  `src/core/engine_fx_rate.inc` (the rest, `tool/rate_fit.py`; one table
+  at a time with `python3 rate_fit.py SHAPE 44100`, numpy and scipy, a
+  few minutes each). What fails today is the `k_known` list in
   `bench_fx_matrix.c`, each entry with a ceiling: a new failure, or a
   listed one past its ceiling, fails the run, and in the full run so does a
   listed one that now passes. The settings come from
