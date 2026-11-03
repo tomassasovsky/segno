@@ -54,6 +54,7 @@
 
 #include "engine_core.h"    /* le_effective_state, le_lanes_active */
 #include "engine_private.h" /* le_engine, load/store helpers */
+#include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_restore.h"
 #include "restore_declip.h"  /* le_declip_process + scratch */
 #include "restore_halfband.h" /* 2:1 decimate / interpolate (96 k denoise leg) */
@@ -233,6 +234,7 @@ static void le_rs_render(le_engine* e, struct le_restore* r,
 
 static void le_rs_worker_main(void* arg) {
   le_engine* e = (le_engine*)arg;
+  le_platform_name_thread("segno-restore");
   struct le_restore* r = e->restore; /* stable: shutdown joins before free */
   /* One scratch + denoise state for the worker's life (the declip scratch is
    * ~33 KB; a per-job alloc would churn). NULL is tolerated downstream. */

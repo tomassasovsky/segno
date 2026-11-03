@@ -173,7 +173,7 @@ void main() {
         expect(after.tracks[1].state, TrackState.stopped);
         expect(after.tracks[0].lengthFrames, 64);
         expect(after.tracks[0].undoDepth, 1);
-        expect(after.tracks[0].positionFrames, 0);
+        expect(engine.snapshot().tracks[0].positionFrames, 0);
         expect(engine.exportTrack(0), pcm0);
         expect(engine.exportTrack(1), pcm1);
         // The Fade froze where the last callback left it (1 - 12000/48000).

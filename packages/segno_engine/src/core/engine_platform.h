@@ -77,6 +77,15 @@ void le_platform_after_device_open(le_engine* engine);
 /* (Linux) It also pins the callback thread to the core le_engine_set_fx_
  * workers names for it, when it names one (#1515). */
 
+/* Names the calling thread, at most 15 characters ("segno-cache"), so top -H,
+ * segno-prof and the benches can tell the engine's threads apart. Each engine
+ * thread names itself as it starts: an unnamed thread keeps the name of the
+ * thread that created it, which on the console is a Dart UI isolate, so the
+ * engine's threads all read as io.flutter.ui and per-thread figures charged
+ * their time to the UI (#1563). Linux also names the audio thread
+ * (segno-audio) in le_platform_after_device_open; miniaudio starts it. */
+void le_platform_name_thread(const char* name);
+
 /* ---- Effects workers (#1515, engine_workers.c) ---- */
 
 /* Whether the callback runs real-time (the ALSA appliance with

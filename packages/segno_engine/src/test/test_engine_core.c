@@ -17,11 +17,12 @@
  * src/CMakeLists.txt (minus the MIDI TUs this suite does not link).
  */
 /* _GNU_SOURCE, and it has to be here — before the first include, since
- * features.h latches on the first one. It buys exactly one symbol: RTLD_NEXT,
+ * features.h latches on the first one. It buys two symbols: RTLD_NEXT,
  * which glibc hides behind it and which the fopen interposer further down
- * needs to reach the real fopen. macOS and MinGW define RTLD_NEXT (or need no
- * dlfcn at all) regardless, so this is a Linux-only concession, scoped to this
- * TU rather than added to the build's global flags. */
+ * needs to reach the real fopen, and pthread_getname_np (the thread-name
+ * test). macOS and MinGW define RTLD_NEXT (or need no dlfcn at all)
+ * regardless, so this is a Linux-only concession, scoped to this TU rather
+ * than added to the build's global flags. */
 #if defined(__linux__) && !defined(_GNU_SOURCE)
 #define _GNU_SOURCE 1
 #endif
@@ -39928,7 +39929,25 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_rt_memory.h"
 #include "test_engine_fx_workers.h"
 
+/* le_platform_name_thread names the thread that calls it (#1563): per-thread
+ * tools on the console read these names, and an unnamed engine thread reads
+ * as the Dart UI thread that started it. */
+static void* name_thread_probe(void* out) {
+  le_platform_name_thread("segno-probe");
+  (void)pthread_getname_np(pthread_self(), (char*)out, 16);
+  return NULL;
+}
+
+static void test_platform_names_the_calling_thread(void) {
+  char name[16] = {0};
+  pthread_t thread;
+  CHECK(pthread_create(&thread, NULL, name_thread_probe, name) == 0);
+  CHECK(pthread_join(thread, NULL) == 0);
+  CHECK(strcmp(name, "segno-probe") == 0);
+}
+
 int main(void) {
+  test_platform_names_the_calling_thread();
   run_rt_memory_tests();
   if (getenv("SEGNO_RT_MEMORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_fx_workers_tests();

@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h> /* PR_SET_NAME */
 #include <time.h>
 #include <unistd.h>
 
@@ -133,6 +134,10 @@ static int le_alsa_find_source(snd_seq_t* seq, const char* id, int self,
 
 static void* le_alsa_midi_thread(void* arg) {
   le_alsa_midi_state* st = (le_alsa_midi_state*)arg;
+  /* Named like the engine's threads (le_platform_name_thread, which the MIDI
+   * suite does not link): unnamed, it would read as the Dart UI thread that
+   * opened it. */
+  (void)prctl(PR_SET_NAME, "segno-midi", 0, 0, 0);
   const int seq_fds = snd_seq_poll_descriptors_count(st->seq, POLLIN);
   struct pollfd* pfds =
       (struct pollfd*)calloc((size_t)seq_fds + 1, sizeof(struct pollfd));

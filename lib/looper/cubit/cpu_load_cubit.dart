@@ -9,7 +9,7 @@ import 'package:cpu_load_repository/cpu_load_repository.dart';
 ///
 /// Created by the readout itself, so the repository samples `/proc/stat`
 /// only while the bar is on screen. Emits only when the displayed figure
-/// changes, the way `MeterCubit` does for the meters (#1304): a steady load
+/// changes, the way `LiveCubit` does for the meters (#1304): a steady load
 /// rebuilds nothing.
 class CpuLoadCubit extends Cubit<int?> {
   /// Creates a [CpuLoadCubit] following [repository].
