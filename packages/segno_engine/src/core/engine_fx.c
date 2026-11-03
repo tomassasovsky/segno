@@ -5123,48 +5123,41 @@ static void fx_wah_kprocess(void* ks, float* l, float* r) {
  * A waveshaper's harmonics above the rate's Nyquist fold back under it as
  * inharmonic tones (#1540). The Overdrive, Distortion, Vinyl and Amp+Cab
  * run their curves at a multiple of the rate: each 2x stage is a polyphase
- * half-band FIR, up before the curve and down after it, cascaded for 4x
+ * IIR half-band, up before the curve and down after it, cascaded for 4x
  * and 8x. The linear filters around a curve stay at the rate.
  *
- * Each stage's half-band is a Kaiser-windowed sinc, designed when the rate
- * is set: flat to LE_OS_PASS_HZ (or 0.42 of a lower rate), at least
- * LE_OS_ATT_DB down from the image of that edge, with as few taps as that
- * takes. The first stage, whose band edges are closest, takes the most;
- * every stage after it has an octave more room and takes few. Linear phase,
- * so the whole path runs a fixed number of frames late, which the kind
- * reports as its latency (le_os_latency).
+ * The half-band is Laurent de Soras's (HIIR): two paths of first-order
+ * allpass sections in z^2, H(z) = (A0(z^2) + z^-1 A1(z^2)) / 2, its
+ * coefficients from his elliptic design (PolyphaseIir2Designer). Each
+ * stage is designed when the rate is set: flat to LE_OS_PASS_HZ (or 0.42
+ * of a lower rate), at least LE_OS_ATT_DB down from the image of that
+ * edge, with as few coefficients as that takes (6 for the first stage at
+ * 44.1 and 48 kHz, 3 or 4 after it). It is minimum phase: the whole path
+ * runs about 4 frames late at 48 kHz, where a linear-phase FIR of the same
+ * stopband ran 33, and its phase turns only near the top of the band,
+ * which a drive does not let through anyway. The kind reports that delay
+ * as its latency (le_os_latency).
  *
- * State per channel: each stage's up history, and its down's even and odd
- * histories, each kept twice over so a read never wraps. Nothing is
- * allocated: the arrays are sized for LE_OS_MAX_STAGES stages of up to
- * LE_OS_MAX_K tap pairs, inside the kind's block. */
+ * State per channel and stage: each section's last input and output, for
+ * the way up and the way down. Nothing is allocated: the arrays are sized
+ * for LE_OS_MAX_STAGES stages of LE_OS_MAX_COEFS sections, inside the
+ * kind's block. */
 #define LE_OS_MAX_STAGES 3 /* up to 8x */
-#define LE_OS_MAX_K 16     /* tap pairs a side: 63 taps */
+#define LE_OS_MAX_COEFS 8
 #define LE_OS_PASS_HZ 20000.0
 #define LE_OS_ATT_DB 70.0
 
-typedef struct le_os_hist {
-  float x[4 * LE_OS_MAX_K]; /* the last 2k samples, twice over */
-  int32_t p;
-} le_os_hist;
+typedef struct le_os_path {
+  float x[LE_OS_MAX_COEFS], y[LE_OS_MAX_COEFS]; /* per section */
+} le_os_path;
 
 typedef struct le_os {
   int32_t sr;     /* the rate the design is for; 0: none yet */
   int32_t stages; /* log2 of the factor */
-  int32_t k[LE_OS_MAX_STAGES];
-  float h[LE_OS_MAX_STAGES][LE_OS_MAX_K]; /* the taps at +-(2i + 1) */
-  le_os_hist up[2][LE_OS_MAX_STAGES];
-  le_os_hist de[2][LE_OS_MAX_STAGES], dn[2][LE_OS_MAX_STAGES];
+  int32_t n[LE_OS_MAX_STAGES];                /* coefficients a stage */
+  float c[LE_OS_MAX_STAGES][LE_OS_MAX_COEFS]; /* even: A0, odd: A1 */
+  le_os_path up[2][LE_OS_MAX_STAGES], down[2][LE_OS_MAX_STAGES];
 } le_os;
-
-static double le_os_i0(double x) {
-  double sum = 1.0, term = 1.0;
-  for (int k = 1; k < 40; ++k) {
-    term *= (x / (2.0 * k)) * (x / (2.0 * k));
-    sum += term;
-  }
-  return sum;
-}
 
 /* The pass edge at [sr]: LE_OS_PASS_HZ, or 0.42 of a rate too low for it. */
 static double le_os_pass_hz(int sr) {
@@ -5172,100 +5165,106 @@ static double le_os_pass_hz(int sr) {
   return LE_OS_PASS_HZ > 0.42 * rate ? 0.42 * rate : LE_OS_PASS_HZ;
 }
 
-/* Stage [s]'s tap pairs a side at [sr]: Kaiser's estimate of the length that
- * holds LE_OS_ATT_DB across the band from the pass edge to its image. */
-static int le_os_k(int sr, int s) {
+/* Stage [s]'s coefficients at [sr], into [c]; returns how many. De Soras's
+ * design: the transition band, as a share of the upper rate, from the pass
+ * edge to its image; the elliptic order that holds LE_OS_ATT_DB over it;
+ * each coefficient from the elliptic functions' series (summed until their
+ * terms are below what a float carries). */
+static int le_os_coefs(int sr, int s, float* c) {
+  const double pi = 3.14159265358979323846;
   const double rate = (double)(sr > 0 ? sr : 48000);
-  const double fp = le_os_pass_hz(sr);
-  const double in = rate * (double)(1 << s); /* the stage's lower rate */
-  /* The band edge and its image, fp and in - fp, over the upper rate. */
-  const double dw = (in - 2.0 * fp) / (2.0 * in);
-  const double n = (LE_OS_ATT_DB - 7.95) / (14.36 * dw) + 1.0;
-  int k = (int)ceil((n + 1.0) / 4.0);
-  if (k < 2) k = 2;
-  if (k > LE_OS_MAX_K) k = LE_OS_MAX_K;
-  return k;
+  const double tbw = 0.25 - le_os_pass_hz(sr) / (2.0 * rate * (double)(1 << s));
+  double k = tan((1.0 - 2.0 * tbw) * pi / 4.0);
+  k *= k;
+  const double kr = pow(1.0 - k * k, 0.25);
+  const double e = 0.5 * (1.0 - kr) / (1.0 + kr);
+  const double e4 = e * e * e * e;
+  const double q = e * (1.0 + e4 * (2.0 + e4 * (15.0 + 150.0 * e4)));
+  const double att = pow(10.0, -LE_OS_ATT_DB / 10.0);
+  const double a = att / (1.0 - att);
+  int order = (int)ceil(log(a * a / 16.0) / log(q));
+  if ((order & 1) == 0) ++order;
+  if (order < 3) order = 3;
+  int n = (order - 1) / 2;
+  if (n > LE_OS_MAX_COEFS) n = LE_OS_MAX_COEFS;
+  for (int i = 0; i < n; ++i) {
+    const double m = (double)(i + 1);
+    double num = 0.0, den = 0.0;
+    for (int j = 0; j < 40; ++j) {
+      const double t = pow(q, (double)(j * (j + 1))) *
+                       sin((2.0 * j + 1.0) * m * pi / order);
+      num += (j & 1) ? -t : t;
+      if (fabs(t) < 1e-30) break;
+    }
+    for (int j = 1; j < 40; ++j) {
+      const double t = pow(q, (double)(j * j)) * cos(2.0 * j * m * pi / order);
+      den += (j & 1) ? -t : t;
+      if (fabs(t) < 1e-30) break;
+    }
+    const double ww = num * pow(q, 0.25) / (den + 0.5);
+    const double w2 = ww * ww;
+    const double x = sqrt((1.0 - w2 * k) * (1.0 - w2 / k)) / (1.0 + w2);
+    c[i] = (float)((1.0 - x) / (1.0 + x));
+  }
+  return n;
 }
 
-/* Designs [o] for 2^[stages] times [sr] and clears its histories. Audio
- * thread (a kind's update, on a new rate): a few thousand flops, once. */
+/* Designs [o] for 2^[stages] times [sr] and clears its state. Audio thread
+ * (a kind's update, on a new rate): a few hundred operations, once. */
 static void le_os_design(le_os* o, int sr, int stages) {
   memset(o, 0, sizeof(*o));
   o->sr = sr;
   o->stages = stages;
-  const double beta = 0.1102 * (LE_OS_ATT_DB - 8.7);
-  const double i0_beta = le_os_i0(beta);
-  for (int s = 0; s < stages; ++s) {
-    const int k = le_os_k(sr, s);
-    o->k[s] = k;
-    double sum = 0.0;
-    for (int i = 0; i < k; ++i) {
-      const double t = 2.0 * i + 1.0;
-      const double r = t / (2.0 * k);
-      const double w = le_os_i0(beta * sqrt(1.0 - r * r)) / i0_beta;
-      const double v = sin(3.14159265358979323846 * t / 2.0) /
-                       (3.14159265358979323846 * t) * w;
-      o->h[s][i] = (float)v;
-      sum += 2.0 * v;
-    }
-    /* The odd taps sum to 1/2, with the centre's 1/2: unity at DC. */
-    for (int i = 0; i < k; ++i) o->h[s][i] = (float)(o->h[s][i] * 0.5 / sum);
-  }
+  for (int s = 0; s < stages; ++s) o->n[s] = le_os_coefs(sr, s, o->c[s]);
 }
 
-/* Empties [o]'s histories, keeping its design. */
+/* Empties [o]'s state, keeping its design. */
 static void le_os_clear(le_os* o) {
   memset(o->up, 0, sizeof(o->up));
-  memset(o->de, 0, sizeof(o->de));
-  memset(o->dn, 0, sizeof(o->dn));
+  memset(o->down, 0, sizeof(o->down));
 }
 
-/* The frames the up and down pair delays a signal: each stage's pair runs
- * 2k - 1 samples of its lower rate late. Rounded to the nearest frame. */
+/* The frames the up and down pair delays a signal at low frequencies,
+ * rounded: each stage's half-band delays by the mean of its two paths
+ * (a section (c + z^-2) / (1 + c z^-2) by 2 (1 - c) / (1 + c) samples of
+ * the upper rate at DC, the odd path one more), once up and once down. */
 static int le_os_latency(int sr, int stages) {
   double d = 0.0;
   for (int s = 0; s < stages; ++s) {
-    d += (2.0 * le_os_k(sr, s) - 1.0) / (double)(1 << s);
+    float c[LE_OS_MAX_COEFS];
+    const int n = le_os_coefs(sr, s, c);
+    double t[2] = {0.0, 1.0};
+    for (int i = 0; i < n; ++i) t[i & 1] += 2.0 * (1.0 - c[i]) / (1.0 + c[i]);
+    /* Up and down, in samples of the upper rate, over 2^(s + 1). */
+    d += (t[0] + t[1]) / (double)(1 << s) / 2.0;
   }
   return (int)(d + 0.5);
 }
 
-static inline const float* le_os_push(le_os_hist* h, int k, float v) {
-  const int n = 2 * k;
-  h->p = h->p == 0 ? n - 1 : h->p - 1;
-  h->x[h->p] = v;
-  h->x[h->p + n] = v;
-  return h->x + h->p; /* [0] the newest, [n - 1] the oldest */
+/* [x] through path [p]'s sections (every other coefficient of [c], from
+ * [first]), each y = c (x - y') + x' in the path's own rate. */
+static inline float le_os_path_run(const float* c, int n, int first,
+                                   le_os_path* p, float x) {
+  for (int i = first; i < n; i += 2) {
+    const float y = c[i] * (x - p->y[i]) + p->x[i];
+    p->x[i] = x;
+    p->y[i] = y;
+    x = y;
+  }
+  return x;
 }
 
-/* One stage up: [x] to two samples at twice the rate, older first. */
-static inline void le_os_up1(const float* h, int k, le_os_hist* st, float x,
-                             float out[2]) {
-  const float* b = le_os_push(st, k, x);
-  float acc = 0.0f;
-  for (int i = 0; i < k; ++i) acc += h[i] * (b[k - 1 - i] + b[k + i]);
-  out[0] = b[k];
-  out[1] = 2.0f * acc;
-}
-
-/* One stage down: two samples, older first, to one at half the rate. */
-static inline float le_os_down1(const float* h, int k, le_os_hist* e,
-                                le_os_hist* od, const float in[2]) {
-  const float* be = le_os_push(e, k, in[0]);
-  const float* bo = le_os_push(od, k, in[1]);
-  float acc = 0.0f;
-  for (int i = 0; i < k; ++i) acc += h[i] * (bo[k - 1 - i] + bo[k + i]);
-  return 0.5f * be[k - 1] + acc;
-}
-
-/* [x] on channel [ch] up to 2^stages samples, in time order, into [out]. */
+/* [x] on channel [ch] up to 2^stages samples, in time order, into [out]:
+ * each stage's even output is A0's, its odd one A1's. */
 static inline int le_os_up(le_os* o, int ch, float x, float* out) {
   out[0] = x;
   int n = 1;
   for (int s = 0; s < o->stages; ++s) {
     float tmp[1 << LE_OS_MAX_STAGES];
+    le_os_path* p = &o->up[ch][s];
     for (int i = 0; i < n; ++i) {
-      le_os_up1(o->h[s], o->k[s], &o->up[ch][s], out[i], tmp + 2 * i);
+      tmp[2 * i] = le_os_path_run(o->c[s], o->n[s], 0, p, out[i]);
+      tmp[2 * i + 1] = le_os_path_run(o->c[s], o->n[s], 1, p, out[i]);
     }
     n *= 2;
     for (int i = 0; i < n; ++i) out[i] = tmp[i];
@@ -5274,14 +5273,17 @@ static inline int le_os_up(le_os* o, int ch, float x, float* out) {
 }
 
 /* The 2^stages samples in [in] (time order) on channel [ch] back down to
- * one; [in] is used as scratch. */
+ * one: each pair's newer sample through A0, its older through A1, halved.
+ * [in] is used as scratch. */
 static inline float le_os_down(le_os* o, int ch, float* in) {
   int n = 1 << o->stages;
   for (int s = o->stages - 1; s >= 0; --s) {
     n /= 2;
+    le_os_path* p = &o->down[ch][s];
     for (int i = 0; i < n; ++i) {
-      in[i] = le_os_down1(o->h[s], o->k[s], &o->de[ch][s], &o->dn[ch][s],
-                          in + 2 * i);
+      const float a0 = le_os_path_run(o->c[s], o->n[s], 0, p, in[2 * i + 1]);
+      const float a1 = le_os_path_run(o->c[s], o->n[s], 1, p, in[2 * i]);
+      in[i] = 0.5f * (a0 + a1);
     }
   }
   return in[0];
@@ -5295,19 +5297,19 @@ static inline float le_os_down(le_os* o, int ch, float* in) {
  * 44.1 / 48 / 96 kHz:
  *
  *   Overdrive   -34.9 -42.3 -50.3 -62.3 / -35.7 -43.0 -51.4 -64.8 /
- *               -42.9 -51.3 -64.7 -88.6
- *   Amp+Cab     -24.9 -40.4 -58.5 -78.2 / -26.8 -41.9 -59.9 -80.6 /
+ *               -42.9 -51.3 -64.7 -88.4
+ *   Amp+Cab     -24.9 -40.4 -58.5 -76.5 / -26.8 -41.9 -59.9 -78.6 /
  *               -42.4 -60.2 -72.5
- *   Vinyl       -44.5 -58.1 -70.1 / -45.9 -59.8 -71.5 / -59.9 -72.3
- *   Distortion  -53.8 -77.2 / -55.7 -80.6 / -80.3
+ *   Vinyl       -44.5 -58.2 -70.4 / -45.9 -59.8 -72.0 / -59.9 -72.4
+ *   Distortion  -53.8 -77.2 / -55.7 -80.5 / -80.3
  *
  * The Overdrive's clipped part (G up to 680 times the input into a tanh)
  * is close to a square wave, so each doubling lowers its aliasing by only
  * 8 dB.
  * First-order antiderivative anti-aliasing on that tanh (its antiderivative
  * log cosh) reaches -69 dB at 2x and 44.1 kHz, but its exp and log1p in
- * double on every sample cost more than 8x plain: 280 against 237 ns a
- * frame at 48 kHz on an M4 Pro. The curves stay where they are:
+ * double on every sample cost more than 8x plain: about 280 against 233 ns
+ * a frame at 48 kHz on an M4 Pro. The curves stay where they are:
  * oversampling only takes away what folded back. A rate past 96 kHz runs
  * the 96 kHz factor. */
 static int le_os_stages(int32_t type, int sr) {

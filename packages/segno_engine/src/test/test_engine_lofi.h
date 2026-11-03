@@ -169,7 +169,18 @@ static void test_vinyl_limiter_release(void) {
   for (int k = 0; k < 3; ++k) {
     const int at = sr / 2 + (int)(want[k][0] * sr) - 240;
     const double a = k == 0 ? 0.2512 : 0.003981;
-    const double g = lofi_amp(out, at, 480, 1000.0, sr) / a / 0.5;
+    /* Read under a Hann window: once the loud tone stops, the DC blocker
+     * (#1547) lets the copy's DC fall away over tens of milliseconds, a
+     * slow swing the plain correlation would mix into the quiet tone. */
+    double re = 0.0, im = 0.0, wsum = 0.0;
+    for (int i = 0; i < 480; ++i) {
+      const double w = 0.5 - 0.5 * cos(2.0 * M_PI * (i + 0.5) / 480.0);
+      const double ph = 2.0 * M_PI * 1000.0 * (at + i) / sr;
+      re += w * out[at + i] * cos(ph);
+      im += w * out[at + i] * sin(ph);
+      wsum += w;
+    }
+    const double g = 2.0 * sqrt(re * re + im * im) / wsum / a / 0.5;
     printf("  %+.2f s: gain %.3f (capture %.3f)\n", want[k][0], g, want[k][1]);
     CHECK(fabs(g - want[k][1]) < 0.06);
   }

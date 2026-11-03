@@ -138,7 +138,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,550 ns a frame at 96 kHz,
+    // Ed's Rack, the plan's unit (section 7): 3,402 ns a frame at 96 kHz,
     // 2,665 in the plan, before its Overdrive and Amp+Cab ran oversampled
     // (#1547).
     final rack = [
@@ -173,7 +173,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the plan's table assumes", () {
-      expect(rackNs, 3550);
+      expect(rackNs, 3402);
       expect(fxBudgetNs(96000), 7192);
     });
 
@@ -206,11 +206,11 @@ void main() {
     });
 
     // The plan's table admitted 2, 4, 6 and 7 at its 2,665 ns.
-    test('admits 2, 3, 4 and 4 racks with 0 to 3 workers', () {
+    test('admits 2, 3, 4 and 5 racks with 0 to 3 workers', () {
       expect(racksAdmitted(0), 2);
       expect(racksAdmitted(1), 3);
       expect(racksAdmitted(2), 4);
-      expect(racksAdmitted(3), 4);
+      expect(racksAdmitted(3), 5);
     });
 
     group('LooperRepository', () {
