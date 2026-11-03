@@ -21692,10 +21692,6 @@ static void test_octaver_psola_sliced_detection(void) {
       le_fx_octaver_seed_settled(fx, 0, params[0]);
       le_octaver_state* o = &fx->oct[0][0];
       const le_psola_pass* ps = le_ps(o);
-      /* A pass starts every max(1, D / 2) hops, D = ceil(rate / 24 kHz), at
-       * the kernel's rate. */
-      int every = ((LE_OCT_RATE + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
-      if (every < 1) every = 1;
       int passes = 0;
       int overran = 0;
       float* out = (float*)malloc(sizeof(float) * (size_t)sr);
@@ -21708,16 +21704,18 @@ static void test_octaver_psola_sliced_detection(void) {
           x += 0.3f / (float)h *
                sinf(2.0f * LE_FFT_PI * f0 * (float)h * (float)i / (float)sr);
         }
-        /* A pass starts on the tick that takes the counter to 0 on its
-         * hop; the one before it must have finished. */
-        if (sr == LE_OCT_RATE && o->hop_count == 1 && ps->hops == every - 1) {
-          ++passes;
-          if (ps->phase != 0) ++overran;
-        }
+        /* A pass starts every hop (it moves the window's end); the one
+         * before it must have finished. */
+        const int32_t was_end = ps->end;
+        const int32_t was_phase = ps->phase;
         float l = x;
         float r = x;
         fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, on);
         out[i] = l;
+        if (sr == LE_OCT_RATE && ps->end != was_end) {
+          ++passes;
+          if (was_phase != 0) ++overran;
+        }
       }
       /* The output's pitch, over its last 0.25 s: +7 semitones. Measured at
        * 48 kHz or under (a boxcar decimation), since the one-shot detector's
@@ -21748,7 +21746,7 @@ static void test_octaver_psola_sliced_detection(void) {
              (double)out_cents);
       CHECK(fabsf(out_cents) < 20.0f);
       if (sr == LE_OCT_RATE) {
-        CHECK(passes > 100 / every);
+        CHECK(passes > 100);
         CHECK(overran <= 1); /* the first may meet a reset pass, never more */
       }
       CHECK(err < (f0 > 100.0f ? 0.003f : 0.01f));
@@ -21806,6 +21804,20 @@ static void test_octaver_resampled_hop_period(void) {
   CHECK(le_fx_hop_period(48000) == LE_PV_HOP);
   CHECK(le_fx_hop_period(96000) == 512);
   CHECK(le_fx_hop_period(44100) == 1176);
+  /* The engine works its own out when it is configured. */
+  {
+    le_engine* e = le_engine_create();
+    CHECK(e != NULL);
+    if (e == NULL) return;
+    CHECK(e->fx_hop_period == LE_PV_HOP);
+    const int32_t rates[] = {44100, 96000, 48000};
+    const uint32_t periods[] = {1176u, 512u, (uint32_t)LE_PV_HOP};
+    for (int i = 0; i < 3; ++i) {
+      CHECK(le_engine_configure(e, rates[i], 1, 2, rates[i]) == LE_OK);
+      CHECK(e->fx_hop_period == periods[i]);
+    }
+    le_engine_destroy(e);
+  }
   /* The latency a prepared slot reports: the kernel's 1216 frames at
    * 48 kHz and both filters' delays; none for one not prepared at the
    * rate, which passes its input. */
