@@ -34,8 +34,13 @@ void main() {
         _cost(TrackEffectType.dualOctaver),
         greaterThan(fxEntryCostNs(octaver)),
       );
+      // PSOLA, in the octaver or the Smart Tune, charges per frame by the
+      // rate.
       final psola = octaver.copyWith(params: [...octaver.params]..[3] = 1);
-      expect(fxEntryCostNs(psola), (kFxPsolaCostUs * 1000 / 64).ceil());
+      expect(fxEntryCostNs(psola), kFxPsolaCostNs.high);
+      expect(fxEntryCostNs(psola, sampleRate: 48000), kFxPsolaCostNs.low);
+      expect(fxEntryCostNs(psola, period: 32), kFxPsolaCostNs.high);
+      expect(_cost(TrackEffectType.smartTune), kFxPsolaCostNs.high);
       expect(
         fxEntryCostNs(
           const PluginEffect(
@@ -58,6 +63,17 @@ void main() {
       );
       // A longer block runs several hop stages: no cheaper per frame.
       expect(fxEntryCostNs(octaver, period: 256), fxEntryCostNs(octaver));
+      // At 44.1 kHz a 64-frame block carries 69.7 of the kernel's 48 kHz
+      // samples, so it can take two quarters; a 32-frame block only one.
+      expect(
+        fxEntryCostNs(octaver, sampleRate: 44100),
+        (2 * octaverUs * 1000 / 64).ceil(),
+      );
+      expect(
+        fxEntryCostNs(octaver, period: 32, sampleRate: 44100),
+        (octaverUs * 1000 / 32).ceil(),
+      );
+      expect(fxEntryCostNs(octaver, sampleRate: 48000), fxEntryCostNs(octaver));
       expect(fxEntryCostNs(delay, period: 32), fxEntryCostNs(delay));
       expect(
         fxBudgetNs(96000, period: 32),
@@ -145,7 +161,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,162 ns a frame at 96 kHz
+    // Ed's Rack, the plan's unit (section 7): 3,275 ns a frame at 96 kHz
     // on the console's own table (#1508), 2,665 in the plan.
     final rack = [
       for (final type in [
@@ -179,7 +195,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 3162);
+      expect(rackNs, 3275);
       expect(fxBudgetNs(96000), 7145);
     });
 

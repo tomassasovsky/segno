@@ -632,9 +632,11 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
            ns[k] <= 0.0 ? " lost in the noise: rerun" : "");
     fflush(stdout);
   }
-  /* kFxKindCostNs takes these per frame; the octaver and PSOLA go to
-   * kFxHopCostUs and kFxPsolaCostUs per block (1 x +us); the oversampled
-   * kinds go to kFxOversampledCostNs at this rate's end of it. */
+  /* kFxKindCostNs takes these per frame; the phase-vocoder kinds go to
+   * kFxHopCostUs per hop quarter (1 x +us, from a run where a block takes
+   * one quarter); PSOLA and the Smart Tune go to kFxPsolaCostNs per frame,
+   * and the oversampled kinds to kFxOversampledCostNs, at this rate's end
+   * of each. */
   printf("charges, ns per frame:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     printf(" %s=%.0f", k_table[k].name, ns[k]);

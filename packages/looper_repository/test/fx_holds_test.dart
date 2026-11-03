@@ -6,7 +6,7 @@ import 'package:segno_engine/segno_engine.dart'
 
 import 'helpers/fake_audio_engine.dart';
 
-/// Ed's Rack, the plan's unit: 3,162 ns a frame at 96 kHz / 64 frames on the
+/// Ed's Rack, the plan's unit: 3,275 ns a frame at 96 kHz / 64 frames on the
 /// console's own table (#1508; 2,665 in the plan). The budget there is
 /// 7,145, so two fit on the callback and a third does not.
 List<TrackEffect> _rack() => [
@@ -68,7 +68,7 @@ void main() {
   });
 
   test("Ed's Rack charges what the tests assume", () {
-    expect(fxChainCostNs(_rack()), 3162);
+    expect(fxChainCostNs(_rack()), 3275);
     expect(fxBudgetNs(96000), 7145);
   });
 
