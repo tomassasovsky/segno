@@ -748,9 +748,7 @@ extension MidiControlEditing on ControlCubit {
                     order: ++_activationOrder,
                   );
                 case final ControlValueTarget target:
-                  if (target is MixValueTarget || target is OwnedValueTarget) {
-                    _retireMixBaseline(target);
-                  }
+                  if (_isSharedValue(target)) _retireMixBaseline(target);
                   (_parameterHolders[target] ??= {})[holder] = (
                     value: values[target]!,
                     order: ++_activationOrder,
@@ -1070,7 +1068,7 @@ extension MidiControlEditing on ControlCubit {
     }
     _parameterHolders.remove(target);
     for (final input in PedalCtrlInput.values) {
-      (_externalInvalidatedMix[input] ??= {}).add(target);
+      _externalHeldTargets[input]?.remove(target);
       _externalMixReleased[input]?.remove(target);
       _externalNumericReleases[input]?.remove(target);
     }
@@ -1098,7 +1096,7 @@ extension MidiControlEditing on ControlCubit {
     }
     targets.forEach(_parameterHolders.remove);
     for (final input in PedalCtrlInput.values) {
-      (_externalInvalidatedMix[input] ??= {}).addAll(targets);
+      _externalHeldTargets[input]?.removeAll(targets);
       _externalMixReleased[input]?.removeWhere(
         (target, _) => targets.contains(target),
       );

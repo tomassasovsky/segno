@@ -381,37 +381,33 @@ typedef struct le_lag_refine {
 } le_lag_refine;
 
 /* The PSOLA octaver's pitch detection in flight (#913), sliced across its
- * hops: a coarse YIN pass over a decimated window, then a narrow device-rate
+ * hops: a coarse YIN pass over a decimated window, then a narrow kernel-rate
  * refinement (le_psola_pass_*, engine_fx.c). It lives at the end of the
  * octaver's heap scratch (le_ps, engine_fx.h), with the windows it reads, so
  * only octaver slots carry it. */
 typedef struct le_psola_pass {
   int32_t phase;  /* 0 idle, 1 coarse, 2 refinement */
-  int32_t decim;  /* the pass's decimation factor */
   int32_t end;    /* the ring index the pass's input ends at */
   int32_t credit; /* iterations the pass may spend, carried tick to tick */
-  int32_t hops;   /* hops since the last pass started */
   float conf;     /* the coarse pass's voicing confidence */
-  float coarse;   /* the coarse period, in device samples */
+  float coarse;   /* the coarse period, in kernel samples */
   le_yin_pass yin;
   le_lag_refine ref;
 } le_psola_pass;
 
-/* The PSOLA octaver's largest pitch-detection decimation (the detection
- * geometry is in engine_fx.h, which includes this file); its refinement spans
- * that many lags either side of the coarse one. */
-#define LE_PSOLA_DMAX 8
-
 /* The Dual Octaver's low band (#1467): its sizes (the tuning is in
  * engine_fx.h). The detection window, in samples at the band's decimated
- * rate (about 3 kHz: 43 ms, two periods of the 60 Hz floor and more). */
+ * rate (3 kHz: 43 ms, two periods of the 60 Hz floor and more). */
 #define LE_OCT_LOW_DWIN 128
+/* The band's ring, samples at the kernel's rate (a power of two): the
+ * deepest tap, the centre plus two of the longest period, and more. */
+#define LE_OCT_LOW_RING 4096
 
 /* One of the low band's two voices (Octave 1, Octave 2): a read tap on the
  * band's ring, moving at the voice's ratio, and the tap it is fading from
  * after a jump of one input period (le_low_voice, engine_fx.c). */
 typedef struct le_oct_low_voice {
-  float d;      /* the tap's delay behind the ring head, device samples */
+  float d;      /* the tap's delay behind the ring head, kernel samples */
   float d_old;  /* the tap fading out */
   int32_t fade; /* samples left in the fade (0: none) */
   int32_t fade_len;
@@ -425,42 +421,28 @@ typedef struct le_oct_low_voice {
  * le_octaver_state::low; the audio thread owns every field after that. */
 typedef struct le_oct_low {
   /* The crossover: one 2nd-order Butterworth low-pass section, run twice
-   * (a Linkwitz-Riley low-pass), its coefficients for the slot's rate. */
+   * (a Linkwitz-Riley low-pass). */
   float lp[5]; /* b0 b1 b2 a1 a2, as le_biquad_tick takes them */
   float z[2][2];
   /* The tap delay the voices centre on: the octaver's latency less the
    * low-pass's group delay. */
   float centre;
-  /* The crossover in phase-vocoder bins, where the vocoder hands over. */
-  float kc;
-  int32_t sr;   /* the rate it was set up for */
-  int32_t mask; /* the ring's length less 1 (a power of two) */
   int32_t head; /* the ring index written last */
-  /* Detection: the band decimated by `decim` (boxcar) into a ring of
-   * LE_OCT_LOW_DWIN, a YIN pass over a frozen copy every `every` hops,
-   * spread over the ticks by a credit. */
-  int32_t decim;
+  /* Detection: the band decimated by LE_OCT_LOW_DECIM (boxcar) into a ring
+   * of LE_OCT_LOW_DWIN, a YIN pass over a frozen copy every hop, spread
+   * over the ticks by a credit. */
   int32_t dn;
   float dacc;
   int32_t dhead;
-  int32_t every;
-  int32_t hops;
   int32_t busy; /* a pass in flight */
   int32_t credit;
   int32_t work; /* the credit a tick adds */
-  /* The input's power and the band's (one-poles over ek), so a band that
+  /* The input's power and the band's (50 ms one-poles), so a band that
    * holds no note of its own is not searched. */
   float e_in;
   float e_low;
-  float ek;
-  /* Per-rate constants: the 10 ms and 5 ms one-poles' steps, and the
-   * shortest and longest periods searched, device samples. */
-  float k10;
-  float k5;
-  float per_min;
-  float per_max;
   le_yin_pass yin;
-  float period; /* device samples (0: none heard yet) */
+  float period; /* kernel samples (0: none heard yet) */
   float f0;     /* the same as a frequency, Hz (0: none) */
   float voiced; /* the smoothed confidence */
   float gate;   /* the band's weight, per sample (0: the vocoder plays it) */
@@ -477,7 +459,7 @@ typedef struct le_oct_low {
   float dring[LE_OCT_LOW_DWIN];
   float win[LE_OCT_LOW_DWIN];
   float dp[LE_OCT_LOW_DWIN / 2 + 1];
-  float* ring; /* mask + 1 floats, right after the block */
+  float ring[LE_OCT_LOW_RING];
 } le_oct_low;
 
 /* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
@@ -499,7 +481,7 @@ typedef struct le_octaver_state {
    * (le_oct_seeded_ticks, engine_fx.c). */
   int32_t hop_count;
   int32_t out_pos;   /* PSOLA's read/write phase in the OLA accumulator */
-  /* PSOLA: the smoothed period (device samples) and voicing, and the grain
+  /* PSOLA: the smoothed period (kernel samples) and voicing, and the grain
    * marks: the analysis mark's distance behind the head, and the samples
    * until the next synthesis mark, each to a fraction of a sample. */
   float period;
@@ -783,6 +765,15 @@ typedef struct le_fx_state {
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
   float* delay[LE_FX_MAX][2];
+  /* The delay rings of each slot (bit c for delay[slot][c]) the thread that
+   * runs the chain knows to be allocated: marked when a kind that runs on the
+   * ring lands on the slot (le_fx_entry_reset), cleared when the ring is
+   * freed. A ring the control thread is still allocating for a coming retype
+   * is not among them, so a slot running another kind reads only these
+   * (#1522), and a ring an earlier kind left keeps being cleared with the
+   * slot. Written by that thread, and by the control thread only while no
+   * thread runs the chain (le_fx_free_delay). */
+  uint8_t ring_known[LE_FX_MAX];
   int32_t delay_pos[LE_FX_MAX][2];
   float fx_lp[LE_FX_MAX][2];
   le_octaver_state oct[LE_FX_MAX][2];
@@ -2897,6 +2888,7 @@ struct le_engine {
   int out_channels; /* hardware playback channels */
   int32_t max_loop_frames;
   int32_t fx_delay_frames; /* per-slot delay-line capacity (1 s @ sample rate) */
+  uint32_t fx_hop_period;  /* le_fx_hop_period(sample_rate), set with it */
 
   /* Audio-thread-local transport. */
   le_loop_clock clock;
@@ -3126,6 +3118,9 @@ struct le_engine {
    * portable core can compute the loopback-excluded input mask from that device
    * UID after open. */
   int capture_id_set;
+  /* 1 when playback_id holds a resolved (pinned) playback device, so the core
+   * can set that interface's routing after open (#1046). */
+  int playback_id_set;
 
   /* ---- #900: the audio-memory bookkeeping. At the END of the struct on
    * purpose: le_engine, le_track and le_lane hold the callback's hot data,

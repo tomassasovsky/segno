@@ -39,7 +39,7 @@ static void rp_open(rp_rack* k, float m, int on) {
     k->types[s] = types[s];
     k->fx->chan[s].rack = rack[s];
     k->on[s] = (on >> s) & 1;
-    le_fx_entry_reset(k->fx, s);
+    le_fx_entry_reset(k->fx, s, types[s]);
     if (types[s] != LE_FX_NONE) {
       CHECK(le_fx_prepare(k->fx, s, types[s], RP_SR) == LE_OK);
     }
@@ -357,7 +357,7 @@ static void test_rack_paths_two_amb_verbs(void) {
   rp_open(&k, 1.0f, 1 << 3);
   k.types[1] = LE_FX_AMB_VERB;
   k.fx->chan[1].rack = LE_FX_RACK_AMB_PATH;
-  le_fx_entry_reset(k.fx, 1);
+  le_fx_entry_reset(k.fx, 1, LE_FX_AMB_VERB);
   CHECK(le_fx_prepare(k.fx, 1, LE_FX_AMB_VERB, RP_SR) == LE_OK);
   k.params[1][0] = 0.2f;
   k.params[1][1] = 0.4f;

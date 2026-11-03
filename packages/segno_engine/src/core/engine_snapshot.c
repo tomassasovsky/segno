@@ -267,14 +267,14 @@ static uint64_t le_fx_fold_hop_position(uint64_t h, int32_t n,
                                         _Atomic int32_t* a_type,
                                         _Atomic int32_t* a_enabled,
                                         _Atomic int32_t* a_chain_enabled,
-                                        const le_track* t, int sr) {
+                                        const le_track* t, uint32_t period) {
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   if (!load_i32(a_chain_enabled)) return h;
   for (int32_t i = 0; i < n; ++i) {
     if (le_fx_type_hops(load_i32(&a_type[i])) && load_i32(&a_enabled[i])) {
       const uint32_t top =
           atomic_load_explicit(&t->a_top_clock, memory_order_relaxed);
-      return le_fx_fp_u32(h, le_fx_hop_position(top, sr));
+      return le_fx_fp_u32(h, le_fx_hop_position(top, period));
     }
   }
   return h;
@@ -306,7 +306,8 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
   return le_fx_fold_hop_position(h, pre, ln->a_fx_type, ln->a_fx_enabled,
                                  &ln->a_fx_chain_enabled,
-                                 &engine->tracks[channel], engine->sample_rate);
+                                 &engine->tracks[channel],
+                                 engine->fx_hop_period);
 }
 
 /* Whether track [channel]'s Pre run can be rendered at all (slice 3e).
@@ -368,7 +369,7 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
                       b->a_fx_chan_level_bits, b->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
   h = le_fx_fold_hop_position(h, pre, b->a_fx_type, b->a_fx_enabled,
-                              &b->a_fx_chain_enabled, t, engine->sample_rate);
+                              &b->a_fx_chain_enabled, t, engine->fx_hop_period);
 
   const int32_t n = le_lanes_active(t);
   h = le_fx_fp_u32(h, (uint32_t)n);
