@@ -836,6 +836,19 @@ void main() {
       expect(find.text(l10nOf(tester).fxPlacementPre), findsNWidgets(2));
     });
 
+    testWidgets('the chain starts under the title and keeps the five-card '
+        'width (#1590 SET-4)', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      final strip = tester.getRect(find.byType(FxChainStrip));
+      expect(
+        strip.left,
+        tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx,
+      );
+      expect(tester.getRect(find.byKey(const Key('fx_card_t1'))).left, 32);
+      // Five 352 cards and four 24 gaps fill it exactly.
+      expect(strip.width, 5 * 352 + 4 * 24);
+    });
+
     testWidgets('the input cards fill the content width under the title '
         '(#1590 SET-1, SET-6)', (tester) async {
       await pump(tester, destination: const FxDestination.liveInput(0));
