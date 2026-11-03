@@ -20,7 +20,9 @@ once more at finalize (normal disarm, or crash recovery) to fold in the
 fields below `finalized: true`. Finalize publishes it durably: it writes
 `performance.json.publishing`, flushes it, renames it over the sidecar and
 syncs the directory, so after a power cut the bundle holds the old sidecar
-or the finalized one, never neither.
+or the finalized one, never neither. A failed directory sync does not undo a
+finalize: the manifest is in place, and if a power cut takes it back the
+next start finalizes the take again.
 
 ## Two authors, one file
 
@@ -148,14 +150,19 @@ such a capture into parts (#1078), keeping every sample as written:
   torn trailing frame is dropped; an empty stream gets one empty part.
 - Each new part is flushed and digested (`sha256` over its payload), the
   directory is synced, and the sidecar is republished (durably, as above)
-  with that stream's parts listed, a minted `take_id`, `encoding: "f32"`
-  and `overs`, `converted_from_raw: true`, still `finalized: false`. Only
-  then is the raw file removed.
+  with that stream's parts listed, a minted `take_id`, `encoding: "f32"`,
+  `overs` and `converted_from_raw: true`, still `finalized: false`. Only
+  then is the raw file removed; if the directory sync after that
+  republication fails, the raw file and the listed parts both stay for the
+  next start. A sidecar with a `take_id` and no `converted_from_raw` is a
+  take the drain wrote as parts, and a raw file beside it is never
+  converted.
   A cut at any point leaves either the raw file or its listed parts; the
   next start reconverts a stream whose listed parts are incomplete, and
   removes a raw file whose parts are listed whole.
 - Before converting, the volume must have room for the largest remaining
-  stream (its bytes plus one header per part). Too little room, a sidecar
+  stream (its bytes plus one header per part), measured after the unlisted
+  parts a cut conversion left are deleted. Too little room, a sidecar
   whose `parts` do not read, a `channel_layout` that does not, or a failed
   write leaves the capture unfinalized with its raw files, and it is
   reported as not recovered.

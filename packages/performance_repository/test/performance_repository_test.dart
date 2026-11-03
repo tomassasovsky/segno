@@ -2168,6 +2168,94 @@ void main() {
       expect(File('$dir/input-0-001.wav').existsSync(), isFalse);
     });
 
+    test('the parts a cut conversion left unlisted are removed before the '
+        'room for the conversion is measured', () async {
+      final dir = seedLegacy('perf-strays', master: ramp(8));
+      // A cut 1 part into the conversion: an unlisted part of 108 bytes.
+      writeRawPcm('$dir/master-001.wav', ramp(27));
+      final measuring = _StrayAwareEngine(dir, free: 200);
+      final local = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: measuring,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        partBytes: 84 + 3 * 8,
+      );
+      addTearDown(local.dispose);
+
+      await local.recoverCapture(dir);
+
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(
+        payload('$dir/master-001.wav'),
+        Float32List.sublistView(ramp(8), 0, 6),
+      );
+    });
+
+    test('a directory sync that fails after the interim sidecar is in place '
+        'keeps both its parts and the raw file', () async {
+      final dir = seedLegacy('perf-sync', master: ramp(4));
+      _FailSecondSync.calls = 0;
+      final local = smallParts(storageIo: _failSecondSync);
+      addTearDown(local.dispose);
+
+      await local.recoverCapture(dir);
+
+      final interim = readSidecar(dir);
+      expect(interim['finalized'], isFalse);
+      expect(
+        (interim['parts'] as List<dynamic>).map((p) => (p as Map)['file']),
+        ['master-001.wav'],
+      );
+      expect(File('$dir/master-001.wav').existsSync(), isTrue);
+      expect(File('$dir/master.pcm').lengthSync(), 16);
+
+      final next = smallParts();
+      addTearDown(next.dispose);
+      await next.recoverCapture(dir);
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(File('$dir/master.pcm').existsSync(), isFalse);
+    });
+
+    test('a finalize whose directory sync fails still finishes: the take is '
+        'finalized, its render starts and the repository is idle', () async {
+      final local = PerformanceRepository(
+        storageIo: _syncAlwaysFails,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(local.dispose);
+      await local.arm();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      final dir = local.armedDirectory!;
+      writeNativeSidecar(dir);
+
+      expect(await local.disarm(), EngineResult.ok);
+
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(local.armedDirectory, isNull);
+      expect(engine.lastRenderCaptureDir, dir);
+    });
+
+    test('a take the drain wrote as parts is never converted, even beside a '
+        'stray raw file', () async {
+      final dir = '${tempDir.path}/exports/perf-parts';
+      Directory(dir).createSync(recursive: true);
+      writeNativeSidecar(dir);
+      final sidecar = readSidecar(dir)..['take_id'] = '0' * 32;
+      File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+      writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
+      writeRawPcm('$dir/master.pcm', ramp(8));
+
+      await repo.recoverCapture(dir);
+
+      expect(readSidecar(dir)['finalized'], isTrue);
+      expect(partSizes('$dir/master-001.wav'), (84 - 8 + 8, 8));
+      expect(File('$dir/master.pcm').lengthSync(), 32);
+    });
+
     test('a sidecar whose parts do not read is left as it is', () async {
       final dir = seedLegacy('perf-odd');
       final sidecar = readSidecar(dir)..['parts'] = 'not a list';
@@ -3254,4 +3342,43 @@ class _InputsUnreadable extends FakeStorageIo {
       _name(path).startsWith('input-')
       ? const FileUnreadable()
       : super.digestFile(path, offset: offset, length: length);
+}
+
+/// An engine whose volume frees the room of every unlisted part a cut
+/// conversion left in [dir] once it is deleted.
+class _StrayAwareEngine extends FakePerformanceEngine {
+  _StrayAwareEngine(this.dir, {required this.free});
+
+  final String dir;
+  final int free;
+
+  @override
+  VolumeSpace? volumeSpace(String path) {
+    final stray = File('$dir/master-001.wav');
+    final used = stray.existsSync() ? stray.lengthSync() : 0;
+    return VolumeSpace(totalBytes: 1 << 40, freeBytes: free - used);
+  }
+}
+
+/// A [StorageIo] whose second directory sync fails: the parts' sync works,
+/// the interim sidecar's does not.
+StorageIo _failSecondSync() => _FailSecondSync();
+
+class _FailSecondSync extends FakeStorageIo {
+  static int calls = 0;
+
+  @override
+  void syncDirectory(String path) {
+    calls++;
+    if (calls == 2) throw FileSystemException('sync failed', path);
+    super.syncDirectory(path);
+  }
+}
+
+StorageIo _syncAlwaysFails() => _SyncAlwaysFails();
+
+class _SyncAlwaysFails extends FakeStorageIo {
+  @override
+  void syncDirectory(String path) =>
+      throw FileSystemException('sync failed', path);
 }
