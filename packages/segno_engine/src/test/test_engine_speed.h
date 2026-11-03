@@ -404,7 +404,8 @@ static void test_speed_render_parity(void) {
  * inside the step's window retracts the print on the cached twin, which stays
  * in parity with the uncached twin (both heads read the lane's dry take, so
  * the window holds no pointer to the print; Part 3a's source swaps are where
- * a turn pins another buffer). Normal re-engages. */
+ * a turn pins another buffer). Back at Normal it stays live: the chain has
+ * played laps at 2x the print does not have (#939). */
 static void test_speed_print_disengages_and_parity(void) {
   printf("test_speed_print_disengages_and_parity\n");
   le_engine *cached, *live;
@@ -432,10 +433,12 @@ static void test_speed_print_disengages_and_parity(void) {
   CHECK(cache_wait_state(cached, 0, 0, LE_CACHE_CACHED, 3000));
   pump_frames(cached, 0, 2 * CACHE_LOOP);
   CHECK(cache_engaged(cached, 0, 0) == 0);
+  /* Normal again. The edited chain has played its laps at 2x, which the
+   * print does not have, so it plays on live (#939). */
   a = speed_set(cached, 1, 1);
   pump_frames(cached, 0, 2 * CACHE_LOOP);
   fade_result(cached, a, LE_OK);
-  CHECK(cache_engaged(cached, 0, 0) == 1); /* Normal: the next lap start */
+  CHECK(cache_engaged(cached, 0, 0) == 0);
   le_engine_destroy(cached);
   le_engine_destroy(live);
 }

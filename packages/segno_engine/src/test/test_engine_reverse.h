@@ -721,14 +721,47 @@ static void test_reverse_cache_disengages(void) {
   le_engine_get_lane_cache(cached, 0, 0, &info);
   CHECK(!info.engaged);
   CHECK(cache_max_diff(oa, ob, 2 * CACHE_LOOP, CACHE_RAMP_SKIP) < CACHE_TOL);
-  /* Forward again: the print re-engages at the next lap start, in parity. */
+  /* Forward again. The live chain has played two laps backward that the
+   * print does not have, so the print stays out and the chain plays on live
+   * (#939), in parity. */
   CHECK(le_engine_toggle_reverse(cached, 0, &a) == LE_OK);
   CHECK(le_engine_toggle_reverse(live, 0, &b) == LE_OK);
   pump_capture(cached, 0.0f, 2 * CACHE_LOOP, oa);
   pump_capture(live, 0.0f, 2 * CACHE_LOOP, ob);
   le_engine_get_lane_cache(cached, 0, 0, &info);
-  CHECK(info.engaged);
+  CHECK(!info.engaged);
   CHECK(cache_max_diff(oa, ob, 2 * CACHE_LOOP, CACHE_RAMP_SKIP) < CACHE_TOL);
+  le_engine_destroy(cached);
+  le_engine_destroy(live);
+}
+
+/* A reverse turn shorter than a lap: back forward, the live chain began at
+ * the turn, less than a lap before the next lap start, so the print engages
+ * there again (#939), in parity. */
+static void test_reverse_short_turn_reengages(void) {
+  printf("test_reverse_short_turn_reengages\n");
+  le_engine *cached, *live;
+  cache_pair_prepare(&cached, &live, LE_FX_DRIVE);
+  pump_frames(cached, 0, CACHE_LOOP);
+  pump_frames(live, 0, CACHE_LOOP);
+  CHECK(cache_engaged(cached, 0, 0) == 1);
+  uint64_t a, b;
+  CHECK(le_engine_toggle_reverse(cached, 0, &a) == LE_OK);
+  CHECK(le_engine_toggle_reverse(live, 0, &b) == LE_OK);
+  pump_frames(cached, 0, 2000);
+  pump_frames(live, 0, 2000);
+  fade_result(cached, a, LE_OK);
+  fade_result(live, b, LE_OK);
+  CHECK(cache_engaged(cached, 0, 0) == 0);
+  CHECK(le_engine_toggle_reverse(cached, 0, &a) == LE_OK);
+  CHECK(le_engine_toggle_reverse(live, 0, &b) == LE_OK);
+  static float oa[CACHE_LOOP], ob[CACHE_LOOP];
+  pump_capture(cached, 0.0f, CACHE_LOOP, oa);
+  pump_capture(live, 0.0f, CACHE_LOOP, ob);
+  fade_result(cached, a, LE_OK);
+  fade_result(live, b, LE_OK);
+  CHECK(cache_engaged(cached, 0, 0) == 1);
+  CHECK(cache_max_diff(oa, ob, CACHE_LOOP, CACHE_RAMP_SKIP) < CACHE_TOL);
   le_engine_destroy(cached);
   le_engine_destroy(live);
 }
@@ -958,6 +991,7 @@ static void run_reverse_tests(void) {
   test_reverse_render_segment_overflow();
   test_reverse_material_resets();
   test_reverse_cache_disengages();
+  test_reverse_short_turn_reengages();
   test_reverse_actual_arm_render();
   test_reverse_restored_image_tracks_phase();
   test_reverse_render_armed_reversed();
