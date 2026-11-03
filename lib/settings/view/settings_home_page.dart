@@ -26,10 +26,8 @@ class SettingsHomePage extends StatelessWidget {
   /// Whether Power is shown; null asks the platform.
   final bool? powerAvailable;
 
-  /// The tiles' left edges in the frame's main area: the pen's menu sits at
-  /// x 100 and steps by a 325 px tile and a 24 px gap (rounded as the pen
-  /// rounds them).
-  static const List<double> columns = [100, 449, 798, 1146, 1495];
+  /// The tiles in a row; the ten destinations take two rows.
+  static const int columns = 5;
 
   /// The two rows' top edges in the frame's main area: the menu's y 120 plus
   /// each row's 152 and 420.
@@ -39,11 +37,15 @@ class SettingsHomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final power = powerAvailable ?? isAppliance();
+    // The row of five fills the content width (#1590), an xl gap apart.
+    final gap = context.spacing.xl;
+    final tileWidth =
+        (LoopSettingsFrame.contentWidthOf(context) - (columns - 1) * gap) /
+        columns;
     return Scaffold(
       body: LoopSettingsFrame(
         crumb: l10n.loopSettingsCrumb,
         title: l10n.stageSettings,
-        titleLeft: 100,
         onBack: () => Navigator.maybePop(context),
         onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
         actions: power
@@ -59,8 +61,9 @@ class SettingsHomePage extends StatelessWidget {
         children: [
           for (final destination in SettingsDestination.values)
             Positioned(
-              left: columns[destination.index % columns.length],
-              top: rows[destination.index ~/ columns.length],
+              left: (destination.index % columns) * (tileWidth + gap),
+              top: rows[destination.index ~/ columns],
+              width: tileWidth,
               child: SettingsTile(
                 destination: destination,
                 autofocus: destination.index == 0,
@@ -88,14 +91,14 @@ class SettingsTile extends StatelessWidget {
   /// Whether the tile takes focus when the page opens.
   final bool autofocus;
 
-  /// The tile's size, from the pen.
-  static const Size size = Size(325, 244);
+  /// The tile's height, from the pen. Its width is the row's share.
+  static const double height = 244;
 
   /// The picture's size, from the pen.
   static const double artSize = 128;
 
-  /// The picture's offset inside the tile.
-  static const Offset artOffset = Offset(98, 32);
+  /// The picture's top inside the tile; it is centred across it.
+  static const double artTop = 32;
 
   /// The name's top inside the tile.
   static const double nameTop = 174;
@@ -126,8 +129,7 @@ class SettingsTile extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             onTap: open,
             child: Container(
-              width: size.width,
-              height: size.height,
+              height: height,
               decoration: BoxDecoration(
                 color: surface.menuArtGround,
                 borderRadius: BorderRadius.circular(radius),
@@ -143,16 +145,20 @@ class SettingsTile extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned(
-                      left: artOffset.dx,
-                      top: artOffset.dy,
-                      width: artSize,
+                      left: 0,
+                      right: 0,
+                      top: artTop,
                       height: artSize,
-                      child: Image.asset(
-                        destination.artAsset,
-                        key: Key('settings_tile_art_${destination.key}'),
-                        fit: BoxFit.contain,
-                        cacheWidth: artPixels,
-                        cacheHeight: artPixels,
+                      child: Center(
+                        child: Image.asset(
+                          destination.artAsset,
+                          key: Key('settings_tile_art_${destination.key}'),
+                          width: artSize,
+                          height: artSize,
+                          fit: BoxFit.contain,
+                          cacheWidth: artPixels,
+                          cacheHeight: artPixels,
+                        ),
                       ),
                     ),
                     Positioned(

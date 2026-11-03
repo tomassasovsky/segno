@@ -9,6 +9,7 @@ import 'package:segno/looper/cubit/loop_settings_feedback_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/model/record_options_view_state.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_labels.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
@@ -39,8 +40,9 @@ _LengthValues _lengthValues(LooperState state) {
 /// The Length & quantize page: the Tracks / Defaults / 1-8 selector, then
 /// Loop length (Auto or a bar count) and Record timing for that scope, each
 /// with its origin tag and a Use default when a track overrides it (the pen's
-/// `length-timing`, 1720 x 474 at (100, 349)). In Multi a track's length is
-/// the shared default; a capture in progress locks the page behind a banner.
+/// `length-timing`, 474 high at y 349, across the content width). In Multi a
+/// track's length is the shared default; a capture in progress locks the page
+/// behind a banner.
 ///
 /// The Defaults scope adds one row the pen does not draw: how long later
 /// tracks record, as a multiple of the base loop (#1199, D3). It was the
@@ -217,7 +219,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
         child: Stack(
           children: [
             Positioned(
-              left: 100,
+              left: 0,
               top: 124,
               child: LoopScopeSelector(
                 trackNames: trackDisplayNames(context, v.count),
@@ -230,13 +232,16 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             ),
             if (locked)
               Positioned(
-                left: 100,
+                left: 0,
                 top: 213,
-                child: LoopLockBanner(text: l10n.loopLengthLocked, width: 1720),
+                child: LoopLockBanner(
+                  text: l10n.loopLengthLocked,
+                  width: LoopSettingsFrame.contentWidthOf(context),
+                ),
               ),
             // ---- loop length
             Positioned(
-              left: 100,
+              left: 0,
               top: top + (scope == null ? 40 : 24),
               child: LoopFieldLabel(
                 title: l10n.loopLengthLabel,
@@ -248,7 +253,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: top + 8,
               child: LoopChoiceRow<bool>(
                 values: const [false, true],
@@ -266,7 +271,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             ),
             if (shownBars > 0)
               Positioned(
-                left: 100 + 328 + 424,
+                left: 328 + 424,
                 top: top,
                 child: LoopStepper(
                   key: ValueKey((sessionRevision, scope, locked, shared)),
@@ -286,7 +291,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
               ),
             if (barsCustom && !locked)
               Positioned(
-                left: 100 + 328 + 1221,
+                right: 0,
                 top: top + 24,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_length_use_default'),
@@ -294,7 +299,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                 ),
               ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: top + 132,
               child: LoopNote(
                 _candidateRefused
@@ -311,7 +316,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             ),
             // ---- record timing
             Positioned(
-              left: 100,
+              left: 0,
               top: top + 231 + 16,
               child: LoopFieldLabel(
                 title: l10n.loopTimingLabel,
@@ -324,7 +329,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             ),
             if (timingCustom && timingEnabled)
               Positioned(
-                left: 100 + 1549,
+                right: 0,
                 top: top + 231,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_timing_use_default'),
@@ -332,7 +337,7 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                 ),
               ),
             Positioned(
-              left: 100,
+              left: 0,
               top: top + 231 + 88,
               child: LoopChoiceRow<RecordTiming>(
                 values: RecordTiming.values,
@@ -341,12 +346,12 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                 selected: timing,
                 enabled: timingEnabled,
                 onSelected: _setTiming,
-                width: 1720,
+                width: LoopSettingsFrame.contentWidthOf(context),
                 gap: 16,
               ),
             ),
             Positioned(
-              left: 100,
+              left: 0,
               top: top + 231 + 208,
               child: LoopNote(
                 timing == null
@@ -358,12 +363,12 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
             // ---- later tracks (defaults only)
             if (scope == null) ...[
               Positioned(
-                left: 100,
+                left: 0,
                 top: top + _multipleTop(locked: locked) + 13,
                 child: LoopFieldLabel(title: l10n.loopDefaultMultipleLabel),
               ),
               Positioned(
-                left: 100 + 328,
+                left: 328,
                 top: top + _multipleTop(locked: locked),
                 child: LoopChoiceRow<int>(
                   key: const Key('loop_default_multiple'),
@@ -384,9 +389,9 @@ class _LoopLengthPageState extends State<LoopLengthPage> {
                 ),
               ),
               Positioned(
-                left: 100 + 328 + _multipleWidth + 32,
+                left: 328 + _multipleWidth + 32,
                 top: top + _multipleTop(locked: locked),
-                right: 100,
+                right: 0,
                 height: _multipleHeight,
                 child: Align(
                   alignment: Alignment.centerLeft,

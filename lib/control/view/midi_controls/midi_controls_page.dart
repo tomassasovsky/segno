@@ -102,10 +102,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   bool _saving = false;
   int _editGeneration = 0;
 
-  /// The pen's insets inside the 1920 x 984 main area.
-  static const double _left = 60;
+  /// The pen's offsets inside the frame's content box, whose full width the
+  /// page takes.
   static const double _top = 140;
-  static const double _width = 1800;
   static const double _rowsTop = 272;
   static const double _editorGap = 60;
   static const double _pickerHeight = 808;
@@ -166,7 +165,6 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                   _MidiView.channel => l10n.midiReceiveChannelTitle,
                   _MidiView.format => l10n.midiMessageFormat,
                 },
-                titleLeft: _left,
                 onBack: _back,
                 onStage: () {
                   if (_saving) return;
@@ -310,9 +308,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     ];
     return [
       Positioned(
-        left: _left,
+        left: 0,
         top: _top,
-        width: _width,
+        right: 0,
         height: MidiDeviceCards.cardSize.height,
         child: MidiDeviceCards(
           cards: midiDeviceCards(connection),
@@ -320,9 +318,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         ),
       ),
       Positioned(
-        left: _left,
+        left: 0,
         top: _rowsTop,
-        width: _width,
+        right: 0,
         bottom: 36,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -593,9 +591,9 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final availability = controlAvailability(context, watch: true);
     final l10n = context.l10n;
     Widget placed(Widget child) => Positioned(
-      left: _left,
+      left: 0,
       top: _top,
-      width: _width,
+      right: 0,
       height: _pickerHeight,
       child: child,
     );
@@ -608,7 +606,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
             connection.selectedId == draft.device;
         return [
           Positioned(
-            left: _left,
+            left: 0,
             top: _top,
             child: MidiSourcePanel(
               deviceName: _deviceName(connection, draft.device),
@@ -631,7 +629,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
             ),
           ),
           Positioned(
-            left: _left + MidiSourcePanel.penSize.width + _editorGap,
+            left: MidiSourcePanel.penSize.width + _editorGap,
             top: _top,
             child: MidiControlCards(
               cards: [

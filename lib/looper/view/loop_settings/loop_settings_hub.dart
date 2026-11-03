@@ -150,7 +150,7 @@ class LoopSettingsHub extends StatelessWidget {
       ),
     ];
     return Positioned(
-      left: 36,
+      left: 0,
       top: 124,
       child: Column(
         children: [

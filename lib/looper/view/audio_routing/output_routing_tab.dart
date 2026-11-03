@@ -13,6 +13,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/routing_facts.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
 
@@ -112,11 +113,18 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
   int _channel = 0;
   RoutingPlayer _player = RoutingPlayer.click;
 
-  /// The pen's `source-grid` step, shared with Input setup.
-  static const double _cardStep = 280;
+  /// The pen's source card and gap, shared with Input setup. The cards
+  /// share the content width, never narrower than the pen's card.
+  static const double _cardWidth = 264;
+  static const double _cardGap = 16;
 
-  /// The pen's destination step: a 684-wide card and a 24 gap.
-  static const double _destinationStep = 708;
+  /// Where the destinations start, after the Send to label.
+  static const double _destinationsLeft = 328;
+
+  /// The pen's destination card and gap; the cards share the rest of the
+  /// width the same way.
+  static const double _destinationWidth = 684;
+  static const double _destinationGap = 24;
 
   /// The mask the chosen source currently drives.
   int _mask(_RoutingValues values) => switch (_kind) {
@@ -199,11 +207,18 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
     // Send to, so their row moves up to where it would have been.
     final live = _kind == RoutingSourceKind.live;
     final sendTop = live ? 665.0 : 497.0;
+    final destinations = buses + (missingFinalJack ? 1 : 0);
+    final destinationWidth = fillingCardWidth(
+      width: LoopSettingsFrame.contentWidthOf(context) - _destinationsLeft,
+      count: destinations,
+      gap: _destinationGap,
+      minWidth: _destinationWidth,
+    );
 
     return Stack(
       children: [
         Positioned(
-          left: 100,
+          left: 0,
           top: 257,
           child: _SourceKinds(
             selected: _kind,
@@ -211,13 +226,13 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
           ),
         ),
         Positioned(
-          left: 100,
+          left: 0,
           top: _kind == RoutingSourceKind.tracks ? 353 : 359,
           child: _sources(values),
         ),
         if (live)
           Positioned(
-            left: 100,
+            left: 0,
             top: 545,
             child: _HearLive(
               input: values.input,
@@ -225,10 +240,10 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
             ),
           ),
         Positioned(
-          left: 100,
+          left: 0,
           top: sendTop,
           child: SizedBox(
-            width: 1720,
+            width: LoopSettingsFrame.contentWidthOf(context),
             height: 144,
             child: Stack(
               children: [
@@ -238,54 +253,60 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
                   child: LoopSectionLabel(l10n.routingSendTo),
                 ),
                 Positioned(
-                  left: 328,
+                  left: _destinationsLeft,
                   top: 0,
-                  width: 1392,
+                  right: 0,
                   height: 144,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
-                    itemCount: buses + (missingFinalJack ? 1 : 0),
+                    itemCount: destinations,
                     separatorBuilder: (_, _) =>
-                        const SizedBox(width: _destinationStep - 684),
-                    itemBuilder: (context, bus) => bus == buses
-                        ? RoutingDestinationCard(
-                            key: const Key('routing_destination_missing_jack'),
-                            jacks: l10n.outputSingleLabel(
-                              values.outputChannels + 1,
+                        const SizedBox(width: _destinationGap),
+                    itemBuilder: (context, bus) => SizedBox(
+                      width: destinationWidth,
+                      child: bus == buses
+                          ? RoutingDestinationCard(
+                              key: const Key(
+                                'routing_destination_missing_jack',
+                              ),
+                              jacks: l10n.outputSingleLabel(
+                                values.outputChannels + 1,
+                              ),
+                              name: l10n.outputSingleLabel(
+                                values.outputChannels + 1,
+                              ),
+                              selected: true,
+                              available: false,
+                              onTap: () => _send(
+                                values,
+                                mask & ~(1 << values.outputChannels),
+                              ),
+                            )
+                          : RoutingDestinationCard(
+                              key: Key('routing_destination_$bus'),
+                              jacks: l10n.outputBusLabel(
+                                bus,
+                                channels: values.outputChannels,
+                              ),
+                              name: l10n.outputName(
+                                names,
+                                bus,
+                                channels: values.outputChannels,
+                              ),
+                              selected:
+                                  mask &
+                                          outputBusMask(
+                                            bus,
+                                            channels: values.outputChannels,
+                                          ) !=
+                                      0 ||
+                                  (bus >= values.deviceBuses &&
+                                      outputMaskDrivesBus(mask, bus)),
+                              available: bus < values.deviceBuses,
+                              onTap: () =>
+                                  _toggleDestination(values, bus, mask),
                             ),
-                            name: l10n.outputSingleLabel(
-                              values.outputChannels + 1,
-                            ),
-                            selected: true,
-                            available: false,
-                            onTap: () => _send(
-                              values,
-                              mask & ~(1 << values.outputChannels),
-                            ),
-                          )
-                        : RoutingDestinationCard(
-                            key: Key('routing_destination_$bus'),
-                            jacks: l10n.outputBusLabel(
-                              bus,
-                              channels: values.outputChannels,
-                            ),
-                            name: l10n.outputName(
-                              names,
-                              bus,
-                              channels: values.outputChannels,
-                            ),
-                            selected:
-                                mask &
-                                        outputBusMask(
-                                          bus,
-                                          channels: values.outputChannels,
-                                        ) !=
-                                    0 ||
-                                (bus >= values.deviceBuses &&
-                                    outputMaskDrivesBus(mask, bus)),
-                            available: bus < values.deviceBuses,
-                            onTap: () => _toggleDestination(values, bus, mask),
-                          ),
+                    ),
                   ),
                 ),
               ],
@@ -293,7 +314,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
           ),
         ),
         Positioned(
-          left: 428,
+          left: _destinationsLeft,
           top: sendTop + 168,
           // "Reaches nothing" is about the destinations this rig HAS: a mask
           // that only drives jacks the device has not got reaches nothing
@@ -312,16 +333,24 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
   /// The sources of the chosen kind.
   Widget _sources(_RoutingValues values) {
     final l10n = context.l10n;
+    final width = LoopSettingsFrame.contentWidthOf(context);
+    double cardWidth(int count) => fillingCardWidth(
+      width: width,
+      count: count,
+      gap: _cardGap,
+      minWidth: _cardWidth,
+    );
     return switch (_kind) {
       RoutingSourceKind.live => SizedBox(
-        width: 1720,
+        width: width,
         height: 112,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: values.inputCount,
-          separatorBuilder: (_, _) => const SizedBox(width: _cardStep - 264),
+          separatorBuilder: (_, _) => const SizedBox(width: _cardGap),
           itemBuilder: (context, input) => RoutingSourceCard(
             key: Key('routing_source_input_$input'),
+            width: cardWidth(values.inputCount),
             ordinal: l10n.routingInputOrdinal(input + 1),
             name: l10n.inputName(
               context.read<LooperBloc>().state.status.isConnected &&
@@ -349,9 +378,10 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
       RoutingSourceKind.players => Row(
         children: [
           for (final player in RoutingPlayer.values) ...[
-            if (player.index > 0) const SizedBox(width: _cardStep - 264),
+            if (player.index > 0) const SizedBox(width: _cardGap),
             RoutingSourceCard(
               key: Key('routing_source_${player.name}'),
+              width: cardWidth(RoutingPlayer.values.length),
               ordinal: null,
               name: switch (player) {
                 RoutingPlayer.backing => l10n.routingSourceBacking,
@@ -384,7 +414,7 @@ class _SourceKinds extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 64,
       child: Stack(
         children: [
@@ -425,7 +455,7 @@ class _HearLive extends StatelessWidget {
     final l10n = context.l10n;
     final monitor = context.watch<MonitorCubit>().state.forInput(input);
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 74,
       child: Stack(
         children: [

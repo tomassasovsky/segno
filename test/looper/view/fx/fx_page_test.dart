@@ -836,6 +836,30 @@ void main() {
       expect(find.text(l10nOf(tester).fxPlacementPre), findsNWidgets(2));
     });
 
+    testWidgets('the input cards fill the content width under the title '
+        '(#1590 SET-1, SET-6)', (tester) async {
+      await pump(tester, destination: const FxDestination.liveInput(0));
+      var last = 0;
+      while (find
+          .byKey(Key('fx_input_card_${last + 1}'))
+          .evaluate()
+          .isNotEmpty) {
+        last++;
+      }
+      final title = tester.getRect(
+        find.byKey(const Key('loop_settings_title')),
+      );
+      expect(title.left, 32);
+      expect(
+        tester.getRect(find.byKey(const Key('fx_input_card_0'))).left,
+        title.left,
+      );
+      expect(
+        tester.getRect(find.byKey(Key('fx_input_card_$last'))).right,
+        1920 - 32,
+      );
+    });
+
     testWidgets('says so when the destination carries nothing', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(1));
 
@@ -1516,8 +1540,9 @@ void main() {
 
         final solo = find.byKey(const Key('fx_track_solo'));
         expect(solo, findsOneWidget);
-        // The pen's place: the left end of the titlebar's row.
-        expect(tester.getTopLeft(solo), const Offset(926, 52 + 96));
+        // The pen's place: the left end of the titlebar's row, which now
+        // ends at the page's 32 inset rather than 36 (#1590).
+        expect(tester.getTopLeft(solo), const Offset(926 + 4, 52 + 96));
         expect(tester.getSize(solo), const Size(49, 24));
         await tester.tap(solo);
         await tester.pump();

@@ -11,8 +11,8 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The Audio & tempo page (#1179, the pen's `audio-tempo-layout`, 1720 x 444
-/// at (100, 364), screens 07/04 to 07/06): the scope selector, then Follow
+/// The Audio & tempo page (#1179, the pen's `audio-tempo-layout`, 444 high
+/// at y 364 across the content width, screens 07/04 to 07/06): the scope selector, then Follow
 /// tempo and Pitch for that scope, each with its origin tag and a Use default
 /// when a track overrides it. A scope that keeps its recorded speed shows
 /// Pitch as the readout it then is: the pitch stays the recorded one.
@@ -67,7 +67,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
       child: Stack(
         children: [
           Positioned(
-            left: 100,
+            left: 0,
             top: 124,
             child: LoopScopeSelector(
               trackNames: trackDisplayNames(context, count),
@@ -77,7 +77,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
           ),
           // ---- follow tempo
           Positioned(
-            left: 100,
+            left: 0,
             top: top + (scope == null ? 34 : 17),
             child: LoopFieldLabel(
               title: l10n.loopAudioFollowLabel,
@@ -89,7 +89,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
             ),
           ),
           Positioned(
-            left: 100 + 328,
+            left: 328,
             top: top,
             child: LoopChoiceRow<bool>(
               values: const [false, true],
@@ -108,7 +108,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
           ),
           if (followCustom)
             Positioned(
-              left: 100 + 328 + 1221,
+              right: 0,
               top: top + 28,
               child: LoopUseDefaultButton(
                 key: const Key('loop_audio_follow_use_default'),
@@ -116,7 +116,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
               ),
             ),
           Positioned(
-            left: 100 + 328,
+            left: 328,
             top: top + 140,
             child: LoopNote(
               follows ? l10n.loopAudioNoteOn : l10n.loopAudioNoteOff,
@@ -126,7 +126,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
           // ---- pitch
           if (follows) ...[
             Positioned(
-              left: 100,
+              left: 0,
               top: pitchTop + (scope == null ? 34 : 17),
               child: LoopFieldLabel(
                 title: l10n.loopAudioPitchLabel,
@@ -138,7 +138,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: pitchTop,
               child: LoopChoiceRow<PitchMode>(
                 values: const [PitchMode.unchanged, PitchMode.followsSpeed],
@@ -163,7 +163,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
             ),
             if (pitchCustom)
               Positioned(
-                left: 100 + 328 + 1221,
+                right: 0,
                 top: pitchTop + 28,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_audio_pitch_use_default'),
@@ -171,7 +171,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
                 ),
               ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: pitchTop + 140,
               child: LoopNote(
                 mode == PitchMode.unchanged
@@ -184,7 +184,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
             // Keeping the recorded speed keeps the recorded pitch: a readout
             // (the pen's 06 / Keep recorded speed), not a choice.
             Positioned(
-              left: 100,
+              left: 0,
               top: pitchTop + 34,
               child: LoopFieldLabel(
                 title: l10n.loopAudioPitchLabel,
@@ -192,7 +192,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: pitchTop + 42,
               child: Row(
                 key: const Key('loop_audio_pitch_readout'),
@@ -215,7 +215,7 @@ class _LoopAudioTempoPageState extends State<LoopAudioTempoPage> {
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: pitchTop + 140,
               child: LoopNote(
                 l10n.loopAudioNotePitchUnchanged,

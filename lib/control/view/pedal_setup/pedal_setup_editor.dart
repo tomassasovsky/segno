@@ -145,20 +145,17 @@ class PedalSetupEditorFrame extends StatelessWidget {
   /// The editing area.
   final Widget child;
 
-  /// The pen's box.
-  static const Size penSize = Size(1720, 212);
+  /// The box's height. It takes its parent's width, the page's content box.
+  static const double height = 212;
 
-  /// The pen's inset before the fields.
+  /// The pen's inset before the fields, which take the rest of the width.
   static const double fieldsLeft = 332;
-
-  /// What is left for them.
-  static const double fieldsWidth = 1720 - fieldsLeft;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return SizedBox.fromSize(
-      size: penSize,
+    return SizedBox(
+      height: height,
       child: Stack(
         children: [
           Positioned(
@@ -177,7 +174,7 @@ class PedalSetupEditorFrame extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(left: fieldsLeft, top: top, child: child),
+          Positioned(left: fieldsLeft, right: 0, top: top, child: child),
         ],
       ),
     );
@@ -214,11 +211,13 @@ class PedalSetupEditor extends StatelessWidget {
   Widget build(BuildContext context) => PedalSetupEditorFrame(
     title: title,
     top: 46,
+    // Press and Hold share what the trailing fields leave, so the row ends
+    // at the content edge.
     child: Row(
       children: [
-        press,
+        Expanded(child: press),
         const SizedBox(width: fieldGap),
-        hold,
+        Expanded(child: hold),
         for (final field in trailing) ...[
           const SizedBox(width: fieldGap),
           field,

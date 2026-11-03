@@ -95,8 +95,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   bool _saving = false;
   bool _saveFailed = false;
 
-  /// The pen's insets inside the 1920 x 984 main area.
-  static const double _left = 100;
+  /// The pen's offsets inside the frame's content box.
   static const double _controlsTop = 120;
   static const double _mapTop = 132;
   static const double _editorTop = 724;
@@ -117,7 +116,6 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             body: LoopSettingsFrame(
               crumb: l10n.pedalSetupCrumb,
               title: l10n.pedalSetupTitle,
-              titleLeft: _left,
               onBack: () => Navigator.of(context).maybePop(),
               onStage: _stage,
               children: [
@@ -151,35 +149,40 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                   key: const Key('pedal_setup_page'),
                   crumb: l10n.pedalSetupCrumb,
                   title: l10n.pedalSetupTitle,
-                  titleLeft: _left,
                   onBack: () => Navigator.of(context).maybePop(),
                   onStage: _stage,
                   actions: _actions(context, control, setup),
                   children: [
                     Positioned(
-                      left: _left,
+                      left: 0,
+                      right: 0,
                       top: _controlsTop,
                       child: _contexts(context),
                     ),
+                    // The pedal map keeps its drawn geometry, centred on the
+                    // page as on the console.
                     Positioned(
-                      left: _left,
+                      left: 0,
+                      right: 0,
                       top: _mapTop,
-                      child: PedalSetupMap(
-                        frame: frame,
-                        // LED colors previews the shown mode's draft
-                        // colours; every other context shows what the pedal
-                        // lights now.
-                        preview: _context == PedalSetupContext.leds
-                            ? _ledPreview(setup)
-                            : null,
-                        physicalLabels: _context == PedalSetupContext.leds,
-                        selected: _selectedGroup,
-                        editable: _editable,
-                        onSelect: (button) =>
-                            setState(() => _selected = button),
-                        bank: _mapBank,
-                        bankSelectable: _context == PedalSetupContext.custom,
-                        onToggleBank: () => setState(() => _bank = 1 - _bank),
+                      child: Center(
+                        child: PedalSetupMap(
+                          frame: frame,
+                          // LED colors previews the shown mode's draft
+                          // colours; every other context shows what the pedal
+                          // lights now.
+                          preview: _context == PedalSetupContext.leds
+                              ? _ledPreview(setup)
+                              : null,
+                          physicalLabels: _context == PedalSetupContext.leds,
+                          selected: _selectedGroup,
+                          editable: _editable,
+                          onSelect: (button) =>
+                              setState(() => _selected = button),
+                          bank: _mapBank,
+                          bankSelectable: _context == PedalSetupContext.custom,
+                          onToggleBank: () => setState(() => _bank = 1 - _bank),
+                        ),
                       ),
                     ),
                     if (control.state.pedalSetupUnavailable ||
@@ -187,9 +190,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                         control.state.pedalSetupRuntimeUnsaved ||
                         _saveFailed)
                       Positioned(
-                        left: _left,
+                        left: 0,
+                        right: 0,
                         top: 388,
-                        width: 1720,
                         height: 64,
                         child: Center(
                           child: AppText(
@@ -220,7 +223,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                         ),
                       ),
                     Positioned(
-                      left: _left,
+                      left: 0,
+                      right: 0,
                       top: _editorTop,
                       child: _editor(context, setup),
                     ),
@@ -391,7 +395,6 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   Widget _contexts(BuildContext context) {
     final l10n = context.l10n;
     return SizedBox(
-      width: 1720,
       height: 72,
       child: Row(
         children: [

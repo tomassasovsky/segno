@@ -25,9 +25,6 @@ class ControllerFirmwarePage extends StatelessWidget {
   /// Creates a [ControllerFirmwarePage].
   const ControllerFirmwarePage({super.key});
 
-  /// The panel's width: the About page's column.
-  static const double width = AboutSettingsPage.columnWidth;
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -38,16 +35,17 @@ class ControllerFirmwarePage extends StatelessWidget {
         .facts
         .lastFlashed;
     final facts = ControllerFacts.read(pedal: pedal, lastFlashed: lastFlashed);
+    // The About page's left column.
+    final width = LoopSettingsFrame.halfWidthOf(context);
     return Scaffold(
       body: LoopSettingsFrame(
         crumb: l10n.controllerFirmwareCrumb,
         title: l10n.controllerFirmwareTitle,
-        titleLeft: 100,
         onBack: () => Navigator.maybePop(context),
         onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
         children: [
           Positioned(
-            left: AboutSettingsPage.columns[0],
+            left: 0,
             top: AboutSettingsPage.top,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

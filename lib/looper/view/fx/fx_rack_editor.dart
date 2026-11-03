@@ -21,12 +21,16 @@ const double kFxPedalGap = 26;
 /// The pen's pedal strip height.
 const double kFxPedalHeight = 650;
 
-/// The left edge of the pen's Track Solo chip in the rack editor's titlebar.
-const double _kSoloLeft = 926;
+/// The left edge of the pen's Track Solo chip in the rack editor's titlebar,
+/// measured back from the content box's right edge, where the row ends.
+const double _kSoloFromRight = 958;
+
+/// The left edge of the rack's own actions, from the same right edge.
+const double _kActionsFromRight = 744;
 
 /// Where the title ends: before the Effects power control (#1452), whose
 /// right edge is 24 short of Track Solo and which is about 270 wide.
-const double _kTitleRight = 1920 - _kSoloLeft + 24 + 300;
+const double _kTitleRight = _kSoloFromRight + 24 + 300;
 
 /// One rack, opened in place (accepted design, `01 Connected pedal editor`):
 /// its pedals side by side with a plain cable between them, each pedal's own
@@ -104,7 +108,7 @@ class FxRackEditor extends StatelessWidget {
           // switch (#1452).
           if (address != null)
             Positioned(
-              right: kLoopPenSize.width - _kSoloLeft + 24,
+              right: _kSoloFromRight + 24,
               top: 32,
               child: FxChainPower(
                 address: address,
@@ -114,7 +118,7 @@ class FxRackEditor extends StatelessWidget {
           // The pen's Track Solo chip, at the left end of the titlebar's row
           // and centred on its 64-high buttons.
           Positioned(
-            left: _kSoloLeft,
+            left: LoopSettingsFrame.contentWidthOf(context) - _kSoloFromRight,
             top: 52,
             child: FxTrackSolo(destination: destination),
           ),
@@ -124,7 +128,8 @@ class FxRackEditor extends StatelessWidget {
             // to the pedal-binding surface, which is not built; the four that
             // are keep the pen's own right edge rather than sliding left into
             // the gap it would have left.
-            left: 1140,
+            left:
+                LoopSettingsFrame.contentWidthOf(context) - _kActionsFromRight,
             top: 32,
             child: _RackActions(
               enabled: group.anyEnabled,
@@ -139,18 +144,18 @@ class FxRackEditor extends StatelessWidget {
           ),
           if (!chainOn)
             Positioned(
-              left: 36,
+              left: 0,
               top: 124,
-              right: 36,
+              right: 0,
               child: FxChainOffNotice(
                 message: l10n.fxChainOffHere,
                 onTurnOn: () => edits.setChainEnabled(enabled: true),
               ),
             ),
           Positioned(
-            left: 36,
+            left: 0,
             top: 124 + band,
-            right: 36,
+            right: 0,
             height: pedalHeight,
             child: Opacity(
               key: const Key('fx_pedal_strip'),
@@ -189,9 +194,9 @@ class FxRackEditor extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 36,
+            left: 0,
             top: 798,
-            right: 36,
+            right: 0,
             height: 162,
             child: FxChannelFooter(
               group: group,

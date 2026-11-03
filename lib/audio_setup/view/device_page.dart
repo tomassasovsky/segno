@@ -29,9 +29,10 @@ class DevicePage extends StatefulWidget {
   /// Creates a [DevicePage].
   const DevicePage({super.key});
 
-  /// The workspace's inset in the frame's main area (pen 28/01: the
-  /// workspace at 36, 124 and its content 52 in from it).
-  static const EdgeInsets inset = EdgeInsets.fromLTRB(88, 148, 88, 0);
+  /// The workspace's inset in the frame's content box: its full width,
+  /// under the title (pen 28/01 drew the content 52 in from the title;
+  /// #1590 lines them up).
+  static const EdgeInsets inset = EdgeInsets.fromLTRB(0, 148, 0, 0);
 
   /// The Apply row's top in the main area.
   static const double applyRowTop = 852;

@@ -100,14 +100,15 @@ void main() {
       expect(find.byType(SettingsTile), findsNWidgets(10));
 
       // The frame lays the pen out 1:1 at 1920 x 1080, with a 96 px top bar
-      // over the main area the tile positions are measured in.
+      // over the main area the tile positions are measured in. The rows of
+      // five fill the content box, 32 in from each edge, 24 apart (#1590).
       expect(
         tester.getRect(tile(SettingsDestination.effects)),
-        const Rect.fromLTWH(100, 368, 325, 244),
+        const Rect.fromLTWH(32, 368, 352, 244),
       );
       expect(
         tester.getRect(tile(SettingsDestination.updates)),
-        const Rect.fromLTWH(1495, 636, 325, 244),
+        const Rect.fromLTWH(1536, 636, 352, 244),
       );
       final order = [
         for (final destination in SettingsDestination.values)
@@ -140,9 +141,10 @@ void main() {
           'assets/settings/${destination.key}.png',
         );
         expect(tester.getSize(art), const Size(128, 128));
+        // Centred across the tile, at the pen's 32 from its top.
         expect(
           tester.getTopLeft(art) - tester.getTopLeft(tile(destination)),
-          const Offset(98, 32),
+          const Offset((352 - 128) / 2, 32),
         );
       }
     });
@@ -406,8 +408,8 @@ void main() {
 
       final button = find.byKey(const Key('settings_power'));
       expect(button, findsOneWidget);
-      // At the title's right edge, as the pen's title bar has it.
-      expect(tester.getTopRight(button).dx, 1920 - 100);
+      // At the title row's right edge: the page's one 32 inset (#1590).
+      expect(tester.getTopRight(button).dx, 1920 - 32);
       await tester.tap(button);
       await tester.pump();
 

@@ -982,6 +982,54 @@ void main() {
     expect(previews.every((value) => value <= max), isTrue);
   });
 
+  group('the page inset (#1590 SET-1, SET-2)', () {
+    double titleLeft(WidgetTester tester) =>
+        tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx;
+
+    testWidgets('the hub rows span the content box under the title', (
+      tester,
+    ) async {
+      await pump(tester);
+      final row = tester.getRect(find.byKey(const Key('loop_hub_mode')));
+      expect(titleLeft(tester), 32);
+      expect(row.left, 32);
+      expect(row.right, 1920 - 32);
+    });
+
+    testWidgets('the mode cards fill the content box under the title', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsPageId.mode);
+      final first = tester.getRect(
+        find.byKey(Key('loop_mode_${LooperMode.values.first.name}')),
+      );
+      final last = tester.getRect(
+        find.byKey(Key('loop_mode_${LooperMode.values.last.name}')),
+      );
+      expect(first.left, titleLeft(tester));
+      expect(last.right, 1920 - 32);
+    });
+
+    testWidgets('Recording starts under the title', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.recording);
+      final l10n = AppLocalizations.of(
+        tester.element(find.byKey(const Key('loop_settings_title'))),
+      );
+      expect(
+        tester.getTopLeft(find.text(l10n.loopRecordingStart)).dx,
+        titleLeft(tester),
+      );
+    });
+
+    testWidgets('Tempo starts under the title', (tester) async {
+      await pump(tester, initial: LoopSettingsPageId.tempo);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('loop_tempo_readout'))).dx,
+        titleLeft(tester),
+      );
+    });
+  });
+
   group('hub', () {
     testWidgets('arrow focus and Enter open the next submenu', (tester) async {
       await pump(tester);

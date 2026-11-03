@@ -130,11 +130,19 @@ void main() {
       final first = TouchCalibrationPage.captureTargets.first;
       expect(
         tester.getCenter(target),
-        Offset(
-          area.left + first.x * area.width,
-          area.top + first.y * area.height,
+        offsetMoreOrLessEquals(
+          Offset(
+            area.left + first.x * area.width,
+            area.top + first.y * area.height,
+          ),
         ),
       );
+      // Under the title, across the content box (#1590 SET-2).
+      expect(
+        area.left,
+        tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx,
+      );
+      expect(area.right, 1920 - 32);
       await tester.tap(find.byKey(const Key('touch_calibration_cancel')));
       await tester.pumpAndSettle();
     });

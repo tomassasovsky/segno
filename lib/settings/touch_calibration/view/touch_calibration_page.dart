@@ -69,9 +69,14 @@ class TouchCalibrationPage extends StatelessWidget {
 /// in whole-screen terms, so the area's targets and taps are converted before
 /// they reach the cubit.
 abstract final class MainCalibrationArea {
-  /// The area in the 1920 x 1080 pen canvas: the workspace at (36, 124)
-  /// under the 96 px top bar, and the area at (52, 56) in it.
-  static const Rect rect = Rect.fromLTWH(88, 276, 1744, 660);
+  /// The area in the 1920 x 1080 pen canvas: the settings frame's content
+  /// box across, at y 276 (#1590 lines it up with the title).
+  static final Rect rect = Rect.fromLTWH(
+    SpacingTheme.standard.xxl,
+    276,
+    kLoopPenSize.width - 2 * SpacingTheme.standard.xxl,
+    660,
+  );
 
   /// [TouchCalibrationPage.captureTargets] as screen points.
   static final List<TouchPoint> toScreen = [
@@ -188,27 +193,26 @@ class _TouchCalibrationViewState extends State<TouchCalibrationView> {
               ),
               children: [
                 Positioned(
-                  left: MainCalibrationArea.rect.left,
+                  left: 0,
                   top: 124,
-                  width: MainCalibrationArea.rect.width,
+                  right: 0,
                   child: _Instruction(readout: _readout),
                 ),
                 Positioned(
                   left: _readout
-                      ? MainCalibrationArea.rect.left +
-                            (MainCalibrationArea.rect.width -
-                                    TouchCalibrationView.trackArea.width) /
-                                2
-                      : MainCalibrationArea.rect.left,
+                      ? (MainCalibrationArea.rect.width -
+                                TouchCalibrationView.trackArea.width) /
+                            2
+                      : 0,
                   top: MainCalibrationArea.rect.top - kLoopTopBarHeight,
                   child: _readout ? const _TrackMirror() : const _MainArea(),
                 ),
-                Positioned(
-                  left: MainCalibrationArea.rect.left,
+                const Positioned(
+                  left: 0,
                   top: 124 + 740,
-                  width: MainCalibrationArea.rect.width,
+                  right: 0,
                   height: 76,
-                  child: const _Footer(),
+                  child: _Footer(),
                 ),
               ],
             ),

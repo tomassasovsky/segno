@@ -30,13 +30,6 @@ class AboutSettingsPage extends StatefulWidget {
   /// Creates an [AboutSettingsPage].
   const AboutSettingsPage({super.key});
 
-  /// The two columns' left edges in the frame's main area: the pen's 100 px
-  /// page margin, then a 24 px gutter.
-  static const List<double> columns = [100, 972];
-
-  /// Each column's width.
-  static const double columnWidth = 848;
-
   /// The columns' top in the frame's main area, under the title row.
   static const double top = 120;
 
@@ -96,10 +89,11 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
     );
     final packages = _packages;
 
+    final width = LoopSettingsFrame.halfWidthOf(context);
     final thisConsole = SettingsFactPanel(
       key: const Key('about_this_console'),
       title: l10n.aboutThisConsolePanel,
-      width: AboutSettingsPage.columnWidth,
+      width: width,
       rows: [
         // A name hangs off the serial, so a build that read none has nothing
         // to rename and no name of its own to show.
@@ -163,17 +157,16 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
       body: LoopSettingsFrame(
         crumb: l10n.settingsCrumb(l10n.settingsAboutTitle),
         title: l10n.settingsAboutTitle,
-        titleLeft: 100,
         onBack: () => Navigator.maybePop(context),
         onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
         children: [
           Positioned(
-            left: AboutSettingsPage.columns[0],
+            left: 0,
             top: AboutSettingsPage.top,
             child: thisConsole,
           ),
           Positioned(
-            left: AboutSettingsPage.columns[1],
+            right: 0,
             top: AboutSettingsPage.top,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,7 +174,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                 SettingsFactPanel(
                   key: const Key('about_controller'),
                   title: l10n.aboutControllerPanel,
-                  width: AboutSettingsPage.columnWidth,
+                  width: width,
                   rows: [
                     SettingsFactRow(
                       key: const Key('about_controller_connection'),
@@ -200,7 +193,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                 SettingsFactPanel(
                   key: const Key('about_licenses'),
                   title: l10n.aboutLicensesPanel,
-                  width: AboutSettingsPage.columnWidth,
+                  width: width,
                   rows: [
                     SettingsFactRow(
                       key: const Key('about_notices'),
