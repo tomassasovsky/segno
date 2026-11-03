@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -78,51 +79,38 @@ class NoticeBar extends StatelessWidget {
 /// - A must-act message: the dot or icon, the sentence and the one fix,
 ///   while [NoticeBar] tints the bar. A passing message still takes the
 ///   centre for its time, then the must-act message comes back.
-/// - [showsTrackMessages]: on a bar whose screen shows no track cards (the
-///   performance views, the settings pages), a message a track caused is
-///   said here, after the track's name.
+/// - A message a track caused is said on the track's card where that card
+///   is on screen ([trackCards]), and here, after the track's name, where it
+///   is not: the other bank, the Mixer (whose strip is all controls), the
+///   performance views and the settings pages.
 ///
 /// Laid out by `TopBarLayout` at the bar's full height.
 class NoticeBarMessage extends StatelessWidget {
   /// Creates a [NoticeBarMessage].
-  const NoticeBarMessage({
-    this.fallback,
-    this.showsTrackMessages = false,
-    super.key,
-  });
+  const NoticeBarMessage({this.fallback, this.trackCards, super.key});
 
   /// What the centre shows when nothing is said: the session name on the
   /// stage, nothing elsewhere.
   final Widget? fallback;
 
-  /// Whether a message a track caused is said here too.
-  final bool showsTrackMessages;
+  /// Whether a track's card is on this screen to say its own messages; null
+  /// on a screen with no track cards, where the bar says every track's.
+  final bool Function(int channel)? trackCards;
 
   @override
   Widget build(BuildContext context) {
-    final message = context.selectNotices<ShownNotice?>(
-      (state) => state.held ? null : state.message,
+    final passing = context.selectNotices<({int? channel, ShownNotice shown})?>(
+      (state) => state.passing(onCard: trackCards),
     );
     final banner = context.selectNotices<ShownNotice?>(
       (state) => state.banner,
     );
-    final track = showsTrackMessages
-        ? context.selectNotices<({int channel, ShownNotice shown})?>(
-            (state) => state.latestTrackMessage,
-          )
-        : null;
     final Widget current;
-    if (message != null &&
-        (track == null || message.serial > track.shown.serial)) {
+    if (passing case (:final channel, :final shown)) {
       current = _PassingMessage(
-        key: ValueKey('message_${message.notice.id}'),
-        shown: message,
-      );
-    } else if (track != null) {
-      current = _PassingMessage(
-        key: ValueKey('track_${track.channel}_${track.shown.notice.id}'),
-        shown: track.shown,
-        channel: track.channel,
+        key: ValueKey('message_${channel}_${shown.notice.id}'),
+        shown: shown,
+        channel: channel,
       );
     } else if (banner != null) {
       current = _MustActMessage(
@@ -183,7 +171,7 @@ class _PassingMessage extends StatelessWidget {
           height: theme.timeLineThickness,
           child: _TimeLeft(
             key: ValueKey(shown.serial),
-            duration: notice.duration,
+            shown: shown,
             color: colors.line,
           ),
         ),
@@ -377,22 +365,32 @@ class _ActionButton extends StatelessWidget {
 
 /// The time-left line: as wide as the message when it appears, shrinking to
 /// its centre at a steady rate until the message goes.
-class _TimeLeft extends StatelessWidget {
-  const _TimeLeft({required this.duration, required this.color, super.key});
+class _TimeLeft extends StatefulWidget {
+  const _TimeLeft({required this.shown, required this.color, super.key});
 
-  final Duration duration;
+  final ShownNotice shown;
   final Color color;
 
   @override
+  State<_TimeLeft> createState() => _TimeLeftState();
+}
+
+/// Starts from the time the message has left, read once when the line is
+/// built, so a bar that comes up while the message is already going by (a
+/// screen change) picks the line up where it is.
+class _TimeLeftState extends State<_TimeLeft> {
+  late final double _left = widget.shown.leftAt(clock.now());
+
+  @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween(begin: 1, end: 0),
-    duration: duration,
+    tween: Tween(begin: _left, end: 0),
+    duration: widget.shown.notice.duration * _left,
     builder: (context, left, _) => Center(
       child: FractionallySizedBox(
         key: const Key('notice_bar_time_left'),
         widthFactor: left,
         heightFactor: 1,
-        child: ColoredBox(color: color),
+        child: ColoredBox(color: widget.color),
       ),
     ),
   );

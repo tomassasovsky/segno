@@ -312,6 +312,39 @@ void main() {
         );
       });
 
+      testWidgets("carries the main bar's marks: the dot only for a critical "
+          'message', (tester) async {
+        await pump(
+          tester,
+          readout: const PerformanceReadout(selected: selected, notice: lost),
+        );
+        expect(
+          find.byKey(const Key('console_readout_notice_dot')),
+          findsOneWidget,
+        );
+        await pump(
+          tester,
+          readout: const PerformanceReadout(
+            selected: selected,
+            notice: ReadoutNotice(
+              title: 'Cleared all tracks',
+              tone: NoticeTone.neutral,
+            ),
+          ),
+        );
+        expect(
+          find.byKey(const Key('console_readout_notice_dot')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('console_readout_notice')),
+            matching: find.byType(Icon),
+          ),
+          findsNothing,
+        );
+      });
+
       testWidgets("a track's message says the track first, on one line", (
         tester,
       ) async {

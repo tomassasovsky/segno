@@ -25,7 +25,7 @@ void main() {
       final cubit = NoticesCubit();
       expect(cubit.state, const NoticesState());
       expect(cubit.state.banner, isNull);
-      expect(cubit.state.latestTrackMessage, isNull);
+      expect(cubit.state.passing(), isNull);
       await cubit.close();
     });
 
@@ -132,7 +132,7 @@ void main() {
             ..showOnTrack(0, _notice('a', tone: NoticeTone.warning));
           async.elapse(const Duration(seconds: 3));
           cubit.showOnTrack(2, _notice('b', tone: NoticeTone.warning));
-          expect(cubit.state.latestTrackMessage?.channel, 2);
+          expect(cubit.state.passing()?.channel, 2);
           async.elapse(const Duration(seconds: 3));
           expect(cubit.state.trackMessage(0), isNull);
           expect(cubit.state.trackMessage(2)?.notice.id, 'b');
@@ -153,6 +153,44 @@ void main() {
           expect(cubit.state.trackMessage(0)?.notice.id, 'b');
           async.elapse(const Duration(seconds: 4));
           expect(cubit.state.trackMessage(0), isNull);
+          unawaited(cubit.close());
+        });
+      });
+    });
+
+    group('passing', () {
+      test("is the newest of the bar's message and the tracks'", () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('saved'))
+            ..showOnTrack(1, _notice('rec', tone: NoticeTone.warning));
+          expect(cubit.state.passing()?.channel, 1);
+          cubit.show(_notice('loaded'));
+          expect(cubit.state.passing()?.channel, isNull);
+          expect(cubit.state.passing()?.shown.notice.id, 'loaded');
+          unawaited(cubit.close());
+        });
+      });
+
+      test('leaves out a track whose card says it', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('saved'))
+            ..showOnTrack(1, _notice('rec', tone: NoticeTone.warning));
+          final onCard = cubit.state.passing(onCard: (channel) => channel < 4);
+          expect(onCard?.shown.notice.id, 'saved');
+          final offCard = cubit.state.passing(onCard: (channel) => channel > 3);
+          expect(offCard?.channel, 1);
+          unawaited(cubit.close());
+        });
+      });
+
+      test('is nothing while held', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('saved'))
+            ..setHeld(held: true);
+          expect(cubit.state.passing(), isNull);
           unawaited(cubit.close());
         });
       });
@@ -181,6 +219,14 @@ void main() {
         expect(cubit.state.banner?.notice.id, 'monitor');
         cubit.clear('monitor');
         expect(cubit.state.banner?.notice.id, 'fx');
+        addTearDown(cubit.close);
+      });
+
+      test('success and neutral rank alike: the newest wins', () {
+        final cubit = NoticesCubit()
+          ..raise(_notice('saved', tone: NoticeTone.success))
+          ..raise(_notice('starting'));
+        expect(cubit.state.banner?.notice.id, 'starting');
         addTearDown(cubit.close);
       });
 

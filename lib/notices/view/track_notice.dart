@@ -24,12 +24,22 @@ Color? trackNoticeRing(BuildContext context, int channel) {
 /// card's free area at one type ramp on every card.
 ///
 /// It takes the place of the area's own content ([child]: the meter, the
-/// waveform, the fader) for as long as the message is up, and gives it back
-/// as it was: the content keeps its state behind the message, unseen. The
-/// message itself takes no touch, so a tap still reaches the card.
+/// waveform) for as long as the message is up, and gives it back as it was:
+/// the content keeps its state behind the message, unseen. The message
+/// itself takes no touch, so a tap still reaches the card. Only display
+/// goes behind it, never a control: the Mixer's strip, which is all
+/// controls, rings and leaves the words to the top bar.
+///
+/// While the area says something more pressing ([yields]: an action queued
+/// on the track) the message steps aside and the card only rings.
 class TrackNotice extends StatelessWidget {
   /// Creates a [TrackNotice] for [channel] over [child].
-  const TrackNotice({required this.channel, required this.child, super.key});
+  const TrackNotice({
+    required this.channel,
+    required this.child,
+    this.yields = false,
+    super.key,
+  });
 
   /// The track whose message this shows.
   final int channel;
@@ -37,11 +47,15 @@ class TrackNotice extends StatelessWidget {
   /// The area's own content.
   final Widget child;
 
+  /// Whether the area's own content wins over the message for now.
+  final bool yields;
+
   @override
   Widget build(BuildContext context) {
-    final shown = context.selectNotices<ShownNotice?>(
+    final message = context.selectNotices<ShownNotice?>(
       (state) => state.trackMessage(channel),
     );
+    final shown = yields ? null : message;
     return Stack(
       fit: StackFit.expand,
       children: [

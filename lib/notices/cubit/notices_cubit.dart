@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc/bloc.dart';
+import 'package:clock/clock.dart';
 import 'package:equatable/equatable.dart';
 import 'package:segno/notices/model/notice.dart';
 
@@ -31,6 +32,9 @@ class NoticesCubit extends Cubit<NoticesState> {
   Timer? _messageTimer;
   final _trackTimers = <int, Timer>{};
 
+  ShownNotice _shown(Notice notice) =>
+      ShownNotice(notice: notice, serial: ++_serial, shownAt: clock.now());
+
   /// Shows [notice] in the top bar for its [Notice.duration].
   ///
   /// The same id again restarts the time in place.
@@ -40,7 +44,7 @@ class NoticesCubit extends Cubit<NoticesState> {
       'A message that goes by itself is never critical; raise it instead.',
     );
     if (_dropped(notice)) return;
-    final shown = ShownNotice(notice: notice, serial: ++_serial);
+    final shown = _shown(notice);
     _messageTimer?.cancel();
     _messageTimer = Timer(notice.duration, () {
       if (state.message?.serial == shown.serial) {
@@ -57,7 +61,7 @@ class NoticesCubit extends Cubit<NoticesState> {
       'A message that goes by itself is never critical; raise it instead.',
     );
     if (_dropped(notice)) return;
-    final shown = ShownNotice(notice: notice, serial: ++_serial);
+    final shown = _shown(notice);
     _trackTimers[channel]?.cancel();
     _trackTimers[channel] = Timer(notice.duration, () {
       if (state.tracks[channel]?.serial != shown.serial) return;
@@ -71,7 +75,7 @@ class NoticesCubit extends Cubit<NoticesState> {
   ///
   /// Raising an id that stands replaces it and makes it the newest.
   void raise(Notice notice) {
-    final shown = ShownNotice(notice: notice, serial: ++_serial);
+    final shown = _shown(notice);
     final message = state.message?.notice.id == notice.id
         ? null
         : state.message;

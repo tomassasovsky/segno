@@ -91,10 +91,12 @@ class ReadoutNotice extends Equatable {
     if (map is! Map<Object?, Object?>) return null;
     final title = map['title'];
     if (title is! String) return null;
+    final body = map['body'];
+    final track = map['track'];
     return ReadoutNotice(
       title: title,
-      body: map['body'] as String?,
-      track: map['track'] as String?,
+      body: body is String ? body : null,
+      track: track is String ? track : null,
       tone: NoticeTone.values.asNameMap()[map['tone']] ?? NoticeTone.neutral,
     );
   }

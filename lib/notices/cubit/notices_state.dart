@@ -4,13 +4,28 @@ part of 'notices_cubit.dart';
 /// which is new each time it is shown, so a repeat restarts its time.
 class ShownNotice extends Equatable {
   /// Creates a [ShownNotice].
-  const ShownNotice({required this.notice, required this.serial});
+  const ShownNotice({
+    required this.notice,
+    required this.serial,
+    required this.shownAt,
+  });
 
   /// What it says.
   final Notice notice;
 
   /// Which show this is: higher is newer.
   final int serial;
+
+  /// When it went up, so a bar built while it is up shows the time it has
+  /// left rather than starting it again.
+  final DateTime shownAt;
+
+  /// The share of its [Notice.duration] still to go at [now], from 1 to 0.
+  double leftAt(DateTime now) {
+    final total = notice.duration.inMicroseconds;
+    final gone = now.difference(shownAt).inMicroseconds;
+    return (1 - gone / total).clamp(0.0, 1.0);
+  }
 
   @override
   List<Object?> get props => [serial];
@@ -44,25 +59,52 @@ class NoticesState extends Equatable {
   ShownNotice? get banner {
     if (held || banners.isEmpty) return null;
     return banners.reduce(
-      (best, next) => _rank(next) > _rank(best) ? next : best,
+      (best, next) => _outranks(next, best) ? next : best,
     );
   }
 
   /// [channel]'s passing message, null while [held].
   ShownNotice? trackMessage(int channel) => held ? null : tracks[channel];
 
-  /// The newest passing message a track caused, for surfaces that show no
-  /// track cards; null while [held].
-  ({int channel, ShownNotice shown})? get latestTrackMessage {
-    if (held || tracks.isEmpty) return null;
-    final newest = tracks.entries.reduce(
-      (best, next) => next.value.serial > best.value.serial ? next : best,
-    );
-    return (channel: newest.key, shown: newest.value);
+  /// The passing message a top bar says: its own [message] or a track's,
+  /// whichever is newer, with the track's channel when it is a track's.
+  ///
+  /// A track whose card is on the bar's screen ([onCard]) says its message
+  /// on the card, so the bar leaves it out; with no [onCard] the screen has
+  /// no track cards and the bar says every track's. Null while [held].
+  ({int? channel, ShownNotice shown})? passing({
+    bool Function(int channel)? onCard,
+  }) {
+    if (held) return null;
+    ({int? channel, ShownNotice shown})? newest = switch (message) {
+      final message? => (channel: null, shown: message),
+      null => null,
+    };
+    for (final MapEntry(key: channel, value: shown) in tracks.entries) {
+      if (onCard?.call(channel) ?? false) continue;
+      if (newest == null || shown.serial > newest.shown.serial) {
+        newest = (channel: channel, shown: shown);
+      }
+    }
+    return newest;
   }
 
-  static int _rank(ShownNotice shown) =>
-      shown.notice.tone.index * 1000000000 + shown.serial;
+  /// Critical first, then warning, then every other tone alike; the newest
+  /// within a rank.
+  static (int, int) _rank(ShownNotice shown) => (
+    switch (shown.notice.tone) {
+      NoticeTone.critical => 2,
+      NoticeTone.warning => 1,
+      NoticeTone.neutral || NoticeTone.success => 0,
+    },
+    shown.serial,
+  );
+
+  static bool _outranks(ShownNotice a, ShownNotice b) {
+    final (rankA, serialA) = _rank(a);
+    final (rankB, serialB) = _rank(b);
+    return rankA != rankB ? rankA > rankB : serialA > serialB;
+  }
 
   NoticesState _copyWith({
     ShownNotice? Function()? message,
