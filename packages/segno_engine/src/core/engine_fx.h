@@ -343,7 +343,10 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
  * here on: the octaver runtime and its heap buffers are touched only for a
  * kind of the octaver family (le_fx_type_hops), because the control thread
  * may be preparing those buffers for a coming retype while the slot runs
- * another kind (#1522). Does NOT allocate/free the delay ring or
+ * another kind (#1522), and the kind's delay rings, when allocated, become
+ * known to the calling thread (le_fx_state::ring_known). A live slot's
+ * buffers are prepared before its kind lands, so a render that replays a
+ * landing prepares first too. Does NOT allocate/free the delay ring or
  * octaver heap buffers (the control thread owns those). Of the
  * enable-crossfade runtime it clears only the DRAIN state: a retyped slot has
  * no tail to drain, and a stale budget would let the next re-enable edge skip
@@ -355,10 +358,10 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type);
 
 /* Zeroes the delay rings chain slot [slot] runs on as [type] ([cap] floats
  * each) when allocated: the audio-thread half of "start clean" that
- * le_fx_entry_reset deliberately leaves out. A ring [type] does not run on is
- * left alone, as le_fx_entry_reset leaves the octaver's buffers (#1522). One
- * ring is cap floats, so callers space these (see
- * LE_FX_ENABLE_CLEAR_SPACING). */
+ * le_fx_entry_reset deliberately leaves out. Of the delay rings, only those
+ * [type] runs on or an earlier kind of the slot left: another may be in the
+ * making on the control thread for a coming retype (#1522). One ring is cap
+ * floats, so callers space these (see LE_FX_ENABLE_CLEAR_SPACING). */
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
                              int32_t type);
 

@@ -1536,15 +1536,16 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
   }
 }
 
-/* What the ring handler does to a live slot when a type lands on it: the
- * reset, then (control side, earlier) its buffers. The one sequence the arm
- * set-up and the logged type changes both replay. Returns 0 on an allocation
- * failure. */
+/* What a live slot goes through when a type lands on it: its buffers (control
+ * side, before the command), then the ring handler's reset. The one sequence
+ * the arm set-up and the logged type changes both replay. Returns 0 on an
+ * allocation failure. */
 static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
                             int32_t sample_rate) {
+  const int ok = type == LE_FX_NONE ||
+                 le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
   le_fx_entry_reset(fx, s, type);
-  return type == LE_FX_NONE ||
-         le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
+  return ok;
 }
 
 /* What the callback does to a live slot when a logged type command lands on

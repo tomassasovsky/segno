@@ -1759,6 +1759,17 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
  * buffers (~9 KB/channel; the frame scratch is not cleared, see
  * le_octaver_state::analysed). That is bounded and fires only on a discrete type-change
  * event (never per sample), consistent with the existing reverb-line clears. */
+/* The delay rings [type] runs on (defined with the vtable). */
+static int le_fx_ring_count(int32_t type);
+
+/* Whether delay[slot][c] is one this thread may read for a slot running a
+ * kind with [rings] rings: one of the kind's, or one the slot's earlier
+ * kinds left (ring_known). */
+static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
+                               int rings) {
+  return c < rings || ((fx->ring_known[slot] >> c) & 1u) != 0;
+}
+
 /* The Mode delay's line (defined with its kernel). */
 static void le_mdly_reset(struct le_fx_line* line);
 static void le_mdly_clear(struct le_fx_line* line);
@@ -1775,6 +1786,12 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
    * octaver runtime is unread until a type of the family lands here, and
    * that landing resets it. */
   const int hops = le_fx_type_hops(type);
+  /* The kind's rings were published with it: from here on they are known
+   * to this thread whatever runs on the slot. */
+  const int rings = le_fx_ring_count(type);
+  for (int c = 0; c < rings; ++c) {
+    if (fx->delay[slot][c] != NULL) fx->ring_known[slot] |= (uint8_t)(1u << c);
+  }
   struct le_fx_line* line =
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_reset(line);
@@ -1832,15 +1849,13 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
   }
 }
 
-/* The delay rings [type] runs on (defined with the vtable). */
-static int le_fx_ring_count(int32_t type);
-
-/* Zeroes the delay rings slot [slot] runs on as [type] ([cap] floats each)
- * when allocated: the audio-thread half of "start clean" that
- * le_fx_entry_reset leaves out. Shared by the settled-bypass re-enable edge
- * and Cut all sound; one ring is cap floats, so callers decide the spacing.
- * A ring [type] does not run on is left alone: the control thread may be
- * allocating it for a coming retype while the slot runs [type] (#1522). */
+/* Zeroes slot [slot]'s delay rings ([cap] floats each) when allocated: the
+ * audio-thread half of "start clean" that le_fx_entry_reset leaves out.
+ * Shared by the settled-bypass re-enable edge and Cut all sound; one ring is
+ * cap floats, so callers decide the spacing. Of the rings, only those [type]
+ * runs on or an earlier kind left (ring_known): the control thread may be
+ * allocating another for a coming retype while the slot runs [type]
+ * (#1522). */
 void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
                              int32_t type) {
   /* The Mode delay's line reads nothing older than its clear: no zeroing
@@ -1850,7 +1865,8 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
   if (line != NULL) le_mdly_clear(line);
   const int rings = le_fx_ring_count(type);
   for (int chan = 0; chan < 2; ++chan) {
-    if (chan < rings && fx->delay[slot][chan] != NULL) {
+    if (le_fx_ring_readable(fx, slot, chan, rings) &&
+        fx->delay[slot][chan] != NULL) {
       memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
     }
     /* The Dual Octaver's low band reads its own ring (#1467). */
@@ -1951,6 +1967,7 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][0] = NULL;
   le_rt_free(fx->delay[slot][1]);
   fx->delay[slot][1] = NULL;
+  fx->ring_known[slot] = 0;
   le_rt_free(atomic_load_explicit(&fx->line[slot], memory_order_relaxed));
   atomic_store_explicit(&fx->line[slot], NULL, memory_order_relaxed);
   le_rt_free(atomic_load_explicit(&fx->amp[slot], memory_order_relaxed));
@@ -9513,9 +9530,12 @@ static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type == LE_FX_MODE_DELAY) {
     return atomic_load_explicit(&fx->line[s], memory_order_acquire) != NULL;
   }
+  if (LE_FX[type].prepare == NULL) return 0;
   const int rings = le_fx_ring_count(type);
-  for (int c = 0; c < rings; ++c) {
-    if (fx->delay[s][c] != NULL) return 1;
+  for (int c = 0; c < 2; ++c) {
+    if (le_fx_ring_readable(fx, s, c, rings) && fx->delay[s][c] != NULL) {
+      return 1;
+    }
   }
   return 0;
 }
