@@ -7,8 +7,14 @@ import 'package:segno/logging/app_log.dart';
 
 /// The audio side of the boot health heartbeat, as `segno-mark-good` reads it.
 enum BootAudio {
-  /// The engine is running.
+  /// The engine is running and its callback processed frames since the
+  /// previous status.
   ok,
+
+  /// The engine reads running, but its callback processed no frames since the
+  /// previous status: the callback stopped while the running flag stayed on
+  /// (#1519).
+  stalled,
 
   /// The interface is not there: the pinned one is unplugged, or nothing is
   /// pinned and there is no interface to pin. Not the build's fault.
@@ -19,15 +25,20 @@ enum BootAudio {
   refused,
 }
 
-/// The [BootAudio] for an engine that is [running] or not, with [config] the
-/// config it last started with (or tried to, at boot) and [devices] the
-/// enumeration, read only when the engine is not running.
+/// The [BootAudio] for an engine that is [running] or not, on a device that
+/// is [devicePresent] or not, with [config] the config it last started with
+/// (or tried to, at boot) and [devices] the enumeration.
+///
+/// A running engine whose device left, or whose device stopped on its own,
+/// keeps its running flag; it is judged like a stopped one, by whether the
+/// interface is there. The enumeration is read only then.
 BootAudio bootAudioOf({
   required bool running,
+  required bool devicePresent,
   required EngineConfig? config,
   required List<AudioDevice> Function() devices,
 }) {
-  if (running) return BootAudio.ok;
+  if (running && devicePresent) return BootAudio.ok;
   final bool present;
   try {
     final list = devices();
@@ -50,31 +61,36 @@ BootAudio bootAudioOf({
 /// working app on a committed slot is never killed for want of a readout or an
 /// interface. Those ride the heartbeat instead, which every [interval] sends
 ///
-///     STATUS=alive <n> readout <m|none> audio <ok|absent|refused>
+///     STATUS=alive <n> readout <m|none> audio <ok|stalled|absent|refused>
 ///
 /// `n` counts this timer, so a hung UI isolate stops it. `m` counts the
 /// readout's answers to a ping, which it gives only once it draws; it is
 /// `none` while the readout's connector does not read connected. `audio` is
-/// [BootAudio]. The gate commits only when `n` advanced, `m` advanced whenever
-/// both its samples counted it, and `audio` was not `refused` in both.
+/// [BootAudio]: a running engine reads `stalled` when its callback's frame
+/// count is the same as at the previous status. A change of `audio` is logged.
+/// The gate commits only when `n` advanced, `m` advanced whenever both its
+/// samples counted it, and `audio` was not `refused` or `stalled` in both.
 class BootReadiness {
   /// Creates a [BootReadiness]; nothing is sent until [start].
   BootReadiness({
     required SystemdNotify notify,
     required Future<void> firstFrame,
     required BootAudio Function() audio,
+    required int Function() audioFrames,
     required Future<bool> Function() readoutConnected,
     required Future<bool> Function() pingReadout,
     this.interval = const Duration(seconds: 5),
   }) : _notify = notify,
        _firstFrame = firstFrame,
        _audio = audio,
+       _audioFrames = audioFrames,
        _readoutConnected = readoutConnected,
        _pingReadout = pingReadout;
 
   final SystemdNotify _notify;
   final Future<void> _firstFrame;
   final BootAudio Function() _audio;
+  final int Function() _audioFrames;
   final Future<bool> Function() _readoutConnected;
   final Future<bool> Function() _pingReadout;
 
@@ -86,6 +102,11 @@ class BootReadiness {
   var _alive = 0;
   var _readoutAnswers = 0;
   var _sendFailed = false;
+
+  /// The audio part and frame count of the previous status; the count is
+  /// `null` when that status was not read from a running engine.
+  BootAudio? _lastAudio;
+  int? _lastFrames;
 
   /// Waits for the first frame, says `READY=1` with the first status, then
   /// sends the heartbeat every [interval] for the life of the process.
@@ -134,14 +155,41 @@ class BootReadiness {
         AppLog.warn('boot health: readout ping failed: $error');
       }
     }
+    final audio = _audioState();
+    final readout = connected ? '$_readoutAnswers' : 'none';
+    return 'alive $_alive readout $readout audio ${audio.name}';
+  }
+
+  /// The audio part of the status, logged when it changes.
+  BootAudio _audioState() {
     var audio = BootAudio.refused;
+    int? frames;
     try {
-      audio = _audio();
+      final state = _audio();
+      if (state == BootAudio.ok) {
+        frames = _audioFrames();
+        // Any change means the callback ran since the previous status.
+        audio = frames == _lastFrames ? BootAudio.stalled : BootAudio.ok;
+      } else {
+        audio = state;
+      }
     } on Object catch (error) {
       AppLog.warn('boot health: audio state unreadable: $error');
     }
-    final readout = connected ? '$_readoutAnswers' : 'none';
-    return 'alive $_alive readout $readout audio ${audio.name}';
+    final previous = _lastAudio;
+    _lastAudio = audio;
+    _lastFrames = frames;
+    if (previous != null && previous != audio) {
+      // An Apply or a reconnect passes through refused; only a stall is a
+      // fault on its own.
+      final line = 'boot health: audio ${previous.name} -> ${audio.name}';
+      if (audio == BootAudio.stalled) {
+        AppLog.warn(line);
+      } else {
+        AppLog.info(line);
+      }
+    }
+    return audio;
   }
 
   void _send(String status) {

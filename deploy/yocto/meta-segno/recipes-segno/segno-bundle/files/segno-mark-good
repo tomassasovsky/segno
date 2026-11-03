@@ -18,16 +18,18 @@
 #   - segno.service is Type=notify. The app sends READY=1 once the main
 #     screen has drawn its first frame, so is-active means "it drew".
 #   - Every 5 s the app's main isolate sends
-#       STATUS=alive <n> readout <m|none> audio <ok|absent|refused>
+#       STATUS=alive <n> readout <m|none> audio <ok|stalled|absent|refused>
 #     <n> counts its own timer, so a hung UI isolate stops it. <m> counts the
 #     7" readout's answers to a ping over the screen link, or is "none" while
 #     the readout's connector reads disconnected. <audio> is "refused" when an
-#     interface is present and the engine is still not running on it.
+#     interface is present and the engine is still not running on it, and
+#     "stalled" when the engine reads running but its callback processed no
+#     frames since the previous status (#1519).
 #
 # Across the window the slot is committed only when the unit stays active with
 # the same MainPID and NRestarts, the alive counter advances, the readout
 # counter advances whenever both samples counted it, and audio was not refused
-# in both samples.
+# or stalled in both samples.
 #
 # Refusing is a real decision, not an error path. On a trial boot it reboots
 # at once: the firmware's tryboot flag is one-shot, so a plain reboot comes
@@ -150,10 +152,16 @@ if is_count "$readout_before" && is_count "$readout_after" &&
 fi
 
 # Both samples: an Apply (stop, then reopen) or a reconnect passes through
-# "refused" for a moment, and a moment must not throw a good build away.
-if [ "$(status_field "$status_before" audio)" = refused ] &&
-    [ "$(status_field "$status_after" audio)" = refused ]; then
-    refuse "the audio engine is not running on the interface that is present"
+# "refused" for a moment, and a moment must not throw a good build away. A
+# stalled callback is audio that does not run either.
+audio_down() {
+    case "$(status_field "$1" audio)" in
+        refused | stalled) return 0 ;;
+    esac
+    return 1
+}
+if audio_down "$status_before" && audio_down "$status_after"; then
+    refuse "the audio engine is not running, or its callback is stalled ('$status_before' -> '$status_after')"
 fi
 
 if ! "$RAUC" status mark-good booted; then
