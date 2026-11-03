@@ -241,9 +241,10 @@ class PedalSetupCap extends StatelessWidget {
               ),
             ),
           ),
+          // Beside the pedal, clear of its art (#1590 PED-1).
           if (badge != null)
             Positioned(
-              right: 6,
+              left: slot.width + context.spacing.sm,
               top: 4,
               child: IgnorePointer(
                 child: AppText(
