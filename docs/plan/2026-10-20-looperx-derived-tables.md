@@ -344,7 +344,7 @@ Kinds #1372 marks as waiting on reference audio, with the settings captured.
 | s3/4 | Mod (chorus) | Guitar / Lead Crunch | Mod only: CHORUS Rate 32.6 % Depth 12 % Mix 33.2 % | residual vs dry -13.7 dB |
 | s3/5 | Mod (chorus) | Guitar / Lead Crunch | Mod Rate 79.7 % | residual -13.6 dB |
 | s3/6 | Reverb (spring) | Guitar / Lead Crunch | Spring only: Time 2.00 s Mix 28.9 % | residual -4.1 dB |
-| s3/7 | Reverb (spring) | Guitar / Lead Crunch | Spring Time bar 0.90 (= 7.9 s by the log taper) | residual -3.6 dB |
+| s3/7 | Reverb (spring) | Guitar / Lead Crunch | Spring Time 8.00 s on screen (bar 0.90; the device's Time moves in whole seconds, #1547) | residual -3.6 dB |
 | s3/8 | Mode delay | Guitar / Lead Crunch | Delay only: Time 2/4 Mode RES HI L/R Feedback 29 % Mix 9 % | residual -37.4 dB |
 | s3/9 | Whammy | Guitar / Lead Crunch | Whammy only: Range -12 Pedal 0 % | 1 kHz stays 1000 Hz |
 | s3/10 | Whammy | Guitar / Lead Crunch | Wham Pedal 99.8 % | 1 kHz -> 506 Hz (-11.8 semitones) |

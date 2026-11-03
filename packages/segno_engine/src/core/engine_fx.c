@@ -7372,7 +7372,8 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
  *   a chain of twelve first-order all-passes;
  * - the decay: each trip loses LE_SPR_TIME's loss at the Time, 0.45 dB more
  *   above 1.2 kHz and its low gain less below 400 Hz (first-order shelves
- *   in the loop), between the whole seconds log-linear. Read on the impulse
+ *   in the loop); between the whole seconds the loss in dB is read
+ *   log-linearly, the low gain linearly (its first rows are 0). Read on the impulse
  *   responses in windows a trip long (20 ms ones alternate between echoes
  *   and the silence between them, and read this tank's decay as 23 % longer
  *   than it is at 8 s), from 0.3 to 1.0 s, broadband and in four bands from
@@ -7383,11 +7384,11 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
  *   (-46 dB at 4.7 kHz, -96 dB at 7.2 kHz): nine sections fitted to the
  *   impulse response's spectrum within 1.7 dB rms from 100 Hz to 7.3 kHz;
  * - the mix law is the chorus's (dry 1 - 0.29 mix; the capture's dry gain
- *   was 0.9165 at 28.9 %), and the wet level is mix times LE_SPR_TIME's wet,
- *   which puts the impulse response's first second at the captures' energy
- *   against the dry at every Time (-18.1 dB at 1 s to -17.1 at 10 s). The
- *   earlier law, 0.85 mix (Time / 2)^0.45, was 8.6 dB louder at 2 s and
- *   17 dB at 8 s.
+ *   was 0.9165 at 28.9 %), and the wet level follows
+ *   0.85 mix (Time / 2)^0.45. The s16spring captures put the wet energy
+ *   well under that, almost flat across Time (-18.1 dB against the dry at
+ *   1 s to -17.1 at 10 s, where this law gives about -9 and -0.6 at 2 and
+ *   8 s): whether to follow them is open (#1576).
  * A known difference: successive echoes repeat more closely (envelope
  * autocorrelation 0.87 at 38 ms against the capture's 0.4). Both channels
  * take the tank's mono output (the capture's correlated at 0.996). */
@@ -7407,16 +7408,17 @@ static const le_fx_param_desc LE_FX_SPRING_PARAMS[] = {
 #define LE_SPR_DRY_DROP 0.29f
 #define LE_SPR_SECTIONS 9
 
-/* At each whole second of Time from 1 to 10 s: the dB a trip loses, the dB
- * it keeps more below LE_SPR_LOW_HZ, and the wet level at 100 % mix. */
+#define LE_SPR_WET 0.85
+#define LE_SPR_WET_EXP 0.45
+
+/* At each whole second of Time from 1 to 10 s: the dB a trip loses, and the
+ * dB it keeps more below LE_SPR_LOW_HZ. */
 static const struct {
-  double loss_db, low_db, wet;
+  double loss_db, low_db;
 } LE_SPR_TIME[10] = {
-    {1.5925, 0.0000, 0.3498}, {1.0904, 0.0000, 0.3071},
-    {0.8372, 0.0000, 0.2820}, {0.6768, 0.0231, 0.2637},
-    {0.5571, 0.0330, 0.2491}, {0.4629, 0.0409, 0.2371},
-    {0.3854, 0.0470, 0.2271}, {0.3199, 0.0522, 0.2184},
-    {0.2631, 0.0563, 0.2097}, {0.2129, 0.0595, 0.2026},
+    {1.5925, 0.0000}, {1.0904, 0.0000}, {0.8372, 0.0000}, {0.6768, 0.0231},
+    {0.5571, 0.0330}, {0.4629, 0.0409}, {0.3854, 0.0470}, {0.3199, 0.0522},
+    {0.2631, 0.0563}, {0.2129, 0.0595},
 };
 
 static const struct {
@@ -7529,15 +7531,14 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     double time = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
     time = time < 1.0 ? 1.0 : time > 10.0 ? 10.0 : time;
     const int i = time >= 10.0 ? 8 : (int)time - 1;
-    const double f = time - (double)(i + 1);
-    const double loss =
-        LE_SPR_TIME[i].loss_db * pow(LE_SPR_TIME[i + 1].loss_db / LE_SPR_TIME[i].loss_db, f);
+    const double frac = time - (double)(i + 1);
+    const double loss = LE_SPR_TIME[i].loss_db *
+                        pow(LE_SPR_TIME[i + 1].loss_db / LE_SPR_TIME[i].loss_db, frac);
     const double low = LE_SPR_TIME[i].low_db +
-                       f * (LE_SPR_TIME[i + 1].low_db - LE_SPR_TIME[i].low_db);
+                       frac * (LE_SPR_TIME[i + 1].low_db - LE_SPR_TIME[i].low_db);
     q->gain_tgt = (float)pow(10.0, -loss * q->trip_scale / 20.0);
     q->low_tgt = (float)pow(10.0, low * q->trip_scale / 20.0);
-    q->wet_tgt =
-        (float)(LE_SPR_TIME[i].wet * pow(LE_SPR_TIME[i + 1].wet / LE_SPR_TIME[i].wet, f));
+    q->wet_tgt = (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP));
   }
   const float k = settle ? 1.0f : q->h.k;
   int moving = le_fx_glide_step(&q->gain, q->gain_tgt, k);
