@@ -137,7 +137,10 @@ static void test_eq_kernel_matches_design(void) {
       le_eq_band_design_for_test(4, sh, 8000.0, -4.0, 0.7, sr, c[bands++]);
       if (!sh) le_eq_band_design_for_test(5, sh, 15000.0, 0.0, q2, sr, c[bands++]);
       for (size_t i = 0; i < sizeof(probes) / sizeof(probes[0]); ++i) {
-        const double want = eq_design_db(c, bands, probes[i], sr);
+        /* At 96 kHz the designs are the 48 kHz ones, run on alternate
+         * samples. */
+        const double want =
+            eq_design_db(c, bands, probes[i], sr == 96000 ? 48000 : sr);
         const double got = eq_measured_db(h, n, probes[i], sr);
         if (fabs(want - got) >= 0.1) {
           printf("  sr %d layout %d at %.0f Hz: design %.3f dB, kernel %.3f dB\n",

@@ -125,10 +125,11 @@ static void test_distortion_matches_the_capture(void) {
 }
 
 /* The cabinet's response, with the curve near linear, is the 4x12"
- * capture's (s4/16) within 1.5 dB, relative to 1 kHz. */
+ * capture's (s4/16) within 1.5 dB, relative to 1 kHz, at 48 kHz, the
+ * Looper X's rate. */
 static void test_distortion_cabinet(void) {
   printf("test_distortion_cabinet\n");
-  const int sr = 96000;
+  const int sr = 48000;
   const int n = 1 << 15;
   float* in = (float*)calloc((size_t)n, sizeof(float));
   float* h = (float*)calloc((size_t)n, sizeof(float));
