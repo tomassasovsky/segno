@@ -54,6 +54,11 @@ extern "C" {
 #endif
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER, mode p3 < 0.5) tuning ------------- */
+/* The rate the octaver's kernel runs at, whatever the engine's: at other
+ * rates fx_octaver_run resamples to and from it (#1547). */
+#define LE_OCT_RATE 48000
+/* Each of fx_octaver_run's two rings, samples (a power of two). */
+#define LE_OCT_RS_RING 512
 #define LE_PV_N 1024             /* STFT window (power of two) */
 #define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum);
                                   * a POWER OF TWO: le_pv_hop_phase masks with
@@ -117,13 +122,35 @@ extern "C" {
  * PSOLA's YIN pass still runs on one tick a hop. */
 #define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
+/* The engine frames after which an octaver's kernel is on the same hop
+ * position again at [sr]: LE_PV_HOP at LE_OCT_RATE; at another rate, the
+ * fewest frames that span a whole number of hops of the kernel's 48 kHz
+ * ticks and start them at the same place in a frame (fx_octaver_run puts
+ * tick k in the frame at k sr / 48 kHz): 512 at 96 kHz, 1176 at 44.1. */
+static inline uint32_t le_fx_hop_period(int sr) {
+  if (sr <= 0) sr = LE_OCT_RATE;
+  const uint64_t n = (uint64_t)LE_PV_HOP * (uint64_t)sr;
+  uint64_t a = n;
+  uint64_t b = LE_OCT_RATE;
+  while (b != 0) {
+    const uint64_t m = a % b;
+    a = b;
+    b = m;
+  }
+  return (uint32_t)(n / a);
+}
+
+/* Engine frame [top]'s position on the octaver's hop at [sr] (#941). */
+static inline uint32_t le_fx_hop_position(uint32_t top, int sr) {
+  return top % le_fx_hop_period(sr);
+}
+
 /* Whether [ent] may play from a lap that began at engine frame [top] (#941):
  * always for a print without an octaver, and for one with an octaver only on
  * the hop position it was rendered from. */
 static inline int le_wet_entry_hop_matches(const le_wet_entry* ent,
-                                           uint32_t top) {
-  return ent->hop_tag == 0 ||
-         ent->hop_tag == (top & (uint32_t)(LE_PV_HOP - 1)) + 1u;
+                                           uint32_t top, int sr) {
+  return ent->hop_tag == 0 || ent->hop_tag == le_fx_hop_position(top, sr) + 1u;
 }
 
 static inline int32_t le_fx_hop_mask(uint32_t p) {
@@ -451,9 +478,14 @@ void le_octaver_envelope(const float* mag, float* env);
 /* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
-/* The heap a Dual Octaver slot's low band (#1467) takes at [sr], both
- * channels, on top of the octaver's buffers. Any thread. */
-size_t le_fx_low_band_bytes(int sr);
+/* The heap a Dual Octaver slot's low band (#1467) takes, both channels, on
+ * top of the octaver's buffers: its kernel runs at LE_OCT_RATE at every
+ * rate. Any thread. */
+size_t le_fx_low_band_bytes(void);
+/* The heap an octaver kind's slot takes at [sr] on top of its input ring:
+ * its kernel's buffers and, away from LE_OCT_RATE, its resamplers' rings,
+ * both channels. Any thread. */
+size_t le_fx_octaver_bytes(int sr);
 
 /* Frees every heap buffer chain slot [slot] owns: its delay rings, its
  * octaver buffers and its per-kind state. The one call an owner reset or

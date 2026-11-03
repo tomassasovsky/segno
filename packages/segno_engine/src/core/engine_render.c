@@ -364,6 +364,16 @@ static int64_t le_render_ring_entries(const le_fx_frozen_chain* c) {
   return n;
 }
 
+/* The octaver-kind entries of chain [c], each holding a kernel's buffers
+ * (le_fx_octaver_bytes) on top of what an entry is charged. */
+static int64_t le_render_pitch_entries(const le_fx_frozen_chain* c) {
+  int64_t n = 0;
+  for (int32_t s = 0; s < c->count && s < LE_FX_MAX; ++s) {
+    n += le_fx_type_hops(c->type[s]) != 0;
+  }
+  return n;
+}
+
 /* The Dual Octaver entries of chain [c], each holding a low band (#1467)
  * on top of what an entry is charged. */
 static int64_t le_render_dual_octavers(const le_fx_frozen_chain* c) {
@@ -394,15 +404,18 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
    * (two stereo rings' worth). */
   int64_t entries = le_render_ring_entries(&j->mix);
   int64_t duals = le_render_dual_octavers(&j->mix);
+  int64_t pitch = le_render_pitch_entries(&j->mix);
   int64_t states = 1;
   for (int32_t i = 0; i < j->nsrc; ++i) {
     const le_render_src* s = &j->src[i];
     entries += le_render_ring_entries(&s->track);
     duals += le_render_dual_octavers(&s->track);
+    pitch += le_render_pitch_entries(&s->track);
     states += 2;
     for (int32_t l = 0; l < s->lanes; ++l) {
       entries += le_render_ring_entries(&s->lane[l].chain);
       duals += le_render_dual_octavers(&s->lane[l].chain);
+      pitch += le_render_pitch_entries(&s->lane[l].chain);
       states += 2;
     }
   }
@@ -411,7 +424,8 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
    * for every entry, which overstates and never understates. */
   bytes += states * (int64_t)(sizeof(le_fx_state) + sizeof(le_fx_kinds)) +
            entries * (2ll * j->cap * (int64_t)sizeof(float) + 16384) +
-           duals * (int64_t)le_fx_low_band_bytes(j->cap);
+           duals * (int64_t)le_fx_low_band_bytes() +
+           pitch * (int64_t)le_fx_octaver_bytes(j->cap);
   return bytes;
 }
 

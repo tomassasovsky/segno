@@ -554,6 +554,12 @@ typedef struct le_octaver_state {
   float tune_at[5];
   int32_t tune_note; /* the note it holds, semitones above the root */
   int32_t tune_held; /* whether it holds one (none after silence) */
+  /* At rates other than 48 kHz the kernel runs at 48 kHz (#1547): the
+   * input at the rate and the kernel's output at 48 kHz, each
+   * LE_OCT_RS_RING samples, indexed by their absolute frame (fx_octaver_run;
+   * heap, made in fx_octaver_prepare). */
+  float* rs_in;
+  float* rs_out;
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
@@ -780,6 +786,22 @@ typedef struct le_fx_state {
   int32_t delay_pos[LE_FX_MAX][2];
   float fx_lp[LE_FX_MAX][2];
   le_octaver_state oct[LE_FX_MAX][2];
+  /* The octaver kinds at rates other than 48 kHz (fx_octaver_run, #1547):
+   * whether the slot's kernel is resampled; the kernel tick it is on (its
+   * hop keeps to these, as it keeps to the clock at 48 kHz); the last frame
+   * it ran (the clock's, or its own count in a state nobody clocks); the
+   * kernel tick it starts on; and where it is: 0 to start on the next
+   * frame (after a reset, or a frame that does not follow the last), 1
+   * waiting for that tick, 2 running. */
+  int32_t oct_rs[LE_FX_MAX];
+  /* The resampler tables the slot was prepared with (fx_octaver_prepare;
+   * NULL at 48 kHz): engine_fx.c's le_oct_rs, made once per rate and never
+   * freed. */
+  const struct le_oct_rs* oct_tab[LE_FX_MAX];
+  uint32_t oct_tick[LE_FX_MAX];
+  uint32_t oct_frame[LE_FX_MAX];
+  uint32_t oct_n0[LE_FX_MAX];
+  int32_t oct_run[LE_FX_MAX];
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_PHASES][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
@@ -934,7 +956,7 @@ typedef struct le_wet_entry {
   float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
   /* 0 for a print whose key does not hold the hop position; else 1 + the
-   * hop position (mod LE_PV_HOP) of the loop top it was rendered from: an
+   * hop position (le_fx_hop_position) of the loop top it was rendered from: an
    * octaver in the printed chain (#941). The audio thread drops such a print
    * at a lap top that starts elsewhere on the hop. */
   uint32_t hop_tag;

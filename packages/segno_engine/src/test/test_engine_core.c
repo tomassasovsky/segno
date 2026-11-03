@@ -21602,12 +21602,13 @@ static void test_octaver_psola_pitch_detect(void) {
   free(b);
 }
 
-/* PSOLA's sliced detection (#913): from 32 to 192 kHz every pass finishes
- * inside the hop that started it (the per-tick credit covers the worst pass
- * at every decimation), the period it settles on is the input's to within
- * 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one, and the shifted output
- * plays the shifted pitch. At 96 kHz the old undecimated pass could not see
- * 80 Hz at all: its 800-lag search stopped at 120 Hz. */
+/* PSOLA's sliced detection (#913): every pass finishes inside the hop that
+ * started it, and from 32 to 192 kHz the period it settles on (in kernel
+ * samples: the kernel runs at LE_OCT_RATE at every rate, #1547) is the
+ * input's to within 0.3 % for a 220 Hz voice and 1 % for an 80 Hz one, and
+ * the shifted output plays the shifted pitch. The passes are counted at
+ * LE_OCT_RATE, where a frame is one kernel tick; at another rate a frame
+ * runs zero, one or two, and the same kernel runs them. */
 static void test_octaver_psola_sliced_detection(void) {
   printf("test_octaver_psola_sliced_detection\n");
   static int32_t types[LE_FX_MAX];
@@ -21637,8 +21638,9 @@ static void test_octaver_psola_sliced_detection(void) {
       le_fx_octaver_seed_settled(fx, 0, params[0]);
       le_octaver_state* o = &fx->oct[0][0];
       const le_psola_pass* ps = le_ps(o);
-      /* A pass starts every max(1, D / 2) hops, D = ceil(sr / 24 kHz). */
-      int every = ((sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
+      /* A pass starts every max(1, D / 2) hops, D = ceil(rate / 24 kHz), at
+       * the kernel's rate. */
+      int every = ((LE_OCT_RATE + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE) / 2;
       if (every < 1) every = 1;
       int passes = 0;
       int overran = 0;
@@ -21654,7 +21656,7 @@ static void test_octaver_psola_sliced_detection(void) {
         }
         /* A pass starts on the tick that takes the counter to 0 on its
          * hop; the one before it must have finished. */
-        if (o->hop_count == 1 && ps->hops == every - 1) {
+        if (sr == LE_OCT_RATE && o->hop_count == 1 && ps->hops == every - 1) {
           ++passes;
           if (ps->phase != 0) ++overran;
         }
@@ -21683,7 +21685,7 @@ static void test_octaver_psola_sliced_detection(void) {
               ? 1200.0f * log2f(((float)(sr / dd) / out_period) / shifted)
               : 9999.0f;
       free(out);
-      const float want = (float)sr / f0;
+      const float want = (float)LE_OCT_RATE / f0;
       const float err = fabsf(o->period - want) / want;
       printf("  %d Hz, %.0f Hz voice: period %.2f (want %.2f, %.3f %%), "
              "voiced %.2f, %d passes, %d overran, output %+.1f cents\n",
@@ -21691,13 +21693,127 @@ static void test_octaver_psola_sliced_detection(void) {
              (double)(100.0f * err), (double)o->voiced, passes, overran,
              (double)out_cents);
       CHECK(fabsf(out_cents) < 20.0f);
-      CHECK(passes > 100 / every);
-      CHECK(overran <= 1); /* the first may meet a reset pass, never more */
+      if (sr == LE_OCT_RATE) {
+        CHECK(passes > 100 / every);
+        CHECK(overran <= 1); /* the first may meet a reset pass, never more */
+      }
       CHECK(err < (f0 > 100.0f ? 0.003f : 0.01f));
       CHECK(o->voiced > 0.6f);
       le_fx_state_free_buffers(fx);
       free(fx);
     }
+  }
+}
+
+/* One clocked Octaver (phase vocoder, up 7, held formants) at [sr] from
+ * engine frame [c0], [n] frames of a 196 Hz voice, into [out] (left). */
+static void oct_rs_run(int sr, uint32_t c0, int n, float* out) {
+  static int32_t types[LE_FX_MAX];
+  static float params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < LE_FX_MAX; ++s) types[s] = LE_FX_NONE;
+  types[0] = LE_FX_OCTAVER;
+  params[0][0] = 0.5f + 7.0f / 48.0f;
+  params[0][1] = 1.0f;
+  params[0][2] = 1.0f;
+  params[0][3] = 0.0f;
+  params[0][4] = 0.0f;
+  le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+  CHECK(fx != NULL);
+  if (fx == NULL) return;
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
+  CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
+  le_fx_entry_reset(fx, 0);
+  le_fx_octaver_seed_settled(fx, 0, params[0]);
+  fx->clocked = 1;
+  for (int i = 0; i < n; ++i) {
+    fx->clock = c0 + (uint32_t)i;
+    float x = 0.0f;
+    for (int h = 1; h <= 6; ++h) {
+      x += 0.25f / (float)h *
+           sinf(2.0f * LE_FFT_PI * 196.0f * (float)h * (float)i / (float)sr);
+    }
+    float l = x;
+    float r = x;
+    fx_apply_chain(fx, sr, sr, &l, &r, 1, types, params, NULL);
+    out[i] = l;
+  }
+  le_fx_state_free_buffers(fx);
+  free(fx);
+}
+
+/* The pitch kinds away from 48 kHz (#1547): the kernel's hop lands on the
+ * same place again every le_fx_hop_period frames, which is what a print
+ * keyed on the hop position (#941) relies on: a run started a period later
+ * is the same sample for sample, one started half a hop later is not. And
+ * the engine clock wrapping mid-run starts the resamplers again, so the
+ * octaver comes back, finite, a latency later. */
+static void test_octaver_resampled_hop_period(void) {
+  printf("test_octaver_resampled_hop_period\n");
+  CHECK(le_fx_hop_period(48000) == LE_PV_HOP);
+  CHECK(le_fx_hop_period(96000) == 512);
+  CHECK(le_fx_hop_period(44100) == 1176);
+  /* The latency a prepared slot reports: the kernel's 1216 frames at
+   * 48 kHz and both filters' delays; none for one not prepared at the
+   * rate, which passes its input. */
+  {
+    le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+    CHECK(fx != NULL);
+    if (fx == NULL) return;
+    CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, 44100) == LE_OK);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 44100) == 1188);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 96000) == 0);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 48000) == LE_PV_LATENCY);
+    le_fx_state_free_buffers(fx);
+    CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, 96000) == LE_OK);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 96000) == 2568);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+  }
+  const int rates[] = {44100, 96000};
+  for (int ri = 0; ri < 2; ++ri) {
+    const int sr = rates[ri];
+    const int n = sr / 2;
+    float* a = (float*)malloc(sizeof(float) * (size_t)n);
+    float* b = (float*)malloc(sizeof(float) * (size_t)n);
+    float* d = (float*)malloc(sizeof(float) * (size_t)n);
+    float* w = (float*)malloc(sizeof(float) * (size_t)n);
+    CHECK(a != NULL && b != NULL && d != NULL && w != NULL);
+    if (a == NULL || b == NULL || d == NULL || w == NULL) return;
+    const uint32_t c0 = 1000;
+    oct_rs_run(sr, c0, n, a);
+    oct_rs_run(sr, c0 + le_fx_hop_period(sr), n, b);
+    oct_rs_run(sr, c0 + (uint32_t)(LE_PV_HOP / 2) * (uint32_t)sr / 48000u, n, d);
+    /* the clock wraps a quarter of the way in */
+    oct_rs_run(sr, 0u - (uint32_t)(n / 4), n, w);
+    float same = 0.0f;
+    float moved = 0.0f;
+    for (int i = 0; i < n; ++i) {
+      same = fmaxf(same, fabsf(a[i] - b[i]));
+      moved = fmaxf(moved, fabsf(a[i] - d[i]));
+    }
+    /* after the wrap, past a latency and a window: finite and playing */
+    const int from = n / 4 + sr / 10;
+    int finite = 1;
+    double e = 0.0;
+    float peak = 0.0f;
+    for (int i = 0; i < n; ++i) {
+      finite &= isfinite(w[i]) ? 1 : 0;
+      peak = fmaxf(peak, fabsf(w[i]));
+      if (i >= from) e += (double)w[i] * w[i];
+    }
+    const double rms = sqrt(e / (double)(n - from));
+    printf("  %d Hz: a period later %.2g, half a hop later %.2g; "
+           "through a wrap: peak %.2f, rms after %.3f\n",
+           sr, (double)same, (double)moved, (double)peak, rms);
+    CHECK(same == 0.0f);
+    CHECK(moved > 1e-3f);
+    CHECK(finite);
+    CHECK(peak < 2.0f);
+    CHECK(rms > 0.05);
+    free(a);
+    free(b);
+    free(d);
+    free(w);
   }
 }
 
@@ -40531,6 +40647,7 @@ int main(void) {
   test_octaver_mode_switch_no_click();
   test_octaver_psola_pitch_detect();
   test_octaver_psola_sliced_detection();
+  test_octaver_resampled_hop_period();
   test_tuner_detect_band();
   test_tuner_arm_and_detect();
   test_tuner_raw_ring_wrap();

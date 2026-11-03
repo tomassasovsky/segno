@@ -7740,9 +7740,9 @@ static inline void snapshot_lane_cache(
         const int32_t len = load_i32(&ln->a_len);
         const uint32_t gen =
             atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
-        const uint32_t hop =
-            atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed) &
-            (uint32_t)(LE_PV_HOP - 1);
+        const uint32_t hop = le_fx_hop_position(
+            atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed),
+            e->sample_rate);
         if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen &&
             hop == ln->cache_fp_hop) {
           ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
@@ -8874,7 +8874,7 @@ static inline void mix_tracks_frame(
      * a launch in this block moved the lap. Drop it at the lap top, as that
      * check will from the next block. */
     if (trk_rp == 0 && tce != NULL &&
-        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f)) {
+        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f, e->sample_rate)) {
       tce = NULL;
       track_cache_ent[t] = NULL;
       if (load_i32(&tr->a_track_cache_active)) {
@@ -9098,7 +9098,7 @@ static inline void mix_tracks_frame(
       const int32_t rp = seg_base[t] + trk_pos[t];
       /* The lane twin of the track's lap-top hop check above (#941). */
       if (rp == 0 && wce != NULL &&
-          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f)) {
+          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f, e->sample_rate)) {
         wce = NULL;
         cache_ent[t][l] = NULL;
         if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
