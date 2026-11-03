@@ -1,10 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
@@ -12,6 +9,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/foot_top_bar.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/theme/theme.dart';
@@ -89,44 +87,9 @@ class _FootMixerContent extends StatelessWidget {
       child: Column(
         key: const Key('foot_mixer_view'),
         children: [
-          Container(
-            height: 96,
-            padding: const EdgeInsetsDirectional.symmetric(horizontal: 36),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: surface.line)),
-            ),
-            child: Row(
-              children: [
-                IconButton.outlined(
-                  key: const Key('foot_mixer_exit'),
-                  tooltip: l10n.actionModeExit,
-                  onPressed: () => control.setMode(InteractionMode.record),
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(64, 64),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                const Spacer(),
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(136, 64),
-                    textStyle: const TextStyle(
-                      fontFamily: SurfaceTheme.displayFont,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w400,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onPressed: () => unawaited(openSegnoSettings()),
-                  child: AppText(l10n.stageSettings),
-                ),
-              ],
-            ),
+          FootTopBar(
+            exitKey: const Key('foot_mixer_exit'),
+            onExit: () => control.setMode(InteractionMode.record),
           ),
           Expanded(
             child: Padding(

@@ -702,7 +702,13 @@ void main() {
             navigatorKey: segnoNavigatorKey,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+            theme: ThemeData(
+              extensions: const [
+                SurfaceTheme.dark,
+                SpacingTheme.standard,
+                NoticeTheme.standard,
+              ],
+            ),
             home: pageIdentity == null
                 ? LoopSettingsPage(initial: initial)
                 : ValueListenableBuilder<Key>(
@@ -866,7 +872,13 @@ void main() {
     var resets = 0;
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        theme: ThemeData(
+          extensions: const [
+            SurfaceTheme.dark,
+            SpacingTheme.standard,
+            NoticeTheme.standard,
+          ],
+        ),
         home: Scaffold(
           body: Center(
             child: LoopSlider(
@@ -910,7 +922,13 @@ void main() {
     final previews = <double>[];
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        theme: ThemeData(
+          extensions: const [
+            SurfaceTheme.dark,
+            SpacingTheme.standard,
+            NoticeTheme.standard,
+          ],
+        ),
         home: Scaffold(
           body: Center(
             child: LoopSlider(

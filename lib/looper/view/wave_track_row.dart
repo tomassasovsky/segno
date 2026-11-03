@@ -13,6 +13,7 @@ import 'package:segno/looper/view/loop_count_words.dart';
 import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/track_column.dart'
     show PrimaryCrown, SlotFigure;
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 
@@ -132,7 +133,9 @@ class WaveTrackRow extends StatelessWidget {
           color: looper.tileBackground,
           borderRadius: BorderRadius.circular(17),
           border: Border.all(
-            color: selected ? surface.onAccent : looper.tileBorder,
+            color:
+                trackNoticeRing(context, track.channel) ??
+                (selected ? surface.onAccent : looper.tileBorder),
             width: 2,
           ),
         ),
@@ -287,12 +290,17 @@ class WaveTrackRow extends StatelessWidget {
                   color: surface.line,
                 ),
                 Expanded(
-                  child: TrackWaveform(
+                  // A message this track caused takes the waveform's place
+                  // for as long as it is up (#1562).
+                  child: TrackNotice(
                     channel: track.channel,
-                    state: meterState,
-                    hasContent: track.hasContent,
-                    bars: barsCount ?? 0,
-                    semanticLabel: l10n.a11ySelectedTrackWaveform(name),
+                    child: TrackWaveform(
+                      channel: track.channel,
+                      state: meterState,
+                      hasContent: track.hasContent,
+                      bars: barsCount ?? 0,
+                      semanticLabel: l10n.a11ySelectedTrackWaveform(name),
+                    ),
                   ),
                 ),
               ],

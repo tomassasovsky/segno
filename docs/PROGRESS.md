@@ -74,8 +74,32 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1547 | Every effect the same at any sample rate and block size: parts 1, 2 and 3a (filter responses) merged; part 3b (the tails: echo, reverbs, spring) in review; 3c pitch (#1467), 3d the Transient next | in-review | auto | `claude/fx-invariance-1547-p3b` |
+| #1562 | One notice system: messages in the top bar's centre, on the track that caused them and on the readout's band, must-act messages as the whole bar; p1 the notice centre and its surfaces, p2 every call site moved onto it (toastification and SnackBars gone), p3 the inline notices | in-review | merge-gate | `claude/notices-1562-p*` |
 
 ---
+
+## November 2026 One notice system (#1562)
+
+- The owner's decision on #1562: direction 1 (the top bar's centre says a
+  passing message in place of the session name; a must-act message turns the
+  whole bar into a banner) plus direction 3's per-track messages on the track
+  cards, and the same message as a band across the readout's top margin.
+- One cubit, `NoticesCubit` (`lib/notices/`), provided at the app root:
+  `show` (top bar, goes by itself), `showOnTrack` (that track's card),
+  `raise` / `clear` (must-act, until the condition clears) and `setHeld`
+  (the Power screen holds them). One message at a time, the newest replacing
+  the last; a passing message with a standing must-act message's id is
+  dropped. Durations: 4 s, 6 s for a warning, 8 s with an action, 10 s for a
+  one-time explanation.
+- Surfaces: `NoticeBar` + `NoticeBarMessage` in every top bar (the stage's,
+  the performance views' `FootTopBar`, the settings frame), laid out by the
+  shared `TopBarLayout`, so the side controls never move and the message sits
+  on the session name's baseline at its size; `TrackNotice` in the Track and
+  Wave cards (a Mixer strip is all controls: it rings and the bar says it);
+  the readout's band (`ReadoutNotice` over the screen link).
+- Sizes and type ramp in the `NoticeTheme` extension, gaps from the new
+  `SpacingTheme` scale, colours from `SurfaceTheme` (new `warningTint`,
+  `warningLine`). Screenshots: `notice_*` in the tracks and notices suites.
 
 ## November 2026 Automatic LED brightness from a light sensor (#1564)
 

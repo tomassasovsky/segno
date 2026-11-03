@@ -1,6 +1,8 @@
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/theme/looper_theme.dart';
+import 'package:segno/theme/notice_theme.dart';
 import 'package:segno/theme/page_transitions.dart';
+import 'package:segno/theme/spacing_theme.dart';
 import 'package:segno/theme/surface_theme.dart';
 import 'package:segno/theme/text_metrics.dart';
 
@@ -205,6 +207,8 @@ abstract final class AppTheme {
         looper,
         surface,
         routingGraphThemeFromSurface(surface),
+        SpacingTheme.standard,
+        NoticeTheme.standard,
       ],
     );
   }

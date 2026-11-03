@@ -386,7 +386,11 @@ void main() {
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           fontFamily: SurfaceTheme.displayFont,
-          extensions: const [SurfaceTheme.dark],
+          extensions: const [
+            SurfaceTheme.dark,
+            SpacingTheme.standard,
+            NoticeTheme.standard,
+          ],
         ),
         home: RepositoryProvider<LooperRepository>.value(
           value: repository,

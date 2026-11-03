@@ -38,6 +38,7 @@ import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
@@ -106,6 +107,7 @@ void main() {
   late OutputLevelCubit outputLevel;
   late StreamController<MeterLevels> meterLevels;
   late AudioSetupCubit audioSetup;
+  late NoticesCubit notices;
   late PedalRepository pedalRepo;
   // The top bar's CPU readout; hidden unless a test gives it a figure.
   late CpuLoadRepository cpuLoad;
@@ -124,6 +126,8 @@ void main() {
     addTearDown(() => dismissAppToast(AppToastId.undoClearAll));
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
+    notices = NoticesCubit();
+    addTearDown(notices.close);
     audioSetup = _MockAudioSetupCubit();
     whenListen(
       audioSetup,
@@ -336,6 +340,7 @@ void main() {
                   settings: TunerSettings(settings: settings),
                 ),
               ),
+              BlocProvider<NoticesCubit>.value(value: notices),
             ],
             child: onAncestorKey == null
                 ? const TracksView()
@@ -436,6 +441,99 @@ void main() {
       expect(find.byKey(const Key('stage_mixer_run')), findsOneWidget);
     },
   );
+
+  group("a track's message (#1562)", () {
+    Notice refused() => Notice(
+      id: 'rec',
+      tone: NoticeTone.warning,
+      title: (_) => 'Recording did not start',
+    );
+
+    testWidgets("the Mixer's strip keeps its fader and the bar says it", (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      tracks.showView(StageView.mixer);
+      await pump(tester);
+      notices.showOnTrack(1, refused());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(const Key('mixer_level_1')), findsOneWidget);
+      expect(find.byKey(const Key('track_notice_1')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('stage_top_bar')),
+          matching: find.textContaining(
+            'Recording did not start',
+            findRichText: true,
+          ),
+        ),
+        findsOneWidget,
+      );
+      notices.clear('rec');
+      await tester.pumpAndSettle();
+    });
+
+    Finder inBar(String text) => find.descendant(
+      of: find.byKey(const Key('stage_top_bar')),
+      matching: find.textContaining(text, findRichText: true),
+    );
+
+    testWidgets('a card holding a queued cue leaves it to the bar', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [Track(), Track(channel: 1, pending: true)],
+        ),
+      );
+      await pump(tester);
+      notices.showOnTrack(1, refused());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(const Key('tracks_queued_1')), findsOneWidget);
+      expect(find.byKey(const Key('track_notice_1')), findsNothing);
+      expect(inBar('Recording did not start'), findsOneWidget);
+      notices.clear('rec');
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a track with no card on screen is said in the bar', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      notices.showOnTrack(2, refused());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(inBar('Recording did not start'), findsOneWidget);
+      notices.clear('rec');
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets("the Track view's card says it, the bar does not", (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      notices.showOnTrack(1, refused());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(const Key('track_notice_1')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('stage_top_bar')),
+          matching: find.textContaining(
+            'Recording did not start',
+            findRichText: true,
+          ),
+        ),
+        findsNothing,
+      );
+      notices.clear('rec');
+      await tester.pumpAndSettle();
+    });
+  });
 
   group('Settings opens as a route over the stage', () {
     testWidgets('from the header icon', (tester) async {

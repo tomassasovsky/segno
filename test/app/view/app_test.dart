@@ -38,6 +38,7 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/cubit/recording_destination_cubit.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
@@ -4584,6 +4585,53 @@ void main() {
           );
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.activeBank, 1);
+    });
+
+    testWidgets('the readout bands what the main screen says (#1562)', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.notice, isNull);
+
+      final notices =
+          tester.element(find.byType(LooperPage)).read<NoticesCubit>()..raise(
+            Notice(
+              id: 'lost',
+              tone: NoticeTone.critical,
+              title: (_) => 'Nothing is heard.',
+            ),
+          );
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(
+        windowService.readouts.last.notice,
+        const ReadoutNotice(
+          title: 'Nothing is heard.',
+          tone: NoticeTone.critical,
+        ),
+      );
+
+      // A track's message, newer, takes the band for its time and names the
+      // track; then the must-act message comes back.
+      notices.showOnTrack(
+        1,
+        Notice(
+          id: 'rec',
+          tone: NoticeTone.warning,
+          title: (_) => 'Recording did not start',
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.notice?.track, 'TRACK 2');
+      expect(windowService.readouts.last.notice?.tone, NoticeTone.warning);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.notice?.tone, NoticeTone.critical);
+
+      notices.clear('lost');
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.notice, isNull);
     });
 
     testWidgets('a shutdown phase change reaches an otherwise idle readout', (

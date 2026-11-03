@@ -25,6 +25,8 @@ void main() {
           extensions: [
             SurfaceTheme.dark,
             routingGraphThemeFromSurface(SurfaceTheme.dark),
+            SpacingTheme.standard,
+            NoticeTheme.standard,
           ],
         ),
         home: Scaffold(
@@ -73,6 +75,8 @@ void main() {
           extensions: [
             SurfaceTheme.dark,
             routingGraphThemeFromSurface(SurfaceTheme.dark),
+            SpacingTheme.standard,
+            NoticeTheme.standard,
           ],
         ),
         home: Scaffold(

@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -25,6 +26,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -105,6 +107,7 @@ void main() {
   late TransportClockCubit transportClock;
   late OutputLevelCubit outputLevel;
   late AudioSetupCubit audioSetup;
+  late NoticesCubit notices;
   late FadeSettings fade;
 
   // The reading the Tuner face draws, and input names for its scenes; reset
@@ -113,6 +116,8 @@ void main() {
   Map<int, String>? inputNames;
 
   setUp(() {
+    notices = NoticesCubit();
+    addTearDown(notices.close);
     tunerReading = const TunerState();
     inputNames = null;
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -271,6 +276,15 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
+        // Animations off, so a message is drawn whole and its time-left
+        // line at its full width, the frame the design is checked against.
+        builder: (context, child) => BlocProvider.value(
+          value: notices,
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!,
+          ),
+        ),
         debugShowCheckedModeBanner: false,
         locale: locale,
         theme: AppTheme.neon,
@@ -1373,4 +1387,155 @@ void main() {
   // meters recede to 40%, and each tile re-dresses with a power pill and its
   // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
   // and with two real chains, so the decal shows the transform end to end.
+
+  // The notice system (#1562): every state the top bar, a track's card and
+  // the foot views take, on the console's own stage at 1920 x 1080.
+  group('notices', () {
+    Future<void> stage(
+      WidgetTester tester, {
+      StageView view = StageView.track,
+    }) async {
+      const names = ['GUITAR', 'BOOM', 'RC-20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      tracks.showView(view);
+      levels(
+        const MeterLevels(
+          tracks: [
+            TrackLevels(peak: 0.9),
+            TrackLevels(peak: 0.68),
+            TrackLevels(peak: 0.55),
+          ],
+        ),
+      );
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 2, state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+    }
+
+    Future<void> shoot(WidgetTester tester, String name) async {
+      // One pump delivers the cubit's state, the next draws it.
+      await tester.pump();
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/notice_$name.png'),
+      );
+      // Let the message run out, so no timer outlives the scene.
+      await tester.pump(const Duration(seconds: 10));
+    }
+
+    Notice lost() => Notice(
+      id: 'lost',
+      tone: NoticeTone.critical,
+      title: (_) => 'Scarlett 4i4 disconnected. Nothing is heard.',
+      action: NoticeAction(label: (_) => 'Open setup', onPressed: () {}),
+    );
+
+    testWidgets('confirmation in the top bar', (tester) async {
+      await stage(tester);
+      notices.show(
+        Notice(
+          id: 'saved',
+          tone: NoticeTone.success,
+          title: (_) => 'Saved as Night set',
+        ),
+      );
+      await shoot(tester, 'confirm');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('undo in the top bar', (tester) async {
+      await stage(tester);
+      notices.show(
+        Notice(
+          id: 'undo',
+          title: (_) => 'Cleared all tracks',
+          action: NoticeAction(
+            icon: LucideIcons.undo2,
+            label: (_) => 'Undo',
+            onPressed: () {},
+          ),
+        ),
+      );
+      await shoot(tester, 'undo');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('warning in the top bar', (tester) async {
+      await stage(tester);
+      notices.show(
+        Notice(
+          id: 'midi',
+          tone: NoticeTone.warning,
+          title: (_) => 'MIDI controller disconnected',
+          body: (_) => 'Loops keep playing',
+        ),
+      );
+      await shoot(tester, 'warning');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('critical must-act: the whole bar', (tester) async {
+      await stage(tester);
+      notices.raise(lost());
+      await shoot(tester, 'must_act_critical');
+    }, skip: !rendersScreenshots);
+
+    testWidgets('warning must-act: the whole bar', (tester) async {
+      await stage(tester);
+      notices.raise(
+        Notice(
+          id: 'fx_held',
+          tone: NoticeTone.warning,
+          title: (_) => 'Some effects are off',
+          body: (_) => 'The rig does not fit the processing',
+          action: NoticeAction(label: (_) => 'Open effects', onPressed: () {}),
+        ),
+      );
+      await shoot(tester, 'must_act_warning');
+    }, skip: !rendersScreenshots);
+
+    for (final view in StageView.values) {
+      testWidgets("a track's message on its card, ${view.name} view", (
+        tester,
+      ) async {
+        await stage(tester, view: view);
+        notices.showOnTrack(
+          1,
+          Notice(
+            id: 'rec',
+            tone: NoticeTone.warning,
+            overline: (_) => 'Rec refused',
+            title: (_) => 'Recording did not start',
+            body: (_) => 'Press Record again',
+          ),
+        );
+        await shoot(tester, 'track_${view.name}');
+      }, skip: !rendersScreenshots);
+    }
+
+    testWidgets('must-act on a performance view (Mixer)', (tester) async {
+      when(repository.allMonitors).thenReturn(const {});
+      control.setMode(InteractionMode.mixer);
+      await stage(tester);
+      notices.raise(lost());
+      await shoot(tester, 'foot_must_act');
+    }, skip: !rendersScreenshots);
+  });
 }

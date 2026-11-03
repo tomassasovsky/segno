@@ -44,7 +44,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        theme: ThemeData(
+          extensions: const [
+            SurfaceTheme.dark,
+            SpacingTheme.standard,
+            NoticeTheme.standard,
+          ],
+        ),
         home: ColoredBox(
           color: SurfaceTheme.dark.background,
           child: Column(

@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
-
 import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -9,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/pen_icons.dart';
+import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -18,6 +17,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/backing_click_dialog.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -47,19 +47,14 @@ class StageTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    return Container(
+    return SizedBox(
       key: const Key('stage_top_bar'),
       height: height,
-      padding: const EdgeInsets.symmetric(horizontal: sideInset),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: surface.line)),
-      ),
-      child: CustomMultiChildLayout(
-        delegate: _CentredTitleLayout(gap: _gap),
-        children: [
-          LayoutId(
-            id: _BarSlot.leading,
-            child: Row(
+      child: NoticeBar(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: sideInset),
+          child: TopBarLayout(
+            leading: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 _StageIconButton(
@@ -77,11 +72,9 @@ class StageTopBar extends StatelessWidget {
                 const _CpuLoad(),
               ],
             ),
-          ),
-          LayoutId(id: _BarSlot.title, child: const _SessionName()),
-          LayoutId(
-            id: _BarSlot.trailing,
-            child: Row(
+            // The session name, or a message in its place (#1562).
+            centre: const _StageMessage(),
+            trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const _BackingClickButton(),
@@ -120,88 +113,49 @@ class StageTopBar extends StatelessWidget {
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// The bar's three slots.
-enum _BarSlot { leading, title, trailing }
-
-/// Lays the bar out with the title centred on the WHOLE bar, not on the room
-/// between the side groups (#1308).
+/// The bar's centre: the session name, or a message in its place (#1562).
 ///
-/// The side groups sit at their own widths at either edge. The title is
-/// centred on the bar and may be at most twice the distance from the centre
-/// to the nearer group, less [gap], so it stays centred whatever the groups'
-/// widths and is ellipsized rather than run under either of them. Only when
-/// a group reaches so near the centre that less than
-/// [minCentredWidth] is left does the title fall back to the room between
-/// the groups.
-///
-/// Flutter's `NavigationToolbar` was the obvious candidate and does not fit:
-/// a long middle slides off centre towards the roomier side there.
-class _CentredTitleLayout extends MultiChildLayoutDelegate {
-  _CentredTitleLayout({required this.gap});
-
-  final double gap;
-
-  /// The narrowest centred room the title is still drawn in; below it the
-  /// title falls back to the room between the groups.
-  static const double minCentredWidth = 120;
+/// A track's message is said on its card when the card is on screen and
+/// free to say it, and here otherwise: the other bank's tracks, a card the
+/// Track view gives to a queued action's cue, and every track on the
+/// Mixer, whose strips are all controls and only ring.
+class _StageMessage extends StatelessWidget {
+  const _StageMessage();
 
   @override
-  void performLayout(Size size) {
-    final loose = BoxConstraints.loose(size);
-    final leading = layoutChild(_BarSlot.leading, loose);
-    final trailing = layoutChild(
-      _BarSlot.trailing,
-      loose.copyWith(maxWidth: math.max(0, size.width - leading.width)),
+  Widget build(BuildContext context) {
+    final view = context.select<TracksCubit, StageView>(
+      (cubit) => cubit.state.stageView,
     );
-    positionChild(
-      _BarSlot.leading,
-      Offset(0, (size.height - leading.height) / 2),
+    final bank = context.select<ControlCubit, int>(
+      (cubit) => cubit.state.activeBank,
     );
-    positionChild(
-      _BarSlot.trailing,
-      Offset(size.width - trailing.width, (size.height - trailing.height) / 2),
-    );
-    final centre = size.width / 2;
-    final centredRoom =
-        2 * (math.min(centre - leading.width, centre - trailing.width) - gap);
-    if (centredRoom >= minCentredWidth) {
-      final title = layoutChild(
-        _BarSlot.title,
-        BoxConstraints(maxWidth: centredRoom, maxHeight: size.height),
-      );
-      positionChild(
-        _BarSlot.title,
-        Offset(centre - title.width / 2, (size.height - title.height) / 2),
-      );
-      return;
-    }
-    // A side group reaches (nearly) to the centre — the Mixer's extra
-    // buttons on the 1024-wide appliance — so no centred room is left: the
-    // title takes the room between the groups instead of vanishing.
-    final start = leading.width + gap;
-    final room = math.max(0, size.width - trailing.width - gap - start);
-    final title = layoutChild(
-      _BarSlot.title,
-      BoxConstraints(maxWidth: room.toDouble(), maxHeight: size.height),
-    );
-    positionChild(
-      _BarSlot.title,
-      Offset(
-        start + (room - title.width) / 2,
-        (size.height - title.height) / 2,
-      ),
+    // One bit per channel whose card says its own message: an int, so a
+    // meter tick that changes none of them rebuilds nothing.
+    final cards = context.select<LooperBloc, int>((bloc) {
+      if (view == StageView.mixer) return 0;
+      final looper = bloc.state;
+      var mask = 0;
+      for (final track in looper.tracks) {
+        final channel = track.channel;
+        if (channel ~/ ControlState.tracksPerBank != bank) continue;
+        final cue = track.pending || looper.songWaitingSection == channel;
+        if (view == StageView.track && cue) continue;
+        mask |= 1 << channel;
+      }
+      return mask;
+    });
+    return NoticeBarMessage(
+      fallback: const _SessionName(),
+      trackCards: (channel) => cards & (1 << channel) != 0,
     );
   }
-
-  @override
-  bool shouldRelayout(_CentredTitleLayout oldDelegate) =>
-      oldDelegate.gap != gap;
 }
 
 /// A 60×60 icon target, bordered like the pen's trailing buttons or bare like
@@ -255,18 +209,17 @@ class _SessionName extends StatelessWidget {
     final name = context.select<SessionCubit, String?>(
       (cubit) => cubit.state.currentSessionName,
     );
+    // The top bar's centre line, which a message takes over in its place.
     return AppText(
       name ?? l10n.sessionUnsaved,
       key: const Key('stage_session_name'),
       textAlign: TextAlign.center,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontFamily: SurfaceTheme.displayFont,
+      style: context.noticeTheme.barTitle.copyWith(
         color: surface.textPrimary,
-        fontSize: 30,
+        fontWeight: FontWeight.w400,
         fontStyle: name == null ? FontStyle.italic : FontStyle.normal,
-        height: 1,
       ),
     );
   }

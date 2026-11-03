@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/track_column.dart' show PrimaryCrown;
+import 'package:segno/notices/model/notice.dart' show NoticeTone;
+import 'package:segno/notices/view/notice_palette.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
@@ -35,6 +37,9 @@ class ConsoleReadoutView extends StatelessWidget {
   /// The reference frame's size — what every dimension is drawn against.
   static const Size referenceSize = Size(1280, 720);
 
+  /// The reference's inset at the sides.
+  static const double sideInset = 49;
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -53,9 +58,14 @@ class ConsoleReadoutView extends StatelessWidget {
             ? width / referenceSize.width
             : height / referenceSize.height;
         final selected = readout.selected;
-        return Padding(
+        final content = Padding(
           // The reference insets the screen 49 at the sides and 45 above.
-          padding: EdgeInsets.fromLTRB(49 * s, 45 * s, 49 * s, 40 * s),
+          padding: EdgeInsets.fromLTRB(
+            sideInset * s,
+            45 * s,
+            sideInset * s,
+            40 * s,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -85,7 +95,127 @@ class ConsoleReadoutView extends StatelessWidget {
             ],
           ),
         );
+        final notice = readout.notice;
+        if (notice == null) return content;
+        return Stack(
+          children: [
+            content,
+            Positioned(
+              left: 0,
+              top: 0,
+              right: 0,
+              child: _NoticeBand(notice: notice, s: s),
+            ),
+          ],
+        );
       },
+    );
+  }
+}
+
+/// The main screen's message across the readout's top margin (#1562): the
+/// tone's tint and rule, the dot or icon, and the sentence. It fills the
+/// margin and no more, so nothing on the readout moves for it, and it takes
+/// no touch: the readout stays inert.
+class _NoticeBand extends StatelessWidget {
+  const _NoticeBand({required this.notice, required this.s});
+
+  final ReadoutNotice notice;
+  final double s;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final spacing = context.spacing;
+    final theme = context.noticeTheme;
+    final colors = NoticePalette.of(surface, notice.tone);
+    final text = theme.readoutText.copyWith(
+      fontSize: theme.readoutText.fontSize! * s,
+    );
+    final icon = noticeToneIcon(notice.tone);
+    final body = notice.body;
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        key: const Key('console_readout_notice'),
+        height: theme.readoutBandHeight * s,
+        padding: EdgeInsets.symmetric(
+          horizontal: ConsoleReadoutView.sideInset * s,
+        ),
+        decoration: BoxDecoration(
+          color: colors.tint,
+          border: Border(
+            bottom: BorderSide(
+              color: colors.line,
+              width: theme.ruleThickness * s,
+            ),
+          ),
+        ),
+        child: AppTextOptics(
+          opticalOffset: Offset.zero,
+          child: Row(
+            children: [
+              // The tone's marks: its icon, the dot for a critical message,
+              // nothing for the rest. A notice's own icon stays on the main
+              // bar; the screen link carries the tone, not glyphs.
+              if (icon != null) ...[
+                Icon(icon, size: text.fontSize, color: colors.mark),
+                SizedBox(width: spacing.md * s),
+              ] else if (notice.tone == NoticeTone.critical) ...[
+                DecoratedBox(
+                  key: const Key('console_readout_notice_dot'),
+                  decoration: BoxDecoration(
+                    color: colors.mark,
+                    shape: BoxShape.circle,
+                  ),
+                  child: SizedBox.square(dimension: theme.readoutDotSize * s),
+                ),
+                SizedBox(width: spacing.md * s),
+              ],
+              Flexible(
+                child: AppText.rich(
+                  TextSpan(
+                    children: [
+                      if (notice.track case final track?) ...[
+                        TextSpan(
+                          text: track,
+                          style: text.copyWith(color: surface.textSecondary),
+                        ),
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: SizedBox(width: spacing.md * s),
+                        ),
+                      ],
+                      TextSpan(
+                        text: notice.title,
+                        style: text.copyWith(color: surface.textPrimary),
+                      ),
+                      if (body != null) ...[
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: SizedBox(width: spacing.md * s),
+                        ),
+                        TextSpan(
+                          text: body,
+                          style: text.copyWith(
+                            color: surface.textSecondary,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  key: const Key('console_readout_notice_text'),
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

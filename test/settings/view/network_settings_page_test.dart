@@ -127,6 +127,8 @@ ThemeData _theme() => ThemeData(
   extensions: [
     SurfaceTheme.dark,
     routingGraphThemeFromSurface(SurfaceTheme.dark),
+    SpacingTheme.standard,
+    NoticeTheme.standard,
   ],
 );
 

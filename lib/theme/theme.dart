@@ -6,5 +6,7 @@ export 'app_text.dart';
 export 'app_theme.dart';
 export 'looper_screen_theme.dart';
 export 'looper_theme.dart';
+export 'notice_theme.dart';
+export 'spacing_theme.dart';
 export 'surface_theme.dart';
 export 'text_metrics.dart';
