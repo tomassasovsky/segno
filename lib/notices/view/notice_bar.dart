@@ -1,4 +1,3 @@
-import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -417,7 +416,7 @@ class _TimeLeft extends StatefulWidget {
 /// built, so a bar that comes up while the message is already going by (a
 /// screen change) picks the line up where it is.
 class _TimeLeftState extends State<_TimeLeft> {
-  late final double _left = widget.shown.leftAt(clock.now());
+  late final double _left = widget.shown.left;
 
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(

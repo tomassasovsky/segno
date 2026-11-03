@@ -475,6 +475,43 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    Finder inBar(String text) => find.descendant(
+      of: find.byKey(const Key('stage_top_bar')),
+      matching: find.textContaining(text, findRichText: true),
+    );
+
+    testWidgets('a card holding a queued cue leaves it to the bar', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [Track(), Track(channel: 1, pending: true)],
+        ),
+      );
+      await pump(tester);
+      notices.showOnTrack(1, refused());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byKey(const Key('tracks_queued_1')), findsOneWidget);
+      expect(find.byKey(const Key('track_notice_1')), findsNothing);
+      expect(inBar('Recording did not start'), findsOneWidget);
+      notices.clear('rec');
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a track with no card on screen is said in the bar', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      notices.showOnTrack(2, refused());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(inBar('Recording did not start'), findsOneWidget);
+      notices.clear('rec');
+      await tester.pumpAndSettle();
+    });
+
     testWidgets("the Track view's card says it, the bar does not", (
       tester,
     ) async {
