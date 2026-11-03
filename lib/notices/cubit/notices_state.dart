@@ -7,7 +7,7 @@ class ShownNotice extends Equatable {
   const ShownNotice({
     required this.notice,
     required this.serial,
-    required this.shownAt,
+    required this.age,
   });
 
   /// What it says.
@@ -16,15 +16,16 @@ class ShownNotice extends Equatable {
   /// Which show this is: higher is newer.
   final int serial;
 
-  /// When it went up, so a bar built while it is up shows the time it has
-  /// left rather than starting it again.
-  final DateTime shownAt;
+  /// Running since it went up, so a bar built while it is up shows the time
+  /// it has left rather than starting it again. A stopwatch, not two
+  /// readings of the wall clock, which the console steps when it first
+  /// reaches a time server.
+  final Stopwatch age;
 
-  /// The share of its [Notice.duration] still to go at [now], from 1 to 0.
-  double leftAt(DateTime now) {
+  /// The share of its [Notice.duration] still to go, from 1 to 0.
+  double get left {
     final total = notice.duration.inMicroseconds;
-    final gone = now.difference(shownAt).inMicroseconds;
-    return (1 - gone / total).clamp(0.0, 1.0);
+    return (1 - age.elapsedMicroseconds / total).clamp(0.0, 1.0);
   }
 
   @override

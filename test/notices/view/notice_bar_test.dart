@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -102,7 +103,7 @@ void main() {
   setUpAll(loadBundledFonts);
 
   setUp(() {
-    notices = NoticesCubit();
+    notices = NoticesCubit(stopwatch: () => clock.stopwatch());
   });
 
   tearDown(() => notices.close());
