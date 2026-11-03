@@ -3,52 +3,6 @@ import 'package:looper_repository/looper_repository.dart';
 
 void main() {
   group('Track equality', () {
-    // Levels are not part of Track (#1301); the playhead is the one field
-    // that moves at the poll rate. These facts are asserted here, at the
-    // definition, where a change to `props` cannot slip past.
-
-    test('steadyProps is props without the playhead', () {
-      // The two lists are written out separately so neither is built twice per
-      // comparison; this is what keeps them from drifting apart. A field added
-      // to one and forgotten in the other fails here rather than becoming a
-      // tile that never rebuilds (if it is missing from `steadyProps`) or a
-      // change the repository never publishes (if it is missing from `props`).
-      const track = Track(
-        channel: 3,
-        state: TrackState.playing,
-        volume: 0.7,
-        muted: true,
-        lengthFrames: 96000,
-        undoDepth: 2,
-        clearRestore: true,
-        redoDepth: 1,
-        multiple: 2,
-        inputMask: 0x2,
-        outputMask: 0x5,
-        layerInFlight: true,
-        pending: true,
-        pendingTrigger: ArmTrigger.sound,
-        lengthPresetBars: 4,
-        recordTimingOverride: RecordTiming.loopStart,
-        overdubDecayOverride: 25,
-        oneShot: true,
-        chainEnabled: false,
-        positionFrames: 4800,
-      );
-      expect(track.props, [...track.steadyProps, track.positionFrames]);
-    });
-
-    test('a moving playhead leaves steadyProps unchanged too', () {
-      const still = Track(channel: 1, state: TrackState.playing);
-      const later = Track(
-        channel: 1,
-        state: TrackState.playing,
-        positionFrames: 960,
-      );
-      expect(later.steadyProps, still.steadyProps);
-      expect(later, isNot(still));
-    });
-
     test('isRunning is playing or overdubbing, muted or not', () {
       expect(const Track(state: TrackState.playing).isRunning, isTrue);
       expect(const Track(state: TrackState.overdubbing).isRunning, isTrue);
@@ -63,23 +17,6 @@ void main() {
       ]) {
         expect(Track(state: state).isRunning, isFalse);
       }
-    });
-
-    test('progress is the playhead over the length, 0 without a length', () {
-      const playing = Track(
-        state: TrackState.playing,
-        lengthFrames: 1000,
-        positionFrames: 250,
-      );
-      expect(playing.progress, 0.25);
-      // The engine publishes the growing write head as both position and
-      // length while recording, so a take in progress reads 0, not 100%.
-      const recording = Track(
-        state: TrackState.recording,
-        lengthFrames: 250,
-        positionFrames: 250,
-      );
-      expect(recording.progress, 0);
     });
 
     test('layers count the base take plus every peelable pass', () {

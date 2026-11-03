@@ -73,6 +73,10 @@ segno-prof stack $(pidof segno) <tid>
 Only that thread is paused, for microseconds per sample, and it is attached
 only while a sample is taken.
 
+The engine names its own threads (`segno-audio`, `segno-fx-0`,
+`segno-cache` and so on), so `io.flutter.ui` in `top -H` or `/proc/<pid>/task`
+is only the Dart UI isolates (#1563).
+
 Experimental images also run `segno-profile.service`, which writes a CSV row
 of CPU per thread role (main, UI, raster, real-time), memory and load every
 minute to `/data/perf/metrics-<date>.csv`, and a stack profile of the main

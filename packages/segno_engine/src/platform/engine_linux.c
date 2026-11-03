@@ -924,12 +924,21 @@ void le_platform_fx_wake(_Atomic uint32_t* word, int n) {
                 0);
 }
 
+void le_platform_name_thread(const char* name) {
+  (void)pthread_setname_np(pthread_self(), name);
+}
+
 void le_platform_after_device_open(le_engine* engine) {
   /* Appliance: promote the audio thread to real-time BEFORE it starts reading,
    * while it is still idle, so it never runs its deadline-critical first reads
    * at normal priority (which overruns the capture at tiny buffers). */
   le_alsa_set_rt_priority(engine);
   le_pin_callback(engine);
+  /* Named from here, not from the callback, so the audio thread makes no
+   * system call for it (le_platform_name_thread says why it is named). */
+  if (engine->device_initialised && engine->device.thread != (ma_thread)0) {
+    (void)pthread_setname_np(engine->device.thread, "segno-audio");
+  }
   /* And map in, and lock, the code it is about to run and the top of its
    * stack (engine_platform.h). */
   le_platform_prefault_audio_code();

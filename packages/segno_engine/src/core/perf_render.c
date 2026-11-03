@@ -1,6 +1,7 @@
 #include "engine_read_head.h"
 #include "../stretch/le_stretch.h" /* Transpose's source renders (#1179) */
 #include "engine_cache.h" /* LE_CACHE_SOURCE_SEED / _FOLD_MS: the same render */
+#include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_fade.h"
 /*
  * perf_render.c — see perf_render.h.
@@ -2170,6 +2171,7 @@ void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
 
 static void le_pr_worker_main(void* arg) {
   le_perf_render* r = (le_perf_render*)arg;
+  le_platform_name_thread("segno-render");
   le_flush_denormals(); /* stems round as the callback does */
 
   char* text = NULL;

@@ -18,6 +18,7 @@
 #include <time.h>
 
 #include "engine_private.h"
+#include "engine_platform.h" /* le_platform_name_thread */
 #include "rt_alloc.h"
 
 #define LE_PREFAULT_JOBS (LE_MAX_TRACKS * LE_MAX_LANES * 4)
@@ -162,6 +163,7 @@ static int le_prefault_pass(le_engine* e, struct le_prefaulter* p) {
 
 static void* le_prefault_main(void* arg) {
   le_engine* e = (le_engine*)arg;
+  le_platform_name_thread("segno-prefault");
   struct le_prefaulter* p = e->prefaulter;
   pthread_mutex_lock(&p->mu);
   while (!p->stop) {

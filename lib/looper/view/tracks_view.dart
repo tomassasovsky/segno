@@ -104,11 +104,9 @@ class _TracksViewState extends State<TracksView> {
     // every surface (keyboard, tiles, pedal) reads and writes.
     final overlay = context.watch<ControlCubit>().state;
     final mode = overlay.mode;
-    // NOT `context.watch<LooperBloc>()`: `LooperState` carries live audio —
-    // per-track `peak` / `positionFrames` and the transport's position and
-    // output peak — so it changes on every poll tick while audio flows, and
-    // watching it here rebuilt this whole method: the theme, the listeners,
-    // the Scaffold and all eight columns.
+    // NOT `context.watch<LooperBloc>()`: any change to one track would
+    // rebuild this whole method: the theme, the listeners, the Scaffold and
+    // all eight columns.
     // Measured at 10.98ms p50 in the build phase on the Pi against a 16.7ms
     // frame (#638). This selector holds only values a moving meter cannot
     // change, so a level tick no longer reaches the chrome; the per-track
@@ -569,11 +567,10 @@ class _TracksViewState extends State<TracksView> {
 
 /// The slice of [LooperState] that [TracksView]'s own chrome depends on.
 ///
-/// Deliberately excludes everything a moving meter touches — per-track
-/// `peak` and `positionFrames`, the master position and the output peak.
-/// Those change on every poll tick while audio flows, and including any here
-/// would put the whole console back on the rebuild path this class exists to
-/// keep it off (#646).
+/// Deliberately excludes each track's own facts, which the slots below
+/// follow per channel: including them here would rebuild the whole console
+/// for a change to one track (#646). Levels (#1301) and playheads (#1563) are
+/// not in the looper state at all.
 ///
 /// [channels] is every track's channel, not just the active bank's: the bank
 /// filter lives on [ControlCubit], so filtering here would rebuild the chrome
@@ -645,16 +642,15 @@ class _ChromeState extends Equatable {
   ];
 }
 
-/// One [TrackColumn], subscribed to nothing but its own [channel]'s [Track] —
-/// and to that track's STEADY fields only ([Track.steadyProps]).
+/// One [TrackColumn], subscribed to nothing but its own [channel]'s [Track].
 ///
 /// Selecting per channel means only track 0's column can follow track 0, where
 /// watching [LooperBloc] in [TracksView] rebuilt all eight columns plus the
-/// entire console around them on every tick (#646). Comparing on the steady
-/// slice means a moving level does not rebuild even that column: the level is
-/// subscribed one level further down, in the [TrackPeakMeter] leaf, so a meter
-/// tick redraws a bar instead of ~250 lines of tile with its l10n lookups,
-/// theme-extension reads and FX stage label.
+/// entire console around them on every tick (#646). The level and the
+/// playhead are followed one level further down, in the [TrackPeakMeter] and
+/// [TrackProgressBar] leaves, so their ticks redraw a bar instead of ~250
+/// lines of tile with its l10n lookups, theme-extension reads and FX stage
+/// label.
 class _TrackSlot extends StatelessWidget {
   const _TrackSlot({
     required this.channel,
@@ -683,10 +679,9 @@ class _TrackSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final steady = context.select<LooperBloc, SteadyTrack?>(
-      (bloc) => steadyTrackOf(bloc.state, channel),
+    final track = context.select<LooperBloc, Track?>(
+      (bloc) => trackOf(bloc.state, channel),
     );
-    final track = steady?.track;
     // The Song section waiting for the playing one's lap edge (#1077): the
     // screen shows it with the queued cue, whatever started the request.
     final waiting = context.select<LooperBloc, bool>(
@@ -719,8 +714,8 @@ class _TrackSlot extends StatelessWidget {
 }
 
 /// [_TrackSlot]'s twin for the Mixer view: one [MixerColumn] per channel, on
-/// the same steady-slice subscription. The strip's meter and playhead
-/// subscribe to their own live values one level down.
+/// the same per-channel subscription. The strip's meter and playhead
+/// follow their own live values one level down.
 class _MixerSlot extends StatelessWidget {
   const _MixerSlot({
     required this.channel,
@@ -745,14 +740,13 @@ class _MixerSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = context
-        .select<LooperBloc, ({SteadyTrack? steady, int generation})>(
-          (bloc) => (
-            steady: steadyTrackOf(bloc.state, channel),
-            generation: bloc.state.mixGeneration,
-          ),
-        );
-    final track = values.steady?.track;
+    final values = context.select<LooperBloc, ({Track? track, int generation})>(
+      (bloc) => (
+        track: trackOf(bloc.state, channel),
+        generation: bloc.state.mixGeneration,
+      ),
+    );
+    final track = values.track;
     if (track == null) return const SizedBox.shrink();
     return Expanded(
       child: MixerColumn(
@@ -770,7 +764,7 @@ class _MixerSlot extends StatelessWidget {
 }
 
 /// [_TrackSlot]'s twin for the Wave view: one [WaveTrackRow] per channel, on
-/// the same steady-slice subscription.
+/// the same per-channel subscription.
 class _WaveSlot extends StatelessWidget {
   const _WaveSlot({
     required this.channel,
@@ -795,10 +789,9 @@ class _WaveSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final steady = context.select<LooperBloc, SteadyTrack?>(
-      (bloc) => steadyTrackOf(bloc.state, channel),
+    final track = context.select<LooperBloc, Track?>(
+      (bloc) => trackOf(bloc.state, channel),
     );
-    final track = steady?.track;
     if (track == null) return const SizedBox.shrink();
     return Expanded(
       child: WaveTrackRow(

@@ -76,6 +76,36 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The UI thread's CPU (#1563)
+
+- The 15% "UI thread at idle" was the audio thread. The engine's threads
+  kept the name of the thread that started them, a Dart UI isolate, so a
+  per-thread sum by name counted the audio thread (14% idle, 16% playing)
+  as `io.flutter.ui`. Each engine thread now names itself
+  (`le_platform_name_thread`: segno-audio, segno-midi, segno-cache,
+  segno-restore, segno-prefault, segno-render, segno-drain, segno-checkpt,
+  segno-fx-N), so `top -H`, `segno-prof` and `/data/bench/load.sh` read
+  true. The main screen's Dart UI thread is 1.4% of a core at idle, most of
+  it the 16 ms snapshot poll.
+- While a loop played, every poll republished `LooperState` because the
+  playhead was in it, and every listener of the state ran again. The
+  playhead is now `LooperRepository.playheads` (`Playhead`), apart from the
+  state as the levels are (#1301); `TransportState.masterPositionFrames`
+  and `Track.positionFrames` are gone.
+- Meters and playheads follow their stream through `LiveValue`
+  (`LiveCubit`): each paints in its own layer, and each stops following
+  while its route is covered (`TickerMode`), so the Effects page no longer
+  keeps the stage under it drawing frames. The waveform's playhead paints
+  over the wave in a layer of its own.
+- Console, build 213 against this branch, 30 s windows, % of one core,
+  Skia / Impeller: the main screen's UI thread playing 9.5 -> 4.1 /
+  10.1 -> 4.6, on the Effects page 7.1 -> 2.1 / 7.7 -> 2.3; the readout's
+  UI thread playing 2.1 -> 1.2 on both. On the Effects page the main
+  screen's raster thread fell 7.3 -> 1.0 / 13.0 -> 2.1. Under Skia the GPU
+  is busier while the stage plays (11% -> 15%): the stage's page is now a
+  stable layer, which Skia's raster cache keeps and draws as an image every
+  frame; Impeller has no raster cache and stays at 10%.
+
 ## November 2026 Screen capture on the console (#1555)
 
 - `segno-capture` (segno-bundle) sends SIGUSR1 to `segno.service`'s process

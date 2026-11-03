@@ -97,6 +97,7 @@ export 'src/models/looper_state.dart';
 export 'src/models/meter_levels.dart';
 export 'src/models/mix_settings_snapshot.dart';
 export 'src/models/output_setup.dart';
+export 'src/models/playhead.dart';
 export 'src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginFormat, PluginParamInfo;
 export 'src/models/selected_render.dart';

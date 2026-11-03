@@ -2,34 +2,29 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:mocktail/mocktail.dart';
-import 'package:segno/looper/cubit/meter_cubit.dart';
+import 'package:segno/looper/cubit/live_cubit.dart';
 import 'package:segno/looper/model/meter_scale.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
-
 void main() {
-  late _MockLooperRepository repository;
   late StreamController<MeterLevels> levels;
+  late MeterLevels latest;
 
   setUp(() {
-    repository = _MockLooperRepository();
     levels = StreamController<MeterLevels>.broadcast(sync: true);
-    when(() => repository.meterLevels).thenAnswer((_) => levels.stream);
-    when(() => repository.meters).thenReturn(const MeterLevels());
+    latest = const MeterLevels();
   });
 
   tearDown(() => unawaited(levels.close()));
 
-  MeterCubit<double> trackMeter(int channel) => MeterCubit<double>(
-    repository: repository,
-    select: (l) => meterPeak(l.track(channel).peak),
-  );
+  LiveCubit<MeterLevels, double> trackMeter(int channel) =>
+      LiveCubit<MeterLevels, double>(
+        values: levels.stream,
+        latest: () => latest,
+        select: (l) => meterPeak(l.track(channel).peak),
+      );
 
-  test('starts from the latest levels', () {
-    when(() => repository.meters).thenReturn(
-      const MeterLevels(tracks: [TrackLevels(peak: 1)]),
-    );
+  test('starts from the latest value', () {
+    latest = const MeterLevels(tracks: [TrackLevels(peak: 1)]);
     final cubit = trackMeter(0);
     addTearDown(cubit.close);
 
@@ -67,13 +62,40 @@ void main() {
     expect(emitted, isEmpty);
   });
 
+  test('stops following while not visible, and shows the latest value '
+      'when visible again', () async {
+    final cubit = trackMeter(0);
+    addTearDown(cubit.close);
+    final emitted = <double>[];
+    final sub = cubit.stream.listen(emitted.add);
+    addTearDown(sub.cancel);
+
+    cubit.follow(visible: false);
+    expect(levels.hasListener, isFalse);
+    latest = const MeterLevels(tracks: [TrackLevels(peak: 1)]);
+    levels.add(latest);
+    await Future<void>.delayed(Duration.zero);
+    expect(emitted, isEmpty);
+
+    cubit.follow(visible: true);
+    expect(levels.hasListener, isTrue);
+    await Future<void>.delayed(Duration.zero);
+    expect(emitted, [1]);
+
+    // Following twice does not listen twice.
+    cubit.follow(visible: true);
+    levels.add(const MeterLevels());
+    await Future<void>.delayed(Duration.zero);
+    expect(emitted, [1, 0]);
+  });
+
   test('stops following once closed', () async {
     final cubit = trackMeter(0);
     await cubit.close();
 
-    levels.add(const MeterLevels(tracks: [TrackLevels(peak: 1)]));
-    await Future<void>.delayed(Duration.zero);
-
+    expect(levels.hasListener, isFalse);
+    cubit.follow(visible: true);
+    expect(levels.hasListener, isFalse);
     expect(cubit.state, 0);
   });
 }

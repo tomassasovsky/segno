@@ -19,23 +19,35 @@ void main() {
   late LooperBloc bloc;
   late LooperRepository repository;
   late StreamController<MeterLevels> levels;
+  late StreamController<Playhead> playheads;
 
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
     levels = StreamController<MeterLevels>.broadcast();
+    playheads = StreamController<Playhead>.broadcast();
     when(() => repository.meterLevels).thenAnswer((_) => levels.stream);
     when(() => repository.meters).thenReturn(const MeterLevels());
+    when(() => repository.playheads).thenAnswer((_) => playheads.stream);
+    when(() => repository.playhead).thenReturn(const Playhead());
   });
 
-  tearDown(() => unawaited(levels.close()));
+  tearDown(() {
+    unawaited(levels.close());
+    unawaited(playheads.close());
+  });
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
   }
 
-  Future<void> pumpLeaf(WidgetTester tester, Widget leaf) => tester.pumpWidget(
+  /// [drawn] false stands for a route under another one: built, not drawn.
+  Future<void> pumpLeaf(
+    WidgetTester tester,
+    Widget leaf, {
+    bool drawn = true,
+  }) => tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.neon,
       home: RepositoryProvider<LooperRepository>.value(
@@ -43,7 +55,10 @@ void main() {
         child: BlocProvider<LooperBloc>.value(
           value: bloc,
           child: Scaffold(
-            body: SizedBox(width: 100, height: 300, child: leaf),
+            body: TickerMode(
+              enabled: drawn,
+              child: SizedBox(width: 100, height: 300, child: leaf),
+            ),
           ),
         ),
       ),
@@ -201,38 +216,78 @@ void main() {
   });
 
   group('TrackProgressBar', () {
-    testWidgets("fills to the track's own progress", (tester) async {
-      seed(
-        const LooperState(
-          tracks: [
-            Track(
-              state: TrackState.playing,
-              lengthFrames: 1000,
-              positionFrames: 250,
-            ),
-          ],
+    // The playhead is read from the repository's live playheads by channel,
+    // not from the looper state (#1563).
+    const bar = TrackProgressBar(channel: 0, color: Colors.green);
+
+    double? drawn(WidgetTester tester) => tester
+        .widget<FractionallySizedBox>(find.byType(FractionallySizedBox))
+        .widthFactor;
+
+    testWidgets("fills to the track's own playhead", (tester) async {
+      when(
+        () => repository.playhead,
+      ).thenReturn(const Playhead(tracks: [0.25]));
+      seed(const LooperState());
+      await pumpLeaf(tester, bar);
+
+      expect(drawn(tester), 0.25);
+    });
+
+    testWidgets('follows the live playhead', (tester) async {
+      seed(const LooperState());
+      await pumpLeaf(tester, bar);
+      expect(drawn(tester), 0);
+
+      playheads.add(const Playhead(tracks: [0.5]));
+      await tester.pump();
+      await tester.pump();
+
+      expect(drawn(tester), 0.5);
+    });
+
+    testWidgets('paints in a layer of its own', (tester) async {
+      seed(const LooperState());
+      // In a column, as on a track tile, so it takes its own height.
+      await pumpLeaf(tester, const Column(children: [bar]));
+
+      final boundary = tester.renderObject<RenderBox>(
+        find.descendant(
+          of: find.byType(TrackProgressBar),
+          matching: find.byType(RepaintBoundary),
         ),
       );
-      await pumpLeaf(
-        tester,
-        const TrackProgressBar(channel: 0, color: Colors.green),
-      );
-      final fill = tester.widget<FractionallySizedBox>(
-        find.byType(FractionallySizedBox),
-      );
-      expect(fill.widthFactor, 0.25);
+      expect(boundary.isRepaintBoundary, isTrue);
+      expect(boundary.size.height, TrackProgressBar.height);
+    });
+
+    testWidgets('stops following while its route is not drawn, and shows the '
+        'latest playhead when it is again', (tester) async {
+      seed(const LooperState());
+      await pumpLeaf(tester, bar, drawn: false);
+      expect(playheads.hasListener, isFalse);
+
+      when(
+        () => repository.playhead,
+      ).thenReturn(const Playhead(tracks: [0.75]));
+      await pumpLeaf(tester, bar);
+      await tester.pump();
+
+      expect(playheads.hasListener, isTrue);
+      expect(drawn(tester), 0.75);
     });
 
     testWidgets('an empty or dropped channel reads 0', (tester) async {
+      when(
+        () => repository.playhead,
+      ).thenReturn(const Playhead(tracks: [0.5]));
       seed(const LooperState(tracks: [Track()]));
       await pumpLeaf(
         tester,
         const TrackProgressBar(channel: 3, color: Colors.green),
       );
-      final fill = tester.widget<FractionallySizedBox>(
-        find.byType(FractionallySizedBox),
-      );
-      expect(fill.widthFactor, 0);
+
+      expect(drawn(tester), 0);
     });
   });
 }
