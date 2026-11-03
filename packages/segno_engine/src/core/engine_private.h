@@ -794,6 +794,10 @@ typedef struct le_fx_state {
    * frame (after a reset, or a frame that does not follow the last), 1
    * waiting for that tick, 2 running. */
   int32_t oct_rs[LE_FX_MAX];
+  /* The resampler tables the slot was prepared with (fx_octaver_prepare;
+   * NULL at 48 kHz): engine_fx.c's le_oct_rs, made once per rate and never
+   * freed. */
+  const struct le_oct_rs* oct_tab[LE_FX_MAX];
   uint32_t oct_tick[LE_FX_MAX];
   uint32_t oct_frame[LE_FX_MAX];
   uint32_t oct_n0[LE_FX_MAX];

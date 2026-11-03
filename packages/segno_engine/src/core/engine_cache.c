@@ -840,17 +840,20 @@ static int le_cache_copy_key_matches(le_engine* e, const le_cache_job* job) {
  * audio. */
 /* Whether a print of [types][0, count) over a loop of [len] frames could not
  * equal live (#941). The octaver's hop is anchored to the engine clock, so on
- * a loop that is not a whole number of hops it falls on different frames of
+ * a loop that is not a whole number of its periods (le_fx_hop_period: a
+ * hop at 48 kHz, 1176 frames at 44.1, 512 at 96) it falls on different frames of
  * the loop each lap: the live octaver output differs lap to lap, and a print
  * of one lap would step at the loop top where it swaps in. Such a chain
- * plays live. On a loop of whole hops every lap is the same, and the print
+ * plays live. On a loop of whole periods every lap is the same, and the print
  * equals live at whichever loop top it engages. A bypassed octaver, or one in
  * a chain switched off, passes the signal dry and prints (a rack's
  * switched-off Pitch Shift); turning it on changes the key and re-checks. */
 static int le_cache_hop_unprintable(const int32_t* types,
                                     const int32_t* enabled, int32_t chain_on,
-                                    int32_t count, int32_t len) {
-  if (!chain_on || len <= 0 || len % LE_PV_HOP == 0) return 0;
+                                    int32_t count, int32_t len, int sr) {
+  if (!chain_on || len <= 0 || len % (int32_t)le_fx_hop_period(sr) == 0) {
+    return 0;
+  }
   for (int32_t s = 0; s < count; ++s) {
     if (le_fx_type_hops(types[s]) && enabled[s]) return 1;
   }
@@ -931,7 +934,8 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   const int32_t len = load_i32(&ln->a_len);
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
                                                  e->sample_rate);
-  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len)) {
+  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len,
+                                               e->sample_rate)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
         free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
@@ -1165,7 +1169,8 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   const int32_t len = load_i32(&tr->lanes[0].a_len);
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
                                                  e->sample_rate);
-  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len)) {
+  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len,
+                                               e->sample_rate)) {
     lc->state = LE_CACHE_GAVE_UP;
     lc->reason =
         free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;

@@ -21752,6 +21752,23 @@ static void test_octaver_resampled_hop_period(void) {
   CHECK(le_fx_hop_period(48000) == LE_PV_HOP);
   CHECK(le_fx_hop_period(96000) == 512);
   CHECK(le_fx_hop_period(44100) == 1176);
+  /* The latency a prepared slot reports: the kernel's 1216 frames at
+   * 48 kHz and both filters' delays; none for one not prepared at the
+   * rate, which passes its input. */
+  {
+    le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+    CHECK(fx != NULL);
+    if (fx == NULL) return;
+    CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, 44100) == LE_OK);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 44100) == 1188);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 96000) == 0);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 48000) == LE_PV_LATENCY);
+    le_fx_state_free_buffers(fx);
+    CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, 96000) == LE_OK);
+    CHECK(le_fx_added_latency(fx, 0, LE_FX_OCTAVER, 96000) == 2568);
+    le_fx_state_free_buffers(fx);
+    free(fx);
+  }
   const int rates[] = {44100, 96000};
   for (int ri = 0; ri < 2; ++ri) {
     const int sr = rates[ri];
@@ -21775,7 +21792,7 @@ static void test_octaver_resampled_hop_period(void) {
       moved = fmaxf(moved, fabsf(a[i] - d[i]));
     }
     /* after the wrap, past a latency and a window: finite and playing */
-    const int from = n / 4 + le_fx_added_latency(NULL, 0, LE_FX_OCTAVER, sr) + sr / 20;
+    const int from = n / 4 + sr / 10;
     int finite = 1;
     double e = 0.0;
     float peak = 0.0f;

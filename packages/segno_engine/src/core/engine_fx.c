@@ -1923,6 +1923,7 @@ void le_fx_free_octaver(le_fx_state* fx, int slot) {
     o->rs_in = NULL;
     le_rt_free(o->rs_out);
     o->rs_out = NULL;
+    fx->oct_tab[slot] = NULL;
     le_rt_free(atomic_load_explicit(&o->low, memory_order_relaxed));
     atomic_store_explicit(&o->low, NULL, memory_order_relaxed);
   }
@@ -2135,7 +2136,7 @@ static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
  * a Kaiser-windowed sinc, linear phase, read at its fractional position
  * from a table of LE_OCT_RS_PHASES phases (linear between two): flat to
  * 0.43 of the lower rate and 72 dB down from half of it. The effect's
- * latency is then a whole number of frames at the rate (le_oct_rs_latency):
+ * latency is then a whole number of frames at the rate (le_oct_rs_latency_of):
  * the kernel's 1216 frames at 48 kHz, 25.3 ms, and both filters' delays.
  * A kernel tick is placed by the engine clock (by the slot's own frame
  * count for a state nobody clocks), so a render reproduces the live
@@ -2180,13 +2181,6 @@ static int le_oct_rs_latency_of(int sr, int d48, int wout) {
   return (int)ceil((double)(d48 + LE_PV_LATENCY + wout + 2) * sr / LE_OCT_RATE);
 }
 
-static int le_oct_rs_latency(int sr) {
-  if (sr == LE_OCT_RATE || sr <= 0) return LE_PV_LATENCY;
-  const int win = le_oct_rs_width(sr, (double)sr);
-  const int wout = le_oct_rs_width(sr, (double)LE_OCT_RATE);
-  return le_oct_rs_latency_of(sr, le_oct_rs_d48(sr, win), wout);
-}
-
 /* One filter's table: weights for each of the phases (and one past), for
  * an input at [rate_in], cut midway between the pass and stop edges. Each
  * phase sums to 1, so a tone passes at unity whatever the fraction. */
@@ -2228,12 +2222,14 @@ static const le_oct_rs* le_oct_rs_find(int sr) {
   return NULL;
 }
 
-/* Makes the tables for [sr] once (control thread): LE_OK, or an error. */
-static int32_t le_oct_rs_make(int sr) {
-  if (sr == LE_OCT_RATE || le_oct_rs_find(sr) != NULL) return LE_OK;
+/* The tables for [sr], made the first time (control thread); NULL when
+ * they cannot be. */
+static const le_oct_rs* le_oct_rs_get(int sr) {
+  const le_oct_rs* found = le_oct_rs_find(sr);
+  if (found != NULL) return found;
   pthread_mutex_lock(&le_oct_rs_mu);
-  int32_t rc = LE_OK;
-  if (le_oct_rs_find(sr) == NULL) {
+  found = le_oct_rs_find(sr);
+  if (found == NULL) {
     int slot = -1;
     for (int i = 0; slot < 0 && i < LE_OCT_RS_RATES; ++i) {
       if (atomic_load_explicit(&le_oct_rs_tabs[i], memory_order_relaxed) == NULL) {
@@ -2246,7 +2242,7 @@ static int32_t le_oct_rs_make(int sr) {
       t->win = le_oct_rs_width(sr, (double)sr);
       t->wout = le_oct_rs_width(sr, (double)LE_OCT_RATE);
       t->d48 = le_oct_rs_d48(sr, t->win);
-      t->latency = le_oct_rs_latency(sr);
+      t->latency = le_oct_rs_latency_of(sr, t->d48, t->wout);
       t->gin = le_oct_rs_design(sr, (double)sr, t->win);
       t->gout = le_oct_rs_design(sr, (double)LE_OCT_RATE, t->wout);
     }
@@ -2261,13 +2257,13 @@ static int32_t le_oct_rs_make(int sr) {
         free(t->gout);
         free(t);
       }
-      rc = LE_ERR_INVALID;
     } else {
       atomic_store_explicit(&le_oct_rs_tabs[slot], t, memory_order_release);
+      found = t;
     }
   }
   pthread_mutex_unlock(&le_oct_rs_mu);
-  return rc;
+  return found;
 }
 
 /* The two channels' rings [a] and [b] (LE_OCT_RS_RING samples, indexed by
@@ -2323,11 +2319,11 @@ static void fx_octaver_run(le_fx_state* fx, int slot, int sr, int cap,
     *r = fx_octaver(fx, slot, 1, cap, *r, q);
     return;
   }
-  const le_oct_rs* t = le_oct_rs_find(sr);
+  const le_oct_rs* t = fx->oct_tab[slot];
   le_octaver_state* o = fx->oct[slot];
-  if (t == NULL || o[0].rs_in == NULL || o[1].rs_in == NULL ||
+  if (t == NULL || t->sr != sr || o[0].rs_in == NULL || o[1].rs_in == NULL ||
       o[0].rs_out == NULL || o[1].rs_out == NULL) {
-    return; /* not prepared for this rate: the input passes */
+    return; /* not prepared for this rate: the input passes, unlate */
   }
   fx->oct_rs[slot] = 1;
   /* The frame this is: the engine's clock, or the slot's own count. One
@@ -3476,10 +3472,12 @@ static void fx_reverb_process(le_fx_state* fx, int slot, int sr, int cap,
 /* Octaver's added latency, adapted to the vtable's (fx, slot) signature. */
 static int fx_octaver_latency_vt(const le_fx_state* fx, int slot,
                                  int32_t type, int sr) {
-  (void)fx;
-  (void)slot;
   (void)type;
-  return le_oct_rs_latency(sr); /* LE_PV_LATENCY at LE_OCT_RATE */
+  if (sr == LE_OCT_RATE || sr <= 0) return LE_PV_LATENCY;
+  /* Away from 48 kHz, the resampled kernel's (fx_octaver_run); none for a
+   * slot not prepared at this rate, which passes its input. */
+  const le_oct_rs* t = fx != NULL ? fx->oct_tab[slot] : NULL;
+  return t != NULL && t->sr == sr ? t->latency : 0;
 }
 
 /* ---- per-type lazy allocation (control thread) ----
@@ -3571,7 +3569,8 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
     }
   }
   /* At another rate, the resamplers to and from the kernel's (#1547). */
-  if (cap != LE_OCT_RATE && le_oct_rs_make(cap) != LE_OK) goto oom;
+  const le_oct_rs* tab = cap != LE_OCT_RATE ? le_oct_rs_get(cap) : NULL;
+  if (cap != LE_OCT_RATE && tab == NULL) goto oom;
   for (int chan = 0; chan < 2 && cap != LE_OCT_RATE; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     if (o->rs_in == NULL) {
@@ -3585,6 +3584,7 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
       owned[n++] = &o->rs_out;
     }
   }
+  fx->oct_tab[slot] = tab;
   return LE_OK;
 oom:
   for (int i = n - 1; i >= 0; --i) {
@@ -3592,6 +3592,12 @@ oom:
     *owned[i] = NULL;
   }
   return LE_ERR_INVALID;
+}
+
+size_t le_fx_octaver_bytes(int sr) {
+  size_t floats = (size_t)LE_PV_OUT + 2u * LE_PV_BINS + LE_PV_SCRATCH_ALLOC;
+  if (sr != LE_OCT_RATE) floats += 2u * LE_OCT_RS_RING;
+  return 2u * floats * sizeof(float);
 }
 
 size_t le_fx_low_band_bytes(void) {

@@ -482,6 +482,10 @@ void le_fx_free_octaver(le_fx_state* fx, int slot);
  * top of the octaver's buffers: its kernel runs at LE_OCT_RATE at every
  * rate. Any thread. */
 size_t le_fx_low_band_bytes(void);
+/* The heap an octaver kind's slot takes at [sr] on top of its input ring:
+ * its kernel's buffers and, away from LE_OCT_RATE, its resamplers' rings,
+ * both channels. Any thread. */
+size_t le_fx_octaver_bytes(int sr);
 
 /* Frees every heap buffer chain slot [slot] owns: its delay rings, its
  * octaver buffers and its per-kind state. The one call an owner reset or
