@@ -1045,6 +1045,20 @@ typedef struct le_fx_slot_meta {
  * swap brings back (Undo, Redo, Peel) in the same block (review M1). */
 #define LE_SRC_CANDIDATES 2
 
+/* A live chain's RUN (#939): the stretch it has played one unchanged key
+ * over, counted in its track's laps (le_track::laps). Audio-thread-local.
+ * The block-start key check sets [restart]; the mix step then begins the run
+ * (le_chain_run_begin), as it does when the chain returns to live play from
+ * a print ([live] going 1). [lap0] is the lap count it began at and [at_top]
+ * whether it began on a loop top, which is what le_run_matches_print weighs
+ * a print against. */
+typedef struct le_chain_run {
+  uint32_t lap0;
+  int32_t at_top;
+  int32_t restart;
+  int32_t live;
+} le_chain_run;
+
 typedef struct le_lane {
   _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
@@ -1188,25 +1202,18 @@ typedef struct le_lane {
   const le_wet_entry* cache_fp_entry;
   uint32_t cache_fp_gen;
   uint32_t cache_fp_hop;
-  /* Audio-thread-LOCAL: the live Pre chain's RUN (#939), the stretch it has
-   * played one unchanged key over — content, volume, length and Pre
-   * fingerprint, as the print's key names them. snapshot_lane_cache compares
-   * the key against run_* each buffer and sets run_restart on a change; the
-   * mix step then takes run_lap0 from the track's lap count (le_track::laps),
-   * as it does when the chain returns to live play from a print (run_live
-   * going 1), and run_at_top says whether that was on a loop top. A print
-   * engages only where the run began less than a lap away from the chain the
-   * print reproduces (le_run_matches_print, engine_process.c). */
+  /* Audio-thread-LOCAL: the live Pre chain's run (#939, le_chain_run) and
+   * the key it is playing: content, volume, length and Pre fingerprint, as
+   * the print's key names them. snapshot_lane_cache compares the key with
+   * run_* each buffer and restarts the run on a change; the fingerprint is
+   * refolded only when run_gen or run_hop (its cheap proxies) moved. */
+  le_chain_run run;
   uint64_t run_fp;
   uint32_t run_rev;
   uint32_t run_vol;
   uint32_t run_gen;
   uint32_t run_hop;
   int32_t run_len;
-  uint32_t run_lap0;
-  int32_t run_at_top;
-  int32_t run_restart;
-  int32_t run_live;
 } le_lane;
 
 /* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
@@ -1547,17 +1554,14 @@ typedef struct le_track {
   uint32_t top_clock;
   /* Audio-thread-LOCAL lap count (#939): one per wrap to index 0 while the
    * track sounds; [lap_rp] is the previous frame's index, -1 while silent.
-   * The bus_run_* fields are the track chain's run, the twin of a lane's
-   * run_* (le_lane), keyed by the whole-track print's key. */
+   * bus_run is the track chain's run (le_chain_run), keyed by the
+   * whole-track print's key (bus_run_fp, _rev, _len). */
   uint32_t laps;
   int32_t lap_rp;
+  le_chain_run bus_run;
   uint64_t bus_run_fp;
   uint32_t bus_run_rev;
   int32_t bus_run_len;
-  uint32_t bus_run_lap0;
-  int32_t bus_run_at_top;
-  int32_t bus_run_restart;
-  int32_t bus_run_live;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */
 

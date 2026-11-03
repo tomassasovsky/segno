@@ -82,7 +82,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   where it cannot swap in exactly. A print reproduces a chain that began one
   lap before the loop top it swaps in at (render twice, keep the second).
   The audio thread now follows each live chain's run, the stretch it has
-  played one unchanged key over (`le_lane::run_*`, `le_track::bus_run_*`,
+  played one unchanged key over (`le_chain_run` on each lane and track bus,
   counted in laps by `le_track::laps`), and swaps a print in only where that
   run began less than a lap away from the print's
   (`le_run_matches_print`). An older run keeps playing live: it carries
