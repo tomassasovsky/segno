@@ -424,7 +424,8 @@ envelope):
   loop-close restoration and a Clear restore point survive save and recall
   with the same Undo, Redo and Peel behavior. `undoCount` and `redoCount`
   count entries, and `layers` holds one image per entry except a redo-side
-  Peel marker, plus the live image.
+  Peel marker, plus the live image. The loop-close restoration and its
+  `processed` kind were removed later (#697).
 - **v13** — each track's playback direction (`tracks[].reversed`, #1162). A
   v12 bundle loads forward, as it always recalled.
 - **v14** — length edits (#1168): a lane's history stores each length

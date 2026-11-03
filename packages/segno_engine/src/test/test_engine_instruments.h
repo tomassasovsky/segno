@@ -310,7 +310,9 @@ static void test_instrument_configure_epoch_and_fallback(void) {
   CHECK(snap.instrument_fallback_blocks == 1);
   CHECK(snap.instrument_peaks[0] == 0.0f); /* the oversized block is silent */
   int zero = 1;
-  for (int i = 0; i < LE_INST_BUS_FRAMES; ++i) zero &= le_instrument_bus(e, 0)[i] == 0.0f;
+  for (int i = 0; i < LE_INST_BUS_FRAMES; ++i) {
+    zero &= le_instrument_bus(e, 0)[i] == 0.0f;
+  }
   CHECK(zero);
   CHECK(le_engine_configure(e, 44100, 2, 2, 44100 * 4) == LE_OK);
   le_engine_get_snapshot(e, &snap);

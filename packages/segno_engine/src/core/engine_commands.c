@@ -69,10 +69,10 @@ static int le_history_is_cleared(const le_track* t) {
  * topmost LAYER reachable from the top through PEEL entries only, with
  * *skipped = how many PEEL entries sit above it. -1 when none is reachable —
  * the stack is empty (the live buffer is the original take), or a kind that is
- * not an overdub (CLEAR, LENGTH, BOUNCE) lies above the topmost LAYER. Stopping at
- * the deepest LAYER is what keeps the original take out of Peel's reach: that
- * entry IS the pre-first-overdub image, so swapping it in leaves the original
- * audible with nothing deeper to consume. */
+ * not an overdub (CLEAR, LENGTH, BOUNCE) lies above the topmost LAYER.
+ * Stopping at the deepest LAYER is what keeps the original take out of Peel's
+ * reach: that entry IS the pre-first-overdub image, so swapping it in leaves
+ * the original audible with nothing deeper to consume. */
 static int le_peel_target(const le_track* t, int32_t* skipped) {
   int n = 0;
   for (int i = t->undo_count - 1; i >= 0; --i) {
@@ -622,8 +622,9 @@ static void le_release_removed_lanes(le_engine* e) {
 static void le_post_dub_shadows(le_engine* engine, int32_t channel,
                                 int32_t target) {
   le_track* t = &engine->tracks[channel];
-  /* Old callback shadows remain owned until the pending Clear completes. */
-  if (t->clear_restore_pending) return;
+  /* Old callback shadows remain owned until the pending Clear completes, and
+   * no slot is taken while a Bounce is in flight (see le_bounce_busy). */
+  if (t->clear_restore_pending || t->bounce_inflight) return;
   const int32_t lanes = le_lanes_active(t);
   const int32_t want = le_layer_slot_frames(engine, le_track_settled_len(t));
   const int running =
@@ -3578,7 +3579,10 @@ int32_t le_engine_set_transpose_bypass(le_engine* e, int32_t on,
  * length), or a posted command could still change the verdict. */
 static int le_length_busy(le_engine* e, int32_t ch) {
   le_track* t = &e->tracks[ch];
-  return t->length_pending ||
+  /* bounce_inflight (#1202): see le_bounce_busy. The ack check alone is not
+   * enough, since the callback acknowledges a Bounce before the drain files
+   * its outcome. */
+  return t->length_pending || t->bounce_inflight ||
          t->state_cmds_posted >
              atomic_load_explicit(&t->a_state_acks, memory_order_acquire) ||
          atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire) ||
@@ -6082,16 +6086,15 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
  * tail), so the install can never meet a writer.
  *
  * While a Bounce is in flight its bundle names two slots no stack holds yet
- * (the incoming image and the outgoing live slot), and nothing pins them:
- * no slot can be taken on the track until le_bounce_collect files the
- * outcome. A Bounce is a state command, so the length edit's busy check
- * (state_cmds_posted ahead of a_state_acks) refuses it until the callback
- * applies the install, and le_engine_edit_length drains, which collects the
- * Bounce, before it selects a slot. Record, Undo, Redo and Peel refuse on
- * bounce_inflight, and this rule refuses another Bounce. The drain's own
- * acquirers (le_post_dub_shadows) need a layer in flight or a recording,
- * which admission rules out. A new control-thread acquirer must keep to
- * this, or the two slots need protecting from track_select_slot. */
+ * (the incoming image and the outgoing live slot), and nothing pins them.
+ * They stay safe because every slot acquirer refuses while bounce_inflight
+ * is set, which lasts until le_bounce_collect files the outcome: the length
+ * edit (le_length_busy), record and its image capture
+ * (le_record_preflight), Undo, Redo, Peel, the shadow posts
+ * (le_post_dub_shadows) and another Bounce (this rule). The callback's
+ * state acknowledgement is not enough on its own: it lands before the drain
+ * collects the Bounce. A new control-thread acquirer must refuse the same
+ * way, or the two slots need protecting from track_select_slot. */
 static int le_bounce_busy(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   const int32_t st = le_effective_state(t);

@@ -217,8 +217,8 @@ endif()
 # out-of-line Signalsmith Stretch and std::vector instantiations would
 # otherwise be default-visibility weak exports of libsegno_engine.so, and
 # Signalsmith is a common plugin dependency, so a dlopen'd plugin could
-# interpose them (or have its own copy interposed). Nothing outside the engine calls le_stretch_*; the
-# FFI surface is untouched.
+# interpose them (or have its own copy interposed). Nothing outside the
+# engine calls le_stretch_*; the FFI surface is untouched.
 if(UNIX AND NOT APPLE)
   set_source_files_properties(stretch/le_stretch.cpp
     PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")

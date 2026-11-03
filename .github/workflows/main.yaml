@@ -431,9 +431,10 @@ jobs:
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
   # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
   # both suites; a failed CHECK returns non-zero and fails the job. A second
-  # step runs the pedal-link contract
-  # test via firmware/test/run_tests.sh — the single definition of that gate
-  # (also the local verify loop): the console board firmware's pedal_link.c
+  # step below runs the macOS forwarder wiring stand-in (CI never `flutter
+  # build macos`). A third step runs the pedal-link contract test via
+  # firmware/test/run_tests.sh — the single definition of that gate (also
+  # the local verify loop): the console board firmware's pedal_link.c
   # decodes and re-encodes the golden frames packages/pedal_repository
   # generates from the Dart codec, so drift between the two fails the job.
   # This is the strongest correctness gate in the repo — keep it on every PR.
@@ -473,6 +474,8 @@ jobs:
       # the console, not from CI.
       - name: Smoke-run the multi-core effects spike
         run: bash packages/segno_engine/src/test/bench/bench_fx_parallel.sh --smoke --chains 2 --workers 1
+      - name: Check macOS forwarder wiring
+        run: bash packages/segno_engine/tool/test/run_macos_forwarder_wiring_tests.sh
       - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)
         run: bash firmware/test/run_tests.sh
 
