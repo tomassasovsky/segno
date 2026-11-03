@@ -97,6 +97,29 @@ static inline int le_rs_phases(int sr) { return sr == 96000 ? 2 : 1; }
 /* The rate a section is designed at: 48 kHz at 96 kHz, else the rate. */
 static inline int le_rs_design_rate(int sr) { return sr == 96000 ? 48000 : sr; }
 
+/* A recirculating delay of [d] samples where its 48 kHz length is no whole
+ * number of samples at the rate (#1547): [n] whole samples, and the
+ * coefficient [a] of a first-order all-pass (a + z^-1) / (1 + a z^-1) that
+ * adds the rest, 0.5 to 1.5 samples at low frequencies (le_frac_tick). A
+ * delay under 1.5 samples runs 1.5. */
+static void le_frac_split(double d, uint32_t* n, float* a) {
+  double whole = floor(d - 0.5);
+  if (whole < 1.0) whole = 1.0;
+  double rest = d - whole;
+  if (rest < 0.5) rest = 0.5;
+  *n = (uint32_t)whole;
+  *a = (float)((1.0 - rest) / (1.0 + rest));
+}
+
+/* [x] through le_frac_split's all-pass [a], its last input and output in
+ * [z]. */
+static inline float le_frac_tick(float a, float z[2], float x) {
+  const float y = a * (x - z[1]) + z[0];
+  z[0] = x;
+  z[1] = y;
+  return y;
+}
+
 /* The bilinear prewarp of a corner [hz] at [sr]: tan(pi hz / sr), the
  * corner held under 0.45 of the rate. The Looper X kinds' TPT filters
  * design from it (the built-in resonant filter keeps its own float form). */
@@ -1924,28 +1947,36 @@ void le_fx_state_free_buffers(le_fx_state* fx) {
  * The call site passes &xl / &xr as the out-params while xl / xr are also the
  * inputs, so both wet[] values are computed before either out-param is written —
  * xl / xr are never read after the first store. */
-/* A reverb line's samples at the running rate, from its 48 kHz length
- * [len48]: that at 48 kHz, [nph] times it at 96 kHz; with [frac], the whole
- * part of len48 sr / 48 kHz ([to_sr]) less half a sample, its rest (0.5 to
- * 1.5 samples) left to an all-pass whose coefficient goes to [fa]. */
-static int le_rev_len(int len48, int nph, int frac, double to_sr, float* fa) {
-  if (!frac) return len48 * nph > 1 ? len48 * nph : 1;
-  const double d = (double)len48 * to_sr;
-  int len = (int)floor(d - 0.5);
-  if (len < 1) len = 1;
-  const double rest = d - len;
-  *fa = (float)((1.0 - rest) / (1.0 + rest));
-  return len;
-}
+_Static_assert(LE_REV_PHASES == LE_RS_PH, "the Freeverb's phases");
 
-/* [x] through the first-order all-pass (fa + z^-1) / (1 + fa z^-1), its
- * last input and output in [z]: a delay of (1 - fa) / (1 + fa) samples at
- * low frequencies. */
-static inline float le_rev_frac(float fa, float* z, float x) {
-  const float y = fa * (x - z[1]) + z[0];
-  z[0] = x;
-  z[1] = y;
-  return y;
+/* Freeverb line [k] of bank [bank] (the combs, then the allpasses) at [sr]
+ * where frac applies: its whole samples [n] and all-pass [a] for its 48 kHz
+ * length (le_frac_split). Worked out once per rate the engine runs and
+ * kept (any thread: two that work one out store the same). */
+static const int le_rev_rates[4] = {44100, 88200, 176400, 192000};
+static _Atomic uint32_t le_rev_memo[4][LE_REV_BANKS][LE_REV_COMBS + LE_REV_APS][2];
+
+static void le_rev_line(int bank, int k, int len48, int sr, uint32_t* n,
+                        float* a) {
+  int ri = -1;
+  for (int i = 0; i < 4; ++i) ri = le_rev_rates[i] == sr ? i : ri;
+  if (ri >= 0) {
+    _Atomic uint32_t* m = le_rev_memo[ri][bank][k];
+    const uint32_t got = atomic_load_explicit(&m[0], memory_order_relaxed);
+    if (got != 0u) {
+      const uint32_t bits = atomic_load_explicit(&m[1], memory_order_relaxed);
+      *n = got;
+      memcpy(a, &bits, sizeof(*a));
+      return;
+    }
+  }
+  le_frac_split((double)len48 * (double)sr / 48000.0, n, a);
+  if (ri >= 0) {
+    uint32_t bits;
+    memcpy(&bits, a, sizeof(bits));
+    atomic_store_explicit(&le_rev_memo[ri][bank][k][1], bits, memory_order_relaxed);
+    atomic_store_explicit(&le_rev_memo[ri][bank][k][0], *n, memory_order_relaxed);
+  }
 }
 
 static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
@@ -1961,12 +1992,11 @@ static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
    * memory, every phase then runs the 48 kHz network (#1547). At other
    * rates a line's 48 kHz length is no whole number of samples: the line
    * runs a sample or so short and a first-order all-pass delays it by the
-   * rest (le_rev_frac), where rounding moved the tail's echoes and with them
+   * rest (le_frac_split), where rounding moved the tail's echoes and with them
    * its envelope by 3 dB at 44.1 kHz. */
-  const int nph = sr == 96000 ? 2 : 1;
-  const int frac = nph == 1 && sr != 48000;
+  const int nph = le_rs_phases(sr);
+  const int frac = le_rs_design_rate(sr) != 48000;
   const float scale = 48000.0f / 44100.0f;
-  const double to_sr = (double)sr / 48000.0;
   const int ph = fx->rev_ph[slot] < nph ? fx->rev_ph[slot] : 0;
   fx->rev_ph[slot] = ph + 1 < nph ? ph + 1 : 0;
   float* comb_lp = fx->rev_comb_lp[slot][ph];
@@ -1974,8 +2004,15 @@ static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
   /* 0..0.4 feedback low-pass, its pole at 48 kHz; at other rates but 96
    * the pole keeps its time constant, so the tail darkens alike. */
   float damp = p[1] * 0.4f;
-  if (nph == 1 && sr != 48000 && damp > 0.0f) {
-    damp = powf(damp, 48000.0f / (float)sr);
+  if (frac && damp > 0.0f) {
+    /* kept while the setting and the rate hold: a powf a frame is more
+     * than the rest of the damping costs */
+    if (fx->rev_damp_p[slot] != damp || fx->rev_damp_sr[slot] != sr) {
+      fx->rev_damp_p[slot] = damp;
+      fx->rev_damp_sr[slot] = sr;
+      fx->rev_damp[slot] = powf(damp, 48000.0f / (float)sr);
+    }
+    damp = fx->rev_damp[slot];
   }
   const float mix = p[2];
 
@@ -1988,14 +2025,16 @@ static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
     const float in = (bank == 0 ? xl : xr) * 0.015f; /* Freeverb input gain */
     float acc = 0.0f;
     for (int c = 0; c < LE_REV_COMBS; ++c) {
+      const int len48 = (int)((float)LE_REV_COMB_LEN[c] * scale) + spread;
       float fa = 0.0f;
-      int len = le_rev_len((int)((float)LE_REV_COMB_LEN[c] * scale) + spread, nph,
-                           frac, to_sr, &fa);
+      uint32_t ln = (uint32_t)(len48 * nph);
+      if (frac) le_rev_line(bank, c, len48, sr, &ln, &fa);
+      const int len = ln > 1u ? (int)ln : 1;
       if (off + len > cap) break; /* safety: never index past the ring */
       int pos = fx->rev_comb_pos[slot][cbase + c];
       if (pos >= len) pos = 0;
       float y = buf[off + pos];
-      if (frac) y = le_rev_frac(fa, fx->rev_frac[slot][cbase + c], y);
+      if (frac) y = le_frac_tick(fa, fx->rev_frac[slot][cbase + c], y);
       acc += y;
       float lp = comb_lp[cbase + c];
       lp = y * (1.0f - damp) + lp * damp; /* damp the signal fed back */
@@ -2008,16 +2047,18 @@ static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
     }
     float s = acc;
     for (int a = 0; a < LE_REV_APS; ++a) {
+      const int len48 = (int)((float)LE_REV_AP_LEN[a] * scale) + spread;
       float fa = 0.0f;
-      int len = le_rev_len((int)((float)LE_REV_AP_LEN[a] * scale) + spread, nph,
-                           frac, to_sr, &fa);
+      uint32_t ln = (uint32_t)(len48 * nph);
+      if (frac) le_rev_line(bank, LE_REV_COMBS + a, len48, sr, &ln, &fa);
+      const int len = ln > 1u ? (int)ln : 1;
       if (off + len > cap) break;
       int pos = fx->rev_ap_pos[slot][abase + a];
       if (pos >= len) pos = 0;
       float bufout = buf[off + pos];
       if (frac) {
         float* z = fx->rev_frac[slot][LE_REV_COMBS * LE_REV_BANKS + abase + a];
-        bufout = le_rev_frac(fa, z, bufout);
+        bufout = le_frac_tick(fa, z, bufout);
       }
       buf[off + pos] = s + bufout * 0.5f; /* allpass feedback coefficient */
       s = bufout - s;
@@ -7416,8 +7457,9 @@ typedef struct le_fx_spring {
   int32_t ph, nph;
   /* At rates other than 48 and 96 kHz, the trip's fraction of a sample: a
    * first-order all-pass delaying low frequencies by it (frac_on). */
-  float frac_ap, frac_z;
+  float frac_ap, frac_z[2];
   int32_t frac_on;
+  le_hb hb; /* at 96 kHz, the input under 24 kHz (le_hb) */
   uint32_t w;
   float ring[LE_SPR_RING];
 } le_fx_spring;
@@ -7435,8 +7477,9 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
       memset(q->z, 0, sizeof(q->z));
       memset(q->ap_z, 0, sizeof(q->ap_z));
       memset(q->loss_s, 0, sizeof(q->loss_s));
-      q->frac_z = 0.0f;
+      memset(q->frac_z, 0, sizeof(q->frac_z));
     }
+    le_hb_design(&q->hb, rate);
     q->nph = le_rs_phases(rate);
     q->ph = 0;
     const int drate = le_rs_design_rate(rate);
@@ -7465,10 +7508,10 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     double want;
     q->frac_on = drate != 48000;
     if (q->frac_on) {
-      const double need = loop_s * rate - LE_SPR_STAGES * (1.0 - a) / (1.0 + a);
-      want = floor(need - 0.5);
-      const double d = need - want;
-      q->frac_ap = (float)((1.0 - d) / (1.0 + d));
+      uint32_t n;
+      le_frac_split(loop_s * rate - LE_SPR_STAGES * (1.0 - a) / (1.0 + a), &n,
+                    &q->frac_ap);
+      want = (double)n;
     } else {
       want = q->nph * trip48;
     }
@@ -7504,7 +7547,7 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
   const float x1 = fx_sanitize(*r);
   const int ph = q->ph;
   if (++q->ph >= q->nph) q->ph = 0;
-  float s = 0.5f * (x0 + x1);
+  float s = le_hb_tick(&q->hb, 0, ph, 0.5f * (x0 + x1));
   for (int i = 0; i < LE_SPR_SECTIONS; ++i) {
     s = le_biquad_tick(q->shape[i], q->z[i][ph], s);
   }
@@ -7517,11 +7560,7 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
     apz[i] = u - q->ap * y;
     u = y;
   }
-  if (q->frac_on) {
-    const float y = q->frac_ap * u + q->frac_z;
-    q->frac_z = u - q->frac_ap * y;
-    u = y;
-  }
+  if (q->frac_on) u = le_frac_tick(q->frac_ap, q->frac_z, u);
   u += (LE_SPR_LOSS_SHELF - 1.0f) *
        (u - le_onepole_lp(&q->loss_s[ph], q->loss_g1, u));
   u = fx_sanitize(u); /* a decayed tail flushes to 0 */
@@ -7737,6 +7776,7 @@ typedef struct le_fx_verb {
   float ap_fa[2][LE_VB_APS]; /* the diffusers' likewise */
   float ap_fz[2][LE_VB_APS][2];
   double line_d[LE_VB_LINES];
+  le_hb hb; /* at 96 kHz, the input under 24 kHz (le_hb) */
   float late_k;  /* the late network's output gain (1 but for the rooms) */
   float ap_g;    /* the diffusers' gain and the early part's (the def's, */
   float early_g; /* or a room's at its Density) */
@@ -7898,11 +7938,8 @@ static void le_vb_geometry(le_fx_verb* q, int sr) {
   for (int c = 0; c < 2; ++c) {
     for (int k = 0; k < q->aps; ++k) {
       if (q->frac_on) {
-        const double dl = (double)le_vb_len(d->ap_ms[c][k], 48000) * sr / 48000.0;
-        const double n = floor(dl - 0.5);
-        const double rest = dl - n;
-        q->ap_n[c][k] = n < 1.0 ? 1u : (uint32_t)n;
-        q->ap_fa[c][k] = (float)((1.0 - rest) / (1.0 + rest));
+        le_frac_split((double)le_vb_len(d->ap_ms[c][k], 48000) * sr / 48000.0,
+                      &q->ap_n[c][k], &q->ap_fa[c][k]);
       } else {
         q->ap_n[c][k] = le_vb_len(d->ap_ms[c][k], sr);
       }
@@ -7916,10 +7953,7 @@ static void le_vb_geometry(le_fx_verb* q, int sr) {
       /* The 48 kHz line's delay at this rate: a whole part that leaves 0.5
        * to 1.5 samples to the all-pass, whose coefficient gives it. */
       const double dl = (double)le_vb_len(d->line_ms[i], 48000) * sr / 48000.0;
-      const double n = floor(dl - 0.5);
-      const double rest = dl - n;
-      q->line_n[i] = n < 1.0 ? 1u : (uint32_t)n;
-      q->frac_a[i] = (float)((1.0 - rest) / (1.0 + rest));
+      le_frac_split(dl, &q->line_n[i], &q->frac_a[i]);
       q->line_d[i] = dl;
     } else {
       q->line_n[i] = le_vb_len(d->line_ms[i], sr);
@@ -7946,7 +7980,8 @@ static void le_vb_lay(le_fx_verb* q, const le_verb_def* def, int rate) {
   memset(q->ap_fz, 0, sizeof(q->ap_fz));
   q->nph = le_rs_phases(rate);
   q->ph = 0;
-  q->frac_on = rate != 48000 && rate != 96000;
+  q->frac_on = le_rs_design_rate(rate) != 48000;
+  le_hb_design(&q->hb, rate);
   memset(q->ap_w, 0, sizeof(q->ap_w));
   memset(q->line_w, 0, sizeof(q->line_w));
   memset(q->ap_full, 0, sizeof(q->ap_full));
@@ -8051,6 +8086,7 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
   const le_verb_def* d = q->def;
   const int ph = q->ph;
   q->ph = ph + 1 < q->nph ? ph + 1 : 0;
+  m = le_hb_tick(&q->hb, 0, ph, m);
   float* ring[2] = {r0, r1};
   /* The input history: the pre-delays and the strong taps read it. */
   float* hist = r0;
@@ -8073,13 +8109,7 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
       float* b = ring[c] + q->ap_off[c][k];
       const uint32_t w = q->ap_w[c][k];
       float dl = q->ap_full[c][k] ? b[w] : 0.0f;
-      if (q->frac_on) {
-        float* z = q->ap_fz[c][k];
-        const float y = q->ap_fa[c][k] * (dl - z[1]) + z[0];
-        z[0] = dl;
-        z[1] = y;
-        dl = y;
-      }
+      if (q->frac_on) dl = le_frac_tick(q->ap_fa[c][k], q->ap_fz[c][k], dl);
       const float v = u + q->ap_g * dl;
       u = dl - q->ap_g * v;
       b[w] = fx_sanitize(v);
@@ -8104,13 +8134,7 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
   for (int i = 0; i < LE_VB_LINES; ++i) {
     const int c = i < LE_VB_LINES / 2 ? 0 : 1;
     o[i] = q->line_full[i] ? ring[c][q->line_off[i] + q->line_w[i]] : 0.0f;
-    if (q->frac_on) {
-      float* z = q->frac_z[i];
-      const float y = q->frac_a[i] * (o[i] - z[1]) + z[0];
-      z[0] = o[i];
-      z[1] = y;
-      o[i] = y;
-    }
+    if (q->frac_on) o[i] = le_frac_tick(q->frac_a[i], q->frac_z[i], o[i]);
     sum += o[i];
     ol += (float)d->cl[i] * o[i];
     orr += (float)d->cr[i] * o[i];

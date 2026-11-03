@@ -787,6 +787,9 @@ typedef struct le_fx_state {
   /* At rates other than 48 and 96 kHz each line's fraction of a sample: a
    * first-order all-pass's last input and output, combs then allpasses. */
   float rev_frac[LE_FX_MAX][(LE_REV_COMBS + LE_REV_APS) * LE_REV_BANKS][2];
+  /* The damping pole kept for the setting and rate it was worked out at. */
+  float rev_damp_p[LE_FX_MAX], rev_damp[LE_FX_MAX];
+  int32_t rev_damp_sr[LE_FX_MAX];
   /* The Slicer's runtime (fx_slicer_process). */
   le_fx_slice_state slice[LE_FX_MAX];
   /* The Mode delay's line (fx_mode_delay_process): its own seconds-long
