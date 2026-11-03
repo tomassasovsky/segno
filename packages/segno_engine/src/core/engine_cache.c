@@ -306,7 +306,8 @@ struct le_fx_cache {
 static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
                                   const int32_t* types, const int32_t* enabled,
                                   const float params[LE_FX_MAX][LE_FX_PARAMS],
-                                  const le_fx_chan* chan, uint32_t top) {
+                                  const le_fx_chan* chan, uint32_t top,
+                                  int sr) {
   uint64_t h = 0xcbf29ce484222325ULL;
   if (count > 0) h = le_fx_fp_u32(h, chain_on ? 1u : 0u);
   for (int32_t i = 0; i < count; ++i) {
@@ -326,7 +327,7 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
    * folds it. */
   for (int32_t i = 0; i < count && chain_on; ++i) {
     if (le_fx_type_hops(types[i]) && enabled[i]) {
-      h = le_fx_fp_u32(h, top & (uint32_t)(LE_PV_HOP - 1));
+      h = le_fx_fp_u32(h, le_fx_hop_position(top, sr));
       break;
     }
   }
@@ -668,7 +669,8 @@ static uint32_t le_ca_hop_tag(le_engine* e, const le_cache_job* job) {
                                     &ln->a_fx_chain_enabled,
                                     &ln->a_fx_pre_count, &ln->a_fx_count);
   }
-  return octaver ? (job->chain.clock0 & (uint32_t)(LE_PV_HOP - 1)) + 1u : 0u;
+  return octaver ? le_fx_hop_position(job->chain.clock0, job->sample_rate) + 1u
+                 : 0u;
 }
 
 static void le_cache_install(le_engine* e, struct le_fx_cache* c,
@@ -972,7 +974,8 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   const uint32_t top =
       atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   const uint64_t fp =
-      le_ca_snapshot_fp(count, chain_on, types, raw_en, params, chan, top);
+      le_ca_snapshot_fp(count, chain_on, types, raw_en, params, chan, top,
+                        e->sample_rate);
   /* Cross-check against the canonical atomic fold: a mismatch means the audio
    * thread published a type/count change mid-snapshot — skip this tick rather
    * than schedule a torn chain (the next tick reads it settled). */

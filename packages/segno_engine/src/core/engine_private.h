@@ -788,16 +788,16 @@ typedef struct le_fx_state {
   le_octaver_state oct[LE_FX_MAX][2];
   /* The octaver kinds at rates other than 48 kHz (fx_octaver_run, #1547):
    * whether the slot's kernel is resampled; the kernel tick it is on (its
-   * hop keeps to these, as it keeps to the clock at 48 kHz); and, for a
-   * state nobody clocks, the frames the slot has run. */
+   * hop keeps to these, as it keeps to the clock at 48 kHz); the last frame
+   * it ran (the clock's, or its own count in a state nobody clocks); the
+   * kernel tick it starts on; and where it is: 0 to start on the next
+   * frame (after a reset, or a frame that does not follow the last), 1
+   * waiting for that tick, 2 running. */
   int32_t oct_rs[LE_FX_MAX];
   uint32_t oct_tick[LE_FX_MAX];
   uint32_t oct_frame[LE_FX_MAX];
-  /* The first 48 kHz sample since the slot's reset (oct_n0_set): the
-   * kernel starts on it, as it starts on the reset's own frame at 48 kHz,
-   * not on the silence the resampler held before it. */
   uint32_t oct_n0[LE_FX_MAX];
-  int32_t oct_n0_set[LE_FX_MAX];
+  int32_t oct_run[LE_FX_MAX];
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_PHASES][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
@@ -952,7 +952,7 @@ typedef struct le_wet_entry {
   float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
   /* 0 for a print whose key does not hold the hop position; else 1 + the
-   * hop position (mod LE_PV_HOP) of the loop top it was rendered from: an
+   * hop position (le_fx_hop_position) of the loop top it was rendered from: an
    * octaver in the printed chain (#941). The audio thread drops such a print
    * at a lap top that starts elsewhere on the hop. */
   uint32_t hop_tag;

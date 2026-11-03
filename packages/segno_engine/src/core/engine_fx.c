@@ -1516,8 +1516,9 @@ static float le_low_play(le_oct_low* L, int sr, int ticks, float level1,
  * wet voice), p2 = dry/wet mix, p3 = mode, p4 = formants (held or moved with
  * the pitch, the phase vocoder only). Params are one-pole smoothed
  * (zipper-free) and a mode switch runs an equal-power gain dip while the DSP
- * runtime resets. The ring length `cap` equals the sample rate (1 s), used here
- * as the time base for the smoothing / dip constants. */
+ * runtime resets. It runs at LE_OCT_RATE whatever the engine's rate
+ * (fx_octaver_run), which is the time base of its smoothing, its dip and its
+ * detection; [cap] is only its ring's length. */
 static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
                         const float* p) {
   float* buf = fx->delay[slot][chan];
@@ -1617,7 +1618,6 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
    * the moment high mode goes off. */
   le_oct_low* low =
       dual ? atomic_load_explicit(&o->low, memory_order_acquire) : NULL;
-  if (low != NULL && low->sr != LE_OCT_RATE) low = NULL;
   if (low != NULL) le_low_write(low, x);
   float wet;
   if (o->cur_mode == 0) {
@@ -1787,9 +1787,6 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->cur_mode = 0;  /* phase vocoder, until the settings say otherwise */
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
-    /* The resamplers start from silence (fx_octaver_run). */
-    if (o->rs_in != NULL) memset(o->rs_in, 0, LE_OCT_RS_RING * sizeof(float));
-    if (o->rs_out != NULL) memset(o->rs_out, 0, LE_OCT_RS_RING * sizeof(float));
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
     /* A retyped slot's band starts with nothing heard: it heard nothing
      * while the slot ran as another kind. */
@@ -1797,8 +1794,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     if (low != NULL) le_low_forget(low);
   }
   le_fx_clear_reverb(fx, slot);
-  fx->oct_frame[slot] = 0;
-  fx->oct_n0_set[slot] = 0;
+  fx->oct_run[slot] = 0; /* the resamplers start again (fx_octaver_run) */
   memset(&fx->slice[slot], 0, sizeof(fx->slice[slot]));
   /* A heap-state kind starts clean too: its block is cleared and settled
    * the next time the slot runs (fx_kind_state). */
@@ -2156,7 +2152,7 @@ typedef struct le_oct_rs {
   float* gout;        /* (LE_OCT_RS_PHASES + 1) x 2 wout */
 } le_oct_rs;
 
-#define LE_OCT_RS_RATES 6
+#define LE_OCT_RS_RATES 16
 static le_oct_rs* _Atomic le_oct_rs_tabs[LE_OCT_RS_RATES];
 static pthread_mutex_t le_oct_rs_mu = PTHREAD_MUTEX_INITIALIZER;
 
@@ -2250,7 +2246,7 @@ static int32_t le_oct_rs_make(int sr) {
       t->win = le_oct_rs_width(sr, (double)sr);
       t->wout = le_oct_rs_width(sr, (double)LE_OCT_RATE);
       t->d48 = le_oct_rs_d48(sr, t->win);
-      t->latency = le_oct_rs_latency_of(sr, t->d48, t->wout);
+      t->latency = le_oct_rs_latency(sr);
       t->gin = le_oct_rs_design(sr, (double)sr, t->win);
       t->gout = le_oct_rs_design(sr, (double)LE_OCT_RATE, t->wout);
     }
@@ -2274,23 +2270,31 @@ static int32_t le_oct_rs_make(int sr) {
   return rc;
 }
 
-/* [ring] (LE_OCT_RS_RING samples, indexed by absolute frame) read at
- * position [pos] through the table [g] of [w] taps a side. */
-static float le_oct_rs_read(const float* ring, double pos, const float* g,
-                            int w) {
-  const double whole = floor(pos);
-  const double ph = (pos - whole) * LE_OCT_RS_PHASES;
-  const int pi = (int)ph;
-  const float fr = (float)(ph - (double)pi);
+/* The two channels' rings [a] and [b] (LE_OCT_RS_RING samples, indexed by
+ * absolute frame) read at position [num] / [den] through the table [g] of
+ * [w] taps a side, into [ya] and [yb]. The position is exact, so frames a
+ * hop period apart (le_fx_hop_period) read with the same weights. */
+static void le_oct_rs_read(const float* a, const float* b, int64_t num,
+                           int64_t den, const float* g, int w, float* ya,
+                           float* yb) {
+  int64_t whole = num / den;
+  if (whole * den > num) --whole; /* floor, for a position before 0 */
+  const int64_t ph = (num - whole * den) * LE_OCT_RS_PHASES;
+  const int pi = (int)(ph / den);
+  const float fr = (float)((double)(ph % den) / (double)den);
   const float* g0 = g + (size_t)pi * 2 * w;
   const float* g1 = g0 + 2 * w;
-  const int64_t first = (int64_t)whole - (w - 1);
-  float acc = 0.0f;
+  const int64_t first = whole - (w - 1);
+  float acc_a = 0.0f;
+  float acc_b = 0.0f;
   for (int j = 0; j < 2 * w; ++j) {
-    const float x = ring[(first + j) & (LE_OCT_RS_RING - 1)];
-    acc += x * (g0[j] + fr * (g1[j] - g0[j]));
+    const int64_t i = (first + j) & (LE_OCT_RS_RING - 1);
+    const float gj = g0[j] + fr * (g1[j] - g0[j]);
+    acc_a += a[i] * gj;
+    acc_b += b[i] * gj;
   }
-  return acc;
+  *ya = acc_a;
+  *yb = acc_b;
 }
 
 static inline float fx_sanitize(float x);
@@ -2326,45 +2330,73 @@ static void fx_octaver_run(le_fx_state* fx, int slot, int sr, int cap,
     return; /* not prepared for this rate: the input passes */
   }
   fx->oct_rs[slot] = 1;
-  /* The frame this is: the engine's clock, or the slot's own count. */
+  /* The frame this is: the engine's clock, or the slot's own count. One
+   * that does not follow the last (a slot not ticked for a while, or the
+   * clock wrapping) starts the resamplers again, as a reset does: the
+   * frame-to-tick placement holds only along an unbroken run. */
   const int clocked = fx->clock_src != NULL || fx->clocked;
-  const uint32_t c = clocked ? le_fx_now(fx) : fx->oct_frame[slot]++;
-  const float x[2] = {fx_sanitize(*l), fx_sanitize(*r)};
-  for (int ch = 0; ch < 2; ++ch) o[ch].rs_in[c & (LE_OCT_RS_RING - 1)] = x[ch];
+  const int running = fx->oct_run[slot] != 0;
+  const uint32_t c = clocked ? le_fx_now(fx)
+                             : (running ? fx->oct_frame[slot] + 1u : 0u);
+  if (running && (c != fx->oct_frame[slot] + 1u || c == 0u)) {
+    fx->oct_run[slot] = 0;
+  }
+  fx->oct_frame[slot] = c;
   /* The kernel ticks k whose time k sr / 48 kHz falls in this frame. */
   const uint64_t k0 = ((uint64_t)c * LE_OCT_RATE + (uint64_t)sr - 1) / (uint64_t)sr;
   const uint64_t k1 =
       (((uint64_t)c + 1) * LE_OCT_RATE + (uint64_t)sr - 1) / (uint64_t)sr;
-  const double to_sr = (double)sr / LE_OCT_RATE;
-  if (!fx->oct_n0_set[slot]) {
+  if (fx->oct_run[slot] == 0) {
+    /* From silence: the kernel starts on this frame's first 48 kHz sample,
+     * as it starts on the reset's own frame at 48 kHz, not on the silence
+     * the resampler holds before it. */
+    for (int ch = 0; ch < 2; ++ch) {
+      memset(o[ch].rs_in, 0, LE_OCT_RS_RING * sizeof(float));
+      memset(o[ch].rs_out, 0, LE_OCT_RS_RING * sizeof(float));
+    }
     fx->oct_n0[slot] = (uint32_t)k0;
-    fx->oct_n0_set[slot] = 1;
+    fx->oct_run[slot] = 1;
   }
+  o[0].rs_in[c & (LE_OCT_RS_RING - 1)] = fx_sanitize(*l);
+  o[1].rs_in[c & (LE_OCT_RS_RING - 1)] = fx_sanitize(*r);
   for (uint64_t k = k0; k < k1; ++k) {
     /* Tick k hears the input's 48 kHz sample k - d48, and keeps to that
      * sample's index as the 48 kHz kernel keeps to its clock. */
-    const double at = (double)((int64_t)k - t->d48) * to_sr;
-    fx->oct_tick[slot] = (uint32_t)((int64_t)k - t->d48);
-    if ((int32_t)(fx->oct_tick[slot] - fx->oct_n0[slot]) < 0) {
-      /* still the silence from before the reset: the kernel waits */
-      o[0].rs_out[k & (LE_OCT_RS_RING - 1)] = 0.0f;
-      o[1].rs_out[k & (LE_OCT_RS_RING - 1)] = 0.0f;
-      continue;
+    const int64_t heard = (int64_t)k - t->d48;
+    const uint32_t tk = (uint32_t)heard;
+    fx->oct_tick[slot] = tk;
+    float* out_l = &o[0].rs_out[k & (LE_OCT_RS_RING - 1)];
+    float* out_r = &o[1].rs_out[k & (LE_OCT_RS_RING - 1)];
+    if (fx->oct_run[slot] == 1) {
+      /* still the silence from before the start: the kernel waits */
+      if ((int32_t)(tk - fx->oct_n0[slot]) < 0) {
+        *out_l = 0.0f;
+        *out_r = 0.0f;
+        continue;
+      }
+      /* Its first tick: the runtime starts on the slot's hop phase at this
+       * tick, as a reset at 48 kHz starts it at the clock's frame. */
+      fx->oct_run[slot] = 2;
+      const int ticks = le_oct_seeded_ticks(fx, slot);
+      for (int ch = 0; ch < 2; ++ch) {
+        le_pv_reset_runtime(fx, slot, ch, ticks);
+        le_oct_low* low = atomic_load_explicit(&o[ch].low, memory_order_acquire);
+        if (low != NULL) le_low_forget(low);
+      }
     }
     if (tick != NULL) tick(fx, slot, p, q);
-    for (int ch = 0; ch < 2; ++ch) {
-      const float in = le_oct_rs_read(o[ch].rs_in, at, t->gin, t->win);
-      o[ch].rs_out[k & (LE_OCT_RS_RING - 1)] = fx_octaver(fx, slot, ch, cap, in, q);
-    }
+    float in_l;
+    float in_r;
+    le_oct_rs_read(o[0].rs_in, o[1].rs_in, heard * sr, LE_OCT_RATE, t->gin,
+                   t->win, &in_l, &in_r);
+    *out_l = fx_octaver(fx, slot, 0, cap, in_l, q);
+    *out_r = fx_octaver(fx, slot, 1, cap, in_r, q);
   }
-  /* the next tick, for a reset between frames */
-  fx->oct_tick[slot] = (uint32_t)((int64_t)k1 - t->d48);
   /* The output [latency] frames behind: what the kernel made LE_PV_LATENCY
    * ticks after it heard the input of then. */
-  const double v =
-      ((double)c - t->latency) / to_sr + t->d48 + LE_PV_LATENCY;
-  *l = le_oct_rs_read(o[0].rs_out, v, t->gout, t->wout);
-  *r = le_oct_rs_read(o[1].rs_out, v, t->gout, t->wout);
+  const int64_t v = ((int64_t)c - t->latency) * LE_OCT_RATE +
+                    (int64_t)(t->d48 + LE_PV_LATENCY) * sr;
+  le_oct_rs_read(o[0].rs_out, o[1].rs_out, v, sr, t->gout, t->wout, l, r);
 }
 
 static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
@@ -3539,8 +3571,8 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
     }
   }
   /* At another rate, the resamplers to and from the kernel's (#1547). */
-  if (le_oct_rs_make(cap) != LE_OK) goto oom;
-  for (int chan = 0; chan < 2; ++chan) {
+  if (cap != LE_OCT_RATE && le_oct_rs_make(cap) != LE_OK) goto oom;
+  for (int chan = 0; chan < 2 && cap != LE_OCT_RATE; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     if (o->rs_in == NULL) {
       o->rs_in = (float*)le_rt_alloc_prefaulted(LE_OCT_RS_RING * sizeof(float));
@@ -3568,9 +3600,7 @@ size_t le_fx_low_band_bytes(void) {
 }
 
 /* DUAL OCTAVER: the octaver's buffers, and its low band's (#1467) per
- * channel, sized for [cap] (the rate). A band set up for another rate is
- * left as it is (fx_octaver skips it): a slot's buffers are freed before it
- * runs at a new rate. */
+ * channel, at LE_OCT_RATE (the kernel's rate at every engine rate). */
 static int32_t fx_dual_octaver_prepare(le_fx_state* fx, int slot, int cap) {
   le_oct_low* made[2] = {NULL, NULL};
   const int32_t len = le_low_ring_len(LE_OCT_RATE);
