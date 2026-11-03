@@ -25,7 +25,7 @@ class MeterLevels extends Equatable {
   final double outputPeak;
 
   /// Each hardware input's raw peak, one entry per channel the device has
-  /// (before conditioning and trim).
+  /// (before the trim).
   final List<double> inputPeaks;
 
   /// What each input's monitor sends to the outputs, per channel the device

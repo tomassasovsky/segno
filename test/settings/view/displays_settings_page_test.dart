@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_role.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/settings/settings.dart';
@@ -340,6 +341,34 @@ void main() {
       await tester.tap(find.byKey(const Key('displays_shortcuts')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('shortcutsHelp_dialog')), findsOneWidget);
+    });
+
+    testWidgets('the legend is a 744 panel sized to its rows, with one '
+        'description column (#1590 DLG-1, DLG-2)', (tester) async {
+      await openDisplays(tester);
+      await tester.tap(find.byKey(const Key('displays_shortcuts')));
+      await tester.pumpAndSettle();
+      final panel = tester.getRect(
+        find
+            .descendant(
+              of: find.byKey(const Key('shortcutsHelp_dialog')),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      final screen = tester.getRect(find.byType(Scaffold).first);
+      expect(panel.width, ConsoleDialogShell.defaultWidth);
+      expect(panel.center, screen.center);
+      final close = tester.getRect(
+        find.byKey(const Key('shortcutsHelp_close')),
+      );
+      expect(close.bottom, panel.bottom - ConsoleDialogShell.padding - 1);
+
+      final starts = {
+        for (final id in const ['playStop', 'clear', 'undo', 'undoClearAll'])
+          tester.getTopLeft(find.byKey(Key('shortcutDescription_$id'))).dx,
+      };
+      expect(starts, hasLength(1));
     });
 
     testWidgets('a Track display window that did not open says so, and '

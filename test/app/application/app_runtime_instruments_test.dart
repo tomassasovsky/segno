@@ -33,7 +33,7 @@ void main() {
     final store = FakeKeyValueStore();
     final settings = SettingsRepository(store: store);
     final controllers = ControllerRepository(sources: const []);
-    final midi = MidiDeviceRepository(source: null, settings: settings);
+    final midi = MidiDeviceRepository(captures: null, settings: settings);
     final pedal = PedalRepository(FakePedalLink());
     final engine = MockAudioEngine()..start(MockAudioEngine().defaultConfig);
     final repository = instruments

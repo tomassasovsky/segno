@@ -32,7 +32,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h> /* clock (conditioning CPU smoke) */
+#include <time.h> /* nanosleep, struct timespec */
 #include <wchar.h>
 #if !defined(_WIN32)
 #include <sys/statvfs.h> /* the oracle for test_volume_space */
@@ -55,7 +55,6 @@
 #include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
 #include "engine_cache.h" /* LE_CACHE_SETTLE_MS (wet-cache tests) */
 #include "engine_internal.h"
-#include "engine_restore.h" /* le_restore_commit_layer (#697 S9 restore tests) */
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_read_head.h"  /* the fractional read coordinate (#1179) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
@@ -64,10 +63,8 @@
 #include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
-#include "restore_declip.h"   /* offline de-clip DSP (#697 S8) */
-#include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
+#include "halfband.h"   /* 2:1 half-band decimator (#697 S8) */
 #include "rt_alloc.h"          /* LE_RT_ALLOC_USES_HEAP (fork-shield checks) */
-#include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
 #include "../stretch/le_stretch.h" /* C shim over Signalsmith Stretch (#1179) */
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
@@ -34865,14 +34862,37 @@ static void test_fx_entry_channel_setter_guards(void) {
 
 /* ---- the whole-track Pre print (slice 3e) ---- */
 
-/* A short loop: these tests measure a steady value, not a decay, so the
- * render settles quickly and the two-in input block fits one call. */
-#define WT_LOOP 64
+/* A loop long enough for a print to be ready on the lap after an edit made
+ * at its top: the settle window plus a render, with room to spare (#939). A
+ * print swaps in only where the live chains it displaces began less than a
+ * lap away from the print's own (le_run_matches_print), so a loop shorter
+ * than the settle window never prints. These tests measure a steady value,
+ * not a decay. */
+#define WT_LOOP 16384
+
+/* Pumps [frames] of [value] on both inputs of a two-in engine, keeping the
+ * last block in [last]. */
+static void wt_pump_value(le_engine* e, float value, int frames, float* last) {
+  static float in[2 * 64];
+  for (int i = 0; i < 2 * 64; ++i) in[i] = value;
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    le_engine_process(e, last, in, (uint32_t)n);
+    frames -= n;
+  }
+}
+
+/* Pumps [frames] of silence through a two-in engine, keeping the last block. */
+static void wt_pump(le_engine* e, int frames, float* last) {
+  wt_pump_value(e, 0.0f, frames, last);
+}
 
 /* A two-in, two-out engine with a two-part track 0 holding [value] on both
  * parts, PLAYING, routed to the one stereo pair. [cap] picks the cache: 0
- * pins the live path, the default lets a render publish. */
-static le_engine* wt_engine_two_parts(float value, int64_t cap) {
+ * pins the live path, the default lets a render publish. The take's seam
+ * continuation records the same value, so the loop is constant throughout. */
+static le_engine* wt_engine_two_parts_loop(float value, int64_t cap,
+                                          int32_t loop) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 20000);
   le_engine_set_fx_cache_cap(e, cap);
@@ -34882,24 +34902,52 @@ static le_engine* wt_engine_two_parts(float value, int64_t cap) {
   CHECK(le_engine_set_lane_output(e, 0, 0, 0x3) == LE_OK);
   CHECK(le_engine_set_lane_output(e, 0, 1, 0x3) == LE_OK);
   drain(e);
-  static float in[2 * 64];
   static float out[2 * 64];
-  for (int i = 0; i < 2 * 64; ++i) in[i] = value;
   le_engine_record(e, 0);
-  le_engine_process(e, out, in, (uint32_t)WT_LOOP);
+  wt_pump_value(e, value, loop, out);
   le_engine_record(e, 0);
   drain(e);
+  wt_pump_value(e, value, 1024, out); /* the seam continuation, then PLAYING */
   return e;
 }
 
-/* Pumps [frames] of silence through a two-in engine, keeping the last block. */
-static void wt_pump(le_engine* e, int frames, float* last) {
-  static float zin[2 * 64];
-  while (frames > 0) {
-    const int n = frames > 64 ? 64 : frames;
-    le_engine_process(e, last, zin, (uint32_t)n);
-    frames -= n;
+static le_engine* wt_engine_two_parts(float value, int64_t cap) {
+  return wt_engine_two_parts_loop(value, cap, WT_LOOP);
+}
+
+/* Ticks the cache, and while track 0 or one of its parts is rendering, spins
+ * (no frames) until that render lands, so a print publishes at a fixed point
+ * of the loop. Returns the track's telemetry. */
+static le_lane_cache_info wt_tick(le_engine* e) {
+  le_lane_cache_info info;
+  for (int k = 0; k < 3000; ++k) {
+    le_lane_cache_info part0;
+    le_lane_cache_info part1;
+    le_engine_get_track_cache(e, 0, &info);
+    le_engine_get_lane_cache(e, 0, 0, &part0);
+    le_engine_get_lane_cache(e, 0, 1, &part1);
+    if (info.state != LE_CACHE_RENDERING &&
+        part0.state != LE_CACHE_RENDERING &&
+        part1.state != LE_CACHE_RENDERING) {
+      break;
+    }
+    test_sleep_ms(1);
   }
+  return info;
+}
+
+/* Drives the cache, a block of frames per tick, until track 0's print
+ * engages, or gives up after three laps. On success [out] holds a block
+ * played from the print. */
+static int wt_wait_engaged(le_engine* e, float* out) {
+  for (int n = 0; n < 3 * WT_LOOP; n += 256) {
+    if (wt_tick(e).engaged) {
+      wt_pump(e, 64, out);
+      return 1;
+    }
+    wt_pump(e, 256, out);
+  }
+  return 0;
 }
 
 /* Whole-track Pre processes the COMBINATION of the track's parts as one
@@ -34930,20 +34978,9 @@ static void test_whole_track_pre_processes_the_combination(void) {
     drain(e);
     le_lane_cache_info info;
     if (pass == 1) {
-      le_engine_get_track_cache(e, 0, &info); /* polling drives the cache */
-      wt_pump(e, 40000, out);
-      /* Past the settle window and several loop tops, so the render has
-       * published and engaged. */
-      int engaged = 0;
-      for (int k = 0; k < 500 && !engaged; ++k) {
-        le_engine_get_track_cache(e, 0, &info);
-        test_sleep_ms(1);
-        wt_pump(e, 256, out);
-        le_engine_get_track_cache(e, 0, &info);
-        engaged = info.engaged;
-      }
       /* Without this the comparison would be two live passes. */
-      CHECK(engaged);
+      CHECK(wt_wait_engaged(e, out));
+      le_engine_get_track_cache(e, 0, &info);
       CHECK(info.state == LE_CACHE_CACHED);
       CHECK(info.renders == 1);
       CHECK(info.entry_frames == WT_LOOP);
@@ -34961,20 +34998,6 @@ static void test_whole_track_pre_processes_the_combination(void) {
     CHECK(fabsf(out[2 * 31 + 1] - one_signal * (1 - 31.0f / 24000)) < 1e-3f);
     le_engine_destroy(e);
   }
-}
-
-/* Spins the scheduler until the track's print engages, or gives up. */
-static int wt_wait_engaged(le_engine* e, float* out) {
-  le_lane_cache_info info;
-  wt_pump(e, 40000, out);
-  for (int k = 0; k < 500; ++k) {
-    le_engine_get_track_cache(e, 0, &info);
-    test_sleep_ms(1);
-    wt_pump(e, 256, out);
-    le_engine_get_track_cache(e, 0, &info);
-    if (info.engaged) return 1;
-  }
-  return 0;
 }
 
 /* Part levels precede the combined nonlinear Pre; the track fader follows
@@ -35041,21 +35064,25 @@ static void test_fx_recipe_atomic_admission_and_frozen_arm(void) {
 /* A deferred recipe must sound the same whether a host splits its callback
  * at the trigger or processes across it. The quantized case keeps existing PCM;
  * the sound case starts and fills a short fresh take inside one callback. */
+/* Long enough for the cached modes' prints to be ready on the lap after
+ * their recipes (#939). */
+#define RB_LOOP 16384
+
 static le_engine* recipe_boundary_engine(int mode) {
   const int sound = mode == 1;
   const int cached = mode >= 2;
   le_engine* e = le_engine_create();
-  CHECK(le_engine_configure(e, 48000, 1, 2, sound ? 32 : 8192) == LE_OK);
+  CHECK(le_engine_configure(e, 48000, 1, 2, sound ? 32 : 2 * RB_LOOP) == LE_OK);
   CHECK(le_engine_set_rec_dub(e, 0) == LE_OK);
   CHECK(le_engine_set_limiter(e, 0, 1) == LE_OK);
   CHECK(le_engine_set_fx_cache_cap(e, cached ? LE_CACHE_DEFAULT_CAP_BYTES : 0) == LE_OK);
   CHECK(timing_gate(e, 0) == LE_OK);
   drain(e);
   if (!sound) {
-    float samples[4096];
-    for (int i = 0; i < 4096; ++i) samples[i] = .2f;
-    CHECK(le_engine_import_track_lane(e, 0, 0, samples, 4096) == LE_OK);
-    CHECK(le_engine_commit_session(e, 4096, 0) == LE_OK);
+    static float samples[RB_LOOP];
+    for (int i = 0; i < RB_LOOP; ++i) samples[i] = .2f;
+    CHECK(le_engine_import_track_lane(e, 0, 0, samples, RB_LOOP) == LE_OK);
+    CHECK(le_engine_commit_session(e, RB_LOOP, 0) == LE_OK);
     CHECK(le_engine_play(e, 0) == LE_OK);
     drain(e);
   }
@@ -35077,7 +35104,7 @@ static le_engine* recipe_boundary_engine(int mode) {
     drain(e);
     /* Cache settlement can finish at any loop phase. Land 16 frames before
      * its next top without changing the already-engaged print. */
-    int remaining = (4080 - e->clock.position + 4096) % 4096;
+    int remaining = (RB_LOOP - 16 - e->clock.position + RB_LOOP) % RB_LOOP;
     while (remaining > 0) {
       const int n = remaining > 64 ? 64 : remaining;
       le_engine_process(e, out, NULL, (uint32_t)n); remaining -= n;
@@ -35442,7 +35469,6 @@ static void test_whole_track_pre_edits_from_the_originals(void) {
 static void test_whole_track_pre_leaves_the_recording_alone(void) {
   printf("test_whole_track_pre_leaves_the_recording_alone\n");
   static float out[2 * 64];
-  static float in[2 * 64];
   le_engine* e = wt_engine_two_parts(0.5f, LE_CACHE_DEFAULT_CAP_BYTES);
   CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
   CHECK(le_engine_set_track_fx_count(e, 0, 1, 1) == LE_OK);
@@ -35454,18 +35480,21 @@ static void test_whole_track_pre_leaves_the_recording_alone(void) {
   CHECK(fabsf(printed - tanhf(1.0f)) < 1e-3f);
 
   /* An overdub pass moves the content, so the render stops describing the
-   * track and it plays live from the new material. */
-  for (int i = 0; i < 2 * 64; ++i) in[i] = 0.25f;
+   * track and it plays live from the new material. One pass inside one lap,
+   * so one Undo takes it back. */
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  wt_pump(e, (WT_LOOP - snap.master_position_frames) % WT_LOOP, out);
   CHECK(le_engine_record(e, 0) == LE_OK); /* start the overdub */
   drain(e);
-  le_engine_process(e, out, in, (uint32_t)WT_LOOP);
+  wt_pump_value(e, 0.25f, WT_LOOP - 4096, out);
   CHECK(le_engine_record(e, 0) == LE_OK); /* stop it */
   drain(e);
   wt_pump(e, 2000, out); /* let the pass retire */
   le_lane_cache_info info;
   le_engine_get_track_cache(e, 0, &info);
   CHECK(info.engaged == 0);
-  wt_pump(e, 2000, out);
+  wt_pump(e, 4096 + 2000, out); /* back inside the overdubbed stretch */
   const float overdubbed = out[2 * 31];
   CHECK(fabsf(overdubbed - printed) > 1e-3f); /* the pass really landed */
 
@@ -36438,14 +36467,14 @@ static float cache_max_diff(const float* x, const float* y, int n, int skip) {
 }
 
 /* Builds the twin harness through the published render: A cached, B live
- * (cap 0), identical timelines — defining loop of 1.0f, a [count]-slot chain
- * of [types] engaged at a loop top, one tick to register the key, the settle
- * window pumped, then A's render spun to CACHED. On return both engines sit
- * at position CACHE_SETTLE of a loop (A not yet engaged: engagement waits
- * for the next loop top). */
-static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
+ * (cap 0), identical timelines — a defining loop of [loop] frames of 1.0f, a
+ * [count]-slot chain of [types] on [lane] engaged at a loop top, one tick to
+ * register the key, the settle window pumped, then A's render spun to
+ * CACHED. On return both engines sit CACHE_SETTLE frames past that loop top
+ * (A not yet engaged: engagement waits for a loop top). */
+static void cache_pair_prepare_chain_loop(le_engine** pa, le_engine** pb,
                                           const int32_t* types, int32_t count,
-                                          int32_t lane) {
+                                          int32_t lane, int32_t loop) {
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   le_engine* b = cache_engine(0);
   /* A non-zero lane has to exist and carry the SAME content as lane 0 before
@@ -36461,9 +36490,9 @@ static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
     drain(a);
     drain(b);
   }
-  cache_record_loop(a, CACHE_LOOP, 1.0f);
-  cache_record_loop(b, CACHE_LOOP, 1.0f);
-  const int32_t need = (CACHE_LOOP - cache_master_pos(a)) % CACHE_LOOP;
+  cache_record_loop(a, loop, 1.0f);
+  cache_record_loop(b, loop, 1.0f);
+  const int32_t need = (loop - cache_master_pos(a)) % loop;
   if (need > 0) {
     pump_frames(a, 0.0f, need);
     pump_frames(b, 0.0f, need);
@@ -36485,6 +36514,12 @@ static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
   CHECK(cache_renders(a, 0, lane) == 1);
   *pa = a;
   *pb = b;
+}
+
+static void cache_pair_prepare_chain_lane(le_engine** pa, le_engine** pb,
+                                          const int32_t* types, int32_t count,
+                                          int32_t lane) {
+  cache_pair_prepare_chain_loop(pa, pb, types, count, lane, CACHE_LOOP);
 }
 
 static void cache_pair_prepare_chain(le_engine** pa, le_engine** pb,
@@ -36581,8 +36616,9 @@ static void test_a_post_edit_leaves_the_print_standing(void) {
   pump_frames(a, 0.0f, CACHE_SETTLE);
   CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
   const int32_t renders = cache_renders(a, 0, 0);
-  /* On to the next loop top, where the print engages. */
-  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  /* On to the second loop top: the chain went in part way through a lap,
+   * so the print engages once it has played a complete one (#1620). */
+  pump_frames(a, 0.0f, 2 * CACHE_LOOP - CACHE_SETTLE + 64);
   CHECK(cache_engaged(a, 0, 0) == 1);
 
   CHECK(le_engine_set_lane_fx_param(a, 0, 0, 1, 0, 0.9f) == LE_OK); /* Post */
@@ -36615,7 +36651,8 @@ static void test_a_pre_channel_edit_drops_the_print(void) {
   le_engine_get_lane_cache(a, 0, 0, &info);
   pump_frames(a, 0.0f, CACHE_SETTLE);
   CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
-  pump_frames(a, 0.0f, CACHE_LOOP - CACHE_SETTLE + 64);
+  /* The second top: the chain went in part way through a lap (#1620). */
+  pump_frames(a, 0.0f, 2 * CACHE_LOOP - CACHE_SETTLE + 64);
   CHECK(cache_engaged(a, 0, 0) == 1);
 
   CHECK(le_engine_set_lane_fx_channels(a, 0, 0, 0, 0, 0, 0.0f, 0.5f) == LE_OK);
@@ -36709,22 +36746,67 @@ static void test_cache_octaver_relaunch_rerenders(void) {
   CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000));
   CHECK(cache_renders(a, 0, 0) == 2);
   CHECK(cache_engaged(a, 0, 0) == 0);
+  /* The relaunch moved the key, which the next buffer's check sees: the run
+   * begins part way into the relaunched lap, so the print engages at the
+   * second top (#1620). */
   pump_frames(a, 0.0f, CACHE_LOOP - 128 - CACHE_SETTLE + 64);
-  CHECK(cache_engaged(a, 0, 0) == 1); /* at the relaunched loop's next top */
+  CHECK(cache_engaged(a, 0, 0) == 0);
+  pump_frames(a, 0.0f, CACHE_LOOP);
+  CHECK(cache_engaged(a, 0, 0) == 1);
   le_engine_destroy(a);
+}
+
+/* A loop shorter than the settle window (#939): ten octaver hops, about
+ * 53 ms, so the print is ready only five laps after the chain went in at a
+ * loop top. It reproduces a chain one lap into its run; the live chain it
+ * would displace is five laps in — an echo built up over more passes, an
+ * LFO further on — and swapping it in would step at the loop top. So the
+ * print never engages, and the cached twin plays exactly what the live one
+ * does, across the loop tops where it used to swap in. */
+#define CACHE_SHORT_LOOP 2560
+
+static void cache_check_short_loop_stays_live(int32_t type) {
+  le_engine* a;
+  le_engine* b;
+  cache_pair_prepare_chain_loop(&a, &b, &type, 1, 0, CACHE_SHORT_LOOP);
+  const int32_t pre = 64;
+  const int32_t to_top =
+      (CACHE_SHORT_LOOP - cache_master_pos(a)) % CACHE_SHORT_LOOP;
+  pump_frames(a, 0.0f, to_top + CACHE_SHORT_LOOP - pre);
+  pump_frames(b, 0.0f, to_top + CACHE_SHORT_LOOP - pre);
+  const int32_t n = pre + 2 * CACHE_SHORT_LOOP;
+  float* oa = (float*)malloc((size_t)n * sizeof(float));
+  float* ob = (float*)malloc((size_t)n * sizeof(float));
+  pump_capture(a, 0.0f, n, oa);
+  pump_capture(b, 0.0f, n, ob);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_CACHED); /* the print is there... */
+  const float d = cache_max_diff(oa, ob, n, 0);
+  if (info.engaged != 0 || d > CACHE_TOL) { /* ...and stays out */
+    printf("  FAIL: type %d on a short loop: engaged %d, cached-vs-live max "
+           "diff %g (line %d)\n",
+           type, info.engaged, (double)d, __LINE__);
+    g_failures++;
+  }
+  free(oa);
+  free(ob);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
 }
 
 static void test_cache_cached_matches_live_every_builtin(void) {
   printf("test_cache_cached_matches_live_every_builtin\n");
   const int32_t types[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_DELAY,
-                           LE_FX_TREMOLO,    LE_FX_OCTAVER,   LE_FX_ECHO,
-                           LE_FX_REVERB,     LE_FX_EQ,        LE_FX_COMPRESSOR,
-                           LE_FX_TRANSIENT,  LE_FX_HP_GATE,   LE_FX_WAH,
-                           LE_FX_OVERDRIVE, LE_FX_DISTORTION, LE_FX_LPF,
-                           LE_FX_SPRING,    LE_FX_DUB_VERB,   LE_FX_AMB_VERB,
-                           LE_FX_WHAMMY,    LE_FX_SMART_TUNE};
+                           LE_FX_OCTAVER,    LE_FX_REVERB,    LE_FX_EQ,
+                           LE_FX_COMPRESSOR, LE_FX_TRANSIENT, LE_FX_HP_GATE,
+                           LE_FX_WAH,        LE_FX_OVERDRIVE, LE_FX_DISTORTION,
+                           LE_FX_LPF,        LE_FX_SPRING,    LE_FX_DUB_VERB,
+                           LE_FX_AMB_VERB,   LE_FX_WHAMMY,    LE_FX_SMART_TUNE};
   /* The doubler and the chorus are free-running and never print
-   * (test_cache_free_running_stays_live). */
+   * (test_cache_free_running_stays_live). The tremolo and the echo run clock
+   * LFOs that print only on a loop of whole cycles, which this one is not
+   * (test_cache_clock_lfo_prints_only_lap_locked). */
   for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
     cache_check_chain_parity(&types[i], 1);
     /* ...and on a NON-ZERO lane. Track 0, lane 0 has hop-stagger seed 0,
@@ -36733,14 +36815,256 @@ static void test_cache_cached_matches_live_every_builtin(void) {
      * carry over: seeded wrong, the octaver's print is a different
      * phase-vocoder realization, swapped in at the loop top as a step. */
     cache_check_chain_parity_lane(&types[i], 1, 1);
+    /* ...and where the print would swap in laps after the chain went in,
+     * on a loop shorter than the settle window (#939). */
+    cache_check_short_loop_stays_live(types[i]);
   }
+}
+
+/* The whole-track print on a loop shorter than the settle window (#939): it
+ * is ready only laps after the delay went on the track, whose live chain has
+ * built its repeats up over those laps while the print carries one lap's. So
+ * it never engages, and the cached twin plays what the live one does. */
+static void test_whole_track_print_stays_live_on_a_short_loop(void) {
+  printf("test_whole_track_print_stays_live_on_a_short_loop\n");
+  le_engine* a = wt_engine_two_parts_loop(0.5f, LE_CACHE_DEFAULT_CAP_BYTES,
+                                          CACHE_SHORT_LOOP);
+  le_engine* b = wt_engine_two_parts_loop(0.5f, 0, CACHE_SHORT_LOOP);
+  le_engine* both[2] = {a, b};
+  for (int k = 0; k < 2; ++k) {
+    CHECK(le_engine_set_track_fx(both[k], 0, 0, LE_FX_DELAY) == LE_OK);
+    CHECK(le_engine_set_track_fx_count(both[k], 0, 1, 1) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(both[k], 0, 0, 0, 0.01f) == LE_OK);
+    CHECK(le_engine_set_track_fx_param(both[k], 0, 0, 1, 0.6f) == LE_OK);
+    drain(both[k]);
+  }
+  static float oa[2 * 64];
+  static float ob[2 * 64];
+  le_lane_cache_info info;
+  le_engine_get_track_cache(a, 0, &info); /* registers the key */
+  wt_pump(a, CACHE_SETTLE, oa);
+  wt_pump(b, CACHE_SETTLE, ob);
+  /* The print publishes without frames moving (the scheduler's copy,
+   * render and collect ticks run on the polls). */
+  int cached = 0;
+  for (int k = 0; k < 3000 && !cached; ++k) {
+    cached = wt_tick(a).state == LE_CACHE_CACHED;
+    if (!cached) test_sleep_ms(1);
+  }
+  CHECK(cached);
+  float d = 0.0f;
+  for (int n = 0; n < 2 * CACHE_SHORT_LOOP; n += 64) {
+    wt_pump(a, 64, oa);
+    wt_pump(b, 64, ob);
+    d = fmaxf(d, cache_max_diff(oa, ob, 2 * 64, 0));
+  }
+  le_engine_get_track_cache(a, 0, &info);
+  CHECK(info.state == LE_CACHE_CACHED);
+  CHECK(info.engaged == 0);
+  CHECK(d <= CACHE_TOL);
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* The loop-top step a print makes when its chain went in part way through
+ * a lap (#1620). Twins as in the parity sweep, but the loop is a 220 Hz sine
+ * (a constant hides a modulated read), the chain (one slot of [type], at
+ * [params] when not NULL) goes in [offset] frames after a loop top, and the
+ * scheduler runs on every block, renders awaited without frames, so a print
+ * lands at a fixed point. Returns the largest cached-vs-live difference over
+ * the two laps from the block the print engages in, or -1 when it does not
+ * engage within [laps_max] laps; [laps] receives the loop tops from the edit
+ * to the engage. [retune] (when not NULL) is a second setting moved in once
+ * the print has engaged, after which the same is measured again into
+ * [retuned] (-1: never re-engaged). */
+static float cache_midlap_step(int32_t type, const float* params, int32_t loop,
+                               int32_t offset, int laps_max, int* laps,
+                               const float* retune, float* retuned) {
+  le_engine* e[2];
+  for (int k = 0; k < 2; ++k) {
+    e[k] = le_engine_create();
+    le_engine_configure(e[k], 48000, 1, 1, loop > 16000 ? loop + 4096 : 20000);
+    le_engine_set_fx_cache_cap(e[k], k == 0 ? LE_CACHE_DEFAULT_CAP_BYTES : 0);
+  }
+  float in[64];
+  float out[2][64];
+  int32_t at = 0; /* frames into the loop's sine, shared by both twins */
+  for (int k = 0; k < 2; ++k) le_engine_record(e[k], 0);
+  int32_t done = 0;
+  while (done < loop + 600) {
+    if (done == loop) {
+      for (int k = 0; k < 2; ++k) {
+        le_engine_record(e[k], 0);
+        drain(e[k]);
+      }
+    }
+    int32_t n = 64;
+    if (done < loop && loop - done < n) n = loop - done;
+    for (int i = 0; i < n; ++i) {
+      in[i] = 0.5f * sinf(2.0f * (float)M_PI * 220.0f * (float)(at + i) /
+                          48000.0f);
+    }
+    at += n;
+    for (int k = 0; k < 2; ++k) le_engine_process(e[k], out[k], in, (uint32_t)n);
+    done += n;
+  }
+  const int32_t need = (loop - cache_master_pos(e[0]) + offset) % loop;
+  for (int k = 0; k < 2; ++k) {
+    pump_frames(e[k], 0.0f, need);
+    CHECK(le_engine_set_lane_fx_count(e[k], 0, 0, 1, 1) == LE_OK);
+    CHECK(le_engine_set_lane_fx(e[k], 0, 0, 0, type) == LE_OK);
+    /* Every cell the kind has; the rest are refused. */
+    for (int p = 0; params != NULL && p < LE_FX_PARAMS; ++p) {
+      (void)le_engine_set_lane_fx_param(e[k], 0, 0, 0, p, params[p]);
+    }
+    drain(e[k]);
+  }
+  float worst = -1.0f;
+  int32_t engaged_at = -1;
+  int32_t tops = 0;
+  int32_t prev_pos = cache_master_pos(e[0]);
+  int phase = 0; /* 0: to the engage, 1: measuring, 2: retuned, 3: measuring */
+  if (retuned != NULL) *retuned = -1.0f;
+  for (int32_t f = 0; f < laps_max * loop; f += 64) {
+    le_lane_cache_info info;
+    for (int k = 0; k < 3000; ++k) {
+      le_engine_get_lane_cache(e[0], 0, 0, &info);
+      if (info.state != LE_CACHE_RENDERING) break;
+      test_sleep_ms(1);
+    }
+    for (int k = 0; k < 2; ++k) process_const(e[k], 0.0f, 64, out[k]);
+    const int32_t pos = cache_master_pos(e[0]);
+    if (pos < prev_pos) ++tops;
+    prev_pos = pos;
+    const int on = cache_engaged(e[0], 0, 0);
+    if ((phase == 0 || phase == 2) && on) {
+      engaged_at = f;
+      if (phase == 0) {
+        *laps = tops;
+        worst = 0.0f;
+      } else {
+        *retuned = 0.0f;
+      }
+      ++phase;
+    }
+    if (phase == 1 || phase == 3) {
+      float* into = phase == 1 ? &worst : retuned;
+      *into = fmaxf(*into, cache_max_diff(out[0], out[1], 64, 0));
+      if (f - engaged_at >= 2 * loop) {
+        if (phase == 3 || retune == NULL) break;
+        for (int k = 0; k < 2; ++k) {
+          for (int p = 0; p < LE_FX_PARAMS; ++p) {
+            (void)le_engine_set_lane_fx_param(e[k], 0, 0, 0, p, retune[p]);
+          }
+          drain(e[k]);
+        }
+        phase = 2;
+      }
+    }
+  }
+  for (int k = 0; k < 2; ++k) le_engine_destroy(e[k]);
+  return worst;
+}
+
+/* The step a print makes at its loop top when the chain went in part way
+ * through a lap, per kind (#1620): early in a lap (the print is ready before
+ * the next top) and late in one (ready only after it). Each engages at the
+ * second top after the edit, once the live chain has played a complete lap,
+ * and kinds with no state longer than a lap swap in exactly. A delay or a
+ * reverb still differs by the part of its tail older than a lap (the print
+ * carries one lap of history, the live chain one to two), so those are
+ * printed, not held to the tolerance. The pitch kinds are left out: their
+ * print differs from live on a sine even with the chain in on a loop top
+ * (#1624). */
+static void test_cache_midlap_edit_steps(void) {
+  printf("test_cache_midlap_edit_steps\n");
+  const int32_t exact[] = {LE_FX_DRIVE,      LE_FX_FILTER,    LE_FX_EQ,
+                           LE_FX_COMPRESSOR, LE_FX_TRANSIENT, LE_FX_HP_GATE,
+                           LE_FX_WAH,        LE_FX_OVERDRIVE, LE_FX_DISTORTION,
+                           LE_FX_LPF};
+  const int32_t tails[] = {LE_FX_DELAY,    LE_FX_REVERB,  LE_FX_SPRING,
+                           LE_FX_DUB_VERB, LE_FX_AMB_VERB};
+  const int32_t offsets[] = {1600, CACHE_LOOP - 1600};
+  for (size_t i = 0; i < sizeof(exact) / sizeof(exact[0]); ++i) {
+    for (int o = 0; o < 2; ++o) {
+      int laps = -1;
+      const float d = cache_midlap_step(exact[i], NULL, CACHE_LOOP, offsets[o],
+                                        6, &laps, NULL, NULL);
+      if (laps != 2 || d < 0.0f || d > CACHE_TOL) {
+        printf("  FAIL: type %d edited at %d: engaged at top %d, step %g\n",
+               exact[i], offsets[o], laps, (double)d);
+        g_failures++;
+      }
+    }
+  }
+  for (size_t i = 0; i < sizeof(tails) / sizeof(tails[0]); ++i) {
+    for (int o = 0; o < 2; ++o) {
+      int laps = -1;
+      const float d = cache_midlap_step(tails[i], NULL, CACHE_LOOP, offsets[o],
+                                        6, &laps, NULL, NULL);
+      CHECK(laps == 2);
+      printf("  type %d edited at %d: tail older than a lap %.5f\n", tails[i],
+             offsets[o], (double)d);
+    }
+  }
+}
+
+/* A clock LFO (the tremolo, the echo's wow) prints only on a loop it fits a
+ * whole number of times (#1620): its phase comes from the engine clock, so
+ * the print agrees with the live chain however the chain went in, and on
+ * such a loop each lap sounds the same. On any other loop it plays live,
+ * said as free-running. A rate move slides the LFO back onto the clock, and
+ * the print waits for that and a complete lap after it. */
+static void test_cache_clock_lfo_prints_only_lap_locked(void) {
+  printf("test_cache_clock_lfo_prints_only_lap_locked\n");
+  /* One cycle a lap, then two: rate = 0.1 + p0 * 11.9 Hz. */
+  const float one[LE_FX_PARAMS] = {
+      (float)((48000.0 / CACHE_LOOP - 0.1) / 11.9), 1.0f};
+  const float two[LE_FX_PARAMS] = {
+      (float)((2.0 * 48000.0 / CACHE_LOOP - 0.1) / 11.9), 1.0f};
+  int laps = -1;
+  float retuned = -1.0f;
+  const float d = cache_midlap_step(LE_FX_TREMOLO, one, CACHE_LOOP, 1600, 16,
+                                    &laps, two, &retuned);
+  CHECK(laps == 2);
+  CHECK(d >= 0.0f && d <= CACHE_TOL);
+  CHECK(retuned >= 0.0f && retuned <= CACHE_TOL);
+  /* Off the lap grid: live, and said why. */
+  const float off[LE_FX_PARAMS] = {0.35f, 1.0f};
+  CHECK(cache_midlap_step(LE_FX_TREMOLO, off, CACHE_LOOP, 1600, 4, &laps, NULL,
+                          NULL) < 0.0f);
+  le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(a, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_TREMOLO) == LE_OK);
+  for (int p = 0; p < 2; ++p) {
+    CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, p, off[p]) == LE_OK);
+  }
+  drain(a);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  pump_frames(a, 0.0f, CACHE_SETTLE + CACHE_LOOP);
+  le_engine_get_lane_cache(a, 0, 0, &info);
+  CHECK(info.state == LE_CACHE_GAVE_UP);
+  CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
+  le_engine_destroy(a);
+  /* The echo's wow is 0.7 Hz: a 10 s loop is seven of them. Its time short
+   * (inside a lap) and its mix at 0.5, so the repeats are heard. */
+  const float echo[LE_FX_PARAMS] = {0.05f, 0.3f, 0.5f};
+  const int32_t wow_loop = 480000;
+  const float de = cache_midlap_step(LE_FX_ECHO, echo, wow_loop, 1600, 4,
+                                     &laps, NULL, NULL);
+  CHECK(laps == 2);
+  CHECK(de >= 0.0f && de <= CACHE_TOL);
+  CHECK(cache_midlap_step(LE_FX_ECHO, echo, CACHE_LOOP, 1600, 4, &laps, NULL,
+                          NULL) < 0.0f);
 }
 
 /* Cached ~= live for a MULTI-slot chain (order-sensitive state across slots),
  * through the same twin harness as the per-built-in runs. */
 static void test_cache_cached_matches_live_multi_slot_chain(void) {
   printf("test_cache_cached_matches_live_multi_slot_chain\n");
-  const int32_t chain[] = {LE_FX_DRIVE, LE_FX_DELAY, LE_FX_TREMOLO};
+  const int32_t chain[] = {LE_FX_DRIVE, LE_FX_DELAY, LE_FX_FILTER};
   cache_check_chain_parity(chain, 3);
 }
 
@@ -37185,7 +37509,7 @@ static void test_cache_midrender_rev_bump_aborts(void) {
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
   CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
+  CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
   drain(a);
   le_lane_cache_info info;
   le_engine_get_lane_cache(a, 0, 0, &info); /* register the key */
@@ -37259,7 +37583,7 @@ static void test_cache_destroy_during_active_render(void) {
     CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
     CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_OCTAVER) == LE_OK);
-    CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_ECHO) == LE_OK);
+    CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
     drain(a);
     le_lane_cache_info info;
     le_engine_get_lane_cache(a, 0, 0, &info);
@@ -37446,46 +37770,16 @@ static void test_cache_batch_matches_per_lane(void) {
   le_engine_destroy(e);
 }
 
-/* ---- per-input conditioning stage (input conditioning, S1) ----
+/* ---- input clip ("HOT") detector (input clip, S2) ----
  *
- * The stage (HPF + hum notches + downward expander, engine_cond.c) runs once
- * per block into the conditioned input copy, upstream of BOTH the lane
- * fan-out and the monitor split; metering and the latency harness read raw.
- * These tests pin the DSP (filter response, expander static curve, bit-exact
- * bypass) and the placement contract (lane buffer == monitor output ==
- * conditioned; snapshot metering == raw; loopback/latency untouched; the
- * sound-activated trigger reads conditioned). */
+ * Always on, no params, RAW path: LE_CLIP_RUN (4) consecutive samples at
+ * |s| >= LE_CLIP_LEVEL (0.999) latch le_snapshot.input_clip_mask's bit for
+ * that input, held LE_CLIP_HOLD_MS (1500) of engine time past the last run.
+ * These tests pin the run threshold, the cross-block run carry, the hold
+ * decay, per-input independence and the loopback exclusion. */
 
-/* Feeds `frames` mono frames of amp*sin(2*pi*freq*t) in <= 64-frame chunks,
- * with phase continuous across calls via *idx (absolute frame counter).
- * Captures contiguous output into `out` when non-NULL (caller sizes it). */
-static void cond_feed_sine(le_engine* e, float freq, float amp, int frames,
-                           long* idx, float* out) {
-  float in[64];
-  float scratch[64];
-  int done = 0;
-  while (done < frames) {
-    int n = frames - done;
-    if (n > 64) n = 64;
-    for (int i = 0; i < n; ++i) {
-      const double t = (double)(*idx + i) / 48000.0;
-      in[i] = amp * (float)sin(2.0 * 3.14159265358979323846 * freq * t);
-    }
-    le_engine_process(e, out != NULL ? out + done : scratch, in, (uint32_t)n);
-    *idx += n;
-    done += n;
-  }
-}
-
-static float cond_rms(const float* buf, int n) {
-  double acc = 0.0;
-  for (int i = 0; i < n; ++i) acc += (double)buf[i] * (double)buf[i];
-  return n > 0 ? (float)sqrt(acc / (double)n) : 0.0f;
-}
-
-/* Mono engine with input 0's clean monitor routed to output 0 — the probe
- * path every DSP test below listens through. */
-static le_engine* cond_engine(void) {
+/* Mono engine with input 0's clean monitor routed to output 0. */
+static le_engine* clip_engine(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 96000);
   le_engine_set_monitor_input(e, 0, 1);
@@ -37493,472 +37787,6 @@ static le_engine* cond_engine(void) {
   drain(e);
   return e;
 }
-
-/* Turns off the sections named so a test can probe one in isolation. */
-static void cond_sections(le_engine* e, float hpf_hz, float hum_hz,
-                          float ratio) {
-  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HPF_HZ, hpf_hz) ==
-        LE_OK);
-  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HUM_HZ, hum_hz) ==
-        LE_OK);
-  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
-                                               ratio) == LE_OK);
-  drain(e);
-}
-
-static void test_cond_setters_validate(void) {
-  printf("test_cond_setters_validate\n");
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(NULL, 0, 1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_input_conditioning(e, -1, 1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_input_conditioning(e, LE_MAX_MONITORED_INPUTS, 1) ==
-        LE_ERR_INVALID);
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  CHECK(le_engine_set_input_conditioning_param(NULL, 0, LE_COND_HPF_HZ, 40) ==
-        LE_ERR_INVALID);
-  CHECK(le_engine_set_input_conditioning_param(e, -1, LE_COND_HPF_HZ, 40) ==
-        LE_ERR_INVALID);
-  CHECK(le_engine_set_input_conditioning_param(e, LE_MAX_MONITORED_INPUTS,
-                                               LE_COND_HPF_HZ, 40) ==
-        LE_ERR_INVALID);
-  CHECK(le_engine_set_input_conditioning_param(e, 0, -1, 40) ==
-        LE_ERR_INVALID);
-  CHECK(le_engine_set_input_conditioning_param(
-            e, 0, LE_COND_EXP_RELEASE_MS + 1, 40) == LE_ERR_INVALID);
-  for (int p = LE_COND_HPF_HZ; p <= LE_COND_EXP_RELEASE_MS; ++p) {
-    CHECK(le_engine_set_input_conditioning_param(e, 0, p, 1.0f) == LE_OK);
-  }
-  drain(e); /* all of the above apply cleanly */
-  le_engine_destroy(e);
-}
-
-/* Bypass contract: a disabled stage is bit-exact passthrough (the raw pointer
- * path), and an ENABLED stage with every section off is bit-exact too (the
- * copy path itself colors nothing). */
-static void test_cond_bypass_bitexact(void) {
-  printf("test_cond_bypass_bitexact\n");
-  le_engine* e = cond_engine();
-  float in[64];
-  float out[64];
-  for (int i = 0; i < 64; ++i) {
-    in[i] = 0.4f * sinf(2.0f * 3.14159265f * 997.0f * (float)i / 48000.0f);
-  }
-
-  /* Disabled (the default): monitor output == input, bit-exact. */
-  le_engine_process(e, out, in, 64);
-  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
-
-  /* Enabled with all sections off: still bit-exact. */
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  cond_sections(e, 0.0f, 0.0f, 1.0f);
-  le_engine_process(e, out, in, 64);
-  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
-
-  /* Disabled again: back to the raw path, bit-exact. */
-  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
-  drain(e);
-  le_engine_process(e, out, in, 64);
-  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
-  le_engine_destroy(e);
-}
-
-/* HPF response: DC is rejected (default 40 Hz cutoff) while the raw meter
- * keeps seeing the full DC level. */
-static void test_cond_hpf_rejects_dc(void) {
-  printf("test_cond_hpf_rejects_dc\n");
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
-
-  static float out[48000];
-  float in[64];
-  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
-  for (int done = 0; done < 48000; done += 64) {
-    le_engine_process(e, out + done, in, 64);
-  }
-  /* One second in, the DC has been filtered to (numerically) nothing. */
-  CHECK(fabsf(out[47999]) < 1e-3f);
-  /* Raw metering: the snapshot peak reflects the ADC, not the post-HPF path. */
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.input_peak > 0.45f);
-  le_engine_destroy(e);
-}
-
-/* Hum notch bank: 50 Hz (base) and 150 Hz (3rd harmonic, default 4 notch
- * sections) are notched > 20 dB once settled; 1 kHz passes essentially
- * untouched. */
-static void test_cond_hum_notch_response(void) {
-  printf("test_cond_hum_notch_response\n");
-  static float out[9600];
-  const float freqs[3] = {50.0f, 150.0f, 1000.0f};
-  for (int k = 0; k < 3; ++k) {
-    le_engine* e = cond_engine();
-    CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-    cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only (default x4) */
-    long idx = 0;
-    cond_feed_sine(e, freqs[k], 0.5f, 2 * 48000 - 9600, &idx, NULL);
-    cond_feed_sine(e, freqs[k], 0.5f, 9600, &idx, out);
-    const float in_rms = 0.5f * 0.70710678f;
-    const float out_rms = cond_rms(out + 4800, 4800);
-    if (k < 3 - 1) {
-      CHECK(out_rms < in_rms * 0.1f); /* > 20 dB down at 50 / 150 Hz */
-    } else {
-      CHECK(out_rms > in_rms * 0.9f); /* < ~1 dB at 1 kHz */
-    }
-    le_engine_destroy(e);
-  }
-}
-
-/* Expander static curve: with a constant-magnitude probe (|x| == A each
- * sample, so the envelope settles exactly to A), the settled gain IS the
- * documented law — unity at/above threshold, u^(R-1) below it (u = A/thr):
- * exact at the default 1:2 and at integer ratios. */
-static void test_cond_expander_static_curve(void) {
-  printf("test_cond_expander_static_curve\n");
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  cond_sections(e, 0.0f, 0.0f, 2.0f); /* expander only, ratio 2 */
-  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_THRESHOLD_DB,
-                                               -40.0f) == LE_OK);
-  /* Fast release so the envelope settles DOWN between the probe levels too
-   * (the 150 ms default would need ~1 s per case to converge within 2%). */
-  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RELEASE_MS,
-                                               5.0f) == LE_OK);
-  drain(e); /* thr_lin = 0.01 */
-
-  float in[64];
-  float out[64];
-  /* (A, ratio, expected settled gain) triples. */
-  const float cases[4][3] = {
-      {0.1f, 2.0f, 1.0f},      /* 20 dB above thr: unity */
-      {0.005f, 2.0f, 0.5f},    /* u = 0.5, R = 2: g = u */
-      {0.0025f, 2.0f, 0.25f},  /* u = 0.25, R = 2: g = u */
-      {0.005f, 4.0f, 0.125f},  /* u = 0.5, R = 4: g = u^3 */
-  };
-  for (int k = 0; k < 4; ++k) {
-    const float amp = cases[k][0];
-    CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
-                                                 cases[k][1]) == LE_OK);
-    drain(e);
-    /* Alternating +-A: |x| is A every sample, the envelope converges to
-     * exactly A (attack 5 ms << the 9600-frame settle). */
-    for (int i = 0; i < 64; ++i) in[i] = (i & 1) ? -amp : amp;
-    for (int blocks = 0; blocks < 150; ++blocks) {
-      le_engine_process(e, out, in, 64);
-    }
-    const float expect = amp * cases[k][2];
-    CHECK(fabsf(fabsf(out[63]) - expect) < expect * 0.02f + 1e-9f);
-  }
-  le_engine_destroy(e);
-}
-
-/* THE placement pin (WYSIWYG): with a hum notch engaged, the lane buffer a
- * recording captures is BIT-EXACT the monitored output — one conditioning
- * run upstream of both consumers — and both are attenuated while the
- * snapshot's input metering still reads the raw level. */
-static void test_cond_lane_monitor_wysiwyg_metering_raw(void) {
-  printf("test_cond_lane_monitor_wysiwyg_metering_raw\n");
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only */
-
-  long idx = 0;
-  cond_feed_sine(e, 50.0f, 0.5f, 2 * 48000, &idx, NULL); /* settle the notch */
-
-  static float out[4800];
-  CHECK(le_engine_record(e, 0) == LE_OK);
-  drain(e);
-  cond_feed_sine(e, 50.0f, 0.5f, 4800, &idx, out); /* the recorded pass */
-  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> PLAYING, len 4800 */
-  drain(e);
-
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].length_frames == 4800);
-
-  /* The lane's live buffer holds the CONDITIONED samples — and is bit-exact
-   * the monitor output captured over the same frames (the WYSIWYG pin: both
-   * consumers read the one conditioned copy). Checked BEFORE any further
-   * processing: the finalize may continue into overdub (rec/dub), and more
-   * fed frames would then layer onto the buffer under comparison. */
-  le_lane* ln = &e->tracks[0].lanes[0];
-  const float* lane = ln->pool[load_i32(&ln->a_live)];
-  CHECK(lane != NULL);
-  if (lane != NULL) {
-    int exact = 1;
-    for (int i = 0; i < 4800; ++i) {
-      if (lane[i] != out[i]) exact = 0;
-    }
-    CHECK(exact);
-    /* And conditioned means ATTENUATED: > 20 dB below the raw input. */
-    CHECK(cond_rms(lane, 4800) < (0.5f * 0.70710678f) * 0.1f);
-  }
-
-  /* Raw metering: process one FULL 50 Hz cycle in a single block (so the
-   * block is guaranteed to contain the waveform's peak whatever the phase)
-   * and snapshot immediately — the published input peak is the RAW level,
-   * not the notched one. */
-  {
-    static float mout[960];
-    static float min_[960];
-    for (int i = 0; i < 960; ++i) {
-      min_[i] = 0.5f * (float)sin(2.0 * 3.14159265358979323846 * 50.0 *
-                                  (double)i / 48000.0);
-    }
-    le_engine_process(e, mout, min_, 960);
-    le_engine_get_snapshot(e, &s);
-    CHECK(s.input_peak > 0.45f);
-  }
-  le_engine_destroy(e);
-}
-
-/* Zero added latency: the stage is IIR + a no-lookahead envelope, so its
- * response to an impulse begins on the SAME frame — nothing is buffered. */
-static void test_cond_zero_added_latency(void) {
-  printf("test_cond_zero_added_latency\n");
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  drain(e); /* full default stage: HPF 40 + hum x4 + expander */
-
-  float in[64] = {0};
-  float out[64];
-  in[0] = 1.0f;
-  le_engine_process(e, out, in, 64);
-  /* The impulse lands on frame 0 of the monitor output (the biquads' b0
-   * terms pass most of it; the first-sample envelope is already above the
-   * -55 dB default threshold, so the expander does not eat it either). */
-  CHECK(fabsf(out[0]) > 0.5f);
-  le_engine_destroy(e);
-}
-
-/* The latency harness is unaffected: the loopback channel is excluded from
- * conditioning by construction and the harness reads raw magnitudes, so a
- * measurement with a hostile stage enabled resolves to the SAME offset as
- * one with no conditioning at all. */
-static void test_cond_latency_harness_unaffected(void) {
-  printf("test_cond_latency_harness_unaffected\n");
-  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
-  int32_t offsets[2] = {0, 0};
-  for (int pass = 0; pass < 2; ++pass) {
-    le_engine* e = le_engine_create();
-    le_engine_configure(e, SR, 2, 2, 100000);
-    le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
-    if (pass == 1) {
-      /* A stage that would demolish the pulse if it ever touched the
-       * harness path: 2 kHz HPF + deep 10:1 expander at -20 dB. */
-      CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-      CHECK(le_engine_set_input_conditioning(e, 1, 1) == LE_OK);
-      CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HPF_HZ,
-                                                   2000.0f) == LE_OK);
-      CHECK(le_engine_set_input_conditioning_param(
-                e, 0, LE_COND_EXP_THRESHOLD_DB, -20.0f) == LE_OK);
-      CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
-                                                   10.0f) == LE_OK);
-      CHECK(le_engine_set_input_conditioning_param(e, 1, LE_COND_HPF_HZ,
-                                                   2000.0f) == LE_OK);
-    }
-    CHECK(le_engine_begin_latency_for_test(e, 0, LE_LATENCY_LOOPBACK_INPUT,
-                                         0.25f, 1) == LE_OK);
-    drain(e);
-    float* out = calloc((size_t)CAP * 2, sizeof(float));
-    float* in = calloc((size_t)CAP * 2, sizeof(float));
-    CHECK(out != NULL && in != NULL);
-    for (int i = 0; i < CAP; ++i) {
-      in[i * 2 + 0] = 0.0f;
-      in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
-    }
-    le_engine_process(e, out, in, CAP);
-    le_snapshot s;
-    le_engine_get_snapshot(e, &s);
-    CHECK(s.latency_state == LE_LATENCY_DONE);
-    offsets[pass] = s.record_offset_frames;
-    free(out);
-    free(in);
-    le_engine_destroy(e);
-  }
-  CHECK(offsets[0] == offsets[1]);
-  CHECK(offsets[0] > 0);
-}
-
-/* The sound-activated record trigger reads the CONDITIONED magnitude: mains
- * hum loud enough to false-arm the raw path no longer fires once notched,
- * while a real signal still does — and the raw path (stage disabled) still
- * fires on that same hum, pinning that the change is the conditioning. */
-static void test_cond_auto_trigger_reads_conditioned(void) {
-  printf("test_cond_auto_trigger_reads_conditioned\n");
-  le_snapshot s;
-
-  /* Conditioned: 50 Hz at 0.3 (15x the 0.02 threshold raw) must NOT fire. */
-  le_engine* e = cond_engine();
-  CHECK(record_start_sound(e, 1) == LE_OK);
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only */
-  long idx = 0;
-  cond_feed_sine(e, 50.0f, 0.3f, 2 * 48000, &idx, NULL); /* settle notch */
-  CHECK(le_engine_record(e, 0) == LE_OK);                /* arm */
-  drain(e);
-  cond_feed_sine(e, 50.0f, 0.3f, 24000, &idx, NULL); /* pure hum: no fire */
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
-  cond_feed_sine(e, 1000.0f, 0.3f, 4800, &idx, NULL); /* real signal: fires */
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
-  le_engine_destroy(e);
-
-  /* Raw (stage disabled): the same hum DOES fire — the trigger change is the
-   * conditioning, not a threshold move. */
-  le_engine* e2 = cond_engine();
-  CHECK(record_start_sound(e2, 1) == LE_OK);
-  CHECK(le_engine_record(e2, 0) == LE_OK);
-  drain(e2);
-  long idx2 = 0;
-  cond_feed_sine(e2, 50.0f, 0.3f, 4800, &idx2, NULL);
-  le_engine_get_snapshot(e2, &s);
-  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
-  le_engine_destroy(e2);
-}
-
-/* An enable EDGE resets the stage's filter/envelope state: charge the HPF
- * with DC, disable, re-enable, feed silence — a stale state would ring;
- * a reset one is exactly silent. */
-static void test_cond_enable_edge_resets_state(void) {
-  printf("test_cond_enable_edge_resets_state\n");
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
-
-  float in[64];
-  float out[64];
-  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
-  for (int b = 0; b < 8; ++b) le_engine_process(e, out, in, 64); /* charge */
-
-  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
-  drain(e);
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  drain(e);
-
-  float silence[64] = {0};
-  le_engine_process(e, out, silence, 64);
-  for (int i = 0; i < 64; ++i) CHECK(out[i] == 0.0f);
-  le_engine_destroy(e);
-}
-
-/* NaN/Inf containment (the fx_sanitize twin at the stage boundary): a
- * non-finite device sample maps to 0 BEFORE any state update, so it can
- * never latch into the biquad/envelope states — every conditioned output
- * stays finite, and the poisoned run is BIT-EXACT the run that was fed a
- * literal 0 at those samples (instant recovery, nothing to flush). */
-static void test_cond_nan_input_contained(void) {
-  printf("test_cond_nan_input_contained\n");
-  le_engine* a = cond_engine();
-  le_engine* b = cond_engine();
-  CHECK(le_engine_set_input_conditioning(a, 0, 1) == LE_OK);
-  CHECK(le_engine_set_input_conditioning(b, 0, 1) == LE_OK);
-  drain(a); /* full default stage: HPF 40 + hum x4 + expander */
-  drain(b);
-
-  float in_a[64];
-  float in_b[64];
-  float out_a[64];
-  float out_b[64];
-  for (int blk = 0; blk < 16; ++blk) {
-    for (int i = 0; i < 64; ++i) {
-      const float s = 0.3f * sinf(2.0f * 3.14159265f * 220.0f *
-                                  (float)(blk * 64 + i) / 48000.0f);
-      in_a[i] = s;
-      in_b[i] = s;
-    }
-    if (blk == 1) {
-      in_a[10] = NAN;
-      in_b[10] = 0.0f;
-      in_a[20] = INFINITY;
-      in_b[20] = 0.0f;
-      in_a[30] = -INFINITY;
-      in_b[30] = 0.0f;
-    }
-    le_engine_process(a, out_a, in_a, 64);
-    le_engine_process(b, out_b, in_b, 64);
-    for (int i = 0; i < 64; ++i) {
-      CHECK(isfinite(out_a[i]));
-      CHECK(out_a[i] == out_b[i]);
-    }
-  }
-  le_engine_destroy(a);
-  le_engine_destroy(b);
-}
-
-/* The oversized-block raw fallback is COUNTED, not silent: a block larger
- * than the conditioned-copy scratch passes through raw (bit-exact) and bumps
- * a_cond_fallback_blocks once; a normal block conditions and leaves the
- * counter alone — the telemetry that proves real backends never hit this. */
-static void test_cond_scratch_fallback_counted(void) {
-  printf("test_cond_scratch_fallback_counted\n");
-  enum { BIG = LE_COND_SCRATCH_FRAMES + 808 };
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  drain(e); /* default stage: HPF 40 on — conditioning WOULD color this */
-  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
-                             memory_order_relaxed) == 0u);
-
-  static float big_in[BIG];
-  static float big_out[BIG];
-  for (int i = 0; i < BIG; ++i) {
-    big_in[i] = 0.3f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
-  }
-  le_engine_process(e, big_out, big_in, BIG);
-  /* Fallback: raw passthrough (the monitor's dry path), counted exactly once. */
-  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
-                             memory_order_relaxed) == 1u);
-  int exact = 1;
-  for (int i = 0; i < BIG; ++i) {
-    if (big_out[i] != big_in[i]) exact = 0;
-  }
-  CHECK(exact);
-
-  /* A normal-sized block conditions again and does NOT bump the counter. */
-  float out[64];
-  le_engine_process(e, out, big_in, 64);
-  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
-                             memory_order_relaxed) == 1u);
-  le_engine_destroy(e);
-}
-
-/* Not a gate — an informational CPU smoke: ns/sample for one fully-engaged
- * stage (HPF + 4 notches + expander), printed for the PR body / the S3
- * on-Pi bench to compare against. */
-static void test_cond_cpu_smoke(void) {
-  printf("test_cond_cpu_smoke\n");
-  le_input_cond c;
-  memset(&c, 0, sizeof(c));
-  le_cond_seed_defaults(&c, 48000);
-  static float buf[4096];
-  for (int i = 0; i < 4096; ++i) {
-    buf[i] = 0.1f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
-  }
-  const long total = 10L * 1000L * 1000L;
-  const long reps = total / 4096;
-  const clock_t t0 = clock();
-  for (long r = 0; r < reps; ++r) {
-    le_cond_process_block(&c, buf, 4096, 1);
-  }
-  const clock_t t1 = clock();
-  const double ns_per_sample = (double)(t1 - t0) / CLOCKS_PER_SEC * 1e9 /
-                               ((double)reps * 4096.0);
-  printf("  cond stage (HPF + 4 notches + expander): %.1f ns/sample\n",
-         ns_per_sample);
-  CHECK(ns_per_sample >= 0.0); /* informational, not a budget gate */
-}
-
-/* ---- input clip ("HOT") detector + snapshot masks (input clip, S2) ----
- *
- * Always on, no params, RAW path: LE_CLIP_RUN (4) consecutive samples at
- * |s| >= LE_CLIP_LEVEL (0.999) latch le_snapshot.input_clip_mask's bit for
- * that input, held LE_CLIP_HOLD_MS (1500) of engine time past the last run.
- * These tests pin the run threshold, the cross-block run carry, the hold
- * decay, per-input independence, the raw-vs-conditioned split (a clipped
- * input the stage reshapes below the rail still flags HOT), the loopback
- * exclusion, and input_cond_mask as the stage-actually-runs truth. */
 
 /* Feeds one block of `frames` mono frames, all zero except a run of `runlen`
  * samples at `level` starting at `at`. */
@@ -37978,7 +37806,7 @@ static void clip_feed_run(le_engine* e, float level, int at, int runlen,
 static void test_clip_rail_run_latches(void) {
   printf("test_clip_rail_run_latches\n");
   le_snapshot s;
-  le_engine* e = cond_engine();
+  le_engine* e = clip_engine();
   le_engine_get_snapshot(e, &s);
   CHECK(s.input_clip_mask == 0u); /* untouched engine: nothing HOT */
 
@@ -38005,7 +37833,7 @@ static void test_clip_rail_run_latches(void) {
 static void test_clip_run_spans_blocks(void) {
   printf("test_clip_run_spans_blocks\n");
   le_snapshot s;
-  le_engine* e = cond_engine();
+  le_engine* e = clip_engine();
   clip_feed_run(e, 0.9995f, 62, 2, 64); /* run tail ends the block */
   le_engine_get_snapshot(e, &s);
   CHECK(s.input_clip_mask == 0u); /* only 2 so far */
@@ -38015,7 +37843,7 @@ static void test_clip_run_spans_blocks(void) {
 
   /* An interrupted pair does NOT carry: 2 + gap + 2 in one block stays 0
    * on a fresh engine (any sub-rail sample resets the run). */
-  le_engine* e2 = cond_engine();
+  le_engine* e2 = clip_engine();
   static float in[64];
   static float out[64];
   for (int i = 0; i < 64; ++i) in[i] = 0.0f;
@@ -38033,7 +37861,7 @@ static void test_clip_run_spans_blocks(void) {
 static void test_clip_hold_decay(void) {
   printf("test_clip_hold_decay\n");
   le_snapshot s;
-  le_engine* e = cond_engine();
+  le_engine* e = clip_engine();
   clip_feed_run(e, 0.9995f, 0, LE_CLIP_RUN, 64); /* latch near block start */
   le_engine_get_snapshot(e, &s);
   CHECK(s.input_clip_mask == 0x1u);
@@ -38085,35 +37913,6 @@ static void test_clip_mask_per_input_independent(void) {
   le_engine_destroy(e);
 }
 
-/* THE raw-path pin: with the conditioning stage reshaping the signal below
- * the rail (a 40 Hz HPF flattens a DC rail to ~0 in the conditioned copy
- * every consumer records/hears), the detector still flags HOT — it reads the
- * RAW device buffer, so the ADC's clip cannot hide behind its own repair. */
-static void test_clip_detects_raw_under_conditioning(void) {
-  printf("test_clip_detects_raw_under_conditioning\n");
-  le_snapshot s;
-  le_engine* e = cond_engine();
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
-
-  /* One second of a +1.0 DC rail — every raw sample is at the clip level. */
-  static float in[64];
-  static float out[64];
-  for (int i = 0; i < 64; ++i) in[i] = 1.0f;
-  float settled = 1.0f;
-  for (int b = 0; b < 750; ++b) {
-    le_engine_process(e, out, in, 64);
-    settled = out[63];
-  }
-  /* The conditioned monitor path has HPF'd the rail to (numerically)
-   * nothing — what records/sounds is nowhere near the clip level... */
-  CHECK(fabsf(settled) < 0.01f);
-  /* ...and HOT flags anyway, off the raw buffer. */
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.input_clip_mask == 0x1u);
-  le_engine_destroy(e);
-}
-
 /* Loopback-excluded channels never flag: they carry our own output back, so
  * a hot master must not read as a hot input. */
 static void test_clip_excluded_input_ignored(void) {
@@ -38135,100 +37934,16 @@ static void test_clip_excluded_input_ignored(void) {
   le_engine_destroy(e);
 }
 
-/* input_cond_mask is the stage-actually-runs truth: 0 by default, bit c on
- * enable, off again on disable — and an enabled stage on a loopback-excluded
- * input reads 0 (it never runs; the latency harness owns those channels). */
-static void test_cond_mask_snapshot(void) {
-  printf("test_cond_mask_snapshot\n");
-  le_snapshot s;
-  le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 2, 2, 96000);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.input_cond_mask == 0u); /* untouched engine: nothing conditioned */
-
-  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
-  CHECK(le_engine_set_input_conditioning(e, 1, 1) == LE_OK);
-  drain(e); /* the enable publishes via the ring (audio-thread commit) */
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.input_cond_mask == 0x3u);
-
-  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.input_cond_mask == 0x2u);
-
-  /* Excluding ch1 removes its bit even though its enable stays set. */
-  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.input_cond_mask == 0u);
-  le_engine_destroy(e);
-}
-
-/* --- Vendored RNNoise smoke test (#697 S7) -------------------------------
+/* --- Half-band decimator (#697 S8) ---------------------------------------
  *
- * Proves the vendored third_party/rnnoise TUs compile, link, and run: init a
- * denoiser state, push frames of deterministic pseudo-noise, and assert the
- * output is finite everywhere and actually differs from the input. The
- * restore pipeline that consumes this (engine_restore.c) is a later slice —
- * this guards only the vendor drop + build wiring.
- */
-static void test_rnnoise_vendor_smoke(void) {
-  printf("test_rnnoise_vendor_smoke\n");
-
-  /* The half-band 96k<->48k resample plan in #697 hard-assumes RNNoise's
-   * fixed 48 kHz / 480-sample frame contract; fail loudly if an upgrade of
-   * the vendored copy ever changes it. */
-  CHECK(rnnoise_get_frame_size() == 480);
-  CHECK(rnnoise_get_size() > 0);
-
-  DenoiseState* st = rnnoise_create(NULL); /* NULL = built-in model weights */
-  CHECK(st != NULL);
-  if (st == NULL) return;
-
-  enum { kFrame = 480, kFrames = 8 };
-  float in[kFrame];
-  float out[kFrame];
-  uint32_t seed = 0x5EED5u;
-  int finite = 1;
-  int differs = 0;
-  float vad = -1.0f;
-  for (int f = 0; f < kFrames; ++f) {
-    for (int i = 0; i < kFrame; ++i) {
-      /* LCG white noise at a plausible 16-bit-scaled input level (RNNoise
-       * expects short-range floats, not +/-1.0). */
-      seed = seed * 1664525u + 1013904223u;
-      in[i] = ((float)(seed >> 8) / 8388608.0f - 1.0f) * 4096.0f;
-      out[i] = in[i];
-    }
-    vad = rnnoise_process_frame(st, out, in);
-    for (int i = 0; i < kFrame; ++i) {
-      if (!isfinite(out[i])) finite = 0;
-      if (out[i] != in[i]) differs = 1;
-    }
-  }
-  CHECK(finite == 1);   /* no NaN/inf anywhere in the denoised output */
-  CHECK(differs == 1);  /* the denoiser actually touched the signal */
-  CHECK(vad >= 0.0f && vad <= 1.0f); /* VAD probability stays in range */
-
-  rnnoise_destroy(st);
-}
-
-/* --- Restore de-clip + half-band DSP (#697 S8) ---------------------------
- *
- * Pure-DSP tests for the offline loop-close restoration pieces: the de-clip
- * repair (restore_declip.c — flat-run detection, Hermite spline for short
- * runs, two-sided Burg AR for long ones) and the 2:1 half-band resampler
- * (restore_halfband.c). Synthetic clipped sines with SNR assertions: the
- * clean sine is the ground truth the repair is measured against. The SNR
- * bounds sit ~5 dB below measured values (macOS clang -O2) to absorb libm /
- * compiler variation without letting a real regression slip through. */
-
-static le_declip_scratch g_declip_scratch;
+ * The 2:1 half-band decimator (halfband.c) the decoder halves a file's rate
+ * with. The SNR bounds sit several dB below measured values (macOS clang -O2)
+ * to absorb libm / compiler variation without letting a real regression slip
+ * through. */
 
 /* SNR of sig against ref over [skip, n - skip), in dB. */
-static double declip_snr_db(const float* ref, const float* sig, uint32_t n,
-                            uint32_t skip) {
+static double hb_snr_db(const float* ref, const float* sig, uint32_t n,
+                        uint32_t skip) {
   double se = 0.0;
   double re = 0.0;
   uint32_t i;
@@ -38241,17 +37956,7 @@ static double declip_snr_db(const float* ref, const float* sig, uint32_t n,
   return 10.0 * log10(re / se);
 }
 
-static double declip_max_abs_diff(const float* x, uint32_t n) {
-  double mx = 0.0;
-  uint32_t i;
-  for (i = 1; i < n; ++i) {
-    const double d = fabs((double)x[i] - (double)x[i - 1]);
-    if (d > mx) mx = d;
-  }
-  return mx;
-}
-
-static int declip_all_finite(const float* x, uint32_t n) {
+static int hb_all_finite(const float* x, uint32_t n) {
   uint32_t i;
   for (i = 0; i < n; ++i) {
     if (!isfinite(x[i])) return 0;
@@ -38259,327 +37964,38 @@ static int declip_all_finite(const float* x, uint32_t n) {
   return 1;
 }
 
-enum { kDeclipN = 9600 };
-static float g_declip_clean[kDeclipN];
-static float g_declip_clipped[kDeclipN];
-static float g_declip_work[kDeclipN];
+enum { kHalfbandN = 9600 };
+static float g_hb_in[kHalfbandN];
+static float g_hb_half[kHalfbandN / 2 + 1];
+static float g_hb_ref[kHalfbandN / 2 + 1];
 
-/* Synthesize amp * sin(2 pi freq / sr) into clean[] and its hard-clipped
- * (+/-0.999) twin into clipped[]; returns the longest at-rail run. */
-static int declip_make_clipped_sine(double freq, double amp, double sr) {
-  int run = 0;
-  int longest = 0;
-  int i;
-  for (i = 0; i < kDeclipN; ++i) {
-    float c = (float)(amp * sin(2.0 * M_PI * freq * (double)i / sr));
-    g_declip_clean[i] = c;
-    if (c > 0.999f) c = 0.999f;
-    if (c < -0.999f) c = -0.999f;
-    g_declip_clipped[i] = c;
-    if (c >= 0.999f || c <= -0.999f) {
-      ++run;
-      if (run > longest) longest = run;
-    } else {
-      run = 0;
-    }
-  }
-  return longest;
-}
-
-/* Short runs (1 kHz at 96 k clips ~10 samples per peak): the Hermite spline
- * path. The reconstruction must recover most of the lost peak (SNR jumps
- * well past the clipped signal's), actually reach back above the rail, and
- * stay seam-continuous — the largest sample-to-sample step of the repaired
- * signal must stay in the same league as the clean sine's own steepest step
- * (a bad seam is a step-discontinuity an order of magnitude above it). */
-static void test_declip_short_run_spline_reconstructs(void) {
-  int longest;
-  int32_t reps;
-  double snr_in;
-  double snr_out;
-  float peak = 0.0f;
-  int i;
-  printf("test_declip_short_run_spline_reconstructs\n");
-  longest = declip_make_clipped_sine(1000.0, 1.05, 96000.0);
-  CHECK(longest > 0 && longest <= 16); /* geometry: spline path exercised */
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps > 0);
-  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
-  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
-  CHECK(snr_out > snr_in + 12.0); /* measured: 33.0 -> 50.9 dB */
-  CHECK(snr_out > 45.0);
-  for (i = 0; i < kDeclipN; ++i) {
-    if (g_declip_work[i] > peak) peak = g_declip_work[i];
-  }
-  CHECK(peak > 1.01f);  /* the repair went back above the rail */
-  CHECK(peak <= 1.998f); /* ... but stayed inside the documented clamp */
-  CHECK(declip_max_abs_diff(g_declip_work, kDeclipN) <
-        2.0 * declip_max_abs_diff(g_declip_clean, kDeclipN));
-}
-
-/* Long runs (100 Hz at 96 k clips ~180 samples per peak): the two-sided
- * Burg AR path with spline-pre-filled context. Same assertion shape as the
- * spline test, plus the amplitude bound. */
-static void test_declip_long_run_ar_reconstructs(void) {
-  int longest;
-  int32_t reps;
-  double snr_in;
-  double snr_out;
-  float peak = 0.0f;
-  int i;
-  printf("test_declip_long_run_ar_reconstructs\n");
-  longest = declip_make_clipped_sine(100.0, 1.2, 96000.0);
-  CHECK(longest > 16 && longest <= 512); /* geometry: AR path exercised */
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps > 0);
-  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
-  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
-  CHECK(snr_out > snr_in + 8.0); /* measured: 19.5 -> 30.3 dB */
-  CHECK(snr_out > 25.0);
-  for (i = 0; i < kDeclipN; ++i) {
-    if (g_declip_work[i] > peak) peak = g_declip_work[i];
-  }
-  CHECK(peak > 1.1f);   /* recovered most of the true 1.2 peak */
-  CHECK(peak <= 1.998f);
-  CHECK(declip_max_abs_diff(g_declip_work, kDeclipN) <
-        2.0 * declip_max_abs_diff(g_declip_clean, kDeclipN));
-  /* Every repaired sample respects the floor: never back under the rail
-   * the original sat at. */
-  for (i = 0; i < kDeclipN; ++i) {
-    if (g_declip_clipped[i] >= 0.999f) CHECK(g_declip_work[i] >= 0.999f);
-    if (g_declip_clipped[i] <= -0.999f) CHECK(g_declip_work[i] <= -0.999f);
-  }
-}
-
-/* Dense clipping (440 Hz at 1.5: runs a half-period apart) still improves —
- * the AR context pre-fill keeps neighboring rails out of the fit. And the
- * algorithm is sample-rate agnostic: the same signal at 48 k repairs too. */
-static void test_declip_dense_and_rate_agnostic(void) {
-  double snr_in;
-  double snr_out;
-  int32_t reps;
-  printf("test_declip_dense_and_rate_agnostic\n");
-  (void)declip_make_clipped_sine(440.0, 1.5, 96000.0);
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps > 0);
-  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
-  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
-  CHECK(snr_out > snr_in + 15.0); /* measured: 12.0 -> 37.3 dB */
-
-  (void)declip_make_clipped_sine(440.0, 1.3, 48000.0);
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps > 0);
-  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
-  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
-  CHECK(snr_out > snr_in + 15.0); /* measured: 16.0 -> 46.5 dB */
-}
-
-/* A signal that never reaches the rail comes back bit-exact — the repair
- * must be a no-op on healthy audio, not a subtle resmoothing. */
-static void test_declip_no_clip_passthrough_bit_exact(void) {
-  int32_t reps;
-  int i;
-  printf("test_declip_no_clip_passthrough_bit_exact\n");
-  for (i = 0; i < kDeclipN; ++i) {
-    g_declip_clipped[i] =
-        (float)(0.99 * sin(2.0 * M_PI * 997.0 * (double)i / 96000.0));
-  }
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps == 0);
-  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
-}
-
-/* Runs touching the buffer edges have no context on one side and pass
- * through untouched (documented conservative behavior); interior runs in
- * the same buffer still repair. */
-static void test_declip_edge_runs_pass_through(void) {
-  int32_t reps;
-  int i;
-  int start_untouched = 1;
-  int end_untouched = 1;
-  int interior_touched = 0;
-  printf("test_declip_edge_runs_pass_through\n");
-  /* cos starts AT the peak -> the first run touches sample 0; force the
-   * tail to rail so the last run touches the final sample. */
-  for (i = 0; i < kDeclipN; ++i) {
-    float c = (float)(1.2 * cos(2.0 * M_PI * 100.0 * (double)i / 96000.0));
-    if (c > 0.999f) c = 0.999f;
-    if (c < -0.999f) c = -0.999f;
-    g_declip_clipped[i] = c;
-  }
-  for (i = kDeclipN - 40; i < kDeclipN; ++i) g_declip_clipped[i] = 0.999f;
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps > 0);
-  for (i = 0; i < 100; ++i) {
-    if (g_declip_work[i] != g_declip_clipped[i]) start_untouched = 0;
-  }
-  for (i = kDeclipN - 40; i < kDeclipN; ++i) {
-    if (g_declip_work[i] != g_declip_clipped[i]) end_untouched = 0;
-  }
-  for (i = 100; i < kDeclipN - 40; ++i) {
-    if (g_declip_work[i] != g_declip_clipped[i]) interior_touched = 1;
-  }
-  CHECK(start_untouched == 1);
-  CHECK(end_untouched == 1);
-  CHECK(interior_touched == 1);
-  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
-}
-
-/* Sustained clipping is not a transient peak: an embedded rail stretch
- * longer than LE_DECLIP_MAX_RUN passes through untouched, and a buffer that
- * is ALL rail comes back bit-exact. */
-static void test_declip_sustained_rail_pass_through(void) {
-  int32_t reps;
-  int i;
-  int untouched = 1;
-  printf("test_declip_sustained_rail_pass_through\n");
-  for (i = 0; i < kDeclipN; ++i) {
-    g_declip_clipped[i] =
-        (float)(0.5 * sin(2.0 * M_PI * 500.0 * (double)i / 96000.0));
-  }
-  for (i = 1000; i < 1000 + 600; ++i) g_declip_clipped[i] = 0.999f;
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps == 0); /* 600 > LE_DECLIP_MAX_RUN (512): nothing to repair */
-  for (i = 1000; i < 1600; ++i) {
-    if (g_declip_work[i] != g_declip_clipped[i]) untouched = 0;
-  }
-  CHECK(untouched == 1);
-
-  for (i = 0; i < kDeclipN; ++i) g_declip_clipped[i] = 0.999f;
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps == 0);
-  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
-}
-
-/* Pathological inputs stay bounded and deterministic: alternating +/- rail
- * (every sample its own length-1 run) must produce finite output inside the
- * documented clamp, bit-identical across two runs. */
-static void test_declip_pathological_stable_and_deterministic(void) {
-  int32_t reps;
-  int i;
-  float mx = 0.0f;
-  printf("test_declip_pathological_stable_and_deterministic\n");
-  for (i = 0; i < kDeclipN; ++i) {
-    g_declip_clipped[i] = (i & 1) ? 0.999f : -0.999f;
-  }
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
-                           &g_declip_scratch);
-  CHECK(reps >= 0);
-  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
-  for (i = 0; i < kDeclipN; ++i) {
-    if (fabsf(g_declip_work[i]) > mx) mx = fabsf(g_declip_work[i]);
-  }
-  CHECK(mx <= 2.0f * 0.999f + 1e-6f);
-  memcpy(g_declip_clean, g_declip_clipped, sizeof(g_declip_clean));
-  le_declip_process(g_declip_clean, kDeclipN, 0.999f, &g_declip_scratch);
-  CHECK(memcmp(g_declip_work, g_declip_clean, sizeof(g_declip_work)) == 0);
-}
-
-/* Two runs over the same REAL clipped signal are bit-identical (the scratch
- * carries no state between calls), and invalid arguments are rejected. */
-static void test_declip_deterministic_and_arg_guards(void) {
-  printf("test_declip_deterministic_and_arg_guards\n");
-  (void)declip_make_clipped_sine(313.0, 1.4, 96000.0);
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  le_declip_process(g_declip_work, kDeclipN, 0.999f, &g_declip_scratch);
-  le_declip_process(g_declip_clipped, kDeclipN, 0.999f, &g_declip_scratch);
-  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
-
-  CHECK(le_declip_process(NULL, kDeclipN, 0.999f, &g_declip_scratch) == -1);
-  CHECK(le_declip_process(g_declip_work, kDeclipN, 0.999f, NULL) == -1);
-  CHECK(le_declip_process(g_declip_work, 0, 0.999f, &g_declip_scratch) == -1);
-  CHECK(le_declip_process(g_declip_work, kDeclipN, 0.0f,
-                          &g_declip_scratch) == -1);
-  CHECK(le_declip_process(g_declip_work, kDeclipN, -1.0f,
-                          &g_declip_scratch) == -1);
-}
-
-/* A clip_level passed well below the material's true peaks (0.4 on a clean
- * 0.9 sine) sweeps healthy loud samples into detected runs. The repair may
- * reshape inside those runs, but the documented posture holds sample by
- * sample: a positive sample never decreases, a negative one never increases
- * (the +6 dB cap binds reconstructed values only — where the original
- * already exceeds it, the ceiling lifts to the original). Regression: the
- * old floor-then-cap order pulled the true 0.9 peaks down to 0.8. */
-static void test_declip_low_clip_level_never_attenuates(void) {
-  int32_t reps;
-  int i;
-  float peak = 0.0f;
-  printf("test_declip_low_clip_level_never_attenuates\n");
-  for (i = 0; i < kDeclipN; ++i) {
-    g_declip_clipped[i] =
-        (float)(0.9 * sin(2.0 * M_PI * 500.0 * (double)i / 96000.0));
-  }
-  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
-  reps = le_declip_process(g_declip_work, kDeclipN, 0.4f, &g_declip_scratch);
-  CHECK(reps > 0); /* the low level detects "runs" all over the sine */
-  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
-  for (i = 0; i < kDeclipN; ++i) {
-    if (g_declip_clipped[i] >= 0.0f) {
-      CHECK(g_declip_work[i] >= g_declip_clipped[i]);
-    } else {
-      CHECK(g_declip_work[i] <= g_declip_clipped[i]);
-    }
-    /* Per-sample ceiling: max(2 * clip_level, |original|). */
-    CHECK(fabsf(g_declip_work[i]) <=
-          (fabsf(g_declip_clipped[i]) > 0.8f ? fabsf(g_declip_clipped[i])
-                                             : 0.8f) +
-              1e-6f);
-    if (fabsf(g_declip_work[i]) > peak) peak = fabsf(g_declip_work[i]);
-  }
-  CHECK(peak >= 0.89f); /* the true 0.9 peaks survived the cap */
-}
-
-static float g_hb_half[kDeclipN / 2 + 1];
-static float g_hb_back[kDeclipN];
-
-/* The half-band pair is transparent in the passband AND delay-compensated:
- * a 96 k -> 48 k -> 96 k round trip lines up sample-for-sample with the
- * input (no group-delay shift for the caller to undo), at both a low and a
- * high in-band frequency. Edges excluded: the zero-padded boundary is the
- * one place the filter sees signal that does not exist. */
-static void test_halfband_roundtrip_transparent_and_aligned(void) {
+/* Fills g_hb_in with a 96 kHz sine at [hz], decimates it, and returns the
+ * output's SNR against the same sine generated directly at 48 kHz. */
+static double hb_passband_snr_db(double hz) {
   int32_t dl;
-  int32_t il;
   int i;
-  printf("test_halfband_roundtrip_transparent_and_aligned\n");
-  for (i = 0; i < kDeclipN; ++i) {
-    g_declip_clean[i] =
-        (float)(0.8 * sin(2.0 * M_PI * 1000.0 * (double)i / 96000.0));
+  for (i = 0; i < kHalfbandN; ++i) {
+    g_hb_in[i] = (float)(0.8 * sin(2.0 * M_PI * hz * (double)i / 96000.0));
   }
-  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
-  CHECK(dl == kDeclipN / 2);
-  il = le_halfband_interpolate(g_hb_half, (uint32_t)dl, g_hb_back);
-  CHECK(il == kDeclipN);
-  /* Sample-aligned comparison IS the delay test: any residual group delay
-   * would collapse this SNR to single digits. */
-  CHECK(declip_snr_db(g_declip_clean, g_hb_back, kDeclipN, 128) > 60.0);
+  dl = le_halfband_decimate(g_hb_in, kHalfbandN, g_hb_half);
+  CHECK(dl == kHalfbandN / 2);
+  for (i = 0; i < kHalfbandN / 2; ++i) {
+    g_hb_ref[i] = (float)(0.8 * sin(2.0 * M_PI * hz * (double)i / 48000.0));
+  }
+  return hb_snr_db(g_hb_ref, g_hb_half, kHalfbandN / 2, 64);
+}
 
-  for (i = 0; i < kDeclipN; ++i) {
-    g_declip_clean[i] =
-        (float)(0.8 * sin(2.0 * M_PI * 8000.0 * (double)i / 96000.0));
-  }
-  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
-  il = le_halfband_interpolate(g_hb_half, (uint32_t)dl, g_hb_back);
-  CHECK(il == kDeclipN);
-  CHECK(declip_snr_db(g_declip_clean, g_hb_back, kDeclipN, 128) > 60.0);
+/* The decimator is transparent in the passband AND delay-compensated: a
+ * 96 k sine decimated to 48 k lines up sample-for-sample with the same sine
+ * generated at 48 k (no group-delay shift for the caller to undo), at a low
+ * and a high in-band frequency (measured: 133 dB and 101 dB). A one-sample
+ * misalignment would read about 18 dB at 1 kHz and 0 dB at 8 kHz, so the
+ * aligned comparison IS the delay test. Edges excluded: the zero-padded
+ * boundary is the one place the filter sees signal that does not exist. */
+static void test_halfband_passband_transparent_and_aligned(void) {
+  printf("test_halfband_passband_transparent_and_aligned\n");
+  CHECK(hb_passband_snr_db(1000.0) > 120.0);
+  CHECK(hb_passband_snr_db(8000.0) > 95.0);
 }
 
 /* Decimation must actually reject what would alias: a 30 kHz tone at 96 k
@@ -38591,14 +38007,14 @@ static void test_halfband_rejects_out_of_band(void) {
   double out_rms = 0.0;
   int i;
   printf("test_halfband_rejects_out_of_band\n");
-  for (i = 0; i < kDeclipN; ++i) {
-    g_declip_clean[i] =
+  for (i = 0; i < kHalfbandN; ++i) {
+    g_hb_in[i] =
         (float)(0.8 * sin(2.0 * M_PI * 30000.0 * (double)i / 96000.0));
-    in_rms += (double)g_declip_clean[i] * (double)g_declip_clean[i];
+    in_rms += (double)g_hb_in[i] * (double)g_hb_in[i];
   }
-  in_rms = sqrt(in_rms / kDeclipN);
-  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
-  CHECK(dl == kDeclipN / 2);
+  in_rms = sqrt(in_rms / kHalfbandN);
+  dl = le_halfband_decimate(g_hb_in, kHalfbandN, g_hb_half);
+  CHECK(dl == kHalfbandN / 2);
   for (i = 128; i < dl - 128; ++i) {
     out_rms += (double)g_hb_half[i] * (double)g_hb_half[i];
   }
@@ -38607,379 +38023,23 @@ static void test_halfband_rejects_out_of_band(void) {
 }
 
 /* Length contracts and argument guards: odd input length rounds the
- * decimated length up ((n + 1) / 2), interpolate always returns 2n, NULL /
- * zero-length arguments are rejected, and lengths whose OUTPUT count would
- * not fit the int32 return are rejected up front (before any buffer access —
- * the small buffers passed with the huge n below are never touched, or these
- * calls would crash). */
+ * decimated length up ((n + 1) / 2), NULL / zero-length arguments are
+ * rejected, and a length whose OUTPUT count would not fit the int32 return is
+ * rejected up front (before any buffer access — the small buffer passed with
+ * the huge n below is never touched, or the call would crash). */
 static void test_halfband_lengths_and_arg_guards(void) {
   float in7[7] = {0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f};
   float dec[4];
-  float interp[14];
   printf("test_halfband_lengths_and_arg_guards\n");
   CHECK(le_halfband_decimate(in7, 7, dec) == 4);
-  CHECK(le_halfband_interpolate(dec, 4, interp) == 8);
-  CHECK(declip_all_finite(interp, 8) == 1);
+  CHECK(hb_all_finite(dec, 4) == 1);
   CHECK(le_halfband_decimate(NULL, 7, dec) == -1);
   CHECK(le_halfband_decimate(in7, 0, dec) == -1);
   CHECK(le_halfband_decimate(in7, 7, NULL) == -1);
-  CHECK(le_halfband_interpolate(NULL, 4, interp) == -1);
-  CHECK(le_halfband_interpolate(dec, 0, interp) == -1);
-  CHECK(le_halfband_interpolate(dec, 4, NULL) == -1);
-  /* int32 return-width guards: 2n (interpolate) and (n + 1) / 2 (decimate,
-   * incl. the n + 1 wrap at UINT32_MAX) must fit; the old code returned a
-   * wrapped/negative length after writing the whole output. */
-  CHECK(le_halfband_interpolate(dec, (uint32_t)INT32_MAX / 2u + 1u, interp) ==
-        -1);
-  CHECK(le_halfband_interpolate(dec, UINT32_MAX, interp) == -1);
+  /* int32 return-width guard: (n + 1) / 2, incl. the n + 1 wrap at
+   * UINT32_MAX, must fit; the old code returned a wrapped/negative length
+   * after writing the whole output. */
   CHECK(le_halfband_decimate(in7, UINT32_MAX, dec) == -1);
-  /* Largest accepted interpolate length is exactly INT32_MAX / 2 — guard is
-   * a contract line, not a fuzzy margin (rejected before y is touched, so
-   * no giant buffer is needed to probe it... but an accepted call WOULD
-   * write, so only the reject side is probed here). */
-}
-
-/* ---- Offline loop-close restoration worker (#697 S9) --------------------
- *
- * The engine half of #697's restoration: le_engine_restore_track queues a
- * background pass (de-clip + optional RNNoise) over a track's captured lanes
- * and publishes the repaired audio as one lockstep undo layer, so a plain
- * le_engine_undo reverts to the raw take and the RT audio thread is untouched.
- * These tests drive the worker deterministically the way the wet-cache tests
- * do — le_engine_get_snapshot both drains the event ring (running
- * le_restore_tick) and reads the per-track restore_state, so polling it in a
- * spin advances the copy -> queue -> render -> publish pipeline to completion.
- * Fidelity is asserted against a clean reference sine (the same technique the
- * S8 de-clip tests use); the raw-vs-restored / undo roundtrip and the two
- * rev/gate guards are exercised directly and deterministically. */
-
-enum { kRestoreLen = 9600 };
-static float g_rs_clean[kRestoreLen];
-static float g_rs_clipped[kRestoreLen];
-static float g_rs_live[kRestoreLen];
-static float g_rs_pre[kRestoreLen];
-
-/* Fills g_rs_clean with amp * sin and g_rs_clipped with its +/-0.999 twin;
- * returns the longest at-rail run (so a test can assert the AR path is hit). */
-static int restore_build_clipped_sine(double freq, double amp, double sr) {
-  int run = 0;
-  int longest = 0;
-  for (int i = 0; i < kRestoreLen; ++i) {
-    float c = (float)(amp * sin(2.0 * M_PI * freq * (double)i / sr));
-    g_rs_clean[i] = c;
-    if (c > 0.999f) c = 0.999f;
-    if (c < -0.999f) c = -0.999f;
-    g_rs_clipped[i] = c;
-    if (c >= 0.999f || c <= -0.999f) {
-      if (++run > longest) longest = run;
-    } else {
-      run = 0;
-    }
-  }
-  return longest;
-}
-
-/* Counts samples flattened EXACTLY at the +/-0.999 rail in [skip, n - skip):
- * de-clip reconstructs those peaks back ABOVE the rail, so this drops sharply
- * after a repair (a >= 0.999 count would not — the repair's floor keeps every
- * once-clipped sample at or above the rail it sat on). */
-static int restore_rail_count(const float* buf, int n, int skip) {
-  int c = 0;
-  for (int i = skip; i < n - skip; ++i) {
-    if (buf[i] == 0.999f || buf[i] == -0.999f) ++c;
-  }
-  return c;
-}
-
-static le_engine* restore_engine(void) {
-  le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 1, 1, 20000);
-  return e;
-}
-
-/* Records a defining loop from [pcm] ([len] frames) and settles it to PLAYING
- * (the same finalize-through-crossfade shape cache_record_loop uses; the
- * overlap is fed silence, so only the first few ms of the head are folded and
- * every interior measurement window is untouched). */
-static void restore_record(le_engine* e, const float* pcm, int len) {
-  le_engine_record(e, 0);
-  int off = 0;
-  while (off < len) {
-    float in[64];
-    float out[64];
-    int n = len - off;
-    if (n > 64) n = 64;
-    for (int i = 0; i < n; ++i) in[i] = pcm[off + i];
-    le_engine_process(e, out, in, (uint32_t)n);
-    off += n;
-  }
-  le_engine_record(e, 0);
-  drain(e);
-  pump_frames(e, 0.0f, 600); /* crossfade overlap -> finalize -> PLAYING */
-}
-
-/* Spins (draining via the snapshot poll on each turn) until track [ch] reports
- * restore_state 0 (idle). Returns 1 on idle, 0 on timeout. */
-static int restore_wait_idle(le_engine* e, int32_t ch, int timeout_ms) {
-  le_snapshot s;
-  for (int k = 0; k < timeout_ms; ++k) {
-    le_engine_get_snapshot(e, &s);
-    if (s.tracks[ch].restore_state == 0) return 1;
-    test_sleep_ms(1);
-  }
-  return 0;
-}
-
-static int32_t restore_track_state(le_engine* e, int32_t ch) {
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  return s.tracks[ch].restore_state;
-}
-
-/* The end-to-end worker path repairs a clipped captured lane: a hard-clipped
- * sine is recorded, restored on the background worker, and the published live
- * buffer has its peaks reconstructed (SNR up, rail samples down) — proving the
- * copy -> worker DSP -> undo-layer publish pipeline actually lands. */
-static void test_restore_worker_repairs_clipped_lane(void) {
-  printf("test_restore_worker_repairs_clipped_lane\n");
-  const int longest = restore_build_clipped_sine(300.0, 1.2, 48000.0);
-  CHECK(longest > 16); /* AR path exercised */
-  le_engine* e = restore_engine();
-  restore_record(e, g_rs_clipped, kRestoreLen);
-
-  /* Pre-restore live buffer == the recorded clipped take (interior). */
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
-        kRestoreLen);
-  const int rail_pre = restore_rail_count(g_rs_pre, kRestoreLen, 1200);
-  CHECK(rail_pre > 0);
-  const double snr_pre = declip_snr_db(g_rs_clean, g_rs_pre, kRestoreLen, 1200);
-
-  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
-  CHECK(restore_wait_idle(e, 0, 5000) == 1);
-
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  const int rail_post = restore_rail_count(g_rs_live, kRestoreLen, 1200);
-  const double snr_post = declip_snr_db(g_rs_clean, g_rs_live, kRestoreLen, 1200);
-  float peak_post = 0.0f;
-  for (int i = 1200; i < kRestoreLen - 1200; ++i) {
-    if (g_rs_live[i] > peak_post) peak_post = g_rs_live[i];
-  }
-  CHECK(rail_post < rail_pre / 2); /* most flat-topped runs reconstructed away */
-  CHECK(peak_post > 1.01f);         /* the repair went back above the rail */
-  CHECK(snr_post > snr_pre + 6.0);  /* measurably closer to the clean sine */
-  CHECK(declip_all_finite(g_rs_live, kRestoreLen) == 1);
-
-  /* The raw take is one undo away (the plan's retention model). */
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].undo_depth >= 1);
-  CHECK(le_engine_undo(e, 0) == LE_OK);
-  drain(e);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* back to raw */
-
-  le_engine_destroy(e);
-}
-
-/* The commit publishes the restored PCM as a lockstep undo layer and reverts
- * cleanly (undo -> raw, redo -> restored), and the rev guard [B5] declines a
- * commit whose take moved. Driven through le_restore_commit_layer directly so
- * the publish/undo/redo roundtrip and the rev check are fully deterministic. */
-static void test_restore_commit_undo_redo_and_rev_guard(void) {
-  printf("test_restore_commit_undo_redo_and_rev_guard\n");
-  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
-  le_engine* e = restore_engine();
-  restore_record(e, g_rs_clipped, kRestoreLen);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
-        kRestoreLen);
-
-  /* A synthetic "restored" buffer: a constant the raw take never holds. */
-  static float synth[kRestoreLen];
-  for (int i = 0; i < kRestoreLen; ++i) synth[i] = 0.25f;
-  float* restored[LE_MAX_LANES] = {0};
-  restored[0] = synth;
-
-  const uint32_t rev = le_engine_track_audio_rev(e, 0);
-  /* Stale rev is refused, the take is untouched. */
-  CHECK(le_restore_commit_layer(e, 0, 0x1u, rev + 1u, kRestoreLen, restored) ==
-        LE_ERR_INVALID);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
-
-  /* Matching rev publishes; the live buffer becomes the restored PCM. */
-  CHECK(le_restore_commit_layer(e, 0, 0x1u, rev, kRestoreLen, restored) == LE_OK);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  for (int i = 0; i < kRestoreLen; ++i) CHECK(g_rs_live[i] == 0.25f);
-  /* The publish bumped the revision (the wet-cache invalidation half). */
-  CHECK(le_engine_track_audio_rev(e, 0) != rev);
-
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].undo_depth >= 1);
-  CHECK(le_engine_undo(e, 0) == LE_OK); /* raw take back */
-  drain(e);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
-  CHECK(le_engine_redo(e, 0) == LE_OK); /* restored take back */
-  drain(e);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  for (int i = 0; i < kRestoreLen; ++i) CHECK(g_rs_live[i] == 0.25f);
-
-  le_engine_destroy(e);
-}
-
-/* A content revision bump between enqueue and the first copy tick discards the
- * job outright (the copy-step seqlock guard), and the take is never touched. */
-static void test_restore_enqueue_rev_bump_discards(void) {
-  printf("test_restore_enqueue_rev_bump_discards\n");
-  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
-  le_engine* e = restore_engine();
-  restore_record(e, g_rs_clipped, kRestoreLen);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
-        kRestoreLen);
-
-  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
-  /* Bump the revision before any drain runs the chunked enqueue copy: the copy
-   * step's rev re-check must discard the job. */
-  le_audio_rev_bump(&e->tracks[0]);
-  CHECK(restore_wait_idle(e, 0, 2000) == 1); /* job released, back to idle */
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* untouched */
-
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].undo_depth == 0); /* nothing published */
-
-  le_engine_destroy(e);
-}
-
-/* Restoration is asynchronous and off the RT path: after the trigger the live
- * buffer is unchanged, pumping audio (the RT thread) does not advance or apply
- * it, and only the control-side snapshot poll drives it to completion. */
-static void test_restore_runs_off_rt_thread(void) {
-  printf("test_restore_runs_off_rt_thread\n");
-  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
-  le_engine* e = restore_engine();
-  restore_record(e, g_rs_clipped, kRestoreLen);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
-        kRestoreLen);
-
-  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
-  /* Pump audio WITHOUT draining: the RT callback never runs restoration, so the
-   * copy pipeline cannot advance and the take stays raw. */
-  pump_frames(e, 0.0f, 4096);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* not yet applied */
-
-  /* Now let the control side drive it; it lands. */
-  CHECK(restore_wait_idle(e, 0, 5000) == 1);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) != 0); /* applied */
-
-  le_engine_destroy(e);
-}
-
-/* Disabled / declined requests are no-ops: empty flags and an empty lane mask
- * are rejected, restoration is refused while capturing, and a refused call
- * leaves the take bit-exact. */
-static void test_restore_noop_when_disabled(void) {
-  printf("test_restore_noop_when_disabled\n");
-  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
-  le_engine* e = restore_engine();
-  restore_record(e, g_rs_clipped, kRestoreLen);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
-        kRestoreLen);
-
-  CHECK(le_engine_restore_track(e, 0, 0x1u, 0u) == LE_ERR_INVALID);  /* no flags */
-  CHECK(le_engine_restore_track(e, 0, 0u, LE_RESTORE_DECLIP) ==
-        LE_ERR_INVALID);                                             /* no lanes */
-  CHECK(le_engine_restore_track(e, 9, 0x1u, LE_RESTORE_DECLIP) ==
-        LE_ERR_INVALID);                                             /* bad track */
-  CHECK(le_engine_cancel_restore(e, 0) == LE_ERR_INVALID); /* nothing in flight */
-
-  /* None of the declines above touched the take. */
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
-
-  /* Refused while capturing (a fresh overdub pass): restoration must decline
-   * rather than race the write head. (The overdub itself does move the take,
-   * so the bit-exact compare is done above, before this.) */
-  le_engine_record(e, 0);
-  pump_frames(e, 0.5f, 256);
-  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_ERR_INVALID);
-  le_engine_record(e, 0);
-  drain(e);
-  pump_frames(e, 0.0f, 600);
-
-  le_engine_destroy(e);
-}
-
-/* Cancel drops an in-flight pass without publishing; a second request is
- * refused while one is already in flight (one job engine-wide). */
-static void test_restore_cancel_and_single_job(void) {
-  printf("test_restore_cancel_and_single_job\n");
-  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
-  le_engine* e = restore_engine();
-  restore_record(e, g_rs_clipped, kRestoreLen);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
-        kRestoreLen);
-
-  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
-  /* One job engine-wide: a second request while busy is refused. */
-  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_ERR_INVALID);
-  CHECK(restore_track_state(e, 0) != 0); /* in flight */
-  CHECK(le_engine_cancel_restore(e, 0) == LE_OK);
-  CHECK(restore_wait_idle(e, 0, 5000) == 1);
-
-  /* Cancel-before-commit leaves the raw take in place. (A cancel that lands
-   * after the worker already published is a benign race — not asserted — but a
-   * cancel driven synchronously here always precedes the collect tick.) */
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
-
-  le_engine_destroy(e);
-}
-
-/* Denoise-enabled restoration at 48 kHz (RNNoise passthrough rate) completes,
- * publishes finite audio, and stays undo-reversible — the worker's denoise leg
- * runs end to end without wedging or NaN-poisoning the take. */
-static void test_restore_denoise_completes_finite(void) {
-  printf("test_restore_denoise_completes_finite\n");
-  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
-  le_engine* e = restore_engine();
-  restore_record(e, g_rs_clipped, kRestoreLen);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
-        kRestoreLen);
-
-  CHECK(le_engine_restore_track(e, 0, 0x1u,
-                                LE_RESTORE_DECLIP | LE_RESTORE_DENOISE) == LE_OK);
-  CHECK(restore_wait_idle(e, 0, 8000) == 1);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(declip_all_finite(g_rs_live, kRestoreLen) == 1);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) != 0); /* the pass ran */
-
-  le_snapshot s;
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].undo_depth >= 1);
-  CHECK(le_engine_undo(e, 0) == LE_OK);
-  drain(e);
-  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
-        kRestoreLen);
-  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
-
-  le_engine_destroy(e);
 }
 
 /* ---- #595 lane slot reclaim: per-lane recoverable + trailing trim ----
@@ -41123,6 +40183,9 @@ int main(void) {
   test_a_post_edit_leaves_the_print_standing();
   test_a_pre_channel_edit_drops_the_print();
   test_cache_cached_matches_live_every_builtin();
+  test_whole_track_print_stays_live_on_a_short_loop();
+  test_cache_midlap_edit_steps();
+  test_cache_clock_lfo_prints_only_lap_locked();
   test_cache_octaver_on_a_partial_hop_loop_stays_live();
   test_cache_bypassed_octaver_prints_on_a_partial_hop_loop();
   test_cache_octaver_relaunch_rerenders();
@@ -41156,46 +40219,14 @@ int main(void) {
   test_plog_codes_are_distinct();
   test_session_import_round_trips_recoverable();
 
-  test_cond_setters_validate();
-  test_cond_bypass_bitexact();
-  test_cond_hpf_rejects_dc();
-  test_cond_hum_notch_response();
-  test_cond_expander_static_curve();
-  test_cond_lane_monitor_wysiwyg_metering_raw();
-  test_cond_zero_added_latency();
-  test_cond_latency_harness_unaffected();
-  test_cond_auto_trigger_reads_conditioned();
-  test_cond_enable_edge_resets_state();
-  test_cond_nan_input_contained();
-  test_cond_scratch_fallback_counted();
-  test_cond_cpu_smoke();
   test_clip_rail_run_latches();
   test_clip_run_spans_blocks();
   test_clip_hold_decay();
   test_clip_mask_per_input_independent();
-  test_clip_detects_raw_under_conditioning();
   test_clip_excluded_input_ignored();
-  test_cond_mask_snapshot();
-  test_rnnoise_vendor_smoke();
-  test_declip_short_run_spline_reconstructs();
-  test_declip_long_run_ar_reconstructs();
-  test_declip_dense_and_rate_agnostic();
-  test_declip_no_clip_passthrough_bit_exact();
-  test_declip_edge_runs_pass_through();
-  test_declip_sustained_rail_pass_through();
-  test_declip_pathological_stable_and_deterministic();
-  test_declip_deterministic_and_arg_guards();
-  test_declip_low_clip_level_never_attenuates();
-  test_halfband_roundtrip_transparent_and_aligned();
+  test_halfband_passband_transparent_and_aligned();
   test_halfband_rejects_out_of_band();
   test_halfband_lengths_and_arg_guards();
-  test_restore_worker_repairs_clipped_lane();
-  test_restore_commit_undo_redo_and_rev_guard();
-  test_restore_enqueue_rev_bump_discards();
-  test_restore_runs_off_rt_thread();
-  test_restore_noop_when_disabled();
-  test_restore_cancel_and_single_job();
-  test_restore_denoise_completes_finite();
   test_read_head_identity_is_exact();
   test_read_head_fractional_rates();
   test_read_head_reorigin_and_wrap();

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +23,48 @@ void main() {
           home: Scaffold(body: ConsoleCard(children: rows)),
         ),
       );
+
+  group('ConsoleRow layout', () {
+    testWidgets('the title takes twice the share of the value, and a long '
+        'subtitle keeps all its words (#1590 DEV-1)', (
+      tester,
+    ) async {
+      // The console's own width: the test font's square glyphs make the
+      // sentence far wider than it is on the console.
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      const subtitle =
+          'A higher cap reserves more memory per track. Change it with no '
+          'tracks recorded.';
+      await pumpRows(tester, [
+        const ConsoleRow(
+          key: Key('row'),
+          title: 'Maximum loop length',
+          subtitle: subtitle,
+          value: '5 min',
+          expanded: false,
+          showDivider: false,
+        ),
+      ]);
+      final row = tester.getRect(find.byKey(const Key('row')));
+      final sub = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.text(subtitle),
+          matching: find.byType(RichText),
+        ),
+      );
+      // The title column takes more than half the row, and the value stays
+      // at the row's right edge.
+      expect(sub.size.width, greaterThan(row.width / 2));
+      expect(
+        tester.getTopRight(find.text('5 min')).dx,
+        greaterThan(row.right - row.width / 4),
+      );
+      expect(sub.didExceedMaxLines, isFalse);
+    });
+  });
 
   group('ConsoleRow semantics', () {
     // A row announces itself as one composed label, so its visible words are

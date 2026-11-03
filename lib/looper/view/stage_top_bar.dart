@@ -38,7 +38,8 @@ class StageTopBar extends StatelessWidget {
   /// The bar's height — the pen's 96.
   static const double height = 96;
 
-  /// The bar's inset from the screen edges — the pen's 60.
+  /// The stage's inset from the screen edges — the pen's 60. The footer and
+  /// the track run share it.
   static const double sideInset = 60;
 
   /// The gap between the trailing buttons — the pen's 24.
@@ -301,9 +302,12 @@ class _ResetMixerButton extends StatelessWidget {
     if (!showing || mustAct) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(right: StageTopBar._gap),
+      // Boxed like A, the view menu, the tuner and settings beside it
+      // (#1590 STG-4).
       child: _StageIconButton(
         key: const Key('stage_reset_mixer'),
         semanticLabel: l10n.a11yMixerReset,
+        bordered: true,
         onTap: () => unawaited(_confirmReset(context)),
         child: Icon(
           LucideIcons.rotateCcw,

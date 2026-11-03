@@ -1,23 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:midi_client/midi_client.dart';
 
-/// Builds the long-lived [MidiControllerSource] for the controller pipeline,
-/// kept deliberately separate from audio bootstrap so the MIDI lifecycle is
-/// fully independent of the audio engine ("switching MIDI never restarts
-/// audio").
+/// The factory `MidiDeviceRepository` opens one native capture per device
+/// with, kept deliberately separate from audio bootstrap so the MIDI
+/// lifecycle is fully independent of the audio engine ("losing MIDI never
+/// restarts audio").
 ///
-/// Construction opens the native MIDI library; on a build/platform with no MIDI
-/// backend (or a flavor where the native library is absent) it can throw, so
-/// this returns `null` rather than aborting launch — the looper stays fully
-/// usable without MIDI and the picker shows its empty state.
-///
-/// The saved device is *reconnected* by `MidiSetupCubit` (created eagerly at
-/// the shell), so all open/close lives on one path; this helper only builds it.
-MidiControllerSource? createNativeMidiSource({
+/// Building a capture opens the native MIDI library; on a build/platform with
+/// no MIDI backend (or a flavor where the native library is absent) it throws,
+/// so this probes once and returns `null` rather than aborting launch — the
+/// looper stays fully usable without MIDI and the page shows its empty state.
+MidiControllerSource Function()? nativeMidiCaptures({
   MidiControllerSource Function()? factory,
 }) {
+  final create = factory ?? MidiControllerSource.new;
   try {
-    return (factory ?? MidiControllerSource.new)();
+    unawaited(create().dispose());
+    return create;
   } on Object catch (error, stackTrace) {
     // A missing/unsupported native MIDI backend is non-fatal: log and run on.
     FlutterError.reportError(

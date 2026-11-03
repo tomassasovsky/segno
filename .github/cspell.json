@@ -20,11 +20,14 @@
   "useGitignore": true,
   "ignorePaths": [
     "**/third_party/clap/**",
-    "**/third_party/rnnoise/**",
     "**/third_party/signalsmith-stretch/**",
     "**/third_party/vst3sdk/**"
   ],
   "words": [
+    "midlap",
+    "relock",
+    "relocking",
+    "EDID",
     "prefault",
     "checkpt",
     "oversample",
@@ -604,7 +607,6 @@
     "libpango",
     "libpipewire",
     "libpulse",
-    "librnnoise",
     "libsegno",
     "libstdc",
     "licence",

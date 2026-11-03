@@ -7,7 +7,8 @@ import 'package:midi_client/src/midi_client_base.dart';
 import 'package:midi_client/src/midi_device.dart';
 import 'package:segno_engine/segno_engine_ffi.dart';
 
-/// Native musical MIDI capture, owned and disposed by ControllerRepository.
+/// Native musical MIDI capture of one device, owned and disposed by
+/// `MidiDeviceRepository`, which keeps one per plugged-in device.
 ///
 /// Complete messages are never debounced: doing so loses rapid releases and
 /// halves of high-resolution controls. Each opened callback captures its own

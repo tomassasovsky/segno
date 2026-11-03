@@ -2302,6 +2302,38 @@ void main() {
       expect(footer.top, greaterThanOrEqualTo(run.bottom));
     });
 
+    testWidgets('the top bar and the footer end at the same edges (#1590 '
+        'STG-1)', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      Rect rect(String key) => tester.getRect(find.byKey(Key(key)));
+      expect(rect('stage_footer').left, rect('stage_library').left);
+      expect(rect('stage_footer_mode').right, rect('stage_settings').right);
+    });
+
+    testWidgets("the Mixer's Reset is boxed like its neighbours (#1590 "
+        'STG-4)', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      tracks.showView(StageView.mixer);
+      await pump(tester);
+      Border? border(String key) =>
+          (tester
+                          .widget<Container>(
+                            find
+                                .descendant(
+                                  of: find.byKey(Key(key)),
+                                  matching: find.byType(Container),
+                                )
+                                .first,
+                          )
+                          .decoration
+                      as BoxDecoration?)
+                  ?.border
+              as Border?;
+      expect(border('stage_reset_mixer'), border('stage_settings'));
+      expect(border('stage_reset_mixer'), isNotNull);
+    });
+
     testWidgets('the shared dBFS scales flank the run and line up with the '
         'meters', (tester) async {
       seed(const LooperState(tracks: [Track()]));

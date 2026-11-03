@@ -291,8 +291,8 @@ int32_t le_engine_lane_slot_cap_for_test(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t slot);
 
 /* Copies up to [max_frames] frames of lane [lane]'s LIVE loop buffer
- * (pool[a_live]) into [out], for the #697 restoration tests to inspect what a
- * loop-close restoration pass published. Returns the number of frames copied
+ * (pool[a_live]) into [out], for tests to inspect the image a track plays.
+ * Returns the number of frames copied
  * (min of the recorded length and [max_frames]), or 0 for out-of-range indices
  * or an unallocated/empty live slot. Control-thread test seam; not part of the
  * FFI surface. */

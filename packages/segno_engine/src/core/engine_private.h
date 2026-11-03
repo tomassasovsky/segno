@@ -644,7 +644,7 @@ typedef struct le_fx_par {
   uint32_t f0;    /* the block's first frame in the callback's buffer */
   uint32_t n;     /* its frames */
   uint32_t clock; /* the FX clock of frame f0 */
-  const float* in; /* the conditioned input (in_c) */
+  const float* in; /* the device input */
   int32_t ch_in, sr, fx_cap;
   int32_t jobs;
   int32_t job_mon[LE_MAX_MONITORED_INPUTS]; /* the monitor each job runs */
@@ -697,13 +697,13 @@ typedef struct le_fx_slice_voice {
   int32_t arg;  /* BACK: the frames back; MIRROR: the ring index it mirrors */
   int32_t len;  /* MIRROR: the frames it was latched for */
   float gain;   /* the gain it last played at */
-  float step;   /* fading out: the gain it loses each frame */
+  float step;   /* the gain it loses each frame fading out (its crossfade's) */
 } le_fx_slice_voice;
 
 /* A slot's Slicer runtime: the slice playing (id 0: none) and up to two
- * fading out after being cut short, the pattern and step in force (a new
- * one waits for the slice playing to end), the gliding mix, how far the
- * output has crossfaded to the input (with no tempo) and the
+ * fading out (the slice before, or one cut short), the pattern and step in
+ * force (a new one waits for the slice playing to end), the gliding mix,
+ * how far the output has crossfaded to the input (with no tempo) and the
  * beat last seen. */
 typedef struct le_fx_slice_state {
   double id;
@@ -715,7 +715,6 @@ typedef struct le_fx_slice_state {
   int32_t step;
   float mix;
   float pass;
-  float wet_g; /* the playing slice's gain this frame */
 } le_fx_slice_state;
 
 typedef struct le_fx_state {
@@ -750,6 +749,11 @@ typedef struct le_fx_state {
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];
+  /* A clock LFO's last frame, or its own frame count for a state nobody
+   * clocks (its phase then counts from its reset, as it always did), and the
+   * rate it last ran at (le_clock_lfo, #1620). */
+  uint32_t lfo_frame[LE_FX_MAX];
+  double lfo_rate[LE_FX_MAX];
   float* delay[LE_FX_MAX][2];
   /* The delay rings of each slot (bit c for delay[slot][c]) the thread that
    * runs the chain knows to be allocated: marked when a kind that runs on the
@@ -920,6 +924,10 @@ typedef struct le_wet_entry {
    * octaver in the printed chain (#941). The audio thread drops such a print
    * at a lap top that starts elsewhere on the hop. */
   uint32_t hop_tag;
+  /* 0 for a print whose key does not hold the top's place on the lap grid;
+   * else 1 + that place (le_fx_lap_position) for the top it was rendered
+   * from: a clock LFO in the printed chain (#1620). */
+  uint32_t lap_tag;
 } le_wet_entry;
 
 /* THE wet-cache key predicate: whether [ent] was rendered for exactly the
@@ -1004,6 +1012,20 @@ typedef struct le_fx_slot_meta {
  * cache's retained pair, so the callback finds the render for the content a
  * swap brings back (Undo, Redo, Peel) in the same block (review M1). */
 #define LE_SRC_CANDIDATES 2
+
+/* A live chain's RUN (#939): the stretch it has played one unchanged key
+ * over, counted in its track's laps (le_track::laps). Audio-thread-local.
+ * The block-start key check sets [restart]; the mix step then begins the run
+ * (le_chain_run_begin), as it does when the chain returns to live play from
+ * a print ([live] going 1). [lap0] is the lap count it began at and [at_top]
+ * whether it began on a loop top, which is what le_run_matches_print weighs
+ * a print against. */
+typedef struct le_chain_run {
+  uint32_t lap0;
+  int32_t at_top;
+  int32_t restart;
+  int32_t live;
+} le_chain_run;
 
 typedef struct le_lane {
   _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
@@ -1125,7 +1147,7 @@ typedef struct le_lane {
   /* Chain-edit generation: bumped (relaxed fetch_add) by EVERY path that can
    * change this lane's chain fingerprint, so the audio thread's per-buffer
    * cache check can skip the full fingerprint refold while nothing changed
-   * (snapshot_lane_cache caches its last verdict keyed on {entry, gen}).
+   * (snapshot_lane_cache refolds run_fp below only when it moved).
    * BUMP SITES — a missed one lets a stale verdict play stale audio, so this
    * list is audited like the a_audio_rev table above: the five lane FX
    * setters in engine_commands.c (type, count, param, enabled,
@@ -1133,27 +1155,34 @@ typedef struct le_lane {
    * le_lane_reset (engine.c), and the audio thread's LE_CMD_SET_LANE_FX /
    * _FX_COUNT handlers (engine_process.c — covers the raw
    * le_engine_post_command escape hatch that bypasses the setters). Every
-   * chain mutation flows through one of those. Safety direction: a spurious
-   * bump merely re-verifies the fingerprint once; only a MISSING bump is a
-   * bug. */
+   * chain mutation flows through one of those, AFTER its stores: the bump
+   * releases them and the audio thread's load acquires, so a refold for a
+   * generation it has seen reads that edit's values (#939 review). Safety
+   * direction: a spurious bump merely re-verifies the fingerprint once; only
+   * a MISSING bump is a bug. */
   _Atomic uint32_t a_fx_gen;
-  /* Audio-thread-LOCAL fingerprint-verdict cache (plain fields, never read
-   * by control): the entry pointer and a_fx_gen value at which the full
-   * fingerprint comparison last PASSED. While both still match (and the
-   * cheap rev/vol/len fields do too), the per-buffer check skips the ~40
-   * atomic loads + FNV refold — the standing cost of a cached steady state
-   * drops to one relaxed load. The track's loop-top hop position is part
-   * of an octaver print's key (#941) and moves on a relaunch without a chain
-   * edit, so the verdict also records it and a change forces the refold. */
-  const le_wet_entry* cache_fp_entry;
-  uint32_t cache_fp_gen;
-  uint32_t cache_fp_hop;
+  /* Audio-thread-LOCAL: the live Pre chain's run (#939, le_chain_run) and
+   * the key it is playing: content, volume, length and Pre fingerprint, as
+   * the print's key names them. snapshot_lane_cache compares the key with
+   * run_* each buffer, restarts the run on a change and checks a published
+   * print against it. The fingerprint is refolded only when run_gen or
+   * run_top (the track's loop top, whose hop position an octaver print's key
+   * folds, #941, and whose lap-grid place a clock LFO's does, #1620) moved,
+   * so a cached steady state costs a few relaxed loads instead of a ~40-load
+   * FNV refold per buffer. */
+  le_chain_run run;
+  uint64_t run_fp;
+  uint32_t run_rev;
+  uint32_t run_vol;
+  uint32_t run_gen;
+  uint32_t run_top;
+  int32_t run_len;
 } le_lane;
 
 /* Bumps a lane's chain-edit generation (see a_fx_gen above). Both threads
  * bump: control setters and the audio-thread ring handlers. */
 static inline void le_lane_fx_gen_bump(le_lane* ln) {
-  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_relaxed);
+  atomic_fetch_add_explicit(&ln->a_fx_gen, 1u, memory_order_release);
 }
 
 /* One hardware input's live monitor (engine-level, one slot per input).
@@ -1211,66 +1240,12 @@ typedef struct le_monitor_input {
   le_fx_state fx;
 } le_monitor_input;
 
-/* ---- Per-input conditioning stage (input conditioning, S1) ---- */
-
-/* Hum-notch bank width: notches at k*base for k = 1..harmonics. */
-#define LE_COND_HUM_MAX 8
-
-/* Conditioned-copy scratch capacity in FRAMES. The audio thread copies the
- * interleaved input block into the preallocated scratch once per block (only
- * when at least one input's stage is enabled), so the scratch must hold one
- * device callback's worth of frames. 8192 comfortably exceeds any real
- * device/backend period (64-4096 typical); a larger block — only the native
- * tests' synthetic mega-blocks ever exceed this — falls back to the raw
- * buffer for that block (documented, RT-safe, no allocation). */
-#define LE_COND_SCRATCH_FRAMES 8192
-
-/* Expander attack: fixed ~5 ms one-pole, no lookahead (zero added latency). */
-#define LE_COND_ATTACK_MS 5.0f
-
-/* Conditioning parameter defaults (le_cond_param order). */
-#define LE_COND_DEF_HPF_HZ 40.0f
-#define LE_COND_DEF_HUM_HZ 50.0f
-#define LE_COND_DEF_HUM_HARMONICS 4
-#define LE_COND_DEF_EXP_THRESHOLD_DB (-55.0f)
-#define LE_COND_DEF_EXP_RATIO 2.0f
-#define LE_COND_DEF_EXP_RELEASE_MS 150.0f
-
-/* One biquad section, transposed direct-form II (5 MAC/sample). */
-typedef struct le_cond_biquad {
-  float b0, b1, b2, a1, a2; /* a0-normalized coefficients */
-  float s1, s2;             /* state */
-} le_cond_biquad;
-
-/* One hardware input's conditioning stage (engine-level, one slot per input,
- * bounded by LE_MAX_MONITORED_INPUTS like the monitor slots). Published config
- * atomics are the control-visible truth (seeded to defaults at configure);
- * everything below them is AUDIO-THREAD-LOCAL DSP state, recomputed by
- * apply_command in lockstep with the ring commands (le_cond_prepare /
- * le_cond_update_param, engine_cond.c) and reset on configure and on enable
- * edges so a re-engaged stage never rings with stale history. */
-typedef struct le_input_cond {
-  _Atomic int32_t a_enabled;                /* 0/1, default 0 */
-  _Atomic uint32_t a_hpf_hz_bits;           /* float Hz; 0 = section off */
-  _Atomic uint32_t a_hum_hz_bits;           /* float Hz; 0 = section off */
-  _Atomic int32_t a_hum_harmonics;          /* 1..LE_COND_HUM_MAX */
-  _Atomic uint32_t a_exp_threshold_db_bits; /* float dB */
-  _Atomic uint32_t a_exp_ratio_bits;        /* float; 1.0 = section off */
-  _Atomic uint32_t a_exp_release_ms_bits;   /* float ms */
-  /* Audio-thread-local derived state (never read by the control thread). */
-  int hpf_on;
-  le_cond_biquad hpf;
-  int hum_n; /* active notch sections (0 = section off) */
-  le_cond_biquad hum[LE_COND_HUM_MAX];
-  int exp_on;
-  float env;          /* envelope follower state */
-  float atk_coef;     /* one-pole attack coefficient */
-  float rel_coef;     /* one-pole release coefficient */
-  float thr_lin;      /* threshold as linear amplitude */
-  float thr_inv;      /* 1 / thr_lin */
-  int exp_pow;        /* integer part of (ratio - 1): whole u-powers */
-  float exp_frac;     /* fractional part of (ratio - 1): linear blend */
-} le_input_cond;
+/* Instrument bus capacity in FRAMES (#1197): each instrument slot's mono bus
+ * holds one device callback's worth of frames. 8192 comfortably exceeds any
+ * real device/backend period (64-4096 typical); a larger block (only the
+ * native tests' synthetic mega-blocks ever exceed this) leaves the instrument
+ * sources silent for that block (RT-safe, no allocation). */
+#define LE_INST_BUS_FRAMES 8192
 
 /* A bus-stage effect chain owner (FX v3 part 1b): the exact chain block shape
  * of le_lane / le_monitor_input — published config atomics, the two-level
@@ -1359,9 +1334,9 @@ typedef enum {
   LE_HIST_PEEL = 2,  /* a Peel (#1164): on the undo stack, the image Peel
                       * removed (the former live slot) plus `skipped`; on the
                       * redo stack a marker with slot -1 that re-peels. */
-  LE_HIST_PROCESSED = 3, /* a loop-close restoration commit (#697 S9): the raw
-                          * take beneath a conditioned live image. Undo/Redo
-                          * swap it like a LAYER; Peel never consumes it. */
+  /* 3 was a loop-close restoration commit (#697), removed with the
+   * restoration; the code stays unallocated so an old Session can never be
+   * misread. */
   LE_HIST_LENGTH = 4, /* a length edit (#1168): `slot` holds the image to put
                        * back, `len` its length and `start` where its frame 0
                        * sits in the live image. Undo/Redo re-apply it through
@@ -1486,6 +1461,18 @@ typedef struct le_track {
    * thread's own copy, so it stores only on a change. */
   _Atomic uint32_t a_top_clock;
   uint32_t top_clock;
+  /* Audio-thread-LOCAL lap count (#939): one per wrap while the track
+   * sounds; [lap_rp] is the previous frame's index, -1 while silent.
+   * bus_run is the track chain's run (le_chain_run), keyed by the
+   * whole-track print's key (bus_run_fp, _rev, _len). */
+  uint32_t laps;
+  int32_t lap_rp;
+  int32_t lap_identity; /* the head could play a print on [lap_rp]'s frame:
+                         * forward, at 1x, from a whole-sample origin */
+  le_chain_run bus_run;
+  uint64_t bus_run_fp;
+  uint32_t bus_run_rev;
+  int32_t bus_run_len;
   _Atomic int32_t lane_count; /* Active lanes, release-published after prepared
                                * buffers and routing become callback-owned. */
 
@@ -1570,12 +1557,10 @@ typedef struct le_track {
 
   /* ---- control-thread-owned undo bookkeeping ---- */
   int32_t outstanding_slots[4]; /* shadow slots posted, not yet retired */
-  /* A Bounce install in flight (#1202): the bundle, and the two slots it
-   * names that no stack holds yet (the incoming image and the outgoing live
-   * slot), pinned against reuse until its outcome is filed. Every other
-   * history motion on the track waits for it (LE_ERR_NOT_READY). */
+  /* A Bounce install in flight (#1202), until its outcome is filed. Every
+   * other history motion on the track waits for it (LE_ERR_NOT_READY); see
+   * le_bounce_busy for why no slot can be taken on the track meanwhile. */
   struct le_bounce_bundle* bounce_inflight;
-  int32_t bounce_pin[2]; /* slot + 1; 0 = none */
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   /* An undo's overdub punch-out has been posted and not yet applied.
@@ -1656,7 +1641,7 @@ typedef struct le_track {
   /* control: a posted LE_CMD_SET_LENGTH not yet filed (#1168) — 1 + the pool
    * slot it publishes, else 0. It is a state command (state_cmds_posted), so
    * `length_ack` names its acknowledgement; until then every history motion,
-   * capture, Clear and restoration commit on the track is refused NOT_READY,
+   * capture and Clear on the track is refused NOT_READY,
    * which keeps the callback's a_live store from racing them. At the ack the
    * drain files `length_file` per `length_op` if a_length_result is LE_OK. */
   int32_t length_pending;
@@ -1788,13 +1773,6 @@ typedef struct le_track {
   _Atomic int32_t a_peel_depth; /* published le_peel_depth: LAYER entries Peel
                                  * can still consume, under a_undo_depth's
                                  * gates (0 on an EMPTY track) — #1164 */
-  /* Offline loop-close restoration telemetry (#697 S9): 0 idle, 1 queued
-   * (enqueue copy pending / QUEUED for the worker), 2 running (worker DSP in
-   * flight). Written by the control-thread le_restore_tick, read by the
-   * snapshot; the audio thread never touches it. A completed pass publishes
-   * its result as an ordinary undo layer, so the restored/raw takes surface
-   * through the existing undo_depth, not here. */
-  _Atomic int32_t a_restore_state;
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
    * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
@@ -2184,6 +2162,10 @@ typedef struct le_bounce_bundle {
   struct le_prepared_fx* lane_fx;
   struct le_prepared_fx* track_fx;
   le_hist_entry prev; /* callback-written: the track before the install */
+  /* Control-written at post: the live slot the install replaces, which the
+   * collect files as history. track_select_slot never hands it, or
+   * target.slot, out while the bundle is in flight. */
+  int32_t out_slot;
   /* Callback-written when the install waited for a tail: the state the
    * track had before the Bounce stopped it, which Undo restores. */
   int32_t parked;
@@ -2428,35 +2410,10 @@ struct le_engine {
    * break the cable feedback loop; a fresh start restores defaults). */
   le_monitor_input monitors[LE_MAX_MONITORED_INPUTS];
 
-  /* Per-input conditioning stages (input conditioning, S1): HPF + hum notches
-   * + downward expander, run once per block into cond_buf — the preallocated
-   * conditioned copy of the interleaved input — upstream of BOTH the lane
-   * fan-out and the monitor split. Metering / clip / latency keep reading the
-   * raw device buffer. cond_buf is control-thread allocated at configure
-   * (LE_COND_SCRATCH_FRAMES * in_channels floats) and freed at destroy /
-   * reallocated at configure; the audio thread only ever reads the pointer
-   * (set before the device runs). NULL (allocation failure) simply keeps the
-   * raw path — conditioning silently off, never a crash. */
-  le_input_cond cond[LE_MAX_CHANNELS]; /* device channels only (#1197) */
-  float* cond_buf;
-  int64_t cond_buf_cap; /* capacity in floats (frames * channels) */
-  /* Bumped once per block in which conditioning was WANTED (>= 1 input
-   * enabled) but fell back to the raw path — the block exceeded the scratch
-   * (LE_COND_SCRATCH_FRAMES) or the scratch failed to allocate. The fallback
-   * is per-block, so a backend that ever delivers oversized periods would
-   * alternate conditioned/raw across gaps (stale filter states -> clicks);
-   * this counter is the telemetry that turns "only synthetic tests hit this"
-   * from aspiration into an observable fact. Same idiom as
-   * a_midi_clock_overruns / a_perf_log_overruns: not surfaced via
-   * le_snapshot yet (no RT assert either — the callback must never abort);
-   * native tests read the atomic directly, and a snapshot field can be added
-   * the day a real consumer needs it. */
-  _Atomic uint32_t a_cond_fallback_blocks;
-
   /* ---- Instruments (#1197; engine_instruments.c) ----
    * `synth` is allocated at create and re-initialised by every configure or
    * reopen (device closed); afterwards only the audio thread touches it.
-   * `inst_bus` holds LE_MAX_INSTRUMENTS mono buses of LE_COND_SCRATCH_FRAMES,
+   * `inst_bus` holds LE_MAX_INSTRUMENTS mono buses of LE_INST_BUS_FRAMES,
    * slot-major, allocated with the engine. */
   struct le_synth* synth;
   float* inst_bus;
@@ -2890,16 +2847,6 @@ struct le_engine {
    * SETTING: seeded in le_engine_create, persists across configure. */
   struct le_fx_cache* cache;
   _Atomic int64_t a_fx_cache_cap;
-
-  /* Offline loop-close restoration worker (#697 S9): opaque control/worker
-   * state owned by engine_restore.c — the same opaque-pointer shape as the
-   * wet cache above. NULL until le_restore_init (end of configure); torn down
-   * (worker JOINED before any pool free [R2](d)) by le_restore_shutdown from
-   * le_engine_stop, the top of le_engine_configure, and le_engine_destroy. The
-   * audio thread never touches this pointer — the whole restoration surface is
-   * a control-thread publish of an undo layer (le_restore_commit_layer) plus
-   * the per-track a_restore_state telemetry. */
-  struct le_restore* restore;
 
   /* The shared render recipe (#1202, engine_render.c): at most one job.
    * render_job is control-owned; render_retired holds a cancelled job until
