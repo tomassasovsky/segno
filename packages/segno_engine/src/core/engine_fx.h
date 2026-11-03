@@ -339,7 +339,11 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
 
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay heads, one-pole memory, octaver runtime, reverb lines) so a
- * freshly engaged effect starts clean. Does NOT allocate/free the delay ring or
+ * freshly engaged effect starts clean. [type] is the kind the slot runs from
+ * here on: the octaver runtime and its heap buffers are touched only for a
+ * kind of the octaver family (le_fx_type_hops), because the control thread
+ * may be preparing those buffers for a coming retype while the slot runs
+ * another kind (#1522). Does NOT allocate/free the delay ring or
  * octaver heap buffers (the control thread owns those). Of the
  * enable-crossfade runtime it clears only the DRAIN state: a retyped slot has
  * no tail to drain, and a stale budget would let the next re-enable edge skip
@@ -347,13 +351,16 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
  * alone (a type change must not disturb one in flight — see
  * le_fx_enable_seed_settled). Runs on the audio thread (SET_*_FX ring
  * handlers) and the control thread (lane/monitor reset). */
-void le_fx_entry_reset(le_fx_state* fx, int slot);
+void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type);
 
-/* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)
- * when allocated: the audio-thread half of "start clean" that
- * le_fx_entry_reset deliberately leaves out. One ring is cap floats, so
- * callers space these (see LE_FX_ENABLE_CLEAR_SPACING). */
-void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap);
+/* Zeroes the delay rings chain slot [slot] runs on as [type] ([cap] floats
+ * each) when allocated: the audio-thread half of "start clean" that
+ * le_fx_entry_reset deliberately leaves out. A ring [type] does not run on is
+ * left alone, as le_fx_entry_reset leaves the octaver's buffers (#1522). One
+ * ring is cap floats, so callers space these (see
+ * LE_FX_ENABLE_CLEAR_SPACING). */
+void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
+                             int32_t type);
 
 /* Settles slot [slot] for an entry of [type] that has just replaced another
  * there (a recipe's renewed slot): its DSP state is reset, and the slot

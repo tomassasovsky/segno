@@ -53,7 +53,7 @@ static void run_octaver(runner* r) {
   int32_t types[LE_FX_MAX] = {LE_FX_OCTAVER};
   int32_t enabled[LE_FX_MAX] = {1};
   float params[LE_FX_MAX][LE_FX_PARAMS] = {{0.25f, 0.5f, 1.0f, 0.0f}};
-  le_fx_entry_reset(fx, 0);
+  le_fx_entry_reset(fx, 0, LE_FX_OCTAVER);
   r->ok = le_fx_prepare(fx, 0, LE_FX_OCTAVER, SR) == LE_OK;
   for (int i = 0; i < FRAMES && r->ok; ++i) {
     float l = 0.5f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / SR);

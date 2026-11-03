@@ -1542,7 +1542,7 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
  * failure. */
 static int le_pr_reset_slot(le_fx_state* fx, int s, int32_t type,
                             int32_t sample_rate) {
-  le_fx_entry_reset(fx, s);
+  le_fx_entry_reset(fx, s, type);
   return type == LE_FX_NONE ||
          le_fx_prepare(fx, s, type, sample_rate) == LE_OK;
 }
@@ -1946,8 +1946,8 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           cut_silenced = 1;
           cut_gain = 0.0f; /* at once, as the callback cuts (#1400) */
           for (int i = 0; i < LE_FX_MAX; ++i) {
-            le_fx_entry_reset(fx, i);
-            le_fx_entry_clear_rings(fx, i, m->sample_rate);
+            le_fx_entry_reset(fx, i, chain.type[i]);
+            le_fx_entry_clear_rings(fx, i, m->sample_rate, chain.type[i]);
           }
           break;
         case LE_CMD_SET_LANE_VOLUME:
@@ -2138,8 +2138,8 @@ static int le_pr_render_master(const le_pr_manifest* m,
         chain.chain_enabled = cmd->arg_f != 0;
       else if (cmd->code == LE_CMD_CUT_SOUND)
         for (int i = 0; i < LE_FX_MAX; ++i) {
-            le_fx_entry_reset(fx, i);
-            le_fx_entry_clear_rings(fx, i, m->sample_rate);
+            le_fx_entry_reset(fx, i, chain.type[i]);
+            le_fx_entry_clear_rings(fx, i, m->sample_rate, chain.type[i]);
           }
     }
     int32_t effective[LE_FX_MAX];

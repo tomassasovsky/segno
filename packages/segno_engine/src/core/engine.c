@@ -301,7 +301,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_i32(&ln->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&ln->fx, s);
     le_fx_free_slot(&ln->fx, s);
-    le_fx_entry_reset(&ln->fx, s);
+    le_fx_entry_reset(&ln->fx, s, LE_FX_NONE);
     /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
      * while the device is closed (no audio thread), so a direct destroy is safe
      * — mirrors le_engine_destroy. Without this, a start→stop→start or any
@@ -363,7 +363,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     store_i32(&m->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&m->fx, s);
     le_fx_free_slot(&m->fx, s);
-    le_fx_entry_reset(&m->fx, s);
+    le_fx_entry_reset(&m->fx, s, LE_FX_NONE);
     /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
      * reconfigure leaks the monitor input's live plugin host + binary. */
     le_plugin_slot_destroy(
@@ -405,7 +405,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     store_i32(&b->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&b->fx, s);
     le_fx_free_slot(&b->fx, s);
-    le_fx_entry_reset(&b->fx, s);
+    le_fx_entry_reset(&b->fx, s, LE_FX_NONE);
     /* No plugin-slot loading targets the bus owners yet (built-in effects
      * only through the track/master setters), but destroy defensively like
      * the lane/monitor resets so a future seam cannot leak here. */
@@ -1046,7 +1046,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   le_fx_bus_reset(&engine->all_tracks);
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      le_fx_entry_reset(&engine->all_tracks_fx[k], s);
+      le_fx_entry_reset(&engine->all_tracks_fx[k], s, LE_FX_NONE);
       le_fx_enable_seed_settled(&engine->all_tracks_fx[k], s);
       le_fx_free_slot(&engine->all_tracks_fx[k], s);
     }

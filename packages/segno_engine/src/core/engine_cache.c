@@ -1716,7 +1716,7 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
      * fresh state starts from that same reset (a raw calloc zero differs —
      * e.g. the octaver's shift smoother seeds at unison 0.5, not 0.0). A
      * hosted plugin's offline slot stays NULL and renders dry. */
-    le_fx_entry_reset(fx, s);
+    le_fx_entry_reset(fx, s, c->type[s]);
     /* Only the entries this state processes own buffers (review L5). */
     if (s >= from && s < to && c->type[s] != LE_FX_NONE &&
         c->type[s] != LE_FX_PLUGIN &&
