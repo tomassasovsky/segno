@@ -17,7 +17,10 @@ parts (see "Audio parts" below), and `loops/`. Unlike `events.log`, it is **atom
 not appended to: `perf_drain.c` rewrites it in full every ~250ms while armed,
 and `performance_repository` (`packages/performance_repository`) rewrites it
 once more at finalize (normal disarm, or crash recovery) to fold in the
-fields below `finalized: true`.
+fields below `finalized: true`. Finalize publishes it durably: it writes
+`performance.json.publishing`, flushes it, renames it over the sidecar and
+syncs the directory, so after a power cut the bundle holds the old sidecar
+or the finalized one, never neither.
 
 ## Two authors, one file
 
@@ -131,6 +134,34 @@ from the file's length, floored to whole frames.
 | `bytes` | int | Header plus `frames` whole frames. |
 | `overs` | int | Samples in this part with a magnitude above 1.0. |
 | `sha256` | string? | SHA-256 of the part's data payload, 64 lowercase hex digits. Present once the part is sealed; absent on the open part. |
+
+### Captures from before #1198
+
+A capture written before the parts format holds raw streams instead:
+`master.pcm` (stream 0) and `input-<n>.pcm` (stream `1 + n`), headerless
+native-endian float32, with no `take_id` and no `parts`. Finalize converts
+such a capture into parts (#1078), keeping every sample as written:
+
+- One stream at a time, master first. Its raw file is copied into
+  `master-NNN.wav` / `input-<n>-NNN.wav` parts a megabyte at a time on a
+  background isolate, so memory stays bounded whatever the take's length. A
+  torn trailing frame is dropped; an empty stream gets one empty part.
+- Each new part is flushed and digested (`sha256` over its payload), the
+  directory is synced, and the sidecar is republished (durably, as above)
+  with that stream's parts listed, a minted `take_id`, `encoding: "f32"`
+  and `overs`, still `finalized: false`. Only then is the raw file removed.
+  A cut at any point leaves either the raw file or its listed parts; the
+  next start reconverts a stream whose listed parts are incomplete, and
+  removes a raw file whose parts are listed whole.
+- Before converting, the volume must have room for the largest remaining
+  stream (its bytes plus one header per part). Too little room, a sidecar
+  whose `parts` do not read, a `channel_layout` that does not, or a failed
+  write leaves the capture unfinalized with its raw files, and it is
+  reported as not recovered.
+
+A capture finalized before this conversion existed keeps its single-file
+`master.wav` and `live-input-<n>.wav`; the Library reads those as one part
+per stream.
 
 ### `layers[]` entries (part 5, unchanged by part 6)
 
