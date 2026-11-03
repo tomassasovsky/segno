@@ -419,9 +419,10 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
       states += 2;
     }
   }
-  /* An entry of a heap-state kind (le_fx_kinds) adds its slot's arena,
-   * at most a page or so each, and its state's table: counted as both
-   * for every entry, which overstates and never understates. */
+  /* An entry of a heap-state kind (le_fx_kinds) adds its kind's block (the
+   * doubler's, the largest, is 128 KB), which the two rings charged for
+   * every entry cover at any device rate, and its state's table, counted
+   * for every state. */
   bytes += states * (int64_t)(sizeof(le_fx_state) + sizeof(le_fx_kinds)) +
            entries * (2ll * j->cap * (int64_t)sizeof(float) + 16384) +
            duals * (int64_t)le_fx_low_band_bytes() +
