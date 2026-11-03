@@ -94,11 +94,14 @@ static const void* le_rate_tables_get(le_rate_tables* set, int32_t sr,
   const void* found = le_rate_tables_find(set, sr);
   if (found != NULL) return found;
   pthread_mutex_lock(&set->mu);
-  found = le_rate_tables_find(set, sr);
-  int slot = 0;
-  while (found == NULL && slot < LE_RATE_TABLES &&
-         atomic_load_explicit(&set->tab[slot], memory_order_relaxed) != NULL) {
-    ++slot;
+  int slot = 0; /* the first empty slot, unless one holds [sr] by now */
+  for (; slot < LE_RATE_TABLES; ++slot) {
+    void* t = atomic_load_explicit(&set->tab[slot], memory_order_relaxed);
+    if (t == NULL) break;
+    if (set->sr[slot] == sr) {
+      found = t;
+      break;
+    }
   }
   if (found == NULL && slot < LE_RATE_TABLES) {
     void* made = make(sr);
@@ -305,8 +308,9 @@ _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
                "PSOLA's YIN cadence must equal the PV hop to share its schedule");
 _Static_assert(LE_OCT_REACH > LE_PV_LATENCY && LE_OCT_REACH > LE_PV_N,
                "the octaver's ring guard covers the dry tap and the PV window");
-_Static_assert(LE_OCT_REACH >= LE_PSOLA_LAG + LE_PSOLA_RAW,
-               "the ring guard covers PSOLA's refinement window");
+_Static_assert(LE_OCT_REACH >= LE_PSOLA_LAG + LE_PSOLA_RAW + LE_PSOLA_AHOP,
+               "the ring guard covers PSOLA's refinement window, copied up "
+               "to a hop after it ended");
 _Static_assert(LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1 + LE_PSOLA_RAW <=
                    LE_PV_SCRATCH,
                "PSOLA's detection windows fit the octaver scratch");
@@ -962,16 +966,18 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
  *
  * A whole YIN pass over the old 1600-sample window was ~640k iterations in one
  * callback every hop: about 1.1 ms on the console, over the 667 us deadline
- * of a 64-frame period at 96 kHz. The pass now runs on a decimated window
- * (a boxcar of D samples is the decimator and its own anti-alias filter, as
- * the tuner's), so it searches 60 Hz at every rate for about a quarter of the
- * work, then refines at the device rate around the coarse lag (le_refine_*),
+ * of a 64-frame period at 96 kHz. The pass now runs on a window decimated
+ * by LE_PSOLA_DECIM (a boxcar is the decimator and its own anti-alias
+ * filter, as the tuner's), so it searches down to 60 Hz for a fraction of
+ * the work, then refines at the kernel's rate around the coarse lag
+ * (le_refine_*),
  * and both are spread over the hop: each tick adds LE_PSOLA_WORK_PER_TICK to
  * a credit the pass spends, and a lag that overshoots it leaves a debt the
  * next ticks pay, so the pass averages exactly that much a tick. The
  * decimated window is frozen into the scratch when the pass starts, and the
- * device-rate one when the refinement starts (the 1 s ring still holds it),
- * so the moving ring cannot change either under the pass. The result lands
+ * kernel-rate one when the refinement starts, up to a hop later (the ring
+ * still holds it: LE_OCT_REACH), so the moving ring cannot change either
+ * under the pass. The result lands
  * within the hop it was started in, a hop at most after the one-shot pass's
  * would have: the period and the voicing it feeds are smoothed over several
  * hops anyway. */
@@ -3612,7 +3618,8 @@ static int32_t fx_dual_octaver_prepare(le_fx_state* fx, int slot, int cap) {
     }
     made[chan] = (le_oct_low*)le_rt_alloc_prefaulted(sizeof(le_oct_low));
     if (made[chan] == NULL) goto oom;
-    memset(made[chan], 0, sizeof(le_oct_low));
+    /* All but the ring, which le_low_init clears. */
+    memset(made[chan], 0, offsetof(le_oct_low, ring));
     le_low_init(made[chan]);
   }
   if (fx_octaver_prepare(fx, slot, cap) != LE_OK) goto oom;

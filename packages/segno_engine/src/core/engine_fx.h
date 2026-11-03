@@ -143,9 +143,10 @@ static inline uint32_t le_fx_hop_period(int sr) {
 }
 
 /* Engine frame [top]'s position on the octaver's hop, whose period is
- * [period] frames (le_fx_hop_period, #941). */
+ * [period] frames (le_fx_hop_period, #941). A period of 0 (an engine never
+ * configured) reads as the 48 kHz one. */
 static inline uint32_t le_fx_hop_position(uint32_t top, uint32_t period) {
-  return top % period;
+  return top % (period != 0u ? period : (uint32_t)LE_PV_HOP);
 }
 
 /* Whether [ent] may play from a lap that began at engine frame [top] (#941):
@@ -238,11 +239,12 @@ static inline le_psola_pass* le_ps(le_octaver_state* o) {
 /* How far behind the head PSOLA reads its input, so its latency matches the
  * split phase vocoder's (LE_PV_LATENCY). */
 #define LE_PSOLA_LAG (LE_PV_LATENCY - LE_PV_N)
-/* The deepest FIFO read of either mode (PSOLA's refinement window, which
- * lies past its decimated pitch window, the dry tap and the PV window): a
- * smaller ring would wrap onto recent input, so fx_octaver passes such a
- * slot through dry. */
-#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_RAW)
+/* The deepest FIFO read of either mode: PSOLA's refinement window, which
+ * lies past its decimated pitch window, the dry tap and the PV window, and
+ * is copied when the coarse pass finishes, up to a hop after the window
+ * ended (le_psola_coarse_done). A smaller ring would wrap onto recent input,
+ * so fx_octaver passes such a slot through dry. */
+#define LE_OCT_REACH (LE_PSOLA_LAG + LE_PSOLA_RAW + LE_PSOLA_AHOP)
 
 /* --- The Dual Octaver's low band (#1467) -------------------------------------
  * The vocoder's 1024-point frame cannot part a bass note from the octave

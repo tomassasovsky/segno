@@ -202,6 +202,7 @@ typedef struct le_cache_job {
   float vol;
   int32_t len;
   int32_t sample_rate;
+  uint32_t hop_period; /* le_engine::fx_hop_period at enqueue */
   int32_t fx_cap;
   /* The chain, frozen at enqueue — entries, effective bits (D-EFFBITS) and
    * the entries' channel handling and level (slice 3e): a printed Pre entry
@@ -669,9 +670,7 @@ static uint32_t le_ca_hop_tag(le_engine* e, const le_cache_job* job) {
                                     &ln->a_fx_chain_enabled,
                                     &ln->a_fx_pre_count, &ln->a_fx_count);
   }
-  return octaver ? le_fx_hop_position(job->chain.clock0,
-                                     le_fx_hop_period(job->sample_rate)) +
-                       1u
+  return octaver ? le_fx_hop_position(job->chain.clock0, job->hop_period) + 1u
                  : 0u;
 }
 
@@ -854,7 +853,7 @@ static int le_cache_hop_unprintable(const int32_t* types,
                                     const int32_t* enabled, int32_t chain_on,
                                     int32_t count, int32_t len,
                                     uint32_t period) {
-  if (!chain_on || len <= 0 || len % (int32_t)period == 0) {
+  if (!chain_on || len <= 0 || le_fx_hop_position((uint32_t)len, period) == 0) {
     return 0;
   }
   for (int32_t s = 0; s < count; ++s) {
@@ -1100,6 +1099,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   job->vol = bits_to_f32(vol_bits);
   job->len = len;
   job->sample_rate = sr;
+  job->hop_period = e->fx_hop_period;
   job->fx_cap = e->fx_delay_frames;
   /* The channel handling the fingerprint above was taken over, not a fresh
    * read: the job must render exactly the chain its key names. */
@@ -1334,6 +1334,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   job->vol = 1.0f;
   job->len = len;
   job->sample_rate = sr;
+  job->hop_period = e->fx_hop_period;
   job->fx_cap = e->fx_delay_frames;
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any, b->fx.hop_seed);
@@ -1460,6 +1461,7 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
   job->vol_bits = 0;
   job->len = len;
   job->sample_rate = sr;
+  job->hop_period = e->fx_hop_period;
   job->copy_pos = 0;
   job->dry = dry;
   job->wet = NULL;
