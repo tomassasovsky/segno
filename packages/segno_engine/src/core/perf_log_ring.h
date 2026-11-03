@@ -353,6 +353,11 @@ int le_perf_log_ring_push(le_perf_log_ring* ring, le_perf_log_entry entry);
  * if the ring is empty. Wait-free; safe to call from the drain thread. */
 int le_perf_log_ring_pop(le_perf_log_ring* ring, le_perf_log_entry* out);
 
+/* Consumer side. Copies the next entry into *out without consuming it and
+ * returns 1, or returns 0 if the ring is empty. Wait-free; the drain thread
+ * uses it to leave an entry for a later cycle. */
+int le_perf_log_ring_peek(le_perf_log_ring* ring, le_perf_log_entry* out);
+
 #ifdef __cplusplus
 }
 #endif

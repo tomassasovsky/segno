@@ -61,7 +61,7 @@ class ExpressionDestinationPicker extends StatelessWidget {
             children: [
               for (final (index, value)
                   in ExpressionDestinationKind.values.indexed) ...[
-                if (index > 0) const SizedBox(width: 9),
+                if (index > 0) SizedBox(width: context.spacing.sm),
                 LoopChoiceButton(
                   key: Key('expression_kind_${value.name}'),
                   label: expressionKindLabel(l10n, value),

@@ -10,12 +10,12 @@ class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository {}
 
 void main() {
   const dev1 = MidiDevice(id: 'id-1', name: 'FCB1010');
-  const connecting = MidiConnection(status: MidiConnectionStatus.connecting);
+  const found = MidiConnection(devices: [dev1]);
   const connected = MidiConnection(
     devices: [dev1],
+    open: {'id-1'},
     selectedId: 'id-1',
     selectedName: 'FCB1010',
-    status: MidiConnectionStatus.connected,
   );
 
   late _MockMidiDeviceRepository repository;
@@ -30,7 +30,6 @@ void main() {
     when(() => repository.connections).thenAnswer((_) => connections.stream);
     when(() => repository.activity).thenAnswer((_) => activity.stream);
     when(() => repository.select(any())).thenAnswer((_) async {});
-    when(repository.selectNone).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -55,10 +54,10 @@ void main() {
       'mirrors the repository connection stream in order',
       build: build,
       act: (_) => connections
-        ..add(connecting)
+        ..add(found)
         ..add(connected),
       expect: () => const [
-        MidiSetupState(connection: connecting),
+        MidiSetupState(connection: found),
         MidiSetupState(connection: connected),
       ],
     );
@@ -82,13 +81,6 @@ void main() {
       build: build,
       act: (cubit) => cubit.select('id-1'),
       verify: (_) => verify(() => repository.select('id-1')).called(1),
-    );
-
-    blocTest<MidiSetupCubit, MidiSetupState>(
-      'selectNone forwards to the repository',
-      build: build,
-      act: (cubit) => cubit.selectNone(),
-      verify: (_) => verify(repository.selectNone).called(1),
     );
 
     blocTest<MidiSetupCubit, MidiSetupState>(

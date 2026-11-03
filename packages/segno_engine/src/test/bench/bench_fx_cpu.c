@@ -525,12 +525,15 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
  * vocoder, PSOLA) can land a whole frame in one block, so it is charged the
  * larger of that and one instance's own p99 increment (p99 rather than the
  * racks' p99.9: a share of eight is steadier there). Prints a row per kind,
- * then the charges for kFxKindCostNs and kFxHopCostUs (looper_repository).
- * The Overdrive, Distortion, Vinyl and Amp+Cab run oversampled, by a factor
- * that depends on the rate (#1547), so their charges go to
- * kFxOversampledCostNs instead: `low` from a run at 48 kHz (44.1 kHz runs
- * the same factor), `high` from one at 96 kHz.
- * Run it paced on the console; elsewhere the numbers are only a proxy. */
+ * then the charges (looper_repository, fx_cost.dart). Each charge there is
+ * the largest of runs at 44.1, 48, 88.2 and 96 kHz, each at 32 and 64
+ * frames (#1508). The phase vocoder's go to kFxHopCostUs per hop quarter,
+ * from the runs where a block takes one (not 44.1 kHz / 64). PSOLA, the
+ * Smart Tune and the kinds that run oversampled (the Overdrive, Distortion,
+ * Vinyl and Amp+Cab, #1547) charge by the rate, to kFxPsolaCostNs and
+ * kFxOversampledCostNs: `low` from 44.1 and 48 kHz, `high` from 88.2 and
+ * 96 kHz. Run it paced on the console; elsewhere the numbers are only a
+ * proxy. */
 typedef struct {
   const char* name;
   int32_t type;
@@ -632,9 +635,11 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
            ns[k] <= 0.0 ? " lost in the noise: rerun" : "");
     fflush(stdout);
   }
-  /* kFxKindCostNs takes these per frame; the octaver and PSOLA go to
-   * kFxHopCostUs and kFxPsolaCostUs per block (1 x +us); the oversampled
-   * kinds go to kFxOversampledCostNs at this rate's end of it. */
+  /* kFxKindCostNs takes these per frame; the phase-vocoder kinds go to
+   * kFxHopCostUs per hop quarter (1 x +us, from a run where a block takes
+   * one quarter); PSOLA and the Smart Tune go to kFxPsolaCostNs per frame,
+   * and the oversampled kinds to kFxOversampledCostNs, at this rate's end
+   * of each. */
   printf("charges, ns per frame:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     printf(" %s=%.0f", k_table[k].name, ns[k]);

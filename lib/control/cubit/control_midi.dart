@@ -145,6 +145,8 @@ extension MidiControlEditing on ControlCubit {
       return MidiSaveResult.refused('$error');
     }
     if (_closing || isClosed) return const MidiSaveResult.refused('closed');
+    // Queued input was read against the old mappings and is dropped, so
+    // every device's decoders restart with it.
     ++_midiIngressRevision;
     _resetMidiDecoders();
     await _queueMidi(() async {
@@ -281,14 +283,16 @@ extension MidiControlEditing on ControlCubit {
 
   /// An old page cannot resume or cancel a newer editor.
   void endMidiEdit(Object owner) {
-    if (!identical(state.midiEdit?.owner, owner)) return;
+    final edit = state.midiEdit;
+    if (edit == null || !identical(edit.owner, owner)) return;
     _midiLearnTimer?.cancel();
-    ++_midiIngressRevision;
-    _resetMidiDecoders();
+    // Only the edited device paused; the others keep their decoders.
+    _resetMidiDecoders(only: {edit.device});
     _publishMidi(state.copyWith(clearMidiEdit: true));
   }
 
-  /// Starts selected-device Learn in an explicit format and wire channel.
+  /// Starts Learn on the edited device in an explicit format and wire
+  /// channel; the mapping it learns names that device.
   void startMidiLearn(
     MidiProtocol protocol, {
     required Object owner,
@@ -297,7 +301,7 @@ extension MidiControlEditing on ControlCubit {
     final edit = state.midiEdit;
     if (edit == null ||
         !identical(edit.owner, owner) ||
-        edit.device != _midiDevices?.session?.device ||
+        !_midiCaptures.containsKey(edit.device) ||
         (channel != null && (channel < 0 || channel > 15))) {
       return;
     }
@@ -344,7 +348,7 @@ extension MidiControlEditing on ControlCubit {
     final devices =
         only ??
         {
-          if (_midiCapture != null) _midiCapture!.device,
+          ..._midiCaptures.keys,
           for (final row in state.midiMappings.mappings) row.source.device,
           if (state.midiEdit != null) state.midiEdit!.device,
         };
@@ -361,26 +365,33 @@ extension MidiControlEditing on ControlCubit {
           };
     _midiLevelTimer?.cancel();
     _midiLevelTimer = null;
-    _publishMidi(state.copyWith(midiLevels: const {}));
+    _publishMidi(state.copyWith(midiLevels: Map.unmodifiable(_midiLevels)));
   }
 
+  /// A device whose capture opened, closed or reopened releases what its
+  /// mappings hold; the other devices keep theirs.
   void _onMidiConnection(MidiConnection _) {
-    final capture = _midiDevices?.session;
-    if (capture == _midiCapture) return;
-    final previous = _midiCapture;
-    if (previous != null) _retireMidi(device: previous.device);
-    _midiCapture = capture;
-    ++_midiIngressRevision;
-    _resetMidiDecoders();
+    final captures = _midiDevices?.sessions ?? const {};
+    final changed = {
+      for (final device in {...captures.keys, ..._midiCaptures.keys})
+        if (captures[device] != _midiCaptures[device]) device,
+    };
+    if (changed.isEmpty) return;
+    _midiCaptures = captures;
+    for (final device in changed) {
+      _retireMidi(device: device);
+    }
     final edit = state.midiEdit;
-    if (edit != null) cancelMidiLearn(edit.owner);
+    if (edit != null && changed.contains(edit.device)) {
+      cancelMidiLearn(edit.owner);
+    }
   }
 
   void _onMidiInput(MidiInputMessage message) {
     if (_inputRetired ||
         _closing ||
         isClosed ||
-        message.session != _midiDevices?.session) {
+        message.session != _midiCaptures[message.session.device]) {
       return;
     }
     _midiReadTime = message.timestampMicros == null
@@ -452,7 +463,7 @@ extension MidiControlEditing on ControlCubit {
       _queueMidi(() async {
         if (revision != _midiIngressRevision ||
             session != _looper.sessionRevision ||
-            message.session != _midiDevices?.session ||
+            message.session != _midiCaptures[device] ||
             !_midiCanDispatch(device)) {
           return;
         }
@@ -483,9 +494,11 @@ extension MidiControlEditing on ControlCubit {
     return _externalTail = next.catchError(_reportMidiError);
   }
 
+  /// Releases what [device]'s mappings hold, or every device's. Queued input
+  /// from that device is dropped; other devices keep their decoders.
   void _retireMidi({String? device}) {
-    ++_midiIngressRevision;
-    _resetMidiDecoders();
+    if (device == null) ++_midiIngressRevision;
+    _resetMidiDecoders(only: device == null ? null : {device});
     unawaited(
       _queueMidi(() => _applyMidiProposals(_midiEngine.retire(device: device))),
     );
@@ -748,9 +761,7 @@ extension MidiControlEditing on ControlCubit {
                     order: ++_activationOrder,
                   );
                 case final ControlValueTarget target:
-                  if (target is MixValueTarget || target is OwnedValueTarget) {
-                    _retireMixBaseline(target);
-                  }
+                  if (_isSharedValue(target)) _retireMixBaseline(target);
                   (_parameterHolders[target] ??= {})[holder] = (
                     value: values[target]!,
                     order: ++_activationOrder,
@@ -1070,7 +1081,7 @@ extension MidiControlEditing on ControlCubit {
     }
     _parameterHolders.remove(target);
     for (final input in PedalCtrlInput.values) {
-      (_externalInvalidatedMix[input] ??= {}).add(target);
+      _externalHeldTargets[input]?.remove(target);
       _externalMixReleased[input]?.remove(target);
       _externalNumericReleases[input]?.remove(target);
     }
@@ -1098,7 +1109,7 @@ extension MidiControlEditing on ControlCubit {
     }
     targets.forEach(_parameterHolders.remove);
     for (final input in PedalCtrlInput.values) {
-      (_externalInvalidatedMix[input] ??= {}).addAll(targets);
+      _externalHeldTargets[input]?.removeAll(targets);
       _externalMixReleased[input]?.removeWhere(
         (target, _) => targets.contains(target),
       );

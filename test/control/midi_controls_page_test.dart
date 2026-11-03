@@ -90,9 +90,9 @@ MidiMapping _mapping() => MidiMapping(
 
 const _connection = MidiConnection(
   devices: [MidiDevice(id: 'usb', name: 'USB controller')],
+  open: {'usb'},
   selectedId: 'usb',
   selectedName: 'USB controller',
-  status: MidiConnectionStatus.connected,
 );
 
 void main() {
@@ -211,7 +211,9 @@ void main() {
       () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
     when(() => devices.connection).thenReturn(_connection);
-    when(() => devices.session).thenReturn(const MidiInputSession('usb', 1));
+    when(
+      () => devices.sessions,
+    ).thenReturn(const {'usb': MidiInputSession('usb', 1)});
     when(() => devices.connections).thenAnswer((_) => connections.stream);
     when(() => devices.messages).thenAnswer((_) => messages.stream);
     when(() => devices.activity).thenAnswer((_) => const Stream<void>.empty());
@@ -602,6 +604,7 @@ void main() {
         countInBars: any(named: 'countInBars'),
         soundStart: any(named: 'soundStart'),
         editKind: any(named: 'editKind'),
+        releasedSettings: any(named: 'releasedSettings'),
       ),
     );
   });
@@ -1259,6 +1262,50 @@ void main() {
     expect(control.state.midiMappings.byId('m1'), _mapping());
   });
 
+  testWidgets('each card says where its own device stands, and an unplugged '
+      "device's mappings stay reachable", (tester) async {
+    when(() => devices.connection).thenReturn(
+      const MidiConnection(
+        devices: [
+          MidiDevice(id: 'usb', name: 'USB controller'),
+          MidiDevice(id: 'pads', name: 'Drum pads'),
+        ],
+        open: {'usb'},
+        openErrors: {'pads': '3'},
+        selectedId: 'usb',
+        selectedName: 'USB controller',
+      ),
+    );
+    final keys = _mapping().copyWith(
+      source: MidiSource(
+        device: 'keys',
+        kind: ControllerSourceKind.midiCc,
+        number: 64,
+      ),
+    );
+    await pump(tester, savedMapping: keys);
+
+    Finder status(String id, String text) => find.descendant(
+      of: find.byKey(Key('midi_device_$id')),
+      matching: find.text(text),
+    );
+    expect(status('usb', 'Connected'), findsOneWidget);
+    expect(status('pads', 'Could not open'), findsOneWidget);
+    expect(status('keys', 'Disconnected'), findsOneWidget);
+    expect(status('keys', 'keys'), findsOneWidget);
+
+    await tap(tester, 'midi_device_keys');
+    verify(() => devices.select('keys')).called(1);
+  });
+
+  testWidgets('the editor names the device a mapping belongs to', (
+    tester,
+  ) async {
+    await pump(tester, seeded: true);
+    await tap(tester, 'midi_row_edit_m1');
+    expect(find.text('USB controller'), findsOneWidget);
+  });
+
   testWidgets('device selection discards only the unfinished mapping draft', (
     tester,
   ) async {
@@ -1267,9 +1314,9 @@ void main() {
         MidiDevice(id: 'usb', name: 'USB controller'),
         MidiDevice(id: 'pads', name: 'Drum pads'),
       ],
+      open: {'usb', 'pads'},
       selectedId: 'usb',
       selectedName: 'USB controller',
-      status: MidiConnectionStatus.connected,
     );
     when(() => devices.connection).thenReturn(second);
     await pump(tester, seeded: true);
@@ -1278,7 +1325,6 @@ void main() {
     await tap(tester, 'midi_row_edit_m1');
     await tap(tester, 'midi_channel');
     await tap(tester, 'midi_channel_omni');
-    when(() => devices.session).thenReturn(const MidiInputSession('pads', 2));
     connections.add(
       second.copyWith(selectedId: 'pads', selectedName: 'Drum pads'),
     );
@@ -1290,7 +1336,6 @@ void main() {
   });
 
   for (final status in [
-    MidiConnectionStatus.connecting,
     MidiConnectionStatus.error,
     MidiConnectionStatus.deviceGone,
   ]) {
@@ -1300,9 +1345,11 @@ void main() {
         tester,
       ) async {
         final unavailable = MidiConnection(
+          openErrors: {
+            if (status == MidiConnectionStatus.error) 'usb': '5',
+          },
           selectedId: 'usb',
           selectedName: 'USB controller',
-          status: status,
         );
         when(() => devices.connection).thenReturn(unavailable);
         await pump(tester, seeded: true);
@@ -1336,68 +1383,17 @@ void main() {
     expect(control.state.midiEdit, isNull);
   });
 
-  testWidgets('failed None remains visible and can be retried', (tester) async {
-    const failed = MidiConnection(
-      devices: [MidiDevice(id: 'usb', name: 'USB controller')],
-      status: MidiConnectionStatus.error,
-      errorDetail: 'storage refused',
-      pinUncertain: true,
-    );
-    when(() => devices.select('')).thenAnswer((_) async {
-      connections.add(failed);
-      throw StateError('storage refused');
-    });
-    await pump(tester);
-
-    await tap(tester, 'midi_select_none');
-    verify(() => devices.select('')).called(1);
-    expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
-    expect(find.byKey(const Key('midi_notice')), findsNothing);
-    expect(find.text('Could not save MIDI device setting'), findsOneWidget);
-    expect(
-      tester
-          .widget<LoopOutlinedButton>(find.byKey(const Key('midi_select_none')))
-          .onTap,
-      isNotNull,
-    );
-
-    when(() => devices.select('')).thenAnswer((_) async {
-      connections.add(
-        const MidiConnection(
-          devices: [MidiDevice(id: 'usb', name: 'USB controller')],
-        ),
-      );
-    });
-    await tap(tester, 'midi_select_none');
-    verify(() => devices.select('')).called(1);
-    expect(find.byKey(const Key('midi_notice')), findsNothing);
-    expect(find.byKey(const Key('midi_device_save_failed')), findsNothing);
-    expect(
-      tester
-          .widget<LoopOutlinedButton>(find.byKey(const Key('midi_select_none')))
-          .onTap,
-      isNull,
-    );
-  });
-
-  testWidgets('reopened page shows unresolved None failure', (tester) async {
+  testWidgets('an unreadable saved device shows the save failure', (
+    tester,
+  ) async {
     when(() => devices.connection).thenReturn(
-      const MidiConnection(
-        status: MidiConnectionStatus.error,
-        errorDetail: 'storage refused',
-        pinUncertain: true,
-      ),
+      const MidiConnection(errorDetail: 'storage refused', pinUncertain: true),
     );
     await pump(tester);
 
     expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
     expect(find.text('Could not save MIDI device setting'), findsOneWidget);
-    expect(
-      tester
-          .widget<LoopOutlinedButton>(find.byKey(const Key('midi_select_none')))
-          .onTap,
-      isNotNull,
-    );
+    expect(find.byKey(const Key('midi_retry_device')), findsNothing);
   });
 
   testWidgets('unrelated successful control change does not hide device '
@@ -1423,14 +1419,13 @@ void main() {
         MidiDevice(id: 'usb', name: 'USB controller'),
         MidiDevice(id: 'pads', name: 'Drum pads'),
       ],
+      open: {'usb', 'pads'},
       selectedId: 'usb',
       selectedName: 'USB controller',
-      status: MidiConnectionStatus.connected,
     );
     final failed = choice.copyWith(
       selectedId: 'pads',
       selectedName: 'Drum pads',
-      status: MidiConnectionStatus.error,
       pinUncertain: true,
     );
     when(() => devices.connection).thenReturn(choice);
@@ -1448,11 +1443,7 @@ void main() {
 
     when(() => devices.select('pads')).thenAnswer((_) async {
       connections.add(
-        failed.copyWith(
-          status: MidiConnectionStatus.connected,
-          pinUncertain: false,
-          clearError: true,
-        ),
+        failed.copyWith(pinUncertain: false, clearError: true),
       );
     });
     await tap(tester, 'midi_retry_device');
@@ -1467,9 +1458,9 @@ void main() {
     when(() => devices.connection).thenReturn(
       const MidiConnection(
         devices: [MidiDevice(id: 'usb', name: 'USB controller')],
+        open: {'usb'},
         selectedId: 'usb',
         selectedName: 'USB controller',
-        status: MidiConnectionStatus.error,
         pinUncertain: true,
       ),
     );

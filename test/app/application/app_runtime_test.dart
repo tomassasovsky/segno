@@ -110,7 +110,7 @@ void main() {
     store = _ReadGateStore();
     settings = SettingsRepository(store: store);
     final controllers = ControllerRepository(sources: const []);
-    final midi = MidiDeviceRepository(source: null, settings: settings);
+    final midi = MidiDeviceRepository(captures: null, settings: settings);
     link = FakePedalLink();
     final pedal = PedalRepository(link);
     link.hello();

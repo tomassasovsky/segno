@@ -1081,7 +1081,7 @@ class SegnoEngineBindings {
   /// does, with *outcome LE_REOPEN_CLEARED_RATE / _CAP and a zero mask. A
   /// running performance capture ends with DEVICE_CHANGED either way. Every
   /// setting the host replays after a start (routing, mix, FX, monitors,
-  /// conditioning, output gates) is reset here too; routes to inputs or outputs
+  /// output gates) is reset here too; routes to inputs or outputs
   /// the new device lacks stay silent.
   ///
   /// With config->keep_material set, a reopen that would clear the whole engine
@@ -1946,7 +1946,7 @@ class SegnoEngineBindings {
   /// Redo branch is dropped. Never touches the original take: Peel consumes the
   /// topmost overdub layer reachable through earlier peels only, so the deepest
   /// layer (the pre-first-overdub image) is swapped in but never consumed, and
-  /// any non-overdub history above the layers (a clear, a loop-close restoration)
+  /// any non-overdub history above the layers (a clear, a length edit)
   /// blocks it. Undo of a Peel restores the layer; Redo re-peels. A synchronous
   /// control-thread swap like the in-track undo: no command, no receipt.
   /// LE_ERR_INVALID when no overdub layer can be peeled (none remain, the track
@@ -2285,10 +2285,9 @@ class SegnoEngineBindings {
   /// a linear gain, default 1, applied to the sample a lane RECORDS from that
   /// input and to nothing else — the monitor path, the input meters, the clip
   /// detector, the sound-activated trigger and the tuner all read the
-  /// untrimmed input: raw for meters/clipping, conditioned for trigger/tuner.
-  /// Clamped to 0..LE_MAX_INPUT_TRIM. Takes
-  /// effect on the next block (a direct store, so it works while stopped);
-  /// reset to 1 by (re)configure.
+  /// untrimmed raw device input. Clamped to 0..LE_MAX_INPUT_TRIM. Takes effect
+  /// on the next block (a direct store, so it works while stopped); reset to 1
+  /// by (re)configure.
   int le_engine_set_input_trim(
     ffi.Pointer<le_engine> engine,
     int input,
@@ -4359,133 +4358,6 @@ class SegnoEngineBindings {
       _le_engine_set_monitor_input_fx_chain_enabledPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Enables or disables the conditioning stage on hardware input [input]
-  /// (0..LE_MAX_MONITORED_INPUTS-1). Disabled by default — the untouched engine
-  /// is bit-identical to the conditioning-free build. An enable EDGE resets the
-  /// stage's filter/envelope state so a re-engaged stage never rings with stale
-  /// history. A loopback-excluded input's stage never runs regardless of this
-  /// flag (the latency harness owns those channels).
-  int le_engine_set_input_conditioning(
-    ffi.Pointer<le_engine> engine,
-    int input,
-    int enabled,
-  ) {
-    return _le_engine_set_input_conditioning(
-      engine,
-      input,
-      enabled,
-    );
-  }
-
-  late final _le_engine_set_input_conditioningPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
-        >
-      >('le_engine_set_input_conditioning');
-  late final _le_engine_set_input_conditioning =
-      _le_engine_set_input_conditioningPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
-
-  /// Sets conditioning parameter [param] (le_cond_param) of hardware input
-  /// [input] to [value] in that parameter's REAL unit (Hz / dB / ms / ratio —
-  /// see le_cond_param). The audio thread clamps on apply and recomputes the
-  /// affected section's coefficients in lockstep (resetting only that section's
-  /// filter state, so a live tweak never rings with coefficients it was not
-  /// filtered by).
-  int le_engine_set_input_conditioning_param(
-    ffi.Pointer<le_engine> engine,
-    int input,
-    int param,
-    double value,
-  ) {
-    return _le_engine_set_input_conditioning_param(
-      engine,
-      input,
-      param,
-      value,
-    );
-  }
-
-  late final _le_engine_set_input_conditioning_paramPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Float,
-          )
-        >
-      >('le_engine_set_input_conditioning_param');
-  late final _le_engine_set_input_conditioning_param =
-      _le_engine_set_input_conditioning_paramPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
-
-  /// Queues an offline restoration pass over track [channel]'s captured lanes
-  /// (control thread). [lane_mask] selects which lanes to repair (bit l = lane l,
-  /// restricted to the track's active lanes); [flags] is a bitwise-OR of
-  /// le_restore_flags. The pass runs on a background worker and publishes its
-  /// result as one undo layer once complete — never touching the RT audio
-  /// thread's latency. Returns LE_OK once the job is queued, or LE_ERR_INVALID
-  /// for a null/out-of-range handle, empty flags or lane mask, a track that is
-  /// RECORDING/OVERDUBBING or has an overdub layer in flight, a track with no
-  /// captured content, or a restoration already in flight (one job engine-wide).
-  /// A queued pass whose take moves before it commits (a new overdub, an undo)
-  /// is discarded, never published.
-  int le_engine_restore_track(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-    int lane_mask,
-    int flags,
-  ) {
-    return _le_engine_restore_track(
-      engine,
-      channel,
-      lane_mask,
-      flags,
-    );
-  }
-
-  late final _le_engine_restore_trackPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Uint32,
-            ffi.Uint32,
-          )
-        >
-      >('le_engine_restore_track');
-  late final _le_engine_restore_track = _le_engine_restore_trackPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
-
-  /// Cancels an in-flight restoration on track [channel] (control thread): a job
-  /// still copying is dropped immediately; one already on the worker aborts at
-  /// its next lane boundary and its result is discarded rather than published.
-  /// Returns LE_OK when a matching job was found and signalled, or LE_ERR_INVALID
-  /// for a null/out-of-range handle or when no restoration for [channel] is in
-  /// flight.
-  int le_engine_cancel_restore(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_cancel_restore(
-      engine,
-      channel,
-    );
-  }
-
-  late final _le_engine_cancel_restorePtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
-        >
-      >('le_engine_cancel_restore');
-  late final _le_engine_cancel_restore = _le_engine_cancel_restorePtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
   /// Sets Track-stage chain entry [index] (0..LE_FX_MAX-1) of track [channel] to
   /// [type]. Changing the type resets that entry's DSP state; delay-lined types
   /// lazily allocate their buffers on this calling thread and seed the type's
@@ -6512,8 +6384,8 @@ class SegnoEngineBindings {
 
   /// Lists track `channel`'s history entries in image-ordinal order (#1164):
   /// the undo stack oldest first, then the redo stack top-down. `kinds[i]` is the
-  /// entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 3 loop-close
-  /// restoration, 4 length edit), `skipped[i]` its peel payload and `starts[i]`
+  /// entry's kind (0 overdub layer, 1 clear restore point, 2 peel, 4 length
+  /// edit; 3 is unallocated), `skipped[i]` its peel payload and `starts[i]`
   /// a length edit's playhead map (0 for every other kind). A redo-side peel
   /// entry is a marker without an image: le_engine_export_layer's ordinals count
   /// image-bearing entries only, so a track's image count is
@@ -8542,19 +8414,6 @@ enum le_command_code {
   /// unallocated so an old event log can never be misread.)
   LE_CMD_SET_TUNER_INPUT(53),
 
-  /// enable/disable input conditioning.
-  /// arg_i = input, arg_f = enabled (0/1).
-  /// An enable EDGE resets the stage's DSP
-  /// state (no stale filter ring).
-  LE_CMD_SET_INPUT_COND(54),
-
-  /// set one conditioning parameter.
-  /// lanef arm: channel = input,
-  /// lane = le_cond_param, value = real-unit
-  /// value (clamped by the audio thread on
-  /// apply).
-  LE_CMD_SET_INPUT_COND_PARAM(55),
-
   /// Immediate finalize (#405): ends track arg_i's live RECORDING take NOW —
   /// or does nothing. Unlike LE_CMD_RECORD, whose meaning depends on the state
   /// it lands on (start / finalize / punch-in / punch-out), this command
@@ -8801,8 +8660,6 @@ enum le_command_code {
     49 => LE_CMD_SET_TRACK_FX,
     50 => LE_CMD_SET_TRACK_FX_COUNT,
     53 => LE_CMD_SET_TUNER_INPUT,
-    54 => LE_CMD_SET_INPUT_COND,
-    55 => LE_CMD_SET_INPUT_COND_PARAM,
     56 => LE_CMD_FINALIZE_TAKE,
     57 => LE_CMD_CANCEL_TAKE,
     58 => LE_CMD_RESTORE_TEMPO,
@@ -9360,15 +9217,6 @@ final class le_track_snapshot extends ffi.Struct {
   /// rather than by "first RECORD_END on the channel".
   @ffi.Int32()
   external int settled_take_id;
-
-  /// Trailing (#697 S9, offline loop-close restoration): 0 idle, 1 queued (the
-  /// enqueue copy is in flight or the job is waiting for the worker), 2 running
-  /// (the worker's de-clip/denoise DSP is in flight). A completed pass publishes
-  /// its result as an ordinary undo layer, so undo_depth/clear_restore carry the
-  /// revert affordance — this field is only the in-progress indicator. See
-  /// le_engine_restore_track.
-  @ffi.Int32()
-  external int restore_state;
 
   /// Trailing (accepted design, slice 1): this track's OWN playhead in frames
   /// within its own length — a multiple's segment offset, a Sync division's
@@ -10007,24 +9855,15 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int clock_send;
 
-  /// ---- input clip detector + conditioning activity (input clip, S2;
-  /// trailing for the same offset-stability reason as the blocks above).
-  /// Both default to 0 — an untouched engine reports no HOT input and no
-  /// active conditioning. */
+  /// ---- input clip detector (input clip, S2; trailing for the same
+  /// offset-stability reason as the blocks above). Defaults to 0 — an
+  /// untouched engine reports no HOT input. */
   /// /* Bit c: HOT — a rail-run (LE_CLIP_RUN consecutive raw samples at
   /// |s| >= LE_CLIP_LEVEL) was seen on input c within the last
   /// LE_CLIP_HOLD_MS of processed audio. Detected on the RAW device buffer,
-  /// so the flag reflects the ADC even when the conditioning stage has ducked
-  /// or notched what records. Loopback-excluded inputs never flag.
+  /// so the flag reflects the ADC. Loopback-excluded inputs never flag.
   @ffi.Uint32()
   external int input_clip_mask;
-
-  /// Bit c: input c's conditioning stage is currently ACTIVE — enabled AND
-  /// not loopback-excluded, i.e. the stage actually runs on the audio path
-  /// (the UI truth for a "conditioning on" badge; a stage enabled on an
-  /// excluded channel reads 0 here because it never runs).
-  @ffi.Uint32()
-  external int input_cond_mask;
 
   /// Trailing (accepted design, slice 1): the master bus's absolute peak over
   /// the most recent block, 0..1 (1.0 = full scale), read AFTER the master
@@ -10048,8 +9887,8 @@ final class le_snapshot extends ffi.Struct {
 
   /// ---- per-channel meters and capture trim (accepted design, slice 3;
   /// trailing). Absolute block peaks may exceed unity; they are not clamped.
-  /// input_peaks[c] is input c's RAW device level (before conditioning and
-  /// trim, like input_clip_mask, so a hot ADC reads hot however the trim is
+  /// input_peaks[c] is input c's RAW device level (before the trim, like
+  /// input_clip_mask, so a hot ADC reads hot however the trim is
   /// set); monitor_peaks[c] is its post-chain/gain/pan stereo peak BEFORE
   /// output folding (0 while off, muted or without an enabled route).
   /// output_peaks[c] follows master gain/limiter but EXCLUDES click.

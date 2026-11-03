@@ -57,7 +57,12 @@
 #include "engine_fx.h"
 #include "bench_common.h"
 #include "../../stretch/le_stretch.h"
-#include "kiss_fft.h" /* rnnoise's, already linked into the engine */
+/* The analysis length (a 5.86 Hz bin at 96 kHz). fft.h's default bound,
+ * 4096 (a 23 Hz bin), is too coarse to separate a triad's partials, so this
+ * TU raises it for its own plan. */
+#define SPEC_N 16384
+#define LE_FFT_MAX_N SPEC_N
+#include "fft.h" /* le_rfft_plan, le_rfft_fwd */
 
 #define SR 96000
 #define BLOCK 64
@@ -107,7 +112,7 @@ static void shifter_open(shifter* s, int alg, double semitones) {
     exit(1);
   }
   for (int i = 0; i < LE_FX_MAX; ++i) le_fx_enable_seed_settled(s->fx, i);
-  le_fx_entry_reset(s->fx, 0);
+  le_fx_entry_reset(s->fx, 0, LE_FX_OCTAVER);
   if (le_fx_prepare(s->fx, 0, LE_FX_OCTAVER, SR) != LE_OK) {
     fprintf(stderr, "octaver prepare failed\n");
     exit(1);
@@ -164,13 +169,6 @@ static void run(shifter* s, const float* in, float* out, int n) {
   }
 }
 
-/* The analysis length (a 5.86 Hz bin at 96 kHz). core/fft.h stops at
- * LE_FFT_MAX_N (4096, a 23 Hz bin), too coarse to separate a triad's
- * partials, so this uses rnnoise's kiss_fft, which the engine already
- * links. Its stage table (MAXFACTORS) holds seven radix-4 stages, so 16384
- * is its largest power of two: 32768 overruns it. */
-#define SPEC_N 16384
-
 static double g_hann[SPEC_N];
 
 static void hann_init(void) {
@@ -199,22 +197,16 @@ static double bin_energy(const float* x, double f) {
 /* The Hann-windowed power spectrum of x[0 .. SPEC_N), bins 0 .. SPEC_N / 2,
  * into pw. */
 static void power_spectrum(const float* x, double* pw) {
-  static kiss_fft_state* cfg;
-  static kiss_fft_cpx in[SPEC_N], out[SPEC_N];
-  if (cfg == NULL) {
-    cfg = rnn_fft_alloc(SPEC_N, NULL, NULL, 0);
-    if (cfg == NULL) {
-      fprintf(stderr, "rnn_fft_alloc failed\n");
-      exit(1);
-    }
+  static le_rfft_plan plan;
+  static float in[SPEC_N], re[SPEC_N / 2 + 1], im[SPEC_N / 2 + 1];
+  if (!le_rfft_plan_init(&plan, SPEC_N)) {
+    fprintf(stderr, "le_rfft_plan_init failed\n");
+    exit(1);
   }
-  for (int i = 0; i < SPEC_N; ++i) {
-    in[i].r = (float)(g_hann[i] * x[i]);
-    in[i].i = 0.0f;
-  }
-  rnn_fft_c(cfg, in, out);
+  for (int i = 0; i < SPEC_N; ++i) in[i] = (float)(g_hann[i] * x[i]);
+  le_rfft_fwd(&plan, in, re, im);
   for (int k = 0; k <= SPEC_N / 2; ++k) {
-    pw[k] = (double)out[k].r * out[k].r + (double)out[k].i * out[k].i;
+    pw[k] = (double)re[k] * re[k] + (double)im[k] * im[k];
   }
 }
 

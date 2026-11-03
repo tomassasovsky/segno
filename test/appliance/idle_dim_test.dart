@@ -254,7 +254,7 @@ void main() {
           providers: [
             RepositoryProvider.value(value: pedal),
             RepositoryProvider.value(
-              value: MidiDeviceRepository(source: null, settings: settings),
+              value: MidiDeviceRepository(captures: null, settings: settings),
             ),
           ],
           child: MultiBlocProvider(

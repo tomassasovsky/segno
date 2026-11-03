@@ -62,11 +62,11 @@ void le_instruments_midi_gone(le_engine* e, int32_t port);
 /* Audio thread: Cut all sound fades every instrument voice out. */
 void le_instruments_cut(le_engine* e);
 
-/* The bus of `slot` (LE_COND_SCRATCH_FRAMES floats; the current block's
+/* The bus of `slot` (LE_INST_BUS_FRAMES floats; the current block's
  * frames start at 0), or NULL. */
 static inline const float* le_instrument_bus(const le_engine* e, int32_t slot) {
   if (e->inst_bus == NULL || slot < 0 || slot >= LE_MAX_INSTRUMENTS) return NULL;
-  return e->inst_bus + (int64_t)slot * LE_COND_SCRATCH_FRAMES;
+  return e->inst_bus + (int64_t)slot * LE_INST_BUS_FRAMES;
 }
 
 /* Whether `source` names an instrument slot (#1197 Part 2b). */
@@ -81,7 +81,7 @@ static inline float le_instrument_source_sample(const le_engine* e,
                                                 int32_t source, uint32_t f) {
   if (!e->inst_bus_live) return 0.0f;
   return e->inst_bus[(int64_t)(source - LE_INSTRUMENT_SOURCE_BASE) *
-                         LE_COND_SCRATCH_FRAMES +
+                         LE_INST_BUS_FRAMES +
                      f];
 }
 

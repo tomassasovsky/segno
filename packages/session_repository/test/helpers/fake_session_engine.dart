@@ -1063,17 +1063,6 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     required double pan,
   }) => EngineResult.ok;
   @override
-  EngineResult setInputConditioningEnabled({
-    required int input,
-    required bool enabled,
-  }) => EngineResult.ok;
-  @override
-  EngineResult setInputConditioningParam({
-    required int input,
-    required InputConditioningParam param,
-    required double value,
-  }) => EngineResult.ok;
-  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,

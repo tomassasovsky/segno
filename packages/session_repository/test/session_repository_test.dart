@@ -970,24 +970,24 @@ void main() {
   );
 
   test(
-    'save then read round-trips a redo-side Peel marker and a restoration '
-    'entry with their kinds (#1164)',
+    'save then read round-trips a redo-side Peel marker with the kinds of '
+    'every entry (#1164)',
     () async {
-      // Undo side: a loop-close restoration's raw take, then the
-      // conditioned image beneath one overdub. Redo side: that overdub's
-      // undone Peel (a marker, no image) above the live image.
+      // Undo side: the original take, then the image beneath one overdub.
+      // Redo side: that overdub's undone Peel (a marker, no image) above the
+      // live image.
       final original = Float32List.fromList([1, 1, 1, 1]);
-      final raw = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
+      final middle = Float32List.fromList([1.5, 1.5, 1.5, 1.5]);
       final live = Float32List.fromList([.125, .125, .125, .125]);
       const history = [
-        HistoryEntry(HistoryKind.processed),
+        HistoryEntry(HistoryKind.layer),
         HistoryEntry(HistoryKind.layer),
         HistoryEntry(HistoryKind.peel),
       ];
       final source = FakeSessionEngine()
         ..seedLayers(
           0,
-          [original, raw, live],
+          [original, middle, live],
           undoDepth: 2,
           redoDepth: 1,
           history: history,
@@ -1005,7 +1005,7 @@ void main() {
       expect(lane.undoCount, 2);
       expect(lane.redoCount, 1);
       expect(lane.liveIndex, 2);
-      expect(bundle.laneStems[(0, 0)], [original, raw, live]);
+      expect(bundle.laneStems[(0, 0)], [original, middle, live]);
     },
   );
 

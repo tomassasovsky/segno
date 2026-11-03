@@ -86,9 +86,11 @@ buffer:    undo snapshots       live (playing)   redo snapshots (newest last)
 - Since schema 12 (#1164) each lane also stores `history`: the track's
   `undoCount + redoCount` entries in the same order (undo oldest first, then
   redo newest-adjacent first), each `{ "kind": …, "skipped": n }`. Kinds are
-  `layer` (an overdub pass), `processed` (a loop-close restoration's raw take),
-  `peel` and `clear` (a Clear restore point, redo side only; Redo re-clears).
-  `skipped` is nonzero only on a `peel` entry.
+  `layer` (an overdub pass), `peel` and `clear` (a Clear restore point, redo
+  side only; Redo re-clears). `skipped` is nonzero only on a `peel` entry.
+  `processed`, the loop-close restoration's kind, went with the restoration
+  (#697); no app build ever wrote one, and decode refuses it as an unknown
+  kind.
 - A `peel` entry on the undo side holds the image the Peel removed; on the redo
   side it is a **marker without an image**. So
   `layers.length == undoCount + 1 + (redo entries that are not peel)`, and
@@ -435,7 +437,8 @@ envelope):
   loop-close restoration and a Clear restore point survive save and recall
   with the same Undo, Redo and Peel behavior. `undoCount` and `redoCount`
   count entries, and `layers` holds one image per entry except a redo-side
-  Peel marker, plus the live image.
+  Peel marker, plus the live image. The loop-close restoration and its
+  `processed` kind were removed later (#697).
 - **v13** — each track's playback direction (`tracks[].reversed`, #1162). A
   v12 bundle loads forward, as it always recalled.
 - **v14** — length edits (#1168): a lane's history stores each length
