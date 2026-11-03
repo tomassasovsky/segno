@@ -23,7 +23,6 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/record_options.dart';
 import 'package:segno/looper/model/record_options_view_state.dart';
 import 'package:segno/looper/model/tempo_state.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -254,10 +253,6 @@ class DestinationHarness {
           // and dismissed here as they are on the console.
           child: ToastificationWrapper(
             child: MaterialApp(
-              builder: (context, child) => BlocProvider(
-                create: (_) => NoticesCubit(),
-                child: child,
-              ),
               navigatorKey: segnoNavigatorKey,
               debugShowCheckedModeBanner: false,
               theme: AppTheme.neon,

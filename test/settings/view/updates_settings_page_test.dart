@@ -12,7 +12,6 @@ import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
 import 'package:segno/settings/view/updates_settings_page.dart';
@@ -119,10 +118,6 @@ void main() {
           BlocProvider<SessionCubit>.value(value: session),
         ],
         child: MaterialApp(
-          builder: (context, child) => BlocProvider(
-            create: (_) => NoticesCubit(),
-            child: child,
-          ),
           theme: AppTheme.neon,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,

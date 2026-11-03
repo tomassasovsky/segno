@@ -23,8 +23,8 @@ extension PumpApp on WidgetTester {
   /// Re-pumping the SAME flavor does not unmount, so tests that re-pump to
   /// push new state keep their element tree.
   ///
-  /// Every route gets a [NoticesCubit], as under the real app: pass
-  /// [notices] to drive or read it, or a fresh one is made per pump.
+  /// Pass [notices] to drive the notice centre every route reads, as the
+  /// app's root provides it.
   Future<void> pumpApp(
     Widget widget, {
     ThemeData? theme,
@@ -45,7 +45,7 @@ extension PumpApp on WidgetTester {
         builder: (context, child) {
           final app = AppTextDefaults(child: child ?? const SizedBox.shrink());
           return notices == null
-              ? BlocProvider(create: (_) => NoticesCubit(), child: app)
+              ? app
               : BlocProvider.value(value: notices, child: app);
         },
         home: widget,

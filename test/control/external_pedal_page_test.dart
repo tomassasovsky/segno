@@ -26,7 +26,6 @@ import 'package:segno/looper/cubit/record_timing_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -273,10 +272,6 @@ void main() {
     addTearDown(() => unawaited(tempoOwner.close()));
     await tester.pumpWidget(
       MaterialApp(
-        builder: (context, child) => BlocProvider(
-          create: (_) => NoticesCubit(),
-          child: child,
-        ),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(

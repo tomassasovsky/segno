@@ -17,7 +17,6 @@ import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
@@ -301,10 +300,6 @@ void main() {
                 BlocProvider<LooperBloc>.value(value: looper),
               ],
               child: MaterialApp(
-                builder: (context, child) => BlocProvider(
-                  create: (_) => NoticesCubit(),
-                  child: child,
-                ),
                 navigatorKey: segnoNavigatorKey,
                 theme: AppTheme.neon,
                 localizationsDelegates: AppLocalizations.localizationsDelegates,

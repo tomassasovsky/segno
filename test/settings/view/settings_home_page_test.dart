@@ -13,7 +13,6 @@ import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/settings/settings.dart';
@@ -76,10 +75,6 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final app = MaterialApp(
-      builder: (context, child) => BlocProvider(
-        create: (_) => NoticesCubit(),
-        child: child,
-      ),
       navigatorKey: segnoNavigatorKey,
       navigatorObservers: observers,
       theme: AppTheme.neon,

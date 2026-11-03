@@ -19,7 +19,6 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -203,10 +202,6 @@ void main() {
     );
     await tester.pumpWidget(
       MaterialApp(
-        builder: (context, child) => BlocProvider(
-          create: (_) => NoticesCubit(),
-          child: child,
-        ),
         locale: locale,
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,

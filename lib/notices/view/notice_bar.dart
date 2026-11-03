@@ -6,6 +6,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/notices/cubit/notices_cubit.dart';
 import 'package:segno/notices/model/notice.dart';
 import 'package:segno/notices/view/notice_palette.dart';
+import 'package:segno/notices/view/select_notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// How long the top bar's centre takes to cross-fade between the session
@@ -37,8 +38,8 @@ class NoticeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final theme = context.noticeTheme;
-    final tone = context.select<NoticesCubit, NoticeTone?>(
-      (cubit) => cubit.state.banner?.notice.tone,
+    final tone = context.selectNotices<NoticeTone?>(
+      (state) => state.banner?.notice.tone,
     );
     final colors = tone == null ? null : NoticePalette.of(surface, tone);
     return Stack(
@@ -99,15 +100,15 @@ class NoticeBarMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final message = context.select<NoticesCubit, ShownNotice?>(
-      (cubit) => cubit.state.held ? null : cubit.state.message,
+    final message = context.selectNotices<ShownNotice?>(
+      (state) => state.held ? null : state.message,
     );
-    final banner = context.select<NoticesCubit, ShownNotice?>(
-      (cubit) => cubit.state.banner,
+    final banner = context.selectNotices<ShownNotice?>(
+      (state) => state.banner,
     );
     final track = showsTrackMessages
-        ? context.select<NoticesCubit, ({int channel, ShownNotice shown})?>(
-            (cubit) => cubit.state.latestTrackMessage,
+        ? context.selectNotices<({int channel, ShownNotice shown})?>(
+            (state) => state.latestTrackMessage,
           )
         : null;
     final Widget current;

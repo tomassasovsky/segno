@@ -24,7 +24,6 @@ import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
 import 'package:segno/looper/view/audio_routing/output_routing_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -213,10 +212,6 @@ void main() {
             if (backingMix != null) BlocProvider.value(value: backingMix),
           ],
           child: MaterialApp(
-            builder: (context, child) => BlocProvider(
-              create: (_) => NoticesCubit(),
-              child: child,
-            ),
             navigatorKey: segnoNavigatorKey,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,

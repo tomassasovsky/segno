@@ -11,7 +11,6 @@ import 'package:segno/control/model/foot_tuner.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
@@ -105,10 +104,6 @@ void main() {
     if (locale == null) return tester.pumpApp(face);
     await tester.pumpWidget(
       MaterialApp(
-        builder: (context, child) => BlocProvider(
-          create: (_) => NoticesCubit(),
-          child: child,
-        ),
         locale: locale,
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,

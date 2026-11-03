@@ -346,6 +346,19 @@ void main() {
     });
   });
 
+  testWidgets('a bar with no notice centre above it draws at rest', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1920, 1080)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    // A page pumped on its own, as the screenshot suites do.
+    await tester.pumpApp(const _Bar());
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('session')), findsOneWidget);
+  });
+
   group(NoticeBar, () {
     testWidgets('a must-act message tints the whole bar and rules it in its '
         'tone until it is cleared', (tester) async {

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/notices/cubit/notices_cubit.dart';
 import 'package:segno/notices/model/notice.dart';
 import 'package:segno/notices/view/notice_palette.dart';
+import 'package:segno/notices/view/select_notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The ring colour of [channel]'s card while a message it caused is up, or
@@ -13,8 +13,8 @@ import 'package:segno/theme/theme.dart';
 /// row and the Mixer's strip — reads it, so a track's message looks the same
 /// whichever view is up.
 Color? trackNoticeRing(BuildContext context, int channel) {
-  final tone = context.select<NoticesCubit, NoticeTone?>(
-    (cubit) => cubit.state.trackMessage(channel)?.notice.tone,
+  final tone = context.selectNotices<NoticeTone?>(
+    (state) => state.trackMessage(channel)?.notice.tone,
   );
   return tone == null ? null : NoticePalette.resolve(context, tone).line;
 }
@@ -39,8 +39,8 @@ class TrackNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shown = context.select<NoticesCubit, ShownNotice?>(
-      (cubit) => cubit.state.trackMessage(channel),
+    final shown = context.selectNotices<ShownNotice?>(
+      (state) => state.trackMessage(channel),
     );
     return Stack(
       fit: StackFit.expand,
