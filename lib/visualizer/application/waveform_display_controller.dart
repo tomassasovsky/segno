@@ -77,8 +77,9 @@ enum WaveformDisplayFailure {
 }
 
 /// Owns second-window lifecycle and delivery, independently of widget rebuilds.
-/// Waveform frames follow repository polls; a trailing gate retains the latest
-/// discrete change. Readout retries use a timer without resampling playheads.
+/// Waveform frames follow the looper state and the playheads, at most one per
+/// [_frame]; a trailing gate sends the latest change. Readout retries use a
+/// timer without resampling playheads.
 class WaveformDisplayController {
   /// Connects the live repository to its exclusively owned window channel.
   /// Await [close] before handing the injected service to another controller.
@@ -97,11 +98,17 @@ class WaveformDisplayController {
   final WaveformWindowService _window;
   final _failures = StreamController<WaveformDisplayFailure>.broadcast();
   WaveformDisplayContext _context;
-  StreamSubscription<LooperState>? _poll;
+  StreamSubscription<LooperState>? _states;
+  StreamSubscription<Playhead>? _playheads;
   Timer? _readoutTimer;
   Timer? _frameGate;
-  LooperState? _pendingFrame;
-  LooperState? _lastSentFrame;
+
+  /// A change arrived while the gate was closed; the gate sends it.
+  bool _framePending = false;
+
+  /// Counts the frames sent, so a failed one retries only while it is the
+  /// latest.
+  int _frameCount = 0;
   (LooperState, WaveformDisplayContext)? _lastReadout;
   int _readoutRevision = 0;
   int _intent = 0;
@@ -185,7 +192,8 @@ class WaveformDisplayController {
   void _startDelivery() {
     if (_running) return;
     _running = true;
-    _poll = _repository.looperState.listen(_requestFrame);
+    _states = _repository.looperState.listen((_) => _requestFrame());
+    _playheads = _repository.playheads.listen((_) => _requestFrame());
     _readoutTimer = Timer.periodic(_frame, (_) => _pushReadout());
     _onWindowReady();
   }
@@ -196,49 +204,48 @@ class WaveformDisplayController {
     final selectionChanged =
         context.cursor != _context.cursor || context.name != _context.name;
     _context = context;
-    if (_running && selectionChanged) _requestFrame(_repository.lastState);
+    if (_running && selectionChanged) _requestFrame();
   }
 
   void _onWindowReady() {
     if (!_running || _closed) return;
     _lastReadout = null;
     _readoutRevision++;
-    _requestFrame(_repository.lastState);
+    _requestFrame();
   }
 
-  void _requestFrame(LooperState state) {
+  void _requestFrame() {
     if (!_running || _closed) return;
     if (_frameGate != null) {
-      _pendingFrame = state;
+      _framePending = true;
       return;
     }
-    _sendFrame(state);
+    _sendFrame();
   }
 
-  void _sendFrame(LooperState state) {
+  void _sendFrame() {
     final delivery = _delivery;
     final cursor = _context.cursor;
     final name = _context.name;
-    _lastSentFrame = state;
-    _pendingFrame = null;
+    final frame = ++_frameCount;
+    _framePending = false;
     _armFrameGate();
-    final selected = _trackAt(state, cursor) ?? const Track();
+    final selected = _trackAt(_repository.lastState, cursor) ?? const Track();
     final samples = selected.hasContent
         ? _repository.readTrackWaveform(cursor)
         : Float32List(0);
+    final progress = _repository.playhead.track(cursor);
     unawaited(
-      _window.pushWaveform(samples, selected.progress, name).catchError((
-        Object _,
-      ) {
+      _window.pushWaveform(samples, progress, name).catchError((Object _) {
         if (!_running ||
             _closed ||
             delivery != _delivery ||
             cursor != _context.cursor ||
             name != _context.name ||
-            !identical(_lastSentFrame, state)) {
+            frame != _frameCount) {
           return;
         }
-        _pendingFrame ??= state;
+        _framePending = true;
         _armFrameGate();
       }),
     );
@@ -247,8 +254,7 @@ class WaveformDisplayController {
   void _armFrameGate() {
     _frameGate ??= Timer(_frame, () {
       _frameGate = null;
-      final pending = _pendingFrame;
-      if (pending != null && _running && !_closed) _sendFrame(pending);
+      if (_framePending && _running && !_closed) _sendFrame();
     });
   }
 
@@ -278,10 +284,11 @@ class WaveformDisplayController {
     _readoutTimer = null;
     _frameGate?.cancel();
     _frameGate = null;
-    unawaited(_poll?.cancel());
-    _poll = null;
-    _pendingFrame = null;
-    _lastSentFrame = null;
+    unawaited(_states?.cancel());
+    _states = null;
+    unawaited(_playheads?.cancel());
+    _playheads = null;
+    _framePending = false;
     _lastReadout = null;
   }
 

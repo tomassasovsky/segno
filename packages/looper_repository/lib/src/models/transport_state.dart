@@ -12,7 +12,6 @@ class TransportState extends Equatable {
   const TransportState({
     this.deviceRunning = false,
     this.masterLengthFrames = 0,
-    this.masterPositionFrames = 0,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -54,9 +53,6 @@ class TransportState extends Equatable {
 
   /// Master loop length in frames; `0` before the first loop is finalized.
   final int masterLengthFrames;
-
-  /// Current master loop playhead in frames.
-  final int masterPositionFrames;
 
   /// Denominator-note beats per minute; `0` when [tempoSource] is
   /// [TempoSource.none] (no tempo ever set).
@@ -185,15 +181,10 @@ class TransportState extends Equatable {
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
-  /// Normalized loop progress in `0..1`, or `0` when no loop exists.
-  double get progress =>
-      hasLoop ? masterPositionFrames / masterLengthFrames : 0;
-
   @override
   List<Object?> get props => [
     deviceRunning,
     masterLengthFrames,
-    masterPositionFrames,
     tempoBpm,
     tempoSource,
     tsNum,

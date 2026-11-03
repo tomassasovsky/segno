@@ -21,6 +21,7 @@ import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/meter_levels.dart';
 import 'package:looper_repository/src/models/mix_settings_snapshot.dart';
 import 'package:looper_repository/src/models/output_setup.dart';
+import 'package:looper_repository/src/models/playhead.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/selected_render.dart';
@@ -194,6 +195,49 @@ class LooperRepository {
 
   /// The levels from the most recent poll.
   MeterLevels get meters => _meters;
+
+  final _playheads = StreamController<Playhead>.broadcast();
+  Playhead _playhead = const Playhead();
+
+  /// Each track's playhead, published on the poll whenever it moves (#1563).
+  /// Kept out of [looperState] for the reason levels are: a playing track's
+  /// position moves on every poll, and inside the state it re-ran every
+  /// listener of the state at the poll rate for as long as a loop played.
+  /// Only what draws a playhead follows this. Emits only while [looperState]
+  /// is listened to, as the poll runs then.
+  Stream<Playhead> get playheads => _playheads.stream;
+
+  /// The playhead from the most recent poll, or read from the engine while
+  /// nothing polls, the way [lastState] is.
+  Playhead get playhead =>
+      _isPolling ? _playhead : _playheadOf(_engine.snapshot());
+
+  Playhead _playheadOf(EngineSnapshot s) {
+    // A session import keeps the public tracks empty until it commits.
+    final importing = _importTracks;
+    return Playhead(
+      tracks: [
+        if (importing != null)
+          for (final _ in importing) 0
+        else
+          for (final track in s.tracks) _progressOf(track),
+      ],
+    );
+  }
+
+  void _publishPlayhead(EngineSnapshot s) {
+    final next = _playheadOf(s);
+    if (next == _playhead) return;
+    _playhead = next;
+    _playheads.add(next);
+  }
+
+  /// [track]'s position as a share of its length, `0` with no length or
+  /// while the take records ([Playhead.tracks]).
+  static double _progressOf(TrackSnapshot track) =>
+      track.lengthFrames > 0 && track.state != TrackState.recording
+      ? (track.positionFrames / track.lengthFrames).clamp(0.0, 1.0)
+      : 0;
 
   void _publishMeters(EngineSnapshot s) {
     final next = MeterLevels(
@@ -2303,6 +2347,7 @@ class LooperRepository {
     final snapshot = _snapshotAndSettleImages();
     _engineSnapshots.add(snapshot);
     _publishMeters(snapshot);
+    _publishPlayhead(snapshot);
     _retryRefusedRecord(snapshot);
     _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
@@ -2476,7 +2521,6 @@ class LooperRepository {
     transport: TransportState(
       deviceRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
-      masterPositionFrames: s.masterPositionFrames,
       tempoBpm: s.tempoBpm,
       tempoSource: s.tempoSource,
       tsNum: s.tsNum,
@@ -2555,7 +2599,6 @@ class LooperRepository {
               pending: s.tracks[i].pending,
               pendingLaunch: s.tracks[i].pendingLaunch,
               pendingTrigger: ArmTrigger.fromCode(s.tracks[i].pendingTrigger),
-              positionFrames: s.tracks[i].positionFrames,
               lengthPresetBars: _effectiveLengthPreset(i),
               lengthPresetOverride: _trackLengthPreset[i],
               recordTimingOverride: _trackRecordTiming[i],
@@ -6358,7 +6401,7 @@ class LooperRepository {
       return Float32List(0);
     }
     final key = _WaveformKey.of(track);
-    final progress = track.progress;
+    final progress = playhead.track(channel);
     final entry = _waveforms[channel];
     if (entry == null || entry.key != key) {
       final samples = _engine.readTrackVisual(channel);
@@ -9608,6 +9651,7 @@ class LooperRepository {
     _paramAnnounceDirty.clear();
     await _engineSnapshots.close();
     await _meterLevels.close();
+    await _playheads.close();
     await _monitorChanges.close();
     await _monitorParamChanges.close();
     await _fxReplayConfirmed.close();
