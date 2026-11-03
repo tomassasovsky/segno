@@ -181,17 +181,13 @@ class SystemApplianceEnv implements ApplianceEnv {
   @override
   Future<void> powerOff() => _runPowerVerb('poweroff');
 
-  /// Runs `reboot` or `poweroff`. They return once systemd has the reset,
-  /// and throw on a refusal or a failure: an [UpdateInstallingException]
-  /// when RAUC is installing, a [ProcessException] otherwise.
-  ///
-  /// A helper that announced the reset and was then killed by a signal was
-  /// killed by that reset: systemd stops every process on the way down. That
-  /// is the reset going ahead, not a failure (#1553).
+  /// Runs `reboot` or `poweroff`. They return once systemd has queued the
+  /// reset (neither verb waits for it, #1553), and throw on a refusal or a
+  /// failure: an [UpdateInstallingException] when RAUC is installing, a
+  /// [ProcessException] otherwise.
   Future<void> _runPowerVerb(String verb) async {
     final result = await runProcess(helperPath, [verb]);
     if (result.exitCode == 0) return;
-    if (result.exitCode < 0 && resetAnnounced('${result.stderr}')) return;
     if (result.exitCode == kUpdateInstallingExitCode) {
       throw UpdateInstallingException('${result.stderr}'.trim());
     }
@@ -224,22 +220,6 @@ class SystemApplianceEnv implements ApplianceEnv {
       return null;
     }
   }
-}
-
-/// Whether the helper's last stderr line is its announcement of a reset,
-/// written just before it hands the reset to systemd: nothing failed after
-/// it.
-@visibleForTesting
-bool resetAnnounced(String stderr) {
-  final lines = const LineSplitter()
-      .convert(stderr)
-      .where((line) => line.trim().isNotEmpty);
-  if (lines.isEmpty) return false;
-  return const {
-    'segno-update-ctl: powering off',
-    'segno-update-ctl: rebooting into the staged slot',
-    'segno-update-ctl: no update staged; plain reboot',
-  }.contains(lines.last.trim());
 }
 
 /// The helper's `install-file` refusal line as the exception the app shows:

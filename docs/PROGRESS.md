@@ -89,8 +89,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   are gone.
 - `segno-update-ctl poweroff` queues the halt with `--no-block` and exits 0,
   as `systemctl reboot` does, so an accepted shutdown no longer logs
-  `power: helper failed`. The app also accepts a helper that announced the
-  reset and was then killed by a signal. Real failures still log.
+  `power: helper failed`. Real failures still log.
+- The power panel closes as the save starts; a fast save shows nothing but
+  still takes no touch.
 - Design: Penpot page 32 still shows the #1543 states; its update waits on
   the Penpot connection.
 

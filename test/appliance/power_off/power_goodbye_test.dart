@@ -42,6 +42,19 @@ void main() {
         );
         expect(find.byKey(const Key('power_goodbye')), findsNothing);
         expect(find.byKey(const Key('power_saving')), findsNothing);
+        // Nothing shows, and still nothing under it takes a touch.
+        expect(
+          tester.getSize(find.byKey(const Key('power_saving_quiet'))),
+          tester.view.physicalSize / tester.view.devicePixelRatio,
+        );
+        expect(
+          tester
+              .widget<AbsorbPointer>(
+                find.byKey(const Key('power_saving_quiet')),
+              )
+              .absorbing,
+          isTrue,
+        );
       });
 
       testWidgets('names the session and ticks off the steps reached', (

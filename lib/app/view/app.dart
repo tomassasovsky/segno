@@ -1575,6 +1575,12 @@ class _AppViewState extends State<_AppView> {
               previous.available?.version != current.available?.version,
           listener: _showUpdateBanner,
         ),
+        // The readout's Restarting face follows whether an update installs.
+        BlocListener<UpdateCubit, UpdateState>(
+          listenWhen: (previous, current) =>
+              stagedUpdateVersion(previous) != stagedUpdateVersion(current),
+          listener: (_, _) => _updateDisplayContext(),
+        ),
       ],
       child: ToastificationWrapper(
         config: const ToastificationConfig(

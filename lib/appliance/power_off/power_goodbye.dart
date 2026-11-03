@@ -83,7 +83,14 @@ class PowerGoodbye extends StatelessWidget {
     final Widget content;
     switch (state.phase) {
       case PowerPhase.saving:
-        if (!state.slow) return const SizedBox.shrink();
+        // A fast save draws nothing, but the screen still takes no touch:
+        // an edit made now would miss the save the reset keeps.
+        if (!state.slow) {
+          return const AbsorbPointer(
+            key: Key('power_saving_quiet'),
+            child: SizedBox.expand(),
+          );
+        }
         content = _SavingFace(state: state);
       case PowerPhase.goodbye:
         content = switch ((state.action, stagedUpdate)) {

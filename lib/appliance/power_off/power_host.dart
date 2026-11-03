@@ -159,10 +159,12 @@ class _PowerHostState extends State<PowerHost> {
       case PowerPhase.options:
       case PowerPhase.saveFailed:
         unawaited(_openDialog());
-      case PowerPhase.saving:
-        break;
       case PowerPhase.saveAs:
         unawaited(_openSaveAs());
+      // The panel goes as the save starts: a fast save shows no face at all
+      // (#1553), and the panel must not linger over it as if nothing had
+      // been chosen.
+      case PowerPhase.saving:
       case PowerPhase.idle:
       case PowerPhase.goodbye:
         _dismissPowerRoutes();

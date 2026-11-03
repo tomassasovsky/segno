@@ -466,6 +466,23 @@ void main() {
       verifyNever(() => session.saveAs(any()));
     });
 
+    testWidgets('the panel goes as the save starts (#1553)', (tester) async {
+      named();
+      final written = Completer<void>();
+      when(() => session.save()).thenAnswer((_) => written.future);
+      await openOptions(tester);
+
+      await tester.tap(find.byKey(const Key('power_shut_down')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(cubit.state.phase, PowerPhase.saving);
+      expect(find.byKey(const Key('power_dialog')), findsNothing);
+      written.complete();
+      await settle(tester);
+      expect(cubit.state.phase, PowerPhase.goodbye);
+    });
+
     testWidgets('named Restart saves and reboots', (tester) async {
       named();
       await openOptions(tester);
