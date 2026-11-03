@@ -69,6 +69,8 @@ gain = 10^((24v − 12)/20).
 ### Other on-screen checks
 
 - Spring Time v = 0.30103 shows 2.00 s (log taper; linear would give 3.71 s).
+  The value then rounds to whole seconds: v = 0.90 (7.94 s by the taper)
+  shows and plays 8.00 s (#1547).
 - Bar fills match the stored value to about 0.003.
 - Rev Length default v = 0.16 shows 0.73 s, matching the reverb-time taper
   ((0.16 + 0.45)/0.84 = 0.726).

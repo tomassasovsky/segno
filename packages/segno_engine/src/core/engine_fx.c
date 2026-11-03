@@ -7370,16 +7370,16 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
  * - the tank is one recirculating spring: its echo returns every 38.0 ms
  *   (the envelope's autocorrelation peak in both), dispersed on each trip by
  *   a chain of twelve first-order all-passes;
+ * - Time is a whole number of seconds, rounded, as the device steps it (bar
+ *   0.90, 7.94 s by the taper, plays 8 s);
  * - the decay: each trip loses LE_SPR_TIME's loss at the Time, 0.45 dB more
  *   above 1.2 kHz and its low gain less below 400 Hz (first-order shelves
- *   in the loop); between the whole seconds the loss in dB is read
- *   log-linearly, the low gain linearly (its first rows are 0). Read on the impulse
- *   responses in windows a trip long (20 ms ones alternate between echoes
- *   and the silence between them, and read this tank's decay as 23 % longer
- *   than it is at 8 s), from 0.3 to 1.0 s, broadband and in four bands from
- *   200 Hz to 4 kHz, it is within 3 % of the captures broadband at every
- *   Time and within 10 % in each band (the 1-2 kHz band the furthest, 9 %
- *   short at 10 s);
+ *   in the loop). Read on the impulse responses in windows a trip long, from
+ *   0.3 to 1.0 s, broadband and in four bands from 200 Hz to 4 kHz, it is
+ *   within 2 % of the captures broadband at every Time and within 10 % in
+ *   each band (the 1-2 kHz band the furthest, 9 % short at 10 s). 20 ms
+ *   windows alternate between the echoes and the near-silence between them:
+ *   they read the earlier tank at 8 s as 5.89 s, 43 % over its 4.12;
  * - the wet sound is band-limited, 200 Hz to a steep edge near 4 kHz
  *   (-46 dB at 4.7 kHz, -96 dB at 7.2 kHz): nine sections fitted to the
  *   impulse response's spectrum within 1.7 dB rms from 100 Hz to 7.3 kHz;
@@ -7528,16 +7528,13 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
   }
   const float m = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
   if (f & LE_FX_DYN_CHANGED) {
-    double time = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
-    time = time < 1.0 ? 1.0 : time > 10.0 ? 10.0 : time;
-    const int i = time >= 10.0 ? 8 : (int)time - 1;
-    const double frac = time - (double)(i + 1);
-    const double loss = LE_SPR_TIME[i].loss_db *
-                        pow(LE_SPR_TIME[i + 1].loss_db / LE_SPR_TIME[i].loss_db, frac);
-    const double low = LE_SPR_TIME[i].low_db +
-                       frac * (LE_SPR_TIME[i + 1].low_db - LE_SPR_TIME[i].low_db);
-    q->gain_tgt = (float)pow(10.0, -loss * q->trip_scale / 20.0);
-    q->low_tgt = (float)pow(10.0, low * q->trip_scale / 20.0);
+    /* Time in whole seconds, as the Looper X steps it (a NaN reads as 1 s). */
+    const double t = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
+    const int i = !(t >= 1.5) ? 0 : !(t < 9.5) ? 9 : (int)(t + 0.5) - 1;
+    const double time = (double)(i + 1);
+    q->gain_tgt =
+        (float)pow(10.0, -LE_SPR_TIME[i].loss_db * q->trip_scale / 20.0);
+    q->low_tgt = (float)pow(10.0, LE_SPR_TIME[i].low_db * q->trip_scale / 20.0);
     q->wet_tgt = (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP));
   }
   const float k = settle ? 1.0f : q->h.k;
@@ -7572,7 +7569,7 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
     u = y;
   }
   if (q->frac_on) u = le_frac_tick(q->frac_ap, q->frac_z, u);
-  u += (lowk - 1.0f) * le_onepole_lp(&q->low_s[ph], q->low_g1, u);
+  if (lowk != 1.0f) u += (lowk - 1.0f) * le_onepole_lp(&q->low_s[ph], q->low_g1, u);
   u += (LE_SPR_LOSS_SHELF - 1.0f) *
        (u - le_onepole_lp(&q->loss_s[ph], q->loss_g1, u));
   u = fx_sanitize(u); /* a decayed tail flushes to 0 */

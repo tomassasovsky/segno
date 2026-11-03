@@ -21,12 +21,12 @@ static double verb_t60_win(const float* h, int sr, double from_s, double to_s,
   return -60.0 / slope;
 }
 
-/* ---- Spring ---- */
-
 /* verb_t60_win in 20 ms windows. */
 static double verb_t60(const float* h, int sr, double from_s, double to_s) {
   return verb_t60_win(h, sr, from_s, to_s, 0.020);
 }
+
+/* ---- Spring ---- */
 
 /* The spring's decay from [from_s] to [to_s] in windows a 38 ms trip long:
  * its echoes come every trip with little between them, so 20 ms windows
@@ -36,7 +36,7 @@ static double spring_t60(const float* h, int sr, double from_s, double to_s) {
 }
 
 /* The spring's impulse response at [sr], Time [time] s and Mix [mix],
- * [n] samples, the dry spike (1 - 0.29 mix) taken out of its first sample. */
+ * [n] samples, its first sample (the dry spike) zeroed. */
 static float* spring_ir(int sr, double time, float mix, int n) {
   float* in = (float*)calloc((size_t)n, sizeof(float));
   float* h = (float*)calloc((size_t)n, sizeof(float));
@@ -48,7 +48,7 @@ static float* spring_ir(int sr, double time, float mix, int n) {
   uint32_t clock = 0;
   dyn_run(fx, LE_FX_SPRING, p, sr, in, h, NULL, n, &clock);
   dyn_free(fx);
-  h[0] -= 1.0f - 0.29f * mix;
+  h[0] = 0.0f;
   free(in);
   return h;
 }
@@ -56,7 +56,7 @@ static float* spring_ir(int sr, double time, float mix, int n) {
 /* The spring against its captures at Mix 28.9 % (#891 s3/6 and s3/7,
  * s16spring; #1547), at 48 kHz, the Looper X's rate: the decay at every
  * whole second of Time, read the same way on the captures (0.3 to 1.0 s),
- * and at Time 7.94 s (between two rows, as the preset taper lands); at
+ * and at bar 0.90 (7.94 s by the taper, the s3/7 capture's 8 s); at
  * Time 2 s the 38 ms echo and the band-limited wet spectrum; at 44.1 and
  * 96 kHz the same decay. At 0 % mix it is the identity. */
 static void test_spring_matches_the_capture(void) {
@@ -64,16 +64,16 @@ static void test_spring_matches_the_capture(void) {
   const int sr = 48000; /* the Looper X's rate */
   const int n = 3 * sr;
   const float mix = 0.289f;
-  /* Time and the captures' decay; 7.94 s reads between 7 and 8 s. */
+  /* Time and the captures' decay; 7.94 s plays 8 s, as on the device. */
   const double cap[11][2] = {{1.0, 1.30}, {2.0, 1.82}, {3.0, 2.28},
                              {4.0, 2.73}, {5.0, 3.20}, {6.0, 3.70},
                              {7.0, 4.24}, {8.0, 4.85}, {9.0, 5.54},
-                             {10.0, 6.32}, {7.94, 4.81}};
+                             {10.0, 6.32}, {7.94, 4.85}};
   for (int c = 0; c < 11; ++c) {
     float* h = spring_ir(sr, cap[c][0], mix, n);
     const double t = spring_t60(h, sr, 0.3, 1.0);
     printf("  Time %.2f s: decay %.2f s (capture %.2f)\n", cap[c][0], t, cap[c][1]);
-    CHECK(fabs(t - cap[c][1]) < 0.04 * cap[c][1]);
+    CHECK(fabs(t - cap[c][1]) < 0.03 * cap[c][1]);
     free(h);
   }
 
