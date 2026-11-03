@@ -5,4 +5,4 @@
 // (one per native TU the macOS build needs). Headers referenced by the included
 // source resolve through HEADER_SEARCH_PATHS (../src/core, ../src/midi,
 // ../src/miniaudio) declared in the podspec.
-#include "../../src/core/engine_cond.c"
+#include "../../src/core/halfband.c"

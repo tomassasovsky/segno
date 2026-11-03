@@ -3,9 +3,10 @@
  *
  * A pure, self-contained transform with no engine coupling: every function is
  * `static` and the caller owns all buffers (no malloc, no platform headers).
- * Header-only means no new translation unit — it is #included by exactly one TU
- * (the phase vocoder's engine_fx.c; the native test here), so the static
- * functions never multiply-define and never sit unused.
+ * Header-only means no new translation unit — it is #included by exactly one
+ * engine TU (the phase vocoder's engine_fx.c; the native test and the pitch
+ * bench include it too), so the static functions never multiply-define and
+ * never sit unused.
  *
  * WHY IT IS BUILT THIS WAY (#1410). The octaver runs four length-1024 real
  * transforms per channel in one sample tick, so their whole cost lands in one
@@ -36,8 +37,13 @@ extern "C" {
 #define LE_FFT_PI 3.14159265358979323846f
 
 /* Upper bound on the real transform length a plan can hold. The phase vocoder
- * uses n = 1024. The inverse's stack scratch is LE_FFT_MAX_N floats. */
+ * uses n = 1024. The inverse's stack scratch is LE_FFT_MAX_N floats. A TU that
+ * needs longer transforms off the audio thread (the pitch bench's analysis)
+ * defines a larger bound before including this header; the plan type is
+ * private to each TU, so the bounds never have to agree. */
+#ifndef LE_FFT_MAX_N
 #define LE_FFT_MAX_N 4096
+#endif
 
 /* The tables for one real transform length. Filled by le_rfft_plan_init on a
  * non-real-time thread and read-only afterwards, so one plan serves any number

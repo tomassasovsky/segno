@@ -658,7 +658,7 @@ typedef struct le_fx_par {
   uint32_t f0;    /* the block's first frame in the callback's buffer */
   uint32_t n;     /* its frames */
   uint32_t clock; /* the FX clock of frame f0 */
-  const float* in; /* the conditioned input (in_c) */
+  const float* in; /* the device input */
   int32_t ch_in, sr, fx_cap;
   int32_t jobs;
   int32_t job_mon[LE_MAX_MONITORED_INPUTS]; /* the monitor each job runs */
@@ -1272,66 +1272,12 @@ typedef struct le_monitor_input {
   le_fx_state fx;
 } le_monitor_input;
 
-/* ---- Per-input conditioning stage (input conditioning, S1) ---- */
-
-/* Hum-notch bank width: notches at k*base for k = 1..harmonics. */
-#define LE_COND_HUM_MAX 8
-
-/* Conditioned-copy scratch capacity in FRAMES. The audio thread copies the
- * interleaved input block into the preallocated scratch once per block (only
- * when at least one input's stage is enabled), so the scratch must hold one
- * device callback's worth of frames. 8192 comfortably exceeds any real
- * device/backend period (64-4096 typical); a larger block — only the native
- * tests' synthetic mega-blocks ever exceed this — falls back to the raw
- * buffer for that block (documented, RT-safe, no allocation). */
-#define LE_COND_SCRATCH_FRAMES 8192
-
-/* Expander attack: fixed ~5 ms one-pole, no lookahead (zero added latency). */
-#define LE_COND_ATTACK_MS 5.0f
-
-/* Conditioning parameter defaults (le_cond_param order). */
-#define LE_COND_DEF_HPF_HZ 40.0f
-#define LE_COND_DEF_HUM_HZ 50.0f
-#define LE_COND_DEF_HUM_HARMONICS 4
-#define LE_COND_DEF_EXP_THRESHOLD_DB (-55.0f)
-#define LE_COND_DEF_EXP_RATIO 2.0f
-#define LE_COND_DEF_EXP_RELEASE_MS 150.0f
-
-/* One biquad section, transposed direct-form II (5 MAC/sample). */
-typedef struct le_cond_biquad {
-  float b0, b1, b2, a1, a2; /* a0-normalized coefficients */
-  float s1, s2;             /* state */
-} le_cond_biquad;
-
-/* One hardware input's conditioning stage (engine-level, one slot per input,
- * bounded by LE_MAX_MONITORED_INPUTS like the monitor slots). Published config
- * atomics are the control-visible truth (seeded to defaults at configure);
- * everything below them is AUDIO-THREAD-LOCAL DSP state, recomputed by
- * apply_command in lockstep with the ring commands (le_cond_prepare /
- * le_cond_update_param, engine_cond.c) and reset on configure and on enable
- * edges so a re-engaged stage never rings with stale history. */
-typedef struct le_input_cond {
-  _Atomic int32_t a_enabled;                /* 0/1, default 0 */
-  _Atomic uint32_t a_hpf_hz_bits;           /* float Hz; 0 = section off */
-  _Atomic uint32_t a_hum_hz_bits;           /* float Hz; 0 = section off */
-  _Atomic int32_t a_hum_harmonics;          /* 1..LE_COND_HUM_MAX */
-  _Atomic uint32_t a_exp_threshold_db_bits; /* float dB */
-  _Atomic uint32_t a_exp_ratio_bits;        /* float; 1.0 = section off */
-  _Atomic uint32_t a_exp_release_ms_bits;   /* float ms */
-  /* Audio-thread-local derived state (never read by the control thread). */
-  int hpf_on;
-  le_cond_biquad hpf;
-  int hum_n; /* active notch sections (0 = section off) */
-  le_cond_biquad hum[LE_COND_HUM_MAX];
-  int exp_on;
-  float env;          /* envelope follower state */
-  float atk_coef;     /* one-pole attack coefficient */
-  float rel_coef;     /* one-pole release coefficient */
-  float thr_lin;      /* threshold as linear amplitude */
-  float thr_inv;      /* 1 / thr_lin */
-  int exp_pow;        /* integer part of (ratio - 1): whole u-powers */
-  float exp_frac;     /* fractional part of (ratio - 1): linear blend */
-} le_input_cond;
+/* Instrument bus capacity in FRAMES (#1197): each instrument slot's mono bus
+ * holds one device callback's worth of frames. 8192 comfortably exceeds any
+ * real device/backend period (64-4096 typical); a larger block (only the
+ * native tests' synthetic mega-blocks ever exceed this) leaves the instrument
+ * sources silent for that block (RT-safe, no allocation). */
+#define LE_INST_BUS_FRAMES 8192
 
 /* A bus-stage effect chain owner (FX v3 part 1b): the exact chain block shape
  * of le_lane / le_monitor_input — published config atomics, the two-level
@@ -1420,9 +1366,9 @@ typedef enum {
   LE_HIST_PEEL = 2,  /* a Peel (#1164): on the undo stack, the image Peel
                       * removed (the former live slot) plus `skipped`; on the
                       * redo stack a marker with slot -1 that re-peels. */
-  LE_HIST_PROCESSED = 3, /* a loop-close restoration commit (#697 S9): the raw
-                          * take beneath a conditioned live image. Undo/Redo
-                          * swap it like a LAYER; Peel never consumes it. */
+  /* 3 was a loop-close restoration commit (#697), removed with the
+   * restoration; the code stays unallocated so an old Session can never be
+   * misread. */
   LE_HIST_LENGTH = 4, /* a length edit (#1168): `slot` holds the image to put
                        * back, `len` its length and `start` where its frame 0
                        * sits in the live image. Undo/Redo re-apply it through
@@ -1643,12 +1589,10 @@ typedef struct le_track {
 
   /* ---- control-thread-owned undo bookkeeping ---- */
   int32_t outstanding_slots[4]; /* shadow slots posted, not yet retired */
-  /* A Bounce install in flight (#1202): the bundle, and the two slots it
-   * names that no stack holds yet (the incoming image and the outgoing live
-   * slot), pinned against reuse until its outcome is filed. Every other
-   * history motion on the track waits for it (LE_ERR_NOT_READY). */
+  /* A Bounce install in flight (#1202), until its outcome is filed. Every
+   * other history motion on the track waits for it (LE_ERR_NOT_READY); see
+   * le_bounce_busy for why no slot can be taken on the track meanwhile. */
   struct le_bounce_bundle* bounce_inflight;
-  int32_t bounce_pin[2]; /* slot + 1; 0 = none */
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   /* An undo's overdub punch-out has been posted and not yet applied.
@@ -1729,7 +1673,7 @@ typedef struct le_track {
   /* control: a posted LE_CMD_SET_LENGTH not yet filed (#1168) — 1 + the pool
    * slot it publishes, else 0. It is a state command (state_cmds_posted), so
    * `length_ack` names its acknowledgement; until then every history motion,
-   * capture, Clear and restoration commit on the track is refused NOT_READY,
+   * capture and Clear on the track is refused NOT_READY,
    * which keeps the callback's a_live store from racing them. At the ack the
    * drain files `length_file` per `length_op` if a_length_result is LE_OK. */
   int32_t length_pending;
@@ -1861,13 +1805,6 @@ typedef struct le_track {
   _Atomic int32_t a_peel_depth; /* published le_peel_depth: LAYER entries Peel
                                  * can still consume, under a_undo_depth's
                                  * gates (0 on an EMPTY track) — #1164 */
-  /* Offline loop-close restoration telemetry (#697 S9): 0 idle, 1 queued
-   * (enqueue copy pending / QUEUED for the worker), 2 running (worker DSP in
-   * flight). Written by the control-thread le_restore_tick, read by the
-   * snapshot; the audio thread never touches it. A completed pass publishes
-   * its result as an ordinary undo layer, so the restored/raw takes surface
-   * through the existing undo_depth, not here. */
-  _Atomic int32_t a_restore_state;
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
    * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
@@ -2257,6 +2194,10 @@ typedef struct le_bounce_bundle {
   struct le_prepared_fx* lane_fx;
   struct le_prepared_fx* track_fx;
   le_hist_entry prev; /* callback-written: the track before the install */
+  /* Control-written at post: the live slot the install replaces, which the
+   * collect files as history. track_select_slot never hands it, or
+   * target.slot, out while the bundle is in flight. */
+  int32_t out_slot;
   /* Callback-written when the install waited for a tail: the state the
    * track had before the Bounce stopped it, which Undo restores. */
   int32_t parked;
@@ -2501,35 +2442,10 @@ struct le_engine {
    * break the cable feedback loop; a fresh start restores defaults). */
   le_monitor_input monitors[LE_MAX_MONITORED_INPUTS];
 
-  /* Per-input conditioning stages (input conditioning, S1): HPF + hum notches
-   * + downward expander, run once per block into cond_buf — the preallocated
-   * conditioned copy of the interleaved input — upstream of BOTH the lane
-   * fan-out and the monitor split. Metering / clip / latency keep reading the
-   * raw device buffer. cond_buf is control-thread allocated at configure
-   * (LE_COND_SCRATCH_FRAMES * in_channels floats) and freed at destroy /
-   * reallocated at configure; the audio thread only ever reads the pointer
-   * (set before the device runs). NULL (allocation failure) simply keeps the
-   * raw path — conditioning silently off, never a crash. */
-  le_input_cond cond[LE_MAX_CHANNELS]; /* device channels only (#1197) */
-  float* cond_buf;
-  int64_t cond_buf_cap; /* capacity in floats (frames * channels) */
-  /* Bumped once per block in which conditioning was WANTED (>= 1 input
-   * enabled) but fell back to the raw path — the block exceeded the scratch
-   * (LE_COND_SCRATCH_FRAMES) or the scratch failed to allocate. The fallback
-   * is per-block, so a backend that ever delivers oversized periods would
-   * alternate conditioned/raw across gaps (stale filter states -> clicks);
-   * this counter is the telemetry that turns "only synthetic tests hit this"
-   * from aspiration into an observable fact. Same idiom as
-   * a_midi_clock_overruns / a_perf_log_overruns: not surfaced via
-   * le_snapshot yet (no RT assert either — the callback must never abort);
-   * native tests read the atomic directly, and a snapshot field can be added
-   * the day a real consumer needs it. */
-  _Atomic uint32_t a_cond_fallback_blocks;
-
   /* ---- Instruments (#1197; engine_instruments.c) ----
    * `synth` is allocated at create and re-initialised by every configure or
    * reopen (device closed); afterwards only the audio thread touches it.
-   * `inst_bus` holds LE_MAX_INSTRUMENTS mono buses of LE_COND_SCRATCH_FRAMES,
+   * `inst_bus` holds LE_MAX_INSTRUMENTS mono buses of LE_INST_BUS_FRAMES,
    * slot-major, allocated with the engine. */
   struct le_synth* synth;
   float* inst_bus;
@@ -2963,16 +2879,6 @@ struct le_engine {
    * SETTING: seeded in le_engine_create, persists across configure. */
   struct le_fx_cache* cache;
   _Atomic int64_t a_fx_cache_cap;
-
-  /* Offline loop-close restoration worker (#697 S9): opaque control/worker
-   * state owned by engine_restore.c — the same opaque-pointer shape as the
-   * wet cache above. NULL until le_restore_init (end of configure); torn down
-   * (worker JOINED before any pool free [R2](d)) by le_restore_shutdown from
-   * le_engine_stop, the top of le_engine_configure, and le_engine_destroy. The
-   * audio thread never touches this pointer — the whole restoration surface is
-   * a control-thread publish of an undo layer (le_restore_commit_layer) plus
-   * the per-track a_restore_state telemetry. */
-  struct le_restore* restore;
 
   /* The shared render recipe (#1202, engine_render.c): at most one job.
    * render_job is control-owned; render_retired holds a cancelled job until

@@ -41,7 +41,7 @@
 #include "engine_core.h"
 #include "engine_private.h"
 #include "miniaudio.h"
-#include "restore_halfband.h"
+#include "halfband.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846

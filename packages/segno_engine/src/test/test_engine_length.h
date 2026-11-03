@@ -596,10 +596,6 @@ static void test_length_refusals_while_busy(void) {
   CHECK(le_engine_record(e, 0) == LE_ERR_NOT_READY);
   CHECK(le_engine_peel(e, 0) == LE_ERR_NOT_READY);
   CHECK(le_engine_history_mode_gate(e, 1u, 0) == LE_ERR_NOT_READY);
-  static float restored_pcm[LOOP_N];
-  float* restored[LE_MAX_LANES] = {restored_pcm};
-  CHECK(le_restore_commit_layer(e, 0, 0x1u, atomic_load(&t->a_audio_rev),
-                                LOOP_N, restored) == LE_ERR_INVALID);
   int32_t verdict = 99;
   CHECK(le_engine_read_request_result(e, id, &verdict) == LE_ERR_NOT_READY);
   len_settle(e);
