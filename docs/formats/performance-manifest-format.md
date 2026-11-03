@@ -450,12 +450,17 @@ writes `finalized: true`, on a background isolate:
   trusted, `events.log` is cut back to `events_bytes`, and a `layers` entry
   whose file the checkpoint does not list is removed and counted in
   `layers_dropped`.
+- **A short part ends its stream.** A part still open, or sealed with frames
+  that never reached it, is where its stream stops; a later part of that
+  stream is not joined on (it would play early) and is left untouched.
 - **A lost sidecar.** A take with checkpoint slots but no readable
   `performance.json` is still found and recovered: the fields come from the
   checkpoint (`sample_rate`, the streams as `channel_layout`, `take_id`),
   `overrun_count`, `zero_filled_frames`, `overrun_gaps` and `layers` are
   empty, and the checkpoint's layer files are counted in `layers_dropped`
-  (their details were in the sidecar).
+  (their details were in the sidecar). A hidden directory (a delete or a
+  discard in progress, which renames the take to `.<slug>.deleting` first)
+  is never found as a take.
 - **Left as it is** (unfinalized, every file kept, reported as not
   recovered): neither a readable sidecar nor a valid slot, a slot of another
   take, a stream the slot does not list when only the slot is trusted, or a

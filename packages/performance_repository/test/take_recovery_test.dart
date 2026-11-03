@@ -427,6 +427,57 @@ void main() {
   });
 
   group('recovery, refused', () {
+    test('a part sealed with frames that never reached it ends its stream; '
+        'a later part is not joined on early', () async {
+      final dir = seed('perf-short-middle');
+      writeSealedPart('$dir/master-001.wav', stereo(5));
+      File('$dir/master-001.wav').openSync(mode: FileMode.append)
+        ..truncateSync(84 + 3 * 8)
+        ..closeSync();
+      writeOpenPart('$dir/master-002.wav', stereo(4, from: 5), index: 2);
+      writeNativeSidecar(dir, captureFrames: 9);
+
+      await repo.recoverCapture(dir);
+
+      expect(
+        [for (final p in partsOf(dir)) (p.file, p.frames)],
+        [('master-001.wav', 3)],
+      );
+      expect(manifestOf(dir)['capture_frames'], 3);
+    });
+
+    test('a discarded take is hidden before it is deleted, and a hidden '
+        'directory is never found as a take', () async {
+      final dir = seed('perf-discarded');
+      writeOpenPart('$dir/master-001.wav', stereo(4));
+      checkpoint(dir, master: [openEntry(1, 4)]);
+      // A discard a cut stopped after the sidecar went: only a slot is left.
+      final half = seed('.perf-half${PerformanceRepository.deletingSuffix}');
+      checkpoint(half, master: [openEntry(1, 4)]);
+
+      expect(
+        (await repo.findUnfinalized()).map((c) => c.directory),
+        [dir],
+      );
+      await repo.discardUnfinalized(dir);
+
+      expect(Directory(dir).existsSync(), isFalse);
+      expect(
+        Directory(
+          '${tempDir.path}/exports/.perf-discarded'
+          '${PerformanceRepository.deletingSuffix}',
+        ).existsSync(),
+        isFalse,
+      );
+      expect(await repo.findUnfinalized(), isEmpty);
+
+      // A leftover of an earlier discard of the same name goes first.
+      final again = seed('perf-half');
+      await repo.discardUnfinalized(again);
+      expect(Directory(again).existsSync(), isFalse);
+      expect(Directory(half).existsSync(), isFalse);
+    });
+
     test('a stream the checkpoint does not list leaves the take as it is when '
         'only the checkpoint is trusted', () async {
       final dir = seed('perf-unlisted-stream');

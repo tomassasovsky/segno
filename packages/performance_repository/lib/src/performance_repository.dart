@@ -764,6 +764,8 @@ class PerformanceRepository {
     final out = <UnfinalizedCapture>[];
     for (final entity in root.listSync()) {
       if (entity is! Directory) continue;
+      // A hidden directory is a delete in progress, never a take.
+      if (_basename(entity.path).startsWith('.')) continue;
       if (!File('${entity.path}/$manifestName').existsSync() &&
           !checkpointSlotNames.any(
             (slot) => File('${entity.path}/$slot').existsSync(),
@@ -803,10 +805,26 @@ class PerformanceRepository {
   /// when it goes away during the delete: a USB drive pulled under the take
   /// takes the directory with it, which is the end this asks for.
   Future<void> discardUnfinalized(String directory) async {
+    // Hidden first, as a delete is: a cut halfway through the delete must
+    // not leave a checkpoint that the next start recovers as a take.
+    final doomed =
+        '${_dirname(directory)}/.${_basename(directory)}$deletingSuffix';
     try {
-      await Directory(directory).delete(recursive: true);
-    } on PathNotFoundException {
-      // Already gone.
+      if (Directory(doomed).existsSync()) {
+        Directory(doomed).deleteSync(recursive: true);
+      }
+      Directory(directory).renameSync(doomed);
+      Directory(doomed).deleteSync(recursive: true);
+    } on FileSystemException {
+      // Gone already, or going (a USB drive pulled under the take): remove
+      // what is left; a hidden remainder is finished at the next start.
+      for (final path in [directory, doomed]) {
+        try {
+          Directory(path).deleteSync(recursive: true);
+        } on FileSystemException {
+          continue;
+        }
+      }
     }
   }
 

@@ -177,6 +177,9 @@ ReconciledTake? reconcileTake({
       var held = (length - RecordedPartHeader.headerBytes) ~/ frameBytes;
       if (header.dataBytes > 0 && header.frames < held) held = header.frames;
       parts.add(_DiskPart(index, file, length, held, header));
+      // A part still open, or sealed with frames that never reached it, is
+      // where the stream's audio stops: a later part would play early.
+      if (header.dataBytes == 0 || held < header.frames) break;
     }
     // A stream with no part of this take on disk has nothing to keep or
     // delete; it must not shorten the others to nothing.
