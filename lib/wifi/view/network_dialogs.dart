@@ -412,11 +412,8 @@ class _DetailsDialog extends StatelessWidget {
           Row(
             children: [
               if (saved)
-                LoopOutlinedButton(
+                _ForgetNetworkButton(
                   key: const Key('network_forget'),
-                  width: 240,
-                  borderColor: Colors.transparent,
-                  label: l10n.wifiForgetConfirmAction,
                   onTap: state.busy
                       ? null
                       : () => choose(NetworkDetailsAction.forget),
@@ -506,6 +503,54 @@ class _DetailRow extends StatelessWidget {
           canRequestFocus: false,
           onTap: onTap,
           child: row,
+        ),
+      ),
+    );
+  }
+}
+
+/// Forget network: a borderless action whose label starts at the dialog's
+/// content edge, in line with the rows above it (#1590 NET-1).
+class _ForgetNetworkButton extends StatelessWidget {
+  const _ForgetNetworkButton({required this.onTap, super.key});
+
+  /// Forgets the network, or null while the Wi-Fi owner is busy.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final label = context.l10n.wifiForgetConfirmAction;
+    final onTap = this.onTap;
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: label,
+      excludeSemantics: true,
+      child: Opacity(
+        opacity: onTap == null ? surface.disabledOpacity : 1,
+        child: LoopFocusable(
+          enabled: onTap != null,
+          onActivate: onTap ?? () {},
+          child: InkWell(
+            canRequestFocus: false,
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: SizedBox(
+              height: 64,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AppText(
+                  label,
+                  style: TextStyle(
+                    color: surface.textPrimary,
+                    fontSize: 24,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
