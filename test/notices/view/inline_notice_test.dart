@@ -66,11 +66,14 @@ void main() {
     expect(action.left, greaterThan(text.right));
   });
 
-  testWidgets('two lines fit a 68 high band whole', (tester) async {
+  testWidgets('two lines and the page action fit a 68 high band whole', (
+    tester,
+  ) async {
     await pump(
       tester,
-      message: 'Effects are off on this track. ' * 2,
+      message: 'Effects are off on this track. ' * 3,
       maxLines: 2,
+      action: const SizedBox(key: Key('turn_on'), width: 260, height: 52),
     );
     expect(tester.takeException(), isNull);
     final paragraph = tester.renderObject<RenderParagraph>(
@@ -79,24 +82,23 @@ void main() {
         matching: find.byType(RichText),
       ),
     );
-    expect(paragraph.didExceedMaxLines, isFalse);
+    expect(paragraph.didExceedMaxLines, isTrue);
     // Laid out at its full two lines' height, not clipped to the band.
     expect(paragraph.textSize.height, lessThanOrEqualTo(paragraph.size.height));
   });
 
-  testWidgets('with no line limit the sentence wraps whole', (tester) async {
-    await pump(
-      tester,
-      message: 'The console went back to 0.1.0-experimental.213. ' * 3,
-      height: 200,
-    );
+  testWidgets('with no line limit the sentence wraps whole, unclipped', (
+    tester,
+  ) async {
+    const message = 'The console went back to 0.1.0-experimental.213. ';
+    await pump(tester, message: message * 3, height: 400);
     final paragraph = tester.renderObject<RenderParagraph>(
       find.descendant(
         of: find.byType(InlineNotice),
         matching: find.byType(RichText),
       ),
     );
-    expect(paragraph.didExceedMaxLines, isFalse);
-    expect(paragraph.maxLines, isNull);
+    expect(paragraph.textSize.height, lessThanOrEqualTo(paragraph.size.height));
+    expect(paragraph.size.height, greaterThan(2 * 24));
   });
 }

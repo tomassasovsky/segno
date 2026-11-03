@@ -294,7 +294,18 @@ class LibraryPreviewTracks extends StatelessWidget {
     final listenRefusalTone = switch (listenRefusalKind) {
       LibraryListenRefusal.unplayable ||
       LibraryListenRefusal.noDevice => ConsoleBannerTone.failure,
-      _ => ConsoleBannerTone.warning,
+      LibraryListenRefusal.performanceArmed ||
+      LibraryListenRefusal.busy ||
+      null => ConsoleBannerTone.warning,
+    };
+    // A session this rig cannot take as it is (another rate, a newer
+    // Segno) or not yet (something else in flight) is a warning; one that
+    // did not load is red (#1562).
+    final refusalTone = switch (session.error) {
+      SessionError.sampleRateMismatch ||
+      SessionError.unsupportedVersion ||
+      SessionError.busy => ConsoleBannerTone.warning,
+      _ => ConsoleBannerTone.failure,
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -303,8 +314,7 @@ class LibraryPreviewTracks extends StatelessWidget {
           ConsoleBanner(
             key: const Key('library_open_refused'),
             message: refusal,
-            // A press that did nothing: a warning, not red (#1562).
-            tone: ConsoleBannerTone.warning,
+            tone: refusalTone,
           ),
           const SizedBox(height: 12),
         ],

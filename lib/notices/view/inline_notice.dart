@@ -30,8 +30,8 @@ class InlineNotice extends StatelessWidget {
   /// The page's button that resolves it.
   final Widget? action;
 
-  /// The most lines the sentence takes, for a band of a fixed height; null
-  /// wraps it whole.
+  /// The most lines the sentence takes, for a band of a fixed height, which
+  /// also keeps its padding tight; null wraps it whole with room around.
   final int? maxLines;
 
   @override
@@ -47,7 +47,8 @@ class InlineNotice extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: spacing.xl,
-          vertical: spacing.xs,
+          // A fixed band ([maxLines]) gives its lines the room.
+          vertical: maxLines == null ? spacing.lg : spacing.xs,
         ),
         decoration: BoxDecoration(
           color: colors.tint,

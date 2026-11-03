@@ -197,7 +197,8 @@ class _Workspace extends StatelessWidget {
       return ConsoleBanner(
         key: const Key('audio_apply_refused_banner'),
         message: _refusalMessage(l10n, refusal),
-        tone: ConsoleBannerTone.failure,
+        // The device stays as it was: a press that did nothing (#1562).
+        tone: ConsoleBannerTone.warning,
       );
     }
     final error = state.error;
