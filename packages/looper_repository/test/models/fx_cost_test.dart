@@ -65,17 +65,13 @@ void main() {
         expect(fxEntryCostNs(fx, sampleRate: 44100), ns.low, reason: '$type');
         expect(fxEntryCostNs(fx, sampleRate: 48000), ns.low, reason: '$type');
         expect(fxEntryCostNs(fx, sampleRate: 88200), ns.high, reason: '$type');
-        expect(fxEntryCostNs(fx, sampleRate: 96000), ns.high, reason: '$type');
-        expect(fxEntryCostNs(fx), ns.high, reason: '$type'); // the bench's
+        expect(fxEntryCostNs(fx), ns.high, reason: '$type'); // 96 kHz
         expect(ns.low, greaterThanOrEqualTo(ns.high), reason: '$type');
         expect(kFxKindCostNs.containsKey(type), isFalse, reason: '$type');
       }
       // A kind that does not oversample charges the same at every rate.
       final delay = _fx(TrackEffectType.delay);
-      expect(
-        fxEntryCostNs(delay, sampleRate: 48000),
-        fxEntryCostNs(delay, sampleRate: 96000),
-      );
+      expect(fxEntryCostNs(delay, sampleRate: 48000), fxEntryCostNs(delay));
     });
 
     test("the budget is 80 % of a frame less the engine's own cost", () {
