@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/view/console_pedal_layout.dart';
 import 'package:segno/control/view/pedal_setup/pedal_hardware_face.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/foot_custom_view.dart';
@@ -145,15 +146,15 @@ void main() {
     expect(within(PedalButton.undo, 'Undo'), findsOneWidget);
     expect(within(PedalButton.undo, 'Hold · Redo'), findsOneWidget);
     expect(
-      within(PedalButton.clear, 'Unavailable action'),
+      within(PedalButton.clear, 'Unavailable'),
       findsOneWidget,
     );
     // The hint never shows a saved key either.
     expect(
-      within(PedalButton.clear, 'Hold · Unavailable action'),
+      within(PedalButton.clear, 'Hold · Unavailable'),
       findsOneWidget,
     );
-    expect(within(PedalButton.stop, 'Record performance'), findsOneWidget);
+    expect(within(PedalButton.stop, 'Capture'), findsOneWidget);
     expect(within(PedalButton.recPlay, 'Record / Play'), findsOneWidget);
     expect(within(PedalButton.track2, 'Track 2'), findsOneWidget);
     expect(within(PedalButton.mode, 'Exit'), findsOneWidget);
@@ -174,6 +175,22 @@ void main() {
       24,
     );
     expect(find.byKey(const Key('foot_custom_recording')), findsNothing);
+  });
+
+  testWidgets('each pedal is centred where the Pedals page draws it (#1590 '
+      'FT-4)', (tester) async {
+    given(custom());
+    await pump(tester);
+    for (final button in [
+      ...ConsolePedalLayout.rearRow,
+      ...ConsolePedalLayout.frontRow,
+    ]) {
+      expect(
+        tester.getCenter(pedal(button)).dx,
+        closeTo(960 + ConsolePedalLayout.centreOffset(button), 0.5),
+        reason: button.name,
+      );
+    }
   });
 
   testWidgets('Bank flips the bank-keyed captions', (tester) async {
@@ -202,7 +219,7 @@ void main() {
     Color? colorOf(PedalButton button, String text) =>
         tester.widget<Text>(within(button, text)).style?.color;
     expect(
-      colorOf(PedalButton.clear, 'Unavailable action'),
+      colorOf(PedalButton.clear, 'Unavailable'),
       surface.textMuted,
     );
     expect(
@@ -287,7 +304,7 @@ void main() {
     );
     given(custom(lit: const {PedalButton.stop: true}));
     await pump(tester);
-    expect(within(PedalButton.stop, 'Stop recording'), findsOneWidget);
+    expect(within(PedalButton.stop, 'Stop capture'), findsOneWidget);
     expect(
       pedalSemantics(tester, PedalButton.stop).properties.selected,
       isTrue,

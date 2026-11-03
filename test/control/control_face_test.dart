@@ -104,6 +104,7 @@ void main() {
     when(() => midiDevices.messages).thenAnswer((_) => const Stream.empty());
     when(() => midiDevices.activity).thenAnswer((_) => activity.stream);
     when(() => midiDevices.connection).thenReturn(const MidiConnection());
+    when(() => midiDevices.sessions).thenReturn(const {});
     when(() => midiDevices.select(any())).thenAnswer((_) async {});
   });
 

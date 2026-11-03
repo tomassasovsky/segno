@@ -11,7 +11,6 @@ import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/history_entry.dart';
-import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
@@ -1828,45 +1827,6 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     required int param,
     required double value,
   }) => _fxParamResult(FxOwner.monitor, input, 0, index, param);
-
-  /// Recorded [setInputConditioningEnabled] calls, in order, for test
-  /// assertions.
-  final inputConditioningEnabledCalls = <({int input, bool enabled})>[];
-
-  /// Recorded [setInputConditioningParam] calls, in order, for test assertions.
-  final inputConditioningParamCalls =
-      <({int input, InputConditioningParam param, double value})>[];
-
-  // Conditioning setters record their calls and work while stopped (a direct
-  // atomic publish native-side), so a repository/cubit test can assert what was
-  // pushed without a running device — the same posture as the FX-enable twins
-  // above.
-  @override
-  EngineResult setInputConditioningEnabled({
-    required int input,
-    required bool enabled,
-  }) {
-    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
-      return EngineResult.invalid;
-    }
-    inputConditioningEnabledCalls.add((input: input, enabled: enabled));
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setInputConditioningParam({
-    required int input,
-    required InputConditioningParam param,
-    required double value,
-  }) {
-    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
-      return EngineResult.invalid;
-    }
-    inputConditioningParamCalls.add(
-      (input: input, param: param, value: value),
-    );
-    return EngineResult.ok;
-  }
 
   /// Recorded [setMonitorInputFxEnabled] calls, in order, for test assertions.
   final monitorInputFxEnabledCalls = <({int input, int index, bool enabled})>[];

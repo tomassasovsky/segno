@@ -8,6 +8,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/foot_pedal_rows.dart';
 import 'package:segno/looper/view/foot_top_bar.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/theme/theme.dart';
@@ -43,17 +44,6 @@ class FootLengthView extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final divide = mode == InteractionMode.divide;
-
-    const front = [
-      PedalButton.recPlay,
-      PedalButton.stop,
-      PedalButton.undo,
-      PedalButton.mode,
-      PedalButton.track1,
-      PedalButton.track2,
-      PedalButton.track3,
-      PedalButton.track4,
-    ];
     Widget pedal(PedalButton button) => _FootLengthPedal(
       button: button,
       mode: mode,
@@ -95,18 +85,6 @@ class FootLengthView extends StatelessWidget {
                         ),
                       ),
                       PositionedDirectional(
-                        start: 480,
-                        top: 56,
-                        width: 180,
-                        child: pedal(PedalButton.clear),
-                      ),
-                      PositionedDirectional(
-                        start: 700,
-                        top: 56,
-                        width: 180,
-                        child: pedal(PedalButton.bank),
-                      ),
-                      PositionedDirectional(
                         start: 940,
                         top: 112,
                         width: 820,
@@ -117,17 +95,9 @@ class FootLengthView extends StatelessWidget {
                           sampleRate: sampleRate,
                         ),
                       ),
-                      PositionedDirectional(
-                        start: 40,
-                        end: 40,
-                        top: 472,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            for (final button in front)
-                              SizedBox(width: 180, child: pedal(button)),
-                          ],
+                      Positioned.fill(
+                        child: FootPedalRows(
+                          pedal: pedal,
                         ),
                       ),
                     ],

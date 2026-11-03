@@ -7,7 +7,6 @@ import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/history_entry.dart';
-import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/instruments.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
@@ -1357,45 +1356,6 @@ abstract interface class MonitorControl {
   int monitorFxFingerprint({required int input});
 }
 
-/// Per-hardware-input live conditioning: a fixed, zero-added-latency utility
-/// stage (HPF + mains-hum notches + downward expander) applied to the raw
-/// input upstream of BOTH the lane fan-out and the monitor split, so lanes,
-/// monitors, and the tuner all read the conditioned signal (WYSIWYG — what
-/// records is what you hear). Deliberately NOT an effect-chain entry: it cannot
-/// be reordered or
-/// removed per-chain, never enters a chain fingerprint, and its parameters are
-/// carried in real units (see [InputConditioningParam]) rather than normalized
-/// `0..1`.
-///
-/// Whether a stage is actually running is published on the snapshot
-/// (`EngineSnapshot.inputCondMask`); the raw-path clip/HOT detector
-/// (`EngineSnapshot.inputClipMask`) reads upstream of this stage, so a clipped
-/// input still flags HOT even when the expander/HPF has reshaped what records.
-/// A loopback-excluded input is never conditioned.
-abstract interface class InputConditioningControl {
-  /// Enables or disables the conditioning stage on hardware [input]. While
-  /// disabled the input is bit-identical to the stage never having existed;
-  /// enabling resets the stage's filter/envelope state (no stale filter ring).
-  /// A loopback-excluded input reports enabled here but never conditions.
-  EngineResult setInputConditioningEnabled({
-    required int input,
-    required bool enabled,
-  });
-
-  /// Sets conditioning parameter [param] of hardware [input] to [value] in that
-  /// parameter's REAL unit (Hz / dB / ms / ratio — see
-  /// [InputConditioningParam]). The audio thread clamps on apply and recomputes
-  /// only the affected section's
-  /// coefficients, so a live tweak never rings with coefficients it was not
-  /// filtered by. Independent of the enable flag — a value set while disabled
-  /// takes effect when the stage is next enabled.
-  EngineResult setInputConditioningParam({
-    required int input,
-    required InputConditioningParam param,
-    required double value,
-  });
-}
-
 /// Session persistence: stem export/import and committing a restored session.
 abstract interface class SessionIo {
   /// Copies track [channel]'s recorded mono loop PCM out for session export, or
@@ -1950,7 +1910,6 @@ abstract interface class AudioEngine
         MasterBusControl,
         EffectsControl,
         MonitorControl,
-        InputConditioningControl,
         InstrumentHost,
         MidiInputSink,
         EnginePluginHosting,

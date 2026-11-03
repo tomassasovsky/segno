@@ -70,14 +70,12 @@ void main() {
 
   group('midiIsInterfacesOwn (#860)', () {
     const scarlettMidi = MidiConnection(
-      selectedId: 'Scarlett 4i4 USB',
-      selectedName: 'Scarlett 4i4 USB MIDI 1',
+      connectivityDeviceId: 'Scarlett 4i4 USB',
       connectivity: MidiConnectivity.lost,
       connectivityDeviceName: 'Scarlett 4i4 USB MIDI 1',
     );
     const pedal = MidiConnection(
-      selectedId: 'fcb1010',
-      selectedName: 'FCB1010',
+      connectivityDeviceId: 'fcb1010',
       connectivity: MidiConnectivity.lost,
       connectivityDeviceName: 'FCB1010',
     );

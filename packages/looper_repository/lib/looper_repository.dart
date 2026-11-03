@@ -20,7 +20,6 @@ export 'package:segno_engine/segno_engine.dart'
         GridDivision,
         HistoryEntry,
         HistoryKind,
-        InputConditioningParam,
         LaneCacheState,
         LengthEdit,
         LooperMode,

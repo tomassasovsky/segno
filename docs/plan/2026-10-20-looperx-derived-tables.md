@@ -86,8 +86,8 @@ gain = 10^((24v − 12)/20).
   RESO LO.
   - L/R modes put the right side half a period later; at 1/8D and 120 BPM
     that is left 375 ms, right 187.5 ms.
-  - GRV modes put the right echo at 0.837 of the period (313.8 ms against
-    375 ms).
+  - GRV modes put the right echo at 251/300 of the period (313.75 ms
+    against 375 ms; #1447, s17grv).
 - Mod Mode (Guitar): CHORUS, PHASER, FLANGER.
 - Cab (Guitar): D.I., BRIT, 1x8", 1x12", 2x10", 2x12", 4x10", 4x12"
   (default), 1x15", BASS, 4x10"; the 12th row is off screen.
