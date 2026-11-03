@@ -3358,14 +3358,10 @@ static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
  * copy's own seqlock-style re-read narrows the same window earlier as a
  * cheap first line of defence. */
 static inline void le_audio_rev_bump(le_track* t) {
-  atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release);
-  /* Read back rather than use fetch_add's value: the non-Clang C++ atomics
-   * shim's fetch_add returns nothing (docs/PROGRESS.md, the C++ blast
-   * radius). The bump sites never race each other on one track. */
-  atomic_store_explicit(
-      &t->a_src_key,
-      atomic_load_explicit(&t->a_audio_rev, memory_order_acquire),
-      memory_order_release);
+  const uint32_t rev =
+      atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release) +
+      1u;
+  atomic_store_explicit(&t->a_src_key, rev, memory_order_release);
 }
 
 /* Forgets every slot's content key (session import: the slots are refilled
