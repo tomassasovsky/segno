@@ -1090,6 +1090,32 @@ VERIFICATION COMMAND: (cd packages/session_repository && /Users/Tomas/developmen
   48 `Z3V6Z` shows a recovered take in the Library; Library Part 7 excluded
   them).
 
+As built, recording durability and bounded recovery (the first item of the
+owner's 2026-11-03 order) is Part 8's finalize and recovery, in two stacked
+PRs on `claude/recording-durability-1198-p1` and `-p2`:
+
+- **p1** converts legacy raw captures into parts as above (#1078), and
+  publishes the finalized manifest through tmp, flush, rename and directory
+  sync. A converted take is marked `converted_from_raw` and kept exactly as
+  converted (stream lengths included: the raw streams are not cut to one
+  length).
+- **p2** is the finalize and recovery of part-format takes: the trust rule,
+  rollover and truncation, every stream ending at the same frame,
+  `capture_frames` clamped to it, the event log and layers cut back to the
+  checkpoint when only it is trusted, and a take whose sidecar was lost
+  recovered from its slots. A take with no valid slot trusts its files.
+- Overs of a cut-back part are counted from its float payload in 1 MiB
+  reads, not decoded through `le_backing_decode_file`: overs are a count of
+  the stored samples, and the decoder returns stereo at the engine's rate,
+  not the samples as stored.
+- The removable-volume manifest with a trailing checksum (D5) waits for
+  Part 10: until the live sidecar moves to the Internal mirror, the stick
+  already holds a `performance.json`.
+- Held takes (`held(reason)`, `saveHeld`, `discardHeld`, `unfinishedTakes`)
+  move to the rest of #1198 with Parts 9 and 13: without the recorder state
+  and the page there is no Save or Discard to offer, so the silent boot
+  salvage stays until then.
+
 ```success-criteria
 GOAL: A take finalizes and recovers in bounded memory without copying audio, recovery never trusts bytes a pulled or power-cut drive may not hold, a stopped take is held for the player's choice, and legacy raw captures are recovered unchanged.
 SUCCESS CRITERIA:
