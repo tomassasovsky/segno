@@ -20,7 +20,7 @@
         }
     },
     "updatesRestartBusySubtitle": "Playback will stop and your session will be saved before restarting.",
-    "updateBannerTitle": "Update available — v{version}",
+    "updateBannerTitle": "Update available: v{version}",
     "@updateBannerTitle": {
         "placeholders": {
             "version": {
@@ -29,13 +29,12 @@
         }
     },
     "updateBannerUpdateAction": "Update…",
-    "updateBannerDismissAction": "Not now",
     "audioDeviceFallbackName": "Audio device",
-    "deviceLostBanner": "No audio device — nothing is heard",
+    "deviceLostBanner": "No audio device. Nothing is heard.",
     "@deviceLostBanner": {
         "description": "Standing red banner on the stage while the pinned audio interface is absent — the engine is stopped (pen: STAGE / device-lost)."
     },
-    "deviceLostNamedBanner": "{device} disconnected — nothing is heard. Audio restarts when it is back.",
+    "deviceLostNamedBanner": "{device} disconnected. Nothing is heard.",
     "@deviceLostNamedBanner": {
         "description": "Standing red banner on the stage, and its echo on the 7\" readout, while the pinned audio interface is absent and its name is known; audio restarts on its own when it returns (#1270 Part 5).",
         "placeholders": {
@@ -48,7 +47,7 @@
     "@deviceLostBannerAction": {
         "description": "Inline action on the device-lost banner — opens the tray's Audio domain on the Device tab."
     },
-    "deviceRestoredClearedBanner": "Device came back at {sampleRate} Hz instead of {previousRate} Hz — the loops were cleared. Reload the session to get them back.",
+    "deviceRestoredClearedBanner": "The device came back at {sampleRate} Hz, not {previousRate} Hz",
     "@deviceRestoredClearedBanner": {
         "description": "Standing stage banner after a reconnect at another sample rate cleared every recorded loop (#1140). Its action opens the Library.",
         "placeholders": {
@@ -60,11 +59,15 @@
             }
         }
     },
-    "deviceRestoredClearedCapBanner": "Device came back with a different loop length limit — the loops were cleared. Reload the session to get them back.",
+    "deviceRestoredClearedTitle": "The loops were cleared",
+    "@deviceRestoredClearedTitle": {
+        "description": "Must-act message when the interface came back and the engine cleared every loop (#1140, #1562)."
+    },
+    "deviceRestoredClearedCapBanner": "The device came back with another loop length limit",
     "@deviceRestoredClearedCapBanner": {
         "description": "Standing stage banner after a reconnect whose loop cap no longer fit the recorded buffers cleared every loop (#1140)."
     },
-    "deviceRestoredPartialToastBody": "{count, plural, =1{Track {tracks} was cleared — an edit on it was still pending when the device went away} other{Tracks {tracks} were cleared — edits on them were still pending when the device went away}}",
+    "deviceRestoredPartialToastBody": "{count, plural, =1{Track {tracks} was cleared: an edit on it was pending} other{Tracks {tracks} were cleared: edits on them were pending}}",
     "@deviceRestoredPartialToastBody": {
         "description": "Body of the transient reconnect toast when the engine kept the loops except the listed tracks (#1140). `tracks` is a comma-separated list of 1-based track numbers.",
         "placeholders": {
@@ -80,7 +83,7 @@
     "@midiLostToastTitle": {
         "description": "Title of the transient toast shown when the pinned MIDI controller is lost (pen: STAGE / midi-lost-toast)."
     },
-    "midiLostToastBody": "Mappings idle until it returns — loops keep playing",
+    "midiLostToastBody": "Loops keep playing",
     "@midiLostToastBody": {
         "description": "Body of the MIDI-lost toast — the loss is low-stakes because the loops keep playing."
     },
@@ -97,17 +100,29 @@
     "@waveformWindowFailedBanner": {
         "description": "Banner shown when the secondary waveform window fails to become ready."
     },
-    "audioRecoveryWaitingBanner": "Waiting for the audio interface — it will start automatically when reconnected.",
+    "audioRecoveryWaitingBanner": "Waiting for the audio interface",
     "@audioRecoveryWaitingBanner": {
         "description": "Banner shown when the console booted with its pinned audio interface absent and is waiting to auto-start it."
+    },
+    "audioRecoveryWaitingBody": "Audio starts when it is back",
+    "@audioRecoveryWaitingBody": {
+        "description": "Second part of the must-act message while the boot waits for the pinned interface (#1562)."
     },
     "close": "Close",
     "sessionMenuTooltip": "Session",
     "a11ySessionMenu": "Session menu",
     "sessionSaved": "Session saved",
     "sessionLoaded": "Session loaded",
-    "sessionLoadedConverted": "Session converted from an older version of Segno. The original was kept beside it.",
-    "sessionLoadedConvertedUnsaved": "Session converted from an older version of Segno for now. It couldn't be saved converted, so the original file is unchanged.",
+    "sessionLoadedConverted": "Session converted from an older Segno",
+    "sessionLoadedConvertedUnsaved": "Session converted for now",
+    "sessionConvertedKept": "The original was kept beside it.",
+    "@sessionConvertedKept": {
+        "description": "Detail of a converted session whose conversion was saved (#1562)."
+    },
+    "sessionConvertedNotWritten": "It couldn't be saved converted; the original is unchanged.",
+    "@sessionConvertedNotWritten": {
+        "description": "Detail of a converted session whose conversion could not be saved (#1562)."
+    },
     "sessionConvertedMasterMoved": "Its Master effects, and pedals bound to them, now run on All tracks.",
     "sessionConvertedMonitorLowered": "A live input above 100% was lowered to 100%.",
     "sessionConvertedTempoFromLoop": "It saved no tempo, so its tempo was set from the loop length.",
@@ -166,10 +181,26 @@
         }
     },
     "sessionErrorSampleRate": "Couldn't load the session — it was recorded at a different sample rate than the current device. Reopen the device at the session's sample rate, then try again.",
+    "sessionLoadFailed": "Couldn't load the session",
+    "@sessionLoadFailed": {
+        "description": "Title of a refused session load in the top bar (#1562)."
+    },
+    "sessionLoadSampleRate": "It was recorded at another sample rate",
+    "@sessionLoadSampleRate": {
+        "description": "Why a session did not load (#1562)."
+    },
+    "sessionLoadNewer": "It was saved by a newer Segno. Update the app first.",
+    "@sessionLoadNewer": {
+        "description": "Why a session did not load (#1562)."
+    },
+    "sessionLoadUnconvertible": "This version can't convert it. It is unchanged.",
+    "@sessionLoadUnconvertible": {
+        "description": "Why a session did not load (#1562)."
+    },
     "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Segno. Update the app, then try again.",
     "sessionErrorUnconvertible": "Couldn't load the session — it was saved by an older version of Segno that this version can't convert. The session was left unchanged.",
     "sessionBootRecoveryTitle": "Session settings need recovery",
-    "sessionBootRecoveryBody": "The loaded session is stopped. Retry to confirm its settings before continuing.",
+    "sessionBootRecoveryBody": "The loaded session is stopped",
     "sessionErrorGeneric": "Session action failed: {details}",
     "@sessionErrorGeneric": {
         "placeholders": {
@@ -178,7 +209,7 @@
             }
         }
     },
-    "engineStoppedBanner": "Audio engine stopped — open setup to start.",
+    "engineStoppedBanner": "Audio engine stopped",
     "audioStartingBanner": "Audio is starting…",
     "@audioStartingBanner": {
         "description": "Stage strip while the audio device warms up after a start, before the player's own audio settings open and anything is heard (#1533)."
@@ -1069,7 +1100,7 @@
     "midiRequiredCcsHint": "CC 80 record · 81 stop · 82 undo · 83 clear",
     "midiActivityActive": "MIDI activity",
     "midiActivityIdle": "Waiting for MIDI input",
-    "midiReconnectedSnackbar": "MIDI controller \"{deviceName}\" reconnected.",
+    "midiReconnectedSnackbar": "MIDI controller {deviceName} reconnected",
     "@midiReconnectedSnackbar": {
         "placeholders": {
             "deviceName": {
@@ -1215,14 +1246,9 @@
             }
         }
     },
-    "perfArmRefused": "Recording didn't start. {reason}",
+    "perfArmRefused": "Recording didn't start",
     "@perfArmRefused": {
-        "description": "Snackbar shown when starting a performance recording is refused because another operation is in flight. reason is operationBusy.",
-        "placeholders": {
-            "reason": {
-                "type": "String"
-            }
-        }
+        "description": "Title of a performance capture refused at its commit by an operation in flight; operationBusy follows as its detail (#1198, #1562)."
     },
     "perfStoppedLowDisk": "Capture stopped — the disk was running out of space. What was recorded has been saved.",
     "@perfStoppedLowDisk": {
@@ -3566,10 +3592,10 @@
     },
     "a11yReadoutNoTrack": "No track selected",
     "recoveryModeTitle": "Loop does not fit this mode",
-    "recoveryModeUndoBody": "Choose Free in Loop settings, then try Undo again. Your session is unchanged.",
-    "recoveryModeRedoBody": "Choose Free in Loop settings, then try Redo again. Your session is unchanged.",
+    "recoveryModeUndoBody": "Choose Free in Loop settings, then Undo again",
+    "recoveryModeRedoBody": "Choose Free in Loop settings, then Redo again",
     "recoveryWaitTitle": "Recovery is not ready yet",
-    "recoveryWaitBody": "Let the current change finish, then try again. Your session is unchanged.",
+    "recoveryWaitBody": "Let the current change finish, then try again",
     "loopSettingsTitle": "Loop settings",
     "@loopSettingsTitle": {
         "description": "Title of the Loop settings hub."
@@ -4074,9 +4100,13 @@
     "@loopSummaryPitchFollows": {
         "description": "Hub summary when the pitch follows the speed."
     },
-    "loopSettingsRefused": "Could not apply this change. Try a shorter length or stop recording, then retry.",
+    "loopSettingsRefused": "Could not apply this change",
     "@loopSettingsRefused": {
         "description": "Feedback when the engine refuses a Loop settings change."
+    },
+    "loopSettingsRefusedBody": "Try a shorter length or stop recording",
+    "@loopSettingsRefusedBody": {
+        "description": "Under loopSettingsRefused (#1562)."
     },
     "routingTitle": "Audio routing",
     "@routingTitle": {
@@ -4315,10 +4345,6 @@
     "@oneShotSettingsRecoveryTitle": {
         "description": "Persistent recovery title for a Loop/Once preference."
     },
-    "oneShotSettingsRecoveryBody": "Retry to recover the playback setting.",
-    "@oneShotSettingsRecoveryBody": {
-        "description": "Explicit retry for a failed playback preference."
-    },
     "followTempoSettingsRefusedTitle": "Follow tempo change was not applied",
     "@followTempoSettingsRefusedTitle": {
         "description": "Follow tempo preference could not be confirmed."
@@ -4326,10 +4352,6 @@
     "followTempoSettingsRecoveryTitle": "Follow tempo settings need recovery",
     "@followTempoSettingsRecoveryTitle": {
         "description": "Persistent recovery title for a Follow tempo preference."
-    },
-    "followTempoSettingsRecoveryBody": "Retry to recover the Follow tempo setting.",
-    "@followTempoSettingsRecoveryBody": {
-        "description": "Explicit retry for a failed Follow tempo preference."
     },
     "pitchModeSettingsRefusedTitle": "Pitch change was not applied",
     "@pitchModeSettingsRefusedTitle": {
@@ -4339,10 +4361,6 @@
     "@pitchModeSettingsRecoveryTitle": {
         "description": "Persistent recovery title for a Pitch preference."
     },
-    "pitchModeSettingsRecoveryBody": "Retry to recover the Pitch setting.",
-    "@pitchModeSettingsRecoveryBody": {
-        "description": "Explicit retry for a failed Pitch preference."
-    },
     "decaySettingsRefusedTitle": "Decay change was not applied",
     "@decaySettingsRefusedTitle": {
         "description": "Toast title after a decay setting is refused."
@@ -4350,10 +4368,6 @@
     "decaySettingsRecoveryTitle": "Decay settings need recovery",
     "@decaySettingsRecoveryTitle": {
         "description": "Toast title when decay settings need explicit recovery."
-    },
-    "decaySettingsRecoveryBody": "Retry to recover the decay setting.",
-    "@decaySettingsRecoveryBody": {
-        "description": "Recovery guidance for an uncertain decay setting."
     },
     "fxAllTracks": "All tracks",
     "@fxAllTracks": {
@@ -4488,16 +4502,15 @@
     "@fxOverBudget": {
         "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
     },
-    "fxTakeHeldToast": "{track}'s effects are off: they don't fit with the rest of the rig. Remove an effect to turn them on.",
+    "fxTakeHeldToast": "This take's effects are off",
     "@fxTakeHeldToast": {
-        "description": "Toast after a take whose inherited effects did not fit the audio processing came in switched off (#1515).",
-        "placeholders": {
-            "track": {
-                "type": "String"
-            }
-        }
+        "description": "On the track's card when a take came in with its inherited effects switched off (#1515, #1562)."
     },
-    "fxHeldBanner": "Some effects are off: the rig doesn't fit the audio processing available. {chains} {count, plural, =1{is} other{are}} off. Remove effects, then turn them back on.",
+    "fxTakeHeldBody": "They don't fit the rig. Remove an effect to turn them on.",
+    "@fxTakeHeldBody": {
+        "description": "Under fxTakeHeldToast (#1562)."
+    },
+    "fxHeldBanner": "{chains} {count, plural, =1{is} other{are}} off",
     "@fxHeldBanner": {
         "description": "Standing stage notice: chains the rig could not run when it came up are switched off (#1515). chains is a list such as 'Guitar's input chain and Track 3'.",
         "placeholders": {
@@ -4508,6 +4521,14 @@
                 "type": "int"
             }
         }
+    },
+    "fxHeldTitle": "Some effects are off",
+    "@fxHeldTitle": {
+        "description": "Must-act message when effects came up switched off because the rig does not fit them (#1515, #1562)."
+    },
+    "fxHeldOpen": "Open effects",
+    "@fxHeldOpen": {
+        "description": "Action on the effects-off message: opens the Effects page at a chain that is off (#1562)."
     },
     "fxHeldInputChain": "{input}'s input chain",
     "@fxHeldInputChain": {
@@ -6382,10 +6403,6 @@
     "@clickSettingsRefusedTitle": {
         "description": "Click settings and safe shutdown recovery message."
     },
-    "clickSettingsRecoveryBody": "Retry to recover the Click setting.",
-    "@clickSettingsRecoveryBody": {
-        "description": "Click settings and safe shutdown recovery message."
-    },
     "recordLengthSharedInMulti": "Track length follows Loop defaults in Multi.",
     "@recordLengthSharedInMulti": {
         "description": "Shared record length controls and recovery message."
@@ -6406,10 +6423,6 @@
     "@recordLengthSettingsRefusedTitle": {
         "description": "Shared record length controls and recovery message."
     },
-    "recordLengthSettingsRecoveryBody": "Retry to recover the record length settings.",
-    "@recordLengthSettingsRecoveryBody": {
-        "description": "Shared record length controls and recovery message."
-    },
     "recordTimingSettingsRecoveryTitle": "Record timing needs recovery",
     "@recordTimingSettingsRecoveryTitle": {
         "description": "Persistent shared recording timing recovery message."
@@ -6417,10 +6430,6 @@
     "recordTimingSettingsRefusedTitle": "Record timing change was not applied",
     "@recordTimingSettingsRefusedTitle": {
         "description": "Brief feedback after a refused recording timing edit."
-    },
-    "recordTimingSettingsRecoveryBody": "Retry to recover the record timing settings.",
-    "@recordTimingSettingsRecoveryBody": {
-        "description": "Recovery action for recording timing."
     },
     "recordTimingUnavailable": "Record timing is not ready",
     "@recordTimingUnavailable": {
@@ -6430,7 +6439,6 @@
     "clickModeUnavailable": "Hear click is unavailable.",
     "clickModeSettingsRecoveryTitle": "Hear click needs attention",
     "clickModeSettingsRefusedTitle": "Hear click was not changed",
-    "clickModeSettingsRecoveryBody": "Retry to confirm the saved click setting.",
     "recordStartUnavailable": "Recording start is unavailable.",
     "@recordStartUnavailable": {
         "description": "No confirmed Count-in and Sound pair is available during initialization or recovery."
@@ -6441,14 +6449,52 @@
     },
     "recordStartSettingsRecoveryTitle": "Recording start needs recovery",
     "recordStartSettingsRefusedTitle": "Recording start could not change",
-    "recordStartSettingsRecoveryBody": "Recording start could not be confirmed. Retry before saving or switching off.",
     "recordingInputRequiredTitle": "Choose recording inputs",
-    "recordRefusedTitle": "Recording did not start. Press Record again.",
+    "recordRefusedTitle": "Recording did not start",
     "@recordRefusedTitle": {
         "description": "A fresh-capture Record press was refused by the engine twice in a row (the track was still being emptied); the press was dropped."
     },
+    "recordRefusedBody": "Press Record again",
+    "@recordRefusedBody": {
+        "description": "Under a refused Record on the track card (#1562)."
+    },
+    "noticeRecRefused": "Rec refused",
+    "@noticeRecRefused": {
+        "description": "Short cause over a refused Record on the track's card (#1562)."
+    },
+    "noticeOverdubRefused": "Overdub refused",
+    "@noticeOverdubRefused": {
+        "description": "Short cause over a refused overdub on the track's card (#1562)."
+    },
+    "noticeNoInput": "No input",
+    "@noticeNoInput": {
+        "description": "Short cause over a Record with no input on the track's card (#1562)."
+    },
+    "noticeLengthUnchanged": "Length unchanged",
+    "@noticeLengthUnchanged": {
+        "description": "Short cause over a length Undo or Redo that did nothing, on the track's card (#1562)."
+    },
+    "noticeEffectsOff": "Effects off",
+    "@noticeEffectsOff": {
+        "description": "Short cause over a take that came in with its effects off, on the track's card (#1562)."
+    },
     "monitorRestoreFailedTitle": "Input monitoring needs recovery",
-    "monitorRestoreFailedBody": "Saved input monitoring could not be fully restored. Retry to apply the saved settings.",
+    "mixSettingsRecoveryTitle": "Mix settings need recovery",
+    "@mixSettingsRecoveryTitle": {
+        "description": "Must-act message when the mix settings owner needs a recovery (#1562)."
+    },
+    "mixSettingsStoppedBody": "Audio is stopped to protect them",
+    "@mixSettingsStoppedBody": {
+        "description": "Under mixSettingsRecoveryTitle when audio was stopped (#1562)."
+    },
+    "mixSettingsNotSaved": "Mix change could not be saved",
+    "@mixSettingsNotSaved": {
+        "description": "A mix change that could not be stored (#1562)."
+    },
+    "mixSettingsNotApplied": "Mix change was not applied",
+    "@mixSettingsNotApplied": {
+        "description": "A mix change the engine refused (#1562)."
+    },
     "actionModeMixer": "Foot Mixer",
     "@actionModeMixer": {
         "description": "Foot Mixer performance surface: actionModeMixer."
@@ -6581,19 +6627,15 @@
     },
     "fadeSettingsRecoveryTitle": "Fade duration needs recovery",
     "fadeSettingsRefusedTitle": "Fade duration change was not saved",
-    "fadeSettingsRecoveryBody": "Retry to recover the Fade duration settings.",
     "instrumentsSettingsRecoveryTitle": "Instruments need recovery",
     "@instrumentsSettingsRecoveryTitle": {
         "description": "Persistent instrument definitions could not be read or confirmed."
     },
     "instrumentsSettingsRefusedTitle": "Instrument change was not saved",
-    "instrumentsSettingsRecoveryBody": "Retry to recover the instruments.",
     "backingMixSettingsRecoveryTitle": "Backing volume and routing need recovery",
     "backingMixSettingsRefusedTitle": "Backing volume or routing change was not saved",
-    "backingMixSettingsRecoveryBody": "Retry to recover the backing volume, pan, outputs and At end.",
     "clickPanSettingsRecoveryTitle": "Click pan needs recovery",
     "clickPanSettingsRefusedTitle": "Click pan change was not saved",
-    "clickPanSettingsRecoveryBody": "Retry to recover the click pan.",
     "actionModeFade": "Fade",
     "@actionModeFade": {
         "description": "Foot Fade performance surface."
@@ -6792,9 +6834,13 @@
     "@footTunerAtLimit": {
         "description": "Foot Tuner: Reference + at 460 Hz or Reference − at 420 Hz."
     },
-    "footTunerSeeded": "Tuner is on Custom: hold MODE, then hold pedal 2.",
+    "footTunerSeeded": "Tuner is on Custom",
     "@footTunerSeeded": {
         "description": "One-time notice when Hold · Tuner is added to Custom pedal 2 (#1229, D11)."
+    },
+    "footTunerSeededBody": "Hold MODE, then hold pedal 2",
+    "@footTunerSeededBody": {
+        "description": "Under footTunerSeeded (#1562)."
     },
     "actionOperationPeel": "Peel",
     "@actionOperationPeel": {
@@ -6820,7 +6866,7 @@
     "@footPeelRefusedOriginalOnly": {
         "description": "Foot Peel performance surface."
     },
-    "footPeelRefusedBusy": "Peel is unavailable while the track records or is about to. Try again when it plays.",
+    "footPeelRefusedBusy": "Peel is unavailable while the track records. Try again when it plays.",
     "@footPeelRefusedBusy": {
         "description": "Foot Peel performance surface."
     },
@@ -7265,11 +7311,15 @@
     "@settingsPower": {
         "description": "Accessible name of the Settings page's power button."
     },
-    "bootModeRetiredNotice": "Segno now always starts in Record mode. Press Mode to switch to Mute.",
+    "bootModeRetiredNotice": "Segno now always starts in Record mode",
     "@bootModeRetiredNotice": {
         "description": "Shown once to an install that used to start in Mute mode, after the start-up mode setting was removed."
     },
-    "bluetoothRetiredNotice": "{count, plural, =1{Bluetooth is no longer supported. The device paired with this console will not reconnect.} other{Bluetooth is no longer supported. The {count} devices paired with this console will not reconnect.}}",
+    "bootModeRetiredBody": "Press Mode to switch to Mute",
+    "@bootModeRetiredBody": {
+        "description": "Under bootModeRetiredNotice (#1562)."
+    },
+    "bluetoothRetiredNotice": "{count, plural, =1{The paired device will not reconnect} other{The {count} paired devices will not reconnect}}",
     "@bluetoothRetiredNotice": {
         "description": "Shown once to an install that had paired Bluetooth devices, after Bluetooth was removed.",
         "placeholders": {
@@ -7277,6 +7327,10 @@
                 "type": "int"
             }
         }
+    },
+    "bluetoothRetiredTitle": "Bluetooth is no longer supported",
+    "@bluetoothRetiredTitle": {
+        "description": "One-time notice to an install that had paired Bluetooth devices (#1199, #1562)."
     },
     "libraryAudio": "Audio",
     "@libraryAudio": {
@@ -7636,30 +7690,13 @@
     "@footFxFailure": {
         "description": "FX face: the rig refused a bound switch's write."
     },
-    "footFxStopChanged": "Stop no longer switches every track's effects off in FX mode. Assign Track FX off or Track FX on to a pedal instead.",
+    "footFxStopChanged": "In FX mode, Stop no longer turns effects off",
     "@footFxStopChanged": {
         "description": "One-time notice on the first FX-mode entry after the FX Stop panic was removed (#1229)."
     },
-    "footFxModeChanged": "MODE now leaves FX mode. Its {press} still works in the other modes.",
+    "footFxModeChanged": "MODE now leaves FX mode",
     "@footFxModeChanged": {
-        "description": "Second line of the one-time FX notice: MODE in FX mode now exits instead of running the player's MODE assignment (#1229, D13). {press} is the mode MODE switches to.",
-        "placeholders": {
-            "press": {
-                "type": "String"
-            }
-        }
-    },
-    "footFxModeChangedHold": "MODE now leaves FX mode. Its {press} and Hold · {hold} still work in the other modes.",
-    "@footFxModeChangedHold": {
-        "description": "As footFxModeChanged, for a MODE switch with a Hold assignment.",
-        "placeholders": {
-            "press": {
-                "type": "String"
-            },
-            "hold": {
-                "type": "String"
-            }
-        }
+        "description": "Second part of the one-time FX notice: MODE in FX mode now exits (#1229, D13)."
     },
     "footFxToggle": "Toggle",
     "@footFxToggle": {
@@ -7673,7 +7710,7 @@
     "@perfStoppedVolumeLost": {
         "description": "Completion banner when the USB drive a take recorded to went away mid-take (#1177)."
     },
-    "perfArmDriveUnavailable": "Recording didn't start. The USB drive in Save to can't be recorded to now.",
+    "perfArmDriveUnavailable": "Recording didn't start. The Save to drive is not available.",
     "@perfArmDriveUnavailable": {
         "description": "Snackbar when a take was to go to a USB drive that went away, turned read-only or is being ejected between the choice and the press."
     },
@@ -7882,7 +7919,7 @@
             }
         }
     },
-    "saveToFellBack": "{label} was removed. Save to is Internal.",
+    "saveToFellBack": "{label} was removed",
     "@saveToFellBack": {
         "description": "Toast when the USB drive chosen in Save to goes away (pulled, ejected or read-only) and the next take goes to Internal.",
         "placeholders": {
@@ -7890,6 +7927,10 @@
                 "type": "String"
             }
         }
+    },
+    "saveToFellBackBody": "Save to is Internal",
+    "@saveToFellBackBody": {
+        "description": "Under saveToFellBack (#1562)."
     },
     "footFadeRefusedEmpty": "{count, plural, =1{The track is empty: there is nothing to fade.} other{No track has a recording: there is nothing to fade.}}",
     "@footFadeRefusedEmpty": {
@@ -7978,9 +8019,13 @@
     "@footLengthFailure": {
         "description": "Foot Multiply / Divide: another refusal."
     },
-    "lengthHistoryRefused": "The length change was not undone or redone. If pressing again changes nothing, that length no longer fits the other loops.",
+    "lengthHistoryRefused": "The length change was not undone or redone",
     "@lengthHistoryRefused": {
         "description": "Undo or Redo of a length edit did nothing (#1168)."
+    },
+    "lengthHistoryRefusedBody": "That length may no longer fit the other loops",
+    "@lengthHistoryRefusedBody": {
+        "description": "Under a length Undo or Redo that did nothing (#1168, #1562)."
     },
     "footLengthRepeatTo": "Repeat to {length}",
     "@footLengthRepeatTo": {
@@ -8232,17 +8277,10 @@
     "@controllerPowerWeak": {
         "description": "Caption under Power supply when the charger offers less than the console wants."
     },
-    "powerCycleBannerTitle": "Unplug the console for 5 seconds to use the charger's full power",
+    "powerCycleBannerTitle": "Unplug for 5 seconds to get the full {offered} W",
     "@powerCycleBannerTitle": {
-        "description": "Banner when a power cycle would raise the USB-C contract."
-    },
-    "powerCycleBannerDescription": "It runs on {now} W; the charger offers {offered} W.",
-    "@powerCycleBannerDescription": {
-        "description": "Power-cycle banner detail.",
+        "description": "Must-act message when a power cycle would raise the USB-C contract (#1352, #1562).",
         "placeholders": {
-            "now": {
-                "type": "String"
-            },
             "offered": {
                 "type": "String"
             }
@@ -8260,7 +8298,7 @@
     "@powerUnplugToApply": {
         "description": "Under Safe to switch off when a power cycle would raise the USB-C contract."
     },
-    "weakChargerToast": "This charger offers {watts} W. Use a 100 W USB-C charger.",
+    "weakChargerToast": "This charger offers {watts} W",
     "@weakChargerToast": {
         "description": "One-time toast at boot when the charger offers less than 90 W.",
         "placeholders": {
@@ -8268,5 +8306,9 @@
                 "type": "String"
             }
         }
+    },
+    "weakChargerBody": "Use a 100 W USB-C charger",
+    "@weakChargerBody": {
+        "description": "Under weakChargerToast (#1562)."
     }
 }

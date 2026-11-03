@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
-import 'package:segno/app/app_toasts.dart';
 import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/view/midi_controls/midi_controls_page.dart';
 import 'package:segno/control/view/pedal_setup/external_pedal_page.dart';
@@ -220,16 +219,12 @@ Future<void> openStorageSettings() => _pushOnce(
       (_) => const StorageSettingsPage(),
 );
 
-/// Pushes the Updates settings page, and drops the update toast: the page
-/// shows the same offer with its own action.
-Future<void> openUpdateSettings() {
-  dismissAppToast(AppToastId.update);
-  return _pushOnce(
-    segnoUpdateSettingsRouteName,
-    () =>
-        (_) => const UpdatesSettingsPage(),
-  );
-}
+/// Pushes the Updates settings page.
+Future<void> openUpdateSettings() => _pushOnce(
+  segnoUpdateSettingsRouteName,
+  () =>
+      (_) => const UpdatesSettingsPage(),
+);
 
 /// Pushes the About page.
 Future<void> openAboutSettings() => _pushOnce(
@@ -272,7 +267,7 @@ void resetSegnoNavigatorForTest() {
   _fxCatalogue = null;
 }
 
-/// Whether the Updates page is on screen (skip the update toast).
+/// Whether the Updates page is on screen (skip the update message).
 bool get isSegnoUpdatesSettingsOpen =>
     _openRoutes.contains(segnoUpdateSettingsRouteName);
 

@@ -102,6 +102,37 @@ void main() {
         });
       });
 
+      test('one-time explanations wait for each other, so none is lost', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('bluetooth', explains: true))
+            ..show(_notice('boot mode', explains: true))
+            ..show(_notice('tuner', explains: true));
+          expect(cubit.state.message?.notice.id, 'bluetooth');
+          async.elapse(const Duration(seconds: 10));
+          expect(cubit.state.message?.notice.id, 'boot mode');
+          async.elapse(const Duration(seconds: 10));
+          expect(cubit.state.message?.notice.id, 'tuner');
+          async.elapse(const Duration(seconds: 10));
+          expect(cubit.state.message, isNull);
+          unawaited(cubit.close());
+        });
+      });
+
+      test('a press replaces an explanation, and the waiting ones still '
+          'come after it', () {
+        fakeAsync((async) {
+          final cubit = NoticesCubit()
+            ..show(_notice('bluetooth', explains: true))
+            ..show(_notice('tuner', explains: true))
+            ..show(_notice('refused', tone: NoticeTone.warning));
+          expect(cubit.state.message?.notice.id, 'refused');
+          async.elapse(const Duration(seconds: 6));
+          expect(cubit.state.message?.notice.id, 'tuner');
+          unawaited(cubit.close());
+        });
+      });
+
       test('a message with the id of a must-act message is dropped', () {
         final cubit = NoticesCubit()
           ..raise(_notice('mix', tone: NoticeTone.critical))

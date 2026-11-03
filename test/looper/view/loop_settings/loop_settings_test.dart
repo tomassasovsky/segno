@@ -17,6 +17,7 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -44,6 +45,8 @@ const _rig = LooperState(
 );
 
 void main() {
+  late NoticesCubit notices;
+  late NoticeLog said;
   late TempoSettings tempoOwner;
   late _MockLooperBloc bloc;
   late _MockLooperRepository repository;
@@ -90,6 +93,12 @@ void main() {
   });
 
   setUp(() {
+    notices = NoticesCubit();
+    said = NoticeLog(notices);
+    addTearDown(() async {
+      await said.close();
+      await notices.close();
+    });
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
     when(() => repository.lengthSettingsFailures).thenAnswer(
@@ -699,6 +708,8 @@ void main() {
             BlocProvider.value(value: tracks),
           ],
           child: MaterialApp(
+            builder: (context, child) =>
+                BlocProvider.value(value: notices, child: child),
             navigatorKey: segnoNavigatorKey,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
@@ -744,7 +755,7 @@ void main() {
     await tester.tap(find.byKey(const Key('loop_length_bars')));
     await tester.pumpAndSettle();
 
-    expect(find.text(l10nOf(tester).loopSettingsRefused), findsOneWidget);
+    expect(said.titles, contains(l10nOf(tester).loopSettingsRefused));
     expect(find.byKey(const Key('loop_stepper_value')), findsOneWidget);
     expect(find.text('4'), findsOneWidget);
     expect(
@@ -859,7 +870,7 @@ void main() {
     failures.add(EngineResult.invalid);
     await tester.pumpAndSettle();
 
-    expect(find.text(l10nOf(tester).loopSettingsRefused), findsOneWidget);
+    expect(said.titles, contains(l10nOf(tester).loopSettingsRefused));
     expect(bloc.state.transport.looperMode, LooperMode.song);
     expect(tester.takeException(), isNull);
   });
@@ -1999,10 +2010,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(options.state.defaultMultiple, 0);
       // What ×2 is a multiple of is said beside the choices.
-      expect(
-        find.text(l10nOf(tester).loopDefaultMultipleNote),
-        findsOneWidget,
-      );
+      expect(find.text(l10nOf(tester).loopDefaultMultipleNote), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('loop_scope_track_0')));
       await tester.pumpAndSettle();

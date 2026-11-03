@@ -3,6 +3,7 @@ import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/track_column.dart' show PrimaryCrown;
 import 'package:segno/notices/view/notice_palette.dart';
+import 'package:segno/notices/view/notice_sentence.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
@@ -71,17 +72,6 @@ class ConsoleReadoutView extends StatelessWidget {
               _Header(selected: selected, s: s),
               SizedBox(height: 26 * s),
               _StateLine(selected: selected, s: s),
-              // The stage's one standing loss condition — the audio interface
-              // is gone — echoed here because the performer is looking down,
-              // not at the main screen (`c/device-lost`, #453).
-              if (readout.lossLine.isNotEmpty) ...[
-                SizedBox(height: 16 * s),
-                _ConnectivityEcho(
-                  key: const Key('console_readout_deviceLost'),
-                  line: readout.lossLine,
-                  s: s,
-                ),
-              ],
               SizedBox(height: 24 * s),
               Expanded(
                 child: KeyedSubtree(
@@ -132,7 +122,6 @@ class _NoticeBand extends StatelessWidget {
       fontSize: theme.readoutText.fontSize! * s,
     );
     final icon = noticeToneIcon(notice.tone);
-    final body = notice.body;
     return Semantics(
       liveRegion: true,
       container: true,
@@ -165,44 +154,20 @@ class _NoticeBand extends StatelessWidget {
                 )
               else
                 Icon(icon, size: text.fontSize, color: colors.mark),
-              SizedBox(width: spacing.md * s),
+              SizedBox(width: spacing.lg * s),
               Flexible(
-                child: AppText.rich(
-                  TextSpan(
-                    children: [
-                      if (notice.track case final track?) ...[
-                        TextSpan(
-                          text: track,
-                          style: text.copyWith(color: surface.textSecondary),
-                        ),
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: SizedBox(width: spacing.md * s),
-                        ),
-                      ],
-                      TextSpan(
-                        text: notice.title,
-                        style: text.copyWith(color: surface.textPrimary),
-                      ),
-                      if (body != null) ...[
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.middle,
-                          child: SizedBox(width: spacing.md * s),
-                        ),
-                        TextSpan(
-                          text: body,
-                          style: text.copyWith(
-                            color: surface.textSecondary,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                child: NoticeSentence(
                   key: const Key('console_readout_notice_text'),
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
+                  scale: s,
+                  title: notice.title,
+                  titleStyle: text.copyWith(color: surface.textPrimary),
+                  body: notice.body,
+                  bodyStyle: text.copyWith(
+                    color: surface.textSecondary,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  source: notice.track,
+                  sourceStyle: text.copyWith(color: surface.textSecondary),
                 ),
               ),
             ],
@@ -408,43 +373,6 @@ class _Footer extends StatelessWidget {
           style: secondary.copyWith(color: surface.textPrimary),
         ),
       ],
-    );
-  }
-}
-
-/// The device-lost line, in readout-scale type: the pen's `c/device-lost`
-/// idiom echoed on the small display, word for word what the stage strip
-/// says. No action — the readout stays inert.
-class _ConnectivityEcho extends StatelessWidget {
-  const _ConnectivityEcho({required this.line, required this.s, super.key});
-
-  final String line;
-  final double s;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 20 * s, vertical: 12 * s),
-      decoration: BoxDecoration(
-        color: surface.recSurface,
-        borderRadius: BorderRadius.circular(10 * s),
-        border: Border.all(color: surface.rec),
-      ),
-      // Up to two lines at full size, never cut: the line names the
-      // interface and says what happens next, which does not fit one line of
-      // the 7" at a readable size (the plan asked for one line; written back).
-      child: AppText(
-        line,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: SurfaceTheme.displayFont,
-          color: surface.textPrimary,
-          fontSize: 24 * s,
-          height: 1.2,
-        ),
-      ),
     );
   }
 }

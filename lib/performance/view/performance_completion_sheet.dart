@@ -138,35 +138,26 @@ class _PerformanceCompletionSheetState
     // The console has no physical keyboard, so rename is the full-width sheet
     // with the on-screen keys — the same surface every other rename on the
     // appliance uses (#668).
-    final to = await showConsoleRenameSheet(
+    // A name that cannot be used is said in the sheet, under the field, and
+    // the sheet stays open for another. `performanceCaptureSlug` runs BEFORE
+    // the cubit call, because `renameCapture` rejects an unfoldable name with
+    // an `ArgumentError`, which is not for catching.
+    await showConsoleRenameSheet(
       context,
       title: l10n.perfRenameTitle,
       subtitle: _basename(path),
       current: _basename(path),
       fieldLabel: l10n.perfRenameTitle,
+      onSave: (to) async {
+        if (performanceCaptureSlug(to) == null) return l10n.perfRenameInvalid;
+        try {
+          await cubit.renameCompletedCapture(to);
+        } on PerformanceNameCollision catch (e) {
+          return l10n.perfRenameDuplicate(e.slug);
+        }
+        return null;
+      },
     );
-    if (to == null) return;
-    // The desktop dialog pre-validates inline; the console sheet has no
-    // validator hook, so the same `performanceCaptureSlug` check runs here —
-    // BEFORE the cubit call, because `renameCapture` rejects an unfoldable
-    // name with an `ArgumentError`, which is not for catching.
-    if (performanceCaptureSlug(to) == null) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: AppText(l10n.perfRenameInvalid)));
-      return;
-    }
-    try {
-      await cubit.renameCompletedCapture(to);
-    } on PerformanceNameCollision catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        SnackBar(content: AppText(l10n.perfRenameDuplicate(e.slug))),
-      );
-    }
   }
 
   /// A footswitch press dismisses it (and any rename sheet stacked on top)

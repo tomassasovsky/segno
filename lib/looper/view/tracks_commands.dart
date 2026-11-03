@@ -5,17 +5,17 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
-import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart'
     show SessionConversionChange;
 
@@ -386,125 +386,166 @@ class TracksCommands {
   }
 }
 
-/// Shows a transient SnackBar surfacing the last session action's outcome —
-/// a localized success line (saying so when a load converted an older
-/// session), or a localized, human-readable error for the known refusals
-/// (sample-rate mismatch, newer or unconvertible manifest version), falling
-/// back to the raw message otherwise. The content is a live region so it is
-/// announced to assistive tech as it appears (WCAG 4.1.3). Wired as the
-/// `TracksView`'s session [BlocListener].
+/// Says the last session action's outcome in the top bar (#1562): a
+/// confirmation when it worked (saying so when a load converted an older
+/// session), a warning for the known refusals (sample-rate mismatch, a newer
+/// or unconvertible manifest version), falling back to the raw message
+/// otherwise. Wired as the `TracksView`'s session [BlocListener].
 void showSessionOutcome(BuildContext context, SessionState state) {
-  final l10n = context.l10n;
-  final message = switch (state.status) {
-    SessionStatus.success => switch (state.outcome) {
-      SessionOutcome.saved => l10n.sessionSaved,
-      // A quick Save with no open session names the session itself (plan
-      // D4); the toast says which name it took.
-      SessionOutcome.savedAs => l10n.sessionSavedAs(
-        state.currentSessionName ?? '',
-      ),
-      SessionOutcome.loaded => switch (state.conversion) {
-        null => l10n.sessionLoaded,
-        final notice => sessionConversionMessage(l10n, notice),
-      },
-      // The stage's header names the new loop (19/06); no toast over it,
-      // unless a template's track names could not be written (#1513).
-      SessionOutcome.newLoop when state.trackNamesNotSaved =>
-        l10n.sessionTrackNamesNotSaved,
-      SessionOutcome.newLoop ||
-      // The catalog outcomes happen in the Library, which shows its own
-      // result; no SnackBar behind it.
-      SessionOutcome.renamed ||
-      SessionOutcome.deleted ||
-      SessionOutcome.duplicated ||
-      SessionOutcome.moved ||
-      SessionOutcome.folderCreated ||
-      SessionOutcome.folderRenamed ||
-      SessionOutcome.folderDeleted ||
-      null => null,
-    },
-    SessionStatus.failure => switch (state.error) {
-      SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
-      SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
-      SessionError.unconvertible => l10n.sessionErrorUnconvertible,
-      // App recovery notices remain actionable above the Library.
-      SessionError.bootPersistence => null,
-      SessionError.busy => l10n.operationBusy(
-        state.refusedBy?.name ?? 'other',
-      ),
-      SessionError.saveFailed => l10n.librarySaveFailed,
-      SessionError.currentSessionProtected => l10n.libraryDeleteCurrentRefused,
-      SessionError.folderNotEmpty => l10n.libraryFolderNotEmpty,
-      SessionError.captureInProgress => l10n.libraryTakeStillRunning,
-      SessionError.templateDoesNotFit => l10n.sessionTemplateDoesNotFit,
-      SessionError.newLoopNotSaved => l10n.sessionNewLoopNotSaved(
-        state.currentSessionName ?? '',
-      ),
-      // nameCollision is answered inside the Library's name sheet; here it
-      // falls back to the generic error. corruptLayers is a
-      // rare corrupt/foreign-bundle refusal — the generic message (carrying the
-      // exception's own description) is sufficient.
-      SessionError.nameCollision ||
-      SessionError.corruptLayers ||
-      SessionError.unknown ||
-      null => l10n.sessionErrorGeneric(state.errorMessage ?? ''),
-    },
-    SessionStatus.idle || SessionStatus.working => null,
-  };
-  if (message == null) return;
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        key: const Key('tracks_session_snackbar'),
-        content: Semantics(liveRegion: true, child: AppText(message)),
-      ),
-    );
+  final notice = sessionOutcomeNotice(state);
+  if (notice != null) context.read<NoticesCubit>().show(notice);
+}
+
+/// The message for a settled session action, or null when the outcome is
+/// shown elsewhere (the Library's own result, a boot recovery).
+Notice? sessionOutcomeNotice(SessionState state) {
+  Notice confirm(NoticeText title, {NoticeText? body}) => Notice(
+    id: AppNoticeId.session,
+    tone: NoticeTone.success,
+    title: title,
+    body: body,
+    explains: body != null,
+  );
+  Notice refuse(NoticeText title, {NoticeText? body, NoticeAction? action}) =>
+      Notice(
+        id: AppNoticeId.session,
+        tone: NoticeTone.warning,
+        title: title,
+        body: body,
+        action: action,
+      );
+  final name = state.currentSessionName ?? '';
+  switch (state.status) {
+    case SessionStatus.success:
+      switch (state.outcome) {
+        case SessionOutcome.saved:
+          return confirm((l10n) => l10n.sessionSaved);
+        // A quick Save with no open session names the session itself (plan
+        // D4); the message says which name it took.
+        case SessionOutcome.savedAs:
+          return confirm((l10n) => l10n.sessionSavedAs(name));
+        case SessionOutcome.loaded:
+          final conversion = state.conversion;
+          if (conversion == null) return confirm((l10n) => l10n.sessionLoaded);
+          return confirm(
+            (l10n) => conversion.written
+                ? l10n.sessionLoadedConverted
+                : l10n.sessionLoadedConvertedUnsaved,
+            body: (l10n) => sessionConversionDetail(l10n, conversion),
+          );
+        // The stage's header names the new loop (19/06); nothing over it,
+        // unless a template's track names could not be written (#1513).
+        case SessionOutcome.newLoop when state.trackNamesNotSaved:
+          return refuse((l10n) => l10n.sessionTrackNamesNotSaved);
+        // The catalog outcomes happen in the Library, which shows its own
+        // result.
+        case SessionOutcome.newLoop:
+        case SessionOutcome.renamed:
+        case SessionOutcome.deleted:
+        case SessionOutcome.duplicated:
+        case SessionOutcome.moved:
+        case SessionOutcome.folderCreated:
+        case SessionOutcome.folderRenamed:
+        case SessionOutcome.folderDeleted:
+        case null:
+          return null;
+      }
+    case SessionStatus.failure:
+      final busy = state.refusedBy?.name ?? 'other';
+      final details = state.errorMessage ?? '';
+      return switch (state.error) {
+        SessionError.sampleRateMismatch => refuse(
+          (l10n) => l10n.sessionLoadFailed,
+          body: (l10n) => l10n.sessionLoadSampleRate,
+          action: NoticeAction(
+            key: const Key(AppNoticeId.sessionOpenSetup),
+            label: (l10n) => l10n.deviceLostBannerAction,
+            onPressed: () => unawaited(openDeviceSettings()),
+          ),
+        ),
+        SessionError.unsupportedVersion => refuse(
+          (l10n) => l10n.sessionLoadFailed,
+          body: (l10n) => l10n.sessionLoadNewer,
+        ),
+        SessionError.unconvertible => refuse(
+          (l10n) => l10n.sessionLoadFailed,
+          body: (l10n) => l10n.sessionLoadUnconvertible,
+        ),
+        // The boot recovery stands as a must-act message of its own.
+        SessionError.bootPersistence => null,
+        SessionError.busy => refuse((l10n) => l10n.operationBusy(busy)),
+        SessionError.saveFailed => refuse((l10n) => l10n.librarySaveFailed),
+        SessionError.currentSessionProtected => refuse(
+          (l10n) => l10n.libraryDeleteCurrentRefused,
+        ),
+        SessionError.folderNotEmpty => refuse(
+          (l10n) => l10n.libraryFolderNotEmpty,
+        ),
+        SessionError.captureInProgress => refuse(
+          (l10n) => l10n.libraryTakeStillRunning,
+        ),
+        SessionError.templateDoesNotFit => refuse(
+          (l10n) => l10n.sessionTemplateDoesNotFit,
+        ),
+        SessionError.newLoopNotSaved => refuse(
+          (l10n) => l10n.sessionNewLoopNotSaved(name),
+        ),
+        // nameCollision is answered inside the Library's name sheet; here it
+        // falls back to the generic error. corruptLayers is a rare
+        // corrupt/foreign-bundle refusal: the generic message, carrying the
+        // exception's own description, is enough.
+        SessionError.nameCollision ||
+        SessionError.corruptLayers ||
+        SessionError.unknown ||
+        null => refuse((l10n) => l10n.sessionErrorGeneric(details)),
+      };
+    case SessionStatus.idle:
+    case SessionStatus.working:
+      return null;
+  }
 }
 
 /// Reacts to a settled [PerformanceRecorderCubit] transition: opens the
-/// completion sheet when a capture finishes, or — for the short-capture
-/// auto-discard, which has no result to show — surfaces a SnackBar notice
-/// instead (no ephemeral state; this reacts to an ordinary field on the
-/// settled [PerformanceRecorderCompleted] transition). Boot-time crash
-/// salvage never arrives here — it recovers silently in the repository
-/// (D-SALVAGE, #679), with no prompt and no state to listen for. Wired as
-/// the `TracksView`'s performance [BlocListener].
+/// completion sheet when a capture finishes, or says in the top bar why a
+/// capture did not start or was not kept. Boot-time crash salvage never
+/// arrives here: it recovers silently in the repository (D-SALVAGE, #679).
+/// Wired as the `TracksView`'s performance [BlocListener].
 void onPerformanceRecorderState(
   BuildContext context,
   PerformanceRecorderState state,
 ) {
+  void say(
+    NoticeText title, {
+    NoticeTone tone = NoticeTone.warning,
+    NoticeText? body,
+  }) => context.read<NoticesCubit>().show(
+    Notice(id: AppNoticeId.performance, tone: tone, title: title, body: body),
+  );
   // A refused arm has to say so. Silently doing nothing is indistinguishable
   // from a dead control, and the operator would simply press again (#640).
   if (state is PerformanceRecorderIdle && state.lowDiskBlocked) {
-    _showPerformanceLowDiskBlocked(context);
+    say((l10n) => l10n.perfLowDiskBlocked);
     return;
   }
   if (state is PerformanceRecorderIdle && state.driveUnavailable) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          key: const Key('tracks_perfArmDriveUnavailable_snackbar'),
-          content: Semantics(
-            liveRegion: true,
-            child: AppText(context.l10n.perfArmDriveUnavailable),
-          ),
-        ),
-      );
+    say((l10n) => l10n.perfArmDriveUnavailable);
     return;
   }
-  // Refused at its commit by an operation in flight (#1198): a toast, since
-  // nothing needs doing beyond waiting for it (the popup-severity rule).
+  // Refused at its commit by an operation in flight (#1198): nothing needs
+  // doing beyond waiting for it.
   final refusedBy = state is PerformanceRecorderIdle ? state.refusedBy : null;
   if (refusedBy != null) {
-    _showPerformanceArmRefused(context, refusedBy);
+    say(
+      (l10n) => l10n.perfArmRefused,
+      body: (l10n) => l10n.operationBusy(refusedBy.name),
+    );
     return;
   }
   // A take the boot salvage could not recover must not just vanish from
   // view: say so; its files are kept (#1198).
   if (state is PerformanceRecorderIdle && state.notRecovered > 0) {
-    _showPerformanceNotRecovered(context, state.notRecovered);
+    final count = state.notRecovered;
+    say((l10n) => l10n.perfTakesNotRecovered(count));
     return;
   }
   // Entering Rendering opens the dialog on its rendering face; entering
@@ -517,83 +558,24 @@ void onPerformanceRecorderState(
   }
   if (state is PerformanceRecorderCompleted) {
     if (state.discarded) {
-      _showPerformanceDiscarded(context);
+      say((l10n) => l10n.perfDiscarded, tone: NoticeTone.neutral);
     } else {
       unawaited(showPerformanceCompletionSheet(context));
     }
   }
 }
 
-void _showPerformanceArmRefused(BuildContext context, GuardKind refusedBy) {
-  final l10n = context.l10n;
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        key: const Key('tracks_perfArmRefused_snackbar'),
-        content: Semantics(
-          liveRegion: true,
-          child: AppText(
-            l10n.perfArmRefused(l10n.operationBusy(refusedBy.name)),
-          ),
-        ),
-      ),
-    );
-}
-
-void _showPerformanceNotRecovered(BuildContext context, int count) {
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        key: const Key('tracks_perfNotRecovered_snackbar'),
-        content: Semantics(
-          liveRegion: true,
-          child: AppText(context.l10n.perfTakesNotRecovered(count)),
-        ),
-      ),
-    );
-}
-
-void _showPerformanceLowDiskBlocked(BuildContext context) {
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        key: const Key('tracks_perfLowDiskBlocked_snackbar'),
-        content: Semantics(
-          liveRegion: true,
-          child: AppText(context.l10n.perfLowDiskBlocked),
-        ),
-      ),
-    );
-}
-
-void _showPerformanceDiscarded(BuildContext context) {
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        key: const Key('tracks_perfDiscarded_snackbar'),
-        content: Semantics(
-          liveRegion: true,
-          child: AppText(context.l10n.perfDiscarded),
-        ),
-      ),
-    );
-}
-
-/// The notice for a session converted from an older version: whether the
-/// original was kept beside the converted session, then one sentence for
-/// each audible change the conversion made.
-String sessionConversionMessage(
+/// The detail of a session converted from an older version: whether the
+/// original was kept beside it, then one sentence for each audible change
+/// the conversion made.
+String sessionConversionDetail(
   AppLocalizations l10n,
   SessionConversionNotice notice,
 ) => [
   if (notice.written)
-    l10n.sessionLoadedConverted
+    l10n.sessionConvertedKept
   else
-    l10n.sessionLoadedConvertedUnsaved,
+    l10n.sessionConvertedNotWritten,
   if (notice.changes.contains(SessionConversionChange.masterEffectsMoved))
     l10n.sessionConvertedMasterMoved,
   if (notice.changes.contains(SessionConversionChange.monitorLevelLowered))

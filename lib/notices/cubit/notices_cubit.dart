@@ -29,23 +29,46 @@ class NoticesCubit extends Cubit<NoticesState> {
 
   int _serial = 0;
   Timer? _messageTimer;
+
+  /// One-time explanations waiting for the one on screen to go by.
+  final _waiting = <Notice>[];
   final _trackTimers = <int, Timer>{};
 
   /// Shows [notice] in the top bar for its [Notice.duration].
   ///
-  /// The same id again restarts the time in place.
+  /// The same id again restarts the time in place. A one-time explanation
+  /// ([Notice.explains]) that arrives while another is up waits for it
+  /// rather than replacing it: each is said once in the console's life, so
+  /// one replaced would never be read. Anything else replaces whatever is up.
   void show(Notice notice) {
     assert(
       notice.tone != NoticeTone.critical,
       'A message that goes by itself is never critical; raise it instead.',
     );
     if (_dropped(notice)) return;
+    final current = state.message?.notice;
+    if (notice.explains &&
+        current != null &&
+        current.explains &&
+        current.id != notice.id) {
+      _waiting
+        ..removeWhere((waiting) => waiting.id == notice.id)
+        ..add(notice);
+      return;
+    }
+    _present(notice);
+  }
+
+  void _present(Notice notice) {
     final shown = ShownNotice(notice: notice, serial: ++_serial);
     _messageTimer?.cancel();
     _messageTimer = Timer(notice.duration, () {
-      if (state.message?.serial == shown.serial) {
-        emit(state._copyWith(message: () => null));
+      if (state.message?.serial != shown.serial) return;
+      if (_waiting.isNotEmpty) {
+        _present(_waiting.removeAt(0));
+        return;
       }
+      emit(state._copyWith(message: () => null));
     });
     emit(state._copyWith(message: () => shown));
   }
@@ -92,6 +115,7 @@ class NoticesCubit extends Cubit<NoticesState> {
   /// Ends every notice with [id]: a must-act message whose condition is
   /// over, or a passing message that no longer applies.
   void clear(String id) {
+    _waiting.removeWhere((waiting) => waiting.id == id);
     final message = state.message?.notice.id == id ? null : state.message;
     if (message == null) _messageTimer?.cancel();
     final banners = [
@@ -114,6 +138,7 @@ class NoticesCubit extends Cubit<NoticesState> {
   void setHeld({required bool held}) {
     if (state.held == held) return;
     if (held) {
+      _waiting.clear();
       _messageTimer?.cancel();
       for (final timer in _trackTimers.values) {
         timer.cancel();

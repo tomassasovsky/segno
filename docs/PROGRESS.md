@@ -99,6 +99,25 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Sizes and type ramp in the `NoticeTheme` extension, gaps from the new
   `SpacingTheme` scale, colours from `SurfaceTheme` (new `warningTint`,
   `warningLine`). Screenshots: `notice_*` in the tracks and notices suites.
+- Every message the app says goes through it (part 2): the settings
+  owners' and the mix's recoveries, the session boot and monitor restores
+  and the power-cycle prompt are must-act messages with their fix; the
+  lost interface, the cleared loops, the stopped engine, audio starting and
+  the effects held off are raised by `StandingNotices`
+  (`lib/app/view/standing_notices.dart`) on every screen; a press a track
+  refused is said on its card; the rest pass through the top bar. Ids live
+  in `AppNoticeId` (`lib/app/app_notices.dart`). `toastification`,
+  `ControlSettingsNotices` and every `SnackBar` are gone; the rename sheets
+  say a bad name under the field.
+- Rules beyond the decision, settled while building it: a body is shown
+  whole or not at all; a bar too narrow for the buttons (a desktop window)
+  drops them before the words; one-time explanations queue behind each
+  other instead of replacing each other; the Mixer's own top-bar buttons
+  step aside while a must-act message stands. `test/notices/
+  notice_copy_fit_test.dart` renders every message in English and Spanish
+  in the stage bar and fails on any cut title or dropped body or button.
+- Tests: a press that settles runs a passing message's time out, so tests
+  ask `NoticeLog` (`test/helpers/notice_log.dart`) what was said.
 
 ## November 2026 Screen capture on the console (#1555)
 

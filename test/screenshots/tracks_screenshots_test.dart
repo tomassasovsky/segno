@@ -1300,85 +1300,6 @@ void main() {
     skip: true, // Fails to render: #1500.
   );
 
-  testWidgets(
-    'console main window with the device-lost banner (STAGE / device-lost)',
-    (tester) async {
-      // The one standing loss condition: the pinned interface is gone, so the
-      // red banner holds the stage above the track run. It STANDS IN for the
-      // "engine stopped" bar (#453) — the two never stack — so a device-gone
-      // engine shows this banner alone, not both. MIDI loss is a transient
-      // toast, never a banner here.
-      whenListen(
-        audioSetup,
-        const Stream<AudioSetupState>.empty(),
-        initialState: const AudioSetupState(
-          deviceConnectivity: DeviceConnectivity.lost,
-          connectivityDeviceName: 'Scarlett 2i2',
-        ),
-      );
-      seed(
-        const LooperState(
-          // The engine reports the device gone, so the generic "not running"
-          // affordance is suppressed and only the device-lost banner shows.
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 96000),
-            Track(channel: 1),
-            Track(channel: 2),
-            Track(channel: 3),
-          ],
-        ),
-      );
-      await pump(tester);
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_device_lost.png'),
-      );
-    },
-    skip: !rendersScreenshots,
-  );
-
-  testWidgets(
-    'console main window with effects switched off because the rig could '
-    'not run them (#1515, STAGE / effects-off)',
-    (tester) async {
-      // The owner's R2: the rig came up over the effects budget, so its
-      // newest chains came up held off. The standing notice names them
-      // until they are back on or dismissed; the warning colour, not the
-      // record red: the sound differs from what was saved, nothing is lost.
-      inputNames = const {0: 'Guitar'};
-      const held = [
-        FxAddress(stage: FxStage.loop, index: 2),
-        FxAddress(stage: FxStage.input),
-      ];
-      seed(
-        LooperState(
-          status: const EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            deviceName: 'Segno',
-            inputChannels: 2,
-            outputChannels: 2,
-          ),
-          tracks: const [
-            Track(state: TrackState.playing, lengthFrames: 96000),
-            Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
-            Track(channel: 2, state: TrackState.playing, lengthFrames: 96000),
-            Track(channel: 3),
-          ],
-          fxHeld: held.toSet(),
-          fxHoldNotice: held,
-        ),
-      );
-      await pump(tester);
-      expect(find.byKey(const Key('fx_held_banner')), findsOneWidget);
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_fx_held.png'),
-      );
-    },
-    skip: !rendersScreenshots,
-  );
-
   // #692: the FX-mode stage transform — the whole stage takes the FX purple,
   // meters recede to 40%, and each tile re-dresses with a power pill and its
   // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
@@ -1439,11 +1360,15 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     }
 
+    // The app's own words, as `StandingNotices` raises them.
     Notice lost() => Notice(
       id: 'lost',
       tone: NoticeTone.critical,
-      title: (_) => 'Scarlett 4i4 disconnected. Nothing is heard.',
-      action: NoticeAction(label: (_) => 'Open setup', onPressed: () {}),
+      title: (l10n) => l10n.deviceLostNamedBanner('Scarlett 4i4'),
+      action: NoticeAction(
+        label: (l10n) => l10n.deviceLostBannerAction,
+        onPressed: () {},
+      ),
     );
 
     testWidgets('confirmation in the top bar', (tester) async {
@@ -1452,7 +1377,7 @@ void main() {
         Notice(
           id: 'saved',
           tone: NoticeTone.success,
-          title: (_) => 'Saved as Night set',
+          title: (l10n) => l10n.sessionSavedAs('Night set'),
         ),
       );
       await shoot(tester, 'confirm');
@@ -1463,10 +1388,10 @@ void main() {
       notices.show(
         Notice(
           id: 'undo',
-          title: (_) => 'Cleared all tracks',
+          title: (l10n) => l10n.undoClearAllToast,
           action: NoticeAction(
             icon: LucideIcons.undo2,
-            label: (_) => 'Undo',
+            label: (l10n) => l10n.undoClearAllAction,
             onPressed: () {},
           ),
         ),
@@ -1480,8 +1405,8 @@ void main() {
         Notice(
           id: 'midi',
           tone: NoticeTone.warning,
-          title: (_) => 'MIDI controller disconnected',
-          body: (_) => 'Loops keep playing',
+          title: (l10n) => l10n.midiLostToastTitle,
+          body: (l10n) => l10n.midiLostToastBody,
         ),
       );
       await shoot(tester, 'warning');
@@ -1499,9 +1424,16 @@ void main() {
         Notice(
           id: 'fx_held',
           tone: NoticeTone.warning,
-          title: (_) => 'Some effects are off',
-          body: (_) => 'The rig does not fit the processing',
-          action: NoticeAction(label: (_) => 'Open effects', onPressed: () {}),
+          title: (l10n) => l10n.fxHeldTitle,
+          body: (l10n) => l10n.fxHeldBanner('RC-20', 1),
+          action: NoticeAction(
+            label: (l10n) => l10n.fxHeldOpen,
+            onPressed: () {},
+          ),
+          secondary: NoticeAction(
+            label: (l10n) => l10n.dismiss,
+            onPressed: () {},
+          ),
         ),
       );
       await shoot(tester, 'must_act_warning');
@@ -1517,9 +1449,9 @@ void main() {
           Notice(
             id: 'rec',
             tone: NoticeTone.warning,
-            overline: (_) => 'Rec refused',
-            title: (_) => 'Recording did not start',
-            body: (_) => 'Press Record again',
+            overline: (l10n) => l10n.noticeRecRefused,
+            title: (l10n) => l10n.recordRefusedTitle,
+            body: (l10n) => l10n.recordRefusedBody,
           ),
         );
         await shoot(tester, 'track_${view.name}');

@@ -198,7 +198,11 @@ class _BackingClickButton extends StatelessWidget {
     final showing = context.select<TracksCubit, bool>(
       (cubit) => cubit.state.stageView == StageView.mixer,
     );
-    if (!showing) return const SizedBox.shrink();
+    // A must-act message takes the whole bar (#1562): the Mixer's own
+    // buttons step aside for it, so the sentence and its fix have the
+    // Track view's room; the bar's standing controls do not move.
+    final mustAct = context.selectNotices((state) => state.banner != null);
+    if (!showing || mustAct) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(right: StageTopBar._gap),
       child: LoopOutlinedButton(
@@ -268,7 +272,11 @@ class _ResetMixerButton extends StatelessWidget {
     final showing = context.select<TracksCubit, bool>(
       (cubit) => cubit.state.stageView == StageView.mixer,
     );
-    if (!showing) return const SizedBox.shrink();
+    // A must-act message takes the whole bar (#1562): the Mixer's own
+    // buttons step aside for it, so the sentence and its fix have the
+    // Track view's room; the bar's standing controls do not move.
+    final mustAct = context.selectNotices((state) => state.banner != null);
+    if (!showing || mustAct) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(right: StageTopBar._gap),
       child: _StageIconButton(

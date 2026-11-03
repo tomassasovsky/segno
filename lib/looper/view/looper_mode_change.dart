@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The five looper modes, each with the one-liner that makes it choosable.
@@ -72,9 +74,8 @@ Future<bool> requestLooperModeChange(
     // and a refusal then must be named, not swallowed.
     gate = repository.looperModeGate(next);
   }
-  final reason = looperModeRefusal(l10n, gate);
-  if (reason != null) {
-    _showRefusal(context, reason);
+  if (looperModeRefusal(l10n, gate) != null) {
+    _showRefusal(context, gate);
     return false;
   }
   unawaited(record.setLooperMode(next));
@@ -170,13 +171,11 @@ String? looperModeRefusal(AppLocalizations l10n, LooperModeGate gate) =>
       LooperModeGate.open || LooperModeGate.playing => null,
     };
 
-void _showRefusal(BuildContext context, String reason) {
-  ScaffoldMessenger.of(context)
-    ..clearSnackBars()
-    ..showSnackBar(
-      SnackBar(
-        key: const Key('looperMode_refused_snackbar'),
-        content: Semantics(liveRegion: true, child: AppText(reason)),
+void _showRefusal(BuildContext context, LooperModeGate gate) =>
+    context.read<NoticesCubit>().show(
+      Notice(
+        id: AppNoticeId.looperMode,
+        tone: NoticeTone.warning,
+        title: (l10n) => looperModeRefusal(l10n, gate) ?? '',
       ),
     );
-}

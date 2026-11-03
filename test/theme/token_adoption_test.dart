@@ -24,10 +24,6 @@ const _allowed = <String, String>{
   'lib/looper/view/fx/stomp/fx_stomp_graphics.dart':
       'stomp pedal face pictures — the approved pedal design (#1501)',
 
-  // Drop shadows. The design system has no shadow tokens at all; these are not
-  // palette drift, they are a gap on the DS side.
-  'lib/app/app_toasts.dart': 'drop shadow — DS defines no shadow tokens',
-
   // Runs in the second window, a separate engine that may have no theme
   // registered, so its theme lookups are null-guarded with literal fallbacks.
   // The playhead is deliberately white and carries its own gutter (3b).

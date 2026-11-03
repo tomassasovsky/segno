@@ -11,17 +11,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/application/app_runtime.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/app/view/control_settings_notices.dart';
 import 'package:segno/app/view/encoder_navigation.dart';
+import 'package:segno/app/view/standing_notices.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/appliance/idle_dim_host.dart';
@@ -42,7 +43,6 @@ import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/settings_owner.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
-import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -60,7 +60,6 @@ import 'package:segno/visualizer/visualizer.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
-import 'package:toastification/toastification.dart';
 import 'package:touch_calibration_client/touch_calibration_client.dart';
 import 'package:update_repository/update_repository.dart';
 import 'package:usb_storage_client/usb_storage_client.dart';
@@ -220,7 +219,6 @@ class _AppState extends State<App> {
   late final RecordOptionsCubit _recordView;
   StreamSubscription<MixSettingsOutcome>? _mixFailureSubscription;
   PowerKeySource? _powerKeySource;
-  final _controlNotices = ControlSettingsNotices();
 
   /// The app's one notice centre (#1562), held while the Power screen is up.
   final _notices = NoticesCubit();
@@ -266,7 +264,7 @@ class _AppState extends State<App> {
       guards: widget.guards,
     );
     _powerNoticeSubscription = _runtime.power.stream.listen(
-      _syncControlNoticesWithPower,
+      (state) => _notices.setHeld(held: state.isUiUp),
     );
     _mixFailureSubscription = _runtime.mix.failures.listen(_showMixFailure);
     _tempoView = TempoCubit(settings: _runtime.tempo);
@@ -275,7 +273,7 @@ class _AppState extends State<App> {
         owner.failures.listen((outcome) => _showOwnedFailure(owner, outcome)),
         // A restart replay can resolve an owed value without Retry.
         owner.recovered.listen(
-          (_) => _controlNotices.dismiss(_ownedNotice(owner.key).id),
+          (_) => _notices.clear(_ownedNotice(owner.key).id),
         ),
       ]);
     }
@@ -287,24 +285,16 @@ class _AppState extends State<App> {
       _showFxTakeHeld,
     );
     _recordRefusedSubscription = widget.repository.recordRefusals.listen(
-      (channel) =>
-          _showRecordRefused(channel, (l10n) => l10n.recordRefusedTitle),
+      (channel) => _showTrackRefused(channel, _recordRefused),
     );
     _overdubRefusedSubscription = widget.repository.overdubRefusals.listen(
-      (channel) =>
-          _showRecordRefused(channel, (l10n) => l10n.footReverseOverdubRefused),
+      (channel) => _showTrackRefused(channel, _overdubRefused),
     );
     // An Undo or Redo of a length edit that did nothing (#1168): refused at
     // the tap or after it was posted, or queued taps that stopped at the
     // edit. From any surface, so a tap that did nothing is never silent.
     _lengthHistoryRefusedSubscription = widget.repository.lengthHistoryRefusals
-        .listen(
-          (channel) => _showRecordRefused(
-            channel,
-            (l10n) => l10n.lengthHistoryRefused,
-            id: AppToastId.lengthHistoryRefused,
-          ),
-        );
+        .listen((channel) => _showTrackRefused(channel, _lengthHistoryRefused));
     _playbackView = PlaybackOptionsCubit(settings: _runtime.playback);
     _recordView = RecordOptionsCubit(settings: _runtime.record);
     _timingView = RecordTimingCubit(settings: _runtime.timing);
@@ -331,7 +321,6 @@ class _AppState extends State<App> {
     unawaited(_fxTakeHeldSubscription?.cancel());
     unawaited(_overdubRefusedSubscription?.cancel());
     unawaited(_lengthHistoryRefusedSubscription?.cancel());
-    _controlNotices.dispose();
     unawaited(_notices.close());
     unawaited(
       _closeControlOwners().catchError((Object error, StackTrace stack) {
@@ -356,219 +345,208 @@ class _AppState extends State<App> {
     ]);
   }
 
+  /// A settings owner's failure (#1562): a value it owes is a must-act
+  /// message with Retry until the owner is ready again; a change it refused
+  /// passes by, and is dropped while that recovery stands (one cause, one
+  /// notice).
   void _showOwnedFailure(
     SettingsOwner<Object, Object?> owner,
     SettingOutcome outcome,
   ) {
     if (!mounted || outcome.status == SettingStatus.superseded) return;
-    final recovery = outcome.status == SettingStatus.recoveryRequired;
     final notice = _ownedNotice(owner.key);
     AppLog.error(
       '${owner.key.name}: ${outcome.status.name} ${outcome.error ?? ''}',
     );
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: notice.id,
-        title: (context) =>
-            Text(recovery ? notice.recovery(context) : notice.refused(context)),
-        description: recovery ? (context) => Text(notice.body(context)) : null,
-        retry: recovery ? () async => (await owner.recover()).isOk : null,
-        needsRecovery: recovery ? () => !owner.ready : null,
-      ),
+    if (outcome.status == SettingStatus.recoveryRequired) {
+      _notices.raise(
+        Notice(
+          id: notice.id,
+          tone: NoticeTone.warning,
+          title: notice.recovery,
+          action: retryNoticeAction(
+            _notices,
+            notice.id,
+            () async => (await owner.recover()).isOk,
+          ),
+        ),
+      );
+      return;
+    }
+    // A recovery resolved without its Retry no longer stands.
+    if (owner.ready) _notices.clear(notice.id);
+    _notices.show(
+      Notice(id: notice.id, tone: NoticeTone.warning, title: notice.refused),
     );
   }
 
-  static ({
-    String id,
-    String Function(BuildContext) recovery,
-    String Function(BuildContext) refused,
-    String Function(BuildContext) body,
-  })
-  _ownedNotice(OwnedSetting key) => switch (key) {
+  static ({String id, NoticeText recovery, NoticeText refused}) _ownedNotice(
+    OwnedSetting key,
+  ) => switch (key) {
     OwnedSetting.clickVolume => (
-      id: AppToastId.clickSettings,
-      recovery: (context) => context.l10n.clickSettingsRecoveryTitle,
-      refused: (context) => context.l10n.clickSettingsRefusedTitle,
-      body: (context) => context.l10n.clickSettingsRecoveryBody,
+      id: AppNoticeId.clickSettings,
+      recovery: (l10n) => l10n.clickSettingsRecoveryTitle,
+      refused: (l10n) => l10n.clickSettingsRefusedTitle,
     ),
     OwnedSetting.hearClick => (
-      id: AppToastId.clickModeSettings,
-      recovery: (context) => context.l10n.clickModeSettingsRecoveryTitle,
-      refused: (context) => context.l10n.clickModeSettingsRefusedTitle,
-      body: (context) => context.l10n.clickModeSettingsRecoveryBody,
+      id: AppNoticeId.clickModeSettings,
+      recovery: (l10n) => l10n.clickModeSettingsRecoveryTitle,
+      refused: (l10n) => l10n.clickModeSettingsRefusedTitle,
     ),
     OwnedSetting.recordStart => (
-      id: AppToastId.recordStartSettings,
-      recovery: (context) => context.l10n.recordStartSettingsRecoveryTitle,
-      refused: (context) => context.l10n.recordStartSettingsRefusedTitle,
-      body: (context) => context.l10n.recordStartSettingsRecoveryBody,
+      id: AppNoticeId.recordStartSettings,
+      recovery: (l10n) => l10n.recordStartSettingsRecoveryTitle,
+      refused: (l10n) => l10n.recordStartSettingsRefusedTitle,
     ),
     OwnedSetting.decay => (
-      id: AppToastId.decaySettings,
-      recovery: (context) => context.l10n.decaySettingsRecoveryTitle,
-      refused: (context) => context.l10n.decaySettingsRefusedTitle,
-      body: (context) => context.l10n.decaySettingsRecoveryBody,
+      id: AppNoticeId.decaySettings,
+      recovery: (l10n) => l10n.decaySettingsRecoveryTitle,
+      refused: (l10n) => l10n.decaySettingsRefusedTitle,
     ),
     OwnedSetting.oneShot => (
-      id: AppToastId.oneShotSettings,
-      recovery: (context) => context.l10n.oneShotSettingsRecoveryTitle,
-      refused: (context) => context.l10n.oneShotSettingsRefusedTitle,
-      body: (context) => context.l10n.oneShotSettingsRecoveryBody,
+      id: AppNoticeId.oneShotSettings,
+      recovery: (l10n) => l10n.oneShotSettingsRecoveryTitle,
+      refused: (l10n) => l10n.oneShotSettingsRefusedTitle,
     ),
     OwnedSetting.recordLength => (
-      id: AppToastId.recordLengthSettings,
-      recovery: (context) => context.l10n.recordLengthSettingsRecoveryTitle,
-      refused: (context) => context.l10n.recordLengthSettingsRefusedTitle,
-      body: (context) => context.l10n.recordLengthSettingsRecoveryBody,
+      id: AppNoticeId.recordLengthSettings,
+      recovery: (l10n) => l10n.recordLengthSettingsRecoveryTitle,
+      refused: (l10n) => l10n.recordLengthSettingsRefusedTitle,
     ),
     OwnedSetting.recordTiming => (
-      id: AppToastId.recordTimingSettings,
-      recovery: (context) => context.l10n.recordTimingSettingsRecoveryTitle,
-      refused: (context) => context.l10n.recordTimingSettingsRefusedTitle,
-      body: (context) => context.l10n.recordTimingSettingsRecoveryBody,
+      id: AppNoticeId.recordTimingSettings,
+      recovery: (l10n) => l10n.recordTimingSettingsRecoveryTitle,
+      refused: (l10n) => l10n.recordTimingSettingsRefusedTitle,
     ),
     OwnedSetting.fade => (
-      id: AppToastId.fadeSettings,
-      recovery: (context) => context.l10n.fadeSettingsRecoveryTitle,
-      refused: (context) => context.l10n.fadeSettingsRefusedTitle,
-      body: (context) => context.l10n.fadeSettingsRecoveryBody,
+      id: AppNoticeId.fadeSettings,
+      recovery: (l10n) => l10n.fadeSettingsRecoveryTitle,
+      refused: (l10n) => l10n.fadeSettingsRefusedTitle,
     ),
     OwnedSetting.backingMix => (
-      id: AppToastId.backingMixSettings,
-      recovery: (context) => context.l10n.backingMixSettingsRecoveryTitle,
-      refused: (context) => context.l10n.backingMixSettingsRefusedTitle,
-      body: (context) => context.l10n.backingMixSettingsRecoveryBody,
+      id: AppNoticeId.backingMixSettings,
+      recovery: (l10n) => l10n.backingMixSettingsRecoveryTitle,
+      refused: (l10n) => l10n.backingMixSettingsRefusedTitle,
     ),
     OwnedSetting.clickPan => (
-      id: AppToastId.clickPanSettings,
-      recovery: (context) => context.l10n.clickPanSettingsRecoveryTitle,
-      refused: (context) => context.l10n.clickPanSettingsRefusedTitle,
-      body: (context) => context.l10n.clickPanSettingsRecoveryBody,
+      id: AppNoticeId.clickPanSettings,
+      recovery: (l10n) => l10n.clickPanSettingsRecoveryTitle,
+      refused: (l10n) => l10n.clickPanSettingsRefusedTitle,
     ),
     OwnedSetting.followTempo => (
-      id: AppToastId.followTempoSettings,
-      recovery: (context) => context.l10n.followTempoSettingsRecoveryTitle,
-      refused: (context) => context.l10n.followTempoSettingsRefusedTitle,
-      body: (context) => context.l10n.followTempoSettingsRecoveryBody,
+      id: AppNoticeId.followTempoSettings,
+      recovery: (l10n) => l10n.followTempoSettingsRecoveryTitle,
+      refused: (l10n) => l10n.followTempoSettingsRefusedTitle,
     ),
     OwnedSetting.pitchMode => (
-      id: AppToastId.pitchModeSettings,
-      recovery: (context) => context.l10n.pitchModeSettingsRecoveryTitle,
-      refused: (context) => context.l10n.pitchModeSettingsRefusedTitle,
-      body: (context) => context.l10n.pitchModeSettingsRecoveryBody,
+      id: AppNoticeId.pitchModeSettings,
+      recovery: (l10n) => l10n.pitchModeSettingsRecoveryTitle,
+      refused: (l10n) => l10n.pitchModeSettingsRefusedTitle,
     ),
     OwnedSetting.instruments => (
-      id: AppToastId.instrumentsSettings,
-      recovery: (context) => context.l10n.instrumentsSettingsRecoveryTitle,
-      refused: (context) => context.l10n.instrumentsSettingsRefusedTitle,
-      body: (context) => context.l10n.instrumentsSettingsRecoveryBody,
+      id: AppNoticeId.instrumentsSettings,
+      recovery: (l10n) => l10n.instrumentsSettingsRecoveryTitle,
+      refused: (l10n) => l10n.instrumentsSettingsRefusedTitle,
     ),
   };
 
   /// A take whose inherited effects did not fit came in with them switched
   /// off (#1515, the owner's R1). The take sounds dry until the player makes
-  /// room, which matters little in the moment: a toast. While the standing
-  /// effects-off notice is up the repository adds the take to it instead.
+  /// room, which matters little in the moment: a message on its track. While
+  /// the standing effects-off message is up the repository adds the take to
+  /// it instead.
   void _showFxTakeHeld(int channel) {
     if (!mounted) return;
-    showAppToast(
-      id: AppToastId.fxTakeHeld,
-      type: ToastificationType.warning,
-      autoCloseDuration: const Duration(seconds: 6),
-      title: Builder(
-        builder: (context) => Text(
-          context.l10n.fxTakeHeldToast(
-            context.l10n.trackName(
-              context.read<TracksCubit>().state.names,
-              channel,
-            ),
-          ),
-        ),
+    _notices.showOnTrack(
+      channel,
+      Notice(
+        id: AppNoticeId.fxTakeHeld,
+        tone: NoticeTone.warning,
+        overline: (l10n) => l10n.noticeEffectsOff,
+        title: (l10n) => l10n.fxTakeHeldToast,
+        body: (l10n) => l10n.fxTakeHeldBody,
       ),
     );
   }
 
+  /// A Record press on a track with no recording input: said on its track.
   void _showRecordingInputRequired(int channel) {
-    if (!mounted || _runtime.power.state.isUiUp) return;
-    showAppToast(
-      id: AppToastId.recordingInputRequired,
-      type: ToastificationType.warning,
-      autoCloseDuration: const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(context.l10n.recordingInputRequiredTitle),
-      ),
-      description: Builder(
-        builder: (context) => Text(
-          context.l10n.trackName(
-            context.read<TracksCubit>().state.names,
-            channel,
-          ),
-        ),
+    if (!mounted) return;
+    _notices.showOnTrack(
+      channel,
+      Notice(
+        id: AppNoticeId.recordingInputRequired,
+        tone: NoticeTone.warning,
+        overline: (l10n) => l10n.noticeNoInput,
+        title: (l10n) => l10n.recordingInputRequiredTitle,
       ),
     );
   }
 
-  /// A Record press the engine refused: a fresh capture refused twice
-  /// (#1146), or an overdub on a reversed track. The press is lost, so say
-  /// why. Low stakes — a toast, like the input notice above.
-  void _showRecordRefused(
-    int channel,
-    String Function(AppLocalizations l10n) title, {
-    String id = AppToastId.recordRefused,
-  }) {
-    if (!mounted || _runtime.power.state.isUiUp) return;
-    showAppToast(
-      id: id,
-      type: ToastificationType.warning,
-      autoCloseDuration: const Duration(seconds: 5),
-      title: Builder(
-        builder: (context) => Text(title(context.l10n)),
-      ),
-      description: Builder(
-        builder: (context) => Text(
-          context.l10n.trackName(
-            context.read<TracksCubit>().state.names,
-            channel,
-          ),
-        ),
-      ),
-    );
+  /// A press the engine refused on a track: a fresh capture refused twice
+  /// (#1146), an overdub on a reversed track, or a length Undo or Redo that
+  /// did nothing (#1168). The press is lost, so its track says why.
+  void _showTrackRefused(int channel, Notice notice) {
+    if (!mounted) return;
+    _notices.showOnTrack(channel, notice);
   }
 
+  static final _recordRefused = Notice(
+    id: AppNoticeId.recordRefused,
+    tone: NoticeTone.warning,
+    overline: (l10n) => l10n.noticeRecRefused,
+    title: (l10n) => l10n.recordRefusedTitle,
+    body: (l10n) => l10n.recordRefusedBody,
+  );
+
+  static final _overdubRefused = Notice(
+    id: AppNoticeId.overdubRefused,
+    tone: NoticeTone.warning,
+    overline: (l10n) => l10n.noticeOverdubRefused,
+    title: (l10n) => l10n.footReverseOverdubRefused,
+  );
+
+  static final _lengthHistoryRefused = Notice(
+    id: AppNoticeId.lengthHistoryRefused,
+    tone: NoticeTone.warning,
+    overline: (l10n) => l10n.noticeLengthUnchanged,
+    title: (l10n) => l10n.lengthHistoryRefused,
+    body: (l10n) => l10n.lengthHistoryRefusedBody,
+  );
+
+  /// The mix owner's failure: a recovery is must-act (critical when audio
+  /// was stopped to protect the settings), a refused change passes by.
   void _showMixFailure(MixSettingsOutcome outcome) {
     if (!mounted || outcome.status == MixSettingsStatus.superseded) return;
-    final recovery = outcome.status == MixSettingsStatus.recoveryRequired;
     AppLog.error('Mix settings: ${outcome.status.name} ${outcome.error ?? ''}');
-    _controlNotices.show(
-      ControlSettingsNotice(
-        id: AppToastId.mixSettings,
-        title: (_) => Text(
-          recovery
-              ? 'Mix settings need recovery'
-              : outcome.status == MixSettingsStatus.storageFailed
-              ? 'Mix change could not be saved'
-              : 'Mix change was not applied',
+    final mix = _runtime.mix;
+    if (outcome.status == MixSettingsStatus.recoveryRequired) {
+      final stopped = mix.stoppedForRecovery;
+      _notices.raise(
+        Notice(
+          id: AppNoticeId.mixSettings,
+          tone: stopped ? NoticeTone.critical : NoticeTone.warning,
+          title: (l10n) => l10n.mixSettingsRecoveryTitle,
+          body: stopped ? (l10n) => l10n.mixSettingsStoppedBody : null,
+          action: retryNoticeAction(
+            _notices,
+            AppNoticeId.mixSettings,
+            () async => (await mix.recover()).isOk,
+          ),
         ),
-        description: recovery
-            ? (_) => Text(
-                _runtime.mix.stoppedForRecovery
-                    ? 'Audio was stopped to protect your settings.'
-                    : 'Retry to confirm the mix.',
-              )
-            : null,
-        retry: recovery
-            ? () async => (await _runtime.mix.recover()).isOk
-            : null,
-        needsRecovery: recovery ? () => _runtime.mix.recoveryRequired : null,
+      );
+      return;
+    }
+    if (!mix.recoveryRequired) _notices.clear(AppNoticeId.mixSettings);
+    final notSaved = outcome.status == MixSettingsStatus.storageFailed;
+    _notices.show(
+      Notice(
+        id: AppNoticeId.mixSettings,
+        tone: NoticeTone.warning,
+        title: (l10n) =>
+            notSaved ? l10n.mixSettingsNotSaved : l10n.mixSettingsNotApplied,
       ),
     );
-  }
-
-  void _syncControlNoticesWithPower(PowerState state) {
-    if (!mounted) return;
-    _notices.setHeld(held: state.isUiUp);
-    _controlNotices.setPowerVisible(visible: state.isUiUp);
-    if (state.isUiUp) dismissAppToast(AppToastId.recordingInputRequired);
   }
 
   @override
@@ -916,10 +894,7 @@ class _AppState extends State<App> {
             },
           ),
         ],
-        child: _AppView(
-          controlNotices: _controlNotices,
-          waveformWindow: widget.waveformWindow,
-        ),
+        child: _AppView(waveformWindow: widget.waveformWindow),
       ),
     );
   }
@@ -928,12 +903,8 @@ class _AppState extends State<App> {
 /// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
 /// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
-  const _AppView({
-    required this.controlNotices,
-    required this.waveformWindow,
-  });
+  const _AppView({required this.waveformWindow});
 
-  final ControlSettingsNotices controlNotices;
   final WaveformWindowService waveformWindow;
 
   @override
@@ -946,11 +917,13 @@ class _AppViewState extends State<_AppView> {
   StreamSubscription<RecoveryRefusal>? _recoverySub;
   bool _restoreNoticeScheduled = false;
 
-  /// "Not now" on the power-cycle banner holds until the next boot.
+  /// "Not now" on the power-cycle message holds until the next boot.
   bool _powerCycleDismissed = false;
 
-  /// The weak-charger toast is said once per boot.
+  /// The weak-charger message is said once per boot.
   bool _weakChargerShown = false;
+
+  NoticesCubit get _notices => context.read<NoticesCubit>();
 
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
@@ -983,7 +956,7 @@ class _AppViewState extends State<_AppView> {
       switch (failure) {
         case WaveformDisplayFailure.openFailed:
           context.read<WaveformWindowCubit>().reportOpenFailed();
-          _showWaveformWindowFailedBanner();
+          _showWaveformWindowFailed();
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1002,10 +975,14 @@ class _AppViewState extends State<_AppView> {
     if (await settings.loadBluetoothRetiredNoticeShown()) return;
     final count = await facts.retiredBluetoothPairings();
     if (count == 0 || !mounted) return;
-    showAppToast(
-      id: AppToastId.bluetoothRetired,
-      title: AppText(_l10n.bluetoothRetiredNotice(count)),
-      icon: const Icon(Icons.bluetooth_disabled),
+    _notices.show(
+      Notice(
+        id: AppNoticeId.bluetoothRetired,
+        explains: true,
+        icon: LucideIcons.bluetoothOff,
+        title: (l10n) => l10n.bluetoothRetiredTitle,
+        body: (l10n) => l10n.bluetoothRetiredNotice(count),
+      ),
     );
     await settings.saveBluetoothRetiredNoticeShown();
   }
@@ -1023,19 +1000,24 @@ class _AppViewState extends State<_AppView> {
       bool needsSessionRecovery() =>
           !session.isClosed && session.state.bootRecoveryRequired;
       if (!needsSessionRecovery()) {
-        widget.controlNotices.dismiss(AppToastId.sessionBootRecovery);
+        _notices.clear(AppNoticeId.sessionBootRecovery);
       } else if (session.state.status == SessionStatus.failure) {
-        widget.controlNotices.show(
-          ControlSettingsNotice(
-            id: AppToastId.sessionBootRecovery,
-            title: (context) => Text(context.l10n.sessionBootRecoveryTitle),
-            description: (context) =>
-                Text(context.l10n.sessionBootRecoveryBody),
-            needsRecovery: needsSessionRecovery,
-            retry: () async {
-              await session.retryLoadedSession();
-              return !session.isClosed && !session.state.bootRecoveryRequired;
-            },
+        // The loaded session is stopped until its settings are confirmed:
+        // critical, with Retry.
+        _notices.raise(
+          Notice(
+            id: AppNoticeId.sessionBootRecovery,
+            tone: NoticeTone.critical,
+            title: (l10n) => l10n.sessionBootRecoveryTitle,
+            body: (l10n) => l10n.sessionBootRecoveryBody,
+            action: retryNoticeAction(
+              _notices,
+              AppNoticeId.sessionBootRecovery,
+              () async {
+                await session.retryLoadedSession();
+                return !session.isClosed && !session.state.bootRecoveryRequired;
+              },
+            ),
           ),
         );
       }
@@ -1045,19 +1027,22 @@ class _AppViewState extends State<_AppView> {
           !persistence.sessionTransitionActive &&
           !session.state.bootRecoveryRequired;
       if (!needsMonitorRecovery()) {
-        widget.controlNotices.dismiss(AppToastId.monitorRestore);
+        _notices.clear(AppNoticeId.monitorRestore);
         return;
       }
-      widget.controlNotices.show(
-        ControlSettingsNotice(
-          id: AppToastId.monitorRestore,
-          title: (context) => Text(context.l10n.monitorRestoreFailedTitle),
-          description: (context) => Text(context.l10n.monitorRestoreFailedBody),
-          needsRecovery: needsMonitorRecovery,
-          retry: () async {
-            await monitor.load();
-            return !monitor.isClosed && !monitor.state.restoreFailed;
-          },
+      _notices.raise(
+        Notice(
+          id: AppNoticeId.monitorRestore,
+          tone: NoticeTone.warning,
+          title: (l10n) => l10n.monitorRestoreFailedTitle,
+          action: retryNoticeAction(
+            _notices,
+            AppNoticeId.monitorRestore,
+            () async {
+              await monitor.load();
+              return !monitor.isClosed && !monitor.state.restoreFailed;
+            },
+          ),
         ),
       );
     });
@@ -1074,8 +1059,6 @@ class _AppViewState extends State<_AppView> {
       defaultName: name == storedDefaultTrackName(control.cursor),
       mode: control.mode.token,
       bank: control.activeBank,
-      lossLine:
-          audioLossLine(_l10n, context.read<AudioSetupCubit>().state) ?? '',
       notice: _readoutNotice(),
       goodbye: readoutGoodbyeOf(
         power,
@@ -1148,69 +1131,65 @@ class _AppViewState extends State<_AppView> {
       }),
     );
     unawaited(_recoverySub?.cancel());
-    dismissAppToast(AppToastId.recoveryRefused);
     super.dispose();
   }
 
+  /// An Undo or Redo the recovery path refused: said for a while, since it
+  /// tells the player what to change first.
   void _showRecoveryRefusal(RecoveryRefusal refusal) {
     if (!mounted) return;
-    final l10n = _l10n;
     final pending = refusal.result == EngineResult.notReady;
-    dismissAppToast(AppToastId.undoClearAll);
-    showAppToast(
-      id: AppToastId.recoveryRefused,
-      autoCloseDuration: const Duration(seconds: 10),
-      title: AppText(pending ? l10n.recoveryWaitTitle : l10n.recoveryModeTitle),
-      description: AppText(
-        pending
+    _notices.show(
+      Notice(
+        id: AppNoticeId.recoveryRefused,
+        tone: NoticeTone.warning,
+        explains: true,
+        title: (l10n) =>
+            pending ? l10n.recoveryWaitTitle : l10n.recoveryModeTitle,
+        body: (l10n) => pending
             ? l10n.recoveryWaitBody
             : switch (refusal.action) {
                 RecoveryAction.undo => l10n.recoveryModeUndoBody,
                 RecoveryAction.redo => l10n.recoveryModeRedoBody,
               },
       ),
-      icon: Icon(
-        refusal.action == RecoveryAction.undo ? Icons.undo : Icons.redo,
-      ),
     );
   }
 
-  /// Short "reconnected" snack toast when the pinned audio device returns.
+  /// The pinned audio interface came back: a confirmation.
   ///
-  /// The *lost* branch is gone (#453): loss is a standing condition, held by
-  /// the stage's `ConnectivityBanners` until the hardware returns; a toast is
-  /// for the restored *event* only. A return that dropped some tracks (#1140:
-  /// a Clear/Undo/Redo/cancel on them was still unapplied at the loss) is the
-  /// same event with one fact added, so it is one transient warning toast
-  /// naming those tracks — low stakes, the rig plays on — not a second
-  /// notice. A return that cleared every loop is a standing condition and is
-  /// the stage banner's, never a toast (#860: one notice per cause).
-  void _showDeviceRestoredToast(AudioSetupState state) {
-    final l10n = _l10n;
-    final name = state.connectivityDeviceName.isEmpty
-        ? l10n.audioDeviceFallbackName
-        : state.connectivityDeviceName;
+  /// The loss itself is a must-act message (`StandingNotices`). A return
+  /// that dropped some tracks (#1140: a Clear/Undo/Redo/cancel on them was
+  /// still unapplied at the loss) is the same event with one fact added, so
+  /// it is one warning naming those tracks; the rig plays on. A return that
+  /// cleared every loop stands as must-act, never here (#860: one notice per
+  /// cause).
+  void _showDeviceRestored(AudioSetupState state) {
+    final device = state.connectivityDeviceName;
+    String name(AppLocalizations l10n) =>
+        device.isEmpty ? l10n.audioDeviceFallbackName : device;
     switch (state.deviceConnectivity) {
       case DeviceConnectivity.restored:
-        showAppSnackToast(
-          id: AppToastId.deviceRestored,
-          title: AppText(l10n.deviceReconnectedSnackbar(name)),
-          icon: const Icon(Icons.check_circle_outline),
+        _notices.show(
+          Notice(
+            id: AppNoticeId.deviceRestored,
+            tone: NoticeTone.success,
+            title: (l10n) => l10n.deviceReconnectedSnackbar(name(l10n)),
+          ),
         );
       case DeviceConnectivity.restoredPartial:
         final dropped = state.engineStatus.reopen?.droppedChannels ?? const [];
-        showAppToast(
-          id: AppToastId.deviceRestoredPartial,
-          type: ToastificationType.warning,
-          title: AppText(l10n.deviceReconnectedSnackbar(name)),
-          description: AppText(
-            l10n.deviceRestoredPartialToastBody(
+        _notices.show(
+          Notice(
+            id: AppNoticeId.deviceRestoredPartial,
+            tone: NoticeTone.warning,
+            explains: true,
+            title: (l10n) => l10n.deviceReconnectedSnackbar(name(l10n)),
+            body: (l10n) => l10n.deviceRestoredPartialToastBody(
               dropped.length,
               dropped.map((channel) => '${channel + 1}').join(', '),
             ),
           ),
-          icon: const Icon(Icons.layers_clear_outlined),
-          autoCloseDuration: const Duration(seconds: 10),
         );
       case DeviceConnectivity.none:
       case DeviceConnectivity.lost:
@@ -1220,196 +1199,188 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
-  /// The MIDI controller's connectivity, surfaced as a transient toast.
-  ///
-  /// Unlike a lost audio interface — a standing condition that stops the
-  /// engine and holds a persistent banner — a lost MIDI controller is
-  /// low-stakes: the loops keep playing, only the mappings go idle. So the
-  /// *lost* event flashes an amber toast that auto-dismisses and leaves no
-  /// standing bar (#453), and *restored* stays a short snack. Neither is a
-  /// persistent surface: `ConnectivityBanners` never mentions MIDI.
-  void _showMidiConnectivityToast(MidiSetupState state) {
+  /// The MIDI controller's connectivity, as passing messages: losing it
+  /// leaves the loops playing and only the mappings idle, so it is a
+  /// warning that goes by itself (#453); its return is a confirmation that
+  /// takes the warning's place.
+  void _showMidiConnectivity(MidiSetupState state) {
     final connection = state.connection;
-    final l10n = _l10n;
-    // The controller returning (or being reselected) retires the lost toast
-    // at once rather than leaving it to time out beside the restored snack.
-    dismissAppToast(AppToastId.midiLost);
     switch (connection.connectivity) {
       case MidiConnectivity.lost:
-        showAppToast(
-          id: AppToastId.midiLost,
-          type: ToastificationType.warning,
-          title: AppText(l10n.midiLostToastTitle),
-          description: AppText(l10n.midiLostToastBody),
-          icon: const Icon(Icons.piano_off_outlined),
-          autoCloseDuration: const Duration(seconds: 6),
+        _notices.show(
+          Notice(
+            id: AppNoticeId.midiLost,
+            tone: NoticeTone.warning,
+            title: (l10n) => l10n.midiLostToastTitle,
+            body: (l10n) => l10n.midiLostToastBody,
+          ),
         );
       case MidiConnectivity.restored:
         final name = connection.connectivityDeviceName.isEmpty
             ? connection.selectedName
             : connection.connectivityDeviceName;
-        showAppSnackToast(
-          id: AppToastId.midiRestored,
-          title: AppText(l10n.midiReconnectedSnackbar(name)),
-          icon: const Icon(Icons.check_circle_outline),
-        );
+        _notices
+          ..clear(AppNoticeId.midiLost)
+          ..show(
+            Notice(
+              id: AppNoticeId.midiRestored,
+              tone: NoticeTone.success,
+              title: (l10n) => l10n.midiReconnectedSnackbar(name),
+            ),
+          );
       case MidiConnectivity.none:
-        break;
+        _notices.clear(AppNoticeId.midiLost);
     }
   }
 
   /// The USB-C contract predates the console profile, so the console runs on
   /// less than the charger offers until it is unplugged and plugged back in
-  /// (#1352). Nothing breaks meanwhile, so the banner can be put off; Power
-  /// off opens the normal Power options, whose Safe to switch off face says
-  /// to unplug. It clears itself once the new contract is in.
-  void _showPowerCycleBanner(PedalPowerSupply? supply) {
+  /// (#1352). A must-act message in the warning tone with Power off…, which
+  /// opens the Power options, whose Safe to switch off face says to unplug;
+  /// "Not now" puts it off until the next boot, and it clears itself once
+  /// the new contract is in.
+  void _showPowerCycle(PedalPowerSupply? supply) {
     if (supply == null || !supply.needsPowerCycle || _powerCycleDismissed) {
-      dismissAppToast(AppToastId.powerCycle);
+      _notices.clear(AppNoticeId.powerCycle);
       return;
     }
-    final l10n = _l10n;
-    showAppToast(
-      id: AppToastId.powerCycle,
-      title: AppText(l10n.powerCycleBannerTitle),
-      description: AppText(
-        l10n.powerCycleBannerDescription(
-          wattsText(supply.watts),
-          wattsText(supply.offeredWatts),
-        ),
-      ),
-      icon: const Icon(Icons.power_outlined),
-      actions: [
-        TextButton(
-          key: const Key(AppToastId.powerCycleDismiss),
+    final offered = wattsText(supply.offeredWatts);
+    _notices.raise(
+      Notice(
+        id: AppNoticeId.powerCycle,
+        tone: NoticeTone.warning,
+        icon: LucideIcons.plugZap,
+        title: (l10n) => l10n.powerCycleBannerTitle(offered),
+        action: NoticeAction(
+          key: const Key(AppNoticeId.powerCyclePowerOff),
+          label: (l10n) => l10n.powerCycleBannerPowerOff,
           onPressed: () {
-            _powerCycleDismissed = true;
-            dismissAppToast(AppToastId.powerCycle);
-          },
-          child: AppText(l10n.powerCycleBannerDismiss),
-        ),
-        TextButton(
-          key: const Key(AppToastId.powerCyclePowerOff),
-          onPressed: () {
-            dismissAppToast(AppToastId.powerCycle);
             if (mounted) requestPower(context);
           },
-          child: AppText(l10n.powerCycleBannerPowerOff),
         ),
-      ],
+        secondary: NoticeAction(
+          key: const Key(AppNoticeId.powerCycleDismiss),
+          label: (l10n) => l10n.powerCycleBannerDismiss,
+          onPressed: () {
+            _powerCycleDismissed = true;
+            _notices.clear(AppNoticeId.powerCycle);
+          },
+        ),
+      ),
     );
   }
 
   /// The charger itself offers too little for the console at full load.
   /// Said once per boot and never in the way: the console runs, and may
   /// only brown out at full brightness.
-  void _showWeakChargerNotice(PedalPowerSupply? supply) {
+  void _showWeakCharger(PedalPowerSupply? supply) {
     if (supply == null || _weakChargerShown || !chargerIsWeak(supply)) return;
     _weakChargerShown = true;
-    showAppToast(
-      id: AppToastId.weakCharger,
-      type: ToastificationType.warning,
-      title: AppText(_l10n.weakChargerToast(wattsText(supply.offeredWatts))),
-      icon: const Icon(Icons.power_outlined),
+    final offered = wattsText(supply.offeredWatts);
+    _notices.show(
+      Notice(
+        id: AppNoticeId.weakCharger,
+        tone: NoticeTone.warning,
+        title: (l10n) => l10n.weakChargerToast(offered),
+        body: (l10n) => l10n.weakChargerBody,
+      ),
     );
   }
 
-  /// Startup notice that a newer build is available. Skipped when Updates is
-  /// already open. "Not now" dismisses that version; "Update…" opens the
-  /// Updates settings page.
-  void _showUpdateBanner(BuildContext context, UpdateState state) {
+  /// A newer build is available: said for a while at startup with Update…,
+  /// which opens the Updates page. The page keeps the offer; nothing here
+  /// needs a touch. Not said while Updates is already open.
+  void _showUpdate(BuildContext context, UpdateState state) {
     final manifest = state.available;
-    if (!state.shouldNotify || manifest == null) {
-      dismissAppToast(AppToastId.update);
+    if (!state.shouldNotify || manifest == null || isSegnoUpdatesSettingsOpen) {
+      _notices.clear(AppNoticeId.update);
       return;
     }
-    if (isSegnoUpdatesSettingsOpen) {
-      dismissAppToast(AppToastId.update);
-      return;
-    }
-    final l10n = _l10n;
-    final cubit = context.read<UpdateCubit>();
-    showAppToast(
-      id: AppToastId.update,
-      title: AppText(l10n.updateBannerTitle('${manifest.version}')),
-      icon: const Icon(Icons.system_update_outlined),
-      actions: [
-        TextButton(
-          key: const Key(AppToastId.updateDismiss),
+    final version = '${manifest.version}';
+    _notices.show(
+      Notice(
+        id: AppNoticeId.update,
+        explains: true,
+        icon: LucideIcons.download,
+        title: (l10n) => l10n.updateBannerTitle(version),
+        action: NoticeAction(
+          key: const Key(AppNoticeId.updateAction),
+          label: (l10n) => l10n.updateBannerUpdateAction,
           onPressed: () {
-            dismissAppToast(AppToastId.update);
-            unawaited(cubit.dismiss(manifest.version));
-          },
-          child: AppText(l10n.updateBannerDismissAction),
-        ),
-        TextButton(
-          key: const Key(AppToastId.updateAction),
-          onPressed: () {
-            dismissAppToast(AppToastId.update);
+            _notices.clear(AppNoticeId.update);
             unawaited(openUpdateSettings());
           },
-          child: AppText(l10n.updateBannerUpdateAction),
         ),
-      ],
+      ),
     );
   }
 
-  /// Secondary waveform window failed to open.
-  void _showWaveformWindowFailedBanner() {
-    final l10n = _l10n;
-    showAppToast(
-      id: AppToastId.waveformFailed,
-      type: ToastificationType.error,
-      title: AppText(l10n.waveformWindowFailedBanner),
-      icon: const Icon(Icons.desktop_access_disabled_outlined),
+  /// The second screen's window failed to open. The Displays page holds the
+  /// standing state with its Try again; this says it when it happens.
+  void _showWaveformWindowFailed() {
+    _notices.show(
+      Notice(
+        id: AppNoticeId.waveformFailed,
+        tone: NoticeTone.warning,
+        title: (l10n) => l10n.waveformWindowFailedBanner,
+      ),
     );
   }
 
   /// FX mode's Stop no longer switches every track's effects off, and MODE
-  /// there now leaves FX instead of running its assigned modes (#1229, D13);
-  /// said once, together, at the first FX entry after the update. Nothing to
-  /// act on here: a toast.
-  void _showFxStopChangedNotice(PedalSetup setup) {
-    final l10n = _l10n;
-    showAppToast(
-      id: AppToastId.fxStopChanged,
-      title: AppText(l10n.footFxStopChanged),
-      description: AppText(footFxModeChangedText(l10n, setup)),
-      icon: const Icon(Icons.info_outline),
+  /// there now leaves FX (#1229, D13); said once, together, at the first FX
+  /// entry after the update.
+  void _showFxStopChanged() {
+    _notices.show(
+      Notice(
+        id: AppNoticeId.fxStopChanged,
+        explains: true,
+        icon: LucideIcons.info,
+        title: (l10n) => l10n.footFxStopChanged,
+        body: (l10n) => l10n.footFxModeChanged,
+      ),
+    );
+  }
+
+  /// The drive chosen in Save to went: the next take goes to Internal, and
+  /// the player is told rather than finding out afterwards.
+  void _showSaveToFellBack(String label) {
+    _notices.show(
+      Notice(
+        id: AppNoticeId.saveToFellBack,
+        tone: NoticeTone.warning,
+        title: (l10n) =>
+            l10n.saveToFellBack(label.isEmpty ? l10n.storageUsbUnnamed : label),
+        body: (l10n) => l10n.saveToFellBackBody,
+      ),
     );
   }
 
   /// The console now always starts in Record; said once to an install whose
-  /// retired boot default was Mute. Low stakes, nothing to act on: a toast.
-  void _showSaveToFellBack(String label) {
-    final l10n = _l10n;
-    showAppToast(
-      id: AppToastId.saveToFellBack,
-      type: ToastificationType.warning,
-      title: AppText(
-        l10n.saveToFellBack(label.isEmpty ? l10n.storageUsbUnnamed : label),
+  /// retired boot default was Mute.
+  void _showBootModeRetired() {
+    _notices.show(
+      Notice(
+        id: AppNoticeId.bootModeRetired,
+        explains: true,
+        icon: LucideIcons.info,
+        title: (l10n) => l10n.bootModeRetiredNotice,
+        body: (l10n) => l10n.bootModeRetiredBody,
       ),
-      icon: const Icon(Icons.usb_off),
-      autoCloseDuration: const Duration(seconds: 6),
-    );
-  }
-
-  void _showBootModeRetiredNotice() {
-    final l10n = _l10n;
-    showAppToast(
-      id: AppToastId.bootModeRetired,
-      title: AppText(l10n.bootModeRetiredNotice),
-      icon: const Icon(Icons.info_outline),
     );
   }
 
   /// Where the Tuner went once the tray stopped carrying it (#1229, D11):
   /// said once, the boot `Hold · Tuner` was added to Custom pedal 2.
-  void _showTunerSeededNotice() {
-    showAppToast(
-      id: AppToastId.tunerSeeded,
-      title: AppText(_l10n.footTunerSeeded),
-      icon: const Icon(Icons.info_outline),
+  void _showTunerSeeded() {
+    _notices.show(
+      Notice(
+        id: AppNoticeId.tunerSeeded,
+        explains: true,
+        icon: LucideIcons.info,
+        title: (l10n) => l10n.footTunerSeeded,
+        body: (l10n) => l10n.footTunerSeededBody,
+      ),
     );
   }
 
@@ -1532,17 +1503,17 @@ class _AppViewState extends State<_AppView> {
           listenWhen: (previous, current) =>
               previous.retiredBootMode == null &&
               current.retiredBootMode != null,
-          listener: (_, _) => _showBootModeRetiredNotice(),
+          listener: (_, _) => _showBootModeRetired(),
         ),
         BlocListener<ControlCubit, ControlState>(
           listenWhen: (previous, current) =>
               !previous.tunerDefaultSeeded && current.tunerDefaultSeeded,
-          listener: (_, _) => _showTunerSeededNotice(),
+          listener: (_, _) => _showTunerSeeded(),
         ),
         BlocListener<ControlCubit, ControlState>(
           listenWhen: (previous, current) =>
               !previous.fxStopChangeNotice && current.fxStopChangeNotice,
-          listener: (_, state) => _showFxStopChangedNotice(state.pedalSetup),
+          listener: (_, _) => _showFxStopChanged(),
         ),
         BlocListener<TracksCubit, TracksState>(
           listener: (_, _) => _updateDisplayContext(),
@@ -1577,14 +1548,14 @@ class _AppViewState extends State<_AppView> {
               previous.connectivityDeviceName != current.connectivityDeviceName,
           listener: (_, state) {
             _updateDisplayContext();
-            _showDeviceRestoredToast(state);
+            _showDeviceRestored(state);
           },
         ),
         BlocListener<MidiSetupCubit, MidiSetupState>(
           listenWhen: (previous, current) =>
               previous.connection.connectivity !=
               current.connection.connectivity,
-          listener: (_, state) => _showMidiConnectivityToast(state),
+          listener: (_, state) => _showMidiConnectivity(state),
         ),
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
@@ -1606,15 +1577,15 @@ class _AppViewState extends State<_AppView> {
           listenWhen: (previous, current) =>
               previous.powerSupply != current.powerSupply,
           listener: (_, state) {
-            _showPowerCycleBanner(state.powerSupply);
-            _showWeakChargerNotice(state.powerSupply);
+            _showPowerCycle(state.powerSupply);
+            _showWeakCharger(state.powerSupply);
           },
         ),
         BlocListener<UpdateCubit, UpdateState>(
           listenWhen: (previous, current) =>
               previous.shouldNotify != current.shouldNotify ||
               previous.available?.version != current.available?.version,
-          listener: _showUpdateBanner,
+          listener: _showUpdate,
         ),
         // The readout's Restarting face follows whether an update installs.
         BlocListener<UpdateCubit, UpdateState>(
@@ -1623,14 +1594,7 @@ class _AppViewState extends State<_AppView> {
           listener: (_, _) => _updateDisplayContext(),
         ),
       ],
-      child: ToastificationWrapper(
-        config: const ToastificationConfig(
-          alignment: Alignment.topCenter,
-          itemWidth: 520,
-          animationDuration: Duration(milliseconds: 280),
-        ),
-        child: rooted,
-      ),
+      child: StandingNotices(child: rooted),
     );
   }
 }

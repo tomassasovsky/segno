@@ -4,7 +4,7 @@ import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/display_brightness_edit.dart';
 import 'package:segno/appliance/display_presence_cubit.dart';
@@ -18,15 +18,12 @@ import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/settings/touch_calibration/view/touch_calibration_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/cubit/waveform_window_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
-import 'package:toastification/toastification.dart';
 import 'package:touch_calibration_client/touch_calibration_client.dart';
-
-/// The toast that says an idle-dim choice was not saved.
-const String idleDimSaveFailedToast = 'idle_dim_save_failed';
 
 /// Settings > Displays (pen 30): a card per panel, Track display first, each
 /// with its own brightness; Dim while idle under them; and the screen
@@ -429,20 +426,13 @@ class _DimWhileIdle extends StatelessWidget {
 
   void _choose(BuildContext context, int seconds) {
     final cubit = context.read<IdleDimCubit>();
-    final l10n = context.l10n;
+    final notices = context.read<NoticesCubit>();
     unawaited(() async {
       try {
         await cubit.setSeconds(seconds);
-        if (!context.mounted) return;
-        dismissAppToast(idleDimSaveFailedToast);
+        notices.clear(AppNoticeId.displaySave);
       } on Object {
-        if (!context.mounted) return;
-        showAppSnackToast(
-          id: idleDimSaveFailedToast,
-          type: ToastificationType.error,
-          icon: const Icon(Icons.error_outline),
-          title: Text(l10n.displayBrightnessSaveFailed),
-        );
+        notices.show(displaySaveFailedNotice());
       }
     }());
   }

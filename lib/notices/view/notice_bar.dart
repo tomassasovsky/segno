@@ -6,6 +6,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/notices/cubit/notices_cubit.dart';
 import 'package:segno/notices/model/notice.dart';
 import 'package:segno/notices/view/notice_palette.dart';
+import 'package:segno/notices/view/notice_sentence.dart';
 import 'package:segno/notices/view/select_notices.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -252,58 +253,75 @@ class _MessageRow extends StatelessWidget {
     final title = notice.title(l10n);
     final body = notice.body?.call(l10n);
     final titleStyle = theme.barTitle.copyWith(color: surface.textPrimary);
-    final action = notice.action;
-    return Semantics(
-      liveRegion: true,
-      container: true,
-      child: Row(
-        key: Key('notice_bar_${notice.id}'),
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (lead case final lead?) ...[lead, SizedBox(width: spacing.lg)],
-          Flexible(
-            child: AppText.rich(
-              TextSpan(
-                children: [
-                  if (trackName != null)
-                    TextSpan(
-                      text: trackName,
-                      style: theme.barTitle.copyWith(
-                        color: surface.textSecondary,
-                      ),
-                    ),
-                  if (trackName != null) _gap(spacing.lg),
-                  TextSpan(text: title, style: titleStyle),
-                  if (body != null) ...[
-                    _gap(spacing.lg),
-                    TextSpan(
-                      text: body,
-                      style: theme.barBody.copyWith(
-                        color: surface.textSecondary,
-                      ),
-                    ),
-                  ],
-                ],
+    // The buttons take at most half of the room: in a bar too narrow for
+    // that (a small desktop window) the message keeps its words and drops
+    // the buttons, the put-off one first. A button is never the only way.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        double buttons(Iterable<NoticeAction?> actions) {
+          var width = 0.0;
+          for (final action in actions.nonNulls) {
+            width += spacing.xl + _ActionButton.widthOf(context, action);
+          }
+          return width;
+        }
+
+        final lead = this.lead == null ? 0.0 : spacing.lg + _leadWidth(theme);
+        final room = constraints.maxWidth / 2;
+        var action = notice.action;
+        var secondary = notice.secondary;
+        if (lead + buttons([action, secondary]) > room) secondary = null;
+        if (lead + buttons([action]) > room) action = null;
+        return Semantics(
+          liveRegion: true,
+          container: true,
+          child: Row(
+            key: Key('notice_bar_${notice.id}'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (this.lead case final lead?) ...[
+                lead,
+                SizedBox(width: spacing.lg),
+              ],
+              Flexible(
+                child: NoticeSentence(
+                  key: const Key('notice_bar_text'),
+                  title: title,
+                  titleStyle: titleStyle,
+                  body: body,
+                  bodyStyle: theme.barBody.copyWith(
+                    color: surface.textSecondary,
+                  ),
+                  source: trackName,
+                  sourceStyle: theme.barTitle.copyWith(
+                    color: surface.textSecondary,
+                  ),
+                ),
               ),
-              key: const Key('notice_bar_text'),
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-            ),
+              if (secondary != null) ...[
+                SizedBox(width: spacing.xl),
+                _ActionButton(
+                  action: secondary,
+                  tone: notice.tone,
+                  quiet: true,
+                ),
+              ],
+              if (action != null) ...[
+                SizedBox(width: secondary == null ? spacing.xl : spacing.sm),
+                _ActionButton(action: action, tone: notice.tone),
+              ],
+            ],
           ),
-          if (action != null) ...[
-            SizedBox(width: spacing.xl),
-            _ActionButton(action: action, tone: notice.tone),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 
-  static InlineSpan _gap(double width) => WidgetSpan(
-    alignment: PlaceholderAlignment.middle,
-    child: SizedBox(width: width),
-  );
+  /// The lead's width: the must-act dot, or an icon at the title's size.
+  double _leadWidth(NoticeTheme theme) =>
+      notice.tone == NoticeTone.critical && notice.icon == null
+      ? theme.dotSize
+      : theme.barIconSize;
 }
 
 /// The notice's icon at the title's size.
@@ -326,10 +344,39 @@ class _Icon extends StatelessWidget {
 
 /// The message's one action, the height of the bar's own controls.
 class _ActionButton extends StatelessWidget {
-  const _ActionButton({required this.action, required this.tone});
+  const _ActionButton({
+    required this.action,
+    required this.tone,
+    this.quiet = false,
+  });
 
   final NoticeAction action;
   final NoticeTone tone;
+
+  /// A way to put the message off: the label alone, in the secondary text
+  /// colour, so the fix stays the one button that stands out.
+  final bool quiet;
+
+  /// How wide [action]'s button is drawn under [context]'s theme.
+  static double widthOf(BuildContext context, NoticeAction action) {
+    final spacing = context.spacing;
+    final theme = context.noticeTheme;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: action.label(context.l10n),
+        style: DefaultTextStyle.of(context).style.merge(theme.barAction),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final label = painter.width;
+    painter.dispose();
+    final icon = action.icon == null
+        ? 0.0
+        : theme.barAction.fontSize! + spacing.sm;
+    return 2 * spacing.xl + icon + label + 2;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -339,6 +386,7 @@ class _ActionButton extends StatelessWidget {
     final colors = NoticePalette.of(surface, tone);
     final label = action.label(context.l10n);
     final icon = action.icon;
+    final labelColor = quiet ? surface.textSecondary : surface.textPrimary;
     return FocusableTapTarget(
       key: action.key,
       semanticLabel: label,
@@ -350,23 +398,19 @@ class _ActionButton extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(theme.barActionRadius),
-          border: Border.all(color: colors.actionLine),
+          border: quiet ? null : Border.all(color: colors.actionLine),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(
-                icon,
-                size: theme.barAction.fontSize,
-                color: surface.textPrimary,
-              ),
+              Icon(icon, size: theme.barAction.fontSize, color: labelColor),
               SizedBox(width: spacing.sm),
             ],
             AppText(
               label,
               maxLines: 1,
-              style: theme.barAction.copyWith(color: surface.textPrimary),
+              style: theme.barAction.copyWith(color: labelColor),
             ),
           ],
         ),

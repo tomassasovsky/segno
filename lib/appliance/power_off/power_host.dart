@@ -13,7 +13,6 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/session/cubit/session_cubit.dart';
-import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:storage_repository/storage_repository.dart';
@@ -208,6 +207,8 @@ class _PowerHostState extends State<PowerHost> {
       while (mounted && cubit.state.phase == PowerPhase.saveAs) {
         final l10n = context.l10n;
         final session = context.read<SessionCubit>();
+        // A name that cannot be used is said in the sheet, under the field,
+        // and the sheet stays open for another.
         final raw = await showConsoleRenameSheet(
           context,
           title: l10n.sessionNewTitle,
@@ -216,6 +217,14 @@ class _PowerHostState extends State<PowerHost> {
           fieldLabel: l10n.sessionNewTitle,
           useRootNavigator: true,
           routeSettings: const RouteSettings(name: powerSaveAsRoute),
+          onSave: (name) async {
+            final slug = sessionSlug(name);
+            if (slug == null) return l10n.sessionNameInvalid;
+            if (session.state.sessions.any((s) => s.name == slug)) {
+              return l10n.sessionNameDuplicate(slug);
+            }
+            return null;
+          },
         );
         if (!mounted) return;
         if (cubit.state.phase != PowerPhase.saveAs) return;
@@ -226,18 +235,7 @@ class _PowerHostState extends State<PowerHost> {
           return;
         }
         final slug = sessionSlug(raw);
-        if (slug == null) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: AppText(l10n.sessionNameInvalid)));
-          continue;
-        }
-        if (session.state.sessions.any((s) => s.name == slug)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: AppText(l10n.sessionNameDuplicate(slug))),
-          );
-          continue;
-        }
+        if (slug == null) continue;
         _saveAsOpen = false;
         cubit.commitSaveAs(
           _snapshot(),

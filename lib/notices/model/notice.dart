@@ -54,6 +54,7 @@ class Notice {
     this.overline,
     this.icon,
     this.action,
+    this.secondary,
     this.explains = false,
   });
 
@@ -77,6 +78,11 @@ class Notice {
 
   /// The one action.
   final NoticeAction? action;
+
+  /// A must-act message's way to put it off ("Not now"), beside [action].
+  /// Only where the condition can wait (#1352's power-cycle prompt, the
+  /// effects held off).
+  final NoticeAction? secondary;
 
   /// A one-time explanation, which stays the longest.
   final bool explains;

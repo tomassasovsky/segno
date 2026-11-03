@@ -18,7 +18,6 @@ void main() {
     tsDen: 8,
     mode: 'fx',
     activeBank: 1,
-    lossLine: 'Scarlett 4i4 disconnected — nothing is heard.',
     notice: ReadoutNotice(
       title: 'Recording did not start',
       body: 'Press Record again',
@@ -56,7 +55,6 @@ void main() {
       expect(decoded.hasTempo, isTrue);
       expect(decoded.selected, isNull);
       expect(decoded.activeBank, 0);
-      expect(decoded.lossLine, isEmpty);
       expect(decoded.notice, isNull);
       expect(decoded.goodbye, ReadoutGoodbye.none);
       expect(
