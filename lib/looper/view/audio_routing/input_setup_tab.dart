@@ -252,6 +252,19 @@ class _InputSetupTabState extends State<_InputSetupView> {
               input: input,
               state: interface,
               locked: values.interfaceLocked,
+              canChange: () {
+                if (!mounted) return false;
+                final current = context.read<LooperBloc>().state;
+                return current.status.isConnected &&
+                    current.status.devicePresent &&
+                    current.status.deviceName == device &&
+                    current.mixGeneration == values.mixGeneration &&
+                    !_setupValues(
+                      current,
+                      input,
+                      context.read<InterfaceInputsCubit>().state.inputs,
+                    ).interfaceLocked;
+              },
             ),
           ),
           // The lock is a line of its own under the rows, as the pen draws it:
