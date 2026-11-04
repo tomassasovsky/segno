@@ -40024,6 +40024,8 @@ int main(void) {
   test_inputs_4i4_gen4();
   test_inputs_vocaster_two();
   test_inputs_6i6_gen1();
+  test_inputs_6i6_gen1_needs_pass_through();
+  test_inputs_scarlett2_never_falls_to_generic();
   test_inputs_hardware_only_interfaces();
   test_inputs_setup_mode();
   test_inputs_generic_rules();

@@ -1498,10 +1498,12 @@ int32_t le_platform_interface_input_set(const char* uid, int32_t control,
   char card[64];
   le_alsa_mixer c;
   le_mixer m;
-  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card)) ||
-      !le_alsa_mixer_open(card, &c, &m)) {
+  /* No card behind the id has no switches; a card that will not open is a
+   * device failure. */
+  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card))) {
     return LE_ERR_INVALID;
   }
+  if (!le_alsa_mixer_open(card, &c, &m)) return LE_ERR_DEVICE;
   const int32_t result = le_interface_inputs_write(&m, control, index, value);
   le_alsa_mixer_close(&c);
   if (result != LE_OK) {

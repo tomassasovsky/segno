@@ -2078,8 +2078,9 @@ LE_EXPORT int32_t le_interface_inputs_read(const char* uid,
 /* Sets one switch (le_interface_control) of input or phantom group `index`
  * (0-based) on the card behind `uid`, writing only when it differs, and reads
  * it back. Returns LE_OK; LE_ERR_INVALID when the card has no such switch or
- * `value` is out of range; LE_ERR_DEVICE when the card refuses the write or
- * the value does not stick (a Gen 4 unit refuses while its Autogain runs);
+ * `value` is out of range; LE_ERR_DEVICE when the card cannot be opened,
+ * refuses the write or does not keep the value (a Gen 4 unit refuses while
+ * its Autogain runs);
  * LE_ERR_UNSUPPORTED off Linux. */
 LE_EXPORT int32_t le_interface_input_set(const char* uid, int32_t control,
                                          int32_t index, int32_t value);

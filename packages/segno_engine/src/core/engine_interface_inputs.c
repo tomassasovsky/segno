@@ -20,7 +20,8 @@
  *    to that driver: setup (MSD) mode, and capture routing that is not
  *    pass-through, where "Line In N" would not be Segno's input N.
  *  - scarlett: the Scarlett 1st Gen driver (mixer_scarlett.c), "Input N
- *    Impedance Switch" and "Input N Pad Switch".
+ *    Impedance Switch" and "Input N Pad Switch", while its capture routing
+ *    records input N on channel N.
  *  - generic: any other card, by keywords in the control's name, keeping only
  *    controls that map to exactly one input (le_generic_match).
  *
@@ -110,6 +111,7 @@ static const le_input_rule k_scarlett_rules[] = {
 };
 
 static int le_scarlett2_check(const le_mixer* m, le_interface_inputs* out);
+static int le_scarlett_check(const le_mixer* m, le_interface_inputs* out);
 
 #define LE_FOCUSRITE_USB_VENDOR 0x1235u
 
@@ -118,7 +120,8 @@ static const le_input_adapter k_adapters[] = {
      sizeof(k_scarlett2_rules) / sizeof(k_scarlett2_rules[0]),
      le_scarlett2_check},
     {"scarlett", LE_FOCUSRITE_USB_VENDOR, k_scarlett_rules,
-     sizeof(k_scarlett_rules) / sizeof(k_scarlett_rules[0]), NULL},
+     sizeof(k_scarlett_rules) / sizeof(k_scarlett_rules[0]),
+     le_scarlett_check},
     {"generic", 0, NULL, 0, NULL},
 };
 
@@ -320,7 +323,6 @@ static void le_inputs_clear(le_interface_inputs* out) {
   for (int i = 0; i < LE_INTERFACE_MAX_INPUTS; ++i) {
     le_interface_input* in = &out->inputs[i];
     in->level = in->pad = in->air = in->phantom_group = -1;
-    in->air_choices = 0;
   }
 }
 
@@ -444,7 +446,12 @@ static int le_scarlett2_check(const le_mixer* m, le_interface_inputs* out) {
         msd ? LE_INTERFACE_SETUP_MODE : LE_INTERFACE_SETUP_MODE_RESTART;
     return 1;
   }
-  if (out->state != LE_INTERFACE_CONTROLS) return 0;
+  /* A card with the driver's names is this driver's, even when none of its
+   * controls could be read: the generic rules, which check no routing, never
+   * take it over. */
+  if (out->state != LE_INTERFACE_CONTROLS) {
+    return le_has_control_prefix(m, "Line In ");
+  }
   char control[32];
   char hardware[32];
   char selected[48];
@@ -455,6 +462,30 @@ static int le_scarlett2_check(const le_mixer* m, le_interface_inputs* out) {
     if (le_mixer_selected(m, control, selected, sizeof(selected)) &&
         (strcmp(selected, hardware) == 0 ||
          le_capture_via_dsp(m, control, hardware))) {
+      continue;
+    }
+    le_inputs_clear(out);
+    return 1;
+  }
+  return 1;
+}
+
+/* The 1st Gen driver routes capture too: "Input Source NN Capture Route"
+ * selects what capture channel NN records. Its switches describe Segno's
+ * input N only while that is "Analog N"; Segno does not set this routing. */
+static int le_scarlett_check(const le_mixer* m, le_interface_inputs* out) {
+  if (out->state != LE_INTERFACE_CONTROLS) return 0;
+  char control[40];
+  char hardware[32];
+  char selected[48];
+  int type = 0;
+  unsigned items = 0;
+  for (int n = 1; n <= out->input_count; ++n) {
+    snprintf(control, sizeof(control), "Input Source %02d Capture Route", n);
+    if (!m->find(m->ctx, control, &type, &items)) continue;
+    snprintf(hardware, sizeof(hardware), "Analog %d", n);
+    if (le_mixer_selected(m, control, selected, sizeof(selected)) &&
+        strcmp(selected, hardware) == 0) {
       continue;
     }
     le_inputs_clear(out);
@@ -475,9 +506,7 @@ static void le_inputs_scan_map(const le_mixer* m, le_input_map* map) {
     int claimed = map->caps.state == LE_INTERFACE_CONTROLS;
     if (adapter->check != NULL) claimed |= adapter->check(m, &map->caps);
     if (!claimed) continue;
-    if (map->caps.state == LE_INTERFACE_CONTROLS ||
-        map->caps.state == LE_INTERFACE_SETUP_MODE ||
-        map->caps.state == LE_INTERFACE_SETUP_MODE_RESTART) {
+    if (map->caps.state != LE_INTERFACE_NO_CONTROLS) {
       snprintf(map->caps.adapter, sizeof(map->caps.adapter), "%s",
                adapter->name);
     }

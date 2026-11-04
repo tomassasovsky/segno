@@ -315,6 +315,41 @@ static void test_inputs_6i6_gen1(void) {
   ii_check_input(&caps, 2, 1, 0, -1, 0, -1);
 }
 
+/* The 1st Gen driver routes capture as well: its switches describe Segno's
+ * inputs only while capture channel N records Analog N. */
+static void test_inputs_6i6_gen1_needs_pass_through(void) {
+  printf("test_inputs_6i6_gen1_needs_pass_through\n");
+  static rt_card card;
+  rt_load_state(&card, II_FIXTURES "scarlett_6i6_gen1.state");
+  rt_set(&card, "Input Source 01 Capture Route", "Mix A");
+  le_interface_inputs caps = ii_scan(&card);
+  ii_check_none(&caps);
+  CHECK(ii_write(&card, LE_INTERFACE_LEVEL, 0, 1) == LE_ERR_INVALID);
+  rt_set(&card, "Input Source 01 Capture Route", "Analog 1");
+  caps = ii_scan(&card);
+  CHECK(caps.state == LE_INTERFACE_CONTROLS);
+}
+
+/* A card named the scarlett2 way stays scarlett2's even when none of its
+ * controls can be read: the generic rules, which check no routing, do not
+ * take it over. */
+static void test_inputs_scarlett2_never_falls_to_generic(void) {
+  printf("test_inputs_scarlett2_never_falls_to_generic\n");
+  static rt_card card;
+  memset(&card, 0, sizeof(card));
+  card.usb_vendor = 0x1235u;
+  /* Not the driver's types: the table matches none of them, and the
+   * generic rules would read both. */
+  rt_add_enum(&card, "Line In 1 Phantom Power Capture Switch", "Off|On", 1);
+  rt_add_enum(&card, "Line In 1 Pad Capture Switch", "Off|On", 0);
+  le_interface_inputs caps = ii_scan(&card);
+  ii_check_none(&caps);
+  card.usb_vendor = 0x07fdu;
+  caps = ii_scan(&card);
+  CHECK(caps.state == LE_INTERFACE_CONTROLS);
+  CHECK(strcmp(caps.adapter, "generic") == 0);
+}
+
 /* Class-compliant interfaces with hardware-only switches, and a desktop
  * codec, expose nothing (its "SPDIF Phantom Jack" is jack sensing on the
  * card interface, not 48 V). */
