@@ -1063,6 +1063,107 @@ void main() {
         expect(calls('undo'), 4);
       });
 
+      group('undo on an empty track that is not a member (#1634)', () {
+        /// Every take cleared as one group; track 4 was empty before the
+        /// clear, like the track 1 Clear all re-homes the selection to.
+        LooperRepository clearedRig() {
+          engine.undoRestoresClearChannels = {0, 1, 2};
+          final repo = rigOfThree()..clearAll([0, 1, 2]);
+          engine.nextSnapshot = _playingTracksSnapshot(0);
+          return repo;
+        }
+
+        test('restores the whole clear-all', () {
+          final repo = clearedRig();
+          expect(repo.undo(channel: 3), EngineResult.ok);
+          expect(calls('undo'), 3);
+          expect(engine.lastChannel, 2);
+        });
+
+        test('the state says so, for every surface that shows Undo', () {
+          expect(rigOfThree().state.clearAllUndoable, isFalse);
+          final repo = clearedRig();
+          expect(repo.state.clearAllUndoable, isTrue);
+          expect(repo.state.undoRestoresClearAll(3), isTrue);
+          expect(repo.state.canUndo(3), isTrue);
+          // A track armed for a take keeps its own (empty) Undo.
+          engine.nextSnapshot = _pendingSnapshot(pending: true, trigger: 0);
+          expect(repo.state.canUndo(0), isFalse);
+          engine.nextSnapshot = _playingTracksSnapshot(0);
+          repo.undo(channel: 3);
+          expect(repo.state.clearAllUndoable, isFalse);
+          expect(repo.state.canUndo(3), isFalse);
+        });
+
+        test('waits with the group for a frozen member', () async {
+          engine
+            ..undoRestoresClearChannels = {0, 2}
+            ..clearRestorePendingChannels = {1};
+          final repo = rigOfThree()..clearAll([0, 1, 2]);
+          engine.nextSnapshot = _playingTracksSnapshot(0);
+          repo.undo(channel: 3);
+          expect(calls('undo'), 0);
+          engine
+            ..undoRestoresClearChannels = {0, 1, 2}
+            ..clearRestorePendingChannels = {};
+          await pollHistory(repo);
+          expect(calls('undo'), 3);
+        });
+
+        test('keeps its own undo while a take is armed on it', () {
+          // Track 1 is not a member here: its take was not cleared.
+          engine.undoRestoresClearChannels = {1, 2};
+          final repo = rigOfThree()..clearAll([1, 2]);
+          engine.nextSnapshot = _pendingSnapshot(pending: true, trigger: 0);
+          repo.undo();
+          expect(calls('undo'), 1);
+          expect(engine.lastChannel, 0);
+        });
+
+        test('keeps its own undo for a take recorded after the clear', () {
+          final repo = clearedRig();
+          engine.nextSnapshot = _playingTracksSnapshot(
+            4,
+            clearRestore: {0, 1, 2},
+          );
+          repo.undo(channel: 3);
+          expect(calls('undo'), 1);
+          expect(engine.lastChannel, 3);
+          // The clear-all is still there for its members.
+          repo.undo(channel: 1);
+          expect(calls('undo'), 4);
+        });
+
+        test('restores the clear-all before an older single clear of its '
+            'own', () {
+          engine.undoRestoresClearChannels = {0, 1, 2};
+          final repo = rigOfThree()
+            ..clear()
+            ..clearAll([1, 2]);
+          engine.nextSnapshot = _playingTracksSnapshot(
+            3,
+            clearRestore: {0, 1, 2},
+          );
+          repo.undo();
+          // The group's two members, not track 1's own older take.
+          expect(calls('undo'), 2);
+          expect(engine.lastChannel, 2);
+          // The next Undo reaches the older point.
+          repo.undo();
+          expect(calls('undo'), 3);
+          expect(engine.lastChannel, 0);
+        });
+
+        test('a single-track clear is not a clear-all', () {
+          engine.undoRestoresClearChannels = {2};
+          final repo = rigOfThree()..clear(channel: 2);
+          engine.nextSnapshot = _playingTracksSnapshot(0);
+          repo.undo(channel: 3);
+          expect(calls('undo'), 1);
+          expect(engine.lastChannel, 3);
+        });
+      });
+
       test('only takes the clear can give back are members, by the '
           "engine's own account", () {
         // Track 1 had nothing to restore: no point filed, none pending.

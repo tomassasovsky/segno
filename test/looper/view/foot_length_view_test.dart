@@ -284,6 +284,30 @@ void main() {
     expect(pedalSemantics(tester, PedalButton.undo).properties.enabled, true);
   });
 
+  testWidgets('after a Clear all, Undo on the empty track 1 offers the '
+      'restore the pedal makes (#1634)', (tester) async {
+    whenListen(
+      looper,
+      const Stream<LooperState>.empty(),
+      initialState: LooperState(
+        transport: _rig.transport,
+        status: _rig.status,
+        clearAllUndoable: true,
+        tracks: [
+          const Track(),
+          const Track(channel: 1),
+          const Track(channel: 2, clearRestore: true),
+          for (var channel = 3; channel < 8; channel++) Track(channel: channel),
+        ],
+      ),
+    );
+    given(const ControlState(mode: InteractionMode.multiply));
+    await pump(tester);
+    expect(inPedal(PedalButton.undo, 'Nothing to undo'), findsNothing);
+    expect(inPedal(PedalButton.undo, 'Last change'), findsOneWidget);
+    expect(pedalSemantics(tester, PedalButton.undo).properties.enabled, true);
+  });
+
   testWidgets('Divide (pen 16 03-05): halves on Undo and Clear, captioned in '
       'bars or beats; Hold · Undo once there is something to undo', (
     tester,
