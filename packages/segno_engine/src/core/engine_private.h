@@ -2524,6 +2524,14 @@ struct le_engine {
   uint64_t clip_hold_until[LE_MAX_CHANNELS];
   _Atomic uint32_t a_input_clip_mask;
 
+  /* The sound-activated trigger's detector high-pass (#1623,
+   * LE_TRIGGER_HP_HZ): two biquad sections' coefficients {b0, b1, b2, a1, a2}
+   * for the configured rate, and each input's section states (transposed
+   * direct form II). Runs on every real input every frame, so an arm never
+   * meets a cold filter. Set at configure; AUDIO-THREAD-LOCAL after. */
+  float trig_hp_c[2][5];
+  float trig_hp_z[LE_MAX_CHANNELS][2][2];
+
   /* Output buses (slice 3b): bus k is the pair (2k, 2k + 1); see
    * le_fx_bus's doc for the chain's place in the frame. Bus 0's chain is
    * what the app calls the Master insert. */

@@ -77,6 +77,17 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The sound trigger ignores hum (#1623)
+
+- The sound-activated record trigger reads each input through a fixed
+  fourth-order Butterworth high-pass at 100 Hz (`LE_TRIGGER_HP_HZ`,
+  `le_trigger_hp`), on its detection path only: 50 and 60 Hz hum come out
+  24 and 18 dB down, rumble more, while a pick's attack still crosses the
+  -34 dBFS threshold on the frame it arrives. The take records the raw
+  input. It replaces the conditioning stage the trigger read before #697.
+- The filter runs on every real input every frame (two biquads each), so an
+  arm never starts on a cold filter. Test: `test_sound_trigger_ignores_hum`.
+
 ## November 2026 Prints swap in after a complete lap, LFOs on the clock (#1620)
 
 - The owner's decision on #1620: (1) time-based modulation takes its phase

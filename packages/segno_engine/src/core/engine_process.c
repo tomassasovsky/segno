@@ -8087,6 +8087,27 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
   tuner_slice(e, frames);
 }
 
+/* Input [c]'s sample [x] through the sound trigger's detector high-pass
+ * (#1623): both sections, transposed direct form II. Returns the filtered
+ * sample. Audio thread. */
+static inline float le_trigger_hp(le_engine* e, int c, float x) {
+  for (int k = 0; k < 2; ++k) {
+    const float* b = e->trig_hp_c[k];
+    float* z = e->trig_hp_z[c][k];
+    const float y = b[0] * x + z[0];
+    z[0] = b[1] * x - b[3] * y + z[1];
+    z[1] = b[2] * x - b[4] * y;
+    x = y;
+  }
+  if (!isfinite(x)) {
+    /* A non-finite sample (a driver glitch) would stay in the states for
+     * good and keep the trigger from ever firing: drop it and start clean. */
+    memset(e->trig_hp_z[c], 0, sizeof(e->trig_hp_z[c]));
+    return 0.0f;
+  }
+  return x;
+}
+
 static inline int process_input_frame(le_engine* e, const float* in,
                                       float* out, uint32_t f,
                                       int ch_in, int ch_out, int tc,
@@ -8095,6 +8116,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
                                       uint64_t perf_frame_base) {
   float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
   float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
+  float trig[LE_MAX_CHANNELS]; /* each real input through the trigger's HP */
   for (int c = 0; c < ch_in; ++c) {
     const float s = in ? in[f * ch_in + c] : 0.0f;
     const float a = fabsf(s);
@@ -8107,10 +8129,14 @@ static inline int process_input_frame(le_engine* e, const float* in,
     if (a > frame_mag) frame_mag = a;
     if (a > in_peak_ch[c]) in_peak_ch[c] = a;
     *in_sumsq += s * s;
+    /* The trigger's detection path (#1623), on every real input so an arm
+     * finds it settled. */
+    if (c < LE_MAX_CHANNELS) trig[c] = le_trigger_hp(e, c, s);
   }
   if (frame_mag > *in_peak) *in_peak = frame_mag;
 
-  /* Signal arms listen only to their selected, real recording sources. Never
+  /* Signal arms listen only to their selected, real recording sources,
+   * through the detector's high-pass (le_trigger_hp, #1623). Never
    * substitute input zero when a route disappears. Cancellation remains a
    * control action even when no selected source is currently usable. While a
    * latency measurement runs the arms wait: its burst and echo are not the
@@ -8128,7 +8154,9 @@ static inline int process_input_frame(le_engine* e, const float* in,
       } else {
         if (source < 0 || source >= ch_in || source >= LE_MAX_CHANNELS ||
             (excluded & (1u << source))) continue;
-        value = in ? fabsf(in[f * ch_in + source]) : 0.0f;
+        /* Through the detector's high-pass: hum and rumble do not arm it
+         * (#1623); the take records the raw input. */
+        value = in ? fabsf(trig[source]) : 0.0f;
       }
       if (value > magnitude) magnitude = value;
     }

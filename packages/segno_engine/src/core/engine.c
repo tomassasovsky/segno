@@ -1008,6 +1008,26 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   }
   atomic_store_explicit(&engine->a_input_clip_mask, 0u, memory_order_relaxed);
 
+  /* The sound trigger's detector high-pass (#1623): a fourth-order
+   * Butterworth (two sections at Q 0.5412 and 1.3066) at LE_TRIGGER_HP_HZ
+   * for this rate, its states clear. */
+  {
+    const double q[2] = {0.54119610, 1.30656296};
+    const double w =
+        2.0 * 3.14159265358979323846 * LE_TRIGGER_HP_HZ / (double)sample_rate;
+    for (int k = 0; k < 2; ++k) {
+      const double alpha = sin(w) / (2.0 * q[k]);
+      const double a0 = 1.0 + alpha;
+      const double cw = cos(w);
+      engine->trig_hp_c[k][0] = (float)((1.0 + cw) / 2.0 / a0);
+      engine->trig_hp_c[k][1] = (float)(-(1.0 + cw) / a0);
+      engine->trig_hp_c[k][2] = (float)((1.0 + cw) / 2.0 / a0);
+      engine->trig_hp_c[k][3] = (float)(-2.0 * cw / a0);
+      engine->trig_hp_c[k][4] = (float)((1.0 - alpha) / a0);
+    }
+    memset(engine->trig_hp_z, 0, sizeof(engine->trig_hp_z));
+  }
+
   /* Output buses (slice 3b): defaults empty/enabled/unity, same rationale as
    * the per-track bus resets above. */
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
