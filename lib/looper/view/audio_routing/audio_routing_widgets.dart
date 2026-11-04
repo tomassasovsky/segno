@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -505,8 +506,8 @@ class RoutingDestinationCard extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: available || selected ? onTap : null,
+          // Its width is the row's share, set where the row is laid out.
           child: Container(
-            width: 684,
             height: 144,
             padding: const EdgeInsets.symmetric(horizontal: 31),
             decoration: BoxDecoration(
@@ -594,7 +595,7 @@ class RoutingTrackScope extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 76,
       child: Stack(
         children: [
@@ -617,7 +618,7 @@ class RoutingTrackScope extends StatelessWidget {
             ),
           if (selected < names.length)
             Positioned(
-              left: 1320,
+              right: 0,
               top: 22,
               width: 400,
               child: Align(

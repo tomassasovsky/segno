@@ -217,24 +217,23 @@ class _LibraryViewState extends State<LibraryView> {
                 key: const Key('library_page'),
                 tabs: LibrarySectionTabs(onShow: (s) => _show(context, s)),
                 title: l10n.libraryTitle,
-                titleLeft: 64,
                 onBack: () => Navigator.pop(context),
                 onStage: _toTracks,
                 actions: const LibraryActions(),
                 children: [
                   // 19/05 shortens the layout by 60 to make room for the line.
                   Positioned(
-                    left: 64,
+                    left: 0,
                     top: 128,
-                    width: 1792,
+                    right: 0,
                     height: failure != null ? 760 : 820,
                     child: const LibrarySessionsTab(),
                   ),
                   if (failure != null)
                     Positioned(
-                      left: 64,
+                      left: 0,
                       top: 916,
-                      width: 1792,
+                      right: 0,
                       height: 33,
                       child: LibraryFailureLine(
                         failure: failure,
@@ -264,14 +263,13 @@ class _LibraryViewState extends State<LibraryView> {
           LibraryExportDone() => l10n.libraryAudioExported,
           _ => l10n.libraryAudioTitle,
         },
-        titleLeft: 64,
         onBack: () => Navigator.pop(context),
         onStage: _toTracks,
         children: const [
           Positioned(
-            left: 64,
+            left: 0,
             top: 128,
-            width: 1792,
+            right: 0,
             height: 820,
             child: LibraryAudioTab(),
           ),

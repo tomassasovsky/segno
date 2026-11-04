@@ -58,6 +58,13 @@ class FxEffectEditor extends StatelessWidget {
 
   TrackEffect get _effect => group.entries.first;
 
+  /// The Track Solo chip's left edge in the titlebar, measured back from
+  /// the content box's right edge, where the row ends.
+  static const double _soloFromRight = 754;
+
+  /// The effect's own actions' left edge, from the same right edge.
+  static const double _actionsFromRight = 541;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -73,7 +80,7 @@ class FxEffectEditor extends StatelessWidget {
         title: fxBlockName(l10n, effect),
         // Ends before the Effects power control (#1452), about 270 wide and
         // 24 short of Track Solo.
-        titleRight: 1920 - 1130 + 24 + 300,
+        titleRight: _soloFromRight + 24 + 300,
         onBack: onBack,
         onStage: onStage,
         children: [
@@ -81,7 +88,7 @@ class FxEffectEditor extends StatelessWidget {
           // switch (#1452).
           if (address != null)
             Positioned(
-              right: kLoopPenSize.width - 1130 + 24,
+              right: _soloFromRight + 24,
               top: 32,
               child: FxChainPower(
                 address: address,
@@ -91,7 +98,7 @@ class FxEffectEditor extends StatelessWidget {
           // The Track Solo chip keeps the rack editor's distance ahead of the
           // bypass (the pen draws it on the rack editor only).
           Positioned(
-            left: 1130,
+            left: LoopSettingsFrame.contentWidthOf(context) - _soloFromRight,
             top: 52,
             child: FxTrackSolo(destination: destination),
           ),
@@ -99,7 +106,7 @@ class FxEffectEditor extends StatelessWidget {
             // Right-aligned inside the titlebar as the pen draws it. The
             // effect's pedal assignment sits ahead of these three there; it
             // belongs to the pedal-binding surface, which is not built.
-            left: 1343,
+            left: LoopSettingsFrame.contentWidthOf(context) - _actionsFromRight,
             top: 32,
             child: _ChainActions(
               enabled: effect.enabled,
@@ -115,18 +122,18 @@ class FxEffectEditor extends StatelessWidget {
           ),
           if (!chainOn)
             Positioned(
-              left: 36,
+              left: 0,
               top: 124,
-              right: 36,
+              right: 0,
               child: FxChainOffNotice(
                 message: l10n.fxChainOffHere,
                 onTurnOn: () => edits.setChainEnabled(enabled: true),
               ),
             ),
           Positioned(
-            left: 235,
+            left: 203,
             top: 124 + band,
-            right: 235,
+            right: 203,
             height: 650 - band,
             child: Opacity(
               key: const Key('fx_effect_parameters'),
@@ -139,9 +146,9 @@ class FxEffectEditor extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 36,
+            left: 0,
             top: 798,
-            right: 36,
+            right: 0,
             height: 162,
             child: FxChannelFooter(
               group: group,

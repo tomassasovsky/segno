@@ -128,15 +128,15 @@ class RoutingNamesList extends StatelessWidget {
 
     if (count == 0) {
       return Positioned(
-        left: 100,
+        left: 0,
         top: 132,
         child: LoopNote(l10n.routingNoPortsYet),
       );
     }
     return Positioned(
-      left: 100,
+      left: 0,
       top: 132,
-      width: 1720,
+      right: 0,
       height: 800,
       child: ListView.builder(
         padding: const EdgeInsets.only(top: 6),
@@ -186,9 +186,9 @@ class _NameRow extends StatelessWidget {
     final surface = context.surface;
     final l10n = context.l10n;
     return Padding(
-      padding: const EdgeInsets.only(left: 6, right: 6, bottom: 12),
-      // The whole row is the button, as the pen draws it: a 1708 x 108 target
-      // beats a pill inside it on a screen driven by fingers.
+      padding: const EdgeInsets.only(bottom: 12),
+      // The whole row is the button, as the pen draws it: a full-width 108
+      // high target beats a pill inside it on a screen driven by fingers.
       child: Semantics(
         button: true,
         label: l10n.routingRenameField(port),
@@ -219,10 +219,11 @@ class _NameRow extends StatelessWidget {
                         ),
                       ),
                     ),
+                  // The name runs to Rename's column.
                   Positioned(
                     left: 245,
                     top: 36,
-                    width: 1238,
+                    right: 245,
                     child: AppText(
                       name,
                       maxLines: 1,

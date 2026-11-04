@@ -72,15 +72,15 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final page = _current;
-    final (title, titleLeft) = switch (page) {
-      LoopSettingsPageId.hub => (l10n.loopSettingsTitle, 36.0),
-      LoopSettingsPageId.mode => (l10n.loopHubMode, 36.0),
-      LoopSettingsPageId.recording => (l10n.loopHubRecording, 36.0),
-      LoopSettingsPageId.tempo => (l10n.loopHubTempo, 36.0),
-      LoopSettingsPageId.signature => (l10n.loopTempoSignature, 36.0),
-      LoopSettingsPageId.length => (l10n.loopHubLength, 100.0),
-      LoopSettingsPageId.playback => (l10n.loopHubPlayback, 100.0),
-      LoopSettingsPageId.audioTempo => (l10n.loopHubAudioTempo, 100.0),
+    final title = switch (page) {
+      LoopSettingsPageId.hub => l10n.loopSettingsTitle,
+      LoopSettingsPageId.mode => l10n.loopHubMode,
+      LoopSettingsPageId.recording => l10n.loopHubRecording,
+      LoopSettingsPageId.tempo => l10n.loopHubTempo,
+      LoopSettingsPageId.signature => l10n.loopTempoSignature,
+      LoopSettingsPageId.length => l10n.loopHubLength,
+      LoopSettingsPageId.playback => l10n.loopHubPlayback,
+      LoopSettingsPageId.audioTempo => l10n.loopHubAudioTempo,
     };
     return BlocProvider(
       create: (context) => LoopSettingsFeedbackCubit(
@@ -111,7 +111,6 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
                       ? l10n.loopSettingsCrumb
                       : l10n.loopSettingsCrumbNested,
                   title: title,
-                  titleLeft: titleLeft,
                   onBack: _back,
                   onStage: _stage,
                   children: [

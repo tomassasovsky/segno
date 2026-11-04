@@ -8,6 +8,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/playback_options_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_edit_scope.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_labels.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
@@ -15,8 +16,9 @@ import 'package:segno/theme/theme.dart';
 
 /// The Playback & overdub page: the scope selector, then Loop/Once and the
 /// overdub decay slider for that scope, each with its origin tag and a Use
-/// default when a track overrides it (the pen's `playback-layout`, 1720 x
-/// 488 at (100, 342)). Both stay live during playback and capture.
+/// default when a track overrides it (the pen's `playback-layout`, 488
+/// high at y 342, across the content width). Both stay live during playback
+/// and capture.
 class LoopPlaybackPage extends StatefulWidget {
   /// Creates a [LoopPlaybackPage].
   const LoopPlaybackPage({super.key});
@@ -127,7 +129,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
         child: Stack(
           children: [
             Positioned(
-              left: 100,
+              left: 0,
               top: 124,
               child: LoopScopeSelector(
                 trackNames: trackDisplayNames(context, count),
@@ -142,7 +144,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             // ---- playback: the label is centred on the Loop/Once row, as
             // the Length page centres its labels on their controls.
             Positioned(
-              left: 100,
+              left: 0,
               top: top,
               height: playbackHeight,
               child: Align(
@@ -158,7 +160,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: top,
               child: LoopChoiceRow<bool>(
                 values: const [false, true],
@@ -178,7 +180,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             ),
             if (onceCustom)
               Positioned(
-                left: 100 + 328 + 1221,
+                right: 0,
                 top: top + 28,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_playback_use_default'),
@@ -186,7 +188,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 ),
               ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: top + 140,
               child: LoopNote(
                 once ? l10n.loopPlaybackNoteOnce : l10n.loopPlaybackNoteLoop,
@@ -195,7 +197,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             ),
             // ---- overdub decay: the label is centred on the slider.
             Positioned(
-              left: 100,
+              left: 0,
               top: sliderTop + LoopSlider.height / 2 - decayLabelBand / 2,
               height: decayLabelBand,
               child: Align(
@@ -211,7 +213,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: top + 246 + 10,
               child: AppText(
                 defaults.decayReady
@@ -227,7 +229,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             ),
             if (decayCustom && defaults.decayReady)
               Positioned(
-                left: 100 + 328 + 1221,
+                right: 0,
                 top: top + 246,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_decay_use_default'),
@@ -235,7 +237,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 ),
               ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: sliderTop,
               child: LoopSlider(
                 key: const Key('loop_decay_slider'),
@@ -254,15 +256,15 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                   _dragDecay = null;
                   _draggingDecay = false;
                 }),
-                width: 1392,
+                width: LoopSettingsFrame.contentWidthOf(context) - 328,
                 semanticLabel: l10n.loopDecaySliderLabel,
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: top + 246 + 160,
               child: SizedBox(
-                width: 1392,
+                width: LoopSettingsFrame.contentWidthOf(context) - 328,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -273,7 +275,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
               ),
             ),
             Positioned(
-              left: 100 + 328,
+              left: 328,
               top: top + 246 + 208,
               child: LoopNote(
                 overdubDecayNote(l10n, decay),

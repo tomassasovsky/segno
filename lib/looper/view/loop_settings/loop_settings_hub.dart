@@ -55,8 +55,8 @@ _HubValues _hubValues(LooperState state) => (
 );
 
 /// The Loop settings hub: the six submenus, each with its current choice
-/// beside it (the pen's `loop-menu`). 1848 x 680 at (36, 124) under the
-/// title.
+/// beside it (the pen's `loop-menu`), 680 high at y 124 across the content
+/// width, under the title.
 class LoopSettingsHub extends StatelessWidget {
   /// Creates a [LoopSettingsHub].
   const LoopSettingsHub({required this.onOpen, super.key});
@@ -150,7 +150,7 @@ class LoopSettingsHub extends StatelessWidget {
       ),
     ];
     return Positioned(
-      left: 36,
+      left: 0,
       top: 124,
       child: Column(
         children: [

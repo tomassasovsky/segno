@@ -33,30 +33,34 @@ class LoopModePage extends StatelessWidget {
     final primary = context.select<LooperBloc, int>(
       (bloc) => bloc.state.transport.primaryTrack,
     );
+    // The cards share the content width, under the title (#1590).
     return Positioned(
-      left: 88,
+      left: 0,
+      right: 0,
       top: 332,
       child: Row(
         children: [
           for (final (i, mode) in LooperMode.values.indexed) ...[
             if (i > 0) const SizedBox(width: 24),
-            _ModeCard(
-              key: Key('loop_mode_${mode.name}'),
-              mode: mode,
-              selected: mode == current,
-              reason: _reason(
-                l10n,
-                mode,
-                mode == current
-                    ? LooperModeGate.open
-                    : repository.looperModeGate(mode),
-                primary,
-              ),
-              onTap: () => unawaited(
-                requestLooperModeChange(
-                  context,
-                  current: current,
-                  next: mode,
+            Expanded(
+              child: _ModeCard(
+                key: Key('loop_mode_${mode.name}'),
+                mode: mode,
+                selected: mode == current,
+                reason: _reason(
+                  l10n,
+                  mode,
+                  mode == current
+                      ? LooperModeGate.open
+                      : repository.looperModeGate(mode),
+                  primary,
+                ),
+                onTap: () => unawaited(
+                  requestLooperModeChange(
+                    context,
+                    current: current,
+                    next: mode,
+                  ),
                 ),
               ),
             ),
@@ -146,7 +150,6 @@ class _ModeCard extends StatelessWidget {
             canRequestFocus: false,
             onTap: onTap,
             child: SizedBox(
-              width: 330,
               height: 420,
               child: Stack(
                 children: [
@@ -164,7 +167,7 @@ class _ModeCard extends StatelessWidget {
                   ),
                   if (selected)
                     Positioned(
-                      left: 273,
+                      right: 29,
                       top: 37,
                       child: Icon(
                         LucideIcons.check,
@@ -172,15 +175,20 @@ class _ModeCard extends StatelessWidget {
                         color: surface.textPrimary,
                       ),
                     ),
+                  // Centred: the card is the row's share, wider than the
+                  // pen's 330.
                   Positioned(
-                    left: 29,
+                    left: 0,
+                    right: 0,
                     top: 100,
-                    child: _ModeDiagram(mode: mode, selected: selected),
+                    child: Center(
+                      child: _ModeDiagram(mode: mode, selected: selected),
+                    ),
                   ),
                   Positioned(
                     left: 29,
                     top: 268,
-                    width: 272,
+                    right: 29,
                     child: AppText(
                       reason,
                       key: Key('loop_mode_${mode.name}_reason'),

@@ -6,16 +6,21 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 
 /// The Recording page: how recording starts (Pedal or Sound) and what the
 /// second pedal press does (Play or Overdub), with one sentence under the
-/// start row saying when the take begins (the pen's `recording-layout`,
-/// 1440 x 288 at (240, 398)). A capture in progress locks both rows behind
-/// a banner and moves the layout down under it.
+/// start row saying when the take begins (the pen's `recording-layout`, 288
+/// high at y 398, here across the content width under the title). A capture
+/// in progress locks both rows behind a banner and moves the layout down
+/// under it.
 class LoopRecordingPage extends StatelessWidget {
   /// Creates a [LoopRecordingPage].
   const LoopRecordingPage({super.key});
+
+  /// Where the choices start, after the row labels.
+  static const double _controlsLeft = 408;
 
   @override
   Widget build(BuildContext context) {
@@ -34,23 +39,25 @@ class LoopRecordingPage extends StatelessWidget {
         : confirmed.countInBars > 0
         ? l10n.loopRecordingNoteCountIn(confirmed.countInBars)
         : l10n.loopRecordingNotePedal;
+    final width = LoopSettingsFrame.contentWidthOf(context);
     return Positioned.fill(
       child: Stack(
         children: [
           if (capturing)
             Positioned(
-              left: 36,
+              left: 0,
               top: 124,
               child: LoopLockBanner(
                 text: l10n.loopRecordingLocked,
-                width: 1848,
+                width: width,
               ),
             ),
+          // Under the title, across the content width (#1590).
           Positioned(
-            left: 240,
+            left: 0,
+            right: 0,
             top: capturing ? 444 : 398,
             child: SizedBox(
-              width: 1440,
               height: 288,
               child: Stack(
                 children: [
@@ -60,7 +67,7 @@ class LoopRecordingPage extends StatelessWidget {
                     child: LoopSectionLabel(l10n.loopRecordingStart),
                   ),
                   Positioned(
-                    left: 408,
+                    left: _controlsLeft,
                     top: 0,
                     child: LoopChoiceRow<bool>(
                       values: const [false, true],
@@ -77,11 +84,11 @@ class LoopRecordingPage extends StatelessWidget {
                           enabled: sound,
                         ),
                       ),
-                      width: 1032,
+                      width: width - _controlsLeft,
                     ),
                   ),
                   Positioned(
-                    left: 408,
+                    left: _controlsLeft,
                     top: 116,
                     child: LoopNote(
                       note,
@@ -94,7 +101,7 @@ class LoopRecordingPage extends StatelessWidget {
                     child: LoopSectionLabel(l10n.loopRecordingSecondPress),
                   ),
                   Positioned(
-                    left: 408,
+                    left: _controlsLeft,
                     top: 192,
                     child: LoopChoiceRow<bool>(
                       values: const [false, true],
@@ -113,7 +120,7 @@ class LoopRecordingPage extends StatelessWidget {
                           value: overdub,
                         ),
                       ),
-                      width: 1032,
+                      width: width - _controlsLeft,
                     ),
                   ),
                 ],

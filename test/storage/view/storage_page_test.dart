@@ -119,6 +119,19 @@ void main() {
       expect(bar.value, closeTo(0.5, 1e-9), reason: 'the used half');
     });
 
+    testWidgets('the recording-time banner shares the card edges '
+        '(#1590 STO-1)', (tester) async {
+      await pump(tester);
+      final card = tester.getRect(
+        find.byKey(const Key('storage_internal_card')),
+      );
+      final banner = tester.getRect(
+        find.byKey(const Key('storage_recording_time')),
+      );
+      expect(banner.left, card.left);
+      expect(banner.right, card.right);
+    });
+
     testWidgets('0.2 GB free: the low-space banner and No recording '
         'space', (tester) async {
       final l10n = await pump(

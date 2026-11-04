@@ -171,7 +171,7 @@ class _FxViewState extends State<FxView> {
                     onStage: _stage,
                     children: [
                       Positioned(
-                        left: 36,
+                        left: 0,
                         top: 160,
                         child: AppText(l10n.fxEditorScopeGone),
                       ),
@@ -861,7 +861,7 @@ class _FxViewState extends State<FxView> {
         onStage: _stage,
         children: [
           Positioned(
-            left: 1633,
+            right: 0,
             top: 32,
             child: LoopOutlinedButton(
               key: const Key('fx_pedal_assignments'),
@@ -872,21 +872,21 @@ class _FxViewState extends State<FxView> {
             ),
           ),
           Positioned(
-            left: 36,
+            left: 0,
             top: 116,
             child: _SoundTypeRow(kind: destination.kind),
           ),
           Positioned(
-            left: 36,
+            left: 0,
             top: 196,
-            right: 30,
+            right: 0,
             height: _stripHeight(destination.kind),
             child: _SourceStrip(destination: destination),
           ),
           Positioned(
-            left: 36,
+            left: 0,
             top: _contextTop(destination.kind),
-            right: 36,
+            right: 0,
             height: 76,
             child: _SoundContext(
               destination: destination,
@@ -896,9 +896,9 @@ class _FxViewState extends State<FxView> {
             ),
           ),
           Positioned(
-            left: 32,
+            left: 0,
             top: _chainTop(destination.kind),
-            right: 32,
+            right: 0,
             bottom: 24,
             child: _DestinationChain(
               destination: destination,
@@ -972,6 +972,18 @@ class _SourceStrip extends StatelessWidget {
   };
 }
 
+/// The gap between two input or output cards.
+const double _sourceGap = 16;
+
+/// An input or output card's width: [count] of them share the content
+/// width, never narrower than the pen's 264.
+double _sourceCardWidth(BuildContext context, int count) => fillingCardWidth(
+  width: LoopSettingsFrame.contentWidthOf(context),
+  count: count,
+  gap: _sourceGap,
+  minWidth: 264,
+);
+
 class _InputStrip extends StatelessWidget {
   const _InputStrip({required this.selected});
 
@@ -986,16 +998,17 @@ class _InputStrip extends StatelessWidget {
       context.select<LooperBloc, int>((b) => b.state.status.inputChannels),
       1,
     );
-    // Eighteen jacks do not fit the pen's four cards, so the row scrolls
-    // rather than shrinking them past legibility — the same answer Input
-    // setup already gives.
+    // The cards share the row (#1590); eighteen jacks do not fit at a
+    // legible width, so past that the row scrolls rather than shrinking
+    // them — the same answer Input setup gives.
     return ListView.separated(
       key: const Key('fx_input_strip'),
       scrollDirection: Axis.horizontal,
       itemCount: count,
-      separatorBuilder: (_, _) => const SizedBox(width: 16),
+      separatorBuilder: (_, _) => const SizedBox(width: _sourceGap),
       itemBuilder: (context, input) => _FxSourceCard(
         cardKey: Key('fx_input_card_$input'),
+        width: _sourceCardWidth(context, count),
         address: FxDestination.liveInput(input).address!,
         ordinal: l10n.routingInputOrdinal(input + 1),
         name: l10n.inputName(names.names, input),
@@ -1064,9 +1077,10 @@ class _OutputStrip extends StatelessWidget {
       key: const Key('fx_output_strip'),
       scrollDirection: Axis.horizontal,
       itemCount: count,
-      separatorBuilder: (_, _) => const SizedBox(width: 16),
+      separatorBuilder: (_, _) => const SizedBox(width: _sourceGap),
       itemBuilder: (context, bus) => _FxSourceCard(
         cardKey: Key('fx_output_card_$bus'),
+        width: _sourceCardWidth(context, count),
         address: FxDestination.output(bus).address!,
         ordinal: l10n.outputBusLabel(bus, channels: channels),
         name: l10n.outputName(names, bus, channels: channels),
@@ -1377,14 +1391,11 @@ class _DestinationChain extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!chainEnabled) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: FxChainOffNotice(
-              message: fxChainOffConsequence(context.l10n, address.stage),
-              onTurnOn: () => _FxViewState._notifyEditResult(
-                context,
-                context.read<FxCubit>().setChainEnabled(address, enabled: true),
-              ),
+          FxChainOffNotice(
+            message: fxChainOffConsequence(context.l10n, address.stage),
+            onTurnOn: () => _FxViewState._notifyEditResult(
+              context,
+              context.read<FxCubit>().setChainEnabled(address, enabled: true),
             ),
           ),
           const SizedBox(height: 12),

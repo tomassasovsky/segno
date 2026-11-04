@@ -329,15 +329,16 @@ void main() {
     ) async {
       await openLibrary(tester);
 
-      // Main area starts under the 96 top bar; the layout at (64, 128).
+      // Main area starts under the 96 top bar; the layout at (32, 128), the
+      // settings pages' one inset (#1590), across the content width.
       expect(
         tester.getTopLeft(find.byKey(const Key('library_search'))),
-        const Offset(64, 96 + 128),
+        const Offset(32, 96 + 128),
       );
       expect(tester.getSize(row('s-cur')), const Size(709, 148));
       expect(
         tester.getRect(find.byKey(const Key('library_preview'))),
-        const Rect.fromLTWH(64 + 765, 96 + 128, 1027, 820),
+        const Rect.fromLTWH(32 + 765, 96 + 128, 1920 - 64 - 765, 820),
       );
     });
   });

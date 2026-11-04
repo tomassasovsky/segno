@@ -99,6 +99,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
     };
 
     final rollback = state.rollback;
+    final width = LoopSettingsFrame.halfWidthOf(context);
     final left = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -118,7 +119,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
           // Bounded by the column: a long build string wraps here rather
           // than running under the right-hand column.
           SizedBox(
-            width: AboutSettingsPage.columnWidth,
+            width: width,
             child: LoopSectionLabel(
               l10n.updatesPageInstalled('$version'),
               key: const Key('updates_installed'),
@@ -159,7 +160,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
         ],
         if (_usbOpen) ...[
           SizedBox(
-            width: AboutSettingsPage.columnWidth,
+            width: width,
             child: UpdatesUsbPanel(
               onClosed: () => setState(() => _usbOpen = false),
             ),
@@ -189,7 +190,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
           SettingsFactPanel(
             key: const Key('updates_automatic'),
             title: l10n.updatesPageAutomaticPanel,
-            width: AboutSettingsPage.columnWidth,
+            width: width,
             rows: [
               SettingsFactRow(
                 key: const Key('updates_auto_check_row'),
@@ -243,7 +244,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
         SettingsFactPanel(
           key: const Key('updates_console'),
           title: l10n.updatesPageConsolePanel,
-          width: AboutSettingsPage.columnWidth,
+          width: width,
           rows: [
             SettingsFactRow(
               key: const Key('updates_about_row'),
@@ -280,18 +281,17 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
           body: LoopSettingsFrame(
             crumb: l10n.settingsCrumb(l10n.settingsUpdatesTitle),
             title: l10n.settingsUpdatesTitle,
-            titleLeft: 100,
             onBack: () => Navigator.maybePop(context),
             onStage: () =>
                 Navigator.popUntil(context, (route) => route.isFirst),
             children: [
               Positioned(
-                left: AboutSettingsPage.columns[0],
+                left: 0,
                 top: AboutSettingsPage.top,
                 child: left,
               ),
               Positioned(
-                left: AboutSettingsPage.columns[1],
+                right: 0,
                 top: AboutSettingsPage.top,
                 child: right,
               ),
@@ -489,7 +489,7 @@ class _StatusPanel extends StatelessWidget {
 
     return Container(
       key: const Key('updates_status'),
-      width: AboutSettingsPage.columnWidth,
+      width: LoopSettingsFrame.halfWidthOf(context),
       padding: const EdgeInsets.all(SettingsFactPanel.inset),
       decoration: BoxDecoration(
         color: surface.card,
@@ -622,7 +622,7 @@ class _RollbackNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     key: const Key('updates_rollback_notice'),
-    width: AboutSettingsPage.columnWidth,
+    width: LoopSettingsFrame.halfWidthOf(context),
     child: InlineNotice(
       message: text,
       action: LoopOutlinedButton(

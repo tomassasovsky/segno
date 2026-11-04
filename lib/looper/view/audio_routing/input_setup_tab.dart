@@ -7,6 +7,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/routing_facts.dart';
 import 'package:segno/looper/view/live_meter.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -81,10 +82,13 @@ class _InputSetupTabState extends State<InputSetupTab> {
   int _draftInput = -1;
   bool _draftPaired = false;
 
-  /// The pen's first four cards; the rest scroll.
+  /// The pen's card: the cards share the content width, never narrower
+  /// than this; past that the rest scroll.
   static const double _cardWidth = 264;
-  static const double _cardStep = 280;
-  static const double _columnWidth = 828;
+  static const double _cardGap = 16;
+
+  /// The gap between the pan and trim columns, which share the width.
+  static const double _columnGap = 64;
 
   /// Where the pan and trim columns sit.
   ///
@@ -152,7 +156,7 @@ class _InputSetupTabState extends State<InputSetupTab> {
       return Stack(
         children: [
           Positioned(
-            left: 100,
+            left: 0,
             top: 425,
             child: LoopNote(l10n.routingNoPortsYet),
           ),
@@ -163,7 +167,7 @@ class _InputSetupTabState extends State<InputSetupTab> {
     return Stack(
       children: [
         Positioned(
-          left: 100,
+          left: 0,
           top: 263,
           child: _InputCards(
             count: count,
@@ -174,7 +178,7 @@ class _InputSetupTabState extends State<InputSetupTab> {
           ),
         ),
         Positioned(
-          left: 100,
+          left: 0,
           top: 431,
           child: _FormatRow(
             input: input,
@@ -186,7 +190,7 @@ class _InputSetupTabState extends State<InputSetupTab> {
           ),
         ),
         Positioned(
-          left: 100,
+          left: 0,
           top: _columnsTop(locked: values.locked),
           child: _PlacementColumn(
             key: ValueKey((
@@ -260,7 +264,7 @@ class _InputSetupTabState extends State<InputSetupTab> {
           ),
         ),
         Positioned(
-          left: 992,
+          right: 0,
           top: _columnsTop(locked: values.locked),
           child: _TrimColumn(
             key: ValueKey((
@@ -354,19 +358,25 @@ class _InputCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final width = LoopSettingsFrame.contentWidthOf(context);
     return SizedBox(
-      width: 1720,
+      width: width,
       height: 112,
-      // Eighteen jacks do not fit the pen's four cards, so the row scrolls
-      // horizontally rather than shrinking the cards past legibility.
+      // The cards share the row; eighteen jacks do not fit at a legible
+      // width, so past that the row scrolls rather than shrinking them.
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: count,
-        separatorBuilder: (_, _) => const SizedBox(
-          width: _InputSetupTabState._cardStep - _InputSetupTabState._cardWidth,
-        ),
+        separatorBuilder: (_, _) =>
+            const SizedBox(width: _InputSetupTabState._cardGap),
         itemBuilder: (context, index) => RoutingSourceCard(
           key: Key('routing_input_card_$index'),
+          width: fillingCardWidth(
+            width: width,
+            count: count,
+            gap: _InputSetupTabState._cardGap,
+            minWidth: _InputSetupTabState._cardWidth,
+          ),
           ordinal: _ordinal(l10n, index),
           name: l10n.inputName(names.names, index),
           selected: index == selected,
@@ -405,7 +415,7 @@ class _FormatRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 74,
       child: Stack(
         children: [
@@ -485,7 +495,10 @@ class _PlacementColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    const width = _InputSetupTabState._columnWidth;
+    final width = LoopSettingsFrame.halfWidthOf(
+      context,
+      gap: _InputSetupTabState._columnGap,
+    );
     return SizedBox(
       width: width,
       height: 238,
@@ -571,7 +584,10 @@ class _TrimColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    const width = _InputSetupTabState._columnWidth;
+    final width = LoopSettingsFrame.halfWidthOf(
+      context,
+      gap: _InputSetupTabState._columnGap,
+    );
     return SizedBox(
       width: width,
       height: 238,

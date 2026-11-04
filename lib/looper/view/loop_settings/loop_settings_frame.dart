@@ -34,12 +34,27 @@ class LoopPenCanvas extends StatelessWidget {
   );
 }
 
-/// One Loop settings page as the pen draws it: the top bar (Back, the
-/// breadcrumb, Stage), the title, and the page's own content positioned in
-/// pen pixels under the title.
+/// The width of each of [count] cards [gap] apart so that the row spans
+/// [width] (#1590), never narrower than [minWidth]: past that the cards keep
+/// [minWidth] and the row scrolls.
+double fillingCardWidth({
+  required double width,
+  required int count,
+  required double gap,
+  required double minWidth,
+}) {
+  if (count < 1) return minWidth;
+  final share = (width - (count - 1) * gap) / count;
+  return share < minWidth ? minWidth : share;
+}
+
+/// One settings page: the top bar (Back, the breadcrumb, Stage), the title,
+/// and the page's own content positioned in pen pixels under the title.
 ///
-/// [titleLeft] is the pen's title inset: 36 on the hub, mode, recording and
-/// tempo pages, 100 on the scoped editors.
+/// Every page shares one inset (#1590): the top bar, the title and the
+/// content all sit [insetOf] in from the canvas's left and right edges. The
+/// page's [children] are positioned inside that content box, so a page
+/// starts its content at `left: 0` and fills it with `right: 0`.
 class LoopSettingsFrame extends StatelessWidget {
   /// Creates a [LoopSettingsFrame].
   const LoopSettingsFrame({
@@ -49,8 +64,7 @@ class LoopSettingsFrame extends StatelessWidget {
     required this.children,
     this.crumb,
     this.tabs,
-    this.titleLeft = 36,
-    this.titleRight = 36,
+    this.titleRight = 0,
     this.actions,
     super.key,
   }) : assert(
@@ -74,27 +88,35 @@ class LoopSettingsFrame extends StatelessWidget {
   /// Returns to the stage.
   final VoidCallback onStage;
 
-  /// The page content, positioned in the 1920 x 984 main area under the
-  /// top bar.
+  /// The page content, positioned in the content box under the top bar:
+  /// the 984 high main area less [insetOf] at each side.
   final List<Widget> children;
 
-  /// The title's inset from the left edge.
-  final double titleLeft;
-
-  /// The title's inset from the right edge. A page that puts its own
-  /// controls in the title row ends the title before them, and a title too
-  /// long for what is left ends in an ellipsis rather than running under
-  /// them.
+  /// Where the title ends, measured from the content box's right edge. A
+  /// page that puts its own controls in the title row ends the title before
+  /// them, and a title too long for what is left ends in an ellipsis rather
+  /// than running under them.
   final double titleRight;
 
-  /// The page's own actions, drawn at the title's right edge (the Pedals
-  /// page's Cancel and Save). Inset by [titleLeft] on the right so the row
-  /// reads as one titlebar rather than a heading with a stray button.
+  /// The page's own actions, drawn at the content box's right edge in the
+  /// title row (the Pedals page's Cancel and Save), so the row reads as one
+  /// titlebar rather than a heading with a stray button.
   final Widget? actions;
 
-  /// The top bar's inset from the canvas edges: Back at 36, Stage ending
-  /// 36 before the right edge.
-  static const double _barInset = 36;
+  /// The one inset of every page in the frame: the top bar's Back and
+  /// Stage, the title and the content sit this far in from the canvas's
+  /// left and right edges. The spacing scale's xxl (32).
+  static double insetOf(BuildContext context) => context.spacing.xxl;
+
+  /// The content box's width: the canvas less [insetOf] at each side.
+  static double contentWidthOf(BuildContext context) =>
+      kLoopPenSize.width - 2 * insetOf(context);
+
+  /// The width of one of two equal columns across the content box, [gap]
+  /// apart (an xl gap unless the page has its own). The second starts at
+  /// this width plus the gap.
+  static double halfWidthOf(BuildContext context, {double? gap}) =>
+      (contentWidthOf(context) - (gap ?? context.spacing.xl)) / 2;
 
   /// The title row in the main area, as the pen draws its two kinds. A row
   /// that carries actions (Settings' Power, the Pedals pages' Cancel and
@@ -112,6 +134,7 @@ class LoopSettingsFrame extends StatelessWidget {
     final surface = context.surface;
     final l10n = context.l10n;
     final row = _titleRow(actions: actions != null);
+    final inset = insetOf(context);
     return LoopPenCanvas(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -121,7 +144,7 @@ class LoopSettingsFrame extends StatelessWidget {
             child: NoticeBar(
               restingRule: surface.frameRule,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: _barInset),
+                padding: EdgeInsets.symmetric(horizontal: inset),
                 child: TopBarLayout(
                   leading: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -172,42 +195,45 @@ class LoopSettingsFrame extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Stack(
-              children: [
-                Positioned(
-                  left: titleLeft,
-                  top: row.top,
-                  right: titleRight,
-                  height: row.height,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppText(
-                      title,
-                      key: const Key('loop_settings_title'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: surface.frameText,
-                        fontFamily: SurfaceTheme.frameFont,
-                        fontSize: 42,
-                        letterSpacing: row.tracking,
-                        height: 1,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: inset),
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: row.top,
+                    right: titleRight,
+                    height: row.height,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppText(
+                        title,
+                        key: const Key('loop_settings_title'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: surface.frameText,
+                          fontFamily: SurfaceTheme.frameFont,
+                          fontSize: 42,
+                          letterSpacing: row.tracking,
+                          height: 1,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (actions != null)
-                  Positioned(
-                    right: titleLeft,
-                    top: row.top,
-                    height: row.height,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: actions,
+                  if (actions != null)
+                    Positioned(
+                      right: 0,
+                      top: row.top,
+                      height: row.height,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: actions,
+                      ),
                     ),
-                  ),
-                ...children,
-              ],
+                  ...children,
+                ],
+              ),
             ),
           ),
         ],

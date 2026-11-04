@@ -108,6 +108,21 @@ void main() {
       expect(find.textContaining('simulated'), findsNothing);
     });
 
+    testWidgets('the two columns split the content box under the title '
+        '(#1590 SET-1, SET-6)', (tester) async {
+      await openAbout(tester);
+      final left = tester.getRect(find.byKey(const Key('about_this_console')));
+      final right = tester.getRect(find.byKey(const Key('about_controller')));
+      expect(
+        left.left,
+        tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx,
+      );
+      expect(left.left, 32);
+      expect(right.right, 1920 - 32);
+      expect(right.left - left.right, 24);
+      expect(left.width, right.width);
+    });
+
     testWidgets('a fact the console did not read has no row', (tester) async {
       await openAbout(
         tester,

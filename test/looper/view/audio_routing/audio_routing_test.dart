@@ -412,10 +412,11 @@ void main() {
       );
       final cardRect = tester.getRect(card);
       final badgeRect = tester.getRect(badge);
-      final scale = cardRect.width / 360;
+      // The canvas is drawn smaller on the compact display.
+      final scale = tester.view.physicalSize.width / 1920;
       expect(
         cardRect.right - badgeRect.right,
-        greaterThanOrEqualTo(26 * scale),
+        greaterThanOrEqualTo(26 * scale - 1e-9),
       );
       expect(
         badgeRect.right,
@@ -760,7 +761,10 @@ void main() {
     await openOutputSetup(tester);
 
     final level = find.byKey(const Key('output_level_slider'));
-    await tester.tapAt(tester.getTopLeft(level) + const Offset(414, 20));
+    // The middle of the slider, whatever the column's width.
+    await tester.tapAt(
+      tester.getTopLeft(level) + Offset(tester.getSize(level).width / 2, 20),
+    );
     await tester.pump(const Duration(milliseconds: 400));
     final levels = verify(
       () => bloc.add(captureAny(that: isA<LooperOutputLevelChanged>())),
@@ -859,6 +863,33 @@ void main() {
     await openOutputs(tester);
     expect(find.text(l10n.routingOutputNames), findsOneWidget);
     expect(find.text(l10n.routingInputNames), findsNothing);
+  });
+
+  testWidgets('the four input cards fill the content width under the title '
+      '(#1590 SET-1, SET-6)', (tester) async {
+    await pump(tester);
+    final title = tester.getRect(find.byKey(const Key('loop_settings_title')));
+    final first = tester.getRect(
+      find.byKey(const Key('routing_input_card_0')),
+    );
+    final last = tester.getRect(find.byKey(const Key('routing_input_card_3')));
+    expect(title.left, 32);
+    expect(first.left, title.left);
+    expect(last.right, 1920 - 32);
+    expect(first.width, last.width);
+  });
+
+  testWidgets('the name rows span the content width, under the title '
+      '(#1590 SET-5)', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('routing_names_action')));
+    await tester.pump();
+    final title = tester.getRect(find.byKey(const Key('loop_settings_title')));
+    for (final port in [0, 3]) {
+      final row = tester.getRect(find.byKey(Key('routing_name_row_$port')));
+      expect(row.left, title.left);
+      expect(row.right, 1920 - 32);
+    }
   });
 
   testWidgets('the names list gives every port a row, and Back returns to '
