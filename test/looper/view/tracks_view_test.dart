@@ -3790,6 +3790,84 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
     });
 
+    testWidgets('a Capture press while a take is still saved, recovered or '
+        'rendered says which, and when Capture is back (#1633)', (
+      tester,
+    ) async {
+      final controller = StreamController<PerformanceRecorderState>();
+      addTearDown(controller.close);
+      whenListen(
+        performanceRecorder,
+        controller.stream,
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+      for (final state in const [
+        // The boot salvage converting a raw take: the recovering idle.
+        PerformanceRecorderIdle(
+          recovering: true,
+          busyWith: PerformanceArmBusy.finalizing,
+          refusal: 1,
+        ),
+        PerformanceRecorderIdle(
+          busyWith: PerformanceArmBusy.rendering,
+          refusal: 2,
+        ),
+        // Entering a finishing state says nothing; a press in it does.
+        PerformanceRecorderFinalizing(refusal: 2),
+        PerformanceRecorderFinalizing(
+          refusal: 3,
+          refusedWith: PerformanceArmBusyRefusal(PerformanceArmBusy.finalizing),
+        ),
+        PerformanceRecorderRendering(percent: 0, refusal: 3),
+        PerformanceRecorderRendering(percent: 50, refusal: 3),
+        PerformanceRecorderRendering(
+          percent: 50,
+          refusal: 4,
+          refusedWith: PerformanceArmBusyRefusal(PerformanceArmBusy.rendering),
+        ),
+        // Still Rendering while the DAW project is written, the engine's
+        // render done: the guard table's reason, not the render's.
+        PerformanceRecorderRendering(
+          percent: 100,
+          refusal: 5,
+          refusedWith: PerformanceArmGuardRefusal(
+            GuardRefused(
+              wants: GuardKind.capture,
+              blockers: [
+                ActiveOperation(
+                  kind: GuardKind.sessionApply,
+                  scope: GuardScope.internal(),
+                  purpose: 'open session',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ]) {
+        controller.add(state);
+        await tester.pump();
+        await tester.pump();
+      }
+
+      expect(said.titles, List.filled(5, l10n.perfArmRefused));
+      expect(
+        [for (final notice in said.shown) notice.body!(l10n)],
+        [
+          l10n.perfArmBusySaving,
+          l10n.perfArmBusyRendering,
+          l10n.perfArmBusySaving,
+          l10n.perfArmBusyRendering,
+          l10n.operationBusy(GuardKind.sessionApply.name),
+        ],
+      );
+      expect(said.shown.every((n) => n.tone == NoticeTone.warning), isTrue);
+      await tester.pump(const Duration(seconds: 6));
+    });
+
     testWidgets(
       'renaming (re-emitting Completed with a different path) does not '
       'reopen the completion sheet once dismissed',

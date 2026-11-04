@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:meta/meta.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/src/legacy_capture.dart';
+import 'package:performance_repository/src/models/arm_refusal.dart';
 import 'package:performance_repository/src/models/capture_summary.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
@@ -88,13 +89,22 @@ class PerformanceRepository {
   final GuardRegistry _guards;
   OperationGuard? _captureGuard;
 
-  final StreamController<GuardRefused> _armRefusals =
-      StreamController<GuardRefused>.broadcast();
+  final StreamController<PerformanceArmRefusal> _armRefusals =
+      StreamController<PerformanceArmRefusal>.broadcast();
 
-  /// Every [arm] the guard table refused, with what refused it. [arm] keeps
-  /// its silent-ok contract (the pedal calls it with nothing in front of
-  /// it), so this is where the reason goes; the recorder cubit listens.
-  Stream<GuardRefused> get armRefusals => _armRefusals.stream;
+  /// Every refused [arm], with why: a take finalizing or recovering, a render
+  /// in progress, or the guard table. The pedal and MIDI controls call [arm]
+  /// with nothing in front of it, so the reason goes here for every caller
+  /// alike, and the recorder cubit listens (#1633).
+  Stream<PerformanceArmRefusal> get armRefusals => _armRefusals.stream;
+
+  /// The work in flight that refuses [arm] right now, or null when none
+  /// does: a take finalizing or recovering, then a render in progress.
+  PerformanceArmBusy? get armBusy => _finalizesInFlight > 0
+      ? PerformanceArmBusy.finalizing
+      : renderProgress.done
+      ? null
+      : PerformanceArmBusy.rendering;
 
   /// What the Storage page and the recorder name a take by.
   static const String capturePurpose = 'recording';
@@ -364,19 +374,19 @@ class PerformanceRepository {
   /// Idempotent — calling this while already armed is a no-op success,
   /// mirroring `EnginePerformanceCapture.perfArm`'s own idempotency (the
   /// original session keeps draining into its original directory). A second
-  /// arm overlapping one still in flight is refused the same way (silent
-  /// ok), preserving that same observable shape. [chains]
+  /// arm overlapping one still in flight is a no-op success too: it is the
+  /// same press arriving twice. [chains]
   /// supplies the lane/monitor effect chains and master-limiter state the
   /// engine snapshot alone cannot read back (see [PerformanceChains]).
   ///
-  /// Refused — a no-op success, the same silent shape as the already-armed
-  /// path and [disarm]'s guard-window refusal — while a salvage finalize or
-  /// offline render is still in flight (#671): arming then would yank that
+  /// Refused with [EngineResult.notReady] while a take finalizes or
+  /// recovers, or a render is in flight (#671), and when the guard table
+  /// refuses the take at its commit: arming then would yank that
   /// in-progress finalize/render out from under whoever is watching it (the
-  /// render's result dialog), and the pedal's MODE long-press calls this
-  /// directly with no cubit-level gate in front of it. Callers observe
-  /// the refusal through [captureStatus] never reporting armed (and
-  /// [armedDirectory] staying null), not through the return value.
+  /// render's result dialog), and the pedal and MIDI controls call this
+  /// directly with no cubit-level gate in front of it. Every such refusal is
+  /// published on [armRefusals] with its reason, so the player is told why
+  /// whichever control was pressed (#1633).
   ///
   /// [root] puts this take's bundle under another directory than the
   /// constructor's `exportsRoot` (a USB volume's `Segno/Performances`, #1177);
@@ -390,7 +400,8 @@ class PerformanceRepository {
     GuardScope scope = const GuardScope.internal(),
   }) async {
     if (_armedDir != null || _armInFlight) return EngineResult.ok;
-    if (_finalizesInFlight > 0 || !renderProgress.done) return EngineResult.ok;
+    final busy = armBusy;
+    if (busy != null) return _refuseArm(PerformanceArmBusyRefusal(busy));
     _armInFlight = true;
     final finished = Completer<void>();
     _armFinished = finished;
@@ -401,6 +412,12 @@ class PerformanceRepository {
       _armFinished = null;
       finished.complete();
     }
+  }
+
+  /// Publishes [refusal] on [armRefusals] and answers the refused [arm].
+  EngineResult _refuseArm(PerformanceArmRefusal refusal) {
+    _armRefusals.add(refusal);
+    return EngineResult.notReady;
   }
 
   /// The body of [arm] past its entry gate; runs with [_armInFlight] held.
@@ -452,10 +469,11 @@ class PerformanceRepository {
     // Re-checked here, not just at entry: the awaits above suspend this arm,
     // and a boot-salvage ([recoverCapture]) starting inside that window
     // raises [_finalizesInFlight] too late for the entry gate to see — the
-    // resumed arm would clobber the in-progress salvage. Same silent-ok
-    // refusal shape; the just-created directory is discarded, exactly like
+    // resumed arm would clobber the in-progress salvage. The same refusal as
+    // the entry gate's; the just-created directory is discarded, exactly like
     // the failed-perfArm path below (#671).
-    if (_armedDir != null || _finalizesInFlight > 0 || !renderProgress.done) {
+    final busy = armBusy;
+    if (_armedDir != null || busy != null) {
       // Ownership-checked belt to [_armInFlight]'s braces: never delete the
       // live armed capture directory (the drain thread is writing into it) —
       // only this call's own still-unclaimed one.
@@ -463,7 +481,9 @@ class PerformanceRepository {
         final created = Directory(dir);
         if (created.existsSync()) created.deleteSync(recursive: true);
       }
-      return EngineResult.ok;
+      return busy == null
+          ? EngineResult.ok
+          : _refuseArm(PerformanceArmBusyRefusal(busy));
     }
 
     // The commit point (accepted behaviour 6.12): the guard is taken here,
@@ -477,8 +497,7 @@ class PerformanceRepository {
     } on GuardRefused catch (refusal) {
       final created = Directory(dir);
       if (created.existsSync()) created.deleteSync(recursive: true);
-      _armRefusals.add(refusal);
-      return EngineResult.ok;
+      return _refuseArm(PerformanceArmGuardRefusal(refusal));
     }
 
     // The take's identity (#1198): random, minted before any audio exists,

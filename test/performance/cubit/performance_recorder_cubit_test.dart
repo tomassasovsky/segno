@@ -283,6 +283,55 @@ void main() {
     );
 
     test(
+      'a pedal or MIDI arm while the salvage still renders says why, keeps '
+      'the recovering flag, which still clears when the render settles, and '
+      'arms once it has (#1633)',
+      () async {
+        final dir = Directory('${tempDir.path}/exports/perf-crashed')
+          ..createSync(recursive: true);
+        writeManifest(dir.path, finalized: false);
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.load();
+
+        // The pedal and MIDI controls reach the repository directly.
+        expect(await performance.arm(), EngineResult.notReady);
+        await pumpEventQueue();
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(
+            recovering: true,
+            busyWith: PerformanceArmBusy.rendering,
+            refusal: 1,
+          ),
+        );
+        // A second press is a new state, so it gets its own answer.
+        expect(await performance.arm(), EngineResult.notReady);
+        await pumpEventQueue();
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(
+            recovering: true,
+            busyWith: PerformanceArmBusy.rendering,
+            refusal: 2,
+          ),
+        );
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await cubit.stream
+            .firstWhere((s) => s == const PerformanceRecorderIdle())
+            .timeout(const Duration(seconds: 5));
+        expect(await performance.arm(), EngineResult.ok);
+        await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+      },
+    );
+
+    test(
       'a stranded-only boot (finalized bundle awaiting its move, nothing '
       'unfinalized) still shows the recovering flag until its re-attempted '
       'render settles (#679 r4)',
@@ -498,7 +547,8 @@ void main() {
       },
     );
 
-    test('is refused (a no-op) while finalizing/rendering', () async {
+    test('is refused while finalizing/rendering, and the finishing state '
+        'counts the press so it can say why (#1633)', () async {
       final cubit = build();
       addTearDown(cubit.close);
       await cubit.toggleArm();
@@ -526,6 +576,25 @@ void main() {
 
       await cubit.toggleArm(); // refused: not idle
       expect(engine.perfArmCalls, 1, reason: 'no second arm went through');
+      expect(
+        cubit.state,
+        anyOf(
+          isA<PerformanceRecorderFinalizing>()
+              .having((s) => s.refusal, 'refusal', 1)
+              .having(
+                (s) => (s.refusedWith! as PerformanceArmBusyRefusal).busy,
+                'busy',
+                PerformanceArmBusy.finalizing,
+              ),
+          isA<PerformanceRecorderRendering>()
+              .having((s) => s.refusal, 'refusal', 1)
+              .having(
+                (s) => (s.refusedWith! as PerformanceArmBusyRefusal).busy,
+                'busy',
+                PerformanceArmBusy.rendering,
+              ),
+        ),
+      );
 
       // The empty take is discarded after the disarm returns: let that file
       // work end before tear-down deletes its directory (#1366).
@@ -557,12 +626,18 @@ void main() {
         // bypassing toggleArm — the repository's own gate must refuse it, or
         // the armed status would clobber the render flow out from under the
         // cubit (and its result dialog).
-        await performance.arm();
+        expect(await performance.arm(), EngineResult.notReady);
         await pumpEventQueue();
 
         expect(performance.armedDirectory, isNull);
         expect(engine.perfArmCalls, 1, reason: 'only the initial arm');
-        expect(cubit.state, isA<PerformanceRecorderRendering>());
+        expect(
+          cubit.state,
+          isA<PerformanceRecorderRendering>()
+              .having((s) => s.percent, 'percent', 30)
+              .having((s) => s.refusal, 'refusal', 1),
+          reason: 'the render keeps its face and counts the refused press',
+        );
 
         // Once the render completes the gate lifts and the pedal can arm a
         // fresh capture again.
@@ -594,13 +669,19 @@ void main() {
     );
 
     blocTest<PerformanceRecorderCubit, PerformanceRecorderState>(
-      'is a no-op while the boot salvage is still running — refused before '
-      'the free-space probe, so no lowDiskBlocked emit can blind the '
-      'recovering flag (#679 r2)',
+      'is refused while the boot salvage is still running, before the '
+      'free-space probe, and says why without dropping the recovering flag '
+      '(#679 r2, #1633)',
       build: build,
       seed: () => const PerformanceRecorderIdle(recovering: true),
       act: (cubit) => cubit.toggleArm(),
-      expect: () => <PerformanceRecorderState>[],
+      expect: () => const <PerformanceRecorderState>[
+        PerformanceRecorderIdle(
+          recovering: true,
+          busyWith: PerformanceArmBusy.finalizing,
+          refusal: 1,
+        ),
+      ],
       verify: (_) => expect(engine.perfArmCalls, 0),
     );
 
@@ -1179,6 +1260,34 @@ void main() {
       },
     );
 
+    test('a busy repository is answered before the free-space probe, so '
+        'the reason is never a low-disk one (#1633)', () async {
+      var probes = 0;
+      final cubit = build(
+        freeSpaceBytes: (_) async {
+          probes++;
+          return 1;
+        },
+      );
+      addTearDown(cubit.close);
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 20,
+      );
+
+      await cubit.toggleArm();
+
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(
+          busyWith: PerformanceArmBusy.rendering,
+          refusal: 1,
+        ),
+      );
+      expect(probes, 0);
+      expect(engine.perfArmCalls, 0);
+    });
+
     test('each refused press emits its own state, so each gets an answer '
         '(#1198)', () async {
       final cubit = build(
@@ -1658,7 +1767,37 @@ void main() {
       expect(engine.perfArmCalls, 1);
     });
 
-    test('a refusal does not stomp the recovering idle', () async {
+    test('a guard refusal while this cubit still writes the DAW project '
+        '(Rendering, engine render done) keeps the guard as its reason '
+        '(#1633)', () async {
+      final cubit = buildGuarded()
+        ..emit(const PerformanceRecorderRendering(percent: 100, name: 'x'));
+      addTearDown(cubit.close);
+      guards.enter(
+        GuardKind.sessionApply,
+        const GuardScope.internal(),
+        purpose: 'open session',
+      );
+      expect(await guarded.arm(), EngineResult.notReady);
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderRendering>()
+            .having((s) => s.percent, 'percent', 100)
+            .having((s) => s.refusal, 'refusal', 1)
+            .having(
+              (s) => (s.refusedWith! as PerformanceArmGuardRefusal)
+                  .refusal
+                  .blockers
+                  .first
+                  .kind,
+              'refused by',
+              GuardKind.sessionApply,
+            ),
+      );
+    });
+
+    test('a refusal keeps the recovering idle, and says why', () async {
       final cubit = buildGuarded()
         ..emit(const PerformanceRecorderIdle(recovering: true));
       addTearDown(cubit.close);
@@ -1669,7 +1808,14 @@ void main() {
       );
       await guarded.arm();
       await pumpEventQueue();
-      expect(cubit.state, const PerformanceRecorderIdle(recovering: true));
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(
+          recovering: true,
+          refusedBy: GuardKind.restart,
+          refusal: 1,
+        ),
+      );
     });
   });
 
