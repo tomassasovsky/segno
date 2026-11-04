@@ -674,7 +674,8 @@ class _TrimColumn extends StatelessWidget {
     );
     return SizedBox(
       width: width,
-      height: 238,
+      // Tall enough for the clip, gain and trim notes together.
+      height: 290,
       child: Stack(
         children: [
           Positioned(
@@ -719,6 +720,7 @@ class _TrimColumn extends StatelessWidget {
                       clipping: clipping,
                       width: _meterWidth,
                       semanticLabel: l10n.routingSignal,
+                      target: kInputGainTargetDb,
                     ),
                   ),
                   // The reading beside the meter. A held clip says so in
@@ -768,9 +770,19 @@ class _TrimColumn extends StatelessWidget {
                 tone: LoopNoteTone.error,
               ),
             ),
+          // The meter reads the input before the trim, so it is where the
+          // interface's gain knob is set: to the band (#1646).
           Positioned(
             left: 0,
             top: clipping ? 234 : 207,
+            child: LoopNote(
+              l10n.routingGainNote,
+              key: const Key('routing_gain_note'),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: clipping ? 261 : 234,
             child: LoopNote(l10n.routingTrimNote),
           ),
         ],

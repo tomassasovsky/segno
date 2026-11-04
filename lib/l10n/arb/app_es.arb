@@ -1950,6 +1950,7 @@
     "routingPanRightAmount": "{percent}% a la derecha",
     "routingTrim": "Ganancia de grabación",
     "routingTrimDb": "{db} dB",
+    "routingGainNote": "Ajusta la ganancia para que tus picos lleguen a la franja.",
     "routingTrimNote": "Solo para nuevas grabaciones. El nivel en vivo queda en el mezclador.",
     "routingSignal": "Señal de grabación",
     "routingClipNote": "La entrada satura. Baja el nivel de la fuente.",
