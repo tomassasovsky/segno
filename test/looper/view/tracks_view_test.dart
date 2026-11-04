@@ -352,12 +352,16 @@ void main() {
                 ),
               ),
             ],
-            child: switch ((onAncestorKey, standing)) {
-              (null, false) => const TracksView(),
-              (null, true) => const StandingNotices(child: TracksView()),
-              (final onKey?, _) => Focus(
+            child: switch ((
+              onAncestorKey,
+              standing
+                  ? const StandingNotices(child: TracksView())
+                  : const TracksView(),
+            )) {
+              (null, final stage) => stage,
+              (final onKey?, final stage) => Focus(
                 onKeyEvent: onKey,
-                child: const TracksView(),
+                child: stage,
               ),
             },
           ),
