@@ -7737,8 +7737,8 @@ static inline void snapshot_lane_cache(
     le_track* tr = &e->tracks[t];
     const uint32_t rev =
         atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
-    /* The loop top the key folds (its hop position for an octaver, #941, its
-     * place on the lap grid for a clock LFO, #1620). */
+    /* The loop top the key folds (its place on the lap grid, for a clock
+     * LFO, #1620). */
     const uint32_t top =
         atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
     for (int l = 0; l < lane_n[t]; ++l) {
@@ -7753,7 +7753,7 @@ static inline void snapshot_lane_cache(
           atomic_load_explicit(&ln->a_fx_gen, memory_order_acquire);
       /* The run (#939). The fingerprint is refolded only when its cheap
        * proxies moved: a generation bump (every chain edit, Post ones
-       * included, so the refold decides) or the hop position it folds. */
+       * included, so the refold decides) or the loop top it folds. */
       const int len_moved = len != ln->run_len;
       if (rev != ln->run_rev || vol != ln->run_vol || len_moved) {
         ln->run_rev = rev;
@@ -9063,12 +9063,12 @@ static inline void mix_tracks_frame(
         atomic_store_explicit(&tr->a_top_clock, top, memory_order_relaxed);
       }
     }
-    /* A print keyed to the hop position (an octaver in it, #941) that does
-     * not match this lap's start is stale: the block-start check ran before
-     * a launch in this block moved the lap. Drop it at the lap top, as that
+    /* A print keyed to the lap grid (a clock LFO in it, #1620) that does not
+     * match this lap's start is stale: the block-start check ran before a
+     * launch in this block moved the lap. Drop it at the lap top, as that
      * check will from the next block. */
     if (trk_rp == 0 && tce != NULL &&
-        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f, e->fx_hop_period)) {
+        !le_wet_entry_lap_matches(tce, e->fx_clock_base + f)) {
       tce = NULL;
       track_cache_ent[t] = NULL;
       if (load_i32(&tr->a_track_cache_active)) {
@@ -9297,9 +9297,9 @@ static inline void mix_tracks_frame(
       if (ln->run.restart) { /* a block-start key change (#939) */
         le_chain_run_begin(&ln->run, tr, sounding, rp);
       }
-      /* The lane twin of the track's lap-top hop check above (#941). */
+      /* The lane twin of the track's lap-top grid check above (#1620). */
       if (rp == 0 && wce != NULL &&
-          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f, e->fx_hop_period)) {
+          !le_wet_entry_lap_matches(wce, e->fx_clock_base + f)) {
         wce = NULL;
         cache_ent[t][l] = NULL;
         if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);

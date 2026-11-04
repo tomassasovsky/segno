@@ -950,11 +950,6 @@ typedef struct le_wet_entry {
   int32_t out_len;
   float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
-  /* 0 for a print whose key does not hold the hop position; else 1 + the
-   * hop position (le_fx_hop_position) of the loop top it was rendered from: an
-   * octaver in the printed chain (#941). The audio thread drops such a print
-   * at a lap top that starts elsewhere on the hop. */
-  uint32_t hop_tag;
   /* 0 for a print whose key does not hold the top's place on the lap grid;
    * else 1 + that place (le_fx_lap_position) for the top it was rendered
    * from: a clock LFO in the printed chain (#1620). */
@@ -1197,8 +1192,8 @@ typedef struct le_lane {
    * the print's key names them. snapshot_lane_cache compares the key with
    * run_* each buffer, restarts the run on a change and checks a published
    * print against it. The fingerprint is refolded only when run_gen or
-   * run_top (the track's loop top, whose hop position an octaver print's key
-   * folds, #941, and whose lap-grid place a clock LFO's does, #1620) moved,
+   * run_top (the track's loop top, whose lap-grid place a clock LFO print's
+   * key folds, #1620) moved,
    * so a cached steady state costs a few relaxed loads instead of a ~40-load
    * FNV refold per buffer. */
   le_chain_run run;
@@ -1487,8 +1482,8 @@ typedef struct le_track {
   /* The engine frame (mod 2^32) the track's current lap began at, published
    * by the audio thread while it plays or overdubs a forward lap at an
    * integral rate, whenever it moves (a lap top, a launch, a relaunch). The
-   * wet cache renders and keys an octaver print against it, so the print
-   * reproduces the live octaver hop (#941). [top_clock] is the audio
+   * wet cache renders and keys a clock LFO's print against it, so the print
+   * reproduces the live LFO's phase (#1620). [top_clock] is the audio
    * thread's own copy, so it stores only on a change. */
   _Atomic uint32_t a_top_clock;
   uint32_t top_clock;
@@ -2937,7 +2932,6 @@ struct le_engine {
   int out_channels; /* hardware playback channels */
   int32_t max_loop_frames;
   int32_t fx_delay_frames; /* per-slot delay-line capacity (1 s @ sample rate) */
-  uint32_t fx_hop_period;  /* le_fx_hop_period(sample_rate), set with it */
 
   /* Audio-thread-local transport. */
   le_loop_clock clock;
