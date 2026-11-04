@@ -1,8 +1,6 @@
 /* The EQ kind (LE_FX_EQ, #887 part 4) and the per-kind heap state it is the
  * first user of. Included by test_engine_core.c. */
 
-void le_eq_design_for_test(int kind, double hz, double db, double q, int sr,
-                           double c[5]);
 void le_eq_bell_for_test(double hz, double db, double q, int sr, double c[5]);
 void le_eq_band_design_for_test(int b, int shelves, double hz, double db,
                                 double q, int sr, double c[5]);

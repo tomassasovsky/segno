@@ -300,37 +300,3 @@ void le_rt_prefault_stack(size_t bytes) {
   for (size_t i = 0; i < bytes; i += 4096u) frame[i] = 0;
   frame[bytes - 1] = 0;
 }
-
-/* ---- arena ---- */
-
-#define LE_RT_ARENA_ALIGN 64u
-
-int le_rt_arena_init(le_rt_arena* a, size_t bytes) {
-  if (a == NULL) return 0;
-  a->base = (unsigned char*)le_rt_alloc_prefaulted(bytes);
-  a->cap = a->base != NULL ? bytes : 0;
-  a->used = 0;
-  return a->base != NULL;
-}
-
-void* le_rt_arena_alloc(le_rt_arena* a, size_t bytes) {
-  if (a == NULL || a->base == NULL || bytes == 0) return NULL;
-  const size_t at = (a->used + LE_RT_ARENA_ALIGN - 1) & ~(size_t)(LE_RT_ARENA_ALIGN - 1);
-  if (at > a->cap || bytes > a->cap - at) return NULL;
-  a->used = at + bytes;
-  unsigned char* p = a->base + at;
-  memset(p, 0, bytes); /* zeroed after a reset too; the pages are resident */
-  return p;
-}
-
-void le_rt_arena_reset(le_rt_arena* a) {
-  if (a != NULL) a->used = 0;
-}
-
-void le_rt_arena_release(le_rt_arena* a) {
-  if (a == NULL) return;
-  le_rt_free(a->base);
-  a->base = NULL;
-  a->cap = 0;
-  a->used = 0;
-}

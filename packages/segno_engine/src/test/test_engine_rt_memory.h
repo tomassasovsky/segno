@@ -79,22 +79,6 @@ static void test_rt_alloc_contract(void) {
   CHECK(r != NULL && r[1023] == 0.0f);
   if (r != NULL) r[1023] = 1.0f;
   le_rt_free(r);
-
-  /* The arena: aligned, zeroed, bounded, reusable. */
-  le_rt_arena arena;
-  CHECK(le_rt_arena_init(&arena, 4096));
-  unsigned char* a1 = (unsigned char*)le_rt_arena_alloc(&arena, 100);
-  unsigned char* a2 = (unsigned char*)le_rt_arena_alloc(&arena, 100);
-  CHECK(a1 != NULL && a2 != NULL && a2 >= a1 + 100);
-  CHECK(((uintptr_t)a1 & 63u) == 0 && ((uintptr_t)a2 & 63u) == 0);
-  CHECK(le_rt_arena_alloc(&arena, 8192) == NULL); /* does not fit */
-  a1[0] = 7;
-  le_rt_arena_reset(&arena);
-  unsigned char* a3 = (unsigned char*)le_rt_arena_alloc(&arena, 16);
-  CHECK(a3 == a1 && a3[0] == 0); /* reused, and zeroed again */
-  le_rt_arena_release(&arena);
-  le_rt_arena_release(&arena); /* idempotent */
-  CHECK(le_rt_arena_alloc(&arena, 16) == NULL);
 }
 
 #if LE_RT_FAULT_TESTS

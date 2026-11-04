@@ -33761,6 +33761,37 @@ static void test_fx_enable_chain_stomp_staggered_clear(void) {
   le_engine_destroy(e);
 }
 
+/* A kind whose block is large (the doubler's 128 KB of delay lines) has it
+ * cleared on the audio thread when its slot re-enables, so a whole-chain
+ * stomp spaces those clears one LE_FX_ENABLE_CLEAR_SPACING (128) apart, as
+ * it spaces ring clears (#1421). */
+static void test_fx_enable_large_blocks_spaced(void) {
+  printf("test_fx_enable_large_blocks_spaced\n");
+  le_engine* e = make_configured_engine();
+  static float cap[1024];
+
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+  for (int s = 0; s < 2; ++s) {
+    CHECK(le_engine_set_monitor_input_fx(e, 0, s, LE_FX_DOUBLER) == LE_OK);
+  }
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 2) == LE_OK);
+  drain(e);
+  process_n(e, 0.5f, 256, cap);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 0) == LE_OK);
+  process_n(e, 0.0f, FX_EN_SETTLE, cap);
+  le_fx_state* fx = &e->monitors[0].fx;
+  CHECK(fx->enable_mix[0] <= 0.0f && fx->enable_mix[1] <= 0.0f);
+  CHECK(le_engine_set_monitor_input_fx_chain_enabled(e, 0, 1) == LE_OK);
+  process_n(e, 0.0f, 1, cap);
+  CHECK(fx->enable_target[0] == 1); /* cleared and ramping in */
+  CHECK(fx->enable_target[1] == 0); /* waits its turn, bypassed */
+  process_n(e, 0.0f, 128, cap);
+  CHECK(fx->enable_target[1] == 1);
+
+  le_engine_destroy(e);
+}
+
 /* The echo and the Freeverb never clear their rings (#1571): their blocks
  * record what they have written, so a slot retyped from a delay whose ring
  * is full of audio reads silence where it has not written yet, and with a
@@ -40270,6 +40301,7 @@ int main(void) {
   test_fx_enable_count_regrow_reseeds();
   test_fx_enable_gap_settles_disabled_ramp();
   test_fx_enable_chain_stomp_staggered_clear();
+  test_fx_enable_large_blocks_spaced();
   test_fx_ring_kinds_never_read_stale_audio();
   test_fx_enable_octaver_warmup_no_hole();
   test_fx_enable_works_while_stopped();

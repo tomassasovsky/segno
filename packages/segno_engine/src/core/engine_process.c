@@ -75,12 +75,6 @@ void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
   }
 }
 
-/* A type command landing on slot [index]: the slot no longer holds the
- * entry a recipe put there (instance), so the next recipe renews it. */
-static inline void le_fx_type_landed(le_fx_slot_meta* meta, int32_t index) {
-  atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
-}
-
 /* Whether the transport is HELD: no track is playing, recording, or
  * overdubbing, so the loop clock sits at the top (advance_transport_frame's
  * idle branch). The audio-thread twin of le_transport_active on the control
@@ -5831,7 +5825,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_lane* ln = &e->tracks[ch].lanes[lane];
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(ln->fx_meta, index);
+      le_fx_slot_forget(ln->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index, cmd->fx.type);
       /* Wet-cache fast path: the published type just moved, so the chain
@@ -5967,7 +5961,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_plog_push(e, frame, *cmd);
       le_monitor_input* m = &e->monitors[input];
       store_i32(&m->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(m->fx_meta, index);
+      le_fx_slot_forget(m->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&m->fx, index, cmd->fx.type);
       break;
@@ -5993,7 +5987,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
       le_fx_bus* b = &e->tracks[ch].bus;
       store_i32(&b->a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(b->fx_meta, index);
+      le_fx_slot_forget(b->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&b->fx, index, cmd->fx.type);
       break;
@@ -6017,7 +6011,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const int32_t index = cmd->fx.index;
       if (index < 0 || index >= LE_FX_MAX) break;
       store_i32(&e->all_tracks.a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(e->all_tracks.fx_meta, index);
+      le_fx_slot_forget(e->all_tracks.fx_meta, index);
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
@@ -6039,7 +6033,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (index < 0 || index >= LE_FX_MAX) break;
       le_plog_push(e, frame, *cmd);
       store_i32(&e->outputs[bus].fx.a_fx_type[index], cmd->fx.type);
-      le_fx_type_landed(e->outputs[bus].fx.fx_meta, index);
+      le_fx_slot_forget(e->outputs[bus].fx.fx_meta, index);
       /* As a recipe renews a slot (le_fx_entry_renew), so perf_render can
        * answer every logged output type the one way. */
       le_fx_entry_renew(&e->outputs[bus].fx.fx, index, cmd->fx.type,

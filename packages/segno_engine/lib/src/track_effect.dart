@@ -1840,21 +1840,6 @@ final class BuiltInEffect extends TrackEffect {
   }) : params = canonicalEffectParams(type, params),
        source = Map<String, double>.unmodifiable(source);
 
-  /// [copyWith] keeping [type]: [params] is already canonical for it.
-  const BuiltInEffect._sameType({
-    required this.type,
-    required this.params,
-    required this.enabled,
-    required this.slotId,
-    required this.placement,
-    required this.channels,
-    required this.rack,
-    required this.module,
-    required this.presetId,
-    required this.rackPath,
-    required this.source,
-  });
-
   /// Rebuilds a [BuiltInEffect] from [toJson] output; unknown codes fall back
   /// to safe defaults. A legacy `stage` key (from the removed pre/post model)
   /// is ignored, so older persisted chains still decode.
@@ -1979,53 +1964,6 @@ final class BuiltInEffect extends TrackEffect {
 
   @override
   int get typeCode => type.code;
-
-  /// Returns a copy with the given fields replaced. [params] is copied.
-  ///
-  /// A new [type] without new [params] starts at that type's defaults, as
-  /// the engine seeds them on a type change: one type's settings mean
-  /// nothing to another.
-  BuiltInEffect copyWith({
-    TrackEffectType? type,
-    List<double>? params,
-    bool? enabled,
-    String? slotId,
-    FxPlacement? placement,
-    FxChannels? channels,
-    FxRack? rack,
-    String? module,
-    String? presetId,
-    FxRackPath? rackPath,
-    Map<String, double>? source,
-  }) => params == null && (type == null || type == this.type)
-      ? BuiltInEffect._sameType(
-          type: this.type,
-          params: this.params,
-          enabled: enabled ?? this.enabled,
-          slotId: slotId ?? this.slotId,
-          placement: placement ?? this.placement,
-          channels: channels ?? this.channels,
-          rack: rack ?? this.rack,
-          module: module ?? this.module,
-          presetId: presetId ?? this.presetId,
-          rackPath: rackPath ?? this.rackPath,
-          source: source == null
-              ? this.source
-              : Map<String, double>.unmodifiable(source),
-        )
-      : BuiltInEffect(
-          type: type ?? this.type,
-          params: params ?? (type ?? this.type).defaultParams,
-          enabled: enabled ?? this.enabled,
-          slotId: slotId ?? this.slotId,
-          placement: placement ?? this.placement,
-          channels: channels ?? this.channels,
-          rack: rack ?? this.rack,
-          module: module ?? this.module,
-          presetId: presetId ?? this.presetId,
-          rackPath: rackPath ?? this.rackPath,
-          source: source ?? this.source,
-        );
 
   @override
   Map<String, dynamic> toJson() => {
@@ -2204,33 +2142,6 @@ final class PluginEffect extends TrackEffect {
 
   @override
   int get typeCode => kPluginFxCode;
-
-  /// Returns a copy with the given fields replaced.
-  PluginEffect copyWith({
-    PluginRef? ref,
-    Map<int, double>? paramValues,
-    List<PluginParamInfo>? params,
-    String? state,
-    String? name,
-    bool? enabled,
-    String? slotId,
-    FxPlacement? placement,
-    FxChannels? channels,
-    FxRack? rack,
-    String? module,
-  }) => PluginEffect(
-    ref: ref ?? this.ref,
-    paramValues: paramValues ?? this.paramValues,
-    params: params ?? this.params,
-    state: state ?? this.state,
-    name: name ?? this.name,
-    enabled: enabled ?? this.enabled,
-    slotId: slotId ?? this.slotId,
-    placement: placement ?? this.placement,
-    channels: channels ?? this.channels,
-    rack: rack ?? this.rack,
-    module: module ?? this.module,
-  );
 
   @override
   Map<String, dynamic> toJson() => {

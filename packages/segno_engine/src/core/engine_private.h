@@ -50,7 +50,6 @@ typedef enum le_midi_dispatch_kind {
                                 * LE_FX_PARAMS / LE_VIZ_POINTS */
 #include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
 #include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
-#include "rt_alloc.h"          /* le_rt_arena (per-kind FX state) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -930,6 +929,12 @@ static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
 typedef struct le_fx_slot_meta {
   _Atomic uint64_t instance;
 } le_fx_slot_meta;
+
+/* Slot [index] no longer holds the entry a recipe put there (a granular type
+ * command landed, or its owner was reset), so the next recipe renews it. */
+static inline void le_fx_slot_forget(le_fx_slot_meta* meta, int32_t index) {
+  atomic_store_explicit(&meta[index].instance, 0u, memory_order_relaxed);
+}
 
 
 /* One recordable input lane — the fundamental unit of captured audio.

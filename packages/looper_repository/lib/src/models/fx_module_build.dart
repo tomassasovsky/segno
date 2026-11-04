@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/src/models/fx_rack_level.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
@@ -155,17 +153,19 @@ class FxModuleBuild {
 /// What a rack control applies at each setting (see
 /// [FxModuleBuild.scales]).
 class FxSourceScale {
-  /// `min * (max / min) ^ v`.
-  const FxSourceScale.log(this.min, this.max) : log = true, points = const [];
+  /// `min * (max / min) ^ v`: the engine's exponential curve.
+  const FxSourceScale.log(this.min, this.max)
+    : curve = FxParamCurve.exponential,
+      points = const [];
 
-  /// `min + (max - min) * v`.
+  /// `min + (max - min) * v`: the engine's linear curve.
   const FxSourceScale.linear(this.min, this.max)
-    : log = false,
+    : curve = FxParamCurve.linear,
       points = const [];
 
   /// Straight lines through measured `(setting, value)` [points], in
   /// setting order from 0 to 1.
-  const FxSourceScale.table(this.points) : min = 0, max = 0, log = false;
+  const FxSourceScale.table(this.points) : min = 0, max = 0, curve = null;
 
   /// The value at 0, unless [points] is set.
   final double min;
@@ -173,8 +173,9 @@ class FxSourceScale {
   /// The value at 1, unless [points] is set.
   final double max;
 
-  /// Whether the scale is logarithmic.
-  final bool log;
+  /// How the value follows the setting from [min] to [max], mapped as the
+  /// engine maps its own parameters; `null` for a table scale.
+  final FxParamCurve? curve;
 
   /// The measured points of a table scale, or empty.
   final List<(double, double)> points;
@@ -182,8 +183,16 @@ class FxSourceScale {
   /// The value setting [v] (clamped to `0..1`) stands for.
   double valueAt(double v) {
     final c = v.clamp(0.0, 1.0);
-    if (points.isEmpty) {
-      return log ? min * math.pow(max / min, c) : min + (max - min) * c;
+    final curve = this.curve;
+    if (curve != null) {
+      return FxParamInfo(
+        key: 'source',
+        unit: FxParamUnit.percent,
+        atMin: min,
+        atMax: max,
+        defaultValue: 0,
+        curve: curve,
+      ).valueAt(c);
     }
     var i = 1;
     while (i < points.length - 1 && c > points[i].$1) {

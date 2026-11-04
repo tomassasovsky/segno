@@ -44,14 +44,11 @@
  * take mmap_lock for write, which is the blocking this file exists to avoid.
  * Any other thread may call these; the allocator keeps no shared state.
  *
- * FOR NEW AUDIO-THREAD STATE (the FX engine room, #1372 Part 4, and anything
- * after it): give each owner (an FX slot, a chain) one le_rt_arena, made with
- * le_rt_arena_init when the slot is prepared and released with
- * le_rt_arena_release when it is retired, and take its per-kind state from it
- * with le_rt_arena_alloc. That is one mapping, one prefault and one lock per
- * owner instead of one per small struct (a mapping costs at least a page and
- * an mmap_lock round trip). Large buffers (a delay ring) may still be their
- * own le_rt_alloc_prefaulted. Never hand one of these pointers to free().
+ * FOR NEW AUDIO-THREAD STATE: allocate it with le_rt_alloc_prefaulted on the
+ * control thread when its owner is prepared, sized for what that owner holds
+ * (an FX slot's per-kind block is one allocation per kind the slot has held,
+ * #1421), and release it with le_rt_free once the audio thread can no longer
+ * reach it. Never hand one of these pointers to free().
  *
  * What this cannot cover, stated so nobody assumes otherwise. These are
  * covered by the app not forking (#1373), and locked or prefaulted only where
@@ -139,30 +136,6 @@ void le_rt_shrink(void* p, size_t bytes);
  * the deepest call the audio callback makes never faults in a stack page.
  * The audio thread calls this itself, once, on its first callback. */
 void le_rt_prefault_stack(size_t bytes);
-
-/* A bump arena over one prefaulted le_rt_alloc block, for the small state of
- * one owner (see the note above). Allocations are 64-byte aligned and
- * zeroed; they are not freed one by one, only all at once by reset or
- * release. Control thread only, like everything here; the audio thread only
- * uses the memory. */
-typedef struct le_rt_arena {
-  unsigned char* base;
-  size_t cap;
-  size_t used;
-} le_rt_arena;
-
-/* Claims and prefaults `bytes` for the arena. Returns 1, or 0 on failure. */
-int le_rt_arena_init(le_rt_arena* a, size_t bytes);
-
-/* The next `bytes` of the arena, zeroed, or NULL when it does not fit. */
-void* le_rt_arena_alloc(le_rt_arena* a, size_t bytes);
-
-/* Forgets every allocation (the memory stays faulted in and locked). Only
- * once the audio thread can no longer reach any of them. */
-void le_rt_arena_reset(le_rt_arena* a);
-
-/* Frees the block. NULL-safe and idempotent. */
-void le_rt_arena_release(le_rt_arena* a);
 
 /* TEST SEAM: makes the next allocations behave as if the kernel refused
  * MADV_DONTFORK (the allocation must still succeed). Single-threaded use only;
