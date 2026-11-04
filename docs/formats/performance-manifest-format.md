@@ -29,7 +29,7 @@ next start finalizes the take again.
 | Phase | Author | Fields written |
 |---|---|---|
 | While armed (~250ms cadence) | `perf_drain.c` (native) | `slug`, `sample_rate`, `channel_layout`, `capture_frames`, `overrun_count`, `overrun_gaps`, `layers`, `take_id`, `encoding`, `volume_generation`, `ring_seconds`, `overs`, `parts`, `stopped_early?`, `finalized: false` (always) |
-| At finalize (disarm, or crash recovery) | `performance_repository` (Dart) | `armSnapshot`, `disarmSnapshot?`, `finalized: true` — every native field above is preserved verbatim, never re-derived |
+| At finalize (disarm, or crash recovery) | `performance_repository` (Dart) | `armSnapshot`, `disarmSnapshot?`, `finalized: true`; `parts`, `overs` and `capture_frames` as the kept audio holds them ("Finalize and recovery" below). Every other native field is preserved verbatim |
 
 A reader only ever needs to parse the file **once it is finalized**
 (`finalized: true`) to see the complete picture; a capture found with
@@ -120,8 +120,8 @@ a 16-byte `fmt ` chunk (format tag 3, IEEE float, 32 bits), a 32-byte `sgno`
 chunk (the 16 take-id bytes, the stream as u16, the part index as u16, 12
 zero bytes), then `data` and its size. All integers are little-endian. The
 sizes are written as 0 when a part opens and patched when it is sealed; a
-part still open when the process died keeps 0 there, and finalize patches it
-from the file's length, floored to whole frames.
+part still open when the process died keeps 0 there, and finalize seals it
+("Finalize and recovery" below).
 
 ```jsonc
 { "stream": 0, "index": 1, "file": "master-001.wav", "frames": 249999989, "bytes": 1999999996, "overs": 0, "sha256": "…" }
@@ -417,3 +417,54 @@ Otherwise only the checkpoint's counts: after a power cut or a pulled stick,
 a size on a FAT or exFAT volume can cover clusters that never received the
 audio. That is the copy the app shows: "The saved checkpoint can be
 recovered. Audio after it may be unavailable."
+
+## Finalize and recovery (#1198 Part 8)
+
+Finalize brings a take's parts to one sealed, consistent state before it
+writes `finalized: true`, on a background isolate:
+
+- **How much counts.** At a Stop (the drain has just stopped, in this boot)
+  every whole frame the files hold. At recovery after a crash, the same only
+  when the trust rule above holds (recovery runs only for takes under the
+  Internal exports root and this build has no mirror, so: the newest slot's
+  `boot_id` is this boot and its `volume_generation` is -1); otherwise only
+  the checkpoint's per-stream frames. A take recorded to a USB drive is not
+  recovered yet; that is Part 10, which also records the drive's
+  generation. A take with no valid slot (cut in its first five seconds) has
+  nothing better than its files, and they count. A part counts only while
+  its header reads as this take's (`take_id`, stream, index, format); the
+  first one that does not ends its stream, and it is never touched.
+- **Every stream ends together**, at the fewest frames any stream with a
+  part holds. A stream with no part of the take is left out rather than
+  shortening the others to nothing.
+- **Sealing.** Parts past that frame are deleted. The last kept part of each
+  stream is truncated to its share, its RIFF and data sizes patched, and its
+  `sha256` and `overs` computed from what it now holds. A part the drain
+  sealed with exactly these contents (the sidecar's record at a Stop, the
+  checkpoint's at a recovery that trusts only it) keeps its recorded digest
+  and overs. A part that cannot be read back stops the finalize, which is
+  retried at the next start.
+- **The manifest.** `parts` lists the kept parts, `overs` their total, and
+  `capture_frames` the frames every stream holds, so a render or an export
+  never lays out more than the audio (#727). When only the checkpoint was
+  trusted, `events.log` is cut back to `events_bytes`, and a `layers` entry
+  whose file the checkpoint does not list is removed and counted in
+  `layers_dropped`.
+- **A short part ends its stream.** A part still open, or sealed with frames
+  that never reached it, is where its stream stops; a later part of that
+  stream is not joined on (it would play early) and is left untouched.
+- **A lost sidecar.** A take with checkpoint slots but no readable
+  `performance.json` is still found and recovered: the fields come from the
+  checkpoint (`sample_rate`, the streams as `channel_layout`, `take_id`),
+  `overrun_count`, `zero_filled_frames`, `overrun_gaps` and `layers` are
+  empty, and the checkpoint's layer files are counted in `layers_dropped`
+  (their details were in the sidecar). A hidden directory (a delete or a
+  discard in progress, which renames the take to `.<slug>.deleting` first)
+  is never found as a take.
+- **Left as it is** (unfinalized, every file kept, reported as not
+  recovered): neither a readable sidecar nor a valid slot, a slot of another
+  take, a stream the slot does not list when only the slot is trusted, or a
+  sidecar with no `take_id` beside part files. A sidecar with no
+  `take_id` and no part (a take that captured no audio) finalizes as it was.
+- A capture converted from raw streams (`converted_from_raw: true`, below)
+  is already sealed and is kept as converted.
