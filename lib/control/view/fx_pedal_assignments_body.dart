@@ -473,7 +473,7 @@ class _EffectsToggle extends StatelessWidget {
 
   /// Height of the footer row — shorter than a list row, because it is not
   /// one: it changes what the list contains rather than being a thing in it.
-  static const double height = 46;
+  static const double height = 56;
 
   @override
   Widget build(BuildContext context) {
@@ -495,8 +495,8 @@ class _EffectsToggle extends StatelessWidget {
             label,
             style: TextStyle(
               color: surface.textMuted,
-              fontSize: 14,
-              height: 1.21,
+              fontSize: kConsoleRowDetailSize,
+              height: 1.2,
               leadingDistribution: TextLeadingDistribution.even,
             ),
           ),
