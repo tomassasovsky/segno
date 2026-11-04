@@ -1755,7 +1755,14 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   List<PerformanceRenderTrackStatus> renderTrackStatuses() => renderStatuses;
 
   @override
-  EngineResult renderCancel() => EngineResult.ok;
+  EngineResult renderCancel() {
+    renderCancelCalls++;
+    renderProgress = PerformanceRenderProgress.empty;
+    return EngineResult.ok;
+  }
+
+  /// How many times [renderCancel] ran.
+  int renderCancelCalls = 0;
 
   // ---- shared render recipe (#1202): not modelled by this fake ----
 

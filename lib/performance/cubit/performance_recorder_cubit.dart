@@ -176,6 +176,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Refused arms so far; see [PerformanceRecorderIdle.refusal].
   int _refusals = 0;
 
+  /// Keeps [PerformanceRepository.arm] refused from a take's finalize until
+  /// this cubit has delivered it (its DAW project written, Completed
+  /// emitted), so no control can start a take the delivery would overwrite
+  /// (#1638).
+  PerformanceArmHold? _deliveryHold;
+
+  void _releaseDeliveryHold() {
+    _deliveryHold?.release();
+    _deliveryHold = null;
+  }
+
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
   /// one in the background into the repository's `recovered/` area, where
@@ -391,15 +402,19 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         }
       case PerformanceRecorderArmed():
         await _performance.disarm();
-      // Answered from the state, not the repository: this cubit still
-      // writes the DAW project in Rendering after the engine's render ends.
+      // The repository names the work: a finalize, the render, or this
+      // cubit's own delivery hold while the DAW project is written (#1638).
       case PerformanceRecorderFinalizing():
         _onArmRefused(
-          const PerformanceArmBusyRefusal(PerformanceArmBusy.finalizing),
+          PerformanceArmBusyRefusal(
+            _performance.armBusy ?? PerformanceArmBusy.finalizing,
+          ),
         );
       case PerformanceRecorderRendering():
         _onArmRefused(
-          const PerformanceArmBusyRefusal(PerformanceArmBusy.rendering),
+          PerformanceArmBusyRefusal(
+            _performance.armBusy ?? PerformanceArmBusy.rendering,
+          ),
         );
     }
   }
@@ -499,8 +514,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   void _onStatus(PerformanceCaptureStatus status) {
     switch (status) {
       case PerformanceCaptureStatus.idle:
-        break; // only ever the initial replay; nothing to react to yet
+        // The initial replay, or a finalize that failed: no delivery follows.
+        _releaseDeliveryHold();
       case PerformanceCaptureStatus.armed:
+        // A disarm the engine refused leaves the take armed: no delivery.
+        _releaseDeliveryHold();
         _captureDir = _performance.armedDirectory;
         _armedAt = _now();
         _sawOverrun = false;
@@ -523,6 +541,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceCaptureStatus.finalizing:
         _armedTicker?.cancel();
         _armedTicker = null;
+        _deliveryHold ??= _performance.holdArm();
         _emit(PerformanceRecorderFinalizing(refusal: _refusals));
       case PerformanceCaptureStatus.done:
         // One last read, and the only one that can see the whole capture.
@@ -646,7 +665,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   static String _mountOf(String root) =>
       root.substring(0, root.length - usbPerformancesDirectory.length - 1);
 
+  /// Delivers the finalized take. The delivery hold is released as the
+  /// take is delivered, and in any case when this ends.
   Future<void> _afterFinalized() async {
+    try {
+      await _deliver();
+    } finally {
+      _releaseDeliveryHold();
+    }
+  }
+
+  Future<void> _deliver() async {
     final dir = _captureDir;
     final armedAt = _armedAt;
     _armedAt = null;
@@ -660,11 +689,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _completedDuration = armedAt == null ? null : elapsed;
     if (_isShortEmptyCapture(dir, elapsed)) {
       // The offline render already started in the background (disarm's own
-      // fire-and-forget) — deleting the directory here only wastes its
-      // in-flight writes (the renderer only ever writes files, never asserts
-      // the directory still exists between writes), so this race is benign.
+      // fire-and-forget); the discard cancels it, so the render slot is free
+      // for the next take (#1638).
       await _performance.discardUnfinalized(dir);
       _captureDir = null;
+      _releaseDeliveryHold();
       _emit(const PerformanceRecorderCompleted.discardedShort());
       return;
     }
@@ -761,6 +790,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     } else {
       result = PerformanceRecordDone(dir);
     }
+    // Delivered: Capture is available from the moment Completed shows.
+    _releaseDeliveryHold();
     _emit(
       PerformanceRecorderCompleted(
         result,
@@ -803,6 +834,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   @override
   Future<void> close() {
     _releaseLease();
+    _releaseDeliveryHold();
     _armedTicker?.cancel();
     _renderPoller?.cancel();
     _recoveringPoller?.cancel();
