@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -85,6 +86,39 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
     final gate = persistGate;
     if (gate != null) await gate.future;
     await super.persistLiveLanes();
+  }
+}
+
+/// One connected MIDI input whose CC messages a test pushes by hand.
+class _Midi extends MidiDeviceRepository {
+  _Midi(SettingsRepository settings)
+    : super(captures: null, settings: settings, pollInterval: Duration.zero);
+
+  final inputs = StreamController<MidiInputMessage>.broadcast();
+
+  MidiInputSession get session => const MidiInputSession('test-midi', 1);
+
+  @override
+  Map<String, MidiInputSession> get sessions => {session.device: session};
+
+  @override
+  Stream<MidiInputMessage> get messages => inputs.stream;
+
+  void push(int id, int value) => inputs.add(
+    MidiInputMessage(
+      session,
+      RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: id,
+        value: value,
+      ),
+    ),
+  );
+
+  @override
+  Future<void> dispose() async {
+    await inputs.close();
+    await super.dispose();
   }
 }
 
@@ -3977,6 +4011,108 @@ void main() {
           expect(cubit.state.clearAllPulse, before);
         },
       );
+    });
+
+    // The repository decides what an Undo on an empty track restores after a
+    // clear-all (looper_repository_test, #1634). These pin that the pedal and
+    // an assigned Undo hand it the re-homed cursor track, not a guess of
+    // their own, so every surface gets the same answer.
+    group('Undo after a clear-all (#1634)', () {
+      Future<void> tapUndo() async {
+        transport
+          ..press(PedalButton.undo, down: true)
+          ..press(PedalButton.undo, down: false);
+        await pumpEventQueue();
+      }
+
+      /// Content on track 3 only, cleared from the pedal surface: the engine
+      /// then reports track 3 empty with its restore point, and the clear
+      /// re-homed the cursor to the empty track 1.
+      Future<void> clearTrackThree(ControlCubit target) async {
+        setEngine(
+          _tracksWith(const [
+            Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        await target.clearAll();
+        verify(() => looper.clearAll([2])).called(1);
+        setEngine(_tracksWith(const [Track(channel: 2, clearRestore: true)]));
+      }
+
+      test(
+        'the Undo pedal asks the repository to undo the empty track 1',
+        () async {
+          await clearTrackThree(cubit);
+          expect(cubit.state.cursor, 0);
+
+          await tapUndo();
+
+          verify(() => looper.undo()).called(1);
+          verifyNever(() => looper.undo(channel: 2));
+        },
+      );
+
+      test('a MIDI Undo command asks the same of the repository', () async {
+        final midi = _Midi(settings);
+        final fade = testFadeSettings();
+        final midiCubit = ControlCubit(
+          fxPersistence: FxChainPersistence(looper: looper),
+          looper: looper,
+          mixSettings: testMixSettings(looper),
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          takeLocked: () => takeIsLocked,
+          fadeSettings: fade,
+          ownedValues: OwnedValuePort(
+            looper: looper,
+            clickVolume: FakeClickVolumeControl(),
+            clickMode: FakeClickModeControl(),
+            recordStart: FakeRecordStartControl(),
+            decay: FakeDecayControl(),
+            oneShot: FakeOneShotControl(),
+            recordLength: FakeRecordLengthControl(),
+            recordTiming: FakeRecordTimingControl(),
+            fade: fade,
+          ),
+          midiDevices: midi,
+        );
+        try {
+          await midiCubit.load();
+          final owner = Object();
+          midiCubit.beginMidiEdit(device: 'test-midi', owner: owner);
+          final saved = await midiCubit.saveMidiMapping(
+            MidiMapping(
+              id: 'draft',
+              source: MidiSource(
+                device: 'test-midi',
+                kind: ControllerSourceKind.midiCc,
+                number: 21,
+              ),
+              behavior: MidiBehavior.momentary,
+              controls: [
+                MidiActionControl(
+                  key: const CommandAction(ControlCommand.undo).key,
+                ),
+              ],
+            ),
+            owner: owner,
+            create: true,
+          );
+          expect(saved.saved, isTrue);
+          midiCubit.endMidiEdit(owner);
+          await clearTrackThree(midiCubit);
+
+          midi.push(21, 127);
+          await pumpEventQueue();
+
+          verify(() => looper.undo()).called(1);
+          verifyNever(() => looper.undo(channel: 2));
+        } finally {
+          await midiCubit.close();
+          await midi.dispose();
+        }
+      });
     });
 
     group('performance recording (D-PEDAL)', () {

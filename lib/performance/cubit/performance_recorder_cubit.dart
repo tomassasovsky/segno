@@ -176,6 +176,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Refused arms so far; see [PerformanceRecorderIdle.refusal].
   int _refusals = 0;
 
+  /// Keeps [PerformanceRepository.arm] refused from a take's finalize until
+  /// this cubit has delivered it (its DAW project written, Completed
+  /// emitted), so no control can start a take the delivery would overwrite
+  /// (#1638).
+  PerformanceArmHold? _deliveryHold;
+
+  void _releaseDeliveryHold() {
+    _deliveryHold?.release();
+    _deliveryHold = null;
+  }
+
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
   /// one in the background into the repository's `recovered/` area, where
@@ -397,15 +408,19 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
           // only logged here.
           addError(error, stackTrace);
         }
-      // Answered from the state, not the repository: this cubit still
-      // writes the DAW project in Rendering after the engine's render ends.
+      // The repository names the work: a finalize, the render, or this
+      // cubit's own delivery hold while the DAW project is written (#1638).
       case PerformanceRecorderFinalizing():
         _onArmRefused(
-          const PerformanceArmBusyRefusal(PerformanceArmBusy.finalizing),
+          PerformanceArmBusyRefusal(
+            _performance.armBusy ?? PerformanceArmBusy.finalizing,
+          ),
         );
       case PerformanceRecorderRendering():
         _onArmRefused(
-          const PerformanceArmBusyRefusal(PerformanceArmBusy.rendering),
+          PerformanceArmBusyRefusal(
+            _performance.armBusy ?? PerformanceArmBusy.rendering,
+          ),
         );
     }
   }
@@ -505,9 +520,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   void _onStatus(PerformanceCaptureStatus status) {
     switch (status) {
       case PerformanceCaptureStatus.idle:
-        // The initial replay, or a finalize that failed: the repository is
-        // free to record again, and the take stays on disk for the next
-        // start's recovery (#1639).
+        // The initial replay, or a finalize that failed: no delivery
+        // follows, the repository is free to record again, and the take
+        // stays on disk (#1638, #1639).
+        _releaseDeliveryHold();
         if (state is PerformanceRecorderFinalizing) {
           _failTake(PerformanceTakeFailure.notSaved);
         }
@@ -515,8 +531,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
           when state is PerformanceRecorderFinalizing &&
               _captureDir != null &&
               _performance.armedDirectory == _captureDir:
+        // The stop failed before the engine stopped: no delivery follows.
+        _releaseDeliveryHold();
         _resumeAfterFailedStop();
       case PerformanceCaptureStatus.armed:
+        // A disarm the engine refused leaves the take armed: no delivery.
+        _releaseDeliveryHold();
         _captureDir = _performance.armedDirectory;
         _armedAt = _now();
         _sawOverrun = false;
@@ -539,6 +559,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceCaptureStatus.finalizing:
         _armedTicker?.cancel();
         _armedTicker = null;
+        _deliveryHold ??= _performance.holdArm();
         _emit(PerformanceRecorderFinalizing(refusal: _refusals));
       case PerformanceCaptureStatus.done:
         // One last read, and the only one that can see the whole capture.
@@ -703,11 +724,16 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _stopReason = null;
     _finishingSelfStop = false;
     _releaseLease();
+    // No delivery follows: Capture is available from the moment the
+    // failure shows (#1638).
+    _releaseDeliveryHold();
     _emit(PerformanceRecorderIdle(takeFailed: failure));
   }
 
   /// Delivers a finalized take; anything it throws ends the take as not
-  /// finished rather than leaving the recorder on its rendering face.
+  /// finished rather than leaving the recorder on its rendering face. The
+  /// delivery hold is released as the take is delivered or fails, and in
+  /// any case when this ends.
   Future<void> _afterFinalized() async {
     try {
       await _deliver();
@@ -716,6 +742,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       if (state is! PerformanceRecorderCompleted) {
         _failTake(PerformanceTakeFailure.notFinished);
       }
+    } finally {
+      _releaseDeliveryHold();
     }
   }
 
@@ -733,11 +761,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _completedDuration = armedAt == null ? null : elapsed;
     if (_isShortEmptyCapture(dir, elapsed)) {
       // The offline render already started in the background (disarm's own
-      // fire-and-forget) — deleting the directory here only wastes its
-      // in-flight writes (the renderer only ever writes files, never asserts
-      // the directory still exists between writes), so this race is benign.
+      // fire-and-forget); the discard cancels it, so the render slot is free
+      // for the next take (#1638).
       await _performance.discardUnfinalized(dir);
       _captureDir = null;
+      _releaseDeliveryHold();
       _emit(const PerformanceRecorderCompleted.discardedShort());
       return;
     }
@@ -846,6 +874,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     } else {
       result = PerformanceRecordDone(dir);
     }
+    // Delivered: Capture is available from the moment Completed shows.
+    _releaseDeliveryHold();
     _emit(
       PerformanceRecorderCompleted(
         result,
@@ -889,6 +919,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   @override
   Future<void> close() {
     _releaseLease();
+    _releaseDeliveryHold();
     _armedTicker?.cancel();
     _renderPoller?.cancel();
     _recoveringPoller?.cancel();

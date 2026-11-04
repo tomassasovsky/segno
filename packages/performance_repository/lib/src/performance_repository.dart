@@ -99,12 +99,29 @@ class PerformanceRepository {
   Stream<PerformanceArmRefusal> get armRefusals => _armRefusals.stream;
 
   /// The work in flight that refuses [arm] right now, or null when none
-  /// does: a take finalizing or recovering, then a render in progress.
-  PerformanceArmBusy? get armBusy => _finalizesInFlight > 0
-      ? PerformanceArmBusy.finalizing
-      : renderProgress.done
-      ? null
-      : PerformanceArmBusy.rendering;
+  /// does: a take finalizing or recovering, a render in progress, then a
+  /// take whose delivery is still held ([holdArm]).
+  PerformanceArmBusy? get armBusy {
+    if (_finalizesInFlight > 0) return PerformanceArmBusy.finalizing;
+    if (!renderProgress.done) return PerformanceArmBusy.rendering;
+    if (_armHolds > 0) return PerformanceArmBusy.finalizing;
+    return null;
+  }
+
+  /// Open [holdArm] holds; [arm] refuses while above zero.
+  int _armHolds = 0;
+
+  /// Keeps [arm] refused, as a take still being saved, until the returned
+  /// hold is released (#1638). A finished take's delivery does not end with
+  /// its finalize and stem render: the app still writes its DAW project
+  /// into the bundle. A take armed in that window would be overwritten by
+  /// the delivery that follows, so the app holds the gate from the take's
+  /// finalize until it has delivered it, and every control, pedal and MIDI
+  /// included, is refused alike.
+  PerformanceArmHold holdArm() {
+    _armHolds++;
+    return PerformanceArmHold._(() => _armHolds--);
+  }
 
   /// What the Storage page and the recorder name a take by.
   static const String capturePurpose = 'recording';
@@ -399,6 +416,14 @@ class PerformanceRepository {
     String? root,
     GuardScope scope = const GuardScope.internal(),
   }) async {
+    // A take being finalized still owns its directory until the finalize
+    // returns: that is a take being saved, not the same press arriving
+    // twice, so it is refused and said like the rest (#1638).
+    if (_status == PerformanceCaptureStatus.finalizing) {
+      return _refuseArm(
+        const PerformanceArmBusyRefusal(PerformanceArmBusy.finalizing),
+      );
+    }
     if (_armedDir != null || _armInFlight) return EngineResult.ok;
     final busy = armBusy;
     if (busy != null) return _refuseArm(PerformanceArmBusyRefusal(busy));
@@ -837,7 +862,15 @@ class PerformanceRepository {
   /// not to salvage it. A no-op if [directory] no longer exists, including
   /// when it goes away during the delete: a USB drive pulled under the take
   /// takes the directory with it, which is the end this asks for.
+  ///
+  /// A render still running on [directory] (a take too short to keep is
+  /// discarded right after its finalize started one) is cancelled first, so
+  /// the render slot is free and Capture is not refused for a take that no
+  /// longer exists (#1638).
   Future<void> discardUnfinalized(String directory) async {
+    if (_renderDir == directory && !renderProgress.done) {
+      _engine.renderCancel();
+    }
     // Hidden first, as a delete is: a cut halfway through the delete must
     // not leave a checkpoint that the next start recovers as a take.
     final doomed =
@@ -992,7 +1025,7 @@ class PerformanceRepository {
         // render never survives the reboot that stranded the bundle. Its
         // result is deliberately unchecked, [_finalize]'s own
         // partial-success posture: the bundle is complete without stems.
-        _engine.renderBegin(dir);
+        _beginRender(dir);
       } else {
         await recoverCapture(dir);
       }
@@ -1308,6 +1341,7 @@ class PerformanceRepository {
     if (_armedDir != null ||
         _armInFlight ||
         _finalizesInFlight > 0 ||
+        _armHolds > 0 ||
         !renderProgress.done) {
       throw const PerformanceCaptureBusy();
     }
@@ -1535,7 +1569,15 @@ class PerformanceRepository {
     // render (e.g. one is already running) is silently accepted — the
     // bundle itself is already complete and valid without its stems, which
     // is exactly the umbrella's partial-success posture applied one level up.
-    _engine.renderBegin(dir);
+    _beginRender(dir);
+  }
+
+  /// The take the engine's render slot was last given, so a discard of that
+  /// take can stop its render ([discardUnfinalized]).
+  String? _renderDir;
+
+  void _beginRender(String dir) {
+    if (_engine.renderBegin(dir).isOk) _renderDir = dir;
   }
 
   /// Exports every currently-settled lane's PCM as a WAV directly into
@@ -1989,5 +2031,21 @@ class PerformanceRepository {
   void dispose() {
     unawaited(_statusController.close());
     unawaited(_armRefusals.close());
+  }
+}
+
+/// A hold on [PerformanceRepository.arm] from
+/// [PerformanceRepository.holdArm]; [release] lets arming through again.
+final class PerformanceArmHold {
+  PerformanceArmHold._(this._onRelease);
+
+  final void Function() _onRelease;
+  bool _released = false;
+
+  /// Ends this hold. Releasing it again does nothing.
+  void release() {
+    if (_released) return;
+    _released = true;
+    _onRelease();
   }
 }

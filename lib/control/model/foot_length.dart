@@ -400,7 +400,7 @@ FootLengthTrack readFootLengthTrack(LooperState looper, int channel) {
     lengthFrames: track.lengthFrames,
     multiple: track.multiple,
     syncDivisor: track.syncDivisor,
-    canUndo: track.canUndo,
+    canUndo: looper.canUndo(channel),
     canRedo: track.canRedo,
     undoDepth: track.undoDepth,
     bars: bars,

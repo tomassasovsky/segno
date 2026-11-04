@@ -672,6 +672,7 @@ void main() {
           takeFailed: PerformanceTakeFailure.notSaved,
         ),
       );
+      expect(performance.armBusy, isNull, reason: 'the hold is released');
 
       await cubit.toggleArm();
       await pumpEventQueue();
@@ -719,6 +720,7 @@ void main() {
       await pumpEventQueue();
       expect(cubit.state, isA<PerformanceRecorderArmed>());
       expect(repo.armedDirectory, dir);
+      expect(repo.armBusy, isNull, reason: 'the hold is released');
       final finalizing = states.indexWhere(
         (s) => s is PerformanceRecorderFinalizing,
       );
@@ -794,11 +796,102 @@ void main() {
           takeFailed: PerformanceTakeFailure.notFinished,
         ),
       );
+      expect(repo.armBusy, isNull, reason: 'the hold is released');
 
       await cubit.toggleArm();
       await pumpEventQueue();
       expect(cubit.state, isA<PerformanceRecorderArmed>());
     });
+
+    test(
+      'a pedal arm after the stem render, while the DAW project is still '
+      'being written, is refused as a take being saved, and arms once the '
+      'take is delivered (#1638)',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+        await armWithLog(performance);
+        await pumpEventQueue();
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 90,
+        );
+        clock = clock.add(const Duration(seconds: 5));
+        unawaited(performance.disarmAndFinalize());
+        await cubit.stream
+            .firstWhere((s) => s is PerformanceRecorderRendering)
+            .timeout(const Duration(seconds: 5));
+
+        // The engine's render ends; this cubit has not delivered the take
+        // yet. In the same synchronous turn, a pedal press arrives.
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        expect(performance.armBusy, PerformanceArmBusy.finalizing);
+        final refused = performance.arm();
+        final completed = waitForCompleted(cubit);
+        expect(await refused, EngineResult.notReady);
+        expect(engine.perfArmCalls, 1, reason: 'only the first take');
+
+        await completed;
+        expect(performance.armBusy, isNull);
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+      },
+    );
+
+    test('a finalize that throws releases the delivery hold, so Capture is '
+        'available again (#1638)', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+      final testZone = Zone.current;
+      await expectLater(
+        IOOverrides.runZoned(
+          performance.disarmAndFinalize,
+          createFile: (path) {
+            final real = testZone.run(() => File(path));
+            return path.endsWith('/performance.json.publishing')
+                ? _ManifestWriteFails(real)
+                : real;
+          },
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      await pumpEventQueue();
+      expect(performance.armBusy, isNull);
+      expect(await performance.arm(), EngineResult.ok);
+    });
+
+    test(
+      'a short take discarded while its render runs frees the render slot: '
+      'the next press arms instead of being refused as rendering (#1638)',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        // The drain's sidecar, so the finalize starts the take's render.
+        writeManifest(performance.armedDirectory!, finalized: false);
+        // Past the 1 s double-press guard, under the 2 s short-take bound.
+        clock = clock.add(const Duration(milliseconds: 1500));
+        // The render the disarm's finalize starts is still running.
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 0,
+        );
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+        expect(completed.discarded, isTrue);
+        expect(engine.renderCancelCalls, 1);
+        expect(performance.armBusy, isNull);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+      },
+    );
 
     test(
       'arms normally once boot recovery has completed — no leftover prompt '

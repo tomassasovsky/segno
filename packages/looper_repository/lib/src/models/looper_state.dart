@@ -40,6 +40,7 @@ class LooperState extends Equatable {
     this.defaultPitchMode = PitchMode.unchanged,
     this.fxHeld = const {},
     this.fxHoldNotice = const [],
+    this.clearAllUndoable = false,
     this.outputFxWaiting = const [],
   });
 
@@ -141,6 +142,32 @@ class LooperState extends Equatable {
 
   /// The Pitch default every track inherits (#1179).
   final PitchMode defaultPitchMode;
+
+  /// Whether the last Clear all can still be undone as one group: every
+  /// track it cleared still holds its restore point.
+  final bool clearAllUndoable;
+
+  /// Whether an Undo on [channel] restores the pending Clear all (#1634):
+  /// one can be undone, and the track is empty with nothing newer of its
+  /// own (no take, no record arm or Count-in launch). A member of the group
+  /// qualifies, and so does track 1, where Clear all leaves the selection.
+  /// The one rule `LooperRepository.undo` applies and every surface that
+  /// shows Undo reads.
+  bool undoRestoresClearAll(int channel) {
+    if (!clearAllUndoable || channel < 0 || channel >= tracks.length) {
+      return false;
+    }
+    final track = tracks[channel];
+    return track.state == TrackState.empty &&
+        !track.pending &&
+        track.pendingLaunch == null;
+  }
+
+  /// Whether an Undo on [channel] does anything: its own history
+  /// ([Track.canUndo]) or the pending Clear all ([undoRestoresClearAll]).
+  bool canUndo(int channel) =>
+      undoRestoresClearAll(channel) ||
+      (channel >= 0 && channel < tracks.length && tracks[channel].canUndo);
 
   /// Output destination [bus]'s configured entries.
   List<TrackEffect> outputEffects(int bus) =>
@@ -258,6 +285,7 @@ class LooperState extends Equatable {
     defaultPitchMode,
     fxHeld,
     fxHoldNotice,
+    clearAllUndoable,
     outputFxWaiting,
   ];
 }
