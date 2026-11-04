@@ -77,6 +77,24 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Exact tempo, Clear tempo, and the footer's ways in (#1653)
+
+- The Tempo page's big BPM is a button: it opens the console keypad
+  (`showTempoEntrySheet`, the numeric layout of `OnScreenKeyboard` in the
+  rename sheet's frame) for 30.00 to 300.00 BPM with two decimals. A tempo
+  outside the range keeps the sheet up and says the range.
+- Clear tempo returns the rig to no tempo, so the next defining loop sets
+  one. The engine decides with its D6 lock: `le_engine_clear_tempo` (command
+  142) answers `LE_ERR_NOT_READY` while material sits under the tempo or on a
+  grid, a take records or a count-in runs, and while a record is armed or
+  unapplied; the callback rechecks `le_tempo_locked`. A refusal raises the
+  `tempoClearRefused` notice. The repository refuses with `notRunning` while
+  the engine is stopped. Not perf-logged (the effect chains' tempo anchor
+  logs the change). Native test: `test_clear_tempo_follows_the_tempo_lock`.
+- Stage footer: the tempo block opens Loop settings at Tempo and the loop
+  mode pill at Loop mode (`openLoopSettings`), each a 44-high tap target with
+  the ink pressed state.
+
 ## November 2026 Takes keep the lap they were played on (#854)
 
 - A take of several base loops reads segment

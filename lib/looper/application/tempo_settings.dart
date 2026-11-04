@@ -197,6 +197,20 @@ class TempoSettings {
     await _settings.saveTempoBpm(bpm);
   }
 
+  /// Clears the tempo (#1653) and persists the unset tempo, so startup does
+  /// not bring it back. The engine's tempo lock decides: while the rig holds
+  /// material under the tempo, a take records or a count-in runs, the
+  /// refusal comes back and nothing changes or is saved.
+  Future<EngineResult> clearTempo() async {
+    _userEditRevision++;
+    final result = _repository.clearTempo();
+    if (!result.isOk) return result;
+    _emit(state.copyWith(bpm: 0));
+
+    await _settings.saveTempoBpm(0);
+    return result;
+  }
+
   /// Sets and persists the time signature, applying it now. [num]/[den] must
   /// be one of [kValidTimeSignatures] — the picker only offers valid choices,
   /// and the engine itself rejects anything else without applying it.

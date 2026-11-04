@@ -209,7 +209,11 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
               ],
             ),
             const SizedBox(height: 12),
-            _NameField(text: _name, label: widget.fieldLabel),
+            ConsoleEntryField(
+              text: _name,
+              label: widget.fieldLabel,
+              textKey: const Key('console_rename_field'),
+            ),
             if (_saveError case final error?) ...[
               const SizedBox(height: 8),
               AppText(error, key: const Key('console_rename_error')),
@@ -230,17 +234,30 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
   }
 }
 
-/// The name being typed, with a caret showing the keys below are live.
+/// What a console sheet's keys are typing, with a caret showing the keys
+/// below are live: a name here, an exact tempo in the Tempo page's keypad.
 ///
 /// Set in the mono face, as the mockup draws it and as the join sheet's field
 /// is: this is the literal string that will be stored, so it is shown in the
 /// face the console uses for literal machine values rather than the one it
 /// uses for prose.
-class _NameField extends StatelessWidget {
-  const _NameField({required this.text, required this.label});
+class ConsoleEntryField extends StatelessWidget {
+  /// Creates a [ConsoleEntryField] showing [text], announced as [label].
+  const ConsoleEntryField({
+    required this.text,
+    required this.label,
+    this.textKey,
+    super.key,
+  });
 
+  /// What has been typed so far.
   final String text;
+
+  /// The announced name of the field.
   final String label;
+
+  /// The typed text's key, for tests.
+  final Key? textKey;
 
   @override
   Widget build(BuildContext context) {
@@ -261,7 +278,7 @@ class _NameField extends StatelessWidget {
             Flexible(
               child: AppText(
                 text,
-                key: const Key('console_rename_field'),
+                key: textKey,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

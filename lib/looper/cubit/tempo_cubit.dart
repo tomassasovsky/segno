@@ -18,6 +18,10 @@ class TempoCubit extends Cubit<TempoState> {
   late final StreamSubscription<TempoState> _subscription;
 
   Future<void> setTempo(double bpm) => _settings.setTempo(bpm);
+
+  /// Clears the tempo; `false` when the engine's tempo lock refused it.
+  // ignore: prefer_void_public_cubit_methods
+  Future<bool> clearTempo() async => (await _settings.clearTempo()).isOk;
   Future<void> setTimeSignature(int num, int den) =>
       _settings.setTimeSignature(num, den);
   Future<void> setClickOutput(int mask) => _settings.setClickOutput(mask);
