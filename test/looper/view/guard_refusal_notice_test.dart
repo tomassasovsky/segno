@@ -75,8 +75,8 @@ void main() {
     for (final (failure, words) in [
       (
         PerformanceTakeFailure.notSaved,
-        'The take could not be saved. Its files are kept, and the next start '
-            'tries to recover it. You can record again.',
+        'The take could not be saved. Its files are kept. You can record '
+            'again.',
       ),
       (
         PerformanceTakeFailure.notFinished,

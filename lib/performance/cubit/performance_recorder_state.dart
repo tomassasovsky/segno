@@ -30,8 +30,8 @@ enum PerformanceStopReason {
 
 /// Why a stopped take ended on idle instead of Completed (#1639).
 enum PerformanceTakeFailure {
-  /// Its finalize failed: the take is kept unfinalized on disk, and the next
-  /// start tries to recover it.
+  /// Its finalize failed: the take is kept unfinalized on disk (on
+  /// Internal, the next start tries to recover it).
   notSaved,
 
   /// It was finalized, but delivering it (its render result, its DAW

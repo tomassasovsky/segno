@@ -392,9 +392,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceRecorderArmed():
         try {
           await _performance.disarm();
-        } on Object {
-          // A failed finalize reaches this cubit through the status stream,
-          // which settles it (#1639); the throw has nothing more to say.
+        } on Object catch (error, stackTrace) {
+          // The status stream settles the recorder (#1639); the error is
+          // only logged here.
+          addError(error, stackTrace);
         }
       // Answered from the state, not the repository: this cubit still
       // writes the DAW project in Rendering after the engine's render ends.
@@ -510,6 +511,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         if (state is PerformanceRecorderFinalizing) {
           _failTake(PerformanceTakeFailure.notSaved);
         }
+      case PerformanceCaptureStatus.armed
+          when state is PerformanceRecorderFinalizing &&
+              _captureDir != null &&
+              _performance.armedDirectory == _captureDir:
+        _resumeAfterFailedStop();
       case PerformanceCaptureStatus.armed:
         _captureDir = _performance.armedDirectory;
         _armedAt = _now();
@@ -651,14 +657,39 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _stopReason = reason;
     try {
       await _performance.disarmAndFinalize();
-    } on Object {
+    } on Object catch (error, stackTrace) {
       // Settled through the status stream, as in [toggleArm] (#1639).
+      addError(error, stackTrace);
     }
   }
 
   /// The mount point a USB take's root is under.
   static String _mountOf(String root) =>
       root.substring(0, root.length - usbPerformancesDirectory.length - 1);
+
+  /// A stop that failed before the engine stopped (the lane export or the
+  /// engine's disarm threw or was refused): the same take goes on. Its
+  /// face comes back with everything this cubit knows about it kept (when
+  /// it started, why it is stopping, its glitch flag), and the move from
+  /// Finalizing back to Armed is what the UI says "could not be stopped"
+  /// for (#1639). A self-stopped take is not retried from here: its
+  /// [_finishingSelfStop] stays set, and the next press tries again.
+  void _resumeAfterFailedStop() {
+    final progress = _performance.captureProgress;
+    _emit(
+      PerformanceRecorderArmed(
+        elapsed: progress.elapsed,
+        overrun: progress.overrun,
+        lowDiskWarning: _lowDiskAtArm,
+        volumeLabel: _leaseLabel,
+      ),
+    );
+    _armedTicker?.cancel();
+    _armedTicker = Timer.periodic(
+      _armedTickInterval,
+      (_) => _emitArmedTick(),
+    );
+  }
 
   /// Ends a take that could not be finalized or delivered on an idle that
   /// says so, so the recorder never stays on saving or rendering and
@@ -680,7 +711,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   Future<void> _afterFinalized() async {
     try {
       await _deliver();
-    } on Object {
+    } on Object catch (error, stackTrace) {
+      addError(error, stackTrace);
       if (state is! PerformanceRecorderCompleted) {
         _failTake(PerformanceTakeFailure.notFinished);
       }
@@ -737,6 +769,16 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
 
   void _pollRender(String dir, Completer<void> completer) {
     if (completer.isCompleted) return;
+    try {
+      _pollRenderOnce(dir, completer);
+    } on Object catch (error, stackTrace) {
+      // Ends the delivery as not finished rather than polling forever.
+      _renderPoller?.cancel();
+      if (!completer.isCompleted) completer.completeError(error, stackTrace);
+    }
+  }
+
+  void _pollRenderOnce(String dir, Completer<void> completer) {
     final progress = _performance.renderProgress;
     final current = state;
     _emit(

@@ -3690,7 +3690,9 @@ class ControlCubit extends Cubit<ControlState> {
     if (_performanceArmed) {
       try {
         return (result: await _performance.disarm(), announced: false);
-      } on Object {
+      } on Object catch (error, stackTrace) {
+        // The recorder settles and announces it (#1639); logged here.
+        addError(error, stackTrace);
         return (result: EngineResult.device, announced: true);
       }
     }

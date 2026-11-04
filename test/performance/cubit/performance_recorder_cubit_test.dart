@@ -678,6 +678,63 @@ void main() {
       expect(cubit.state, isA<PerformanceRecorderArmed>());
     });
 
+    test('a stop that fails before the engine stops returns to the same '
+        'take, keeping when it started, and the next stop delivers it '
+        '(#1639)', () async {
+      final broken = _DisarmThrowsOnce();
+      final repo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(repo.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: repo,
+        armedTickInterval: const Duration(milliseconds: 10),
+        renderPollInterval: const Duration(milliseconds: 10),
+        now: () => clock,
+        freeSpaceBytes: (_) async => null,
+      );
+      addTearDown(cubit.close);
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      final dir = repo.armedDirectory!;
+      writeManifest(dir, finalized: false);
+      File('$dir/events.log').writeAsBytesSync(
+        (BytesBuilder()
+              ..add(_eventLogHeader())
+              ..add(_eventLogEntry()))
+            .toBytes(),
+      );
+      clock = clock.add(const Duration(seconds: 5));
+
+      broken.throwDisarm = true;
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+      expect(repo.armedDirectory, dir);
+      final finalizing = states.indexWhere(
+        (s) => s is PerformanceRecorderFinalizing,
+      );
+      expect(finalizing, isNonNegative);
+      expect(states[finalizing + 1], isA<PerformanceRecorderArmed>());
+
+      broken.throwDisarm = false;
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(
+        completed.duration,
+        const Duration(seconds: 5),
+        reason: "the failed stop must not restart the take's clock",
+      );
+    });
+
     test('a manifest of the wrong shape after the render still completes '
         'the take instead of staying on rendering (#1639)', () async {
       final cubit = build();
@@ -2248,4 +2305,16 @@ class _RenderStatusThrows extends FakeAudioEngine {
   @override
   List<PerformanceRenderTrackStatus> renderTrackStatuses() =>
       throw StateError('render results unavailable');
+}
+
+/// An engine whose disarm throws while [throwDisarm] is set, before
+/// anything has stopped.
+class _DisarmThrowsOnce extends FakeAudioEngine {
+  bool throwDisarm = false;
+
+  @override
+  EngineResult perfDisarm() {
+    if (throwDisarm) throw StateError('native cleanup unavailable');
+    return super.perfDisarm();
+  }
 }

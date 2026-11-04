@@ -1258,9 +1258,13 @@
     "@perfArmBusyRendering": {
         "description": "Detail of a performance capture refused because a take's stems are still rendering (#1633). perfArmRefused is its title."
     },
-    "perfTakeNotSaved": "The take could not be saved. Its files are kept, and the next start tries to recover it. You can record again.",
+    "perfStopFailed": "Recording could not be stopped. Try again.",
+    "@perfStopFailed": {
+        "description": "A performance take whose stop failed before the engine stopped (#1639): the take goes on."
+    },
+    "perfTakeNotSaved": "The take could not be saved. Its files are kept. You can record again.",
     "@perfTakeNotSaved": {
-        "description": "A stopped performance take whose finalize failed: its files stay on disk for the next start's recovery, and Capture is available again (#1639)."
+        "description": "A stopped performance take whose finalize failed: its files are kept (on Internal, the next start tries to recover it), and Capture is available again (#1639)."
     },
     "perfTakeNotFinished": "The take could not be finished. Its files are kept. You can record again.",
     "@perfTakeNotFinished": {
