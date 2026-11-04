@@ -281,7 +281,10 @@ void le_fx_recipe_apply(le_engine* e, struct le_prepared_fx* p, uint64_t frame) 
     /* Which slots now hold a different entry than before: those reset
      * (and, on an output bus, log their type for perf_render to reset too).
      * An entry kept where it was, with its type, keeps its DSP state, so a
-     * publish that only moves settings leaves every tail sounding. */
+     * publish that only moves settings leaves every tail sounding. State
+     * never moves between slots: an entry that lands in another slot (an
+     * insert before it) starts clean there, and the instance id says only
+     * which entry a slot holds (#1421). */
     _Static_assert(LE_FX_MAX <= 64, "renewed is one bit per slot");
     uint64_t renewed = 0;
     /* The count the chain was running: a renewed slot inside it replaces an

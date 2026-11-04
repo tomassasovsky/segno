@@ -10,6 +10,7 @@ import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_destination.dart';
@@ -84,6 +85,47 @@ class _StandingNoticesState extends State<StandingNotices> {
       ),
     );
     _syncFxHeld(looper);
+    _syncOutputFxWaiting(looper);
+  }
+
+  /// Effects kept for outputs the open device lacks (#1421): named once per
+  /// device open, logged when named, until the player dismisses them.
+  void _syncOutputFxWaiting(LooperState looper) {
+    final waiting = looper.outputFxWaiting;
+    if (waiting.isEmpty) {
+      _set(AppNoticeId.outputFxWaiting, null);
+      return;
+    }
+    final names = context.read<OutputsCubit>().state.names;
+    final channels = looper.status.outputChannels;
+    if (_raised[AppNoticeId.outputFxWaiting] != _OutputFxWaiting(waiting)) {
+      AppLog.info(
+        'effects kept for outputs the device lacks: '
+        '${waiting.map((bus) => bus + 1).join(', ')}',
+      );
+    }
+    _set(
+      AppNoticeId.outputFxWaiting,
+      _OutputFxWaiting(waiting),
+      () => Notice(
+        id: AppNoticeId.outputFxWaiting,
+        title: (l10n) => l10n.outputFxWaitingTitle,
+        body: (l10n) => l10n.outputFxWaitingBody(
+          fxHeldList(l10n, [
+            for (final bus in waiting)
+              l10n.outputName(names, bus, channels: channels),
+          ]),
+          waiting.length,
+        ),
+        secondary: NoticeAction(
+          key: const Key(AppNoticeId.outputFxWaitingDismiss),
+          label: (l10n) => l10n.dismiss,
+          onPressed: () => context.read<LooperBloc>().add(
+            const LooperOutputFxWaitingDismissed(),
+          ),
+        ),
+      ),
+    );
   }
 
   void _syncDeviceLost(AudioSetupState audio) {
@@ -230,7 +272,8 @@ class _StandingNoticesState extends State<StandingNotices> {
             previous.status.isConnected != current.status.isConnected ||
             previous.status.starting != current.status.starting ||
             previous.status.outputChannels != current.status.outputChannels ||
-            previous.fxHoldNotice != current.fxHoldNotice,
+            previous.fxHoldNotice != current.fxHoldNotice ||
+            previous.outputFxWaiting != current.outputFxWaiting,
         listener: (_, _) => _sync(),
       ),
       BlocListener<TracksCubit, TracksState>(
@@ -255,6 +298,15 @@ class _Reopen extends Equatable {
 
   @override
   List<Object?> get props => [reopen];
+}
+
+class _OutputFxWaiting extends Equatable {
+  const _OutputFxWaiting(this.buses);
+
+  final List<int> buses;
+
+  @override
+  List<Object?> get props => [buses];
 }
 
 class _FxHeld extends Equatable {

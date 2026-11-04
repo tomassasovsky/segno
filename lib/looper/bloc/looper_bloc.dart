@@ -61,6 +61,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperFxHoldNoticeDismissed>(
       (_, _) => _repository.dismissFxHoldNotice(),
     );
+    on<LooperOutputFxWaitingDismissed>(
+      (_, _) => _repository.dismissOutputFxWaitingNotice(),
+    );
     on<LooperVolumeChanged>((event, _) {
       unawaited(
         _mixSettings.setTrackVolume(event.volume, channel: event.channel),

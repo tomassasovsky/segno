@@ -2013,6 +2013,8 @@
     "fxTakeHeldToast": "Los efectos de esta toma están apagados",
     "fxTakeHeldBody": "No entran en el equipo. Quita un efecto para encenderlos.",
     "fxHeldBanner": "{count, plural, =1{Apagado} other{Apagados}}: {chains}",
+    "outputFxWaitingTitle": "Efectos guardados para una salida que falta",
+    "outputFxWaitingBody": "{outputs} no {count, plural, =1{está} other{están}} en esta interfaz. Sus efectos se guardan y se aplican al conectar una interfaz que {count, plural, =1{la tenga} other{las tenga}}.",
     "fxHeldTitle": "Hay efectos apagados",
     "fxHeldOpen": "Abrir efectos",
     "fxHeldInputChain": "la cadena de entrada de {input}",

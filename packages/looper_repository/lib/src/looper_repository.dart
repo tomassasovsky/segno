@@ -2646,6 +2646,9 @@ class LooperRepository {
       for (final at in _fxHoldNotice)
         if (fxChainHeld(at)) at,
     ]),
+    outputFxWaiting: List.unmodifiable(
+      _outputFxWaiting(s.outputBusCount, open: s.isRunning),
+    ),
     inputSetup: _inputSetup,
     outputSetup: _outputSetup,
     laneInputs: Map.unmodifiable(_laneInput),
@@ -3062,6 +3065,8 @@ class LooperRepository {
     EngineConfig? warmUpTarget,
     bool owesOffset = false,
   }) {
+    // A device opens: each output it lacks that keeps effects is told once.
+    _outputFxWaitingDismissed = {};
     {
       _fxSlots.clear();
       _fxPending.clear();
@@ -8393,6 +8398,33 @@ class LooperRepository {
   /// Whether the chain at [address] is switched off because it did not fit.
   bool fxChainHeld(FxAddress address) =>
       _fxHeld.contains(address) && _chainAt(address).isNotEmpty;
+
+  /// Output destinations whose waiting notice the player took down since
+  /// the device opened ([dismissOutputFxWaitingNotice]).
+  Set<int> _outputFxWaitingDismissed = {};
+
+  /// The output destinations at or past [busCount] that hold an effects
+  /// chain, in order, but those dismissed since the device opened; none
+  /// while no device is [open]. Their chains are kept and are applied when a
+  /// device with those outputs opens (each start replays them, #1421).
+  List<int> _outputFxWaiting(int busCount, {required bool open}) => !open
+      ? const []
+      : [
+          for (final bus in _outputEffects.keys.toList()..sort())
+            if (bus >= busCount &&
+                _outputEffects[bus]!.isNotEmpty &&
+                !_outputFxWaitingDismissed.contains(bus))
+              bus,
+        ];
+
+  /// Takes down the notice about effects kept for outputs the open device
+  /// lacks; the chains stay kept. It comes back on the next device open.
+  void dismissOutputFxWaitingNotice() {
+    final waiting = state.outputFxWaiting;
+    if (waiting.isEmpty) return;
+    _outputFxWaitingDismissed = {..._outputFxWaitingDismissed, ...waiting};
+    _reproject();
+  }
 
   /// Takes down the standing notice (R2); the chains it named stay off.
   void dismissFxHoldNotice() {

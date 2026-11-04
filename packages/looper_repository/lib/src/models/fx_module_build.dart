@@ -889,29 +889,43 @@ FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
   return variants[family] ?? variants.values.first;
 }
 
-/// The rack variant [entry] was built as, or `null` when it is not one: an
-/// entry built from a module with variants ([kFxModuleVariants]) onto the
-/// variant's own type (a Looper X kind, or the octaver a Pitch Shift runs
-/// on). The variant is the one whose controls all
-/// appear in the entry's [BuiltInEffect.source] (with the ones it knows it
-/// drops, [FxModuleBuild.unmapped]), the one with the most of them first;
-/// every factory preset of a family carries all of its keys, so this is the
-/// family's own. An entry no variant fits is not one.
+/// The family whose variant [fxModuleBuild] gives for [module] and
+/// [family]: [family] when the module has that variant, its default
+/// variant's otherwise, `null` for a module without variants.
+String? fxModuleVariant(FxModule module, {String? family}) {
+  final variants = kFxModuleVariants[module.name];
+  if (variants == null) return null;
+  return variants.containsKey(family) ? family : variants.keys.first;
+}
+
+/// The rack variant [entry] was built as, or `null` when it is not one: its
+/// stored [BuiltInEffect.variant] of its [BuiltInEffect.module] in
+/// [kFxModuleVariants], when that variant runs on the entry's own type (a
+/// Looper X kind, or the octaver a Pitch Shift runs on).
 ///
 /// What a surface shows for a rack pedal: [FxModuleBuild.exposed], under
 /// [FxModuleBuild.labels]. Any other entry shows every parameter of its type.
-FxModuleBuild? fxEntryBuild(BuiltInEffect entry) =>
-    (_entryBuilds[entry] ??= (build: _findEntryBuild(entry))).build;
+FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
+  final name = entry.module;
+  final variant = entry.variant;
+  if (name == null || variant == null) return null;
+  final build = kFxModuleVariants[name]?[variant];
+  return build?.type == entry.type ? build : null;
+}
 
-/// [fxEntryBuild]'s answer per entry: every control of an editor resolves
-/// it, on every build and drag event, and an entry never changes.
-final Expando<({FxModuleBuild? build})> _entryBuilds = Expando();
-
-FxModuleBuild? _findEntryBuild(BuiltInEffect entry) {
+/// The variant an entry saved before entries stored theirs was built as: the
+/// one whose controls all appear in the entry's [BuiltInEffect.source]
+/// (with the ones it knows it drops, [FxModuleBuild.unmapped]), the one with
+/// the most of them first, or `null` when none fits. Every factory preset of
+/// a family carries all of its keys, so this is the family's own for a
+/// factory entry. Only the one-time conversion at decode
+/// (`decodeTrackEffects`) asks it.
+String? fxLegacyEntryVariant(BuiltInEffect entry) {
   final name = entry.module;
   if (name == null) return null;
   final variants = kFxModuleVariants[name];
   if (variants == null) return null;
+  String? found;
   FxModuleBuild? build;
   var best = -1;
   for (final MapEntry(key: family, value: v) in variants.entries) {
@@ -927,9 +941,10 @@ FxModuleBuild? _findEntryBuild(BuiltInEffect entry) {
     if (keys.length > best || (keys.length == best && own)) {
       best = keys.length;
       build = v;
+      found = family;
     }
   }
-  return build?.type == entry.type ? build : null;
+  return build?.type == entry.type ? found : null;
 }
 
 /// The controls [entry] shows: the parameters, in order, and the key each is
@@ -1035,6 +1050,9 @@ BuiltInEffect fxModuleEntry(FxModule module, FxPreset preset) {
     // entry, and this is what still says which pedal it is.
     module: module.name,
     presetId: preset.id,
+    // The rack variant it was built as, so every surface reads the same
+    // controls whatever keys its source holds.
+    variant: fxModuleVariant(module, family: preset.family),
     // Every value the preset gives this module — its power key, its own
     // parameters and the ones it shares with another module — so a later
     // build can rebuild the module from what was loaded.
