@@ -27,6 +27,8 @@ abstract final class AppNoticeId {
   static const fxHeld = 'fxHeld';
   static const fxHeldOpen = 'fxHeld_open';
   static const fxHeldDismiss = 'fxHeld_dismiss';
+  static const outputFxWaiting = 'outputFxWaiting';
+  static const outputFxWaitingDismiss = 'outputFxWaiting_dismiss';
   static const deviceRestored = 'deviceRestored';
   static const deviceRestoredPartial = 'deviceRestoredPartial';
   static const midiLost = 'midiLost';

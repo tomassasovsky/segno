@@ -204,6 +204,38 @@ void main() {
       );
     });
 
+    test('the rack variant round-trips, counts in equality and is omitted '
+        'when unset', () {
+      final fx = BuiltInEffect(
+        type: TrackEffectType.compressor,
+        module: 'Compressor',
+        variant: 'Dub Rack',
+      );
+      final json = fx.toJson();
+      expect(json['variant'], 'Dub Rack');
+      final decoded = BuiltInEffect.fromJson(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      );
+      expect(decoded, fx);
+      expect(decoded.hashCode, fx.hashCode);
+      expect(
+        fx,
+        isNot(
+          BuiltInEffect(
+            type: TrackEffectType.compressor,
+            module: 'Compressor',
+            variant: 'Drum Rack',
+          ),
+        ),
+      );
+      final none = BuiltInEffect(type: TrackEffectType.compressor).toJson();
+      expect(none.containsKey('variant'), isFalse);
+      expect(
+        BuiltInEffect.fromJson(const {'type': 10, 'variant': 3}).variant,
+        isNull,
+      );
+    });
+
     test('the rack path round-trips by name, counts in equality and is '
         'omitted on no path', () {
       final fx = BuiltInEffect(

@@ -41,6 +41,7 @@ class LooperState extends Equatable {
     this.fxHeld = const {},
     this.fxHoldNotice = const [],
     this.clearAllUndoable = false,
+    this.outputFxWaiting = const [],
   });
 
   /// Master loop transport.
@@ -82,6 +83,12 @@ class LooperState extends Equatable {
   /// joined while the notice stood. Empty when there is no notice (none
   /// held, or the player dismissed it).
   final List<FxAddress> fxHoldNotice;
+
+  /// The output destinations, in order, that hold an effects chain the open
+  /// device has no output for: the chain is kept and applies when a device
+  /// with that output opens (#1421). Empty while no device is open, and for
+  /// those the player dismissed the notice about since the device opened.
+  final List<int> outputFxWaiting;
 
   /// What the chromatic tuner hears on its armed input. Disarmed by default,
   /// and disarmed costs nothing — the engine gates detection on the arm.
@@ -279,5 +286,6 @@ class LooperState extends Equatable {
     fxHeld,
     fxHoldNotice,
     clearAllUndoable,
+    outputFxWaiting,
   ];
 }

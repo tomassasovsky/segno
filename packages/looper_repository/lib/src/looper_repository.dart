@@ -2649,6 +2649,9 @@ class LooperRepository {
       for (final at in _fxHoldNotice)
         if (fxChainHeld(at)) at,
     ]),
+    outputFxWaiting: List.unmodifiable(
+      _outputFxWaiting(s.outputBusCount, open: s.isRunning),
+    ),
     inputSetup: _inputSetup,
     outputSetup: _outputSetup,
     laneInputs: Map.unmodifiable(_laneInput),
@@ -8407,6 +8410,46 @@ class LooperRepository {
   /// Whether the chain at [address] is switched off because it did not fit.
   bool fxChainHeld(FxAddress address) =>
       _fxHeld.contains(address) && _chainAt(address).isNotEmpty;
+
+  /// Output destinations whose waiting notice the player took down, and the
+  /// device (by name and destination count) that was open then
+  /// ([dismissOutputFxWaitingNotice]): a reopen of the same device keeps
+  /// them dismissed, another device names them again.
+  Set<int> _outputFxWaitingDismissed = const {};
+  (String, int)? _outputFxWaitingDevice;
+
+  /// The output destinations at or past [busCount] that hold an effects
+  /// chain, in order, but those dismissed on this device; none while no
+  /// device is [open]. Their chains are kept and are applied when a device
+  /// with those outputs opens (each start replays them, #1421).
+  List<int> _outputFxWaiting(int busCount, {required bool open}) {
+    if (!open) return const [];
+    final dismissed = _outputFxWaitingDevice == (_engine.deviceName, busCount)
+        ? _outputFxWaitingDismissed
+        : const <int>{};
+    return [
+      for (final bus in _outputEffects.keys.toList()..sort())
+        if (bus >= busCount &&
+            _outputEffects[bus]!.isNotEmpty &&
+            !dismissed.contains(bus))
+          bus,
+    ];
+  }
+
+  /// Takes down the notice about effects kept for outputs the open device
+  /// lacks; the chains stay kept. It comes back when another device opens.
+  void dismissOutputFxWaitingNotice() {
+    final s = _engine.snapshot();
+    final waiting = _outputFxWaiting(s.outputBusCount, open: s.isRunning);
+    if (waiting.isEmpty) return;
+    final device = (_engine.deviceName, s.outputBusCount);
+    _outputFxWaitingDismissed = {
+      if (_outputFxWaitingDevice == device) ..._outputFxWaitingDismissed,
+      ...waiting,
+    };
+    _outputFxWaitingDevice = device;
+    _reproject();
+  }
 
   /// Takes down the standing notice (R2); the chains it named stay off.
   void dismissFxHoldNotice() {
