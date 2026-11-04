@@ -1367,7 +1367,12 @@ void main() {
       final title = tester.getRect(find.text(l10nOf(tester).fxAddTitle).last);
       final first = tester.getRect(find.byKey(const Key('fx_library_saved')));
       expect(first.left, title.left);
-      expect(first.left, 36);
+      expect(first.left, 32);
+      // My presets, Ed's Rack and Single FX fill the first row (#1590 SET-6).
+      expect(
+        tester.getRect(find.byKey(const Key('fx_library_single'))).right,
+        1920 - 32,
+      );
     });
 
     testWidgets('a build with no catalogue says so instead of drawing an '
