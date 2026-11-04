@@ -90,6 +90,8 @@ export 'src/models/fx_slot_ids.dart'
 export 'src/models/fx_user_preset.dart';
 export 'src/models/input_monitor.dart';
 export 'src/models/input_setup.dart';
+export 'src/models/interface_inputs.dart'
+    hide interfaceInputsFromEngine;
 export 'src/models/lane.dart';
 export 'src/models/latency_result.dart';
 export 'src/models/looper_state.dart';

@@ -15,6 +15,7 @@ import 'package:looper_repository/src/models/fx_cost.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
+import 'package:looper_repository/src/models/interface_inputs.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/latency_result.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
@@ -2092,6 +2093,71 @@ class LooperRepository {
 
   /// The engine + miniaudio version string.
   String get engineVersion => _engine.version;
+
+  /// The capture device the engine last opened: whose input switches
+  /// [readInterfaceInputs] reads. Null before the first successful start.
+  String? get _interfaceCaptureId => _lastEngineConfig?.captureDeviceId;
+
+  /// Reads the input switches of the interface the engine records from
+  /// (#1646): Inst or Line, Pad, Air and 48 V, as the interface holds them,
+  /// including changes made with its own buttons. [InterfaceInputs.none]
+  /// before the engine has opened a device. Reaches the USB device off the
+  /// calling isolate.
+  Future<InterfaceInputs> readInterfaceInputs() async {
+    final id = _interfaceCaptureId;
+    if (id == null) return InterfaceInputs.none;
+    return interfaceInputsFromEngine(await _engine.readInterfaceInputs(id));
+  }
+
+  /// Sets [input]'s level on the interface, and reads it back.
+  Future<EngineResult> setInterfaceInputLevel(int input, InputLevel level) =>
+      _setInterfaceSwitch(
+        InterfaceControl.level,
+        input,
+        level == InputLevel.inst ? 1 : 0,
+      );
+
+  /// Sets [input]'s pad on the interface, and reads it back.
+  Future<EngineResult> setInterfaceInputPad(int input, {required bool on}) =>
+      _setInterfaceSwitch(InterfaceControl.pad, input, on ? 1 : 0);
+
+  /// Sets [input]'s Air on the interface, and reads it back.
+  /// [InputAir.presenceDrive] needs a three-way Air.
+  Future<EngineResult> setInterfaceInputAir(int input, InputAir air) =>
+      _setInterfaceSwitch(InterfaceControl.air, input, air.index);
+
+  /// Turns 48 V switch [phantomSwitch] (an index into
+  /// [InterfaceInputs.phantomSwitches]) on or off, and reads it back. Only
+  /// ever on the player's request: nothing in Segno turns phantom power on by
+  /// itself.
+  Future<EngineResult> setInterfacePhantomPower(
+    int phantomSwitch, {
+    required bool on,
+  }) => _setInterfaceSwitch(
+    InterfaceControl.phantom,
+    phantomSwitch,
+    on ? 1 : 0,
+  );
+
+  /// Turns a Focusrite unit's setup (MSD) mode off. The unit shows its
+  /// controls once it is power-cycled.
+  Future<EngineResult> turnOffInterfaceSetupMode() =>
+      _setInterfaceSwitch(InterfaceControl.setupModeOff, 0, 0);
+
+  Future<EngineResult> _setInterfaceSwitch(
+    InterfaceControl control,
+    int index,
+    int value,
+  ) async {
+    final id = _interfaceCaptureId;
+    if (id == null) return EngineResult.notRunning;
+    return _engine.setInterfaceInput(
+      id,
+      control: control,
+      index: index,
+      value: value,
+    );
+  }
 
   void _startPolling() {
     // Polling must survive subscribe/cancel cycles (hot restart, a bloc being

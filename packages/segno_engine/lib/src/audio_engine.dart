@@ -8,6 +8,7 @@ import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/instruments.dart';
+import 'package:segno_engine/src/interface_inputs.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
@@ -1897,6 +1898,29 @@ abstract interface class MidiInputSink {
   EngineResult detachMidiInput(int port);
 }
 
+/// The interface's own input switches (#1646): Inst or Line, Pad, Air and
+/// 48 V phantom power, read from and written to the card the engine records
+/// from. No engine handle is needed, and nothing is stored: the interface
+/// keeps its own settings. Both calls reach the USB device, so the native
+/// engine runs them off the calling isolate.
+abstract interface class InterfaceInputControl {
+  /// Reads the switches of the card behind capture device [captureDeviceId]
+  /// (empty: the system default, which has none).
+  Future<InterfaceInputsInfo> readInterfaceInputs(String captureDeviceId);
+
+  /// Sets [control] of input or 48 V switch [index] (0-based) to [value] on
+  /// the card behind [captureDeviceId], and reads it back.
+  /// [EngineResult.invalid] when the card has no such switch,
+  /// [EngineResult.device] when it refuses the value or does not keep it,
+  /// [EngineResult.unsupported] off Linux.
+  Future<EngineResult> setInterfaceInput(
+    String captureDeviceId, {
+    required InterfaceControl control,
+    required int index,
+    required int value,
+  });
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -1923,4 +1947,5 @@ abstract interface class AudioEngine
         EnginePerformanceCapture,
         EngineSelectedRender,
         SessionIo,
-        BackingControl {}
+        BackingControl,
+        InterfaceInputControl {}
