@@ -249,8 +249,9 @@ class Track extends Equatable {
   bool get isRunning =>
       state == TrackState.playing || state == TrackState.overdubbing;
 
-  /// Whether undo would do anything: peel an overdub layer, or put back a take
-  /// the user cleared.
+  /// Whether undo would do anything on this track's own history: peel an
+  /// overdub layer, or put back a take the user cleared. A surface that shows
+  /// Undo reads `LooperState.canUndo`, which adds a pending Clear all.
   bool get canUndo => undoDepth > 0 || clearRestore;
 
   /// Whether an undone overdub layer can be redone.

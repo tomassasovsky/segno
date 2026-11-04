@@ -1080,6 +1080,21 @@ void main() {
           expect(engine.lastChannel, 2);
         });
 
+        test('the state says so, for every surface that shows Undo', () {
+          expect(rigOfThree().state.clearAllUndoable, isFalse);
+          final repo = clearedRig();
+          expect(repo.state.clearAllUndoable, isTrue);
+          expect(repo.state.undoRestoresClearAll(3), isTrue);
+          expect(repo.state.canUndo(3), isTrue);
+          // A track armed for a take keeps its own (empty) Undo.
+          engine.nextSnapshot = _pendingSnapshot(pending: true, trigger: 0);
+          expect(repo.state.canUndo(0), isFalse);
+          engine.nextSnapshot = _playingTracksSnapshot(0);
+          repo.undo(channel: 3);
+          expect(repo.state.clearAllUndoable, isFalse);
+          expect(repo.state.canUndo(3), isFalse);
+        });
+
         test('waits with the group for a frozen member', () async {
           engine
             ..undoRestoresClearChannels = {0, 2}

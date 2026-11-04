@@ -2515,6 +2515,9 @@ class LooperRepository {
 
   LooperState _project(EngineSnapshot s) => LooperState(
     mixGeneration: _mixGeneration,
+    // As last settled: [undo] and the poll settle the group just before
+    // they project.
+    clearAllUndoable: _clearAllGroup.isNotEmpty || _clearAllPending.isNotEmpty,
     tuner: TunerReading(
       hz: s.tunerHz,
       confidence: s.tunerConfidence,
@@ -4319,9 +4322,12 @@ class LooperRepository {
   /// until the audio thread applies the restore.
   ///
   /// While a [clearAll] can still be undone, an undo on an empty track with
-  /// nothing of its own to undo restores that clear-all (#1634). Clear all
-  /// selects track 1, which is often not a member, so every surface's Undo
-  /// (pedal, keyboard, MIDI and CTRL bindings) reaches the restore from it.
+  /// nothing newer of its own restores that clear-all
+  /// ([LooperState.undoRestoresClearAll], #1634). Clear all selects track 1,
+  /// which is often not a member, so every surface's Undo (pedal, keyboard,
+  /// MIDI and CTRL bindings) reaches the restore from it. A restore point of
+  /// the track's own does not stop it: a single clear ends the group, so
+  /// that point predates the clear-all, and the next Undo reaches it.
   EngineResult undo({int channel = 0}) {
     if (_transportReserved) {
       return EngineResult.notReady;
@@ -4330,26 +4336,10 @@ class LooperRepository {
     // A grouped clear comes back as one operation, whichever member is asked.
     final group = _intactClearAllGroup();
     if (group.contains(channel) ||
-        (group.isNotEmpty && _nothingToUndo(channel))) {
+        (group.isNotEmpty && state.undoRestoresClearAll(channel))) {
       return _undoClearGroup(group);
     }
     return _undoTrack(channel);
-  }
-
-  /// Whether track [channel] is empty with nothing newer than the clear-all
-  /// to undo: no take and no record arm or Count-in launch waiting to start
-  /// one, as the engine last published them (a fresher read than the poll).
-  ///
-  /// A restore point of its own does not count: a single clear ends the
-  /// group, so any such point predates the clear-all, and the next Undo
-  /// reaches it once the group is restored.
-  bool _nothingToUndo(int channel) {
-    final tracks = _engine.snapshot().tracks;
-    if (channel < 0 || channel >= tracks.length) return false;
-    final track = tracks[channel];
-    return track.state == TrackState.empty &&
-        !track.pending &&
-        track.pendingLaunch == null;
   }
 
   EngineResult _undoClearGroup(Set<int> group) {
