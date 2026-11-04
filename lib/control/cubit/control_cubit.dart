@@ -3397,7 +3397,7 @@ class ControlCubit extends Cubit<ControlState> {
       case ControlCommand.stop:
         return _recStop(selectedChannel);
       case ControlCommand.undo:
-        return _undoSelected(selectedChannel).isOk;
+        return _looper.undo(channel: selectedChannel).isOk;
       case ControlCommand.redo:
         return _looper.redo(channel: selectedChannel).isOk;
       case ControlCommand.clearAll:
@@ -3655,30 +3655,9 @@ class ControlCubit extends Cubit<ControlState> {
       },
       onTap: () {
         _log('undo ch=$channel  (tap)');
-        _undoSelected(channel);
+        undo(channel);
       },
     );
-  }
-
-  /// The selected-track Undo of the Undo pedal and an assigned Undo command.
-  ///
-  /// Per track, except when [channel] is empty, idle and holds no restore
-  /// point of its own while a cleared take is still restorable elsewhere:
-  /// then it restores the clear, as [undoClearAll] does. Clear all re-homes
-  /// the cursor to track 1, so a take cleared from any other track would
-  /// otherwise be out of the pedal's reach (#1634). A track with anything of
-  /// its own to undo keeps the per-track Undo: material recorded after the
-  /// clear is the newer edit.
-  EngineResult _undoSelected(int channel) {
-    final track = _trackAt(channel);
-    if (track != null &&
-        track.state == TrackState.empty &&
-        !track.clearRestore &&
-        _tracks.any((t) => t.clearRestore)) {
-      _log('undo clear-all');
-      return _looper.undoClearAll();
-    }
-    return _looper.undo(channel: channel);
   }
 
   // ---------------------------------------------------------------------------

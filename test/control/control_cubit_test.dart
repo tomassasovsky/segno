@@ -4013,6 +4013,10 @@ void main() {
       );
     });
 
+    // The repository decides what an Undo on an empty track restores after a
+    // clear-all (looper_repository_test, #1634). These pin that the pedal and
+    // an assigned Undo hand it the re-homed cursor track, not a guess of
+    // their own, so every surface gets the same answer.
     group('Undo after a clear-all (#1634)', () {
       Future<void> tapUndo() async {
         transport
@@ -4036,31 +4040,19 @@ void main() {
       }
 
       test(
-        'the Undo pedal restores a clear-all from the empty track 1',
+        'the Undo pedal asks the repository to undo the empty track 1',
         () async {
           await clearTrackThree(cubit);
           expect(cubit.state.cursor, 0);
 
           await tapUndo();
 
-          verify(() => looper.undoClearAll()).called(1);
-          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+          verify(() => looper.undo()).called(1);
+          verifyNever(() => looper.undo(channel: 2));
         },
       );
 
-      test('a long press still redoes the selected track', () async {
-        await clearTrackThree(cubit);
-
-        transport.press(PedalButton.undo, down: true);
-        await Future<void>.delayed(const Duration(milliseconds: 850));
-        transport.press(PedalButton.undo, down: false);
-        await pumpEventQueue();
-
-        verify(() => looper.redo()).called(1);
-        verifyNever(() => looper.undoClearAll());
-      });
-
-      test('a MIDI Undo command restores a clear-all too', () async {
+      test('a MIDI Undo command asks the same of the repository', () async {
         final midi = _Midi(settings);
         final fade = testFadeSettings();
         final midiCubit = ControlCubit(
@@ -4114,46 +4106,13 @@ void main() {
           midi.push(21, 127);
           await pumpEventQueue();
 
-          verify(() => looper.undoClearAll()).called(1);
-          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+          verify(() => looper.undo()).called(1);
+          verifyNever(() => looper.undo(channel: 2));
         } finally {
           await midiCubit.close();
           await midi.dispose();
         }
       });
-
-      test('with no clear pending, Undo stays on the selected track', () async {
-        setEngine(
-          _tracksWith(const [
-            Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
-          ]),
-        );
-
-        await tapUndo();
-
-        verify(() => looper.undo()).called(1);
-        verifyNever(() => looper.undoClearAll());
-      });
-
-      test(
-        'a take recorded after the clear keeps its own Undo',
-        () async {
-          await clearTrackThree(cubit);
-          // A fresh take on track 1 is the newer edit: Undo peels it, and
-          // the clear-all stays restorable.
-          setEngine(
-            _tracksWith(const [
-              Track(state: TrackState.playing, lengthFrames: 48000),
-              Track(channel: 2, clearRestore: true),
-            ]),
-          );
-
-          await tapUndo();
-
-          verify(() => looper.undo()).called(1);
-          verifyNever(() => looper.undoClearAll());
-        },
-      );
     });
 
     group('performance recording (D-PEDAL)', () {

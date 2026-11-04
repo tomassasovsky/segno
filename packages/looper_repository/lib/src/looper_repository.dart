@@ -4317,6 +4317,11 @@ class LooperRepository {
   /// what this class pushes. Asked BEFORE the undo: the engine's answer
   /// describes the next tap, and the snapshot it derives from does not flip
   /// until the audio thread applies the restore.
+  ///
+  /// While a [clearAll] can still be undone, an undo on an empty track with
+  /// nothing of its own to undo restores that clear-all (#1634). Clear all
+  /// selects track 1, which is often not a member, so every surface's Undo
+  /// (pedal, keyboard, MIDI and CTRL bindings) reaches the restore from it.
   EngineResult undo({int channel = 0}) {
     if (_transportReserved) {
       return EngineResult.notReady;
@@ -4324,8 +4329,26 @@ class LooperRepository {
     _settlePendingClearUndos();
     // A grouped clear comes back as one operation, whichever member is asked.
     final group = _intactClearAllGroup();
-    if (group.contains(channel)) return _undoClearGroup(group);
+    if (group.contains(channel) ||
+        (group.isNotEmpty && _nothingToUndo(channel))) {
+      return _undoClearGroup(group);
+    }
     return _undoTrack(channel);
+  }
+
+  /// Whether track [channel] is empty with no undo of its own: no take, no
+  /// record arm or Count-in launch waiting to start one, and no cleared take
+  /// to restore. Read from the live snapshot, so an arm made since the last
+  /// poll counts.
+  bool _nothingToUndo(int channel) {
+    final tracks = _engine.snapshot().tracks;
+    if (channel < 0 || channel >= tracks.length) return false;
+    final track = tracks[channel];
+    return track.state == TrackState.empty &&
+        !track.pending &&
+        track.pendingLaunch == null &&
+        !_engine.clearRestorePending(channel: channel) &&
+        !_engine.undoRestoresClear(channel: channel);
   }
 
   EngineResult _undoClearGroup(Set<int> group) {

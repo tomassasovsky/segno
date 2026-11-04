@@ -2324,10 +2324,11 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Undo/redo** — multi-level, per track, overdub layers only. A **user clear
   is undoable**: it leaves a per-track restore point (take + layers + FX chains
   + mutes) that undo brings back; a post-clear-all toast and `⌘⇧C` restore the
-  whole rig at once (undo-clear-all, derived from live restore points). The
-  Undo pedal and an assigned Undo command do the same when the selected
-  track is empty with no restore point of its own (#1634): Clear all homes
-  the cursor to track 1, so this is how the foot brings the rig back.
+  whole rig at once (undo-clear-all, derived from live restore points). Any
+  Undo on an empty track with nothing of its own to undo (no take, arm or
+  restore point) restores a pending clear-all too (#1634): Clear all selects
+  track 1, so the Undo pedal, the keyboard and MIDI or CTRL bindings restore
+  the cleared tracks from there.
   Session-load clears stay destructive. Immediate swap (tiny click on undo
   accepted).
 - **#4 loop multiples** — **auto-round on stop** (record freely from the loop
