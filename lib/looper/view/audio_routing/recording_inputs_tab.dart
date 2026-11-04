@@ -5,6 +5,7 @@ import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
 import 'package:segno/theme/theme.dart';
@@ -66,9 +67,10 @@ class RecordingInputsTab extends StatefulWidget {
 class _RecordingInputsTabState extends State<RecordingInputsTab> {
   int _channel = 0;
 
-  /// The pen's `routing-record` card grid.
+  /// The pen's `routing-record` card: the cards share the content width,
+  /// never narrower than this; past that the row scrolls.
   static const double _cardWidth = 360;
-  static const double _cardStep = 378;
+  static const double _cardGap = 18;
 
   /// One selection reaches one admitted, durable/native routing revision.
   void _toggle(int channel, int input, {required bool selected}) {
@@ -105,11 +107,18 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
       for (var input = 0; input < values.inputCount; input++) input,
       ...values.strayInputs,
     ];
+    final width = LoopSettingsFrame.contentWidthOf(context);
+    final cardWidth = fillingCardWidth(
+      width: width,
+      count: jacks.length,
+      gap: _cardGap,
+      minWidth: _cardWidth,
+    );
 
     return Stack(
       children: [
         Positioned(
-          left: 100,
+          left: 0,
           top: 257,
           child: RoutingTrackScope(
             heading: l10n.loopScopeTracks,
@@ -120,22 +129,22 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
           ),
         ),
         Positioned(
-          left: 100,
+          left: 0,
           top: 377,
           child: LoopSectionLabel(l10n.routingRecordFrom),
         ),
         Positioned(
-          left: 100,
+          left: 0,
           top: 439,
           child: SizedBox(
-            width: 1720,
+            width: width,
             height: 180,
-            // More jacks than the pen's four cards scroll rather than shrink.
+            // The cards share the row; more jacks than fit at a legible
+            // width scroll rather than shrink.
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: jacks.length,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(width: _cardStep - _cardWidth),
+              separatorBuilder: (_, _) => const SizedBox(width: _cardGap),
               itemBuilder: (context, index) {
                 final input = jacks[index];
                 final on = recorded.contains(input);
@@ -151,27 +160,30 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
                       ].where((i) => !recorded.contains(i)).length
                     : 1;
                 final full = !on && needed > available;
-                return _InputChoiceCard(
-                  key: Key('routing_record_card_$input'),
-                  ordinal: '${input + 1}',
-                  name: input < values.inputCount
-                      ? l10n.inputName(names, input)
-                      : '${l10n.inputName(names, input)} · '
-                            '${l10n.routingInputUnavailable}',
-                  selected: on,
-                  enabled:
-                      values.inputCount > 0 &&
-                      !values.locked &&
-                      !full &&
-                      (on || input < values.inputCount),
-                  onTap: () => _toggle(values.channel, input, selected: !on),
+                return SizedBox(
+                  width: cardWidth,
+                  child: _InputChoiceCard(
+                    key: Key('routing_record_card_$input'),
+                    ordinal: '${input + 1}',
+                    name: input < values.inputCount
+                        ? l10n.inputName(names, input)
+                        : '${l10n.inputName(names, input)} · '
+                              '${l10n.routingInputUnavailable}',
+                    selected: on,
+                    enabled:
+                        values.inputCount > 0 &&
+                        !values.locked &&
+                        !full &&
+                        (on || input < values.inputCount),
+                    onTap: () => _toggle(values.channel, input, selected: !on),
+                  ),
                 );
               },
             ),
           ),
         ),
         Positioned(
-          left: 100,
+          left: 0,
           top: 649,
           child: switch (values) {
             final it when it.locked => LoopNote(l10n.routingLockedInputs),
@@ -222,7 +234,6 @@ class _InputChoiceCard extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             onTap: enabled ? onTap : null,
             child: Container(
-              width: _RecordingInputsTabState._cardWidth,
               height: 180,
               padding: const EdgeInsets.all(25),
               decoration: BoxDecoration(
@@ -256,7 +267,7 @@ class _InputChoiceCard extends StatelessWidget {
                   Positioned(
                     left: 0,
                     top: 76,
-                    width: 310,
+                    right: 0,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,

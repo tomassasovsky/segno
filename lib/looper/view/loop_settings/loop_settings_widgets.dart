@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/common/encoder_intents.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_edit_scope.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -780,7 +781,7 @@ class LoopLockBanner extends StatelessWidget {
   );
 }
 
-/// The scoped editors' Tracks / Defaults / 1-8 selector, 1720 wide: the
+/// The scoped editors' Tracks / Defaults / 1-8 selector, the content width: the
 /// "Tracks" heading, Defaults, one button per track, and the selected track's
 /// name at the right.
 class LoopScopeSelector extends StatelessWidget {
@@ -809,7 +810,7 @@ class LoopScopeSelector extends StatelessWidget {
         ? null
         : trackNames[selected!];
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 64,
       child: Stack(
         children: [
@@ -1392,7 +1393,7 @@ class _LoopSliderState extends State<LoopSlider> {
 }
 
 /// One row of the Loop settings hub: the submenu's name, its current value
-/// and a chevron. 1848 x 100.
+/// and a chevron, 100 high across the content width.
 class LoopHubRow extends StatelessWidget {
   /// Creates a [LoopHubRow].
   const LoopHubRow({
@@ -1431,7 +1432,7 @@ class LoopHubRow extends StatelessWidget {
             canRequestFocus: false,
             onTap: onTap,
             child: SizedBox(
-              width: 1848,
+              width: LoopSettingsFrame.contentWidthOf(context),
               height: 100,
               child: Stack(
                 children: [
@@ -1464,7 +1465,7 @@ class LoopHubRow extends StatelessWidget {
                     ),
                   ),
                   Positioned(
-                    left: 1787,
+                    right: 33,
                     top: 36,
                     child: Icon(
                       LucideIcons.chevronRight,

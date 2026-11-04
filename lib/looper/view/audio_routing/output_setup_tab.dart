@@ -8,6 +8,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
 import 'package:segno/looper/view/live_meter.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -62,11 +63,18 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
   int _draftChannels = -1;
   bool _draftMono = false;
 
-  /// The pen's `source-grid` step.
-  static const double _cardStep = 280;
+  /// The pen's output card and gap; the cards share the content width,
+  /// never narrower than the pen's card.
+  static const double _cardWidth = 264;
+  static const double _cardGap = 16;
 
-  /// The pen's column width, shared with Input setup.
-  static const double _column = 828;
+  /// The gap between the balance and level columns, which share the width
+  /// as on Input setup.
+  static const double _columnGap = 64;
+
+  /// One column's width.
+  static double _columnOf(BuildContext context) =>
+      LoopSettingsFrame.halfWidthOf(context, gap: _columnGap);
 
   @override
   Widget build(BuildContext context) {
@@ -113,18 +121,23 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
     return Stack(
       children: [
         Positioned(
-          left: 100,
+          left: 0,
           top: 263,
           child: SizedBox(
-            width: 1720,
+            width: LoopSettingsFrame.contentWidthOf(context),
             height: 112,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: values.busCount,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(width: _cardStep - 264),
+              separatorBuilder: (_, _) => const SizedBox(width: _cardGap),
               itemBuilder: (context, bus) => RoutingSourceCard(
                 key: Key('output_card_$bus'),
+                width: fillingCardWidth(
+                  width: LoopSettingsFrame.contentWidthOf(context),
+                  count: values.busCount,
+                  gap: _cardGap,
+                  minWidth: _cardWidth,
+                ),
                 ordinal: l10n.outputBusLabel(
                   bus,
                   channels: values.outputChannels,
@@ -148,13 +161,13 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
         ),
         if (values.busCount == 0)
           Positioned(
-            left: 100,
+            left: 0,
             top: 425,
             child: LoopNote(l10n.routingNoDestinationsYet),
           )
         else ...[
           Positioned(
-            left: 100,
+            left: 0,
             top: 425,
             child: _FormatRow(
               bus: selected,
@@ -163,7 +176,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
             ),
           ),
           Positioned(
-            left: 100,
+            left: 0,
             top: 563,
             child: _BalanceColumn(
               key: ValueKey((
@@ -222,7 +235,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
             ),
           ),
           Positioned(
-            left: 992,
+            right: 0,
             top: 563,
             child: _LevelColumn(
               key: ValueKey((
@@ -280,7 +293,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
             ),
           ),
           Positioned(
-            left: 100,
+            left: 0,
             top: 807,
             child: LoopNote(l10n.routingOutputAppliesNote),
           ),
@@ -309,7 +322,7 @@ class _FormatRow extends StatelessWidget {
     // wider one: the control keeps its right edge as its label changes.
     final muteWidth = muted ? 176.0 : 241.0;
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 74,
       child: Stack(
         children: [
@@ -338,7 +351,7 @@ class _FormatRow extends StatelessWidget {
               child: LoopNote(l10n.routingOutputMonoNote),
             ),
           Positioned(
-            left: 1720 - muteWidth,
+            left: LoopSettingsFrame.contentWidthOf(context) - muteWidth,
             top: 1,
             child: LoopChoiceButton(
               key: const Key('output_mute'),
@@ -382,7 +395,7 @@ class _BalanceColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return SizedBox(
-      width: _OutputSetupTabState._column,
+      width: _OutputSetupTabState._columnOf(context),
       height: 196,
       child: Stack(
         children: [
@@ -392,7 +405,7 @@ class _BalanceColumn extends StatelessWidget {
             child: RoutingInlineLabel(
               label: l10n.routingBalance,
               value: routingPlacementLabel(l10n, balance),
-              width: _OutputSetupTabState._column,
+              width: _OutputSetupTabState._columnOf(context),
             ),
           ),
           Positioned(
@@ -401,7 +414,7 @@ class _BalanceColumn extends StatelessWidget {
             child: LoopSlider(
               key: const Key('output_balance_slider'),
               value: (balance + 1) / 2,
-              width: _OutputSetupTabState._column,
+              width: _OutputSetupTabState._columnOf(context),
               semanticLabel: l10n.routingBalance,
               enabled: enabled,
               onChanged: (v) => onChanged(v * 2 - 1),
@@ -416,7 +429,7 @@ class _BalanceColumn extends StatelessWidget {
             child: RoutingSliderEnds(
               start: l10n.routingPanLeft,
               end: l10n.routingPanRight,
-              width: _OutputSetupTabState._column,
+              width: _OutputSetupTabState._columnOf(context),
             ),
           ),
         ],
@@ -457,7 +470,7 @@ class _LevelColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return SizedBox(
-      width: _OutputSetupTabState._column,
+      width: _OutputSetupTabState._columnOf(context),
       height: 196,
       child: Stack(
         children: [
@@ -467,7 +480,7 @@ class _LevelColumn extends StatelessWidget {
             child: RoutingInlineLabel(
               label: l10n.routingOutputLevel,
               value: l10n.routingOutputLevelPercent((level * 100).round()),
-              width: _OutputSetupTabState._column,
+              width: _OutputSetupTabState._columnOf(context),
             ),
           ),
           Positioned(
@@ -476,7 +489,7 @@ class _LevelColumn extends StatelessWidget {
             child: LoopSlider(
               key: const Key('output_level_slider'),
               value: level.clamp(0.0, 1.0),
-              width: _OutputSetupTabState._column,
+              width: _OutputSetupTabState._columnOf(context),
               semanticLabel: l10n.routingOutputLevel,
               onChanged: onChanged,
               onChangeEnd: onCommit,
@@ -528,7 +541,7 @@ class _MeterRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return SizedBox(
-      width: _OutputSetupTabState._column,
+      width: _OutputSetupTabState._columnOf(context),
       height: 28,
       child: Stack(
         children: [

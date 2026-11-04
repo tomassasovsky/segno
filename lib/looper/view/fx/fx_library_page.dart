@@ -106,7 +106,7 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
         children: [
           if (family != null)
             Positioned(
-              left: 36,
+              left: 0,
               top: 86,
               child: AppText(
                 l10n.fxPresetCount(family.presets.length),
@@ -122,9 +122,9 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
           // domain's job, and that domain is not built.
           if (_saved)
             Positioned(
-              left: 36,
+              left: 0,
               top: 32,
-              right: 36,
+              right: 0,
               height: 64,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -146,9 +146,9 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
               ),
             ),
           Positioned(
-            left: 36,
+            left: 0,
             top: family != null || _single || _saved ? 138 : 124,
-            right: 36,
+            right: 0,
             bottom: 24,
             child: switch ((family, _single, _saved)) {
               (final FxFamily f, _, _) => _PresetList(
@@ -214,17 +214,20 @@ class _LibraryGrid extends StatelessWidget {
       for (final family in catalogue.families)
         if (family != wide) family,
     ];
-    // The grid starts at the title's left edge, as the Effects page under it
-    // does; four square cards fit a row of the content width.
+    // Four square cards share each row of the content width, under the
+    // title (#1590); the wide banner takes two of them and the gap between.
+    const gap = 40.0;
+    final cell = (LoopSettingsFrame.contentWidthOf(context) - 3 * gap) / 4;
     return SingleChildScrollView(
       child: Wrap(
-        spacing: 40,
+        spacing: gap,
         runSpacing: 20,
         children: [
           _LibraryCard(
             key: const Key('fx_library_saved'),
             label: l10n.fxLibraryMyPresets,
             asset: 'assets/images/selector/my-presets.png',
+            width: cell,
             onTap: onSaved,
           ),
           if (wide != null)
@@ -232,13 +235,14 @@ class _LibraryGrid extends StatelessWidget {
               key: Key('fx_library_family_${wide.slug}'),
               label: wide.name,
               asset: wide.selectorAsset,
-              width: 810,
+              width: 2 * cell + gap,
               onTap: () => onFamily(wide),
             ),
           _LibraryCard(
             key: const Key('fx_library_single'),
             label: l10n.fxLibrarySingle,
             asset: kFxSingleSelectorAsset,
+            width: cell,
             onTap: onSingle,
           ),
           for (final family in rest)
@@ -246,6 +250,7 @@ class _LibraryGrid extends StatelessWidget {
               key: Key('fx_library_family_${family.slug}'),
               label: family.name,
               asset: family.selectorAsset,
+              width: cell,
               onTap: () => onFamily(family),
             ),
         ],
@@ -259,8 +264,8 @@ class _LibraryCard extends StatelessWidget {
   const _LibraryCard({
     required this.label,
     required this.onTap,
+    required this.width,
     this.asset,
-    this.width = 385,
     super.key,
   });
 

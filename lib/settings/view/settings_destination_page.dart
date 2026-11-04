@@ -33,9 +33,9 @@ class SettingsDestinationPage extends StatelessWidget {
   /// What the page shows on its panel.
   final Widget body;
 
-  /// The panel's inset in the frame's main area: the pen's 100 px page
-  /// margins, starting under the title row.
-  static const EdgeInsets panelInset = EdgeInsets.fromLTRB(100, 120, 100, 40);
+  /// The panel's inset in the frame's content box: its full width, starting
+  /// under the title row.
+  static const EdgeInsets panelInset = EdgeInsets.fromLTRB(0, 120, 0, 40);
 
   /// The body's inset inside the panel, as the tray sheet set its faces.
   static const EdgeInsets bodyInset = EdgeInsets.fromLTRB(20, 18, 20, 0);
@@ -50,7 +50,6 @@ class SettingsDestinationPage extends StatelessWidget {
       body: LoopSettingsFrame(
         crumb: crumb ?? context.l10n.settingsCrumb(title),
         title: title,
-        titleLeft: 100,
         onBack: () => Navigator.maybePop(context),
         onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
         children: [

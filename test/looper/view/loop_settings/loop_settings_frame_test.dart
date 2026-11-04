@@ -18,11 +18,19 @@ void main() {
         LoopSettingsFrame(
           crumb: 'SETTINGS',
           title: 'Settings',
-          titleLeft: 100,
           onBack: () {},
           onStage: () {},
           actions: actions,
-          children: const [],
+          children: const [
+            Positioned(
+              key: Key('content'),
+              left: 0,
+              top: 120,
+              right: 0,
+              height: 10,
+              child: SizedBox.expand(),
+            ),
+          ],
         ),
       );
       return tester.element(find.byType(LoopSettingsFrame)).surface;
@@ -141,6 +149,34 @@ void main() {
       expect(withActions.dy, kLoopTopBarHeight + 30 + 64 / 2);
       // Settings and Pedals, the pen's titles with actions, are untracked.
       expect(title().letterSpacing, 0);
+    });
+
+    testWidgets('the top bar, the title, the actions and the content share '
+        'one 32 px inset (#1590)', (tester) async {
+      await pump(
+        tester,
+        actions: const SizedBox(key: Key('actions'), width: 64, height: 64),
+      );
+      const inset = 32.0;
+      expect(
+        tester.getTopLeft(find.byKey(const Key('loop_settings_back'))).dx,
+        inset,
+      );
+      expect(
+        tester.getTopRight(find.byKey(const Key('loop_settings_stage'))).dx,
+        kLoopPenSize.width - inset,
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx,
+        inset,
+      );
+      final content = tester.getRect(find.byKey(const Key('content')));
+      expect(content.left, inset);
+      expect(content.right, kLoopPenSize.width - inset);
+      expect(
+        tester.getTopRight(find.byKey(const Key('actions'))).dx,
+        kLoopPenSize.width - inset,
+      );
     });
   });
 }

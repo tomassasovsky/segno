@@ -40,11 +40,14 @@ class PedalLedEditor extends StatelessWidget {
           for (final (index, MapEntry(key: state, value: color))
               in colors.entries.indexed) ...[
             if (index > 0) SizedBox(width: context.spacing.xl),
-            PedalColorField(
-              key: Key('pedal_led_state_${state.name}'),
-              label: pedalLedStateLabel(l10n, state),
-              color: color,
-              onTap: () => onEdit(state),
+            // The wells share the row, so it ends at the content edge.
+            Expanded(
+              child: PedalColorField(
+                key: Key('pedal_led_state_${state.name}'),
+                label: pedalLedStateLabel(l10n, state),
+                color: color,
+                onTap: () => onEdit(state),
+              ),
             ),
           ],
         ],

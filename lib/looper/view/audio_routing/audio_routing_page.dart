@@ -72,8 +72,8 @@ class _AudioRoutingPageState extends State<AudioRoutingPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     // [LoopSettingsFrame] lays itself out on the pen canvas, and positions
-    // its children in the 1920 x 984 MAIN area — so every `top` below is the
-    // pen's screen y minus the 96 px top bar.
+    // its children in its content box under the top bar — so every `top`
+    // below is the pen's screen y minus the 96 px top bar.
     final names = _names;
     return Scaffold(
       body: LoopSettingsFrame(
@@ -83,14 +83,13 @@ class _AudioRoutingPageState extends State<AudioRoutingPage> {
           RoutingNames.inputs => l10n.routingInputNames,
           RoutingNames.outputs => l10n.routingOutputNames,
         },
-        titleLeft: 100,
         onBack: _back,
         onStage: _stage,
         children: names != null
             ? [RoutingNamesList(side: names)]
             : [
                 Positioned(
-                  left: 100,
+                  left: 0,
                   top: 132,
                   child: AudioRoutingTabBar(
                     selected: _tab,
@@ -99,7 +98,7 @@ class _AudioRoutingPageState extends State<AudioRoutingPage> {
                 ),
                 Positioned(
                   // The pen's header action, right-aligned with the task row.
-                  right: 100,
+                  right: 0,
                   top: 32,
                   child: LoopOutlinedButton(
                     key: const Key('routing_names_action'),

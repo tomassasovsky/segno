@@ -32,9 +32,9 @@ class NetworkSettingsPage extends StatelessWidget {
   /// How often the open page re-reads the connection and the internet.
   static const Duration refreshInterval = WifiCubit.connectivityInterval;
 
-  /// The content's inset in the frame's main area: the pen's 100 px page
-  /// margins, starting under the title row.
-  static const EdgeInsets inset = EdgeInsets.fromLTRB(100, 120, 100, 40);
+  /// The content's inset in the frame's content box: its full width,
+  /// under the title row.
+  static const EdgeInsets inset = EdgeInsets.fromLTRB(0, 120, 0, 40);
 
   @override
   Widget build(BuildContext context) => BlocProvider(
@@ -188,7 +188,6 @@ class _NetworkViewState extends State<_NetworkView> {
         body: LoopSettingsFrame(
           crumb: l10n.settingsCrumb(title),
           title: title,
-          titleLeft: 100,
           onBack: () => Navigator.maybePop(context),
           onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
           actions: state.supported

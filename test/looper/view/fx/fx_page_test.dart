@@ -836,6 +836,43 @@ void main() {
       expect(find.text(l10nOf(tester).fxPlacementPre), findsNWidgets(2));
     });
 
+    testWidgets('the chain starts under the title and keeps the five-card '
+        'width (#1590 SET-4)', (tester) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      final strip = tester.getRect(find.byType(FxChainStrip));
+      expect(
+        strip.left,
+        tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx,
+      );
+      expect(tester.getRect(find.byKey(const Key('fx_card_t1'))).left, 32);
+      // Five 352 cards and four 24 gaps fill it exactly.
+      expect(strip.width, 5 * 352 + 4 * 24);
+    });
+
+    testWidgets('the input cards fill the content width under the title '
+        '(#1590 SET-1, SET-6)', (tester) async {
+      await pump(tester, destination: const FxDestination.liveInput(0));
+      var last = 0;
+      while (find
+          .byKey(Key('fx_input_card_${last + 1}'))
+          .evaluate()
+          .isNotEmpty) {
+        last++;
+      }
+      final title = tester.getRect(
+        find.byKey(const Key('loop_settings_title')),
+      );
+      expect(title.left, 32);
+      expect(
+        tester.getRect(find.byKey(const Key('fx_input_card_0'))).left,
+        title.left,
+      );
+      expect(
+        tester.getRect(find.byKey(Key('fx_input_card_$last'))).right,
+        1920 - 32,
+      );
+    });
+
     testWidgets('says so when the destination carries nothing', (tester) async {
       await pump(tester, destination: const FxDestination.recordedTrack(1));
 
@@ -1330,7 +1367,12 @@ void main() {
       final title = tester.getRect(find.text(l10nOf(tester).fxAddTitle).last);
       final first = tester.getRect(find.byKey(const Key('fx_library_saved')));
       expect(first.left, title.left);
-      expect(first.left, 36);
+      expect(first.left, 32);
+      // My presets, Ed's Rack and Single FX fill the first row (#1590 SET-6).
+      expect(
+        tester.getRect(find.byKey(const Key('fx_library_single'))).right,
+        1920 - 32,
+      );
     });
 
     testWidgets('a build with no catalogue says so instead of drawing an '
@@ -1528,8 +1570,9 @@ void main() {
 
         final solo = find.byKey(const Key('fx_track_solo'));
         expect(solo, findsOneWidget);
-        // The pen's place: the left end of the titlebar's row.
-        expect(tester.getTopLeft(solo), const Offset(926, 52 + 96));
+        // The pen's place: the left end of the titlebar's row, which now
+        // ends at the page's 32 inset rather than 36 (#1590).
+        expect(tester.getTopLeft(solo), const Offset(926 + 4, 52 + 96));
         expect(tester.getSize(solo), const Size(49, 24));
         await tester.tap(solo);
         await tester.pump();

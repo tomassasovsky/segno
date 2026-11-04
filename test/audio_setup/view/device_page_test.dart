@@ -361,6 +361,25 @@ void main() {
 
   // ------------------------------------------------------------- the header
 
+  testWidgets('the workspace starts under the title and spans the content '
+      'box (#1590 SET-1, SET-2)', (tester) async {
+    await pump(tester);
+    final workspace = tester.getRect(
+      find
+          .descendant(
+            of: find.byKey(const Key('device_page')),
+            matching: find.byType(SingleChildScrollView),
+          )
+          .first,
+    );
+    expect(
+      workspace.left,
+      tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx,
+    );
+    expect(workspace.left, 32);
+    expect(workspace.right, 1920 - 32);
+  });
+
   group('the interface', () {
     testWidgets('names the pinned interface, its counts and that it is there', (
       tester,

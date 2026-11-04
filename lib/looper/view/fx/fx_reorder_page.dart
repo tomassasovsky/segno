@@ -107,7 +107,7 @@ class _FxReorderPageState extends State<FxReorderPage> {
         onStage: widget.onStage,
         children: [
           Positioned(
-            left: 1635,
+            right: 0,
             top: 32,
             child: Row(
               children: [
@@ -131,9 +131,9 @@ class _FxReorderPageState extends State<FxReorderPage> {
             ),
           ),
           Positioned(
-            left: 36,
+            left: 0,
             top: 172,
-            right: 36,
+            right: 0,
             height: 488,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -157,11 +157,11 @@ class _FxReorderPageState extends State<FxReorderPage> {
             ),
           ),
           Positioned(
-            left: 36,
+            left: 0,
             // The 488px cards start at 172 and end at 660. Reserve a full
             // gap before these controls so they never cover the drag grips.
             top: 690,
-            right: 36,
+            right: 0,
             height: 64,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,

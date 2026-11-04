@@ -32,12 +32,6 @@ class ConsoleLedsPage extends StatefulWidget {
   static Route<void> route() =>
       MaterialPageRoute<void>(builder: (_) => const ConsoleLedsPage());
 
-  /// The two columns' left edges in the frame's main area.
-  static const List<double> columns = [100, 972];
-
-  /// Each column's width.
-  static const double columnWidth = 848;
-
   /// The columns' top in the frame's main area, under the title row.
   static const double top = 120;
 
@@ -74,19 +68,18 @@ class _ConsoleLedsPageState extends State<ConsoleLedsPage> {
                 '${l10n.settingsDisplaysTitle} / ${l10n.consoleLedsTitle}',
               ),
               title: l10n.consoleLedsTitle,
-              titleLeft: 100,
               onBack: _back,
               onStage: _stage,
-              children: [
+              children: const [
                 Positioned(
-                  left: ConsoleLedsPage.columns[0],
+                  left: 0,
                   top: ConsoleLedsPage.top,
-                  child: const _BrightnessColumn(),
+                  child: _BrightnessColumn(),
                 ),
                 Positioned(
-                  left: ConsoleLedsPage.columns[1],
+                  right: 0,
                   top: ConsoleLedsPage.top,
-                  child: const _SensorColumn(),
+                  child: _SensorColumn(),
                 ),
               ],
             ),
@@ -120,7 +113,6 @@ void _edit(
 class _BrightnessColumn extends StatelessWidget {
   const _BrightnessColumn();
 
-  static const double _width = ConsoleLedsPage.columnWidth;
   static const double _range =
       ConsoleLedSettings.maxBrightness - ConsoleLedSettings.minBrightness;
 
@@ -198,8 +190,9 @@ class _BrightnessColumn extends StatelessWidget {
           ? cubit.setOffset(offsetAt(travel))
           : cubit.setBrightness(brightnessAt(travel)),
     );
+    final width = LoopSettingsFrame.halfWidthOf(context);
     return SizedBox(
-      width: _width,
+      width: width,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -218,7 +211,7 @@ class _BrightnessColumn extends StatelessWidget {
               context,
               (cubit) => cubit.setAutomatic(automatic: value),
             ),
-            width: _width,
+            width: width,
             height: 80,
           ),
           const SizedBox(height: 40),
@@ -249,7 +242,7 @@ class _BrightnessColumn extends StatelessWidget {
           const SizedBox(height: 16),
           LoopSlider(
             key: Key('console_leds_${offsetSlider ? 'offset' : 'brightness'}'),
-            width: _width,
+            width: width,
             value: travel,
             keyboardStep: offsetSlider
                 ? 1 / (2 * _offsetPoints)
@@ -305,8 +298,6 @@ class _BrightnessColumn extends StatelessWidget {
 class _SensorColumn extends StatelessWidget {
   const _SensorColumn();
 
-  static const double _width = ConsoleLedsPage.columnWidth;
-
   static int _countsOf(int level) => PedalAmbientLight(
     sensor: PedalLightSensor.reading,
     level: level,
@@ -320,15 +311,16 @@ class _SensorColumn extends StatelessWidget {
     final settings = state.settings;
     final fitted = state.sensorFitted;
     String reading(int level) => l10n.consoleLedsReadingValue(_countsOf(level));
+    final width = LoopSettingsFrame.halfWidthOf(context);
     return SizedBox(
-      width: _width,
+      width: width,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SettingsFactPanel(
             key: const Key('console_leds_sensor'),
             title: l10n.consoleLedsSensorPanel,
-            width: _width,
+            width: width,
             rows: [
               SettingsFactRow(
                 key: const Key('console_leds_sensor_state'),

@@ -52,8 +52,8 @@ class LibrarySessionsTab extends StatelessWidget {
             LibraryLocation.usb => const LibraryConnectUsb(),
           },
         ),
-        // The pen puts the card at x 765, 1028 wide, one pixel past its own
-        // 1792 layout; this keeps the x and stays inside.
+        // The pen puts the card at x 765; it takes the rest of the content
+        // width.
         const SizedBox(width: 56),
         const Expanded(child: LibraryPreviewCard()),
       ],

@@ -37,18 +37,8 @@ class DisplaysSettingsPage extends StatefulWidget {
   /// Creates a [DisplaysSettingsPage].
   const DisplaysSettingsPage({super.key});
 
-  /// The two cards' left edges in the frame's main area: the pen's 100 px
-  /// page margin, then a 24 px gutter.
-  static const List<double> columns = [100, 972];
-
-  /// Each card's width.
-  static const double cardWidth = 848;
-
   /// The cards' top in the frame's main area, under the title row.
   static const double top = 120;
-
-  /// The full content width.
-  static const double contentWidth = 1720;
 
   /// Where Dim while idle starts.
   static const double dimTop = 556;
@@ -91,7 +81,6 @@ class _DisplaysSettingsPageState extends State<DisplaysSettingsPage> {
               body: LoopSettingsFrame(
                 crumb: l10n.settingsCrumb(l10n.settingsDisplaysTitle),
                 title: l10n.settingsDisplaysTitle,
-                titleLeft: 100,
                 onBack: _back,
                 onStage: _stage,
                 // The console's pills and ring (#1564): light output like
@@ -107,17 +96,17 @@ class _DisplaysSettingsPageState extends State<DisplaysSettingsPage> {
                 ),
                 children: const [
                   Positioned(
-                    left: 100,
+                    left: 0,
                     top: DisplaysSettingsPage.top,
                     child: _DisplayCards(),
                   ),
                   Positioned(
-                    left: 100,
+                    left: 0,
                     top: DisplaysSettingsPage.dimTop,
                     child: _DimWhileIdle(),
                   ),
                   Positioned(
-                    left: 100,
+                    left: 0,
                     top: DisplaysSettingsPage.optionsTop,
                     child: _DisplayOptions(),
                   ),
@@ -168,11 +157,7 @@ class _DisplayCardsState extends State<_DisplayCards> {
                   ? () => _calibrate(TouchScreen.readout)
                   : null,
             ),
-            const SizedBox(
-              width:
-                  DisplaysSettingsPage.contentWidth -
-                  2 * DisplaysSettingsPage.cardWidth,
-            ),
+            SizedBox(width: context.spacing.xl),
             DisplayCard(
               key: const Key('displays_card_main'),
               role: DisplayRole.main,
@@ -235,7 +220,7 @@ class DisplayCard extends StatelessWidget {
     final surface = context.surface;
     final calibrate = onCalibrate;
     return Container(
-      width: DisplaysSettingsPage.cardWidth,
+      width: LoopSettingsFrame.halfWidthOf(context),
       height: height,
       padding: const EdgeInsets.all(_inset),
       decoration: BoxDecoration(
@@ -284,7 +269,7 @@ class DisplayCard extends StatelessWidget {
           const SizedBox(height: 40),
           DisplayBrightnessSlider(
             role: role,
-            width: DisplaysSettingsPage.cardWidth - 2 * _inset,
+            width: LoopSettingsFrame.halfWidthOf(context) - 2 * _inset,
           ),
           if (calibrate != null) ...[
             const Spacer(),
@@ -457,7 +442,7 @@ class _DimWhileIdle extends StatelessWidget {
       (cubit) => cubit.state.seconds,
     );
     return SizedBox(
-      width: DisplaysSettingsPage.contentWidth,
+      width: LoopSettingsFrame.contentWidthOf(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -473,10 +458,12 @@ class _DimWhileIdle extends StatelessWidget {
                 keyOf: (value) => Key('displays_dim_$value'),
                 selected: seconds,
                 onSelected: (value) => _choose(context, value),
-                width: 848,
+                // Under the Track display card.
+                width: LoopSettingsFrame.halfWidthOf(context),
                 height: 80,
               ),
-              const SizedBox(width: 48),
+              // The note starts under the Main display card.
+              SizedBox(width: context.spacing.xl),
               Expanded(child: LoopNote(l10n.displaysDimNote)),
             ],
           ),
@@ -499,7 +486,7 @@ class _DisplayOptions extends StatelessWidget {
     final highContrast = context.watch<HighContrastCubit>().state;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return SizedBox(
-      width: DisplaysSettingsPage.contentWidth,
+      width: LoopSettingsFrame.contentWidthOf(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

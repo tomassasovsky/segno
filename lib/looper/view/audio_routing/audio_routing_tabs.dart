@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The pen's `Routing task` nav: four pills in a 1720 x 93 row with a rule
-/// under them. Each pill carries its own pen width, so the row reads as the
-/// four task names rather than as four equal columns.
+/// The pen's `Routing task` nav: four pills in a 93 high row across the
+/// content width with a rule under them. Each pill carries its own pen
+/// width, so the row reads as the four task names rather than as four equal
+/// columns.
 class AudioRoutingTabBar extends StatelessWidget {
   /// Creates an [AudioRoutingTabBar].
   const AudioRoutingTabBar({
@@ -48,7 +50,7 @@ class AudioRoutingTabBar extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 93,
       child: Stack(
         children: [

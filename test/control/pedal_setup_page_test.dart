@@ -209,6 +209,42 @@ void main() {
   const save = Key('pedal_setup_save');
   const cancel = Key('pedal_setup_cancel');
 
+  group('the content box (#1590 SET-1, SET-6)', () {
+    testWidgets('Press and Hold end at the content edge', (tester) async {
+      await pump(tester);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx,
+        32,
+      );
+      expect(tester.getRect(find.byKey(hold)).right, 1920 - 32);
+      expect(
+        tester.getSize(find.byKey(press)).width,
+        tester.getSize(find.byKey(hold)).width,
+      );
+    });
+
+    testWidgets('the LED colour wells fill the row to the content edge', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+      await tester.pumpAndSettle();
+      final wells = find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'pedal_led_state_',
+            ),
+      );
+      expect(wells, findsWidgets);
+      final right = [
+        for (final element in wells.evaluate())
+          tester.getRect(find.byWidget(element.widget)).right,
+      ].reduce((a, b) => a > b ? a : b);
+      expect(right, 1920 - 32);
+    });
+  });
+
   group('Track controls', () {
     testWidgets('opens on MODE, the one switch with both gestures free', (
       tester,

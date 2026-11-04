@@ -138,11 +138,22 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   Object? _buttonControl;
   Object? _replacingButtonControl;
 
-  /// The pen's insets inside the 1920 x 984 main area.
-  static const double _left = 100;
+  /// The pen's offsets inside the frame's content box, whose full width the
+  /// page takes.
   static const double _toolbarTop = 122;
   static const double _workspaceTop = 214;
   static const double _editorLeft = 680;
+
+  /// The pen's workspace: the pedal art and the button editor (or the
+  /// expression panels), kept at the pen's 1720 from the content box's left
+  /// edge. Their controls are laid out to these widths.
+  static const double _workspaceWidth = 1720;
+
+  /// The button editor's width, from [_editorLeft] to the workspace's end.
+  static const double _editorWidth = _workspaceWidth - _editorLeft;
+
+  /// One of the editor's two gesture fields, the pen's 506.
+  static const double _fieldWidth = 506;
 
   /// The types this screen offers, in the pen's order.
   static const List<ExternalJackType> _types = [
@@ -187,7 +198,6 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             body: LoopSettingsFrame(
               crumb: l10n.pedalSetupCrumb,
               title: l10n.externalPedalsTitle,
-              titleLeft: _left,
               onBack: () => Navigator.of(context).maybePop(),
               onStage: () =>
                   Navigator.of(context).popUntil((route) => route.isFirst),
@@ -234,7 +244,6 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
               _ExternalView.destinations => l10n.expressionChooseDestination,
               _ExternalView.controls => l10n.expressionChooseControl,
             },
-            titleLeft: _left,
             onBack: _back,
             onStage: () {
               if (!_saving) {
@@ -248,7 +257,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             children: [
               if (main)
                 Positioned(
-                  left: _left,
+                  left: 0,
                   top: _toolbarTop,
                   child: _toolbar(context, jack),
                 ),
@@ -267,17 +276,17 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) => switch (_view) {
     _ExternalView.main when jack.type == ExternalJackType.expression => [
       Positioned(
-        left: _left,
+        left: 0,
         top: _expressionTop,
         child: _expressionWorkspace(context, setup, jack),
       ),
     ],
     _ExternalView.main => [
       Positioned(
-        left: _left,
+        left: 0,
         top: _workspaceTop,
         child: SizedBox(
-          width: 1720,
+          width: _workspaceWidth,
           height: ExternalPedalArt.penSize.height,
           child: Stack(
             children: [
@@ -308,16 +317,16 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ],
     _ExternalView.calibrate => [
       Positioned(
-        left: _left,
+        left: 0,
         top: _calibrateTop,
         child: _calibrateWorkspace(context, setup, jack),
       ),
     ],
     _ExternalView.destinations => [
       Positioned(
-        left: _left,
+        left: 0,
         top: _pickerTop,
-        width: 1720,
+        right: 0,
         height: _pickerHeight,
         child: ExpressionDestinationPicker(
           destinations: _destinations(context),
@@ -332,9 +341,9 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ],
     _ExternalView.controls => [
       Positioned(
-        left: _left,
+        left: 0,
         top: _pickerTop,
-        width: 1720,
+        right: 0,
         height: _pickerHeight,
         child: ExpressionControlPicker(
           // An empty destination is still a destination: the picker says so
@@ -387,7 +396,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final expression = jack.expression;
     return SizedBox(
-      width: 1720,
+      width: _workspaceWidth,
       height: _expressionHeight,
       child: BlocSelector<PedalCubit, PedalState, int?>(
         key: ValueKey('expression_${_jack.name}'),
@@ -405,32 +414,40 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
                 onCalibrate: () => _openCalibrate(context),
               ),
               const SizedBox(width: _columnGap),
-              SizedBox(
-                height: _expressionHeight,
-                child: ExpressionControlsPanel(
-                  rows: _rows(context, expression),
-                  selected: _openTarget(expression),
-                  position: position,
-                  onSelect: (target) => setState(() => _selected = target),
-                  onAdd: () => setState(() {
-                    _replacing = null;
-                    _view = _ExternalView.destinations;
-                  }),
-                  onChange: () => setState(() {
-                    _replacing = _openTarget(expression);
-                    _view = _ExternalView.destinations;
-                  }),
-                  onRemove: () => _removeControl(setup, jack),
-                  onEndpoint: ({required isHeel, required value}) =>
-                      _moveEndpoint(setup, jack, isHeel: isHeel, value: value),
-                  onEndpointCancel: ({required isHeel, required value}) =>
-                      _moveEndpoint(
-                        setup,
-                        jack,
-                        isHeel: isHeel,
-                        value: value,
-                        preserveRaw: true,
-                      ),
+              // The controls take the rest of the workspace.
+              Expanded(
+                child: SizedBox(
+                  height: _expressionHeight,
+                  child: ExpressionControlsPanel(
+                    rows: _rows(context, expression),
+                    selected: _openTarget(expression),
+                    position: position,
+                    onSelect: (target) => setState(() => _selected = target),
+                    onAdd: () => setState(() {
+                      _replacing = null;
+                      _view = _ExternalView.destinations;
+                    }),
+                    onChange: () => setState(() {
+                      _replacing = _openTarget(expression);
+                      _view = _ExternalView.destinations;
+                    }),
+                    onRemove: () => _removeControl(setup, jack),
+                    onEndpoint: ({required isHeel, required value}) =>
+                        _moveEndpoint(
+                          setup,
+                          jack,
+                          isHeel: isHeel,
+                          value: value,
+                        ),
+                    onEndpointCancel: ({required isHeel, required value}) =>
+                        _moveEndpoint(
+                          setup,
+                          jack,
+                          isHeel: isHeel,
+                          value: value,
+                          preserveRaw: true,
+                        ),
+                  ),
                 ),
               ),
             ],
@@ -445,7 +462,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     ExternalPedalSetup setup,
     ExternalJackSetup jack,
   ) => SizedBox(
-    width: 1720,
+    width: _workspaceWidth,
     height: _calibrateHeight,
     child: BlocSelector<PedalCubit, PedalState, int?>(
       key: ValueKey('calibration_${_jack.name}'),
@@ -471,21 +488,23 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
               height: _calibrateHeight,
             ),
             const SizedBox(width: _columnGap),
-            SizedBox(
-              height: _calibrateHeight,
-              child: ExpressionCalibrationPanel(
-                heel: _captureHeel,
-                toe: _captureToe,
-                connected: raw != null,
-                onCapture: ({required isHeel}) => setState(() {
-                  if (isHeel) {
-                    _captureHeel = raw;
-                  } else {
-                    _captureToe = raw;
-                  }
-                }),
-                onCancel: _leaveCalibrate,
-                onUse: (travel) => _useCalibration(setup, jack, travel),
+            Expanded(
+              child: SizedBox(
+                height: _calibrateHeight,
+                child: ExpressionCalibrationPanel(
+                  heel: _captureHeel,
+                  toe: _captureToe,
+                  connected: raw != null,
+                  onCapture: ({required isHeel}) => setState(() {
+                    if (isHeel) {
+                      _captureHeel = raw;
+                    } else {
+                      _captureToe = raw;
+                    }
+                  }),
+                  onCancel: _leaveCalibrate,
+                  onUse: (travel) => _useCalibration(setup, jack, travel),
+                ),
               ),
             ),
           ],
@@ -803,7 +822,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   Widget _toolbar(BuildContext context, ExternalJackSetup jack) {
     final l10n = context.l10n;
     return SizedBox(
-      width: 1720,
+      width: LoopSettingsFrame.contentWidthOf(context),
       height: 64,
       child: Row(
         children: [
@@ -899,19 +918,19 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final l10n = context.l10n;
     final surface = context.surface;
     final button = jack.switchAt(_button);
-    if (button == null) return const SizedBox(width: 1040, height: 722);
+    if (button == null) return const SizedBox(width: _editorWidth, height: 722);
     final latching = button.hardware == ExternalSwitchHardware.latching;
     if (_buttonPick != null) return _buttonPicker(context, setup, jack, button);
     if (_showControls) return _controlsPanel(context, setup, jack, button);
     return SizedBox(
-      width: 1040,
+      width: _editorWidth,
       height: ExternalPedalArt.penSize.height,
       child: Stack(
         children: [
           Positioned(
             left: 0,
             top: 138,
-            width: 1040,
+            width: _editorWidth,
             child: _editorTitle(context),
           ),
           Positioned(
@@ -929,7 +948,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           Positioned(
             left: 0,
             top: 551.41,
-            width: 1040,
+            width: _editorWidth,
             child: AppText(
               latching
                   ? l10n.externalChangeNote
@@ -1037,7 +1056,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
         _write(setup, jack, button.copyWith(controls: next));
 
     return SizedBox(
-      width: 1040,
+      width: _editorWidth,
       height: ExternalPedalArt.penSize.height,
       child: Column(
         children: [
@@ -1130,7 +1149,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
         _buttonPick == _ButtonPick.controls && destination != null;
     final controls = button.controls;
     return SizedBox(
-      width: 1040,
+      width: _editorWidth,
       height: ExternalPedalArt.penSize.height,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1263,7 +1282,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     final l10n = context.l10n;
     final surface = context.surface;
     return SizedBox(
-      width: 1040,
+      width: _editorWidth,
       height: 112,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1312,7 +1331,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   ) {
     final l10n = context.l10n;
     return SizedBox(
-      width: 1040,
+      width: _editorWidth,
       height: 129,
       child: Row(
         children: [
@@ -1340,7 +1359,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     BuildContext context,
     ExternalSwitchSetup button,
   ) => SizedBox(
-    width: 506,
+    width: _fieldWidth,
     height: 129,
     child: _field(
       context,
@@ -1366,7 +1385,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
         : controlActionLabel(l10n, names, action);
     return SizedBox(
       key: key,
-      width: 506,
+      width: _fieldWidth,
       height: 129,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1380,7 +1399,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           ),
           const Spacer(),
           LoopOutlinedButton(
-            width: 506,
+            width: _fieldWidth,
             height: 80,
             fontSize: 28,
             tone: LoopButtonTone.raised,
