@@ -4100,9 +4100,13 @@ class LooperRepository {
   /// a fresh take on a member retires that member's point (the engine's
   /// rule), and the group with it — the per-track history then answers as
   /// usual, and nothing newer is overwritten.
+  ///
+  /// With no [channels] (a second Clear all on a rig already empty) nothing
+  /// is erased, so the last group stays undoable (#1642).
   EngineResult clearAll(Iterable<int> channels) {
     if (_transportReserved) return EngineResult.notReady;
     _pendingClearAllUndo = const {};
+    if (channels.isEmpty) return EngineResult.ok;
     final group = <int>{};
     final pending = <int>{};
     var result = EngineResult.ok;

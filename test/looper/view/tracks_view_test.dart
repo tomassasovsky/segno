@@ -22,6 +22,7 @@ import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/app/view/standing_notices.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
@@ -276,11 +277,15 @@ void main() {
   // The post-clear-all toast renders into a toastification overlay, which
   // needs the app's Navigator above it (hence wrapping MaterialApp, not its
   // child). Inert for the tests that never raise a toast.
+  //
+  // [standing] puts the app's standing-notice owner above the stage, as the
+  // app does.
   Future<void> pumpStage(
     WidgetTester tester, {
     KeyEventResult Function(FocusNode, KeyEvent)? onAncestorKey,
     Locale? locale,
     List<NavigatorObserver> navigatorObservers = const [],
+    bool standing = false,
   }) => tester.pumpWidget(
     BlocProvider<NoticesCubit>.value(
       value: notices,
@@ -325,6 +330,10 @@ void main() {
                 create: (_) =>
                     InputsCubit(settings: settings, repository: repository),
               ),
+              BlocProvider<OutputsCubit>(
+                create: (_) =>
+                    OutputsCubit(settings: settings, repository: repository),
+              ),
               BlocProvider<MonitorCubit>(
                 create: (_) => MonitorCubit(
                   fxPersistence: fxPersistence,
@@ -343,9 +352,18 @@ void main() {
                 ),
               ),
             ],
-            child: onAncestorKey == null
-                ? const TracksView()
-                : Focus(onKeyEvent: onAncestorKey, child: const TracksView()),
+            child: switch ((
+              onAncestorKey,
+              standing
+                  ? const StandingNotices(child: TracksView())
+                  : const TracksView(),
+            )) {
+              (null, final stage) => stage,
+              (final onKey?, final stage) => Focus(
+                onKeyEvent: onKey,
+                child: stage,
+              ),
+            },
           ),
         ),
       ),
@@ -358,6 +376,7 @@ void main() {
     Locale? locale,
     Size size = const Size(1920, 1080),
     List<NavigatorObserver> navigatorObservers = const [],
+    bool standing = false,
   }) {
     // The appliance's 1920 x 1080 page: the Mixer's top bar holds Backing &
     // click, Reset mixer and the Tuner together, wider than the default
@@ -371,6 +390,7 @@ void main() {
       onAncestorKey: onAncestorKey,
       locale: locale,
       navigatorObservers: navigatorObservers,
+      standing: standing,
     );
   }
 
@@ -4063,6 +4083,105 @@ void main() {
         expect(notices.state.message, isNull);
       },
     );
+
+    group('ends once the clear can no longer be undone (#1642)', () {
+      const playing = Track(state: TrackState.playing, lengthFrames: 48000);
+      const connected = EngineStatus(isConnected: true);
+      late StreamController<LooperState> engine;
+
+      // The engine's word after each call, through the bloc as the app has
+      // it: a clear-all leaves an undoable group behind.
+      void report(LooperState state) {
+        when(() => repository.state).thenReturn(state);
+        engine.add(state);
+      }
+
+      Future<void> clearAllOnTheStage(WidgetTester tester) async {
+        engine = StreamController<LooperState>.broadcast();
+        addTearDown(engine.close);
+        const before = LooperState(status: connected, tracks: [playing]);
+        when(() => repository.state).thenReturn(before);
+        whenListen(bloc, engine.stream, initialState: before);
+        when(() => repository.clearAll(any())).thenAnswer((_) {
+          report(
+            const LooperState(
+              status: connected,
+              clearAllUndoable: true,
+              tracks: [Track(clearRestore: true)],
+            ),
+          );
+          return EngineResult.ok;
+        });
+        pedalLink.hello();
+        await pump(tester, standing: true);
+        await control.clearAll();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(
+          notices.state.message?.notice.id,
+          AppNoticeId.undoClearAll,
+        );
+      }
+
+      Future<void> tap(WidgetTester tester, PedalButton button) async {
+        pedalLink.press(button, down: true);
+        await tester.pump(const Duration(milliseconds: 50));
+        pedalLink.press(button, down: false);
+        // The pedal events arrive on a real stream; let them land.
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+      }
+
+      testWidgets('an Undo pedal press takes it down', (tester) async {
+        when(
+          () => repository.undo(channel: any(named: 'channel')),
+        ).thenAnswer((_) {
+          report(const LooperState(status: connected, tracks: [playing]));
+          return EngineResult.ok;
+        });
+        await clearAllOnTheStage(tester);
+
+        await tap(tester, PedalButton.undo);
+
+        verify(() => repository.undo()).called(1);
+        expect(notices.state.message, isNull);
+        await tester.pump(const Duration(seconds: 10));
+      });
+
+      testWidgets('a new take that retires the restore takes it down', (
+        tester,
+      ) async {
+        await clearAllOnTheStage(tester);
+
+        // A take on the cleared track: the engine retires its restore
+        // point, and the group with it.
+        report(
+          const LooperState(
+            status: connected,
+            tracks: [Track(state: TrackState.recording)],
+          ),
+        );
+        await tester.pump();
+
+        expect(notices.state.message, isNull);
+        await tester.pump(const Duration(seconds: 10));
+      });
+
+      testWidgets('its own Undo still restores the rig', (tester) async {
+        when(() => repository.undoClearAll()).thenAnswer((_) {
+          report(const LooperState(status: connected, tracks: [playing]));
+          return EngineResult.ok;
+        });
+        await clearAllOnTheStage(tester);
+
+        await tester.tap(find.byKey(const Key(AppNoticeId.undoClearAllAction)));
+        await tester.pump();
+
+        verify(() => repository.undoClearAll()).called(1);
+        expect(notices.state.message, isNull);
+        await tester.pump(const Duration(seconds: 10));
+      });
+    });
 
     testWidgets('an empty-rig clear-all shows no toast', (tester) async {
       seed(const LooperState(tracks: [Track()]));

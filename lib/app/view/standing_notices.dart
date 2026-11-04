@@ -32,6 +32,11 @@ import 'package:segno/notices/notices.dart';
 /// - Audio is starting (#1533): neutral, no action; it ends by itself.
 /// - Effects came up switched off (#1515): warning, with Open effects and
 ///   Dismiss.
+///
+/// It also ends the Clear all message (the stage raises it, with Undo) the
+/// moment the clear can no longer be undone (#1642): an Undo from any
+/// surface brought the rig back, or a new take retired the restore. The
+/// message is in every screen's top bar, so this cannot wait for the stage.
 class StandingNotices extends StatefulWidget {
   /// Creates a [StandingNotices] over [child].
   const StandingNotices({required this.child, super.key});
@@ -278,6 +283,12 @@ class _StandingNoticesState extends State<StandingNotices> {
             previous.fxHoldNotice != current.fxHoldNotice ||
             previous.outputFxWaiting != current.outputFxWaiting,
         listener: (_, _) => _sync(),
+      ),
+      BlocListener<LooperBloc, LooperState>(
+        listenWhen: (previous, current) =>
+            previous.clearAllUndoable && !current.clearAllUndoable,
+        listener: (context, _) =>
+            context.read<NoticesCubit>().clear(AppNoticeId.undoClearAll),
       ),
       BlocListener<TracksCubit, TracksState>(
         listenWhen: (previous, current) => previous.names != current.names,

@@ -55,7 +55,8 @@ class _TracksViewState extends State<TracksView> {
   /// The message after Clear all, whose Undo restores the whole rig. Undo
   /// routes through the shared [TracksCommands.undoClearAll], so the message,
   /// `⌘⇧C` and the pedal can never drift; the message is the discoverable
-  /// moment, the key and the pedal the permanent ways.
+  /// moment, the key and the pedal the permanent ways. `StandingNotices`
+  /// ends it once the clear can no longer be undone, whatever undid it.
   void _showUndoClearAll() {
     if (!mounted) return;
     final notices = context.read<NoticesCubit>();

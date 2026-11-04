@@ -82,15 +82,20 @@ void main() {
     return cubit;
   }
 
-  Future<UsbUpdateCubit> listed(List<RemovableVolume> on) async {
-    final cubit = build()..open();
-    volumes.add(on);
+  /// Waits until [cubit] has read the drive. The drive is read with real
+  /// file I/O, which the event queue does not wait for, so a loaded machine
+  /// can still be reading after [pumpEventQueue].
+  Future<void> read(UsbUpdateCubit cubit) async {
     await pumpEventQueue();
-    // The drive is read with real file I/O, which the event queue does not
-    // wait for, so a loaded machine can still be reading here.
     while (cubit.state.phase == UsbUpdatePhase.reading) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
+  }
+
+  Future<UsbUpdateCubit> listed(List<RemovableVolume> on) async {
+    final cubit = build()..open();
+    volumes.add(on);
+    await read(cubit);
     return cubit;
   }
 
@@ -381,7 +386,8 @@ void main() {
       expect(cancelled?.call(), isTrue);
       when(() => storage.current).thenReturn([volume()]);
       copy.completeError(const StorageFailure.io('cancelled'));
-      await pumpEventQueue();
+      // Back to the list re-reads the drive.
+      await read(cubit);
       expect(cubit.state.phase, UsbUpdatePhase.list);
       verifyNever(() => updates.installPackage(any()));
     });

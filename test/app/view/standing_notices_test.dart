@@ -11,7 +11,9 @@ import 'package:looper_repository/looper_repository.dart'
         FxAddress,
         FxStage,
         LooperState,
-        ReopenOutcome;
+        ReopenOutcome,
+        Track,
+        TrackState;
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/view/standing_notices.dart';
@@ -355,6 +357,89 @@ void main() {
       looperStates.add(connected);
       await tester.pump();
       expect(notices.state.banners, isEmpty);
+    });
+  });
+
+  group('the Clear all message (#1642)', () {
+    const undoable = LooperState(
+      status: EngineStatus(isConnected: true),
+      clearAllUndoable: true,
+    );
+
+    // As the stage raises it after a Clear all.
+    void showClearAll() => notices.show(
+      Notice(
+        id: AppNoticeId.undoClearAll,
+        title: (l10n) => l10n.undoClearAllToast,
+      ),
+    );
+
+    String? messageId() => notices.state.message?.notice.id;
+
+    testWidgets('ends when an Undo from any surface brings the rig back, '
+        'with no stage on screen', (tester) async {
+      await pump(tester, looperState: undoable);
+      showClearAll();
+      expect(messageId(), AppNoticeId.undoClearAll);
+
+      // The Undo pedal, the keyboard or a binding: the repository settles
+      // the group and the clear is no longer undoable.
+      looperStates.add(
+        const LooperState(
+          status: EngineStatus(isConnected: true),
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(notices.state.message, isNull);
+    });
+
+    testWidgets('ends when a new take retires the restore', (tester) async {
+      await pump(tester, looperState: undoable);
+      showClearAll();
+
+      looperStates.add(
+        const LooperState(
+          status: EngineStatus(isConnected: true),
+          tracks: [Track(state: TrackState.recording)],
+        ),
+      );
+      await tester.pump();
+      expect(notices.state.message, isNull);
+    });
+
+    testWidgets('stays while the clear can still be undone', (tester) async {
+      await pump(tester, looperState: undoable);
+      showClearAll();
+
+      looperStates.add(
+        const LooperState(
+          status: EngineStatus(isConnected: true),
+          clearAllUndoable: true,
+          tracks: [Track(clearRestore: true)],
+        ),
+      );
+      await tester.pump();
+      expect(messageId(), AppNoticeId.undoClearAll);
+      notices.clear(AppNoticeId.undoClearAll);
+    });
+
+    testWidgets('leaves another message alone', (tester) async {
+      await pump(tester, looperState: undoable);
+      notices.show(
+        Notice(
+          id: AppNoticeId.recordRefused,
+          tone: NoticeTone.warning,
+          title: (l10n) => l10n.undoClearAllToast,
+        ),
+      );
+
+      looperStates.add(connected);
+      await tester.pump();
+      expect(messageId(), AppNoticeId.recordRefused);
+      notices.clear(AppNoticeId.recordRefused);
     });
   });
 }

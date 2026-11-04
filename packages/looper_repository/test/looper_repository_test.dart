@@ -1095,6 +1095,15 @@ void main() {
           expect(repo.state.canUndo(3), isFalse);
         });
 
+        test('a second Clear all on the empty rig keeps the group '
+            '(#1642)', () {
+          final repo = clearedRig();
+          expect(repo.clearAll(const []), EngineResult.ok);
+          expect(repo.state.clearAllUndoable, isTrue);
+          expect(repo.undo(channel: 3), EngineResult.ok);
+          expect(calls('undo'), 3);
+        });
+
         test('waits with the group for a frozen member', () async {
           engine
             ..undoRestoresClearChannels = {0, 2}
