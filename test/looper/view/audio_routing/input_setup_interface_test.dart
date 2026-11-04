@@ -128,7 +128,7 @@ void main() {
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             theme: ThemeData(
-              extensions: [
+              extensions: const [
                 SurfaceTheme.dark,
                 SpacingTheme.standard,
                 NoticeTheme.standard,
@@ -263,7 +263,7 @@ void main() {
       onInterface = const InterfaceInputs(
         status: InterfaceInputsStatus.controls,
         inputs: [
-          InterfaceInput(),
+          InterfaceInput.none,
           InterfaceInput(phantomSwitch: 0),
         ],
         phantomSwitches: [
