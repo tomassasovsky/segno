@@ -3065,8 +3065,6 @@ class LooperRepository {
     EngineConfig? warmUpTarget,
     bool owesOffset = false,
   }) {
-    // A device opens: each output it lacks that keeps effects is told once.
-    _outputFxWaitingDismissed = {};
     {
       _fxSlots.clear();
       _fxPending.clear();
@@ -8399,30 +8397,43 @@ class LooperRepository {
   bool fxChainHeld(FxAddress address) =>
       _fxHeld.contains(address) && _chainAt(address).isNotEmpty;
 
-  /// Output destinations whose waiting notice the player took down since
-  /// the device opened ([dismissOutputFxWaitingNotice]).
-  Set<int> _outputFxWaitingDismissed = {};
+  /// Output destinations whose waiting notice the player took down, and the
+  /// device (by name and destination count) that was open then
+  /// ([dismissOutputFxWaitingNotice]): a reopen of the same device keeps
+  /// them dismissed, another device names them again.
+  Set<int> _outputFxWaitingDismissed = const {};
+  (String, int)? _outputFxWaitingDevice;
 
   /// The output destinations at or past [busCount] that hold an effects
-  /// chain, in order, but those dismissed since the device opened; none
-  /// while no device is [open]. Their chains are kept and are applied when a
-  /// device with those outputs opens (each start replays them, #1421).
-  List<int> _outputFxWaiting(int busCount, {required bool open}) => !open
-      ? const []
-      : [
-          for (final bus in _outputEffects.keys.toList()..sort())
-            if (bus >= busCount &&
-                _outputEffects[bus]!.isNotEmpty &&
-                !_outputFxWaitingDismissed.contains(bus))
-              bus,
-        ];
+  /// chain, in order, but those dismissed on this device; none while no
+  /// device is [open]. Their chains are kept and are applied when a device
+  /// with those outputs opens (each start replays them, #1421).
+  List<int> _outputFxWaiting(int busCount, {required bool open}) {
+    if (!open) return const [];
+    final dismissed = _outputFxWaitingDevice == (_engine.deviceName, busCount)
+        ? _outputFxWaitingDismissed
+        : const <int>{};
+    return [
+      for (final bus in _outputEffects.keys.toList()..sort())
+        if (bus >= busCount &&
+            _outputEffects[bus]!.isNotEmpty &&
+            !dismissed.contains(bus))
+          bus,
+    ];
+  }
 
   /// Takes down the notice about effects kept for outputs the open device
-  /// lacks; the chains stay kept. It comes back on the next device open.
+  /// lacks; the chains stay kept. It comes back when another device opens.
   void dismissOutputFxWaitingNotice() {
-    final waiting = state.outputFxWaiting;
+    final s = _engine.snapshot();
+    final waiting = _outputFxWaiting(s.outputBusCount, open: s.isRunning);
     if (waiting.isEmpty) return;
-    _outputFxWaitingDismissed = {..._outputFxWaitingDismissed, ...waiting};
+    final device = (_engine.deviceName, s.outputBusCount);
+    _outputFxWaitingDismissed = {
+      if (_outputFxWaitingDevice == device) ..._outputFxWaitingDismissed,
+      ...waiting,
+    };
+    _outputFxWaitingDevice = device;
     _reproject();
   }
 

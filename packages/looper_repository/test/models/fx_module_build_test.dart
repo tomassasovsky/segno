@@ -729,6 +729,15 @@ void main() {
       // picks the Drum variant for these keys; a stored variant is never
       // guessed again.
       expect(fxLegacyEntryVariant(e.copyWith()), 'Drum Rack');
+      // Saved inside a Dub rack, the guess takes the rack's own family.
+      expect(
+        fxLegacyEntryVariant(
+          e.copyWith(
+            rack: FxRack(id: 'r', name: 'Dub', art: kFxFamilySlugs['Dub Rack']),
+          ),
+        ),
+        'Dub Rack',
+      );
       final decoded = decodeTrackEffects(encodeTrackEffects([e])).single;
       expect((decoded as BuiltInEffect).variant, 'Dub Rack');
     });

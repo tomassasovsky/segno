@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart'
@@ -97,23 +98,25 @@ class _StandingNoticesState extends State<StandingNotices> {
       return;
     }
     final names = context.read<OutputsCubit>().state.names;
-    final channels = looper.status.outputChannels;
-    if (_raised[AppNoticeId.outputFxWaiting] != _OutputFxWaiting(waiting)) {
+    final key = _OutputFxWaiting(waiting, names);
+    final was = _raised[AppNoticeId.outputFxWaiting];
+    if (was is! _OutputFxWaiting || !listEquals(was.buses, waiting)) {
       AppLog.info(
         'effects kept for outputs the device lacks: '
-        '${waiting.map((bus) => bus + 1).join(', ')}',
+        '${waiting.map((bus) => '${2 * bus + 1}-${2 * bus + 2}').join(', ')}',
       );
     }
     _set(
       AppNoticeId.outputFxWaiting,
-      _OutputFxWaiting(waiting),
+      key,
       () => Notice(
         id: AppNoticeId.outputFxWaiting,
         title: (l10n) => l10n.outputFxWaitingTitle,
         body: (l10n) => l10n.outputFxWaitingBody(
           fxHeldList(l10n, [
+            // A destination the device lacks is a stereo pair.
             for (final bus in waiting)
-              l10n.outputName(names, bus, channels: channels),
+              l10n.outputName(names, bus, channels: 2 * (bus + 1)),
           ]),
           waiting.length,
         ),
@@ -301,12 +304,13 @@ class _Reopen extends Equatable {
 }
 
 class _OutputFxWaiting extends Equatable {
-  const _OutputFxWaiting(this.buses);
+  const _OutputFxWaiting(this.buses, this.names);
 
   final List<int> buses;
+  final Object names;
 
   @override
-  List<Object?> get props => [buses];
+  List<Object?> get props => [buses, names];
 }
 
 class _FxHeld extends Equatable {

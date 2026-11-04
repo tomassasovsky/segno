@@ -77,8 +77,8 @@ void main() {
   }
 
   group('effects for an output the device lacks (#1421)', () {
-    test('are kept, named until dismissed, and named again on the next '
-        'device open', () {
+    test('are kept, named until dismissed, and named again on another '
+        'device', () {
       engine.nextSnapshot = _rig(2, outputBusCount: 1);
       final repo = start();
       final delay = BuiltInEffect(type: TrackEffectType.delay, slotId: 'd');
@@ -90,14 +90,19 @@ void main() {
       repo.dismissOutputFxWaitingNotice();
       expect(repo.state.outputFxWaiting, isEmpty);
       expect(repo.outputEffects(3), [delay]);
+      // The same device reopened (a buffer change): still dismissed.
+      repo.stopEngine();
+      engine.nextSnapshot = _rig(2, outputBusCount: 1);
+      repo.startEngine(const EngineConfig());
+      expect(repo.state.outputFxWaiting, isEmpty);
       // A device with four destinations: the chain applies, nothing waits.
       repo.stopEngine();
       engine.nextSnapshot = _rig(2, outputBusCount: 4);
       repo.startEngine(const EngineConfig());
       expect(repo.state.outputFxWaiting, isEmpty);
-      // Back on the small device, the kept chain is named once more.
+      // Another device that lacks it too: named again.
       repo.stopEngine();
-      engine.nextSnapshot = _rig(2, outputBusCount: 1);
+      engine.nextSnapshot = _rig(2, outputBusCount: 2);
       repo.startEngine(const EngineConfig());
       expect(repo.state.outputFxWaiting, [3]);
     });

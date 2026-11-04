@@ -642,9 +642,9 @@ class BuiltInEffect extends TrackEffect {
 
   /// The rack family whose variant of [module] this entry was built as (a
   /// key of `kFxModuleVariants[module]`, such as `'Dub Rack'`), or `null`
-  /// for an entry not built from a rack module. Stored, never guessed: an
-  /// entry saved before it was stored gets it once, when it is decoded
-  /// (`decodeTrackEffects`).
+  /// for an entry not built from a rack module. Stored, not guessed: an
+  /// entry saved before it was stored takes it when it is decoded
+  /// (`decodeTrackEffects`), and is saved with it the next time its chain is.
   final String? variant;
 
   /// The factory preset's own values for this entry's module, by the
@@ -1133,7 +1133,8 @@ String encodeTrackEffects(List<TrackEffect> effects) =>
 ///
 /// The one conversion step for chains saved before a rack entry stored its
 /// variant: such an entry takes the variant its keys point to
-/// ([fxLegacyEntryVariant]), once, here, and is saved with it from then on.
+/// ([fxLegacyEntryVariant]) here, and is saved with it the next time its
+/// chain is saved; an entry that has one is never guessed.
 List<TrackEffect> decodeTrackEffects(String? encoded) => [
   for (final e in engine.decodeTrackEffects(encoded))
     _withStoredVariant(_trackEffectFromEngine(e)),

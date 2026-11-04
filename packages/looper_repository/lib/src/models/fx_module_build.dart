@@ -884,9 +884,9 @@ List<BuiltInEffect> fxFactoryRack(
 /// What this engine can build for [module], in [family]'s variant when the
 /// module has variants (its default variant without a family).
 FxModuleBuild fxModuleBuild(FxModule module, {String? family}) {
-  final variants = kFxModuleVariants[module.name];
-  if (variants == null) return const FxModuleBuild.unavailable();
-  return variants[family] ?? variants.values.first;
+  final variant = fxModuleVariant(module, family: family);
+  if (variant == null) return const FxModuleBuild.unavailable();
+  return kFxModuleVariants[module.name]![variant]!;
 }
 
 /// The family whose variant [fxModuleBuild] gives for [module] and
@@ -913,12 +913,13 @@ FxModuleBuild? fxEntryBuild(BuiltInEffect entry) {
   return build?.type == entry.type ? build : null;
 }
 
-/// The variant an entry saved before entries stored theirs was built as: the
-/// one whose controls all appear in the entry's [BuiltInEffect.source]
-/// (with the ones it knows it drops, [FxModuleBuild.unmapped]), the one with
-/// the most of them first, or `null` when none fits. Every factory preset of
-/// a family carries all of its keys, so this is the family's own for a
-/// factory entry. Only the one-time conversion at decode
+/// The variant an entry saved before entries stored theirs was built as, or
+/// `null` when none fits: among the variants whose controls all appear in
+/// the entry's [BuiltInEffect.source] (with the ones it knows it drops,
+/// [FxModuleBuild.unmapped]), the one of the family its rack was built from
+/// (its [FxRack.art]), else the one with the most of them. Every factory
+/// preset of a family carries all of its keys, so this is the family's own
+/// for a factory entry. Only the conversion at decode
 /// (`decodeTrackEffects`) asks it.
 String? fxLegacyEntryVariant(BuiltInEffect entry) {
   final name = entry.module;
@@ -926,25 +927,23 @@ String? fxLegacyEntryVariant(BuiltInEffect entry) {
   final variants = kFxModuleVariants[name];
   if (variants == null) return null;
   String? found;
-  FxModuleBuild? build;
   var best = -1;
   for (final MapEntry(key: family, value: v) in variants.entries) {
-    // The keys it places and the ones it knows it drops: the variant with
-    // the most of them that the entry carries is its rack's (the Rhythmic
-    // Rack's LPF, with its LFO keys, over the Lo-Fi Rack's). Where two
-    // carry the same keys (Ed's and the Vocal Rack's reverbs), the one
-    // whose family the entry's rack was built from.
     final keys = [...v.params.whereType<String>(), ...v.unmapped];
     if (!keys.every(entry.source.containsKey)) continue;
-    final own =
-        entry.rack?.art != null && kFxFamilySlugs[family] == entry.rack!.art;
-    if (keys.length > best || (keys.length == best && own)) {
+    // The rack's own family wins outright: a Dub compressor that holds
+    // `Comp Attack` fits the Drum variant too, with more keys.
+    final art = entry.rack?.art;
+    if (art != null && kFxFamilySlugs[family] == art) {
+      found = family;
+      break;
+    }
+    if (keys.length > best) {
       best = keys.length;
-      build = v;
       found = family;
     }
   }
-  return build?.type == entry.type ? found : null;
+  return found != null && variants[found]!.type == entry.type ? found : null;
 }
 
 /// The controls [entry] shows: the parameters, in order, and the key each is
