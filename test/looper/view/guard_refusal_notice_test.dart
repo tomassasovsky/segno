@@ -69,6 +69,31 @@ void main() {
     );
   });
 
+  testWidgets('a take that could not be saved or finished says so, and '
+      'that Capture is available again (#1639)', (tester) async {
+    final context = await pumpHost(tester);
+    for (final (failure, words) in [
+      (
+        PerformanceTakeFailure.notSaved,
+        'The take could not be saved. Its files are kept, and the next start '
+            'tries to recover it. You can record again.',
+      ),
+      (
+        PerformanceTakeFailure.notFinished,
+        'The take could not be finished. Its files are kept. You can record '
+            'again.',
+      ),
+    ]) {
+      onPerformanceRecorderState(
+        context,
+        PerformanceRecorderIdle(takeFailed: failure),
+      );
+      expect(notices.state.message?.notice.title(l10n), words);
+      expect(notices.state.message?.notice.tone, NoticeTone.warning);
+    }
+    await tester.pump(const Duration(seconds: 6));
+  });
+
   testWidgets('a plain idle shows nothing', (tester) async {
     final context = await pumpHost(tester);
     onPerformanceRecorderState(context, const PerformanceRecorderIdle());

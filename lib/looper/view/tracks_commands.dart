@@ -590,6 +590,18 @@ void onPerformanceRecorderState(
     );
     return;
   }
+  // A stopped take that could not be saved or finished says so, and that
+  // Capture is available again (#1639).
+  final takeFailed = state is PerformanceRecorderIdle ? state.takeFailed : null;
+  if (takeFailed != null) {
+    say(
+      (l10n) => switch (takeFailed) {
+        PerformanceTakeFailure.notSaved => l10n.perfTakeNotSaved,
+        PerformanceTakeFailure.notFinished => l10n.perfTakeNotFinished,
+      },
+    );
+    return;
+  }
   // A take the boot salvage could not recover must not just vanish from
   // view: say so; its files are kept (#1198).
   if (state is PerformanceRecorderIdle && state.notRecovered > 0) {

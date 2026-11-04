@@ -1258,6 +1258,14 @@
     "@perfArmBusyRendering": {
         "description": "Detail of a performance capture refused because a take's stems are still rendering (#1633). perfArmRefused is its title."
     },
+    "perfTakeNotSaved": "The take could not be saved. Its files are kept, and the next start tries to recover it. You can record again.",
+    "@perfTakeNotSaved": {
+        "description": "A stopped performance take whose finalize failed: its files stay on disk for the next start's recovery, and Capture is available again (#1639)."
+    },
+    "perfTakeNotFinished": "The take could not be finished. Its files are kept. You can record again.",
+    "@perfTakeNotFinished": {
+        "description": "A finalized performance take whose delivery (render result, DAW project) failed: its files are kept, and Capture is available again (#1639)."
+    },
     "perfStoppedLowDisk": "Capture stopped — the disk was running out of space. What was recorded has been saved.",
     "@perfStoppedLowDisk": {
         "description": "Shown when a running capture stopped itself on the free-space floor and finalized what it had."

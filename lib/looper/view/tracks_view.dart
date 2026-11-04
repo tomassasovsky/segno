@@ -263,6 +263,7 @@ class _TracksViewState extends State<TracksView> {
                         current.driveUnavailable ||
                         current.refusedBy != null ||
                         current.busyWith != null ||
+                        current.takeFailed != null ||
                         current.notRecovered > 0)),
             listener: onPerformanceRecorderState,
           ),

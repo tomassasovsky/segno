@@ -648,6 +648,101 @@ void main() {
       },
     );
 
+    test('a finalize that throws lands on idle saying the take was not '
+        'saved, and Capture arms again (#1639)', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+      final testZone = Zone.current;
+      await IOOverrides.runZoned(
+        cubit.toggleArm,
+        createFile: (path) {
+          final real = testZone.run(() => File(path));
+          return path.endsWith('/performance.json.publishing')
+              ? _ManifestWriteFails(real)
+              : real;
+        },
+      );
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(
+          takeFailed: PerformanceTakeFailure.notSaved,
+        ),
+      );
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+    });
+
+    test('a manifest of the wrong shape after the render still completes '
+        'the take instead of staying on rendering (#1639)', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      final dir = await armWithLog(performance);
+      await pumpEventQueue();
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 50,
+      );
+      clock = clock.add(const Duration(seconds: 5));
+      await cubit.toggleArm();
+      await cubit.stream
+          .firstWhere((s) => s is PerformanceRecorderRendering)
+          .timeout(const Duration(seconds: 5));
+
+      // Well-formed JSON whose fields have the wrong types: reading it
+      // throws a cast error, not an I/O one.
+      File('$dir/performance.json').writeAsStringSync('{"slug": 5}');
+      engine.renderProgress = PerformanceRenderProgress.empty;
+      final completed = await waitForCompleted(cubit);
+      expect(completed.result, PerformanceRecordDone(dir));
+      expect(completed.tracks, isEmpty);
+    });
+
+    test('a delivery that throws anywhere else lands on idle saying the '
+        'take was not finished, and Capture arms again (#1639)', () async {
+      final broken = _RenderStatusThrows();
+      final repo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(repo.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: repo,
+        armedTickInterval: const Duration(milliseconds: 10),
+        renderPollInterval: const Duration(milliseconds: 10),
+        now: () => clock,
+        freeSpaceBytes: (_) async => null,
+      );
+      addTearDown(cubit.close);
+      await armWithLog(repo);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
+      await cubit.toggleArm();
+      await cubit.stream
+          .firstWhere(
+            (s) => s is PerformanceRecorderIdle && s.takeFailed != null,
+          )
+          .timeout(const Duration(seconds: 5));
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(
+          takeFailed: PerformanceTakeFailure.notFinished,
+        ),
+      );
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+    });
+
     test(
       'arms normally once boot recovery has completed — no leftover prompt '
       'state ever blocks the toolbar (#679)',
@@ -2115,4 +2210,42 @@ class _SnapshotBlockingEngine extends FakeAudioEngine {
     Directory('${target.captureDir}/arm-snapshot.json.pending').createSync();
     return super.perfArm(target);
   }
+}
+
+/// A manifest whose publish write fails, as a full disk would.
+class _ManifestWriteFails implements File {
+  _ManifestWriteFails(this._inner);
+
+  final File _inner;
+
+  @override
+  String get path => _inner.path;
+
+  @override
+  bool existsSync() => _inner.existsSync();
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) =>
+      _inner.readAsString(encoding: encoding);
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async => throw const FileSystemException('No space left on device');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'not reached by finalize on the manifest: $invocation',
+  );
+}
+
+/// An engine whose render results cannot be read once the render is done:
+/// a delivery failure no catch inside the delivery expects.
+class _RenderStatusThrows extends FakeAudioEngine {
+  @override
+  List<PerformanceRenderTrackStatus> renderTrackStatuses() =>
+      throw StateError('render results unavailable');
 }

@@ -693,26 +693,40 @@ class PerformanceRepository {
     return _finalizeArmed(dir);
   }
 
+  /// The disarm-time snapshot of the take in [dir], taken while the engine
+  /// is still the live session's.
+  PerformanceDisarmSnapshot _disarmSnapshot(String dir) =>
+      PerformanceDisarmSnapshot(
+        // Re-read here, not copied from the arm snapshot: D6's tempo lock
+        // only engages once grid content exists, so a tempo dialed in — or
+        // derived by the first loop — after an arm-over-empty-grid is only
+        // knowable now. This is the authoritative tempo a DAW export stamps;
+        // the arm-time copy serves crash salvage, which never gets this pass
+        // (#281). Read before perfDisarm, while the engine is still the live
+        // session's.
+        tempoBpm: _engine.snapshot().tempoBpm,
+        tracks: _captureSettledLanes(
+          dir,
+          chains: const PerformanceChains(),
+          writeChains: false,
+          stampTakeId: true,
+        ),
+      );
+
   Future<EngineResult> _finalizeArmed(String dir) async {
     _setStatus(PerformanceCaptureStatus.finalizing);
-    final disarmSnapshot = PerformanceDisarmSnapshot(
-      // Re-read here, not copied from the arm snapshot: D6's tempo lock
-      // only engages once grid content exists, so a tempo dialed in — or
-      // derived by the first loop — after an arm-over-empty-grid is only
-      // knowable now. This is the authoritative tempo a DAW export stamps;
-      // the arm-time copy serves crash salvage, which never gets this pass
-      // (#281). Read before perfDisarm below, while the engine is still the
-      // live session's.
-      tempoBpm: _engine.snapshot().tempoBpm,
-      tracks: _captureSettledLanes(
-        dir,
-        chains: const PerformanceChains(),
-        writeChains: false,
-        stampTakeId: true,
-      ),
-    );
-
-    final result = _engine.perfDisarm();
+    final PerformanceDisarmSnapshot disarmSnapshot;
+    final EngineResult result;
+    try {
+      disarmSnapshot = _disarmSnapshot(dir);
+      result = _engine.perfDisarm();
+    } on Object {
+      // The lanes could not be exported, or the engine's disarm threw:
+      // nothing has stopped and the take keeps its owner. Saying so keeps no
+      // one waiting on a finalize that never started (#1639).
+      _setStatus(PerformanceCaptureStatus.armed);
+      rethrow;
+    }
     if (!result.isOk) {
       _setStatus(PerformanceCaptureStatus.armed);
       return result;
