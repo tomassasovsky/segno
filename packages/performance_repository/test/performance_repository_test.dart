@@ -1268,6 +1268,39 @@ void main() {
       );
     }
 
+    test('an arm while the take is still finalizing is refused as a take '
+        'being saved, not taken for the same press twice (#1638)', () async {
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory!;
+      final refusals = <PerformanceArmRefusal>[];
+      final sub = repo.armRefusals.listen(refusals.add);
+      addTearDown(sub.cancel);
+
+      final readGate = Completer<void>();
+      final testZone = Zone.current;
+      final finalizing = IOOverrides.runZoned(
+        repo.disarm,
+        createFile: (path) {
+          final real = testZone.run(() => File(path));
+          return path == '$dir/${PerformanceRepository.manifestName}'
+              ? _GatedReadFile(real, readGate.future)
+              : real;
+        },
+      );
+      await pumpEventQueue();
+      expect(repo.armedDirectory, dir, reason: 'still finalizing');
+
+      expect(await repo.arm(), EngineResult.notReady);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
+        [PerformanceArmBusy.finalizing],
+      );
+
+      readGate.complete();
+      expect(await finalizing, EngineResult.ok);
+    });
+
     test('discarding a take cancels the render its finalize started, so '
         'the render slot is free for the next take (#1638)', () async {
       await armAndSeedNative(engine, repo);

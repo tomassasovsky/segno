@@ -416,6 +416,14 @@ class PerformanceRepository {
     String? root,
     GuardScope scope = const GuardScope.internal(),
   }) async {
+    // A take being finalized still owns its directory until the finalize
+    // returns: that is a take being saved, not the same press arriving
+    // twice, so it is refused and said like the rest (#1638).
+    if (_status == PerformanceCaptureStatus.finalizing) {
+      return _refuseArm(
+        const PerformanceArmBusyRefusal(PerformanceArmBusy.finalizing),
+      );
+    }
     if (_armedDir != null || _armInFlight) return EngineResult.ok;
     final busy = armBusy;
     if (busy != null) return _refuseArm(PerformanceArmBusyRefusal(busy));
