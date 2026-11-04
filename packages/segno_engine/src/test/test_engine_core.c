@@ -17876,11 +17876,12 @@ static void test_fx_reverb_builds_a_tail(void) {
   process_const(e, 0.0f, 64, out);
   for (int i = 0; i < 64; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
-  /* Full wet: the first reflected sample is still silent (shortest comb line is
+  /* Full wet: once the mix lands (the kind's next update, within
+   * LE_FX_UPDATE_FRAMES), the output is still silent (shortest comb line is
    * far longer than the blocks processed so far). */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* mix = fully wet */
   process_const(e, 0.0f, 64, out);
-  CHECK(fabsf(out[0]) < 1e-6f);
+  for (int i = LE_FX_UPDATE_FRAMES; i < 64; ++i) CHECK(fabsf(out[i]) < 1e-6f);
 
   /* Process ~12.8 k more frames: a real tail appears, stays finite, and never
    * blows up despite the comb feedback. */
@@ -33760,6 +33761,36 @@ static void test_fx_enable_chain_stomp_staggered_clear(void) {
   le_engine_destroy(e);
 }
 
+/* The echo and the Freeverb never clear their rings (#1571): their blocks
+ * record what they have written, so a slot retyped from a delay whose ring
+ * is full of audio reads silence where it has not written yet, and with a
+ * silent input stays exactly silent. */
+static void test_fx_ring_kinds_never_read_stale_audio(void) {
+  printf("test_fx_ring_kinds_never_read_stale_audio\n");
+  static float cap[1024];
+  const int32_t kinds[] = {LE_FX_ECHO, LE_FX_REVERB};
+  for (int k = 0; k < 2; ++k) {
+    le_engine* e = make_configured_engine();
+    CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+    CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+    drain(e);
+    /* More than a second of input: every sample of the delay's rings. */
+    for (int b = 0; b < 50; ++b) process_n(e, 1.0f, 1024, cap);
+    CHECK(le_engine_set_monitor_input_fx(e, 0, 0, kinds[k]) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 1.0f) == LE_OK);
+    drain(e);
+    int silent = 1;
+    for (int b = 0; b < 50; ++b) {
+      process_n(e, 0.0f, 1024, cap);
+      for (int i = 0; i < 1024; ++i) silent &= cap[i] == 0.0f;
+    }
+    CHECK(silent);
+    le_engine_destroy(e);
+  }
+}
+
 /* Octaver re-enable warmup: the ring clear also zeroes the octaver's
  * delay-matched DRY tap, so without warmup a re-enable rendered a ~LE_PV_LATENCY
  * (~25 ms) hole of silence. The warmup feeds the FIFO while the output stays
@@ -40239,6 +40270,7 @@ int main(void) {
   test_fx_enable_count_regrow_reseeds();
   test_fx_enable_gap_settles_disabled_ramp();
   test_fx_enable_chain_stomp_staggered_clear();
+  test_fx_ring_kinds_never_read_stale_audio();
   test_fx_enable_octaver_warmup_no_hole();
   test_fx_enable_works_while_stopped();
   test_fx_enable_monitor_twins();

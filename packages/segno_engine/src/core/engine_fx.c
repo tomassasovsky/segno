@@ -1831,75 +1831,6 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   return dry * (1.0f - mix) + wet_out * mix;
 }
 
-/* Tape-style echo. Three things set it apart from the clean digital delay: a
- * slow wow LFO wobbles the read time (tape pitch flutter, read fractionally), a
- * heavy one-pole low-pass darkens the loop so each repeat loses highs, and the
- * fed-back signal is softly saturated (tape compression, which also self-limits
- * the feedback). The wet tap is that processed signal, so even the first repeat
- * is coloured rather than a clean copy. p0 = time (0..1 s), p1 = feedback,
- * p2 = wet mix. Shares the fx_delay ring; fx_lp is the loop low-pass, and the
- * wow LFO runs on the engine clock (le_clock_lfo). */
-static float fx_echo(le_fx_state* fx, int slot, int chan, int sr, int cap,
-                     float x, const float* p, float wow) {
-  float* buf = fx->delay[slot][chan];
-  if (buf == NULL || cap <= 1) return x;
-
-  /* Wow/flutter: a slow LFO ([wow], -1..1, on the engine clock) wobbles the
-   * read time a few ms for tape wobble. */
-  const float wob = 0.004f * (float)sr; /* ~4 ms wobble depth */
-  float d = p[0] * (float)(cap - 1) + wow * wob;
-  if (d < 1.0f) d = 1.0f;
-  if (d > (float)(cap - 1)) d = (float)(cap - 1);
-
-  const int pos = fx->delay_pos[slot][chan];
-  const float delayed = fx_read_frac(buf, cap, pos, d);
-
-  /* Darken the loop (~1.4 kHz one-pole) then soft-saturate the repeats. The
-   * one-pole's step is 0.18 at 48 kHz; at other rates it keeps the same time
-   * constant, 1 - 0.82^(48000 / sr), so the repeats darken alike (#1547). */
-  float lp = fx->fx_lp[slot][chan];
-  if (fx->echo_sr[slot] != sr) { /* worked out once per rate */
-    fx->echo_step[slot] = (float)(1.0 - pow(0.82, 48000.0 / (sr > 0 ? sr : 48000)));
-    fx->echo_sr[slot] = sr;
-  }
-  lp += fx->echo_step[slot] * (delayed - lp);
-  fx->fx_lp[slot][chan] = lp;
-  const float wet = tanhf(lp);
-  const float fb = p[1] * 0.97f;
-
-  buf[pos] = x + wet * fb;
-  int npos = pos + 1;
-  if (npos >= cap) npos = 0;
-  fx->delay_pos[slot][chan] = npos;
-
-  const float mix = p[2];
-  return x * (1.0f - mix) + wet * mix;
-}
-
-/* Comb and allpass line lengths (samples at 44.1 kHz; scaled to the running
- * rate). The classic Freeverb tunings: mutually prime lengths so the comb
- * resonances and allpass diffusion never line up into a periodic ring. */
-static const int LE_REV_COMB_LEN[LE_REV_COMBS] = {1116, 1188, 1277, 1356,
-                                                  1422, 1491, 1557, 1617};
-static const int LE_REV_AP_LEN[LE_REV_APS] = {556, 441, 341, 225};
-
-/* Freeverb stereo spread: the right bank's lines are this many samples longer
- * (at 44.1 kHz, scaled to the running rate) so its tail decorrelates from the
- * left's, giving a mono input a wide stereo decay. */
-#define LE_REV_SPREAD 23
-
-/* Clears the reverb comb/allpass write heads and per-comb damping memory for
- * chain slot [s] across both stereo banks (the reverb's share of the per-slot
- * DSP state). */
-static void le_fx_clear_reverb(le_fx_state* fx, int s) {
-  for (int i = 0; i < LE_REV_COMBS * LE_REV_BANKS; ++i) fx->rev_comb_pos[s][i] = 0;
-  memset(fx->rev_comb_lp[s], 0, sizeof(fx->rev_comb_lp[s]));
-  for (int i = 0; i < LE_REV_APS * LE_REV_BANKS; ++i) fx->rev_ap_pos[s][i] = 0;
-  fx->rev_ph[s] = 0;
-  memset(fx->rev_frac[s], 0, sizeof(fx->rev_frac[s]));
-  fx->rev_sr[s] = 0; /* the lines are worked out again (le_rev_geometry) */
-}
-
 /* The delay rings [type] runs on (defined with the vtable). */
 static int le_fx_ring_count(int32_t type);
 
@@ -1913,8 +1844,8 @@ static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
 
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay read head, one-pole memory, the octaver phase-vocoder runtime
- * when [type] is of its family, reverb lines) so a freshly engaged effect
- * starts clean — no filter blow-up from stale
+ * when [type] is of its family, a heap-state kind's block) so a freshly
+ * engaged effect starts clean — no filter blow-up from stale
  * integrators, no delay-read of old content. Does NOT free or allocate the delay
  * ring or octaver buffers; the control thread owns their lifetime. Shared by
  * le_lane_reset, le_monitor_input_reset, and the SET_*_FX ring handlers (which
@@ -1924,7 +1855,7 @@ static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
  * allocated octaver slot it memsets the phase-vocoder accumulator and phase
  * buffers (~9 KB/channel; the frame scratch is not cleared, see
  * le_octaver_state::analysed). That is bounded and fires only on a discrete type-change
- * event (never per sample), consistent with the existing reverb-line clears. */
+ * event (never per sample). */
 /* The Mode delay's line (defined with its kernel). */
 static void le_mdly_reset(struct le_fx_line* line);
 static void le_mdly_clear(struct le_fx_line* line);
@@ -1977,7 +1908,6 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
     le_oct_low* low = atomic_load_explicit(&o->low, memory_order_acquire);
     if (low != NULL) le_low_forget(low);
   }
-  le_fx_clear_reverb(fx, slot);
   fx->oct_run[slot] = 0; /* the resamplers start again (fx_octaver_run) */
   memset(&fx->slice[slot], 0, sizeof(fx->slice[slot]));
   /* A heap-state kind starts clean too: its block is cleared and settled
@@ -2140,140 +2070,6 @@ void le_fx_free_slot(le_fx_state* fx, int slot) {
 void le_fx_state_free_buffers(le_fx_state* fx) {
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_free_slot(fx, s);
   le_fx_free_kind_table(fx);
-}
-
-_Static_assert(LE_REV_PHASES == LE_RS_PH, "the Freeverb's phases");
-
-/* Slot [slot]'s Freeverb lines at [sr] (the left bank's combs, then its
- * allpasses, then the right bank's): each one's samples and, where frac
- * applies, its all-pass for the rest of its 48 kHz length (le_frac_split),
- * worked out when the rate changes and kept in the slot. */
-static void le_rev_geometry(le_fx_state* fx, int slot, int sr) {
-  if (fx->rev_sr[slot] == sr) return;
-  const float scale = 48000.0f / 44100.0f;
-  const int nph = le_rs_phases(sr);
-  const int frac = le_rs_design_rate(sr) != 48000;
-  for (int bank = 0; bank < LE_REV_BANKS; ++bank) {
-    const int spread = bank == 0 ? 0 : (int)((float)LE_REV_SPREAD * scale);
-    for (int k = 0; k < LE_REV_COMBS + LE_REV_APS; ++k) {
-      const int base = k < LE_REV_COMBS ? LE_REV_COMB_LEN[k]
-                                        : LE_REV_AP_LEN[k - LE_REV_COMBS];
-      const int len48 = (int)((float)base * scale) + spread;
-      const int i = bank * (LE_REV_COMBS + LE_REV_APS) + k;
-      uint32_t n = (uint32_t)(len48 * nph);
-      float a = 0.0f;
-      if (frac) le_frac_split((double)len48 * (double)sr / 48000.0, &n, &a);
-      fx->rev_len[slot][i] = n > 1u ? (int32_t)n : 1;
-      fx->rev_fa[slot][i] = a;
-    }
-  }
-  fx->rev_sr[slot] = sr;
-}
-
-/* Schroeder/Freeverb reverb: LE_REV_COMBS parallel damped comb filters are
- * summed and run through LE_REV_APS series allpass diffusers, producing a dense
- * decaying tail rather than the discrete repeats of DELAY/ECHO. Two such banks
- * run in parallel — a left and a right whose lines are offset by LE_REV_SPREAD —
- * each fed by its own input (the left bank by xl, the right by xr) and returned
- * through *out_l / *out_r. A mono input (xl == xr) feeds both banks identically,
- * so it still yields a decorrelated stereo tail from the spread alone, exactly as
- * before; an already-stereo input reverberates each side on its own bank. p0 =
- * size (tail length, via comb feedback), p1 = damping (treble absorbed each
- * pass), p2 = wet mix. The wet path carries only the reverberated signal, so the
- * dry is heard through (1 - mix). Both banks are packed into the slot's single
- * 1 s ring delay[slot][0] (delay[slot][1] is unused by reverb); both banks total
- * well under 1 s even at 192 kHz.
- *
- * The call site passes &xl / &xr as the out-params while xl / xr are also the
- * inputs, so both wet[] values are computed before either out-param is written —
- * xl / xr are never read after the first store. */
-static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
-                      float xr, const float* p, float* out_l, float* out_r) {
-  float* buf = fx->delay[slot][0];
-  if (buf == NULL || cap <= 1) {
-    *out_l = xl;
-    *out_r = xr;
-    return;
-  }
-  /* The line lengths are Freeverb's 44.1 kHz ones scaled to 48 kHz, and
-   * at 96 kHz exactly twice those: with the damping on each phase's own
-   * memory, every phase then runs the 48 kHz network (#1547). At other
-   * rates a line's 48 kHz length is no whole number of samples: the line
-   * runs a sample or so short and a first-order all-pass delays it by the
-   * rest (le_frac_split), where rounding moved the tail's echoes and with them
-   * its envelope by 3 dB at 44.1 kHz. */
-  const int nph = le_rs_phases(sr);
-  const int frac = le_rs_design_rate(sr) != 48000;
-  le_rev_geometry(fx, slot, sr);
-  const int ph = fx->rev_ph[slot] < nph ? fx->rev_ph[slot] : 0;
-  fx->rev_ph[slot] = ph + 1 < nph ? ph + 1 : 0;
-  float* comb_lp = fx->rev_comb_lp[slot][ph];
-  const float room = 0.70f + p[0] * 0.28f; /* 0.70..0.98 comb feedback */
-  /* 0..0.4 feedback low-pass, its pole at 48 kHz; at other rates but 96
-   * the pole keeps its time constant, so the tail darkens alike. */
-  float damp = p[1] * 0.4f;
-  if (frac && damp > 0.0f) {
-    /* kept while the setting and the rate hold: a powf a frame is more
-     * than the rest of the damping costs */
-    if (fx->rev_damp_p[slot] != damp || fx->rev_damp_sr[slot] != sr) {
-      fx->rev_damp_p[slot] = damp;
-      fx->rev_damp_sr[slot] = sr;
-      fx->rev_damp[slot] = powf(damp, 48000.0f / (float)sr);
-    }
-    damp = fx->rev_damp[slot];
-  }
-  const float mix = p[2];
-
-  int off = 0;
-  float wet[LE_REV_BANKS] = {0.0f, 0.0f};
-  for (int bank = 0; bank < LE_REV_BANKS; ++bank) {
-    const int lbase = bank * (LE_REV_COMBS + LE_REV_APS); /* its lines */
-    const int cbase = bank * LE_REV_COMBS; /* this bank's state slice */
-    const int abase = bank * LE_REV_APS;
-    const float in = (bank == 0 ? xl : xr) * 0.015f; /* Freeverb input gain */
-    float acc = 0.0f;
-    for (int c = 0; c < LE_REV_COMBS; ++c) {
-      const int len = fx->rev_len[slot][lbase + c];
-      const float fa = fx->rev_fa[slot][lbase + c];
-      if (off + len > cap) break; /* safety: never index past the ring */
-      int pos = fx->rev_comb_pos[slot][cbase + c];
-      if (pos >= len) pos = 0;
-      float y = buf[off + pos];
-      if (frac) y = le_frac_tick(fa, fx->rev_frac[slot][cbase + c], y);
-      acc += y;
-      float lp = comb_lp[cbase + c];
-      lp = y * (1.0f - damp) + lp * damp; /* damp the signal fed back */
-      comb_lp[cbase + c] = lp;
-      buf[off + pos] = in + lp * room;
-      pos += 1;
-      if (pos >= len) pos = 0;
-      fx->rev_comb_pos[slot][cbase + c] = pos;
-      off += len;
-    }
-    float s = acc;
-    for (int a = 0; a < LE_REV_APS; ++a) {
-      const int len = fx->rev_len[slot][lbase + LE_REV_COMBS + a];
-      const float fa = fx->rev_fa[slot][lbase + LE_REV_COMBS + a];
-      if (off + len > cap) break;
-      int pos = fx->rev_ap_pos[slot][abase + a];
-      if (pos >= len) pos = 0;
-      float bufout = buf[off + pos];
-      if (frac) {
-        float* z = fx->rev_frac[slot][LE_REV_COMBS * LE_REV_BANKS + abase + a];
-        bufout = le_frac_tick(fa, z, bufout);
-      }
-      buf[off + pos] = s + bufout * 0.5f; /* allpass feedback coefficient */
-      s = bufout - s;
-      pos += 1;
-      if (pos >= len) pos = 0;
-      fx->rev_ap_pos[slot][abase + a] = pos;
-      off += len;
-    }
-    wet[bank] = s;
-  }
-  /* Write both out-params last: they may alias the xl / xr inputs. */
-  *out_l = xl * (1.0f - mix) + wet[0] * mix;
-  *out_r = xr * (1.0f - mix) + wet[1] * mix;
 }
 
 /* ---- the effect vtable ----
@@ -3674,21 +3470,6 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
   const float dry = m <= 0.5f ? 1.0f : 1.0f - (2.0f * m - 1.0f) * (2.0f * m - 1.0f);
   *l = *l * dry + wl * wet;
   *r = *r * dry + wr * wet;
-}
-
-static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
-                            float* r, const float* p) {
-  const float wow = sinf(
-      2.0f * LE_PI * (float)le_clock_lfo(fx, slot, LE_ECHO_WOW_HZ, sr));
-  *l = fx_echo(fx, slot, 0, sr, cap, *l, p, wow);
-  *r = fx_echo(fx, slot, 1, sr, cap, *r, p, wow);
-}
-/* Reverb is natively stereo (it cross-feeds its two banks), so its wrapper makes
- * the one stereo call. fx_reverb computes both wet values before writing either
- * out-param, so passing l / r as both inputs and outputs is safe. */
-static void fx_reverb_process(le_fx_state* fx, int slot, int sr, int cap,
-                              float* l, float* r, const float* p) {
-  fx_reverb(fx, slot, sr, cap, *l, *r, p, l, r);
 }
 
 /* Octaver's added latency, adapted to the vtable's (fx, slot) signature. */
@@ -5200,6 +4981,8 @@ static inline double le_lfo_step(double ph, double inc) {
  * owner's is the same from every fresh block (the plan's per-owner
  * seeding, as the hop phase is). */
 static uint32_t le_fx_kind_seed(const void* ks);
+/* The clock LFO phase the chain handed the kind this sample (lfo_hz). */
+static float le_fx_kind_lfo(const void* ks);
 
 /* xorshift32: the next state, never 0 from a nonzero one. */
 static inline uint32_t le_xorshift(uint32_t* s) {
@@ -5232,8 +5015,8 @@ static inline float le_unit(uint32_t* s) {
  *   50.5 ms at 50 % and 100 ms at 100 % (measured 1.0, 51.2 and 100.8 ms),
  *   the shortest 0.2 ms. The ring holds 100 ms up to 162 kHz, so the
  *   appliance's 96 kHz gets the whole range; that makes the block 128 KB,
- *   which every slot's arena holds once and the audio thread clears when a
- *   slot turns into a doubler.
+ *   which a slot allocates the first time it holds a doubler and the audio
+ *   thread clears when a slot turns into one.
  * - The mix does not fade the copy: from 50 % up it changes nothing
  *   (Studio, Vocal and Dub alike), and towards 0 % it shrinks the delays
  *   until, at 0 %, the copy sits within 1 ms of the dry signal (the range
@@ -8062,9 +7845,8 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
       want = q->nph * trip48;
     }
     double trip = want;
-    /* Past 107 kHz the trip outgrows the ring (a larger one would sit in
-     * every slot's arena): hold it there and scale the loss per trip, so the
-     * decay stays right though the echo shortens. */
+    /* Past 107 kHz the trip outgrows the ring: hold it there and scale the
+     * loss per trip, so the decay stays right though the echo shortens. */
     if (trip > (double)(LE_SPR_RING - 1u)) trip = (double)(LE_SPR_RING - 1u);
     if (trip < 1.0) trip = 1.0;
     q->trip = (uint32_t)trip;
@@ -8747,9 +8529,9 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
 static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
                               float* r) {
   le_fx_verb* q = (le_fx_verb*)ks;
-  /* Rings too short for the geometry: the input passes untouched, as it
-   * does when the slot has no rings (fx_run). */
-  if (q->def == NULL || (uint32_t)cap < q->need[0] ||
+  /* Rings too short for the geometry, or one missing: the input passes
+   * untouched, as it does when the slot has no rings (fx_run). */
+  if (q->def == NULL || r1 == NULL || (uint32_t)cap < q->need[0] ||
       (uint32_t)cap < q->need[1])
     return;
   const float dry = le_fx_glide_next(&q->dry);
@@ -9085,7 +8867,8 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
                                    float* l, float* r) {
   le_fx_rverb* q = (le_fx_rverb*)ks;
   le_fx_verb* v = &q->v;
-  if (v->def == NULL || (uint32_t)cap < v->need[0] || (uint32_t)cap < v->need[1])
+  if (v->def == NULL || r1 == NULL || (uint32_t)cap < v->need[0] ||
+      (uint32_t)cap < v->need[1])
     return;
   const float dry = le_fx_glide_next(&v->dry);
   const float wet = le_fx_glide_next(&v->wet) * le_fx_glide_next(&q->dip);
@@ -9324,6 +9107,281 @@ static void fx_plugin_process(le_fx_state* fx, int slot, int sr, int cap,
 }
 
 
+/* ---- Echo (LE_FX_ECHO) ----
+ *
+ * Tape-style echo. Three things set it apart from the clean digital delay: a
+ * slow wow LFO wobbles the read time (tape pitch flutter, read fractionally), a
+ * heavy one-pole low-pass darkens the loop so each repeat loses highs, and the
+ * fed-back signal is softly saturated (tape compression, which also self-limits
+ * the feedback). The wet tap is that processed signal, so even the first repeat
+ * is coloured rather than a clean copy. p0 = time (0..1 s), p1 = feedback,
+ * p2 = wet mix. Its lines are the slot's two rings; its block knows how much
+ * of them it has written, so the rings are never cleared for it. The wow LFO
+ * runs on the engine clock (le_clock_lfo, through the vtable's lfo_hz). */
+#define LE_ECHO_PARAMS_N 3
+
+typedef struct le_fx_echo {
+  le_fx_dyn_head h;
+  float last[LE_ECHO_PARAMS_N];
+  /* The settings: the time's share of the ring, the loop's feedback and
+   * the wet mix. */
+  float time;
+  float fb;
+  float mix;
+  /* Per-rate: the loop low-pass's step (0.18 at 48 kHz; elsewhere the same
+   * time constant, 1 - 0.82^(48000 / sr), so the repeats darken alike,
+   * #1547) and the wow's depth (4 ms). */
+  float step;
+  float wob;
+  float lp[2];   /* the loop low-pass, per channel */
+  int32_t pos;   /* the rings' write head */
+  int32_t full;  /* the rings have wrapped: every sample is written */
+} le_fx_echo;
+
+static void fx_echo_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_echo* q = (le_fx_echo*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_ECHO_PARAMS_N, sr, settle);
+  if (!f) return;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    const int rate = sr > 0 ? sr : 48000;
+    q->step = (float)(1.0 - pow(0.82, 48000.0 / rate));
+    q->wob = 0.004f * (float)rate;
+  }
+  q->time = p[0];
+  q->fb = p[1] * 0.97f;
+  q->mix = p[2];
+}
+
+/* The ring [buf] [d] samples behind [head], read fractionally; a sample
+ * not yet written since the block was cleared reads as silence. */
+static float le_echo_read(const le_fx_echo* q, const float* buf, int cap,
+                          float d) {
+  if (q->full) return fx_read_frac(buf, cap, q->pos, d);
+  float rp = (float)q->pos - d;
+  while (rp < 0.0f) rp += (float)cap;
+  while (rp >= (float)cap) rp -= (float)cap;
+  const int i0 = (int)rp;
+  const float frac = rp - (float)i0;
+  int i1 = i0 + 1;
+  if (i1 >= cap) i1 = 0;
+  const float a = i0 < q->pos ? buf[i0] : 0.0f;
+  const float b = i1 < q->pos ? buf[i1] : 0.0f;
+  return a + frac * (b - a);
+}
+
+static void fx_echo_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
+                              float* r) {
+  le_fx_echo* q = (le_fx_echo*)ks;
+  if (cap <= 1 || r1 == NULL) return;
+  if (q->pos >= cap) { /* the rings were remade shorter: start them again */
+    q->pos = 0;
+    q->full = 0;
+  }
+  /* Wow/flutter: a slow LFO on the engine clock wobbles the read time a few
+   * ms for tape wobble. */
+  const float wow = sinf(2.0f * LE_PI * le_fx_kind_lfo(ks));
+  float d = q->time * (float)(cap - 1) + wow * q->wob;
+  if (d < 1.0f) d = 1.0f;
+  if (d > (float)(cap - 1)) d = (float)(cap - 1);
+  float* ring[2] = {r0, r1};
+  float* io[2] = {l, r};
+  for (int c = 0; c < 2; ++c) {
+    const float x = *io[c];
+    const float delayed = le_echo_read(q, ring[c], cap, d);
+    /* Darken the loop (~1.4 kHz one-pole) then soft-saturate the repeats. */
+    q->lp[c] += q->step * (delayed - q->lp[c]);
+    const float wet = tanhf(q->lp[c]);
+    ring[c][q->pos] = x + wet * q->fb;
+    *io[c] = x * (1.0f - q->mix) + wet * q->mix;
+  }
+  if (++q->pos >= cap) {
+    q->pos = 0;
+    q->full = 1;
+  }
+}
+
+/* ---- Reverb (LE_FX_REVERB) ----
+ *
+ * Schroeder/Freeverb reverb: LE_REV_COMBS parallel damped comb filters are
+ * summed and run through LE_REV_APS series allpass diffusers, producing a dense
+ * decaying tail rather than the discrete repeats of DELAY/ECHO. Two such banks
+ * run in parallel — a left and a right whose lines are offset by LE_REV_SPREAD —
+ * each fed by its own input (the left bank by the left, the right bank by the
+ * right). A mono input feeds both banks identically, so it still yields a
+ * decorrelated stereo tail from the spread alone; an already-stereo input
+ * reverberates each side on its own bank. p0 = size (tail length, via comb
+ * feedback), p1 = damping (treble absorbed each pass), p2 = wet mix. The wet
+ * path carries only the reverberated signal, so the dry is heard through
+ * (1 - mix). Both banks are packed into the slot's first ring (its `prepare`
+ * makes only that one); both banks total well under 1 s even at 192 kHz. Its
+ * block knows which lines it has filled, so the ring is never cleared for
+ * it. */
+#define LE_REV_PARAMS_N 3
+#define LE_REV_COMBS 8
+#define LE_REV_APS 4
+#define LE_REV_BANKS 2
+#define LE_REV_LINES ((LE_REV_COMBS + LE_REV_APS) * LE_REV_BANKS)
+_Static_assert(LE_RS_PH == 2, "the Freeverb's damping keeps two phases");
+
+/* Comb and allpass line lengths (samples at 44.1 kHz; scaled to the running
+ * rate). The classic Freeverb tunings: mutually prime lengths so the comb
+ * resonances and allpass diffusion never line up into a periodic ring. */
+static const int LE_REV_COMB_LEN[LE_REV_COMBS] = {1116, 1188, 1277, 1356,
+                                                  1422, 1491, 1557, 1617};
+static const int LE_REV_AP_LEN[LE_REV_APS] = {556, 441, 341, 225};
+
+/* Freeverb stereo spread: the right bank's lines are this many samples longer
+ * (at 44.1 kHz, scaled to the running rate) so its tail decorrelates from the
+ * left's, giving a mono input a wide stereo decay. */
+#define LE_REV_SPREAD 23
+
+typedef struct le_fx_rev {
+  le_fx_dyn_head h;
+  float last[LE_REV_PARAMS_N];
+  float room; /* the comb feedback, 0.70..0.98 */
+  float damp; /* the comb feedback low-pass's pole, at the rate */
+  float mix;
+  /* Per-rate: the phases the 48 kHz network runs on (le_rs_phases), and
+   * whether its lines take a fraction of a sample (le_rev_geometry). */
+  int32_t nph;
+  int32_t frac;
+  int32_t ph; /* the phase this sample runs */
+  /* Each line's samples, its all-pass for the rest of its 48 kHz length,
+   * its write head and whether it has wrapped: the left bank's combs, then
+   * its allpasses, then the right bank's. */
+  int32_t len[LE_REV_LINES];
+  float fa[LE_REV_LINES];
+  int32_t pos[LE_REV_LINES];
+  int32_t full[LE_REV_LINES];
+  /* Each line's fraction: its all-pass's last input and output. */
+  float frac_z[LE_REV_LINES][2];
+  /* Each comb's damping memory, one per phase: at 96 kHz the network is the
+   * 48 kHz one on alternate samples. */
+  float comb_lp[LE_RS_PH][LE_REV_COMBS * LE_REV_BANKS];
+} le_fx_rev;
+
+/* [q]'s lines at [sr]: each one's samples and, where frac applies, its
+ * all-pass for the rest of its 48 kHz length (le_frac_split). The line
+ * lengths are Freeverb's 44.1 kHz ones scaled to 48 kHz, and at 96 kHz
+ * exactly twice those: with the damping on each phase's own memory, every
+ * phase then runs the 48 kHz network (#1547). At other rates a line's
+ * 48 kHz length is no whole number of samples: the line runs a sample or so
+ * short and a first-order all-pass delays it by the rest, where rounding
+ * moved the tail's echoes and with them its envelope by 3 dB at 44.1 kHz. */
+static void le_rev_geometry(le_fx_rev* q, int sr) {
+  const float scale = 48000.0f / 44100.0f;
+  q->nph = le_rs_phases(sr);
+  q->frac = le_rs_design_rate(sr) != 48000;
+  for (int bank = 0; bank < LE_REV_BANKS; ++bank) {
+    const int spread = bank == 0 ? 0 : (int)((float)LE_REV_SPREAD * scale);
+    for (int k = 0; k < LE_REV_COMBS + LE_REV_APS; ++k) {
+      const int base = k < LE_REV_COMBS ? LE_REV_COMB_LEN[k]
+                                        : LE_REV_AP_LEN[k - LE_REV_COMBS];
+      const int len48 = (int)((float)base * scale) + spread;
+      const int i = bank * (LE_REV_COMBS + LE_REV_APS) + k;
+      uint32_t n = (uint32_t)(len48 * q->nph);
+      float a = 0.0f;
+      if (q->frac) le_frac_split((double)len48 * (double)sr / 48000.0, &n, &a);
+      q->len[i] = n > 1u ? (int32_t)n : 1;
+      q->fa[i] = a;
+    }
+  }
+}
+
+static void fx_reverb_update(void* ks, const float* p, int sr, int settle) {
+  le_fx_rev* q = (le_fx_rev*)ks;
+  const int f = le_fx_dyn_begin(&q->h, q->last, p, LE_REV_PARAMS_N, sr, settle);
+  if (!f) return;
+  const int rate = sr > 0 ? sr : 48000;
+  if (f & LE_FX_DYN_NEW_RATE) {
+    /* A new layout: every line starts again empty, so none reads what the
+     * old one wrote there. */
+    le_rev_geometry(q, rate);
+    memset(q->pos, 0, sizeof(q->pos));
+    memset(q->full, 0, sizeof(q->full));
+    memset(q->frac_z, 0, sizeof(q->frac_z));
+  }
+  q->room = 0.70f + p[0] * 0.28f;
+  /* 0..0.4 feedback low-pass, its pole at 48 kHz; at other rates but 96
+   * the pole keeps its time constant, so the tail darkens alike. */
+  q->damp = p[1] * 0.4f;
+  if (q->frac && q->damp > 0.0f) {
+    q->damp = powf(q->damp, 48000.0f / (float)rate);
+  }
+  q->mix = p[2];
+}
+
+/* One line's oldest sample: silence until the line has wrapped. */
+static inline float le_rev_out(const le_fx_rev* q, const float* line, int i,
+                               int pos) {
+  return q->full[i] ? line[pos] : 0.0f;
+}
+
+/* Moves line [i]'s write head on from [pos]. */
+static inline void le_rev_advance(le_fx_rev* q, int i, int pos) {
+  if (++pos >= q->len[i]) {
+    pos = 0;
+    q->full[i] = 1;
+  }
+  q->pos[i] = pos;
+}
+
+static void fx_reverb_rkprocess(void* ks, float* r0, float* r1, int cap,
+                                float* l, float* r) {
+  (void)r1;
+  le_fx_rev* q = (le_fx_rev*)ks;
+  if (cap <= 1) return;
+  float* buf = r0;
+  const int ph = q->ph < q->nph ? q->ph : 0;
+  q->ph = ph + 1 < q->nph ? ph + 1 : 0;
+  float* comb_lp = q->comb_lp[ph];
+  const float room = q->room;
+  const float damp = q->damp;
+  const float mix = q->mix;
+  const float x[LE_REV_BANKS] = {*l, *r};
+  int off = 0;
+  float wet[LE_REV_BANKS] = {0.0f, 0.0f};
+  for (int bank = 0; bank < LE_REV_BANKS; ++bank) {
+    const int lbase = bank * (LE_REV_COMBS + LE_REV_APS); /* its lines */
+    const int cbase = bank * LE_REV_COMBS; /* its combs' damping */
+    const float in = x[bank] * 0.015f; /* Freeverb input gain */
+    float acc = 0.0f;
+    for (int c = 0; c < LE_REV_COMBS; ++c) {
+      const int i = lbase + c;
+      const int len = q->len[i];
+      if (off + len > cap) break; /* safety: never index past the ring */
+      int pos = q->pos[i];
+      if (pos >= len) pos = 0;
+      float y = le_rev_out(q, buf + off, i, pos);
+      if (q->frac) y = le_frac_tick(q->fa[i], q->frac_z[i], y);
+      acc += y;
+      float lp = comb_lp[cbase + c];
+      lp = y * (1.0f - damp) + lp * damp; /* damp the signal fed back */
+      comb_lp[cbase + c] = lp;
+      buf[off + pos] = in + lp * room;
+      le_rev_advance(q, i, pos);
+      off += len;
+    }
+    float s = acc;
+    for (int a = 0; a < LE_REV_APS; ++a) {
+      const int i = lbase + LE_REV_COMBS + a;
+      const int len = q->len[i];
+      if (off + len > cap) break;
+      int pos = q->pos[i];
+      if (pos >= len) pos = 0;
+      float bufout = le_rev_out(q, buf + off, i, pos);
+      if (q->frac) bufout = le_frac_tick(q->fa[i], q->frac_z[i], bufout);
+      buf[off + pos] = s + bufout * 0.5f; /* allpass feedback coefficient */
+      s = bufout - s;
+      le_rev_advance(q, i, pos);
+      off += len;
+    }
+    wet[bank] = s;
+  }
+  *l = x[0] * (1.0f - mix) + wet[0] * mix;
+  *r = x[1] * (1.0f - mix) + wet[1] * mix;
+}
+
 typedef struct le_fx_vtable {
   /* Processes one stereo sample through chain slot [slot] in place, advancing
    * that slot's per-channel DSP state. NULL == a no-op slot (LE_FX_NONE). */
@@ -9350,11 +9408,14 @@ typedef struct le_fx_vtable {
   size_t state_size;
   void (*update)(void* ks, const float* p, int sr, int settle);
   void (*kprocess)(void* ks, float* l, float* r);
-  /* A heap-state kind whose long lines live in the slot's two rings, which
-   * its `prepare` allocates (the reverbs): run instead of `kprocess`, with
-   * both rings and their length (the sample rate). A slot without both
-   * rings passes the input untouched. Its block tracks which parts of the
-   * rings it has written, so the rings are never cleared for it. */
+  /* A heap-state kind whose long lines live in the slot's rings, which its
+   * `prepare` allocates (the echo and the reverbs): run instead of
+   * `kprocess`, with the rings and their length (the sample rate). The
+   * second ring is NULL for a kind whose `prepare` makes only the first
+   * (the Freeverb); a slot without the first passes the input untouched,
+   * and so does a kind that needs both and lacks the second. Its block
+   * tracks which parts of the rings it has written, so the rings are never
+   * cleared for it. */
   void (*rkprocess)(void* ks, float* r0, float* r1, int cap, float* l,
                     float* r);
   /* A heap-state kind locked to the beat (the Rhythmic LPF's LFO): given,
@@ -9362,6 +9423,11 @@ typedef struct le_fx_vtable {
    * that update covers (where a setting it ramps toward lands). NULL for
    * the rest. */
   void (*beat)(void* ks, double beat);
+  /* A heap-state kind with an LFO on the engine clock (the echo's wow): its
+   * rate, Hz, whose phase the chain works out each sample through the
+   * slot's clock LFO (le_clock_lfo) and hands the kernel in its block
+   * (le_fx_kind_lfo). 0 for the rest. */
+  double lfo_hz;
 } le_fx_vtable;
 
 /* Bypass drains the tail instead of crossfading out: a linear kind that
@@ -9388,10 +9454,14 @@ static const le_fx_vtable LE_FX[] = {
     [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
                        fx_octaver_prepare, LE_FX_OCTAVER_PARAMS,
                        LE_FX_F_FREE_RUNNING},
-    [LE_FX_ECHO] =
-        {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ECHO_PARAMS, LE_FX_F_DRAINS},
-    [LE_FX_REVERB] =
-        {fx_reverb_process, NULL, fx_reverb_prepare, LE_FX_REVERB_PARAMS, LE_FX_F_DRAINS},
+    /* The echo and the Freeverb keep their state in the block and their
+     * lines in the slot's rings, and drain their tails on bypass. */
+    [LE_FX_ECHO] = {NULL, NULL, fx_stereo_ring_prepare, LE_FX_ECHO_PARAMS,
+                    LE_FX_F_DRAINS, sizeof(le_fx_echo), fx_echo_update, NULL,
+                    fx_echo_rkprocess, NULL, LE_ECHO_WOW_HZ},
+    [LE_FX_REVERB] = {NULL, NULL, fx_reverb_prepare, LE_FX_REVERB_PARAMS,
+                      LE_FX_F_DRAINS, sizeof(le_fx_rev), fx_reverb_update, NULL,
+                      fx_reverb_rkprocess},
     /* A hosted plugin: process forwards to its slot; no params, no prepare, no
      * defaults (the host owns all state). Output is sanitized at the chain
      * boundary in fx_apply_chain. */
@@ -9490,7 +9560,9 @@ static const le_fx_vtable LE_FX[] = {
 _Static_assert(LE_EQ_PARAMS_N ==
                    sizeof(LE_FX_EQ_PARAMS) / sizeof(LE_FX_EQ_PARAMS[0]),
                "le_fx_eq.last holds every EQ setting");
-_Static_assert(LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
+_Static_assert(LE_ECHO_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_ECHO_PARAMS) &&
+                   LE_REV_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_REVERB_PARAMS) &&
+                   LE_COMP_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_COMPRESSOR_PARAMS) &&
                    LE_TR_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_TRANSIENT_PARAMS) &&
                    LE_HPG_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_HP_GATE_PARAMS) &&
                    LE_DBL_PARAMS_N == LE_FX_ROW_COUNT(LE_FX_DOUBLER_PARAMS) &&
@@ -9552,10 +9624,16 @@ typedef struct le_fx_kind_block {
   int32_t type;
   int32_t settle; /* audio thread: the next update lands at once */
   uint32_t seed;  /* audio thread: set with each clear (le_fx_kind_seed) */
+  float lfo;      /* audio thread: the clock LFO's phase this sample, cycles */
 } le_fx_kind_block;
 
 static inline void* le_fx_kind_payload(le_fx_kind_block* b) {
   return (unsigned char*)b + LE_FX_KIND_ALIGN;
+}
+
+static float le_fx_kind_lfo(const void* ks) {
+  return ((const le_fx_kind_block*)((const unsigned char*)ks -
+                                    LE_FX_KIND_ALIGN))->lfo;
 }
 
 static uint32_t le_fx_kind_seed(const void* ks) {
@@ -9566,16 +9644,6 @@ static uint32_t le_fx_kind_seed(const void* ks) {
 static size_t le_fx_kind_block_bytes(int32_t type) {
   const size_t n = LE_FX[type].state_size;
   return LE_FX_KIND_ALIGN + ((n + LE_FX_KIND_ALIGN - 1) & ~(size_t)(LE_FX_KIND_ALIGN - 1));
-}
-
-/* One slot's arena: room for one block of every heap-state kind, so a slot
- * that holds each kind in turn never runs out. */
-static size_t le_fx_kind_arena_bytes(void) {
-  size_t bytes = 0;
-  for (int32_t t = LE_FX_NONE + 1; t < LE_FX_TYPE_COUNT; ++t) {
-    if (LE_FX[t].state_size) bytes += le_fx_kind_block_bytes(t);
-  }
-  return bytes;
 }
 
 /* Control thread: makes sure slot [slot] has a block for [type]. */
@@ -9591,13 +9659,10 @@ static int32_t le_fx_kind_prepare(le_fx_state* fx, int slot, int32_t type) {
   for (le_fx_kind_block* b = head; b != NULL; b = b->next) {
     if (b->type == type) return LE_OK;
   }
-  if (ks->arena.base == NULL &&
-      !le_rt_arena_init(&ks->arena, le_fx_kind_arena_bytes())) {
-    return LE_ERR_INVALID;
-  }
-  le_fx_kind_block* b = (le_fx_kind_block*)le_rt_arena_alloc(
-      &ks->arena, le_fx_kind_block_bytes(type));
-  if (b == NULL) return LE_ERR_INVALID; /* sized for every kind: unreachable */
+  /* Sized for this kind only, so a slot pays for the kinds it has held. */
+  le_fx_kind_block* b =
+      (le_fx_kind_block*)le_rt_alloc_prefaulted(le_fx_kind_block_bytes(type));
+  if (b == NULL) return LE_ERR_INVALID;
   b->type = type;
   b->settle = 1;
   b->next = head;
@@ -9609,15 +9674,20 @@ void le_fx_free_kinds(le_fx_state* fx, int slot) {
   le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
   if (k == NULL) return;
   le_fx_kind_slot* ks = &k->slot[slot];
+  le_fx_kind_block* b = atomic_load_explicit(&ks->head, memory_order_relaxed);
   atomic_store_explicit(&ks->head, NULL, memory_order_relaxed);
   ks->cur = NULL;
-  le_rt_arena_release(&ks->arena);
+  while (b != NULL) {
+    le_fx_kind_block* next = b->next;
+    le_rt_free(b);
+    b = next;
+  }
 }
 
 void le_fx_free_kind_table(le_fx_state* fx) {
   le_fx_kinds* k = atomic_load_explicit(&fx->kinds, memory_order_relaxed);
   if (k == NULL) return;
-  for (int s = 0; s < LE_FX_MAX; ++s) le_rt_arena_release(&k->slot[s].arena);
+  for (int s = 0; s < LE_FX_MAX; ++s) le_fx_free_kinds(fx, s);
   atomic_store_explicit(&fx->kinds, NULL, memory_order_relaxed);
   le_rt_free(k);
 }
@@ -9677,10 +9747,18 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
   if (LE_FX[ty].state_size) {
     void* st = fx_kind_state(fx, s, ty, sr, p);
     if (st == NULL) return;
+    if (LE_FX[ty].lfo_hz > 0.0) {
+      ((le_fx_kind_block*)((unsigned char*)st - LE_FX_KIND_ALIGN))->lfo =
+          (float)le_clock_lfo(fx, s, LE_FX[ty].lfo_hz, sr);
+    }
     if (LE_FX[ty].rkprocess != NULL) {
-      float* r0 = fx->delay[s][0];
-      float* r1 = fx->delay[s][1];
-      if (r0 != NULL && r1 != NULL) LE_FX[ty].rkprocess(st, r0, r1, cap, l, r);
+      /* Only the rings this kind runs on, or ones an earlier kind left: the
+       * control thread may be making the other for a coming retype
+       * (#1522). */
+      const int rings = le_fx_ring_count(ty);
+      float* r0 = le_fx_ring_readable(fx, s, 0, rings) ? fx->delay[s][0] : NULL;
+      float* r1 = le_fx_ring_readable(fx, s, 1, rings) ? fx->delay[s][1] : NULL;
+      if (r0 != NULL) LE_FX[ty].rkprocess(st, r0, r1, cap, l, r);
       return;
     }
     LE_FX[ty].kprocess(st, l, r);
@@ -9690,8 +9768,9 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
 }
 
 /* Whether slot [s] as [type] holds a tail that re-enabling must clear: the
- * rings `prepare` allocated (delay, echo, reverb, the octaver), or a
- * draining kind's block (the spring's ring). */
+ * rings `prepare` allocated (the delay, the octaver), or a draining
+ * heap-state kind's block (the spring's ring; the echo's and the reverbs'
+ * record of what their rings hold). */
 static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
   if (LE_FX[type].state_size != 0) return (LE_FX[type].flags & LE_FX_F_DRAINS) != 0;
@@ -10108,9 +10187,9 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
            * simply stays bypassed and retries next sample. A draining
            * heap-state kind is spaced the same way: the reset clears its
            * block (the spring's ring lives there). A ring kernel
-           * (`rkprocess`, the reverbs) skips the ring clear: its cleared
-           * block marks every structure unwrapped, so it reads silence
-           * until it has written there again. */
+           * (`rkprocess`: the echo and the reverbs) skips the ring clear:
+           * its cleared block marks every structure unwrapped, so it reads
+           * silence until it has written there again. */
           /* The Mode delay reads only its own line, which the reset
            * empties at once: no ring to clear, no spacing to wait on, and
            * any 1 s rings an earlier kind left stay as they are, unread. */
