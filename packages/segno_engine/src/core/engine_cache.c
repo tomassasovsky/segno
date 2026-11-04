@@ -859,13 +859,10 @@ static int le_cache_free_running(const int32_t* types, const int32_t* enabled,
   if (!chain_on) return 0; /* the print is the dry signal */
   for (int32_t s = 0; s < count; ++s) {
     /* ...and so does a clock LFO that does not fit the lap a whole number of
-     * times (#1620), and every kind on the octaver's kernel (#1624): its
-     * phase vocoder carries running synthesis phases, which advance by a
-     * fraction of a cycle each lap on most material, so its voice is phased
-     * differently every lap and no one lap's print equals the next. */
+     * times (#1620). The kinds on the octaver's kernel are free-running
+     * (#1624). */
     if (enabled[s] && (le_fx_entry_free_running(types[s], params[s], sr) ||
-                       le_fx_entry_lfo_drifts(types[s], params[s], len, sr) ||
-                       le_fx_type_hops(types[s]))) {
+                       le_fx_entry_lfo_drifts(types[s], params[s], len, sr))) {
       return 1;
     }
   }
@@ -1677,9 +1674,9 @@ void le_fx_frozen_bits(const le_fx_frozen_chain* c, int32_t from, int32_t to,
 int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
                                 int32_t from, int32_t to, int32_t cap) {
   /* The live owner's hop-stagger seed, BEFORE the resets below seed any
-   * octaver's hop counter from it (#915). A calloc'd 0 is one owner's seed;
-   * every other owner's print would be a different phase-vocoder
-   * realization than the live chain it replaces, swapped in at a loop top.
+   * octaver's hop counter or heap kind's update phase from it (#915). A
+   * calloc'd 0 is one owner's seed; every other owner's render would update
+   * on other frames than the live chain it stands for.
    *
    * What the seed cannot fix (#939): RENDER-TWICE-KEEP-SECOND reproduces a
    * chain that engaged exactly one lap earlier. A live chain that has run

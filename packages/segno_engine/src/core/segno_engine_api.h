@@ -3668,9 +3668,7 @@ typedef enum le_cache_reason {
   LE_CACHE_REASON_PART_POST = 3, /* a part Post chain must keep live tails */
   LE_CACHE_REASON_BUDGET = 4, /* a Transpose source render does not fit the
                                * cap; the track plays dry (#1179) */
-  /* 5 is retired: the octaver's hop (#941); its kinds now play live as
-   * free-running (#1624). */
-  LE_CACHE_REASON_FREE_RUNNING = 6, /* the print holds a free-running
+  LE_CACHE_REASON_FREE_RUNNING = 5, /* the print holds a free-running
                                      * modulator (a chorus or doubler LFO,
                                      * vinyl noise, a degrade's hold), a
                                      * kind on the song's beat (the Pumper,

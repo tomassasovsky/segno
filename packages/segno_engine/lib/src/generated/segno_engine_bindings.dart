@@ -10443,7 +10443,7 @@ enum le_cache_reason {
   /// (#1620), or a kind on the octaver's
   /// kernel (#1624), which sounds different
   /// each lap
-  LE_CACHE_REASON_FREE_RUNNING(6);
+  LE_CACHE_REASON_FREE_RUNNING(5);
 
   final int value;
   const le_cache_reason(this.value);
@@ -10454,7 +10454,7 @@ enum le_cache_reason {
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
     4 => LE_CACHE_REASON_BUDGET,
-    6 => LE_CACHE_REASON_FREE_RUNNING,
+    5 => LE_CACHE_REASON_FREE_RUNNING,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }

@@ -378,7 +378,9 @@ int le_fx_type_free_running(int32_t type);
  * vinyl's noise, the degrade's hold below [sr], the LPF's resonance past
  * its oscillation point or its LFO depth above 0; the Mod's depth and mix,
  * or the depth alone for its tremolo) actually doing something; the
- * doubler always is.
+ * doubler always is. On the octaver's kernel (#1624): the octaver's mix, the
+ * Dual Octaver's mix with a voice up, the Whammy off unison; Smart Tune
+ * always.
  * Any thread. */
 int le_fx_entry_free_running(int32_t type, const float* p, int sr);
 
@@ -439,8 +441,8 @@ void le_fx_rack_reset(le_fx_state* fx, int slot);
  * Control thread / offline only, after le_fx_entry_reset. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
 /* Whether [type] runs the octaver's kernel on the hop clock (the octaver,
- * the Whammy, the Dual Octaver and Smart Tune): what the prints and caches
- * key the hop phase on. */
+ * the Whammy, the Dual Octaver and Smart Tune): the kinds an offline render
+ * (the render recipe, the stems) seeds on the live owner's hop. */
 int le_fx_type_hops(int32_t type);
 /* Puts a Pumper slot's depth glide at [params]'s, and its duck at the one
  * the beat of the frame [fx] is at gives, as a slot that has been running

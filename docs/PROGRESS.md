@@ -89,12 +89,16 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   rest) and steps at every loop top after: on a 220 Hz sine loop of 55
   whole hops, the live octaver's second lap differs from its first by 0.8,
   however the chain went in.
-- The cache reports them FREE_RUNNING (`le_cache_free_running`). With no
-  print holding an octaver, the hop-position key (#941) is gone: the
-  fingerprint fold, `le_wet_entry::hop_tag`, `LE_CACHE_REASON_HOP` (value 5
-  retired), `le_fx_hop_period`/`le_fx_hop_position` and
-  `le_engine::fx_hop_period`. The octaver's clock-anchored hop and its
-  per-owner seed stay: the render recipe and the stems still reproduce it.
+- They carry the free-running flag (`LE_FX_F_FREE_RUNNING`), heard when the
+  voice is: the octaver's mix above 0, the Dual Octaver's mix with a voice
+  up, the Whammy's pedal off 0; Smart Tune always
+  (`le_fx_entry_free_running`). An unheard voice repeats every lap and
+  prints. With no print holding a heard octaver, the hop-position key (#941)
+  is gone: the fingerprint fold, `le_wet_entry::hop_tag`,
+  `LE_CACHE_REASON_HOP` (FREE_RUNNING is now 5),
+  `le_fx_hop_period`/`le_fx_hop_position` and `le_engine::fx_hop_period`.
+  The octaver's clock-anchored hop and its per-owner seed stay: the render
+  recipe and the stems still reproduce it.
 - Tests: `test_cache_pitch_kinds_play_live` (each kind gives up, and the
   octaver's laps differ on a sine), `test_cache_bypassed_octaver_prints`,
   and `test_cache_clock_lfo_relaunch_rerenders` (the relaunch re-render,

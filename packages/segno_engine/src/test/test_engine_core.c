@@ -36335,8 +36335,7 @@ static void test_track_output_fx_lifecycle(void) {
  * at the next top the live chain's state equals the render's kept second pass
  * exactly (render-twice-keep-second), making the comparison near-bit-exact. */
 
-#define CACHE_LOOP 14080 /* > settle window, so publish lands in loop 1;
-                          * a whole number of octaver hops (#941) */
+#define CACHE_LOOP 14080 /* > settle window, so publish lands in loop 1 */
 /* The settle window in frames at the tests' 48 kHz, derived from the engine's
  * own constant (engine_cache.h) plus a margin, so a tuning change moves every
  * cache test with it. */
@@ -36615,36 +36614,49 @@ static void test_a_pre_channel_edit_drops_the_print(void) {
   le_engine_destroy(a);
 }
 
-/* The kinds on the octaver's kernel never print (#1624). Its phase vocoder
- * carries running synthesis phases, which a loop of most material advances
- * by a fraction of a cycle each lap, so the live voice is phased differently
- * every lap: a print of one lap (which would equal the lap it was rendered
- * for) steps at the next loop top. The lane stays live and says why, on a
- * loop of whole hops too. */
-static void cache_pitch_stays_live(int32_t type) {
+/* The kinds on the octaver's kernel do not print while their voice is heard
+ * (#1624). Its phase vocoder carries running synthesis phases, which a loop
+ * of most material advances by a fraction of a cycle each lap, so the live
+ * voice is phased differently every lap: a print of one lap (which would
+ * equal the lap it was rendered for) steps at the next loop top. The lane
+ * stays live and says why, on a loop of whole hops too. [param] at [value]
+ * (none when -1) sets the voice heard or not. */
+static void cache_pitch_stays_live(int32_t type, int32_t param, float value,
+                                   int heard) {
   le_engine* a = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
   cache_record_loop(a, CACHE_LOOP, 1.0f); /* 55 whole hops */
   CHECK(le_engine_set_lane_fx(a, 0, 0, 0, type) == LE_OK);
   CHECK(le_engine_set_lane_fx_count(a, 0, 0, 1, 1) == LE_OK);
+  if (param >= 0) {
+    CHECK(le_engine_set_lane_fx_param(a, 0, 0, 0, param, value) == LE_OK);
+  }
   drain(a);
   le_lane_cache_info info;
   le_engine_get_lane_cache(a, 0, 0, &info);
-  pump_frames(a, 0.0f, CACHE_SETTLE + 2 * CACHE_LOOP);
-  le_engine_get_lane_cache(a, 0, 0, &info);
-  CHECK(info.state == LE_CACHE_GAVE_UP);
-  CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
-  CHECK(info.renders == 0);
-  CHECK(info.engaged == 0);
+  pump_frames(a, 0.0f, CACHE_SETTLE);
+  if (heard) {
+    pump_frames(a, 0.0f, 2 * CACHE_LOOP);
+    le_engine_get_lane_cache(a, 0, 0, &info);
+    CHECK(info.state == LE_CACHE_GAVE_UP);
+    CHECK(info.reason == LE_CACHE_REASON_FREE_RUNNING);
+    CHECK(info.renders == 0);
+    CHECK(info.engaged == 0);
+  } else {
+    CHECK(cache_wait_state(a, 0, 0, LE_CACHE_CACHED, 3000)); /* prints */
+  }
   le_engine_destroy(a);
 }
 
 static void test_cache_pitch_kinds_play_live(void) {
   printf("test_cache_pitch_kinds_play_live\n");
-  const int32_t kinds[] = {LE_FX_OCTAVER, LE_FX_DUAL_OCTAVER, LE_FX_WHAMMY,
-                           LE_FX_SMART_TUNE};
-  for (size_t i = 0; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
-    cache_pitch_stays_live(kinds[i]);
-  }
+  cache_pitch_stays_live(LE_FX_OCTAVER, -1, 0.0f, 1);
+  cache_pitch_stays_live(LE_FX_DUAL_OCTAVER, -1, 0.0f, 1);
+  cache_pitch_stays_live(LE_FX_WHAMMY, 0, 1.0f, 1); /* the pedal at full */
+  cache_pitch_stays_live(LE_FX_SMART_TUNE, -1, 0.0f, 1);
+  /* A voice not heard repeats every lap and prints: the octaver at 0 % mix
+   * (its dry, delay-matched), the Whammy with its pedal at 0 (unison). */
+  cache_pitch_stays_live(LE_FX_OCTAVER, 2, 0.0f, 0);
+  cache_pitch_stays_live(LE_FX_WHAMMY, 0, 0.0f, 0);
   /* Why: on a 220 Hz loop of 55 whole hops, the live octaver's second lap
    * is not its first. */
   le_engine* e = cache_engine(0);
@@ -37481,26 +37493,38 @@ static void test_cache_copy_refuses_queued_capture(void) {
   le_engine_destroy(e);
 }
 
+/* A long loop through every reverb and a delay: a render that outlives the
+ * tests' 2 ms punch-ins by orders of magnitude (about half a second on an
+ * M-series Mac; the octaver that made it heavy before no longer prints,
+ * #1624). */
+#define CACHE_HEAVY_LEN (4 * 190208)
+
+static void cache_set_heavy_chain(le_engine* a) {
+  const int32_t kinds[] = {LE_FX_REVERB, LE_FX_DUB_VERB,  LE_FX_AMB_VERB,
+                           LE_FX_SPRING, LE_FX_ROOM_VERB, LE_FX_DELAY};
+  const int32_t n = (int32_t)(sizeof(kinds) / sizeof(kinds[0]));
+  CHECK(le_engine_set_lane_fx_count(a, 0, 0, n, n) == LE_OK);
+  for (int32_t s = 0; s < n; ++s) {
+    CHECK(le_engine_set_lane_fx(a, 0, 0, s, kinds[s]) == LE_OK);
+  }
+  drain(a);
+}
+
 /* [B5] The worker aborts an in-flight render when the lane's a_audio_rev
  * bumps mid-render: the render is discarded (renders never increments) and
  * the lane simply schedules fresh once the new content settles. */
 static void test_cache_midrender_rev_bump_aborts(void) {
   printf("test_cache_midrender_rev_bump_aborts\n");
   le_engine* a = le_engine_create();
-  le_engine_configure(a, 48000, 1, 1, 200000);
+  le_engine_configure(a, 48000, 1, 1, CACHE_HEAVY_LEN + 4096);
   le_engine_set_fx_cache_cap(a, LE_CACHE_DEFAULT_CAP_BYTES);
-  const int32_t len = 190208; /* long + heavy (whole octaver hops, #941): the render outlives the test's
-                               * punch-in by orders of magnitude */
+  const int32_t len = CACHE_HEAVY_LEN;
   le_engine_record(a, 0);
   pump_frames(a, 1.0f, len);
   le_engine_record(a, 0);
   drain(a);
   pump_frames(a, 1.0f, 600);
-  CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_DUB_VERB) == LE_OK);
-  CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
-  drain(a);
+  cache_set_heavy_chain(a);
   le_lane_cache_info info;
   le_engine_get_lane_cache(a, 0, 0, &info); /* register the key */
   pump_frames(a, 0.0f, CACHE_SETTLE);
@@ -37562,19 +37586,15 @@ static void test_cache_destroy_during_active_render(void) {
   printf("test_cache_destroy_during_active_render\n");
   for (int variant = 0; variant < 3; ++variant) {
     le_engine* a = le_engine_create();
-    le_engine_configure(a, 48000, 1, 1, 200000);
+    le_engine_configure(a, 48000, 1, 1, CACHE_HEAVY_LEN + 4096);
     le_engine_set_fx_cache_cap(a, LE_CACHE_DEFAULT_CAP_BYTES);
-    const int32_t len = 190208; /* a long, heavy render, whole octaver hops */
+    const int32_t len = CACHE_HEAVY_LEN;
     le_engine_record(a, 0);
     pump_frames(a, 1.0f, len);
     le_engine_record(a, 0);
     drain(a);
     pump_frames(a, 1.0f, 600);
-    CHECK(le_engine_set_lane_fx_count(a, 0, 0, 3, 3) == LE_OK);
-    CHECK(le_engine_set_lane_fx(a, 0, 0, 0, LE_FX_REVERB) == LE_OK);
-    CHECK(le_engine_set_lane_fx(a, 0, 0, 1, LE_FX_DUB_VERB) == LE_OK);
-    CHECK(le_engine_set_lane_fx(a, 0, 0, 2, LE_FX_DELAY) == LE_OK);
-    drain(a);
+    cache_set_heavy_chain(a);
     le_lane_cache_info info;
     le_engine_get_lane_cache(a, 0, 0, &info);
     pump_frames(a, 0.0f, CACHE_SETTLE);
