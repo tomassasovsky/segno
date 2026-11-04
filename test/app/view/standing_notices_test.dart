@@ -52,6 +52,7 @@ void main() {
 
   setUpAll(() async {
     registerFallbackValue(const LooperFxHoldNoticeDismissed());
+    registerFallbackValue(const LooperOutputFxWaitingDismissed());
     // The console's faces, so a message's body is measured as drawn.
     await loadBundledFonts();
   });
@@ -252,6 +253,44 @@ void main() {
       expect(notices.state.banner?.notice.tone, NoticeTone.neutral);
       expect(notices.state.banner?.notice.action, isNull);
       looperStates.add(connected);
+      await tester.pump();
+      expect(notices.state.banners, isEmpty);
+    });
+  });
+
+  group('effects kept for a missing output (#1421)', () {
+    testWidgets('names the outputs and offers Dismiss', (tester) async {
+      await pump(
+        tester,
+        looperState: const LooperState(
+          status: EngineStatus(isConnected: true, outputChannels: 2),
+          outputFxWaiting: [2, 3],
+        ),
+      );
+      expect(bannerId(), AppNoticeId.outputFxWaiting);
+      expect(find.text('Effects kept for a missing output'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const Key(AppNoticeId.outputFxWaitingDismiss)),
+      );
+      verify(
+        () => looper.add(const LooperOutputFxWaitingDismissed()),
+      ).called(1);
+    });
+
+    testWidgets('goes when nothing waits', (tester) async {
+      await pump(
+        tester,
+        looperState: const LooperState(
+          status: EngineStatus(isConnected: true, outputChannels: 2),
+          outputFxWaiting: [2],
+        ),
+      );
+      expect(bannerId(), AppNoticeId.outputFxWaiting);
+      looperStates.add(
+        const LooperState(
+          status: EngineStatus(isConnected: true, outputChannels: 2),
+        ),
+      );
       await tester.pump();
       expect(notices.state.banners, isEmpty);
     });

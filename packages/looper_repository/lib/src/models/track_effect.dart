@@ -591,6 +591,7 @@ class BuiltInEffect extends TrackEffect {
     this.rack,
     this.module,
     this.presetId,
+    this.variant,
     Map<String, double> source = const {},
   }) : params = engine.canonicalEffectParams(type._engine, params),
        source = Map<String, double>.unmodifiable(source);
@@ -606,6 +607,7 @@ class BuiltInEffect extends TrackEffect {
     required this.rack,
     required this.module,
     required this.presetId,
+    required this.variant,
     required this.source,
   });
 
@@ -638,6 +640,13 @@ class BuiltInEffect extends TrackEffect {
   /// it did not come from one.
   final String? presetId;
 
+  /// The rack family whose variant of [module] this entry was built as (a
+  /// key of `kFxModuleVariants[module]`, such as `'Dub Rack'`), or `null`
+  /// for an entry not built from a rack module. Stored, not guessed: an
+  /// entry saved before it was stored takes it when it is decoded
+  /// (`decodeTrackEffects`), and is saved with it the next time its chain is.
+  final String? variant;
+
   /// The factory preset's own values for this entry's module, by the
   /// preset's parameter names.
   ///
@@ -664,6 +673,7 @@ class BuiltInEffect extends TrackEffect {
     FxRack? rack,
     String? module,
     String? presetId,
+    String? variant,
     Map<String, double>? source,
   }) => params == null && (type == null || type == this.type)
       ? BuiltInEffect._sameType(
@@ -676,6 +686,7 @@ class BuiltInEffect extends TrackEffect {
           rack: rack ?? this.rack,
           module: module ?? this.module,
           presetId: presetId ?? this.presetId,
+          variant: variant ?? this.variant,
           source: source == null
               ? this.source
               : Map<String, double>.unmodifiable(source),
@@ -690,6 +701,7 @@ class BuiltInEffect extends TrackEffect {
           rack: rack ?? this.rack,
           module: module ?? this.module,
           presetId: presetId ?? this.presetId,
+          variant: variant ?? this.variant,
           source: source ?? this.source,
         );
 
@@ -704,6 +716,7 @@ class BuiltInEffect extends TrackEffect {
     rack,
     module,
     presetId,
+    variant,
     source,
   ];
 }
@@ -956,6 +969,7 @@ engine.TrackEffect _trackEffectToEngine(
     :final rack,
     :final module,
     :final presetId,
+    :final variant,
     :final source,
   ) =>
     engine.BuiltInEffect(
@@ -968,6 +982,7 @@ engine.TrackEffect _trackEffectToEngine(
       rack: _rackToEngine(rack),
       module: module,
       presetId: presetId,
+      variant: variant,
       rackPath: _pathToEngine(path),
       source: source,
     ),
@@ -1060,6 +1075,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         :final rack,
         :final module,
         :final presetId,
+        :final variant,
         :final source,
       ) =>
         BuiltInEffect(
@@ -1072,6 +1088,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           rack: _rackFromEngine(rack),
           module: module,
           presetId: presetId,
+          variant: variant,
           source: source,
         ),
       engine.PluginEffect(
@@ -1113,9 +1130,21 @@ String encodeTrackEffects(List<TrackEffect> effects) =>
 
 /// Decodes a chain produced by [encodeTrackEffects]; malformed input yields an
 /// empty chain. Delegates to the engine serializer, then maps to domain types.
+///
+/// The one conversion step for chains saved before a rack entry stored its
+/// variant: such an entry takes the variant its keys point to
+/// ([fxLegacyEntryVariant]) here, and is saved with it the next time its
+/// chain is saved; an entry that has one is never guessed.
 List<TrackEffect> decodeTrackEffects(String? encoded) => [
-  for (final e in engine.decodeTrackEffects(encoded)) _trackEffectFromEngine(e),
+  for (final e in engine.decodeTrackEffects(encoded))
+    _withStoredVariant(_trackEffectFromEngine(e)),
 ];
+
+TrackEffect _withStoredVariant(TrackEffect effect) {
+  if (effect is! BuiltInEffect || effect.variant != null) return effect;
+  final variant = fxLegacyEntryVariant(effect);
+  return variant == null ? effect : effect.copyWith(variant: variant);
+}
 
 /// An order-sensitive 64-bit fingerprint of [chain], computed with the SAME
 /// FNV-1a folding the native engine uses in `le_engine_lane_fx_fingerprint` /

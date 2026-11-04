@@ -150,8 +150,8 @@ void main() {
   );
 
   test(
-    'it DOES keep the parameters, the channel settings, the pedal name and '
-    'the factory source',
+    'it DOES keep the parameters, the channel settings, the pedal name, '
+    'its rack variant and the factory source',
     () async {
       await cubit.save(
         name: 'Verse',
@@ -162,6 +162,7 @@ void main() {
             enabled: false,
             module: 'Delay',
             presetId: 'factory-id',
+            variant: 'Dub Rack',
             source: const {'Delay': 1, 'Del Mode': 0.545},
             channels: const FxChannels(
               input: FxChannelInput.monoSum,
@@ -179,6 +180,7 @@ void main() {
       expect(fx.enabled, isFalse);
       expect(fx.module, 'Delay');
       expect(fx.presetId, 'factory-id');
+      expect(fx.variant, 'Dub Rack');
       expect(fx.source, {'Delay': 1, 'Del Mode': 0.545});
     },
   );

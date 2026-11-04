@@ -1168,3 +1168,10 @@ final class LooperFxHoldNoticeDismissed extends LooperEvent {
   /// Creates a [LooperFxHoldNoticeDismissed].
   const LooperFxHoldNoticeDismissed();
 }
+
+/// The player dismissed the notice that effects are kept for outputs the
+/// open device lacks (#1421); the chains stay kept.
+final class LooperOutputFxWaitingDismissed extends LooperEvent {
+  /// Creates a [LooperOutputFxWaitingDismissed].
+  const LooperOutputFxWaitingDismissed();
+}

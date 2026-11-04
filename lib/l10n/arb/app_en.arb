@@ -4494,6 +4494,22 @@
             }
         }
     },
+    "outputFxWaitingTitle": "Effects kept for a missing output",
+    "@outputFxWaitingTitle": {
+        "description": "Notice title when an output destination holds effects but the open interface has no such output (#1421)."
+    },
+    "outputFxWaitingBody": "{outputs} {count, plural, =1{isn't} other{aren't}} on this interface. {count, plural, =1{Its effects are} other{Their effects are}} kept and apply when an interface with {count, plural, =1{it} other{them}} is connected.",
+    "@outputFxWaitingBody": {
+        "description": "Notice body for outputFxWaitingTitle. outputs is a list of output names such as 'Output 3 and Output 4'; their effects are kept and apply when an interface with those outputs is connected (#1421).",
+        "placeholders": {
+            "outputs": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
     "fxHeldTitle": "Some effects are off",
     "@fxHeldTitle": {
         "description": "Must-act message when effects came up switched off because the rig does not fit them (#1515, #1562)."

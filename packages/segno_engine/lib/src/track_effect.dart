@@ -1835,6 +1835,7 @@ final class BuiltInEffect extends TrackEffect {
     this.rack,
     this.module,
     this.presetId,
+    this.variant,
     this.rackPath = FxRackPath.none,
     Map<String, double> source = const {},
   }) : params = canonicalEffectParams(type, params),
@@ -1875,6 +1876,8 @@ final class BuiltInEffect extends TrackEffect {
     final module = rawModule is String ? rawModule : null;
     final rawPresetId = json['presetId'];
     final presetId = rawPresetId is String ? rawPresetId : null;
+    final rawVariant = json['variant'];
+    final variant = rawVariant is String ? rawVariant : null;
     final rackPath = FxRackPath.fromWireName(json['rackPath']);
     final rawSource = json['source'];
     final source = <String, double>{
@@ -1894,6 +1897,7 @@ final class BuiltInEffect extends TrackEffect {
         rack: rack,
         module: module,
         presetId: presetId,
+        variant: variant,
         rackPath: rackPath,
         source: source,
       );
@@ -1913,6 +1917,7 @@ final class BuiltInEffect extends TrackEffect {
       rack: rack,
       module: module,
       presetId: presetId,
+      variant: variant,
       rackPath: rackPath,
       source: source,
     );
@@ -1952,6 +1957,11 @@ final class BuiltInEffect extends TrackEffect {
   /// it did not come from one.
   final String? presetId;
 
+  /// The rack family whose variant of [module] this entry was built as
+  /// (`'Dub Rack'`, ...), or `null` for an entry not built from a rack
+  /// module. Pure Dart-side passthrough, kept by the repository.
+  final String? variant;
+
   /// The rack path this entry runs on ([FxRackPath]): derived by the
   /// repository from the entry's rack variant, and carried here so the
   /// performance render routes the rack as the live chain did.
@@ -1979,6 +1989,7 @@ final class BuiltInEffect extends TrackEffect {
     if (rack != null) 'rack': rack!.toJson(),
     if (module != null) 'module': module,
     if (presetId != null) 'presetId': presetId,
+    if (variant != null) 'variant': variant,
     if (rackPath != FxRackPath.none) 'rackPath': rackPath.name,
     if (source.isNotEmpty) 'source': source,
   };
@@ -1994,6 +2005,7 @@ final class BuiltInEffect extends TrackEffect {
       other.rack == rack &&
       other.module == module &&
       other.presetId == presetId &&
+      other.variant == variant &&
       other.rackPath == rackPath &&
       _listEquals(other.params, params) &&
       _sourceEquals(other.source, source);
@@ -2008,6 +2020,7 @@ final class BuiltInEffect extends TrackEffect {
     rack,
     module,
     presetId,
+    variant,
     rackPath,
     Object.hashAll(params),
     Object.hashAllUnordered([

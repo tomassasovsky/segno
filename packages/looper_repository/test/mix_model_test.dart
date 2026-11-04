@@ -76,6 +76,38 @@ void main() {
     return repo;
   }
 
+  group('effects for an output the device lacks (#1421)', () {
+    test('are kept, named until dismissed, and named again on another '
+        'device', () {
+      engine.nextSnapshot = _rig(2, outputBusCount: 1);
+      final repo = start();
+      final delay = BuiltInEffect(type: TrackEffectType.delay, slotId: 'd');
+      expect(repo.setOutputEffects(bus: 3, effects: [delay]), EngineResult.ok);
+      expect(repo.setOutputEffects(bus: 0, effects: [delay]), EngineResult.ok);
+      // Bus 0 exists; bus 3 does not, and its chain is kept, not dropped.
+      expect(repo.state.outputFxWaiting, [3]);
+      expect(repo.outputEffects(3), [delay]);
+      repo.dismissOutputFxWaitingNotice();
+      expect(repo.state.outputFxWaiting, isEmpty);
+      expect(repo.outputEffects(3), [delay]);
+      // The same device reopened (a buffer change): still dismissed.
+      repo.stopEngine();
+      engine.nextSnapshot = _rig(2, outputBusCount: 1);
+      repo.startEngine(const EngineConfig());
+      expect(repo.state.outputFxWaiting, isEmpty);
+      // A device with four destinations: the chain applies, nothing waits.
+      repo.stopEngine();
+      engine.nextSnapshot = _rig(2, outputBusCount: 4);
+      repo.startEngine(const EngineConfig());
+      expect(repo.state.outputFxWaiting, isEmpty);
+      // Another device that lacks it too: named again.
+      repo.stopEngine();
+      engine.nextSnapshot = _rig(2, outputBusCount: 2);
+      repo.startEngine(const EngineConfig());
+      expect(repo.state.outputFxWaiting, [3]);
+    });
+  });
+
   group('shared FX lookup', () {
     test('missing owners never retarget an existing chain', () {
       final repo = start();

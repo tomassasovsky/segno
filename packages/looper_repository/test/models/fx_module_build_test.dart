@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -709,6 +710,71 @@ void main() {
         'release',
         'makeup',
       ]);
+    });
+
+    test('a Dub compressor holding Comp Attack stays the Dub variant: the '
+        'entry stores the variant it was built as (#1421)', () {
+      final e = fxModuleEntry(
+        _module('Compressor'),
+        preset('Dub Rack', const {
+          'Comp': 1,
+          'Comp Thresh': 0.7,
+          'Comp Attack': 0.2,
+          'Comp Make-Up': 0.2,
+        }),
+      );
+      expect(e.variant, 'Dub Rack');
+      expect(fxEntryBuild(e)!.exposed, [0, 4]);
+      // The key guess an entry saved without a variant gets once at decode
+      // picks the Drum variant for these keys; a stored variant is never
+      // guessed again.
+      expect(fxLegacyEntryVariant(e.copyWith()), 'Drum Rack');
+      // Saved inside a Dub rack, the guess takes the rack's own family.
+      expect(
+        fxLegacyEntryVariant(
+          e.copyWith(
+            rack: FxRack(id: 'r', name: 'Dub', art: kFxFamilySlugs['Dub Rack']),
+          ),
+        ),
+        'Dub Rack',
+      );
+      final decoded = decodeTrackEffects(encodeTrackEffects([e])).single;
+      expect((decoded as BuiltInEffect).variant, 'Dub Rack');
+    });
+
+    test('an entry saved before entries stored their variant takes the '
+        'key guess once, at decode, and keeps it from then on', () {
+      final built = fxModuleEntry(
+        _module('Compressor'),
+        preset('Drum Rack', const {
+          'Comp': 1,
+          'Comp Thresh': 0.7,
+          'Comp Attack': 0.2,
+          'Comp Make-Up': 0.2,
+        }),
+      );
+      final legacy = (jsonDecode(encodeTrackEffects([built])) as List)
+          .cast<Map<String, dynamic>>()
+          .map((m) => Map<String, dynamic>.of(m)..remove('variant'))
+          .toList();
+      expect(legacy.single.containsKey('variant'), isFalse);
+      final converted =
+          decodeTrackEffects(jsonEncode(legacy)).single as BuiltInEffect;
+      expect(converted.variant, 'Drum Rack');
+      expect(fxEntryBuild(converted)!.exposed, [0, 2, 4]);
+      expect(encodeTrackEffects([converted]), contains('"variant"'));
+      // An entry with no variant and no conversion is no rack pedal.
+      expect(
+        fxEntryBuild(
+          BuiltInEffect(
+            type: built.type,
+            params: built.params,
+            module: built.module,
+            source: built.source,
+          ),
+        ),
+        isNull,
+      );
     });
 
     test("the Drum Rack's attack reads on its own 0.1 to 300 ms scale", () {
