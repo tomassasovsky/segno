@@ -1697,6 +1697,17 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Anchors [importAnchor] gave, by channel (#854); the commit puts them on
+  /// the tracks' snapshots.
+  final Map<int, int> importedAnchors = {};
+
+  @override
+  EngineResult importAnchor(int channel, int anchorLap) {
+    calls.add('importAnchor');
+    importedAnchors[channel] = anchorLap;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       importLayer(channel, lane, 0, pcm);
@@ -1781,6 +1792,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
         rms: 0,
         peak: 0,
         spanFrames: importedSpans[entry.key] ?? 0,
+        anchorLap: importedAnchors[entry.key] ?? 0,
       );
     }
     _nextSnapshot = _nextSnapshot.copyWith(
@@ -2336,6 +2348,7 @@ class _LengthTrack extends TrackSnapshot {
         pitchModeOverride: source.pitchModeOverride,
         pitchEffectiveCents: source.pitchEffectiveCents,
         spanFrames: source.spanFrames,
+        anchorLap: source.anchorLap,
         volume: engine.trackLevels[channel] ?? source.volume,
         muted: source.muted,
         lengthFrames: source.lengthFrames,

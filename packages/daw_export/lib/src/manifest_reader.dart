@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:daw_export/src/automation_thinning.dart';
 import 'package:daw_export/src/daw_project.dart';
-import 'package:daw_export/src/device_chain_resolver.dart';
 import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/manifest_json.dart';
 
@@ -15,16 +14,9 @@ import 'package:daw_export/src/manifest_json.dart';
 /// reference the capture's already-rendered stems (`stems/wet/`, falling
 /// back to `stems/dry/` for a channel whose wet render failed or hasn't run)
 /// and per-lane loop exports (`loops/`), and whose tracks carry automation
-/// lanes reconstructed from the raw logged volume/mute gestures (part 10).
-///
-/// Part 10 additionally resolves each channel's real Segno VST3 device
-/// chain from its captured lanes' `armSnapshot`-only `effects`
-/// ([resolveDeviceChain], D-CHAIN-SOURCE) and, when a non-empty chain
-/// resolves, prefers the `stems/dry/` stem over `stems/wet/` for that
-/// channel's arrangement clip (D-WETDRY) — falling all the way back to
-/// today's wet-preferred, no-device-chain behavior if the dry stem is
-/// unexpectedly missing, never risking a silent double-application of
-/// effects.
+/// lanes reconstructed from the raw logged volume/mute gestures (part 10)
+/// only where the clip is the unity-gain dry stem: the wet render already
+/// applies those gestures, so automating them again would apply them twice.
 abstract final class DawManifestReader {
   /// Reads `<captureDir>/performance.json` and returns the [DawProject] it
   /// describes, or `null` if the manifest is missing/unreadable/corrupt (a
@@ -104,30 +96,6 @@ abstract final class DawManifestReader {
       }
     }
 
-    // channel -> (lane -> raw effects[] entries), armSnapshot ONLY
-    // (D-CHAIN-SOURCE — a disarmSnapshot lane entry never carries `effects`,
-    // matching the already-shipped `fx_chains.dart` precedent). A lane with
-    // no arm-time entry at all (recorded fresh during the performance, only
-    // ever appearing in disarmSnapshot) has no evidence of any effects, so
-    // it defaults to an empty chain below — the same honest "nothing to
-    // report" default `resolveDeviceChain` already uses for a lane with an
-    // arm-time entry but no `effects` key.
-    final effectsByChannel = <int, Map<int, List<Map<String, dynamic>>>>{};
-    for (final t in armTracks) {
-      final channel = (t['channel'] as num?)?.toInt();
-      if (channel == null) continue;
-      final laneMap = effectsByChannel.putIfAbsent(channel, () => {});
-      for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
-        final laneJson = lane as Map<String, dynamic>;
-        final laneIndex = (laneJson['lane'] as num?)?.toInt();
-        if (laneIndex == null) continue;
-        final effects = laneJson['effects'] as List<dynamic>?;
-        laneMap[laneIndex] = effects == null
-            ? const []
-            : [for (final e in effects) e as Map<String, dynamic>];
-      }
-    }
-
     // Arm-time mute/solo per channel: the baseline the logged gestures are
     // applied on top of (events.log is relative to arm), so the activator
     // lane reflects each track's effective audibility — a solo on one track
@@ -164,50 +132,19 @@ abstract final class DawManifestReader {
         );
       }
 
-      final resolution = resolveDeviceChain([
-        for (final laneIndex in lanes.keys.toList()..sort())
-          effectsByChannel[channel]?[laneIndex] ??
-              const <Map<String, dynamic>>[],
+      final arrangementFile = _firstExisting(captureDir, [
+        'stems/wet/track$channel.wav',
+        'stems/dry/track$channel.wav',
       ]);
-      // A device chain is only actually emitted for a NON-EMPTY chain
-      // (als_builder.dart) — an empty resolved chain (a channel with no
-      // effects on any lane) has nothing to double-apply, so it keeps
-      // today's wet-preferred stem choice unchanged rather than switching
-      // preference for no reason.
-      var deviceChain = resolution.chain;
-      final deviceChainFallbackReason = resolution.fallbackReason;
-      String? arrangementFile;
-      if (deviceChain != null && deviceChain.isNotEmpty) {
-        final dryRef = 'stems/dry/track$channel.wav';
-        if (File('$captureDir/$dryRef').existsSync()) {
-          arrangementFile = dryRef;
-        } else {
-          // D-WETDRY: the dry stem this resolved chain needs is
-          // unexpectedly missing — treat the whole channel exactly as if
-          // resolution had failed rather than risk silently double-applying
-          // effects (once baked into the wet render, once via the live
-          // device chain). deviceChainFallbackReason intentionally stays
-          // whatever resolveDeviceChain returned (null, since resolution
-          // itself succeeded) — this is a data-availability gap, not a
-          // chain-representability failure, and the umbrella's fallback
-          // reasons cover only the latter.
-          deviceChain = null;
-          arrangementFile = _firstExisting(captureDir, [
-            'stems/wet/track$channel.wav',
-            'stems/dry/track$channel.wav',
-          ]);
-        }
-      } else {
-        arrangementFile = _firstExisting(captureDir, [
-          'stems/wet/track$channel.wav',
-          'stems/dry/track$channel.wav',
-        ]);
-      }
 
       if (arrangementFile == null && sessionClips.isEmpty) continue;
 
+      // The wet render bakes lane-0 volume, mute and solo into the stem
+      // (perf_render.c's wet pass), so only a dry clip gets them as Live
+      // automation.
+      final gainsBaked = arrangementFile?.startsWith('stems/wet/') ?? false;
       final automationLanes = <AutomationLane>[];
-      if (logEntries != null) {
+      if (logEntries != null && !gainsBaked) {
         final raw = EventLogReader.readChannelAutomation(
           logEntries,
           channel,
@@ -251,8 +188,6 @@ abstract final class DawManifestReader {
                 ),
           sessionClips: sessionClips,
           automationLanes: automationLanes,
-          deviceChain: deviceChain,
-          deviceChainFallbackReason: deviceChainFallbackReason,
         ),
       );
     }

@@ -78,6 +78,80 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Takes keep the lap they were played on (#854)
+
+- A take of several base loops reads segment
+  `(loop_iteration - start_iter) mod multiple`. Every reset used to zero
+  `start_iter`, so Stop-all, a reopen, a Session recall and the undo of a
+  Clear or of an undone take moved each take's first loop to lap 0. Each
+  reset now keeps the take's anchor, `start_iter` modulo its multiple
+  (`le_track_anchor` / `le_track_anchor_set` in `engine_private.h`), with
+  `start_iter` moved to the same residue at or below lap 0.
+- The anchor is published as `le_track_snapshot.anchor_lap`. A Session saves
+  it per track (`anchorLap`, schema 17; older bundles convert to 0) and a
+  recall gives it back with `le_engine_import_anchor` before the commit. A
+  Clear carries it in its restore point through the Clear mailbox; an undo to
+  empty files it on the redo entry from the published value, and
+  `LE_CMD_REDO_FROM_EMPTY` / `LE_EVT_TAKE_CANCELLED` carry it in the
+  `restore` payload; an undo behind a queued restore files the lap that
+  restore carries (`pending_anchor`). A mode switch keeps it between
+  shared-clock modes, counted again in the take's new multiple when the
+  base changes. At another Speed a restart (the hold, a reopen, a commit, a
+  restore or redo into a held rig) parks the head so the take starts on the
+  image frame it reads at 1x (`le_track_park_head`), so the offset holds at
+  1/2x too. A Once take is launched, not placed: a restart starts it at its
+  first bar, as a relaunch does. A Session save keeps the lap within the
+  multiple it pairs with.
+- Not placed: a restore or redo into a running rig at a Speed other than
+  1x reads from origin 0, as before; the takes around it carry origins from
+  the Speed change, and there is no common reference to place it against.
+- The DAW export places an arm-time image at its anchor: the performance
+  manifest's arm `tracks[]` carry `anchorLap` when nonzero.
+- Native test: `test_engine_anchor.h` (a 4-bar take on bar 1 and one on bar
+  3 keep their two-bar offset through Stop-all, Session save and recall, a
+  retained reopen, Clear undo and redo of an undone take).
+- By-ear check owed on the console: record a 1-bar loop, a 4-bar take from
+  bar 1 and a 4-bar take from bar 3, then Stop-all and Play, and save and
+  reopen the Session; the two takes keep their offset.
+
+## November 2026 The octaver's kinds play live (#1624)
+
+- The owner's decision on #1624: the Octaver, Dual Octaver, Whammy and Smart
+  Tune are never printed and always play live (the multicore workers, #1515,
+  carry live chains), because a print cannot be made exact.
+- The cause: their phase vocoder carries running synthesis phases, which a
+  loop of most material advances by a fraction of a cycle each lap, so the
+  live voice is phased differently every lap. A print equals the lap it was
+  rendered for (the old parity sweep, on a constant loop, could not see the
+  rest) and steps at every loop top after: on a 220 Hz sine loop of 55
+  whole hops, the live octaver's second lap differs from its first by 0.8,
+  however the chain went in.
+- They carry the free-running flag (`LE_FX_F_FREE_RUNNING`), heard when the
+  voice is: the octaver's mix above 0, the Dual Octaver's mix with a voice
+  up, the Whammy's pedal off 0; Smart Tune always
+  (`le_fx_entry_free_running`). An unheard voice repeats every lap and
+  prints. With no print holding a heard octaver, the hop-position key (#941)
+  is gone: the fingerprint fold, `le_wet_entry::hop_tag`,
+  `LE_CACHE_REASON_HOP` (FREE_RUNNING is now 5),
+  `le_fx_hop_period`/`le_fx_hop_position` and `le_engine::fx_hop_period`.
+  The octaver's clock-anchored hop and its per-owner seed stay: the render
+  recipe and the stems still reproduce it.
+- Tests: `test_cache_pitch_kinds_play_live` (each kind gives up, and the
+  octaver's laps differ on a sine), `test_cache_bypassed_octaver_prints`,
+  and `test_cache_clock_lfo_relaunch_rerenders` (the relaunch re-render,
+  now on a lap-locked tremolo).
+
+## November 2026 The sound trigger ignores hum (#1623)
+
+- The sound-activated record trigger reads each input through a fixed
+  fourth-order Butterworth high-pass at 100 Hz (`LE_TRIGGER_HP_HZ`,
+  `le_trigger_hp`), on its detection path only: 50 and 60 Hz hum come out
+  24 and 18 dB down, rumble more, while a pick's attack still crosses the
+  -34 dBFS threshold on the frame it arrives. The take records the raw
+  input. It replaces the conditioning stage the trigger read before #697.
+- The filter runs on every real input every frame (two biquads each), so an
+  arm never starts on a cold filter. Test: `test_sound_trigger_ignores_hum`.
+
 ## November 2026 Prints swap in after a complete lap, LFOs on the clock (#1620)
 
 - The owner's decision on #1620: (1) time-based modulation takes its phase
@@ -96,8 +170,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   at each loop top under 1e-4): otherwise each lap sounds different and it
   plays live, reported FREE_RUNNING (`le_fx_entry_lfo_drifts`). Its print is
   keyed on the top's place on the lap grid (`le_fx_lap_position`, folded
-  into the fingerprint, `le_wet_entry::lap_tag` at the lap top), as an
-  octaver's is on the hop position.
+  into the fingerprint, `le_wet_entry::lap_tag` at the lap top).
 - What a chain plays reversed or at another rate is not a lap of the loop,
   so every run on the track begins again where the head is back at forward
   1x (and at any jump of the read index there, which Play on a playing track
@@ -106,8 +179,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   until its next edit.
 - Remaining step at the swap per kind (`test_cache_midlap_edit_steps`, a sine
   loop): 0 for the memoryless and short-state kinds; a delay or reverb
-  differs by the part of its tail older than a lap; the octaver and Smart
-  Tune differ even with the chain in on a loop top (#1624).
+  differs by the part of its tail older than a lap; the octaver's kinds play
+  live (#1624).
 
 ## November 2026 Wet cache swaps in only over a matching run (#939)
 
@@ -1581,47 +1654,6 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   compile. Assertions that can only hold with the instrument compiled in are
   wrapped in `CHECK_TIMING` in `test_engine_core.c`; everything else is asserted
   in both builds.
-- **Adding a header to `src/core/` — the C++ blast radius nothing on macOS
-  catches.** Any new core header reaches **every C++ translation unit in the
-  VST3 builds**, via `engine_private.h` → `engine_fx.h` →
-  `vst3/test/host_harness.{h,cpp}` (which includes `engine_fx.h` *inside* an
-  `extern "C" { }` block). So a header that is perfectly good C can still break
-  the plugin builds on two of three platforms:
-  - `engine_private.h` carries a **C++ atomics shim** (`#undef _Atomic` plus
-    macro/`template` stand-ins for `atomic_load_explicit` and friends) because
-    MSVC and GCC reject `_Atomic` in C++ and offer no keyword-compatible
-    `<stdatomic.h>` there. It is guarded to `#if defined(__cplusplus) &&
-    !defined(__clang__)` — **so macOS CI never compiles it at all**. A header
-    that uses an atomic op the shim does not cover passes every macOS job and
-    fails Windows *and* Linux. (This bit twice on #722: first a missing
-    `atomic_exchange_explicit`, then a `template` that cannot be declared with C
-    linkage — the shim's `extern "C++" { }` wrapper is what fixes the latter and
-    is load-bearing, not decoration.)
-  - **The only local repro on this Mac** (there is no non-Clang compiler here) —
-    note the `-U__clang__`, the `extern "C"` wrapper, and `std::min` in scope;
-    a plain top-level `#include` does **not** reproduce it:
-    ```sh
-    cd packages/segno_engine
-    cat > /tmp/shim_repro.cpp <<'EOF'
-    #include <algorithm>
-    extern "C" {
-    #include "engine_fx.h"
-    }
-    int main() { return (int)std::min(1, 2); }
-    EOF
-    clang++ -std=c++17 -U__clang__ -I src/core -I src/midi -I src/miniaudio \
-      -c /tmp/shim_repro.cpp -o /tmp/shim_repro.o
-    ```
-  - A core header that pulls in **`<windows.h>`** must `#define NOMINMAX` first,
-    guarded with `#ifndef`, because stock `<windows.h>` defines `min`/`max` as
-    macros and turns any later `std::min(` into MSVC C2589 — which is exactly
-    the `std::min` in the repro above. Define it **in the header that drags
-    `<windows.h>` in**, not in the build files: a `-DNOMINMAX` would have to be
-    repeated in CMake, the podspec, the SPM target and the native test runner,
-    and would drift the first time one was missed. Do **not** reach for
-    `WIN32_LEAN_AND_MEAN` instead — it applies to the whole TU, including
-    miniaudio's own later `<windows.h>`, and miniaudio documents it as excluding
-    symbols it then redefines by hand.
 - **Effects matrix (#1547):** every effect kind at 44.1, 48 and 96 kHz and at
   blocks of 32 to 512 frames, at every factory preset's settings: block
   invariance (bit-exact), response and envelope against 48 kHz, aliasing and
@@ -2243,16 +2275,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   whole; the chrome button and `G` open the tray at Signal. Built in 3 stacked phases (scaffold →
   rich node + dock → deletions); ~1.3k lines of old-surface tests removed with
   their load-bearing coverage migrated onto the `signal_*` tests.
-- **Segno FX plugins** — Segno's own built-in effects, shipped *as* real,
-  installable VST3 plugins for third-party DAWs (distinct from the plugin
-  *host* above — this ships Segno's own DSP as third-party VST3 plugins).
-  Seven native plugins share one `packages/segno_engine/vst3/` build —
-  **Delay, Reverb, Echo, Drive, Filter, Tremolo, Octaver** — each wrapping
-  the same engine DSP core the looper uses, so behavior can't drift from the
-  in-app effect, checked by a **golden-parity audio-diff harness**. **macOS,
-  Windows, and Linux all build and test all 7 plugins**, each via its own CI
-  job (`vst3-plugins-macos`/`-windows`/`-linux`) running the shared CTest
-  gate. Parts 15-17 (further effects/polish) are not yet started.
+- **Segno FX plugins (removed, #940).** Segno's own effects were also built
+  as desktop VST3 plugins (`packages/segno_engine/vst3/`, seven plugins, a
+  golden-parity CTest suite and per-OS CI jobs). They went with the desktop
+  targets (#920): the owner's call on 2026-11-03 deleted the build, its tests,
+  the `vst3-plugins-linux` job, the `segno_dsp_core` library that existed only
+  to share `engine_fx.c` with it, and the C++ atomics shim in
+  `engine_private.h` that only the plugins needed. Hosting third-party
+  VST3/CLAP plugins (`src/host/`) is unaffected. The `.als` export's
+  device chains, which named these plugins, went in #1587.
 - **Performance recording** (12-part plan). Captures a full live performance
   to disk, sample-accurately: RT-safe audio-thread taps write into lock-free
   rings, a control-thread drain thread streams them to a per-run event log
@@ -2273,16 +2304,12 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   Live 12 `.als`** project: one audio track per non-empty track/live-input
   stem, arrangement-view clips at capture start, session-view loop clips per
   lane, and volume/mute **automation envelopes** thinned from the event log.
-  Its newest piece (device-chain export) resolves a channel's per-lane
-  effects into a single **real Segno VST3 device chain** embedded in the
-  `.als` when every lane agrees on one representable chain, falling back to
-  the wet-bounce stem export otherwise (mixed lanes, a third-party plugin, or
-  an unrepresented effect type). **Known gap:** `PerformanceRepository.arm()`
-  is not yet called with real per-lane chains at either call site
-  (`performance_recorder_cubit.dart`, `control_cubit.dart`), so the shipped
-  app always takes the wet-bounce fallback today — wiring real chains
-  through is a small separate follow-up. Also **note:** the presentation
-  layer (`PerformanceRecorderCubit`, `export_device_chain_summary.dart`)
+  Effects reach Live only as audio: every track uses its wet stem (dry when
+  the wet render is missing), and `fx-chains.txt` records each lane's chain
+  as text. The device-chain export that once wrote Segno VST3 devices, and
+  the capture dialog's EXPORT card that reported on it, were removed in
+  #1587 with the plugins (#940). **Note:** the presentation
+  layer (`PerformanceRecorderCubit`, `PerformanceCompletionSheet`)
   currently imports `daw_export` and does its own file I/O directly rather
   than going through `performance_repository` — an accepted, documented
   layering shortcut, not yet folded into the repository.
@@ -2304,7 +2331,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   top; round track length up to the nearest whole multiple of the base loop).
   Free-running `loop_iteration`; track reads its `(iter-start_iter) % k` segment.
   New-track first pass always begins at the loop top (phase-locked multiples);
-  per-track multi-loop phase is relative to each track's own start.
+  per-track multi-loop phase is relative to each track's own start, and
+  each take keeps that lap through Stop-all, reopen, Session recall and undo
+  (#854, owner 2026-11-03; #201's bar-1 option is dropped).
 - **Fully free mode (no tempo)** — the looper is tempo-free: one master loop
   length set by the first recording, no metronome/click/count-in/tap-tempo, no
   loop↔tempo sync, no quantization. Captures start/stop immediately. BPM logic
@@ -2339,17 +2368,8 @@ the **on-hardware end-to-end validation** (full-count interface plugged in)
 remains open — see "On-hardware validations" below.
 
 ### Possible next steps (no hard dependency)
-- **Per-track multi-loop phase alignment** — multi-loop tracks currently phase
-  relative to their own start iteration; an absolute-parity option would align
-  all k-loop tracks to the same base-loop downbeat. _(Not started.)_
 - **Accessibility pass** — no `Semantics` coverage yet (theming + golden tests
   are done). Screen-reader labels, focus order, keyboard-nav a11y tests.
-- **VST3 FX plugins — parts 15-17** — further built-in effects/polish beyond
-  the 7 already shipped (Delay/Reverb/Echo/Drive/Filter/Tremolo/Octaver) and
-  their Windows/Linux builds; brainstormed
-  (`docs/brainstorm/2026-07-13-vst3-plugins-parts-15-17-brainstorm-doc.md`)
-  but never planned or built. Epic #194 is closed, and the desktop targets
-  went with #920.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
@@ -2384,8 +2404,7 @@ remains open — see "On-hardware validations" below.
 native (all C tests: incl. mid-loop record, transport reset single- &
 multi-track, loop multiples, loop-viz, per-track effects DSP, session
 export/import roundtrip, **single-chain monitor + record-FX snapshot +
-RT-safety + structural output gate**) · VST3 CTest gate (16 wired: 7
-plugin-id + 7 parity + 2 wrapper, plus a per-plugin load-smoke check) ·
+RT-safety + structural output gate**) ·
 segno_engine (dart, the FFI/plugin layer — was labeled "plugin") 138 (~7
 skipped) · controller_repository 18 · looper_repository 184 (~6 skipped) ·
 settings_repository 65 · session_repository 57 · local_storage_client 1 ·
@@ -2397,7 +2416,7 @@ settings + access, banks + A/B, performance keyboard, functional-settings,
 tags, routing-chip toggle + picker, capture re-assign, tap-to-trace
 dim/clear, output gate + a11y, no-active-outputs notice, responsive
 stacking, contextual dock**, session menu, **performance recorder UI +
-pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
+pedal arm/disarm**, **DAW export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
 

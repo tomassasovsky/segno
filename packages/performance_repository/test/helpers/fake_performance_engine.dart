@@ -257,6 +257,9 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
   EngineResult importSpan(int channel, int spanFrames) => EngineResult.ok;
 
   @override
+  EngineResult importAnchor(int channel, int anchorLap) => EngineResult.ok;
+
+  @override
   EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
       EngineResult.ok;
 

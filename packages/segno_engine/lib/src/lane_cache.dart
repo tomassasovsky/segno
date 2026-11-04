@@ -20,9 +20,9 @@ enum LaneCacheState {
 
   /// The lane is live until its chain or loop changes: its chain can never be
   /// rendered offline (it hosts a plugin slot), renders failed repeatedly, or
-  /// it holds an octaver or a Whammy on a loop that is not a whole number of
-  /// their hops (256 frames), so no single lap's render equals live, or it
-  /// holds a free-running modulator (a chorus or a doubler), which sounds
+  /// it holds a kind on the octaver's kernel (an octaver, Whammy, Dual
+  /// Octaver or Smart Tune), whose voice is phased differently each lap, or
+  /// a free-running modulator (a chorus or a doubler), which sounds
   /// different each lap.
   gaveUp;
 

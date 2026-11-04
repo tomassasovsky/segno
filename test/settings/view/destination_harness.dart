@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
@@ -138,6 +139,9 @@ class DestinationHarness {
   /// test sets one before [pump].
   TouchCalibrationClient touch = const UnsupportedTouchCalibrationClient();
 
+  /// The guard table touch calibration holds its guard in.
+  final GuardRegistry guards = GuardRegistry();
+
   /// The Track display link calibration draws its targets through.
   WaveformWindowService link = NoopWaveformWindowService();
 
@@ -238,6 +242,7 @@ class DestinationHarness {
           RepositoryProvider.value(value: WifiRepository(client: wifi)),
           RepositoryProvider<DisplayOutputs>.value(value: outputs),
           RepositoryProvider<TouchCalibrationClient>.value(value: touch),
+          RepositoryProvider<GuardRegistry>.value(value: guards),
           RepositoryProvider<WaveformWindowService>.value(value: link),
         ],
         child: MultiBlocProvider(

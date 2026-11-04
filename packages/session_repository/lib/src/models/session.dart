@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:meta/meta.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/session_exception.dart';
@@ -206,6 +208,7 @@ class SessionTrack {
     required this.reversed,
     required this.lanes,
     this.spanFrames = 0,
+    this.anchorLap = 0,
   });
 
   /// Projects a [SessionTrack] from a current-schema JSON map.
@@ -243,14 +246,20 @@ class SessionTrack {
     if (span is! int || span < 0) {
       throw const FormatException('invalid track span');
     }
+    final multiple = (json['multiple'] as num).toInt();
+    final anchor = json['anchorLap'];
+    if (anchor is! int || anchor < 0 || anchor >= math.max(multiple, 1)) {
+      throw const FormatException('invalid track anchor lap');
+    }
     return SessionTrack(
       channel: channel,
-      multiple: (json['multiple'] as num).toInt(),
+      multiple: multiple,
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       fadeAmount: amount.toDouble(),
       reversed: reversed,
       lanes: lanes,
       spanFrames: span,
+      anchorLap: anchor,
     );
   }
 
@@ -281,6 +290,13 @@ class SessionTrack {
   /// the engine's import span, so the take reads at its own ratio.
   final int spanFrames;
 
+  /// The lap the take was played on (#854, schema 17): the master lap,
+  /// counted from the rig's lap 0 and reduced modulo [multiple], that the
+  /// take's first lap plays on. Recalled through the engine's import anchor,
+  /// so a take of several base loops plays where it was played against the
+  /// others rather than from lap 0.
+  final int anchorLap;
+
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
@@ -289,6 +305,7 @@ class SessionTrack {
     'fadeAmount': fadeAmount,
     'reversed': reversed,
     'spanFrames': spanFrames,
+    'anchorLap': anchorLap,
     'lanes': [for (final l in lanes) l.toJson()],
   };
 
@@ -303,6 +320,7 @@ class SessionTrack {
           fadeAmount == other.fadeAmount &&
           reversed == other.reversed &&
           spanFrames == other.spanFrames &&
+          anchorLap == other.anchorLap &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -313,6 +331,7 @@ class SessionTrack {
     fadeAmount,
     reversed,
     spanFrames,
+    anchorLap,
     Object.hashAll(lanes),
   );
 }
@@ -1085,8 +1104,9 @@ class Session {
   /// (#1168) length edits in a lane's history with their playhead maps
   /// (`start`) and the grid in beats (`loopBeats`), since 15 (#1200) the
   /// backing setup and the click's pan, and since 16 (#1179 Part 4b) the
-  /// recorded tempo, each take's span and the Audio & tempo settings.
-  static const int formatVersion = 16;
+  /// recorded tempo, each take's span and the Audio & tempo settings, and
+  /// since 17 (#854) the lap each take was played on.
+  static const int formatVersion = 17;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';

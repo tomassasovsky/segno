@@ -4,7 +4,7 @@
 
 A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-current **v16** schema. Decode accepts the current schema only (see
+current **v17** schema. Decode accepts the current schema only (see
 [Versioning](#versioning)).
 
 Related: the performance-capture path stores retiring layers with its own
@@ -181,11 +181,11 @@ Note what is *not* here: there are no per-flag manifest fields, and no per-flag
 settings keys either. Every enable bit and every slot id lives inside the one
 string per chain.
 
-## Manifest schema (v16)
+## Manifest schema (v17)
 
 ```jsonc
 {
-  "version": 16,
+  "version": 17,
   "sampleRate": 48000,
   "channels": 1,
   "baseLengthFrames": 96000,
@@ -197,6 +197,7 @@ string per chain.
       "fadeAmount": 1.0,            // v11: the stationary Fade level, 0..1
       "reversed": false,            // v13: plays reversed (#1162)
       "spanFrames": 0,              // v16: see "Recorded tempo" below
+      "anchorLap": 0,               // v17: see "The lap a take was played on"
       "lanes": [
         {
           "lane": 0,
@@ -308,6 +309,18 @@ session tempo, which retimes from the recorded pair to exactly
 always the master as saved, so readers that ignore these fields still see the
 song's own length.
 
+### The lap a take was played on (v17)
+
+A take of several base loops plays from where it was recorded against the
+master: a 4-loop take started on the master's third lap plays its first loop
+on every lap that is 2 modulo 4. `anchorLap` saves that lap, counted from the
+master's first lap and reduced modulo `multiple` (0 for a take of one loop or
+a Sync division, and always below `multiple`). The engine keeps it through
+Stop-all, a reopen and undo, and publishes it as
+`le_track_snapshot.anchor_lap`. Recall imports each take with its lap
+(`le_engine_import_anchor`) before the commit, so Play starts every take where
+it sat against the others.
+
 Audio never appears in the manifest; it lives in the referenced WAVs.
 
 Chains exist **independently of audio**: a `laneChains`/`trackChains` entry may
@@ -318,14 +331,14 @@ channel survives a save.
 
 ## Versioning
 
-Writing is always the current version (v16). `Session.fromJson` accepts the
+Writing is always the current version (v17). `Session.fromJson` accepts the
 current version only: any other `version` fails with
 `SessionUnsupportedVersion`, and a non-integer `version` with a
 `FormatException`. Inside the current schema, fields that `toJson` omits at
 their defaults (`pan`, `balance`, the optional maps) read as those defaults.
 
 Opening a bundle goes through `decodeSessionManifest` (#1196,
-`session_migration.dart`). A manifest from v1 to v15 is converted in memory,
+`session_migration.dart`). A manifest from v1 to v16 is converted in memory,
 one step per schema bump, and must then pass the strict decoder; a newer one
 fails with `SessionUnsupportedVersion` and one that cannot be converted with
 `SessionUnconvertible`, leaving the bundle untouched. Once the converted
@@ -444,3 +457,6 @@ envelope):
   recorded pair and no spans; Follow tempo and Pitch were the player's global
   preferences until then, so the conversion takes the live ones (rule 1, the
   schema-8 precedent).
+- **v17** — the lap each take was played on (`anchorLap`, #854). Every
+  earlier schema recalled its takes from lap 0, so a v16 bundle loads with
+  every take at lap 0, as it did.

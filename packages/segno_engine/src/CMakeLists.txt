@@ -13,76 +13,12 @@ cmake_minimum_required(VERSION 3.15)
 # le_stretch.cpp, #1179) and, when SEGNO_ENABLE_PLUGINS is on, the plugin host.
 project(segno_engine_core VERSION 0.1.0 LANGUAGES C CXX)
 
-# --- segno_dsp_core: the effects DSP, split out as its own STATIC library so a
-# second target (the future VST3 plugin builds, parts 2/3) can link engine_fx.c
-# without duplicating the source file. Source reorganization only — no change
-# to segno_engine's public behavior, ABI, or output.
-#
-# Link-seam gotcha: engine_fx.c's LE_FX_PLUGIN row (fx_plugin_process) calls
-# le_plugin_slot_process() unconditionally, with no #ifdef guard, so any
-# target linking segno_dsp_core has an unresolved symbol unless it also links
-# something that defines it. segno_engine gets this for free below (it links
-# either host/slot.cpp when SEGNO_ENABLE_PLUGINS is on, or the stub in
-# core/plugin_disabled.c when it's off) — parts 2/3 must link the stub too.
-add_library(segno_dsp_core STATIC
-  core/engine_fx.c
-  # The audio-thread allocator (rt_alloc.h). It rides here, and only here,
-  # because engine_fx.c claims its rings from it, so every target linking
-  # segno_dsp_core (the VST3 plugin builds in ../vst3) needs it; segno_engine
-  # gets it by linking this library, and listing it there too would define it
-  # twice.
-  core/rt_alloc.c
-)
-
-# Matches segno_engine's own C_STANDARD/atomics configuration below: this
-# static lib ends up embedded in multiple .so/.dll/.dylib outputs, so PIC is
-# set explicitly rather than relying on it propagating from consumers.
-# pthread_once (engine_fx.c builds the octaver's shared tables once, #1410).
-find_package(Threads REQUIRED)
-target_link_libraries(segno_dsp_core PUBLIC Threads::Threads)
-
-set_target_properties(segno_dsp_core PROPERTIES
-  C_STANDARD 11
-  C_STANDARD_REQUIRED ON
-  POSITION_INDEPENDENT_CODE ON
-)
-
-# engine_fx.c's own includes ("engine_fx.h", "engine_internal.h", "fft.h") are
-# flat quote-includes resolved relative to its own directory (core/); the
-# exceptions are engine_private.h -> miniaudio.h (one level over, in
-# miniaudio/), engine_private.h -> le_midi_clock.h (C1, one level over, in
-# midi/ — struct le_engine embeds a le_midi_clock_gen field), and engine_fx.c's
-# own `#include "../host/plugin_slot.h"` (resolved relative to the including
-# file regardless of -I flags).
-#
-# PUBLIC (not PRIVATE): a consumer that links segno_dsp_core needs these same
-# directories on its own include path to `#include "engine_fx.h"` (the whole
-# point of the split — parts 2/3's VST3 targets link segno_dsp_core PRIVATE
-# and drive the DSP through engine_fx.h's public seam). PRIVATE here would
-# silently fail to propagate through target_link_libraries and break that
-# include the moment a consumer target is added.
-target_include_directories(segno_dsp_core PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}/core"
-  "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio"
-  "${CMAKE_CURRENT_SOURCE_DIR}/midi"
-)
-
-# Verified via `nm -u` on the built objects: segno_dsp_core's only unresolved
-# symbols are libc/libm/pthread (rt_alloc.c's mmap/munmap/madvise/sysconf/
-# fprintf, and calloc/free/sinf/cosf/sin/cos/tanf/tanhf/atan2f/expf/logf/
-# powf, engine_fx.c's pthread_once for the octaver tables (#1410), plus the
-# compiler-inserted stack-protector/memcpy-check builtins) and
-# le_plugin_slot_process (the link-seam gotcha above). If a future change to
-# engine_fx.c (or a header it pulls in) adds a new external dependency, this
-# list goes stale — re-run `nm -u` on the object and update both this comment
-# and D-LINK's consumer list (parts 2/3) if so.
-
 add_library(segno_engine SHARED
   # ---- core/: the portable engine (S1 split into per-concern TUs) ----
   core/engine.c              # residual control-thread core + shared helpers
   core/engine_digest.c       # SHA-256, file digests, directory fsync (engine-free)
-  # core/engine_fx.c and core/rt_alloc.c live in segno_dsp_core above (linked
-  # PRIVATE below) so the VST3 plugin builds can link them too.
+  core/engine_fx.c           # the effects DSP (the FX chain kernels)
+  core/rt_alloc.c            # the audio-thread allocator (rt_alloc.h)
   core/engine_session.c      # session export / import / commit
   core/engine_devices.c      # device discovery, loopback, id resolution, backend
   core/engine_snapshot.c     # published-state snapshots + visualization reads
@@ -180,11 +116,6 @@ target_include_directories(segno_engine PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/midi"
   "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio"
 )
-
-# engine_fx.c's object code now arrives via segno_dsp_core instead of a direct
-# compile; PRIVATE keeps the static lib an implementation detail (it does not
-# leak into segno_engine's own public link interface).
-target_link_libraries(segno_engine PRIVATE segno_dsp_core)
 
 # DART_SHARED_LIB keeps the FFI-exported symbols visible in the stripped release
 # library (mirrors the flutter plugin_ffi template contract).

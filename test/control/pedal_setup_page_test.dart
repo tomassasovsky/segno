@@ -228,6 +228,17 @@ void main() {
       expect(find.text(l10n.actionModeCustom), findsOneWidget);
     });
 
+    testWidgets('Press and Hold sit a spacing token apart (#1590 PED-3)', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(
+        tester.getTopLeft(find.byKey(hold)).dx -
+            tester.getTopRight(find.byKey(press)).dx,
+        SpacingTheme.standard.xl,
+      );
+    });
+
     testWidgets('each cap is centred where the foot views draw its pedal '
         '(#1590 FT-4)', (tester) async {
       await pump(tester);
@@ -1076,6 +1087,20 @@ void main() {
             reason: state.name,
           );
         }
+        // The colour wells sit a spacing token apart (#1590 PED-3).
+        expect(
+          tester
+                  .getTopLeft(
+                    find.byKey(const Key('pedal_led_state_overdubbing')),
+                  )
+                  .dx -
+              tester
+                  .getTopRight(
+                    find.byKey(const Key('pedal_led_state_recording')),
+                  )
+                  .dx,
+          SpacingTheme.standard.xl,
+        );
         for (final key in [
           'pedal_led_mode',
           'pedal_setup_context_tracks',

@@ -39,8 +39,16 @@ int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
 #define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
 #define LE_LATENCY_CAPTURE_DIV 10  /* capture window = sample_rate / this (~100ms) */
 
-/* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
+/* Input level (0..1) that triggers sound-activated recording (~-34 dBFS),
+ * read after the detector's high-pass (le_trigger_hp, #1623). */
 #define LE_AUTO_RECORD_THRESHOLD 0.02f
+
+/* The sound-activated trigger's detector high-pass (#1623): a fourth-order
+ * Butterworth at LE_TRIGGER_HP_HZ on each input's detection path only, so
+ * mains hum (50/60 Hz, 18 to 24 dB down) and rumble cannot start a take while
+ * a pick's attack, broadband, still does. What records stays raw. The
+ * Looper X's and RC-600's input triggers ignore rumble the same way. */
+#define LE_TRIGGER_HP_HZ 100.0
 
 /* Drops any Song or Band handoff (#1077). A waiting Record's arm is left
  * for le_song_publish to clear at the end of the block. Audio thread, or

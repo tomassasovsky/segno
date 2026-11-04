@@ -1048,6 +1048,41 @@ void main() {
       expect(rig.trackPitchModeOverrides, {0: PitchMode.unchanged});
     });
 
+    test('the lap each take was played on reaches the rig (#854)', () {
+      final rig = rigFromBundle((
+        session: const Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(
+              channel: 1,
+              multiple: 4,
+              lengthFrames: 16,
+              fadeAmount: 1,
+              reversed: false,
+              anchorLap: 2,
+              lanes: [
+                SessionLane(
+                  lane: 0,
+                  volume: 1,
+                  muted: false,
+                  outputMask: 3,
+                  inputChannel: 0,
+                  layers: [SessionLayer(file: 'track1_lane0_L0.wav')],
+                  history: TrackHistory.none,
+                ),
+              ],
+            ),
+          ],
+        ),
+        laneStems: {
+          (1, 0): [Float32List(16)],
+        },
+      ));
+      expect(rig.tracks.single.anchorLap, 2);
+    });
+
     test("a manifest that names no defaults still carries the model's own, "
         'so a load RESETS rather than inherits', () {
       // The same posture the FX stages take: a fact the manifest does not

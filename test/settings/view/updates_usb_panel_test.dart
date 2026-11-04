@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/settings/view/settings_fact_panel.dart';
 import 'package:segno/settings/view/updates_usb_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/usb/usb_update_cubit.dart';
@@ -137,5 +138,18 @@ void main() {
       final l10n = await pump(tester, state);
       expect(find.text(text(l10n)), findsOneWidget);
     }
+  });
+
+  testWidgets('its content sits at the fact panels inset (#1590 UPD-4)', (
+    tester,
+  ) async {
+    final l10n = await pump(
+      tester,
+      const UsbUpdateState(phase: UsbUpdatePhase.noDrive),
+    );
+    final panel = tester.getRect(find.byKey(const Key('updates_usb_panel')));
+    final title = tester.getRect(find.text(l10n.updatesUsbChoose));
+    // A one-pixel border, then the inset every Updates card uses.
+    expect(title.left - panel.left, 1 + SettingsFactPanel.inset);
   });
 }

@@ -109,17 +109,8 @@ typedef struct le_midi_sink {
   _Atomic int32_t in_flight;   /* producer accesses in progress */
 } le_midi_sink;
 
-/* The operations are C only. This header reaches the VST3 C++ translation
- * units through engine_private.h, whose C++ atomics shim covers only the
- * struct members above (written with the `_Atomic T` qualifier form so the
- * shim's empty `_Atomic` leaves valid C++); no C++ code calls these. */
-#ifndef __cplusplus
-
 #include <stdatomic.h>
 #if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #include <windows.h> /* SwitchToThread */
 #else
 #include <sched.h> /* sched_yield */
@@ -285,8 +276,6 @@ static inline void le_midi_sink_bind(le_midi_sink* s, le_midi_port* p) {
   atomic_store_explicit(&p->a_owner, s, memory_order_release);
   atomic_store_explicit(&s->port, p, memory_order_seq_cst);
 }
-
-#endif /* !__cplusplus */
 
 #ifdef __cplusplus
 }

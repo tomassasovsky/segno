@@ -849,6 +849,12 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
   t->pending_master_len = 0;
 }
 
+/* Notes the lap a just-marked restore places the take on (#854). */
+static void le_mark_restore_anchor(le_track* t, int32_t anchor) {
+  t->pending_anchor = anchor;
+  t->pending_anchor_cmd = t->state_cmds_posted;
+}
+
 /* Marks a successfully posted command that EMPTIES the track: the state flip
  * plus the publication ticket a later fresh capture needs before it may free,
  * regrow or zero this track's PCM (#1146, le_track.empty_command). Called
@@ -1180,8 +1186,8 @@ static void le_handle_retired(le_engine* engine, const le_command* evt,
  * immediately (LE_CMD_REDO_FROM_EMPTY). A cancelled take that captured
  * nothing (value 0) leaves nothing to redo. */
 static void le_handle_take_cancelled(le_engine* engine, const le_command* evt) {
-  const int32_t ch = evt->lanei.channel;
-  const int32_t len = evt->lanei.value;
+  const int32_t ch = evt->restore.channel;
+  const int32_t len = evt->restore.len;
   if (ch < 0 || ch >= engine->track_count) return;
   le_track* t = &engine->tracks[ch];
   /* A clear or a fresh capture since the cancel was posted owns the slot
@@ -1191,7 +1197,9 @@ static void le_handle_take_cancelled(le_engine* engine, const le_command* evt) {
   if (len <= 0) return;
   /* The cancel already cleared the redo branch (a fresh take does, at
    * capture start), so the slot goes on an empty stack. */
-  if (!le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)))) return;
+  le_hist_entry base = le_hist_layer(load_i32(&t->lanes[0].a_live));
+  base.anchor = evt->restore.anchor; /* #854 */
+  if (!le_redo_push(t, base)) return;
   t->empty_len = len;
   store_i32(&t->a_redo_depth, t->redo_count);
   for (int32_t l = 0; l < le_lanes_active(t); ++l) {
@@ -1224,6 +1232,7 @@ static void le_collect_clear(le_engine* engine, le_track* t) {
   const uint32_t bits = atomic_load_explicit(&t->a_clear_fade_amount, memory_order_seq_cst);
   const int32_t len = atomic_load_explicit(&t->a_clear_len, memory_order_seq_cst);
   const int32_t master_len = atomic_load_explicit(&t->a_clear_master_len, memory_order_seq_cst);
+  const int32_t anchor = atomic_load_explicit(&t->a_clear_anchor, memory_order_seq_cst);
 #ifdef LE_NATIVE_TESTS
   if (le_test_fade_hook) le_test_fade_hook(engine, 3);
 #endif
@@ -1251,6 +1260,7 @@ static void le_collect_clear(le_engine* engine, le_track* t) {
     e.slot = t->clear_restore_slot;
     e.len = len;
     e.master_len = master_len;
+    e.anchor = anchor;
     e.multiple = master_len > 0 && len >= master_len ? len / master_len : 1;
     e.state = LE_TRACK_STOPPED;
     e.clear_generation = generation;
@@ -1262,6 +1272,7 @@ static void le_collect_clear(le_engine* engine, le_track* t) {
     le_hist_entry* e = &t->undo_stack[t->undo_count - 1];
     if (e->clear_generation == generation && !e->fade_ready) {
       e->fade_amount = amount;
+      e->anchor = anchor; /* audio-owned, like the amount (#854) */
       e->fade_ready = 1;
     }
   }
@@ -3000,6 +3011,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   cmd.restore.state = e.state;
   cmd.restore.master_len = e.master_len;
   cmd.restore.fade_amount = e.fade_amount;
+  cmd.restore.anchor = e.anchor;
   /* Staged before the push: the callback may apply this restore before the
    * publish below and looks the slot up at that frame (#1143). */
   const uint32_t image_id = le_stage_source_image(engine, channel, e.slot, e.len);
@@ -3019,6 +3031,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   t->outstanding_count = 0;
   le_mark_state_cmd(t, e.state);
   t->pending_len = e.len; /* what the restore will publish */
+  le_mark_restore_anchor(t, e.anchor);
   t->pending_master_len = le_restore_master_len(engine, e.len, e.master_len);
   /* Length and multiple are DELIBERATELY not stored control-side here, unlike
    * the paths that empty a track. Those publish len 0 up front so a poll can
@@ -3146,13 +3159,21 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
    * did not make it onto the redo stack would empty the track with no way back —
    * worse than declining the tap. */
   if (t->redo_count >= LE_POOL_SLOTS) return LE_ERR_INVALID;
+  /* The lap the take plays from (#854), read before the push: the callback
+   * publishes 0 for the track once it is empty. A restore still in the ring
+   * has not published its lap yet; the one it was posted with is the take's. */
+  le_hist_entry base = le_hist_layer(load_i32(&t->lanes[0].a_live));
+  const int restoring =
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire) <
+      t->pending_anchor_cmd;
+  base.anchor = restoring ? t->pending_anchor : load_i32(&t->a_anchor);
   if (le_push(engine, LE_CMD_UNDO_TO_EMPTY, channel, 0.0f) != LE_OK) {
     return LE_ERR_INVALID;
   }
   /* An emptied track must not have a quantized/auto-record arm still pending —
    * it would fire a surprise fresh recording at the next loop top. */
   le_cancel_arm(engine, channel);
-  (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
+  (void)le_redo_push(t, base);
   t->empty_len = len;
   le_mark_empty_cmd(engine, t);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
@@ -3246,9 +3267,11 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
      * callback looks the slot up at that frame. */
     const int32_t next = t->redo_stack[t->redo_count - 1].slot;
     const uint32_t image_id = le_stage_source_image(engine, channel, next, len);
-    if (le_push_cmd(engine, (le_command){.code = LE_CMD_REDO_FROM_EMPTY,
-                                         .lanei = {channel, 0, len}}) !=
-        LE_OK) {
+    const int32_t anchor = t->redo_stack[t->redo_count - 1].anchor;
+    const le_command redo = {
+        .code = LE_CMD_REDO_FROM_EMPTY,
+        .restore = {.channel = channel, .len = len, .anchor = anchor}};
+    if (le_push_cmd(engine, redo) != LE_OK) {
       return LE_ERR_INVALID;
     }
     t->redo_count--;
@@ -3261,6 +3284,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     le_mark_state_cmd(t, LE_TRACK_PLAYING);
     t->pending_len = len;
     t->pending_master_len = le_restore_master_len(engine, len, 0);
+    le_mark_restore_anchor(t, anchor);
     le_track_set_len(t, len);
     store_i32(&t->a_redo_depth, t->redo_count);
     return LE_OK;

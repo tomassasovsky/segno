@@ -128,6 +128,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->follow_override = load_i32(&tr->a_follow_override);
   out->pitch_override = load_i32(&tr->a_pitch_override);
   out->span_frames = load_i32(&tr->a_span_clock); /* #1179 Part 4b */
+  out->anchor_lap = active ? load_i32(&tr->a_anchor) : 0; /* #854 */
   {
     /* The tempo ratio's pitch on what sounds: the source's length over the
      * span it plays across (the take's own while dry). */
@@ -255,39 +256,27 @@ uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
                                  &ln->a_fx_chain_enabled);
 }
 
-/* Folds the track's loop-top position on the octaver hop (#941) into a print
- * key when [types][0, n) holds an octaver that plays (its slot enabled, the
- * chain on; a bypassed one passes the signal dry, hop or no hop, as a rack's
- * switched-off Pitch Shift does): such a print is rendered against
- * that position (the cache's clock0), so a stop and relaunch, or a held
- * transport, that moves the loop against the engine clock changes the key and
- * the print falls back live and re-renders instead of engaging off the live
- * hop. A chain without an octaver is keyed as before.
- *
- * A chain holding a clock LFO (le_fx_type_clock_lfo, #1620) folds the top's
- * place on the lap grid the same way: its print is rendered against that
- * clock, and repeats live only from tops on the same grid. */
-static uint64_t le_fx_fold_hop_position(uint64_t h, int32_t n,
+/* Folds where the track's loop top sits on the lap grid into a print key
+ * when [types][0, n) holds a clock LFO that plays (#1620; its slot enabled,
+ * the chain on): such a print is rendered against the clock of that top (the
+ * cache's clock0) and repeats live only from tops on the same grid, so a stop
+ * and relaunch, or a held transport, that moves the loop against the engine
+ * clock changes the key and the print falls back live and re-renders. A
+ * chain without one is keyed as before. */
+static uint64_t le_fx_fold_lap_position(uint64_t h, int32_t n,
                                         _Atomic int32_t* a_type,
                                         _Atomic int32_t* a_enabled,
                                         _Atomic int32_t* a_chain_enabled,
-                                        le_track* t, uint32_t period) {
+                                        le_track* t) {
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   if (!load_i32(a_chain_enabled)) return h;
-  const uint32_t top =
-      atomic_load_explicit(&t->a_top_clock, memory_order_relaxed);
-  for (int32_t i = 0; i < n; ++i) {
-    if (le_fx_type_hops(load_i32(&a_type[i])) && load_i32(&a_enabled[i])) {
-      h = le_fx_fp_u32(h, le_fx_hop_position(top, period));
-      break;
-    }
-  }
-  /* A clock LFO (#1620) folds where the top sits on the lap grid. */
   for (int32_t i = 0; i < n; ++i) {
     if (le_fx_type_clock_lfo(load_i32(&a_type[i])) &&
         load_i32(&a_enabled[i])) {
-      h = le_fx_fp_u32(h, le_fx_lap_position(top, load_i32(&t->lanes[0].a_len)));
-      break;
+      const uint32_t top =
+          atomic_load_explicit(&t->a_top_clock, memory_order_relaxed);
+      return le_fx_fp_u32(
+          h, le_fx_lap_position(top, load_i32(&t->lanes[0].a_len)));
     }
   }
   return h;
@@ -317,10 +306,9 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
                       ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits,
                       ln->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
-  return le_fx_fold_hop_position(h, pre, ln->a_fx_type, ln->a_fx_enabled,
+  return le_fx_fold_lap_position(h, pre, ln->a_fx_type, ln->a_fx_enabled,
                                  &ln->a_fx_chain_enabled,
-                                 &engine->tracks[channel],
-                                 engine->fx_hop_period);
+                                 &engine->tracks[channel]);
 }
 
 /* Whether track [channel]'s Pre run can be rendered at all (slice 3e).
@@ -381,8 +369,8 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
                       b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
                       b->a_fx_chan_level_bits, b->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
-  h = le_fx_fold_hop_position(h, pre, b->a_fx_type, b->a_fx_enabled,
-                              &b->a_fx_chain_enabled, t, engine->fx_hop_period);
+  h = le_fx_fold_lap_position(h, pre, b->a_fx_type, b->a_fx_enabled,
+                              &b->a_fx_chain_enabled, t);
 
   const int32_t n = le_lanes_active(t);
   h = le_fx_fp_u32(h, (uint32_t)n);

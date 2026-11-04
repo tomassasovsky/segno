@@ -108,6 +108,7 @@ void main() {
     'v14_length_1168',
     'v15_length_backing',
     'v16_audio_tempo',
+    'v17_anchor',
   ]) {
     test('$name maps to a valid rig', () async {
       final opened = await SessionRepository(
@@ -118,7 +119,7 @@ void main() {
       expect(MixSettingsSnapshot.fromRig(rig).isValid, isTrue);
       expect(
         opened.conversion?.fromVersion,
-        name.startsWith('v16') ? isNull : isNotNull,
+        name.startsWith('v17') ? isNull : isNotNull,
       );
     });
   }

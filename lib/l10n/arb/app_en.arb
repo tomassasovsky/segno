@@ -1237,7 +1237,7 @@
     "@perfLowDiskBlocked": {
         "description": "Snackbar shown when arming a performance capture is refused because the export volume is already below the free-space floor."
     },
-    "operationBusy": "{kind, select, capture{A recording is running. Stop it first.} sessionApply{A session is opening. Try again when it has opened.} sessionWrite{A session is being saved. Try again in a moment.} transfer{A USB transfer is running. Try again when it finishes.} eject{A drive is being ejected. Try again when it finishes.} deviceChange{The audio interface is changing. Try again in a moment.} calibration{Latency is being measured. Try again when it finishes.} restart{The console is shutting down.} other{Something else is running. Try again in a moment.}}",
+    "operationBusy": "{kind, select, capture{A recording is running. Stop it first.} sessionApply{A session is opening. Try again when it has opened.} sessionWrite{A session is being saved. Try again in a moment.} transfer{A USB transfer is running. Try again when it finishes.} eject{A drive is being ejected. Try again when it finishes.} deviceChange{The audio interface is changing. Try again in a moment.} calibration{Latency is being measured. Try again when it finishes.} touchCalibration{A touchscreen is being calibrated. Try again when it finishes.} restart{The console is shutting down.} other{Something else is running. Try again in a moment.}}",
     "@operationBusy": {
         "description": "Why an action was refused at its commit: another operation it must not overlap is in flight (the guard table, #1198). kind is the GuardKind name of the blocking operation.",
         "placeholders": {
@@ -1267,30 +1267,6 @@
         }
     },
     "perfRenameButton": "Rename",
-    "perfExportSummaryTitle": "Export",
-    "@perfExportSummaryTitle": {
-        "description": "Heading above the per-track export summary on the performance-completion sheet."
-    },
-    "perfExportTrackLive": "Live plugins",
-    "@perfExportTrackLive": {
-        "description": "Per-track export summary label: this track exported with a live, editable Segno VST3 device chain."
-    },
-    "perfExportTrackBounced": "Bounced audio",
-    "@perfExportTrackBounced": {
-        "description": "Per-track export summary label: this track exported as bounced (wet) audio, with no live device chain."
-    },
-    "perfExportReasonMixedLanes": "Exported as audio — this track's lanes had different effects chains.",
-    "@perfExportReasonMixedLanes": {
-        "description": "Fallback reason shown under a bounced-audio track: its lanes didn't all share the same effects chain."
-    },
-    "perfExportReasonThirdPartyPlugin": "Exported as audio — this track uses a third-party plugin.",
-    "@perfExportReasonThirdPartyPlugin": {
-        "description": "Fallback reason shown under a bounced-audio track: its chain includes a hosted third-party plugin, which can't be exported live."
-    },
-    "perfExportReasonUnrepresented": "Exported as audio — this track uses an effect that can't be exported live yet.",
-    "@perfExportReasonUnrepresented": {
-        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Segno version doesn't recognize as exportable."
-    },
     "timeSignatureNoteValueLabel": "Note value",
     "clickModeOffLabel": "Off",
     "clickModeRecLabel": "Recording",
