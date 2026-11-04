@@ -3868,6 +3868,30 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
     });
 
+    testWidgets('a stop that fails and leaves the take recording says so '
+        '(#1639)', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderFinalizing(),
+          PerformanceRecorderArmed(
+            elapsed: Duration(seconds: 5),
+            overrun: false,
+          ),
+        ]),
+        initialState: const PerformanceRecorderArmed(
+          elapsed: Duration(seconds: 4),
+          overrun: false,
+        ),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(said.titles, [l10n.perfStopFailed]);
+      await tester.pump(const Duration(seconds: 6));
+    });
+
     testWidgets(
       'renaming (re-emitting Completed with a different path) does not '
       'reopen the completion sheet once dismissed',

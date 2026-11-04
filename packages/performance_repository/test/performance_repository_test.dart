@@ -1268,6 +1268,44 @@ void main() {
       );
     }
 
+    test('a disarm whose lane export or engine disarm throws reports the '
+        'take armed again, never leaving it finalizing (#1639)', () async {
+      final broken = _ThrowAfterArmEngine();
+      final localRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: broken,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      addTearDown(localRepo.dispose);
+      final statuses = <PerformanceCaptureStatus>[];
+      final sub = localRepo.captureStatus.listen(statuses.add);
+      addTearDown(sub.cancel);
+      expect(await localRepo.arm(), EngineResult.ok);
+      final dir = localRepo.armedDirectory!;
+
+      broken.throwSnapshot = true;
+      await expectLater(localRepo.disarmAndFinalize(), throwsStateError);
+      await pumpEventQueue();
+      expect(statuses.last, PerformanceCaptureStatus.armed);
+      expect(localRepo.armedDirectory, dir);
+      expect(broken.perfArmed, isTrue);
+
+      broken
+        ..throwSnapshot = false
+        ..throwDisarmOnce = true;
+      await expectLater(localRepo.disarmAndFinalize(), throwsStateError);
+      await pumpEventQueue();
+      expect(statuses.last, PerformanceCaptureStatus.armed);
+      expect(localRepo.armedDirectory, dir);
+
+      writeNativeSidecar(dir);
+      expect(await localRepo.disarmAndFinalize(), EngineResult.ok);
+      await pumpEventQueue();
+      expect(statuses.last, PerformanceCaptureStatus.done);
+    });
+
     test('an arm while the take is still finalizing is refused as a take '
         'being saved, not taken for the same press twice (#1638)', () async {
       await armAndSeedNative(engine, repo);

@@ -263,8 +263,24 @@ class _TracksViewState extends State<TracksView> {
                         current.driveUnavailable ||
                         current.refusedBy != null ||
                         current.busyWith != null ||
+                        current.takeFailed != null ||
                         current.notRecovered > 0)),
             listener: onPerformanceRecorderState,
+          ),
+          BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
+            // Finalizing back to Armed is a stop that failed before the
+            // engine stopped: the take goes on, and the player is told
+            // (#1639).
+            listenWhen: (previous, current) =>
+                previous is PerformanceRecorderFinalizing &&
+                current is PerformanceRecorderArmed,
+            listener: (context, _) => context.read<NoticesCubit>().show(
+              Notice(
+                id: AppNoticeId.performance,
+                tone: NoticeTone.warning,
+                title: (l10n) => l10n.perfStopFailed,
+              ),
+            ),
           ),
           BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
             // A Capture press while the last take is still being saved or

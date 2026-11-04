@@ -3293,13 +3293,11 @@ class ControlCubit extends Cubit<ControlState> {
       );
       return false;
     }
-    final arming = !_performanceArmed;
-    final result = await _performanceToggleResult();
-    // A refused arm is published with its reason, and the recorder says why
-    // whichever control was pressed (#1633): one cause, one notice. Counted
+    final toggled = await _performanceToggle();
+    // The recorder says why (#1633, #1639): one cause, one notice. Counted
     // here, for the assigned press only.
-    if (arming && result == EngineResult.notReady) _ownNotices++;
-    return result.isOk;
+    if (toggled.announced) _ownNotices++;
+    return toggled.result.isOk;
   }
 
   Future<bool> _volumeTooFullToArm() async {
@@ -3680,15 +3678,26 @@ class ControlCubit extends Cubit<ControlState> {
   /// guard covers a rapid re-press identically here, so it is not
   /// duplicated in this cubit.
   void togglePerformanceRecord() {
-    unawaited(_performanceToggleResult());
+    unawaited(_performanceToggle());
   }
 
   /// Disarms a running take or arms one; a locked take is refused as
-  /// invalid.
-  Future<EngineResult> _performanceToggleResult() async {
-    if (_takeLocked()) return EngineResult.invalid;
-    if (_performanceArmed) return _performance.disarm();
-    return _performance.arm(chains: _currentChains());
+  /// invalid. `announced` is set when the recorder already says why it did
+  /// not work: a refused arm (published with its reason, #1633), or a take
+  /// whose finalize failed (the recorder settles it, #1639).
+  Future<({EngineResult result, bool announced})> _performanceToggle() async {
+    if (_takeLocked()) return (result: EngineResult.invalid, announced: false);
+    if (_performanceArmed) {
+      try {
+        return (result: await _performance.disarm(), announced: false);
+      } on Object catch (error, stackTrace) {
+        // The recorder settles and announces it (#1639); logged here.
+        addError(error, stackTrace);
+        return (result: EngineResult.device, announced: true);
+      }
+    }
+    final result = await _performance.arm(chains: _currentChains());
+    return (result: result, announced: result == EngineResult.notReady);
   }
 
   void _onPerformanceStatus(PerformanceCaptureStatus status) {

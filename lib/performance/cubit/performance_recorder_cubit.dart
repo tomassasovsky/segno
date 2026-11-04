@@ -401,7 +401,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
           unawaited(_stopEarly(PerformanceStopReason.volumeLost));
         }
       case PerformanceRecorderArmed():
-        await _performance.disarm();
+        try {
+          await _performance.disarm();
+        } on Object catch (error, stackTrace) {
+          // The status stream settles the recorder (#1639); the error is
+          // only logged here.
+          addError(error, stackTrace);
+        }
       // The repository names the work: a finalize, the render, or this
       // cubit's own delivery hold while the DAW project is written (#1638).
       case PerformanceRecorderFinalizing():
@@ -514,8 +520,20 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   void _onStatus(PerformanceCaptureStatus status) {
     switch (status) {
       case PerformanceCaptureStatus.idle:
-        // The initial replay, or a finalize that failed: no delivery follows.
+        // The initial replay, or a finalize that failed: no delivery
+        // follows, the repository is free to record again, and the take
+        // stays on disk (#1638, #1639).
         _releaseDeliveryHold();
+        if (state is PerformanceRecorderFinalizing) {
+          _failTake(PerformanceTakeFailure.notSaved);
+        }
+      case PerformanceCaptureStatus.armed
+          when state is PerformanceRecorderFinalizing &&
+              _captureDir != null &&
+              _performance.armedDirectory == _captureDir:
+        // The stop failed before the engine stopped: no delivery follows.
+        _releaseDeliveryHold();
+        _resumeAfterFailedStop();
       case PerformanceCaptureStatus.armed:
         // A disarm the engine refused leaves the take armed: no delivery.
         _releaseDeliveryHold();
@@ -658,18 +676,72 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _armedTicker?.cancel();
     _armedTicker = null;
     _stopReason = reason;
-    await _performance.disarmAndFinalize();
+    try {
+      await _performance.disarmAndFinalize();
+    } on Object catch (error, stackTrace) {
+      // Settled through the status stream, as in [toggleArm] (#1639).
+      addError(error, stackTrace);
+    }
   }
 
   /// The mount point a USB take's root is under.
   static String _mountOf(String root) =>
       root.substring(0, root.length - usbPerformancesDirectory.length - 1);
 
-  /// Delivers the finalized take. The delivery hold is released as the
-  /// take is delivered, and in any case when this ends.
+  /// A stop that failed before the engine stopped (the lane export or the
+  /// engine's disarm threw or was refused): the same take goes on. Its
+  /// face comes back with everything this cubit knows about it kept (when
+  /// it started, why it is stopping, its glitch flag), and the move from
+  /// Finalizing back to Armed is what the UI says "could not be stopped"
+  /// for (#1639). A self-stopped take is not retried from here: its
+  /// [_finishingSelfStop] stays set, and the next press tries again.
+  void _resumeAfterFailedStop() {
+    final progress = _performance.captureProgress;
+    _emit(
+      PerformanceRecorderArmed(
+        elapsed: progress.elapsed,
+        overrun: progress.overrun,
+        lowDiskWarning: _lowDiskAtArm,
+        volumeLabel: _leaseLabel,
+      ),
+    );
+    _armedTicker?.cancel();
+    _armedTicker = Timer.periodic(
+      _armedTickInterval,
+      (_) => _emitArmedTick(),
+    );
+  }
+
+  /// Ends a take that could not be finalized or delivered on an idle that
+  /// says so, so the recorder never stays on saving or rendering and
+  /// Capture is available again (#1639).
+  void _failTake(PerformanceTakeFailure failure) {
+    _armedTicker?.cancel();
+    _armedTicker = null;
+    _renderPoller?.cancel();
+    _captureDir = null;
+    _armedAt = null;
+    _stopReason = null;
+    _finishingSelfStop = false;
+    _releaseLease();
+    // No delivery follows: Capture is available from the moment the
+    // failure shows (#1638).
+    _releaseDeliveryHold();
+    _emit(PerformanceRecorderIdle(takeFailed: failure));
+  }
+
+  /// Delivers a finalized take; anything it throws ends the take as not
+  /// finished rather than leaving the recorder on its rendering face. The
+  /// delivery hold is released as the take is delivered or fails, and in
+  /// any case when this ends.
   Future<void> _afterFinalized() async {
     try {
       await _deliver();
+    } on Object catch (error, stackTrace) {
+      addError(error, stackTrace);
+      if (state is! PerformanceRecorderCompleted) {
+        _failTake(PerformanceTakeFailure.notFinished);
+      }
     } finally {
       _releaseDeliveryHold();
     }
@@ -725,6 +797,16 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
 
   void _pollRender(String dir, Completer<void> completer) {
     if (completer.isCompleted) return;
+    try {
+      _pollRenderOnce(dir, completer);
+    } on Object catch (error, stackTrace) {
+      // Ends the delivery as not finished rather than polling forever.
+      _renderPoller?.cancel();
+      if (!completer.isCompleted) completer.completeError(error, stackTrace);
+    }
+  }
+
+  void _pollRenderOnce(String dir, Completer<void> completer) {
     final progress = _performance.renderProgress;
     final current = state;
     _emit(
@@ -744,7 +826,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       _finishRender(
         dir,
         renderFailed: progress.failed,
-      ).whenComplete(completer.complete),
+      ).then(completer.complete, onError: completer.completeError),
     );
   }
 
@@ -766,7 +848,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     List<DawTrack> tracks;
     try {
       tracks = await writeDawProject(dir);
-    } on FileSystemException {
+    } on Object {
+      // Any failure, not only a full disk: a malformed manifest throws a
+      // cast error, and the take must still complete (#1639).
       tracks = const [];
     }
     _captureDir = null;
@@ -812,7 +896,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       return PerformanceManifest.fromJson(
         jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>,
       );
-    } on FormatException {
+    } on Object {
+      // Unreadable, or well-formed JSON of the wrong shape (a cast error).
       return null;
     }
   }
