@@ -687,8 +687,9 @@ class _TrimColumn extends StatelessWidget {
     );
     return SizedBox(
       width: width,
-      // Tall enough for the clip, gain and trim notes together.
-      height: 290,
+      // Tall enough for the clip, gain and trim notes together, a note's
+      // line (28.8) apart.
+      height: 272,
       child: Stack(
         children: [
           Positioned(
@@ -787,7 +788,7 @@ class _TrimColumn extends StatelessWidget {
           // interface's gain knob is set: to the band (#1646).
           Positioned(
             left: 0,
-            top: clipping ? 234 : 207,
+            top: clipping ? 212 : 207,
             child: LoopNote(
               l10n.routingGainNote,
               key: const Key('routing_gain_note'),
@@ -795,7 +796,7 @@ class _TrimColumn extends StatelessWidget {
           ),
           Positioned(
             left: 0,
-            top: clipping ? 261 : 234,
+            top: clipping ? 241 : 236,
             child: LoopNote(l10n.routingTrimNote),
           ),
         ],

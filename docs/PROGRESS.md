@@ -104,8 +104,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `audio_routing_input_setup*` screenshots.
 - The input meter carries the gain band (-18 to -6 dBFS,
   `kInputGainTargetDb`) and a note to set the hardware gain knob against it.
-- Owed: the Penpot frames (plan part 3; geometry in PR #1651's "Design
-  writeback"), the device checks listed on the closing PR, and #1648 (the
+- Owed: the Penpot frames (plan part 3, #1658; geometry in PR #1651's
+  "Design writeback"), the device checks listed on PR #1655, and #1648 (the
   routing rules into the same adapters).
 
 ## November 2026 Takes keep the lap they were played on (#854)

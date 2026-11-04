@@ -281,7 +281,11 @@ String routingDbfsLabel(AppLocalizations l10n, double peak) {
 /// cells that disagree with the scale drawn directly under them.
 double routingMeterPosition(double level) {
   if (level <= 0) return 0;
-  final db = 20 * (math.log(level) / math.ln10);
+  return routingMeterPositionOfDb(20 * (math.log(level) / math.ln10));
+}
+
+/// [routingMeterPosition] for a level already in dBFS.
+double routingMeterPositionOfDb(double db) {
   if (db <= kMeterFloorDb) return 0;
   if (db >= 0) return 1;
   if (db <= -24) return (db - kMeterFloorDb) / (-24 - kMeterFloorDb) / 3;
@@ -387,15 +391,15 @@ class RoutingInputMeter extends StatelessWidget {
     );
   }
 
-  /// The cells [target] covers, `first` inclusive to `last` exclusive, on
-  /// the same scale the level lights; null without a target.
+  /// The cells [target] covers, `first` inclusive to `last` exclusive: the
+  /// cells that light at a level inside it. Cell `i` lights once the level
+  /// reaches position `(i + 0.5) / segments` (the fill rounds), so a peak at
+  /// the band's low edge lights its first cell. Null without a target.
   ({int first, int last})? get targetCells {
     final target = this.target;
     if (target == null) return null;
-    int cellAt(double db) =>
-        (routingMeterPosition(math.pow(10, db / 20).toDouble()) * segments)
-            .round();
-    return (first: cellAt(target.low), last: cellAt(target.high));
+    double at(double db) => routingMeterPositionOfDb(db) * segments - 0.5;
+    return (first: at(target.low).ceil(), last: at(target.high).floor() + 1);
   }
 
   Color _cellColor(

@@ -39,8 +39,9 @@ void main() {
         target: kInputGainTargetDb,
       );
       // -18 dBFS is halfway along (between the -24 and -12 ticks), -6 five
-      // sixths of the way: cells 21 to 33 of 41.
-      expect(meter.targetCells, (first: 21, last: 34));
+      // sixths of the way: a peak at -18 lights cell 20, one at -6 cell 33.
+      expect(meter.targetCells, (first: 20, last: 34));
+      expect((routingMeterPositionOfDb(-18) * 41).round(), 21);
     });
 
     test('a meter without a target has no band', () {
@@ -68,7 +69,7 @@ void main() {
       const surface = SurfaceTheme.dark;
       expect(
         find.byKey(const Key('routing_meter_target_cell')),
-        findsNWidgets(13),
+        findsNWidgets(14),
       );
       // -12 dBFS lights cells 0..26; the band's rest is shaded.
       expect(cellColor(tester, 26), surface.accent);
@@ -81,7 +82,7 @@ void main() {
         find.byKey(const Key('routing_meter_target')),
       );
       final meter = tester.getRect(find.byType(RoutingInputMeter));
-      expect(marker.left - meter.left, closeTo(21 * step, 0.01));
+      expect(marker.left - meter.left, closeTo(20 * step, 0.01));
       expect(marker.top - meter.top, 28 + RoutingInputMeter.markerGap);
     });
 
@@ -96,7 +97,7 @@ void main() {
           target: kInputGainTargetDb,
         ),
       );
-      expect(cellColor(tester, 21), SurfaceTheme.dark.accent);
+      expect(cellColor(tester, 20), SurfaceTheme.dark.accent);
       expect(cellColor(tester, 33), SurfaceTheme.dark.accent);
       expect(find.byKey(const Key('routing_meter_target')), findsOneWidget);
     });
