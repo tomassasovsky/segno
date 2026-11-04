@@ -10,8 +10,7 @@
  * encodeFloat32 output (packages/wav_codec/lib/src/wav.dart).
  *
  * Internal to the engine's own TUs (render recipe, performance renderer,
- * capture parts). Deliberately NOT included by engine_private.h, so it never
- * reaches the VST3 C++ translation units. */
+ * capture parts). */
 #ifndef SEGNO_ENGINE_WAV_H
 #define SEGNO_ENGINE_WAV_H
 

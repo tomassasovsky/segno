@@ -24,62 +24,6 @@
 #include <stdint.h>
 #include <string.h>
 
-/* Both MSVC and GCC reject the C11 `_Atomic` keyword in C++ translation units,
- * and neither exposes a keyword-compatible <stdatomic.h> fallback there — it is a
- * Clang extension. The only C++ includers of this header (transitively, via
- * engine_fx.h) are the VST3 plugins under packages/segno_engine/vst3/: they use
- * the DSP types (le_fx_state, LE_FX_MAX, ...) but never perform atomic operations
- * on the published snapshot fields. An atomic scalar/pointer has the same size and
- * alignment as its plain counterpart on the targeted ABIs, so collapsing `_Atomic`
- * to nothing for those TUs keeps every struct layout — and the DSP ABI with
- * segno_dsp_core's C build — identical. Guarded to non-Clang C++ (Clang accepts
- * `_Atomic` in C++, so macOS is untouched); the engine's own C build always sees
- * real C11 atomics. Must sit after <stdatomic.h> and before the engine headers
- * below (which use the keyword too). */
-#if defined(__cplusplus) && !defined(__clang__)
-#undef _Atomic
-#define _Atomic
-/* MSVC's and GCC's <stdatomic.h> also omit the C11 free-function atomic API in
- * C++ mode. The only call sites reachable from these TUs are the `static inline`
- * snapshot accessors below (load_i32/store_i32/store_f32/load_f32), which the
- * plugins never call but the compiler still parses. Map the handful of ops used
- * to plain accesses for these TUs only — safe because a plugin reads DSP state
- * synchronously (no cross-thread publication happens in a plugin TU). */
-#undef memory_order_relaxed
-#define memory_order_relaxed 0
-#undef atomic_load_explicit
-#define atomic_load_explicit(slot, mo) (*(slot))
-#undef atomic_store_explicit
-#define atomic_store_explicit(slot, v, mo) ((void)(*(slot) = (v)))
-/* le_audio_rev_bump below; plugins never call it but the compiler parses it. */
-#undef atomic_fetch_add_explicit
-#define atomic_fetch_add_explicit(slot, v, mo) ((void)(*(slot) += (v)))
-/* engine_telemetry.h claims its gap-suppression licence with an exchange, so
- * unlike the three above this one has to YIELD the old value rather than
- * discard it — which no comma-expression macro can do, and GCC's statement
- * expressions are not available under MSVC. Hence a function: a two-parameter
- * template, so an unsuffixed literal (`0u` against a uint64_t slot) still
- * deduces. Read-then-write without atomicity is safe for exactly the reason
- * the rest of this shim is: no plugin TU ever reaches these call sites.
- *
- * The `extern "C++"` is load-bearing, not decoration. Callers reach this
- * header from inside their own `extern "C" { #include ... }` — the VST3 test
- * harness (vst3/test/host_harness.h) does exactly that — and a template
- * cannot be declared with C linkage (MSVC C2894, GCC "template with C
- * linkage"). Nesting `extern "C++"` restores C++ linkage wherever the include
- * lands, so this does not depend on how any includer wraps it. */
-extern "C++" {
-template <typename T, typename V>
-inline T le_cxx_atomic_exchange(T* slot, V value) {
-  const T previous = *slot;
-  *slot = (T)value;
-  return previous;
-}
-}
-#undef atomic_exchange_explicit
-#define atomic_exchange_explicit(slot, v, mo) le_cxx_atomic_exchange((slot), (v))
-#endif
-
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
@@ -736,9 +680,8 @@ typedef struct le_fx_state {
    * hop, in samples (0, 64, 128 or 192). le_engine_create gives each chain
    * owner one (le_fx_*_hop_seed, engine_fx.h) and the octaver adds its slot
    * (le_pv_hop_phase, engine_fx.c). 0, the calloc'd default, suits a
-   * standalone state that is not a copy of a live owner (the VST3
-   * processors; #940 covers giving a hosted instance its own). The offline
-   * renderers stand in for a live owner and copy its seed. Written once by
+   * standalone state that is not a copy of a live owner (a test harness).
+   * The offline renderers stand in for a live owner and copy its seed. Written once by
    * the control thread before any audio runs; read-only afterwards. */
   int32_t hop_seed;
   /* The clock an octaver's hop is anchored to (#941): the engine frame
@@ -748,8 +691,8 @@ typedef struct le_fx_state {
    * le_engine_create), which the audio thread advances once per frame, so
    * every reset site sees the right frame without setting anything. An
    * offline render leaves [clock_src] NULL and sets [clock] to the live frame
-   * it stands for before each sample. A state nobody clocks (the VST3
-   * processors) stays at 0, and its phase then counts from its reset. */
+   * it stands for before each sample. A state nobody clocks (a test
+   * harness) stays at 0, and its phase then counts from its reset. */
   const _Atomic uint32_t* clock_src;
   uint32_t clock;
   /* The musical time the chain runs at (le_fx_tempo): the engine's for a
@@ -870,10 +813,8 @@ typedef struct le_fx_state {
    * forwards to, or NULL. The control thread publishes/retracts it
    * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
    * NULL or not-ready slot renders dry passthrough — no plugin is ever created
-   * or freed on the audio thread (D-LIFE). */
-  /* NB: keyword form (`*_Atomic`), not the `_Atomic(...)` functional form, so
-   * the MSVC-C++ `#define _Atomic` shim above collapses it cleanly. Identical
-   * C11 semantics: an atomic array of pointers to le_plugin_slot. */
+   * or freed on the audio thread (D-LIFE). An atomic array of pointers to
+   * le_plugin_slot. */
   le_plugin_slot *_Atomic plugin[LE_FX_MAX];
 
   /* Per-entry channel handling and level (slice 3e), cached from the owner's
@@ -1415,14 +1356,7 @@ typedef struct {
   uint64_t start_iter;
 } le_hist_entry;
 
-/* Positional aggregate init, not the designated initializer the rest of the
- * engine's C uses: engine_fx.h includes this header, and each VST3 plugin's
- * processor.h pulls engine_fx.h into a C++17 TU to reuse the FX kernels.
- * Designated initializers are C++20 — gcc/clang accept them in C++17 as an
- * extension, MSVC rejects them (error C7555), so everything reachable from
- * engine_fx.h must stay C++17-clean or the Windows plugin build breaks.
- *
- * Keep it an initializer rather than member assignments: aggregate init
+/* Keep it an initializer rather than member assignments: aggregate init
  * zero-fills members it does not name. The CLEAR restore point (#219) adds
  * exactly such members, and a LAYER entry must carry them as zeroes rather than
  * whatever was on the stack — with plain assignment they would read garbage. */
@@ -3368,14 +3302,10 @@ static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
  * copy's own seqlock-style re-read narrows the same window earlier as a
  * cheap first line of defence. */
 static inline void le_audio_rev_bump(le_track* t) {
-  atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release);
-  /* Read back rather than use fetch_add's value: the non-Clang C++ atomics
-   * shim's fetch_add returns nothing (docs/PROGRESS.md, the C++ blast
-   * radius). The bump sites never race each other on one track. */
-  atomic_store_explicit(
-      &t->a_src_key,
-      atomic_load_explicit(&t->a_audio_rev, memory_order_acquire),
-      memory_order_release);
+  const uint32_t rev =
+      atomic_fetch_add_explicit(&t->a_audio_rev, 1u, memory_order_release) +
+      1u;
+  atomic_store_explicit(&t->a_src_key, rev, memory_order_release);
 }
 
 /* Forgets every slot's content key (session import: the slots are refilled

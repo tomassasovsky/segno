@@ -19,24 +19,21 @@ class SegnoVst3Ref {
 
   /// The plugin's permanent class GUID, as 32 uppercase hex characters (no
   /// dashes) — the processor class id minted once in the plugin's own part
-  /// (`packages/segno_engine/vst3/*/ids.h`'s `kProcessorUID`, umbrella
-  /// D-GUID) and never changed again. This is the identity Ableton
-  /// persists in a `.als`'s device XML to re-resolve the plugin on load —
-  /// this constant and the C++ `ids.h` it was transcribed from must never
-  /// drift apart.
+  /// (its `kProcessorUID`, umbrella D-GUID; the plugin sources went in #940)
+  /// and never changed again. This is the identity Ableton persists in a
+  /// `.als`'s device XML to re-resolve the plugin on load.
   final String classId;
 
-  /// The plugin's VST3 processor subcategory (e.g. `Fx|Delay`), matching
-  /// its `factory.cpp`'s `DEF_VST3_CLASS` call exactly — informational only
-  /// (device XML emission doesn't currently need it), carried here so a
-  /// future consumer doesn't have to re-derive it from the C++ source.
+  /// The plugin's VST3 processor subcategory (e.g. `Fx|Delay`), as its
+  /// factory registered it — informational only (device XML emission
+  /// doesn't need it).
   final String subcategory;
 
   /// How many of a `DawEffect`'s `params` (the cells its type reads, as
   /// the persisted manifest carries them) this plugin's
   /// controller actually registers as a real `RangeParameter`/
-  /// `StringListParameter` — matching each plugin's `controller.cpp`
-  /// exactly (Drive/Filter/Tremolo: 2; Delay/Echo/Reverb: 3; Octaver: 4).
+  /// `StringListParameter` (Drive/Filter/Tremolo: 2; Delay/Echo/Reverb: 3;
+  /// Octaver: 4).
   /// `als_builder.dart`'s `_deviceChainXml` emits only the first
   /// [paramCount] values: anything further doesn't correspond to a real
   /// parameter the plugin registers, so emitting it would write `ParameterId`
@@ -48,9 +45,7 @@ class SegnoVst3Ref {
   final String vendor;
 
   /// Packed `major << 16 | minor << 8 | patch` — informational only (every
-  /// shipped plugin is `1.0.0` today; `kSegnoDelayVersion`-style constants
-  /// in each plugin's `factory.cpp` are the source of truth if this ever
-  /// needs to track a real per-plugin version).
+  /// plugin was `1.0.0`).
   final int version;
 }
 
@@ -84,20 +79,10 @@ const int kFxReverb = 7;
 /// One [SegnoVst3Ref] per built-in effect type, keyed by its `LE_FX_*` code
 /// — hardcoded constants, not runtime-discovered, since `daw_export` is a
 /// pure Dart package with no engine dependency (umbrella Data Model). Class
-/// GUIDs transcribed from each plugin's `ids.h` (parts 2, 3, 5, 6, 7, 8, 9);
-/// subcategories and `paramCount`s transcribed from each plugin's
-/// `factory.cpp`/`controller.cpp`.
-///
-/// This part has no *code* dependency on `packages/segno_engine/vst3/` (this
-/// is a hardcoded-constants file, not an import), but the umbrella's own
-/// dependency note is still a real *merge-order* one: this PR should not
-/// merge before parts 5-9's PRs do, since Echo/Drive/Filter/Tremolo/
-/// Octaver's `ids.h` files (this data's actual source of truth) exist only
-/// on those still-open branches at the time this file was written, not in
-/// this branch's own history (it was branched directly off `master`, which
-/// only has Delay/Reverb, parts 2-3). All seven GUIDs below were
-/// independently verified byte-for-byte against each plugin's real `ids.h`
-/// before being transcribed here.
+/// GUIDs, subcategories and `paramCount`s were transcribed from the
+/// plugins' own sources, which #940 deleted with the plugin build: these
+/// values are frozen, and nothing builds the plugins they name. Removing
+/// the device-chain export that still uses them is #1587.
 const Map<int, SegnoVst3Ref> segnoVst3Plugins = {
   kFxDelay: SegnoVst3Ref(
     classId: '153409ABA7B2437F83B5A2A6C60EF9B6',
@@ -112,7 +97,7 @@ const Map<int, SegnoVst3Ref> segnoVst3Plugins = {
   kFxEcho: SegnoVst3Ref(
     // Echo is a delay-family effect (matches Ableton's own categorization
     // convention), so its subcategory is "Fx|Delay" too — same as Delay,
-    // not a typo (see packages/segno_engine/vst3/echo/factory.cpp).
+    // not a typo.
     classId: 'D771158E80027D4E96FA4568E993192E',
     subcategory: 'Fx|Delay',
     paramCount: 3, // Time, Feedback, Mix
