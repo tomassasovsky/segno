@@ -40,6 +40,18 @@ void main() {
       addTearDown(repository.dispose);
     });
 
+    /// Starts the engine on capture device ':2,0' with the device present.
+    void open() {
+      expect(
+        repository.startEngine(const EngineConfig(captureDeviceId: ':2,0')),
+        EngineResult.ok,
+      );
+      engineFake.nextSnapshot = engineFake.nextSnapshot.copyWith(
+        isRunning: true,
+        devicePresent: true,
+      );
+    }
+
     test(
       'before the engine opened a device: nothing read, nothing set',
       () async {
@@ -54,10 +66,7 @@ void main() {
     );
 
     test('reads the open capture device and maps every switch', () async {
-      expect(
-        repository.startEngine(const EngineConfig(captureDeviceId: ':2,0')),
-        EngineResult.ok,
-      );
+      open();
       engineFake.interfaceInputs = const engine.InterfaceInputsInfo(
         state: engine.InterfaceInputsState.controls,
         inputs: [
@@ -97,8 +106,27 @@ void main() {
       expect(engineFake.interfaceInputReads, [':2,0']);
     });
 
+    test('a device that is not open is never reached', () async {
+      open();
+      engineFake.nextSnapshot = engineFake.nextSnapshot.copyWith(
+        devicePresent: false,
+      );
+      expect(await repository.readInterfaceInputs(), InterfaceInputs.none);
+      expect(
+        await repository.setInterfacePhantomPower(0, on: true),
+        EngineResult.notRunning,
+      );
+      engineFake.nextSnapshot = engineFake.nextSnapshot.copyWith(
+        isRunning: false,
+        devicePresent: true,
+      );
+      expect(await repository.readInterfaceInputs(), InterfaceInputs.none);
+      expect(engineFake.interfaceInputReads, isEmpty);
+      expect(engineFake.interfaceInputWrites, isEmpty);
+    });
+
     test('maps the setup-mode states', () async {
-      repository.startEngine(const EngineConfig(captureDeviceId: ':2,0'));
+      open();
       engineFake.interfaceInputs = const engine.InterfaceInputsInfo(
         state: engine.InterfaceInputsState.setupMode,
       );
@@ -116,7 +144,7 @@ void main() {
     });
 
     test('each setter writes its control to the open capture device', () async {
-      repository.startEngine(const EngineConfig(captureDeviceId: ':2,0'));
+      open();
       expect(
         await repository.setInterfaceInputLevel(0, InputLevel.inst),
         EngineResult.ok,
@@ -137,7 +165,7 @@ void main() {
     });
 
     test('passes a refused write through', () async {
-      repository.startEngine(const EngineConfig(captureDeviceId: ':2,0'));
+      open();
       engineFake.interfaceInputResult = EngineResult.device;
       expect(
         await repository.setInterfaceInputPad(0, on: true),
