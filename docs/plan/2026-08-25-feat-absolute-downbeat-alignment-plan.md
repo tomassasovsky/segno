@@ -2,6 +2,10 @@
 
 **Status:** Definition for plan-gate sign-off · **Date:** 2026-08-25 · **Type:** feature (engine + Dart settings/UI)
 
+> **Superseded 2026-11-03** (owner, brief Q9): the bar-1 toggle is dropped and
+> #201 is closed. Takes keep the lap they were played on through Stop-all,
+> reload and undo-restore, which is D1(b) below, built under #854.
+
 > Tracking: #201 (`stage:brainstorm`, P3, one line: "Absolute-downbeat option
 > for k-loop tracks"). Verified against `master` @ `61609b35`.
 

@@ -6477,6 +6477,34 @@ class SegnoEngineBindings {
   late final _le_engine_import_span = _le_engine_import_spanPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets the lap an imported take was played on (#854), as a Session saved it
+  /// from le_track_snapshot.anchor_lap. Track `channel` must be EMPTY with lane
+  /// 0 imported (LE_ERR_INVALID otherwise, and for a negative lap); 0 clears
+  /// it. le_engine_commit_session reduces it modulo the multiple it parks the
+  /// take at, so Play starts the take where it sat against the others. Call
+  /// after the take's lanes are imported (a lane-0 import starts a new take and
+  /// clears it) and before the commit. Control thread.
+  int le_engine_import_anchor(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int anchor_lap,
+  ) {
+    return _le_engine_import_anchor(
+      engine,
+      channel,
+      anchor_lap,
+    );
+  }
+
+  late final _le_engine_import_anchorPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_import_anchor');
+  late final _le_engine_import_anchor = _le_engine_import_anchorPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Establishes the master loop at `base_frames` and parks every imported track
   /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
   /// (length / base_frames, or length / its imported span; a base/2 or base/4
@@ -8329,9 +8357,11 @@ enum le_command_code {
   /// len 0, master grid kept. arg_i = track.
   LE_CMD_UNDO_TO_EMPTY(39),
 
-  /// reinstate an undone-to-empty track. lanei
-  /// arm: channel, value = restored length. The
-  /// control thread already swapped a_live.
+  /// reinstate an undone-to-empty track.
+  /// `restore` arm: channel, len = restored
+  /// length, anchor = the lap the take was
+  /// played on (#854). The control thread
+  /// already swapped a_live.
   LE_CMD_REDO_FROM_EMPTY(40),
 
   /// undo of an undoable clear: reinstate a cleared
@@ -8468,10 +8498,11 @@ enum le_command_code {
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100),
 
-  /// LE_CMD_CANCEL_TAKE landed: lanei arm —
-  /// channel, value = the finalized length the
-  /// emptied track holds for redo (0: nothing
-  /// was captured, nothing to redo).
+  /// LE_CMD_CANCEL_TAKE landed: `restore`
+  /// arm — channel, len = the finalized length
+  /// the emptied track holds for redo (0:
+  /// nothing was captured, nothing to redo),
+  /// anchor = the take's lap (#854).
   LE_EVT_TAKE_CANCELLED(101),
   LE_CMD_SET_FX_RECIPE(77),
 
@@ -9316,6 +9347,14 @@ final class le_track_snapshot extends ffi.Struct {
   /// A Session saves it so a recall reads every take at its own ratio.
   @ffi.Int32()
   external int span_frames;
+
+  /// Trailing (#854): the take's as-played anchor — the master lap, counted
+  /// from the rig's lap 0 and reduced modulo `multiple`, that the take's
+  /// first lap plays on. A take of one base loop, a Sync division and an
+  /// EMPTY track read 0. Kept through Stop-all, a reopen and undo-restore; a
+  /// Session saves it and gives it back with le_engine_import_anchor.
+  @ffi.Int32()
+  external int anchor_lap;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

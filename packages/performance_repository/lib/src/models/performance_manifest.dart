@@ -181,6 +181,7 @@ class PerformanceTrackSnapshot {
     required this.muted,
     required this.multiple,
     this.solo = false,
+    this.anchorLap = 0,
     this.lanes = const [],
   });
 
@@ -194,6 +195,8 @@ class PerformanceTrackSnapshot {
         multiple: (json['multiple'] as num).toInt(),
         // Absent in manifests written before per-track solo existed.
         solo: json['solo'] as bool? ?? false,
+        // Absent when 0, and in manifests written before #854.
+        anchorLap: (json['anchorLap'] as num?)?.toInt() ?? 0,
         lanes: [
           for (final l in (json['lanes'] as List<dynamic>? ?? const []))
             PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
@@ -219,6 +222,12 @@ class PerformanceTrackSnapshot {
   /// Track length in whole base loops.
   final int multiple;
 
+  /// The lap the take was played on (#854, [TrackSnapshot.anchorLap]): the
+  /// offline renderer places an arm-time image of several base loops at the
+  /// segment the take sounded at arm. Written only when nonzero, so a
+  /// manifest without it is what a build before #854 wrote.
+  final int anchorLap;
+
   /// Per-lane snapshots, in lane order.
   final List<PerformanceLaneSnapshot> lanes;
 
@@ -230,6 +239,7 @@ class PerformanceTrackSnapshot {
     'muted': muted,
     'solo': solo,
     'multiple': multiple,
+    if (anchorLap > 0) 'anchorLap': anchorLap,
     'lanes': [for (final l in lanes) l.toJson()],
   };
 }

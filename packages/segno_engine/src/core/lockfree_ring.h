@@ -228,8 +228,11 @@ typedef struct le_command {
               * pre-clear LE_TRACK_*; `master_len` re-establishes the grid when
               * the clear emptied the last track and reset the clock (0 = the
               * clear left the grid standing). The multiple is derived from the
-              * base, exactly as LE_CMD_REDO_FROM_EMPTY does. */
-      int32_t channel, len, state, master_len;
+              * base, exactly as LE_CMD_REDO_FROM_EMPTY does. `anchor` is the
+              * lap the take was played on (le_track_anchor, #854).
+              * LE_CMD_REDO_FROM_EMPTY and LE_EVT_TAKE_CANCELLED carry the
+              * channel, the take's len and its anchor here too. */
+      int32_t channel, len, state, master_len, anchor;
       float fade_amount;
     } restore;
   };

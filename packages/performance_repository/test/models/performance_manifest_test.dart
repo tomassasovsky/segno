@@ -130,6 +130,31 @@ void main() {
       final legacy = Map<String, dynamic>.from(track.toJson())..remove('solo');
       expect(PerformanceTrackSnapshot.fromJson(legacy).solo, isFalse);
     });
+
+    test('carries the lap the take was played on only when nonzero (#854)', () {
+      const played = PerformanceTrackSnapshot(
+        channel: 1,
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        multiple: 4,
+        anchorLap: 2,
+      );
+      expect(played.toJson()['anchorLap'], 2);
+      expect(PerformanceTrackSnapshot.fromJson(played.toJson()).anchorLap, 2);
+      const fromLapZero = PerformanceTrackSnapshot(
+        channel: 1,
+        state: TrackState.playing,
+        volume: 1,
+        muted: false,
+        multiple: 4,
+      );
+      expect(fromLapZero.toJson().containsKey('anchorLap'), isFalse);
+      expect(
+        PerformanceTrackSnapshot.fromJson(fromLapZero.toJson()).anchorLap,
+        0,
+      );
+    });
   });
 
   group('PerformanceArmSnapshot', () {

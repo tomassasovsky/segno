@@ -6337,10 +6337,12 @@ void main() {
       int outputMask = 0x3,
       int inputChannel = 0,
       bool reversed = false,
+      int anchorLap = 0,
     }) => SessionRigTrack(
       fadeAmount: 1,
       reversed: reversed,
       channel: channel,
+      anchorLap: anchorLap,
       lanes: [
         SessionRigLane(
           lane: 0,
@@ -6372,6 +6374,33 @@ void main() {
       );
       expect(repo.laneMuted(0, 0), isFalse);
       expect(engine.laneMute[(0, 0)], isFalse);
+    });
+
+    test('each take is imported with the lap it was played on before the '
+        'commit (#854)', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+            rigTrack(
+              1,
+              Float32List.fromList([1, 1, 1, 1, 2, 2, 2, 2]),
+              anchorLap: 1,
+            ),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      // Lap 0 is what an import leaves, so only track 1 asks for its lap.
+      expect(engine.importedAnchors, {1: 1});
+      expect(
+        engine.calls.indexOf('importAnchor'),
+        lessThan(engine.calls.indexOf('commitSession')),
+      );
     });
 
     test('a reversed track recalls reversed, and only after its install '

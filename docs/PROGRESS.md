@@ -77,6 +77,42 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Takes keep the lap they were played on (#854)
+
+- A take of several base loops reads segment
+  `(loop_iteration - start_iter) mod multiple`. Every reset used to zero
+  `start_iter`, so Stop-all, a reopen, a Session recall and the undo of a
+  Clear or of an undone take moved each take's first loop to lap 0. Each
+  reset now keeps the take's anchor, `start_iter` modulo its multiple
+  (`le_track_anchor` / `le_track_anchor_set` in `engine_private.h`), with
+  `start_iter` moved to the same residue at or below lap 0.
+- The anchor is published as `le_track_snapshot.anchor_lap`. A Session saves
+  it per track (`anchorLap`, schema 17; older bundles convert to 0) and a
+  recall gives it back with `le_engine_import_anchor` before the commit. A
+  Clear carries it in its restore point through the Clear mailbox; an undo to
+  empty files it on the redo entry from the published value, and
+  `LE_CMD_REDO_FROM_EMPTY` / `LE_EVT_TAKE_CANCELLED` carry it in the
+  `restore` payload; an undo behind a queued restore files the lap that
+  restore carries (`pending_anchor`). A mode switch keeps it between
+  shared-clock modes, counted again in the take's new multiple when the
+  base changes. At another Speed a restart (the hold, a reopen, a commit, a
+  restore or redo into a held rig) parks the head so the take starts on the
+  image frame it reads at 1x (`le_track_park_head`), so the offset holds at
+  1/2x too. A Once take is launched, not placed: a restart starts it at its
+  first bar, as a relaunch does. A Session save keeps the lap within the
+  multiple it pairs with.
+- Not placed: a restore or redo into a running rig at a Speed other than
+  1x reads from origin 0, as before; the takes around it carry origins from
+  the Speed change, and there is no common reference to place it against.
+- The DAW export places an arm-time image at its anchor: the performance
+  manifest's arm `tracks[]` carry `anchorLap` when nonzero.
+- Native test: `test_engine_anchor.h` (a 4-bar take on bar 1 and one on bar
+  3 keep their two-bar offset through Stop-all, Session save and recall, a
+  retained reopen, Clear undo and redo of an undone take).
+- By-ear check owed on the console: record a 1-bar loop, a 4-bar take from
+  bar 1 and a 4-bar take from bar 3, then Stop-all and Play, and save and
+  reopen the Session; the two takes keep their offset.
+
 ## November 2026 The octaver's kinds play live (#1624)
 
 - The owner's decision on #1624: the Octaver, Dual Octaver, Whammy and Smart
@@ -2294,7 +2330,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   top; round track length up to the nearest whole multiple of the base loop).
   Free-running `loop_iteration`; track reads its `(iter-start_iter) % k` segment.
   New-track first pass always begins at the loop top (phase-locked multiples);
-  per-track multi-loop phase is relative to each track's own start.
+  per-track multi-loop phase is relative to each track's own start, and
+  each take keeps that lap through Stop-all, reopen, Session recall and undo
+  (#854, owner 2026-11-03; #201's bar-1 option is dropped).
 - **Fully free mode (no tempo)** — the looper is tempo-free: one master loop
   length set by the first recording, no metronome/click/count-in/tap-tempo, no
   loop↔tempo sync, no quantization. Captures start/stop immediately. BPM logic
@@ -2329,9 +2367,6 @@ the **on-hardware end-to-end validation** (full-count interface plugged in)
 remains open — see "On-hardware validations" below.
 
 ### Possible next steps (no hard dependency)
-- **Per-track multi-loop phase alignment** — multi-loop tracks currently phase
-  relative to their own start iteration; an absolute-parity option would align
-  all k-loop tracks to the same base-loop downbeat. _(Not started.)_
 - **Accessibility pass** — no `Semantics` coverage yet (theming + golden tests
   are done). Screen-reader labels, focus order, keyboard-nav a11y tests.
 

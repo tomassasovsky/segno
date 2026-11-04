@@ -372,9 +372,11 @@ typedef enum le_command_code {
                            * control thread before the push. */
   LE_CMD_UNDO_TO_EMPTY = 39,   /* undo past the base layer: track to EMPTY,
                                 * len 0, master grid kept. arg_i = track. */
-  LE_CMD_REDO_FROM_EMPTY = 40, /* reinstate an undone-to-empty track. lanei
-                                * arm: channel, value = restored length. The
-                                * control thread already swapped a_live. */
+  LE_CMD_REDO_FROM_EMPTY = 40, /* reinstate an undone-to-empty track.
+                                * `restore` arm: channel, len = restored
+                                * length, anchor = the lap the take was
+                                * played on (#854). The control thread
+                                * already swapped a_live. */
   LE_CMD_RESTORE_CLEAR = 43,   /* undo of an undoable clear: reinstate a cleared
                                 * track. `restore` arm. Distinct from REDO_FROM_
                                 * EMPTY because it restores the pre-clear STATE
@@ -539,10 +541,11 @@ typedef enum le_command_code {
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
                                * channel, slot, generation. */
-  LE_EVT_TAKE_CANCELLED = 101, /* LE_CMD_CANCEL_TAKE landed: lanei arm —
-                                * channel, value = the finalized length the
-                                * emptied track holds for redo (0: nothing
-                                * was captured, nothing to redo). */
+  LE_EVT_TAKE_CANCELLED = 101, /* LE_CMD_CANCEL_TAKE landed: `restore`
+                                * arm — channel, len = the finalized length
+                                * the emptied track holds for redo (0:
+                                * nothing was captured, nothing to redo),
+                                * anchor = the take's lap (#854). */
   LE_CMD_SET_FX_RECIPE = 77,
   LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
   LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */
@@ -1328,6 +1331,12 @@ typedef struct le_track_snapshot {
    * laid down against once a retime moved the clock (0: the clock in force).
    * A Session saves it so a recall reads every take at its own ratio. */
   int32_t span_frames;
+  /* Trailing (#854): the take's as-played anchor — the master lap, counted
+   * from the rig's lap 0 and reduced modulo `multiple`, that the take's
+   * first lap plays on. A take of one base loop, a Sync division and an
+   * EMPTY track read 0. Kept through Stop-all, a reopen and undo-restore; a
+   * Session saves it and gives it back with le_engine_import_anchor. */
+  int32_t anchor_lap;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -4322,6 +4331,16 @@ LE_EXPORT int32_t le_engine_export_history(le_engine* engine, int32_t channel,
  * Control thread. */
 LE_EXPORT int32_t le_engine_import_span(le_engine* engine, int32_t channel,
                                         int32_t span_frames);
+
+/* Sets the lap an imported take was played on (#854), as a Session saved it
+ * from le_track_snapshot.anchor_lap. Track `channel` must be EMPTY with lane
+ * 0 imported (LE_ERR_INVALID otherwise, and for a negative lap); 0 clears
+ * it. le_engine_commit_session reduces it modulo the multiple it parks the
+ * take at, so Play starts the take where it sat against the others. Call
+ * after the take's lanes are imported (a lane-0 import starts a new take and
+ * clears it) and before the commit. Control thread. */
+LE_EXPORT int32_t le_engine_import_anchor(le_engine* engine, int32_t channel,
+                                          int32_t anchor_lap);
 
 /* Establishes the master loop at `base_frames` and parks every imported track
  * (EMPTY with a loaded length) STOPPED at its whole-loop multiple

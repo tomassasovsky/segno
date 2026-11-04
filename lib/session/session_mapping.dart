@@ -450,6 +450,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           fadeAmount: track.fadeAmount,
           reversed: track.reversed,
           spanFrames: track.spanFrames,
+          anchorLap: track.anchorLap,
           lanes: lanes,
         ),
       );

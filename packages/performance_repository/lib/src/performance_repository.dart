@@ -1593,6 +1593,7 @@ class PerformanceRepository {
           muted: track.muted,
           solo: track.solo,
           multiple: track.multiple,
+          anchorLap: track.anchorLap,
           lanes: lanes,
         ),
       );

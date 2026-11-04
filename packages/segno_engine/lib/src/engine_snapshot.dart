@@ -720,6 +720,7 @@ class TrackSnapshot {
     this.pitchModeOverride,
     this.pitchEffectiveCents = 0,
     this.spanFrames = 0,
+    this.anchorLap = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -765,6 +766,7 @@ class TrackSnapshot {
       pitchModeOverride = null,
       pitchEffectiveCents = 0,
       spanFrames = 0,
+      anchorLap = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -832,6 +834,7 @@ class TrackSnapshot {
         : PitchMode.fromCode(native.pitch_override),
     pitchEffectiveCents: native.pitch_effective_cents,
     spanFrames: native.span_frames,
+    anchorLap: native.anchor_lap,
     imageRevision: native.image_revision,
     peakL: native.peak_l,
     peakR: native.peak_r,
@@ -881,6 +884,12 @@ class TrackSnapshot {
   /// retime moved the clock (#1179), 0 for the clock in force. A Session
   /// saves it so a recall reads every take at its own ratio.
   final int spanFrames;
+
+  /// The lap the take was played on (#854): the master lap, counted from the
+  /// rig's lap 0 and reduced modulo [multiple], that its first lap plays on.
+  /// 0 for a take of one base loop, a Sync division and an empty track. A
+  /// Session saves it so a recall plays every take where it was played.
+  final int anchorLap;
 
   /// Sequence of the coherent native tuple publication.
   final int fadeRevision;
@@ -1069,6 +1078,7 @@ class TrackSnapshot {
           pitchModeOverride == other.pitchModeOverride &&
           pitchEffectiveCents == other.pitchEffectiveCents &&
           spanFrames == other.spanFrames &&
+          anchorLap == other.anchorLap &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -1110,6 +1120,7 @@ class TrackSnapshot {
     pitchModeOverride,
     pitchEffectiveCents,
     spanFrames,
+    anchorLap,
     Object.hashAll(lanes),
   ]);
 }

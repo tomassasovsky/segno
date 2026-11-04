@@ -89,6 +89,7 @@ class SessionRigTrack {
     required this.lanes,
     required this.reversed,
     this.spanFrames = 0,
+    this.anchorLap = 0,
   });
 
   /// Track channel index.
@@ -104,6 +105,10 @@ class SessionRigTrack {
   /// rig's recorded one (#1179); 0 on the recorded master. Imported with the
   /// take, so it reads at its own ratio.
   final int spanFrames;
+
+  /// The lap the take was played on (#854): imported with the take, so the
+  /// commit places it there against the others rather than on lap 0.
+  final int anchorLap;
 
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.

@@ -1330,6 +1330,8 @@ typedef struct {
   int32_t len;        /* CLEAR: pre-clear track length in frames */
   int32_t multiple;   /* CLEAR: pre-clear length in whole base loops */
   int32_t state;      /* CLEAR: pre-clear state (PLAYING / STOPPED) */
+  int32_t anchor;     /* CLEAR, and the base take an undo to empty filed for
+                       * redo: the take's anchor (le_track_anchor, #854) */
   int32_t master_len; /* CLEAR: master grid at clear time. A clear that empties
                        * the last track resets the clock, so the restore has to
                        * re-establish it — the track's own len is not enough
@@ -1558,6 +1560,7 @@ typedef struct le_track {
   _Atomic uint32_t a_clear_fade_amount;
   _Atomic int32_t a_clear_len;
   _Atomic int32_t a_clear_master_len;
+  _Atomic int32_t a_clear_anchor; /* #854 */
   /* control: LE_CMD_CANCEL_TAKE posted and its LE_EVT_TAKE_CANCELLED not yet
    * filed. A clear or a fresh capture in between supersedes the cancel, so
    * the late event must not file a redo slot the track no longer owns. */
@@ -1591,6 +1594,11 @@ typedef struct le_track {
                             * (0 for a command that empties the track) */
   int32_t pending_master_len; /* control: the master grid that command
                                * re-establishes (0: leaves it as published) */
+  /* control: the lap the last posted restore places the take on (#854), and
+   * that restore's state_cmds_posted ticket: until a_state_acks reaches it,
+   * the published a_anchor still reads the empty track's 0. */
+  int32_t pending_anchor;
+  int pending_anchor_cmd;
   /* Control-only ticket (commands_posted) of the last command whose
    * application empties this track. a_commands_published at or past it proves
    * the callback block that applied it has completed — so no pointer that
@@ -1773,7 +1781,12 @@ typedef struct le_track {
                        * track over a master: the absolute phase (segment*base +
                        * position), seeded at press so writes stay phase-locked
                        * to the master loop. */
-  uint64_t start_iter; /* loop_iteration when this track's recording began */
+  uint64_t start_iter; /* loop_iteration when this track's recording began,
+                        * or a lap at or below 0 with the same residue modulo
+                        * the multiple (le_track_anchor_set, #854) */
+  /* The take's anchor (le_track_anchor), published once per block for the
+   * snapshot (le_track_snapshot.anchor_lap); 0 while EMPTY. */
+  _Atomic int32_t a_anchor;
   int32_t record_start; /* record_pos when this capture began, so a fixed-length
                          * track can auto-finalize after exactly K base loops. */
   /* Take identity (#819). take_seq is an audio-thread-local monotonic counter
@@ -1941,6 +1954,10 @@ typedef struct le_track {
    * clears it), adopted and cleared by the commit. Kept apart from
    * a_span_clock because the import's queued transform reset clears that. */
   _Atomic int32_t a_import_span;
+  /* The anchor a Session import gave this EMPTY track (#854), the same way:
+   * control-written by le_engine_import_anchor after the lane-0 import
+   * (which clears it), adopted and cleared by the commit. */
+  _Atomic int32_t a_import_anchor;
   /* Pitch across a retime (#1179 Part 4a-ii): this track's override of the
    * default (-1 inherit, 0 Unchanged: a stretch render keeps the pitch,
    * 1 Follows speed: the varispeed head moves it), callback-owned and
@@ -3286,6 +3303,39 @@ static inline int32_t load_i32(_Atomic int32_t* slot) {
 }
 static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
   atomic_store_explicit(slot, v, memory_order_relaxed);
+}
+
+/* A take's as-played anchor (#854): the master lap, counted from the rig's
+ * lap 0 and reduced modulo the take's multiple, that the take's first lap
+ * plays on. A track of multiple k reads segment (loop_iteration - start_iter)
+ * mod k, so the anchor is start_iter's residue. start_iter only ever holds a
+ * lap count or a small negative lap (le_track_anchor_set, a length edit's
+ * segment rebase), so its signed value is the true one. 0 for a take of one
+ * base loop and for a Sync division. */
+static inline int32_t le_track_anchor(le_track* t) {
+  const int32_t k = load_i32(&t->a_multiple);
+  if (k <= 1) return 0;
+  const int64_t a = (int64_t)t->start_iter % k;
+  return (int32_t)(a < 0 ? a + k : a);
+}
+
+/* Places a take at `anchor` (#854): start_iter becomes the anchor's residue
+ * at or below lap 0, so loop_iteration - start_iter is a lap count that is
+ * never negative, from the 0 a reset restarts at as much as from a running
+ * lap. Reads the multiple, so call after it is set. Publishes the anchor at
+ * once: control files it on an undo to empty, which may land before the
+ * block's end publishes it. */
+static inline void le_track_anchor_set(le_track* t, int32_t anchor) {
+  const int32_t k = load_i32(&t->a_multiple);
+  const int32_t a = k > 1 && anchor > 0 ? anchor % k : 0;
+  t->start_iter = a > 0 ? (uint64_t)0 - (uint64_t)(k - a) : 0;
+  store_i32(&t->a_anchor, a);
+}
+
+/* A restart keeps every take on its anchor (#854): start_iter moves to the
+ * same residue at or below lap 0. */
+static inline void le_track_anchor_rebase(le_track* t) {
+  le_track_anchor_set(t, le_track_anchor(t));
 }
 
 /* Bumps a track's content revision (FX v3 part 2, [R1]) — call at every row of

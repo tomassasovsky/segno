@@ -1892,6 +1892,9 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   EngineResult importSpan(int channel, int spanFrames) => _requireRunning();
 
+  @override
+  EngineResult importAnchor(int channel, int anchorLap) => _requireRunning();
+
   /// The capture directory of the most recent [perfArm] call, for test
   /// assertions. `null` until the first arm.
   String? lastPerfCaptureDir;

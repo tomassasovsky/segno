@@ -39378,6 +39378,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_clock.h"
 #include "test_engine_rt_memory.h"
 #include "test_engine_fx_workers.h"
+#include "test_engine_anchor.h"
 #include "test_engine_interface_routing.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
@@ -39475,6 +39476,7 @@ int main(void) {
   run_backing_tests();
   run_audition_tests();
   run_render_tests();
+  run_anchor_tests();
   run_rack_output_tests();
   run_eq_tests();
   run_eq_rate_tests();

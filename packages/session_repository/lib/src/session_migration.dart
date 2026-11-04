@@ -87,6 +87,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   14: _v14ToV15,
   // #1179's Audio & tempo; landed after #1168's 14 and #1200's 15.
   15: _addAudioTempo,
+  16: _addAnchors,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -460,6 +461,15 @@ void _addAudioTempo(Map<String, dynamic> m, SessionMigrationContext c) {
     if (track.containsKey('spanFrames')) continue;
     track['spanFrames'] = 0;
     c.note('tracks[${track['channel']}].spanFrames', 'its own master');
+  }
+}
+
+/// 16 → 17: the lap each take was played on (#854). Every earlier schema
+/// recalled its takes from lap 0, so every take keeps that.
+void _addAnchors(Map<String, dynamic> m, SessionMigrationContext c) {
+  for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
+    track['anchorLap'] = 0;
+    c.note('tracks[${track['channel']}].anchorLap', 'played from lap 0');
   }
 }
 

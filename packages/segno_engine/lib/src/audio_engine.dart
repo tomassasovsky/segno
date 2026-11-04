@@ -1441,6 +1441,13 @@ abstract interface class SessionIo {
   /// span past the buffer cap.
   EngineResult importSpan(int channel, int spanFrames);
 
+  /// Gives an imported take the lap it was played on (#854), as a Session
+  /// saved it ([TrackSnapshot.anchorLap]). Call after the take's lanes are
+  /// imported (a lane-0 import clears it) and before [commitSession], which
+  /// reduces it modulo the take's multiple. Invalid for a negative lap or a
+  /// track that is not empty with lane 0 imported.
+  EngineResult importAnchor(int channel, int anchorLap);
+
   /// Establishes the master loop at [baseFrames] and leaves every imported
   /// track stopped at its whole-loop multiple (or its length over its
   /// [importSpan]). Restores exactly [loopBeats] beats (denominator notes)

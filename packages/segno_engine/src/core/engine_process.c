@@ -394,6 +394,42 @@ static void le_head_follow(le_engine* e, le_track* t, uint64_t frame,
   le_span_log(e, t, frame, logged, le_head_index(&t->head, pos, len), turn);
 }
 
+/* Parks a take's head for a restart at its anchor (#854). Its lap count
+ * carries the anchor in song frames, which the head's rate would scale by
+ * the Speed too; the origin takes the Speed back out, so at any Speed the
+ * take restarts on the image frame it reads at 1x, where it sits against
+ * the other takes. A span's ratio stays in: it converts song frames to the
+ * take's own. A Once take is launched, not placed: it restarts at its lap
+ * start, as le_restart_once relaunches it. Origin 0 at 1x for any take on
+ * lap 0, as every restart parked it before. */
+static void le_track_park_head(le_engine* e, le_track* t) {
+  t->head.origin = 0.0;
+  int32_t len;
+  const int64_t pos = le_track_song_position(e, t, &len);
+  if (len <= 0 || pos == 0) return;
+  if (load_i32(&t->a_one_shot)) {
+    t->head.origin = le_head_origin(&t->head, t->head.reversed ? len - 1 : 0,
+                                    pos, len);
+    return;
+  }
+  if (e->speed_numer == e->speed_denom) return;
+  const double speed = (double)e->speed_numer / (double)e->speed_denom;
+  const le_read_head unit = {t->head.reversed, 0.0, t->head.rate / speed};
+  t->head.origin =
+      le_head_origin(&t->head, le_head_index(&unit, pos, len), pos, len);
+}
+
+/* le_track_park_head where le_head_follow may already have logged the head
+ * at origin 0: a parked origin is logged again at the same frame, so the
+ * renderer re-anchors where the callback reads. */
+static void le_track_park_head_logged(le_engine* e, le_track* t,
+                                      uint64_t frame) {
+  le_track_park_head(e, t);
+  if (t->head.origin != 0.0) {
+    le_span_log(e, t, frame, t->log_play_len, le_track_read_index(e, t), 0);
+  }
+}
+
 /* Latches the tempo the shared clock's length measures as the recorded one
  * (a defined, committed or regridded master), or none without a grid. */
 static void le_tempo_latch(le_engine* e) {
@@ -794,6 +830,12 @@ static void le_apply_mode_switch(le_engine* e, int32_t m, uint64_t frame) {
   for (int32_t t = 0; t < e->track_count; ++t) {
     le_track* tr = &e->tracks[t];
     const int32_t len = load_i32(&tr->lanes[0].a_len);
+    /* A take keeps the lap it was played on (#854) on a shared clock; Free
+     * and Song have none, so a take returning from them starts on lap 0. It
+     * is a place within the take, so a new base counts it again in the
+     * take's new multiple (a retime's undo keeps the multiple). */
+    const int64_t anchor = le_track_anchor(tr);
+    const int64_t old_k = load_i32(&tr->a_multiple);
     tr->start_iter = 0;
     tr->free_iteration = 0;
     tr->head.origin = 0.0;
@@ -813,7 +855,12 @@ static void le_apply_mode_switch(le_engine* e, int32_t m, uint64_t frame) {
       le_restore_multiple_or_divisor(
           tr, load_i32(&e->tracks[primary].lanes[0].a_len), len);
     }
+    const int64_t new_k = load_i32(&tr->a_multiple);
+    le_track_anchor_set(tr, old_k > 1 && anchor * new_k % old_k == 0
+                                ? (int32_t)(anchor * new_k / old_k)
+                                : 0);
     le_head_follow(e, tr, frame, 0);
+    le_track_park_head_logged(e, tr, frame);
   }
   le_primary_reconcile(e);
 }
@@ -1936,6 +1983,9 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     store_i32(&t->a_multiple, k);
     le_track_set_len(t, k * base);
   }
+  /* The take's anchor, at once (#854): control may file it for an undo to
+   * empty before the block's end publishes it. */
+  store_i32(&t->a_anchor, le_track_anchor(t));
   /* #728: the seam. A non-defining take gets NO crossfade from this function —
    * its head holds the moment the take started and its tail the moment it
    * ended, a whole lap apart, so every playback wrap splices. Arm the trailing
@@ -2433,7 +2483,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
      * through the ordinary handle_play / unpark path, the same transport
      * fact LE_CMD_COMMIT_SESSION establishes for a recalled Session. */
     le_reset_track_playback(t);
-    t->start_iter = 0;
+    le_track_anchor_rebase(t); /* #854: from lap 0 */
     t->record_pos = 0;
     t->record_start = 0;
     t->od_gain = 0.0f;
@@ -2450,6 +2500,7 @@ void le_engine_reopen_settle(le_engine* e, uint32_t drop_mask) {
   for (int32_t ch = 0; ch < e->track_count; ++ch) {
     e->tracks[ch].free_clock.position = 0;
     e->tracks[ch].free_iteration = 0;
+    le_track_park_head(e, &e->tracks[ch]); /* on its anchor at any Speed */
   }
   /* A drop that leaves every track EMPTY resets the master so a new loop can
    * be defined — exactly handle_clear's rule (a rig that was already all
@@ -3691,6 +3742,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
     frozen_master_len = load_i32(&e->a_master_len);
   }
   le_audio_rev_bump(t); /* [R1] clear: the track's content is gone */
+  const int32_t anchor = le_track_anchor(t); /* for the restore (#854) */
   t->record_pos = 0;
   t->start_iter = 0;
   t->pending_record = 0;
@@ -3803,6 +3855,7 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   atomic_store_explicit(&t->a_clear_fade_amount, bits, memory_order_seq_cst);
   atomic_store_explicit(&t->a_clear_len, frozen_len, memory_order_seq_cst);
   atomic_store_explicit(&t->a_clear_master_len, frozen_master_len, memory_order_seq_cst);
+  atomic_store_explicit(&t->a_clear_anchor, anchor, memory_order_seq_cst);
   atomic_fetch_add_explicit(&t->a_clear_revision, 1, memory_order_seq_cst);
   atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
   /* Undo/redo stacks and each lane's a_live are reset by le_engine_clear on the
@@ -4122,6 +4175,7 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
     if (seg < 0) seg += cmd->length.multiple;
     t->start_iter = e->loop_iteration - (uint64_t)seg;
   }
+  store_i32(&t->a_anchor, le_track_anchor(t)); /* at once (#854) */
   t->turn_left = 0;
   /* A Transpose render (#1179) is of the old image and length: the track
    * plays its dry take at once, with no window over the old render (its
@@ -4566,6 +4620,9 @@ static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
     }
     le_restore_multiple_or_divisor(t, e->clock.length, g->len);
     t->start_iter = master > 0 ? e->loop_iteration : g->start_iter;
+    /* On the same clock the side keeps its anchor, from lap 0 (#854): a
+     * Stop-all since it was filed restarted the lap count below it. */
+    if (master == 0) le_track_anchor_rebase(t);
   }
   if (g->reversed) {
     /* Origin 0 (le_reset_track_playback above): a reversed lap starts at
@@ -4976,7 +5033,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           le_launch_remove(e, ch);
         }
         const le_command none = {.code = LE_EVT_TAKE_CANCELLED,
-                                 .lanei = {ch, 0, 0}};
+                                 .restore = {.channel = ch}};
         (void)le_ring_push(&e->evt_ring, none);
         atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
         break;
@@ -4985,7 +5042,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         t->record_pos = t->xfade_len; /* the intended length, no fade */
         t->xfade_capture = 0;
       }
-      int32_t len = 0;
+      int32_t len = 0, anchor = 0;
       if (t->record_pos <= 0) {
         /* Nothing captured: the take never established anything, so the
          * track simply reads empty again. Not handle_clear: that bumps the
@@ -5005,10 +5062,12 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           finalize_new_track(e, t, LE_TRACK_PLAYING, frame, 0);
         }
         len = load_i32(&t->lanes[0].a_len);
+        anchor = le_track_anchor(t); /* its redo plays where it was (#854) */
         apply_undo_to_empty(e, ch, frame);
       }
-      const le_command evt = {.code = LE_EVT_TAKE_CANCELLED,
-                              .lanei = {ch, 0, len}};
+      const le_command evt = {
+          .code = LE_EVT_TAKE_CANCELLED,
+          .restore = {.channel = ch, .len = len, .anchor = anchor}};
       (void)le_ring_push(&e->evt_ring, evt); /* a full ring: no redo */
       atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
       break;
@@ -5054,10 +5113,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     }
     case LE_CMD_REDO_FROM_EMPTY: {
       /* Reinstate an undone-to-empty track: the control thread already swapped
-       * a_live back to the base content; restore length/multiple/state here.
-       * start_iter = 0 keeps the COMMIT_SESSION segment convention. */
-      const int32_t ch = cmd->lanei.channel;
-      const int32_t len = cmd->lanei.value;
+       * a_live back to the base content; restore length/multiple/state here,
+       * and the anchor the undo took off (#854). */
+      const int32_t ch = cmd->restore.channel;
+      const int32_t len = cmd->restore.len;
       if (!valid_channel(e, ch)) break;
       le_track* t = &e->tracks[ch];
       if (load_i32(&t->a_state) == LE_TRACK_EMPTY && len > 0) {
@@ -5067,8 +5126,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_dub_drop_armed(t);
         le_restore_track_clock(e, t, len, 0, frame);
         le_track_set_len(t, len);
+        le_track_anchor_set(t, cmd->restore.anchor);
         le_head_follow(e, t, frame, 0); /* its span's rate (#1179) */
-        t->start_iter = 0;
+        /* From a held rig the redo restarts the loop: placed like a hold. */
+        if (was_held) le_track_park_head_logged(e, t, frame);
         store_i32(&t->a_state,
                   le_handoff_restore_state(e, ch, LE_TRACK_PLAYING));
         le_primary_reconcile(e); /* a redone first take is a first take */
@@ -5098,8 +5159,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         le_dub_drop_armed(t);
         le_restore_track_clock(e, t, len, cmd->restore.master_len, frame);
         le_track_set_len(t, len);
+        le_track_anchor_set(t, cmd->restore.anchor); /* #854 */
         le_head_follow(e, t, frame, 0); /* its span's rate (#1179) */
-        t->start_iter = 0;
+        /* Into a held rig the take waits at the top: placed like a hold. */
+        if (le_transport_held(e)) le_track_park_head_logged(e, t, frame);
         t->fade = (le_fade){cmd->restore.fade_amount, cmd->restore.fade_amount, 0};
         t->fade_sample = cmd->restore.fade_amount;
         /* Capture provenance needs nothing here (#1143): the restored slot's
@@ -6291,11 +6354,14 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
            * any other length is the whole multiple it always was. */
           le_restore_multiple_or_divisor(tr, base, len);
         }
-        tr->start_iter = 0;
+        /* The lap it was played on, as the Session saved it (#854). */
+        le_track_anchor_set(tr, load_i32(&tr->a_import_anchor));
+        store_i32(&tr->a_import_anchor, 0);
         /* Parked at the loop head, so a Play in this same drain starts at
          * the lap start of an installed direction (#1162). */
         le_reset_track_playback(tr);
         le_head_follow(e, tr, frame, 0); /* its span's rate (#1179 4b) */
+        le_track_park_head_logged(e, tr, frame); /* its anchor (#854) */
         store_i32(&tr->a_state, LE_TRACK_STOPPED);
       }
       /* A session that saved no crown still gets one: its lowest recorded
@@ -7288,8 +7354,9 @@ static inline void advance_transport_frame(le_engine* e, int tc,
     } else {
       /* Nothing is playing or recording: hold the transport at the top so the
        * next play starts from the beginning rather than looping in silence.
-       * Resetting each track's start_iter keeps multi-loop tracks aligned to
-       * their first segment on the next play. */
+       * Each multi-loop take keeps the lap it was played on (#854): its
+       * start_iter moves to the same residue at or below lap 0, so the next
+       * play starts it where it sat against the other takes. */
       /* Transport fact (#262), edge-triggered: log the hold once, at the frame
        * it begins, carrying the position the clock is pinned FROM (read BEFORE
        * the reset below). Subsequent held frames find the latch set and stay
@@ -7300,12 +7367,15 @@ static inline void advance_transport_frame(le_engine* e, int tc,
                      (le_command){.code = LE_PLOG_TRANSPORT_HELD,
                                   .arg_i = e->clock.position});
         e->transport_held = 1;
+        /* Once, at the edge: every later write while held (a record start,
+         * a restore, a length edit) already leaves start_iter at or below
+         * the held lap 0. */
+        for (int t = 0; t < tc; ++t) le_track_anchor_rebase(&e->tracks[t]);
       }
       e->clock.position = 0;
       e->loop_iteration = 0;
       for (int t = 0; t < tc; ++t) {
-        e->tracks[t].start_iter = 0;
-        e->tracks[t].head.origin = 0.0;
+        le_track_park_head(e, &e->tracks[t]); /* on its anchor at any Speed */
         e->tracks[t].turn_left = 0; /* a parked origin has no old head */
         e->tracks[t].sounding_frames = 0; /* the next launch is a fresh lap */
       }
@@ -10528,6 +10598,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
               tstate == LE_TRACK_EMPTY ? 0
               : recording              ? rp
                                        : e->trk_play_pos[t]);
+    store_i32(&e->tracks[t].a_anchor,
+              tstate == LE_TRACK_EMPTY ? 0 : le_track_anchor(&e->tracks[t]));
     if (e->tracks[t].bounce_parked != NULL) {
       le_bounce_park_tick(e, &e->tracks[t], trk_lpeak[t], trk_rpeak[t],
                           frames, perf_frame_base + frames);
