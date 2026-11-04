@@ -1237,7 +1237,7 @@
     "@perfLowDiskBlocked": {
         "description": "Snackbar shown when arming a performance capture is refused because the export volume is already below the free-space floor."
     },
-    "operationBusy": "{kind, select, capture{A recording is running. Stop it first.} sessionApply{A session is opening. Try again when it has opened.} sessionWrite{A session is being saved. Try again in a moment.} transfer{A USB transfer is running. Try again when it finishes.} eject{A drive is being ejected. Try again when it finishes.} deviceChange{The audio interface is changing. Try again in a moment.} calibration{Latency is being measured. Try again when it finishes.} restart{The console is shutting down.} other{Something else is running. Try again in a moment.}}",
+    "operationBusy": "{kind, select, capture{A recording is running. Stop it first.} sessionApply{A session is opening. Try again when it has opened.} sessionWrite{A session is being saved. Try again in a moment.} transfer{A USB transfer is running. Try again when it finishes.} eject{A drive is being ejected. Try again when it finishes.} deviceChange{The audio interface is changing. Try again in a moment.} calibration{Latency is being measured. Try again when it finishes.} touchCalibration{A touchscreen is being calibrated. Try again when it finishes.} restart{The console is shutting down.} other{Something else is running. Try again in a moment.}}",
     "@operationBusy": {
         "description": "Why an action was refused at its commit: another operation it must not overlap is in flight (the guard table, #1198). kind is the GuardKind name of the blocking operation.",
         "placeholders": {
@@ -1929,10 +1929,6 @@
     "midiDeviceRow": "Device",
     "@midiDeviceRow": {
         "description": "Row that opens the MIDI input picker."
-    },
-    "midiDeviceNone": "None",
-    "@midiDeviceNone": {
-        "description": "Value of the MIDI device row when nothing is selected."
     },
     "midiStatusWaiting": "Waiting for MIDI input",
     "@midiStatusWaiting": {
@@ -6052,17 +6048,9 @@
     "@midiDelete": {
         "description": "Deletes the saved MIDI mapping being edited."
     },
-    "midiDeviceAvailable": "Available",
-    "@midiDeviceAvailable": {
-        "description": "A MIDI device card for a controller that is plugged in but not the one in use."
-    },
     "midiDeviceConnected": "Connected",
     "@midiDeviceConnected": {
         "description": "A MIDI device card for the open, connected controller."
-    },
-    "midiDeviceConnecting": "Connecting…",
-    "@midiDeviceConnecting": {
-        "description": "A MIDI device card while its port is opening."
     },
     "midiDeviceDisconnected": "Disconnected",
     "@midiDeviceDisconnected": {
@@ -6883,13 +6871,45 @@
             }
         }
     },
-    "footCustomStopRecording": "Stop recording",
-    "@footCustomStopRecording": {
-        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording runs."
+    "footCustomStopCapture": "Stop capture",
+    "@footCustomStopCapture": {
+        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording (a capture) runs."
     },
-    "footCustomUnavailableAction": "Unavailable action",
+    "footCustomUnavailableAction": "Unavailable",
     "@footCustomUnavailableAction": {
         "description": "Foot Custom surface: a switch whose saved assignment this build cannot run. Its saved key is never shown."
+    },
+    "footCustomCapture": "Capture",
+    "@footCustomCapture": {
+        "description": "Foot Custom surface: a switch assigned Record performance, short enough for one line under the pedal (#1590). The app calls a performance recording a capture."
+    },
+    "footCustomClearAll": "Clear all",
+    "@footCustomClearAll": {
+        "description": "Foot Custom surface: a switch assigned Clear all tracks, short enough for one line under the pedal."
+    },
+    "footCustomCutSound": "Cut all sound",
+    "@footCustomCutSound": {
+        "description": "Foot Custom surface: a switch assigned Cut all sound, short enough for one line under the pedal."
+    },
+    "footCustomRecordPlay": "Record / Play",
+    "@footCustomRecordPlay": {
+        "description": "Foot Custom surface: a switch assigned Record / Play, short enough for one line under the pedal."
+    },
+    "footCustomNextBank": "Next bank",
+    "@footCustomNextBank": {
+        "description": "Foot Custom surface: a switch assigned Next bank, short enough for one line under the pedal."
+    },
+    "footCustomTrackFxOn": "Track FX on",
+    "@footCustomTrackFxOn": {
+        "description": "Foot Custom surface: a switch assigned Track FX on, short enough for one line under the pedal."
+    },
+    "footCustomTrackFxOff": "Track FX off",
+    "@footCustomTrackFxOff": {
+        "description": "Foot Custom surface: a switch assigned Track FX off, short enough for one line under the pedal."
+    },
+    "footCustomMixer": "Foot Mixer",
+    "@footCustomMixer": {
+        "description": "Foot Custom surface: a switch assigned the Foot Mixer, short enough for one line under the pedal."
     },
     "assignedActionUnknownRefused": "This control's action isn't available in this version. Reassign it.",
     "@assignedActionUnknownRefused": {

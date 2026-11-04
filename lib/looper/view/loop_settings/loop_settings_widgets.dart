@@ -487,6 +487,7 @@ class LoopFieldLabel extends StatelessWidget {
       );
     }
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         heading,
@@ -1109,6 +1110,9 @@ class LoopSlider extends StatefulWidget {
     super.key,
   });
 
+  /// The track's height, for a page that lines a label up with it.
+  static const double height = 56;
+
   /// Position in `0..1`.
   final double value;
 
@@ -1348,7 +1352,7 @@ class _LoopSliderState extends State<LoopSlider> {
                 opacity: enabled ? 1 : surface.disabledOpacity,
                 child: Container(
                   width: width,
-                  height: 56,
+                  height: LoopSlider.height,
                   decoration: BoxDecoration(
                     color: surface.surface,
                     borderRadius: BorderRadius.circular(12),

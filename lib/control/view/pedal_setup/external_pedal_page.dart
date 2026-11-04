@@ -152,11 +152,8 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
   /// The button editor's width, from [_editorLeft] to the workspace's end.
   static const double _editorWidth = _workspaceWidth - _editorLeft;
 
-  /// The gap between the Press and Hold fields.
-  static const double _fieldGap = 28;
-
-  /// One of the editor's two gesture fields.
-  static const double _fieldWidth = (_editorWidth - _fieldGap) / 2;
+  /// One of the editor's two gesture fields, the pen's 506.
+  static const double _fieldWidth = 506;
 
   /// The types this screen offers, in the pen's order.
   static const List<ExternalJackType> _types = [
@@ -830,7 +827,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
       child: Row(
         children: [
           for (final (index, value) in PedalCtrlJack.values.indexed) ...[
-            if (index > 0) const SizedBox(width: 9),
+            if (index > 0) SizedBox(width: context.spacing.sm),
             LoopChoiceButton(
               key: Key('external_jack_${value.name}'),
               label: switch (value) {
@@ -845,7 +842,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           ],
           const Spacer(),
           for (final (index, type) in _types.indexed) ...[
-            if (index > 0) const SizedBox(width: 9),
+            if (index > 0) SizedBox(width: context.spacing.sm),
             LoopChoiceButton(
               key: Key('external_type_${type.name}'),
               label: _typeLabel(context, type),
@@ -997,7 +994,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             width: 141,
             height: 64,
           ),
-          const SizedBox(width: 9),
+          SizedBox(width: context.spacing.sm),
           LoopChoiceButton(
             key: const Key('external_panel_controls'),
             label: l10n.externalPanelControls,
@@ -1303,7 +1300,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             children: [
               for (final (index, hardware)
                   in ExternalSwitchHardware.values.indexed) ...[
-                if (index > 0) const SizedBox(width: 9),
+                if (index > 0) SizedBox(width: context.spacing.sm),
                 LoopChoiceButton(
                   key: Key('external_hardware_${hardware.name}'),
                   label: switch (hardware) {
@@ -1345,7 +1342,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             action: button.gestures.press,
             slot: _ActionSlot.press,
           ),
-          const SizedBox(width: _fieldGap),
+          SizedBox(width: context.spacing.xl),
           _field(
             context,
             key: const Key('external_hold'),

@@ -211,7 +211,6 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     final paused = control.state.midiRemotePaused;
     final unavailable = control.state.midiUnavailable;
     final loaded = control.state.midiLoaded;
-    final clearFailed = !connection.hasSelection && connection.pinUncertain;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -271,15 +270,6 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
               ? () => _add(control, connection)
               : null,
         ),
-        const SizedBox(width: 16),
-        LoopOutlinedButton(
-          key: const Key('midi_select_none'),
-          width: 150,
-          label: l10n.midiDeviceNone,
-          onTap: connection.hasSelection || clearFailed
-              ? () => unawaited(_selectDevice(''))
-              : null,
-        ),
         if (connection.pinUncertain && connection.hasSelection) ...[
           const SizedBox(width: 16),
           LoopOutlinedButton(
@@ -313,7 +303,13 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         right: 0,
         height: MidiDeviceCards.cardSize.height,
         child: MidiDeviceCards(
-          cards: midiDeviceCards(connection),
+          cards: midiDeviceCards(
+            connection,
+            mapped: [
+              for (final mapping in control.state.midiMappings.mappings)
+                mapping.source.device,
+            ],
+          ),
           onSelect: (id) => unawaited(_selectDevice(id)),
         ),
       ),
@@ -602,8 +598,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
         return const [];
       case _MidiView.editor:
         final connected =
-            connection.status == MidiConnectionStatus.connected &&
-            connection.selectedId == draft.device;
+            connection.statusOf(draft.device) == MidiConnectionStatus.connected;
         return [
           Positioned(
             left: 0,
@@ -783,8 +778,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
       final l10n = context.l10n;
       final connection = context.read<MidiSetupCubit>().state.connection;
       final connected =
-          connection.status == MidiConnectionStatus.connected &&
-          connection.selectedId == draft.device;
+          connection.statusOf(draft.device) == MidiConnectionStatus.connected;
       setState(
         () => _notice = connected
             ? l10n.midiLearnTimedOut

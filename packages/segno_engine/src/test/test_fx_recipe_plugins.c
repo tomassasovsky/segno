@@ -170,7 +170,10 @@ int main(void) {
   CHECK(le_engine_fx_recipe_revision(e, LE_FX_OWNER_MONITOR, 0, 0) == 3);
 
   /* An arm owns its frozen host until capture or cancellation, even though
-   * the admission command has long since been consumed. */
+   * the admission command has long since been consumed. Silence first: the
+   * sound trigger's detector is high-passed (#1623), so the input dropping
+   * from 0.4 to 0 is a sound to it until the filter settles. */
+  for (int n = 0; n < 32; ++n) pump(e, 0, out);
   CHECK(le_engine_set_record_start(e, 0, 1, LE_RECORD_START_SOUND) == LE_OK); pump(e, 0, out);
   le_plugin_slot* take = NULL;
   CHECK(le_engine_prepare_plugin(e, "gain", &take) == LE_OK);

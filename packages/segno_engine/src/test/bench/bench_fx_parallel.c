@@ -335,7 +335,7 @@ static int host_create(host* h, const bench_opts* o, int index) {
     h->type[s] = rec.type[s];
     h->enabled[s] = 1;
     memcpy(h->params[s], rec.params[s], sizeof(h->params[s]));
-    le_fx_entry_reset(h->fx, s);
+    le_fx_entry_reset(h->fx, s, h->type[s]);
     if (le_fx_prepare(h->fx, s, rec.type[s], o->rate) != LE_OK) return 0;
   }
   for (int k = 0; k < 400; ++k) {

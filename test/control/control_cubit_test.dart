@@ -71,7 +71,7 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
     required this.log,
     required super.engine,
     required super.exportsRoot,
-  }) : super(guards: GuardRegistry());
+  }) : super(guards: GuardRegistry(), storageIo: fakeStorageIo);
 
   final List<String> log;
 
@@ -366,6 +366,7 @@ void main() {
         engine: FakeAudioEngine(),
         exportsRoot: () async => tempDir.path,
         now: () => clock,
+        storageIo: fakeStorageIo,
       );
       // Every emit projects a frame from the repository snapshot, so the
       // snapshot has to exist before the first one; setEngine() re-stubs it.

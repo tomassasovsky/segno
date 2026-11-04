@@ -480,7 +480,7 @@ static void test_rack_off_tail_keeps_the_rack_level(void) {
   for (int k = 0; k < 2; ++k) {
     rk_chan(both[k], 0, 0, 0, 0.0f, 1.0f, LE_FX_RACK_FIRST);
     rk_chan(both[k], 1, 0, 0, 0.0f, 0.1f, LE_FX_RACK_LAST);
-    le_fx_entry_reset(both[k], 1);
+    le_fx_entry_reset(both[k], 1, types[1]);
     CHECK(le_fx_prepare(both[k], 1, LE_FX_DELAY, sr) == LE_OK);
   }
   const int32_t on[LE_FX_MAX] = {1, 1};

@@ -154,7 +154,6 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->settled_take_id =
       active ? atomic_load_explicit(&tr->a_settled_take_id, memory_order_acquire)
              : 0;
-  out->restore_state = active ? load_i32(&tr->a_restore_state) : 0;
   out->position_frames = active ? load_i32(&tr->a_play_pos) : 0;
   out->pending_trigger =
       active && out->pending ? load_i32(&tr->a_pending_trigger) : -1;
@@ -256,26 +255,27 @@ uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
                                  &ln->a_fx_chain_enabled);
 }
 
-/* Folds the track's loop-top position on the octaver hop (#941) into a print
- * key when [types][0, n) holds an octaver that plays (its slot enabled, the
- * chain on; a bypassed one passes the signal dry, hop or no hop, as a rack's
- * switched-off Pitch Shift does): such a print is rendered against
- * that position (the cache's clock0), so a stop and relaunch, or a held
- * transport, that moves the loop against the engine clock changes the key and
- * the print falls back live and re-renders instead of engaging off the live
- * hop. A chain without an octaver is keyed as before. */
-static uint64_t le_fx_fold_hop_position(uint64_t h, int32_t n,
+/* Folds where the track's loop top sits on the lap grid into a print key
+ * when [types][0, n) holds a clock LFO that plays (#1620; its slot enabled,
+ * the chain on): such a print is rendered against the clock of that top (the
+ * cache's clock0) and repeats live only from tops on the same grid, so a stop
+ * and relaunch, or a held transport, that moves the loop against the engine
+ * clock changes the key and the print falls back live and re-renders. A
+ * chain without one is keyed as before. */
+static uint64_t le_fx_fold_lap_position(uint64_t h, int32_t n,
                                         _Atomic int32_t* a_type,
                                         _Atomic int32_t* a_enabled,
                                         _Atomic int32_t* a_chain_enabled,
-                                        const le_track* t, int sr) {
+                                        le_track* t) {
   if (n > LE_FX_MAX) n = LE_FX_MAX;
   if (!load_i32(a_chain_enabled)) return h;
   for (int32_t i = 0; i < n; ++i) {
-    if (le_fx_type_hops(load_i32(&a_type[i])) && load_i32(&a_enabled[i])) {
+    if (le_fx_type_clock_lfo(load_i32(&a_type[i])) &&
+        load_i32(&a_enabled[i])) {
       const uint32_t top =
           atomic_load_explicit(&t->a_top_clock, memory_order_relaxed);
-      return le_fx_fp_u32(h, le_fx_hop_position(top, sr));
+      return le_fx_fp_u32(
+          h, le_fx_lap_position(top, load_i32(&t->lanes[0].a_len)));
     }
   }
   return h;
@@ -305,9 +305,9 @@ uint64_t le_lane_pre_fx_fingerprint(le_engine* engine, int32_t channel,
                       ln->a_fx_chan_gr_bits, ln->a_fx_chan_level_bits,
                       ln->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
-  return le_fx_fold_hop_position(h, pre, ln->a_fx_type, ln->a_fx_enabled,
+  return le_fx_fold_lap_position(h, pre, ln->a_fx_type, ln->a_fx_enabled,
                                  &ln->a_fx_chain_enabled,
-                                 &engine->tracks[channel], engine->sample_rate);
+                                 &engine->tracks[channel]);
 }
 
 /* Whether track [channel]'s Pre run can be rendered at all (slice 3e).
@@ -368,8 +368,8 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
                       b->a_fx_chan_gl_bits, b->a_fx_chan_gr_bits,
                       b->a_fx_chan_level_bits, b->a_fx_chan_rack);
   for (int32_t s = 0; s < pre; ++s) h = le_fx_chan_fold(h, &chan[s]);
-  h = le_fx_fold_hop_position(h, pre, b->a_fx_type, b->a_fx_enabled,
-                              &b->a_fx_chain_enabled, t, engine->sample_rate);
+  h = le_fx_fold_lap_position(h, pre, b->a_fx_type, b->a_fx_enabled,
+                              &b->a_fx_chain_enabled, t);
 
   const int32_t n = le_lanes_active(t);
   h = le_fx_fp_u32(h, (uint32_t)n);
@@ -622,21 +622,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->clock_result = load_i32(&engine->a_clock_result);
   out->clock_losses =
       atomic_load_explicit(&engine->a_clock_losses, memory_order_relaxed);
-  /* Input clip + conditioning activity (input clip, S2; trailing block).
-   * The clip mask is the audio thread's published verdict; the cond mask is
-   * derived here from the published per-input enables intersected with the
-   * loopback exclusion — the same gate the audio thread applies before
-   * running a stage, so a bit is set iff the stage actually runs. */
+  /* Input clip (input clip, S2; trailing block): the audio thread's
+   * published verdict. */
   out->input_clip_mask =
       atomic_load_explicit(&engine->a_input_clip_mask, memory_order_relaxed);
-  uint32_t cond_mask = 0u;
-  for (int32_t c = 0; c < LE_MAX_CHANNELS; ++c) {
-    if (load_i32(&engine->cond[c].a_enabled) &&
-        !(out->excluded_input_mask & (1u << c))) {
-      cond_mask |= 1u << c;
-    }
-  }
-  out->input_cond_mask = cond_mask;
   out->output_peak = load_f32(&engine->a_out_peak_bits);
   /* Record start settings (slice 2b; trailing block): control-side plain
    * ints, read on the same thread that writes them. */
@@ -752,7 +741,6 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->peak_l = 0.0f;
     out->peak_r = 0.0f;
     out->settled_take_id = 0;
-    out->restore_state = 0;
     out->position_frames = 0;
     out->pending_trigger = -1;
     out->quantize_override = -1;

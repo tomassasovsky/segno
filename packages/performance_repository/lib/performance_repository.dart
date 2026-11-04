@@ -1,6 +1,6 @@
 /// Owns the performance-recording capture lifecycle for Segno: arming and
 /// disarming the audio engine, snapshotting settled lanes and monitor/master
-/// state, finalizing raw PCM to WAV, and assembling the
+/// state, finalizing the take's float WAV parts, and assembling the
 /// `{documents}/exports/<slug>/` bundle.
 library;
 
@@ -14,3 +14,4 @@ export 'src/performance_capture_status.dart';
 export 'src/performance_exception.dart';
 export 'src/performance_repository.dart';
 export 'src/performance_slug.dart';
+export 'src/take_recovery.dart' show readBootId;

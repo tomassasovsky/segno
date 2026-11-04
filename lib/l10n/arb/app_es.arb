@@ -761,7 +761,7 @@
     "perfCaptureGlitch": "Se detectaron cuadros de audio perdidos durante la captura.",
     "perfDiscarded": "La captura era demasiado corta para conservarla — descartada.",
     "perfLowDisk": "Poco espacio en disco — la captura podría quedarse sin espacio.",
-    "operationBusy": "{kind, select, capture{Hay una grabación en curso. Detenla primero.} sessionApply{Se está abriendo una sesión. Inténtalo al terminar.} sessionWrite{Se está guardando una sesión. Inténtalo en un momento.} transfer{Hay una transferencia USB en curso. Inténtalo al terminar.} eject{Se está expulsando una unidad. Inténtalo al terminar.} deviceChange{La interfaz de audio está cambiando. Inténtalo luego.} calibration{Se está midiendo la latencia. Inténtalo al terminar.} restart{La consola se está apagando.} other{Hay otra operación en curso. Inténtalo en un momento.}}",
+    "operationBusy": "{kind, select, capture{Hay una grabación en curso. Detenla primero.} sessionApply{Se está abriendo una sesión. Inténtalo al terminar.} sessionWrite{Se está guardando una sesión. Inténtalo en un momento.} transfer{Hay una transferencia USB en curso. Inténtalo al terminar.} eject{Se está expulsando una unidad. Inténtalo al terminar.} deviceChange{La interfaz de audio está cambiando. Inténtalo luego.} calibration{Se está midiendo la latencia. Inténtalo al terminar.} touchCalibration{Se está calibrando una pantalla táctil. Inténtalo al terminar.} restart{La consola se está apagando.} other{Hay otra operación en curso. Inténtalo en un momento.}}",
     "perfArmRefused": "La grabación no empezó",
     "perfLowDiskBlocked": "No hay espacio en disco para iniciar una captura. Libera espacio.",
     "perfStoppedLowDisk": "Captura detenida — el disco se estaba quedando sin espacio. Se ha guardado lo grabado.",
@@ -1257,10 +1257,6 @@
     "midiDeviceRow": "Dispositivo",
     "@midiDeviceRow": {
         "description": "Row that opens the MIDI input picker."
-    },
-    "midiDeviceNone": "Ninguno",
-    "@midiDeviceNone": {
-        "description": "Value of the MIDI device row when nothing is selected."
     },
     "midiStatusWaiting": "Esperando entrada MIDI",
     "@midiStatusWaiting": {
@@ -2352,9 +2348,7 @@
     "midiControlsPaused": "Controles MIDI en pausa",
     "midiControlsTitle": "Controles MIDI",
     "midiDelete": "Eliminar",
-    "midiDeviceAvailable": "Disponible",
     "midiDeviceConnected": "Conectado",
-    "midiDeviceConnecting": "Conectando…",
     "midiDeviceDisconnected": "Desconectado",
     "midiDeviceOpenFailed": "No se pudo abrir",
     "midiEditExisting": "Editar la asignación existente",
@@ -2538,8 +2532,16 @@
     "footPeelRefusedBusy": "Peel no está disponible mientras la pista graba. Inténtalo de nuevo.",
     "footPeelFailure": "No se pudo quitar la capa. Inténtalo de nuevo.",
     "footCustomHold": "Mantener · {action}",
-    "footCustomStopRecording": "Detener grabación",
-    "footCustomUnavailableAction": "Acción no disponible",
+    "footCustomStopCapture": "Parar captura",
+    "footCustomUnavailableAction": "No disponible",
+    "footCustomCapture": "Capturar",
+    "footCustomClearAll": "Borrar todo",
+    "footCustomCutSound": "Cortar sonido",
+    "footCustomRecordPlay": "Rec / Play",
+    "footCustomNextBank": "Cambiar banco",
+    "footCustomTrackFxOn": "Encender FX",
+    "footCustomTrackFxOff": "Apagar FX",
+    "footCustomMixer": "Mezclador",
     "assignedActionUnknownRefused": "La acción de este control no está disponible en esta versión. Reasígnala.",
     "assignedActionRefused": "{action} no está disponible ahora.",
     "mixerFading": "En Fade",

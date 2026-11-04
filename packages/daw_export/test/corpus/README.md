@@ -65,7 +65,11 @@ itself expects has not been verified against a real save.
    visibly present and correct on the timeline. Record the outcome in the
    PR that adds real corpus files.
 
-## Part 10: real device-chain XML (HIGH PRIORITY — needs Ableton Live 12 + all seven Segno VST3 plugins installed)
+## Part 10: real device-chain XML (moot: the plugins were deleted in #940)
+
+The Segno VST3 plugins this section verifies against no longer build (#940),
+and removing the device-chain export is #1587. The procedure below is kept
+as the record of what was never verified.
 
 Part 10 ([Segno FX as VST3 plugins](../../../../docs/plan/2026-07-08-feat-segno-fx-vst3-plugins-plan.md)
 umbrella) adds `als_builder.dart`'s first-ever device-XML emission

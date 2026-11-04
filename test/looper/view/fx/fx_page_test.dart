@@ -1358,6 +1358,18 @@ void main() {
       );
     });
 
+    testWidgets("the grid starts at the title's left edge (#1590 SET-3)", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_add_effects');
+
+      final title = tester.getRect(find.text(l10nOf(tester).fxAddTitle).last);
+      final first = tester.getRect(find.byKey(const Key('fx_library_saved')));
+      expect(first.left, title.left);
+      expect(first.left, 36);
+    });
+
     testWidgets('a build with no catalogue says so instead of drawing an '
         'empty grid', (tester) async {
       await pump(

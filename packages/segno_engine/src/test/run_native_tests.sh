@@ -32,15 +32,7 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # (clock_gettime / CLOCK_MONOTONIC; strict c11 also triggers ALSA's struct
 # timespec redefinition). Include path mirrors src/CMakeLists.txt: every src
 # subdir holding headers, so the sources' flat `#include "x.h"` resolves.
-# third_party/rnnoise/include carries the public rnnoise.h; third_party/
-# rnnoise/src is needed too, and only on x86: vec.h pulls vec_avx.h on any
-# SSE2 host, which includes src/x86/x86cpu.h, whose own `#include "common.h"`
-# resolves against src/x86/ and misses the header one level up. Upstream
-# builds with src/ on the path for exactly this reason. It goes LAST so the
-# engine's own headers still win any future name clash (there are none today
-# — the two sets were compared).
-STD="-std=gnu11 -I src/core -I src/midi -I src/miniaudio \
-  -I third_party/rnnoise/include -I third_party/rnnoise/src"
+STD="-std=gnu11 -I src/core -I src/midi -I src/miniaudio"
 
 # The C++ runtime joins ENGINE_LIBS for the one C++ engine TU (src/stretch/
 # le_stretch.cpp, the Signalsmith Stretch shim, #1179), compiled separately
@@ -70,32 +62,17 @@ esac
 # src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
 # (engine_process.c calls le_midi_clock_advance every block) despite living in
 # midi/ per the plan's file placement; keep it in sync with CMakeLists.txt.
-# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) and
+# src/core/halfband.c (the decoder's 2:1 half-band resampler) and
 # src/core/synth_*.c (the instrument voices and patch table, #1197) sit
 # outside the engine*.c glob on purpose (pure DSP TUs, not engine state) and
 # are listed explicitly — keep in sync with CMakeLists.txt.
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
-  src/core/restore_declip.c src/core/restore_halfband.c \
+  src/core/halfband.c \
   src/core/synth_voice.c src/core/synth_patch.c \
   src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c \
   src/midi/le_clock_follow.c"
-
-# Vendored RNNoise (third_party/rnnoise, BSD-3-Clause — offline loop-close
-# denoise, #697). Listed explicitly, NOT globbed: the vendored src/ dir also
-# holds tool/example TUs with their own main() (dump_features.c,
-# write_weights.c) that must not link into the test binary. Mirrors the
-# rnnoise list in src/CMakeLists.txt — keep them in sync (same portable
-# subset; the x86 RTCD/SSE4.1/AVX2 TUs are deliberately not compiled).
-ENGINE_SRC="$ENGINE_SRC \
-  third_party/rnnoise/src/denoise.c third_party/rnnoise/src/rnn.c \
-  third_party/rnnoise/src/pitch.c third_party/rnnoise/src/kiss_fft.c \
-  third_party/rnnoise/src/celt_lpc.c third_party/rnnoise/src/nnet.c \
-  third_party/rnnoise/src/nnet_default.c \
-  third_party/rnnoise/src/parse_lpcnet_weights.c \
-  third_party/rnnoise/src/rnnoise_data.c \
-  third_party/rnnoise/src/rnnoise_tables.c"
 
 # --- The stretch shim object (#1179) ------------------------------------------
 # src/stretch/le_stretch.cpp is the only C++ TU in the portable engine: the C
@@ -298,9 +275,4 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework Foundation \
     -o "$OUT/segno_plugin_slot_tests.exe"
   "$OUT/segno_plugin_slot_tests.exe"
-
-  # NOTE: the vst3/ plugin GUID/wrapper/parity tests used to live here (also
-  # Darwin-gated, so they ran in no CI job). They now build via CTest in
-  # packages/segno_engine/vst3/CMakeLists.txt — the single definition — and run
-  # on macOS/Windows/Linux in the vst3-plugins-* CI jobs. Do not re-add them here.
 fi

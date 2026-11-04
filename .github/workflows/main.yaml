@@ -431,10 +431,10 @@ jobs:
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
   # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
   # both suites; a failed CHECK returns non-zero and fails the job. A second
-  # step below runs the macOS RNNoise include/forwarder wiring stand-in (CI
-  # never `flutter build macos`). A third step runs the pedal-link contract
-  # test via firmware/test/run_tests.sh — the single definition of that gate
-  # (also the local verify loop): the console board firmware's pedal_link.c
+  # step below runs the macOS forwarder wiring stand-in (CI never `flutter
+  # build macos`). A third step runs the pedal-link contract test via
+  # firmware/test/run_tests.sh — the single definition of that gate (also
+  # the local verify loop): the console board firmware's pedal_link.c
   # decodes and re-encodes the golden frames packages/pedal_repository
   # generates from the Dart codec, so drift between the two fails the job.
   # This is the strongest correctness gate in the repo — keep it on every PR.
@@ -474,8 +474,8 @@ jobs:
       # the console, not from CI.
       - name: Smoke-run the multi-core effects spike
         run: bash packages/segno_engine/src/test/bench/bench_fx_parallel.sh --smoke --chains 2 --workers 1
-      - name: Check macOS RNNoise include/forwarder wiring
-        run: bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh
+      - name: Check macOS forwarder wiring
+        run: bash packages/segno_engine/tool/test/run_macos_forwarder_wiring_tests.sh
       - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)
         run: bash firmware/test/run_tests.sh
 
@@ -679,27 +679,6 @@ jobs:
           test -s "$SEGNO_ENGINE_LIB"
           flutter pub get
           flutter test --tags fuzz
-
-  # Linux port (part 14): the same seven plugins + CTest suite with gcc/clang. The
-  # default generator on ubuntu is single-config (Makefiles), so the build type is
-  # CMAKE_BUILD_TYPE (Debug gives the SDK its DEVELOPMENT=1), like the macOS job.
-  vst3-plugins-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install C/C++ build dependencies
-        run: |
-          sudo apt-get update
-          # libasound2-dev: the engine's src/CMakeLists.txt (pulled in via
-          # add_subdirectory) runs find_package(ALSA REQUIRED) at configure time
-          # even though EXCLUDE_FROM_ALL means its ALSA-linking segno_engine target
-          # is never built here — matches native-tests.
-          sudo apt-get install -y build-essential cmake libasound2-dev
-      - name: Configure + build + test the VST3 plugins
-        run: |
-          cmake -S packages/segno_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/vst3
-          ctest --test-dir build/vst3 --output-on-failure
 
   # The appliance shell suites (wifi, mark-good, journal persist, the kernel
   # cmdline, reconcile-staged, the update attempt marker), which share one

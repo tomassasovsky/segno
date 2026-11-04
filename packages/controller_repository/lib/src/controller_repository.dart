@@ -5,8 +5,9 @@ import 'package:controller_repository/src/controller_input.dart';
 import 'package:controller_repository/src/controller_source.dart';
 
 /// Owns controller sources and forwards exact console events to ControlCubit.
-/// Musical MIDI mappings use the selected-device raw stream; there are no
-/// implicit transport CCs or a second assignment dispatcher here.
+/// Musical MIDI mappings read every captured device's raw stream from the MIDI
+/// device repository; there are no implicit transport CCs or a second
+/// assignment dispatcher here.
 class ControllerRepository {
   /// Subscribes once and takes ownership of every supplied source.
   ControllerRepository({required List<ControllerSource> sources})

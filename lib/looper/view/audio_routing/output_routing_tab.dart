@@ -16,6 +16,7 @@ import 'package:segno/looper/view/audio_routing/routing_facts.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/loop_settings/loop_track_names.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The kinds of thing that can be sent somewhere.
 ///
@@ -480,7 +481,7 @@ class _HearLive extends StatelessWidget {
                   unawaited(context.read<MonitorCubit>().setMode(input, mode)),
               width: 284,
               height: 74,
-              gap: 5,
+              gap: context.spacing.sm,
               fontSize: 22,
             ),
           ),

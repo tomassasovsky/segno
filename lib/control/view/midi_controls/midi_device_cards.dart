@@ -6,20 +6,14 @@ import 'package:segno/theme/theme.dart';
 
 /// Where a MIDI input stands, as its card says it.
 enum MidiDeviceStatus {
-  /// The input in use, delivering messages.
+  /// Plugged in and captured: its messages feed its mappings.
   connected,
 
-  /// The input in use, while its port opens.
-  connecting,
-
-  /// The input in use, not plugged in.
+  /// Not plugged in. Its mappings are kept.
   disconnected,
 
-  /// The input in use, whose port would not open.
+  /// Plugged in, but its port would not open.
   openFailed,
-
-  /// Plugged in, and not the input in use.
-  available,
 }
 
 /// One MIDI input the page can configure.
@@ -29,6 +23,7 @@ class MidiDeviceCard {
     required this.id,
     required this.name,
     required this.status,
+    required this.selected,
   });
 
   /// The device's stable identity, which its mappings name.
@@ -40,49 +35,57 @@ class MidiDeviceCard {
   /// Where it stands.
   final MidiDeviceStatus status;
 
-  /// Whether it is the input in use — the one whose mappings are listed.
-  bool get selected => status != MidiDeviceStatus.available;
+  /// Whether the page lists this device's mappings.
+  final bool selected;
 
   /// Whether it is plugged in.
-  bool get online =>
-      status != MidiDeviceStatus.disconnected &&
-      status != MidiDeviceStatus.openFailed;
+  bool get online => status != MidiDeviceStatus.disconnected;
 }
 
-/// The cards [connection] gives: every enumerated input, and the one in use
-/// even while it is unplugged, so its mappings stay reachable.
-List<MidiDeviceCard> midiDeviceCards(MidiConnection connection) {
-  final selectedStatus = connection.pinUncertain
-      ? MidiDeviceStatus.disconnected
-      : switch (connection.status) {
-          MidiConnectionStatus.connected => MidiDeviceStatus.connected,
-          MidiConnectionStatus.connecting => MidiDeviceStatus.connecting,
-          MidiConnectionStatus.error => MidiDeviceStatus.openFailed,
-          MidiConnectionStatus.deviceGone ||
-          MidiConnectionStatus.none => MidiDeviceStatus.disconnected,
-        };
-  return [
-    for (final device in connection.devices)
-      MidiDeviceCard(
-        id: device.id,
-        name: device.name,
-        status: device.id == connection.selectedId
-            ? selectedStatus
-            : MidiDeviceStatus.available,
+/// The cards [connection] gives: every enumerated input, and each absent
+/// device the page still has to reach — the selected one and every device
+/// in [mapped] (the devices the mappings name) — so its mappings stay
+/// editable while it is unplugged.
+List<MidiDeviceCard> midiDeviceCards(
+  MidiConnection connection, {
+  Iterable<String> mapped = const [],
+}) {
+  MidiDeviceCard card(String id, String name) => MidiDeviceCard(
+    id: id,
+    name: name,
+    status: switch (connection.statusOf(id)) {
+      MidiConnectionStatus.connected => MidiDeviceStatus.connected,
+      MidiConnectionStatus.error => MidiDeviceStatus.openFailed,
+      MidiConnectionStatus.deviceGone ||
+      MidiConnectionStatus.none => MidiDeviceStatus.disconnected,
+    },
+    selected: id == connection.selectedId,
+  );
+  final cards = <String, MidiDeviceCard>{};
+  for (final device in connection.devices) {
+    // A device with several ports is listed once per port under one id.
+    cards.putIfAbsent(device.id, () => card(device.id, device.name));
+  }
+  if (connection.hasSelection) {
+    cards.putIfAbsent(
+      connection.selectedId,
+      () => card(
+        connection.selectedId,
+        connection.names[connection.selectedId] ??
+            (connection.selectedName.isEmpty
+                ? connection.selectedId
+                : connection.selectedName),
       ),
-    if (connection.hasSelection && !connection.isSelectedPresent)
-      MidiDeviceCard(
-        id: connection.selectedId,
-        name: connection.selectedName.isEmpty
-            ? connection.selectedId
-            : connection.selectedName,
-        status: selectedStatus,
-      ),
-  ];
+    );
+  }
+  for (final id in mapped) {
+    cards.putIfAbsent(id, () => card(id, connection.names[id] ?? id));
+  }
+  return [...cards.values];
 }
 
-/// The row of MIDI inputs at the top of the MIDI controls page. Choosing one
-/// makes it the input in use.
+/// The row of MIDI inputs at the top of the MIDI controls page. Every
+/// plugged-in input feeds its own mappings; choosing one lists them.
 class MidiDeviceCards extends StatefulWidget {
   /// Creates a [MidiDeviceCards].
   const MidiDeviceCards({
@@ -94,7 +97,7 @@ class MidiDeviceCards extends StatefulWidget {
   /// The inputs, in the order the host lists them.
   final List<MidiDeviceCard> cards;
 
-  /// Makes an input the one in use.
+  /// Lists an input's mappings.
   final ValueChanged<String> onSelect;
 
   /// The pen's card.
@@ -157,10 +160,8 @@ class _DeviceCard extends StatelessWidget {
     final surface = context.surface;
     final status = switch (card.status) {
       MidiDeviceStatus.connected => l10n.midiDeviceConnected,
-      MidiDeviceStatus.connecting => l10n.midiDeviceConnecting,
       MidiDeviceStatus.disconnected => l10n.midiDeviceDisconnected,
       MidiDeviceStatus.openFailed => l10n.midiDeviceOpenFailed,
-      MidiDeviceStatus.available => l10n.midiDeviceAvailable,
     };
     return Semantics(
       button: true,

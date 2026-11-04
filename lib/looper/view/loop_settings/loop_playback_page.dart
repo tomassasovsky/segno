@@ -109,6 +109,11 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             ? defaults.overdubDecay
             : trackDecay ?? defaults.overdubDecay);
     const top = 342.0;
+    const playbackHeight = 120.0;
+    const sliderTop = top + 246 + 84;
+    // The band the decay label is centred in: tall enough for the heading
+    // and its origin tag.
+    const decayLabelBand = 80.0;
     return Positioned.fill(
       child: BlocListener<LooperBloc, LooperState>(
         listenWhen: (before, after) =>
@@ -136,14 +141,22 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 }),
               ),
             ),
-            // ---- playback
+            // ---- playback: the label is centred on the Loop/Once row, as
+            // the Length page centres its labels on their controls.
             Positioned(
               left: 0,
-              top: top + 17,
-              child: LoopFieldLabel(
-                title: l10n.loopPlaybackLabel,
-                fontSize: 32,
-                origin: scopedOrigin(scoped: scope != null, custom: onceCustom),
+              top: top,
+              height: playbackHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: LoopFieldLabel(
+                  title: l10n.loopPlaybackLabel,
+                  fontSize: 32,
+                  origin: scopedOrigin(
+                    scoped: scope != null,
+                    custom: onceCustom,
+                  ),
+                ),
               ),
             ),
             Positioned(
@@ -161,7 +174,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 onSelected: _setOnce,
                 enabled: defaults.oneShotReady,
                 width: 584,
-                height: 120,
+                height: playbackHeight,
                 fontSize: 28,
               ),
             ),
@@ -182,16 +195,20 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 key: const Key('loop_playback_note'),
               ),
             ),
-            // ---- overdub decay
+            // ---- overdub decay: the label is centred on the slider.
             Positioned(
               left: 0,
-              top: top + 246 + 51,
-              child: LoopFieldLabel(
-                title: l10n.loopDecayLabel,
-                fontSize: 32,
-                origin: scopedOrigin(
-                  scoped: scope != null,
-                  custom: decayCustom,
+              top: sliderTop + LoopSlider.height / 2 - decayLabelBand / 2,
+              height: decayLabelBand,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: LoopFieldLabel(
+                  title: l10n.loopDecayLabel,
+                  fontSize: 32,
+                  origin: scopedOrigin(
+                    scoped: scope != null,
+                    custom: decayCustom,
+                  ),
                 ),
               ),
             ),
@@ -221,7 +238,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
               ),
             Positioned(
               left: 328,
-              top: top + 246 + 84,
+              top: sliderTop,
               child: LoopSlider(
                 key: const Key('loop_decay_slider'),
                 value: decay / 100,

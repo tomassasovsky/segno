@@ -67,18 +67,20 @@ class LibrarySessionList extends StatelessWidget {
   const LibrarySessionList({super.key});
 
   @override
-  Widget build(BuildContext context) => const Column(
+  Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      // The field takes what New folder leaves, so the pair spans the list's
+      // width at the title row's button gap.
       Row(
-        children: [
-          LibrarySearchField(),
-          SizedBox(width: 9),
+        spacing: context.spacing.md,
+        children: const [
+          Expanded(child: LibrarySearchField()),
           LibraryNewFolderButton(),
         ],
       ),
-      SizedBox(height: 84, child: LibraryFolderChips()),
-      Expanded(child: LibrarySessionRows()),
+      const SizedBox(height: 84, child: LibraryFolderChips()),
+      const Expanded(child: LibrarySessionRows()),
     ],
   );
 }
@@ -128,22 +130,20 @@ class LibrarySearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final query = context.select<LibraryCubit, String>((c) => c.state.query);
-    return SizedBox(
-      width: 556,
-      child: LibrarySearchBox(
-        key: const Key('library_search'),
-        text: query.isEmpty ? l10n.librarySearchSessions : query,
-        placeholder: query.isEmpty,
-        semanticLabel: l10n.librarySearchSessions,
-        onTap: () => unawaited(_edit(context, query)),
-      ),
+    return LibrarySearchBox(
+      key: const Key('library_search'),
+      text: query.isEmpty ? l10n.librarySearchSessions : query,
+      placeholder: query.isEmpty,
+      semanticLabel: l10n.librarySearchSessions,
+      onTap: () => unawaited(_edit(context, query)),
     );
   }
 }
 
-/// The pen's 64-high search box, as wide as its parent allows (556 on the
-/// Sessions tab, 310 on the Audio tab): an outlined box with the query or
-/// the placeholder, which opens a keyboard sheet instead of taking keys.
+/// The pen's 64-high search box, as wide as its parent allows (what New
+/// folder leaves on the Sessions tab, 310 on the Audio tab): an outlined box
+/// with the query or the placeholder, which opens a keyboard sheet instead of
+/// taking keys.
 class LibrarySearchBox extends StatelessWidget {
   /// Creates the search box.
   const LibrarySearchBox({
@@ -246,9 +246,9 @@ class LibraryFolderChips extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
+        spacing: context.spacing.sm,
         children: [
-          for (final (i, (key, label, value)) in chips.indexed) ...[
-            if (i > 0) const SizedBox(width: 7),
+          for (final (key, label, value) in chips)
             LibraryChip(
               key: key,
               label: label,
@@ -261,7 +261,6 @@ class LibraryFolderChips extends StatelessWidget {
                 _ => null,
               },
             ),
-          ],
         ],
       ),
     );
@@ -371,7 +370,7 @@ class LibrarySessionRows extends StatelessWidget {
     final cubit = context.read<LibraryCubit>();
     return ListView.builder(
       key: const Key('library_rows'),
-      padding: const EdgeInsets.only(top: 12, right: 10),
+      padding: const EdgeInsets.only(top: 12),
       itemExtent: 148,
       itemCount: rows.length,
       itemBuilder: (context, i) {

@@ -335,11 +335,46 @@ void main() {
         tester.getTopLeft(find.byKey(const Key('library_search'))),
         const Offset(32, 96 + 128),
       );
-      expect(tester.getSize(row('s-cur')), const Size(699, 148));
+      expect(tester.getSize(row('s-cur')), const Size(709, 148));
       expect(
         tester.getRect(find.byKey(const Key('library_preview'))),
         const Rect.fromLTWH(32 + 765, 96 + 128, 1920 - 64 - 765, 820),
       );
+    });
+  });
+
+  group('edges (#1590)', () {
+    testWidgets('the search, New folder and the rows share the list edges, '
+        'with token gaps between the controls', (tester) async {
+      await openLibrary(tester);
+      final search = tester.getRect(find.byKey(const Key('library_search')));
+      final folder = tester.getRect(
+        find.byKey(const Key('library_new_folder')),
+      );
+      final first = tester.getRect(row('s-cur'));
+
+      expect(first.left, search.left);
+      expect(first.right, folder.right);
+      expect(folder.left - search.right, SpacingTheme.standard.md);
+      expect(
+        tester.getRect(find.byKey(const Key('library_folder_unfiled'))).left -
+            tester.getRect(find.byKey(const Key('library_folder_all'))).right,
+        SpacingTheme.standard.sm,
+      );
+    });
+
+    testWidgets("the preview's track rows end at its buttons' right edge", (
+      tester,
+    ) async {
+      await openLibrary(tester);
+      final manage = tester.getRect(find.byKey(const Key('library_manage')));
+      final returnTo = tester.getRect(
+        find.byKey(const Key('library_return_to_tracks')),
+      );
+      final track = tester.getRect(find.byKey(const Key('library_track_0')));
+
+      expect(returnTo.right, manage.right);
+      expect(track.right, manage.right);
     });
   });
 

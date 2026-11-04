@@ -328,6 +328,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   });
 
+  testWidgets('Record as is wide enough for its labels, a token apart '
+      '(#1590 LOOP-2, LOOP-3)', (tester) async {
+    await pump(tester);
+    final mono = tester.getRect(find.byKey(const Key('routing_format_mono')));
+    final stereo = tester.getRect(
+      find.byKey(const Key('routing_format_stereo')),
+    );
+    expect(stereo.left - mono.right, SpacingTheme.standard.sm);
+    expect(stereo.right - mono.left, 400);
+  });
+
   testWidgets('a track capturing this input locks the format and says why', (
     tester,
   ) async {

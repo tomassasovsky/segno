@@ -318,7 +318,7 @@ class LibrarySectionTabs extends StatelessWidget {
           width: 180,
           height: 64,
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: context.spacing.md),
         LoopChoiceButton(
           key: const Key('library_tab_audio'),
           label: l10n.libraryAudio,
@@ -472,7 +472,7 @@ class LibraryActions extends StatelessWidget {
           width: 160,
           height: 64,
         ),
-        const SizedBox(width: 12),
+        SizedBox(width: context.spacing.md),
         LoopChoiceButton(
           key: const Key('library_location_usb'),
           label: l10n.libraryUsb,

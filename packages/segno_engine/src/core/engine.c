@@ -35,7 +35,6 @@
 #include "audio_ring.h" /* le_audio_ring_release (capture-ring teardown) */
 #include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
 #include "engine_render.h" /* le_render_destroy (render recipe jobs) */
-#include "engine_restore.h" /* le_restore_init/shutdown (restoration worker) */
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
@@ -250,9 +249,6 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
    * reclaim / LRU to collect. */
   atomic_store_explicit(&ln->a_wet, NULL, memory_order_release);
   store_i32(&ln->a_cache_active, 0);
-  ln->cache_fp_entry = NULL; /* audio-local fp-verdict cache dies with it */
-  ln->cache_fp_gen = 0;
-  ln->cache_fp_hop = 0;
   le_lane_fx_gen_bump(ln); /* the reset rewrites the whole chain below */
   atomic_store_explicit(&ln->a_input_channel, input_channel,
                         memory_order_relaxed);
@@ -301,7 +297,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_i32(&ln->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&ln->fx, s);
     le_fx_free_slot(&ln->fx, s);
-    le_fx_entry_reset(&ln->fx, s);
+    le_fx_entry_reset(&ln->fx, s, LE_FX_NONE);
     /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
      * while the device is closed (no audio thread), so a direct destroy is safe
      * — mirrors le_engine_destroy. Without this, a start→stop→start or any
@@ -363,7 +359,7 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     store_i32(&m->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&m->fx, s);
     le_fx_free_slot(&m->fx, s);
-    le_fx_entry_reset(&m->fx, s);
+    le_fx_entry_reset(&m->fx, s, LE_FX_NONE);
     /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
      * reconfigure leaks the monitor input's live plugin host + binary. */
     le_plugin_slot_destroy(
@@ -405,7 +401,7 @@ static void le_fx_bus_reset(le_fx_bus* b) {
     store_i32(&b->a_fx_chan_rack[s], 0);
     le_fx_enable_seed_settled(&b->fx, s);
     le_fx_free_slot(&b->fx, s);
-    le_fx_entry_reset(&b->fx, s);
+    le_fx_entry_reset(&b->fx, s, LE_FX_NONE);
     /* No plugin-slot loading targets the bus owners yet (built-in effects
      * only through the track/master setters), but destroy defensively like
      * the lane/monitor resets so a future seam cannot leak here. */
@@ -462,9 +458,6 @@ static void le_engine_quiesce_workers(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
-  /* Offline restoration worker (#697 S9, [R2](d)): join before the pools are
-   * touched — its enqueue copies read pool memory. */
-  le_restore_shutdown(engine);
 
   /* Performance-recording capture: stop and join the drain thread — if
    * still armed here, the engine is being reconfigured mid-session (a
@@ -1005,33 +998,34 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     store_f32(&engine->tracks[t].a_trk_peak_r_bits, 0.0f);
   }
 
-  /* Per-input conditioning stages (input conditioning, S1): defaults (all
-   * disabled) + the conditioned-copy scratch for the new channel count. The
-   * device is closed during configure, so both the seed and the realloc are
-   * race-free. A failed allocation leaves cond_buf NULL — the audio thread
-   * then simply keeps the raw path (conditioning silently off). */
-  for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
-    le_cond_seed_defaults(&engine->cond[c], sample_rate);
-  }
-  le_rt_free(engine->cond_buf);
-  engine->cond_buf_cap =
-      (int64_t)LE_COND_SCRATCH_FRAMES * (int64_t)input_channels;
-  /* Prefaulted: the callback copies every input block into it (rt_alloc.h). */
-  engine->cond_buf = (float*)le_rt_alloc_prefaulted(
-      (size_t)engine->cond_buf_cap * sizeof(float));
-  if (engine->cond_buf == NULL) engine->cond_buf_cap = 0;
-  /* Raw-fallback telemetry: per session, like a_xruns above. */
-  atomic_store_explicit(&engine->a_cond_fallback_blocks, 0u,
-                        memory_order_relaxed);
-
   /* Input clip ("HOT") detector (input clip, S2): fresh session, no input is
    * HOT and no rail-run is in progress. Plain fields are race-free here (the
-   * device is closed during configure), same as the cond seeds above. */
+   * device is closed during configure). */
   for (int c = 0; c < LE_MAX_CHANNELS; ++c) {
     engine->clip_run[c] = 0;
     engine->clip_hold_until[c] = 0;
   }
   atomic_store_explicit(&engine->a_input_clip_mask, 0u, memory_order_relaxed);
+
+  /* The sound trigger's detector high-pass (#1623): a fourth-order
+   * Butterworth (two sections at Q 0.5412 and 1.3066) at LE_TRIGGER_HP_HZ
+   * for this rate, its states clear. */
+  {
+    const double q[2] = {0.54119610, 1.30656296};
+    const double w =
+        2.0 * 3.14159265358979323846 * LE_TRIGGER_HP_HZ / (double)sample_rate;
+    for (int k = 0; k < 2; ++k) {
+      const double alpha = sin(w) / (2.0 * q[k]);
+      const double a0 = 1.0 + alpha;
+      const double cw = cos(w);
+      engine->trig_hp_c[k][0] = (float)((1.0 + cw) / 2.0 / a0);
+      engine->trig_hp_c[k][1] = (float)(-(1.0 + cw) / a0);
+      engine->trig_hp_c[k][2] = (float)((1.0 + cw) / 2.0 / a0);
+      engine->trig_hp_c[k][3] = (float)(-2.0 * cw / a0);
+      engine->trig_hp_c[k][4] = (float)((1.0 - alpha) / a0);
+    }
+    memset(engine->trig_hp_z, 0, sizeof(engine->trig_hp_z));
+  }
 
   /* Output buses (slice 3b): defaults empty/enabled/unity, same rationale as
    * the per-track bus resets above. */
@@ -1046,7 +1040,7 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   le_fx_bus_reset(&engine->all_tracks);
   for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      le_fx_entry_reset(&engine->all_tracks_fx[k], s);
+      le_fx_entry_reset(&engine->all_tracks_fx[k], s, LE_FX_NONE);
       le_fx_enable_seed_settled(&engine->all_tracks_fx[k], s);
       le_fx_free_slot(&engine->all_tracks_fx[k], s);
     }
@@ -1062,7 +1056,6 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
    * no patches; the epoch tells the app that every voice and latch is gone. */
   le_instruments_reset(engine, sample_rate);
   le_cache_init(engine);
-  le_restore_init(engine); /* #697 S9: offline loop-close restoration worker */
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
 }
 
@@ -1519,7 +1512,6 @@ void le_engine_destroy(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
-  le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
   le_prefault_shutdown(engine); /* its jobs name the pool buffers below */
   le_collect_retired(engine, 1);
   le_backing_release(engine, 0); /* #1200: no audio thread any more */
@@ -1583,7 +1575,6 @@ void le_engine_destroy(le_engine* engine) {
   }
   le_fx_free_kind_table(&engine->all_tracks.fx);
   le_rt_free(engine->lat_buf);
-  le_rt_free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   le_instruments_destroy(engine); /* the synth and its buses (#1197) */
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
@@ -1725,12 +1716,17 @@ static int32_t le_engine_publish_and_start(le_engine* engine,
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
-  /* Exclude any loopback-labelled capture channels, computed from the resolved
-   * capture-device UID: our explicit capture id when one was pinned/loopback-
-   * routed (capture_id_set, set by the backend), else the system default input
-   * (on string-id backends the id union is the UID string). */
+  /* The interface's own routing to pass-through (#1046), first, so the mask
+   * below reads the routing just set. Then exclude any loopback-labelled
+   * capture channels, computed from the resolved capture-device UID: our
+   * explicit capture id when one was pinned/loopback-routed (capture_id_set,
+   * set by the backend), else the system default input (on string-id backends
+   * the id union is the UID string). */
   const char* capture_uid =
       engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
+  const char* playback_uid =
+      engine->playback_id_set ? (const char*)&engine->playback_id : NULL;
+  le_platform_own_interface_routing(capture_uid, playback_uid);
   const uint32_t excluded_mask =
       le_platform_excluded_input_mask(capture_uid, info.input_channels);
   /* relaxed: a lone published value, matching the other configuration atomics
@@ -1839,7 +1835,6 @@ int32_t le_engine_stop(le_engine* engine) {
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
-  le_restore_shutdown(engine); /* #697 S9: join the restoration worker on stop */
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
   le_platform_on_engine_teardown();

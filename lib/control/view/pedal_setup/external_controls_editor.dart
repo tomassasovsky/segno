@@ -360,7 +360,7 @@ class ExternalControlsEditor extends StatelessWidget {
             children: [
               for (final (index, value)
                   in ExternalValueCondition.values.indexed) ...[
-                if (index > 0) const SizedBox(width: 9),
+                if (index > 0) SizedBox(width: context.spacing.sm),
                 LoopChoiceButton(
                   key: Key('external_value_condition_${value.name}'),
                   label: value == ExternalValueCondition.onOff

@@ -5,6 +5,10 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/settings/touch_calibration/cubit/touch_calibration_cubit.dart';
+import 'package:touch_calibration_client/touch_calibration_client.dart';
+
+import '../../settings/touch_calibration/fake_touch_calibration_client.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -266,6 +270,34 @@ void main() {
       await tick();
 
       verify(looper.finishWarmUp).called(1);
+    });
+
+    test('a touch calibration in progress does not defer the switch '
+        '(#1375)', () async {
+      final calibration = TouchCalibrationCubit(
+        client: FakeTouchCalibrationClient(),
+        guards: guards,
+        screen: TouchScreen.main,
+        captureTargets: const [
+          (x: 0.1, y: 0.1),
+          (x: 0.9, y: 0.1),
+          (x: 0.5, y: 0.9),
+        ],
+        testTargets: const [(x: 0.5, y: 0.5)],
+      )..start();
+      addTearDown(calibration.close);
+      await pumpEventQueue();
+      expect(calibration.state.phase, TouchCalibrationPhase.capture);
+      expect(
+        guards.active.map((op) => op.kind),
+        [GuardKind.touchCalibration],
+      );
+      await build();
+
+      await tick(4);
+
+      verify(looper.finishWarmUp).called(1);
+      expect(calibration.state.phase, TouchCalibrationPhase.capture);
     });
 
     test('a refused admission is tried again on the next tick', () async {

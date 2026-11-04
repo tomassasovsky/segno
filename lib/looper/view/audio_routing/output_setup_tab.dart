@@ -340,7 +340,7 @@ class _FormatRow extends StatelessWidget {
               ),
               width: 198,
               height: 74,
-              gap: 5,
+              gap: context.spacing.sm,
               fontSize: 22,
             ),
           ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:console_facts_client/console_facts_client.dart';
@@ -10,9 +11,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:midi_client/midi_client.dart' show MidiControllerSource;
+import 'package:midi_client/testing.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
@@ -226,7 +226,6 @@ class _WindowGone implements Exception {
 
 /// A MIDI source whose enumeration the test drives by hand, so a pinned
 /// controller can be made to vanish and return through `refresh()`.
-class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 class _TrackFxStore extends FakeKeyValueStore {
   final releaseWrite = Completer<void>();
@@ -632,12 +631,13 @@ class _PowerKey implements PowerKeySource {
 
 class _ShutdownMidi extends MidiDeviceRepository {
   _ShutdownMidi(SettingsRepository settings)
-    : super(source: null, settings: settings, pollInterval: Duration.zero);
+    : super(captures: null, settings: settings, pollInterval: Duration.zero);
 
   final _inputs = StreamController<MidiInputMessage>.broadcast();
 
-  @override
   MidiInputSession get session => const MidiInputSession('shutdown-test', 1);
+  @override
+  Map<String, MidiInputSession> get sessions => {session.device: session};
 
   @override
   Stream<MidiInputMessage> get messages => _inputs.stream;
@@ -737,7 +737,7 @@ void main() {
       );
       // No MIDI backend by default; the MIDI-specific test below wires its own.
       midiDeviceRepository = MidiDeviceRepository(
-        source: null,
+        captures: null,
         settings: settings,
       );
       addTearDown(repository.dispose);
@@ -858,7 +858,7 @@ void main() {
           ticker: const Stream<void>.empty(),
         );
         final controllers = ControllerRepository(sources: const []);
-        final midi = MidiDeviceRepository(source: null, settings: settings);
+        final midi = MidiDeviceRepository(captures: null, settings: settings);
         final performance = PerformanceRepository(
           guards: GuardRegistry(),
           engine: engine,
@@ -4407,6 +4407,143 @@ void main() {
     );
 
     testWidgets(
+      'the loss warning stays up until every lost device in use is back',
+      (tester) async {
+        const pedal = MidiDevice(id: 'fcb1010', name: 'FCB1010');
+        const keys = MidiDevice(id: 'keys', name: 'Keyboard');
+        var enumerated = const <MidiDevice>[pedal, keys];
+        // The keyboard is in use through a mapping, the pedal by selection.
+        await tester.runAsync(
+          () => settings.saveMidiConfiguration(
+            jsonEncode({
+              'version': 1,
+              'enabled': true,
+              'mappings': [
+                MidiMapping(
+                  id: 'k1',
+                  source: MidiSource(
+                    device: 'keys',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 64,
+                  ),
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: const TrackVolumeTarget(0).canonicalString(),
+                      low: 0,
+                      high: 1,
+                    ),
+                  ],
+                ).toJson(),
+              ],
+            }),
+          ),
+        );
+        final midi = MidiDeviceRepository(
+          captures: () => FakeMidiCapture(devices: () => enumerated),
+          settings: settings,
+          pollInterval: Duration.zero,
+        );
+        await midi.select('fcb1010');
+
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: _RecordingWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+          ),
+        );
+        watchNotices(tester);
+        await tester.pumpAndSettle();
+
+        Future<void> plug(List<MidiDevice> devices) async {
+          enumerated = devices;
+          midi.refresh();
+          await tester.pump();
+          await tester.pump();
+        }
+
+        await plug(const [keys]);
+        await plug(const []);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        await plug(const [keys]);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        await plug(const [pedal, keys]);
+        expect(noticeUp(tester, AppNoticeId.midiLost), isFalse);
+
+        await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await midi.dispose();
+      },
+    );
+
+    testWidgets(
+      'a device not in use comes and goes unsaid, and leaves the loss '
+      'warning of the device in use up',
+      (tester) async {
+        const pedal = MidiDevice(id: 'fcb1010', name: 'FCB1010');
+        const keys = MidiDevice(id: 'keys', name: 'Keyboard');
+        var enumerated = const <MidiDevice>[pedal, keys];
+        final midi = MidiDeviceRepository(
+          captures: () => FakeMidiCapture(devices: () => enumerated),
+          settings: settings,
+          pollInterval: Duration.zero,
+        );
+        await midi.select('fcb1010');
+
+        await tester.pumpWidget(
+          App(
+            guards: GuardRegistry(),
+            mixSettings: testMixSettings(repository, settings: settings),
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: _RecordingWindowService(),
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            backingRepository: testBackingRepository(),
+          ),
+        );
+        watchNotices(tester);
+        await tester.pumpAndSettle();
+
+        // The keyboard has no mapping and is not shown: nothing is said.
+        enumerated = const [pedal];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(noticeSaid(AppNoticeId.midiLost), isFalse);
+
+        // The pedal goes; the keyboard's return does not take its warning.
+        enumerated = const [];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        enumerated = const [keys];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(noticeUp(tester, AppNoticeId.midiLost), isTrue);
+        expect(noticeSaid(AppNoticeId.midiRestored), isFalse);
+
+        await tester.pump(const Duration(seconds: 10));
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await midi.dispose();
+      },
+    );
+
+    testWidgets(
       'a lost MIDI controller flashes a transient toast and raises no '
       'standing bar; its return is a snack',
       (tester) async {
@@ -4416,19 +4553,9 @@ void main() {
         // own hotplug diff.
         const dev = MidiDevice(id: 'fcb1010', name: 'FCB1010');
         var enumerated = const <MidiDevice>[dev];
-        final source = _MockMidiSource();
-        when(source.enumerate).thenAnswer((_) => enumerated);
-        when(() => source.activity).thenAnswer(
-          (_) => const Stream<RawControllerInput>.empty(),
-        );
-        when(() => source.messages).thenAnswer(
-          (_) => const Stream<MidiInputMessage>.empty(),
-        );
-        when(() => source.open(any())).thenReturn(0);
-        when(source.close).thenReturn(0);
 
         final midi = MidiDeviceRepository(
-          source: source,
+          captures: () => FakeMidiCapture(devices: () => enumerated),
           settings: settings,
           pollInterval: Duration.zero,
         );
@@ -4532,18 +4659,8 @@ void main() {
           name: 'Scarlett 4i4 USB MIDI 1',
         );
         var enumerated = const <MidiDevice>[port];
-        final source = _MockMidiSource();
-        when(source.enumerate).thenAnswer((_) => enumerated);
-        when(() => source.activity).thenAnswer(
-          (_) => const Stream<RawControllerInput>.empty(),
-        );
-        when(() => source.messages).thenAnswer(
-          (_) => const Stream<MidiInputMessage>.empty(),
-        );
-        when(() => source.open(any())).thenReturn(0);
-        when(source.close).thenReturn(0);
         final midi = MidiDeviceRepository(
-          source: source,
+          captures: () => FakeMidiCapture(devices: () => enumerated),
           settings: settings,
           pollInterval: Duration.zero,
         );

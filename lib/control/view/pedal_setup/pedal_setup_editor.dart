@@ -204,9 +204,6 @@ class PedalSetupEditor extends StatelessWidget {
   /// Further fields after Hold: the pedal's colours in Custom controls.
   final List<Widget> trailing;
 
-  /// The pen's gap between the fields.
-  static const double fieldGap = 28;
-
   @override
   Widget build(BuildContext context) => PedalSetupEditorFrame(
     title: title,
@@ -216,10 +213,10 @@ class PedalSetupEditor extends StatelessWidget {
     child: Row(
       children: [
         Expanded(child: press),
-        const SizedBox(width: fieldGap),
+        SizedBox(width: context.spacing.xl),
         Expanded(child: hold),
         for (final field in trailing) ...[
-          const SizedBox(width: fieldGap),
+          SizedBox(width: context.spacing.xl),
           field,
         ],
       ],

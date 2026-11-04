@@ -251,7 +251,7 @@ class FxChannelFooter extends StatelessWidget {
                   height: 64,
                   fontSize: 22,
                 ),
-                const SizedBox(width: 5),
+                SizedBox(width: context.spacing.sm),
                 LoopChoiceButton(
                   key: const Key('fx_placement_post'),
                   label: l10n.fxPlacementPost,
@@ -289,7 +289,7 @@ class FxChannelFooter extends StatelessWidget {
                 height: 64,
                 fontSize: 22,
               ),
-              const SizedBox(width: 5),
+              SizedBox(width: context.spacing.sm),
               LoopChoiceButton(
                 key: const Key('fx_output_mono'),
                 label: l10n.fxChannelMono,

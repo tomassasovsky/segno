@@ -105,10 +105,6 @@ void main() {
           EngineResult.ok,
         );
         await settleMix();
-        expect(
-          repository.setInputConditioningEnabled(input: 0, enabled: false),
-          EngineResult.ok,
-        );
         expect(repository.setClickOutput(0), EngineResult.ok);
         expect(repository.setMasterGain(1), EngineResult.ok);
         expect(engine.setLimiter(enabled: false), EngineResult.ok);

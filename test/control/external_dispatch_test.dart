@@ -110,6 +110,7 @@ class _Store extends FakeKeyValueStore {
   bool failMix = false;
   int failMixWrites = 0;
   Completer<void>? fxGate;
+  Completer<void>? mixGate;
   Completer<void>? monitorModeGate;
   Completer<void>? monitorFxGate;
   @override
@@ -118,6 +119,7 @@ class _Store extends FakeKeyValueStore {
       if (failMixWrites > 0) failMixWrites--;
       throw StateError('mix storage refused');
     }
+    if (key == 'mix_settings') await mixGate?.future;
     if (key.startsWith('track_fx_chain.')) await fxGate?.future;
     if (key == 'monitor_input_mode.0') await monitorModeGate?.future;
     if (key == 'monitor_fx.0') await monitorFxGate?.future;
@@ -133,10 +135,11 @@ class _Store extends FakeKeyValueStore {
 
 class _Midi extends MidiDeviceRepository {
   _Midi(SettingsRepository settings)
-    : super(source: null, settings: settings, pollInterval: Duration.zero);
+    : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
-  @override
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
+  @override
+  Map<String, MidiInputSession> get sessions => {session.device: session};
   @override
   Stream<MidiInputMessage> get messages => inputs.stream;
   void push(RawControllerInput input, {int? timestampMicros}) => inputs.add(
@@ -700,50 +703,136 @@ void main() {
         },
       );
     }
-    check(
-      '${midi ? 'MIDI' : 'External'} refused press '
-      'preserves ordinary mix intent',
-      button(
-        [],
-        parameters: [
-          ExternalParameter(
-            target: const TrackPanTarget(0),
-            active: .9,
-            inactive: .2,
-            condition: ExternalValueCondition.heldReleased,
-          ),
-        ],
-      ),
-      (r) {
-        unawaited(r.mix.setTrackPan(.25));
-        r.settle();
-        r.store.failMix = true;
-        if (midi) {
-          r
-            ..bindMidi(
-              target: const TrackPanTarget(0).canonicalString(),
-              low: -.6,
-              high: .8,
-            )
-            ..midiValue(127);
-        } else {
-          r
-            ..sample(255)
-            ..settle();
-        }
-        expect(looper.mixSettingsSnapshot.trackPans[0], .25);
-        r.store.failMix = false;
-        if (midi) {
-          r.midiValue(0);
-        } else {
-          r
-            ..sample(0)
-            ..settle();
-        }
-        expect(looper.mixSettingsSnapshot.trackPans[0], .25);
-      },
-    );
+    // A refused Held voids its whole gesture, so its Released does nothing
+    // (#1153), whether or not an ordinary edit came first.
+    for (final edited in [false, true]) {
+      check(
+        '${midi ? 'MIDI' : 'External'} refused press voids its Released'
+        '${edited ? ' and preserves ordinary mix intent' : ''}',
+        button(
+          [],
+          parameters: [
+            ExternalParameter(
+              target: const TrackPanTarget(0),
+              active: .9,
+              inactive: .2,
+              condition: ExternalValueCondition.heldReleased,
+            ),
+          ],
+        ),
+        (r) {
+          if (edited) {
+            unawaited(r.mix.setTrackPan(.25));
+            r.settle();
+          }
+          final before = looper.mixSettingsSnapshot.trackPans[0] ?? 0;
+          r.store.failMix = true;
+          if (midi) {
+            r
+              ..bindMidi(
+                target: const TrackPanTarget(0).canonicalString(),
+                low: -.6,
+                high: .8,
+              )
+              ..midiValue(127);
+          } else {
+            r
+              ..sample(255)
+              ..settle();
+          }
+          expect(looper.mixSettingsSnapshot.trackPans[0] ?? 0, before);
+          r.store.failMix = false;
+          if (midi) {
+            r.midiValue(0);
+          } else {
+            r
+              ..sample(0)
+              ..settle();
+          }
+          expect(looper.mixSettingsSnapshot.trackPans[0] ?? 0, before);
+        },
+      );
+    }
   }
+
+  check(
+    'a Held that lands while its switch retires still owes its Released',
+    button(
+      [],
+      parameters: [
+        ExternalParameter(
+          target: const TrackPanTarget(0),
+          active: .9,
+          inactive: .2,
+          condition: ExternalValueCondition.heldReleased,
+        ),
+      ],
+    ),
+    (r) {
+      // An older ordinary pan never outranks the authored Released.
+      unawaited(r.mix.setTrackPan(.25));
+      r.settle();
+      final gate = r.store.mixGate = Completer<void>();
+      r.sample(255);
+      // The jack goes away while the Held's Mixer write is in flight.
+      r.link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.none,
+          value: 0,
+        ),
+      );
+      r.clock.flushMicrotasks();
+      r.store.mixGate = null;
+      gate.complete();
+      r.settle();
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(-.6, 1e-6));
+    },
+  );
+
+  check(
+    "retiring a latch's Mixer value leaves no holder behind a MIDI hold",
+    ExternalJackSetup(
+      single: ExternalSwitchSetup(
+        hardware: ExternalSwitchHardware.latching,
+        controls: ExternalControls(
+          parameters: [
+            ExternalParameter(
+              target: const TrackPanTarget(0),
+              active: .5,
+              inactive: .2,
+            ),
+          ],
+        ),
+      ),
+    ),
+    (r) {
+      r
+        ..bindMidi(
+          target: const TrackPanTarget(0).canonicalString(),
+          low: -.6,
+          high: .8,
+        )
+        ..sample(0)
+        ..settle()
+        ..sample(255)
+        ..settle();
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(0, 1e-6));
+      r.midiValue(127);
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(.8, 1e-6));
+      r.link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.none,
+          value: 0,
+        ),
+      );
+      r
+        ..settle()
+        ..midiValue(0);
+      expect(looper.mixSettingsSnapshot.trackPans[0], closeTo(-.6, 1e-6));
+    },
+  );
 
   check(
     'missing External mix sibling does not reject a valid held target',
