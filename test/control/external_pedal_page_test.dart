@@ -449,6 +449,17 @@ void main() {
       expect(selectedButton(tester), l10n.externalButton(2));
     });
 
+    testWidgets('Press and Hold sit a spacing token apart (#1590 PED-3)', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('external_hold'))).dx -
+            tester.getTopRight(find.byKey(const Key('external_press'))).dx,
+        SpacingTheme.standard.xl,
+      );
+    });
+
     testWidgets('going back to a single switch cannot leave the second '
         'button selected', (tester) async {
       await pump(tester);

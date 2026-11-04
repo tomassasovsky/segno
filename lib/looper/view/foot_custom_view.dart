@@ -6,6 +6,7 @@ import 'package:segno/control/model/foot_custom.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/foot_pedal_rows.dart';
 import 'package:segno/looper/view/foot_top_bar.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -31,12 +32,28 @@ String assignedActionRefusedText(
 /// A caption for a pedal: an action this build cannot run reads as such,
 /// never as its saved key, and a wrapped catalogue label keeps its separator
 /// at the end of the first line (`Selected track ·` / `Mute`).
+///
+/// A mode or command takes its short foot name where the catalogue's would
+/// wrap under the pedal in either language, so it reads on one line as a
+/// caption and as a Hold line (#1590 FT-3). A track operation carries a track
+/// name of any length and keeps its two lines.
 String footCustomActionLabel(
   AppLocalizations l10n,
   List<String> trackNames,
   ControlAction action,
 ) => switch (action) {
   UnavailableAction() => l10n.footCustomUnavailableAction,
+  CommandAction(command: ControlCommand.recordPerformance) =>
+    l10n.footCustomCapture,
+  CommandAction(command: ControlCommand.clearAll) => l10n.footCustomClearAll,
+  CommandAction(command: ControlCommand.cutSound) => l10n.footCustomCutSound,
+  CommandAction(command: ControlCommand.recordPlay) =>
+    l10n.footCustomRecordPlay,
+  CommandAction(command: ControlCommand.nextBank) => l10n.footCustomNextBank,
+  CommandAction(command: ControlCommand.trackFxOn) => l10n.footCustomTrackFxOn,
+  CommandAction(command: ControlCommand.trackFxOff) =>
+    l10n.footCustomTrackFxOff,
+  ModeAction(mode: InteractionMode.mixer) => l10n.footCustomMixer,
   _ => controlActionLabel(
     l10n,
     trackNames,
@@ -59,17 +76,6 @@ class FootCustomView extends StatelessWidget {
     );
     final l10n = context.l10n;
     final surface = context.surface;
-
-    const front = [
-      PedalButton.recPlay,
-      PedalButton.stop,
-      PedalButton.undo,
-      PedalButton.mode,
-      PedalButton.track1,
-      PedalButton.track2,
-      PedalButton.track3,
-      PedalButton.track4,
-    ];
     return DefaultTextStyle.merge(
       style: TextStyle(
         fontWeight: FontWeight.w400,
@@ -101,41 +107,12 @@ class FootCustomView extends StatelessWidget {
                           style: const TextStyle(fontSize: 40),
                         ),
                       ),
-                      PositionedDirectional(
-                        start: 480,
-                        top: 56,
-                        width: 180,
-                        child: _FootCustomPedal(
-                          pedal: projection[PedalButton.clear],
-                          bank: projection.bank,
-                        ),
-                      ),
-                      PositionedDirectional(
-                        start: 700,
-                        top: 56,
-                        width: 180,
-                        child: _FootCustomPedal(
-                          pedal: projection[PedalButton.bank],
-                          bank: projection.bank,
-                        ),
-                      ),
-                      PositionedDirectional(
-                        start: 40,
-                        end: 40,
-                        top: 472,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            for (final button in front)
-                              SizedBox(
-                                width: 180,
-                                child: _FootCustomPedal(
-                                  pedal: projection[button],
-                                  bank: projection.bank,
-                                ),
-                              ),
-                          ],
+                      Positioned.fill(
+                        child: FootPedalRows(
+                          pedal: (button) => _FootCustomPedal(
+                            pedal: projection[button],
+                            bank: projection.bank,
+                          ),
                         ),
                       ),
                     ],
@@ -215,7 +192,7 @@ class _FootCustomPedal extends StatelessWidget {
     // started (pen 20/03).
     String label(ControlAction action) =>
         armed && action == const CommandAction(ControlCommand.recordPerformance)
-        ? l10n.footCustomStopRecording
+        ? l10n.footCustomStopCapture
         : footCustomActionLabel(l10n, names, action);
     final slot = switch (button) {
       PedalButton.track1 => 0,
@@ -232,7 +209,7 @@ class _FootCustomPedal extends StatelessWidget {
       FootCustomRole.assignment when press != null => label(press),
       // No Press: the switch reads its hardware name.
       FootCustomRole.assignment => switch (button) {
-        PedalButton.recPlay => l10n.actionRecordPlay,
+        PedalButton.recPlay => l10n.footCustomRecordPlay,
         PedalButton.stop => l10n.actionStop,
         PedalButton.undo => l10n.actionUndo,
         PedalButton.clear => l10n.actionOperationClear,

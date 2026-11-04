@@ -6871,13 +6871,45 @@
             }
         }
     },
-    "footCustomStopRecording": "Stop recording",
-    "@footCustomStopRecording": {
-        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording runs."
+    "footCustomStopCapture": "Stop capture",
+    "@footCustomStopCapture": {
+        "description": "Foot Custom performance surface: what a switch assigned Record performance reads while a performance recording (a capture) runs."
     },
-    "footCustomUnavailableAction": "Unavailable action",
+    "footCustomUnavailableAction": "Unavailable",
     "@footCustomUnavailableAction": {
         "description": "Foot Custom surface: a switch whose saved assignment this build cannot run. Its saved key is never shown."
+    },
+    "footCustomCapture": "Capture",
+    "@footCustomCapture": {
+        "description": "Foot Custom surface: a switch assigned Record performance, short enough for one line under the pedal (#1590). The app calls a performance recording a capture."
+    },
+    "footCustomClearAll": "Clear all",
+    "@footCustomClearAll": {
+        "description": "Foot Custom surface: a switch assigned Clear all tracks, short enough for one line under the pedal."
+    },
+    "footCustomCutSound": "Cut all sound",
+    "@footCustomCutSound": {
+        "description": "Foot Custom surface: a switch assigned Cut all sound, short enough for one line under the pedal."
+    },
+    "footCustomRecordPlay": "Record / Play",
+    "@footCustomRecordPlay": {
+        "description": "Foot Custom surface: a switch assigned Record / Play, short enough for one line under the pedal."
+    },
+    "footCustomNextBank": "Next bank",
+    "@footCustomNextBank": {
+        "description": "Foot Custom surface: a switch assigned Next bank, short enough for one line under the pedal."
+    },
+    "footCustomTrackFxOn": "Track FX on",
+    "@footCustomTrackFxOn": {
+        "description": "Foot Custom surface: a switch assigned Track FX on, short enough for one line under the pedal."
+    },
+    "footCustomTrackFxOff": "Track FX off",
+    "@footCustomTrackFxOff": {
+        "description": "Foot Custom surface: a switch assigned Track FX off, short enough for one line under the pedal."
+    },
+    "footCustomMixer": "Foot Mixer",
+    "@footCustomMixer": {
+        "description": "Foot Custom surface: a switch assigned the Foot Mixer, short enough for one line under the pedal."
     },
     "assignedActionUnknownRefused": "This control's action isn't available in this version. Reassign it.",
     "@assignedActionUnknownRefused": {

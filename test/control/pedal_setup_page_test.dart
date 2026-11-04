@@ -14,6 +14,7 @@ import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
+import 'package:segno/control/view/console_pedal_layout.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -225,6 +226,34 @@ void main() {
       // The accepted default keeps short Mute and held Custom separate.
       expect(find.text(l10n.actionModeMute), findsOneWidget);
       expect(find.text(l10n.actionModeCustom), findsOneWidget);
+    });
+
+    testWidgets('Press and Hold sit a spacing token apart (#1590 PED-3)', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(
+        tester.getTopLeft(find.byKey(hold)).dx -
+            tester.getTopRight(find.byKey(press)).dx,
+        SpacingTheme.standard.xl,
+      );
+    });
+
+    testWidgets('each cap is centred where the foot views draw its pedal '
+        '(#1590 FT-4)', (tester) async {
+      await pump(tester);
+      for (final button in [
+        ...ConsolePedalLayout.rearRow,
+        ...ConsolePedalLayout.frontRow,
+      ]) {
+        expect(
+          tester
+              .getCenter(find.byKey(Key('pedal_setup_cap_${button.name}')))
+              .dx,
+          closeTo(960 + ConsolePedalLayout.centreOffset(button), 0.5),
+          reason: button.name,
+        );
+      }
     });
 
     testWidgets('the bank letter sits beside the BANK pedal, clear of its '
@@ -1058,6 +1087,20 @@ void main() {
             reason: state.name,
           );
         }
+        // The colour wells sit a spacing token apart (#1590 PED-3).
+        expect(
+          tester
+                  .getTopLeft(
+                    find.byKey(const Key('pedal_led_state_overdubbing')),
+                  )
+                  .dx -
+              tester
+                  .getTopRight(
+                    find.byKey(const Key('pedal_led_state_recording')),
+                  )
+                  .dx,
+          SpacingTheme.standard.xl,
+        );
         for (final key in [
           'pedal_led_mode',
           'pedal_setup_context_tracks',
