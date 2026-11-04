@@ -2094,14 +2094,19 @@ class LooperRepository {
   /// The engine + miniaudio version string.
   String get engineVersion => _engine.version;
 
-  /// The capture device the engine last opened: whose input switches
-  /// [readInterfaceInputs] reads. Null before the first successful start.
-  String? get _interfaceCaptureId => _lastEngineConfig?.captureDeviceId;
+  /// The capture device the engine has open: whose input switches
+  /// [readInterfaceInputs] reads. Null while no device is open, so nothing
+  /// reaches a card the engine is not running on.
+  String? get _interfaceCaptureId {
+    final status = state.status;
+    if (!status.isConnected || !status.devicePresent) return null;
+    return _lastEngineConfig?.captureDeviceId;
+  }
 
   /// Reads the input switches of the interface the engine records from
   /// (#1646): Inst or Line, Pad, Air and 48 V, as the interface holds them,
   /// including changes made with its own buttons. [InterfaceInputs.none]
-  /// before the engine has opened a device. Reaches the USB device off the
+  /// while the engine has no device open. Reaches the USB device off the
   /// calling isolate.
   Future<InterfaceInputs> readInterfaceInputs() async {
     final id = _interfaceCaptureId;

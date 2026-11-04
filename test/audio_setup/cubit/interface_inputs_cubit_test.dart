@@ -21,6 +21,12 @@ const _scarlett = LooperState(
 
 const _closed = LooperState();
 
+/// [_scarlett] after the engine reopened it.
+LooperState _reopened(int generation) => LooperState(
+  mixGeneration: generation,
+  status: _scarlett.status,
+);
+
 InterfaceInputs _fourI4({
   InputLevel level = InputLevel.line,
   bool on = false,
@@ -48,7 +54,6 @@ void main() {
   late StreamController<LooperState> engine;
   late InterfaceInputs onInterface;
   late int reads;
-  late int generation;
 
   setUp(() {
     repository = _MockLooperRepository();
@@ -56,10 +61,8 @@ void main() {
     addTearDown(engine.close);
     onInterface = _fourI4();
     reads = 0;
-    generation = 1;
     when(() => repository.looperState).thenAnswer((_) => engine.stream);
     when(() => repository.state).thenReturn(_scarlett);
-    when(() => repository.mixGeneration).thenAnswer((_) => generation);
     when(() => repository.readInterfaceInputs()).thenAnswer((_) async {
       reads++;
       return onInterface;
@@ -177,8 +180,7 @@ void main() {
         when(() => repository.state).thenReturn(_closed);
         engine.add(_closed);
         await pumpEventQueue();
-        generation = 2;
-        engine.add(_scarlett);
+        engine.add(_reopened(2));
         await pumpEventQueue();
       },
       skip: 1,
@@ -204,21 +206,91 @@ void main() {
       expect(cubit.state, const InterfaceInputsState());
     });
 
-    test('a watch read overtaken by a change read-back is dropped', () async {
-      final first = Completer<InterfaceInputs>();
-      var call = 0;
-      when(() => repository.readInterfaceInputs()).thenAnswer((_) {
-        call++;
-        return call == 1 ? first.future : Future.value(onInterface);
-      });
+    test(
+      'reads and writes reach the interface one at a time, in order',
+      () async {
+        final first = Completer<InterfaceInputs>();
+        var call = 0;
+        when(() => repository.readInterfaceInputs()).thenAnswer((_) {
+          call++;
+          return call == 1 ? first.future : Future.value(onInterface);
+        });
+        final cubit = build();
+        addTearDown(cubit.close);
+        cubit
+          ..setLevel(0, InputLevel.inst)
+          ..setLevel(0, InputLevel.line);
+        await pumpEventQueue();
+        // The open's read is still on its way: nothing is written yet.
+        verifyNever(() => repository.setInterfaceInputLevel(any(), any()));
+        first.complete(_fourI4());
+        await pumpEventQueue();
+        verifyInOrder([
+          () => repository.setInterfaceInputLevel(0, InputLevel.inst),
+          () => repository.setInterfaceInputLevel(0, InputLevel.line),
+        ]);
+        expect(cubit.state.inputs, _fourI4());
+      },
+    );
+
+    test('a write that throws counts a failure and still reads', () async {
+      when(
+        () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
+      ).thenThrow(StateError('isolate'));
       final cubit = build();
       addTearDown(cubit.close);
-      cubit.setLevel(0, InputLevel.inst);
+      final errors = <Object>[];
+      final sub = cubit.stream.listen((_) {}, onError: errors.add);
+      addTearDown(sub.cancel);
       await pumpEventQueue();
-      expect(cubit.state.inputs, _fourI4(level: InputLevel.inst));
-      first.complete(_fourI4());
+      cubit.setPad(0, on: true);
       await pumpEventQueue();
-      expect(cubit.state.inputs, _fourI4(level: InputLevel.inst));
+      expect(cubit.state.failures, 1);
+      expect(cubit.state.lastFailure, InterfaceSwitch.pad);
+      expect(reads, 2);
+    });
+
+    test('a stopped engine is not the interface refusing', () async {
+      when(
+        () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
+      ).thenAnswer((_) async => EngineResult.notRunning);
+      final cubit = build();
+      addTearDown(cubit.close);
+      await pumpEventQueue();
+      cubit.setPad(0, on: true);
+      await pumpEventQueue();
+      expect(cubit.state.failures, 0);
+    });
+
+    test(
+      'the same device reopened reads again and keeps what it shows',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+        await pumpEventQueue();
+        final states = <InterfaceInputsState>[];
+        final sub = cubit.stream.listen(states.add);
+        addTearDown(sub.cancel);
+        onInterface = _fourI4(level: InputLevel.inst);
+        engine.add(_reopened(3));
+        await pumpEventQueue();
+        expect(reads, 2);
+        expect(states, [
+          InterfaceInputsState(
+            inputs: _fourI4(level: InputLevel.inst),
+            loaded: true,
+          ),
+        ]);
+      },
+    );
+
+    test('watching a closed cubit does nothing', () async {
+      final cubit = build();
+      await pumpEventQueue();
+      await cubit.close();
+      cubit.startWatching();
+      await pumpEventQueue();
+      expect(reads, 1);
     });
 
     test('watches only between startWatching and stopWatching', () {
