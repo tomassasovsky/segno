@@ -182,9 +182,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// it stays until the user removes it — no prompt and
   /// no dialog-triggering state. The one thing surfaced is the honest busy
   /// fact: while there is actual salvage work, idle carries
-  /// [PerformanceRecorderIdle.recovering] so the record button can disable
-  /// instead of looking alive while the repository's in-flight gates
-  /// silently refuse every press. The composition root calls this unawaited
+  /// [PerformanceRecorderIdle.recovering], so the record button reads busy
+  /// and a press is answered with why it did not arm (#1633). The
+  /// composition root calls this unawaited
   /// at boot; [PerformanceRepository.arm]'s own gates (#671) cover the
   /// pedal for as long as the background finalize/render runs. Latched —
   /// safe to call once at boot.
@@ -219,13 +219,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// [load] set — but only once [PerformanceRepository.renderProgress]
   /// actually reads done. A timed-out salvage render outlives
   /// `runBootRecovery` and keeps holding [PerformanceRepository.arm]'s
-  /// render gate, so clearing the flag on return would re-enable a button
-  /// whose every press is silently refused — the exact invisible refusal
-  /// the flag exists to prevent. While the render is still live this polls
-  /// at the same cadence as the post-disarm render poll, keeping the flag
-  /// (and the disabled button) up until arming genuinely works again.
-  /// Only ever clears the exact state [load] set — anything else on screen
-  /// is not this method's to stomp.
+  /// render gate, so clearing the flag on return would make the button read
+  /// ready while every press is refused. While the render is still live
+  /// this polls at the same cadence as the post-disarm render poll, keeping
+  /// the flag up until arming genuinely works again. Only ever clears a
+  /// recovering idle (with or without a refused press on it) — anything else
+  /// on screen is not this method's to stomp.
   ///
   /// The idle it settles on carries how many takes could not be recovered,
   /// so the player is told (#1198): a take left unrecovered silently would
@@ -327,6 +326,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         );
       case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
+        // Busy work the repository would refuse anyway (a re-render, a
+        // finalize this cubit did not start) is answered before a drive is
+        // leased or measured, so the reason is never a low-disk one.
+        final busy = _performance.armBusy;
+        if (busy != null) {
+          _onArmRefused(PerformanceArmBusyRefusal(busy));
+          return;
+        }
         final target = _armTarget();
         if (target == null) {
           _emit(
@@ -469,13 +476,19 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
           ),
         );
       case PerformanceRecorderFinalizing():
-        _emit(PerformanceRecorderFinalizing(refusal: ++_refusals));
+        _emit(
+          PerformanceRecorderFinalizing(
+            refusal: ++_refusals,
+            refusedWith: refusal,
+          ),
+        );
       case PerformanceRecorderRendering(:final percent, :final name):
         _emit(
           PerformanceRecorderRendering(
             percent: percent,
             name: name,
             refusal: ++_refusals,
+            refusedWith: refusal,
           ),
         );
       case PerformanceRecorderArmed():

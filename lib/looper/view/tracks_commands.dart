@@ -515,29 +515,39 @@ String perfArmBusyText(AppLocalizations l10n, PerformanceArmBusy busy) =>
     };
 
 /// Says why a Capture press was refused while the last take is still being
-/// saved or rendered: the press counted on the finishing state's `refusal`
-/// (#1633). Wired as the `TracksView`'s second performance [BlocListener].
+/// saved or rendered: the press counted on the finishing state's `refusal`,
+/// with its reason in `refusedWith` (#1633). Wired as the `TracksView`'s
+/// second performance [BlocListener].
 void onPerformanceArmRefusedWhileFinishing(
   BuildContext context,
   PerformanceRecorderState state,
 ) {
-  final busy = state is PerformanceRecorderRendering
-      ? PerformanceArmBusy.rendering
-      : PerformanceArmBusy.finalizing;
+  final refusal = switch (state) {
+    PerformanceRecorderFinalizing(:final refusedWith) ||
+    PerformanceRecorderRendering(:final refusedWith) => refusedWith,
+    _ => null,
+  };
+  if (refusal == null) return;
   context.read<NoticesCubit>().show(
     Notice(
       id: AppNoticeId.performance,
       tone: NoticeTone.warning,
       title: (l10n) => l10n.perfArmRefused,
-      body: (l10n) => perfArmBusyText(l10n, busy),
+      body: (l10n) => switch (refusal) {
+        PerformanceArmBusyRefusal(:final busy) => perfArmBusyText(l10n, busy),
+        PerformanceArmGuardRefusal(:final refusal) => l10n.operationBusy(
+          refusal.blockers.first.kind.name,
+        ),
+      },
     ),
   );
 }
 
 /// Reacts to a settled [PerformanceRecorderCubit] transition: opens the
 /// completion sheet when a capture finishes, or says in the top bar why a
-/// capture did not start or was not kept. Boot-time crash salvage never
-/// arrives here: it recovers silently in the repository (D-SALVAGE, #679).
+/// capture did not start or was not kept. Boot-time crash salvage opens
+/// nothing here: it recovers silently in the repository (D-SALVAGE, #679);
+/// only a press refused while it runs is answered (#1633).
 /// Wired as the `TracksView`'s performance [BlocListener].
 void onPerformanceRecorderState(
   BuildContext context,

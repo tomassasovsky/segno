@@ -579,12 +579,20 @@ void main() {
       expect(
         cubit.state,
         anyOf(
-          const PerformanceRecorderFinalizing(refusal: 1),
-          isA<PerformanceRecorderRendering>().having(
-            (s) => s.refusal,
-            'refusal',
-            1,
-          ),
+          isA<PerformanceRecorderFinalizing>()
+              .having((s) => s.refusal, 'refusal', 1)
+              .having(
+                (s) => (s.refusedWith! as PerformanceArmBusyRefusal).busy,
+                'busy',
+                PerformanceArmBusy.finalizing,
+              ),
+          isA<PerformanceRecorderRendering>()
+              .having((s) => s.refusal, 'refusal', 1)
+              .having(
+                (s) => (s.refusedWith! as PerformanceArmBusyRefusal).busy,
+                'busy',
+                PerformanceArmBusy.rendering,
+              ),
         ),
       );
 
@@ -1252,6 +1260,34 @@ void main() {
       },
     );
 
+    test('a busy repository is answered before the free-space probe, so '
+        'the reason is never a low-disk one (#1633)', () async {
+      var probes = 0;
+      final cubit = build(
+        freeSpaceBytes: (_) async {
+          probes++;
+          return 1;
+        },
+      );
+      addTearDown(cubit.close);
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 20,
+      );
+
+      await cubit.toggleArm();
+
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(
+          busyWith: PerformanceArmBusy.rendering,
+          refusal: 1,
+        ),
+      );
+      expect(probes, 0);
+      expect(engine.perfArmCalls, 0);
+    });
+
     test('each refused press emits its own state, so each gets an answer '
         '(#1198)', () async {
       final cubit = build(
@@ -1729,6 +1765,36 @@ void main() {
       await pumpEventQueue();
       expect(cubit.state, isA<PerformanceRecorderArmed>());
       expect(engine.perfArmCalls, 1);
+    });
+
+    test('a guard refusal while this cubit still writes the DAW project '
+        '(Rendering, engine render done) keeps the guard as its reason '
+        '(#1633)', () async {
+      final cubit = buildGuarded()
+        ..emit(const PerformanceRecorderRendering(percent: 100, name: 'x'));
+      addTearDown(cubit.close);
+      guards.enter(
+        GuardKind.sessionApply,
+        const GuardScope.internal(),
+        purpose: 'open session',
+      );
+      expect(await guarded.arm(), EngineResult.notReady);
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderRendering>()
+            .having((s) => s.percent, 'percent', 100)
+            .having((s) => s.refusal, 'refusal', 1)
+            .having(
+              (s) => (s.refusedWith! as PerformanceArmGuardRefusal)
+                  .refusal
+                  .blockers
+                  .first
+                  .kind,
+              'refused by',
+              GuardKind.sessionApply,
+            ),
+      );
     });
 
     test('a refusal keeps the recovering idle, and says why', () async {

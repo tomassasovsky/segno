@@ -196,14 +196,17 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
 /// there is nothing for the UI to show progress for.
 class PerformanceRecorderFinalizing extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderFinalizing].
-  const PerformanceRecorderFinalizing({this.refusal = 0});
+  const PerformanceRecorderFinalizing({this.refusal = 0, this.refusedWith});
 
   /// Arms refused so far (see [PerformanceRecorderIdle.refusal]): a Capture
   /// press while the take is saved bumps it, and the UI says why (#1633).
   final int refusal;
 
+  /// Why the last press in this state was refused, or null before any was.
+  final PerformanceArmRefusal? refusedWith;
+
   @override
-  List<Object?> get props => [refusal];
+  List<Object?> get props => [refusal, refusedWith];
 }
 
 /// The bundle is finalized; the offline dry/wet/master render (parts 7-8)
@@ -217,6 +220,7 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
     required this.percent,
     this.name,
     this.refusal = 0,
+    this.refusedWith,
   });
 
   /// Render completion, `0..100`.
@@ -231,8 +235,13 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// press while the take renders bumps it, and the UI says why (#1633).
   final int refusal;
 
+  /// Why the last press in this state was refused, or null before any was.
+  /// Not always the render: this cubit writes the DAW project after the
+  /// engine's render ends, when the guard table may be what refused it.
+  final PerformanceArmRefusal? refusedWith;
+
   @override
-  List<Object?> get props => [percent, name, refusal];
+  List<Object?> get props => [percent, name, refusal, refusedWith];
 }
 
 /// The capture is fully finished: bundle finalized, render (and `.als`

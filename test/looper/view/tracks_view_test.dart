@@ -3818,17 +3818,42 @@ void main() {
         ),
         // Entering a finishing state says nothing; a press in it does.
         PerformanceRecorderFinalizing(refusal: 2),
-        PerformanceRecorderFinalizing(refusal: 3),
+        PerformanceRecorderFinalizing(
+          refusal: 3,
+          refusedWith: PerformanceArmBusyRefusal(PerformanceArmBusy.finalizing),
+        ),
         PerformanceRecorderRendering(percent: 0, refusal: 3),
         PerformanceRecorderRendering(percent: 50, refusal: 3),
-        PerformanceRecorderRendering(percent: 50, refusal: 4),
+        PerformanceRecorderRendering(
+          percent: 50,
+          refusal: 4,
+          refusedWith: PerformanceArmBusyRefusal(PerformanceArmBusy.rendering),
+        ),
+        // Still Rendering while the DAW project is written, the engine's
+        // render done: the guard table's reason, not the render's.
+        PerformanceRecorderRendering(
+          percent: 100,
+          refusal: 5,
+          refusedWith: PerformanceArmGuardRefusal(
+            GuardRefused(
+              wants: GuardKind.capture,
+              blockers: [
+                ActiveOperation(
+                  kind: GuardKind.sessionApply,
+                  scope: GuardScope.internal(),
+                  purpose: 'open session',
+                ),
+              ],
+            ),
+          ),
+        ),
       ]) {
         controller.add(state);
         await tester.pump();
         await tester.pump();
       }
 
-      expect(said.titles, List.filled(4, l10n.perfArmRefused));
+      expect(said.titles, List.filled(5, l10n.perfArmRefused));
       expect(
         [for (final notice in said.shown) notice.body!(l10n)],
         [
@@ -3836,6 +3861,7 @@ void main() {
           l10n.perfArmBusyRendering,
           l10n.perfArmBusySaving,
           l10n.perfArmBusyRendering,
+          l10n.operationBusy(GuardKind.sessionApply.name),
         ],
       );
       expect(said.shown.every((n) => n.tone == NoticeTone.warning), isTrue);
