@@ -197,6 +197,11 @@ material. A captured monitor stem already holds that silence, exactly as
 heard, through the same path a monitor mute takes, so replay has nothing to
 apply.
 
+Clear tempo, `LE_CMD_CLEAR_TEMPO` (142, #1653), is not logged either, like
+`LE_CMD_RESTORE_TEMPO`: it changes no recorded material, and the engine
+applies it only while the tempo lock is open. The effect chains' musical
+time it moves reaches the log as the next `LE_PLOG_FX_TEMPO` anchor.
+
 Recording images retain source balance and position separately from live
 lane level and track pan. The volume/pan events contain their effective
 composition at application time, so replay does not apply the image twice.

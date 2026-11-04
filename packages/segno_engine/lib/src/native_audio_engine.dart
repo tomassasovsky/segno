@@ -1933,6 +1933,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult clearTempo() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_clear_tempo(_engine));
+  }
+
+  @override
   EngineResult setTimeSignature(int num, int den) {
     _checkAlive();
     return EngineResult.fromCode(

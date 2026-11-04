@@ -700,6 +700,8 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
   }) => EngineResult.ok;
 
   @override
+  EngineResult clearTempo() => EngineResult.ok;
+  @override
   EngineResult setTempo(double bpm) => EngineResult.ok;
   @override
   EngineResult setTimeSignature(int num, int den) => EngineResult.ok;

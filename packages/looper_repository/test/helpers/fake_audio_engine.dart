@@ -862,6 +862,15 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// What [clearTempo] answers.
+  EngineResult clearTempoResult = EngineResult.ok;
+
+  @override
+  EngineResult clearTempo() {
+    calls.add('clearTempo');
+    return clearTempoResult;
+  }
+
   @override
   EngineResult setTempo(double bpm) {
     lastTempoBpm = bpm;

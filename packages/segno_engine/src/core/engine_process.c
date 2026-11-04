@@ -5217,6 +5217,18 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       le_tempo_latch(e);
       break;
     }
+    case LE_CMD_CLEAR_TEMPO: {
+      /* #1653: the D6 lock decides, with no retime: a tempo that holds
+       * material, a take or a count-in stays. An external clock owns it. */
+      if (le_tempo_locked(e) || e->clock_source >= 0) break;
+      store_f32(&e->a_tempo_bpm_bits, 0.0f);
+      store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_NONE);
+      e->has_tap = 0;
+      e->last_tap_frame = 0;
+      le_restore_musical_grid(e, 0);
+      le_tempo_latch(e);
+      break;
+    }
     case LE_CMD_SET_TEMPO: {
       /* D6: rejected (no-op) while locked, unless it retimes (below). */
       if (le_tempo_locked(e) && !le_tempo_follow_open(e)) break;

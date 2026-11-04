@@ -588,6 +588,10 @@ typedef enum le_command_code {
   LE_CMD_MEASURE_LATENCY_PATH = 140, /* latency.output, .input, .amplitude,
                                       * .request */
   LE_CMD_CANCEL_LATENCY = 141,       /* latency.request */
+  /* Clear tempo (#1653): back to no tempo (BPM 0, source NONE, no bar
+   * grid). Typed producer only (le_engine_clear_tempo); the callback is a
+   * no-op while le_tempo_locked or an external clock owns the tempo. */
+  LE_CMD_CLEAR_TEMPO = 142,
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
   LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
@@ -2703,6 +2707,16 @@ LE_EXPORT int32_t le_engine_set_tempo(le_engine* engine, float bpm);
  * the new session's mode/crown/import commands. No audio or loop span changes. */
 LE_EXPORT int32_t le_engine_restore_tempo(le_engine* engine, float bpm,
                                           int32_t source);
+/* Clears the tempo (#1653): BPM 0, tempo_source NONE and no bar grid, so the
+ * next defining loop sets the tempo again. Refused exactly while the tempo is
+ * locked (D6): a track holds material on a grid or under a tempo, a take or a
+ * count-in is under way, or a record is armed, launching or not yet
+ * acknowledged — LE_ERR_NOT_READY, nothing posted. LE_ERR_EXTERNAL_CLOCK
+ * while an external clock owns the tempo; LE_ERR_NOT_RUNNING unconfigured;
+ * LE_ERR_INVALID for a null handle. The callback rechecks the lock before
+ * applying. Not perf-logged: the effect chains' musical time picks up the
+ * change through their own anchor (LE_PLOG_FX_TEMPO). */
+LE_EXPORT int32_t le_engine_clear_tempo(le_engine* engine);
 
 /* Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
  * num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID
