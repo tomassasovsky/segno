@@ -37,55 +37,74 @@ class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
   late final StreamSubscription<LooperState> _subscription;
   Timer? _watch;
 
-  /// The open device's key, or null with none open; a read for another key
-  /// is dropped.
-  (String, int)? _device;
+  /// The open device's name, or null with none open; a result for another
+  /// device is dropped.
+  String? _device;
 
-  /// Reads are numbered as they start; one that lands after a later one
-  /// (a watch read overtaken by a change's read-back) is dropped.
-  int _readsStarted = 0;
-  int _readShown = 0;
-  bool _watchReading = false;
+  /// The open device's engine lifetime: a reopen of the same device reads it
+  /// again without dropping what is shown.
+  int _generation = -1;
+
+  /// Every read and write runs after the last one finished, so the interface
+  /// takes changes in the order the player made them and a read never
+  /// reports a value from before a change that already landed.
+  Future<void> _queue = Future<void>.value();
+  int _queued = 0;
 
   void _followDevice(LooperState looper) {
     final status = looper.status;
     final device = status.isConnected && status.devicePresent
-        ? (status.deviceName, _repository.mixGeneration)
+        ? status.deviceName
         : null;
-    if (device == _device) return;
+    final generation = looper.mixGeneration;
+    if (device == _device) {
+      if (device != null && generation != _generation) {
+        _generation = generation;
+        _enqueue(_read);
+      }
+      return;
+    }
     _device = device;
+    _generation = generation;
     emit(const InterfaceInputsState());
-    if (device != null) unawaited(_read());
+    if (device != null) _enqueue(_read);
+  }
+
+  /// Runs [operation] after everything queued before it.
+  void _enqueue(Future<void> Function() operation) {
+    _queued++;
+    _queue = _queue.then((_) async {
+      try {
+        if (!isClosed) await operation();
+      } on Object catch (error, stackTrace) {
+        if (!isClosed) addError(error, stackTrace);
+      } finally {
+        _queued--;
+      }
+    });
   }
 
   /// Reads the interface and shows what it reports.
   Future<void> _read() async {
     final device = _device;
     if (device == null) return;
-    final number = ++_readsStarted;
     final read = await _repository.readInterfaceInputs();
-    if (isClosed || device != _device || number < _readShown) return;
-    _readShown = number;
+    if (isClosed || device != _device) return;
     emit(state.reading(read));
   }
 
-  /// A watch read, unless the last one is still on its way.
-  Future<void> _watchRead() async {
-    if (_watchReading) return;
-    _watchReading = true;
-    try {
-      await _read();
-    } finally {
-      _watchReading = false;
-    }
-  }
-
   /// Reads the interface twice a second until [stopWatching], so a change
-  /// made on the interface itself shows.
+  /// made on the interface itself shows. A tick with anything still queued
+  /// is skipped.
   void startWatching() {
+    if (isClosed) return;
     _watch?.cancel();
-    _watch = Timer.periodic(_watchInterval, (_) => unawaited(_watchRead()));
-    unawaited(_watchRead());
+    void tick() {
+      if (_queued == 0) _enqueue(_read);
+    }
+
+    _watch = Timer.periodic(_watchInterval, (_) => tick());
+    tick();
   }
 
   /// Stops [startWatching]'s reads.
@@ -95,55 +114,59 @@ class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
   }
 
   /// Sets [input]'s level.
-  void setLevel(int input, InputLevel level) => unawaited(
-    _change(
-      InterfaceSwitch.level,
-      () => _repository.setInterfaceInputLevel(input, level),
-    ),
+  void setLevel(int input, InputLevel level) => _change(
+    InterfaceSwitch.level,
+    () => _repository.setInterfaceInputLevel(input, level),
   );
 
   /// Sets [input]'s pad.
-  void setPad(int input, {required bool on}) => unawaited(
-    _change(
-      InterfaceSwitch.pad,
-      () => _repository.setInterfaceInputPad(input, on: on),
-    ),
+  void setPad(int input, {required bool on}) => _change(
+    InterfaceSwitch.pad,
+    () => _repository.setInterfaceInputPad(input, on: on),
   );
 
   /// Sets [input]'s Air.
-  void setAir(int input, InputAir air) => unawaited(
-    _change(
-      InterfaceSwitch.air,
-      () => _repository.setInterfaceInputAir(input, air),
-    ),
+  void setAir(int input, InputAir air) => _change(
+    InterfaceSwitch.air,
+    () => _repository.setInterfaceInputAir(input, air),
   );
 
   /// Turns 48 V switch [phantomSwitch] on or off. Turning it on is the
   /// player's confirmed request; nothing calls this on its own.
-  void setPhantomPower(int phantomSwitch, {required bool on}) => unawaited(
-    _change(
-      InterfaceSwitch.phantom,
-      () => _repository.setInterfacePhantomPower(phantomSwitch, on: on),
-    ),
+  void setPhantomPower(int phantomSwitch, {required bool on}) => _change(
+    InterfaceSwitch.phantom,
+    () => _repository.setInterfacePhantomPower(phantomSwitch, on: on),
   );
 
   /// Turns the unit's setup mode off; it shows its controls after a power
   /// cycle.
-  void turnOffSetupMode() => unawaited(
-    _change(InterfaceSwitch.setupMode, _repository.turnOffInterfaceSetupMode),
-  );
+  void turnOffSetupMode() =>
+      _change(InterfaceSwitch.setupMode, _repository.turnOffInterfaceSetupMode);
 
-  Future<void> _change(
+  /// Queues [write], counts a refusal, then reads what the interface holds,
+  /// refused or not. A write that finds the engine stopped is not the
+  /// interface refusing.
+  void _change(
     InterfaceSwitch which,
     Future<EngineResult> Function() write,
-  ) async {
+  ) {
     final device = _device;
     if (device == null) return;
-    final result = await write();
-    if (isClosed || device != _device) return;
-    if (!result.isOk) emit(state.refusing(which));
-    // What the interface holds now, refused or not.
-    await _read();
+    _enqueue(() async {
+      if (device != _device) return;
+      EngineResult result;
+      try {
+        result = await write();
+      } on Object catch (error, stackTrace) {
+        addError(error, stackTrace);
+        result = EngineResult.device;
+      }
+      if (isClosed || device != _device) return;
+      if (!result.isOk && result != EngineResult.notRunning) {
+        emit(state.refusing(which));
+      }
+    });
+    _enqueue(_read);
   }
 
   @override
