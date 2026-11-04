@@ -14,3 +14,4 @@ export 'src/performance_capture_status.dart';
 export 'src/performance_exception.dart';
 export 'src/performance_repository.dart';
 export 'src/performance_slug.dart';
+export 'src/take_recovery.dart' show readBootId;

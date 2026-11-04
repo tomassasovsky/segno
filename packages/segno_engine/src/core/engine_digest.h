@@ -6,11 +6,6 @@
  * incremental context so a writer that already holds the bytes (the
  * performance drain, which seals each recorded part with its digest) can hash
  * them as it writes instead of reading the file back.
- *
- * Included only by .c files, never by engine_private.h: a header reachable
- * from engine_private.h reaches every C++ translation unit of the VST3
- * builds (docs/PROGRESS.md, "Adding a header to src/core/"). This one is plain
- * C with no atomics, but keeping it out of that chain means it never has to be.
  */
 #ifndef SEGNO_ENGINE_DIGEST_H
 #define SEGNO_ENGINE_DIGEST_H

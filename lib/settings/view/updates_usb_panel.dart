@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/settings/view/settings_fact_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/usb/usb_update_cubit.dart';
 import 'package:segno/update/usb/usb_update_package.dart';
@@ -67,7 +68,7 @@ class UpdatesUsbPanel extends StatelessWidget {
 
     return Container(
       key: const Key('updates_usb_panel'),
-      padding: const EdgeInsets.all(37),
+      padding: const EdgeInsets.all(SettingsFactPanel.inset),
       decoration: BoxDecoration(
         color: surface.card,
         borderRadius: BorderRadius.circular(12),

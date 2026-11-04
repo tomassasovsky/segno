@@ -10434,19 +10434,16 @@ enum le_cache_reason {
   /// cap; the track plays dry (#1179)
   LE_CACHE_REASON_BUDGET(4),
 
-  /// the print holds an octaver and the loop is not a
-  /// whole number of octaver hops (256 frames): its
-  /// hop falls on other frames each lap, so no single
-  /// lap's render equals live (#941)
-  LE_CACHE_REASON_HOP(5),
-
   /// the print holds a free-running
   /// modulator (a chorus or doubler LFO,
-  /// vinyl noise, a degrade's hold) or a
+  /// vinyl noise, a degrade's hold), a
   /// kind on the song's beat (the Pumper,
-  /// Slicer, swept LPF, Mode delay), which
-  /// sounds different each lap
-  LE_CACHE_REASON_FREE_RUNNING(6);
+  /// Slicer, swept LPF, Mode delay), a
+  /// clock LFO that does not fit the lap
+  /// (#1620), or a kind on the octaver's
+  /// kernel (#1624), which sounds different
+  /// each lap
+  LE_CACHE_REASON_FREE_RUNNING(5);
 
   final int value;
   const le_cache_reason(this.value);
@@ -10457,8 +10454,7 @@ enum le_cache_reason {
     2 => LE_CACHE_REASON_RENDER_FAILED,
     3 => LE_CACHE_REASON_PART_POST,
     4 => LE_CACHE_REASON_BUDGET,
-    5 => LE_CACHE_REASON_HOP,
-    6 => LE_CACHE_REASON_FREE_RUNNING,
+    5 => LE_CACHE_REASON_FREE_RUNNING,
     _ => throw ArgumentError('Unknown value for le_cache_reason: $value'),
   };
 }
