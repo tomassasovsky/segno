@@ -61,13 +61,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1178 | Library and Sessions redesign | build | merge-gate | `claude/library-1178-*` |
 | #1179 | Pitch and time DSP core | build | merge-gate | `claude/pitch-time-1179-*` |
 | #1197 | Instruments | plan | merge-gate | `claude/instruments-1197-*` |
-| #1198 | Recording to USB and long recordings | plan | merge-gate | `claude/recording-1198-*` |
+| #1198, #1078 | Recording to USB and long recordings: Parts 1-5 and 11 on the trunk; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | merge-gate | `claude/recording-durability-1198-p*` |
 | #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
 | #1270 | Device and appliance pages (Parts 6, 7, 9, 11, 12 shipped; plan approved 2026-10-26 and refreshed; Q5 answered: refuse an Apply over the effects budget; P1, P2, P3a, P3b, P4 and P5 merged; P8 update from USB in review; all parts built; on-device checks listed on the issue) | build | merge-gate | `claude/device-pages-*1270*` |
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
+| #1590 | Screen audit fixes: class (a) batches 1 to 7 and the owner's class (b) answers, one PR per batch | build | auto | `claude/audit-*-1590-p*` |
 | #1540 | Drive pedals' aliasing at 48 kHz: bench and blind A/B built, the owner's listening decides on oversampling | in-review | auto | `claude/alias-ab-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
@@ -75,6 +76,131 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 
 ---
+
+## November 2026 The octaver's kinds play live (#1624)
+
+- The owner's decision on #1624: the Octaver, Dual Octaver, Whammy and Smart
+  Tune are never printed and always play live (the multicore workers, #1515,
+  carry live chains), because a print cannot be made exact.
+- The cause: their phase vocoder carries running synthesis phases, which a
+  loop of most material advances by a fraction of a cycle each lap, so the
+  live voice is phased differently every lap. A print equals the lap it was
+  rendered for (the old parity sweep, on a constant loop, could not see the
+  rest) and steps at every loop top after: on a 220 Hz sine loop of 55
+  whole hops, the live octaver's second lap differs from its first by 0.8,
+  however the chain went in.
+- They carry the free-running flag (`LE_FX_F_FREE_RUNNING`), heard when the
+  voice is: the octaver's mix above 0, the Dual Octaver's mix with a voice
+  up, the Whammy's pedal off 0; Smart Tune always
+  (`le_fx_entry_free_running`). An unheard voice repeats every lap and
+  prints. With no print holding a heard octaver, the hop-position key (#941)
+  is gone: the fingerprint fold, `le_wet_entry::hop_tag`,
+  `LE_CACHE_REASON_HOP` (FREE_RUNNING is now 5),
+  `le_fx_hop_period`/`le_fx_hop_position` and `le_engine::fx_hop_period`.
+  The octaver's clock-anchored hop and its per-owner seed stay: the render
+  recipe and the stems still reproduce it.
+- Tests: `test_cache_pitch_kinds_play_live` (each kind gives up, and the
+  octaver's laps differ on a sine), `test_cache_bypassed_octaver_prints`,
+  and `test_cache_clock_lfo_relaunch_rerenders` (the relaunch re-render,
+  now on a lap-locked tremolo).
+
+## November 2026 The sound trigger ignores hum (#1623)
+
+- The sound-activated record trigger reads each input through a fixed
+  fourth-order Butterworth high-pass at 100 Hz (`LE_TRIGGER_HP_HZ`,
+  `le_trigger_hp`), on its detection path only: 50 and 60 Hz hum come out
+  24 and 18 dB down, rumble more, while a pick's attack still crosses the
+  -34 dBFS threshold on the frame it arrives. The take records the raw
+  input. It replaces the conditioning stage the trigger read before #697.
+- The filter runs on every real input every frame (two biquads each), so an
+  arm never starts on a cold filter. Test: `test_sound_trigger_ignores_hum`.
+
+## November 2026 Prints swap in after a complete lap, LFOs on the clock (#1620)
+
+- The owner's decision on #1620: (1) time-based modulation takes its phase
+  from the engine clock, (2) a print swaps in only over a live chain that has
+  played at least one complete lap since its last key change. The run rule
+  (`le_run_matches_print`) is now: begun on a loop top, the next top; begun
+  part way through a lap, the second top after it. Anything else stays live.
+- Clock LFOs (`le_clock_lfo`, engine_fx.c): the tremolo and the echo's wow
+  take frac(rate x frame / sr) from `le_fx_now`. A rate move keeps the
+  phase continuous through an offset that slides back to 0 at 0.25 cycles a
+  second, or half the LFO rate when slower (`LE_LFO_RELOCK_CPS`); while it
+  slides, the lane's run waits (`le_fx_lfo_relocking`). A state nobody
+  clocks (the VST3 processors) counts its own frames, as before.
+- Such an LFO prints only on a loop it fits a whole number of times (within
+  3e-5 cycles for the tremolo, 5e-7 for the echo's wow, what keeps the step
+  at each loop top under 1e-4): otherwise each lap sounds different and it
+  plays live, reported FREE_RUNNING (`le_fx_entry_lfo_drifts`). Its print is
+  keyed on the top's place on the lap grid (`le_fx_lap_position`, folded
+  into the fingerprint, `le_wet_entry::lap_tag` at the lap top).
+- What a chain plays reversed or at another rate is not a lap of the loop,
+  so every run on the track begins again where the head is back at forward
+  1x (and at any jump of the read index there, which Play on a playing track
+  does not make today). A lane back at Normal after a reverse or speed turn
+  therefore prints again after a complete lap, where #939 left it live
+  until its next edit.
+- Remaining step at the swap per kind (`test_cache_midlap_edit_steps`, a sine
+  loop): 0 for the memoryless and short-state kinds; a delay or reverb
+  differs by the part of its tail older than a lap; the octaver's kinds play
+  live (#1624).
+
+## November 2026 Wet cache swaps in only over a matching run (#939)
+
+- The owner's decision on #939 (Q11): the loop-stage wet cache stays off
+  where it cannot swap in exactly. A print reproduces a chain that began one
+  lap before the loop top it swaps in at (render twice, keep the second).
+  The audio thread now follows each live chain's run, the stretch it has
+  played one unchanged key over (`le_chain_run` on each lane and track bus,
+  counted in laps by `le_track::laps`), and swaps a print in only where that
+  run matches the print (`le_run_matches_print`; tightened by #1620 above).
+  An older run keeps playing live: it carries history the print does not
+  (an echo built up over more passes, an LFO further on), which used to step
+  at the loop top.
+- In practice: a print is ready about 250 ms (`LE_CACHE_SETTLE_MS`) plus a
+  few 16 ms scheduler ticks plus its render after the edit, so on a loop
+  shorter than that the cache stays off; longer loops print as before. The
+  same rule holds the whole-track print.
+- Tests: the every-kind parity sweep adds a 2560-frame loop per kind (the
+  print is ready five laps after the chain went in) and
+  `test_whole_track_print_stays_live_on_a_short_loop` covers the track
+  print; the whole-track tests run on a 16384-frame loop.
+
+## November 2026 Segno owns the interface's routing (#1046)
+
+- At every device open, before the loopback mask is read and the callback
+  starts, the engine sets the interface's routing matrix to plain
+  pass-through (`le_platform_own_interface_routing`, from
+  `le_engine_publish_and_start`, so start and reopen both run it). Linux
+  sets the inputs of the card behind the capture id and the outputs of the
+  card behind the playback id (both, when they are one card), through the
+  `dlopen`'d libasound control API. Inputs only on the capture card, so the
+  loopback slots it sets are the ones the mask excludes.
+- The rules are per kernel driver, matched on control names. Only
+  `scarlett2` has rules (Scarlett Gen 2 and 3, Gen 4 Solo, 2i2 and 4i4,
+  Clarett USB/+, Vocaster; the big Gen 4 units use the FCP driver and are
+  left alone): `le_own_scarlett2_routing` in `engine_devices.c`. Hardware outputs
+  (`Analogue Output NN`, then `S/PDIF Output N`, then `ADAT Output N`
+  `Playback Enum`) play `PCM 1`, `PCM 2`, ... in order. `PCM NN Capture
+  Enum` records the hardware inputs in order, and the slots past them
+  return `PCM 1`, `PCM 2`, ... (the loopback #1541 times on, excluded from
+  recording; `Off` on a card Segno only records from). A hardware input recorded through the unit's input DSP
+  (`DSP n` fed by that input, Gen 4 and Vocaster) is kept. Direct
+  monitoring goes off. The mixer is left alone, since
+  nothing selects a `Mix` afterwards. Only controls that differ are
+  written, then read back. A card without these controls is left alone.
+- Logs `segno/audio: hw:N routing set to pass-through (N of M controls
+  changed)`, or `routing not pass-through` with the first control that
+  failed. Nothing is reported to the UI yet.
+- Tests: `test_engine_interface_routing.h` runs the rules against a fake
+  card read from the console's `amixer contents` dump
+  (`src/test/fixtures/alsa/scarlett_4i4_gen3.txt`) and against built cards
+  (S/PDIF ordering, direct monitor).
+- Verified on the console's 4i4 on 2026-11-03 with a test engine library:
+  outputs set to `Mix A`-`Mix D` and stray capture sources came back as
+  pass-through at app start (7 of 10 controls changed), and the loopback
+  mask read 0x30. Device check owed: a replug after scrambling the routing
+  in `amixer`.
 
 ## November 2026 One notice system (#1562)
 
@@ -1510,7 +1636,7 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   reads its level's true peak between samples and smooths its gain over
   0.1 ms, which keeps its folds under -69 dB. What fails today is the
   `k_known` list in `bench_fx_matrix.c` (only the Dual Octaver's
-  envelope, #1580), each entry with a ceiling: a new failure, or a
+  Octave 2 envelope at 96 kHz, #1616), each entry with a ceiling: a new failure, or a
   listed one past its ceiling, fails the run, and in the full run so does a
   listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;
@@ -2211,8 +2337,10 @@ remains open — see "On-hardware validations" below.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
-  `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
-  with a device-selection UI. Hardware-gated only for a live DIN-MIDI smoke test.
+  `le_midi_*` capture seam → one `MidiControllerSource` per plugged-in device,
+  owned by `MidiDeviceRepository`, so every connected controller feeds the
+  mappings learned from it (#1040). Hardware-gated only for a live DIN-MIDI
+  smoke test and a two-controller check.
 - **VST3/CLAP plugin hosting on Linux.** Hosting is on by default only on
   macOS; the Linux CMake build leaves `SEGNO_ENABLE_PLUGINS` off unless the
   environment overrides it, since third-party plugins rarely ship for aarch64

@@ -66,8 +66,8 @@ Future<void> runSegno(
     'or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
-  // The engine's vendored native code (Signalsmith Stretch, RNNoise,
-  // miniaudio, VST3, CLAP) for System > About's open-source notices.
+  // The engine's vendored native code (Signalsmith Stretch, miniaudio, VST3,
+  // CLAP) for System > About's open-source notices.
   registerVendoredLicenses();
   // And the typefaces bundled with the app.
   registerFontLicenses();
@@ -149,11 +149,11 @@ Future<void> runSegno(
     instruments = instrumentRepository;
   }
 
-  // The native MIDI source feeds the controller pipeline; it is null when no
-  // MIDI backend is available (e.g. the mock flavor), in which case the looper
-  // runs with no controller source. The readout screen already returned
-  // above, so it never opens MIDI.
-  final midiSource = createNativeMidiSource();
+  // One native MIDI capture per plugged-in device; null when no MIDI backend
+  // is available (e.g. the mock flavor), in which case the looper runs
+  // without MIDI. The readout screen already returned above, so it never
+  // opens MIDI.
+  final midiCaptures = nativeMidiCaptures();
   // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
   // the appliance (the link owns the device node, retries until the overlay
   // lands, and reports every state change to the log), or a board-less link
@@ -162,13 +162,10 @@ Future<void> runSegno(
       ? UartPedalLink(log: AppLog.info)
       : NoopPedalLink();
   final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
-  // The repository owns source lifetimes and forwards exact console samples.
-  // Musical assignments consume the selected-device stream separately.
+  // The repository owns the console source and forwards exact console
+  // samples. Musical assignments read MIDI from the device repository.
   final controllerRepository = ControllerRepository(
-    sources: [
-      ?midiSource,
-      ConsoleCtrlSource(pedalRepository),
-    ],
+    sources: [ConsoleCtrlSource(pedalRepository)],
   );
   final settings = SettingsRepository(
     store: SharedPreferencesKeyValueStore(),
@@ -222,12 +219,11 @@ Future<void> runSegno(
     volumeSpace: performance.volumeSpace,
     guards: registry,
   );
-  // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
-  // persistence). Borrows the shared [midiSource] (owned by the controller
-  // pipeline) and never disposes it. Held independent of the engine so MIDI
-  // changes never restart audio.
+  // Captures every plugged-in MIDI input (hotplug, persistence of the page's
+  // controller). Held independent of the engine so MIDI changes never
+  // restart audio.
   final midiDeviceRepository = MidiDeviceRepository(
-    source: midiSource,
+    captures: midiCaptures,
     settings: settings,
   );
 
@@ -301,11 +297,16 @@ Future<void> runSegno(
       BootReadiness(
         notify: notify,
         firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
-        audio: () => bootAudioOf(
-          running: looper.state.status.isConnected,
-          config: looper.lastEngineConfig ?? audioRecoveryConfig,
-          devices: looper.devices,
-        ),
+        audio: () {
+          final status = looper.state.status;
+          return bootAudioOf(
+            running: status.isConnected,
+            devicePresent: status.devicePresent,
+            config: looper.lastEngineConfig ?? audioRecoveryConfig,
+            devices: looper.devices,
+          );
+        },
+        audioFrames: looper.readFramesProcessed,
         readoutConnected: () async =>
             readoutConnector != null &&
             (await displayOutputs.isConnected(readoutConnector) ?? false),

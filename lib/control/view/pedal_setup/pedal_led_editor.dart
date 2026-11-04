@@ -39,7 +39,7 @@ class PedalLedEditor extends StatelessWidget {
         children: [
           for (final (index, MapEntry(key: state, value: color))
               in colors.entries.indexed) ...[
-            if (index > 0) const SizedBox(width: PedalSetupEditor.fieldGap),
+            if (index > 0) SizedBox(width: context.spacing.xl),
             PedalColorField(
               key: Key('pedal_led_state_${state.name}'),
               label: pedalLedStateLabel(l10n, state),

@@ -1668,7 +1668,7 @@ void main() {
       expect(buildRepo().state.status.excludedInputMask, 0x2);
     });
 
-    test('projects the clip + conditioning masks onto EngineStatus', () {
+    test('projects the clip mask onto EngineStatus', () {
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
@@ -1676,7 +1676,6 @@ void main() {
         inputChannels: 4,
         outputChannels: 2,
         inputClipMask: 0x5,
-        inputCondMask: 0x2,
         framesProcessed: 0,
         xrunCount: 0,
         inputRms: 0,
@@ -1687,14 +1686,10 @@ void main() {
       );
       final status = buildRepo().state.status;
       expect(status.inputClipMask, 0x5);
-      expect(status.inputCondMask, 0x2);
       expect(status.isInputHot(0), isTrue);
       expect(status.isInputHot(1), isFalse);
       expect(status.isInputHot(2), isTrue);
       expect(status.isInputHot(-1), isFalse);
-      expect(status.isInputConditioned(1), isTrue);
-      expect(status.isInputConditioned(0), isFalse);
-      expect(status.isInputConditioned(32), isFalse);
     });
 
     test('projects fx added latency onto EngineStatus (frames + ms)', () {
@@ -1790,7 +1785,6 @@ void main() {
         'devicePresent',
         'excludedInputMask',
         'inputClipMask',
-        'inputCondMask',
         'recordOffsetFrames',
         'fxAddedLatencyFrames',
         // Set once per reconnect, cleared by the next deliberate start: it
@@ -1846,6 +1840,14 @@ void main() {
       expect(telemetry.armed, CallbackWindowStats.empty);
       expect(telemetry.session.hasTrouble, isFalse);
       expect(buildRepo().readCallbackTelemetry(), CallbackTelemetry.empty);
+    });
+
+    test('reads the frames processed fresh from the engine', () {
+      final repo = buildRepo();
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(framesProcessed: 480);
+      expect(repo.readFramesProcessed(), 480);
+      engine.nextSnapshot = engine.nextSnapshot.copyWith(framesProcessed: 960);
+      expect(repo.readFramesProcessed(), 960);
     });
   });
 
@@ -4731,91 +4733,6 @@ void main() {
       expect(engine.monitorMute[0], isTrue);
     });
 
-    test('setInputConditioningEnabled forwards while running', () {
-      buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setInputConditioningEnabled(input: 0, enabled: true);
-      expect(engine.conditioningEnabled[0], isTrue);
-    });
-
-    test('conditioning refuses instrument sources, which have no stage', () {
-      final repo = buildRepo()..startEngine(const EngineConfig());
-      expect(
-        repo.setInputConditioningEnabled(input: kMaxChannels, enabled: true),
-        EngineResult.invalid,
-      );
-      expect(
-        repo.setInputConditioningParam(
-          input: kMaxChannels,
-          param: InputConditioningParam.hpfHz,
-          value: 80,
-        ),
-        EngineResult.invalid,
-      );
-      expect(engine.conditioningEnabled, isNot(contains(kMaxChannels)));
-    });
-
-    test('setInputConditioningParam forwards the code + real-unit value', () {
-      buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setInputConditioningParam(
-          input: 1,
-          param: InputConditioningParam.hpfHz,
-          value: 80,
-        );
-      expect(engine.conditioningParam[(1, InputConditioningParam.hpfHz)], 80);
-    });
-
-    test('conditioning intent is remembered and reapplied on restart', () {
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setInputConditioningParam(
-          input: 0,
-          param: InputConditioningParam.expRatio,
-          value: 3,
-        )
-        ..setInputConditioningEnabled(input: 0, enabled: true);
-
-      engine.conditioningEnabled.clear();
-      engine.conditioningParam.clear();
-      repo.startEngine(const EngineConfig());
-
-      expect(engine.conditioningEnabled[0], isTrue);
-      expect(
-        engine.conditioningParam[(0, InputConditioningParam.expRatio)],
-        3,
-      );
-    });
-
-    test('conditioning set while stopped applies on the next start', () {
-      final repo = buildRepo()
-        ..setInputConditioningEnabled(input: 0, enabled: true);
-      // Nothing forwarded yet: the device is not running.
-      expect(engine.conditioningEnabled.containsKey(0), isFalse);
-
-      repo.startEngine(const EngineConfig());
-      expect(engine.conditioningEnabled[0], isTrue);
-    });
-
-    test('rejects an out-of-range conditioning input without touching '
-        'the engine', () {
-      final repo = buildRepo()..startEngine(const EngineConfig());
-      expect(
-        repo.setInputConditioningEnabled(input: -1, enabled: true),
-        EngineResult.invalid,
-      );
-      expect(
-        repo.setInputConditioningParam(
-          input: kMaxMonitoredInputs,
-          param: InputConditioningParam.hpfHz,
-          value: 40,
-        ),
-        EngineResult.invalid,
-      );
-      expect(engine.conditioningEnabled, isEmpty);
-      expect(engine.conditioningParam, isEmpty);
-    });
-
     test('an empty monitor chain (clean path) zeroes the count', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -7497,11 +7414,11 @@ void main() {
         final live = Float32List.fromList([2, 2, 2, 2]);
         final redo0 = Float32List.fromList([3, 3, 3, 3]);
         // An overdub beneath the live image; above it a Peel marker (no
-        // image) and then a restoration image (#1164).
+        // image) and then an overdub image (#1164).
         const history = TrackHistory([
           HistoryEntry(HistoryKind.layer),
           HistoryEntry(HistoryKind.peel),
-          HistoryEntry(HistoryKind.processed),
+          HistoryEntry(HistoryKind.layer),
         ], undoCount: 1);
         await repo.applySession(
           SessionRig(

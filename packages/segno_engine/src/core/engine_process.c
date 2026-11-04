@@ -316,7 +316,9 @@ static void le_source_len_log(le_engine* e, le_track* t, uint64_t frame) {
 /* A printed Pre render never plays through a non-identity head (reversed or
  * at another rate): disengage every print so the live chains take over
  * through the settled-bypass re-enable path [B7]; a forward 1x track
- * re-engages at its next lap start. */
+ * re-engages at a later lap start, once the live chains' runs match the
+ * prints again (le_run_matches_print: a turn back within a lap does, laps
+ * played reversed or at another rate do not, #939). */
 static void le_track_disengage_prints(le_track* t) {
   store_i32(&t->a_track_cache_active, 0);
   for (int l = 0; l < LE_MAX_LANES; ++l) {
@@ -2785,9 +2787,10 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
 static void le_fx_state_clear_tails(le_fx_state* fx, _Atomic int32_t* types,
                                     int fx_cap) {
   for (int s = 0; s < LE_FX_MAX; ++s) {
-    if (load_i32(&types[s]) == LE_FX_NONE) continue;
-    le_fx_entry_reset(fx, s);
-    le_fx_entry_clear_rings(fx, s, fx_cap);
+    const int32_t type = load_i32(&types[s]);
+    if (type == LE_FX_NONE) continue;
+    le_fx_entry_reset(fx, s, type);
+    le_fx_entry_clear_rings(fx, s, fx_cap, type);
   }
 }
 
@@ -2809,9 +2812,10 @@ static void le_fx_state_clear_tails_range(le_fx_state* fx,
   if (first < 0) first = 0;
   if (last > LE_FX_MAX) last = LE_FX_MAX;
   for (int s = first; s < last; ++s) {
-    if (load_i32(&types[s]) == LE_FX_NONE) continue;
-    le_fx_entry_reset(fx, s);
-    le_fx_entry_clear_rings(fx, s, fx_cap);
+    const int32_t type = load_i32(&types[s]);
+    if (type == LE_FX_NONE) continue;
+    le_fx_entry_reset(fx, s, type);
+    le_fx_entry_clear_rings(fx, s, fx_cap, type);
   }
 }
 
@@ -5766,7 +5770,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_i32(&ln->a_fx_type[index], cmd->fx.type);
       le_fx_type_landed(ln->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      le_fx_entry_reset(&ln->fx, index);
+      le_fx_entry_reset(&ln->fx, index, cmd->fx.type);
       /* Wet-cache fast path: the published type just moved, so the chain
        * identity did too. The control setter already bumped, but a raw
        * le_engine_post_command bypasses it — this bump covers that hatch. */
@@ -5902,7 +5906,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_i32(&m->a_fx_type[index], cmd->fx.type);
       le_fx_type_landed(m->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      le_fx_entry_reset(&m->fx, index);
+      le_fx_entry_reset(&m->fx, index, cmd->fx.type);
       break;
     }
     case LE_CMD_SET_MONITOR_INPUT_FX_COUNT: {
@@ -5913,33 +5917,6 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->monitors[input].a_fx_count, count);
-      break;
-    }
-    /* ---- Per-input conditioning stage (input conditioning, S1) ----
-     * This thread is the sole owner of the stage's biquad/envelope state, so
-     * both commands recompute it here, in lockstep with the config change.
-     * Loopback exclusion is deliberately NOT folded into the stored enable
-     * (unlike SET_MONITOR_INPUT): the per-block conditioning pass masks
-     * excluded channels out itself, so an input that stops being loopback
-     * (device change) needs no re-push. Not perf-logged (upstream of capture:
-     * recorded PCM already embodies the conditioning; nothing replays it). */
-    case LE_CMD_SET_INPUT_COND: {
-      const int32_t input = cmd->arg_i;
-      if (input < 0 || input >= LE_MAX_CHANNELS) break;
-      le_input_cond* c = &e->cond[input];
-      const int on = cmd->arg_f != 0.0f ? 1 : 0;
-      const int was = load_i32(&c->a_enabled);
-      store_i32(&c->a_enabled, on);
-      /* Enable EDGE: fresh coefficients + zeroed filter/envelope state, so a
-       * re-engaged stage never rings with stale history. */
-      if (on && !was) le_cond_prepare(c, e->sample_rate);
-      break;
-    }
-    case LE_CMD_SET_INPUT_COND_PARAM: {
-      const int32_t input = cmd->lanef.channel;
-      if (input < 0 || input >= LE_MAX_CHANNELS) break;
-      le_cond_update_param(&e->cond[input], cmd->lanef.lane, cmd->lanef.value,
-                           e->sample_rate);
       break;
     }
     /* ---- Track-stage + output bus chains ----
@@ -5955,7 +5932,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       store_i32(&b->a_fx_type[index], cmd->fx.type);
       le_fx_type_landed(b->fx_meta, index);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      le_fx_entry_reset(&b->fx, index);
+      le_fx_entry_reset(&b->fx, index, cmd->fx.type);
       break;
     }
     case LE_CMD_SET_TRACK_FX_COUNT: {
@@ -5981,7 +5958,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       /* One config, one instance per bus: every instance's DSP state resets,
        * or a destination would keep the previous effect's filter memory. */
       for (int k = 0; k < LE_MAX_OUTPUT_BUSES; ++k) {
-        le_fx_entry_reset(&e->all_tracks_fx[k], index);
+        le_fx_entry_reset(&e->all_tracks_fx[k], index, cmd->fx.type);
       }
       break;
     }
@@ -7702,6 +7679,38 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
   }
 }
 
+/* Whether a Pre slot [0, pre) of the chain [fx] runs ([a_type], [a_pre],
+ * [a_count]) holds a clock LFO still sliding back onto the clock after a rate
+ * move (le_fx_lfo_relocking, #1620). Audio thread. */
+static inline int le_pre_lfo_relocking(const le_fx_state* fx,
+                                       _Atomic int32_t* a_type,
+                                       _Atomic int32_t* a_enabled,
+                                       _Atomic int32_t* a_chain_enabled,
+                                       _Atomic int32_t* a_pre,
+                                       _Atomic int32_t* a_count) {
+  /* Only a slot that plays: a bypassed one, or a chain switched off, is not
+   * ticked, so its offset waits where it was and the print (of the chain
+   * without it) does not depend on it. */
+  if (!load_i32(a_chain_enabled)) return 0;
+  int32_t pre = load_i32(a_pre);
+  const int32_t count = load_i32(a_count);
+  if (pre > count) pre = count;
+  if (pre > LE_FX_MAX) pre = LE_FX_MAX;
+  for (int32_t s = 0; s < pre; ++s) {
+    if (load_i32(&a_enabled[s]) &&
+        le_fx_lfo_relocking(fx, s, load_i32(&a_type[s]))) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static inline int le_lane_lfo_relocking(le_lane* ln) {
+  return le_pre_lfo_relocking(&ln->fx, ln->a_fx_type, ln->a_fx_enabled,
+                              &ln->a_fx_chain_enabled, &ln->a_fx_pre_count,
+                              &ln->a_fx_count);
+}
+
 /* Per-buffer wet-cache snapshot (FX v3 part 2): loads each lane's published
  * entry ONCE (acquire) and re-derives the lane's current cache key —
  * {a_audio_rev [R1], chain fingerprint (params + enabled), a_vol_bits (D-VOL),
@@ -7712,50 +7721,67 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
  * re-enters through the enable machinery's clean settled-bypass re-enable
  * edge (reset + staggered ring clear + warmup + ramp [B7]), which is what
  * makes the fallback click-free while the documented tail-drop happens.
- * Cost when the cache is idle: one relaxed pointer load per lane. The
- * fingerprint recompute (le_lane_pre_fx_fingerprint — pure atomic loads +
- * FNV math, RT-safe) runs only while an entry is published. */
+ *
+ * The same pass follows the live chain's RUN (#939): the key fields above
+ * are compared against the ones the run began under, and a change marks the
+ * run restarted (le_lane::run), so the engage step knows how many laps
+ * the live chain has played with the material and chain a print reproduces.
+ * Cost: a handful of loads per lane, plus the fingerprint refold
+ * (le_lane_pre_fx_fingerprint — pure atomic loads + FNV math, RT-safe) only
+ * when the lane's chain-edit generation (a_fx_gen) or loop top moved (once a
+ * lap). */
 static inline void snapshot_lane_cache(
     le_engine* e, int tc, const int32_t* lane_n,
     const le_wet_entry* cache_ent[][LE_MAX_LANES]) {
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
+    const uint32_t rev =
+        atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+    /* The loop top the key folds (its place on the lap grid, for a clock
+     * LFO, #1620). */
+    const uint32_t top =
+        atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &tr->lanes[l];
       cache_ent[t][l] = NULL;
-      const le_wet_entry* w =
-          atomic_load_explicit(&ln->a_wet, memory_order_acquire);
-      int ok = w != NULL;
-      if (ok) {
-        /* The full key check via the ONE shared predicate — with the
-         * fingerprint term served from the audio-local verdict cache while
-         * the lane's chain-edit generation (a_fx_gen) is unchanged, so a
-         * cached steady state costs one relaxed load instead of a ~40-load
-         * FNV refold per buffer. Any chain edit bumps the generation and
-         * forces the full refold the same buffer. */
-        const uint32_t rev =
-            atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
-        const uint32_t vol =
-            atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
-        const int32_t len = load_i32(&ln->a_len);
-        const uint32_t gen =
-            atomic_load_explicit(&ln->a_fx_gen, memory_order_relaxed);
-        const uint32_t hop = le_fx_hop_position(
-            atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed),
-            e->sample_rate);
-        if (w == ln->cache_fp_entry && gen == ln->cache_fp_gen &&
-            hop == ln->cache_fp_hop) {
-          ok = le_wet_entry_key_matches(w, rev, w->chain_fp, vol, len);
-        } else {
-          ok = le_wet_entry_key_matches(
-              w, rev, le_lane_pre_fx_fingerprint(e, t, l), vol, len);
-          if (ok) { /* remember the verdict for this {entry, gen, hop} */
-            ln->cache_fp_entry = w;
-            ln->cache_fp_gen = gen;
-            ln->cache_fp_hop = hop;
-          }
+      const uint32_t vol =
+          atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed);
+      const int32_t len = load_i32(&ln->a_len);
+      /* Acquire: pairs with le_lane_fx_gen_bump's release, so the refold
+       * below reads the edit the generation names. */
+      const uint32_t gen =
+          atomic_load_explicit(&ln->a_fx_gen, memory_order_acquire);
+      /* The run (#939). The fingerprint is refolded only when its cheap
+       * proxies moved: a generation bump (every chain edit, Post ones
+       * included, so the refold decides) or the loop top it folds. */
+      const int len_moved = len != ln->run_len;
+      if (rev != ln->run_rev || vol != ln->run_vol || len_moved) {
+        ln->run_rev = rev;
+        ln->run_vol = vol;
+        ln->run_len = len;
+        ln->run.restart = 1;
+      }
+      /* The length too: a clock LFO's key folds the top's place on the
+       * lap grid (#1620). */
+      if (gen != ln->run_gen || top != ln->run_top || len_moved) {
+        const uint64_t fp = le_lane_pre_fx_fingerprint(e, t, l);
+        ln->run_gen = gen;
+        ln->run_top = top;
+        if (fp != ln->run_fp) {
+          ln->run_fp = fp;
+          ln->run.restart = 1;
         }
       }
+      /* A clock LFO sliding back onto the clock after a rate move (#1620)
+       * is not yet the chain a print reproduces: its run begins once it is
+       * back on. */
+      if (le_lane_lfo_relocking(ln)) ln->run.restart = 1;
+      /* The full key check via the ONE shared predicate, against the key
+       * the run just took. */
+      const le_wet_entry* w =
+          atomic_load_explicit(&ln->a_wet, memory_order_acquire);
+      const int ok =
+          w != NULL && le_wet_entry_key_matches(w, rev, ln->run_fp, vol, len);
       if (ok) {
         cache_ent[t][l] = w;
       } else if (load_i32(&ln->a_cache_active)) {
@@ -7770,17 +7796,31 @@ static inline void snapshot_lane_cache(
  * memo. A track's key spans every part's chain, level, pan and mute as well
  * as its own Pre run, so a memo would need a generation bump on some fifteen
  * setters and a single missed one would play a render that no longer
- * describes the track. The refold is gated on a published entry instead, so a
- * track with no print — every track until something is put on its Pre run —
- * costs one relaxed load. */
+ * describes the track. The refold is gated on the track having a Pre run it
+ * could print instead (le_track_pre_printable), so any other track — every
+ * track until something is put on its Pre run — costs a few relaxed loads.
+ *
+ * The refold also follows the track chain's RUN (#939), as the lane pass
+ * does: a key change marks it restarted (le_track::bus_run). It runs
+ * while that Pre run exists, published print or not, because the run has to
+ * be known from its start: a print published several laps after the key
+ * last changed must find that out at its loop top. */
 static inline void snapshot_track_cache(le_engine* e, int tc,
                                         const le_wet_entry* track_ent[]) {
+  const int cache_on =
+      atomic_load_explicit(&e->a_fx_cache_cap, memory_order_relaxed) > 0;
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
     track_ent[t] = NULL;
     const le_wet_entry* w =
         atomic_load_explicit(&tr->a_track_wet, memory_order_acquire);
-    if (w == NULL) {
+    if (!cache_on || load_i32(&tr->bus.a_fx_pre_count) <= 0 ||
+        !le_track_pre_printable(e, t)) {
+      /* Nothing it could print (the cache off, no Pre run, or a part with a
+       * Post entry or a plugin): no refold, and any print still published
+       * no longer describes the track. The key a printable run later has
+       * differs from this zero, so that run begins then. */
+      tr->bus_run_fp = 0;
       if (load_i32(&tr->a_track_cache_active)) {
         store_i32(&tr->a_track_cache_active, 0);
       }
@@ -7788,11 +7828,30 @@ static inline void snapshot_track_cache(le_engine* e, int tc,
     }
     const uint32_t rev =
         atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
+    const int32_t len = load_i32(&tr->lanes[0].a_len);
+    const uint64_t fp = le_track_pre_fingerprint(e, t);
+    if (fp != tr->bus_run_fp || rev != tr->bus_run_rev ||
+        len != tr->bus_run_len) {
+      tr->bus_run_fp = fp;
+      tr->bus_run_rev = rev;
+      tr->bus_run_len = len;
+      tr->bus_run.restart = 1;
+    }
+    if (le_pre_lfo_relocking(&tr->bus.fx, tr->bus.a_fx_type,
+                             tr->bus.a_fx_enabled, &tr->bus.a_fx_chain_enabled,
+                             &tr->bus.a_fx_pre_count, &tr->bus.a_fx_count)) {
+      tr->bus_run.restart = 1; /* back on the clock first (#1620) */
+    }
+    if (w == NULL) {
+      if (load_i32(&tr->a_track_cache_active)) {
+        store_i32(&tr->a_track_cache_active, 0);
+      }
+      continue;
+    }
     /* Unity stands in for the volume term: every part's level is inside the
      * rendered combination, so there is no separate one to key on. */
-    const int ok = le_wet_entry_key_matches(w, rev, le_track_pre_fingerprint(e, t),
-                                            f32_to_bits(1.0f),
-                                            load_i32(&tr->lanes[0].a_len));
+    const int ok =
+        le_wet_entry_key_matches(w, rev, fp, f32_to_bits(1.0f), len);
     if (ok) {
       track_ent[t] = w;
     } else if (load_i32(&tr->a_track_cache_active)) {
@@ -8028,14 +8087,36 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
   tuner_slice(e, frames);
 }
 
+/* Input [c]'s sample [x] through the sound trigger's detector high-pass
+ * (#1623): both sections, transposed direct form II. Returns the filtered
+ * sample. Audio thread. */
+static inline float le_trigger_hp(le_engine* e, int c, float x) {
+  for (int k = 0; k < 2; ++k) {
+    const float* b = e->trig_hp_c[k];
+    float* z = e->trig_hp_z[c][k];
+    const float y = b[0] * x + z[0];
+    z[0] = b[1] * x - b[3] * y + z[1];
+    z[1] = b[2] * x - b[4] * y;
+    x = y;
+  }
+  if (!isfinite(x)) {
+    /* A non-finite sample (a driver glitch) would stay in the states for
+     * good and keep the trigger from ever firing: drop it and start clean. */
+    memset(e->trig_hp_z[c], 0, sizeof(e->trig_hp_z[c]));
+    return 0.0f;
+  }
+  return x;
+}
+
 static inline int process_input_frame(le_engine* e, const float* in,
-                                      const float* in_c, float* out, uint32_t f,
+                                      float* out, uint32_t f,
                                       int ch_in, int ch_out, int tc,
                                       int sr, uint32_t excluded, float* in_sumsq,
                                       float* in_peak, float* in_peak_ch,
                                       uint64_t perf_frame_base) {
   float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
   float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
+  float trig[LE_MAX_CHANNELS]; /* each real input through the trigger's HP */
   for (int c = 0; c < ch_in; ++c) {
     const float s = in ? in[f * ch_in + c] : 0.0f;
     const float a = fabsf(s);
@@ -8048,11 +8129,14 @@ static inline int process_input_frame(le_engine* e, const float* in,
     if (a > frame_mag) frame_mag = a;
     if (a > in_peak_ch[c]) in_peak_ch[c] = a;
     *in_sumsq += s * s;
+    /* The trigger's detection path (#1623), on every real input so an arm
+     * finds it settled. */
+    if (c < LE_MAX_CHANNELS) trig[c] = le_trigger_hp(e, c, s);
   }
   if (frame_mag > *in_peak) *in_peak = frame_mag;
 
-  /* Signal arms listen only to their selected, real recording sources. Input
-   * conditioning precedes this buffer; meters/latency above remain raw. Never
+  /* Signal arms listen only to their selected, real recording sources,
+   * through the detector's high-pass (le_trigger_hp, #1623). Never
    * substitute input zero when a route disappears. Cancellation remains a
    * control action even when no selected source is currently usable. While a
    * latency measurement runs the arms wait: its burst and echo are not the
@@ -8070,7 +8154,9 @@ static inline int process_input_frame(le_engine* e, const float* in,
       } else {
         if (source < 0 || source >= ch_in || source >= LE_MAX_CHANNELS ||
             (excluded & (1u << source))) continue;
-        value = in_c ? fabsf(in_c[f * ch_in + source]) : 0.0f;
+        /* Through the detector's high-pass: hum and rumble do not arm it
+         * (#1623); the take records the raw input. */
+        value = in ? fabsf(trig[source]) : 0.0f;
       }
       if (value > magnitude) magnitude = value;
     }
@@ -8277,6 +8363,75 @@ static inline void sync_division_positions_frame(le_engine* e, int tc,
     trk_len[t] = len;
     trk_pos[t] = pos % len;
   }
+}
+
+/* Whether a live chain's [run] lets a print engage at this loop top of its
+ * track [tr] (#939, #1620).
+ *
+ * A print reproduces a chain that began, fresh, one lap before the loop top
+ * it swaps in at: its render plays the loop twice and keeps the second pass,
+ * so it carries exactly one lap of history. The live chain it displaces began
+ * wherever its key last changed, and matches the print when it has played at
+ * least one complete lap since then, so whatever it holds that is shorter
+ * than a lap (a delay line, a reverb's early field, a clock LFO's phase) is
+ * what the print holds, and less than two, so it carries no lap the print
+ * does not:
+ *
+ * - begun on a loop top: this is the next one (one top crossed);
+ * - begun part way through a lap: this is the second top after it (two
+ *   crossed), the first being less than a lap on.
+ *
+ * Any other run keeps playing live. A loop shorter than the settle window
+ * plus the render never prints: the print is only ready laps after the edit.
+ * What still differs is state older than a lap, the part of a tail longer
+ * than the loop. */
+static inline int le_run_matches_print(const le_track* tr,
+                                       const le_chain_run* run) {
+  if (run->restart) return 0; /* not begun: a key change, or silent */
+  const uint32_t laps = tr->laps - run->lap0; /* wrap-safe, like the count */
+  return run->at_top ? laps == 1u : laps == 2u;
+}
+
+/* Begins [run] at this frame of track [tr]: [sounding] and [rp] are the
+ * track's state and read index this frame. A run cannot begin while the
+ * track is silent: it stays pending and begins on the first frame the track
+ * sounds, at whatever index the launch put it. */
+static inline void le_chain_run_begin(le_chain_run* run, const le_track* tr,
+                                      int sounding, int32_t rp) {
+  if (!sounding) {
+    run->restart = 1;
+    return;
+  }
+  run->lap0 = tr->laps;
+  run->at_top = rp == 0;
+  run->restart = 0;
+}
+
+/* Follows [run] past this frame's engage step (#939): begins it when the
+ * chain returns to live play from a print ([live]). A block-start key change
+ * begins it before the engage step instead (le_chain_run_begin on
+ * [restart]), so a print never engages in the frame its key changed. */
+static inline void le_chain_run_step(le_chain_run* run, const le_track* tr,
+                                     int sounding, int32_t rp, int live) {
+  if (live && !run->live) le_chain_run_begin(run, tr, sounding, rp);
+  run->live = live;
+}
+
+/* The whole-track print's twin of le_run_matches_print (#939). It displaces
+ * the track chain and every part's chain, so each must match it; a part
+ * already playing its own print, or with no chain, plays what the print was
+ * rendered from. */
+static inline int le_track_print_run_matches(
+    le_track* tr, int32_t lanes, const le_wet_entry** lane_ent,
+    const int32_t* lane_fx_count) {
+  if (!le_run_matches_print(tr, &tr->bus_run)) return 0;
+  for (int32_t l = 0; l < lanes; ++l) {
+    le_lane* ln = &tr->lanes[l];
+    if (lane_fx_count[l] == 0) continue;
+    if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
+    if (!le_run_matches_print(tr, &ln->run)) return 0;
+  }
+  return 1;
 }
 
 /* Per-frame capture + additive playback mix: snapshots each track's per-lane
@@ -8855,6 +9010,45 @@ static inline void mix_tracks_frame(
      * They keep being read for metering. */
     const le_wet_entry* tce = track_cache_ent[t];
     const int32_t trk_rp = seg_base[t] + trk_pos[t];
+    /* The laps this track has played (#939): one per wrap from a frame that
+     * was sounding too, so a launch from a stop starts a lap rather than
+     * finishing one. A run of a live chain counts its laps
+     * against this, and runs restarted by the block-start key checks take
+     * their start here, after this frame's wrap. */
+    if (sounding) {
+      /* Forward at 1x from a whole-sample origin: the head a print plays
+       * through (the engage step's own test). */
+      const int identity =
+          !tr->head.reversed && le_head_is_integral(&tr->head);
+      int jump = 0;
+      if (tr->lap_rp >= 0 && trk_rp != tr->lap_rp) {
+        /* A wrap is the read index moving back against its direction: it
+         * need not land on 0 (2x on an odd length steps past it). */
+        if (tr->head.reversed ? trk_rp > tr->lap_rp : trk_rp < tr->lap_rp) {
+          ++tr->laps;
+        }
+        /* At forward 1x the index steps by one, wrapping at the length; any
+         * other move there is a jump. */
+        const int32_t tlen = load_i32(&tr->lanes[0].a_len);
+        jump = identity && tr->lap_identity && tlen > 0 &&
+               trk_rp != (tr->lap_rp + 1 >= tlen ? 0 : tr->lap_rp + 1);
+      }
+      /* What a chain holds after a jump, or after laps played reversed or at
+       * another rate, is not a lap of the loop, so every run on the track
+       * begins again: at the jump, or where the head is back at forward 1x
+       * (#1620). A print then waits for a complete lap from there. */
+      if (jump || (identity && tr->lap_rp >= 0 && !tr->lap_identity)) {
+        tr->bus_run.restart = 1;
+        for (int l = 0; l < LE_MAX_LANES; ++l) tr->lanes[l].run.restart = 1;
+      }
+      tr->lap_identity = identity;
+      tr->lap_rp = trk_rp;
+    } else {
+      tr->lap_rp = -1;
+    }
+    if (tr->bus_run.restart) {
+      le_chain_run_begin(&tr->bus_run, tr, sounding, trk_rp);
+    }
     /* The engine frame the current lap began at (#941), the clock a print
      * is rendered and keyed against: this frame less the read index, on a
      * forward lap at an integral rate. It moves only at a lap top (a wrap, a
@@ -8869,12 +9063,12 @@ static inline void mix_tracks_frame(
         atomic_store_explicit(&tr->a_top_clock, top, memory_order_relaxed);
       }
     }
-    /* A print keyed to the hop position (an octaver in it, #941) that does
-     * not match this lap's start is stale: the block-start check ran before
-     * a launch in this block moved the lap. Drop it at the lap top, as that
+    /* A print keyed to the lap grid (a clock LFO in it, #1620) that does not
+     * match this lap's start is stale: the block-start check ran before a
+     * launch in this block moved the lap. Drop it at the lap top, as that
      * check will from the next block. */
     if (trk_rp == 0 && tce != NULL &&
-        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f, e->sample_rate)) {
+        !le_wet_entry_lap_matches(tce, e->fx_clock_base + f)) {
       tce = NULL;
       track_cache_ent[t] = NULL;
       if (load_i32(&tr->a_track_cache_active)) {
@@ -8888,7 +9082,8 @@ static inline void mix_tracks_frame(
     if (tce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
         le_head_is_integral(&tr->head) &&
         (tr->transpose_st == 0 || e->transpose_bypass) &&
-        !load_i32(&tr->a_track_cache_active) && trk_rp == 0) {
+        !load_i32(&tr->a_track_cache_active) && trk_rp == 0 &&
+        le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t])) {
       store_i32(&tr->a_track_cache_active, 1);
       for (int l = 0; l < lane_n[t]; ++l) {
         le_lane* el = &e->tracks[t].lanes[l];
@@ -8906,6 +9101,9 @@ static inline void mix_tracks_frame(
     }
     const int track_printed =
         tce != NULL && load_i32(&tr->a_track_cache_active);
+    /* Dropping the print hands the track chain back to live play through the
+     * re-enable edge: its run starts here (#939). */
+    le_chain_run_step(&tr->bus_run, tr, sounding, trk_rp, !track_printed);
     if (track_printed) {
       /* The engage edge can land mid-buffer, so mask the printed slots'
        * effective bits for the rest of it too — a force-bypassed slot whose
@@ -9096,9 +9294,12 @@ static inline void mix_tracks_frame(
        * tail/LFO continuity) for playback nobody hears. */
       const le_wet_entry* wce = cache_ent[t][l];
       const int32_t rp = seg_base[t] + trk_pos[t];
-      /* The lane twin of the track's lap-top hop check above (#941). */
+      if (ln->run.restart) { /* a block-start key change (#939) */
+        le_chain_run_begin(&ln->run, tr, sounding, rp);
+      }
+      /* The lane twin of the track's lap-top grid check above (#1620). */
       if (rp == 0 && wce != NULL &&
-          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f, e->sample_rate)) {
+          !le_wet_entry_lap_matches(wce, e->fx_clock_base + f)) {
         wce = NULL;
         cache_ent[t][l] = NULL;
         if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
@@ -9106,7 +9307,8 @@ static inline void mix_tracks_frame(
       if (wce != NULL && st[t] == LE_TRACK_PLAYING && !tr->head.reversed &&
           le_head_is_integral(&tr->head) &&
           (tr->transpose_st == 0 || e->transpose_bypass) &&
-          !load_i32(&ln->a_cache_active) && rp == 0) {
+          !load_i32(&ln->a_cache_active) && rp == 0 &&
+          le_run_matches_print(tr, &ln->run)) {
         store_i32(&ln->a_cache_active, 1);
         for (int s = 0; s < fx_pre_count[t][l]; ++s) {
           le_fx_enable_force_bypass(&ln->fx, s);
@@ -9116,6 +9318,9 @@ static inline void mix_tracks_frame(
         }
       }
       const int printed = wce != NULL && load_i32(&ln->a_cache_active);
+      /* The lane chain plays live unless its own print or the track's has
+       * it bypassed; a return to live play begins its run (#939). */
+      le_chain_run_step(&ln->run, tr, sounding, rp, !printed && !track_printed);
       float wl;
       float wr;
       if (printed) {
@@ -9798,58 +10003,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     if (!(excluded & (1u << c))) ++active_in;
   }
 
-  /* ---- Per-input conditioning stage (input conditioning, S1) ----
-   * HPF + hum notches + downward expander, run ONCE per block per enabled
-   * input into the preallocated conditioned copy of the interleaved input,
-   * upstream of BOTH the lane fan-out and the monitor split (WYSIWYG: the
-   * performer hears exactly what records, and N lanes recording one input
-   * capture identical samples for one run of the DSP). `in_c` is what the
-   * lane capture, the monitors, the tuner, and the sound-activated record
-   * trigger read; metering / the latency harness keep reading the RAW `in`
-   * (process_input_frame). Loopback-excluded channels are never conditioned
-   * — the harness's round-trip correlation cannot be shaved by the HPF.
-   * Zero added buffering latency by construction (IIR + no-lookahead
-   * envelope; see engine_cond.c). Dormant cost: at most
-   * LE_MAX_CHANNELS relaxed loads per block. A block larger than the
-   * scratch (only the native tests' synthetic mega-blocks) falls back to the
-   * raw path for that block rather than allocating on the audio thread. */
-  const float* in_c = in;
-  if (in != NULL) {
-    uint32_t cond_mask = 0u;
-    const int cond_ch = ch_in < LE_MAX_CHANNELS ? ch_in : LE_MAX_CHANNELS;
-    for (int c = 0; c < cond_ch; ++c) {
-      if (load_i32(&e->cond[c].a_enabled) && !(excluded & (1u << c))) {
-        cond_mask |= 1u << c;
-      }
-    }
-    if (cond_mask != 0u) {
-      if (e->cond_buf != NULL &&
-          (int64_t)frames * (int64_t)ch_in <= e->cond_buf_cap) {
-        memcpy(e->cond_buf, in,
-               sizeof(float) * (size_t)frames * (size_t)ch_in);
-        for (int c = 0; c < cond_ch; ++c) {
-          if (cond_mask & (1u << c)) {
-            le_cond_process_block(&e->cond[c], e->cond_buf + c, frames, ch_in);
-          }
-        }
-        in_c = e->cond_buf;
-      } else if (frames > 0) {
-        /* Conditioning WANTED but impossible this block (oversized period or
-         * a failed scratch allocation): raw fallback, COUNTED — silent
-         * per-block alternation between conditioned and raw would click
-         * (stale filter states across the gaps), so the counter is how a
-         * bench/test proves this path never fires on a real backend. No RT
-         * assert: the audio callback must never abort. */
-        atomic_fetch_add_explicit(&e->a_cond_fallback_blocks, 1u,
-                                  memory_order_relaxed);
-      }
-    }
-  }
-
   /* ---- Input clip ("HOT") detector (input clip, S2) ----
-   * Always on, no params, and deliberately on the RAW `in` — never `in_c` —
-   * so a clipped input flags HOT even when the conditioning stage has ducked
-   * or notched what records (HOT reflects the ADC; see the LE_CLIP_* doc).
+   * Always on, no params, on the raw device buffer `in`, so HOT reflects the
+   * ADC (see the LE_CLIP_* doc).
    * LE_CLIP_RUN consecutive samples at |s| >= LE_CLIP_LEVEL latch the input's
    * bit for LE_CLIP_HOLD_MS of engine time (the a_frames timeline), refreshed
    * while the rail persists; the run counter carries across blocks so a run
@@ -9974,14 +10130,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
   /* Loop-stage wet cache (part 2), snapshotted once per buffer (see
    * snapshot_lane_cache): the per-lane published-entry pointer + full key
-   * verdict. NULL everywhere until a render publishes — one relaxed load per
-   * lane of dormant cost. */
+   * verdict, NULL everywhere until a render publishes, and each live chain's
+   * run (#939): a few relaxed loads per lane, the fingerprint refolded only
+   * after a chain edit. */
   const le_wet_entry* cache_ent[LE_MAX_TRACKS][LE_MAX_LANES];
   snapshot_lane_cache(e, tc, lane_n, cache_ent);
 
   /* Each track's whole-track print (slice 3e), same shape, one entry per
-   * track. NULL everywhere until a render publishes — one relaxed load per
-   * track of dormant cost. */
+   * track, NULL everywhere until a render publishes. A track whose Pre run
+   * could print has its key refolded every buffer to follow the track
+   * chain's run (#939); any other track costs a few relaxed loads. */
   const le_wet_entry* track_cache_ent[LE_MAX_TRACKS];
   snapshot_track_cache(e, tc, track_cache_ent);
   le_transpose_select(e, tc, lane_n, perf_frame_base);
@@ -10079,10 +10237,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   par->jobs = 0;
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
-    if (!instrument && (in_c == NULL || c >= ch_in)) continue;
+    if (!instrument && (in == NULL || c >= ch_in)) continue;
     if (mon_on[c] && !mon_mut[c] && mon_has_fx[c]) par->job_mon[par->jobs++] = c;
   }
-  par->in = in_c;
+  par->in = in;
   par->ch_in = ch_in;
   par->sr = sr;
   par->fx_cap = fx_cap;
@@ -10125,7 +10283,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
        * harness owns the frame it has already written `out`, so skip the
        * rest (in both loops). */
       par->owned[i] = (uint8_t)process_input_frame(
-          e, in, in_c, out, f, ch_in, ch_out, tc, sr, excluded, &in_sumsq,
+          e, in, out, f, ch_in, ch_out, tc, sr, excluded, &in_sumsq,
           &in_peak, in_peak_ch, perf_frame_base);
       if (par->owned[i]) {
         /* The FX clock still moves on to the next frame (#941). */
@@ -10170,10 +10328,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         }
       }
 
-      /* Per-lane capture + additive playback mix (see mix_tracks_frame).
-       * Reads the CONDITIONED input (in_c): the conditioning stage sits
-       * upstream of the lane write by design (WYSIWYG). */
-      mix_tracks_frame(e, in_c, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
+      /* Per-lane capture + additive playback mix (see mix_tracks_frame). */
+      mix_tracks_frame(e, in, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
                        out_enabled, overdub_fb, free_or_song, od_step,
                        od_fade_frames, pos,
                        lane_n, lane_fx_any, has_fx, fx_count, fx_pre_count,
@@ -10236,10 +10392,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       atomic_store_explicit(&ot->a_frame, par->clock + i, memory_order_relaxed);
       float frame_out_peak = 0.0f;
 
-      /* Per-input live monitoring (see mix_monitors_frame). Reads the
-       * CONDITIONED input (in_c): conditioned-clean IS the input's clean,
-       * for every consumer at once (WYSIWYG with the lane capture). */
-      mix_monitors_frame(e, in_c, out, f, i, ch_in, ch_out, out_enabled,
+      /* Per-input live monitoring (see mix_monitors_frame). */
+      mix_monitors_frame(e, in, out, f, i, ch_in, ch_out, out_enabled,
                          mon_on, mon_mut, mon_has_fx, mon_vol, mon_out, mon_gl,
                          mon_gr, mon_peak);
 
@@ -10324,9 +10478,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_f32(&e->a_out_rms_bits,
             total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
   store_f32(&e->a_out_peak_bits, out_peak);
-  /* The tuner reads the CONDITIONED input too — pitch detection benefits from
-   * the hum notches exactly like the lane capture does. */
-  tuner_tap_block(e, in_c, frames, ch_in, sr);
+  tuner_tap_block(e, in, frames, ch_in, sr);
   for (int t = 0; t < tc; ++t) {
     /* Lane buffers are mono: one loop sample accumulated per frame. The shared
      * write head publishes the same growing length onto every active lane. */

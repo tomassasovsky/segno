@@ -189,6 +189,16 @@ void main() {
       expect(find.byKey(const Key('power_shut_down')), findsOneWidget);
       expect(find.textContaining('without saving'), findsNothing);
       expect(find.textContaining('installs during the restart'), findsNothing);
+      // The buttons sit a spacing token apart (#1590 DLG-3).
+      Rect rect(String key) => tester.getRect(find.byKey(Key(key)));
+      expect(
+        rect('power_restart').left - rect('power_cancel').right,
+        moreOrLessEquals(SpacingTheme.standard.lg),
+      );
+      expect(
+        rect('power_shut_down').left - rect('power_restart').right,
+        moreOrLessEquals(SpacingTheme.standard.lg),
+      );
     });
 
     testWidgets('an unnamed session says it will be named first', (

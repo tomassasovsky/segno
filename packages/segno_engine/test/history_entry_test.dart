@@ -112,7 +112,7 @@ void main() {
       expect(HistoryKind.layer.code, 0);
       expect(HistoryKind.clear.code, 1);
       expect(HistoryKind.peel.code, 2);
-      expect(HistoryKind.processed.code, 3);
+      expect(HistoryKind.fromCode(3), isNull); // the restoration, #697
       expect(HistoryKind.length.code, 4);
       expect(HistoryKind.bounce.code, 5);
       for (final kind in HistoryKind.values) {

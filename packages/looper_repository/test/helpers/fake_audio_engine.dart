@@ -1524,35 +1524,6 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
-  /// Per-input conditioning enabled flag passed to
-  /// [setInputConditioningEnabled].
-  final Map<int, bool> conditioningEnabled = {};
-
-  /// Per-(input, param) conditioning value passed to
-  /// [setInputConditioningParam].
-  final Map<(int, InputConditioningParam), double> conditioningParam = {};
-
-  @override
-  EngineResult setInputConditioningEnabled({
-    required int input,
-    required bool enabled,
-  }) {
-    conditioningEnabled[input] = enabled;
-    calls.add('setInputConditioningEnabled');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setInputConditioningParam({
-    required int input,
-    required InputConditioningParam param,
-    required double value,
-  }) {
-    conditioningParam[(input, param)] = value;
-    calls.add('setInputConditioningParam');
-    return EngineResult.ok;
-  }
-
   /// Per-(input, index) effect type passed to [setMonitorInputFx].
   final Map<(int, int), TrackEffectType> monitorFx = {};
 
@@ -2276,7 +2247,6 @@ class _LengthSnapshot extends EngineSnapshot {
         outputChannels: source.outputChannels,
         excludedInputMask: source.excludedInputMask,
         inputClipMask: source.inputClipMask,
-        inputCondMask: source.inputCondMask,
         masterLengthFrames: source.masterLengthFrames,
         masterPositionFrames: source.masterPositionFrames,
         recordOffsetFrames: source.recordOffsetFrames,
@@ -2387,7 +2357,6 @@ class _LengthTrack extends TrackSnapshot {
         lengthPresetBars: bars ?? source.lengthPresetBars,
         oneShot: engine.trackOneShot[channel] ?? source.oneShot,
         settledTakeId: source.settledTakeId,
-        restoreState: source.restoreState,
         positionFrames: source.positionFrames,
         pendingTrigger: source.pendingTrigger,
         quantizeOverride: engine.lastQuantize == null

@@ -39,8 +39,16 @@ int32_t le_length_presets_check(le_engine* engine, const int32_t* bars,
 #define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
 #define LE_LATENCY_CAPTURE_DIV 10  /* capture window = sample_rate / this (~100ms) */
 
-/* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
+/* Input level (0..1) that triggers sound-activated recording (~-34 dBFS),
+ * read after the detector's high-pass (le_trigger_hp, #1623). */
 #define LE_AUTO_RECORD_THRESHOLD 0.02f
+
+/* The sound-activated trigger's detector high-pass (#1623): a fourth-order
+ * Butterworth at LE_TRIGGER_HP_HZ on each input's detection path only, so
+ * mains hum (50/60 Hz, 18 to 24 dB down) and rumble cannot start a take while
+ * a pick's attack, broadband, still does. What records stays raw. The
+ * Looper X's and RC-600's input triggers ignore rumble the same way. */
+#define LE_TRIGGER_HP_HZ 100.0
 
 /* Drops any Song or Band handoff (#1077). A waiting Record's arm is left
  * for le_song_publish to clear at the end of the block. Audio thread, or
@@ -341,8 +349,8 @@ static inline void le_track_publish_live(le_track* t, int32_t slot,
 /* Publishes [slot] live with its staged image identity (#1143): `id` is the
  * perf.slot_image entry the callback will log when it first mixes the slot —
  * a nonzero staged id from le_stage_source_image, or 0 for a slot whose PCM
- * has no immutable copy in this capture (loop-close restoration, session
- * import), which the callback logs as 323/0 so the stem fails truthfully.
+ * has no immutable copy in this capture (a session import), which the
+ * callback logs as 323/0 so the stem fails truthfully.
  * Every control-side a_live publisher goes through here, so a stale entry
  * can never be read for a slot that was published without one. */
 static inline void le_publish_live_image(le_engine* e, le_track* t, int32_t slot,
@@ -572,30 +580,6 @@ void le_lane_shrink_slot(le_engine* e, le_lane* ln, int32_t slot,
  * free goes through here; a buffer the callback may still hold is retired
  * instead (le_retire_buffer). NULL-safe. */
 void le_free_audio_buffer(le_engine* e, float* buf);
-
-/* ---- Per-input conditioning stage (input conditioning, S1) ----
- * Defined in engine_cond.c. le_cond_seed_defaults runs on the CONTROL thread
- * at configure (device closed — no audio thread): stores the published
- * defaults and fully prepares the DSP state. The other three run on the AUDIO
- * thread alone (apply_command / the per-block conditioning pass). */
-
-/* Seeds published defaults (disabled, 40 Hz HPF, 50 Hz x4 hum, -55 dB 1:2
- * expander, 150 ms release) and recomputes + resets all DSP state. */
-void le_cond_seed_defaults(le_input_cond* c, int sample_rate);
-
-/* Recomputes every section's coefficients from the published params and
- * resets ALL filter/envelope state (enable edges + configure). */
-void le_cond_prepare(le_input_cond* c, int sample_rate);
-
-/* Clamps + publishes one le_cond_param and recomputes the affected section's
- * coefficients, resetting only that section's own state. */
-void le_cond_update_param(le_input_cond* c, int32_t param, float value,
-                          int sample_rate);
-
-/* Runs the stage in place over one input channel of an interleaved block:
- * buf[0], buf[stride], ... buf[(frames-1)*stride]. */
-void le_cond_process_block(le_input_cond* c, float* buf, uint32_t frames,
-                           int32_t stride);
 
 /* Drains the audio->control event ring (retired per-pass undo layers) into the
  * per-track undo stacks, replenishes shadow-slot spares, pre-arms the

@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/control/control.dart';
@@ -37,7 +38,8 @@ class StageTopBar extends StatelessWidget {
   /// The bar's height — the pen's 96.
   static const double height = 96;
 
-  /// The bar's inset from the screen edges — the pen's 60.
+  /// The stage's inset from the screen edges — the pen's 60. The footer and
+  /// the track run share it.
   static const double sideInset = 60;
 
   /// The gap between the trailing buttons — the pen's 24.
@@ -271,32 +273,15 @@ class _ResetMixerButton extends StatelessWidget {
 
   Future<void> _confirmReset(BuildContext context) async {
     final l10n = context.l10n;
-    final surface = context.surface;
     final repository = context.read<LooperRepository>();
     final generation = repository.mixGeneration;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: surface.scrim,
-      builder: (dialogContext) => AlertDialog(
-        key: const Key('mixer_reset_confirm'),
-        backgroundColor: surface.cardHigh,
-        title: Text(l10n.mixerReset),
-        content: Text(l10n.mixerResetConfirmBody),
-        actions: [
-          TextButton(
-            key: const Key('mixer_reset_cancel'),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          FilledButton(
-            key: const Key('mixer_reset_apply'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.mixerReset),
-          ),
-        ],
-      ),
+    final confirmed = await showConsoleConfirmDialog(
+      context,
+      title: l10n.mixerReset,
+      body: l10n.mixerResetConfirmBody,
+      confirmLabel: l10n.mixerReset,
     );
-    if (confirmed == true &&
+    if (confirmed &&
         context.mounted &&
         repository.mixGeneration == generation) {
       context.read<LooperBloc>().add(const LooperMixerReset());
@@ -317,9 +302,12 @@ class _ResetMixerButton extends StatelessWidget {
     if (!showing || mustAct) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(right: StageTopBar._gap),
+      // Boxed like A, the view menu, the tuner and settings beside it
+      // (#1590 STG-4).
       child: _StageIconButton(
         key: const Key('stage_reset_mixer'),
         semanticLabel: l10n.a11yMixerReset,
+        bordered: true,
         onTap: () => unawaited(_confirmReset(context)),
         child: Icon(
           LucideIcons.rotateCcw,

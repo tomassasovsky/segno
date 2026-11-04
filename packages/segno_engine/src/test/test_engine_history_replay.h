@@ -605,33 +605,6 @@ static void test_history_capture_namespace(void) {
   le_engine_destroy(e);
 }
 
-/* A loop-close restoration commit during capture publishes processed material
- * with no staged image: 323/0, the stem fails, the master is intact. */
-static void test_history_loop_close_restore_fails_truthfully(void) {
-  printf("test_history_loop_close_restore_fails_truthfully\n");
-  le_engine* e = history_fixture();
-  const char* dir = render_test_dir("history-loop-close");
-  const char* arm = history_arm_image(e, dir);
-  CHECK(perf_arm_dir(e, dir) == LE_OK); drain(e);
-  static float live[64];
-  int at = history_process(e, live, 0, 4, 1);
-  static float restored_pcm[HR_LEN];
-  for (int i = 0; i < HR_LEN; ++i) restored_pcm[i] = .125f;
-  float* restored[LE_MAX_LANES] = {restored_pcm};
-  const uint32_t rev = atomic_load(&e->tracks[0].a_audio_rev);
-  CHECK(le_restore_commit_layer(e, 0, 0x1u, rev, HR_LEN, restored) == LE_OK);
-  at = history_process(e, live, at, 4, 1);
-  CHECK(live[4] == .125f);
-  CHECK(le_perf_disarm(e) == LE_OK);
-  le_perf_log_entry facts[4];
-  CHECK(history_source_facts(dir, 0, facts, 4) == 1);
-  CHECK(facts[0].cmd.code == LE_PLOG_SOURCE_TRANSPORT && facts[0].frame == 4);
-  CHECK(facts[0].cmd.restore_log.image_id == 0);
-  fade_finalize_manifest(dir, arm);
-  fade_render_status(e, dir, 0);
-  le_engine_destroy(e);
-}
-
 /* Review E3: a session import during capture rewrites a slot whose image an
  * earlier Undo staged (slot X, id 1), then Undo-to-empty keeps X live. The
  * imported PCM must not be logged as image 1: the callback logs 323/0 and the
@@ -693,6 +666,5 @@ static void run_history_replay_tests(void) {
   test_history_staging_refusal_fails_stem_keeps_undo();
   test_history_missing_image_and_manifest_full();
   test_history_capture_namespace();
-  test_history_loop_close_restore_fails_truthfully();
   test_history_import_during_capture_fails_truthfully();
 }

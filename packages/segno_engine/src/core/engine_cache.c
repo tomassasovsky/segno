@@ -307,7 +307,7 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
                                   const int32_t* types, const int32_t* enabled,
                                   const float params[LE_FX_MAX][LE_FX_PARAMS],
                                   const le_fx_chan* chan, uint32_t top,
-                                  int sr) {
+                                  int32_t len) {
   uint64_t h = 0xcbf29ce484222325ULL;
   if (count > 0) h = le_fx_fp_u32(h, chain_on ? 1u : 0u);
   for (int32_t i = 0; i < count; ++i) {
@@ -322,12 +322,12 @@ static uint64_t le_ca_snapshot_fp(int32_t count, int32_t chain_on,
   /* The channel handling, after the entries — the order
    * le_lane_pre_fx_fingerprint folds it in (slice 3e). */
   for (int32_t i = 0; i < count; ++i) h = le_fx_chan_fold(h, &chan[i]);
-  /* ...and, for a chain holding an octaver, the loop top's position on the
-   * hop the print is rendered against (#941), as le_lane_pre_fx_fingerprint
-   * folds it. */
+  /* ...and, for a chain holding a clock LFO, where the loop top the print is
+   * rendered against sits on the lap grid (#1620), as
+   * le_lane_pre_fx_fingerprint folds it too. */
   for (int32_t i = 0; i < count && chain_on; ++i) {
-    if (le_fx_type_hops(types[i]) && enabled[i]) {
-      h = le_fx_fp_u32(h, le_fx_hop_position(top, sr));
+    if (le_fx_type_clock_lfo(types[i]) && enabled[i]) {
+      h = le_fx_fp_u32(h, le_fx_lap_position(top, len));
       break;
     }
   }
@@ -623,54 +623,61 @@ static void le_cache_install_entry(le_engine* e, struct le_fx_cache* c,
                         memory_order_release);
 }
 
-/* Whether a Pre run [0, pre) of [a_type] holds an octaver that plays: its
- * slot enabled and the chain on (le_fx_fold_hop_position's rule). */
-static int le_ca_pre_has_octaver(_Atomic int32_t* a_type,
-                                 _Atomic int32_t* a_enabled,
-                                 _Atomic int32_t* a_chain_enabled,
-                                 _Atomic int32_t* a_pre,
-                                 _Atomic int32_t* a_count) {
+/* Whether a Pre run [0, pre) of [a_type] holds a kind [is] names that
+ * plays: its slot enabled and the chain on (le_fx_fold_lap_position's rule).
+ */
+static int le_ca_pre_has(int (*is)(int32_t), _Atomic int32_t* a_type,
+                         _Atomic int32_t* a_enabled,
+                         _Atomic int32_t* a_chain_enabled,
+                         _Atomic int32_t* a_pre, _Atomic int32_t* a_count) {
   if (!load_i32(a_chain_enabled)) return 0;
   int32_t pre = load_i32(a_pre);
   const int32_t count = load_i32(a_count);
   if (pre > count) pre = count;
   if (pre > LE_FX_MAX) pre = LE_FX_MAX;
   for (int32_t s = 0; s < pre; ++s) {
-    if (le_fx_type_hops(load_i32(&a_type[s])) && load_i32(&a_enabled[s])) {
+    if (is(load_i32(&a_type[s])) && load_i32(&a_enabled[s])) return 1;
+  }
+  return 0;
+}
+
+/* Whether the job's printed chain holds a kind [is] names: the lane's Pre
+ * run, or for a whole-track print the track's Pre run or any part's. The key
+ * was just checked against the current chain, so the chain read here is the
+ * one that was rendered. */
+static int le_ca_job_has(le_engine* e, const le_cache_job* job,
+                         int (*is)(int32_t)) {
+  le_track* tr = &e->tracks[job->channel];
+  if (job->kind != LE_CACHE_KIND_TRACK) {
+    le_lane* ln = &tr->lanes[job->lane];
+    return le_ca_pre_has(is, ln->a_fx_type, ln->a_fx_enabled,
+                         &ln->a_fx_chain_enabled, &ln->a_fx_pre_count,
+                         &ln->a_fx_count);
+  }
+  if (le_ca_pre_has(is, tr->bus.a_fx_type, tr->bus.a_fx_enabled,
+                    &tr->bus.a_fx_chain_enabled, &tr->bus.a_fx_pre_count,
+                    &tr->bus.a_fx_count)) {
+    return 1;
+  }
+  const int32_t lanes = le_lanes_active(tr);
+  for (int32_t l = 0; l < lanes; ++l) {
+    le_lane* ln = &tr->lanes[l];
+    if (le_ca_pre_has(is, ln->a_fx_type, ln->a_fx_enabled,
+                      &ln->a_fx_chain_enabled, &ln->a_fx_pre_count,
+                      &ln->a_fx_count)) {
       return 1;
     }
   }
   return 0;
 }
 
-/* The finished print's le_wet_entry::hop_tag (#941): set when its key folds
- * the hop position, which is when an octaver is in the printed chain: the
- * lane's Pre run, or for a whole-track print the track's Pre run or any
- * part's. The key was just checked against the current chain, so the chain
- * read here is the one that was rendered. */
-static uint32_t le_ca_hop_tag(le_engine* e, const le_cache_job* job) {
-  le_track* tr = &e->tracks[job->channel];
-  int octaver = 0;
-  if (job->kind == LE_CACHE_KIND_TRACK) {
-    octaver = le_ca_pre_has_octaver(tr->bus.a_fx_type, tr->bus.a_fx_enabled,
-                                    &tr->bus.a_fx_chain_enabled,
-                                    &tr->bus.a_fx_pre_count,
-                                    &tr->bus.a_fx_count);
-    const int32_t lanes = le_lanes_active(tr);
-    for (int32_t l = 0; l < lanes && !octaver; ++l) {
-      le_lane* ln = &tr->lanes[l];
-      octaver = le_ca_pre_has_octaver(ln->a_fx_type, ln->a_fx_enabled,
-                                      &ln->a_fx_chain_enabled,
-                                      &ln->a_fx_pre_count, &ln->a_fx_count);
-    }
-  } else {
-    le_lane* ln = &tr->lanes[job->lane];
-    octaver = le_ca_pre_has_octaver(ln->a_fx_type, ln->a_fx_enabled,
-                                    &ln->a_fx_chain_enabled,
-                                    &ln->a_fx_pre_count, &ln->a_fx_count);
-  }
-  return octaver ? le_fx_hop_position(job->chain.clock0, job->sample_rate) + 1u
-                 : 0u;
+/* The finished print's le_wet_entry::lap_tag (#1620): set when its key
+ * folds the top's place on the lap grid, which is when a clock LFO is in the
+ * printed chain. */
+static uint32_t le_ca_lap_tag(le_engine* e, const le_cache_job* job) {
+  return le_ca_job_has(e, job, le_fx_type_clock_lfo)
+             ? le_fx_lap_position(job->chain.clock0, job->len) + 1u
+             : 0u;
 }
 
 static void le_cache_install(le_engine* e, struct le_fx_cache* c,
@@ -680,7 +687,7 @@ static void le_cache_install(le_engine* e, struct le_fx_cache* c,
                             .vol_bits = job->vol_bits,
                             .len = job->len,
                             .out_len = job->len,
-                            .hop_tag = le_ca_hop_tag(e, job)};
+                            .lap_tag = le_ca_lap_tag(e, job)};
   le_cache_install_entry(e, c, job->kind, job->channel, job->lane, &key,
                          &job->wet);
 }
@@ -838,28 +845,6 @@ static int le_cache_copy_key_matches(le_engine* e, const le_cache_job* job) {
  * debounce [B2][B3], publish a retained match, or enqueue a render when the
  * gates allow. Every "don't cache" outcome degrades to live — never blocks
  * audio. */
-/* Whether a print of [types][0, count) over a loop of [len] frames could not
- * equal live (#941). The octaver's hop is anchored to the engine clock, so on
- * a loop that is not a whole number of its periods (le_fx_hop_period: a
- * hop at 48 kHz, 1176 frames at 44.1, 512 at 96) it falls on different frames of
- * the loop each lap: the live octaver output differs lap to lap, and a print
- * of one lap would step at the loop top where it swaps in. Such a chain
- * plays live. On a loop of whole periods every lap is the same, and the print
- * equals live at whichever loop top it engages. A bypassed octaver, or one in
- * a chain switched off, passes the signal dry and prints (a rack's
- * switched-off Pitch Shift); turning it on changes the key and re-checks. */
-static int le_cache_hop_unprintable(const int32_t* types,
-                                    const int32_t* enabled, int32_t chain_on,
-                                    int32_t count, int32_t len, int sr) {
-  if (!chain_on || len <= 0 || len % (int32_t)le_fx_hop_period(sr) == 0) {
-    return 0;
-  }
-  for (int32_t s = 0; s < count; ++s) {
-    if (le_fx_type_hops(types[s]) && enabled[s]) return 1;
-  }
-  return 0;
-}
-
 /* Whether a printed run holds a free-running modulator (#887 part 6: the
  * chorus's and the doubler's LFOs run on whatever the loop does): each lap
  * of it sounds different, so one lap's print would repeat where live does
@@ -869,10 +854,15 @@ static int le_cache_hop_unprintable(const int32_t* types,
  * and re-checks. */
 static int le_cache_free_running(const int32_t* types, const int32_t* enabled,
                                   const float params[LE_FX_MAX][LE_FX_PARAMS],
-                                  int32_t chain_on, int32_t count, int sr) {
+                                  int32_t chain_on, int32_t count, int32_t len,
+                                  int sr) {
   if (!chain_on) return 0; /* the print is the dry signal */
   for (int32_t s = 0; s < count; ++s) {
-    if (enabled[s] && le_fx_entry_free_running(types[s], params[s], sr)) {
+    /* ...and so does a clock LFO that does not fit the lap a whole number of
+     * times (#1620). The kinds on the octaver's kernel are free-running
+     * (#1624). */
+    if (enabled[s] && (le_fx_entry_free_running(types[s], params[s], sr) ||
+                       le_fx_entry_lfo_drifts(types[s], params[s], len, sr))) {
       return 1;
     }
   }
@@ -933,12 +923,10 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   }
   const int32_t len = load_i32(&ln->a_len);
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
-                                                 e->sample_rate);
-  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len,
-                                               e->sample_rate)) {
+                                                 len, e->sample_rate);
+  if (free_running) {
     lc->state = LE_CACHE_GAVE_UP;
-    lc->reason =
-        free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
+    lc->reason = LE_CACHE_REASON_FREE_RUNNING;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     /* Withdraw an older print still published, so the track scheduler does
      * not read it as a ready part and render a whole-track print it would
@@ -979,7 +967,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
       atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   const uint64_t fp =
       le_ca_snapshot_fp(count, chain_on, types, raw_en, params, chan, top,
-                        e->sample_rate);
+                        load_i32(&tr->lanes[0].a_len));
   /* Cross-check against the canonical atomic fold: a mismatch means the audio
    * thread published a type/count change mid-snapshot — skip this tick rather
    * than schedule a torn chain (the next tick reads it settled). */
@@ -1103,7 +1091,8 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any, ln->fx.hop_seed);
   /* Rendered as the lap that began at the last loop top, the one before the
-   * top the print is expected to engage at (#941). */
+   * top the print is expected to engage at: a clock LFO's phase follows
+   * the clock it is rendered at (#1620). */
   job->chain.clock0 = top; /* the top the key above was taken at */
   job->copy_pos = 0;
   job->dry = dry;
@@ -1168,12 +1157,10 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   }
   const int32_t len = load_i32(&tr->lanes[0].a_len);
   const int free_running = le_cache_free_running(types, raw_en, params, chain_on, count,
-                                                 e->sample_rate);
-  if (free_running || le_cache_hop_unprintable(types, raw_en, chain_on, count, len,
-                                               e->sample_rate)) {
+                                                 len, e->sample_rate);
+  if (free_running) {
     lc->state = LE_CACHE_GAVE_UP;
-    lc->reason =
-        free_running ? LE_CACHE_REASON_FREE_RUNNING : LE_CACHE_REASON_HOP;
+    lc->reason = LE_CACHE_REASON_FREE_RUNNING;
     lc->has_key = 0; /* any later printable chain re-arms, even the old key */
     atomic_store_explicit(&tr->a_track_wet, NULL, memory_order_release);
     return;
@@ -1218,9 +1205,9 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   const uint32_t top =
       atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
   const uint64_t fp = le_track_pre_fingerprint(e, t);
-  /* The key folds the loop top's hop position for an octaver chain (#941);
-   * a relaunch between the two reads would key the print to one top and
-   * render it from another, so skip this tick and take both again. */
+  /* The key folds the loop top's place on the lap grid for a clock LFO
+   * (#1620); a relaunch between the two reads would key the print to one top
+   * and render it from another, so skip this tick and take both again. */
   if (atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed) != top) {
     return;
   }
@@ -1335,7 +1322,8 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   le_fx_frozen_fill(&job->chain, count, count, chain_on, types, raw_en, params,
                     chan, chan_any, b->fx.hop_seed);
   /* Rendered as the lap that began at the last loop top, the one before the
-   * top the print is expected to engage at (#941). */
+   * top the print is expected to engage at: a clock LFO's phase follows
+   * the clock it is rendered at (#1620). */
   job->chain.clock0 = top; /* the top the key above was taken at */
   job->copy_pos = 0;
   job->dry = src;
@@ -1686,14 +1674,15 @@ void le_fx_frozen_bits(const le_fx_frozen_chain* c, int32_t from, int32_t to,
 int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
                                 int32_t from, int32_t to, int32_t cap) {
   /* The live owner's hop-stagger seed, BEFORE the resets below seed any
-   * octaver's hop counter from it (#915). A calloc'd 0 is one owner's seed;
-   * every other owner's print would be a different phase-vocoder
-   * realization than the live chain it replaces, swapped in at a loop top.
+   * octaver's hop counter or heap kind's update phase from it (#915). A
+   * calloc'd 0 is one owner's seed; every other owner's render would update
+   * on other frames than the live chain it stands for.
    *
    * What the seed cannot fix (#939): RENDER-TWICE-KEEP-SECOND reproduces a
-   * chain that engaged exactly one lap earlier. A live lane that has run k
-   * laps sits (k - 1) * len samples further on, and unlike a tail a hop
-   * phase never decays. */
+   * chain that engaged exactly one lap earlier. A live chain that has run
+   * more laps carries history the print does not (an echo built up over
+   * more passes, an LFO further on), so the audio thread swaps a print in
+   * only where the live chain's run matches it (le_run_matches_print). */
   fx->hop_seed = c->hop_seed;
   fx->clock = c->clock0;
   fx->clocked = 1;
@@ -1716,7 +1705,7 @@ int32_t le_fx_frozen_state_init(le_fx_state* fx, const le_fx_frozen_chain* c,
      * fresh state starts from that same reset (a raw calloc zero differs —
      * e.g. the octaver's shift smoother seeds at unison 0.5, not 0.0). A
      * hosted plugin's offline slot stays NULL and renders dry. */
-    le_fx_entry_reset(fx, s);
+    le_fx_entry_reset(fx, s, c->type[s]);
     /* Only the entries this state processes own buffers (review L5). */
     if (s >= from && s < to && c->type[s] != LE_FX_NONE &&
         c->type[s] != LE_FX_PLUGIN &&
@@ -1740,7 +1729,8 @@ int32_t le_fx_print(const le_fx_frozen_chain* c, int32_t count,
   le_fx_frozen_bits(c, 0, count, bits);
   /* RENDER-TWICE-KEEP-SECOND: pass 1 is exactly the chain's first live lap,
    * so the kept pass matches a live chain that engaged at the previous loop
-   * top, with tails that wrap the loop boundary baked in. */
+   * top, with tails that wrap the loop boundary baked in. The audio thread
+   * engages it only over a live chain whose run matches that (#939). */
   for (int pass = 0; pass < 2 && rc == LE_OK; ++pass) {
     for (int32_t f = 0; f < len; ++f) {
       if ((f % LE_CACHE_ABORT_CHECK_FRAMES) == 0 && abort_fn != NULL &&

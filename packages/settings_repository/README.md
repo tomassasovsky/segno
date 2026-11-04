@@ -3,10 +3,9 @@
 Repository that stores Segno's persistent settings in a key-value store
 (`KeyValueStore` from `local_storage_client`, backed by `shared_preferences`).
 It covers the audio device configuration, latency calibration per device
-profile, monitor and input conditioning settings, tempo and recording choices,
-pedal setup and bindings, MIDI configuration, display settings, and one-time
-notices. The app's cubits and `midi_device_repository` read and write through
-it.
+profile, monitor settings, tempo and recording choices, pedal setup and
+bindings, MIDI configuration, display settings, and one-time notices. The
+app's cubits and `midi_device_repository` read and write through it.
 
 ## Usage
 

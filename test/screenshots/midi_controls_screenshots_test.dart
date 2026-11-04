@@ -83,9 +83,9 @@ MidiMapping _mapping() => MidiMapping(
 
 const _connection = MidiConnection(
   devices: [MidiDevice(id: 'usb', name: 'USB controller')],
+  open: {'usb'},
   selectedId: 'usb',
   selectedName: 'USB controller',
-  status: MidiConnectionStatus.connected,
 );
 
 /// Images of the real MIDI screens for review. CI renders them into the
@@ -207,7 +207,9 @@ void main() {
       () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
     ).thenReturn(EngineResult.ok);
     when(() => devices.connection).thenReturn(_connection);
-    when(() => devices.session).thenReturn(const MidiInputSession('usb', 1));
+    when(
+      () => devices.sessions,
+    ).thenReturn(const {'usb': MidiInputSession('usb', 1)});
     when(() => devices.connections).thenAnswer((_) => connections.stream);
     when(() => devices.messages).thenAnswer((_) => messages.stream);
     when(() => devices.activity).thenAnswer((_) => const Stream<void>.empty());
@@ -742,7 +744,6 @@ void main() {
       const gone = MidiConnection(
         selectedId: 'usb',
         selectedName: 'USB controller',
-        status: MidiConnectionStatus.deviceGone,
       );
       when(() => devices.connection).thenReturn(gone);
       connections.add(gone);

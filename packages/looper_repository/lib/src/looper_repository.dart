@@ -1837,15 +1837,6 @@ class LooperRepository {
   final Map<int, bool> _monitorMute = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
 
-  /// Per-input conditioning-stage intent (the fixed HPF / hum-notch / expander
-  /// utility stage), remembered and re-applied on every successful (re)start:
-  /// the engine resets conditioning on every configure, so — like the monitor
-  /// maps above — the intent lives here and is re-pushed after each device
-  /// (re)open. [_condEnabled] is the stage on/off; [_condParams] holds each set
-  /// parameter's real-unit value, keyed by input then [InputConditioningParam].
-  final Map<int, bool> _condEnabled = {};
-  final Map<int, Map<InputConditioningParam, double>> _condParams = {};
-
   /// Live plugin slot handles keyed by chain position — `(channel, lane,
   /// index)` for lane chains, `(input, index)` for monitor chains. Repopulated
   /// every time a chain is (re)applied to the running engine; an absent entry
@@ -2083,6 +2074,15 @@ class LooperRepository {
   /// On healthy hardware every judged field reads zero; see
   /// [CallbackTelemetry].
   CallbackTelemetry readCallbackTelemetry() => _engine.callbackTelemetry();
+
+  /// Frames the audio callback has processed. A running engine whose count
+  /// stops moving has a callback that no longer runs, which the running flag
+  /// alone does not show (#1519). The native count runs on across stops and
+  /// starts; the mock engine's starts again at each start.
+  ///
+  /// A method for the reason [readCallbackTelemetry] is: it changes on every
+  /// callback, so it stays off [state].
+  int readFramesProcessed() => _engine.snapshot().framesProcessed;
 
   /// The player's config: the most recent config passed to [startEngine] or
   /// applied, or `null` before the first successful start. During a warm-up
@@ -2680,7 +2680,6 @@ class LooperRepository {
       devicePresent: s.devicePresent,
       excludedInputMask: s.excludedInputMask,
       inputClipMask: s.inputClipMask,
-      inputCondMask: s.inputCondMask,
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       reopen: _lastReopen,
@@ -3265,22 +3264,6 @@ class LooperRepository {
           return fxResult;
         }
       }
-      // Re-apply per-input conditioning (the engine resets it on configure):
-      // stage each input's parameters first, then its enable flag, so the final
-      // enable establishes the stage with its parameters already in place.
-      _condParams.forEach((input, params) {
-        params.forEach(
-          (param, value) => _engine.setInputConditioningParam(
-            input: input,
-            param: param,
-            value: value,
-          ),
-        );
-      });
-      _condEnabled.forEach(
-        (input, enabled) =>
-            _engine.setInputConditioningEnabled(input: input, enabled: enabled),
-      );
       // Each target receives one complete recipe, including its power flag.
       for (final channel in <int>{
         ..._trackEffects.keys,
@@ -6299,50 +6282,6 @@ class LooperRepository {
     _monitorMute[input] = muted;
     _monitorChanged(input);
     return EngineResult.ok;
-  }
-
-  /// Enables or disables hardware [input]'s conditioning stage (the fixed HPF /
-  /// hum-notch / expander utility stage). Remembered and re-applied on every
-  /// successful (re)start — the engine resets conditioning on each configure —
-  /// and takes effect immediately only while running. Returns
-  /// [EngineResult.invalid] for an input outside `[0, kMaxChannels)`:
-  /// conditioning is a hardware stage, which instrument sources (#1197) do
-  /// not have, and the engine refuses them.
-  EngineResult setInputConditioningEnabled({
-    required int input,
-    required bool enabled,
-  }) {
-    if (input < 0 || input >= kMaxChannels) {
-      return EngineResult.invalid;
-    }
-    _condEnabled[input] = enabled;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setInputConditioningEnabled(input: input, enabled: enabled);
-  }
-
-  /// Sets conditioning parameter [param] of hardware [input] to [value] in its
-  /// real unit (Hz / dB / ms / ratio — see [InputConditioningParam]).
-  /// Remembered
-  /// and re-applied on every (re)start; takes effect immediately only while
-  /// running. Independent of the enable flag — a value set while the stage is
-  /// off is applied and takes effect when it is next enabled. Returns
-  /// [EngineResult.invalid] for an input outside `[0, kMaxChannels)`, as
-  /// [setInputConditioningEnabled] does.
-  EngineResult setInputConditioningParam({
-    required int input,
-    required InputConditioningParam param,
-    required double value,
-  }) {
-    if (input < 0 || input >= kMaxChannels) {
-      return EngineResult.invalid;
-    }
-    (_condParams[input] ??= {})[param] = value;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setInputConditioningParam(
-      input: input,
-      param: param,
-      value: value,
-    );
   }
 
   /// Turns hardware [output] on/off as a routing target (the structural output

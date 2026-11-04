@@ -28,7 +28,6 @@ flutter:
   assets:
     - third_party/clap/LICENSE
     - src/miniaudio/LICENSE
-    - third_party/rnnoise/COPYING
     - third_party/signalsmith-stretch/dsp/LICENSE.txt
     - third_party/signalsmith-stretch/LICENSE.txt
     - third_party/vst3sdk/base/LICENSE.txt

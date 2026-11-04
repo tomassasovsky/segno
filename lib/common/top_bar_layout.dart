@@ -17,6 +17,13 @@ import 'package:segno/theme/theme.dart';
 /// reaches so near the centre that less than [minCentredWidth] is left does
 /// the centre fall back to the room between the groups.
 ///
+/// The trailing group gets the room the leading one leaves, less the bar's
+/// gap. When it is wider than that room (the Mixer's buttons in a desktop
+/// window narrower than the appliance panel), it is scaled down to fit, the
+/// way the stage scales the Mixer's strips, rather than overflowing the bar's
+/// edge. It is laid out at its own width, unconstrained, so it cannot hold an
+/// [Expanded], a [Flexible] or a [Spacer].
+///
 /// Flutter's `NavigationToolbar` was the obvious candidate and does not fit:
 /// a long middle slides off centre towards the roomier side there.
 class TopBarLayout extends StatelessWidget {
@@ -47,7 +54,14 @@ class TopBarLayout extends StatelessWidget {
     children: [
       LayoutId(id: _Slot.leading, child: leading),
       LayoutId(id: _Slot.centre, child: centre),
-      LayoutId(id: _Slot.trailing, child: trailing),
+      LayoutId(
+        id: _Slot.trailing,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: trailing,
+        ),
+      ),
     ],
   );
 }
@@ -65,7 +79,9 @@ class _CentredLayout extends MultiChildLayoutDelegate {
     final leading = layoutChild(_Slot.leading, loose);
     final trailing = layoutChild(
       _Slot.trailing,
-      loose.copyWith(maxWidth: math.max(0, size.width - leading.width)),
+      // The bar's gap stays between the groups, also when the trailing one
+      // has to be scaled down to fit.
+      loose.copyWith(maxWidth: math.max(0, size.width - leading.width - gap)),
     );
     positionChild(
       _Slot.leading,

@@ -1290,7 +1290,7 @@ void main() {
       // Two lanes, each a 3-layer stack (undo 1, live, redo 1) — the per-lane
       // layer zip must keep each lane's ordered layers, history and counts.
       const history = TrackHistory([
-        HistoryEntry(HistoryKind.processed),
+        HistoryEntry(HistoryKind.layer),
         HistoryEntry(HistoryKind.layer),
       ], undoCount: 1);
       SessionLane historyLane(int index, List<String> files) => SessionLane(

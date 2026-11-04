@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +23,107 @@ void main() {
           home: Scaffold(body: ConsoleCard(children: rows)),
         ),
       );
+
+  group('ConsoleRow layout', () {
+    testWidgets('the title takes twice the share of the value, and a long '
+        'subtitle keeps all its words (#1590 DEV-1)', (
+      tester,
+    ) async {
+      // The console's own width: the test font's square glyphs make the
+      // sentence far wider than it is on the console.
+      tester.view
+        ..physicalSize = const Size(1920, 1080)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      const subtitle =
+          'A higher cap reserves more memory per track. Change it with no '
+          'tracks recorded.';
+      await pumpRows(tester, [
+        const ConsoleRow(
+          key: Key('row'),
+          title: 'Maximum loop length',
+          subtitle: subtitle,
+          value: '5 min',
+          expanded: false,
+          showDivider: false,
+        ),
+      ]);
+      final row = tester.getRect(find.byKey(const Key('row')));
+      final sub = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.text(subtitle),
+          matching: find.byType(RichText),
+        ),
+      );
+      // The title column takes more than half the row, and the value stays
+      // at the row's right edge.
+      expect(sub.size.width, greaterThan(row.width / 2));
+      expect(
+        tester.getTopRight(find.text('5 min')).dx,
+        greaterThan(row.right - row.width / 4),
+      );
+      expect(sub.didExceedMaxLines, isFalse);
+    });
+  });
+
+  testWidgets(
+    'a row is drawn at the scale of the full-size pages (#1590 DEV-2)',
+    (
+      tester,
+    ) async {
+      await pumpRows(tester, [
+        ConsoleRow(
+          key: const Key('row'),
+          title: 'Delete old captures',
+          subtitle: 'Captures older than 30 days',
+          value: '6.2 GB',
+          expanded: false,
+          showDivider: false,
+          onTap: () {},
+        ),
+        ConsolePickRow(
+          key: const Key('pick'),
+          title: 'Scarlett 18i20',
+          state: '18 in · 20 out',
+          selected: true,
+          onTap: () {},
+        ),
+      ]);
+      double size(String text) => tester
+          .widget<AppText>(find.widgetWithText(AppText, text))
+          .style!
+          .fontSize!;
+      expect(tester.getSize(find.byKey(const Key('row'))).height, 84);
+      expect(size('Delete old captures'), 24);
+      expect(size('Captures older than 30 days'), 20);
+      expect(size('6.2 GB'), 24);
+      expect(size('Scarlett 18i20'), 24);
+      expect(size('18 in · 20 out'), 20);
+      // The pages' 28 px chevron and check, not text glyphs.
+      expect(
+        tester
+            .widget<Icon>(
+              find.descendant(
+                of: find.byKey(const Key('row')),
+                matching: find.byType(Icon),
+              ),
+            )
+            .size,
+        28,
+      );
+      expect(
+        tester
+            .widget<Icon>(
+              find.descendant(
+                of: find.byKey(const Key('pick')),
+                matching: find.byType(Icon),
+              ),
+            )
+            .size,
+        28,
+      );
+    },
+  );
 
   group('ConsoleRow semantics', () {
     // A row announces itself as one composed label, so its visible words are

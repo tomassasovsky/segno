@@ -66,6 +66,12 @@ typedef _ControlOrigins = ({
   Map<OwnedValueTarget, Object> owned,
 });
 
+/// Whether [target] is a shared value: a Mixer value or one an owner outside
+/// Control holds (Click, Decay, One-shot, Record length and timing, Click
+/// mode, Count-in).
+bool _isSharedValue(ControlValueTarget target) =>
+    target is MixValueTarget || target is OwnedValueTarget;
+
 /// The press/long-press state machine every gestural footswitch shares.
 ///
 /// [press] arms a hold timer and remembers the tap action; holding past the
@@ -197,10 +203,11 @@ class ControlCubit extends Cubit<ControlState> {
   /// (what this call site passed before it was wired).
   /// [controller] is the external-MIDI seam (part 7): its resolved binding
   /// events land at the same dispatch point the pedal's do, so a discrete CC
-  /// stomps exactly like a footswitch. [midiDevices] supplies the connectivity
-  /// this cubit needs to honour the release-all rule when the MIDI source
-  /// itself disappears (B1). Both are optional — a build or test with no MIDI
-  /// seam simply never receives external control.
+  /// stomps exactly like a footswitch. [midiDevices] supplies every captured
+  /// MIDI device's messages, and the connectivity this cubit needs to honour
+  /// the release-all rule when a device disappears (B1). Both are optional —
+  /// a build or test with no MIDI seam simply never receives external
+  /// control.
   ///
   /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
   /// route is up, so a take cannot start behind the dialog. [inputLocked]
@@ -264,7 +271,7 @@ class ControlCubit extends Cubit<ControlState> {
       }
     });
     _midiSession = _looper.sessionRevision;
-    _midiCapture = midiDevices?.session;
+    _midiCaptures = midiDevices?.sessions ?? const {};
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
     _statusSub = _pedal.statusChanges.listen(_onLinkStatus);
@@ -304,7 +311,9 @@ class ControlCubit extends Cubit<ControlState> {
     step: _midiStep,
   );
   StreamSubscription<MidiInputMessage>? _midiMessageSub;
-  MidiInputSession? _midiCapture;
+
+  /// The capture lifetime of every device feeding controls, by device.
+  Map<String, MidiInputSession> _midiCaptures = const {};
   int _midiIngressRevision = 0;
   int _midiSession = -1;
   int _nextMidiId = 1;
@@ -349,7 +358,12 @@ class ControlCubit extends Cubit<ControlState> {
       <PedalCtrlInput, Map<ControlValueTarget, double>>{};
   final _externalPowerReleases = <PedalCtrlInput, Map<FxBindingTarget, bool>>{};
   Object? _externalReleaseEligibility;
-  final _externalInvalidatedMix = <PedalCtrlInput, Set<ControlValueTarget>>{};
+
+  /// The shared value targets (Mixer and owned values) whose Held this
+  /// input's gesture applied and whose Released is still owed. A Released
+  /// writes only these: a refused Held voids its whole gesture, and an
+  /// ordinary edit after an accepted Held supersedes the owed Released.
+  final _externalHeldTargets = <PedalCtrlInput, Set<ControlValueTarget>>{};
   final _externalMixReleased =
       <PedalCtrlInput, Map<ControlValueTarget, double>>{};
   final _externalHeldSetups = <PedalCtrlInput, ExternalSwitchSetup>{};
@@ -435,6 +449,7 @@ class ControlCubit extends Cubit<ControlState> {
       _externalNumericReleases.remove(input);
       _externalMixReleased.remove(input);
       _externalPowerReleases.remove(input);
+      _externalHeldTargets.remove(input);
       final trigger = _externalTrigger(input);
       for (final holders in _activationHolders.values) {
         holders.remove(trigger);
@@ -641,7 +656,7 @@ class ControlCubit extends Cubit<ControlState> {
       requestedReleased: {
         if (held == true)
           for (final row in setup.controls.parameters)
-            if (row.target is MixValueTarget || row.target is OwnedValueTarget)
+            if (_isSharedValue(row.target))
               if (row.condition == ExternalValueCondition.heldReleased)
                 row.target: row.inactive,
       },
@@ -718,6 +733,14 @@ class ControlCubit extends Cubit<ControlState> {
           }
           var applied = actionAccepted;
           if (held == false) {
+            // A gesture's Released writes a shared value only when its Held
+            // applied it. Retirement's own cleanup of what this trigger
+            // holds is added below and is never filtered.
+            parameters.removeWhere(
+              (target, _) =>
+                  _isSharedValue(target) &&
+                  !(_externalHeldTargets[input]?.contains(target) ?? false),
+            );
             for (final entry
                 in (_externalNumericReleases[input] ?? {}).entries) {
               parameters.putIfAbsent(entry.key, () => entry.value);
@@ -750,11 +773,6 @@ class ControlCubit extends Cubit<ControlState> {
             }
           }
           if (held == false) {
-            parameters.removeWhere(
-              (target, _) =>
-                  (target is MixValueTarget || target is OwnedValueTarget) &&
-                  (_externalInvalidatedMix[input]?.contains(target) ?? false),
-            );
             (_externalNumericReleases[input] ??= {}).addAll(parameters);
             (_externalPowerReleases[input] ??= {}).addAll(activations);
           }
@@ -799,15 +817,24 @@ class ControlCubit extends Cubit<ControlState> {
             for (final target in activations.keys)
               target: _looper.bindingEnabled(target),
           };
+          // A Held that landed owes its Released even when the gesture was
+          // cancelled (retired) while the write was in flight.
+          void heldApplied(ControlValueTarget target) {
+            if (held != true || !_originCurrent(target, origins)) return;
+            (_externalHeldTargets[input] ??= {}).add(target);
+            // The authored Released outranks an older ordinary value.
+            _retireMixBaseline(target);
+          }
+
           void recordParameter(ControlValueTarget target) {
             if (!_originCurrent(target, origins)) return;
             if (held == false) {
               _externalMixReleased[input]?.remove(target);
               _parameterHolders[target]?.remove(trigger);
               _externalNumericReleases[input]?.remove(target);
+              _externalHeldTargets[input]?.remove(target);
             } else {
-              _externalInvalidatedMix[input]?.remove(target);
-              if (target is MixValueTarget || target is OwnedValueTarget) {
+              if (_isSharedValue(target)) {
                 _retireMixBaseline(target);
                 _externalMixReleased[input]?.remove(target);
                 if (requestedReleased[target] case final low?) {
@@ -943,6 +970,7 @@ class ControlCubit extends Cubit<ControlState> {
                 releasedValues: released(),
               );
             }
+            if (outcome.isOk) mixValues.keys.forEach(heldApplied);
             if (outcome.isOk && !cancelled()) {
               applied = true;
               mixValues.keys.forEach(recordParameter);
@@ -964,6 +992,7 @@ class ControlCubit extends Cubit<ControlState> {
                 origin: origin,
                 released: released,
               );
+              if (accepted) heldApplied(target);
               if (cancelled()) return;
               if (accepted) {
                 applied = true;

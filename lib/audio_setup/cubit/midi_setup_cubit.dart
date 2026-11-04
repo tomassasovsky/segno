@@ -6,12 +6,12 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 
 part 'midi_setup_state.dart';
 
-/// Composes [MidiDeviceRepository] data for the MIDI foot-controller picker.
+/// Composes [MidiDeviceRepository] data for the MIDI controls page.
 ///
 /// A thin business-logic seam over the repository: it surfaces the repository's
 /// [MidiConnection] domain model and folds in the raw activity stream
 /// ([MidiDeviceRepository.activity]) as an opaque blink tick, emitting the
-/// combined [MidiSetupState]. All MIDI lifecycle (enumerate / open / close,
+/// combined [MidiSetupState]. All MIDI lifecycle (enumerate / capture,
 /// hotplug supervision, persistence) lives in the repository, so this cubit
 /// holds no device logic and — like the repository — never touches the audio
 /// engine.
@@ -35,13 +35,10 @@ class MidiSetupCubit extends Cubit<MidiSetupState> {
   late final StreamSubscription<MidiConnection> _connectionSub;
   late final StreamSubscription<void> _activitySub;
 
-  /// Selects the device [id] to open (empty id selects "None").
+  /// Shows the device [id] on the MIDI page.
   Future<void> select(String id) => _repository.select(id);
 
-  /// Deselects the device ("None").
-  Future<void> selectNone() => _repository.selectNone();
-
-  /// Re-enumerates the host's MIDI inputs and reconciles the pinned device.
+  /// Re-enumerates the host's MIDI inputs and reconciles the captures.
   void refresh() => _repository.refresh();
 
   @override

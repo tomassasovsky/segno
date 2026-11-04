@@ -29,16 +29,13 @@ uses the generated bindings directly through `segno_engine_ffi.dart`.
 - **Tempo and sync.** Tempo, time signature and tap tempo; a click with its
   own modes, outputs, level and pan; MIDI clock send, and following an
   external MIDI clock.
-- **Signal path.** A conditioning stage per input (high-pass filter, mains hum
-  notches, downward expander). Live monitoring per input with separate wet and
-  dry sends. Effect chains of up to 64 entries on each lane, each track, each
+- **Signal path.** Live monitoring per input with separate wet and dry sends.
+  Effect chains of up to 64 entries on each lane, each track, each
   monitored input, the All tracks mix and each output bus. The built-in
   effects are drive, filter, delay, tremolo, octaver, echo and reverb. A
   background worker renders stable lane chains ahead of time (the wet cache).
   Output buses have level, mono, balance and mute; master gain and a limiter
   follow. There is also a tuner.
-- **Restoration.** After a loop closes, a background worker can de-clip the
-  take and denoise it with RNNoise. The result is one undo layer.
 - **Other voices.** A backing player that plays a decoded WAV or MP3 file
   (up to 900 seconds), a Library audition voice, and instruments that play
   built-in synth patches from MIDI notes.
@@ -89,8 +86,8 @@ never:
 Buffers the audio thread writes are allocated on the control thread through
 `rt_alloc.h`. On Linux it excludes them from `fork()`, locks them in RAM and
 faults them in before use; a background thread keeps a recording's buffer
-faulted in ahead of the write head. File writing, rendering, restoration and
-the wet cache run on their own threads.
+faulted in ahead of the write head. File writing, rendering and the wet
+cache run on their own threads.
 
 ## Layout
 
@@ -104,7 +101,7 @@ the wet cache run on their own threads.
 | `src/host/` | VST3 and CLAP plugin hosting (macOS builds only). |
 | `src/miniaudio/` | Vendored miniaudio and `miniaudio_impl.c`. |
 | `src/test/` | Native tests, benchmarks and `run_native_tests.sh`. |
-| `third_party/` | Vendored CLAP, RNNoise, Signalsmith Stretch and VST3 SDK sources. |
+| `third_party/` | Vendored CLAP, Signalsmith Stretch and VST3 SDK sources. |
 | `lib/src/audio_engine.dart` | The `AudioEngine` interface, the test seam. |
 | `lib/src/native_audio_engine.dart` | The FFI implementation, `NativeAudioEngine`, and the device-free `PumpedNativeEngine`. |
 | `lib/src/mock_audio_engine.dart` | `MockAudioEngine`, an in-memory engine for tests and the mock app. |

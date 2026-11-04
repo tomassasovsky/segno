@@ -108,12 +108,18 @@ local_conf_header:
     # be missing from the one record a hang that never panics leaves behind.
     # The journal gets every level either way.
     #
-    # video=HDMI-A-*:1920x1080@60D sets the console's boot mode on both HDMI
-    # connectors AND force-enables them (modedb `D` = digital + on). The app
-    # does its own modeset (each panel's EDID-preferred mode, homescreen.toml),
-    # so the `D` is the part that matters: a panel that drops HPD for a moment
-    # stays a connector the embedder drives, and a 7" absent at boot does not
-    # make ivi-homescreen exit for want of the connector it pins (#821, #1318).
+    # video=HDMI-A-*:<mode>@60D sets each HDMI connector's boot mode AND
+    # force-enables it (modedb `D` = digital + on). The `D` keeps a panel that
+    # drops HPD for a moment a connector the embedder drives, and a 7" absent
+    # at boot does not make ivi-homescreen exit for want of the connector it
+    # pins (#821, #1318). The mode is each panel's native one: the 15.6" main
+    # screen on HDMI-A-2 is 1920x1080, the 7" readout on HDMI-A-1 is 1024x600
+    # (homescreen.toml). Both connectors read an empty EDID on the console, so
+    # the forced mode is what puts the native mode in each connector's list.
+    # The main view takes the first listed mode, 1920x1080; the readout pins
+    # 1024x600@60 in homescreen.toml, because the kernel lists its 1024x768
+    # fallback first. Forced to 1920x1080, the 7" drew 1200x675 logical and
+    # its own scaler shrank the signal to 1024x600 (#1591).
     # deploy/yocto/test/run_kernel_cmdline_tests.sh holds this line in place.
     #
     # Audio real-time tuning: cpufreq.default_governor=performance pins the CPUs at
@@ -121,7 +127,7 @@ local_conf_header:
     # threadirqs runs IRQ handlers as schedulable kernel threads so segno-rtirq can
     # raise the USB sound-card IRQ above the audio thread (PREEMPT_RT force-threads
     # them anyway, but keep it explicit so it also holds on a non-RT fallback).
-    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=4 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1920x1080@60D video=HDMI-A-2:1920x1080@60D splash plymouth.ignore-serial-consoles cpufreq.default_governor=performance threadirqs"
+    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=4 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1024x600@60D video=HDMI-A-2:1920x1080@60D splash plymouth.ignore-serial-consoles cpufreq.default_governor=performance threadirqs"
     # Kill the Raspberry Pi firmware's rainbow test square at boot (the plymouth
     # segno splash replaces it). `splash` above triggers plymouth despite `quiet`.
     RPI_EXTRA_CONFIG:append = "\ndisable_splash=1"

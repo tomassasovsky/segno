@@ -61,6 +61,60 @@ static void le_fx_ensure_pv_tables(void) {
   (void)pthread_once(&le_pv_tables_once, le_pv_tables_build);
 }
 
+/* ---- Tables made once per sample rate ----
+ *
+ * The pitch kinds' resamplers and the Amp+Cab's cabinets are worked out for
+ * a rate the first time a slot is prepared at it (a control thread, under
+ * the set's lock) and kept for the life of the process. The slots fill in
+ * order and are never freed or replaced, so any thread, the audio thread
+ * included, finds a table without a lock. */
+#define LE_RATE_TABLES 16
+
+typedef struct le_rate_tables {
+  void* _Atomic tab[LE_RATE_TABLES];
+  int32_t sr[LE_RATE_TABLES]; /* slot i's rate, set before tab[i] is */
+  pthread_mutex_t mu;
+} le_rate_tables;
+
+/* [set]'s table for [sr], or NULL when none was made. Any thread. */
+static const void* le_rate_tables_find(le_rate_tables* set, int32_t sr) {
+  for (int i = 0; i < LE_RATE_TABLES; ++i) {
+    const void* t = atomic_load_explicit(&set->tab[i], memory_order_acquire);
+    if (t == NULL) return NULL; /* the slots past it are empty too */
+    if (set->sr[i] == sr) return t;
+  }
+  return NULL;
+}
+
+/* [set]'s table for [sr], made by [make] the first time (a control thread;
+ * [make] runs under the set's lock). NULL when it cannot be made, or when
+ * every slot holds another rate's. */
+static const void* le_rate_tables_get(le_rate_tables* set, int32_t sr,
+                                      void* (*make)(int32_t sr)) {
+  const void* found = le_rate_tables_find(set, sr);
+  if (found != NULL) return found;
+  pthread_mutex_lock(&set->mu);
+  int slot = 0; /* the first empty slot, unless one holds [sr] by now */
+  for (; slot < LE_RATE_TABLES; ++slot) {
+    void* t = atomic_load_explicit(&set->tab[slot], memory_order_relaxed);
+    if (t == NULL) break;
+    if (set->sr[slot] == sr) {
+      found = t;
+      break;
+    }
+  }
+  if (found == NULL && slot < LE_RATE_TABLES) {
+    void* made = make(sr);
+    if (made != NULL) {
+      set->sr[slot] = sr;
+      atomic_store_explicit(&set->tab[slot], made, memory_order_release);
+      found = made;
+    }
+  }
+  pthread_mutex_unlock(&set->mu);
+  return found;
+}
+
 /* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
 static float fx_drive(float x, const float* p) {
   const float drive = 1.0f + p[0] * 29.0f; /* 1x .. 30x pre-gain */
@@ -199,19 +253,6 @@ static float fx_delay(le_fx_state* fx, int slot, int chan, int cap, float x,
   return x * (1.0f - mix) + delayed * mix;
 }
 
-/* Tremolo: sine LFO amplitude modulation. p0 = rate (0.1..12 Hz), p1 = depth. */
-static float fx_tremolo(le_fx_state* fx, int slot, int chan, int sr, float x,
-                        const float* p) {
-  const float rate = 0.1f + p[0] * 11.9f;
-  const float depth = p[1];
-  float ph = fx->lfo[slot][chan];
-  const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * ph)); /* 0..1 */
-  ph += rate / (float)sr;
-  if (ph >= 1.0f) ph -= 1.0f;
-  fx->lfo[slot][chan] = ph;
-  return x * (1.0f - depth * (1.0f - lfo));
-}
-
 /* Linearly interpolated read from a ring of [cap] samples, [d] samples behind
  * the head [head] (the index of the most recently written sample). [d] may be
  * fractional and is assumed in [0, cap). */
@@ -254,8 +295,9 @@ _Static_assert(LE_PSOLA_AHOP == LE_PV_HOP,
                "PSOLA's YIN cadence must equal the PV hop to share its schedule");
 _Static_assert(LE_OCT_REACH > LE_PV_LATENCY && LE_OCT_REACH > LE_PV_N,
                "the octaver's ring guard covers the dry tap and the PV window");
-_Static_assert(LE_OCT_REACH >= LE_PSOLA_LAG + LE_PSOLA_RAW,
-               "the ring guard covers PSOLA's refinement window");
+_Static_assert(LE_OCT_REACH >= LE_PSOLA_LAG + LE_PSOLA_RAW + LE_PSOLA_AHOP,
+               "the ring guard covers PSOLA's refinement window, copied up "
+               "to a hop after it ended");
 _Static_assert(LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1 + LE_PSOLA_RAW <=
                    LE_PV_SCRATCH,
                "PSOLA's detection windows fit the octaver scratch");
@@ -291,6 +333,119 @@ static inline uint32_t le_fx_now(const le_fx_state* fx) {
 static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
   return le_fx_hop_mask((uint32_t)fx->hop_seed +
                         (uint32_t)slot * (uint32_t)LE_PV_STAGGER_QUARTER);
+}
+
+/* ---- LFOs on the engine clock (#1620) ----
+ *
+ * A time-based modulator takes its phase from the engine frame it is
+ * processing (le_fx_now), not from its own reset: frac(rate * frame / sr).
+ * So two instances of the same settings agree whenever they process the same
+ * frame, whenever each was reset, which is what lets a print (rendered from a
+ * fresh chain at the clock it stands in for) agree with the live chain it
+ * swaps in over, and what makes an offline render reproduce what was heard.
+ *
+ * A rate move would make a pure clock phase jump (rate times a frame count
+ * in the millions), so the move keeps the phase continuous through an offset
+ * and the offset then slides back to 0 at LE_LFO_RELOCK_CPS cycles a second,
+ * or half the LFO's rate when that is less (the LFO runs that much fast or
+ * slow for at most 2 s, 10 s at the slowest tremolo). While it slides the
+ * slot is relocking (le_fx_lfo_relocking) and the wet cache counts the live
+ * chain's run from when it is back on the clock. A slot's lfo[slot][0] is the
+ * offset in cycles and lfo_rate[slot] the rate it was set for (0: none yet,
+ * a fresh slot, which starts on the clock); lfo_frame[slot] is the last frame
+ * (to catch the 32-bit clock wrapping) or, for a state nobody clocks, its
+ * own count. */
+#define LE_LFO_RELOCK_CPS 0.25
+
+/* The tremolo's rate at settings [p], Hz. */
+static double le_tremolo_rate(const float* p) {
+  return 0.1 + (double)p[0] * 11.9;
+}
+
+/* The echo's wow rate, Hz: fixed. */
+#define LE_ECHO_WOW_HZ 0.7
+
+/* The most a clock LFO may miss a whole number of cycles in a lap and still
+ * print (le_fx_entry_lfo_drifts): its print loops one lap, so at each loop
+ * top the LFO steps back by the miss. The tremolo's gain moves pi x depth
+ * per cycle at most, so 3e-5 cycles is under 1e-4 of gain; the echo's wow
+ * moves its read by 2 pi x 4 ms a cycle, so 5e-7 cycles keeps the read
+ * within 8e-4 frames, under 1e-4 on a full-scale 1 kHz tone. */
+#define LE_TREMOLO_LAP_TOL 3e-5
+#define LE_ECHO_LAP_TOL 5e-7
+
+/* frac(x), in [0, 1). */
+static inline double le_frac(double x) { return x - floor(x); }
+
+/* Slot [slot]'s LFO phase, in cycles, at [rate] Hz on the frame [fx] is
+ * processing: the clock phase plus the slot's relock offset, which this
+ * advances (once per frame: call it once per slot per sample). */
+static double le_clock_lfo(le_fx_state* fx, int slot, double rate, int sr) {
+  const double hz = (double)(sr > 0 ? sr : 48000);
+  const int clocked = fx->clock_src != NULL || fx->clocked;
+  const uint32_t now = clocked ? le_fx_now(fx) : fx->lfo_frame[slot]++;
+  const double t = (double)now / hz;
+  float* offset = &fx->lfo[slot][0];
+  double* set = &fx->lfo_rate[slot];
+  if (*set != rate) {
+    if (*set > 0.0) {
+      /* Continuous through the move: the old phase, from the new rate. */
+      const double was = le_frac(*set * t + (double)*offset);
+      double o = was - le_frac(rate * t);
+      o -= floor(o + 0.5); /* the shorter way round, in [-0.5, 0.5) */
+      *offset = (float)o;
+    }
+    *set = rate;
+  } else if (clocked && now < fx->lfo_frame[slot] &&
+             fx->lfo_frame[slot] - now > 0x80000000u) {
+    /* The 32-bit clock wrapped (a day at 48 kHz): the clock phase jumps by
+     * frac(rate * 2^32 / sr), so carry the old phase across and relock. */
+    double o = (double)*offset + le_frac(rate * 4294967296.0 / hz);
+    o -= floor(o + 0.5);
+    *offset = (float)o;
+  }
+  if (clocked) fx->lfo_frame[slot] = now;
+  if (*offset != 0.0f) {
+    /* Never faster than half the LFO itself, so a slow one slows down
+     * rather than running backwards while it relocks. */
+    const double cps =
+        rate * 0.5 < LE_LFO_RELOCK_CPS ? rate * 0.5 : LE_LFO_RELOCK_CPS;
+    const float step = (float)(cps / hz);
+    *offset = fabsf(*offset) <= step ? 0.0f
+              : *offset > 0.0f       ? *offset - step
+                                     : *offset + step;
+  }
+  return le_frac(rate * t + (double)*offset);
+}
+
+int le_fx_type_clock_lfo(int32_t type) {
+  return type == LE_FX_TREMOLO || type == LE_FX_ECHO;
+}
+
+int le_fx_lfo_relocking(const le_fx_state* fx, int slot, int32_t type) {
+  return slot >= 0 && slot < LE_FX_MAX && le_fx_type_clock_lfo(type) &&
+         fx->lfo[slot][0] != 0.0f;
+}
+
+int le_fx_entry_lfo_drifts(int32_t type, const float* p, int32_t len, int sr) {
+  double rate = 0.0;
+  if (type == LE_FX_TREMOLO && p[1] > 0.0f) rate = le_tremolo_rate(p);
+  if (type == LE_FX_ECHO && p[2] > 0.0f) rate = LE_ECHO_WOW_HZ;
+  if (rate <= 0.0 || len <= 0) return 0;
+  const double cycles = rate * (double)len / (double)(sr > 0 ? sr : 48000);
+  /* The miss each lap is the step at each loop top: held to LE_LFO_LAP_STEP
+   * of output, through each kind's sensitivity to its phase. */
+  const double tol = type == LE_FX_TREMOLO ? LE_TREMOLO_LAP_TOL
+                                           : LE_ECHO_LAP_TOL;
+  return fabs(cycles - floor(cycles + 0.5)) > tol;
+}
+
+/* Tremolo: sine LFO amplitude modulation, on the engine clock. p0 = rate
+ * (0.1..12 Hz), p1 = depth. */
+static float fx_tremolo(float x, double ph, const float* p) {
+  const float depth = p[1];
+  const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * (float)ph)); /* 0..1 */
+  return x * (1.0f - depth * (1.0f - lfo));
 }
 
 /* The two modes run one counter in opposite directions: PV counts up and runs
@@ -373,7 +528,6 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
     le_psola_pass* ps = le_ps(o);
     ps->phase = 0;
     ps->credit = 0;
-    ps->hops = 0;
   }
   o->frame_ratio = 1.0f;
   o->frame_formants_move = 0;
@@ -510,15 +664,24 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
  * the formants stay fixed in frequency; moving them, the magnitude goes over
  * as it is, envelope and all. [drop_dc] also drops a region whose peak
  * lands below bin 1 (the second voice's, two octaves down; the first voice
- * keeps the shipped octaver's behaviour). */
+ * keeps the shipped octaver's behaviour). [by_owner]: the low band takes
+ * its share of each bin by the partial that owns it (the first voice), not
+ * of each region's bins wherever they land (the second; see below). */
 static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
-                             float* re, float* im, int drop_dc) {
-  /* The Dual Octaver's low band (#1467) plays this share of each region
+                             float* re, float* im, int drop_dc, int by_owner) {
+  /* The Dual Octaver's low band (#1467) plays this share of each partial
    * below the crossover: the band's weight times what it passes at the
-   * region's peak, its boost over the crossover's low-pass there
-   * (1 / (1 + (f / fc)^4), the Linkwitz-Riley pair), at most all of it, so
-   * the two bands sum to the whole voice. None from 5 fc up (under -45 dB)
-   * or with no band, which leaves the vocoder as it was. */
+   * partial's peak, its boost over the crossover's low-pass there
+   * (1 / (1 + (f / fc)^4), the Linkwitz-Riley pair), at most all of it.
+   * The vocoder gives it up from the region's bins (the second voice) or
+   * from the bins the partial owns (the first, [by_owner]; see below), so
+   * the two bands sum to the whole voice on a lone partial. Where two
+   * partials share bins, giving up by owner drops the other's part of a
+   * bin the handed-over partial owns, and keeps the handed-over partial's
+   * part of a bin the other owns: on a held 147 Hz bass the down voice's
+   * second harmonic reads -8.7 dB against its fundamental (-5.4 dB by
+   * region; a waveform at half speed has -6.0). None from 5 fc up (under
+   * -45 dB) or with no band, which leaves the vocoder as it was. */
   const float low_w = o->frame_low_w;
   const float low_g = o->frame_low_g;
   const float kc = o->frame_low_kc;
@@ -530,10 +693,12 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
   float syn_mag[LE_PV_BINS];
   float syn_phase[LE_PV_BINS];
   float syn_best[LE_PV_BINS];
+  float syn_keep[LE_PV_BINS]; /* by_owner: the share the bin's owner keeps */
   for (int k = 0; k < LE_PV_BINS; ++k) {
     syn_mag[k] = 0.0f;
     syn_phase[k] = sum_phase[k];
     syn_best[k] = -1.0f;
+    syn_keep[k] = 1.0f;
   }
   /* Peak-region shifting with identity phase locking (Laroche and Dolson,
    * 1999): each spectral peak moves to its shifted frequency carrying the
@@ -542,7 +707,22 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
    * ratio; scaling each bin's index instead spread an up-shifted lobe over
    * every other bin and lost up to 13 dB at a fifth. A region runs from
    * halfway after the previous peak to halfway before the next; where two
-   * regions land on one bin, the louder source sets its phase. */
+   * regions land on one bin, the louder source sets its phase.
+   *
+   * With [by_owner], the first voice is shifted whole, as the plain
+   * octaver's is, and the low band then takes its share of each bin in the
+   * proportion it takes of the partial that set the bin's phase, its owner
+   * (#1580). Taking the share of each region before the contest left a
+   * handed-over partial's remainder close in level to a neighbour's lobe,
+   * so the slightest change in the input decided which set the bin's
+   * phase; the bin then summed with the band's voice at a phase that moved
+   * with it, and the Dual Octaver's level at 44.1 and 96 kHz strayed up to
+   * 3.9 dB from 48 kHz's. Judging the contest on the whole partials but
+   * still taking the share region by region was steady, but left a
+   * neighbour's lobe turning at the handed-over partial's phase: 1.3 dB
+   * too much down voice on a 110 Hz bass. The second voice keeps the share
+   * by region: whether by owner suits it too is #1616's to measure (its
+   * residue at 96 kHz is its own: it strays further with the band off). */
   int peaks[LE_PV_BINS];
   int np = 0;
   for (int q = 0; q < LE_PV_BINS; ++q) {
@@ -581,7 +761,9 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     for (int k = start; k < end; ++k) {
       const int j = k + shift;
       if (j < 0 || j >= LE_PV_BINS) continue;
-      const float m = keep * mag[k]; /* mag[k] exactly, kept whole */
+      /* The source bin as it is (by_owner: the share comes off below), or
+       * its region's share already off. */
+      const float m = by_owner ? mag[k] : keep * mag[k];
       float fg = 1.0f;
       if (!o->frame_formants_move) {
         fg = env[j] / (env[k] + 1e-9f);
@@ -590,6 +772,7 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
       syn_mag[j] += m * fg;
       if (m > syn_best[j]) {
         syn_best[j] = m;
+        syn_keep[j] = keep;
         syn_phase[j] =
             le_wrap_pi(peak_phase + (in_phase[k] - in_phase[peak]));
       }
@@ -597,6 +780,7 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     start = end;
   }
   for (int b = 0; b < LE_PV_BINS; ++b) {
+    if (by_owner) syn_mag[b] *= syn_keep[b];
     sum_phase[b] = syn_phase[b];
     re[b] = syn_mag[b] * cosf(syn_phase[b]);
     im[b] = syn_mag[b] * sinf(syn_phase[b]);
@@ -605,14 +789,14 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
 
 static void le_pv_stage_shift(le_octaver_state* o) {
   le_pv_shift_into(o, o->frame_ratio, o->sum_phase, LE_PV_S_RE(o),
-                   LE_PV_S_IM(o), 0);
+                   LE_PV_S_IM(o), 0, 1);
 }
 
 /* The second voice's shift (#1464): the same analysis at its own ratio,
  * into its own spectrum and phases. */
 static void le_pv_stage_shift2(le_octaver_state* o) {
   le_pv_shift_into(o, o->frame_ratio2, LE_PV_S_PHASE2(o), LE_PV_S_RE2(o),
-                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f);
+                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f, 0);
 }
 
 /* Stage 3: inverse transform, synthesis-window, and overlap-add from the
@@ -912,34 +1096,28 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
  *
  * A whole YIN pass over the old 1600-sample window was ~640k iterations in one
  * callback every hop: about 1.1 ms on the console, over the 667 us deadline
- * of a 64-frame period at 96 kHz. The pass now runs on a decimated window
- * (a boxcar of D samples is the decimator and its own anti-alias filter, as
- * the tuner's), so it searches 60 Hz at every rate for about a quarter of the
- * work, then refines at the device rate around the coarse lag (le_refine_*),
+ * of a 64-frame period at 96 kHz. The pass now runs on a window decimated
+ * by LE_PSOLA_DECIM (a boxcar is the decimator and its own anti-alias
+ * filter, as the tuner's), so it searches down to 60 Hz for a fraction of
+ * the work, then refines at the kernel's rate around the coarse lag
+ * (le_refine_*),
  * and both are spread over the hop: each tick adds LE_PSOLA_WORK_PER_TICK to
  * a credit the pass spends, and a lag that overshoots it leaves a debt the
  * next ticks pay, so the pass averages exactly that much a tick. The
  * decimated window is frozen into the scratch when the pass starts, and the
- * device-rate one when the refinement starts (the 1 s ring still holds it),
- * so the moving ring cannot change either under the pass. The result lands
+ * kernel-rate one when the refinement starts, up to a hop later (the ring
+ * still holds it: LE_OCT_REACH), so the moving ring cannot change either
+ * under the pass. The result lands
  * within the hop it was started in, a hop at most after the one-shot pass's
  * would have: the period and the voicing it feeds are smoothed over several
  * hops anyway. */
 #define LE_PS_WIN(o) ((o)->scratch)
 #define LE_PS_DP(o) ((o)->scratch + LE_PSOLA_DWIN)
 #define LE_PS_RAW(o) ((o)->scratch + LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1)
-_Static_assert(LE_PSOLA_DMAX <= LE_REFINE_SPAN_MAX,
+_Static_assert(LE_PSOLA_DECIM <= LE_REFINE_SPAN_MAX,
                "PSOLA's refinement span fits le_lag_refine");
-
-/* The decimation for a [sr] Hz input: ceil(sr / LE_PSOLA_RATE), 1 to
- * LE_PSOLA_DMAX, so the analysis rate is at most LE_PSOLA_RATE and its
- * window holds two periods of LE_PSOLA_MIN_HZ (up to 192 kHz). */
-static int le_psola_decim(int sr) {
-  int d = (sr + LE_PSOLA_RATE - 1) / LE_PSOLA_RATE;
-  if (d < 1) d = 1;
-  if (d > LE_PSOLA_DMAX) d = LE_PSOLA_DMAX;
-  return d;
-}
+_Static_assert(LE_PSOLA_DECIM * LE_PSOLA_DWIN <= LE_PSOLA_RAW,
+               "PSOLA's decimated window lies inside its refinement window");
 
 /* Feeds a finished detection into the smoothed voicing and period, as the
  * one-shot pass did: the voicing follows every result, the period only a
@@ -954,13 +1132,6 @@ static void le_psola_pass_apply(le_octaver_state* o, float period,
   }
 }
 
-/* Hops between pass starts at [sr] Hz: max(1, D / 2), so a pass starts about
- * every 5 ms at every rate. */
-static int le_psola_every(int sr) {
-  const int every = le_psola_decim(sr) / 2;
-  return every < 1 ? 1 : every;
-}
-
 /* Starts a detection over the input ending at FIFO index [end]: freezes the
  * decimated window into the scratch and opens the coarse pass, charging the
  * decimation to the pass's credit. Any pass still in flight is dropped. A
@@ -968,8 +1139,7 @@ static int le_psola_every(int sr) {
 static void le_psola_pass_begin(le_octaver_state* o, const float* fifo,
                                 int end, int cap) {
   le_psola_pass* ps = le_ps(o);
-  const int sr = LE_OCT_RATE; /* the kernel's rate; cap is the ring's length */
-  const int d = le_psola_decim(sr);
+  const int d = LE_PSOLA_DECIM;
   float* win = LE_PS_WIN(o);
   end %= cap;
   if (end < 0) end += cap;
@@ -984,10 +1154,9 @@ static void le_psola_pass_begin(le_octaver_state* o, const float* fifo,
     }
     win[i] = acc * inv;
   }
-  ps->decim = d;
   ps->end = end;
   ps->credit -= LE_PSOLA_DWIN * d;
-  if (!le_yin_begin(&ps->yin, win, LE_PSOLA_DWIN, sr / d, LE_PSOLA_MIN_HZ,
+  if (!le_yin_begin(&ps->yin, win, LE_PSOLA_DWIN, LE_OCT_RATE / d, LE_PSOLA_MIN_HZ,
                     LE_PSOLA_MAX_HZ, LE_PS_DP(o), LE_PSOLA_DWIN / 2 + 1)) {
     le_psola_pass_apply(o, 0.0f, 0.0f);
     return;
@@ -995,11 +1164,11 @@ static void le_psola_pass_begin(le_octaver_state* o, const float* fifo,
   ps->phase = 1;
 }
 
-/* Hands the finished coarse pass to the refinement, freezing the device-rate
+/* Hands the finished coarse pass to the refinement, freezing the kernel-rate
  * window it walks, or applies the coarse period as it is when refining would
- * not change what plays: no decimation, a period too long for two of it to
- * fit the device-rate window, or a frame under the voicing gate (fx_octaver's
- * dry fallback takes it whatever its period). */
+ * not change what plays: a period too long for two of it to fit the
+ * kernel-rate window, or a frame under the voicing gate (fx_octaver's dry
+ * fallback takes it whatever its period). */
 static void le_psola_coarse_done(le_octaver_state* o, const float* fifo,
                                  int cap) {
   le_psola_pass* ps = le_ps(o);
@@ -1009,10 +1178,9 @@ static void le_psola_coarse_done(le_octaver_state* o, const float* fifo,
     le_psola_pass_apply(o, 0.0f, 0.0f);
     return;
   }
-  const int d = ps->decim;
-  ps->coarse = period * (float)d;
-  if (d == 1 || ps->conf < 0.3f ||
-      !le_refine_begin(&ps->ref, ps->coarse, d, LE_PSOLA_RAW)) {
+  ps->coarse = period * (float)LE_PSOLA_DECIM;
+  if (ps->conf < 0.3f ||
+      !le_refine_begin(&ps->ref, ps->coarse, LE_PSOLA_DECIM, LE_PSOLA_RAW)) {
     le_psola_pass_apply(o, ps->coarse, ps->conf);
     return;
   }
@@ -1027,7 +1195,7 @@ static void le_psola_coarse_done(le_octaver_state* o, const float* fifo,
   ps->phase = 2;
 }
 
-/* One tick of detection: starts a pass on its hop, adds the tick's work to
+/* One tick of detection: starts a pass on each hop, adds the tick's work to
  * the credit and, while it is positive, spends it on lags (a lag is never
  * split, so the last one may overshoot into a debt), carrying from the coarse
  * pass into the refinement, and applies the result once the refinement is
@@ -1035,12 +1203,8 @@ static void le_psola_coarse_done(le_octaver_state* o, const float* fifo,
 static void le_psola_pass_tick(le_octaver_state* o, const float* fifo, int end,
                                int cap, int hop) {
   le_psola_pass* ps = le_ps(o);
-  const int every = le_psola_every(LE_OCT_RATE);
-  if (hop && ++ps->hops >= every) {
-    ps->hops = 0;
-    le_psola_pass_begin(o, fifo, end, cap);
-  }
-  const int32_t work = LE_PSOLA_WORK_PER_TICK / every;
+  if (hop) le_psola_pass_begin(o, fifo, end, cap);
+  const int32_t work = LE_PSOLA_WORK_PER_TICK;
   ps->credit += work;
   if (ps->credit > work) ps->credit = work; /* no banking while idle */
   while (ps->credit > 0 && ps->phase != 0) {
@@ -1195,14 +1359,23 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
  * at half speed plays 55 Hz alone, as the Looper X does (55 Hz at 0.0 dB,
  * 110 Hz at -72 dB in the s7oct capture). */
 
-/* The band's ring length at [sr]: the deepest tap (the centre plus two of
- * the longest period) to a power of two. */
-static int32_t le_low_ring_len(int sr) {
-  const int need = LE_PV_LATENCY + 2 * (sr / LE_OCT_LOW_MIN_HZ) + 8;
-  int32_t n = 1024;
-  while (n < need) n <<= 1;
-  return n;
-}
+/* The band's per-sample constants at the kernel's rate: the 50, 10 and
+ * 5 ms one-poles' steps, the shortest and longest periods searched (kernel
+ * samples), and the crossover in phase-vocoder bins, where the vocoder
+ * hands over. */
+#define LE_OCT_LOW_EK (20.0f / (float)LE_OCT_RATE)
+#define LE_OCT_LOW_K10 (100.0f / (float)LE_OCT_RATE)
+#define LE_OCT_LOW_K5 (200.0f / (float)LE_OCT_RATE)
+#define LE_OCT_LOW_PER_MIN ((float)LE_OCT_RATE / (float)LE_OCT_LOW_MAX_HZ)
+#define LE_OCT_LOW_PER_MAX ((float)LE_OCT_RATE / (float)LE_OCT_LOW_MIN_HZ)
+#define LE_OCT_LOW_KC \
+  ((float)(LE_OCT_LOW_HZ * (double)LE_PV_N / (double)LE_OCT_RATE))
+#define LE_OCT_LOW_MASK (LE_OCT_LOW_RING - 1)
+_Static_assert((LE_OCT_LOW_RING & LE_OCT_LOW_MASK) == 0,
+               "the low band's ring is a power of two");
+_Static_assert(LE_OCT_LOW_RING >=
+                   LE_PV_LATENCY + 2 * (LE_OCT_RATE / LE_OCT_LOW_MIN_HZ) + 8,
+               "the low band's ring holds the deepest tap");
 
 /* The voices' runtime back to a reset's, as the vocoder's is on a reset or
  * a High Mode switch: silent for the frames the vocoder has not analysed
@@ -1234,7 +1407,6 @@ static void le_low_forget(le_oct_low* L) {
   L->dhead = 0;
   L->e_in = 0.0f;
   L->e_low = 0.0f;
-  L->hops = 0;
   L->busy = 0;
   L->credit = 0;
   L->period = 0.0f;
@@ -1249,18 +1421,17 @@ static void le_low_forget(le_oct_low* L) {
  * cleared. */
 static void le_low_clear(le_oct_low* L) {
   le_low_forget(L);
-  memset(L->ring, 0, sizeof(float) * (size_t)(L->mask + 1));
+  memset(L->ring, 0, sizeof(L->ring));
   L->head = 0;
   le_low_reset_runtime(L);
 }
 
-/* Sets up a zeroed band for [sr] (control thread, before the slot is
- * published): the crossover's coefficients (the bilinear 2nd-order
- * Butterworth), the centre (each section delays low frequencies by
- * sqrt(2) / (2 K) samples), the hand-over bin, and the detection's
- * decimation and cadence (a pass about every 5 ms). */
-static void le_low_init(le_oct_low* L, int sr, int32_t len) {
-  const double k = le_prewarp(LE_OCT_LOW_HZ, sr);
+/* Sets up a zeroed band (control thread, before the slot is published):
+ * the crossover's coefficients (the bilinear 2nd-order Butterworth) and the
+ * centre (each section delays low frequencies by sqrt(2) / (2 K)
+ * samples). */
+static void le_low_init(le_oct_low* L) {
+  const double k = le_prewarp(LE_OCT_LOW_HZ, LE_OCT_RATE);
   const double r2 = 1.4142135623730951;
   const double n = 1.0 / (1.0 + r2 * k + k * k);
   L->lp[0] = (float)(k * k * n);
@@ -1269,34 +1440,22 @@ static void le_low_init(le_oct_low* L, int sr, int32_t len) {
   L->lp[3] = (float)(2.0 * (k * k - 1.0) * n);
   L->lp[4] = (float)((1.0 - r2 * k + k * k) * n);
   L->centre = (float)((double)LE_PV_LATENCY - r2 / k);
-  L->kc = (float)(LE_OCT_LOW_HZ * (double)LE_PV_N / (double)sr);
-  L->sr = sr;
-  L->ring = (float*)(void*)(L + 1);
-  L->mask = len - 1;
-  L->decim = (sr + LE_OCT_LOW_RATE / 2) / LE_OCT_LOW_RATE;
-  if (L->decim < 1) L->decim = 1;
-  L->every = sr / 48000 < 1 ? 1 : sr / 48000;
   L->work = 0;
-  L->ek = 20.0f / (float)sr; /* 50 ms */
-  L->k10 = 100.0f / (float)sr;
-  L->k5 = 200.0f / (float)sr;
-  L->per_min = (float)sr / (float)LE_OCT_LOW_MAX_HZ;
-  L->per_max = (float)sr / (float)LE_OCT_LOW_MIN_HZ;
   le_low_clear(L);
 }
 
 /* Writes input sample [x] through the crossover into the ring, and the
  * decimator, and follows the input's and the band's power. */
 static void le_low_write(le_oct_low* L, float x) {
-  L->e_in += (x * x - L->e_in) * L->ek;
+  L->e_in += (x * x - L->e_in) * LE_OCT_LOW_EK;
   const float y = le_biquad_tick(L->lp, L->z[1],
                                  le_biquad_tick(L->lp, L->z[0], x));
-  L->e_low += (y * y - L->e_low) * L->ek;
-  L->head = (L->head + 1) & L->mask;
+  L->e_low += (y * y - L->e_low) * LE_OCT_LOW_EK;
+  L->head = (L->head + 1) & LE_OCT_LOW_MASK;
   L->ring[L->head] = y;
   L->dacc += y;
-  if (++L->dn >= L->decim) {
-    L->dring[L->dhead] = L->dacc / (float)L->decim;
+  if (++L->dn >= LE_OCT_LOW_DECIM) {
+    L->dring[L->dhead] = L->dacc / (float)LE_OCT_LOW_DECIM;
     if (++L->dhead >= LE_OCT_LOW_DWIN) L->dhead = 0;
     L->dacc = 0.0f;
     L->dn = 0;
@@ -1308,8 +1467,8 @@ static float le_low_read(const le_oct_low* L, float d) {
   const float rp = (float)L->head - d;
   const float fl = floorf(rp);
   const int32_t i = (int32_t)fl;
-  const float a = L->ring[i & L->mask];
-  return a + (rp - fl) * (L->ring[(i + 1) & L->mask] - a);
+  const float a = L->ring[i & LE_OCT_LOW_MASK];
+  return a + (rp - fl) * (L->ring[(i + 1) & LE_OCT_LOW_MASK] - a);
 }
 
 /* A finished detection. Only a confident one counts as voiced, and it
@@ -1317,7 +1476,7 @@ static float le_low_read(const le_oct_low* L, float d) {
  * not got. The period steps to a new note rather than gliding there (a tap
  * jumping by a period between two notes' would not land on a repeat of the
  * waveform). */
-static void le_low_apply(le_oct_low* L, int sr, float period, float conf) {
+static void le_low_apply(le_oct_low* L, float period, float conf) {
   const int sure = period > 0.0f && conf >= 0.5f;
   L->voiced += 0.35f * ((sure ? conf : 0.0f) - L->voiced);
   if (!sure) return;
@@ -1326,23 +1485,22 @@ static void le_low_apply(le_oct_low* L, int sr, float period, float conf) {
   } else {
     L->period += 0.5f * (period - L->period);
   }
-  if (L->period < L->per_min) L->period = L->per_min;
-  if (L->period > L->per_max) L->period = L->per_max;
-  L->f0 = (float)sr / L->period;
+  if (L->period < LE_OCT_LOW_PER_MIN) L->period = LE_OCT_LOW_PER_MIN;
+  if (L->period > LE_OCT_LOW_PER_MAX) L->period = LE_OCT_LOW_PER_MAX;
+  L->f0 = (float)LE_OCT_RATE / L->period;
 }
 
-/* One tick of detection: on every `every`-th analysis tick of the vocoder
- * (the hop's, so the pass runs on the instance's own schedule) freeze the
+/* One tick of detection: on each analysis tick of the vocoder (the hop's,
+ * so the pass runs on the instance's own schedule) freeze the
  * decimated window and start a YIN pass, then spend the tick's credit on it,
  * as PSOLA's sliced pass does (le_psola_pass_tick). A band holding under a
  * twentieth of the input's power carries no note of its own (a tone above
  * the crossover leaks into it): no pitch, and no pass. */
-static void le_low_detect(le_oct_low* L, int sr, int analysis) {
-  if (analysis && ++L->hops >= L->every) {
-    L->hops = 0;
+static void le_low_detect(le_oct_low* L, int analysis) {
+  if (analysis) {
     if (L->e_low < 0.05f * L->e_in) {
       L->busy = 0;
-      le_low_apply(L, sr, 0.0f, 0.0f);
+      le_low_apply(L, 0.0f, 0.0f);
       return;
     }
     int32_t k = L->dhead; /* the oldest decimated sample */
@@ -1350,16 +1508,16 @@ static void le_low_detect(le_oct_low* L, int sr, int analysis) {
       L->win[i] = L->dring[k];
       if (++k == LE_OCT_LOW_DWIN) k = 0;
     }
-    L->busy = le_yin_begin(&L->yin, L->win, LE_OCT_LOW_DWIN, sr / L->decim,
+    L->busy = le_yin_begin(&L->yin, L->win, LE_OCT_LOW_DWIN,
+                           LE_OCT_RATE / LE_OCT_LOW_DECIM,
                            LE_OCT_LOW_MIN_HZ, LE_OCT_LOW_MAX_HZ, L->dp,
                            LE_OCT_LOW_DWIN / 2 + 1);
     if (L->busy) {
       /* The pass's lags spread over the ticks until the next one starts,
        * with a quarter to spare. */
-      const int32_t ticks = L->every * LE_PV_HOP;
-      L->work = (5 * L->yin.maxlag * L->yin.integ) / (4 * ticks) + 1;
+      L->work = (5 * L->yin.maxlag * L->yin.integ) / (4 * LE_PV_HOP) + 1;
     } else {
-      le_low_apply(L, sr, 0.0f, 0.0f); /* silence */
+      le_low_apply(L, 0.0f, 0.0f); /* silence */
     }
   }
   if (!L->busy) return;
@@ -1381,7 +1539,7 @@ static void le_low_detect(le_oct_low* L, int sr, int analysis) {
           period <= (float)(L->yin.minlag + 1)) {
         conf = 0.0f;
       }
-      le_low_apply(L, sr, period * (float)L->decim, conf);
+      le_low_apply(L, period * (float)LE_OCT_LOW_DECIM, conf);
     }
   }
 }
@@ -1393,10 +1551,9 @@ static void le_low_detect(le_oct_low* L, int sr, int analysis) {
  * [per] nearer the head, where the waveform repeats, and fades from the
  * old tap over a quarter of the time to the next jump. A tap running from
  * lo to lo + per with that fade spends its time at lo + 0.625 per on
- * average, so lo centres it on L->centre. A period too long for that
- * starts the range at the head instead and plays up to a few ms late: none
- * from the band's 60 Hz floor up at 96 kHz and below (the centre is 1043
- * samples there), below 138 Hz at 192 kHz. */
+ * average, so lo centres it on L->centre (about 1130 samples), which
+ * leaves room for the band's longest period (800 samples, its 60 Hz
+ * floor). */
 static float le_low_voice(le_oct_low* L, le_oct_low_voice* v, float ratio,
                           float per) {
   float y = le_low_read(L, v->d);
@@ -1419,7 +1576,8 @@ static float le_low_voice(le_oct_low* L, le_oct_low_voice* v, float ratio,
     v->fade_len = len;
     v->fade = len;
   }
-  if (v->d > (float)(L->mask - 2) || v->d_old > (float)(L->mask - 2)) {
+  if (v->d > (float)(LE_OCT_LOW_MASK - 2) ||
+      v->d_old > (float)(LE_OCT_LOW_MASK - 2)) {
     v->d = lo; /* a period change left the tap past the ring: restart */
     v->d_old = lo;
     v->fade = 0;
@@ -1435,15 +1593,16 @@ static float le_low_voice(le_oct_low* L, le_oct_low_voice* v, float ratio,
  *
  * The note's fundamental is handed over whole: the band is boosted by the
  * crossover's loss at the detected pitch (1 + (f0 / fc)^4, up to 2 at the
- * crossover), and the vocoder gives up the same share of each region
- * (le_pv_shift_into), so a note near the crossover is not split between two
- * voices whose phases differ. A note above the crossover is left to the
+ * crossover), and the vocoder gives up the same share of the note's
+ * partial (le_pv_shift_into: of the bins it owns in the first voice, of its
+ * region in the second), so a note near the crossover is not split between
+ * two voices whose phases differ. A note above the crossover is left to the
  * vocoder, the band fading out by 1.15 fc. The voices come in over a
  * smoothstep from LE_OCT_LOW_MIN_HZ, where the Looper X's start
  * (engine_fx.h): their level only, as the Looper X plays no other voice
  * there, so the vocoder still hands the note over. */
-static void le_low_follow(le_oct_low* L, int sr, int analysis) {
-  le_low_detect(L, sr, analysis);
+static void le_low_follow(le_oct_low* L, int analysis) {
+  le_low_detect(L, analysis);
   const float f0 = L->f0;
   float want = (L->voiced - 0.3f) / 0.3f; /* PSOLA's soft gate */
   if (want < 0.0f || f0 <= 0.0f) want = 0.0f;
@@ -1460,7 +1619,7 @@ static void le_low_follow(le_oct_low* L, int sr, int analysis) {
   } else {
     want *= x >= 1.15f ? 0.0f : (1.15f - x) / 0.15f;
   }
-  const float k = L->k10;
+  const float k = LE_OCT_LOW_K10;
   L->gate += (want - L->gate) * k;
   if (want == 0.0f && L->gate < 1e-4f) L->gate = 0.0f;
   L->boost += (boost - L->boost) * k;
@@ -1482,9 +1641,9 @@ static void le_low_follow(le_oct_low* L, int sr, int analysis) {
  * two analysis ticks around then): the share the vocoder's frame playing
  * now gave up, so the two sum to one voice while the weight moves too. A
  * band with no weight plays nothing, and stops reading. */
-static float le_low_play(le_oct_low* L, int sr, int ticks, float level1,
+static float le_low_play(le_oct_low* L, int ticks, float level1,
                          float level2) {
-  const float k = L->k5;
+  const float k = LE_OCT_LOW_K5;
   L->level1 += (level1 - L->level1) * k;
   L->level2 += (level2 - L->level2) * k;
   const float back = (float)(LE_OCT_LOW_HOLD - ticks) / (float)LE_PV_HOP;
@@ -1495,7 +1654,7 @@ static float le_low_play(le_oct_low* L, int sr, int ticks, float level1,
   if (w <= 0.0f) return 0.0f;
   /* Before any pitch is heard (the weight is then 0 anyway), a 100 Hz
    * period keeps the taps moving. */
-  const float per = L->period > 0.0f ? L->period : 0.01f * (float)sr;
+  const float per = L->period > 0.0f ? L->period : 0.01f * (float)LE_OCT_RATE;
   float y = 0.0f;
   if (L->level1 > 1e-4f) y += L->level1 * le_low_voice(L, &L->v[0], 0.5f, per);
   if (L->level2 > 1e-4f) y += L->level2 * le_low_voice(L, &L->v[1], 0.25f, per);
@@ -1626,12 +1785,12 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     float low_g = 1.0f;
     float low_kc = 1.0f;
     if (low != NULL) {
-      le_low_follow(low, LE_OCT_RATE, o->hop_count == 0);
+      le_low_follow(low, o->hop_count == 0);
       if (!up) { /* each voice at its Vol, untrimmed (le_doct_settings) */
-        band = le_low_play(low, LE_OCT_RATE, o->hop_count, p[8], p[7]);
+        band = le_low_play(low, o->hop_count, p[8], p[7]);
         low_w = low->gate;
         low_g = low->boost;
-        low_kc = low->kc;
+        low_kc = LE_OCT_LOW_KC;
       }
     }
     wet = le_pv_tick(o, buf, head, cap, ratio, p[4] >= 0.5f, ratio * ratio,
@@ -1678,19 +1837,15 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
  * fed-back signal is softly saturated (tape compression, which also self-limits
  * the feedback). The wet tap is that processed signal, so even the first repeat
  * is coloured rather than a clean copy. p0 = time (0..1 s), p1 = feedback,
- * p2 = wet mix. Shares the fx_delay ring; lfo is the wow phase, fx_lp the loop
- * low-pass. */
+ * p2 = wet mix. Shares the fx_delay ring; fx_lp is the loop low-pass, and the
+ * wow LFO runs on the engine clock (le_clock_lfo). */
 static float fx_echo(le_fx_state* fx, int slot, int chan, int sr, int cap,
-                     float x, const float* p) {
+                     float x, const float* p, float wow) {
   float* buf = fx->delay[slot][chan];
   if (buf == NULL || cap <= 1) return x;
 
-  /* Wow/flutter: a slow LFO wobbles the read time a few ms for tape wobble. */
-  float ph = fx->lfo[slot][chan];
-  const float wow = sinf(2.0f * LE_PI * ph);
-  ph += 0.7f / (float)sr; /* ~0.7 Hz wow */
-  if (ph >= 1.0f) ph -= 1.0f;
-  fx->lfo[slot][chan] = ph;
+  /* Wow/flutter: a slow LFO ([wow], -1..1, on the engine clock) wobbles the
+   * read time a few ms for tape wobble. */
   const float wob = 0.004f * (float)sr; /* ~4 ms wobble depth */
   float d = p[0] * (float)(cap - 1) + wow * wob;
   if (d < 1.0f) d = 1.0f;
@@ -1745,9 +1900,21 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
   fx->rev_sr[s] = 0; /* the lines are worked out again (le_rev_geometry) */
 }
 
+/* The delay rings [type] runs on (defined with the vtable). */
+static int le_fx_ring_count(int32_t type);
+
+/* Whether delay[slot][c] is one this thread may read for a slot running a
+ * kind with [rings] rings: one of the kind's, or one the slot's earlier
+ * kinds left (ring_known). */
+static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
+                               int rings) {
+  return c < rings || ((fx->ring_known[slot] >> c) & 1u) != 0;
+}
+
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
- * phase, delay read head, one-pole memory, octaver phase-vocoder runtime, reverb
- * lines) so a freshly engaged effect starts clean — no filter blow-up from stale
+ * phase, delay read head, one-pole memory, the octaver phase-vocoder runtime
+ * when [type] is of its family, reverb lines) so a freshly engaged effect
+ * starts clean — no filter blow-up from stale
  * integrators, no delay-read of old content. Does NOT free or allocate the delay
  * ring or octaver buffers; the control thread owns their lifetime. Shared by
  * le_lane_reset, le_monitor_input_reset, and the SET_*_FX ring handlers (which
@@ -1765,13 +1932,29 @@ static int32_t le_mdly_frames(const struct le_fx_line* line);
 /* The Amp+Cab's instance (defined with its kernel). */
 static void le_amp_reset(struct le_fx_amp* a);
 
-void le_fx_entry_reset(le_fx_state* fx, int slot) {
+void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
+  /* The octaver family's runtime lives in its heap buffers, which the
+   * control thread may be preparing for a coming retype of this slot while
+   * the slot runs another kind (prepare_recipe writes them into the live
+   * state). Only a slot that runs one of those kinds has them published to
+   * this thread, so only such a slot touches them (#1522). Any other slot's
+   * octaver runtime is unread until a type of the family lands here, and
+   * that landing resets it. */
+  const int hops = le_fx_type_hops(type);
+  /* The kind's rings were published with it: from here on they are known
+   * to this thread whatever runs on the slot. */
+  const int rings = le_fx_ring_count(type);
+  for (int c = 0; c < rings; ++c) {
+    if (fx->delay[slot][c] != NULL) fx->ring_known[slot] |= (uint8_t)(1u << c);
+  }
   struct le_fx_line* line =
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_reset(line);
   struct le_fx_amp* amp =
       atomic_load_explicit(&fx->amp[slot], memory_order_acquire);
   if (amp != NULL) le_amp_reset(amp);
+  fx->lfo_frame[slot] = 0;
+  fx->lfo_rate[slot] = 0.0;
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
     fx->svf_ic2[slot][chan] = 0.0f;
@@ -1787,6 +1970,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot) {
     o->cur_mode = 0;  /* phase vocoder, until the settings say otherwise */
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
+    if (!hops) continue;
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
     /* A retyped slot's band starts with nothing heard: it heard nothing
      * while the slot ran as another kind. */
@@ -1822,18 +2006,24 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
   }
 }
 
-/* Zeroes chain slot [slot]'s delay rings (both channels, [cap] floats each)
- * when allocated: the audio-thread half of "start clean" that
- * le_fx_entry_reset leaves out. Shared by the settled-bypass re-enable edge
- * and Cut all sound; one ring is cap floats, so callers decide the spacing. */
-void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap) {
+/* Zeroes slot [slot]'s delay rings ([cap] floats each) when allocated: the
+ * audio-thread half of "start clean" that le_fx_entry_reset leaves out.
+ * Shared by the settled-bypass re-enable edge and Cut all sound; one ring is
+ * cap floats, so callers decide the spacing. Of the rings, only those [type]
+ * runs on or an earlier kind left (ring_known): the control thread may be
+ * allocating another for a coming retype while the slot runs [type]
+ * (#1522). */
+void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
+                             int32_t type) {
   /* The Mode delay's line reads nothing older than its clear: no zeroing
    * of its seconds of ring on the audio thread. */
   struct le_fx_line* line =
       atomic_load_explicit(&fx->line[slot], memory_order_acquire);
   if (line != NULL) le_mdly_clear(line);
+  const int rings = le_fx_ring_count(type);
   for (int chan = 0; chan < 2; ++chan) {
-    if (fx->delay[slot][chan] != NULL) {
+    if (le_fx_ring_readable(fx, slot, chan, rings) &&
+        fx->delay[slot][chan] != NULL) {
       memset(fx->delay[slot][chan], 0, (size_t)cap * sizeof(float));
     }
     /* The Dual Octaver's low band reads its own ring (#1467). */
@@ -1934,6 +2124,7 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][0] = NULL;
   le_rt_free(fx->delay[slot][1]);
   fx->delay[slot][1] = NULL;
+  fx->ring_known[slot] = 0;
   le_rt_free(atomic_load_explicit(&fx->line[slot], memory_order_relaxed));
   atomic_store_explicit(&fx->line[slot], NULL, memory_order_relaxed);
   le_rt_free(atomic_load_explicit(&fx->amp[slot], memory_order_relaxed));
@@ -2121,8 +2312,9 @@ static void fx_delay_process(le_fx_state* fx, int slot, int sr, int cap,
 static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)cap;
-  *l = fx_tremolo(fx, slot, 0, sr, *l, p);
-  *r = fx_tremolo(fx, slot, 1, sr, *r, p);
+  const double ph = le_clock_lfo(fx, slot, le_tremolo_rate(p), sr);
+  *l = fx_tremolo(*l, ph, p);
+  *r = fx_tremolo(*r, ph, p);
 }
 /* ---- The pitch kinds at rates other than 48 kHz (#1547) ----
  *
@@ -2153,9 +2345,7 @@ typedef struct le_oct_rs {
   float* gout;        /* (LE_OCT_RS_PHASES + 1) x 2 wout */
 } le_oct_rs;
 
-#define LE_OCT_RS_RATES 16
-static le_oct_rs* _Atomic le_oct_rs_tabs[LE_OCT_RS_RATES];
-static pthread_mutex_t le_oct_rs_mu = PTHREAD_MUTEX_INITIALIZER;
+static le_rate_tables le_oct_rs_tabs = {.mu = PTHREAD_MUTEX_INITIALIZER};
 
 /* A filter's half-width, in samples of its input at [rate_in], for the
  * pass and stop edges of the lower of [sr] and 48 kHz. */
@@ -2212,64 +2402,44 @@ static float* le_oct_rs_design(int sr, double rate_in, int w) {
   return g;
 }
 
-/* The tables for [sr], or NULL when none were made. Any thread. */
-static const le_oct_rs* le_oct_rs_find(int sr) {
-  for (int i = 0; i < LE_OCT_RS_RATES; ++i) {
-    const le_oct_rs* t =
-        atomic_load_explicit(&le_oct_rs_tabs[i], memory_order_acquire);
-    if (t != NULL && t->sr == sr) return t;
+/* The resamplers' tables for [sr] (le_rate_tables_get), or NULL when they
+ * cannot be made: the filters would outgrow the rings. */
+static void* le_oct_rs_make(int32_t sr) {
+  le_oct_rs* t = (le_oct_rs*)calloc(1, sizeof(*t));
+  if (t == NULL) return NULL;
+  t->sr = sr;
+  t->win = le_oct_rs_width(sr, (double)sr);
+  t->wout = le_oct_rs_width(sr, (double)LE_OCT_RATE);
+  t->d48 = le_oct_rs_d48(sr, t->win);
+  t->latency = le_oct_rs_latency_of(sr, t->d48, t->wout);
+  t->gin = le_oct_rs_design(sr, (double)sr, t->win);
+  t->gout = le_oct_rs_design(sr, (double)LE_OCT_RATE, t->wout);
+  /* What each ring must still hold: the input back to the oldest tap a
+   * tick reads (a frame's ticks span up to sr / 48 kHz frames), the
+   * output back to the oldest tap the frame reads. */
+  if (t->gin == NULL || t->gout == NULL ||
+      2 * t->win + 4 + sr / LE_OCT_RATE > LE_OCT_RS_RING ||
+      2 * t->wout + 10 + LE_OCT_RATE / sr > LE_OCT_RS_RING) {
+    free(t->gin);
+    free(t->gout);
+    free(t);
+    return NULL;
   }
-  return NULL;
+  return t;
 }
 
 /* The tables for [sr], made the first time (control thread); NULL when
  * they cannot be. */
 static const le_oct_rs* le_oct_rs_get(int sr) {
-  const le_oct_rs* found = le_oct_rs_find(sr);
-  if (found != NULL) return found;
-  pthread_mutex_lock(&le_oct_rs_mu);
-  found = le_oct_rs_find(sr);
-  if (found == NULL) {
-    int slot = -1;
-    for (int i = 0; slot < 0 && i < LE_OCT_RS_RATES; ++i) {
-      if (atomic_load_explicit(&le_oct_rs_tabs[i], memory_order_relaxed) == NULL) {
-        slot = i;
-      }
-    }
-    le_oct_rs* t = slot < 0 ? NULL : (le_oct_rs*)calloc(1, sizeof(*t));
-    if (t != NULL) {
-      t->sr = sr;
-      t->win = le_oct_rs_width(sr, (double)sr);
-      t->wout = le_oct_rs_width(sr, (double)LE_OCT_RATE);
-      t->d48 = le_oct_rs_d48(sr, t->win);
-      t->latency = le_oct_rs_latency_of(sr, t->d48, t->wout);
-      t->gin = le_oct_rs_design(sr, (double)sr, t->win);
-      t->gout = le_oct_rs_design(sr, (double)LE_OCT_RATE, t->wout);
-    }
-    /* What each ring must still hold: the input back to the oldest tap a
-     * tick reads (a frame's ticks span up to sr / 48 kHz frames), the
-     * output back to the oldest tap the frame reads. */
-    if (t == NULL || t->gin == NULL || t->gout == NULL ||
-        2 * t->win + 4 + sr / LE_OCT_RATE > LE_OCT_RS_RING ||
-        2 * t->wout + 10 + LE_OCT_RATE / sr > LE_OCT_RS_RING) {
-      if (t != NULL) {
-        free(t->gin);
-        free(t->gout);
-        free(t);
-      }
-    } else {
-      atomic_store_explicit(&le_oct_rs_tabs[slot], t, memory_order_release);
-      found = t;
-    }
-  }
-  pthread_mutex_unlock(&le_oct_rs_mu);
-  return found;
+  return (const le_oct_rs*)le_rate_tables_get(&le_oct_rs_tabs, sr,
+                                              le_oct_rs_make);
 }
 
 /* The two channels' rings [a] and [b] (LE_OCT_RS_RING samples, indexed by
  * absolute frame) read at position [num] / [den] through the table [g] of
  * [w] taps a side, into [ya] and [yb]. The position is exact, so frames a
- * hop period apart (le_fx_hop_period) read with the same weights. */
+ * whole number of hops apart at the kernel's rate read with the same
+ * weights. */
 static void le_oct_rs_read(const float* a, const float* b, int64_t num,
                            int64_t den, const float* g, int w, float* ya,
                            float* yb) {
@@ -2532,48 +2702,58 @@ static const double LE_PUMP_PERIOD[11] = {
     -1.0, 2.0, 4.0 / 3.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0,
     0.125, 1.0 / 12.0};
 
-/* e(phase) every 1/20 of the period from the beat, as measured; 0 from three
- * quarters on. */
-static const float LE_PUMP_SHAPE[16] = {
-    1.000f, 0.994f, 0.984f, 0.970f, 0.948f, 0.918f, 0.876f, 0.820f,
-    0.746f, 0.654f, 0.544f, 0.418f, 0.284f, 0.153f, 0.045f, 0.0f};
+/* The duck's shape (#891 s17rhy, a steady 1 kHz tone at Bar, 1/2, 1/4, 1/8
+ * and 1/16, Depth 50, 70, 85 and 100 %: the same at every rate and depth to
+ * 0.001). It falls from the beat to full depth over the first 0.022 of the
+ * period, straight in dB at full depth: (1 - 100^(-phase / 0.022)) / 0.99,
+ * held at 1 (11 ms at 1/4 and 120 BPM, 44 ms at a bar); then it recovers as
+ * LE_PUMP_SHAPE, every 1/40 of the period from the beat, to 0 by about
+ * three quarters. */
+#define LE_PUMP_ATTACK 0.022
+static const float LE_PUMP_SHAPE[32] = {
+    1.0f,    0.9998f, 0.9969f, 0.9934f, 0.9890f, 0.9835f, 0.9769f, 0.9688f,
+    0.9590f, 0.9472f, 0.9331f, 0.9165f, 0.8968f, 0.8739f, 0.8473f, 0.8167f,
+    0.7819f, 0.7425f, 0.6985f, 0.6497f, 0.5963f, 0.5385f, 0.4769f, 0.4121f,
+    0.3450f, 0.2772f, 0.2103f, 0.1464f, 0.0890f, 0.0403f, 0.0074f, 0.0f};
 
-/* The dip in dB against depth, as measured at 30, 70 and 100 % (a = 0.50,
- * 0.901, 0.990), linear between. */
-static const float LE_PUMP_DIP_AT[4] = {0.0f, 0.3f, 0.7f, 1.0f};
-static const float LE_PUMP_DIP_DB[4] = {0.0f, 6.0206f, 20.0877f, 40.0f};
-
-/* The duck is smoothed with this time constant: the measured shape is at
- * full depth on the beat, and a gain step is a click (#813), whether at the
- * beat or where an anchor moves the phase (a loop top that is not a whole
- * number of periods). */
-#define LE_PUMP_SMOOTH_S 0.00025
+/* The duck's steepest, at full depth at the attack's start: ln(100) /
+ * 0.022 a period. The duck moves no faster than 1.5 times that, so the
+ * shape itself plays as measured, while a gain step, a click (#813), where
+ * an anchor moves the phase (a loop top that is not a whole number of
+ * periods) glides as fast as the attack falls; and never faster than
+ * across LE_PUMP_MIN_GLIDE_S, which only the fastest rates reach. */
+#define LE_PUMP_MAX_SLOPE (1.5 * 4.605170186 / LE_PUMP_ATTACK)
+#define LE_PUMP_MIN_GLIDE_S 0.00025
 
 static float le_pump_shape(double phase) {
-  const double x = phase * 20.0;
-  if (x >= 15.0) return 0.0f;
-  const int i = (int)x;
+  const double x = phase * 40.0;
+  if (!(x < 31.0)) return 0.0f;
+  const int i = x > 0.0 ? (int)x : 0;
   const float f = (float)(x - (double)i);
-  return LE_PUMP_SHAPE[i] + (LE_PUMP_SHAPE[i + 1] - LE_PUMP_SHAPE[i]) * f;
+  const float rec =
+      LE_PUMP_SHAPE[i] + (LE_PUMP_SHAPE[i + 1] - LE_PUMP_SHAPE[i]) * f;
+  if (phase >= LE_PUMP_ATTACK) return rec;
+  /* 100^(-phase / attack) */
+  const float att = (float)(
+      (1.0 - exp(-phase * (4.605170185988091 / LE_PUMP_ATTACK))) / 0.99);
+  return (att < 1.0f ? att : 1.0f) * rec;
 }
 
+/* The depth at full duck (#891 s17rhy): a = 0.99 d (2 - d), dips of 6.1,
+ * 11.8, 20.1, 29.8 and 40.0 dB at 30, 50, 70, 85 and 100 %, each within
+ * 0.15 dB of the captures (6.20, 11.89, 20.09, 29.93 and 40.09). */
 static float le_pump_depth(float d) {
   if (!(d > 0.0f)) return 0.0f;
   if (d >= 1.0f) d = 1.0f;
-  int i = 1;
-  while (i < 3 && d > LE_PUMP_DIP_AT[i]) ++i;
-  const float f = (d - LE_PUMP_DIP_AT[i - 1]) /
-                  (LE_PUMP_DIP_AT[i] - LE_PUMP_DIP_AT[i - 1]);
-  const float db =
-      LE_PUMP_DIP_DB[i - 1] + (LE_PUMP_DIP_DB[i] - LE_PUMP_DIP_DB[i - 1]) * f;
-  return 1.0f - powf(10.0f, -db / 20.0f);
+  return 0.99f * d * (2.0f - d);
 }
 
 
 /* The measured shape at the frame [fx] is processing, for the rate
- * setting [rate_setting]. */
+ * setting [rate_setting]; [frames], if not NULL, is set to the period in
+ * frames (0 with no usable tempo). */
 static float le_pump_shape_now(const le_fx_state* fx, int sr,
-                               float rate_setting) {
+                               float rate_setting, double* frames) {
   float qpf;
   int32_t num, den;
   const double beat = le_fx_beat_now(fx, sr, &qpf, &num, &den);
@@ -2584,6 +2764,7 @@ static float le_pump_shape_now(const le_fx_state* fx, int sr,
                                  : LE_PUMP_PERIOD[pos];
   double into = fmod(beat, period); /* quarter notes since the beat */
   if (into < 0.0) into += period;
+  if (frames != NULL) *frames = qpf > 0.0f ? period / (double)qpf : 0.0;
   return le_pump_shape(into / period);
 }
 
@@ -2594,14 +2775,16 @@ void le_fx_pumper_seed_settled(le_fx_state* fx, int slot, const float* params,
   fx->lfo[slot][1] = fx->lfo[slot][0];
   fx->fx_lp[slot][0] = params[1];
   fx->fx_lp[slot][1] =
-      fx->lfo[slot][0] * le_pump_shape_now(fx, sr > 0 ? sr : 48000, params[0]);
+      fx->lfo[slot][0] *
+      le_pump_shape_now(fx, sr > 0 ? sr : 48000, params[0], NULL);
 }
 
 static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
                               float* l, float* r, const float* p) {
   (void)cap;
   const int32_t rate = sr > 0 ? sr : 48000;
-  const float e = le_pump_shape_now(fx, rate, p[0]);
+  double period;
+  const float e = le_pump_shape_now(fx, rate, p[0], &period);
   /* The depth glides (about 10 ms), so a moving control never steps. Its
    * target is worked out only when the setting moves: lfo[slot][1] holds
    * it for the setting in fx_lp[slot][0] (both 0 after a reset, which is
@@ -2612,10 +2795,15 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
   }
   float* a = &fx->lfo[slot][0];
   *a += (fx->lfo[slot][1] - *a) * (100.0f / (float)rate);
-  /* The duck itself, smoothed (fx_lp[slot][1], 0 after a reset). */
+  /* The duck itself (fx_lp[slot][1], 0 after a reset), held to
+   * LE_PUMP_MAX_SLOPE. */
   float* duck = &fx->fx_lp[slot][1];
-  *duck += (*a * e - *duck) /
-           (1.0f + (float)(LE_PUMP_SMOOTH_S * (double)rate));
+  const float d = *a * e - *duck;
+  const double floor_f = 1.0 / (LE_PUMP_MIN_GLIDE_S * (double)rate);
+  const float most = (float)(period > 0.0
+                                 ? fmin(LE_PUMP_MAX_SLOPE / period, floor_f)
+                                 : floor_f);
+  *duck += d > most ? most : d < -most ? -most : d;
   const float g = 1.0f - *duck;
   *l *= g;
   *r *= g;
@@ -2629,21 +2817,22 @@ static void fx_pumper_process(le_fx_state* fx, int slot, int sr, int cap,
  * replays A at a 125 ms delay; ABcccc plays A, B, then c live and replays
  * that half step three times); _ rests for a step, or half a step in a
  * pattern with lower-case letters (s6v: AB__dd and AA__dd; the capture
- * reads 48 to 54 dB down; this one is silent); a slice ends with a 4 ms
- * fade and starts
- * without one. < plays the step before backwards (the factory "Reverse"
- * preset is <<<<). The list stops at <<<<: the Looper X's three Fd
- * patterns after it are not modelled (no capture, no factory preset), so
- * they are not offered.
+ * reads 48 to 54 dB down; this one is silent). From one slice to the next
+ * the output crossfades, straight, over the 4 ms from the boundary: the
+ * slice before plays on past its end as it fades out, and the new one fades
+ * in (#1447, s4/21-23 against the Pumper's beat in the same session). <
+ * plays the step before backwards (the factory "Reverse" preset is <<<<).
+ * The list stops at <<<<: the Looper X's three Fd patterns after it are not
+ * modelled (no capture, no factory preset), so they are not offered.
  *
  * Each slice fixes where it reads when it starts (a distance back, or the
  * point it mirrors about), so a tempo change under a slice does not move
  * it. A new pattern or step waits for the slice playing to end. A slice
- * cut short (a beat that jumps) fades out over the 4 ms while the next one
- * fades in. The source is the slot's
- * delay ring: a slice whose source is not all within it is silent. With
- * the 1 s ring the quarter-step factory presets (a one-step replay) hold
- * above 60 BPM, and Reverse (two 1/16 steps back) above 30 BPM. */
+ * cut short (a beat that jumps) crossfades to the next the same way. The
+ * source is the slot's delay ring: a slice whose source is not all within
+ * it is silent. With the 1 s ring the quarter-step factory presets (a
+ * one-step replay) hold above 60 BPM, and Reverse (two 1/16 steps back) a
+ * little above 30 BPM. */
 
 /* The patterns, in the choice's order (the Looper X's SlicerPattern table,
  * read from its binary, up to <<<<; docs/plan/2026-10-20-looperx-derived-
@@ -2666,7 +2855,7 @@ static const double LE_SLICE_STEP[9] = {1.0,       2.0 / 3.0, 0.5,
                                         1.0 / 3.0, 0.25,      1.0 / 6.0,
                                         0.125,     1.0 / 12.0, 0.0625};
 
-/* The slice end's fade (#891: about 4 ms). */
+/* The crossfade from one slice to the next (#891: about 4 ms). */
 #define LE_SLICE_FADE_S 0.004
 
 /* A token's length in half steps: a capital letter or < is a step, a
@@ -2742,16 +2931,29 @@ static float le_slice_read(const float* ring, int cap, int pos,
   return ring[at];
 }
 
-/* Ends slot [st]'s slice early: it carries on as a voice fading out at
- * the 4 ms rate ([fade] frames from full), in whichever of the two fading
- * voices is free or quieter (a third voice, quieter than both, is
- * dropped: with the gains summing to at most 1, it is at most a third). */
-static void le_slice_cut(le_fx_slice_state* st, double fade) {
+/* Ends slot [st]'s slice (the ring's newest frame at [pos] of [cap]): it
+ * carries on as a voice fading out over [fade] frames from full, or at its
+ * own crossfade's rate if that is faster (a slice shorter than 8 ms), so
+ * the two fading voices free up in time; a reversed slice fades out by the
+ * end of the source it latched, never turning round. It takes whichever of
+ * the two fading voices is free or quieter (a third voice, quieter than
+ * both, is dropped: with the gains summing to at most 1, it is at most a
+ * third). */
+static void le_slice_cut(le_fx_slice_state* st, double fade, int pos,
+                         int cap) {
   if (st->cur.mode != LE_SLICE_SILENT && st->cur.gain > 0.0f) {
     const int k = st->out[0].gain <= st->out[1].gain ? 0 : 1;
     if (st->cur.gain > st->out[k].gain) {
+      float step = fmaxf(st->cur.step, (float)(1.0 / fade));
+      if (st->cur.mode == LE_SLICE_MIRROR) {
+        int n = pos - st->cur.arg;
+        if (n < 0) n += cap;
+        const int left = st->cur.len - n;
+        step = left > 0 ? fmaxf(step, st->cur.gain / (float)left)
+                        : st->cur.gain;
+      }
       st->out[k] = st->cur;
-      st->out[k].step = (float)(1.0 / fade);
+      st->out[k].step = step;
     }
   }
   st->cur.mode = LE_SLICE_SILENT;
@@ -2768,6 +2970,34 @@ static float le_slice_fading(const le_fx_slice_state* st, int next) {
     if (g > 0.0f) sum += g;
   }
   return sum;
+}
+
+/* Where the beat falls in [st]'s pattern and step: the slice's token, its
+ * id (0 is none; its cycle, token and settings), how far into it, its
+ * length and fade, and for a letter how far back it reads (in frames at
+ * [qpf] quarters a frame). */
+typedef struct le_slice_pos {
+  char tok;
+  double id, into_f, len_f, fade_f, back_f;
+} le_slice_pos;
+
+static void le_slice_at(const le_fx_slice_state* st, double beat, float qpf,
+                        int rate, le_slice_pos* sp) {
+  const char* pat = LE_SLICE_PATTERNS[st->patt];
+  const double half_q = LE_SLICE_STEP[st->step] * 0.5;
+  const double cycle_q = (double)le_slice_cycle(pat) * half_q;
+  const double cycles = floor(beat / cycle_q);
+  const double pos_q = beat - cycles * cycle_q;
+  int index, start, len, first;
+  sp->tok = le_slice_token(pat, pos_q / half_q, &index, &start, &len, &first);
+  const double fpq = 1.0 / (double)qpf; /* frames a quarter */
+  sp->into_f = (pos_q - (double)start * half_q) * fpq;
+  sp->len_f = (double)len * half_q * fpq;
+  sp->fade_f = fmin(LE_SLICE_FADE_S * (double)rate, 0.5 * sp->len_f);
+  sp->back_f = (double)(start - first) * half_q * fpq;
+  sp->id = 1.0 +
+           ((cycles * 32.0 + (double)index) * 20.0 + (double)st->patt) * 9.0 +
+           (double)st->step;
 }
 
 static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
@@ -2794,60 +3024,50 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
       st->mix + (mix_to - st->mix) * (float)(1.0 / (0.010 * (double)rate));
   /* Landing once a step no longer moves it. */
   st->mix = mix_next == st->mix ? mix_to : mix_next;
-  /* A new pattern or step waits for the slice playing to end: a setting
-   * change never cuts a slice. */
   int si = (int)(p[1] * 8.0f + 0.5f);
   si = si < 0 ? 0 : si > 8 ? 8 : si;
-  if (st->cur.gain <= 0.0f) {
-    st->patt = le_slice_index(p[0]);
-    st->step = si;
-  }
-  const char* pat = LE_SLICE_PATTERNS[st->patt];
   float qpf;
   int32_t num, den;
   const double beat = le_fx_beat_now(fx, rate, &qpf, &num, &den);
   /* No usable tempo: the input passes, crossfaded to over the 4 ms. */
   const int passes = !(qpf > 0.0f) || !isfinite(beat);
   if (passes) {
-    le_slice_cut(st, fade4);
+    le_slice_cut(st, fade4, pos, cap);
   } else if (beat < st->last_beat) {
-    le_slice_cut(st, fade4); /* the beat went back: a new slice */
+    le_slice_cut(st, fade4, pos, cap); /* the beat went back: a new slice */
   }
   st->last_beat = passes ? 0.0 : beat;
   if (fresh) st->pass = passes ? 1.0f : 0.0f;
 
   if (!passes) {
-    const double half_q = LE_SLICE_STEP[st->step] * 0.5;
-    const double cycle_q = (double)le_slice_cycle(pat) * half_q;
-    const double cycles = floor(beat / cycle_q);
-    const double pos_q = beat - cycles * cycle_q;
-    int index, start, len, first;
-    const char tok =
-        le_slice_token(pat, pos_q / half_q, &index, &start, &len, &first);
-    const double into = pos_q - (double)start * half_q; /* quarter notes */
-    const double fpq = 1.0 / (double)qpf;              /* frames a quarter */
-    const double len_f = (double)len * half_q * fpq;    /* the slice */
-    const double fade_f = fmin(fade4, 0.5 * len_f);
-    /* Which slice this is (0 is none): its cycle, token and settings. */
-    const double id =
-        1.0 + ((cycles * 32.0 + (double)index) * 20.0 + (double)st->patt) *
-                  9.0 +
-        (double)st->step;
-    if (id != st->id) {
-      le_fx_slice_voice v = {LE_SLICE_SILENT, 0, 0, 1.0f, 0.0f};
-      if (tok == '<') {
+    le_slice_pos sp;
+    le_slice_at(st, beat, qpf, rate, &sp);
+    /* A new pattern or step waits for the slice playing to end (or a
+     * rest): a setting change never cuts a slice. */
+    const int np = le_slice_index(p[0]);
+    if ((sp.id != st->id || st->cur.gain <= 0.0f) &&
+        (np != st->patt || si != st->step)) {
+      st->patt = np;
+      st->step = si;
+      le_slice_at(st, beat, qpf, rate, &sp);
+    }
+    if (sp.id != st->id) {
+      le_fx_slice_voice v = {LE_SLICE_SILENT, 0, 0, 0.0f, 0.0f};
+      if (sp.tok == '<') {
         /* The step before, backwards: at n frames into the slice, 2n
-         * back, so the whole slice needs twice its length of ring. */
-        if (2.0 * len_f < (double)(cap - 1)) {
-          const long n0 = lround(into * fpq);
+         * back, so the slice needs twice its length of ring, and its fade
+         * past the end as much as the ring has left. */
+        if (2.0 * sp.len_f < (double)(cap - 1)) {
+          const double run = fmin(sp.len_f + sp.fade_f, 0.5 * (cap - 2));
+          const long n0 = lround(sp.into_f);
           long e = (long)pos - n0;
           while (e < 0) e += cap;
           v.mode = LE_SLICE_MIRROR;
           v.arg = (int32_t)e;
-          v.len = (int32_t)ceil(len_f);
+          v.len = (int32_t)ceil(run);
         }
-      } else if (tok != '_') {
-        const double back = (double)(start - first) * half_q * fpq;
+      } else if (sp.tok != '_') {
+        const double back = sp.back_f;
         if (back >= 0.0 && back < (double)cap - 0.5) {
           v.mode = LE_SLICE_BACK;
           v.arg = (int32_t)(back + 0.5);
@@ -2856,54 +3076,50 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
       if (st->cur.mode == LE_SLICE_BACK && v.mode == LE_SLICE_BACK &&
           st->cur.arg == v.arg && st->cur.gain > 0.0f) {
         /* The same audio from the same point (a live slice into a live
-         * one across a jump): it plays on. */
+         * one): it plays on. */
         v.gain = st->cur.gain;
-      } else {
-        if (st->cur.gain > 0.0f) le_slice_cut(st, fade4);
-        /* Under slices fading out, the new one fades in as they fade: on
-         * time, nothing fades and the new slice starts at once. */
-        v.gain = 1.0f - le_slice_fading(st, 0);
+      } else if (st->cur.gain > 0.0f) {
+        /* The slice before plays on past its end, fading out, while this
+         * one fades in from nothing (#891 s4/21-23: a linear crossfade of
+         * about 4 ms from the boundary). */
+        le_slice_cut(st, sp.fade_f, pos, cap);
       }
+      v.step = (float)(1.0 / sp.fade_f); /* its crossfade's rate */
       st->cur = v;
-      st->id = id;
+      st->id = sp.id;
     }
     if (st->cur.mode != LE_SLICE_SILENT) {
-      /* The slice's end fades out over 4 ms (half the slice, if shorter);
-       * the gain moves no faster than that either way, so a beat that
-       * jumps or a tempo that changes near the end still fades. */
-      double left = len_f - into * fpq;
+      /* A slice fades in over its 4 ms (half the slice, if shorter), no
+       * faster than the voices before it fade out, so they never sum above
+       * the input. A reversed slice also fades out to end where its
+       * latched source does, should the tempo drop under it; once that has
+       * run out it stays silent. */
+      float want = 1.0f;
       int src_out = 0;
       if (st->cur.mode == LE_SLICE_MIRROR) {
-        /* A reversed slice ends where its latched source does, should the
-         * tempo drop under it; once that has run out it stays silent. */
         int n = pos - st->cur.arg;
         if (n < 0) n += cap;
-        left = fmin(left, (double)(st->cur.len - n));
-        src_out = st->cur.len - n <= 0;
+        const double left = (double)(st->cur.len - n);
+        want = left >= sp.fade_f ? 1.0f
+               : left > 0.0     ? (float)(left / sp.fade_f)
+                                : 0.0f;
+        src_out = left <= 0.0;
       }
-      const float want = left >= fade_f ? 1.0f
-                         : left > 0.0   ? (float)(left / fade_f)
-                                        : 0.0f;
-      const float d = (float)(1.0 / fade_f);
-      /* With the fading voices, never more than the input. */
+      const float d = (float)(1.0 / sp.fade_f);
       const float g = fminf(fminf(fmaxf(want, st->cur.gain - d),
                                   st->cur.gain + d),
                             1.0f - le_slice_fading(st, 1));
-      /* A slice that reached its end on time has nothing left to fade
-       * out after its last frame. */
-      st->cur.gain = left > 1.5 || g > want + 1e-3f ? g : 0.0f;
-      st->wet_g = g;
+      st->cur.gain = g > 0.0f ? g : 0.0f;
       if (src_out && st->cur.gain <= 0.0f) st->cur.mode = LE_SLICE_SILENT;
     } else {
       st->cur.gain = 0.0f;
-      st->wet_g = 0.0f;
     }
   }
 
   float wet[2] = {0.0f, 0.0f};
   if (st->cur.mode != LE_SLICE_SILENT && !passes) {
-    wet[0] = st->wet_g * le_slice_read(ring[0], cap, pos, &st->cur);
-    wet[1] = st->wet_g * le_slice_read(ring[1], cap, pos, &st->cur);
+    wet[0] = st->cur.gain * le_slice_read(ring[0], cap, pos, &st->cur);
+    wet[1] = st->cur.gain * le_slice_read(ring[1], cap, pos, &st->cur);
   }
   for (int k = 0; k < 2; ++k) {
     le_fx_slice_voice* v = &st->out[k];
@@ -2917,11 +3133,13 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
     wet[0] += v->gain * le_slice_read(ring[0], cap, pos, v);
     wet[1] += v->gain * le_slice_read(ring[1], cap, pos, v);
   }
-  /* Mix (#891): 100 % is the slices alone; 50 % keeps the dry whole and
-   * adds the slices at half. */
+  /* Mix (#891 s17rhy, noise at 25, 50, 75, 90 and 100 %): the slices at
+   * m (2 - m) and the dry at 1 - m^2, each within 0.015 of the captures
+   * (0.75 and 0.75 at 50 %). */
   const float m = st->mix;
-  const float dry = m > 0.5f ? 2.0f * (1.0f - m) : 1.0f;
-  float o[2] = {in[0] * dry + wet[0] * m, in[1] * dry + wet[1] * m};
+  const float dry = 1.0f - m * m;
+  const float wg = m * (2.0f - m);
+  float o[2] = {in[0] * dry + wet[0] * wg, in[1] * dry + wet[1] * wg};
   /* Toward the input when it passes, over the 4 ms. */
   const float fd_step = (float)(1.0 / fade4);
   st->pass = passes ? fminf(1.0f, st->pass + fd_step)
@@ -2953,11 +3171,13 @@ static void fx_slicer_process(le_fx_state* fx, int slot, int sr, int cap,
  * - the timings: the plain modes put the echo on both sides; L/R the right
  *   one half the time early (0.881) with the left on time at
  *   0.219 + 0.666 Feedback, each with 0.126 / 0.143 of the other side's;
- *   GRV the right at 0.837 of the time (0.871) and the left on time at
- *   0.750 + 0.116 Feedback, with 0.126 / 0.113 of the other. The timings
- *   were measured on DIGI and RES HI, and are the same on both; the DAMPED
- *   and RESO LO ones, composed from them, match their own captures (s6v
- *   9-16) within 0.3 dB through the fourth repeat.
+ *   GRV the right at 251/300 of the time (0.881) and the left on time at
+ *   0.753 + 0.129 Feedback, each carrying 0.143 of the other side's
+ *   (s17grv: the early tap 15060 frames of 18000 at 1/8D, 20080 of 24000
+ *   at 1/4, 10040 at 1/8; RES HI GRV within 0.1 dB at Feedback 0, 29 and
+ *   50 %). The timings were measured on DIGI and RES HI, and are the same
+ *   on both; the DAMPED and RESO LO ones, composed from them, match their
+ *   own captures (s6v 9-16) within 0.3 dB through the fourth repeat.
  * Two limits, fit to DIGI passes (s6v 17-18, with s4/4): the echo
  * saturates from 0.55 toward 0.60 (at Feedback 0 % a 0 dBFS tone's echo
  * comes back 3.1 dB down on the capture and 2.95 dB here, a -3 dBFS one
@@ -2983,7 +3203,7 @@ static const double LE_MDLY_QUARTERS[20] = {
 #define LE_MDLY_OUT_LP_HZ 10917.0
 #define LE_MDLY_LOOP_LP_HZ 14832.0
 #define LE_MDLY_DAMP_HZ 13203.0
-#define LE_MDLY_GRV 0.8368
+#define LE_MDLY_GRV (251.0 / 300.0) /* GRV's early tap (s17grv) */
 #define LE_MDLY_DC_HZ 5.0  /* the loop's DC blocker */
 #define LE_MDLY_ECHO_KNEE 0.55f /* the voiced echo's limit: knee, ceiling */
 #define LE_MDLY_ECHO_CEIL 0.60f
@@ -3356,7 +3576,7 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     line->mix = mix_to;
     line->tap = want > 0 ? want : 1;
   }
-  /* The early tap: L/R half the time, GRV 0.837 of it, the Dub's
+  /* The early tap: L/R half the time, GRV 251/300 of it, the Dub's
    * 1 - Ratio / 2. */
   const double early = timing == 1   ? 0.5
                        : timing == 2 ? LE_MDLY_GRV
@@ -3429,9 +3649,9 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
     const float gl = 0.219f + 0.666f * fb;
     wl = gl * (vp + 0.143f * ve);
     wr = 0.881f * ve + 0.126f * vp;
-  } else if (timing == 2) { /* GRV */
-    wl = (0.750f + 0.116f * fb) * vp + 0.1135f * ve;
-    wr = 0.871f * ve + 0.126f * vp;
+  } else if (timing == 2) { /* GRV: each side carries 0.143 of the other */
+    wl = (0.753f + 0.129f * fb) * (vp + 0.143f * ve);
+    wr = 0.881f * (ve + 0.143f * vp);
   } else { /* the Dub's L/R Ratio, its side gains gliding */
     const float ra = line->cur[2];
     const int i = ra <= 0.5f ? 0 : 1;
@@ -3458,8 +3678,10 @@ static void fx_mode_delay_process(le_fx_state* fx, int slot, int sr, int cap,
 
 static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
                             float* r, const float* p) {
-  *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
-  *r = fx_echo(fx, slot, 1, sr, cap, *r, p);
+  const float wow = sinf(
+      2.0f * LE_PI * (float)le_clock_lfo(fx, slot, LE_ECHO_WOW_HZ, sr));
+  *l = fx_echo(fx, slot, 0, sr, cap, *l, p, wow);
+  *r = fx_echo(fx, slot, 1, sr, cap, *r, p, wow);
 }
 /* Reverb is natively stereo (it cross-feeds its two banks), so its wrapper makes
  * the one stereo call. fx_reverb computes both wet values before writing either
@@ -3584,7 +3806,10 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
       owned[n++] = &o->rs_out;
     }
   }
-  fx->oct_tab[slot] = tab;
+  /* Written only when it changes: a slot already running a kind of the
+   * family reads it every sample (fx_octaver_run), and a recipe prepares
+   * every slot it names again, a kept octaver too (#1522). */
+  if (fx->oct_tab[slot] != tab) fx->oct_tab[slot] = tab;
   return LE_OK;
 oom:
   for (int i = n - 1; i >= 0; --i) {
@@ -3600,25 +3825,22 @@ size_t le_fx_octaver_bytes(int sr) {
   return 2u * floats * sizeof(float);
 }
 
-size_t le_fx_low_band_bytes(void) {
-  return 2u * (sizeof(le_oct_low) +
-               (size_t)le_low_ring_len(LE_OCT_RATE) * sizeof(float));
-}
+size_t le_fx_low_band_bytes(void) { return 2u * sizeof(le_oct_low); }
 
 /* DUAL OCTAVER: the octaver's buffers, and its low band's (#1467) per
  * channel, at LE_OCT_RATE (the kernel's rate at every engine rate). */
 static int32_t fx_dual_octaver_prepare(le_fx_state* fx, int slot, int cap) {
   le_oct_low* made[2] = {NULL, NULL};
-  const int32_t len = le_low_ring_len(LE_OCT_RATE);
   for (int chan = 0; chan < 2; ++chan) {
     if (atomic_load_explicit(&fx->oct[slot][chan].low, memory_order_relaxed) !=
         NULL) {
       continue;
     }
-    made[chan] = (le_oct_low*)le_rt_alloc_prefaulted(le_fx_low_band_bytes() / 2u);
+    made[chan] = (le_oct_low*)le_rt_alloc_prefaulted(sizeof(le_oct_low));
     if (made[chan] == NULL) goto oom;
-    memset(made[chan], 0, sizeof(le_oct_low));
-    le_low_init(made[chan], LE_OCT_RATE, len);
+    /* All but the ring, which le_low_init clears. */
+    memset(made[chan], 0, offsetof(le_oct_low, ring));
+    le_low_init(made[chan]);
   }
   if (fx_octaver_prepare(fx, slot, cap) != LE_OK) goto oom;
   for (int chan = 0; chan < 2; ++chan) {
@@ -4424,8 +4646,7 @@ static void fx_eq_update(void* ks, const float* p, int sr, int settle) {
 
 static void fx_eq_kprocess(void* ks, float* l, float* r) {
   le_fx_eq* q = (le_fx_eq*)ks;
-  /* A non-finite sample would latch into the band memory for good (the
-   * conditioning stage's biquads guard the same way). */
+  /* A non-finite sample would latch into the band memory for good. */
   double x[2] = {isfinite(*l) ? *l : 0.0, isfinite(*r) ? *r : 0.0};
   for (int b = 0; b < LE_EQ_BANDS; ++b) {
     if (!(q->active & (1u << b))) continue;
@@ -6182,38 +6403,31 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
  * after: each row's first B taps (run directly) and the spectra of the
  * partitions after them. */
 typedef struct le_cab_bank {
-  int32_t sr, parts;
+  int32_t parts;
   float head[LE_CAB_ROWS][LE_CAB_B];
   float re[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
   float im[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
 } le_cab_bank;
 
-#define LE_CAB_BANKS 6 /* 44.1, 48, 88.2, 96, 176.4 and 192 kHz */
-static le_cab_bank* _Atomic le_cab_banks[LE_CAB_BANKS];
-static pthread_mutex_t le_cab_banks_mu = PTHREAD_MUTEX_INITIALIZER;
-static le_rfft_plan le_cab_fft;
+static le_rate_tables le_cab_banks = {.mu = PTHREAD_MUTEX_INITIALIZER};
+static le_rfft_plan le_cab_fft; /* built under le_cab_banks' lock */
 
 /* The bank for [sr], or NULL when none was built. Any thread. */
 static const le_cab_bank* le_cab_bank_find(int32_t sr) {
-  for (int i = 0; i < LE_CAB_BANKS; ++i) {
-    const le_cab_bank* b =
-        atomic_load_explicit(&le_cab_banks[i], memory_order_acquire);
-    if (b != NULL && b->sr == sr) return b;
-  }
-  return NULL;
+  return (const le_cab_bank*)le_rate_tables_find(&le_cab_banks, sr);
 }
 
 #define LE_CAB_SINC_HW 32    /* resampling kernel half-width, 48 kHz taps */
 #define LE_CAB_SINC_HZ 21000.0 /* its cutoff, under 44.1 kHz's Nyquist */
 #define LE_CAB_SINC_BETA 8.0  /* its Kaiser window */
 
-/* The samples a resampled cabinet starts late at [sr] (le_cab_bank_get):
+/* The samples a resampled cabinet starts late at [sr] (le_cab_bank_make):
  * about 0.09 ms, none at 48 and 96 kHz. */
 static int le_cab_pre(int sr) {
   return sr == 48000 || sr == 96000 ? 0 : (int)(4.0 * sr / 48000.0 + 0.5);
 }
 
-/* Builds the bank for [sr] once (control thread). At 48 kHz each row is the
+/* Builds the bank for [sr] (le_rate_tables_get). At 48 kHz each row is the
  * captured response itself. At 96 kHz the 48 kHz response runs on every
  * other sample (taps at the even positions, le_rs_phases), which is that
  * response exactly below 24 kHz. Other rates resample the 48 kHz response
@@ -6225,23 +6439,7 @@ static int le_cab_pre(int sr) {
  * reports them as latency. Past 96 kHz the
  * response is cut at LE_CAB_MAX_PARTS partitions, with a fade over its last
  * quarter. */
-static const le_cab_bank* le_cab_bank_get(int32_t sr) {
-  if (sr <= 0) sr = 48000;
-  const le_cab_bank* found = le_cab_bank_find(sr);
-  if (found != NULL) return found;
-  pthread_mutex_lock(&le_cab_banks_mu);
-  found = le_cab_bank_find(sr);
-  int slot = -1;
-  for (int i = 0; found == NULL && i < LE_CAB_BANKS; ++i) {
-    if (atomic_load_explicit(&le_cab_banks[i], memory_order_relaxed) == NULL) {
-      slot = i;
-      break;
-    }
-  }
-  if (found != NULL || slot < 0) {
-    pthread_mutex_unlock(&le_cab_banks_mu);
-    return found;
-  }
+static void* le_cab_bank_make(int32_t sr) {
   const int n48 = LE_CAB_TAPS48;
   const int max_taps = LE_CAB_B * (LE_CAB_MAX_PARTS + 1);
   const double r = 48000.0 / (double)sr; /* 48 kHz taps per output sample */
@@ -6257,10 +6455,8 @@ static const le_cab_bank* le_cab_bank_get(int32_t sr) {
   if (b == NULL || h == NULL || !le_rfft_plan_init(&le_cab_fft, 2 * LE_CAB_B)) {
     free(b);
     free(h);
-    pthread_mutex_unlock(&le_cab_banks_mu);
     return NULL;
   }
-  b->sr = sr;
   b->parts = (m - LE_CAB_B + LE_CAB_B - 1) / LE_CAB_B;
   if (b->parts > LE_CAB_MAX_PARTS) b->parts = LE_CAB_MAX_PARTS;
   if (sr == 48000) {
@@ -6321,9 +6517,14 @@ static const le_cab_bank* le_cab_bank_get(int32_t sr) {
     }
   }
   free(h);
-  atomic_store_explicit(&le_cab_banks[slot], b, memory_order_release);
-  pthread_mutex_unlock(&le_cab_banks_mu);
   return b;
+}
+
+/* The bank for [sr], built the first time (control thread). */
+static const le_cab_bank* le_cab_bank_get(int32_t sr) {
+  if (sr <= 0) sr = 48000;
+  return (const le_cab_bank*)le_rate_tables_get(&le_cab_banks, sr,
+                                                le_cab_bank_make);
 }
 
 /* ---- the amp's voicing, fit to the s6 captures (scratch analysis) ---- */
@@ -7728,11 +7929,11 @@ static void fx_lpf_kprocess(void* ks, float* l, float* r) {
  *   (-46 dB at 4.7 kHz, -96 dB at 7.2 kHz): nine sections fitted to the
  *   impulse response's spectrum within 1.7 dB rms from 100 Hz to 7.3 kHz;
  * - the mix law is the chorus's (dry 1 - 0.29 mix; the capture's dry gain
- *   was 0.9165 at 28.9 %), and the wet level follows
- *   0.85 mix (Time / 2)^0.45. The s16spring captures put the wet energy
- *   well under that, almost flat across Time (-18.1 dB against the dry at
- *   1 s to -17.1 at 10 s, where this law gives about -9 and -0.6 at 2 and
- *   8 s): whether to follow them is open (#1576).
+ *   was 0.9165 at 28.9 %), and the wet level is LE_SPR_TIME's at the Time,
+ *   times the mix: fitted so the wet energy over the impulse response's
+ *   first second, against the dry, is the capture's at every whole second
+ *   (-18.1 dB at 1 s to -17.1 dB at 10 s, the rise all from the longer
+ *   tail; #1576).
  * A known difference: successive echoes repeat more closely (envelope
  * autocorrelation 0.87 at 38 ms against the capture's 0.4). Both channels
  * take the tank's mono output (the capture's correlated at 0.996). */
@@ -7752,17 +7953,16 @@ static const le_fx_param_desc LE_FX_SPRING_PARAMS[] = {
 #define LE_SPR_DRY_DROP 0.29f
 #define LE_SPR_SECTIONS 9
 
-#define LE_SPR_WET 0.85
-#define LE_SPR_WET_EXP 0.45
-
-/* At each whole second of Time from 1 to 10 s: the dB a trip loses, and the
- * dB it keeps more below LE_SPR_LOW_HZ. */
+/* At each whole second of Time from 1 to 10 s: the dB a trip loses, the dB
+ * it keeps more below LE_SPR_LOW_HZ, and the wet gain at 100 % mix. */
 static const struct {
-  double loss_db, low_db;
+  double loss_db, low_db, wet;
 } LE_SPR_TIME[10] = {
-    {1.5925, 0.0000}, {1.0904, 0.0000}, {0.8372, 0.0000}, {0.6768, 0.0231},
-    {0.5571, 0.0330}, {0.4629, 0.0409}, {0.3854, 0.0470}, {0.3199, 0.0522},
-    {0.2631, 0.0563}, {0.2129, 0.0595},
+    {1.5925, 0.0000, 0.3496}, {1.0904, 0.0000, 0.3075},
+    {0.8372, 0.0000, 0.2819}, {0.6768, 0.0231, 0.2637},
+    {0.5571, 0.0330, 0.2491}, {0.4629, 0.0409, 0.2371},
+    {0.3854, 0.0470, 0.2271}, {0.3199, 0.0522, 0.2184},
+    {0.2631, 0.0563, 0.2097}, {0.2129, 0.0595, 0.2026},
 };
 
 static const struct {
@@ -7875,11 +8075,10 @@ static void fx_spring_update(void* ks, const float* p, int sr, int settle) {
     /* Time in whole seconds, as the Looper X steps it (a NaN reads as 1 s). */
     const double t = le_fx_desc_value(&LE_FX_SPRING_PARAMS[0], p[0]);
     const int i = !(t >= 1.5) ? 0 : !(t < 9.5) ? 9 : (int)(t + 0.5) - 1;
-    const double time = (double)(i + 1);
     q->gain_tgt =
         (float)pow(10.0, -LE_SPR_TIME[i].loss_db * q->trip_scale / 20.0);
     q->low_tgt = (float)pow(10.0, LE_SPR_TIME[i].low_db * q->trip_scale / 20.0);
-    q->wet_tgt = (float)(LE_SPR_WET * pow(time / 2.0, LE_SPR_WET_EXP));
+    q->wet_tgt = (float)LE_SPR_TIME[i].wet;
   }
   const float k = settle ? 1.0f : q->h.k;
   int moving = le_fx_glide_step(&q->gain, q->gain_tgt, k);
@@ -9014,17 +9213,17 @@ static int le_st_in(unsigned mask, int k) {
 }
 
 /* The correction, in cents, that takes channel [o]'s pitch of period [pf]
- * (kernel samples at [cap] Hz) to the nearest note of [p]'s scale, or to
- * the note it holds while that is within LE_ST_HOLD of as near. */
-static float le_st_want(le_octaver_state* o, float pf, int cap,
-                        const float* p) {
+ * (kernel samples, at LE_OCT_RATE) to the nearest note of [p]'s scale, or
+ * to the note it holds while that is within LE_ST_HOLD of as near. */
+static float le_st_want(le_octaver_state* o, float pf, const float* p) {
   const le_fx_param_desc* d = LE_FX_SMART_TUNE_PARAMS;
   const double ref = le_fx_desc_value(&d[3], p[3]);
   const int root = (int)(le_mdly_clamp01(p[1]) * 11.0f + 0.5f);
   const int type = (int)(le_mdly_clamp01(p[2]) * 13.0f + 0.5f);
   const unsigned mask = LE_ST_SCALES[type];
   /* Semitones above the root (A is 9 above C). */
-  const double x = 12.0 * log2((double)cap / (double)pf / ref) + 9.0 - root;
+  const double x =
+      12.0 * log2((double)LE_OCT_RATE / (double)pf / ref) + 9.0 - root;
   const int b = (int)floor(x);
   int best = b;
   double gap = 1e9;
@@ -9051,7 +9250,7 @@ static float le_st_want(le_octaver_state* o, float pf, int cap,
  * pitch. A note starts correcting once PSOLA's voicing reaches 0.6, its
  * third detection, when the period it smooths has left the last note's. */
 static float le_st_correct(le_octaver_state* o, const le_octaver_state* in,
-                           const float* p, int cap) {
+                           const float* p) {
   const float pf = in->period;
   const float gate = o->tune_held ? 0.3f : 0.6f;
   if (in->cur_mode != 1 || pf <= 0.0f || in->voiced < gate) {
@@ -9064,7 +9263,7 @@ static float le_st_correct(le_octaver_state* o, const le_octaver_state* in,
     o->tune_at[1] = p[0];
     const double tau =
         0.5e-3 * le_fx_desc_value(&LE_FX_SMART_TUNE_PARAMS[0], p[0]);
-    o->tune_a = (float)(1.0 - exp(-1.0 / (tau * (double)cap)));
+    o->tune_a = (float)(1.0 - exp(-1.0 / (tau * (double)LE_OCT_RATE)));
   }
   if (pf != o->tune_at[0] || p[1] != o->tune_at[2] || p[2] != o->tune_at[3] ||
       p[3] != o->tune_at[4]) {
@@ -9072,7 +9271,7 @@ static float le_st_correct(le_octaver_state* o, const le_octaver_state* in,
     if (p[1] != o->tune_at[2] || p[2] != o->tune_at[3]) o->tune_held = 0;
     o->tune_at[0] = pf;
     for (int k = 2; k < 5; ++k) o->tune_at[k] = p[k - 1];
-    o->tune_want = le_st_want(o, pf, cap, p);
+    o->tune_want = le_st_want(o, pf, p);
   }
   o->tune_c += o->tune_a * (o->tune_want - o->tune_c);
   return o->tune_c;
@@ -9096,7 +9295,7 @@ static void le_st_tick(le_fx_state* fx, int slot, const float* p, float* q) {
     }
   }
   const int in = o[1].voiced > o[0].voiced + 0.1f ? 1 : 0;
-  q[0] = 0.5f + le_st_correct(&o[0], &o[in], p, LE_OCT_RATE) / 4800.0f;
+  q[0] = 0.5f + le_st_correct(&o[0], &o[in], p) / 4800.0f;
   /* The shift is set, not smoothed: the glide is the correction's own. */
   o[0].sm_shift = q[0];
   o[1].sm_shift = q[0];
@@ -9169,9 +9368,11 @@ typedef struct le_fx_vtable {
  * holds a tail in rings and reports no latency (delay, echo, reverb, whose
  * rings `prepare` allocates; the spring, whose ring is in its kind block). */
 #define LE_FX_F_DRAINS 1u
-/* A free-running modulator (an LFO that runs on whatever the loop does): the
- * kind sounds different each lap, so a chain holding it is never printed
- * (le_fx_type_free_running). */
+/* A free-running modulator (an LFO that runs on whatever the loop does), or
+ * a kind on the octaver's kernel, whose phase vocoder carries running
+ * synthesis phases a loop advances by a fraction of a cycle each lap
+ * (#1624): the kind sounds different each lap, so a chain holding it is
+ * never printed (le_fx_type_free_running). */
 #define LE_FX_F_FREE_RUNNING 2u
 
 /* Indexed by le_fx_type — one row per effect. Adding an effect is adding its
@@ -9185,7 +9386,8 @@ static const le_fx_vtable LE_FX[] = {
         {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_DELAY_PARAMS, LE_FX_F_DRAINS},
     [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, LE_FX_TREMOLO_PARAMS},
     [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
-                       fx_octaver_prepare, LE_FX_OCTAVER_PARAMS},
+                       fx_octaver_prepare, LE_FX_OCTAVER_PARAMS,
+                       LE_FX_F_FREE_RUNNING},
     [LE_FX_ECHO] =
         {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ECHO_PARAMS, LE_FX_F_DRAINS},
     [LE_FX_REVERB] =
@@ -9247,10 +9449,12 @@ static const le_fx_vtable LE_FX[] = {
                         fx_verb_rkprocess},
     /* The octaver's kernel and state, its settings mapped (fx_whammy_process). */
     [LE_FX_WHAMMY] = {fx_whammy_process, fx_octaver_latency_vt,
-                      fx_octaver_prepare, LE_FX_WHAMMY_PARAMS},
+                      fx_octaver_prepare, LE_FX_WHAMMY_PARAMS,
+                      LE_FX_F_FREE_RUNNING},
     /* The octaver's kernel and state, its settings mapped (le_doct_settings). */
     [LE_FX_DUAL_OCTAVER] = {fx_dual_octaver_process, fx_octaver_latency_vt,
-                            fx_dual_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS},
+                            fx_dual_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS,
+                            LE_FX_F_FREE_RUNNING},
     /* The amp and its cabinet, in its own per-slot instance (fx->amp). */
     [LE_FX_AMP_CAB] = {fx_amp_cab_process, fx_os_latency_vt, fx_amp_cab_prepare,
                        LE_FX_AMP_CAB_PARAMS},
@@ -9273,7 +9477,8 @@ static const le_fx_vtable LE_FX[] = {
     /* The octaver's kernel and state, its shift following the detected
      * pitch (fx_smart_tune_process). */
     [LE_FX_SMART_TUNE] = {fx_smart_tune_process, fx_octaver_latency_vt,
-                          fx_octaver_prepare, LE_FX_SMART_TUNE_PARAMS},
+                          fx_octaver_prepare, LE_FX_SMART_TUNE_PARAMS,
+                          LE_FX_F_FREE_RUNNING},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -9493,12 +9698,32 @@ static int le_fx_holds_tail(const le_fx_state* fx, int s, int32_t type) {
   if (type == LE_FX_MODE_DELAY) {
     return atomic_load_explicit(&fx->line[s], memory_order_acquire) != NULL;
   }
-  return LE_FX[type].prepare != NULL &&
-         (fx->delay[s][0] != NULL || fx->delay[s][1] != NULL);
+  if (LE_FX[type].prepare == NULL) return 0;
+  const int rings = le_fx_ring_count(type);
+  for (int c = 0; c < 2; ++c) {
+    if (le_fx_ring_readable(fx, s, c, rings) && fx->delay[s][c] != NULL) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Both rings for the ring kinds and the octaver family, the first alone for
+ * the Reverb, none for any other kind. Only these are published to the thread
+ * running a slot as [type]; the others may be in the making on the control
+ * thread for a coming retype (#1522). */
+static int le_fx_ring_count(int32_t type) {
+  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT) return 0;
+  int32_t (*const prepare)(le_fx_state*, int, int) = LE_FX[type].prepare;
+  if (prepare == fx_reverb_prepare) return 1;
+  return prepare == fx_stereo_ring_prepare || prepare == fx_octaver_prepare ||
+                 prepare == fx_dual_octaver_prepare
+             ? 2
+             : 0;
 }
 
 void le_fx_entry_renew(le_fx_state* fx, int slot, int32_t type, int sounding) {
-  le_fx_entry_reset(fx, slot);
+  le_fx_entry_reset(fx, slot, type);
   /* An entry replacing one the chain was running enters through the enable
    * edge: handed the old entry's settled ramp, it would switch in at full in
    * one sample (#1452). */
@@ -9535,6 +9760,15 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
                                                   : p[1] > 0.0f && p[2] > 0.0f;
     case LE_FX_SLICER: /* heard */
       return p[2] > 0.0f;
+    /* The octaver's kernel (#1624), heard and shifting: */
+    case LE_FX_OCTAVER: /* its voice in the mix */
+      return p[2] > 0.0f;
+    case LE_FX_DUAL_OCTAVER: /* in the mix, an octave up */
+      return p[2] > 0.0f && (p[1] > 0.0f || p[3] > 0.0f);
+    case LE_FX_WHAMMY: /* off unison (the pedal at 0 shifts nothing) */
+      return p[0] > 0.0f;
+    case LE_FX_SMART_TUNE: /* always correcting */
+      return 1;
     default:
       return p[2] > 0.0f; /* the chorus's mix */
   }
@@ -9883,10 +10117,10 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
           const int needs_clear =
               ty != LE_FX_MODE_DELAY && le_fx_holds_tail(fx, s, ty);
           if (needs_clear && fx->enable_clear_cooldown > 0) goto slot_done;
-          le_fx_entry_reset(fx, s);
+          le_fx_entry_reset(fx, s, ty);
           if (needs_clear) {
             if (LE_FX[ty].prepare != NULL && LE_FX[ty].rkprocess == NULL)
-              le_fx_entry_clear_rings(fx, s, cap);
+              le_fx_entry_clear_rings(fx, s, cap, ty);
             fx->enable_clear_cooldown = LE_FX_ENABLE_CLEAR_SPACING;
           }
           fx->enable_warmup[s] = le_fx_added_latency(fx, s, ty, sr);

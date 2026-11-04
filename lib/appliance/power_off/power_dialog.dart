@@ -335,7 +335,7 @@ class _PowerBody extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 28),
-        Row(spacing: 14, children: actions),
+        Row(spacing: context.spacing.lg, children: actions),
       ],
     );
   }
