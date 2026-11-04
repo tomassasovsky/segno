@@ -247,10 +247,8 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// rather than delivered.
   final bool discarded;
 
-  /// Every exported channel's `daw_export` [DawTrack], carrying
-  /// [DawTrack.deviceChain]/[DawTrack.deviceChainFallbackReason] — the
-  /// per-track export summary (part 11) is rendered straight from this,
-  /// with no separate app-layer summary model. Populated by the same
+  /// Every exported channel's `daw_export` [DawTrack]; the completion
+  /// dialog's subtitle counts them. Populated by the same
   /// `DawManifestReader.read` call the cubit already makes to build
   /// `.als`/`fx-chains.txt`; empty when [discarded] or when the manifest
   /// couldn't be read.
