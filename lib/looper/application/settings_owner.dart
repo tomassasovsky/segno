@@ -145,6 +145,10 @@ class SettingsOwner<V extends Object, C> {
   bool _busy = false;
   bool _closing = false;
   Object? _unreadable;
+
+  /// A load whose replay threw (#1614): the family stays unavailable until
+  /// Retry runs the load again.
+  Object? _loadError;
   int? _loadSession;
   ({Object? address, C checkpoint})? _owedRollback;
   SettingOutcome _last = const SettingOutcome(SettingStatus.rejected);
@@ -167,9 +171,13 @@ class SettingsOwner<V extends Object, C> {
   /// Whether a load has ever confirmed a value.
   bool get initialized => _initialized;
 
-  /// Unreadable storage, an owed rollback or an uncertain receipt.
+  /// Unreadable storage, a load that threw, an owed rollback or an uncertain
+  /// receipt.
   bool get _recoveryPending =>
-      _unreadable != null || _owedRollback != null || _family.recoveryRequired;
+      _unreadable != null ||
+      _loadError != null ||
+      _owedRollback != null ||
+      _family.recoveryRequired;
 
   /// Whether a new value can be admitted; an in-flight write does not count.
   bool get ready => _initialized && !_recoveryPending && !_closing;
@@ -312,6 +320,9 @@ class SettingsOwner<V extends Object, C> {
           }
         }
         final result = await _family.settle();
+        // A load that threw runs again below; it stays owed until the
+        // steps before it have succeeded.
+        _loadError = null;
         if (_recoveryPending) {
           return _report(
             SettingOutcome(
@@ -380,6 +391,7 @@ class SettingsOwner<V extends Object, C> {
     }
     _family.request(value, value, null);
     _unreadable = null;
+    _loadError = null;
     _owedRollback = null;
     _initialized = true;
     _report(const SettingOutcome(SettingStatus.applied));
@@ -435,16 +447,35 @@ class SettingsOwner<V extends Object, C> {
     }
     // Another address or edit queues behind the waiting one, in order.
     final slot = _waiting = _Slot(write);
-    unawaited(
-      load().then(
-        (_) => _queue(() async {
-          if (identical(_waiting, slot)) _waiting = null;
-          final next = slot.write;
-          next.done.complete(await _write(next));
-        }),
-      ),
-    );
+    unawaited(_run(slot));
     return write.done.future;
+  }
+
+  /// Runs [slot]'s write once the load and the writes before it are done.
+  /// Its caller always gets an outcome: a write that throws where [_write]
+  /// does not catch it answers with a reported refusal carrying the error
+  /// (#1614), and the queue goes on to the writes after it.
+  Future<void> _run(_Slot<V> slot) async {
+    try {
+      await load();
+      await _queue(() async {
+        if (identical(_waiting, slot)) _waiting = null;
+        final next = slot.write;
+        next.done.complete(await _write(next));
+      });
+    } on Object catch (error, stack) {
+      if (identical(_waiting, slot)) _waiting = null;
+      final done = slot.write.done;
+      if (done.isCompleted) return;
+      AppLog.error(
+        '${_family.key.name}: write failed',
+        error: error,
+        stack: stack,
+      );
+      done.complete(
+        _report(SettingOutcome(SettingStatus.rejected, error: error)),
+      );
+    }
   }
 
   Future<SettingOutcome> _write(_Write<V> write) async {
@@ -455,7 +486,10 @@ class SettingsOwner<V extends Object, C> {
     if (!current()) return const SettingOutcome(SettingStatus.superseded);
     // An owed receipt may be replaying right now; the settle below waits for
     // it and the check after it refuses only a value still owed.
-    if (!_initialized || _unreadable != null || _owedRollback != null) {
+    if (!_initialized ||
+        _unreadable != null ||
+        _loadError != null ||
+        _owedRollback != null) {
       return _report(
         SettingOutcome(
           _recoveryPending
@@ -550,8 +584,27 @@ class SettingsOwner<V extends Object, C> {
         );
       }
       final deferred = !_running;
-      final admission = _family.request(value, durable, write.edit);
-      final result = admission.isOk ? await _family.settle() : admission;
+      final EngineResult result;
+      try {
+        final admission = _family.request(value, durable, write.edit);
+        result = admission.isOk ? await _family.settle() : admission;
+      } on Object catch (error, stack) {
+        AppLog.error(
+          '${_family.key.name}: write threw',
+          error: error,
+          stack: stack,
+        );
+        // A request or receipt that throws is a refusal with the error as
+        // its cause: storage goes back to its checkpoint, so it never keeps
+        // a value nothing confirmed, and nothing is left owed that a later
+        // throw could hold for good.
+        return await _rollback(
+          write.address,
+          checkpoint,
+          current() ? SettingStatus.rejected : SettingStatus.superseded,
+          error: error,
+        );
+      }
       if (result.isOk) {
         // Committed: the engine holds this value now, so storage keeps it
         // even when the lifetime moved on before this resumed.
@@ -687,6 +740,17 @@ class SettingsOwner<V extends Object, C> {
           }
           _initialized = true;
           _report(const SettingOutcome(SettingStatus.applied));
+          return true;
+        } on Object catch (error, stack) {
+          // A replay that throws leaves the family unavailable, not the load
+          // failed for good: Retry runs it again (#1614).
+          AppLog.error(
+            '${_family.key.name}: load threw',
+            error: error,
+            stack: stack,
+          );
+          _loadError = error;
+          _report(SettingOutcome(SettingStatus.recoveryRequired, error: error));
           return true;
         } finally {
           _busy = false;
