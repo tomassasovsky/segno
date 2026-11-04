@@ -22,6 +22,7 @@ class InterfaceSwitchesRow extends StatelessWidget {
     required this.input,
     required this.state,
     required this.locked,
+    required this.canChange,
     super.key,
   });
 
@@ -34,6 +35,11 @@ class InterfaceSwitchesRow extends StatelessWidget {
   /// Whether a recording holds the input (or an input its 48 V switch
   /// powers).
   final bool locked;
+
+  /// Whether the input can still be changed right now: asked again when the
+  /// 48 V confirmation closes, since a recording may have started, or the
+  /// device changed, while it was open.
+  final bool Function() canChange;
 
   /// The row's height: the format row's.
   static const double height = 74;
@@ -95,7 +101,7 @@ class InterfaceSwitchesRow extends StatelessWidget {
             const SizedBox(width: 32),
             LoopOutlinedButton(
               key: const Key('routing_interface_setup_mode_off'),
-              width: 340,
+              width: 460,
               label: l10n.routingInterfaceSetupModeOff,
               onTap: () =>
                   context.read<InterfaceInputsCubit>().turnOffSetupMode(),
@@ -121,6 +127,7 @@ class InterfaceSwitchesRow extends StatelessWidget {
           phantom: inputs.phantomFor(input),
           phantomIndex: switches.phantomSwitch,
           locked: locked,
+          canChange: canChange,
         );
     }
   }
@@ -133,6 +140,7 @@ class _Switches extends StatelessWidget {
     required this.phantom,
     required this.phantomIndex,
     required this.locked,
+    required this.canChange,
   });
 
   final int input;
@@ -140,6 +148,7 @@ class _Switches extends StatelessWidget {
   final PhantomSwitch? phantom;
   final int? phantomIndex;
   final bool locked;
+  final bool Function() canChange;
 
   /// The gap between the row's controls.
   static const double _gap = 32;
@@ -165,7 +174,18 @@ class _Switches extends StatelessWidget {
             ),
       confirmLabel: l10n.routingPhantomConfirm,
     );
-    if (confirmed && !cubit.isClosed) cubit.setPhantomPower(index, on: true);
+    if (!confirmed || cubit.isClosed || !canChange()) return;
+    // The switch the dialog named must still be the one that powers this
+    // input.
+    final now = cubit.state.inputs;
+    final still = now.phantomFor(input);
+    if (now.inputAt(input).phantomSwitch != index ||
+        still == null ||
+        still.firstInput != phantom.firstInput ||
+        still.lastInput != phantom.lastInput) {
+      return;
+    }
+    cubit.setPhantomPower(index, on: true);
   }
 
   @override
@@ -176,6 +196,14 @@ class _Switches extends StatelessWidget {
     final pad = switches.pad;
     final air = switches.air;
     final phantom = this.phantom;
+    final phantomLabel = phantom == null
+        ? ''
+        : phantom.firstInput == phantom.lastInput
+        ? l10n.routingInterfacePhantom
+        : l10n.routingInterfacePhantomInputs(
+            phantom.firstInput + 1,
+            phantom.lastInput + 1,
+          );
     final controls = <Widget>[
       if (level != null)
         LoopChoiceRow<InputLevel>(
@@ -188,7 +216,9 @@ class _Switches extends StatelessWidget {
           keyOf: (v) => Key('routing_interface_level_${v.name}'),
           selected: level,
           enabled: !locked,
-          onSelected: (v) => cubit.setLevel(input, v),
+          onSelected: (v) {
+            if (v != level) cubit.setLevel(input, v);
+          },
           width: InterfaceSwitchesRow.levelWidth,
           height: InterfaceSwitchesRow.height,
           gap: context.spacing.sm,
@@ -232,7 +262,9 @@ class _Switches extends StatelessWidget {
               keyOf: (v) => Key('routing_interface_air_${v.name}'),
               selected: air,
               enabled: !locked,
-              onSelected: (v) => cubit.setAir(input, v),
+              onSelected: (v) {
+                if (v != air) cubit.setAir(input, v);
+              },
               width: InterfaceSwitchesRow.airChoiceWidth,
               height: InterfaceSwitchesRow.height,
               gap: context.spacing.sm,
@@ -243,13 +275,8 @@ class _Switches extends StatelessWidget {
       if (phantom != null)
         LoopSwitch(
           key: const Key('routing_interface_phantom'),
-          label: phantom.firstInput == phantom.lastInput
-              ? l10n.routingInterfacePhantom
-              : l10n.routingInterfacePhantomInputs(
-                  phantom.firstInput + 1,
-                  phantom.lastInput + 1,
-                ),
-          semanticLabel: l10n.routingTagPhantom,
+          label: phantomLabel,
+          semanticLabel: phantomLabel,
           value: phantom.on,
           onChanged: locked ? null : (on) => _phantomChanged(context, on: on),
         ),

@@ -218,6 +218,13 @@ void main() {
       verify(() => repository.setInterfaceInputAir(0, InputAir.presence));
     });
 
+    testWidgets('choosing what is already set writes nothing', (tester) async {
+      await pump(tester);
+      await tester.tap(key('routing_interface_level_inst'));
+      await tester.pump();
+      verifyNever(() => repository.setInterfaceInputLevel(any(), any()));
+    });
+
     testWidgets('each switch writes the selected input', (tester) async {
       await pump(tester);
       await tester.tap(key('routing_interface_level_line'));
@@ -246,6 +253,34 @@ void main() {
       await tester.tap(find.byKey(const Key('device_confirm_confirm')));
       await tester.pumpAndSettle();
       verify(() => repository.setInterfacePhantomPower(0, on: true)).called(1);
+    });
+
+    testWidgets('a recording that starts while it asks writes nothing', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(key('routing_interface_phantom'));
+      await tester.pumpAndSettle();
+      const recording = LooperState(
+        tracks: [
+          Track(state: TrackState.recording, lanes: [Lane(inputChannel: 1)]),
+        ],
+        status: EngineStatus(
+          isConnected: true,
+          devicePresent: true,
+          deviceName: 'Scarlett 4i4 USB',
+          inputChannels: 4,
+          outputChannels: 4,
+        ),
+      );
+      when(() => bloc.state).thenReturn(recording);
+      states.add(recording);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('device_confirm_confirm')));
+      await tester.pumpAndSettle();
+      verifyNever(
+        () => repository.setInterfacePhantomPower(any(), on: any(named: 'on')),
+      );
     });
 
     testWidgets('a cancelled confirmation writes nothing', (tester) async {
