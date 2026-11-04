@@ -22,13 +22,13 @@ class PerfRecordButton extends StatelessWidget {
     final state = context.watch<PerformanceRecorderCubit>().state;
     final armed = state is PerformanceRecorderArmed;
     // The boot-time background salvage counts as busy too (#679): its
-    // finalize/render holds the repository's arm gates. The button stays
-    // pressable while busy: a press says why it did not arm and when it
-    // will (#1633), the same answer a pedal or MIDI press gets.
+    // finalize/render holds the repository's arm gates, and a button that
+    // looks alive while every press is silently refused reads as dead.
     final busy =
         state is PerformanceRecorderFinalizing ||
         state is PerformanceRecorderRendering ||
         (state is PerformanceRecorderIdle && state.recovering);
+    final enabled = !busy;
     final tooltip = armed
         ? l10n.perfDisarm
         : busy
@@ -46,8 +46,10 @@ class PerfRecordButton extends StatelessWidget {
       icon: Icon(
         armed ? Icons.fiber_manual_record : Icons.fiber_manual_record_outlined,
       ),
-      onPressed: () =>
-          unawaited(context.read<PerformanceRecorderCubit>().toggleArm()),
+      onPressed: enabled
+          ? () =>
+                unawaited(context.read<PerformanceRecorderCubit>().toggleArm())
+          : null,
     );
   }
 }

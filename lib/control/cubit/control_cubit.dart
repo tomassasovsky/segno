@@ -3281,7 +3281,8 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// An assigned Record performance: a capture that has not enough room is
   /// refused with the recorder's own low-disk words, as its toolbar button
-  /// does; an engine refusal falls to the generic notice.
+  /// does; a refusal the recorder announces (a take finishing, the guard
+  /// table) adds none; an engine refusal falls to the generic notice.
   Future<bool> _assignedPerformanceToggle() async {
     if (!_performanceArmed && await _volumeTooFullToArm()) {
       _ownNotices++;
@@ -3292,7 +3293,13 @@ class ControlCubit extends Cubit<ControlState> {
       );
       return false;
     }
-    return _togglePerformanceRecordAccepted();
+    final arming = !_performanceArmed;
+    final result = await _performanceToggleResult();
+    // A refused arm is published with its reason, and the recorder says why
+    // whichever control was pressed (#1633): one cause, one notice. Counted
+    // here, for the assigned press only.
+    if (arming && result == EngineResult.notReady) _ownNotices++;
+    return result.isOk;
   }
 
   Future<bool> _volumeTooFullToArm() async {
@@ -3673,19 +3680,15 @@ class ControlCubit extends Cubit<ControlState> {
   /// guard covers a rapid re-press identically here, so it is not
   /// duplicated in this cubit.
   void togglePerformanceRecord() {
-    unawaited(_togglePerformanceRecordAccepted());
+    unawaited(_performanceToggleResult());
   }
 
-  Future<bool> _togglePerformanceRecordAccepted() async {
-    if (_takeLocked()) return false;
-    if (_performanceArmed) {
-      return (await _performance.disarm()).isOk;
-    }
-    final result = await _performance.arm(chains: _currentChains());
-    // A refused arm is published with its reason, and the recorder says why
-    // whichever control was pressed (#1633): one cause, one notice.
-    if (result == EngineResult.notReady) _ownNotices++;
-    return result.isOk;
+  /// Disarms a running take or arms one; a locked take is refused as
+  /// invalid.
+  Future<EngineResult> _performanceToggleResult() async {
+    if (_takeLocked()) return EngineResult.invalid;
+    if (_performanceArmed) return _performance.disarm();
+    return _performance.arm(chains: _currentChains());
   }
 
   void _onPerformanceStatus(PerformanceCaptureStatus status) {

@@ -697,11 +697,16 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   void _pollRender(String dir, Completer<void> completer) {
     if (completer.isCompleted) return;
     final progress = _performance.renderProgress;
+    final current = state;
     _emit(
       PerformanceRecorderRendering(
         percent: progress.progressPercent,
         name: _basename(dir),
         refusal: _refusals,
+        // A tick keeps the last refused press's reason.
+        refusedWith: current is PerformanceRecorderRendering
+            ? current.refusedWith
+            : null,
       ),
     );
     if (!progress.done) return;
