@@ -96,6 +96,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
     this.lowDiskBlocked = false,
     this.recovering = false,
     this.refusedBy,
+    this.busyWith,
     this.driveUnavailable = false,
     this.refusal = 0,
     this.notRecovered = 0,
@@ -124,15 +125,20 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// the control was pressed (accepted behaviour 6.12).
   final GuardKind? refusedBy;
 
+  /// The work still in flight that refused the last arm (a take finalizing
+  /// or recovering, a render), or null. Capture is available again when it
+  /// ends (#1633).
+  final PerformanceArmBusy? busyWith;
+
   /// The last arm was refused because the chosen USB drive could not take a
   /// recording any more (gone, read-only, being ejected) between the choice
   /// and the press.
   final bool driveUnavailable;
 
   /// Which refusal this is: the cubit counts every refused arm, for
-  /// [lowDiskBlocked] and [refusedBy] alike. Without it a second refused
-  /// press would emit a state equal to the first, the cubit would drop it,
-  /// and the operator would see no answer to the second press.
+  /// [lowDiskBlocked], [refusedBy] and [busyWith] alike. Without it a second
+  /// refused press would emit a state equal to the first, the cubit would
+  /// drop it, and the operator would see no answer to the second press.
   final int refusal;
 
   /// Takes the boot salvage could not recover this boot (a raw take too
@@ -145,6 +151,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
     lowDiskBlocked,
     recovering,
     refusedBy,
+    busyWith,
     driveUnavailable,
     refusal,
     notRecovered,
@@ -189,10 +196,14 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
 /// there is nothing for the UI to show progress for.
 class PerformanceRecorderFinalizing extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderFinalizing].
-  const PerformanceRecorderFinalizing();
+  const PerformanceRecorderFinalizing({this.refusal = 0});
+
+  /// Arms refused so far (see [PerformanceRecorderIdle.refusal]): a Capture
+  /// press while the take is saved bumps it, and the UI says why (#1633).
+  final int refusal;
 
   @override
-  List<Object?> get props => [];
+  List<Object?> get props => [refusal];
 }
 
 /// The bundle is finalized; the offline dry/wet/master render (parts 7-8)
@@ -202,7 +213,11 @@ class PerformanceRecorderFinalizing extends PerformanceRecorderState {
 /// while in this state (umbrella — no render queue).
 class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderRendering].
-  const PerformanceRecorderRendering({required this.percent, this.name});
+  const PerformanceRecorderRendering({
+    required this.percent,
+    this.name,
+    this.refusal = 0,
+  });
 
   /// Render completion, `0..100`.
   final int percent;
@@ -212,8 +227,12 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// Null when the cubit does not know it — the dialog drops the prefix.
   final String? name;
 
+  /// Arms refused so far (see [PerformanceRecorderIdle.refusal]): a Capture
+  /// press while the take renders bumps it, and the UI says why (#1633).
+  final int refusal;
+
   @override
-  List<Object?> get props => [percent, name];
+  List<Object?> get props => [percent, name, refusal];
 }
 
 /// The capture is fully finished: bundle finalized, render (and `.als`

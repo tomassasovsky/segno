@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
@@ -505,6 +506,34 @@ Notice? sessionOutcomeNotice(SessionState state) {
   }
 }
 
+/// Why an arm was refused while [busy] is in flight, and when Capture is
+/// available again (#1633).
+String perfArmBusyText(AppLocalizations l10n, PerformanceArmBusy busy) =>
+    switch (busy) {
+      PerformanceArmBusy.finalizing => l10n.perfArmBusySaving,
+      PerformanceArmBusy.rendering => l10n.perfArmBusyRendering,
+    };
+
+/// Says why a Capture press was refused while the last take is still being
+/// saved or rendered: the press counted on the finishing state's `refusal`
+/// (#1633). Wired as the `TracksView`'s second performance [BlocListener].
+void onPerformanceArmRefusedWhileFinishing(
+  BuildContext context,
+  PerformanceRecorderState state,
+) {
+  final busy = state is PerformanceRecorderRendering
+      ? PerformanceArmBusy.rendering
+      : PerformanceArmBusy.finalizing;
+  context.read<NoticesCubit>().show(
+    Notice(
+      id: AppNoticeId.performance,
+      tone: NoticeTone.warning,
+      title: (l10n) => l10n.perfArmRefused,
+      body: (l10n) => perfArmBusyText(l10n, busy),
+    ),
+  );
+}
+
 /// Reacts to a settled [PerformanceRecorderCubit] transition: opens the
 /// completion sheet when a capture finishes, or says in the top bar why a
 /// capture did not start or was not kept. Boot-time crash salvage never
@@ -538,6 +567,16 @@ void onPerformanceRecorderState(
     say(
       (l10n) => l10n.perfArmRefused,
       body: (l10n) => l10n.operationBusy(refusedBy.name),
+    );
+    return;
+  }
+  // Refused while a take finalizes, recovers or renders (#1633): say which,
+  // and that Capture comes back when it ends.
+  final busyWith = state is PerformanceRecorderIdle ? state.busyWith : null;
+  if (busyWith != null) {
+    say(
+      (l10n) => l10n.perfArmRefused,
+      body: (l10n) => perfArmBusyText(l10n, busyWith),
     );
     return;
   }

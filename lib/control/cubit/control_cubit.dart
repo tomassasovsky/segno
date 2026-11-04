@@ -291,8 +291,9 @@ class ControlCubit extends Cubit<ControlState> {
   // performance's low-disk refusal.
   final Future<int?> Function(String path) _freeSpaceBytes;
 
-  // Refusals this cubit announced with their own words, so the generic
-  // assigned-action notice can tell it was said.
+  // Refusals announced with their own words (by this cubit, or by the
+  // recorder for a refused performance arm), so the generic assigned-action
+  // notice can tell it was said.
   int _ownNotices = 0;
   final Duration Function()? _midiClock;
   final _midiStopwatch = Stopwatch()..start();
@@ -3679,9 +3680,12 @@ class ControlCubit extends Cubit<ControlState> {
     if (_takeLocked()) return false;
     if (_performanceArmed) {
       return (await _performance.disarm()).isOk;
-    } else {
-      return (await _performance.arm(chains: _currentChains())).isOk;
     }
+    final result = await _performance.arm(chains: _currentChains());
+    // A refused arm is published with its reason, and the recorder says why
+    // whichever control was pressed (#1633): one cause, one notice.
+    if (result == EngineResult.notReady) _ownNotices++;
+    return result.isOk;
   }
 
   void _onPerformanceStatus(PerformanceCaptureStatus status) {

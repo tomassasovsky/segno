@@ -145,7 +145,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final Duration _renderPollInterval;
 
   late final StreamSubscription<PerformanceCaptureStatus> _statusSubscription;
-  late final StreamSubscription<GuardRefused> _refusalSubscription;
+  late final StreamSubscription<PerformanceArmRefusal> _refusalSubscription;
   Timer? _armedTicker;
   Timer? _renderPoller;
   Timer? _recoveringPoller;
@@ -231,9 +231,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// so the player is told (#1198): a take left unrecovered silently would
   /// look lost.
   void _clearRecoveringWhenRenderSettles(int notRecovered) {
-    const recovering = PerformanceRecorderIdle(recovering: true);
+    // A refused press re-emits the recovering idle with its reason, so this
+    // keys off the flag, not one exact state.
+    bool recovering() =>
+        state is PerformanceRecorderIdle &&
+        (state as PerformanceRecorderIdle).recovering;
     final settled = PerformanceRecorderIdle(notRecovered: notRecovered);
-    if (state != recovering) {
+    if (!recovering()) {
       if (notRecovered > 0 && state == const PerformanceRecorderIdle()) {
         _emit(settled);
       }
@@ -245,7 +249,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     }
     _recoveringPoller?.cancel();
     _recoveringPoller = Timer.periodic(_renderPollInterval, (timer) {
-      if (isClosed || state != recovering) {
+      if (isClosed || !recovering()) {
         timer.cancel();
         return;
       }
@@ -290,16 +294,16 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     );
   }
 
-  /// Arms or disarms depending on the current state; a no-op while
-  /// finalizing/rendering (no queue). That refusal is enforced
-  /// authoritatively by [PerformanceRepository.arm] itself (#671) — that gate
-  /// also covers the pedal's MODE long-press, which never passes through this
-  /// cubit, and the boot-time background salvage (which runs entirely inside
-  /// the repository with no state here to key a refusal off) — but the case
-  /// here is not redundant: falling through to the arm
-  /// branch would run the free-space probe and could emit a `lowDiskBlocked`
-  /// idle state over the on-screen render progress, so refusing before it is
-  /// UX-load-bearing. A settled [PerformanceRecorderCompleted] (delivered or
+  /// Arms or disarms depending on the current state; refused, with the
+  /// reason, while a take finalizes, recovers or renders (no queue, #1633).
+  /// That refusal is enforced authoritatively by [PerformanceRepository.arm]
+  /// itself (#671) — that gate also covers the pedal and MIDI controls,
+  /// which never pass through this cubit, and the boot-time background
+  /// salvage (which runs entirely inside the repository) — but refusing here
+  /// first is not redundant: falling through to the arm branch would run the
+  /// free-space probe and could emit a `lowDiskBlocked` idle state over the
+  /// on-screen render progress or the recovering flag. A settled
+  /// [PerformanceRecorderCompleted] (delivered or
   /// auto-discarded-short alike) arms a fresh capture exactly like
   /// [PerformanceRecorderIdle] does — [PerformanceRepository.arm] has no
   /// precondition beyond not already being armed, so there is no need to
@@ -313,11 +317,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     if (_takeLocked()) return;
     switch (state) {
       // Refused before the free-space probe, same reasoning as the
-      // finalizing/rendering case: the repository's gate would silently
-      // refuse the arm anyway, but falling through would let a probe emit
-      // `lowDiskBlocked` over the recovering flag, blinding the button.
+      // finalizing/rendering case. The salvage may be between its finalize
+      // and its render: it is still recovering a take.
       case PerformanceRecorderIdle(recovering: true):
-        break;
+        _onArmRefused(
+          PerformanceArmBusyRefusal(
+            _performance.armBusy ?? PerformanceArmBusy.finalizing,
+          ),
+        );
       case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
         final target = _armTarget();
@@ -377,9 +384,16 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         }
       case PerformanceRecorderArmed():
         await _performance.disarm();
+      // Answered from the state, not the repository: this cubit still
+      // writes the DAW project in Rendering after the engine's render ends.
       case PerformanceRecorderFinalizing():
+        _onArmRefused(
+          const PerformanceArmBusyRefusal(PerformanceArmBusy.finalizing),
+        );
       case PerformanceRecorderRendering():
-        break;
+        _onArmRefused(
+          const PerformanceArmBusyRefusal(PerformanceArmBusy.rendering),
+        );
     }
   }
 
@@ -429,23 +443,42 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _leaseLabel = null;
   }
 
-  /// An arm the guard table refused at its commit, from this cubit's toggle
-  /// or the pedal's direct call alike: land on idle with the reason, so the
-  /// refusal is visible rather than a dead control.
-  void _onArmRefused(GuardRefused refusal) {
-    switch (state) {
-      case PerformanceRecorderIdle(recovering: false):
+  /// A refused arm, from this cubit's toggle or a pedal's or MIDI control's
+  /// direct call alike: say why on the state the press found, so the refusal
+  /// is visible rather than a dead control (#1633). Idle keeps its
+  /// recovering flag; a finishing take keeps its face and counts the press.
+  void _onArmRefused(PerformanceArmRefusal refusal) {
+    final current = state;
+    switch (current) {
+      case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
         _emit(
           PerformanceRecorderIdle(
-            refusedBy: refusal.blockers.first.kind,
+            recovering:
+                current is PerformanceRecorderIdle && current.recovering,
+            refusedBy: switch (refusal) {
+              PerformanceArmGuardRefusal(:final refusal) =>
+                refusal.blockers.first.kind,
+              PerformanceArmBusyRefusal() => null,
+            },
+            busyWith: switch (refusal) {
+              PerformanceArmBusyRefusal(:final busy) => busy,
+              PerformanceArmGuardRefusal() => null,
+            },
             refusal: ++_refusals,
           ),
         );
-      case PerformanceRecorderIdle():
-      case PerformanceRecorderArmed():
       case PerformanceRecorderFinalizing():
-      case PerformanceRecorderRendering():
+        _emit(PerformanceRecorderFinalizing(refusal: ++_refusals));
+      case PerformanceRecorderRendering(:final percent, :final name):
+        _emit(
+          PerformanceRecorderRendering(
+            percent: percent,
+            name: name,
+            refusal: ++_refusals,
+          ),
+        );
+      case PerformanceRecorderArmed():
         break;
     }
   }
@@ -477,7 +510,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceCaptureStatus.finalizing:
         _armedTicker?.cancel();
         _armedTicker = null;
-        _emit(const PerformanceRecorderFinalizing());
+        _emit(PerformanceRecorderFinalizing(refusal: _refusals));
       case PerformanceCaptureStatus.done:
         // One last read, and the only one that can see the whole capture.
         // The armed ticker stopped at `finalizing`, but the drain thread's
@@ -632,7 +665,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   }
 
   Future<void> _runRenderPipeline(String dir) async {
-    _emit(PerformanceRecorderRendering(percent: 0, name: _basename(dir)));
+    _emit(
+      PerformanceRecorderRendering(
+        percent: 0,
+        name: _basename(dir),
+        refusal: _refusals,
+      ),
+    );
     final completer = Completer<void>();
     _renderPoller?.cancel();
     _renderPoller = Timer.periodic(_renderPollInterval, (_) {
@@ -649,6 +688,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       PerformanceRecorderRendering(
         percent: progress.progressPercent,
         name: _basename(dir),
+        refusal: _refusals,
       ),
     );
     if (!progress.done) return;

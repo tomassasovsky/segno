@@ -1248,7 +1248,15 @@
     },
     "perfArmRefused": "Recording didn't start",
     "@perfArmRefused": {
-        "description": "Title of a performance capture refused at its commit by an operation in flight; operationBusy follows as its detail (#1198, #1562)."
+        "description": "Title of a refused performance capture: operationBusy follows as its detail when an operation in flight refused it at its commit (#1198, #1562), perfArmBusySaving or perfArmBusyRendering when a take is still finishing (#1633)."
+    },
+    "perfArmBusySaving": "A take is still being saved or recovered. You can record again when it finishes.",
+    "@perfArmBusySaving": {
+        "description": "Detail of a performance capture refused because a take is still being finalized, or recovered after a crash (#1633). perfArmRefused is its title."
+    },
+    "perfArmBusyRendering": "A take's tracks are still rendering. You can record again when the render finishes.",
+    "@perfArmBusyRendering": {
+        "description": "Detail of a performance capture refused because a take's stems are still rendering (#1633). perfArmRefused is its title."
     },
     "perfStoppedLowDisk": "Capture stopped — the disk was running out of space. What was recorded has been saved.",
     "@perfStoppedLowDisk": {

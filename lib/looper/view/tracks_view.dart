@@ -262,8 +262,26 @@ class _TracksViewState extends State<TracksView> {
                     (current.lowDiskBlocked ||
                         current.driveUnavailable ||
                         current.refusedBy != null ||
+                        current.busyWith != null ||
                         current.notRecovered > 0)),
             listener: onPerformanceRecorderState,
+          ),
+          BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
+            // A Capture press while the last take is still being saved or
+            // rendered keeps that state's face and counts the press; each
+            // one says why (#1633).
+            listenWhen: (previous, current) => switch ((previous, current)) {
+              (
+                PerformanceRecorderFinalizing(refusal: final before),
+                PerformanceRecorderFinalizing(refusal: final after),
+              ) ||
+              (
+                PerformanceRecorderRendering(refusal: final before),
+                PerformanceRecorderRendering(refusal: final after),
+              ) => before != after,
+              _ => false,
+            },
+            listener: onPerformanceArmRefusedWhileFinishing,
           ),
           BlocListener<ControlCubit, ControlState>(
             // Any surface that clears the rig — the pedal's CLEAR, the `C`

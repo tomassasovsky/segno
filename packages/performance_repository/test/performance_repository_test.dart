@@ -987,50 +987,67 @@ void main() {
     });
 
     test(
-      'is refused while an offline render is in flight, and works again '
-      'once it completes (#671)',
+      'is refused while an offline render is in flight, says why, and works '
+      'again once it completes (#671, #1633)',
       () async {
         engine.renderProgress = const PerformanceRenderProgress(
           done: false,
           progressPercent: 40,
         );
+        final refusals = <PerformanceArmRefusal>[];
+        final sub = repo.armRefusals.listen(refusals.add);
+        addTearDown(sub.cancel);
 
+        expect(repo.armBusy, PerformanceArmBusy.rendering);
         final result = await repo.arm();
 
-        // The refusal is a silent no-op success — the same shape as the
-        // already-armed path and disarm's guard window; the observable is
-        // the state that never changed, not the return value.
-        expect(result, EngineResult.ok);
+        expect(result, EngineResult.notReady);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
+          [PerformanceArmBusy.rendering],
+        );
         expect(repo.armedDirectory, isNull);
         expect(engine.perfArmCalls, 0);
         expect(Directory('${tempDir.path}/exports').existsSync(), isFalse);
 
         engine.renderProgress = PerformanceRenderProgress.empty;
-        await repo.arm();
+        expect(repo.armBusy, isNull);
+        expect(await repo.arm(), EngineResult.ok);
         expect(repo.armedDirectory, isNotNull);
         expect(engine.perfArmed, isTrue);
+        expect(refusals, hasLength(1), reason: 'an arm that works is quiet');
       },
     );
 
     test(
       'is refused while a boot-salvage finalize (recoverCapture) is in '
-      'flight — the window where no armed directory exists to no-op on '
-      '(#671)',
+      'flight — the window where no armed directory exists to no-op on — '
+      'and says a take is finalizing (#671, #1633)',
       () async {
         final dir = '${tempDir.path}/exports/perf-crashed';
         Directory(dir).createSync(recursive: true);
         writeNativeSidecar(dir);
         writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
+        final refusals = <PerformanceArmRefusal>[];
+        final sub = repo.armRefusals.listen(refusals.add);
+        addTearDown(sub.cancel);
 
         final recovery = repo.recoverCapture(dir);
+        expect(repo.armBusy, PerformanceArmBusy.finalizing);
         final result = await repo.arm();
 
-        expect(result, EngineResult.ok);
+        expect(result, EngineResult.notReady);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
+          [PerformanceArmBusy.finalizing],
+        );
         expect(repo.armedDirectory, isNull);
         expect(engine.perfArmCalls, 0);
 
         await recovery;
-        await repo.arm();
+        expect(await repo.arm(), EngineResult.ok);
         expect(repo.armedDirectory, isNotNull);
       },
     );
@@ -1077,7 +1094,7 @@ void main() {
         rootGate.complete('${tempDir.path}/exports');
 
         final result = await arming;
-        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(result, EngineResult.notReady, reason: 'the re-check refuses');
         expect(gatedRepo.armedDirectory, isNull);
         expect(engine.perfArmCalls, 0);
 
@@ -1117,7 +1134,7 @@ void main() {
         rootGate.complete('${tempDir.path}/exports');
 
         expect(await arm1, EngineResult.ok);
-        expect(await arm2, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(await arm2, EngineResult.ok, reason: 'the same press twice');
 
         expect(gatedRepo.armedDirectory, isNotNull);
         expect(
@@ -1169,7 +1186,7 @@ void main() {
         expect(repo.armedDirectory, isNull);
 
         final result = await repo.arm();
-        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(result, EngineResult.notReady);
         expect(
           repo.armedDirectory,
           isNull,
@@ -2473,7 +2490,7 @@ void main() {
         }
 
         final result = await pollingRepo.arm();
-        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(result, EngineResult.notReady);
         expect(pollingRepo.armedDirectory, isNull);
         expect(engine.perfArmCalls, 0);
 
@@ -3281,11 +3298,11 @@ void main() {
         const GuardScope.internal(),
         purpose: 'audio apply',
       );
-      final refusals = <GuardRefused>[];
+      final refusals = <PerformanceArmRefusal>[];
       final sub = guarded.armRefusals.listen(refusals.add);
       addTearDown(sub.cancel);
 
-      expect(await guarded.arm(), EngineResult.ok);
+      expect(await guarded.arm(), EngineResult.notReady);
       await Future<void>.delayed(Duration.zero);
       expect(engine.perfArmCalls, 0);
       expect(guarded.armedDirectory, isNull);
@@ -3293,8 +3310,9 @@ void main() {
         Directory('${tempDir.path}/exports/perf-20260706-143015').existsSync(),
         isFalse,
       );
-      expect(refusals.single.wants, GuardKind.capture);
-      expect(refusals.single.blockers.single.purpose, 'audio apply');
+      final refused = (refusals.single as PerformanceArmGuardRefusal).refusal;
+      expect(refused.wants, GuardKind.capture);
+      expect(refused.blockers.single.purpose, 'audio apply');
 
       change.release();
       expect(await guarded.arm(), EngineResult.ok);

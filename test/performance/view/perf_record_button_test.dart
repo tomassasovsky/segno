@@ -71,48 +71,28 @@ void main() {
     },
   );
 
-  testWidgets(
-    'disabled while finalizing, with the "still rendering" tooltip',
-    (tester) async {
-      await pump(tester, const PerformanceRecorderFinalizing());
+  // Pressable while busy: the press is refused with a notice saying why and
+  // when Capture is back, the answer a pedal or MIDI press gets too (#1633).
+  for (final (name, state) in const [
+    ('finalizing', PerformanceRecorderFinalizing()),
+    ('rendering', PerformanceRecorderRendering(percent: 42)),
+    ('the boot salvage recovering', PerformanceRecorderIdle(recovering: true)),
+  ]) {
+    testWidgets('pressable while $name, with the busy tooltip, and a press '
+        'asks the cubit, which says why it did not arm', (tester) async {
+      await pump(tester, state);
       final strings = await l10n();
 
       final button = tester.widget<IconButton>(
         find.byKey(const Key('tracks_perfRecord')),
       );
-      expect(button.onPressed, isNull);
       expect(button.tooltip, strings.perfArmDisabledRendering);
-    },
-  );
 
-  testWidgets(
-    'disabled while rendering, with the "still rendering" tooltip',
-    (tester) async {
-      await pump(tester, const PerformanceRecorderRendering(percent: 42));
-      final strings = await l10n();
-
-      final button = tester.widget<IconButton>(
-        find.byKey(const Key('tracks_perfRecord')),
-      );
-      expect(button.onPressed, isNull);
-      expect(button.tooltip, strings.perfArmDisabledRendering);
-    },
-  );
-
-  testWidgets(
-    'disabled while the boot salvage is still recovering, with the busy '
-    'tooltip — the button must say why presses do nothing (#679 r2)',
-    (tester) async {
-      await pump(tester, const PerformanceRecorderIdle(recovering: true));
-      final strings = await l10n();
-
-      final button = tester.widget<IconButton>(
-        find.byKey(const Key('tracks_perfRecord')),
-      );
-      expect(button.onPressed, isNull);
-      expect(button.tooltip, strings.perfArmDisabledRendering);
-    },
-  );
+      await tester.tap(find.byKey(const Key('tracks_perfRecord')));
+      await tester.pump();
+      verify(cubit.toggleArm).called(1);
+    });
+  }
 
   testWidgets('tapping the enabled button dispatches toggleArm', (
     tester,

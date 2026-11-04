@@ -17,7 +17,8 @@ import 'package:segno/control/control.dart';
 import 'package:segno/looper/application/fade_settings.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
-import 'package:segno_engine/segno_engine.dart' show TrackSnapshot;
+import 'package:segno_engine/segno_engine.dart'
+    show PerformanceRenderProgress, TrackSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -549,6 +550,39 @@ void main() {
         expect(rig.refused, [perform]);
         expect(rig.control.state.assignedActionLowDisk, isFalse);
       } finally {
+        await rig.close();
+      }
+    });
+
+    test('a performance arm while a take still renders is refused with the '
+        "recorder's reason, gets no second notice, and arms once the render "
+        'is done (#1633)', () async {
+      final rig = await enter(performOnStop);
+      final refusals = <PerformanceArmRefusal>[];
+      final subscription = rig.performance.armRefusals.listen(refusals.add);
+      try {
+        rig.engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 40,
+        );
+        await rig.stomp(PedalButton.stop);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.engine.perfArmCalls, 0);
+        expect(
+          refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
+          [PerformanceArmBusy.rendering],
+        );
+        expect(rig.refused, isEmpty, reason: 'one cause, one notice');
+
+        rig.engine.renderProgress = PerformanceRenderProgress.empty;
+        await rig.stomp(PedalButton.stop);
+        await _pump(const Duration(milliseconds: 30));
+        expect(rig.engine.perfArmCalls, 1);
+        expect(rig.performance.armedDirectory, isNotNull);
+        expect(refusals, hasLength(1));
+        expect(rig.refused, isEmpty);
+      } finally {
+        await subscription.cancel();
         await rig.close();
       }
     });
