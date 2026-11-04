@@ -174,10 +174,8 @@ static int le_is_hardware_source(const char* item) {
                           strncmp(item, "ADAT ", 5) == 0);
 }
 
-/* The item enumerated `control` selects, copied into `out`; 0 when it cannot
- * be read. */
-static int le_mixer_selected(const le_mixer* m, const char* control,
-                             char* out, size_t cap) {
+int le_mixer_selected(const le_mixer* m, const char* control, char* out,
+                      size_t cap) {
   int type = 0;
   unsigned items = 0;
   unsigned value = 0;
@@ -192,11 +190,8 @@ static int le_mixer_selected(const le_mixer* m, const char* control,
   return 1;
 }
 
-/* Whether capture `control` already records hardware source `hardware`
- * through the unit's input DSP: it selects "DSP n" and "DSP Input n Capture
- * Enum" selects `hardware`. */
-static int le_capture_via_dsp(const le_mixer* m, const char* control,
-                              const char* hardware) {
+int le_capture_via_dsp(const le_mixer* m, const char* control,
+                       const char* hardware) {
   char current[48];
   if (!le_mixer_selected(m, control, current, sizeof(current))) return 0;
   int n = 0;

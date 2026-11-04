@@ -39442,6 +39442,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_fx_workers.h"
 #include "test_engine_anchor.h"
 #include "test_engine_interface_routing.h"
+#include "test_engine_interface_inputs.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -40011,6 +40012,21 @@ int main(void) {
   test_routing_spdif_order_and_direct_monitor();
   test_routing_roles_per_card();
   test_routing_keeps_inputs_through_their_dsp();
+  test_inputs_4i4_gen3();
+  test_inputs_4i4_writes();
+  test_inputs_refused_writes();
+  test_inputs_need_pass_through();
+  test_inputs_solo_gen3();
+  test_inputs_2i2_gen3();
+  test_inputs_18i20_gen3();
+  test_inputs_solo_gen4();
+  test_inputs_2i2_gen4();
+  test_inputs_4i4_gen4();
+  test_inputs_vocaster_two();
+  test_inputs_6i6_gen1();
+  test_inputs_hardware_only_interfaces();
+  test_inputs_setup_mode();
+  test_inputs_generic_rules();
   test_excluded_mask_from_names();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();

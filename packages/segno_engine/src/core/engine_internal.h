@@ -157,9 +157,18 @@ int le_alsa_ctl_name_from_uid(const char* uid, char* out, size_t cap);
 
 /* A sound card's mixer controls, looked up by name. Linux backs it with
  * libasound's control API (engine_linux.c); the tests with a fake card read
- * from an `amixer contents` dump. Every call is on the control thread. */
+ * from an `amixer contents` or `alsactl` state dump. One le_mixer is used by
+ * one thread at a time: device open owns the one it opens for routing, and
+ * each interface-input call (#1646) opens its own. */
 typedef struct le_mixer {
   void* ctx;
+  /* The card's USB vendor and product ids (from the components string
+   * "USBvvvv:pppp" snd-usb-audio sets), 0 when it is not a USB card. */
+  unsigned usb_vendor;
+  unsigned usb_product;
+  /* The name of the card's `index`-th mixer control, in the card's order, or
+   * NULL past the last. Valid until the next call. */
+  const char* (*control_name)(void* ctx, unsigned index);
   /* 1 when the card has mixer control `name`, with its type and, for an
    * enumerated control, its item count (0 otherwise); 0 when it has none. */
   int (*find)(void* ctx, const char* name, int* type, unsigned* items);
@@ -171,6 +180,17 @@ typedef struct le_mixer {
   int (*read)(void* ctx, const char* name, unsigned* value);
   int (*write)(void* ctx, const char* name, unsigned value);
 } le_mixer;
+
+/* The item enumerated `control` selects, copied into `out`; 0 when it cannot
+ * be read. */
+int le_mixer_selected(const le_mixer* m, const char* control, char* out,
+                      size_t cap);
+
+/* Whether scarlett2 capture `control` records hardware source `hardware`
+ * through the unit's input DSP: it selects "DSP n" and "DSP Input n Capture
+ * Enum" selects `hardware`. */
+int le_capture_via_dsp(const le_mixer* m, const char* control,
+                       const char* hardware);
 
 /* What le_own_scarlett2_routing did to one card. */
 typedef struct le_routing_report {
@@ -201,6 +221,16 @@ void le_own_scarlett2_routing(const le_mixer* m, int roles,
  * scarlett2 source is one of the host's own playback streams
  * (le_capture_source_is_loopback). 0 on a card without the controls. */
 uint32_t le_scarlett2_loopback_mask(const le_mixer* m, int channel_count);
+
+/* ---- The interface's input switches (#1646, engine_interface_inputs.c) ----
+ *
+ * The adapters and their rules, against an le_mixer so the tests can run them
+ * on fixtures. le_interface_inputs_scan fills *out (state, inputs, phantom
+ * groups, adapter) from the card; le_interface_inputs_write sets one switch
+ * as le_interface_input_set describes and returns its le_result. */
+void le_interface_inputs_scan(const le_mixer* m, le_interface_inputs* out);
+int32_t le_interface_inputs_write(const le_mixer* m, int32_t control,
+                                  int32_t index, int32_t value);
 
 /* Sightings an entry of the channel-count memo is trusted for before it is read
  * again (engine_devices.c, where the rationale for a per-entry countdown lives).

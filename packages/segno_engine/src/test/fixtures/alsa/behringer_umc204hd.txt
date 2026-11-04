@@ -1,0 +1,39 @@
+# Behringer UMC204HD (USB 1397:0508), from https://github.com/alsa-project/alsa-ucm-conf/issues/177:
+# names, numids and ifaces from the issue's `amixer -D hw:U192k controls`
+# listing; types and values from the strace of `amixer -D hw:U192k contents`
+# attached there (files/8979035/out.txt). strace cut each written line at 32
+# characters, so access flags and ranges are not shown.
+# usb 1397:0508
+numid=7,iface=CARD,name='Internal Validity'
+  ; type=BOOLEAN,values=1
+  : values=on
+numid=3,iface=MIXER,name='PCM Playback Switch'
+  ; type=BOOLEAN,values=4
+  : values=on,on,on,on
+numid=4,iface=MIXER,name='PCM Playback Switch',index=1
+  ; type=BOOLEAN,values=1
+  : values=on
+numid=5,iface=MIXER,name='PCM Playback Volume'
+  ; type=INTEGER,values=4
+  : values=107,107,107,107
+numid=6,iface=MIXER,name='PCM Playback Volume',index=1
+  ; type=INTEGER,values=1
+  : values=107
+numid=8,iface=MIXER,name='Mic Capture Switch'
+  ; type=BOOLEAN,values=2
+  : values=on,on
+numid=9,iface=MIXER,name='Mic Capture Switch',index=1
+  ; type=BOOLEAN,values=1
+  : values=on
+numid=10,iface=MIXER,name='Mic Capture Volume'
+  ; type=INTEGER,values=2
+  : values=127,127
+numid=11,iface=MIXER,name='Mic Capture Volume',index=1
+  ; type=INTEGER,values=1
+  : values=127
+numid=2,iface=PCM,name='Capture Channel Map'
+  ; type=INTEGER,values=2
+  : values=0,0
+numid=1,iface=PCM,name='Playback Channel Map'
+  ; type=INTEGER,values=4
+  : values=0,0,0,0
