@@ -3679,16 +3679,15 @@ typedef enum le_cache_reason {
   LE_CACHE_REASON_PART_POST = 3, /* a part Post chain must keep live tails */
   LE_CACHE_REASON_BUDGET = 4, /* a Transpose source render does not fit the
                                * cap; the track plays dry (#1179) */
-  LE_CACHE_REASON_HOP = 5, /* the print holds an octaver and the loop is not a
-                            * whole number of octaver hops (256 frames): its
-                            * hop falls on other frames each lap, so no single
-                            * lap's render equals live (#941) */
-  LE_CACHE_REASON_FREE_RUNNING = 6, /* the print holds a free-running
+  LE_CACHE_REASON_FREE_RUNNING = 5, /* the print holds a free-running
                                      * modulator (a chorus or doubler LFO,
-                                     * vinyl noise, a degrade's hold) or a
+                                     * vinyl noise, a degrade's hold), a
                                      * kind on the song's beat (the Pumper,
-                                     * Slicer, swept LPF, Mode delay), which
-                                     * sounds different each lap */
+                                     * Slicer, swept LPF, Mode delay), a
+                                     * clock LFO that does not fit the lap
+                                     * (#1620), or a kind on the octaver's
+                                     * kernel (#1624), which sounds different
+                                     * each lap */
 } le_cache_reason;
 
 /* Snapshot of one lane's cache state (le_engine_get_lane_cache). */

@@ -7807,8 +7807,8 @@ static inline void snapshot_lane_cache(
     le_track* tr = &e->tracks[t];
     const uint32_t rev =
         atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
-    /* The loop top the key folds (its hop position for an octaver, #941, its
-     * place on the lap grid for a clock LFO, #1620). */
+    /* The loop top the key folds (its place on the lap grid, for a clock
+     * LFO, #1620). */
     const uint32_t top =
         atomic_load_explicit(&tr->a_top_clock, memory_order_relaxed);
     for (int l = 0; l < lane_n[t]; ++l) {
@@ -7823,7 +7823,7 @@ static inline void snapshot_lane_cache(
           atomic_load_explicit(&ln->a_fx_gen, memory_order_acquire);
       /* The run (#939). The fingerprint is refolded only when its cheap
        * proxies moved: a generation bump (every chain edit, Post ones
-       * included, so the refold decides) or the hop position it folds. */
+       * included, so the refold decides) or the loop top it folds. */
       const int len_moved = len != ln->run_len;
       if (rev != ln->run_rev || vol != ln->run_vol || len_moved) {
         ln->run_rev = rev;
@@ -8157,6 +8157,27 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
   tuner_slice(e, frames);
 }
 
+/* Input [c]'s sample [x] through the sound trigger's detector high-pass
+ * (#1623): both sections, transposed direct form II. Returns the filtered
+ * sample. Audio thread. */
+static inline float le_trigger_hp(le_engine* e, int c, float x) {
+  for (int k = 0; k < 2; ++k) {
+    const float* b = e->trig_hp_c[k];
+    float* z = e->trig_hp_z[c][k];
+    const float y = b[0] * x + z[0];
+    z[0] = b[1] * x - b[3] * y + z[1];
+    z[1] = b[2] * x - b[4] * y;
+    x = y;
+  }
+  if (!isfinite(x)) {
+    /* A non-finite sample (a driver glitch) would stay in the states for
+     * good and keep the trigger from ever firing: drop it and start clean. */
+    memset(e->trig_hp_z[c], 0, sizeof(e->trig_hp_z[c]));
+    return 0.0f;
+  }
+  return x;
+}
+
 static inline int process_input_frame(le_engine* e, const float* in,
                                       float* out, uint32_t f,
                                       int ch_in, int ch_out, int tc,
@@ -8165,6 +8186,7 @@ static inline int process_input_frame(le_engine* e, const float* in,
                                       uint64_t perf_frame_base) {
   float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
   float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
+  float trig[LE_MAX_CHANNELS]; /* each real input through the trigger's HP */
   for (int c = 0; c < ch_in; ++c) {
     const float s = in ? in[f * ch_in + c] : 0.0f;
     const float a = fabsf(s);
@@ -8177,10 +8199,14 @@ static inline int process_input_frame(le_engine* e, const float* in,
     if (a > frame_mag) frame_mag = a;
     if (a > in_peak_ch[c]) in_peak_ch[c] = a;
     *in_sumsq += s * s;
+    /* The trigger's detection path (#1623), on every real input so an arm
+     * finds it settled. */
+    if (c < LE_MAX_CHANNELS) trig[c] = le_trigger_hp(e, c, s);
   }
   if (frame_mag > *in_peak) *in_peak = frame_mag;
 
-  /* Signal arms listen only to their selected, real recording sources. Never
+  /* Signal arms listen only to their selected, real recording sources,
+   * through the detector's high-pass (le_trigger_hp, #1623). Never
    * substitute input zero when a route disappears. Cancellation remains a
    * control action even when no selected source is currently usable. While a
    * latency measurement runs the arms wait: its burst and echo are not the
@@ -8198,7 +8224,9 @@ static inline int process_input_frame(le_engine* e, const float* in,
       } else {
         if (source < 0 || source >= ch_in || source >= LE_MAX_CHANNELS ||
             (excluded & (1u << source))) continue;
-        value = in ? fabsf(in[f * ch_in + source]) : 0.0f;
+        /* Through the detector's high-pass: hum and rumble do not arm it
+         * (#1623); the take records the raw input. */
+        value = in ? fabsf(trig[source]) : 0.0f;
       }
       if (value > magnitude) magnitude = value;
     }
@@ -9105,12 +9133,12 @@ static inline void mix_tracks_frame(
         atomic_store_explicit(&tr->a_top_clock, top, memory_order_relaxed);
       }
     }
-    /* A print keyed to the hop position (an octaver in it, #941) that does
-     * not match this lap's start is stale: the block-start check ran before
-     * a launch in this block moved the lap. Drop it at the lap top, as that
+    /* A print keyed to the lap grid (a clock LFO in it, #1620) that does not
+     * match this lap's start is stale: the block-start check ran before a
+     * launch in this block moved the lap. Drop it at the lap top, as that
      * check will from the next block. */
     if (trk_rp == 0 && tce != NULL &&
-        !le_wet_entry_hop_matches(tce, e->fx_clock_base + f, e->fx_hop_period)) {
+        !le_wet_entry_lap_matches(tce, e->fx_clock_base + f)) {
       tce = NULL;
       track_cache_ent[t] = NULL;
       if (load_i32(&tr->a_track_cache_active)) {
@@ -9339,9 +9367,9 @@ static inline void mix_tracks_frame(
       if (ln->run.restart) { /* a block-start key change (#939) */
         le_chain_run_begin(&ln->run, tr, sounding, rp);
       }
-      /* The lane twin of the track's lap-top hop check above (#941). */
+      /* The lane twin of the track's lap-top grid check above (#1620). */
       if (rp == 0 && wce != NULL &&
-          !le_wet_entry_hop_matches(wce, e->fx_clock_base + f, e->fx_hop_period)) {
+          !le_wet_entry_lap_matches(wce, e->fx_clock_base + f)) {
         wce = NULL;
         cache_ent[t][l] = NULL;
         if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);

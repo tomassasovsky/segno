@@ -14,12 +14,22 @@ class FakeTouchCalibrationClient implements TouchCalibrationClient {
   TouchMatrix? inForce;
 
   final calls = <String>[];
+  bool failRead = false;
   bool failApply = false;
   bool failWrite = false;
   bool failRestore = false;
 
+  /// When set, a read waits for it before it answers.
+  Completer<void>? readGate;
+
   /// When set, an apply waits for it before it takes effect.
   Completer<void>? applyGate;
+
+  /// When set, a write waits for it before it takes effect.
+  Completer<void>? writeGate;
+
+  /// When set, a restore waits for it before it takes effect.
+  Completer<void>? restoreGate;
 
   @override
   Future<bool> isSupported() async => true;
@@ -27,6 +37,8 @@ class FakeTouchCalibrationClient implements TouchCalibrationClient {
   @override
   Future<TouchMatrix?> read(TouchScreen screen) async {
     calls.add('read ${screen.name}');
+    await readGate?.future;
+    if (failRead) throw StateError('udev is wedged');
     return stored;
   }
 
@@ -41,6 +53,7 @@ class FakeTouchCalibrationClient implements TouchCalibrationClient {
   @override
   Future<void> write(TouchScreen screen, TouchMatrix matrix) async {
     calls.add('write ${screen.name}');
+    await writeGate?.future;
     if (failWrite) throw StateError('read-only');
     stored = inForce = matrix;
   }
@@ -48,6 +61,7 @@ class FakeTouchCalibrationClient implements TouchCalibrationClient {
   @override
   Future<void> restore(TouchScreen screen) async {
     calls.add('restore ${screen.name}');
+    await restoreGate?.future;
     if (failRestore) throw StateError('udev is wedged');
     inForce = stored;
   }

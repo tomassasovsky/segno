@@ -89,11 +89,12 @@ typedef struct le_fx_frozen_chain {
   int32_t chan_any;
   le_fx_chan chan[LE_FX_MAX];
   /* The frozen owner's le_fx_state::hop_seed (#915): a render seeds its heap
-   * state with it so octavers render on the live owner's hop phases. */
+   * state with it so it updates on the live owner's frames, and an
+   * octaver (the render recipe, the stems) renders on its hop phases. */
   int32_t hop_seed;
   /* The live FX clock (le_fx_state::clock) of the first rendered frame: a
    * print's pass 1 runs at clock0 + f and the kept pass at clock0 + len + f,
-   * so its octaver hops land on the frames the live chain's will (#941).
+   * so its clock LFOs (#1620) land on the frames the live chain's will.
    * The cache schedulers set it from the track's last loop top, predicting
    * the print engages at the next one; 0 for the render recipe. */
   uint32_t clock0;

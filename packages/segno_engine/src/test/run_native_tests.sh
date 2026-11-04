@@ -275,9 +275,4 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework Foundation \
     -o "$OUT/segno_plugin_slot_tests.exe"
   "$OUT/segno_plugin_slot_tests.exe"
-
-  # NOTE: the vst3/ plugin GUID/wrapper/parity tests used to live here (also
-  # Darwin-gated, so they ran in no CI job). They now build via CTest in
-  # packages/segno_engine/vst3/CMakeLists.txt — the single definition — and run
-  # on macOS/Windows/Linux in the vst3-plugins-* CI jobs. Do not re-add them here.
 fi

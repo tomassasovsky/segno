@@ -483,6 +483,54 @@ void main() {
     });
   });
 
+  group('layout', () {
+    testWidgets('the installed version has a line of its own above the '
+        'buttons (#1590 UPD-3)', (tester) async {
+      await pump(tester, _running);
+      final installed = tester.getRect(
+        find.byKey(const Key('updates_installed')),
+      );
+      final usb = tester.getRect(find.byKey(const Key('updates_load_usb')));
+      final check = tester.getRect(find.byKey(const Key('updates_check')));
+
+      // One line of the 28 px section label, not two at line height 1 (the
+      // line box differs a little between the test hosts' font setups).
+      expect(installed.height, lessThan(2 * 28));
+      expect(usb.top - installed.bottom, SpacingTheme.standard.lg);
+      expect(check.top, usb.top);
+      expect(check.left - usb.right, SpacingTheme.standard.lg);
+      // The version, the buttons and the panel under them share one left
+      // edge.
+      expect(usb.left, installed.left);
+      expect(
+        tester.getRect(find.byKey(const Key('updates_status'))).left,
+        installed.left,
+      );
+    });
+  });
+
+  testWidgets('without the update helper the version sits an xl gap over '
+      'the panel, and with no version the panel starts the column', (
+    tester,
+  ) async {
+    await pump(tester, UpdateState(currentVersion: Version.parse('1.0.0')));
+    final installed = tester.getRect(
+      find.byKey(const Key('updates_installed')),
+    );
+    expect(
+      tester.getRect(find.byKey(const Key('updates_status'))).top -
+          installed.bottom,
+      SpacingTheme.standard.xl,
+    );
+
+    await pump(tester, const UpdateState());
+    expect(find.byKey(const Key('updates_installed')), findsNothing);
+    expect(
+      tester.getRect(find.byKey(const Key('updates_status'))).top,
+      installed.top,
+    );
+  });
+
   group('settings and links', () {
     testWidgets('Check automatically is a pick of Off and On', (tester) async {
       await pump(tester, _running);

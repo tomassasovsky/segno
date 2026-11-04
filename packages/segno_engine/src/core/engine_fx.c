@@ -2037,10 +2037,10 @@ void le_fx_entry_clear_rings(le_fx_state* fx, int slot, int cap,
  * freshly created (zeroed) le_fx_state does not read as a mid-ramp bypass and
  * fade in on first use. Every standalone le_fx_state owner calls this after
  * creating/zeroing its state: le_lane_reset / le_monitor_input_reset, the
- * offline renders (through le_fx_enable_seed_at), the VST3 plugin
- * processors, and the test harnesses. Deliberately NOT part of le_fx_entry_reset, which touches only
- * the DRAIN half of the runtime (a retyped slot has no tail to drain) and
- * leaves an in-flight enable ramp alone. */
+ * offline renders (through le_fx_enable_seed_at), and the test harnesses.
+ * Deliberately NOT part of le_fx_entry_reset, which touches only the DRAIN
+ * half of the runtime (a retyped slot has no tail to drain) and leaves an
+ * in-flight enable ramp alone. */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
   fx->enable_mix[slot] = 1.0f;
   fx->enable_target[slot] = 1;
@@ -2438,7 +2438,8 @@ static const le_oct_rs* le_oct_rs_get(int sr) {
 /* The two channels' rings [a] and [b] (LE_OCT_RS_RING samples, indexed by
  * absolute frame) read at position [num] / [den] through the table [g] of
  * [w] taps a side, into [ya] and [yb]. The position is exact, so frames a
- * hop period apart (le_fx_hop_period) read with the same weights. */
+ * whole number of hops apart at the kernel's rate read with the same
+ * weights. */
 static void le_oct_rs_read(const float* a, const float* b, int64_t num,
                            int64_t den, const float* g, int w, float* ya,
                            float* yb) {
@@ -9367,9 +9368,11 @@ typedef struct le_fx_vtable {
  * holds a tail in rings and reports no latency (delay, echo, reverb, whose
  * rings `prepare` allocates; the spring, whose ring is in its kind block). */
 #define LE_FX_F_DRAINS 1u
-/* A free-running modulator (an LFO that runs on whatever the loop does): the
- * kind sounds different each lap, so a chain holding it is never printed
- * (le_fx_type_free_running). */
+/* A free-running modulator (an LFO that runs on whatever the loop does), or
+ * a kind on the octaver's kernel, whose phase vocoder carries running
+ * synthesis phases a loop advances by a fraction of a cycle each lap
+ * (#1624): the kind sounds different each lap, so a chain holding it is
+ * never printed (le_fx_type_free_running). */
 #define LE_FX_F_FREE_RUNNING 2u
 
 /* Indexed by le_fx_type — one row per effect. Adding an effect is adding its
@@ -9383,7 +9386,8 @@ static const le_fx_vtable LE_FX[] = {
         {fx_delay_process, NULL, fx_stereo_ring_prepare, LE_FX_DELAY_PARAMS, LE_FX_F_DRAINS},
     [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, LE_FX_TREMOLO_PARAMS},
     [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
-                       fx_octaver_prepare, LE_FX_OCTAVER_PARAMS},
+                       fx_octaver_prepare, LE_FX_OCTAVER_PARAMS,
+                       LE_FX_F_FREE_RUNNING},
     [LE_FX_ECHO] =
         {fx_echo_process, NULL, fx_stereo_ring_prepare, LE_FX_ECHO_PARAMS, LE_FX_F_DRAINS},
     [LE_FX_REVERB] =
@@ -9445,10 +9449,12 @@ static const le_fx_vtable LE_FX[] = {
                         fx_verb_rkprocess},
     /* The octaver's kernel and state, its settings mapped (fx_whammy_process). */
     [LE_FX_WHAMMY] = {fx_whammy_process, fx_octaver_latency_vt,
-                      fx_octaver_prepare, LE_FX_WHAMMY_PARAMS},
+                      fx_octaver_prepare, LE_FX_WHAMMY_PARAMS,
+                      LE_FX_F_FREE_RUNNING},
     /* The octaver's kernel and state, its settings mapped (le_doct_settings). */
     [LE_FX_DUAL_OCTAVER] = {fx_dual_octaver_process, fx_octaver_latency_vt,
-                            fx_dual_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS},
+                            fx_dual_octaver_prepare, LE_FX_DUAL_OCTAVER_PARAMS,
+                            LE_FX_F_FREE_RUNNING},
     /* The amp and its cabinet, in its own per-slot instance (fx->amp). */
     [LE_FX_AMP_CAB] = {fx_amp_cab_process, fx_os_latency_vt, fx_amp_cab_prepare,
                        LE_FX_AMP_CAB_PARAMS},
@@ -9471,7 +9477,8 @@ static const le_fx_vtable LE_FX[] = {
     /* The octaver's kernel and state, its shift following the detected
      * pitch (fx_smart_tune_process). */
     [LE_FX_SMART_TUNE] = {fx_smart_tune_process, fx_octaver_latency_vt,
-                          fx_octaver_prepare, LE_FX_SMART_TUNE_PARAMS},
+                          fx_octaver_prepare, LE_FX_SMART_TUNE_PARAMS,
+                          LE_FX_F_FREE_RUNNING},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -9753,6 +9760,15 @@ int le_fx_entry_free_running(int32_t type, const float* p, int sr) {
                                                   : p[1] > 0.0f && p[2] > 0.0f;
     case LE_FX_SLICER: /* heard */
       return p[2] > 0.0f;
+    /* The octaver's kernel (#1624), heard and shifting: */
+    case LE_FX_OCTAVER: /* its voice in the mix */
+      return p[2] > 0.0f;
+    case LE_FX_DUAL_OCTAVER: /* in the mix, an octave up */
+      return p[2] > 0.0f && (p[1] > 0.0f || p[3] > 0.0f);
+    case LE_FX_WHAMMY: /* off unison (the pedal at 0 shifts nothing) */
+      return p[0] > 0.0f;
+    case LE_FX_SMART_TUNE: /* always correcting */
+      return 1;
     default:
       return p[2] > 0.0f; /* the chorus's mix */
   }

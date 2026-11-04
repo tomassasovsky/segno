@@ -1323,7 +1323,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
             action: button.gestures.press,
             slot: _ActionSlot.press,
           ),
-          const SizedBox(width: 28),
+          SizedBox(width: context.spacing.xl),
           _field(
             context,
             key: const Key('external_hold'),

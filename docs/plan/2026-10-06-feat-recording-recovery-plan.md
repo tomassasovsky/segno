@@ -607,16 +607,22 @@ player's Save or Discard, its durable state is on disk (and in the Internal
 mirror for USB), and it must not block Open, New loop, power off, update or
 eject. Save recovered audio takes its own `transfer` lease while it writes.
 
-| Wants to commit ↓ / active → | capture | sessionApply | sessionWrite | transfer | eject | deviceChange | calibration | restart |
-|---|---|---|---|---|---|---|---|---|
-| **capture** (arm) | – | refuse | allow | refuse (same volume) | refuse (same volume) | refuse | refuse | refuse |
-| **sessionApply** (Open, New loop) | allow (a running take is finished first: today's `disarmAndFinalize`, rule 1) | refuse | refuse | allow | allow | refuse | refuse | refuse |
-| **sessionWrite** (save, Save as, rename, duplicate, delete, restore into Internal) | allow | allow (its own preservation save) | refuse (same bundle) | allow | allow | allow | allow | refuse |
-| **transfer** (export, backup, import, restore read, Save recovered audio) | refuse (same volume) | allow | allow | allow | refuse (same volume) | allow | allow | refuse |
-| **eject** | refuse (same volume) | allow | allow | refuse (same volume) | refuse (same volume) | allow | allow | refuse |
-| **deviceChange** (audio apply, rate change) | refuse | refuse | allow | allow | allow | refuse | refuse | refuse |
-| **calibration** (latency measurement; touch calibration when it exists) | refuse | refuse | allow | allow | allow | refuse | refuse | refuse |
-| **restart** (power off, restart, update install) | refuse (a running take is finished first) | refuse | refuse | refuse | refuse | refuse | allow (it is cancelled and keeps the old profile, AB §7.6) | – |
+| Wants to commit ↓ / active → | capture | sessionApply | sessionWrite | transfer | eject | deviceChange | calibration | touchCalibration | restart |
+|---|---|---|---|---|---|---|---|---|---|
+| **capture** (arm) | – | refuse | allow | refuse (same volume) | refuse (same volume) | refuse | refuse | allow | refuse |
+| **sessionApply** (Open, New loop) | allow (a running take is finished first: today's `disarmAndFinalize`, rule 1) | refuse | refuse | allow | allow | refuse | refuse | allow | refuse |
+| **sessionWrite** (save, Save as, rename, duplicate, delete, restore into Internal) | allow | allow (its own preservation save) | refuse (same bundle) | allow | allow | allow | allow | allow | refuse |
+| **transfer** (export, backup, import, restore read, Save recovered audio) | refuse (same volume) | allow | allow | allow | refuse (same volume) | allow | allow | allow | refuse |
+| **eject** | refuse (same volume) | allow | allow | refuse (same volume) | refuse (same volume) | allow | allow | allow | refuse |
+| **deviceChange** (audio apply, rate change) | refuse | refuse | allow | allow | allow | refuse | refuse | allow | refuse |
+| **calibration** (latency measurement) | refuse | refuse | allow | allow | allow | refuse | refuse | allow | refuse |
+| **touchCalibration** (touch calibration, #1375) | allow | allow | allow | allow | allow | allow | allow | refuse | refuse |
+| **restart** (power off, restart, update install) | refuse (a running take is finished first) | refuse | refuse | refuse | refuse | refuse | allow (it is cancelled and keeps the old profile, AB §7.6) | allow (nothing cancels it; the reboot discards a calibration only tried, #1375) | – |
+
+Touch calibration is its own kind (#1375): it touches no audio, so it
+holds up nothing audio does (a take, a device change, the warm-up's switch
+out of silence), and only another touch calibration or a shutdown refuses
+it.
 
 Eject against eject is per volume (#1177's P6 review): an eject left
 unanswered on one drive, which can last until that drive is pulled, must not
@@ -1089,6 +1095,32 @@ VERIFICATION COMMAND: (cd packages/session_repository && /Users/Tomas/developmen
   from `parts` and includes `recovered/` takes marked `recovered: true` (pen
   48 `Z3V6Z` shows a recovered take in the Library; Library Part 7 excluded
   them).
+
+As built, recording durability and bounded recovery (the first item of the
+owner's 2026-11-03 order) is Part 8's finalize and recovery, in two stacked
+PRs on `claude/recording-durability-1198-p1` and `-p2`:
+
+- **p1** converts legacy raw captures into parts as above (#1078), and
+  publishes the finalized manifest through tmp, flush, rename and directory
+  sync. A converted take is marked `converted_from_raw` and kept exactly as
+  converted (stream lengths included: the raw streams are not cut to one
+  length).
+- **p2** is the finalize and recovery of part-format takes: the trust rule,
+  rollover and truncation, every stream ending at the same frame,
+  `capture_frames` clamped to it, the event log and layers cut back to the
+  checkpoint when only it is trusted, and a take whose sidecar was lost
+  recovered from its slots. A take with no valid slot trusts its files.
+- Overs of a cut-back part are counted from its float payload in 1 MiB
+  reads, not decoded through `le_backing_decode_file`: overs are a count of
+  the stored samples, and the decoder returns stereo at the engine's rate,
+  not the samples as stored.
+- The removable-volume manifest with a trailing checksum (D5) waits for
+  Part 10: until the live sidecar moves to the Internal mirror, the stick
+  already holds a `performance.json`.
+- Held takes (`held(reason)`, `saveHeld`, `discardHeld`, `unfinishedTakes`)
+  move to the rest of #1198 with Parts 9 and 13: without the recorder state
+  and the page there is no Save or Discard to offer, so the silent boot
+  salvage stays until then.
 
 ```success-criteria
 GOAL: A take finalizes and recovers in bounded memory without copying audio, recovery never trusts bytes a pulled or power-cut drive may not hold, a stopped take is held for the player's choice, and legacy raw captures are recovered unchanged.

@@ -7,9 +7,6 @@
  * block's shape); the control thread starts and stops the pool. Not part of
  * the FFI surface; the public calls are le_engine_set_fx_workers and
  * le_engine_get_fx_workers_telemetry (segno_engine_api.h).
- *
- * Deliberately not included by engine_private.h, so it reaches no C++
- * translation unit (docs/PROGRESS.md, "Adding a header to src/core/").
  */
 #ifndef SEGNO_ENGINE_WORKERS_H
 #define SEGNO_ENGINE_WORKERS_H

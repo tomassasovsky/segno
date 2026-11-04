@@ -102,7 +102,6 @@ cache run on their own threads.
 | `src/miniaudio/` | Vendored miniaudio and `miniaudio_impl.c`. |
 | `src/test/` | Native tests, benchmarks and `run_native_tests.sh`. |
 | `third_party/` | Vendored CLAP, Signalsmith Stretch and VST3 SDK sources. |
-| `vst3/` | A separate build of the seven built-in effects as VST3 plugins. |
 | `lib/src/audio_engine.dart` | The `AudioEngine` interface, the test seam. |
 | `lib/src/native_audio_engine.dart` | The FFI implementation, `NativeAudioEngine`, and the device-free `PumpedNativeEngine`. |
 | `lib/src/mock_audio_engine.dart` | `MockAudioEngine`, an in-memory engine for tests and the mock app. |

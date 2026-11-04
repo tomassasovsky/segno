@@ -16,6 +16,7 @@ import 'package:performance_repository/src/models/unfinalized_capture.dart';
 import 'package:performance_repository/src/performance_capture_status.dart';
 import 'package:performance_repository/src/performance_exception.dart';
 import 'package:performance_repository/src/performance_slug.dart';
+import 'package:performance_repository/src/take_recovery.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:wav_codec/wav_codec.dart';
 
@@ -45,6 +46,8 @@ class PerformanceRepository {
   /// engine; it is called on a background isolate too, so it must be a
   /// top-level or static function. [partBytes] is the size of the parts a
   /// take from before #1198 is converted into (tests pass small sizes).
+  /// [bootId] reads this boot's kernel id, which decides how far recovery
+  /// trusts a take's files ([readBootId]).
   PerformanceRepository({
     required AudioEngine engine,
     required Future<String> Function() exportsRoot,
@@ -55,6 +58,7 @@ class PerformanceRepository {
     int? reserveBytes,
     StorageIo Function() storageIo = NativeStorageIo.new,
     int partBytes = RecordedPartWriter.defaultPartBytes,
+    String Function() bootId = readBootId,
   }) : _engine = engine,
        _guards = guards,
        _exportsRoot = exportsRoot,
@@ -63,7 +67,8 @@ class PerformanceRepository {
        _bootRecoveryPollInterval = bootRecoveryPollInterval,
        _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout,
        _storageIo = storageIo,
-       _partBytes = partBytes;
+       _partBytes = partBytes,
+       _bootId = bootId;
 
   final AudioEngine _engine;
   final Future<String> Function() _exportsRoot;
@@ -73,6 +78,7 @@ class PerformanceRepository {
   final StorageIo Function() _storageIo;
   late final StorageIo _io = _storageIo();
   final int _partBytes;
+  final String Function() _bootId;
 
   /// The app's one guard table (accepted behaviour 6.12). A take holds a
   /// `capture` guard from the commit of [arm] until it is finalized or its
@@ -249,6 +255,11 @@ class PerformanceRepository {
   static const Duration defaultBootRecoveryRenderTimeout = Duration(
     minutes: 10,
   );
+
+  /// The sidecar key that marks a take converted from raw streams (#1078):
+  /// its parts are sealed and kept exactly as recorded, so finalize does not
+  /// bring its streams to one length as it does for a take the drain wrote.
+  static const String convertedFromRawKey = 'converted_from_raw';
 
   /// The arm-time snapshot's own file, written immediately at [arm] so it
   /// survives a crash before [disarm]'s finalize ever merges it into
@@ -701,7 +712,17 @@ class PerformanceRepository {
         dir,
         armSnapshot: _armSnapshot,
         disarmSnapshot: disarmSnapshot,
+        live: true,
       );
+    } on Object {
+      // The engine has stopped: the take is no longer live, whatever the
+      // finalize did. It stays unfinalized on disk for the next start's
+      // recovery, and the repository is free to record again.
+      _armedDir = null;
+      _armSnapshot = null;
+      _armedAt = null;
+      _setStatus(PerformanceCaptureStatus.idle);
+      rethrow;
     } finally {
       _releaseCaptureGuard();
     }
@@ -735,14 +756,22 @@ class PerformanceRepository {
   /// Scans the exports root for capture directories whose sidecar lacks
   /// `finalized: true` — evidence of a crash while armed (D-SALVAGE). An
   /// unreadable/corrupt sidecar counts as unfinalized too (the write itself
-  /// was interrupted).
+  /// was interrupted), and so does a take with a checkpoint slot but no
+  /// sidecar at all (a power cut before the first sidecar was durable).
   Future<List<UnfinalizedCapture>> findUnfinalized() async {
     final root = Directory(await _exportsRoot());
     if (!root.existsSync()) return const [];
     final out = <UnfinalizedCapture>[];
     for (final entity in root.listSync()) {
       if (entity is! Directory) continue;
-      if (!File('${entity.path}/$manifestName').existsSync()) continue;
+      // A hidden directory is a delete in progress, never a take.
+      if (_basename(entity.path).startsWith('.')) continue;
+      if (!File('${entity.path}/$manifestName').existsSync() &&
+          !checkpointSlotNames.any(
+            (slot) => File('${entity.path}/$slot').existsSync(),
+          )) {
+        continue;
+      }
       if (!_sidecarFinalized(entity.path)) {
         out.add(
           UnfinalizedCapture(
@@ -763,8 +792,12 @@ class PerformanceRepository {
   /// render (dry stems, wet stems, master reconstruction), same as [disarm]
   /// — a salvage render is free (D-RENDER reads only from the capture
   /// directory, never the live engine).
-  Future<void> recoverCapture(String directory) =>
-      _finalize(directory, armSnapshot: null, disarmSnapshot: null);
+  Future<void> recoverCapture(String directory) => _finalize(
+    directory,
+    armSnapshot: null,
+    disarmSnapshot: null,
+    live: false,
+  );
 
   /// Discards a crashed (unfinalized) capture at [directory] by deleting it
   /// outright — the counterpart to [recoverCapture] when the user chooses
@@ -772,10 +805,26 @@ class PerformanceRepository {
   /// when it goes away during the delete: a USB drive pulled under the take
   /// takes the directory with it, which is the end this asks for.
   Future<void> discardUnfinalized(String directory) async {
+    // Hidden first, as a delete is: a cut halfway through the delete must
+    // not leave a checkpoint that the next start recovers as a take.
+    final doomed =
+        '${_dirname(directory)}/.${_basename(directory)}$deletingSuffix';
     try {
-      await Directory(directory).delete(recursive: true);
-    } on PathNotFoundException {
-      // Already gone.
+      if (Directory(doomed).existsSync()) {
+        Directory(doomed).deleteSync(recursive: true);
+      }
+      Directory(directory).renameSync(doomed);
+      Directory(doomed).deleteSync(recursive: true);
+    } on FileSystemException {
+      // Gone already, or going (a USB drive pulled under the take): remove
+      // what is left; a hidden remainder is finished at the next start.
+      for (final path in [directory, doomed]) {
+        try {
+          Directory(path).deleteSync(recursive: true);
+        } on FileSystemException {
+          continue;
+        }
+      }
     }
   }
 
@@ -1339,90 +1388,121 @@ class PerformanceRepository {
     String dir, {
     required PerformanceArmSnapshot? armSnapshot,
     required PerformanceDisarmSnapshot? disarmSnapshot,
+    required bool live,
   }) async {
     _finalizesInFlight++;
     try {
-      final manifestFile = File('$dir/$manifestName');
-      final String rawManifest;
-      try {
-        rawManifest = await manifestFile.readAsString();
-      } on FileSystemException {
-        return; // no sidecar was ever written (e.g. disarmed within the drain
-        // thread's first ~250ms cycle): nothing to finalize
-      }
-      Map<String, dynamic> native;
+      // The sidecar, or null when it is missing (a cut before the drain's
+      // first one was durable) or does not read: a crashing writer can leave
+      // well-formed JSON with wrong types, whose decode casts raise [Error]s
+      // rather than [FormatException]. The checkpoint can still say what the
+      // take holds.
+      Map<String, dynamic>? native;
       try {
         native = PerformanceManifest.fromJson(
-          jsonDecode(rawManifest) as Map<String, dynamic>,
+          jsonDecode(await File('$dir/$manifestName').readAsString())
+              as Map<String, dynamic>,
         ).native;
       } on Object {
-        // Corrupt OR wrong-shaped sidecar: a crashing writer can leave
-        // well-formed JSON with wrong types, whose decode casts raise
-        // [Error]s rather than [FormatException] — this parse is the one
-        // step where catching everything is the honest contract (nothing
-        // recoverable to finalize), instead of upgrading every outer guard.
-        return;
+        native = null;
       }
       // A capture from before #1198 (#1078): raw PCM, no parts and no take
       // id, or one whose conversion a cut interrupted. A take the drain
       // wrote as parts always carries its id, so a stray raw file beside its
       // parts never sends it here.
       final rawCapture =
-          native['take_id'] == null || native[convertedFromRawKey] == true;
+          native != null &&
+          (native['take_id'] == null || native[convertedFromRawKey] == true);
       if (rawCapture && _holdsRawPcm(dir)) {
         // Converted into parts a stream at a time in bounded memory;
         // anything short of a complete conversion leaves it unfinalized, its
         // raw files kept, for the next start.
-        final streams = _legacyStreams(native);
+        final streams = streamsOf(native);
         if (streams == null) return; // a layout no conversion can trust
         final converted = await _convertLegacy(dir, native, streams);
         if (converted == null) return;
         native = converted;
-      } else {
-        // The drain writes each stream as finished float WAV parts, so there
-        // is nothing to convert. A crash leaves the open part's sizes
-        // unpatched; seal it here so a salvaged take still plays (#1198).
-        // Part 8 replaces this with the checkpoint-based recovery.
-        _sealOpenParts(dir);
       }
 
-      var resolvedArm = armSnapshot;
-      final armFile = File('$dir/$_armSnapshotFileName');
-      if (resolvedArm == null && armFile.existsSync()) {
-        resolvedArm = PerformanceArmSnapshot.fromJson(
-          jsonDecode(await armFile.readAsString()) as Map<String, dynamic>,
+      // The parts as the durable record and the trust rule allow (D4):
+      // sealed, every stream ending at the same frame. Null when the take's
+      // shape cannot be known; it stays as it is for the next start. A take
+      // converted from raw streams is already sealed and is kept exactly as
+      // it was recorded, stream lengths included.
+      final sidecar = native;
+      if (sidecar?[convertedFromRawKey] == true) {
+        return await _publishFinalized(
+          dir,
+          sidecar!,
+          armSnapshot,
+          disarmSnapshot,
         );
       }
-
-      final manifest = PerformanceManifest(
-        slug: _basename(dir),
-        finalized: true,
-        native: native,
-        armSnapshot: resolvedArm,
-        disarmSnapshot: disarmSnapshot,
+      final storageIo = _storageIo;
+      final bootId = _bootId();
+      final reconciled = await Isolate.run(
+        () => reconcileTake(
+          dir: dir,
+          native: sidecar,
+          live: live,
+          bootId: bootId,
+          storageIo: storageIo(),
+        ),
       );
-      // A failed directory sync does not undo the finalize: the manifest is
-      // in place, and if a power cut takes it back the next start finalizes
-      // the take again.
-      await _publishManifest(dir, manifest.toJson());
-      if (armFile.existsSync()) armFile.deleteSync();
-
-      // Kick off the offline render (dry stems, wet stems, master
-      // reconstruction — parts 7-8, one render session covers all three):
-      // fire-and-forget — the worker thread reads only from `dir` on disk from
-      // here on, with no further dependency on this finalize call, so its
-      // outcome is exposed purely via the poll-on-demand
-      // `renderProgress`/`renderTrackStatuses` getters above rather than
-      // awaited here. A failure to even START a
-      // render (e.g. one is already running) is silently accepted — the
-      // bundle itself is already complete and valid without its stems, which
-      // is exactly the umbrella's partial-success posture applied one level up.
-      _engine.renderBegin(dir);
+      if (reconciled == null) return;
+      await _publishFinalized(
+        dir,
+        _reconciledFields(native, reconciled),
+        armSnapshot,
+        disarmSnapshot,
+      );
     } finally {
       // Decremented only after renderBegin: the render poll takes over
       // [arm]'s refusal from here with no uncovered gap between the two.
       _finalizesInFlight--;
     }
+  }
+
+  /// Writes [native] with the arm and disarm snapshots as the take's
+  /// finalized manifest, durably, then starts its offline render.
+  Future<void> _publishFinalized(
+    String dir,
+    Map<String, dynamic> native,
+    PerformanceArmSnapshot? armSnapshot,
+    PerformanceDisarmSnapshot? disarmSnapshot,
+  ) async {
+    var resolvedArm = armSnapshot;
+    final armFile = File('$dir/$_armSnapshotFileName');
+    if (resolvedArm == null && armFile.existsSync()) {
+      resolvedArm = PerformanceArmSnapshot.fromJson(
+        jsonDecode(await armFile.readAsString()) as Map<String, dynamic>,
+      );
+    }
+
+    final manifest = PerformanceManifest(
+      slug: _basename(dir),
+      finalized: true,
+      native: native,
+      armSnapshot: resolvedArm,
+      disarmSnapshot: disarmSnapshot,
+    );
+    // A failed directory sync does not undo the finalize: the manifest is
+    // in place, and if a power cut takes it back the next start finalizes
+    // the take again.
+    await _publishManifest(dir, manifest.toJson());
+    if (armFile.existsSync()) armFile.deleteSync();
+
+    // Kick off the offline render (dry stems, wet stems, master
+    // reconstruction — parts 7-8, one render session covers all three):
+    // fire-and-forget — the worker thread reads only from `dir` on disk from
+    // here on, with no further dependency on this finalize call, so its
+    // outcome is exposed purely via the poll-on-demand
+    // `renderProgress`/`renderTrackStatuses` getters above rather than
+    // awaited here. A failure to even START a
+    // render (e.g. one is already running) is silently accepted — the
+    // bundle itself is already complete and valid without its stems, which
+    // is exactly the umbrella's partial-success posture applied one level up.
+    _engine.renderBegin(dir);
   }
 
   /// Exports every currently-settled lane's PCM as a WAV directly into
@@ -1548,8 +1628,68 @@ class PerformanceRepository {
       },
   ];
 
-  /// The sidecar key that marks a take converted from raw streams (#1078).
-  static const String convertedFromRawKey = 'converted_from_raw';
+  /// The sidecar fields of a finalized take from [reconciled]: its parts,
+  /// overs and identity, and `capture_frames` set to the frames every
+  /// stream holds, so a render or an export never lays out more than the
+  /// audio (#727). A take with no part keeps its `capture_frames`.
+  /// [native] is null when the sidecar was lost: the fields the checkpoint
+  /// cannot give (overruns, gaps, layer details) are then empty, and its
+  /// layer files are counted as dropped. When only the checkpoint was
+  /// trusted, a layer it does not list is dropped too.
+  Map<String, dynamic> _reconciledFields(
+    Map<String, dynamic>? native,
+    ReconciledTake reconciled,
+  ) {
+    final takeId = reconciled.takeId;
+    // A take with no id has no part either; its fields stand as they are.
+    if (takeId == null) return native!;
+    final checkpoint = reconciled.checkpoint;
+    final fields = <String, dynamic>{
+      ...native ??
+          {
+            'sample_rate': reconciled.sampleRate,
+            'channel_layout': {
+              'master_channels': reconciled.streams.first.channels,
+              'captured_inputs': [
+                for (final s in reconciled.streams.skip(1)) s.stream - 1,
+              ],
+            },
+            // Overwritten below by what the parts hold, when there are any.
+            'capture_frames': checkpoint?.frames ?? 0,
+            'overrun_count': 0,
+            'zero_filled_frames': 0,
+            'overrun_gaps': const <dynamic>[],
+            'layers': const <dynamic>[],
+            if (checkpoint != null && checkpoint.layers.isNotEmpty)
+              'layers_dropped': checkpoint.layers.length,
+          },
+      // With no part on disk the stems still render to the captured
+      // length, so it is kept.
+      if (reconciled.parts.isNotEmpty) 'capture_frames': reconciled.frames,
+      'take_id': takeId,
+      'encoding': TakeCheckpoint.encoding,
+      'overs': reconciled.parts.fold<int>(0, (sum, p) => sum + p.overs),
+      'parts': [for (final p in reconciled.parts) p.toJson()],
+    };
+    final layers = fields['layers'];
+    if (native != null &&
+        checkpoint != null &&
+        !reconciled.trustedFiles &&
+        layers is List<dynamic>) {
+      final durable = checkpoint.layers.toSet();
+      final kept = [
+        for (final l in layers)
+          if (l is Map<String, dynamic> && durable.contains(l['filename'])) l,
+      ];
+      final dropped = layers.length - kept.length;
+      if (dropped > 0) {
+        fields['layers'] = kept;
+        final before = fields['layers_dropped'];
+        fields['layers_dropped'] = (before is int ? before : 0) + dropped;
+      }
+    }
+    return fields;
+  }
 
   /// A raw stream file the drain wrote before #1198.
   static final _rawPcmFile = RegExp(r'^(master|input-\d+)\.pcm$');
@@ -1558,28 +1698,6 @@ class PerformanceRepository {
   bool _holdsRawPcm(String dir) => Directory(dir).listSync().any(
     (e) => e is File && _rawPcmFile.hasMatch(_basename(e.path)),
   );
-
-  /// The streams a capture from before #1198 wrote, from its sidecar's
-  /// `channel_layout`: the master (stream 0, 1 or 2 channels) and each
-  /// captured input `n` (stream `1 + n`, stereo). Null when the layout does
-  /// not read, which no conversion may guess at.
-  List<({int stream, int channels})>? _legacyStreams(
-    Map<String, dynamic> native,
-  ) {
-    final layout = native['channel_layout'] ?? const <String, dynamic>{};
-    if (layout is! Map<String, dynamic>) return null;
-    final master = layout['master_channels'] ?? 1;
-    final inputs = layout['captured_inputs'] ?? const <dynamic>[];
-    if (master is! int || master < 1 || master > 2 || inputs is! List) {
-      return null;
-    }
-    final streams = [(stream: 0, channels: master)];
-    for (final input in inputs) {
-      if (input is! int || input < 0) return null;
-      streams.add((stream: 1 + input, channels: 2));
-    }
-    return streams;
-  }
 
   /// Converts a capture from before #1198 into float parts (#1078): each
   /// raw stream in turn is copied into parts on a background isolate, a
@@ -1829,48 +1947,6 @@ class PerformanceRepository {
 
   /// A part file the drain names: `master-001.wav`, `input-3-002.wav`.
   static final _partFile = RegExp(r'^(master|input-\d+)-\d{3}\.wav$');
-
-  /// Patches the RIFF and data sizes of every part [dir] holds whose header
-  /// still reads 0 (the drain patches them only when it seals the part),
-  /// dropping a torn trailing frame. A file that is not a recorded part is
-  /// left alone; one that cannot be opened throws, which keeps the bundle in
-  /// place for the next boot.
-  void _sealOpenParts(String dir) {
-    const header = PerfTarget.partHeaderBytes;
-    for (final entity in Directory(dir).listSync()) {
-      if (!_partFile.hasMatch(_basename(entity.path))) continue;
-      final file = File(entity.path).openSync(mode: FileMode.append);
-      try {
-        final length = file.lengthSync();
-        if (length < header) continue;
-        file.setPositionSync(0);
-        final head = ByteData.sublistView(file.readSync(header));
-        String tag(int at) =>
-            String.fromCharCodes(head.buffer.asUint8List(at, 4));
-        if (tag(0) != 'RIFF' ||
-            tag(8) != 'WAVE' ||
-            tag(36) != 'sgno' ||
-            tag(76) != 'data' ||
-            head.getUint32(4, Endian.little) != 0) {
-          continue;
-        }
-        final frameBytes = head.getUint16(22, Endian.little) * 4;
-        if (frameBytes == 0) continue;
-        final data = (length - header) ~/ frameBytes * frameBytes;
-        file
-          ..truncateSync(header + data)
-          ..setPositionSync(4)
-          ..writeFromSync(_u32(header - 8 + data))
-          ..setPositionSync(header - 4)
-          ..writeFromSync(_u32(data));
-      } finally {
-        file.closeSync();
-      }
-    }
-  }
-
-  static Uint8List _u32(int value) =>
-      (ByteData(4)..setUint32(0, value, Endian.little)).buffer.asUint8List();
 
   String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;

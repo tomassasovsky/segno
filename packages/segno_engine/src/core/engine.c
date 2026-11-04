@@ -815,7 +815,6 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
   engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
   engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
-  engine->fx_hop_period = le_fx_hop_period(sample_rate);
 
   /* Backing player (#1200): a buffer queued in the ring dies with it below,
    * so free it first; the loaded and staged buffers survive a retained
@@ -1011,6 +1010,26 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     engine->clip_hold_until[c] = 0;
   }
   atomic_store_explicit(&engine->a_input_clip_mask, 0u, memory_order_relaxed);
+
+  /* The sound trigger's detector high-pass (#1623): a fourth-order
+   * Butterworth (two sections at Q 0.5412 and 1.3066) at LE_TRIGGER_HP_HZ
+   * for this rate, its states clear. */
+  {
+    const double q[2] = {0.54119610, 1.30656296};
+    const double w =
+        2.0 * 3.14159265358979323846 * LE_TRIGGER_HP_HZ / (double)sample_rate;
+    for (int k = 0; k < 2; ++k) {
+      const double alpha = sin(w) / (2.0 * q[k]);
+      const double a0 = 1.0 + alpha;
+      const double cw = cos(w);
+      engine->trig_hp_c[k][0] = (float)((1.0 + cw) / 2.0 / a0);
+      engine->trig_hp_c[k][1] = (float)(-(1.0 + cw) / a0);
+      engine->trig_hp_c[k][2] = (float)((1.0 + cw) / 2.0 / a0);
+      engine->trig_hp_c[k][3] = (float)(-2.0 * cw / a0);
+      engine->trig_hp_c[k][4] = (float)((1.0 - alpha) / a0);
+    }
+    memset(engine->trig_hp_z, 0, sizeof(engine->trig_hp_z));
+  }
 
   /* Output buses (slice 3b): defaults empty/enabled/unity, same rationale as
    * the per-track bus resets above. */
@@ -1363,9 +1382,6 @@ le_engine* le_engine_create(void) {
   /* The audibility gains (#1400) start at their gates on the first frame each
    * track is mixed. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
-  /* The octaver's hop period before any configure (a rate of 0 reads as
-   * 48 kHz), so a key folded before then divides by a real period. */
-  engine->fx_hop_period = le_fx_hop_period(0);
   /* No take has dropped a frame (#1198): 0 would name frame 0. */
   atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
                         memory_order_relaxed);

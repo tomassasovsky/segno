@@ -1261,7 +1261,8 @@ void main() {
       },
     );
 
-    test('leaves a sealed part and a file that is not a part alone', () async {
+    test('keeps a sealed part to the frames its header names, and leaves a '
+        'file that is not a part alone', () async {
       await repo.arm();
       clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
       final dir = repo.armedDirectory!;
@@ -1281,8 +1282,9 @@ void main() {
       await repo.disarm();
 
       expect(partSizes('$dir/master-001.wav'), (84, 8));
-      expect(File('$dir/master-001.wav').lengthSync(), 84 + 8 + 3);
+      expect(File('$dir/master-001.wav').lengthSync(), 84 + 8);
       expect(partSizes('$dir/notes-001.txt'), (0, 0));
+      expect(File('$dir/notes-001.txt').lengthSync(), 84 + 4);
     });
 
     test(
@@ -1855,10 +1857,12 @@ void main() {
     }) {
       final dir = '${tempDir.path}/exports/$slug';
       Directory(dir).createSync(recursive: true);
+      // Written before takes had ids.
       writeNativeSidecar(
         dir,
         masterChannels: masterChannels,
         capturedInputs: inputs,
+        takeId: null,
       );
       writeRawPcm('$dir/master.pcm', master ?? ramp(8));
       for (final MapEntry(key: input, value: samples) in inputSamples.entries) {
@@ -2423,8 +2427,9 @@ void main() {
       'the next boot, without crashing',
       () async {
         final dir = seedCrashed('perf-crashed');
-        // A directory named like a part: sealing it fails to open it.
-        Directory('$dir/master-002.wav').createSync();
+        // A directory where the finalized sidecar is written: publishing
+        // it fails.
+        Directory('$dir/performance.json.publishing').createSync();
 
         await repo.runBootRecovery();
 
@@ -2583,9 +2588,9 @@ void main() {
       'escapes as an unhandled error (#679 r2)',
       () async {
         final bad = seedCrashed('perf-a-bad');
-        // A directory named like a part: this capture's salvage throws
-        // mid-finalize.
-        Directory('$bad/master-002.wav').createSync();
+        // A directory where the finalized sidecar is written: this
+        // capture's salvage throws mid-finalize.
+        Directory('$bad/performance.json.publishing').createSync();
         seedCrashed('perf-b-good');
 
         // Deterministic regardless of listSync order: an unguarded loop

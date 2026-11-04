@@ -4,9 +4,7 @@
  *
  * One pure header shared by the audio callback (mix_tracks_frame), the offline
  * performance renderer (perf_render.c) and the bench, so they can never
- * disagree about which sample a track reads. Positional initializers only, no
- * _Atomic, no allocation and no libm: it reaches every VST3 C++ translation
- * unit through engine_private.h (docs/PROGRESS.md, the C++ blast radius) and
+ * disagree about which sample a track reads. No allocation and no libm: it
  * runs on the audio thread.
  *
  * A track reads its source through a head {reversed, origin, rate}. For the
