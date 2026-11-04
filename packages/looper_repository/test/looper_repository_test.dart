@@ -1119,6 +1119,26 @@ void main() {
           expect(calls('undo'), 4);
         });
 
+        test('restores the clear-all before an older single clear of its '
+            'own', () {
+          engine.undoRestoresClearChannels = {0, 1, 2};
+          final repo = rigOfThree()
+            ..clear()
+            ..clearAll([1, 2]);
+          engine.nextSnapshot = _playingTracksSnapshot(
+            3,
+            clearRestore: {0, 1, 2},
+          );
+          repo.undo();
+          // The group's two members, not track 1's own older take.
+          expect(calls('undo'), 2);
+          expect(engine.lastChannel, 2);
+          // The next Undo reaches the older point.
+          repo.undo();
+          expect(calls('undo'), 3);
+          expect(engine.lastChannel, 0);
+        });
+
         test('a single-track clear is not a clear-all', () {
           engine.undoRestoresClearChannels = {2};
           final repo = rigOfThree()..clear(channel: 2);

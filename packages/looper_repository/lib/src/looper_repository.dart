@@ -4336,19 +4336,20 @@ class LooperRepository {
     return _undoTrack(channel);
   }
 
-  /// Whether track [channel] is empty with no undo of its own: no take, no
-  /// record arm or Count-in launch waiting to start one, and no cleared take
-  /// to restore. Read from the live snapshot, so an arm made since the last
-  /// poll counts.
+  /// Whether track [channel] is empty with nothing newer than the clear-all
+  /// to undo: no take and no record arm or Count-in launch waiting to start
+  /// one, as the engine last published them (a fresher read than the poll).
+  ///
+  /// A restore point of its own does not count: a single clear ends the
+  /// group, so any such point predates the clear-all, and the next Undo
+  /// reaches it once the group is restored.
   bool _nothingToUndo(int channel) {
     final tracks = _engine.snapshot().tracks;
     if (channel < 0 || channel >= tracks.length) return false;
     final track = tracks[channel];
     return track.state == TrackState.empty &&
         !track.pending &&
-        track.pendingLaunch == null &&
-        !_engine.clearRestorePending(channel: channel) &&
-        !_engine.undoRestoresClear(channel: channel);
+        track.pendingLaunch == null;
   }
 
   EngineResult _undoClearGroup(Set<int> group) {
