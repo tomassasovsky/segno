@@ -986,6 +986,43 @@ void main() {
       ]);
     });
 
+    test('is refused as a take still being saved while a delivery holds '
+        'it, and works again once every hold is released (#1638)', () async {
+      final refusals = <PerformanceArmRefusal>[];
+      final sub = repo.armRefusals.listen(refusals.add);
+      addTearDown(sub.cancel);
+
+      final first = repo.holdArm();
+      final second = repo.holdArm();
+      expect(repo.armBusy, PerformanceArmBusy.finalizing);
+      expect(await repo.arm(), EngineResult.notReady);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
+        [PerformanceArmBusy.finalizing],
+      );
+
+      first
+        ..release()
+        ..release(); // a second release changes nothing
+      expect(repo.armBusy, PerformanceArmBusy.finalizing);
+      second.release();
+      expect(repo.armBusy, isNull);
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, isNotNull);
+    });
+
+    test('a render reads as rendering even while a delivery holds the gate '
+        '(#1638)', () async {
+      final hold = repo.holdArm();
+      addTearDown(hold.release);
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      expect(repo.armBusy, PerformanceArmBusy.rendering);
+    });
+
     test(
       'is refused while an offline render is in flight, says why, and works '
       'again once it completes (#671, #1633)',
@@ -1230,6 +1267,28 @@ void main() {
         stream: 1,
       );
     }
+
+    test('discarding a take cancels the render its finalize started, so '
+        'the render slot is free for the next take (#1638)', () async {
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory!;
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 5,
+      );
+      expect(await repo.disarm(), EngineResult.ok);
+      expect(repo.armBusy, PerformanceArmBusy.rendering);
+
+      // Another take's directory leaves the render alone.
+      await repo.discardUnfinalized('${tempDir.path}/exports/perf-other');
+      expect(engine.renderCancelCalls, 0);
+
+      await repo.discardUnfinalized(dir);
+      expect(engine.renderCancelCalls, 1);
+      expect(Directory(dir).existsSync(), isFalse);
+      expect(repo.armBusy, isNull);
+      expect(await repo.arm(), EngineResult.ok);
+    });
 
     test('seals the open parts a crash left, dropping a torn frame, and '
         'converts nothing (#1198)', () async {
