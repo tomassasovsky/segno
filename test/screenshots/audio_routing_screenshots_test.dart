@@ -50,6 +50,50 @@ const _rig = LooperState(
   outputBusCount: 2,
 );
 
+/// The console's interface: a Scarlett 4i4 3rd Gen with input 1 on Inst and
+/// the shared 48 V switch on for the vocal microphone (#1646).
+const _fourI4 = InterfaceInputs(
+  status: InterfaceInputsStatus.controls,
+  inputs: [
+    InterfaceInput(
+      level: InputLevel.inst,
+      pad: false,
+      air: InputAir.off,
+      phantomSwitch: 0,
+    ),
+    InterfaceInput(
+      level: InputLevel.line,
+      pad: false,
+      air: InputAir.presence,
+      phantomSwitch: 0,
+    ),
+  ],
+  phantomSwitches: [PhantomSwitch(firstInput: 0, lastInput: 1, on: true)],
+);
+
+/// A Scarlett 4i4 4th Gen: three-way Air and one 48 V switch per input.
+const _fourI4Gen4 = InterfaceInputs(
+  status: InterfaceInputsStatus.controls,
+  inputs: [
+    InterfaceInput(
+      level: InputLevel.inst,
+      air: InputAir.presenceDrive,
+      airThreeWay: true,
+      phantomSwitch: 0,
+    ),
+    InterfaceInput(
+      level: InputLevel.line,
+      air: InputAir.off,
+      airThreeWay: true,
+      phantomSwitch: 1,
+    ),
+  ],
+  phantomSwitches: [
+    PhantomSwitch(firstInput: 0, lastInput: 0, on: false),
+    PhantomSwitch(firstInput: 1, lastInput: 1, on: false),
+  ],
+);
+
 void main() {
   late TempoSettings tempoOwner;
 
@@ -65,6 +109,7 @@ void main() {
   late SettingsRepository settings;
   late StreamController<int> monitorChanges;
   late StreamController<int> monitorParams;
+  late InterfaceInputs interfaceInputs;
 
   setUp(() {
     bloc = _MockLooperBloc();
@@ -129,6 +174,10 @@ void main() {
       () => repository.monitorParamChanges,
     ).thenAnswer((_) => monitorParams.stream);
     when(() => repository.allMonitors()).thenReturn(const {});
+    interfaceInputs = _fourI4;
+    when(
+      () => repository.readInterfaceInputs(),
+    ).thenAnswer((_) async => interfaceInputs);
   });
 
   Future<void> pump(
@@ -181,6 +230,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        debugShowCheckedModeBanner: false,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
@@ -216,6 +266,91 @@ void main() {
     await expectLater(
       find.byType(AudioRoutingPage),
       matchesGoldenFile('goldens/audio_routing_input_setup.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Input setup, 48 V confirmation', (tester) async {
+    interfaceInputs = const InterfaceInputs(
+      status: InterfaceInputsStatus.controls,
+      inputs: [
+        InterfaceInput(
+          level: InputLevel.line,
+          pad: false,
+          air: InputAir.off,
+          phantomSwitch: 0,
+        ),
+        InterfaceInput(
+          level: InputLevel.line,
+          pad: false,
+          air: InputAir.off,
+          phantomSwitch: 0,
+        ),
+      ],
+      phantomSwitches: [PhantomSwitch(firstInput: 0, lastInput: 1, on: false)],
+    );
+    await pump(tester, tab: AudioRoutingTab.setup);
+    await tester.tap(find.byKey(const Key('routing_interface_phantom')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/audio_routing_input_setup_phantom.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Input setup, three-way Air', (tester) async {
+    interfaceInputs = _fourI4Gen4;
+    await pump(tester, tab: AudioRoutingTab.setup);
+    await expectLater(
+      find.byType(AudioRoutingPage),
+      matchesGoldenFile('goldens/audio_routing_input_setup_air.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Input setup, locked', (tester) async {
+    await pump(
+      tester,
+      tab: AudioRoutingTab.setup,
+      state: const LooperState(
+        tracks: [
+          Track(
+            state: TrackState.recording,
+            lanes: [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+          ),
+          Track(channel: 1, lanes: [Lane(inputChannel: 2, outputMask: 0xC)]),
+        ],
+        status: EngineStatus(
+          isConnected: true,
+          devicePresent: true,
+          deviceName: 'Scarlett 18i20',
+          inputChannels: 4,
+          outputChannels: 4,
+        ),
+        outputBusCount: 2,
+      ),
+    );
+    await expectLater(
+      find.byType(AudioRoutingPage),
+      matchesGoldenFile('goldens/audio_routing_input_setup_locked.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Input setup, no switches', (tester) async {
+    interfaceInputs = InterfaceInputs.none;
+    await pump(tester, tab: AudioRoutingTab.setup);
+    await expectLater(
+      find.byType(AudioRoutingPage),
+      matchesGoldenFile('goldens/audio_routing_input_setup_none.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Input setup, setup mode', (tester) async {
+    interfaceInputs = const InterfaceInputs(
+      status: InterfaceInputsStatus.setupMode,
+    );
+    await pump(tester, tab: AudioRoutingTab.setup);
+    await expectLater(
+      find.byType(AudioRoutingPage),
+      matchesGoldenFile('goldens/audio_routing_input_setup_setup_mode.png'),
     );
   }, skip: !rendersScreenshots);
 
