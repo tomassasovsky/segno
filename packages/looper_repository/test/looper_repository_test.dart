@@ -1084,7 +1084,7 @@ void main() {
           expect(rigOfThree().state.clearAllUndoable, isFalse);
           final repo = clearedRig();
           expect(repo.state.clearAllUndoable, isTrue);
-          expect(repo.state.undoRestoresClearAll(3), isTrue);
+          expect(repo.state.undoRestoresClear(3), isTrue);
           expect(repo.state.canUndo(3), isTrue);
           // A track armed for a take keeps its own (empty) Undo.
           engine.nextSnapshot = _pendingSnapshot(pending: true, trigger: 0);
@@ -1163,13 +1163,312 @@ void main() {
           expect(engine.lastChannel, 0);
         });
 
-        test('a single-track clear is not a clear-all', () {
+        test('a single-track clear is restored from it too, but is not a '
+            'clear-all (#1707)', () {
           engine.undoRestoresClearChannels = {2};
           final repo = rigOfThree()..clear(channel: 2);
           engine.nextSnapshot = _playingTracksSnapshot(0);
+          expect(repo.state.clearAllUndoable, isFalse);
           repo.undo(channel: 3);
           expect(calls('undo'), 1);
+          expect(engine.lastChannel, 2);
+        });
+      });
+
+      group('undo after one track was cleared (#1707)', () {
+        /// A take whose next Undo takes back the edit numbered
+        /// [historySeq]; the takes at the clear have none (0).
+        TrackSnapshot take({
+          int undoDepth = 0,
+          int redoDepth = 0,
+          int historySeq = 0,
+          TrackState state = TrackState.playing,
+        }) => TrackSnapshot(
+          state: state,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 96000,
+          undoDepth: undoDepth,
+          redoDepth: redoDepth,
+          historySeq: historySeq,
+          rms: 0.3,
+          peak: 0.5,
+        );
+        const cleared = TrackSnapshot(
+          state: TrackState.empty,
+          volume: 0.8,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          clearRestore: true,
+          rms: 0,
+          peak: 0,
+        );
+        EngineSnapshot rig(List<TrackSnapshot> tracks) =>
+            _playingTracksSnapshot(0).copyWith(tracks: _nativeSlots(tracks));
+
+        /// Tracks 1, 2 and 3 play; track 2 is cleared, as a Track Hold
+        /// clears it with track 3 still selected.
+        LooperRepository clearedTrackTwo() {
+          engine.undoRestoresClearChannels = {1};
+          final repo = rigOfThree()..clear(channel: 1);
+          engine.nextSnapshot = rig([take(), cleared, take()]);
+          return repo;
+        }
+
+        test('an Undo on the selected playing track restores the cleared '
+            'one', () {
+          final repo = clearedTrackTwo();
+          expect(repo.undo(channel: 2), EngineResult.ok);
+          expect(calls('undo'), 1);
+          expect(engine.lastChannel, 1);
+          // The clear is spent: the next Undo is track 3's own.
+          engine.undoRestoresClearChannels = {};
+          repo.undo(channel: 2);
+          expect(calls('undo'), 2);
+          expect(engine.lastChannel, 2);
+        });
+
+        test('the state says so, for every surface that shows Undo', () {
+          final repo = clearedTrackTwo();
+          expect(repo.state.undoableClear, UndoableClear.track);
+          expect(repo.state.clearAllUndoable, isFalse);
+          expect(repo.state.undoRestoresClear(2), isTrue);
+          expect(repo.state.undoRestoresClear(1), isTrue);
+          repo.undo(channel: 2);
+          expect(repo.state.undoableClear, UndoableClear.none);
+          expect(repo.state.undoRestoresClear(2), isFalse);
+        });
+
+        test('a layer on the asked track since the clear keeps its own '
+            'Undo', () {
+          final repo = clearedTrackTwo();
+          engine.nextSnapshot = rig([
+            take(),
+            cleared,
+            take(undoDepth: 1, historySeq: 5),
+          ]);
+          expect(repo.state.editedSinceClear, {2});
+          expect(repo.state.undoRestoresClear(2), isFalse);
+          repo.undo(channel: 2);
+          expect(calls('undo'), 1);
+          expect(engine.lastChannel, 2);
+          // The clear is still there for the cleared track.
+          repo.undo(channel: 1);
+          expect(calls('undo'), 2);
+          expect(engine.lastChannel, 1);
+        });
+
+        test('a Peel since the clear keeps its own Undo, though the undo '
+            'depth stays the same', () {
+          final repo = clearedTrackTwo();
+          engine.nextSnapshot = rig([take(), cleared, take(historySeq: 5)]);
+          repo.undo(channel: 2);
+          expect(engine.lastChannel, 2);
+        });
+
+        test('once the newer edit is undone, the clear is the next Undo', () {
+          final repo = clearedTrackTwo();
+          // The overdub since the clear was undone: the next Undo on track
+          // 3 would take back an edit older than the clear.
+          engine.nextSnapshot = rig([take(), cleared, take(redoDepth: 1)]);
+          expect(repo.state.undoRestoresClear(2), isTrue);
+          repo.undo(channel: 2);
+          expect(engine.lastChannel, 1);
+        });
+
+        test('a take on a track that was empty at the clear keeps its own '
+            'Undo', () {
+          final repo = clearedTrackTwo();
+          engine.nextSnapshot = rig([take(), cleared, take(), take()]);
+          repo.undo(channel: 3);
           expect(engine.lastChannel, 3);
+        });
+
+        test('a clear with nothing to restore keeps the last clear', () {
+          final repo = clearedTrackTwo()..clear(channel: 3);
+          expect(repo.state.undoableClear, UndoableClear.track);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [1]);
+        });
+
+        test('a track the Clear all was refused on keeps its own Undo', () {
+          engine
+            ..undoRestoresClearChannels = {0, 1}
+            ..refuseClearChannels = {2};
+          final repo = rigOfThree()..clearAll([0, 1, 2]);
+          engine.nextSnapshot = rig([cleared, cleared, take()]);
+          expect(repo.state.clearAllUndoable, isTrue);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [2]);
+          // The rig comes back from a cleared track.
+          repo.undo(channel: 1);
+          expect(engine.undoChannels, [2, 0, 1]);
+        });
+
+        test('a track clear leaves an undone Clear all its grouped Redo', () {
+          engine.undoRestoresClearChannels = {0, 1};
+          final repo = rigOfThree()
+            ..clearAll([0, 1])
+            ..undo(channel: 1);
+          engine.undoRestoresClearChannels = {0, 1, 2};
+          repo.clear(channel: 2);
+          engine.redoReclearsChannels = {0, 1};
+          repo.redo(channel: 1);
+          expect(calls('redo'), 2);
+          expect(repo.state.clearAllUndoable, isTrue);
+        });
+
+        test('a first take recording at the clear keeps its own Undo once it '
+            'ends', () {
+          engine
+            ..undoRestoresClearChannels = {1}
+            ..nextSnapshot = rig([
+              take(),
+              take(),
+              take(state: TrackState.recording),
+            ]);
+          final repo = buildRepo()
+            ..startEngine(const EngineConfig())
+            ..clear(channel: 1);
+          engine.nextSnapshot = rig([take(), cleared, take()]);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [2]);
+        });
+
+        test("undoing a track's clear leaves an undone Clear all its grouped "
+            'Redo', () {
+          engine.undoRestoresClearChannels = {0, 1};
+          final repo = rigOfThree()
+            ..clearAll([0, 1])
+            ..undo(channel: 1);
+          engine.undoRestoresClearChannels = {0, 1, 2};
+          repo
+            ..clear(channel: 2)
+            ..undo(channel: 2);
+          engine.redoReclearsChannels = {0, 1};
+          repo.redo(channel: 1);
+          expect(calls('redo'), 2);
+        });
+
+        test('a grouped Redo keeps the refused track its own Undo', () {
+          engine
+            ..undoRestoresClearChannels = {0, 1}
+            ..refuseClearChannels = {2};
+          final repo = rigOfThree()
+            ..clearAll([0, 1, 2])
+            ..undo(channel: 1);
+          engine.redoReclearsChannels = {0, 1};
+          repo.redo(channel: 1);
+          engine.nextSnapshot = rig([cleared, cleared, take()]);
+          expect(repo.state.clearAllUndoable, isTrue);
+          expect(repo.state.undoRestoresClear(2), isFalse);
+        });
+
+        test('a clear of a capture that held nothing keeps the clear before '
+            'it', () async {
+          final repo = clearedTrackTwo();
+          // Track 4 is cleared in its first block: the frozen point is still
+          // to be filed, then the capture turns out to have held nothing.
+          engine.clearRestorePendingChannels = {3};
+          repo.clear(channel: 3);
+          engine.clearRestorePendingChannels = {};
+          await pollHistory(repo);
+          expect(repo.state.undoableClear, UndoableClear.track);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [1]);
+        });
+
+        test('a clear of a capture whose point lands replaces the clear '
+            'before it', () async {
+          final repo = clearedTrackTwo();
+          engine.clearRestorePendingChannels = {3};
+          repo.clear(channel: 3);
+          engine
+            ..clearRestorePendingChannels = {}
+            ..undoRestoresClearChannels = {1, 3};
+          await pollHistory(repo);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [3]);
+        });
+
+        test('an overdub running on the asked track keeps its own Undo', () {
+          final repo = clearedTrackTwo();
+          engine.nextSnapshot = rig([
+            take(),
+            cleared,
+            take(state: TrackState.overdubbing),
+          ]);
+          repo.undo(channel: 2);
+          expect(engine.lastChannel, 2);
+        });
+
+        test("another track's edit does not stop it", () {
+          final repo = clearedTrackTwo();
+          engine.nextSnapshot = rig([take(undoDepth: 1), cleared, take()]);
+          repo.undo(channel: 2);
+          expect(engine.lastChannel, 1);
+        });
+
+        test('a later clear replaces it as the last clear', () {
+          engine.undoRestoresClearChannels = {0, 1};
+          final repo = rigOfThree()
+            ..clear(channel: 1)
+            ..clear();
+          engine.nextSnapshot = rig([cleared, cleared, take()]);
+          repo.undo(channel: 2);
+          expect(calls('undo'), 1);
+          expect(engine.lastChannel, 0);
+          // Track 2's older point is its own Undo's, not track 3's.
+          engine.undoRestoresClearChannels = {1};
+          repo.undo(channel: 2);
+          expect(engine.lastChannel, 2);
+          repo.undo(channel: 1);
+          expect(engine.lastChannel, 1);
+        });
+
+        test('a fresh take on the cleared track retires it', () {
+          final repo = clearedTrackTwo();
+          // The engine retires the restore point with the new take.
+          engine
+            ..undoRestoresClearChannels = {}
+            ..nextSnapshot = rig([take(), take(), take()]);
+          repo.undo(channel: 2);
+          expect(engine.lastChannel, 2);
+          expect(repo.state.undoableClear, UndoableClear.none);
+        });
+
+        test('a redo of the clear makes it the last clear again', () {
+          final repo = clearedTrackTwo()..undo(channel: 2);
+          engine.redoReclearsChannels = {1};
+          expect(repo.redo(channel: 1), EngineResult.ok);
+          expect(calls('redo'), 1);
+          expect(repo.state.undoableClear, UndoableClear.track);
+          repo.undo(channel: 2);
+          expect(calls('undo'), 2);
+          expect(engine.lastChannel, 1);
+        });
+
+        test('it ends the cleared notice of an earlier Clear all', () {
+          // Track 4 was empty at the Clear all and took a take since.
+          engine.undoRestoresClearChannels = {0, 1, 2};
+          final repo = rigOfThree()..clearAll([0, 1, 2]);
+          expect(repo.state.clearAllUndoable, isTrue);
+          engine.undoRestoresClearChannels = {0, 1, 2, 3};
+          repo.clear(channel: 3);
+          expect(repo.state.clearAllUndoable, isFalse);
+          expect(repo.state.undoableClear, UndoableClear.track);
+        });
+
+        test('undoClearAll restores each point once after it', () {
+          engine.undoRestoresClearChannels = {0, 1};
+          final repo = rigOfThree()
+            ..clear()
+            ..clear(channel: 1);
+          engine.nextSnapshot = rig([cleared, cleared, take()]);
+          expect(repo.undoClearAll(), EngineResult.ok);
+          expect(calls('undo'), 2);
+          expect(engine.undoChannels, [0, 1]);
         });
       });
 
@@ -1506,13 +1805,21 @@ void main() {
         expect(engine.lastChannel, 1);
       });
 
-      test('a single clear ends the group', () {
+      test('a single clear ends the group and is the last clear (#1707)', () {
         engine.undoRestoresClearChannels = {0, 1, 2};
         final repo = rigOfThree()
           ..clearAll([0, 1])
           ..clear(channel: 2);
+        engine.nextSnapshot = _playingTracksSnapshot(
+          3,
+          clearRestore: {0, 1, 2},
+        );
         expect(repo.undo(channel: 1), EngineResult.ok);
         expect(calls('undo'), 1);
+        expect(engine.lastChannel, 2);
+        // The Clear all's members are their own Undo's now.
+        expect(repo.undo(channel: 1), EngineResult.ok);
+        expect(calls('undo'), 2);
         expect(engine.lastChannel, 1);
       });
 

@@ -88,7 +88,21 @@ static int le_peel_target(const le_track* t, int32_t* skipped) {
   return -1;
 }
 
+/* The history order every engine shares (#1707): only increasing order
+ * matters, so one counter serves every engine in the process. */
+static _Atomic int32_t le_history_clock = 0;
+
+void le_stamp_history(le_track* t) {
+  for (int i = 0; i < t->undo_count; ++i) {
+    if (t->undo_stack[i].seq != 0) continue;
+    t->undo_stack[i].seq =
+        atomic_fetch_add_explicit(&le_history_clock, 1, memory_order_relaxed) +
+        1;
+  }
+}
+
 static void le_publish_undo_depth(le_track* t) {
+  le_stamp_history(t);
   /* A frozen take's restore point is still to be filed: the layers kept
    * beneath it are not peelable yet (the track reads EMPTY), and the restore
    * is not offered until the point lands — so both read 0 for now. */
@@ -706,6 +720,7 @@ static int le_capture_may_overdub(le_engine* engine, int32_t channel,
  * instead of leaving the arrays safe by coincidence. */
 static int le_redo_push(le_track* t, le_hist_entry e) {
   if (t->redo_count >= LE_POOL_SLOTS) return 0;
+  e.seq = 0; /* a redo files it again as a new edit (#1707) */
   t->redo_stack[t->redo_count++] = e;
   return 1;
 }
@@ -746,6 +761,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
     if (insert < 0) insert = 0;
     for (int k = p; k > insert; --k) t->undo_stack[k] = t->undo_stack[k - 1];
     t->undo_stack[insert] = le_hist_layer(live);
+    t->undo_stack[insert].seq = top.layer_seq; /* its own place (#1707) */
     t->undo_count++;
     (void)le_redo_push(t, le_hist_kind_entry(LE_HIST_PEEL, -1, top.skipped));
   } else {
@@ -769,6 +785,7 @@ static void le_undo_swap(le_engine* engine, le_track* t) {
 static void le_peel_apply(le_engine* engine, le_track* t, int idx,
                           int32_t skipped) {
   const int32_t target = t->undo_stack[idx].slot;
+  const int32_t layer_seq = t->undo_stack[idx].seq;
   const int32_t live = load_i32(&t->lanes[0].a_live);
   const uint32_t id = le_stage_source_image(
       engine, (int32_t)(t - engine->tracks), target,
@@ -778,6 +795,7 @@ static void le_peel_apply(le_engine* engine, le_track* t, int idx,
   }
   t->undo_stack[t->undo_count - 1] =
       le_hist_kind_entry(LE_HIST_PEEL, live, skipped);
+  t->undo_stack[t->undo_count - 1].layer_seq = layer_seq;
   le_publish_live_image(engine, t, target, id, 1); /* [R1] peel swap */
 }
 
@@ -3872,7 +3890,10 @@ static void le_length_collect(le_engine* e, le_track* t) {
     } else {
       le_clear_redo(t);
     }
-    if (t->undo_count < LE_POOL_SLOTS) t->undo_stack[t->undo_count++] = f;
+    if (t->undo_count < LE_POOL_SLOTS) {
+      t->undo_stack[t->undo_count] = f;
+      t->undo_stack[t->undo_count++].seq = 0; /* a new edit (#1707) */
+    }
   }
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
@@ -6297,6 +6318,7 @@ void le_bounce_collect(le_engine* engine) {
                   (size_t)(LE_POOL_SLOTS - 1) * sizeof(t->undo_stack[0]));
           t->undo_count = LE_POOL_SLOTS - 1;
         }
+        prev.seq = 0; /* a new edit, or a redo of one (#1707) */
         t->undo_stack[t->undo_count++] = prev;
       }
       le_publish_undo_depth(t);

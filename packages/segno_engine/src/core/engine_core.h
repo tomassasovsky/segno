@@ -161,6 +161,12 @@ static inline le_hist_entry le_hist_kind_entry(int32_t kind, int32_t slot,
   return e;
 }
 
+/* Stamps every undo entry that has no seq yet, oldest first, from one
+ * process-wide counter (#1707). Control thread, after every change to the
+ * undo stack; le_publish_undo_depth calls it. The snapshot reads the top
+ * entry's seq straight off the stack (le_track_snapshot.history_seq). */
+void le_stamp_history(le_track* t);
+
 /* How many LAYER entries Peel can still consume (#1164): those above the
  * highest entry that is neither LAYER nor PEEL (the whole stack when there is
  * none). */

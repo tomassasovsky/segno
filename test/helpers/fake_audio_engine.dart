@@ -2144,6 +2144,7 @@ class _LengthTrack extends TrackSnapshot {
          clearRestore: source.clearRestore,
          redoDepth: source.redoDepth,
          peelDepth: source.peelDepth,
+         historySeq: source.historySeq,
          multiple: source.multiple,
          syncDivisor: source.syncDivisor,
          lengthHistoryRefusals: source.lengthHistoryRefusals,
