@@ -571,6 +571,17 @@ void main() {
       expect(engine.monitorPan[0], 0.75);
     });
 
+    test('a take remembers its input; a later input change keeps it', () {
+      final repo = start();
+      expect(repo.state.tracks[0].lanes.single.recordedInput, -1);
+      repo
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 1)
+        ..record();
+      expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
+      repo.setLaneInput(channel: 0, lane: 0, inputChannel: 0);
+      expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
+    });
+
     test('a pair member records hard on its side at the balance gain', () {
       final repo = start()
         ..setLaneCount(channel: 0, count: 2)
@@ -806,6 +817,7 @@ void main() {
                   outputMask: 0x3,
                   inputChannel: 0,
                   pan: -0.5,
+                  recordedInput: 1,
                 ),
               ],
             ),
@@ -824,6 +836,12 @@ void main() {
       );
       // The lane's saved image plus the restored track pan.
       expect(engine.lanePan[(0, 0)], -0.75);
+      // The take keeps the input it was captured from, apart from the
+      // lane's setting.
+      engine.nextSnapshot = _rig(2);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
       expect(repo.trackPan(0), -0.25);
       // Track 1's pan and solo went with the old rig.
       expect(repo.trackPan(1), 0);

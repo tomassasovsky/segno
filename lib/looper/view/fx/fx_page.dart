@@ -1320,8 +1320,7 @@ typedef _TrackPart = ({int lane, int input});
 /// lane count and lane inputs set to record an input, the configuration the
 /// engine records from and `FxCubit` accepts a part address against, plus
 /// any lane within that count that holds recorded audio and the lane being
-/// [editing]. Each is named by the input it is set to record, else the one
-/// the engine reports for it.
+/// [editing]. Each is named by [_partInput].
 List<_TrackPart> _trackParts(
   LooperState state,
   int channel, {
@@ -1340,12 +1339,20 @@ List<_TrackPart> _trackParts(
   ];
 }
 
-/// The input lane [lane] of [track] is set to record, else the one the
-/// engine reports for it; `-1` for neither.
+/// The input lane [lane] of [track] is named by: the one its take was
+/// captured from while it holds audio, so changing the lane's input never
+/// renames a recording; else the one it is set to record; else the one the
+/// engine reports for it; `-1` for none.
 int _partInput(LooperState state, Track track, int lane) {
+  final engineLane = track.lanes.elementAtOrNull(lane);
+  if (engineLane != null &&
+      engineLane.hasContent &&
+      engineLane.recordedInput >= 0) {
+    return engineLane.recordedInput;
+  }
   final configured = state.laneInputs[(track.channel, lane)] ?? lane;
   if (configured >= 0) return configured;
-  return track.lanes.elementAtOrNull(lane)?.inputChannel ?? -1;
+  return engineLane?.inputChannel ?? -1;
 }
 
 /// The chain at the selected destination.

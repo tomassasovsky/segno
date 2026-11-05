@@ -192,6 +192,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   "Design writeback"), the device checks listed on PR #1655, and #1648 (the
   routing rules into the same adapters).
 
+## November 2026 Takes remember the input they were recorded from (#1678)
+
+- A lane's take keeps the input it was captured from (`Lane.recordedInput`),
+  fixed when the take starts, the same way the lane's image pan and balance
+  are fixed (`_laneSource` in `LooperRepository`, filled from the pending
+  image when the take publishes). Changing the lane's input afterwards only
+  changes where the next take comes from.
+- A Session saves it per lane (`recordedInput`, schema 18). Older bundles
+  convert by taking the lane's saved `inputChannel`. A recall restores it.
+- Effects → Recorded tracks lists the inputs a track is set to record
+  (`laneCounts`, `laneInputs`), whether or not anything is recorded yet, and
+  names a part that holds audio by its recorded input.
+
 ## November 2026 Takes keep the lap they were played on (#854)
 
 - A take of several base loops reads segment

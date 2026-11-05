@@ -1315,6 +1315,7 @@ class LooperRepository {
         final pending = entry.value;
         _laneBasePan.addAll(entry.value.images);
         _laneBalance.addAll(entry.value.balances);
+        _laneSource.addAll(entry.value.sources);
         // A published take changes only source metadata. A concurrently
         // accepted fader edit still owns its independent live level/offset.
         _mix.pending?.images.addAll(entry.value.images);
@@ -1753,6 +1754,11 @@ class LooperRepository {
   /// take recorded. Absent entries are centre and unity.
   final Map<(int, int), double> _laneBasePan = {};
   final Map<(int, int), double> _laneBalance = {};
+
+  /// The input each lane's take was captured from, fixed with its image
+  /// ([_laneBasePan]) and saved with the session. Labels only: it changes
+  /// nothing the engine plays, so it stays out of the mix intent.
+  final Map<(int, int), int> _laneSource = {};
   final Map<int, double> _trackPan = {};
   final Map<int, bool> _trackSolo = {};
 
@@ -2694,6 +2700,7 @@ class LooperRepository {
                     volume: _laneVolume[(i, l)] ?? 1,
                     pan: s.tracks[i].lanes[l].pan,
                     imagePan: _laneBasePan[(i, l)] ?? 0,
+                    recordedInput: _laneSource[(i, l)] ?? -1,
                     balance: _laneBalance[(i, l)] ?? 1,
                     muted: s.tracks[i].lanes[l].muted,
                     lengthFrames: s.tracks[i].lanes[l].lengthFrames,
@@ -3814,6 +3821,7 @@ class LooperRepository {
     }
     final images = <(int, int), double>{};
     final balances = <(int, int), double>{};
+    final sources = <(int, int), int>{};
     final source = <int, StereoMix>{};
     for (var lane = 0; lane < laneCount(channel); lane++) {
       final key = (channel, lane);
@@ -3821,6 +3829,7 @@ class LooperRepository {
       final input = _laneInput[key] ?? lane;
       images[key] = _inputSetup.effectivePanOf(input);
       balances[key] = _inputSetup.balanceGainOf(input);
+      sources[key] = input;
       source[lane] = (gain: balances[key]!, pan: images[key]!);
     }
     if (_pendingImages.containsKey(channel)) return EngineResult.notReady;
@@ -3953,6 +3962,7 @@ class LooperRepository {
         _imageRevision,
         images,
         balances,
+        sources,
         {
           for (var lane = 0; lane < laneCount(channel); lane++)
             _laneInput[(channel, lane)] ?? lane,
@@ -4766,7 +4776,9 @@ class LooperRepository {
                     l.pan > 1 ||
                     !l.balance.isFinite ||
                     l.balance < 0 ||
-                    l.balance > 1,
+                    l.balance > 1 ||
+                    l.recordedInput < -1 ||
+                    l.recordedInput >= kMaxChannels,
               ),
         ) ||
         rig.monitors.any(
@@ -5107,6 +5119,8 @@ class LooperRepository {
     // Restore per-lane routing / mix through the cached setters so the caches
     // stay truthful (and a restart replays them). Lane count first — so an
     // added lane is activated — then per-lane input / output / volume / mute.
+    // The takes' sources are the session's, never the previous one's.
+    _laneSource.clear();
     for (final track in rig.tracks) {
       // Activate up to the highest imported lane index — not the lane *count*
       // —
@@ -5122,6 +5136,9 @@ class LooperRepository {
         // below lands on top of it.
         restoredMix.balances[(track.channel, lane.lane)] = lane.balance;
         restoredMix.images[(track.channel, lane.lane)] = lane.pan;
+        if (lane.recordedInput >= 0) {
+          _laneSource[(track.channel, lane.lane)] = lane.recordedInput;
+        }
         restoredMix.levels[(track.channel, lane.lane)] = lane.volume;
         _requireSessionSetting(
           setLaneMute(
@@ -9908,6 +9925,7 @@ class _PendingImage {
     this.revision,
     this.images,
     this.balances,
+    this.sources,
     this.inputs,
     this.inherited,
     this.inheritedInputs,
@@ -9918,6 +9936,7 @@ class _PendingImage {
   final int revision;
   final Map<(int, int), double> images;
   final Map<(int, int), double> balances;
+  final Map<(int, int), int> sources;
   final Set<int> inputs;
   final Map<int, List<TrackEffect>> inherited;
   final Map<int, int> inheritedInputs;

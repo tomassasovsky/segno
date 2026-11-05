@@ -424,6 +424,8 @@ void main() {
                           rig.tracks[channel].lanes[lane].inputChannel,
                       lengthFrames:
                           rig.tracks[channel].lanes[lane].lengthFrames,
+                      recordedInput:
+                          rig.tracks[channel].lanes[lane].recordedInput,
                       effects: laneEntries[(channel, lane)] ?? const [],
                     ),
                 ],
@@ -916,6 +918,25 @@ void main() {
           state: rigWith(
             const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
             [0, -1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('a recorded part keeps the name of the input it was '
+          'captured from after the lane input changes', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 2, lengthFrames: 48000, recordedInput: 0),
+              Lane(inputChannel: 1),
+            ],
+            [2, 1],
           ),
         );
         expect(await parts(tester), [
