@@ -215,6 +215,15 @@ void main() {
       expect(engine.snapshot().tempoBpm, 0);
     });
 
+    test('clears the tempo back to unset', () {
+      expect(engine.clearTempo(), EngineResult.notRunning);
+      engine.start(engine.defaultConfig);
+      expect(engine.setTempo(97.5), EngineResult.ok);
+      expect(engine.clearTempo(), EngineResult.ok);
+      expect(engine.snapshot().tempoBpm, 0);
+      expect(engine.snapshot().tempoSource, TempoSource.none);
+    });
+
     test('defaults to 18 inputs and 20 outputs', () {
       expect(engine.defaultConfig.inputChannels, 18);
       expect(engine.defaultConfig.outputChannels, 20);

@@ -8566,6 +8566,71 @@
     "@consoleLedsCalibrateNote": {
         "description": "How to calibrate the light sensor."
     },
+    "loopTempoEdit": "Type a tempo",
+    "@loopTempoEdit": {
+        "description": "Accessible name of the Tempo page's readout: tapping it opens the keypad."
+    },
+    "loopTempoClear": "Clear tempo",
+    "@loopTempoClear": {
+        "description": "Tempo page button: back to no tempo, so the next loop sets one."
+    },
+    "loopTempoClearRefused": "Tempo not cleared",
+    "@loopTempoClearRefused": {
+        "description": "Notice when Clear tempo is refused."
+    },
+    "loopTempoClearRefusedBody": "A recording or a count-in holds the tempo. Clear the tracks first.",
+    "@loopTempoClearRefusedBody": {
+        "description": "Why Clear tempo was refused."
+    },
+    "loopTempoClearStopped": "The audio interface is stopped. Start it, then clear the tempo.",
+    "@loopTempoClearStopped": {
+        "description": "Why Clear tempo was refused while the engine is stopped."
+    },
+    "loopTempoEntryTitle": "Tempo",
+    "@loopTempoEntryTitle": {
+        "description": "Title of the tempo keypad sheet."
+    },
+    "loopTempoEntryNow": "Now {bpm} BPM",
+    "@loopTempoEntryNow": {
+        "description": "The tempo before the keypad entry.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "loopTempoEntryRange": "{min} to {max} BPM",
+    "@loopTempoEntryRange": {
+        "description": "The tempos the keypad accepts.",
+        "placeholders": {
+            "min": {
+                "type": "String"
+            },
+            "max": {
+                "type": "String"
+            }
+        }
+    },
+    "loopTempoEntryField": "Tempo in BPM",
+    "@loopTempoEntryField": {
+        "description": "Accessible name of the keypad's field."
+    },
+    "loopTempoEntryOutOfRange": "Enter a tempo from {min} to {max} BPM",
+    "@loopTempoEntryOutOfRange": {
+        "description": "The keypad's refusal of a tempo outside the range.",
+        "placeholders": {
+            "min": {
+                "type": "String"
+            },
+            "max": {
+                "type": "String"
+            }
+        }
+    },
+    "loopTempoEntrySet": "Set",
+    "@loopTempoEntrySet": {
+        "description": "The keypad's action key."
+    },
     "readoutPanelOpen": "Tempo, length and start",
     "@readoutPanelOpen": {
         "description": "Announced name of the readout's footer strip, which opens its Loop panel (#1654)."

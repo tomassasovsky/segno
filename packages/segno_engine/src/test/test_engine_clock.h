@@ -89,9 +89,11 @@ static void test_clock_sync_follows_external_tempo(void) {
   CHECK(le_engine_tap_tempo(e) == LE_ERR_EXTERNAL_CLOCK);
   CHECK(le_engine_restore_tempo(e, 90.0f, LE_TEMPO_SOURCE_MANUAL) ==
         LE_ERR_EXTERNAL_CLOCK);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_EXTERNAL_CLOCK);
   CHECK(le_push(e, LE_CMD_SET_TEMPO, 0, 90.0f) == LE_OK);
   CHECK(le_push(e, LE_CMD_RESTORE_TEMPO, LE_TEMPO_SOURCE_MANUAL, 90.0f) ==
         LE_OK);
+  CHECK(le_push(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) == LE_OK);
   mi_block(e);
   CHECK(fabsf(mi_snapshot(e).tempo_bpm - 120.0f) < 0.01f);
   /* Two raw taps half a second apart (the fake MIDI clock stands still, so

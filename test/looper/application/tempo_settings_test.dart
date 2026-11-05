@@ -598,6 +598,28 @@ void main() {
       },
     );
 
+    test('clearTempo emits and persists the unset tempo', () async {
+      when(repository.clearTempo).thenReturn(EngineResult.ok);
+      await settings.saveTempoBpm(96);
+      final owner = TempoSettings(repository: repository, settings: settings);
+      addTearDown(owner.close);
+      await owner.setTempo(96);
+      expect(await owner.clearTempo(), EngineResult.ok);
+      expect(owner.state.bpm, 0);
+      expect(await settings.loadTempoBpm(), 0);
+      verify(repository.clearTempo).called(1);
+    });
+
+    test('a refused clearTempo keeps and saves nothing new', () async {
+      when(repository.clearTempo).thenReturn(EngineResult.notReady);
+      final owner = TempoSettings(repository: repository, settings: settings);
+      addTearDown(owner.close);
+      await owner.setTempo(96);
+      expect(await owner.clearTempo(), EngineResult.notReady);
+      expect(owner.state.bpm, 96);
+      expect(await settings.loadTempoBpm(), 96);
+    });
+
     test('tapTempo forwards to the repository and is never persisted', () {
       final cubit = TempoSettings(repository: repository, settings: settings);
 

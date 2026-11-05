@@ -188,10 +188,12 @@ button the app sends. The wire is unchanged
 track is pending (the Track Hold set to Clear track, or a Custom pedal whose
 Hold is Clear or Clear all), the app sends `CLEAR_HOLD` (`0x13`) every 20 ms
 with the held footswitch and how much of the long-press threshold has run
-(0..254). The board draws red from both ends of that pill toward the centre
-over whatever the pill shows, at the same uniform level as the Song queue
-(110), with the leading pixel on each side partly filled so the edges move
-smoothly. While the fill runs, the app colours the held pill with its own
+(0..254). A Clear track hold sends nothing for its first 350 ms (#1652): the
+fill starts after that pause and runs the whole threshold, so the clear fires
+350 ms later than other holds, with no firmware change. The board draws red
+from both ends of that pill toward the centre over whatever the pill shows,
+at the same uniform level as the Song queue (110), with the leading pixel on
+each side partly filled so the edges move smoothly. While the fill runs, the app colours the held pill with its own
 state (green playing, red recording) instead of the pressed colour. On a pill
 the app shows red (a recording track, or any state it colours red), the pill's own red drops to about a third
 (`PILL_CLEAR_UNDER_RED`, 85 of 255) and the fill is drawn at full brightness

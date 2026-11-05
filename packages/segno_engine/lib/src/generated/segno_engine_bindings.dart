@@ -438,8 +438,9 @@ class SegnoEngineBindings {
   /// Sets one switch (le_interface_control) of input or phantom group `index`
   /// (0-based) on the card behind `uid`, writing only when it differs, and reads
   /// it back. Returns LE_OK; LE_ERR_INVALID when the card has no such switch or
-  /// `value` is out of range; LE_ERR_DEVICE when the card refuses the write or
-  /// the value does not stick (a Gen 4 unit refuses while its Autogain runs);
+  /// `value` is out of range; LE_ERR_DEVICE when the card cannot be opened,
+  /// refuses the write or does not keep the value (a Gen 4 unit refuses while
+  /// its Autogain runs);
   /// LE_ERR_UNSUPPORTED off Linux.
   int le_interface_input_set(
     ffi.Pointer<ffi.Char> uid,
@@ -2599,6 +2600,30 @@ class SegnoEngineBindings {
       >('le_engine_restore_tempo');
   late final _le_engine_restore_tempo = _le_engine_restore_tempoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, double, int)>();
+
+  /// Clears the tempo (#1653): BPM 0, tempo_source NONE and no bar grid, so the
+  /// next defining loop sets the tempo again. Refused exactly while the tempo is
+  /// locked (D6): a track holds material on a grid or under a tempo, a take or a
+  /// count-in is under way, or a record is armed, launching or not yet
+  /// acknowledged — LE_ERR_NOT_READY, nothing posted. LE_ERR_EXTERNAL_CLOCK
+  /// while an external clock owns the tempo; LE_ERR_NOT_RUNNING unconfigured;
+  /// LE_ERR_INVALID for a null handle. The callback rechecks the lock before
+  /// applying. Not perf-logged: the effect chains' musical time picks up the
+  /// change through their own anchor (LE_PLOG_FX_TEMPO).
+  int le_engine_clear_tempo(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_clear_tempo(
+      engine,
+    );
+  }
+
+  late final _le_engine_clear_tempoPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_clear_tempo',
+      );
+  late final _le_engine_clear_tempo = _le_engine_clear_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
   /// Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
   /// num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID
@@ -8635,6 +8660,11 @@ enum le_command_code {
   /// latency.request
   LE_CMD_CANCEL_LATENCY(141),
 
+  /// Clear tempo (#1653): back to no tempo (BPM 0, source NONE, no bar
+  /// grid). Typed producer only (le_engine_clear_tempo); the callback is a
+  /// no-op while le_tempo_locked or an external clock owns the tempo.
+  LE_CMD_CLEAR_TEMPO(142),
+
   /// render recipe (#1202): the callback records
   /// every source's read law; never raw-posted
   LE_CMD_RENDER_FREEZE(112),
@@ -8764,6 +8794,7 @@ enum le_command_code {
     137 => LE_CMD_AUDITION_STOP,
     140 => LE_CMD_MEASURE_LATENCY_PATH,
     141 => LE_CMD_CANCEL_LATENCY,
+    142 => LE_CMD_CLEAR_TEMPO,
     112 => LE_CMD_RENDER_FREEZE,
     113 => LE_CMD_BOUNCE,
     114 => LE_CMD_BOUNCE_RECOVER,
