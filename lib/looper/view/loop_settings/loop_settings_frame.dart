@@ -186,6 +186,7 @@ class LoopSettingsFrame extends StatelessWidget {
                       width: 113,
                       radius: 8,
                       tone: LoopButtonTone.frameRaised,
+                      fitLabel: true,
                       label: l10n.loopSettingsStage,
                       onTap: onStage,
                     ),

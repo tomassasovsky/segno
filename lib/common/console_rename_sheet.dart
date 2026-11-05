@@ -218,7 +218,9 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
               const SizedBox(height: 8),
               AppText(error, key: const Key('console_rename_error')),
             ],
-            const SizedBox(height: 13),
+            // The keys sit on the keyboard's edges (#1672): 16 under the
+            // field, and 19 from the sheet's sides and bottom like the field.
+            const SizedBox(height: 16),
             OnScreenKeyboard(
               layout: OnScreenKeyboardLayout.text,
               showNumberRow: true,

@@ -219,7 +219,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopPlaybackLabel,
-                  fontSize: 32,
                   origin: scopedOrigin(
                     scoped: scope != null,
                     custom: onceCustom,
@@ -273,7 +272,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopDecayLabel,
-                  fontSize: 32,
                   origin: scopedOrigin(
                     scoped: scope != null,
                     custom: decayCustom,
@@ -356,7 +354,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopAudioFollowLabel,
-                  fontSize: 32,
                   originBeside: true,
                   origin: scopedOrigin(
                     scoped: scope != null,
@@ -411,7 +408,6 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
                 alignment: Alignment.centerLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopAudioPitchLabel,
-                  fontSize: 32,
                   originBeside: true,
                   origin: follows
                       ? scopedOrigin(scoped: scope != null, custom: pitchCustom)
