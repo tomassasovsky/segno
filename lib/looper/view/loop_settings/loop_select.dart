@@ -102,22 +102,44 @@ class _LoopMenuState<T> extends State<LoopMenu<T>> {
         ),
       ),
       menuChildren: [
-        for (final item in widget.items) _row(context, item),
+        for (final item in widget.items)
+          _LoopMenuRow<T>(
+            item: item,
+            selected: item.value == widget.value,
+            onSelected: widget.onSelected,
+          ),
       ],
       builder: (context, controller, _) => widget.builder(context, controller),
     );
   }
+}
 
-  Widget _row(BuildContext context, LoopSelectItem<T> item) {
+/// One row of a [LoopMenu]: [item]'s label, filled and checked when it is
+/// the current choice.
+class _LoopMenuRow<T> extends StatelessWidget {
+  const _LoopMenuRow({
+    required this.item,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final LoopSelectItem<T> item;
+
+  /// Whether [item] is the current choice.
+  final bool selected;
+
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
-    final selected = item.value == widget.value;
     return Semantics(
       inMutuallyExclusiveGroup: true,
       checked: selected,
       child: MenuItemButton(
         key: item.key,
         autofocus: selected,
-        onPressed: item.enabled ? () => widget.onSelected(item.value) : null,
+        onPressed: item.enabled ? () => onSelected(item.value) : null,
         style: ButtonStyle(
           fixedSize: const WidgetStatePropertyAll(Size.fromHeight(64)),
           padding: const WidgetStatePropertyAll(

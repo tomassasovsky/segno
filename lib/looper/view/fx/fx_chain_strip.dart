@@ -100,7 +100,11 @@ class FxChainStrip extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (var i = 0; i < groups.length; i++) ...[
-            if (i > 0) _gapBefore(i, preGroups, surface),
+            if (i > 0)
+              _ChainGap(
+                index: i,
+                stageBreak: showPlacement && i == preGroups && preGroups > 0,
+              ),
             _FxChainCard(
               key: Key('fx_card_${fxGroupId(groups[i])}'),
               group: groups[i],
@@ -115,25 +119,32 @@ class FxChainStrip extends StatelessWidget {
       ),
     );
   }
+}
 
-  /// The space before card [i]: the stage break where the Pre run ends, and
-  /// otherwise the plain cable.
-  Widget _gapBefore(int i, int preGroups, SurfaceTheme surface) {
-    final isBreak = showPlacement && i == preGroups && preGroups > 0;
-    return SizedBox(
-      width: isBreak ? kFxStageBreak : kFxCardGap,
-      height: kFxCardHeight,
-      child: isBreak
-          ? null
-          : Center(
-              child: Container(
-                key: Key('fx_cable_$i'),
-                height: 3,
-                color: surface.borderStrong,
-              ),
+/// The space before card [index]: the stage break where the Pre run ends,
+/// and otherwise the plain cable.
+class _ChainGap extends StatelessWidget {
+  const _ChainGap({required this.index, required this.stageBreak});
+
+  final int index;
+
+  /// Whether the Pre run ends here.
+  final bool stageBreak;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: stageBreak ? kFxStageBreak : kFxCardGap,
+    height: kFxCardHeight,
+    child: stageBreak
+        ? null
+        : Center(
+            child: Container(
+              key: Key('fx_cable_$index'),
+              height: 3,
+              color: context.surface.borderStrong,
             ),
-    );
-  }
+          ),
+  );
 }
 
 /// One group in the strip: its placement tag, its artwork frame, its name, and
@@ -285,22 +296,34 @@ class FxRackArt extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
         ),
         child: slug == null
-            ? _fallback(surface)
+            ? _FallbackMark(lit: lit)
             : FxArtView(
                 art: FxRackPicture(slug),
-                fallback: _fallback(surface),
+                fallback: _FallbackMark(lit: lit),
               ),
       ),
     );
   }
+}
 
-  Widget _fallback(SurfaceTheme surface) => Center(
-    child: Icon(
-      LucideIcons.audioWaveform,
-      size: 56,
-      color: lit ? surface.accent : surface.textTertiary,
-    ),
-  );
+/// The app's own mark, drawn where a group has no rack artwork.
+class _FallbackMark extends StatelessWidget {
+  const _FallbackMark({required this.lit});
+
+  /// Whether the group is audible.
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Center(
+      child: Icon(
+        LucideIcons.audioWaveform,
+        size: 56,
+        color: lit ? surface.accent : surface.textTertiary,
+      ),
+    );
+  }
 }
 
 /// What a group is called: the rack's own name, or the single effect's.

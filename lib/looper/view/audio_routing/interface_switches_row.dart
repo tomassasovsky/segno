@@ -73,15 +73,37 @@ class InterfaceSwitchesRow extends StatelessWidget {
             bottom: 0,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _content(context),
+              child: _Content(
+                input: input,
+                state: state,
+                locked: locked,
+                canChange: canChange,
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _content(BuildContext context) {
+/// What the row shows after its label: the switches, or the note that says
+/// why there are none.
+class _Content extends StatelessWidget {
+  const _Content({
+    required this.input,
+    required this.state,
+    required this.locked,
+    required this.canChange,
+  });
+
+  final int input;
+  final InterfaceInputsState state;
+  final bool locked;
+  final bool Function() canChange;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     if (!state.loaded) return const SizedBox.shrink();
     final inputs = state.inputs;

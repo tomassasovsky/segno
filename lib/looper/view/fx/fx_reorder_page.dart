@@ -140,7 +140,11 @@ class _FxReorderPageState extends State<FxReorderPage> {
               child: Row(
                 children: [
                   for (var i = 0; i < _draft.length; i++) ...[
-                    if (i > 0) _gap(i),
+                    if (i > 0)
+                      _ReorderGap(
+                        index: i,
+                        cable: _draft[i - 1].stageTag == _draft[i].stageTag,
+                      ),
                     _Card(
                       key: Key('fx_reorder_${_draft[i].id}'),
                       card: _draft[i],
@@ -188,16 +192,26 @@ class _FxReorderPageState extends State<FxReorderPage> {
       ),
     );
   }
+}
 
-  /// The space before card [i]: the plain cable, or nothing where the strip
-  /// breaks between the two stages.
-  Widget _gap(int i) => SizedBox(
-    width: _cardGap,
-    height: _cardHeight,
-    child: _draft[i - 1].stageTag == _draft[i].stageTag
+/// The space before card [index]: the plain cable, or nothing where the strip
+/// breaks between the two stages.
+class _ReorderGap extends StatelessWidget {
+  const _ReorderGap({required this.index, required this.cable});
+
+  final int index;
+
+  /// Whether cards on both sides share a stage, so a cable joins them.
+  final bool cable;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: _FxReorderPageState._cardGap,
+    height: _FxReorderPageState._cardHeight,
+    child: cable
         ? Center(
             child: Container(
-              key: Key('fx_reorder_cable_$i'),
+              key: Key('fx_reorder_cable_$index'),
               height: 3,
               color: context.surface.borderStrong,
             ),
