@@ -513,17 +513,6 @@ class _TempoCard extends StatelessWidget {
       fontSize: 13,
       height: 1.25,
     );
-    Widget step(String label, double delta) => Expanded(
-      child: ReadoutPressButton(
-        key: Key('readout_panel_nudge_$label'),
-        label: label,
-        semanticLabel: '$label ${l10n.stageBpmUnit}',
-        enabled: editable,
-        repeat: true,
-        fontSize: 17,
-        onPressed: () => onCommand(TempoNudge(delta)),
-      ),
-    );
     return Container(
       key: const Key('readout_panel_tempo'),
       padding: const EdgeInsets.all(12),
@@ -617,13 +606,41 @@ class _TempoCard extends StatelessWidget {
           const Spacer(),
           Row(
             children: [
-              step('-1', -1),
+              Expanded(
+                child: _TempoStep(
+                  label: '-1',
+                  delta: -1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
               SizedBox(width: gap),
-              step('-0.1', -0.1),
+              Expanded(
+                child: _TempoStep(
+                  label: '-0.1',
+                  delta: -0.1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
               SizedBox(width: gap),
-              step('+0.1', 0.1),
+              Expanded(
+                child: _TempoStep(
+                  label: '+0.1',
+                  delta: 0.1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
               SizedBox(width: gap),
-              step('+1', 1),
+              Expanded(
+                child: _TempoStep(
+                  label: '+1',
+                  delta: 1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
             ],
           ),
           SizedBox(height: gap),
@@ -764,27 +781,11 @@ class _Choices extends StatelessWidget {
     // One gap across and down the grid (#1672): the rows are xs apart,
     // since the right column has only a few px to spare while a take records.
     final gap = context.spacing.xs;
-    List<Widget> spaced(List<Widget> children) => [
-      for (final (i, child) in children.indexed) ...[
-        if (i > 0) SizedBox(width: gap),
-        child,
-      ],
-    ];
-    Widget timing(RecordTiming value) => Expanded(
-      child: ReadoutButton(
-        key: Key('readout_panel_timing_${value.name}'),
-        label: readoutTimingLabel(l10n, value),
-        selected: loop.timing == value,
-        enabled: editable,
-        fontSize: 14,
-        onPressed: () => onTiming(value),
-      ),
-    );
     return Column(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _section(
+        _ChoiceSection(
           gap: gap,
           label: _SectionLabel(
             title: l10n.loopTempoSignature,
@@ -795,7 +796,7 @@ class _Choices extends StatelessWidget {
             noteKey: const Key('readout_panel_signature_note'),
           ),
           rows: [
-            spaced([
+            [
               for (final (num, den) in kReadoutQuickSignatures)
                 Expanded(
                   child: ReadoutButton(
@@ -822,10 +823,10 @@ class _Choices extends StatelessWidget {
                   onPressed: onMoreSignatures,
                 ),
               ),
-            ]),
+            ],
           ],
         ),
-        _section(
+        _ChoiceSection(
           gap: gap,
           label: _SectionLabel(
             title: l10n.readoutPanelLength,
@@ -842,7 +843,7 @@ class _Choices extends StatelessWidget {
             noteKey: const Key('readout_panel_length_note'),
           ),
           rows: [
-            spaced([
+            [
               SizedBox(
                 width: 52,
                 child: ReadoutButton(
@@ -889,10 +890,10 @@ class _Choices extends StatelessWidget {
                   onPressed: () => onLength(0),
                 ),
               ),
-            ]),
+            ],
           ],
         ),
-        _section(
+        _ChoiceSection(
           gap: gap,
           label: _SectionLabel(
             title: l10n.readoutPanelStart,
@@ -909,25 +910,52 @@ class _Choices extends StatelessWidget {
             noteKey: const Key('readout_panel_timing_note'),
           ),
           rows: [
-            spaced([
-              for (final value in RecordTiming.values.take(4)) timing(value),
-            ]),
-            spaced([
-              for (final value in RecordTiming.values.skip(4)) timing(value),
+            [
+              for (final value in RecordTiming.values.take(4))
+                Expanded(
+                  child: _TimingButton(
+                    timing: value,
+                    selected: loop.timing == value,
+                    enabled: editable,
+                    onTiming: onTiming,
+                  ),
+                ),
+            ],
+            [
+              for (final value in RecordTiming.values.skip(4))
+                Expanded(
+                  child: _TimingButton(
+                    timing: value,
+                    selected: loop.timing == value,
+                    enabled: editable,
+                    onTiming: onTiming,
+                  ),
+                ),
               // The second row's fourth cell stays empty.
               const Expanded(child: SizedBox.shrink()),
-            ]),
+            ],
           ],
         ),
       ],
     );
   }
+}
 
-  Widget _section({
-    required Widget label,
-    required List<List<Widget>> rows,
-    required double gap,
-  }) => Column(
+/// One of the panel's choice sections: its label over rows of buttons, the
+/// rows and the buttons in them [gap] apart.
+class _ChoiceSection extends StatelessWidget {
+  const _ChoiceSection({
+    required this.label,
+    required this.rows,
+    required this.gap,
+  });
+
+  final Widget label;
+  final List<List<Widget>> rows;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -936,10 +964,61 @@ class _Choices extends StatelessWidget {
         SizedBox(height: gap),
         SizedBox(
           height: kReadoutMinTarget,
-          child: Row(children: row),
+          child: Row(spacing: gap, children: row),
         ),
       ],
     ],
+  );
+}
+
+/// One record timing on the Start rows.
+class _TimingButton extends StatelessWidget {
+  const _TimingButton({
+    required this.timing,
+    required this.selected,
+    required this.enabled,
+    required this.onTiming,
+  });
+
+  final RecordTiming timing;
+  final bool selected;
+  final bool enabled;
+  final ValueChanged<RecordTiming> onTiming;
+
+  @override
+  Widget build(BuildContext context) => ReadoutButton(
+    key: Key('readout_panel_timing_${timing.name}'),
+    label: readoutTimingLabel(context.l10n, timing),
+    selected: selected,
+    enabled: enabled,
+    fontSize: 14,
+    onPressed: () => onTiming(timing),
+  );
+}
+
+/// One of the tempo card's steps: held, it repeats.
+class _TempoStep extends StatelessWidget {
+  const _TempoStep({
+    required this.label,
+    required this.delta,
+    required this.enabled,
+    required this.onCommand,
+  });
+
+  final String label;
+  final double delta;
+  final bool enabled;
+  final ValueChanged<ReadoutCommand> onCommand;
+
+  @override
+  Widget build(BuildContext context) => ReadoutPressButton(
+    key: Key('readout_panel_nudge_$label'),
+    label: label,
+    semanticLabel: '$label ${context.l10n.stageBpmUnit}',
+    enabled: enabled,
+    repeat: true,
+    fontSize: 17,
+    onPressed: () => onCommand(TempoNudge(delta)),
   );
 }
 
