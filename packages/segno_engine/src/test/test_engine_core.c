@@ -22414,7 +22414,7 @@ static void test_fx_param_descriptors_match_kernels(void) {
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
-                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 9, 4,
+                            4, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 9, 4,
                             5, 4, 7, 4};
   for (int32_t t = 0; t < 33; ++t) CHECK(le_fx_param_count(t) == counts[t]);
   CHECK(le_fx_param_count(33) == LE_ERR_INVALID);

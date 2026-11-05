@@ -894,6 +894,154 @@ static void test_hp_gate_hold_restarts(void) {
   free(out);
 }
 
+/* The RMS of [x] over [from, to). */
+static double gate_rms(const float* x, int from, int to) {
+  double e = 0.0;
+  for (int i = from; i < to; ++i) e += (double)x[i] * x[i];
+  return sqrt(e / (to - from));
+}
+
+/* An idle input's floor at [dbfs] RMS: white noise, or 50 Hz hum with its
+ * odd harmonics to 950 Hz (60 % of the power) plus white noise (#1644). */
+static void gate_floor(float* x, int n, int sr, double dbfs, int hum,
+                       uint32_t seed) {
+  double* w = (double*)malloc(sizeof(double) * (size_t)n);
+  double* h = (double*)calloc((size_t)n, sizeof(double));
+  double pw = 0.0, ph = 0.0;
+  for (int i = 0; i < n; ++i) {
+    seed = seed * 1664525u + 1013904223u;
+    w[i] = ((seed >> 8) / 16777216.0) * 2.0 - 1.0;
+    pw += w[i] * w[i];
+    for (int k = 1; k <= 19 && hum; k += 2) {
+      h[i] += sin(2.0 * M_PI * 50.0 * k * i / sr + k) / k;
+    }
+    ph += h[i] * h[i];
+  }
+  const double total = pow(10.0, dbfs / 10.0);
+  const double gw = sqrt((hum ? 0.4 : 1.0) * total / (pw / n));
+  const double gh = hum ? sqrt(0.6 * total / (ph / n)) : 0.0;
+  for (int i = 0; i < n; ++i) x[i] = (float)(gw * w[i] + gh * h[i]);
+  free(w);
+  free(h);
+}
+
+/* The Guitar Rack's gate (#1644; looper_repository's _guitarGate): -70.5 dB
+ * on the RMS over 10 ms, a crest at -60.5 dBFS opening it at once, the
+ * Looper X's 250 ms hold, a 120 ms release.
+ * - It starts shut: an idle floor of -90 to -80 dBFS RMS, white or hum, is
+ *   40 dB down from the first 50 ms on.
+ * - A plucked note on that floor (A2 and its harmonics, -20 dBFS at the
+ *   pluck, falling 10 dB a second) plays untouched while it is louder than
+ *   the floor the gate is set for: in every 50 ms window where the note
+ *   alone is over -80 dBFS RMS (or the floor, if higher), the output is
+ *   within 1 dB of the input. On a -80 dBFS floor the gate takes the tail
+ *   only after it has sunk into the floor. On a quieter one it takes the
+ *   tail at about -78 dBFS, and fades it: never faster than 1 dB in 10 ms
+ *   (the 120 ms release falls 0.72).
+ * - Soft picks, -50 and -55 dBFS at their peaks, keep their attack: their
+ *   first 5 ms come out within 1 dB. (At -60 dBFS the first crest misses
+ *   the -60.5 dBFS opening peak, and the average opens the gate a few
+ *   milliseconds in.) */
+static void test_hp_gate_guitar_keeps_the_tail(void) {
+  printf("test_hp_gate_guitar_keeps_the_tail\n");
+  const int sr = 48000;
+  float p[LE_FX_PARAMS] = {0};
+  p[1] = dyn_setting(LE_FX_HP_GATE, 1, -70.5);
+  p[2] = dyn_setting(LE_FX_HP_GATE, 2, 120.0);
+  p[3] = dyn_setting(LE_FX_HP_GATE, 3, 10.0);
+  const int n = 8 * sr;
+  float* floor_ = (float*)malloc(sizeof(float) * (size_t)n);
+  float* note = (float*)calloc((size_t)n, sizeof(float));
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* out = (float*)malloc(sizeof(float) * (size_t)n);
+  const int at = 2 * sr; /* the pluck */
+  double peak = 0.0;
+  for (int i = at; i < n; ++i) {
+    const double t = (double)(i - at) / sr;
+    double v = 0.0;
+    for (int k = 1; k <= 12; ++k) v += sin(2.0 * M_PI * 110.0 * k * t) / k;
+    note[i] = (float)(v * pow(10.0, -10.0 * t / 20.0) * fmin(1.0, t / 0.001));
+    if (fabs(note[i]) > peak) peak = fabs(note[i]);
+  }
+  for (int i = at; i < n; ++i) note[i] *= (float)(pow(10.0, -20.0 / 20.0) / peak);
+  const int w = sr / 20;
+  for (int hum = 0; hum < 2; ++hum) {
+    for (int lv = 0; lv < 2; ++lv) {
+      const double fdb = lv ? -90.0 : -80.0;
+      gate_floor(floor_, n, sr, fdb, hum, 1644u + 7u * (uint32_t)(hum + 2 * lv));
+      /* The floor alone, then the floor and the note. */
+      for (int with = 0; with < 2; ++with) {
+        for (int i = 0; i < n; ++i) in[i] = floor_[i] + (with ? note[i] : 0.0f);
+        le_fx_state* fx = dyn_state(LE_FX_HP_GATE, sr);
+        uint32_t clock = 0;
+        dyn_run(fx, LE_FX_HP_GATE, p, sr, in, out, NULL, n, &clock);
+        dyn_free(fx);
+        const int idle_to = with ? at : n;
+        const double shut = dyn_db((float)(gate_rms(out, sr / 20, idle_to) /
+                                           gate_rms(in, sr / 20, idle_to)));
+        if (shut > -40.0) {
+          printf("  %s floor at %.0f dBFS: %.1f dB from 50 ms\n",
+                 hum ? "hum" : "white", fdb, shut);
+        }
+        CHECK(shut <= -40.0);
+        if (!with) continue;
+        const double floor_rms = fmax(gate_rms(floor_, at, n), 1e-4);
+        double worst = 0.0, last_over = 0.0;
+        for (int s0 = at; s0 + w <= n; s0 += w) {
+          if (gate_rms(note, s0, s0 + w) <= floor_rms) break;
+          const double e = dyn_db((float)(gate_rms(out, s0, s0 + w) /
+                                          gate_rms(in, s0, s0 + w)));
+          if (fabs(e) > fabs(worst)) worst = e;
+          last_over = (double)(s0 - at) / sr;
+        }
+        if (fabs(worst) >= 1.0) {
+          printf("  %s floor at %.0f dBFS: the tail off by %.2f dB (over the "
+                 "floor for %.2f s)\n",
+                 hum ? "hum" : "white", fdb, worst, last_over);
+        }
+        CHECK(fabs(worst) < 1.0);
+        CHECK(last_over > 4.0); /* the note was heard over the floor */
+        /* The fade: the gain falls by at most 1 dB in 10 ms. */
+        const int cs = sr / 100;
+        double prev = 0.0, steep = 0.0;
+        for (int s0 = at; s0 + cs <= n; s0 += cs) {
+          const double g = dyn_db((float)(gate_rms(out, s0, s0 + cs) /
+                                          gate_rms(in, s0, s0 + cs)));
+          if (s0 > at && g > -60.0 && prev - g > steep) steep = prev - g;
+          prev = g;
+        }
+        if (steep >= 1.0) {
+          printf("  %s floor at %.0f dBFS: the gain fell %.2f dB in 10 ms\n",
+                 hum ? "hum" : "white", fdb, steep);
+        }
+        CHECK(steep < 1.0);
+      }
+    }
+  }
+  /* Soft picks after an idle -80 dBFS floor keep their attack. */
+  gate_floor(floor_, n, sr, -80.0, 1, 99u);
+  const double soft[2] = {-30.0, -35.0}; /* under the -20 dBFS pluck */
+  for (int k = 0; k < 2; ++k) {
+    const float g = (float)pow(10.0, soft[k] / 20.0);
+    for (int i = 0; i < n; ++i) in[i] = floor_[i] + note[i] * g;
+    le_fx_state* fx = dyn_state(LE_FX_HP_GATE, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_HP_GATE, p, sr, in, out, NULL, n, &clock);
+    dyn_free(fx);
+    const double e = dyn_db((float)(gate_rms(out, at, at + sr / 200) /
+                                    gate_rms(in, at, at + sr / 200)));
+    if (fabs(e) >= 1.0) {
+      printf("  a pick at %.0f dBFS: its first 5 ms off by %.2f dB\n",
+             -20.0 + soft[k], e);
+    }
+    CHECK(fabs(e) < 1.0);
+  }
+  free(floor_);
+  free(note);
+  free(in);
+  free(out);
+}
+
 /* A glide the slot stops processing part-way (the chain skipped for a
  * while, the engine clock running on) resumes from where it stood, never
  * jumping: the compressor's make-up rising 0 -> 30 dB, paused for 1000
@@ -1019,6 +1167,7 @@ static void run_dynamics_tests(void) {
   test_hp_gate_matches_measured();
   test_hp_gate_gates();
   test_hp_gate_hold_restarts();
+  test_hp_gate_guitar_keeps_the_tail();
   test_dynamics_paused_glide_resumes_smoothly();
   test_dynamics_offline_equals_live();
   test_dynamics_on_a_lane();
