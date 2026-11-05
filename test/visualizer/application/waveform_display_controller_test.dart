@@ -39,6 +39,9 @@ class _Window implements WaveformWindowService {
   void Function(ReadoutCommand command)? onReadoutCommand;
 
   @override
+  void showRefusal(ReadoutRefusal refusal) {}
+
+  @override
   Future<bool> showCalibrationTarget(
     ({double x, double y})? target, {
     String label = '',

@@ -80,14 +80,31 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 ## November 2026 Clear track Hold also clears in Mute mode (#1671)
 
 - With Track Hold set to Clear track, holding a track pedal in Mute mode
-  clears the held track as in Record: the press still mutes or unmutes on
-  contact, then the 350 ms pause, the pill fill and the flash (#1534,
-  #1652). Bank-following, take locks and mode changes end it as before.
-- Arm overdub still runs only in Record (`ControlCubit._armTrackHold`): an
-  overdub that starts from a mix-only mode would surprise the player. The
-  Looper X's Hold Track Pedal is one setting with no mode limit; the RC-600
-  has no Mute mode but puts Clear on the long press of its Play/Stop and
-  Stop track functions.
+  clears the held track as in Record: the 350 ms pause, the pill fill and
+  the flash (#1534, #1652). Bank-following, take locks and mode changes end
+  it as before.
+- With Clear track set, Mute's track press acts on release, and a hold that
+  fires cancels it (the owner's option B on #1671), the rule Custom pairs
+  follow. So nothing unmutes, rejoins the mix or parks the loop before a
+  clear, and Undo brings the track back as it was. With Arm overdub or None
+  set, Mute keeps its press on contact.
+- Arm overdub still runs only in Record (`ControlCubit._armTrackHold`). A
+  Song section that is capturing is not cleared from Mute, as Mute's press
+  leaves it alone. The Looper X's Hold Track Pedal is one setting with no
+  mode limit; the RC-600 has no Mute mode but puts Clear on the long press
+  of its Play/Stop and Stop track functions.
+
+## November 2026 Clear tempo on the 7in readout (#1654)
+
+- The owner changed decision 6 after build 229: the readout's Loop panel
+  has Clear tempo beside Tap, offered whenever a tempo is set, as on the
+  main screen's Tempo page.
+- It sends `tempo.clear`; `ReadoutCommands` calls
+  `TempoSettings.clearTempo()` (#1653), so the engine's tempo lock decides.
+  A refusal is the screen link's one reply (`ScreenLinkOp.refused`, a
+  `ReadoutRefusal`), and the panel shows the main screen's notice, title and
+  reason, in the tempo note's place for 6 s. While it shows, it replaces the
+  recording band.
 
 ## November 2026 Tempo, length and start on the 7in readout (#1654)
 

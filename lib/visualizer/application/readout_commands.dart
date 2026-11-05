@@ -11,8 +11,10 @@ import 'package:segno/visualizer/readout_command.dart';
 /// Applies the changes a player asks for on the readout's Loop panel (#1654)
 /// through the settings classes the Loop settings pages use, so a change
 /// from the readout is persisted, recalled and refused exactly as one from
-/// the main screen. Nothing is answered: the readout sees the accepted value
-/// in its next readout push.
+/// the main screen. An accepted change is not answered: the readout sees the
+/// accepted value in its next readout push. A refused Clear tempo is, through
+/// [ReadoutCommands.new]'s `onRefused`, because nothing in the push says it
+/// was refused.
 ///
 /// The tempo lock is checked here, not left to the engine: the engine takes
 /// a locked tempo or signature command and drops it later on the audio
@@ -27,11 +29,13 @@ class ReadoutCommands {
     required RecordSettings record,
     required RecordTimingSettings timing,
     required bool Function() dimmed,
+    required void Function(ReadoutRefusal refusal) onRefused,
   }) : _repository = repository,
        _tempo = tempo,
        _record = record,
        _timing = timing,
-       _dimmed = dimmed;
+       _dimmed = dimmed,
+       _onRefused = onRefused;
 
   /// Where a nudge starts when no tempo is set: where the main screen's Tempo
   /// page starts its slider.
@@ -41,17 +45,31 @@ class ReadoutCommands {
   /// caught up with it.
   static const Duration _pendingFor = Duration(seconds: 1);
 
+  /// How long after a touch on the readout wakes the console its commands
+  /// are dropped: the length of the waking touch.
+  static const Duration wakeGesture = Duration(seconds: 1);
+
   final LooperRepository _repository;
   final TempoSettings _tempo;
   final RecordSettings _record;
   final RecordTimingSettings _timing;
   final bool Function() _dimmed;
+  final void Function(ReadoutRefusal refusal) _onRefused;
 
   /// The tempo the last accepted set put in, the live tempo it replaced,
   /// and a stopwatch running since (monotonic, so a clock step cannot
   /// stretch the window). Held while the live tempo still reads what it
   /// read then.
   ({double target, double from, Stopwatch age})? _pending;
+
+  /// Running since a touch on the readout woke the console.
+  Stopwatch? _woke;
+
+  /// A touch on the readout woke the dimmed console. A button that acts on
+  /// release (Clear tempo, a length, a signature) sends its command after
+  /// the wake, when the console is no longer dimmed, so for [wakeGesture]
+  /// commands are dropped as the dimmed console drops them.
+  void woke() => _woke = clock.stopwatch()..start();
 
   /// Applies [command].
   void handle(ReadoutCommand command) {
@@ -60,6 +78,8 @@ class ReadoutCommands {
     // word on it. A step and Tap act on touch, before the waking activity
     // arrives, so they are dropped here too.
     if (_dimmed()) return;
+    final woke = _woke;
+    if (woke != null && woke.elapsed < wakeGesture) return;
     switch (command) {
       case TempoNudge(:final delta):
         if (_tempoLocked) return;
@@ -72,6 +92,10 @@ class ReadoutCommands {
         if (_tempoLocked) return;
         _pending = null;
         _tempo.tapTempo();
+      case TempoClear():
+        // No lock check here: the engine's tempo lock decides, as it does
+        // for the main screen's Clear tempo.
+        unawaited(_clearTempo());
       case SignatureSet(:final num, :final den):
         // Only before the first take, as on the RC-600 (D6).
         if (_repository.lastState.tempoFollow != TempoFollowState.free) return;
@@ -82,6 +106,22 @@ class ReadoutCommands {
       case TimingSet(:final timing):
         unawaited(_timing.setTiming(timing));
     }
+  }
+
+  /// Clears the tempo, and reports a refusal with the reason the main
+  /// screen's notice gives.
+  Future<void> _clearTempo() async {
+    final result = await _tempo.clearTempo();
+    if (result.isOk) {
+      // No tempo is left for a pending nudge to build on.
+      _pending = null;
+      return;
+    }
+    _onRefused(switch (result) {
+      EngineResult.notReady => ReadoutRefusal.tempoClearLocked,
+      EngineResult.notRunning => ReadoutRefusal.tempoClearStopped,
+      _ => ReadoutRefusal.tempoClearOther,
+    });
   }
 
   /// Whether the tempo takes no change now: an external clock owns it, or
