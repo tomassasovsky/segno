@@ -551,6 +551,23 @@ void main() {
       return EngineResult.ok;
     });
     when(
+      () => repository.setRackEnabled(
+        address: const FxAddress(stage: FxStage.track),
+        rackId: any(named: 'rackId'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenAnswer((call) {
+      final next = fxWithRackEnabled(
+        trackEntries[0]!,
+        call.namedArguments[#rackId]! as String,
+        enabled: call.namedArguments[#enabled]! as bool,
+      );
+      if (next == null) return EngineResult.invalid;
+      trackEntries[0] = next;
+      publish();
+      return EngineResult.ok;
+    });
+    when(
       () => repository.setOutputEffectEnabled(
         bus: 0,
         index: any(named: 'index'),
@@ -1798,19 +1815,35 @@ void main() {
         expect(find.text(l10nOf(tester).fxModuleCount(3)), findsOneWidget);
       });
 
-      testWidgets("the card's power writes every pedal, because a rack is one "
-          'thing to the player', (tester) async {
+      testWidgets("the card's power switches the rack as one thing and keeps "
+          "each pedal's own switch (#1711)", (tester) async {
         await pumpRack(tester);
         await tapKey(tester, 'fx_power_R1');
 
-        final written = verify(
-          () => repository.setTrackEffectEnabled(
-            channel: 0,
-            index: captureAny(named: 'index'),
+        verify(
+          () => repository.setRackEnabled(
+            address: const FxAddress(stage: FxStage.track),
+            rackId: 'R1',
             enabled: false,
           ),
-        ).captured.cast<int>();
-        expect(written, [1, 2, 3]);
+        ).called(1);
+        verifyNever(
+          () => repository.setTrackEffectEnabled(
+            channel: any(named: 'channel'),
+            index: any(named: 'index'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+        // The card reads the rack's switch, so the same switch turns it back
+        // on.
+        await tapKey(tester, 'fx_power_R1');
+        verify(
+          () => repository.setRackEnabled(
+            address: const FxAddress(stage: FxStage.track),
+            rackId: 'R1',
+            enabled: true,
+          ),
+        ).called(1);
       });
 
       testWidgets('opens into one column per pedal, each with its own power '

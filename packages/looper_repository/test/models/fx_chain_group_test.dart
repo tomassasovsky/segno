@@ -181,11 +181,81 @@ void main() {
         _fx('b', rackId: 'r1', enabled: false),
       ];
 
-      expect(fxChainGroups(chain).single.anyEnabled, isFalse);
+      expect(fxChainGroups(chain).single.isOn, isFalse);
       expect(
-        fxChainGroups([chain.first, _fx('b', rackId: 'r1')]).single.anyEnabled,
+        fxChainGroups([chain.first, _fx('b', rackId: 'r1')]).single.isOn,
         isTrue,
       );
+    });
+  });
+
+  group('the rack switch (#1711)', () {
+    List<TrackEffect> chain() => [
+      _fx('a', rackId: 'r1'),
+      _fx('b', rackId: 'r1', enabled: false),
+      _fx('c', rackId: 'r2'),
+      _fx('d'),
+    ];
+
+    test('a bypassed rack is off whatever its modules say', () {
+      final off = fxWithRackEnabled(chain(), 'r1', enabled: false)!;
+
+      final groups = fxChainGroups(off);
+      expect(groups.map((g) => g.isOn), [false, true, true]);
+      expect(off.map((fx) => fx.enabled), [true, false, true, true]);
+      expect(off.map((fx) => fx.rack?.bypassed), [true, true, false, null]);
+    });
+
+    test('on restores the modules as they were', () {
+      final off = fxWithRackEnabled(chain(), 'r1', enabled: false)!;
+
+      expect(fxWithRackEnabled(off, 'r1', enabled: true), chain());
+    });
+
+    test('on with every module off switches them all on', () {
+      final silent = [
+        _fx('a', rackId: 'r1', enabled: false),
+        _fx('b', rackId: 'r1', enabled: false),
+      ];
+
+      final on = fxWithRackEnabled(silent, 'r1', enabled: true)!;
+
+      expect(on.map((fx) => fx.enabled), [true, true]);
+      expect(fxChainGroups(on).single.isOn, isTrue);
+    });
+
+    test('names no rack it does not hold', () {
+      expect(fxWithRackEnabled(chain(), 'gone', enabled: false), isNull);
+      // A standalone effect's slot id is not a rack id.
+      expect(fxWithRackEnabled(chain(), 'd', enabled: false), isNull);
+    });
+
+    test('a rename keeps the switch', () {
+      final off = fxWithRackEnabled(chain(), 'r1', enabled: false)!;
+
+      expect(
+        fxRenameRack(off, 'r1', 'Wah').first.rack?.bypassed,
+        isTrue,
+      );
+    });
+  });
+
+  group('fxSoleRack', () {
+    test('is the rack a chain is end to end', () {
+      expect(
+        fxSoleRack([_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')])?.id,
+        'r1',
+      );
+    });
+
+    test('is null for none, several, or a standalone effect', () {
+      expect(fxSoleRack(const []), isNull);
+      expect(fxSoleRack([_fx('a')]), isNull);
+      expect(
+        fxSoleRack([_fx('a', rackId: 'r1'), _fx('b', rackId: 'r2')]),
+        isNull,
+      );
+      expect(fxSoleRack([_fx('a', rackId: 'r1'), _fx('b')]), isNull);
     });
   });
 

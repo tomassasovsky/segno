@@ -4132,7 +4132,12 @@ class ControlCubit extends Cubit<ControlState> {
           _reportFxRefusal(FootFxRefusal.failed);
           return false;
         }
-        _fxPersistence.ordinaryTarget(target, enabled: !prior);
+        _fxPersistence
+          ..ordinaryTarget(target, enabled: !prior)
+          // A toggle is the player's new setting, so the chain it changed is
+          // saved and a reload keeps it — a rack's switch (#1711) as much as
+          // a chain's or an effect's. A momentary returns to what is saved.
+          ..scheduleSave(target.address, _settings, debounce: Duration.zero);
       case BindingBehavior.momentary:
         if (_heldRestore.containsKey(binding.key)) return false;
         _log('binding momentary ${binding.key.button.name} (was $prior)');
@@ -4189,6 +4194,10 @@ class ControlCubit extends Cubit<ControlState> {
       FxSlotTarget(:final slotId) => FxSlotTarget(
         address: address,
         slotId: slotId,
+      ),
+      FxRackTarget(:final rackId) => FxRackTarget(
+        address: address,
+        rackId: rackId,
       ),
     };
   }

@@ -79,7 +79,7 @@ class ExpressionActivation extends Equatable {
     this.art,
   });
 
-  /// The chain or the effect.
+  /// The chain, the rack or the effect.
   final FxBindingTarget target;
 
   /// Its name within the destination.
@@ -117,8 +117,9 @@ class ExpressionDestination extends Equatable {
   final List<ExpressionControlGroup> groups;
 
   /// The effects here a button can turn on and off: the whole chain first,
-  /// then each effect in it. Empty unless the catalogue was asked for them —
-  /// an expression pedal sweeps values and has nothing to switch.
+  /// then each rack in it followed by its effects, in signal order. Empty
+  /// unless the catalogue was asked for them — an expression pedal sweeps
+  /// values and has nothing to switch.
   final List<ExpressionActivation> activations;
 
   /// Every control here, flattened.
@@ -336,6 +337,7 @@ List<ExpressionDestination> expressionDestinations(
     switch (target) {
       FxParamTarget(:final address, :final slotId) ||
       FxSlotTarget(:final address, :final slotId) => (address, slotId),
+      FxRackTarget(:final address, :final rackId) => (address, #rack, rackId),
       _ => target,
     },
     () => expressionTargetArt(looper, target),
@@ -411,6 +413,7 @@ List<ExpressionDestination> expressionDestinations(
 /// the pedal on that page:
 ///
 /// - a parameter, or one effect, draws the pedal it belongs to;
+/// - a rack draws its rack's picture;
 /// - a whole chain draws its rack's picture when the chain IS one rack, and
 ///   nothing when it is several, or none — there is no single pedal to show;
 /// - a fader or the master gain draws nothing, as the pen draws them.
@@ -429,30 +432,41 @@ FxArt? expressionTargetArt(LooperRepository looper, Object target) {
   return switch (target) {
     FxParamTarget(:final address, :final slotId) => entryArt(address, slotId),
     FxSlotTarget(:final address, :final slotId) => entryArt(address, slotId),
-    FxChainTarget(:final address) => _rackArt(looper, address),
+    FxRackTarget(:final address, :final rackId) => switch (looper
+        .rackGroupAt(address, rackId)
+        ?.rack
+        ?.art) {
+      final art? => FxRackPicture(art),
+      null => null,
+    },
+    // One rack, end to end: anything else is a chain the picture would
+    // misname.
+    FxChainTarget(:final address) => switch (fxSoleRack(
+      looper.chainEntriesAt(address) ?? const [],
+    )?.art) {
+      final art? => FxRackPicture(art),
+      null => null,
+    },
     _ => null,
   };
 }
 
-FxArt? _rackArt(LooperRepository looper, FxAddress address) {
-  final entries = looper.chainEntriesAt(address);
-  if (entries == null || entries.isEmpty) return null;
-  final rack = entries.first.rack;
-  final art = rack?.art;
-  if (rack == null || art == null) return null;
-  // One rack, end to end: anything else is a chain the picture would misname.
-  if (entries.any((fx) => fx.rack?.id != rack.id)) return null;
-  return FxRackPicture(art);
-}
-
-/// Names an activation within its destination: the effect's own name, or the
-/// whole chain.
+/// Names an activation within its destination: the effect's own name, the
+/// rack's, or the whole chain — which a chain that is one rack end to end
+/// ([fxSoleRack]) takes from its rack, since to the player it IS that rack.
+///
+/// A rack that is gone has no name left to read, so its row says it was a
+/// rack; the row itself shows the binding as missing (R25).
 String expressionActivationName(
   AppLocalizations l10n,
   LooperRepository looper,
   FxBindingTarget target,
 ) => switch (target) {
-  FxChainTarget() => l10n.externalActivationChain,
+  FxChainTarget(:final address) =>
+    fxSoleRack(looper.chainEntriesAt(address) ?? const [])?.name ??
+        l10n.externalActivationChain,
+  final FxRackTarget rack =>
+    fxRackName(looper, rack) ?? l10n.externalActivationRack,
   final FxSlotTarget slot => fxSlotName(looper, slot) ?? slot.slotId,
 };
 

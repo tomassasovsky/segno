@@ -2307,6 +2307,7 @@
     "expressionControlGain": "Ganancia",
     "expressionNoControls": "Todavía no hay controles ajustables acá.",
     "externalActivationChain": "Todos los efectos",
+    "externalActivationRack": "Rack",
     "externalActivationRow": "{name} · Activación",
     "externalPanelActions": "Acciones",
     "externalPanelControls": "Controles",

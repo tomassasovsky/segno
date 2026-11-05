@@ -224,7 +224,12 @@ final class FxChannels {
 @immutable
 final class FxRack {
   /// Creates an [FxRack].
-  const FxRack({required this.id, required this.name, this.art});
+  const FxRack({
+    required this.id,
+    required this.name,
+    this.art,
+    this.bypassed = false,
+  });
 
   /// Rebuilds an [FxRack] from [toJson] output, or `null` when the map does
   /// not carry the two fields that make a rack addressable.
@@ -234,7 +239,12 @@ final class FxRack {
     final name = json['name'];
     if (id is! String || id.isEmpty || name is! String) return null;
     final art = json['art'];
-    return FxRack(id: id, name: name, art: art is String ? art : null);
+    return FxRack(
+      id: id,
+      name: name,
+      art: art is String ? art : null,
+      bypassed: json['bypassed'] == true,
+    );
   }
 
   /// The rack's identity, shared by every module in it and unique within its
@@ -253,15 +263,30 @@ final class FxRack {
   /// draws nothing.
   final String? art;
 
+  /// Whether the rack is switched off as a whole (#1711).
+  ///
+  /// A bypassed rack passes its input through untouched, and each of its
+  /// modules keeps its own `enabled` bit, so switching the rack back on
+  /// restores every pedal as it was. The engine never sees this flag: the
+  /// repository hands it each module's effective state, its own bit with the
+  /// rack's switch applied.
+  final bool bypassed;
+
   /// Returns a copy with the given fields replaced.
-  FxRack copyWith({String? id, String? name, String? art}) =>
-      FxRack(id: id ?? this.id, name: name ?? this.name, art: art ?? this.art);
+  FxRack copyWith({String? id, String? name, String? art, bool? bypassed}) =>
+      FxRack(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        art: art ?? this.art,
+        bypassed: bypassed ?? this.bypassed,
+      );
 
   /// A JSON-friendly map for persistence.
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     if (art != null) 'art': art,
+    if (bypassed) 'bypassed': true,
   };
 
   @override
@@ -269,10 +294,11 @@ final class FxRack {
       other is FxRack &&
       other.id == id &&
       other.name == name &&
-      other.art == art;
+      other.art == art &&
+      other.bypassed == bypassed;
 
   @override
-  int get hashCode => Object.hash(id, name, art);
+  int get hashCode => Object.hash(id, name, art, bypassed);
 }
 
 /// Which of the Dub Rack's two parallel paths a rack entry runs on (#1430),

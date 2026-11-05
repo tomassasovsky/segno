@@ -5921,6 +5921,10 @@
     "@externalActivationChain": {
         "description": "An activation on a whole chain rather than one effect in it."
     },
+    "externalActivationRack": "Rack",
+    "@externalActivationRack": {
+        "description": "Names an activation on a rack whose name can no longer be read, because the rack was removed or replaced; the row also shows it as missing."
+    },
     "externalActivationRow": "{name} · Activation",
     "@externalActivationRow": {
         "description": "Names an activation in the control picker.",

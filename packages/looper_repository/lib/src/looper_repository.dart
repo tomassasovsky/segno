@@ -3883,7 +3883,7 @@ class LooperRepository {
                 FxRecipeSlot(
                   type: trackEffectTypeToEngine(fx.type),
                   params: fx.params,
-                  enabled: fx.enabled,
+                  enabled: fx.effectiveEnabled,
                   channels: fxChannelsToEngine(fx.channels),
                   rack: edges[index],
                   path: paths[index],
@@ -3906,7 +3906,7 @@ class LooperRepository {
                 slots.add(
                   FxRecipeSlot(
                     type: trackEffectTypeToEngine(TrackEffectType.none),
-                    enabled: plugin.enabled,
+                    enabled: plugin.effectiveEnabled,
                     channels: fxChannelsToEngine(plugin.channels),
                     rack: edges[index],
                     instance: fxInstanceId(plugin.slotId),
@@ -3926,7 +3926,7 @@ class LooperRepository {
                 FxRecipeSlot(
                   type: trackEffectTypeToEngine(TrackEffectType.none),
                   plugin: handle,
-                  enabled: plugin.enabled,
+                  enabled: plugin.effectiveEnabled,
                   channels: fxChannelsToEngine(plugin.channels),
                   rack: edges[index],
                   instance: fxInstanceId(plugin.slotId),
@@ -6032,7 +6032,7 @@ class LooperRepository {
   static bool _chainAudiblyDry(
     List<TrackEffect> chain, {
     required bool chainEnabled,
-  }) => !chainEnabled || chain.every((fx) => !fx.enabled);
+  }) => !chainEnabled || chain.every((fx) => !fx.effectiveEnabled);
 
   /// Sets the track's independent playback gain after Pre and before Post.
   /// Part levels and the captured source image remain independent.
@@ -7541,15 +7541,15 @@ class LooperRepository {
     if (index < 0 || index >= _allTracksEffects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(_allTracksEffects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setAllTracksFxEnabled(
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _allTracksEffects = List<TrackEffect>.of(_allTracksEffects)
-      ..[index] = _withEnabled(_allTracksEffects[index], enabled);
+    _allTracksEffects = List<TrackEffect>.of(_allTracksEffects)..[index] = next;
     return EngineResult.ok;
   }
 
@@ -7656,17 +7656,18 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setLaneFxEnabled(
         channel: channel,
         lane: lane,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
     _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+      ..[index] = next;
     _reproject();
     return EngineResult.ok;
   }
@@ -7764,16 +7765,16 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setMonitorInputFxEnabled(
         input: input,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _monitorEffects[input] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+    _monitorEffects[input] = List<TrackEffect>.of(effects)..[index] = next;
     _monitorChanged(input);
     return EngineResult.ok;
   }
@@ -7788,16 +7789,16 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setTrackFxEnabled(
         channel: channel,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _trackEffects[channel] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+    _trackEffects[channel] = List<TrackEffect>.of(effects)..[index] = next;
     _reproject();
     return EngineResult.ok;
   }
@@ -7812,19 +7813,119 @@ class LooperRepository {
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
+    final next = _withEnabled(effects[index], enabled);
     if (_intendRunning) {
       final result = _engine.setOutputFxEnabled(
         bus: bus,
         index: index,
-        enabled: enabled,
+        enabled: next.effectiveEnabled,
       );
       if (!result.isOk) return result;
     }
-    _outputEffects[bus] = List<TrackEffect>.of(effects)
-      ..[index] = _withEnabled(effects[index], enabled);
+    _outputEffects[bus] = List<TrackEffect>.of(effects)..[index] = next;
     _reproject();
     return EngineResult.ok;
   }
+
+  /// Switches the rack [rackId] in the chain at [address] on or off as a
+  /// whole (#1711), leaving each module's own switch as it is
+  /// ([fxWithRackEnabled]).
+  ///
+  /// The rack's switch lives on its entries (`FxRack.bypassed`) and is saved
+  /// with the chain, as each entry's own switch is. The engine has no rack
+  /// switch: each module's flag there is its EFFECTIVE state
+  /// ([TrackEffect.effectiveEnabled]), written through the same per-entry
+  /// atomic stores (with their click-free ramp) the per-effect setters use,
+  /// so no DSP state is reset and every engine reader (the callback, the wet
+  /// cache, the fingerprints, the performance log) sees the rack's switch
+  /// without knowing racks. Only entries whose effective state changes are
+  /// written.
+  ///
+  /// [EngineResult.invalid] when [address] names no chain or the chain holds
+  /// no such rack.
+  EngineResult setRackEnabled({
+    required FxAddress address,
+    required String rackId,
+    required bool enabled,
+  }) {
+    // A lane-less Loop address names no chain (A9).
+    if (address.stage == FxStage.loop && address.lane == null) {
+      return EngineResult.invalid;
+    }
+    final current = _chainAt(address);
+    final next = fxWithRackEnabled(current, rackId, enabled: enabled);
+    if (next == null) return EngineResult.invalid;
+    if (_intendRunning) {
+      final written = <int>[];
+      for (var i = 0; i < next.length; i++) {
+        final on = next[i].effectiveEnabled;
+        if (on == current[i].effectiveEnabled) continue;
+        final result = _setEngineEntryEnabled(address, i, enabled: on);
+        if (!result.isOk) {
+          // Put back what this call already switched, so the engine never
+          // holds half a rack switch the repository did not take.
+          for (final j in written) {
+            _setEngineEntryEnabled(
+              address,
+              j,
+              enabled: current[j].effectiveEnabled,
+            );
+          }
+          return result;
+        }
+        written.add(i);
+      }
+    }
+    switch (address.stage) {
+      case FxStage.input:
+        _monitorEffects[address.index] = next;
+        _monitorChanged(address.index);
+        return EngineResult.ok;
+      case FxStage.loop:
+        _laneEffects[(address.index, address.lane!)] = next;
+      case FxStage.track:
+        _trackEffects[address.index] = next;
+      case FxStage.allTracks:
+        _allTracksEffects = next;
+      case FxStage.output:
+        _outputEffects[address.index] = next;
+    }
+    _reproject();
+    return EngineResult.ok;
+  }
+
+  /// The engine's per-entry flag for entry [index] of the chain at [address].
+  EngineResult _setEngineEntryEnabled(
+    FxAddress address,
+    int index, {
+    required bool enabled,
+  }) => switch (address.stage) {
+    FxStage.input => _engine.setMonitorInputFxEnabled(
+      input: address.index,
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.loop => _engine.setLaneFxEnabled(
+      channel: address.index,
+      lane: address.lane!,
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.track => _engine.setTrackFxEnabled(
+      channel: address.index,
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.allTracks => _engine.setAllTracksFxEnabled(
+      index: index,
+      enabled: enabled,
+    ),
+    FxStage.output => _engine.setOutputFxEnabled(
+      bus: address.index,
+      index: index,
+      enabled: enabled,
+    ),
+  };
 
   /// Enables/disables lane [lane] of track [channel]'s WHOLE chain in one
   /// atomic flip without touching the per-entry flags (R15).
@@ -8075,7 +8176,7 @@ class LooperRepository {
             FxRecipeSlot(
               type: trackEffectTypeToEngine(fx.type),
               params: fx.params,
-              enabled: fx.enabled,
+              enabled: fx.effectiveEnabled,
               channels: fxChannelsToEngine(fx.channels),
               rack: edges[index],
               path: paths[index],
@@ -8103,7 +8204,7 @@ class LooperRepository {
           slots.add(
             FxRecipeSlot(
               type: trackEffectTypeToEngine(TrackEffectType.none),
-              enabled: plugin.enabled,
+              enabled: plugin.effectiveEnabled,
               channels: fxChannelsToEngine(plugin.channels),
               rack: edges[index],
               instance: fxInstanceId(plugin.slotId),
@@ -8138,7 +8239,7 @@ class LooperRepository {
           FxRecipeSlot(
             type: trackEffectTypeToEngine(TrackEffectType.none),
             plugin: handle,
-            enabled: plugin.enabled,
+            enabled: plugin.effectiveEnabled,
             channels: fxChannelsToEngine(plugin.channels),
             rack: edges[index],
             instance: fxInstanceId(plugin.slotId),

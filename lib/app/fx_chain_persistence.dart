@@ -673,12 +673,19 @@ class FxChainPersistence {
   /// Projects an acknowledged envelope, preserving unrelated fields.
   FxChainEnvelope project(FxAddress address, FxChainEnvelope live) {
     _syncSession();
+    var entries = live.entries;
+    for (final MapEntry(key: target, value: on) in _powers.entries) {
+      if (target case FxRackTarget(
+        address: final at,
+        :final rackId,
+      ) when at == address) {
+        entries = fxWithRackEnabled(entries, rackId, enabled: on) ?? entries;
+      }
+    }
     return FxChainEnvelope(
       chainEnabled: _powers[FxChainTarget(address)] ?? live.chainEnabled,
       meta: live.meta,
-      entries: [
-        for (final effect in live.entries) _projectEffect(address, effect),
-      ],
+      entries: [for (final effect in entries) _projectEffect(address, effect)],
     );
   }
 

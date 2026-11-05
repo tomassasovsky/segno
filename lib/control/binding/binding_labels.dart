@@ -44,8 +44,11 @@ String fxStageLabel(
   FxStage.output => l10n.pedalAssignStageOutput(address.index + 1),
 };
 
-/// Names a discrete (`enabled`-flipping) [target] — one whole chain, or one
-/// effect inside it.
+/// Names a discrete (`enabled`-flipping) [target] — one whole chain, one rack
+/// in it, or one effect inside it.
+///
+/// Pure, so it cannot read a rack's or an effect's name from the rig; a
+/// surface that can calls [fxRackName] or [fxSlotName] first.
 String bindingTargetLabel(
   AppLocalizations l10n,
   List<String> trackNames,
@@ -58,6 +61,7 @@ String bindingTargetLabel(
     // can repeat within one chain, so it could not identify which slot the
     // binding points at.
     FxSlotTarget(:final slotId) => '$stage · $slotId',
+    FxRackTarget() => '$stage · ${l10n.externalActivationRack}',
   };
 }
 
@@ -161,6 +165,20 @@ String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
       BuiltInEffect(:final type) => type.label,
       PluginEffect(:final name) => name,
     };
+  }
+  return null;
+}
+
+/// The name of the rack [target] names, or `null` when the rack is gone.
+///
+/// The rack's own name, which the player may have changed, never its id: the
+/// id is the binding's identity, and this is what the row says.
+String? fxRackName(LooperRepository looper, FxRackTarget target) {
+  for (final fx
+      in looper.chainEntriesAt(target.address) ?? const <TrackEffect>[]) {
+    if (fx.rack case final rack? when rack.id == target.rackId) {
+      return rack.name;
+    }
   }
   return null;
 }

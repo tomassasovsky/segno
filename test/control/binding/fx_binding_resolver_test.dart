@@ -6,11 +6,15 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
-TrackEffect _fx(String slotId, {bool enabled = true}) => BuiltInEffect(
-  type: TrackEffectType.drive,
-  enabled: enabled,
-  slotId: slotId,
-);
+TrackEffect _fx(String slotId, {bool enabled = true, FxRack? rack}) =>
+    BuiltInEffect(
+      type: TrackEffectType.drive,
+      enabled: enabled,
+      slotId: slotId,
+      rack: rack,
+    );
+
+const _track5 = FxAddress(stage: FxStage.track, index: 5);
 
 void main() {
   late _MockLooperRepository looper;
@@ -22,6 +26,8 @@ void main() {
   late Map<int, List<TrackEffect>> trackChains;
   late List<TrackEffect> masterChain;
   late Map<String, bool> chainEnabled;
+
+  setUpAll(() => registerFallbackValue(_track5));
 
   setUp(() {
     looper = _MockLooperRepository();
@@ -157,6 +163,105 @@ void main() {
   });
 
   group('FxBindingResolver', () {
+    group('rack targets (#1711)', () {
+      // Two copies of one saved sound and a standalone effect: two racks that
+      // read the same and are not the same.
+      const first = FxRack(id: 'rack-1', name: 'Soft Chords');
+      const second = FxRack(id: 'rack-2', name: 'Soft Chords');
+      const firstRack = FxRackTarget(address: _track5, rackId: 'rack-1');
+      const secondRack = FxRackTarget(address: _track5, rackId: 'rack-2');
+
+      setUp(() {
+        trackChains[5] = [
+          _fx('a1', rack: first),
+          _fx('a2', rack: first, enabled: false),
+          _fx('b1', rack: second),
+          _fx('solo'),
+        ];
+        when(
+          () => looper.setRackEnabled(
+            address: any(named: 'address'),
+            rackId: any(named: 'rackId'),
+            enabled: any(named: 'enabled'),
+          ),
+        ).thenReturn(EngineResult.ok);
+      });
+
+      test('every rack instance is offered, after its chain and before its '
+          'own effects', () {
+        final targets = looper
+            .availableBindingTargets()
+            .where((t) => t.address == _track5)
+            .toList();
+        expect(targets, const [
+          FxChainTarget(_track5),
+          firstRack,
+          FxSlotTarget(address: _track5, slotId: 'a1'),
+          FxSlotTarget(address: _track5, slotId: 'a2'),
+          secondRack,
+          FxSlotTarget(address: _track5, slotId: 'b1'),
+          FxSlotTarget(address: _track5, slotId: 'solo'),
+        ]);
+      });
+
+      test('a chain that is one rack end to end offers the chain only', () {
+        trackChains[5] = [_fx('a1', rack: first), _fx('a2', rack: first)];
+        expect(
+          looper.availableBindingTargets().whereType<FxRackTarget>(),
+          isEmpty,
+        );
+      });
+
+      test("reads the rack's switch, not its pedals' own", () {
+        expect(looper.bindingEnabled(firstRack), isTrue);
+        trackChains[5] = [
+          _fx('a1', rack: first.copyWith(bypassed: true)),
+          _fx('b1', rack: second),
+        ];
+        expect(looper.bindingEnabled(firstRack), isFalse);
+        expect(looper.bindingEnabled(secondRack), isTrue);
+      });
+
+      test('writes the one rack through the rack switch', () {
+        expect(looper.setBindingEnabled(secondRack, enabled: false), isTrue);
+        verify(
+          () => looper.setRackEnabled(
+            address: _track5,
+            rackId: 'rack-2',
+            enabled: false,
+          ),
+        ).called(1);
+        verifyNever(
+          () => looper.setTrackEffectEnabled(
+            channel: any(named: 'channel'),
+            index: any(named: 'index'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+      });
+
+      test('a rack that is gone is missing — never the chain or the other '
+          'rack (R25)', () {
+        trackChains[5] = [_fx('b1', rack: second)];
+        expect(looper.bindingEnabled(firstRack), isNull);
+        expect(looper.bindingResolves(firstRack), isFalse);
+        expect(looper.setBindingEnabled(firstRack, enabled: false), isFalse);
+        verifyNever(
+          () => looper.setRackEnabled(
+            address: any(named: 'address'),
+            rackId: any(named: 'rackId'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+        verifyNever(
+          () => looper.setTrackChainEnabled(
+            channel: any(named: 'channel'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+      });
+    });
+
     group('chain targets', () {
       test('read the per-chain flag on every stage', () {
         chainEnabled['track:5'] = false;

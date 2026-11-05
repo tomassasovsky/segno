@@ -79,6 +79,41 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A pedal switches a rack, so one switch alternates two racks (#1711)
+
+- Each rack INSTANCE in a chain is a binding target of its own,
+  `FxRackTarget` (`{stage, index, lane?, rack}`), keyed by `FxRack.id`. That
+  id is already an instance id: every addition mints one (`SlotIds.mint`), it
+  is saved with the chain, and a rename or reorder never rewrites it, so a
+  second copy of the same sound in one chain is a different rack. A rack
+  that is removed or replaced makes its bindings show as missing (R25); they
+  never fall back to the chain or the other rack.
+- A rack's switch is `FxRack.bypassed`, on every module of the rack and
+  saved with the chain (session file, settings and performance snapshot
+  alike). Off leaves each pedal's own `enabled` as it was; on restores them,
+  and switches them all on only when every one was off (nothing to restore).
+  `TrackEffect.effectiveEnabled` is the pedal's own switch with its rack's
+  applied. The engine has no rack switch: the repository hands it the
+  effective state through the existing per-entry atomic stores and recipe
+  slots (`LooperRepository.setRackEnabled`), so the callback, wet cache,
+  fingerprints and performance log see it without knowing racks, and nothing
+  native changed.
+- Offered in External pedals Controls, MIDI controls and FX pedal
+  assignments, each rack after its chain and before its own effects. A chain
+  that is one rack end to end (`fxSoleRack`) offers only its chain row,
+  named by the rack instead of "Every effect". Custom controls carry actions,
+  not activations, so they offer none.
+- The Effects page's rack power is the same switch: the card reads
+  `FxChainGroup.isOn`, and a bypassed rack's editor dims its pedals, which
+  keep their own switches.
+- A console binding's toggle now saves the chain it changed, so a rack (or a
+  chain or an effect) switched from the pedal survives a reload. A momentary
+  returns to what is saved.
+- One external switch with Rack A active while On and Rack B active while
+  Off alternates them on every press (the Line 6 Helix pattern);
+  `test/control/rack_activation_dispatch_test.dart` drives exactly that
+  through the control path.
+
 ## November 2026 Clear track Hold also clears in Mute mode (#1671)
 
 - With Track Hold set to Clear track, holding a track pedal in Mute mode

@@ -1096,4 +1096,33 @@ void main() {
       expect(a, isNot(b));
     });
   });
+
+  group('FxRack', () {
+    test('saves its switch only when the rack is bypassed (#1711)', () {
+      const on = FxRack(id: 'r1', name: 'Soft Chords', art: 'guitar');
+      final off = on.copyWith(bypassed: true);
+
+      expect(on.toJson().containsKey('bypassed'), isFalse);
+      expect(off.toJson()['bypassed'], isTrue);
+      expect(FxRack.fromJson(off.toJson()), off);
+      expect(FxRack.fromJson(on.toJson()), on);
+      expect(off, isNot(on));
+    });
+
+    test('a bypassed rack rides its entries through a saved chain', () {
+      final chain = [
+        BuiltInEffect(
+          type: TrackEffectType.drive,
+          enabled: false,
+          rack: const FxRack(id: 'r1', name: 'Soft Chords', bypassed: true),
+        ),
+      ];
+
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+
+      expect(decoded, chain);
+      expect(decoded.single.rack!.bypassed, isTrue);
+      expect((decoded.single as BuiltInEffect).enabled, isFalse);
+    });
+  });
 }
