@@ -41,10 +41,8 @@ class ExpressionCalibrationPanel extends StatelessWidget {
   /// Stages the captured travel into the page's draft.
   final ValueChanged<ExpressionCalibration> onUse;
 
-  /// The pen's column width and card geometry.
+  /// The pen's column width.
   static const double penWidth = 1290;
-  static const double _cardWidth = 631;
-  static const double _cardHeight = 273;
 
   /// The travel the two captures describe, or `null` while one is missing.
   ExpressionCalibration? get captured {
@@ -84,9 +82,19 @@ class ExpressionCalibrationPanel extends StatelessWidget {
           const SizedBox(height: 38),
           Row(
             children: [
-              _end(context, isHeel: true),
+              _CaptureEnd(
+                isHeel: true,
+                value: heel,
+                connected: connected,
+                onCapture: onCapture,
+              ),
               const SizedBox(width: 28),
-              _end(context, isHeel: false),
+              _CaptureEnd(
+                isHeel: false,
+                value: toe,
+                connected: connected,
+                onCapture: onCapture,
+              ),
             ],
           ),
           const SizedBox(height: 38),
@@ -129,11 +137,38 @@ class ExpressionCalibrationPanel extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _end(BuildContext context, {required bool isHeel}) {
+/// One end of the travel: its step number, what to do, and its capture
+/// button.
+class _CaptureEnd extends StatelessWidget {
+  const _CaptureEnd({
+    required this.isHeel,
+    required this.value,
+    required this.connected,
+    required this.onCapture,
+  });
+
+  /// Whether this is the heel end; otherwise the toe.
+  final bool isHeel;
+
+  /// The raw reading captured for this end, or `null` until it has been.
+  final int? value;
+
+  /// Whether the jack has reported a position, so a capture can be taken.
+  final bool connected;
+
+  /// Captures the current reading as an end. `true` is the heel.
+  final void Function({required bool isHeel}) onCapture;
+
+  /// The pen's card geometry.
+  static const double _cardWidth = 631;
+  static const double _cardHeight = 273;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final value = isHeel ? heel : toe;
     final done = value != null;
     final end = isHeel ? l10n.expressionHeel : l10n.expressionToe;
     return SizedBox(
