@@ -8,6 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/tempo_state.dart';
 import 'package:segno/looper/view/track_column.dart' show PrimaryCrown;
+import 'package:segno/notices/view/notice_sentence.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
@@ -35,6 +36,7 @@ class ReadoutLoopPanel extends StatefulWidget {
     required this.frame,
     required this.onCommand,
     required this.onDone,
+    this.refusal,
     super.key,
   });
 
@@ -49,6 +51,10 @@ class ReadoutLoopPanel extends StatefulWidget {
 
   /// Closes the panel.
   final VoidCallback onDone;
+
+  /// The main screen's refusal of the last command, said until it is
+  /// replaced or times out; null when there is none.
+  final ReadoutRefusal? refusal;
 
   /// How long a length the panel sent stands in for the pushed one: the
   /// push that carries it is a few frames behind a fast second press.
@@ -103,8 +109,11 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
   Widget build(BuildContext context) {
     final readout = widget.readout;
     final surface = context.surface;
-    final recording = readout.loop.captureLocked;
     final spacing = context.spacing;
+    // A refusal takes the recording band's place while it is said, because
+    // the 7" has no room for both. The header still names the take, and the
+    // locked controls stay dimmed.
+    final recordingBand = readout.loop.captureLocked && widget.refusal == null;
     final panel = ColoredBox(
       key: const Key('readout_panel'),
       color: surface.background,
@@ -123,7 +132,7 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
               frame: widget.frame,
               onDone: widget.onDone,
             ),
-            if (recording) ...[
+            if (recordingBand) ...[
               SizedBox(height: spacing.sm),
               const _RecordingBand(),
             ],
@@ -139,7 +148,8 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
                       frame: widget.frame,
                       onCommand: widget.onCommand,
                       onTypeTempo: () => setState(() => _keypad = true),
-                      recordingBand: recording,
+                      recordingBand: recordingBand,
+                      refusal: widget.refusal,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -472,6 +482,7 @@ class _TempoCard extends StatelessWidget {
     required this.onCommand,
     required this.onTypeTempo,
     required this.recordingBand,
+    required this.refusal,
   });
 
   final PerformanceReadout readout;
@@ -484,12 +495,24 @@ class _TempoCard extends StatelessWidget {
   /// The band above already says why everything is locked.
   final bool recordingBand;
 
+  /// Why the main screen refused the last command, said in the note's place.
+  final ReadoutRefusal? refusal;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    // One gap for the card's buttons, across and down (#1672): the steps,
+    // Clear tempo and Tap.
+    final gap = context.spacing.sm;
     final l10n = context.l10n;
     final editable = readoutTempoEditable(readout);
+    final refused = refusal;
     final (note, warns) = _tempoNote(l10n);
+    final noteStyle = TextStyle(
+      color: warns ? surface.warning : surface.textSecondary,
+      fontSize: 13,
+      height: 1.25,
+    );
     Widget step(String label, double delta) => Expanded(
       child: ReadoutPressButton(
         key: Key('readout_panel_nudge_$label'),
@@ -581,40 +604,59 @@ class _TempoCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          if (note != null)
+          // A refusal takes the note's place until it times out.
+          if (refused != null)
+            _RefusalNote(refusal: refused, style: noteStyle)
+          else if (note != null)
             AppText(
               note,
               key: const Key('readout_panel_tempo_note'),
               maxLines: 2,
-              style: TextStyle(
-                color: warns ? surface.warning : surface.textSecondary,
-                fontSize: 13,
-                height: 1.25,
-              ),
+              style: noteStyle,
             ),
           const Spacer(),
           Row(
             children: [
               step('-1', -1),
-              const SizedBox(width: 8),
+              SizedBox(width: gap),
               step('-0.1', -0.1),
-              const SizedBox(width: 8),
+              SizedBox(width: gap),
               step('+0.1', 0.1),
-              const SizedBox(width: 8),
+              SizedBox(width: gap),
               step('+1', 1),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: gap),
           SizedBox(
             height: 52,
-            child: ReadoutPressButton(
-              key: const Key('readout_panel_tap'),
-              label: l10n.readoutPanelTap.toUpperCase(),
-              semanticLabel: l10n.loopTempoTap,
-              enabled: editable,
-              style: ReadoutButtonStyle.outlined,
-              fontSize: 22,
-              onPressed: () => onCommand(const TempoTap()),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // As on the main screen's Tempo page: Clear tempo, then Tap.
+                // Only a set tempo can be cleared; the engine's tempo lock
+                // decides the rest, and a refusal comes back to say why.
+                Expanded(
+                  child: ReadoutButton(
+                    key: const Key('readout_panel_clear_tempo'),
+                    label: l10n.loopTempoClear,
+                    enabled: readout.hasTempo,
+                    fontSize: 17,
+                    onPressed: () => onCommand(const TempoClear()),
+                  ),
+                ),
+                SizedBox(width: gap),
+                Expanded(
+                  child: ReadoutPressButton(
+                    key: const Key('readout_panel_tap'),
+                    label: l10n.readoutPanelTap.toUpperCase(),
+                    semanticLabel: l10n.loopTempoTap,
+                    enabled: editable,
+                    style: ReadoutButtonStyle.outlined,
+                    fontSize: 22,
+                    onPressed: () => onCommand(const TempoTap()),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -992,4 +1034,40 @@ class _DotsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DotsPainter old) => old.color != color;
+}
+
+/// Why the main screen refused the last command, in the words of its own
+/// notice (#1653): the title in [style]'s weight 600 in `warning`, then the
+/// reason, wrapped whole as the readout's notice band wraps it.
+class _RefusalNote extends StatelessWidget {
+  const _RefusalNote({required this.refusal, required this.style});
+
+  final ReadoutRefusal refusal;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final body = switch (refusal) {
+      ReadoutRefusal.tempoClearLocked => l10n.loopTempoClearRefusedBody,
+      ReadoutRefusal.tempoClearStopped => l10n.loopTempoClearStopped,
+      ReadoutRefusal.tempoClearOther => null,
+    };
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: NoticeSentence(
+        key: const Key('readout_panel_refusal'),
+        wraps: true,
+        title: l10n.loopTempoClearRefused,
+        titleStyle: style.copyWith(
+          color: surface.warning,
+          fontWeight: FontWeight.w600,
+        ),
+        body: body,
+        bodyStyle: style.copyWith(color: surface.textSecondary),
+      ),
+    );
+  }
 }
