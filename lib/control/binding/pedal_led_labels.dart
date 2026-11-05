@@ -2,6 +2,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/binding/pedal_led_map.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 /// What the LED editor calls [state].
 String pedalLedStateLabel(AppLocalizations l10n, PedalLedState state) =>
@@ -35,4 +36,24 @@ String pedalLedGroupLabel(AppLocalizations l10n, PedalLedGroup group) =>
       PedalLedGroup.clear => pedalButtonLegend(PedalButton.clear),
       PedalLedGroup.mode => pedalButtonLegend(PedalButton.mode),
       PedalLedGroup.bank => pedalButtonLegend(PedalButton.bank),
+    };
+
+/// What the LED editor calls [mode]: the mode's own name.
+///
+/// Not the catalogue's Mode action label: there Record reads "Exit", the way
+/// out of every other mode, which on this page hid Record behind a word that
+/// is not a mode.
+String pedalLedModeLabel(AppLocalizations l10n, InteractionMode mode) =>
+    switch (mode) {
+      InteractionMode.record => l10n.pedalLedModeRecord,
+      InteractionMode.mute => l10n.pedalLedModeMute,
+      InteractionMode.fx => l10n.actionModeFx,
+      InteractionMode.custom => l10n.actionModeCustom,
+      InteractionMode.mixer => l10n.actionModeMixer,
+      InteractionMode.fade => l10n.actionModeFade,
+      InteractionMode.reverse => l10n.actionModeReverse,
+      InteractionMode.peel => l10n.actionModePeel,
+      InteractionMode.tuner => l10n.actionModeTuner,
+      InteractionMode.multiply => l10n.actionModeMultiply,
+      InteractionMode.divide => l10n.actionModeDivide,
     };

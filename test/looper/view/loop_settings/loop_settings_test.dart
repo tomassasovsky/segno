@@ -1047,6 +1047,83 @@ void main() {
     });
   });
 
+  group('one layout for the four tabs (#1672)', () {
+    // Where each tab's first element sits: 30 under the tab row.
+    const contentTop = 96 + 124.0;
+
+    testWidgets('every tab starts its content under the tabs', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(
+        tester.getTopLeft(find.byKey(const Key('loop_mode_multi'))).dy,
+        contentTop,
+      );
+      await tester.tap(find.byKey(const Key('loop_settings_tab_tempo')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.byKey(const Key('loop_tempo_entry'))).dy,
+        contentTop,
+      );
+      await tester.tap(find.byKey(const Key('loop_settings_tab_recording')));
+      await tester.pumpAndSettle();
+      final l10n = AppLocalizations.of(
+        tester.element(find.byKey(const Key('loop_settings_title'))),
+      );
+      expect(
+        tester.getTopLeft(find.text(l10n.loopRecordingStart)).dy,
+        contentTop,
+      );
+      await tester.tap(find.byKey(const Key('loop_settings_tab_playback')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getTopLeft(find.byKey(const Key('loop_scope_defaults'))).dy,
+        contentTop,
+      );
+    });
+
+    testWidgets('the exact-tempo keypad is drawn at full size', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsTab.tempo);
+      await tester.tap(find.byKey(const Key('loop_tempo_entry')));
+      await tester.pumpAndSettle();
+      final sheet = find.byKey(const Key('tempo_entry_sheet'));
+      final key = find
+          .ancestor(
+            of: find.descendant(of: sheet, matching: find.text('1')),
+            matching: find.byType(SizedBox),
+          )
+          .first;
+      expect(tester.getSize(key).height, 80);
+      expect(
+        tester.getSize(find.byKey(const Key('tempo_entry_cancel'))).height,
+        64,
+      );
+    });
+
+    testWidgets('Recording and Playback draw their choices one size', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsTab.recording);
+      final recording = [
+        for (final key in [
+          'loop_recording_pedal',
+          'loop_recording_play',
+          'loop_length_auto',
+          'loop_timing_immediately',
+        ])
+          tester.getSize(find.byKey(Key(key))).height,
+      ];
+      await tester.tap(find.byKey(const Key('loop_settings_tab_playback')));
+      await tester.pumpAndSettle();
+      final playback = tester
+          .getSize(find.byKey(const Key('loop_playback_loop')))
+          .height;
+      expect(recording, everyElement(playback));
+    });
+  });
+
   group('tabs (#1659)', () {
     LoopChoiceButton tab(WidgetTester tester, String name) =>
         tester.widget<LoopChoiceButton>(
