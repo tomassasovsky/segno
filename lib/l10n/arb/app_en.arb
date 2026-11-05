@@ -5604,6 +5604,14 @@
             }
         }
     },
+    "pedalLedModeRecord": "Record",
+    "@pedalLedModeRecord": {
+        "description": "LED colors mode picker: Record mode, by its own name (the catalogue calls its Mode action Exit)."
+    },
+    "pedalLedModeMute": "Mute",
+    "@pedalLedModeMute": {
+        "description": "LED colors mode picker: Mute mode, by its own name."
+    },
     "pedalLedReset": "Reset to defaults",
     "@pedalLedReset": {
         "description": "Puts every LED color of the shown mode back to the pedal's original colors."

@@ -404,7 +404,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             LoopOutlinedButton(
               key: const Key('pedal_led_mode'),
               width: 420,
-              label: l10n.pedalLedMode(_modeLabel(context, _ledMode)),
+              label: l10n.pedalLedMode(pedalLedModeLabel(l10n, _ledMode)),
               onTap: () => unawaited(_pickLedMode()),
             ),
           const Spacer(),
@@ -540,13 +540,6 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     };
   }
 
-  String _modeLabel(BuildContext context, InteractionMode mode) =>
-      controlActionLabel(
-        context.l10n,
-        context.read<TracksCubit>().state.names,
-        ModeAction(mode),
-      );
-
   Future<void> _pickLedMode() async {
     final chosen = await showPedalChoicePicker<InteractionMode>(
       context,
@@ -561,7 +554,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
               PedalChoice(
                 value: mode,
                 id: 'mode_${ModeAction(mode).token}',
-                label: _modeLabel(context, mode),
+                label: pedalLedModeLabel(context.l10n, mode),
               ),
           ],
         ),

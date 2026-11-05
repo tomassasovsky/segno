@@ -18,6 +18,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_page.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -225,6 +226,35 @@ void main() {
     await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
     await tester.pumpAndSettle();
     await shot(tester, 'leds');
+  }, skip: !rendersScreenshots);
+
+  testWidgets('LED colors: the mode picker', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_led_mode')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/pedal_setup_leds_modes.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('LED colors: Mute mode', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_led_mode')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        Key(
+          'pedal_choice_mode_${const ModeAction(InteractionMode.mute).token}',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await shot(tester, 'leds_mute');
   }, skip: !rendersScreenshots);
 
   testWidgets('LED color editor', (tester) async {
