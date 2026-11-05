@@ -3,15 +3,6 @@
 # and on any entry that no longer matches one, so this list only shrinks:
 # when you turn one of these into a widget class, delete its line.
 # Never add a line. The last refactor deletes this file.
-lib/control/view/fx_pedal_assignments_body.dart#_FxPedalAssignmentsBodyState._trackRow
-lib/control/view/fx_pedal_assignments_body.dart#_FxPedalAssignmentsBodyState._assignSection
-lib/control/view/fx_pedal_assignments_body.dart#_FxPedalAssignmentsBodyState._targetRow
-lib/control/view/midi_controls/midi_controls_page.dart#_MidiControlsPageState._listActions
-lib/control/view/midi_controls/midi_controls_page.dart#_MidiControlsPageState._list
-lib/control/view/midi_controls/midi_controls_page.dart#_MidiControlsPageState._editorActions
-lib/control/view/midi_controls/midi_controls_page.dart#_MidiControlsPageState._destinationActions
-lib/control/view/midi_controls/midi_controls_page.dart#_MidiControlsPageState._editing
-lib/control/view/midi_controls/midi_controls_page.dart#_MidiControlsPageState._editing.placed
 lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._loadedPage
 lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._body
 lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._expressionWorkspace
