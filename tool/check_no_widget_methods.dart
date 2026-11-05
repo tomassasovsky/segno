@@ -36,6 +36,7 @@ import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/file_system/file_system.dart' show ResourceProvider;
 // The public AnalysisContextCollection cannot take a package config, and the
 // packages under packages/ are resolved through the app's, so they need no
@@ -144,6 +145,18 @@ Future<List<WidgetMethod>> findWidgetMethods({
         if (result is! ResolvedUnitResult) {
           throw StateError('could not resolve $path');
         }
+        // A file that does not resolve has no widget types to find, so it
+        // would pass unchecked.
+        final errors = [
+          for (final diagnostic in result.diagnostics)
+            if (diagnostic.severity == Severity.error) diagnostic,
+        ];
+        if (errors.isNotEmpty) {
+          throw StateError(
+            '$path has ${errors.length} analysis errors, the first: '
+            '${errors.first.message}',
+          );
+        }
         final visitor = _Visitor(
           root: root,
           checked: included,
@@ -247,7 +260,10 @@ class _Visitor extends RecursiveAstVisitor<void> {
 
   bool _returnsWidget(DartType type) {
     final typeSystem = result.typeSystem;
-    if (type is NeverType || type is InvalidType) return false;
+    // Null and Never are subtypes of every nullable type, Widget? included.
+    if (type is NeverType || type is InvalidType || type.isDartCoreNull) {
+      return false;
+    }
     if (type is InterfaceType) {
       if (type.isDartAsyncFuture || type.isDartAsyncFutureOr) {
         return _returnsWidget(type.typeArguments.single);
