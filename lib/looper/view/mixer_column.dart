@@ -458,57 +458,55 @@ class _StripButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) =>
-        _row(context, _scale(context, constraints.maxWidth)),
+    builder: (context, constraints) {
+      final scale = _scale(context, constraints.maxWidth);
+      final l10n = context.l10n;
+      final bloc = context.read<LooperBloc>();
+      final channel = track.channel;
+      return Row(
+        children: [
+          Expanded(
+            flex: 102,
+            child: _StripButton(
+              key: Key('mixer_mute_$channel'),
+              scale: scale,
+              label: l10n.mixerMute,
+              on: track.muted,
+              semanticLabel: track.muted
+                  ? l10n.a11yMixerUnmute(channel + 1)
+                  : l10n.a11yMixerMute(channel + 1),
+              onTap: () => bloc.add(LooperMuteToggled(channel)),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            flex: 102,
+            child: _StripButton(
+              key: Key('mixer_solo_$channel'),
+              scale: scale,
+              label: l10n.mixerSolo,
+              on: track.solo,
+              semanticLabel: track.solo
+                  ? l10n.a11yMixerUnsolo(channel + 1)
+                  : l10n.a11yMixerSolo(channel + 1),
+              onTap: () => bloc.add(LooperTrackSoloToggled(channel)),
+              // Clearing every Solo at once has no control of its own in the
+              // accepted design, and the stage already uses a long press for
+              // its second action (a tile's long press stops the track). One
+              // gesture, on the control it is about.
+              onLongPress: () => bloc.add(const LooperSoloCleared()),
+              longPressLabel: l10n.a11yMixerClearSolo,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            flex: 147,
+            child: _StripFxPair(track: track, scale: scale),
+          ),
+        ],
+      );
+    },
   );
-
-  Widget _row(BuildContext context, double scale) {
-    final l10n = context.l10n;
-    final bloc = context.read<LooperBloc>();
-    final channel = track.channel;
-    return Row(
-      children: [
-        Expanded(
-          flex: 102,
-          child: _StripButton(
-            key: Key('mixer_mute_$channel'),
-            scale: scale,
-            label: l10n.mixerMute,
-            on: track.muted,
-            semanticLabel: track.muted
-                ? l10n.a11yMixerUnmute(channel + 1)
-                : l10n.a11yMixerMute(channel + 1),
-            onTap: () => bloc.add(LooperMuteToggled(channel)),
-          ),
-        ),
-        const SizedBox(width: 9),
-        Expanded(
-          flex: 102,
-          child: _StripButton(
-            key: Key('mixer_solo_$channel'),
-            scale: scale,
-            label: l10n.mixerSolo,
-            on: track.solo,
-            semanticLabel: track.solo
-                ? l10n.a11yMixerUnsolo(channel + 1)
-                : l10n.a11yMixerSolo(channel + 1),
-            onTap: () => bloc.add(LooperTrackSoloToggled(channel)),
-            // Clearing every Solo at once has no control of its own in the
-            // accepted design, and the stage already uses a long press for
-            // its second action (a tile's long press stops the track). One
-            // gesture, on the control it is about.
-            onLongPress: () => bloc.add(const LooperSoloCleared()),
-            longPressLabel: l10n.a11yMixerClearSolo,
-          ),
-        ),
-        const SizedBox(width: 9),
-        Expanded(
-          flex: 147,
-          child: _StripFxPair(track: track, scale: scale),
-        ),
-      ],
-    );
-  }
 }
 
 /// One of the strip's small state buttons: lit when [on], dimmed and inert

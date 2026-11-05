@@ -26,25 +26,24 @@ class FootPedalRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      Widget place(PedalButton button, double top) => Positioned(
-        left: ConsolePedalLayout.left(
-          button,
-          constraints.maxWidth,
-          pedalWidth,
-        ),
-        top: top,
-        width: pedalWidth,
-        child: pedal(button),
-      );
-      return Stack(
-        children: [
-          for (final button in ConsolePedalLayout.rearRow)
-            place(button, _rearTop),
-          for (final button in ConsolePedalLayout.frontRow)
-            place(button, _frontTop),
-        ],
-      );
-    },
+    builder: (context, constraints) => Stack(
+      children: [
+        for (final (row, top) in [
+          (ConsolePedalLayout.rearRow, _rearTop),
+          (ConsolePedalLayout.frontRow, _frontTop),
+        ])
+          for (final button in row)
+            Positioned(
+              left: ConsolePedalLayout.left(
+                button,
+                constraints.maxWidth,
+                pedalWidth,
+              ),
+              top: top,
+              width: pedalWidth,
+              child: pedal(button),
+            ),
+      ],
+    ),
   );
 }

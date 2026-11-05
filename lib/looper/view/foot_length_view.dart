@@ -44,13 +44,6 @@ class FootLengthView extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final divide = mode == InteractionMode.divide;
-    Widget pedal(PedalButton button) => _FootLengthPedal(
-      button: button,
-      mode: mode,
-      projection: projection,
-      outcome: outcome,
-      sampleRate: sampleRate,
-    );
     return DefaultTextStyle.merge(
       style: TextStyle(
         fontWeight: FontWeight.w400,
@@ -97,7 +90,13 @@ class FootLengthView extends StatelessWidget {
                       ),
                       Positioned.fill(
                         child: FootPedalRows(
-                          pedal: pedal,
+                          pedal: (button) => _FootLengthPedal(
+                            button: button,
+                            mode: mode,
+                            projection: projection,
+                            outcome: outcome,
+                            sampleRate: sampleRate,
+                          ),
                         ),
                       ),
                     ],

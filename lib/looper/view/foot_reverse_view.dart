@@ -152,35 +152,31 @@ class _ReverseOverviewCell extends StatelessWidget {
     return Opacity(
       key: Key('foot_reverse_overview_${track.channel}'),
       opacity: track.busy ? surface.disabledOpacity : 1,
-      child: _overviewColumn(l10n, style, color),
-    );
-  }
-
-  Widget _overviewColumn(AppLocalizations l10n, TextStyle style, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppText(
-          name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: style,
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            if (track.recorded) ...[
-              Icon(
-                _directionIcon(reversed: track.reversed),
-                size: 26,
-                color: color,
-              ),
-              const SizedBox(width: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppText(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (track.recorded) ...[
+                Icon(
+                  _directionIcon(reversed: track.reversed),
+                  size: 26,
+                  color: color,
+                ),
+                const SizedBox(width: 9),
+              ],
+              AppText(_directionWord(l10n, track), style: style),
             ],
-            AppText(_directionWord(l10n, track), style: style),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
