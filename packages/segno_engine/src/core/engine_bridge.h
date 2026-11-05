@@ -307,10 +307,8 @@ static inline double le_bridge_align(const float* buf, int32_t len,
       }
     }
   }
-  int64_t at = base + lag;
-  if (at < 0) at += len;
-  if (at >= len) at -= len;
-  return (double)at;
+  /* whole, and within a lap of [0, len): exact */
+  return le_head_wrap((double)(base + lag), len);
 }
 
 /* Whether a step at engine frame `clock` follows the lane's last one, so the
