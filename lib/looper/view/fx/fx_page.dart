@@ -1260,9 +1260,10 @@ class _HearLive extends StatelessWidget {
 
 /// Which part of the selected track the chain belongs to.
 ///
-/// Offers only the parts this track actually has: processing per recorded
-/// input needs separately recorded parts, and offering one that does not
-/// exist would point the editor at nothing.
+/// Offers one part per input the track is set to record, whether or not
+/// anything has been recorded yet: a part is a lane, and its chain can be
+/// set up before the first take. A lane that records no input any more but
+/// still holds audio stays, since that audio still plays through its chain.
 class _PartPicker extends StatelessWidget {
   const _PartPicker({required this.destination});
 
@@ -1273,18 +1274,19 @@ class _PartPicker extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.read<FxCubit>();
     final names = context.watch<InputsCubit>().state;
-    final recorded = context.select<LooperBloc, List<int>>(
-      (b) => _recordedLanes(b.state, destination.index),
+    final parts = context.select<LooperBloc, List<_TrackPart>>(
+      (b) => _trackParts(
+        b.state,
+        destination.index,
+        // The part being edited keeps its row even after its input was taken
+        // off the track, so the picker always names what the editor points
+        // at.
+        editing: switch (destination.part) {
+          FxRecordedPart(:final lane) => lane,
+          _ => null,
+        },
+      ),
     );
-    // The part being edited keeps its row even if its audio was just
-    // cleared, so the picker always names what the editor is pointing at.
-    final lanes = switch (destination.part) {
-      FxRecordedPart(:final lane) when !recorded.contains(lane) => [
-        ...recorded,
-        lane,
-      ],
-      _ => recorded,
-    };
     return LoopSelect<FxTrackPart>(
       key: const Key('fx_part_picker'),
       value: destination.part,
@@ -1295,47 +1297,55 @@ class _PartPicker extends StatelessWidget {
           value: FxTrackPart.whole,
           label: l10n.fxWholeTrack,
         ),
-        for (final lane in lanes)
+        for (final (:lane, :input) in parts)
           LoopSelectItem(
             key: Key('fx_part_$lane'),
             value: FxTrackPart.part(lane),
-            label: _partName(context, lanes, lane, names),
+            // A part is named by the INPUT it records, which is what makes
+            // "edit only the guitar in this take" a thing the player can
+            // point at.
+            label: input < 0
+                ? l10n.fxPartOrdinal(lane + 1)
+                : l10n.inputName(names.names, input),
           ),
       ],
     );
   }
-
-  /// A part is named by the INPUT it recorded, which is what makes "edit only
-  /// the guitar in this take" a thing the player can point at.
-  String _partName(
-    BuildContext context,
-    List<int> lanes,
-    int lane,
-    InputsState names,
-  ) {
-    final l10n = context.l10n;
-    final input = context
-        .read<LooperBloc>()
-        .state
-        .tracks
-        .elementAtOrNull(destination.index)
-        ?.lanes
-        .elementAtOrNull(lane)
-        ?.inputChannel;
-    return input == null || input < 0
-        ? l10n.fxPartOrdinal(lane + 1)
-        : l10n.inputName(names.names, input);
-  }
 }
 
-/// The lanes of track [channel] that hold recorded audio, in lane order.
-List<int> _recordedLanes(LooperState state, int channel) {
-  final track = state.tracks.elementAtOrNull(channel);
+/// One lane of a track and the hardware input it records (`-1` = none).
+typedef _TrackPart = ({int lane, int input});
+
+/// The parts of track [channel], in lane order: every lane its confirmed
+/// lane count and lane inputs set to record an input, the configuration the
+/// engine records from and `FxCubit` accepts a part address against, plus
+/// any lane within that count that holds recorded audio and the lane being
+/// [editing]. Each is named by the input it is set to record, else the one
+/// the engine reports for it.
+List<_TrackPart> _trackParts(
+  LooperState state,
+  int channel, {
+  int? editing,
+}) {
+  final track = state.tracks.where((t) => t.channel == channel).firstOrNull;
   if (track == null) return const [];
+  final count = state.laneCounts[channel] ?? 1;
   return [
-    for (var lane = 0; lane < track.lanes.length; lane++)
-      if (track.lanes[lane].lengthFrames > 0) lane,
+    for (var lane = 0; lane < math.max(count, (editing ?? -1) + 1); lane++)
+      if (lane == editing ||
+          (lane < count &&
+              ((state.laneInputs[(channel, lane)] ?? lane) >= 0 ||
+                  (track.lanes.elementAtOrNull(lane)?.hasContent ?? false))))
+        (lane: lane, input: _partInput(state, track, lane)),
   ];
+}
+
+/// The input lane [lane] of [track] is set to record, else the one the
+/// engine reports for it; `-1` for neither.
+int _partInput(LooperState state, Track track, int lane) {
+  final configured = state.laneInputs[(track.channel, lane)] ?? lane;
+  if (configured >= 0) return configured;
+  return track.lanes.elementAtOrNull(lane)?.inputChannel ?? -1;
 }
 
 /// The chain at the selected destination.
