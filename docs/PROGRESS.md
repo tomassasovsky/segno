@@ -38,6 +38,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1697 | No methods that return widgets: the CI check with a baseline, then one refactor PR per area | in-review | auto | `claude/no-widget-methods-1697*` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
