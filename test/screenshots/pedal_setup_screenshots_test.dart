@@ -227,6 +227,15 @@ void main() {
     await shot(tester, 'leds');
   }, skip: !rendersScreenshots);
 
+  testWidgets('LED colors: Mute mode', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('pedal_led_mode_mute')));
+    await tester.pumpAndSettle();
+    await shot(tester, 'leds_mute');
+  }, skip: !rendersScreenshots);
+
   testWidgets('LED color editor', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const Key('pedal_setup_context_leds')));
