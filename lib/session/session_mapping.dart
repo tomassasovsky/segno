@@ -160,6 +160,7 @@ SessionSettings settingsFromLooper(
                 track.lanes[lane].volume,
             imagePan: track.lanes[lane].imagePan,
             balance: track.lanes[lane].balance,
+            recordedInput: track.lanes[lane].recordedInput,
           ),
     },
     inputSetup: SessionInputSetup(
@@ -439,6 +440,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           inputChannel: lane.inputChannel,
           pan: lane.pan,
           balance: lane.balance,
+          recordedInput: lane.recordedInput,
           history: lane.history,
         ),
       );

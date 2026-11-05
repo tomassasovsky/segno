@@ -72,7 +72,15 @@ class SessionChains {
 }
 
 /// Repository-owned lane mix that cannot be recovered from engine products.
-typedef SessionLaneMix = ({double level, double imagePan, double balance});
+///
+/// `recordedInput` is the input the lane's take was captured from (`-1`
+/// when unknown).
+typedef SessionLaneMix = ({
+  double level,
+  double imagePan,
+  double balance,
+  int recordedInput,
+});
 
 /// Desired musical settings supplied by the app layer when saving.
 ///
@@ -1745,6 +1753,9 @@ class SessionRepository {
                 layers: [SessionLayer(file: content)],
                 pan: settings.laneMix[(i, l)]?.imagePan ?? 0,
                 balance: settings.laneMix[(i, l)]?.balance ?? 1,
+                recordedInput:
+                    settings.laneMix[(i, l)]?.recordedInput ??
+                    track.lanes[l].inputChannel,
                 history: history,
               ),
           ],
@@ -2122,6 +2133,7 @@ class SessionRepository {
             layers: layerFiles,
             pan: mix?.imagePan ?? 0,
             balance: mix?.balance ?? 1,
+            recordedInput: mix?.recordedInput ?? laneSnap.inputChannel,
             history: history,
           ),
         );

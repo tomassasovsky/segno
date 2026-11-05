@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/waveform_window.dart';
@@ -281,6 +282,24 @@ void main() {
         findsWidgets,
       );
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('draws in the readout palette (#1674)', (tester) async {
+      await pump(tester);
+      final context = tester.element(find.byType(ConsoleReadoutView));
+      expect(Theme.of(context).extension<SurfaceTheme>(), SurfaceTheme.readout);
+      // Muted text and the footer's border take the lifted tiers.
+      final noTrack = tester.widget<AppText>(
+        find.byKey(const Key('console_readout_noTrack')),
+      );
+      expect(noTrack.style!.color, SurfaceTheme.dark.textTertiary);
+      final strip = tester.widget<Material>(
+        find.byKey(const Key('console_readout_strip')),
+      );
+      expect(
+        (strip.shape! as RoundedRectangleBorder).side.color,
+        SurfaceTheme.readout.borderSubtle,
+      );
     });
   });
 }

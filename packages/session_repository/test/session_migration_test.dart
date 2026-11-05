@@ -472,8 +472,30 @@ void main() {
       );
     });
 
-    test('the current schema opens with no conversion', () async {
+    test('schema 17 opens with each take recorded from its lane input '
+        '(#1678)', () async {
       final dir = copyFixture('v17_anchor');
+      final (:bundle, :conversion) = await repo().open(
+        dir,
+        liveSettings: () => _live,
+      );
+      expect(conversion!.fromVersion, 17);
+      for (final track in bundle.session.tracks) {
+        for (final lane in track.lanes) {
+          expect(lane.recordedInput, lane.inputChannel);
+        }
+      }
+      expect(
+        conversion.notes,
+        containsAll([
+          'tracks[1].lanes[0].recordedInput: taken from inputChannel',
+          'tracks[1].lanes[1].recordedInput: taken from inputChannel',
+        ]),
+      );
+    });
+
+    test('the current schema opens with no conversion', () async {
+      final dir = copyFixture('v18_recorded_input');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -516,12 +538,18 @@ void main() {
       expect(bundle.session.defaultFollowTempo, isFalse);
       // The lap each take was played on (#854).
       expect(bundle.session.tracks.map((t) => t.anchorLap), [0, 1, 0, 0, 0]);
+      // The input each take was captured from, apart from the lane's
+      // setting (#1678).
+      final lanes = bundle.session.tracks[1].lanes;
+      expect(lanes[1].inputChannel, 1);
+      expect(lanes[1].recordedInput, 3);
       expect(snapshotOf(dir), before);
     });
 
     test('the current schema stays strict: a track without a direction, a '
-        'span or an anchor, a grid without its beats, or a manifest without '
-        'its Audio & tempo settings, is refused, not defaulted', () {
+        'span or an anchor, a grid without its beats, a manifest without '
+        'its Audio & tempo settings, or a lane without its recorded input, '
+        'is refused, not defaulted', () {
       for (final edit in <void Function(Map<String, dynamic>)>[
         (m) => ((m['tracks'] as List)[1] as Map).remove('reversed'),
         (m) => ((m['tracks'] as List)[1] as Map).remove('spanFrames'),
@@ -529,8 +557,10 @@ void main() {
         (m) => m.remove('loopBeats'),
         (m) => m.remove('defaultFollowTempo'),
         (m) => m.remove('recordedTempoBpm'),
+        (m) => ((((m['tracks'] as List)[1] as Map)['lanes'] as List)[1] as Map)
+            .remove('recordedInput'),
       ]) {
-        final manifest = manifestOf(copyFixture('v17_anchor'));
+        final manifest = manifestOf(copyFixture('v18_recorded_input'));
         edit(manifest);
         expect(
           () => decodeSessionManifest(jsonEncode(manifest)),
@@ -631,7 +661,7 @@ void main() {
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v17_anchor');
+      final dir = copyFixture('v18_recorded_input');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });
