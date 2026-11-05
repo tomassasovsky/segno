@@ -122,9 +122,14 @@ abstract final class ScreenLinkOp {
   static const calibrationTap = 'calibrationTap';
 
   /// Readout to main: a change the player asked for on the readout's Loop
-  /// panel (#1654), a `ReadoutCommand` map under `command`. No reply: the
-  /// readout sees the result in its next [readout].
+  /// panel (#1654), a `ReadoutCommand` map under `command`. An accepted
+  /// change has no reply: the readout sees the result in its next [readout].
   static const command = 'command';
+
+  /// Main to readout: the main screen refused a [command] whose refusal the
+  /// player needs to hear (a Clear tempo the tempo lock keeps), the
+  /// `ReadoutRefusal` name under `refusal`.
+  static const refused = 'refused';
 }
 
 /// A copy of [value] that a [SendPort] can carry between isolate groups.
