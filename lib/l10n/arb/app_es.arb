@@ -2168,7 +2168,6 @@
     "a11yMixerLevel": "Nivel de la pista {number}",
     "a11yMixerReset": "Restablecer todos los niveles a la unidad y los panoramas al centro",
     "pedalSetupContextLeds": "Colores LED",
-    "pedalLedMode": "Modo: {mode}",
     "pedalLedModeRecord": "Grabación",
     "pedalLedModeMute": "Silencio",
     "pedalLedReset": "Restablecer",
