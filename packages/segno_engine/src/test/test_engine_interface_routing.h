@@ -1,10 +1,12 @@
 /* The interface's own routing (#1046): le_own_scarlett2_routing and
  * le_scarlett2_loopback_mask against a fake card. The 4i4 card is read from
  * an `amixer contents` dump of the console's (fixtures/alsa); the others are
- * built here. Included by test_engine_core.c. */
+ * built here. The fake card also serves the input-switch tests
+ * (test_engine_interface_inputs.h), which read `alsactl` state dumps too.
+ * Included by test_engine_core.c. */
 
-#define RT_MAX_CTLS 128
-#define RT_MAX_ITEMS 24
+#define RT_MAX_CTLS 256
+#define RT_MAX_ITEMS 64
 
 typedef struct rt_ctl {
   char name[64];
@@ -18,6 +20,8 @@ typedef struct rt_ctl {
 typedef struct rt_card {
   rt_ctl ctl[RT_MAX_CTLS];
   int count;
+  unsigned usb_vendor; /* from a fixture's "# usb vvvv:pppp" line */
+  unsigned usb_product;
   int writes;
   const char* refuse; /* a write to this control fails */
   const char* stuck;  /* a write to this control succeeds but changes nothing */
@@ -64,9 +68,37 @@ static int rt_write(void* ctx, const char* name, unsigned value) {
   return 0;
 }
 
+/* The name of the card's index-th mixer control, in the dump's order. */
+static const char* rt_control_name(void* ctx, unsigned index) {
+  rt_card* card = (rt_card*)ctx;
+  for (int i = 0; i < card->count; ++i) {
+    if (card->ctl[i].mixer && index-- == 0) return card->ctl[i].name;
+  }
+  return NULL;
+}
+
 static le_mixer rt_mixer(rt_card* card) {
-  le_mixer m = {card, rt_find, rt_item_name, rt_read, rt_write};
+  le_mixer m;
+  memset(&m, 0, sizeof(m));
+  m.ctx = card;
+  m.usb_vendor = card->usb_vendor;
+  m.usb_product = card->usb_product;
+  m.control_name = rt_control_name;
+  m.find = rt_find;
+  m.item_name = rt_item_name;
+  m.read = rt_read;
+  m.write = rt_write;
   return m;
+}
+
+/* A fixture's "# usb vvvv:pppp" line: the card's USB ids. */
+static void rt_usb_line(rt_card* card, const char* line) {
+  unsigned vendor = 0;
+  unsigned product = 0;
+  if (sscanf(line, "# usb %x:%x", &vendor, &product) == 2) {
+    card->usb_vendor = vendor;
+    card->usb_product = product;
+  }
 }
 
 /* Reads an `amixer -c N contents` dump: each control's iface, name, type,
@@ -80,7 +112,9 @@ static void rt_load(rt_card* card, const char* path) {
   rt_ctl* c = NULL;
   while (fgets(line, sizeof(line), f) != NULL) {
     const char* name = strstr(line, "name='");
-    if (strncmp(line, "numid=", 6) == 0 && name != NULL &&
+    if (line[0] == '#') {
+      rt_usb_line(card, line);
+    } else if (strncmp(line, "numid=", 6) == 0 && name != NULL &&
         card->count < RT_MAX_CTLS) {
       c = &card->ctl[card->count++];
       c->mixer = strstr(line, "iface=MIXER") != NULL;
@@ -104,6 +138,79 @@ static void rt_load(rt_card* card, const char* path) {
     } else if (strncmp(line, "  : values=", 11) == 0) {
       const char* v = line + 11;
       c->value = strncmp(v, "on", 2) == 0 ? 1u : (unsigned)strtoul(v, NULL, 10);
+    }
+  }
+  fclose(f);
+}
+
+/* Copies an alsactl value (quoted or bare) after `key` in `line` into out. */
+static int rt_state_value(const char* line, const char* key, char* out,
+                          size_t cap) {
+  const char* p = strstr(line, key);
+  if (p == NULL) return 0;
+  p += strlen(key);
+  while (*p == ' ' || *p == '\t') ++p;
+  size_t len = 0;
+  if (*p == '\'') {
+    ++p;
+    const char* end = strchr(p, '\'');
+    len = end != NULL ? (size_t)(end - p) : strlen(p);
+  } else {
+    while (p[len] != '\0' && p[len] != '\n') ++len;
+  }
+  snprintf(out, cap, "%.*s", (int)len, p);
+  return 1;
+}
+
+/* Reads one card of an `alsactl store` state file: each control's iface,
+ * name, type, items and first value. A fixture holds one card. */
+static void rt_load_state(rt_card* card, const char* path) {
+  memset(card, 0, sizeof(*card));
+  FILE* f = fopen(path, "r");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  char line[512];
+  char value[64] = "";
+  rt_ctl* c = NULL;
+  while (fgets(line, sizeof(line), f) != NULL) {
+    char text[64];
+    if (line[0] == '#') {
+      rt_usb_line(card, line);
+    } else if (strncmp(line, "\tcontrol", 8) == 0 &&
+               card->count < RT_MAX_CTLS) {
+      c = &card->ctl[card->count++];
+      value[0] = '\0';
+    } else if (c == NULL) {
+      continue;
+    } else if (strncmp(line, "\t}", 2) == 0) {
+      /* The control's end: its value, now that its items are known. */
+      if (c->type == LE_MIXER_BOOLEAN) {
+        c->value = strcmp(value, "true") == 0;
+      } else if (c->type == LE_MIXER_ENUMERATED) {
+        for (unsigned i = 0; i < c->items; ++i) {
+          if (strcmp(c->item[i], value) == 0) c->value = i;
+        }
+      }
+      c = NULL;
+    } else if (strncmp(line, "\t\tiface ", 8) == 0) {
+      c->mixer = strstr(line, "MIXER") != NULL;
+    } else if (strncmp(line, "\t\tname ", 7) == 0) {
+      rt_state_value(line, "name", c->name, sizeof(c->name));
+    } else if (strncmp(line, "\t\tvalue", 7) == 0 && value[0] == '\0') {
+      /* "value X", or "value.0 X" for the first of several. */
+      const char* v = line + 7;
+      while (*v != ' ' && *v != '\0') ++v;
+      rt_state_value(v, "", value, sizeof(value));
+    } else if (strncmp(line, "\t\t\ttype ", 8) == 0 &&
+               rt_state_value(line, "type", text, sizeof(text))) {
+      c->type = strcmp(text, "ENUMERATED") == 0 ? LE_MIXER_ENUMERATED
+                : strcmp(text, "BOOLEAN") == 0  ? LE_MIXER_BOOLEAN
+                                                : 0;
+    } else if (strncmp(line, "\t\t\titem.", 8) == 0 &&
+               c->items < RT_MAX_ITEMS) {
+      const char* v = line + 8;
+      while (*v != ' ' && *v != '\0') ++v;
+      rt_state_value(v, "", c->item[c->items++], sizeof(c->item[0]));
     }
   }
   fclose(f);
