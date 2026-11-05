@@ -124,7 +124,7 @@ class _ReadoutTempoKeypadState extends State<ReadoutTempoKeypad> {
                 ),
                 const Spacer(),
                 SizedBox(
-                  height: OnScreenKeyboard.keyHeight,
+                  height: OnScreenKeyboard.standardKeyHeight,
                   child: ReadoutButton(
                     key: const Key('readout_keypad_cancel'),
                     label: l10n.cancel,

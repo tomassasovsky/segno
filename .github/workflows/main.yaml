@@ -190,11 +190,26 @@ jobs:
   # code with package:analyzer, so it needs flutter pub get. Its own job
   # because dart analyze and bloc lint run inside the reusable workflow above.
   # tool/widget_methods_baseline.txt lists what is left to convert; the check
-  # fails on anything new and on stale entries.
+  # fails on anything new and on stale entries, and the first step fails when
+  # the baseline gains an entry.
   no-widget-methods:
     runs-on: ubuntu-latest
     steps:
+      # Depth 2 brings the commit before this one (the base, for a pull
+      # request's merge commit), to compare the baseline with.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: The widget-method baseline only shrinks
+        run: |
+          baseline=tool/widget_methods_baseline.txt
+          git cat-file -e "HEAD^1:$baseline" 2>/dev/null || exit 0
+          added=$(git diff HEAD^1 HEAD -- "$baseline" | grep -E '^\+[^+#]' || true)
+          if [ -n "$added" ]; then
+            echo "$baseline gained entries; make them widget classes instead:"
+            echo "$added"
+            exit 1
+          fi
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.47.x"
@@ -511,7 +526,18 @@ jobs:
           set -eu
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.1.1
           echo "$PWD/bin" >> "$GITHUB_PATH"
+      # The core download comes from the package server on every run, and its
+      # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
+      - name: Cache the Arduino core and libraries
+        id: arduino-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-rp2040-6.0.0-neopixel-1.15.5-bus-2.8.4
       - name: Install the RP2040/RP2350 core and LED drivers
+        if: steps.arduino-cache.outputs.cache-hit != 'true'
         run: |
           set -eu
           arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
