@@ -211,6 +211,19 @@ void main() {
       expect(find.byKey(const Key('console_readout_name')), findsNothing);
     });
 
+    testWidgets('without a panel to open, the strip is no button', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await pump(tester);
+      expect(
+        tester.getSemantics(find.byKey(const Key('console_readout_strip'))),
+        isNot(matchesSemantics(isButton: true)),
+      );
+      expect(find.bySemanticsLabel('Tempo, length and start'), findsNothing);
+      semantics.dispose();
+    });
+
     testWidgets('only the footer strip takes a tap (#1654)', (tester) async {
       await pump(tester);
       final strip = find.byKey(const Key('console_readout_strip'));

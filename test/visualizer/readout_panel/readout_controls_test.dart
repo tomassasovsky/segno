@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
     show RecordTiming, TempoFollowState;
@@ -112,6 +113,15 @@ void main() {
     return tester.widget<ReadoutButtonFace>(face).enabled;
   }
 
+  void semanticTap(WidgetTester tester, String key) {
+    final node = tester.getSemantics(find.byKey(Key(key)));
+    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+    tester.binding.renderViews.first.owner!.semanticsOwner!.performAction(
+      node.id,
+      SemanticsAction.tap,
+    );
+  }
+
   group('the strip and the panel', () {
     testWidgets('the readout is unchanged until the strip is touched', (
       tester,
@@ -131,6 +141,29 @@ void main() {
 
       await open(tester);
       expect(sent, isEmpty);
+    });
+
+    testWidgets("the strip names the selected track's next take, and "
+        'nothing before the owners load', (tester) async {
+      await pump(
+        tester,
+        readoutOf(
+          loop: const ReadoutLoopSettings(
+            lengthBars: 4,
+            trackLengthBars: 8,
+            timing: RecordTiming.bar,
+            trackTiming: RecordTiming.eighth,
+            ready: true,
+          ),
+        ),
+      );
+      expect(find.text('8 bars'), findsOneWidget);
+      expect(find.text('Start 1/8'), findsOneWidget);
+
+      pushed.value = readoutOf(loop: const ReadoutLoopSettings());
+      await tester.pump();
+      expect(find.byKey(const Key('console_readout_length')), findsNothing);
+      expect(find.byKey(const Key('console_readout_start')), findsNothing);
     });
 
     testWidgets('Done closes the panel', (tester) async {
@@ -225,6 +258,37 @@ void main() {
       expect(sent, hasLength(before));
       await gesture.up();
       await tester.pump();
+    });
+
+    testWidgets('a finger sliding off a held step stops it', (tester) async {
+      await pump(tester, readoutOf());
+      await open(tester);
+      final step = find.byKey(const Key('readout_panel_nudge_+1'));
+      final gesture = await tester.startGesture(tester.getCenter(step));
+      await tester.pump(ReadoutPressButton.repeatDelay);
+      await tester.pump(ReadoutPressButton.repeatEvery);
+      await gesture.moveTo(tester.getCenter(step) + const Offset(0, 120));
+      await tester.pump();
+      final before = sent.length;
+      await tester.pump(ReadoutPressButton.repeatEvery * 5);
+      expect(sent, hasLength(before));
+      await gesture.up();
+      await tester.pump();
+    });
+
+    testWidgets('every button can be pressed through accessibility', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await pump(tester, readoutOf());
+      await open(tester);
+      semanticTap(tester, 'readout_panel_timing_half');
+      await tester.pump();
+      expect(sent, const [TimingSet(RecordTiming.half)]);
+      semanticTap(tester, 'readout_panel_done');
+      await tester.pump();
+      expect(panel, findsNothing);
+      semantics.dispose();
     });
 
     testWidgets('Tap sends on touch, before the finger lifts', (tester) async {
@@ -431,6 +495,28 @@ void main() {
       expect(sent, isEmpty);
     });
 
+    testWidgets('a take the owners report before the engine does locks '
+        'the tempo too', (tester) async {
+      await pump(
+        tester,
+        readoutOf(
+          follow: TempoFollowState.retimes,
+          loop: const ReadoutLoopSettings(
+            lengthBars: 4,
+            timing: RecordTiming.bar,
+            captureLocked: true,
+            ready: true,
+          ),
+        ),
+      );
+      await open(tester);
+      expect(band, findsOneWidget);
+      for (final key in [...tempoKeys, 'readout_panel_signature_4_4']) {
+        expect(enabled(tester, key), isFalse, reason: key);
+      }
+      expect(note, findsNothing);
+    });
+
     testWidgets('a MIDI clock owns the tempo', (tester) async {
       await pump(tester, readoutOf(clock: true));
       await open(tester);
@@ -511,6 +597,10 @@ void main() {
           ),
         ),
         ('locked', readoutOf(follow: TempoFollowState.noFollower)),
+        (
+          'locked at 15/8',
+          readoutOf(follow: TempoFollowState.noGrid, tsNum: 15, tsDen: 8),
+        ),
       ]) {
         testWidgets('$name: every text in full and every target 48 px '
             '($language)', (tester) async {
