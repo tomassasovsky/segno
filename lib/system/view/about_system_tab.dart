@@ -268,7 +268,9 @@ typedef _FactRow = ConsoleRow Function({required bool last});
 /// a row that decides its own closing hairline is a row that is wrong on the
 /// next rig.
 class _FactCard extends StatelessWidget {
-  const _FactCard({required this.rows});
+  // A card with no rows is a 2px line: the caller leaves the group out.
+  const _FactCard({required this.rows})
+    : assert(rows.length > 0, 'a fact card needs at least one row');
 
   final List<_FactRow> rows;
 
