@@ -671,9 +671,6 @@ static void test_pitch_audible_render_first(void) {
   le_track_snapshot snap;
   for (int t = 0; t < 5; ++t) {
     le_engine_get_track(e, t, &snap);
-    if (snap.state != (t < 4 ? LE_TRACK_STOPPED : LE_TRACK_PLAYING)) {
-      printf("  track %d state %d\n", t, snap.state);
-    }
     CHECK(snap.state == (t < 4 ? LE_TRACK_STOPPED : LE_TRACK_PLAYING));
   }
   CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);

@@ -144,16 +144,16 @@ static inline double le_bridge_score(const float* sub, const float* target,
  * and the owner's guitar takes, this splices 4 to 6 times a second instead
  * of 14 to 22, the chord's partials dip about a third as much (0.7 dB RMS
  * below their running level against 2.1; the Signalsmith render measures
- * 0.9), and a bass note no longer beats. A drum loop's hits land about
- * 15 ms from their place on average against 10 (a kick's ringing body
- * repeats, so it counts as tonal). One search
+ * 0.9), and a bass note no longer beats. A drum loop's hits land as close
+ * to their place on average (9 ms), but up to 31 ms off against 20 (a kick's
+ * ringing body repeats, so it counts as tonal). One search
  * costs about 40 % more (9.3 against 6.6 us on an M4) and runs a quarter to
  * a third as often. */
 #define LE_BRIDGE_REACH_MS 25
 #define LE_BRIDGE_INNER_MS 10
 #define LE_BRIDGE_WINDOW_MS 20
 #define LE_BRIDGE_MAX_TAPS 160
-#define LE_BRIDGE_MAX_SUB 2560
+#define LE_BRIDGE_MAX_SUB 8192
 
 /* x rounded to a whole index in [0, len). */
 static inline int64_t le_bridge_round(double x, int32_t len) {
@@ -177,15 +177,18 @@ static inline int64_t le_bridge_near(int64_t d, int32_t len) {
  * The lags run on the tap spacing, then every lag around the best one. */
 static inline double le_bridge_align(const float* buf, int32_t len,
                                      double ideal, double cont, double g,
-                                     int32_t reversed, int32_t sample_rate,
-                                     int32_t* tonal) {
+                                     int32_t reversed, int32_t turned,
+                                     int32_t sample_rate, int32_t* tonal) {
   const int64_t base = le_bridge_round(ideal, len);
   const int64_t from = le_bridge_round(cont, len);
   const int32_t reach = sample_rate * LE_BRIDGE_REACH_MS / 1000;
   const int32_t inner = sample_rate * LE_BRIDGE_INNER_MS / 1000;
   const int32_t keep = *tonal ? reach : inner;
   const int64_t drift = le_bridge_near(from - base, len);
-  if (drift >= -keep && drift <= keep) return (double)from;
+  /* a grain that turns (a Reverse toggle, a Speed step) is searched for:
+   * the old grain's continuation read the other way, or at another rate,
+   * does not continue it */
+  if (!turned && drift >= -keep && drift <= keep) return (double)from;
   int32_t step = sample_rate / 6000;
   if (step < 1) step = 1;
   int32_t n = sample_rate * LE_BRIDGE_WINDOW_MS / 1000 / step;
@@ -260,6 +263,12 @@ static inline double le_bridge_align(const float* buf, int32_t len,
    * repeats nowhere and the lag that keeps time wins. */
   int32_t limit = reach;
   *tonal = other >= 0.25 * ((double)et + 1e-12);
+  /* Held material found while a grain could still continue within the wide
+   * tolerance: it continues (the lean must not trade the continuation for
+   * a lag merely close to it). */
+  if (*tonal && !turned && drift >= -reach && drift <= reach) {
+    return (double)from;
+  }
   if (!*tonal) {
     best = near;
     best_score = near_score;
@@ -336,6 +345,7 @@ static inline int32_t le_bridge_step(le_bridge* b, const float* buf,
     b->prev_g = b->cur_g;
     b->prev_rev = b->cur_rev;
     b->cur = le_bridge_align(buf, len, index, cont, g, h->reversed,
+                             b->cur_rev != h->reversed || b->cur_g != g,
                              sample_rate, &b->tonal);
     b->cur_g = g;
     b->cur_rev = h->reversed;

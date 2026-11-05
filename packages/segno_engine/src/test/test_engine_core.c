@@ -37738,9 +37738,9 @@ static void test_cache_cap_zero_disables_engaged_lane(void) {
  * callback can write it; a later revision mismatch only detects stale output. */
 static void test_cache_copy_refuses_queued_capture(void) {
   printf("test_cache_copy_refuses_queued_capture\n");
-  /* Longer than two ticks' copy budget, so the copy is still in progress
-   * after the enqueue's tick and the Record's own drain. */
-  const int32_t len = 2 * LE_CACHE_COPY_TICK_FRAMES + 190000;
+  /* Several ticks' copy budget, so the copy is still in progress after the
+   * enqueue's tick and the drains the Record and its checks run. */
+  const int32_t len = 4 * LE_CACHE_COPY_TICK_FRAMES + 190000;
   le_engine* e = le_engine_create();
   CHECK(le_engine_configure(e, 48000, 1, 1, len + 10000) == LE_OK);
   cache_record_loop(e, len, 0.25f);

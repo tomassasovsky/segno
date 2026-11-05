@@ -17,9 +17,9 @@
  *      a_audio_rev it copied under. Every chunk requires settled commands and
  *      the callback's end-of-block readable fact (no armed/seam/fade writer).
  *      Revision/key checks reject stale work; they do not synchronize PCM.
- *      The copy is CHUNKED across ticks (le_cache_copy_step, bounded
- *      per call) so the UI-poll drain path never stalls behind one giant
- *      memcpy. A finished render whose revision moved is discarded. In-flight
+ *      The copy is CHUNKED across ticks (le_cache_copy_step, one
+ *      budget per call, LE_CACHE_COPY_TICK_FRAMES) so the UI-poll drain
+ *      path never stalls behind one giant memcpy. A finished render whose revision moved is discarded. In-flight
  *      copies count against the memory cap. The control thread owns all pool
  *      management (alloc/shrink/a_live swaps), so a control-side copy can
  *      never race a pool free.
@@ -170,9 +170,6 @@ enum {
   LE_CACHE_JOB_FAILED = 5,
   LE_CACHE_JOB_COPYING = 6,
 };
-
-/* (LE_CACHE_COPY_TICK_FRAMES, the copy budget per tick, lives in
- * engine_cache.h beside the settle windows.) */
 
 /* One render job. `dry` is control-allocated at enqueue and control-freed at
  * collection (the worker only reads it); `wet` is worker-allocated and either
@@ -1334,7 +1331,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
 
 /* One TRACK's Transpose pass (#1179 Part 3a): publish its retained renders
  * when every lane holds one for the current key, else schedule one job that
- * renders every active lane at that key after the 100 ms settle. Entries stay
+ * renders every active lane at that key after the source settle. Entries stay
  * while the pitch returns to 0 or is bypassed (LRU reclaims them), so a step
  * back or an Undo to a rendered take is cache-hot. A job the budget cannot
  * host is refused with the reason and the track stays dry, reported. */
@@ -1452,7 +1449,10 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
                         memory_order_release);
 }
 
-/* Advances every COPYING job by one bounded chunk [R2](a). The source
+/* Advances the COPYING jobs [R2](a) by one shared budget
+ * (LE_CACHE_COPY_TICK_FRAMES), the jobs of tracks that sound first, then
+ * the rest, each in slot order; a job the budget does not reach waits for
+ * the next tick. The source
  * pointer is re-resolved per chunk on this same control thread — the only
  * thread that swaps a_live or reallocs pool slots — so a chunk can never
  * read a freed buffer. Settled commands and the callback's readable fact
@@ -1519,6 +1519,13 @@ static int le_cache_assemble_chunk(le_engine* e, le_cache_job* job,
   return 1;
 }
 
+/* Whether a track sounds now, for the order renders are scheduled and
+ * copied and picked in [B6]. */
+static int le_cache_track_audible(le_track* tr) {
+  const int32_t st = load_i32(&tr->a_state);
+  return st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING;
+}
+
 /* The frames per lane a job copies this tick out of *budget: what it has
  * left, at most the budget shared among its `ways` lanes or channels. */
 static int32_t le_cache_copy_take(int64_t* budget, int32_t left, int32_t ways) {
@@ -1530,10 +1537,12 @@ static int32_t le_cache_copy_take(int64_t* budget, int32_t left, int32_t ways) {
 
 static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
   int64_t budget = LE_CACHE_COPY_TICK_FRAMES;
-  for (int j = 0; j < LE_CACHE_JOB_SLOTS; ++j) {
-    le_cache_job* job = &c->jobs[j];
+  for (int k = 0; k < 2 * LE_CACHE_JOB_SLOTS; ++k) {
+    le_cache_job* job = &c->jobs[k % LE_CACHE_JOB_SLOTS];
     if (atomic_load_explicit(&job->a_state, memory_order_relaxed) !=
-        LE_CACHE_JOB_COPYING) {
+            LE_CACHE_JOB_COPYING ||
+        le_cache_track_audible(&e->tracks[job->channel]) !=
+            (k < LE_CACHE_JOB_SLOTS)) {
       continue;
     }
     le_track* tr = &e->tracks[job->channel];
@@ -1779,13 +1788,6 @@ int le_cache_source_ready(le_engine* engine, int32_t channel) {
 }
 
 /* ---- the render worker [B6] ---- */
-
-/* Whether a track sounds now, for the order renders are scheduled and
- * picked in [B6]. */
-static int le_cache_track_audible(le_track* tr) {
-  const int32_t st = load_i32(&tr->a_state);
-  return st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING;
-}
 
 /* Picks the next queued job for a lane currently audible [B6], or NULL with
  * the first queued stopped-lane job in *out_fallback. */

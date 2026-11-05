@@ -2604,8 +2604,8 @@ class SegnoEngineBindings {
   /// Clears the tempo (#1653): BPM 0, tempo_source NONE and no bar grid, so the
   /// next defining loop sets the tempo again. Refused exactly while the tempo is
   /// locked (D6): a track holds material on a grid or under a tempo, a take or a
-  /// count-in is under way, or a record is armed, launching or not yet
-  /// acknowledged — LE_ERR_NOT_READY, nothing posted. LE_ERR_EXTERNAL_CLOCK
+  /// count-in is under way, or a record is waiting, launching or not yet
+  /// applied — LE_ERR_NOT_READY, nothing posted. LE_ERR_EXTERNAL_CLOCK
   /// while an external clock owns the tempo; LE_ERR_NOT_RUNNING unconfigured;
   /// LE_ERR_INVALID for a null handle. The callback rechecks the lock before
   /// applying. Not perf-logged: the effect chains' musical time picks up the
@@ -6819,7 +6819,7 @@ class SegnoEngineBindings {
 
   /// Transpose (#1179 Part 3a): plays track [channel] as a pitch-shifted render
   /// of its own takes at unchanged timing. The render is built off the audio
-  /// thread by the cache worker (about 100 ms after the last step, plus the
+  /// thread by the cache worker (about 30 ms after the last step, plus the
   /// render); until it lands the track plays its dry take at true pitch and
   /// le_track_snapshot.transpose_effective_st reads 0, then it crossfades to the
   /// render at the same position. Step moves the stored pitch by [delta] (+1 or
