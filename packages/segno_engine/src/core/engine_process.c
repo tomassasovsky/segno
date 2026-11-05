@@ -7801,8 +7801,13 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     le_source_len_log(e, tr, frame);
     le_transpose_log(e, tr, frame, turn);
   }
+  /* on is set only above, so this is the whole buffer's answer; a turn's
+   * old head counts while its window mixes. */
   int any = 0;
-  for (int t = 0; t < tc; ++t) any |= e->bridges[t].on | e->bridges[t].turn;
+  for (int t = 0; t < tc; ++t) {
+    any |= e->bridges[t].on |
+           (e->tracks[t].turn_left > 0 && e->bridges[t].turn);
+  }
   e->bridge_any = any;
 }
 
@@ -8561,20 +8566,13 @@ static inline int le_track_print_run_matches(
   return 1;
 }
 
-/* Per-frame capture + additive playback mix: snapshots each track's per-lane
- * playback state, records / overdubs the live input into the lane buffers at the
- * latency-compensated write head, and sums every audible lane (through its
- * effect chain) into `out`. Fills [st] (the per-track state snapshot the
- * transport advance reads) and accumulates [frame_trk_peak] (per-track) and the
- * [lane_sumsq] / [lane_peak] metering. [pos] is the playhead (read by the caller
- * before the transport advances). */
-/* Out of line, cold: GCC inlines a static function called once, which would
- * pull the bridge's search (and its stack buffers) into the mixer's frame
- * loop and slow every lane that does not bridge (#1675). */
+/* Out of line: GCC inlines a static function called once, which would pull
+ * the bridge's search (and its stack buffers) into the mixer's frame loop
+ * and slow every lane that does not bridge (#1675). */
 #if defined(_MSC_VER)
-#define LE_BRIDGE_COLD __declspec(noinline)
+#define LE_BRIDGE_NOINLINE __declspec(noinline)
 #else
-#define LE_BRIDGE_COLD __attribute__((noinline, cold))
+#define LE_BRIDGE_NOINLINE __attribute__((noinline))
 #endif
 
 /* The pitch bridge's read for lane l of track t this frame (#1675): the
@@ -8583,7 +8581,7 @@ static inline int le_track_print_run_matches(
  * LE_BRIDGE_OLD for a turn window's old one), the other side through its
  * head, mixed by the window's weights. Kept out of mix_tracks_frame so a lane
  * that does not bridge runs the plain read alone. */
-static LE_BRIDGE_COLD float le_mix_bridge_lane(
+static LE_BRIDGE_NOINLINE float le_mix_bridge_lane(
     le_engine* e, int t, int l, const float* lbuf, int32_t len, double index,
     int64_t pos, int bridging, double turn_index, float turn_x, float turn_y,
     uint32_t f, int sr) {
@@ -8613,7 +8611,7 @@ static LE_BRIDGE_COLD float le_mix_bridge_lane(
 
 /* A bridged track's Stop fade for lane l (#1675): its grains read on from
  * where the track stopped, at the tail's index. */
-static LE_BRIDGE_COLD float le_mix_bridge_tail(le_engine* e, int t, int l,
+static LE_BRIDGE_NOINLINE float le_mix_bridge_tail(le_engine* e, int t, int l,
                                                const float* lbuf, int32_t len,
                                                double tail_at, uint32_t f,
                                                int sr) {
@@ -8628,6 +8626,13 @@ static LE_BRIDGE_COLD float le_mix_bridge_tail(le_engine* e, int t, int l,
   return x;
 }
 
+/* Per-frame capture + additive playback mix: snapshots each track's per-lane
+ * playback state, records / overdubs the live input into the lane buffers at the
+ * latency-compensated write head, and sums every audible lane (through its
+ * effect chain) into `out`. Fills [st] (the per-track state snapshot the
+ * transport advance reads) and accumulates [frame_trk_peak] (per-track) and the
+ * [lane_sumsq] / [lane_peak] metering. [pos] is the playhead (read by the caller
+ * before the transport advances). */
 static inline void mix_tracks_frame(
     le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
     int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
@@ -8650,7 +8655,7 @@ static inline void mix_tracks_frame(
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
     int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
     float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
-    int any_solo, uint64_t perf_frame_base) {
+    int any_solo, uint64_t perf_frame_base, int bridge_block) {
   /* The All tracks recorded-mix stage (slice 3e). While the chain has
    * something on it the tracks route HERE instead of straight to `out`, and
    * the loop after the track loop runs the chain once per output bus over
@@ -8907,30 +8912,31 @@ static inline void mix_tracks_frame(
   double turn_idx[LE_MAX_TRACKS];
   int32_t src_len[LE_MAX_TRACKS];
   float turn_x[LE_MAX_TRACKS], turn_y[LE_MAX_TRACKS];
-  /* The pitch bridge (#1675), all behind bridge_block, which is 0 unless a
-   * track bridges this buffer: bridging[t] is LE_BRIDGE_NEW when the new
-   * head reads through the grains, | LE_BRIDGE_OLD when a turn window's old
-   * head does, 0 for the plain read below; bridge_pos[t] is the song
-   * position the grains step at. */
+  /* The pitch bridge (#1675), all behind bridge_block (le_engine.bridge_any,
+   * read once a buffer), which is 0 unless a track bridges this buffer.
+   * bridging[t] is LE_BRIDGE_NEW when the new head reads through the grains,
+   * | LE_BRIDGE_OLD when a turn window's old head does, 0 for the plain read
+   * below; bridge_pos[t] is the song position the grains step at. Both are
+   * written only while bridge_block is set, so every reader tests it
+   * first. */
   int bridging[LE_MAX_TRACKS];
   int64_t bridge_pos[LE_MAX_TRACKS];
-  const int bridge_block = e->bridge_any; /* once a frame, mostly 0 */
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
     head_idx[t] = -1.0;
     turn_idx[t] = -1.0;
     turn_x[t] = 1.0f;
-    int bridge_any = 0;
+    int track_bridged = 0;
     if (bridge_block) {
       const le_track_bridge* tb = &e->bridges[t];
       bridging[t] = 0;
-      bridge_any = tb->on || (tr->turn_left > 0 && tb->turn);
+      track_bridged = tb->on || (tr->turn_left > 0 && tb->turn);
     }
     /* A stretch render (#1179 Part 4a-ii) is not the take's length, so its
      * read always goes through the head, mapped (le_head_read_scaled); a
      * bridged track's too. */
     const int stretched =
-        tr->src_ent[0] != NULL || tr->turn_ent[0] != NULL || bridge_any;
+        tr->src_ent[0] != NULL || tr->turn_ent[0] != NULL || track_bridged;
     if (trk_len[t] <= 0 ||
         (le_head_is_identity(&tr->head) && tr->turn_left == 0 && !stretched)) {
       continue;
@@ -8945,7 +8951,7 @@ static inline void mix_tracks_frame(
     trk_pos[t] = whole % trk_len[t];
     src_len[t] = len;
     if (!le_head_is_integral(&tr->head) || stretched) head_idx[t] = index;
-    if (bridge_any) {
+    if (track_bridged) {
       const le_track_bridge* tb = &e->bridges[t];
       bridge_pos[t] = song;
       bridging[t] = (tb->on ? LE_BRIDGE_NEW : 0) |
@@ -9421,6 +9427,7 @@ static inline void mix_tracks_frame(
         /* The Stop's fade-out (#1400): read on past the stop, never past
          * this lane's allocated slot. */
         float x = 0.0f;
+        /* bridge_block covers `on`: le_transpose_select sets both. */
         if (bridge_block && e->bridges[t].on && !sounding &&
             tail_len <= cap[t][l] &&
             le_bridge_continues(&e->bridges[t].lane[l],
@@ -10367,6 +10374,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const le_wet_entry* track_cache_ent[LE_MAX_TRACKS];
   snapshot_track_cache(e, tc, track_cache_ent);
   le_transpose_select(e, tc, lane_n, perf_frame_base);
+  const int bridge_block = e->bridge_any; /* the pitch bridge, per buffer */
 
 
   /* Per-input live monitor chain, snapshotted once per buffer (see
@@ -10564,7 +10572,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                        at_fx_params, at_fx_enabled, cache_ent, lane_sumsq,
                        lane_peak, st,
                        frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
-                       in_trim, solo, any_solo, perf_frame_base);
+                       in_trim, solo, any_solo, perf_frame_base,
+                       bridge_block);
 
       /* The click's schedule and voice (its sample sums in during the
        * second loop), the loop viz cursor, the track viz taps, then the
