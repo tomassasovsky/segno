@@ -104,11 +104,17 @@ class LoopChoiceButton extends StatelessWidget {
     this.enabled = true,
     this.fontSize = 24,
     this.hint,
+    this.fitLabel = false,
     super.key,
   });
 
   /// Why the choice cannot be taken, announced while it is not [enabled].
   final String? hint;
+
+  /// Whether a label wider than [width] widens the button instead of
+  /// shrinking to fit it, for a button that stands alone rather than in a
+  /// row of equal choices (#1672).
+  final bool fitLabel;
 
   /// The choice's name.
   final String label;
@@ -161,44 +167,76 @@ class LoopChoiceButton extends StatelessWidget {
             child: InkWell(
               canRequestFocus: false,
               onTap: enabled ? onTap : null,
-              child: SizedBox(
+              child: _LoopButtonBox(
                 width: width,
                 height: height,
-                // A label longer than its box scales down rather than
-                // overflowing: the pen's boxes fit the English labels, and a
-                // translation may not.
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (icon != null) ...[
-                          Icon(icon, size: 36, color: textColor),
-                          const SizedBox(width: 24),
-                        ],
-                        // The button's own Semantics names it; the visible
-                        // text would read the label a second time.
-                        ExcludeSemantics(
-                          child: AppText(
-                            label,
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: fontSize,
-                              height: 1,
-                            ),
-                          ),
+                fitLabel: fitLabel,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: 36, color: textColor),
+                      const SizedBox(width: 24),
+                    ],
+                    // The button's own Semantics names it; the visible
+                    // text would read the label a second time.
+                    ExcludeSemantics(
+                      child: AppText(
+                        label,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: fontSize,
+                          height: 1,
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A Loop button's box: [width] x [height] with the label centred 12 in
+/// from the sides. A label longer than the box scales down rather than
+/// overflowing (the pen's boxes fit the English labels, and a translation
+/// may not), unless [fitLabel], where the box grows from [width] to fit it
+/// as far as its parent allows.
+class _LoopButtonBox extends StatelessWidget {
+  const _LoopButtonBox({
+    required this.width,
+    required this.height,
+    required this.fitLabel,
+    required this.child,
+  });
+
+  final double width;
+  final double height;
+  final bool fitLabel;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    // With fitLabel the label still scales down where the parent cannot
+    // give it room to grow.
+    final label = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: FittedBox(fit: BoxFit.scaleDown, child: child),
+    );
+    if (!fitLabel) {
+      return SizedBox(width: width, height: height, child: label);
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: width,
+        minHeight: height,
+        maxHeight: height,
+      ),
+      child: Align(widthFactor: 1, child: label),
     );
   }
 }
@@ -400,7 +438,7 @@ class LoopSectionLabel extends StatelessWidget {
   /// The heading.
   final String text;
 
-  /// 28 on most rows, 32 on the playback and audio fields.
+  /// 28; 26 where it leads a control in a row, as a switch's label does.
   final double fontSize;
 
   @override
@@ -432,7 +470,6 @@ class LoopFieldLabel extends StatelessWidget {
   const LoopFieldLabel({
     required this.title,
     this.origin,
-    this.fontSize = 28,
     this.originBeside = false,
     super.key,
   });
@@ -443,9 +480,6 @@ class LoopFieldLabel extends StatelessWidget {
   /// The origin tag; `null` on the defaults scope, where every field is the
   /// default.
   final LoopFieldOrigin? origin;
-
-  /// The heading size.
-  final double fontSize;
 
   /// Draws the tag beside the heading (the record timing heading) rather
   /// than under it.
@@ -474,7 +508,7 @@ class LoopFieldLabel extends StatelessWidget {
               height: 1,
             ),
           );
-    final heading = LoopSectionLabel(title, fontSize: fontSize);
+    final heading = LoopSectionLabel(title);
     if (tagText == null) return heading;
     if (originBeside) {
       return Row(
@@ -498,7 +532,8 @@ class LoopFieldLabel extends StatelessWidget {
   }
 }
 
-/// The pen's "Use default" button: 172 x 64, outlined.
+/// The pen's "Use default" button: 172 x 64, outlined, wider when its label
+/// needs it.
 class LoopUseDefaultButton extends StatelessWidget {
   /// Creates a [LoopUseDefaultButton].
   const LoopUseDefaultButton({required this.onTap, super.key});
@@ -510,6 +545,7 @@ class LoopUseDefaultButton extends StatelessWidget {
   Widget build(BuildContext context) => LoopOutlinedButton(
     width: 172,
     label: context.l10n.loopUseDefault,
+    fitLabel: true,
     onTap: onTap,
   );
 }
@@ -558,12 +594,17 @@ class LoopOutlinedButton extends StatelessWidget {
     this.borderColor,
     this.focusNode,
     this.autofocus = false,
+    this.fitLabel = false,
     super.key,
   });
 
   /// Whether the encoder starts on this button when its page or dialog
   /// opens.
   final bool autofocus;
+
+  /// Whether a label wider than [width] widens the button instead of
+  /// shrinking to fit it (#1672).
+  final bool fitLabel;
 
   /// The button's focus node; see [LoopFocusable.focusNode].
   final FocusNode? focusNode;
@@ -675,34 +716,33 @@ class LoopOutlinedButton extends StatelessWidget {
           child: InkWell(
             canRequestFocus: false,
             onTap: onTap,
-            child: SizedBox(
-              width: width,
-              height: height,
-              child: Center(
-                child: icon != null
-                    ? Icon(icon, size: 28, color: foreground)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (leadingIcon != null) ...[
-                                Icon(leadingIcon, size: 28, color: foreground),
-                                const SizedBox(width: 12),
-                              ],
-                              AppText(label ?? '', style: text),
-                              if (trailingIcon != null) ...[
-                                const SizedBox(width: 12),
-                                Icon(trailingIcon, size: 28, color: foreground),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-              ),
-            ),
+            child: icon != null
+                ? SizedBox(
+                    width: width,
+                    height: height,
+                    child: Center(
+                      child: Icon(icon, size: 28, color: foreground),
+                    ),
+                  )
+                : _LoopButtonBox(
+                    width: width,
+                    height: height,
+                    fitLabel: fitLabel,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (leadingIcon != null) ...[
+                          Icon(leadingIcon, size: 28, color: foreground),
+                          const SizedBox(width: 12),
+                        ],
+                        AppText(label ?? '', style: text),
+                        if (trailingIcon != null) ...[
+                          const SizedBox(width: 12),
+                          Icon(trailingIcon, size: 28, color: foreground),
+                        ],
+                      ],
+                    ),
+                  ),
           ),
         ),
       ),
@@ -819,40 +859,44 @@ class LoopScopeSelector extends StatelessWidget {
             top: 16,
             child: LoopSectionLabel(l10n.loopScopeTracks),
           ),
+          // Defaults, then the tracks 12 apart; Defaults widens for a
+          // longer translation and the tracks follow it (#1672).
           Positioned(
             left: 328,
             top: 0,
-            child: LoopChoiceButton(
-              key: const Key('loop_scope_defaults'),
-              label: l10n.loopScopeDefaults,
-              selected: selected == null,
-              onTap: () {
-                LoopEditScope.maybeOf(context)?.cancel();
-                onSelected(null);
-              },
-              width: 144,
-              height: 64,
-            ),
-          ),
-          for (var i = 0; i < trackNames.length; i++)
-            Positioned(
-              left: 328 + 156 + 76.0 * i,
-              top: 0,
-              child: Semantics(
-                label: l10n.loopScopeTrack(i + 1),
-                child: LoopChoiceButton(
-                  key: Key('loop_scope_track_$i'),
-                  label: '${i + 1}',
-                  selected: selected == i,
+            child: Row(
+              spacing: context.spacing.md,
+              children: [
+                LoopChoiceButton(
+                  key: const Key('loop_scope_defaults'),
+                  label: l10n.loopScopeDefaults,
+                  selected: selected == null,
                   onTap: () {
                     LoopEditScope.maybeOf(context)?.cancel();
-                    onSelected(i);
+                    onSelected(null);
                   },
-                  width: 64,
+                  width: 144,
                   height: 64,
+                  fitLabel: true,
                 ),
-              ),
+                for (var i = 0; i < trackNames.length; i++)
+                  Semantics(
+                    label: l10n.loopScopeTrack(i + 1),
+                    child: LoopChoiceButton(
+                      key: Key('loop_scope_track_$i'),
+                      label: '${i + 1}',
+                      selected: selected == i,
+                      onTap: () {
+                        LoopEditScope.maybeOf(context)?.cancel();
+                        onSelected(i);
+                      },
+                      width: 64,
+                      height: 64,
+                    ),
+                  ),
+              ],
             ),
+          ),
           if (name != null)
             Positioned(
               right: 0,
