@@ -77,6 +77,18 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Clear track Hold also clears in Mute mode (#1671)
+
+- With Track Hold set to Clear track, holding a track pedal in Mute mode
+  clears the held track as in Record: the press still mutes or unmutes on
+  contact, then the 350 ms pause, the pill fill and the flash (#1534,
+  #1652). Bank-following, take locks and mode changes end it as before.
+- Arm overdub still runs only in Record (`ControlCubit._armTrackHold`): an
+  overdub that starts from a mix-only mode would surprise the player. The
+  Looper X's Hold Track Pedal is one setting with no mode limit; the RC-600
+  has no Mute mode but puts Clear on the long press of its Play/Stop and
+  Stop track functions.
+
 ## November 2026 Tempo, length and start on the 7in readout (#1654)
 
 - The readout's footer is a strip that names the tempo, signature, length

@@ -3792,12 +3792,19 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Track selection/transport remains immediate; Hold follows the current
   /// bank position until the threshold fires.
+  ///
+  /// Record runs either Hold. Mute runs only Clear track (#1671), as the
+  /// Looper X's one Hold Track Pedal setting does: the press keeps its mute,
+  /// and Arm overdub, which starts a take, stays out of a mix-only mode.
   void _armTrackHold(PedalButton button) {
-    if (state.pedalSetupUnavailable || state.mode != InteractionMode.record) {
-      return;
-    }
+    if (state.pedalSetupUnavailable) return;
     final hold = state.pedalSetup.trackHold;
-    if (hold == TrackHold.none) return;
+    final armed = switch (state.mode) {
+      InteractionMode.record => hold != TrackHold.none,
+      InteractionMode.mute => hold == TrackHold.clearTrack,
+      _ => false,
+    };
+    if (!armed) return;
     final clearTrack = hold == TrackHold.clearTrack;
     _armGesture(
       _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
