@@ -6,12 +6,13 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/looper/view/looper_mode_change.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The Loop mode page: the five mode cards with their diagrams (the pen's
-/// `mode-choices`, 1744 x 420 at (88, 332) under the title). A card that the
+/// `mode-choices`, 420 high, under the tabs). A card that the
 /// engine refuses right now shows its reason in place of its description;
 /// choosing a mode over playing loops asks "Stop loops and switch" in the
 /// pen's own dialog (accepted design, Loop mode transitions).
@@ -33,11 +34,12 @@ class LoopModePage extends StatelessWidget {
     final primary = context.select<LooperBloc, int>(
       (bloc) => bloc.state.transport.primaryTrack,
     );
-    // The cards share the content width, under the title (#1590).
+    // The cards share the content width (#1590), under the tabs where every
+    // Loop settings tab starts (#1672).
     return Positioned(
       left: 0,
       right: 0,
-      top: 332,
+      top: kLoopTabContentTop,
       child: Row(
         children: [
           for (final (i, mode) in LooperMode.values.indexed) ...[

@@ -15,6 +15,13 @@ String readoutTimingLabel(AppLocalizations l10n, RecordTiming timing) =>
       RecordTiming.sixteenth => '1/16',
     };
 
+/// A record timing on the Loop panel's Start buttons: as [readoutTimingLabel]
+/// names it, shorter where a button has no room for the whole name (#1672).
+String readoutTimingButtonLabel(AppLocalizations l10n, RecordTiming timing) =>
+    timing == RecordTiming.loopStart
+    ? l10n.readoutButtonLoopTop
+    : readoutTimingLabel(l10n, timing);
+
 /// A length as the readout names it: Auto, or the bars.
 String readoutLengthLabel(AppLocalizations l10n, int bars) =>
     bars <= 0 ? l10n.loopLengthAuto : l10n.lengthPresetBars(bars);
