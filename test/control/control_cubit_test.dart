@@ -1563,11 +1563,14 @@ void main() {
           transport.sent.clear();
         }
 
-        /// Waits for [done] on the wall clock, up to three seconds, so an
-        /// assertion after a timer never races a loaded machine.
+        /// Waits for [done] on the wall clock, so an assertion after a timer
+        /// never races a loaded machine; fails after three seconds.
         Future<void> until(bool Function() done) async {
           final waited = Stopwatch()..start();
-          while (!done() && waited.elapsed < const Duration(seconds: 3)) {
+          while (!done()) {
+            if (waited.elapsed > const Duration(seconds: 3)) {
+              fail('timed out waiting for the hold');
+            }
             await Future<void>.delayed(const Duration(milliseconds: 10));
           }
         }
@@ -1590,7 +1593,8 @@ void main() {
           await setUpHold(TrackHold.clearTrack);
           transport.press(PedalButton.track3, down: true);
           await pumpEventQueue();
-          await Future<void>.delayed(const Duration(milliseconds: 200));
+          // Well inside the 350 ms pause.
+          await Future<void>.delayed(const Duration(milliseconds: 100));
           expect(fills(), isEmpty);
           await until(() => fills().isNotEmpty);
           expect(
@@ -1663,6 +1667,47 @@ void main() {
           transport.press(PedalButton.track1, down: false);
           await pumpEventQueue();
         });
+
+        test('a short press mutes the track pressed, whatever the bank is at '
+            'release', () async {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+              Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          await setUpHold(TrackHold.clearTrack);
+          transport.press(PedalButton.track1, down: true);
+          await pumpEventQueue();
+          cubit.browseBank(1);
+          transport.press(PedalButton.track1, down: false);
+          await pumpEventQueue();
+          verify(() => looper.setMute(muted: true)).called(1);
+          verifyNever(() => looper.setMute(muted: true, channel: 4));
+        });
+
+        test(
+          'Loop: a track that is overdubbing is cleared, as in Record',
+          () async {
+            setEngine(
+              _tracksWith(const [
+                Track(
+                  channel: 2,
+                  state: TrackState.overdubbing,
+                  lengthFrames: 48000,
+                ),
+              ]),
+            );
+            await setUpHold(TrackHold.clearTrack);
+            transport.press(PedalButton.track3, down: true);
+            await pumpEventQueue();
+            await until(() => clears.isNotEmpty);
+            expect(clears.map((c) => c.channel), [2]);
+            transport.press(PedalButton.track3, down: false);
+            await pumpEventQueue();
+            expect(anyMute, isFalse);
+          },
+        );
 
         test('a mode change cancels the clear and the mute', () async {
           await setUpHold(TrackHold.clearTrack);
