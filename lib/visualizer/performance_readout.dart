@@ -283,9 +283,9 @@ class PerformanceReadout extends Equatable {
         final Object token =>
           TempoFollowState.values.asNameMap()[token] ?? TempoFollowState.busy,
       },
-      clockOwnsTempo: map['clockOwnsTempo'] as bool? ?? false,
+      clockOwnsTempo: map['clockOwnsTempo'] == true,
       loop: ReadoutLoopSettings.fromMap(map['loop']),
-      dimmed: map['dimmed'] as bool? ?? false,
+      dimmed: map['dimmed'] == true,
     );
   }
 
