@@ -109,6 +109,7 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
   Widget build(BuildContext context) {
     final readout = widget.readout;
     final surface = context.surface;
+    final spacing = context.spacing;
     // A refusal takes the recording band's place while it is said, because
     // the 7" has no room for both. The header still names the take, and the
     // locked controls stay dimmed.
@@ -117,7 +118,12 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
       key: const Key('readout_panel'),
       color: surface.background,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+        padding: EdgeInsets.fromLTRB(
+          spacing.lg,
+          spacing.sm,
+          spacing.lg,
+          spacing.sm,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -127,10 +133,10 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
               onDone: widget.onDone,
             ),
             if (recordingBand) ...[
-              const SizedBox(height: 6),
+              SizedBox(height: spacing.sm),
               const _RecordingBand(),
             ],
-            const SizedBox(height: 8),
+            SizedBox(height: spacing.sm),
             Expanded(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -185,9 +191,10 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
           onDismiss: () => setState(() => _keypad = false),
         ),
         Positioned(
-          top: 8,
-          right: 16,
-          bottom: 10,
+          // The panel's own padding, so the keypad covers its content.
+          top: spacing.sm,
+          right: spacing.lg,
+          bottom: spacing.sm,
           width: 424,
           child: ReadoutTempoKeypad(
             onSet: (bpm) {
@@ -260,6 +267,7 @@ class _PanelHeader extends StatelessWidget {
       LooperMeterState.empty => surface.textMuted,
     };
     final bars = track?.bars ?? 0;
+    final spacing = context.spacing;
     return SizedBox(
       height: kReadoutMinTarget,
       child: Row(
@@ -281,10 +289,10 @@ class _PanelHeader extends StatelessWidget {
                 fontWeight: FontWeight.w400,
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: spacing.sm),
             if (track.primary) ...[
               const PrimaryCrown(size: 18),
-              const SizedBox(width: 10),
+              SizedBox(width: spacing.sm),
             ],
             Expanded(
               child: AppText(
@@ -297,13 +305,13 @@ class _PanelHeader extends StatelessWidget {
                 style: title,
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: spacing.sm),
             AppText(
               word,
               style: TextStyle(color: wordColor, fontSize: 15, height: 1),
             ),
             if (bars > 0) ...[
-              const SizedBox(width: 10),
+              SizedBox(width: spacing.sm),
               AppText(
                 l10n.stageBarsFigure(bars),
                 style: TextStyle(
@@ -313,7 +321,7 @@ class _PanelHeader extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(width: 12),
+            SizedBox(width: spacing.md),
             SizedBox(
               width: 140,
               height: 28,
@@ -327,7 +335,7 @@ class _PanelHeader extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(width: 12),
+          SizedBox(width: spacing.md),
           SizedBox(
             width: 88,
             child: ReadoutButton(
@@ -355,7 +363,10 @@ class _RecordingBand extends StatelessWidget {
       liveRegion: true,
       child: Container(
         key: const Key('readout_panel_recording'),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: context.spacing.md,
+          vertical: context.spacing.xs,
+        ),
         decoration: BoxDecoration(
           color: surface.recTint,
           border: Border.all(color: surface.recLine),
@@ -412,13 +423,14 @@ class _SectionLabel extends StatelessWidget {
     );
     final subtitleText = subtitle;
     final noteText = note;
+    final gap = context.spacing.sm;
     return SizedBox(
       height: 16,
       child: Row(
         children: [
           AppText(title.toUpperCase(), style: style),
           if (subtitleText != null) ...[
-            const SizedBox(width: 6),
+            SizedBox(width: gap),
             AppText(
               '· $subtitleText',
               style: style.copyWith(
@@ -428,11 +440,11 @@ class _SectionLabel extends StatelessWidget {
             ),
           ],
           if (locked) ...[
-            const SizedBox(width: 6),
+            SizedBox(width: gap),
             Icon(LucideIcons.lock, size: 12, color: surface.textMuted),
           ],
           if (noteText != null) ...[
-            const SizedBox(width: 6),
+            SizedBox(width: gap),
             Flexible(
               child: AppText(
                 noteText,
@@ -448,7 +460,7 @@ class _SectionLabel extends StatelessWidget {
           ],
           // The beat lights give way at a long signature on a narrow card.
           if (trailing != null) ...[
-            const SizedBox(width: 8),
+            SizedBox(width: gap),
             Expanded(
               child: Align(
                 alignment: Alignment.centerRight,
@@ -489,6 +501,9 @@ class _TempoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    // One gap for the card's buttons, across and down (#1672): the steps,
+    // Clear tempo and Tap.
+    final gap = context.spacing.sm;
     final l10n = context.l10n;
     final editable = readoutTempoEditable(readout);
     final refused = refusal;
@@ -497,17 +512,6 @@ class _TempoCard extends StatelessWidget {
       color: warns ? surface.warning : surface.textSecondary,
       fontSize: 13,
       height: 1.25,
-    );
-    Widget step(String label, double delta) => Expanded(
-      child: ReadoutPressButton(
-        key: Key('readout_panel_nudge_$label'),
-        label: label,
-        semanticLabel: '$label ${l10n.stageBpmUnit}',
-        enabled: editable,
-        repeat: true,
-        fontSize: 17,
-        onPressed: () => onCommand(TempoNudge(delta)),
-      ),
     );
     return Container(
       key: const Key('readout_panel_tempo'),
@@ -602,16 +606,44 @@ class _TempoCard extends StatelessWidget {
           const Spacer(),
           Row(
             children: [
-              step('-1', -1),
-              const SizedBox(width: 8),
-              step('-0.1', -0.1),
-              const SizedBox(width: 8),
-              step('+0.1', 0.1),
-              const SizedBox(width: 8),
-              step('+1', 1),
+              Expanded(
+                child: _TempoStep(
+                  label: '-1',
+                  delta: -1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: _TempoStep(
+                  label: '-0.1',
+                  delta: -0.1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: _TempoStep(
+                  label: '+0.1',
+                  delta: 0.1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: _TempoStep(
+                  label: '+1',
+                  delta: 1,
+                  enabled: editable,
+                  onCommand: onCommand,
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: gap),
           SizedBox(
             height: 52,
             child: Row(
@@ -629,7 +661,7 @@ class _TempoCard extends StatelessWidget {
                     onPressed: () => onCommand(const TempoClear()),
                   ),
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: gap),
                 Expanded(
                   child: ReadoutPressButton(
                     key: const Key('readout_panel_tap'),
@@ -683,6 +715,7 @@ class _BeatLights extends StatelessWidget {
         bars > 0 &&
         (state == LooperMeterState.playing ||
             state == LooperMeterState.overdubbing);
+    final gap = context.spacing.xs;
     return ValueListenableBuilder<WaveformFrame>(
       valueListenable: frame,
       builder: (context, data, _) {
@@ -694,7 +727,7 @@ class _BeatLights extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (var i = 0; i < beats; i++) ...[
-              if (i > 0) const SizedBox(width: 5),
+              if (i > 0) SizedBox(width: gap),
               DecoratedBox(
                 key: Key('readout_panel_beat_$i'),
                 decoration: BoxDecoration(
@@ -734,8 +767,6 @@ class _Choices extends StatelessWidget {
   final ValueChanged<int> onLength;
   final ValueChanged<RecordTiming> onTiming;
 
-  static const double _gap = 6;
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -747,27 +778,15 @@ class _Choices extends StatelessWidget {
     final channel = readout.selected?.channel;
     final trackLength = loop.trackLengthBars;
     final trackTiming = loop.trackTiming;
-    List<Widget> spaced(List<Widget> children) => [
-      for (final (i, child) in children.indexed) ...[
-        if (i > 0) const SizedBox(width: _gap),
-        child,
-      ],
-    ];
-    Widget timing(RecordTiming value) => Expanded(
-      child: ReadoutButton(
-        key: Key('readout_panel_timing_${value.name}'),
-        label: readoutTimingLabel(l10n, value),
-        selected: loop.timing == value,
-        enabled: editable,
-        fontSize: 14,
-        onPressed: () => onTiming(value),
-      ),
-    );
+    // One gap across and down the grid (#1672): the rows are xs apart,
+    // since the right column has only a few px to spare while a take records.
+    final gap = context.spacing.xs;
     return Column(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _section(
+        _ChoiceSection(
+          gap: gap,
           label: _SectionLabel(
             title: l10n.loopTempoSignature,
             locked: !signatureEditable,
@@ -777,7 +796,7 @@ class _Choices extends StatelessWidget {
             noteKey: const Key('readout_panel_signature_note'),
           ),
           rows: [
-            spaced([
+            [
               for (final (num, den) in kReadoutQuickSignatures)
                 Expanded(
                   child: ReadoutButton(
@@ -804,10 +823,11 @@ class _Choices extends StatelessWidget {
                   onPressed: onMoreSignatures,
                 ),
               ),
-            ]),
+            ],
           ],
         ),
-        _section(
+        _ChoiceSection(
+          gap: gap,
           label: _SectionLabel(
             title: l10n.readoutPanelLength,
             subtitle: trackLength == null || channel == null
@@ -823,7 +843,7 @@ class _Choices extends StatelessWidget {
             noteKey: const Key('readout_panel_length_note'),
           ),
           rows: [
-            spaced([
+            [
               SizedBox(
                 width: 52,
                 child: ReadoutButton(
@@ -870,10 +890,11 @@ class _Choices extends StatelessWidget {
                   onPressed: () => onLength(0),
                 ),
               ),
-            ]),
+            ],
           ],
         ),
-        _section(
+        _ChoiceSection(
+          gap: gap,
           label: _SectionLabel(
             title: l10n.readoutPanelStart,
             subtitle: trackTiming == null || channel == null
@@ -889,36 +910,115 @@ class _Choices extends StatelessWidget {
             noteKey: const Key('readout_panel_timing_note'),
           ),
           rows: [
-            spaced([
-              for (final value in RecordTiming.values.take(4)) timing(value),
-            ]),
-            spaced([
-              for (final value in RecordTiming.values.skip(4)) timing(value),
+            [
+              for (final value in RecordTiming.values.take(4))
+                Expanded(
+                  child: _TimingButton(
+                    timing: value,
+                    selected: loop.timing == value,
+                    enabled: editable,
+                    onTiming: onTiming,
+                  ),
+                ),
+            ],
+            [
+              for (final value in RecordTiming.values.skip(4))
+                Expanded(
+                  child: _TimingButton(
+                    timing: value,
+                    selected: loop.timing == value,
+                    enabled: editable,
+                    onTiming: onTiming,
+                  ),
+                ),
               // The second row's fourth cell stays empty.
               const Expanded(child: SizedBox.shrink()),
-            ]),
+            ],
           ],
         ),
       ],
     );
   }
+}
 
-  Widget _section({
-    required Widget label,
-    required List<List<Widget>> rows,
-  }) => Column(
+/// One of the panel's choice sections: its label over rows of buttons, the
+/// rows and the buttons in them [gap] apart.
+class _ChoiceSection extends StatelessWidget {
+  const _ChoiceSection({
+    required this.label,
+    required this.rows,
+    required this.gap,
+  });
+
+  final Widget label;
+  final List<List<Widget>> rows;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       label,
       for (final row in rows) ...[
-        const SizedBox(height: 4),
+        SizedBox(height: gap),
         SizedBox(
           height: kReadoutMinTarget,
-          child: Row(children: row),
+          child: Row(spacing: gap, children: row),
         ),
       ],
     ],
+  );
+}
+
+/// One record timing on the Start rows.
+class _TimingButton extends StatelessWidget {
+  const _TimingButton({
+    required this.timing,
+    required this.selected,
+    required this.enabled,
+    required this.onTiming,
+  });
+
+  final RecordTiming timing;
+  final bool selected;
+  final bool enabled;
+  final ValueChanged<RecordTiming> onTiming;
+
+  @override
+  Widget build(BuildContext context) => ReadoutButton(
+    key: Key('readout_panel_timing_${timing.name}'),
+    label: readoutTimingLabel(context.l10n, timing),
+    selected: selected,
+    enabled: enabled,
+    fontSize: 14,
+    onPressed: () => onTiming(timing),
+  );
+}
+
+/// One of the tempo card's steps: held, it repeats.
+class _TempoStep extends StatelessWidget {
+  const _TempoStep({
+    required this.label,
+    required this.delta,
+    required this.enabled,
+    required this.onCommand,
+  });
+
+  final String label;
+  final double delta;
+  final bool enabled;
+  final ValueChanged<ReadoutCommand> onCommand;
+
+  @override
+  Widget build(BuildContext context) => ReadoutPressButton(
+    key: Key('readout_panel_nudge_$label'),
+    label: label,
+    semanticLabel: '$label ${context.l10n.stageBpmUnit}',
+    enabled: enabled,
+    repeat: true,
+    fontSize: 17,
+    onPressed: () => onCommand(TempoNudge(delta)),
   );
 }
 
@@ -959,6 +1059,7 @@ class _SignatureGrid extends StatelessWidget {
       ),
     ];
     final rows = (cells.length / _columns).ceil();
+    final gap = context.spacing.xs;
     return Column(
       key: const Key('readout_panel_signatures'),
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -969,7 +1070,7 @@ class _SignatureGrid extends StatelessWidget {
             child: Row(
               children: [
                 for (var col = 0; col < _columns; col++) ...[
-                  if (col > 0) const SizedBox(width: 6),
+                  if (col > 0) SizedBox(width: gap),
                   Expanded(
                     child: row * _columns + col < cells.length
                         ? cells[row * _columns + col]
