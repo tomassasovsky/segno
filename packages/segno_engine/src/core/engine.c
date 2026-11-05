@@ -1886,6 +1886,8 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (code == LE_CMD_AUDITION_START || code == LE_CMD_AUDITION_STOP) {
     return LE_ERR_INVALID;
   }
+  /* Clear tempo (#1653) is gated by its typed producer. */
+  if (code == LE_CMD_CLEAR_TEMPO) return LE_ERR_INVALID;
   /* The latency path (#1270) is validated by its typed producers. */
   if (code == LE_CMD_MEASURE_LATENCY_PATH || code == LE_CMD_CANCEL_LATENCY) {
     return LE_ERR_INVALID;

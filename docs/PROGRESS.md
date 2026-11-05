@@ -103,6 +103,41 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   untouched. Owed: the Penpot frames (geometry in the PR's "Design
   writeback").
 
+## November 2026 Exact tempo entry, Clear tempo, and footer shortcuts to Tempo and Loop mode (#1653)
+
+- The Tempo page's big BPM is a button: it opens the console keypad
+  (`showTempoEntrySheet`, the numeric layout of `OnScreenKeyboard` in the
+  rename sheet's frame) for 30.00 to 300.00 BPM with two decimals. A tempo
+  outside the range keeps the sheet up and says the range.
+- Clear tempo returns the rig to no tempo, so the next defining loop sets
+  one. The engine decides with its D6 lock: `le_engine_clear_tempo` (command
+  142) answers `LE_ERR_NOT_READY` while material sits under the tempo or on a
+  grid, a take records or a count-in runs, and while a record is posted,
+  waiting or launching; the callback rechecks `le_tempo_locked` and a waiting
+  record, and raw posts of 142 are refused. A refusal raises the
+  `tempoClearRefused` notice, saying why. The repository refuses with
+  `notRunning` while the engine is stopped. Not perf-logged (the effect chains' tempo anchor
+  logs the change). Native test: `test_clear_tempo_follows_the_tempo_lock`.
+- Stage footer: the tempo block opens Loop settings at Tempo and the loop
+  mode pill at Loop mode (`openLoopSettings`), each a 44-high tap target with
+  the ink pressed state.
+
+## November 2026 Clear track hold pauses before its fill (#1652)
+
+- With Track Hold set to Clear track, a held track pedal waits 350 ms
+  (`ControlCubit._clearTrackPause`) before its pill starts to fill. During
+  the pause the pill reads pressed and no `CLEAR_HOLD` is sent, so a release
+  in it is an ordinary press (the track is selected and nothing else
+  happens). After the pause the fill runs from 0 over the long-press
+  threshold (800 ms by default) and the track clears when it completes, at
+  1150 ms from the press.
+- Only the Clear track hold changes. Undo's redo, Bank, Clear all, custom
+  Holds (including a Custom Clear or Clear all) and every other hold keep
+  the long-press threshold, and a custom clear's fill still starts at the
+  press. No screen draws the track fill, so nothing on screen changes.
+  Firmware is unchanged.
+- Device check owed: the pause and the fill's feel on the console.
+
 ## November 2026 The interface's input switches (#1646)
 
 - Settings → Audio routing → Input setup has an **Interface** row for the
@@ -523,7 +558,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 - A hold that clears (Track Hold set to Clear track in Record mode, or a
   Custom pedal whose Hold is Clear or Clear all) fills the held pedal's pill
-  red from both ends toward the centre over the long-press threshold;
+  red from both ends toward the centre over the long-press threshold (a
+  Clear track hold first waits 350 ms, #1652);
   releasing early, or a hold that can no longer fire, ends the fill at once.
   When it fires the track clears and the board flashes the full red pill 3
   times (120 ms on, 120 ms off) on its own clock, then shows the empty-track

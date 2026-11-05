@@ -1,18 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/output_level_cubit.dart';
 import 'package:segno/looper/cubit/transport_clock_cubit.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The session strip under the track run (the accepted stage): tempo and time
 /// signature, the elapsed transport time, the output level with its clip
-/// warning, and the loop mode. Readouts only, each subscribed to its own
-/// slice so a level tick redraws one figure and a beat nothing at all.
+/// warning, and the loop mode. Each readout is subscribed to its own slice so
+/// a level tick redraws one figure and a beat nothing at all. The tempo opens
+/// Loop settings on its Tempo & click tab and the loop mode on its Loop mode
+/// tab (#1653, #1659).
 class StageFooter extends StatelessWidget {
   /// Creates a [StageFooter].
   const StageFooter({super.key});
@@ -20,6 +27,9 @@ class StageFooter extends StatelessWidget {
   /// The narrowest strip the four slots are laid out at; a narrower window
   /// scales the strip down as one piece.
   static const double minWidth = 900;
+
+  /// The strip's height, and so the height of its touch targets.
+  static const double height = 44;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -33,7 +43,7 @@ class StageFooter extends StatelessWidget {
       0,
     ),
     child: ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 44),
+      constraints: const BoxConstraints(minHeight: height),
       // Four fixed slots across the strip (#1308): a readout changing value
       // or length moves neither itself nor its neighbours. Scaled down as
       // one strip in a window narrower than [minWidth].
@@ -100,47 +110,47 @@ class _TempoBlock extends StatelessWidget {
       fontSize: 24,
       height: 1,
     );
-    return Semantics(
-      label: l10n.a11yStageTempo(bpm, signature),
-      child: ExcludeSemantics(
-        child: Row(
-          key: const Key('stage_footer_tempo'),
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            // A fixed box for the figure, sized for `999.9`: `—`, `84.0`
-            // and `120.0` all leave BPM and the signature where they are.
-            SizedBox(
-              width: bpmWidth,
-              child: AppText(
-                bpm,
-                key: const Key('stage_footer_bpm'),
-                textAlign: TextAlign.end,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: SurfaceTheme.displayFont,
-                  color: surface.textPrimary,
-                  fontSize: 32,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                  height: 1,
-                ),
+    return _FooterTarget(
+      semanticLabel: l10n.a11yStageTempo(bpm, signature),
+      onTap: () => unawaited(openLoopSettings(initial: LoopSettingsTab.tempo)),
+      child: Row(
+        key: const Key('stage_footer_tempo'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          // A fixed box for the figure, sized for `999.9`: `—`, `84.0`
+          // and `120.0` all leave BPM and the signature where they are.
+          SizedBox(
+            width: bpmWidth,
+            child: AppText(
+              bpm,
+              key: const Key('stage_footer_bpm'),
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: SurfaceTheme.displayFont,
+                color: surface.textPrimary,
+                fontSize: 32,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                height: 1,
               ),
             ),
-            const SizedBox(width: 6),
-            AppText(l10n.stageBpmUnit, style: secondary),
-            const SizedBox(width: 22),
-            Flexible(
-              child: AppText(
-                signature,
-                key: const Key('stage_footer_signature'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: secondary,
-              ),
+          ),
+          const SizedBox(width: 6),
+          AppText(l10n.stageBpmUnit, style: secondary),
+          const SizedBox(width: 22),
+          Flexible(
+            child: AppText(
+              signature,
+              key: const Key('stage_footer_signature'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: secondary,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -236,6 +246,9 @@ class _OutputLevel extends StatelessWidget {
 class _LoopModePill extends StatelessWidget {
   const _LoopModePill();
 
+  /// The pill's corner.
+  static const double _radius = 5;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -250,29 +263,67 @@ class _LoopModePill extends StatelessWidget {
       LooperMode.band => l10n.looperModeBandLabel,
       LooperMode.free => l10n.looperModeFreeLabel,
     };
-    return Semantics(
-      label: l10n.a11yStageLoopMode(label),
-      child: ExcludeSemantics(
-        child: Container(
-          key: const Key('stage_footer_mode'),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: surface.line),
-          ),
-          child: AppText(
-            label.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: SurfaceTheme.displayFont,
-              color: surface.textSecondary,
-              fontSize: 22,
-              height: 1,
-            ),
+    return _FooterTarget(
+      semanticLabel: l10n.a11yStageLoopMode(label),
+      radius: _radius,
+      onTap: () => unawaited(openLoopSettings(initial: LoopSettingsTab.mode)),
+      child: Container(
+        key: const Key('stage_footer_mode'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(_radius),
+          border: Border.all(color: surface.line),
+        ),
+        child: AppText(
+          label.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: SurfaceTheme.displayFont,
+            color: surface.textSecondary,
+            fontSize: 22,
+            height: 1,
           ),
         ),
       ),
     );
   }
+}
+
+/// A footer readout as a button (#1653): one encoder stop with the console's
+/// pressed state, as tall as the strip so the whole height takes the touch.
+class _FooterTarget extends StatelessWidget {
+  const _FooterTarget({
+    required this.semanticLabel,
+    required this.onTap,
+    required this.child,
+    this.radius = 8,
+  });
+
+  final String semanticLabel;
+  final VoidCallback onTap;
+  final Widget child;
+
+  /// The pressed state's corner.
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) => FocusableTapTarget(
+    semanticLabel: semanticLabel,
+    borderRadius: radius,
+    onTap: onTap,
+    child: Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        // The tap target is the one focus stop.
+        canRequestFocus: false,
+        borderRadius: BorderRadius.circular(radius),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: StageFooter.height),
+          child: Align(widthFactor: 1, child: child),
+        ),
+      ),
+    ),
+  );
 }

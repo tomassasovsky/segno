@@ -714,10 +714,12 @@ void main() {
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             theme: ThemeData(
-              extensions: const [
+              extensions: [
                 SurfaceTheme.dark,
                 SpacingTheme.standard,
                 NoticeTheme.standard,
+                // The keypad sheet's Cancel is a console tap target.
+                routingGraphThemeFromSurface(SurfaceTheme.dark),
               ],
             ),
             home: pageIdentity == null
@@ -1522,6 +1524,24 @@ void main() {
   });
 
   group('Tempo & click', () {
+    testWidgets('Count-in says a count-in switches a Sound start to Pedal '
+        '(#1659)', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.tempo);
+      final note = find.byKey(const Key('loop_count_in_sound_note'));
+      expect(note, findsNothing);
+      await tempo.setSoundStart(enabled: true);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(l10nOf(tester).loopTempoCountInSoundNote),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('loop_count_in_2')));
+      await tester.pumpAndSettle();
+      expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
+      expect(tempo.state.confirmedRecordStart?.countInBars, 2);
+      expect(note, findsNothing);
+    });
+
     testWidgets('click, count-in and tap reach the tempo cubit', (
       tester,
     ) async {
@@ -1793,6 +1813,134 @@ void main() {
       );
       expect(reopened.selected, isTrue);
       expect(reopened.enabled, isFalse);
+    });
+
+    group('exact tempo and Clear tempo (#1653)', () {
+      Finder sheet() => find.byKey(const Key('tempo_entry_sheet'));
+
+      Future<void> type(WidgetTester tester, String keys) async {
+        for (final key in keys.split('')) {
+          await tester.tap(
+            find.descendant(of: sheet(), matching: find.text(key)),
+          );
+          await tester.pump();
+        }
+      }
+
+      Future<void> openKeypad(WidgetTester tester) async {
+        await pump(tester, initial: LoopSettingsTab.tempo);
+        await tester.tap(find.byKey(const Key('loop_tempo_entry')));
+        await tester.pumpAndSettle();
+        expect(sheet(), findsOneWidget);
+      }
+
+      Future<void> set(WidgetTester tester) async {
+        await tester.tap(
+          find.descendant(
+            of: sheet(),
+            matching: find.text(l10nOf(tester).loopTempoEntrySet),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('the keypad sets the exact tempo', (tester) async {
+        await openKeypad(tester);
+        // A third decimal and a fourth whole digit are not typed.
+        await type(tester, '128.475');
+        expect(
+          tester.widget<AppText>(find.byKey(const Key('tempo_entry_field'))),
+          isA<AppText>().having((text) => text.data, 'data', '128.47'),
+        );
+        await set(tester);
+        expect(sheet(), findsNothing);
+        verify(() => repository.setTempo(128.47)).called(1);
+        expect(await settings.loadTempoBpm(), 128.47);
+      });
+
+      testWidgets('an out-of-range tempo is refused and the sheet stays', (
+        tester,
+      ) async {
+        await openKeypad(tester);
+        clearInteractions(repository);
+        await type(tester, '350');
+        await set(tester);
+        expect(sheet(), findsOneWidget);
+        expect(find.byKey(const Key('tempo_entry_error')), findsOneWidget);
+        await tester.tap(
+          find.descendant(
+            of: sheet(),
+            matching: find.byIcon(
+              Icons.backspace_outlined,
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(find.byKey(const Key('tempo_entry_error')), findsNothing);
+        await tester.tap(
+          find.descendant(
+            of: sheet(),
+            matching: find.byIcon(
+              Icons.backspace_outlined,
+            ),
+          ),
+        );
+        await tester.pump();
+        await set(tester); // 3 BPM
+        expect(find.byKey(const Key('tempo_entry_error')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('tempo_entry_cancel')));
+        await tester.pumpAndSettle();
+        expect(sheet(), findsNothing);
+        verifyNever(() => repository.setTempo(any()));
+      });
+
+      testWidgets('Clear tempo returns the rig to no tempo', (tester) async {
+        when(repository.clearTempo).thenReturn(EngineResult.ok);
+        await pump(tester, initial: LoopSettingsTab.tempo);
+        await settings.saveTempoBpm(120);
+        await tester.tap(find.byKey(const Key('loop_tempo_clear')));
+        await tester.pumpAndSettle();
+        verify(repository.clearTempo).called(1);
+        expect(await settings.loadTempoBpm(), 0);
+        expect(
+          said.titles,
+          isNot(contains(l10nOf(tester).loopTempoClearRefused)),
+        );
+
+        // The engine publishes no tempo: the readout says so, and there is
+        // nothing left to clear.
+        states.add(
+          const LooperState(
+            tracks: [Track(), Track(channel: 1), Track(channel: 2)],
+            transport: TransportState(
+              deviceRunning: true,
+              looperMode: LooperMode.song,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(l10nOf(tester).loopTempoUnset), findsOneWidget);
+        expect(
+          tester
+              .widget<LoopOutlinedButton>(
+                find.byKey(const Key('loop_tempo_clear')),
+              )
+              .onTap,
+          isNull,
+        );
+      });
+
+      testWidgets('a locked tempo refuses Clear with a notice', (tester) async {
+        when(repository.clearTempo).thenReturn(EngineResult.notReady);
+        await pump(tester, initial: LoopSettingsTab.tempo);
+        await settings.saveTempoBpm(120);
+        await tester.tap(find.byKey(const Key('loop_tempo_clear')));
+        await tester.pumpAndSettle();
+        verify(repository.clearTempo).called(1);
+        expect(said.titles, contains(l10nOf(tester).loopTempoClearRefused));
+        expect(await settings.loadTempoBpm(), 120);
+        expect(find.text('120.00'), findsOneWidget);
+      });
     });
 
     testWidgets('the signature button opens the grid and a pick returns', (

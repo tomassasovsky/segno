@@ -33,6 +33,7 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
@@ -1302,6 +1303,61 @@ void main() {
     // before it builds against this test's providers.
     segnoNavigatorKey.currentState!.removeRoute(pushed.single);
     await tester.pumpAndSettle();
+  });
+
+  group('the footer opens the Loop settings tabs (#1653, #1659)', () {
+    Future<LoopSettingsTab> opened(WidgetTester tester, String key) async {
+      seed(const LooperState(tracks: [Track()]));
+      final pushed = <Route<dynamic>>[];
+      await pump(tester, navigatorObservers: [_PushObserver(pushed.add)]);
+      pushed.clear();
+
+      await tester.tap(find.byKey(Key(key)));
+      expect(pushed, hasLength(1));
+      final route = pushed.single as PageRouteBuilder<void>;
+      expect(route.settings.name, segnoLoopSettingsRouteName);
+      final page =
+          route.pageBuilder(
+                tester.element(find.byType(TracksView)),
+                kAlwaysCompleteAnimation,
+                kAlwaysCompleteAnimation,
+              )
+              as LoopSettingsPage;
+      // The pages are covered by their own tests; take the route down
+      // before it builds against this test's providers.
+      segnoNavigatorKey.currentState!.removeRoute(route);
+      await tester.pumpAndSettle();
+      return page.initial;
+    }
+
+    testWidgets('the BPM opens the Tempo & click tab', (tester) async {
+      expect(
+        await opened(tester, 'stage_footer_bpm'),
+        LoopSettingsTab.tempo,
+      );
+    });
+
+    testWidgets('the mode pill opens the Loop mode tab', (tester) async {
+      expect(
+        await opened(tester, 'stage_footer_mode'),
+        LoopSettingsTab.mode,
+      );
+    });
+
+    testWidgets('both are named buttons', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      for (final key in ['stage_footer_tempo', 'stage_footer_mode']) {
+        final node = tester.getSemantics(
+          find.ancestor(
+            of: find.byKey(Key(key)),
+            matching: find.byType(FocusableTapTarget),
+          ),
+        );
+        expect(node, isSemantics(isButton: true, hasTapAction: true));
+        expect(node.label, isNotEmpty);
+      }
+    });
   });
 
   testWidgets('tapping a tile only selects that channel in record mode', (

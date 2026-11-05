@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
@@ -12,7 +13,9 @@ import 'package:segno/looper/model/tempo_state.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_labels.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/looper/view/loop_settings/tempo_entry_sheet.dart';
 import 'package:segno/looper/view/tempo_labels.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// What the Tempo & click page reads off the transport.
@@ -32,10 +35,13 @@ _TempoValues _tempoValues(LooperState state) => (
   playing: state.isPlaying,
 );
 
-/// The Tempo & click page: the tempo readout with its beat lights, the
-/// tempo slider with whole and fine steps and Tap tempo, the time signature
-/// (a button to its own page), and the Hear click and Count-in rows (the
-/// pen's `timing-layout`, 458 high at y 313, across the content width).
+/// The Tempo & click page: the tempo readout with its beat lights (a tap
+/// types an exact tempo on the keypad), the tempo slider with whole and fine
+/// steps, Clear tempo and Tap tempo, the time signature (a button to its own
+/// page), and the Hear click and Count-in rows (the pen's `timing-layout`,
+/// 458 high at y 313, across the content width). While recording starts on
+/// Sound, a note under Count-in says a count-in switches the start to Pedal
+/// (#1659), since Start recording is on the Recording tab.
 class LoopTempoPage extends StatefulWidget {
   /// Creates a [LoopTempoPage].
   const LoopTempoPage({required this.onOpenSignature, super.key});
@@ -62,11 +68,14 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
   /// Where the time signature's column starts, from the right edge.
   static const double _signatureInset = 280;
 
-  /// The Tap button's width.
+  /// The Tap and Clear tempo buttons' width.
   static const double _tapWidth = 213;
 
-  static const double _minBpm = 30;
-  static const double _maxBpm = 300;
+  /// The readout's height: the figure and its unit under it.
+  static const double _readoutHeight = 118;
+
+  static final double _minBpm = kTempoRange.$1;
+  static final double _maxBpm = kTempoRange.$2;
 
   double _bpmOf(double fraction) {
     final bpm = _minBpm + fraction * (_maxBpm - _minBpm);
@@ -80,6 +89,35 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
   void _commitTempo(double fraction) {
     setState(() => _draftBpm = null);
     unawaited(context.read<TempoCubit>().setTempo(_bpmOf(fraction)));
+  }
+
+  /// The keypad's exact tempo, applied as typed.
+  Future<void> _enterTempo(double current) async {
+    final tempo = context.read<TempoCubit>();
+    final bpm = await showTempoEntrySheet(context, current: current);
+    if (bpm == null || !mounted) return;
+    setState(() => _draftBpm = null);
+    await tempo.setTempo(bpm);
+  }
+
+  /// Back to no tempo, or the notice saying why the lock keeps it.
+  Future<void> _clearTempo() async {
+    final notices = context.read<NoticesCubit>();
+    setState(() => _draftBpm = null);
+    final result = await context.read<TempoCubit>().clearTempo();
+    if (result.isOk) return;
+    notices.show(
+      Notice(
+        id: AppNoticeId.tempoClearRefused,
+        tone: NoticeTone.warning,
+        title: (l10n) => l10n.loopTempoClearRefused,
+        body: switch (result) {
+          EngineResult.notReady => (l10n) => l10n.loopTempoClearRefusedBody,
+          EngineResult.notRunning => (l10n) => l10n.loopTempoClearStopped,
+          _ => null,
+        },
+      ),
+    );
   }
 
   @override
@@ -110,39 +148,27 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
     // the width, and the time signature keeps its place at the right end.
     final width = LoopSettingsFrame.contentWidthOf(context);
     final sliderWidth = width - _controlsLeft - _sliderEndInset;
+    final tapLeft = _controlsLeft + sliderWidth - _tapWidth;
     return Positioned(
       left: 0,
       top: 313,
       child: SizedBox(
         width: width,
-        height: 458,
+        height: 458 + 45,
         child: Stack(
           children: [
-            // ---- tempo readout
+            // ---- tempo readout, a tap from the keypad
             Positioned(
               left: 0,
               top: 0,
-              child: AppText(
-                bpm > 0 ? bpm.toStringAsFixed(2) : l10n.loopTempoUnset,
-                key: const Key('loop_tempo_readout'),
-                style: TextStyle(
-                  color: surface.textPrimary,
-                  fontSize: bpm > 0 ? 78 : 40,
-                  fontFamily: SurfaceTheme.monoFont,
-                  height: 1,
+              child: _TempoReadout(
+                bpm: bpm,
+                // Its column, short of the controls by the page's gap.
+                size: Size(
+                  _controlsLeft - context.spacing.xxl,
+                  _readoutHeight,
                 ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              top: 94,
-              child: AppText(
-                l10n.loopTempoBpmUnit,
-                style: TextStyle(
-                  color: surface.textSecondary,
-                  fontSize: 24,
-                  height: 1,
-                ),
+                onTap: () => unawaited(_enterTempo(bpm)),
               ),
             ),
             Positioned(
@@ -198,9 +224,24 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                 ],
               ),
             ),
-            // Tap ends where the slider ends.
+            // Clear tempo, then Tap, which ends where the slider ends.
             Positioned(
-              left: _controlsLeft + sliderWidth - _tapWidth,
+              left: tapLeft - context.spacing.lg - _tapWidth,
+              top: 81,
+              child: Opacity(
+                opacity: bpm > 0 ? 1 : surface.disabledOpacity,
+                child: LoopOutlinedButton(
+                  key: const Key('loop_tempo_clear'),
+                  width: _tapWidth,
+                  height: 80,
+                  fontSize: 28,
+                  label: l10n.loopTempoClear,
+                  onTap: bpm > 0 ? () => unawaited(_clearTempo()) : null,
+                ),
+              ),
+            ),
+            Positioned(
+              left: tapLeft,
               top: 81,
               child: LoopOutlinedButton(
                 key: const Key('loop_tempo_tap'),
@@ -315,7 +356,94 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                   ),
                 ),
               ),
+            // Choosing a count-in turns Sound off (the pair is exclusive).
+            if (confirmedRecordStart?.soundStart ?? false)
+              Positioned(
+                left: _controlsLeft,
+                top: 362 + 96 + 16,
+                child: LoopNote(
+                  l10n.loopTempoCountInSoundNote,
+                  key: const Key('loop_count_in_sound_note'),
+                ),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The tempo in large figures over its unit, or `not set`: a button that
+/// opens the keypad, with the console's pressed and encoder-focus states.
+class _TempoReadout extends StatelessWidget {
+  const _TempoReadout({
+    required this.bpm,
+    required this.size,
+    required this.onTap,
+  });
+
+  final double bpm;
+  final Size size;
+  final VoidCallback onTap;
+
+  /// Where the unit sits under the figure.
+  static const double _unitTop = 94;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final value = bpm > 0 ? bpm.toStringAsFixed(2) : l10n.loopTempoUnset;
+    return Semantics(
+      button: true,
+      label: l10n.loopTempoEdit,
+      value: bpm > 0 ? '$value ${l10n.loopTempoBpmUnit}' : value,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: LoopFocusable(
+        onActivate: onTap,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            key: const Key('loop_tempo_entry'),
+            canRequestFocus: false,
+            // The focus outline's corner (LoopFocusable's).
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: SizedBox.fromSize(
+              size: size,
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: AppText(
+                      value,
+                      key: const Key('loop_tempo_readout'),
+                      style: TextStyle(
+                        color: surface.textPrimary,
+                        fontSize: bpm > 0 ? 78 : 40,
+                        fontFamily: SurfaceTheme.monoFont,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    top: _unitTop,
+                    child: AppText(
+                      l10n.loopTempoBpmUnit,
+                      style: TextStyle(
+                        color: surface.textSecondary,
+                        fontSize: 24,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

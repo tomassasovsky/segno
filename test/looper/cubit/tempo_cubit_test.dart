@@ -58,6 +58,16 @@ void main() {
     },
   );
 
+  test('clearTempo reports whether the engine took it', () async {
+    expect(await cubit.clearTempo(), EngineResult.notRunning);
+    repository.startEngine(const EngineConfig());
+    await cubit.setTempo(96);
+    expect(cubit.state.bpm, 96);
+    expect(await cubit.clearTempo(), EngineResult.ok);
+    expect(cubit.state.bpm, 0);
+    expect(store.values['tempo.bpm'], 0);
+  });
+
   blocTest<TempoCubit, TempoState>(
     'closing and remounting the projection leaves the accepted owner alive',
     build: () => cubit,
