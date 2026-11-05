@@ -447,6 +447,8 @@
     "paramSustain": "Sostenido",
     "paramHighpass": "Pasaaltos",
     "paramGateThreshold": "Umbral de puerta",
+    "paramGateRelease": "Liberación de puerta",
+    "paramGateDetector": "Detector de puerta",
     "effectDoubler": "Doblador",
     "effectChorus": "Chorus",
     "effectWah": "Wah",
