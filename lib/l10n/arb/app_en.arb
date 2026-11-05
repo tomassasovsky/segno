@@ -8735,5 +8735,14 @@
     "readoutPanelTypeHint": "Tap the figure to type it.",
     "@readoutPanelTypeHint": {
         "description": "Says the tempo figure on the readout's Loop panel opens the keypad."
+    },
+    "readoutKeypadSet": "Set {bpm}",
+    "@readoutKeypadSet": {
+        "description": "The readout keypad's Set key once the typed text is a tempo.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
     }
 }

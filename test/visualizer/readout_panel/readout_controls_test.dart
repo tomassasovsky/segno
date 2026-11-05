@@ -470,6 +470,45 @@ void main() {
       });
     }
 
+    testWidgets('the panel behind presses nothing; a touch on it backs out', (
+      tester,
+    ) async {
+      await pump(tester, readoutOf());
+      await openKeypad(tester);
+      // Tap, under the scrim at the panel's lower left.
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const Key('readout_panel_tap'))) -
+            const Offset(100, 0),
+      );
+      await tester.pump();
+      expect(sent, isEmpty);
+      expect(keypad, findsNothing);
+      expect(panel, findsOneWidget);
+    });
+
+    testWidgets('typing keeps the panel open', (tester) async {
+      await pump(tester, readoutOf());
+      await openKeypad(tester);
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(seconds: 6));
+        await type(tester, '1');
+      }
+      expect(keypad, findsOneWidget);
+      await tester.pump(ReadoutControls.idleClose);
+      expect(panel, findsNothing);
+    });
+
+    testWidgets('the dotted rule is as wide as the figure', (tester) async {
+      await pump(tester, readoutOf());
+      await open(tester);
+      final rule = tester.getSize(
+        find.byKey(const Key('readout_panel_bpm_rule')),
+      );
+      final figure = tester.getRect(find.byKey(const Key('readout_panel_bpm')));
+      expect(rule.width, greaterThanOrEqualTo(figure.width));
+      expect(rule.width, lessThan(figure.width + 60));
+    });
+
     testWidgets('Cancel and an empty Set send nothing', (tester) async {
       await pump(tester, readoutOf());
       await openKeypad(tester);

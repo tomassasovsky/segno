@@ -143,8 +143,7 @@ class _ReadoutTempoKeypadState extends State<ReadoutTempoKeypad> {
                 // The Set key names what it will set, as the mockup draws it.
                 doneLabel: typed == null
                     ? l10n.loopTempoEntrySet
-                    : '${l10n.loopTempoEntrySet} '
-                          '${typed.toStringAsFixed(2)}',
+                    : l10n.readoutKeypadSet(typed.toStringAsFixed(2)),
                 onKey: _type,
                 onBackspace: _backspace,
                 onDone: _submit,

@@ -169,8 +169,11 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
       fit: StackFit.expand,
       children: [
         panel,
-        // The panel stays in view and takes no touch while the keypad is up.
-        ModalBarrier(color: surface.scrim.withValues(alpha: 0.5)),
+        // The panel stays in view; a touch on it backs out of the keypad.
+        ModalBarrier(
+          color: surface.scrim.withValues(alpha: 0.5),
+          onDismiss: () => setState(() => _keypad = false),
+        ),
         Positioned(
           top: 8,
           right: 16,
@@ -520,42 +523,45 @@ class _TempoCard extends StatelessWidget {
                   alignment: Alignment.centerLeft,
                   child: Opacity(
                     opacity: editable ? 1 : surface.disabledOpacity,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            AppText(
-                              readoutExactTempo(
-                                hasTempo: readout.hasTempo,
-                                bpm: readout.tempoBpm,
+                    // As wide as the figure, so the rule underlines it.
+                    child: IntrinsicWidth(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              AppText(
+                                readoutExactTempo(
+                                  hasTempo: readout.hasTempo,
+                                  bpm: readout.tempoBpm,
+                                ),
+                                key: const Key('readout_panel_bpm'),
+                                style: TextStyle(
+                                  fontFamily: SurfaceTheme.monoFont,
+                                  color: surface.textPrimary,
+                                  fontSize: 44,
+                                  height: 1,
+                                ),
                               ),
-                              key: const Key('readout_panel_bpm'),
-                              style: TextStyle(
-                                fontFamily: SurfaceTheme.monoFont,
-                                color: surface.textPrimary,
-                                fontSize: 44,
-                                height: 1,
+                              const SizedBox(width: 8),
+                              AppText(
+                                l10n.stageBpmUnit,
+                                style: TextStyle(
+                                  color: surface.textSecondary,
+                                  fontSize: 15,
+                                  height: 1,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            AppText(
-                              l10n.stageBpmUnit,
-                              style: TextStyle(
-                                color: surface.textSecondary,
-                                fontSize: 15,
-                                height: 1,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        // The keypad's affordance, as on the mockup.
-                        if (editable) const _DottedRule(width: 132),
-                      ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          // The keypad's affordance, as on the mockup.
+                          if (editable) const _DottedRule(),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -941,28 +947,30 @@ class _SignatureGrid extends StatelessWidget {
 
 /// The dotted line under the tempo that says it can be typed.
 class _DottedRule extends StatelessWidget {
-  const _DottedRule({required this.width});
-
-  final double width;
+  const _DottedRule();
 
   @override
-  Widget build(BuildContext context) {
-    final color = context.surface.textMuted;
-    const dot = 3.0;
-    const gap = 3.0;
-    final count = (width / (dot + gap)).floor();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < count; i++) ...[
-          if (i > 0) const SizedBox(width: gap),
-          SizedBox(
-            width: dot,
-            height: 2,
-            child: ColoredBox(color: color),
-          ),
-        ],
-      ],
-    );
+  Widget build(BuildContext context) => SizedBox(
+    key: const Key('readout_panel_bpm_rule'),
+    height: 2,
+    child: CustomPaint(painter: _DotsPainter(context.surface.textMuted)),
+  );
+}
+
+/// 3 px dashes, 3 px apart, across the width.
+class _DotsPainter extends CustomPainter {
+  const _DotsPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    for (var x = 0.0; x + 3 <= size.width; x += 6) {
+      canvas.drawRect(Rect.fromLTWH(x, 0, 3, size.height), paint);
+    }
   }
+
+  @override
+  bool shouldRepaint(_DotsPainter old) => old.color != color;
 }
