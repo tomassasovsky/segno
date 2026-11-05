@@ -452,8 +452,9 @@ FxArt? expressionTargetArt(LooperRepository looper, Object target) {
 }
 
 /// Names an activation within its destination: the effect's own name, the
-/// rack's, or the whole chain — which a chain that is one rack end to end
-/// ([fxSoleRack]) takes from its rack, since to the player it IS that rack.
+/// rack's, or the whole chain. A chain that is one rack end to end is offered
+/// as its rack ([FxBindingResolver.availableBindingTargets]), so a whole-chain
+/// row is always every effect.
 ///
 /// A rack that is gone has no name left to read, so its row says it was a
 /// rack; the row itself shows the binding as missing (R25).
@@ -462,9 +463,7 @@ String expressionActivationName(
   LooperRepository looper,
   FxBindingTarget target,
 ) => switch (target) {
-  FxChainTarget(:final address) =>
-    fxSoleRack(looper.chainEntriesAt(address) ?? const [])?.name ??
-        l10n.externalActivationChain,
+  FxChainTarget() => l10n.externalActivationChain,
   final FxRackTarget rack =>
     fxRackName(looper, rack) ?? l10n.externalActivationRack,
   final FxSlotTarget slot => fxSlotName(looper, slot) ?? slot.slotId,

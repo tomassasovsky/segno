@@ -285,14 +285,22 @@ void main() {
       expect(rows[4].art, const FxRackPicture('guitar'));
     });
 
-    test('a chain that is one rack is named by it, and offered once', () {
+    test('a chain that is one rack is offered as that rack, by its name', () {
       monitorChains = {
         0: [module('c', chords), module('d', chords)],
       };
       final rows = activations();
-      expect(rows.first.target, const FxChainTarget(address));
+      expect(
+        rows.first.target,
+        const FxRackTarget(address: address, rackId: 'r-2'),
+      );
       expect(rows.first.label, 'Soft Chords');
-      expect(rows.where((row) => row.target is FxRackTarget), isEmpty);
+      expect(rows.where((row) => row.target is FxChainTarget), isEmpty);
+      // A whole-chain binding made before is still every effect.
+      expect(
+        expressionActivationName(l10n, looper, const FxChainTarget(address)),
+        'Every effect',
+      );
     });
 
     test('a rack that is gone says it was a rack and draws nothing', () {

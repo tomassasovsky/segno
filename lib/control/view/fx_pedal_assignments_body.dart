@@ -439,7 +439,7 @@ class _TargetRow extends StatelessWidget {
         FxSlotTarget() => l10n.controlEffectIn(stage),
       },
       valueColor: chosen ? surface.accent : surface.textMuted,
-      indented: target is! FxChainTarget,
+      indented: target is FxSlotTarget,
       // Nothing in this list opens — every row acts on the tap — so the
       // gutter a disclosure marker would reserve is not kept either.
       showDisclosure: false,

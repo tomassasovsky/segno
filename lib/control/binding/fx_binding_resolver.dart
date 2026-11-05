@@ -30,18 +30,18 @@ extension FxBindingResolver on LooperRepository {
   /// reorder, so binding to it would create a target that silently goes stale
   /// on the next edit (A9).
   ///
-  /// Every rack INSTANCE is offered (#1711), except in a chain that is that
-  /// one rack end to end ([fxSoleRack]): there the chain's own row is the
-  /// rack, named and drawn by it, and a second row switching the same sound
-  /// would read the same and do almost the same.
+  /// Every rack INSTANCE is offered (#1711). A chain that is one rack end to
+  /// end ([fxSoleRack]) offers that rack in place of its whole-chain row: to
+  /// the player it IS the rack, and the rack's target switches what the
+  /// rack's card on the Effects page switches, so the card and the pedal's
+  /// LED always agree. A binding to such a chain made before still resolves.
   List<FxBindingTarget> availableBindingTargets() {
     final targets = <FxBindingTarget>[];
     void add(FxAddress address, List<TrackEffect> entries) {
-      targets.add(FxChainTarget(address));
-      final sole = fxSoleRack(entries) != null;
+      if (fxSoleRack(entries) == null) targets.add(FxChainTarget(address));
       for (final group in fxChainGroups(entries)) {
         final rack = group.rack;
-        if (rack != null && !sole) {
+        if (rack != null) {
           targets.add(FxRackTarget(address: address, rackId: rack.id));
         }
         for (final fx in group.entries) {
@@ -107,6 +107,28 @@ extension FxBindingResolver on LooperRepository {
     return fxChainGroups(
       entries,
     ).where((group) => group.rack?.id == rackId).firstOrNull;
+  }
+
+  /// Whether a pedal's LED for [target] is lit, or `null` when [target] does
+  /// not resolve: what the Effects page shows for it.
+  ///
+  /// A chain or a rack lights with its own switch, as its power button reads.
+  /// An effect lights only while it sounds — its own switch, its rack's and
+  /// its chain's all on, the chain not held off for room (#1515) — as the
+  /// page dims a pedal whose rack or chain is off. Pressing still flips the
+  /// effect's own switch ([bindingEnabled]).
+  bool? bindingLit(FxBindingTarget target) {
+    final enabled = bindingEnabled(target);
+    if (enabled == null) return null;
+    return switch (target) {
+      FxChainTarget() || FxRackTarget() => enabled,
+      FxSlotTarget(:final address, :final slotId) =>
+        chainEntriesAt(
+              address,
+            )![_slotIndex(address, slotId)!].effectiveEnabled &&
+            chainEnabledAt(address)! &&
+            !fxChainHeld(address),
+    };
   }
 
   /// Whether [target] names something that exists in the live rig.

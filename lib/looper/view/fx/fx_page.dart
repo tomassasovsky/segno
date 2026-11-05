@@ -682,7 +682,15 @@ class _FxViewState extends State<FxView> {
       // there are none.
       final control = context.read<ControlCubit>();
       final oldSlots = {for (final fx in sameRack.entries) ?fx.slotId};
-      final count = fxAssignmentsTo(control.state, address, oldSlots);
+      // The rack itself goes too (#1711): a switch bound to it is counted in
+      // the same question.
+      final oldRacks = {sameRack.rack!.id};
+      final count = fxAssignmentsTo(
+        control.state,
+        address,
+        oldSlots,
+        rackIds: oldRacks,
+      );
       if (count > 0) {
         final l10n = context.l10n;
         final confirmed = await showConsoleConfirmDialog(
@@ -703,7 +711,11 @@ class _FxViewState extends State<FxView> {
       // their assignments go now. A store that cannot save is reported with
       // the edit's own unsaved notice.
       if (count > 0 && result.committed) {
-        final removed = await control.removeFxAssignments(address, oldSlots);
+        final removed = await control.removeFxAssignments(
+          address,
+          oldSlots,
+          rackIds: oldRacks,
+        );
         if (!removed && result.status == FxEditStatus.applied) {
           result = FxEditResult(FxEditStatus.unsaved, groupId: result.groupId);
         } else if (!removed && result.status == FxEditStatus.stale && mounted) {

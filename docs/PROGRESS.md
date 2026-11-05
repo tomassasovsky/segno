@@ -86,8 +86,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   id is already an instance id: every addition mints one (`SlotIds.mint`), it
   is saved with the chain, and a rename or reorder never rewrites it, so a
   second copy of the same sound in one chain is a different rack. A rack
-  that is removed or replaced makes its bindings show as missing (R25); they
-  never fall back to the chain or the other rack.
+  that is removed makes its bindings show as missing (R25); they never fall
+  back to the chain or the other rack. Re-adding a factory rack asks first,
+  counting bindings to the rack with those to its pedals in its one
+  question, and removes them on confirm.
 - A rack's switch is `FxRack.bypassed`, on every module of the rack and
   saved with the chain (session file, settings and performance snapshot
   alike). Off and on change only that flag, so each pedal's own `enabled`
@@ -100,15 +102,18 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   native changed.
 - Offered in External pedals Controls, MIDI controls and FX pedal
   assignments, each rack after its chain and before its own effects. A chain
-  that is one rack end to end (`fxSoleRack`) offers only its chain row,
-  named by the rack instead of "Every effect". Custom controls carry actions,
-  not activations, so they offer none.
+  that is one rack end to end (`fxSoleRack`) offers that rack in place of
+  its "Every effect" row, so the pedal switches what the rack's card
+  switches; an older binding to such a chain still works. Custom controls
+  carry actions, not activations, so they offer none.
 - The Effects page's rack power is the same switch: its button reads
   `FxChainGroup.isOn` (the rack's switch), the card lights when
   `FxChainGroup.audible` (switch on and a pedal on), and a bypassed rack's
   editor dims its pedals, which keep their own switches.
-- A console or external binding to one pedal reads that pedal's own switch,
-  inside a bypassed rack as inside a chain that is off.
+- A pedal LED follows what the Effects page shows (`bindingLit`): a chain or
+  rack binding lights with its own switch, an effect binding only while the
+  effect sounds (its own switch, its rack's and its chain's on, the chain not
+  held off for room). Pressing still flips the effect's own switch.
 - A console binding's toggle now saves the chain it changed, so a rack (or a
   chain or an effect) switched from the pedal survives a reload. A momentary
   returns to what is saved, and an empty chain switched off is not saved.

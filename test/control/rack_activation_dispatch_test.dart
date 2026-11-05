@@ -275,6 +275,61 @@ void main() {
     }
   });
 
+  test("an effect's LED follows its sound: dark while its rack is off, "
+      'and its press still flips its own switch', () async {
+    final rig = _Rig();
+    try {
+      await rig.twoRacks();
+      await rig.control.load();
+      await rig.control.setGlobalBindings(
+        PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+            target: const FxSlotTarget(
+              address: _input,
+              slotId: 'chords',
+            ).canonicalString(),
+          ),
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+            target: _chordsRack.canonicalString(),
+          ),
+        ]),
+      );
+      rig.control.setMode(InteractionMode.fx);
+      await rig._settle();
+      expect(rig.lit(PedalButton.track1), isTrue);
+
+      // The rack off: the effect is silent, so its LED is dark.
+      await rig.stomp(PedalButton.track2);
+      expect(rig.lit(PedalButton.track1), isFalse);
+      expect(rig.looper.monitorEffects(0).last.enabled, isTrue);
+
+      // Its press flips its own switch, which the rack keeps for later.
+      await rig.stomp(PedalButton.track1);
+      expect(rig.looper.monitorEffects(0).last.enabled, isFalse);
+      expect(rig.lit(PedalButton.track1), isFalse);
+
+      // The rack back on: still dark, its own switch is now off.
+      await rig.stomp(PedalButton.track2);
+      expect(rig.lit(PedalButton.track1), isFalse);
+      await rig.stomp(PedalButton.track1);
+      expect(rig.lit(PedalButton.track1), isTrue);
+
+      // The chain off: what the LED reads goes dark too, as the Effects page
+      // dims it.
+      rig.looper.setMonitorChainEnabled(input: 0, enabled: false);
+      expect(
+        rig.looper.bindingLit(
+          const FxSlotTarget(address: _input, slotId: 'chords'),
+        ),
+        isFalse,
+      );
+    } finally {
+      await rig.close();
+    }
+  });
+
   test('a stomp that switches an empty chain off saves nothing', () async {
     final rig = _Rig();
     try {
