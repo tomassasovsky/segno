@@ -181,16 +181,7 @@ static inline int64_t le_bridge_near(int64_t d, int32_t len) {
  * frames at the grain rate) and the candidate region are gathered once into
  * flat arrays at their common spacing, so each lag is a strided dot product.
  * The lags run on the tap spacing, then every lag around the best one. */
-/* Cold: it runs a few times a second per lane, and out of the hot text it
- * leaves the mixer's code where the arm64 gate measured it (#1698). GCC
- * compiles it no slower (9.0 against 9.1 us a search). */
-#if defined(__GNUC__) || defined(__clang__)
-#define LE_BRIDGE_COLD __attribute__((cold))
-#else
-#define LE_BRIDGE_COLD
-#endif
-
-LE_BRIDGE_COLD static inline double le_bridge_align(const float* buf, int32_t len,
+static inline double le_bridge_align(const float* buf, int32_t len,
                                      double ideal, double cont, double g,
                                      int32_t reversed, int32_t turned,
                                      int32_t sample_rate, int32_t* tonal) {
