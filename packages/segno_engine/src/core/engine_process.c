@@ -8566,13 +8566,15 @@ static inline int le_track_print_run_matches(
   return 1;
 }
 
-/* Out of line: GCC inlines a static function called once, which would pull
- * the bridge's search (and its stack buffers) into the mixer's frame loop
- * and slow every lane that does not bridge (#1675). */
+/* Out of line and cold: GCC inlines a static function called once, which
+ * would pull the bridge's search (and its stack buffers) into the mixer's
+ * frame loop, and `cold` places the bridge's code away from the loop's
+ * (#1675; the arm64 bench gate on the 8 x 8 lane rig is sensitive to it).
+ * The bridged path is compiled for size, which costs it a few percent. */
 #if defined(_MSC_VER)
 #define LE_BRIDGE_NOINLINE __declspec(noinline)
 #else
-#define LE_BRIDGE_NOINLINE __attribute__((noinline))
+#define LE_BRIDGE_NOINLINE __attribute__((noinline, cold))
 #endif
 
 /* The pitch bridge's read for lane l of track t this frame (#1675): the
@@ -8655,7 +8657,7 @@ static inline void mix_tracks_frame(
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
     int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
     float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
-    int any_solo, uint64_t perf_frame_base, int bridge_block) {
+    int any_solo, uint64_t perf_frame_base) {
   /* The All tracks recorded-mix stage (slice 3e). While the chain has
    * something on it the tracks route HERE instead of straight to `out`, and
    * the loop after the track loop runs the chain once per output bus over
@@ -8913,7 +8915,7 @@ static inline void mix_tracks_frame(
   int32_t src_len[LE_MAX_TRACKS];
   float turn_x[LE_MAX_TRACKS], turn_y[LE_MAX_TRACKS];
   /* The pitch bridge (#1675), all behind bridge_block (le_engine.bridge_any,
-   * read once a buffer), which is 0 unless a track bridges this buffer.
+   * set once a buffer), which is 0 unless a track bridges this buffer.
    * bridging[t] is LE_BRIDGE_NEW when the new head reads through the grains,
    * | LE_BRIDGE_OLD when a turn window's old head does, 0 for the plain read
    * below; bridge_pos[t] is the song position the grains step at. Both are
@@ -8921,6 +8923,7 @@ static inline void mix_tracks_frame(
    * first. */
   int bridging[LE_MAX_TRACKS];
   int64_t bridge_pos[LE_MAX_TRACKS];
+  const int bridge_block = e->bridge_any;
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
     head_idx[t] = -1.0;
@@ -10374,7 +10377,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const le_wet_entry* track_cache_ent[LE_MAX_TRACKS];
   snapshot_track_cache(e, tc, track_cache_ent);
   le_transpose_select(e, tc, lane_n, perf_frame_base);
-  const int bridge_block = e->bridge_any; /* the pitch bridge, per buffer */
 
 
   /* Per-input live monitor chain, snapshotted once per buffer (see
@@ -10572,8 +10574,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                        at_fx_params, at_fx_enabled, cache_ent, lane_sumsq,
                        lane_peak, st,
                        frame_trk_peak, trk_sumsq, trk_peak, trk_lpeak, trk_rpeak,
-                       in_trim, solo, any_solo, perf_frame_base,
-                       bridge_block);
+                       in_trim, solo, any_solo, perf_frame_base);
 
       /* The click's schedule and voice (its sample sums in during the
        * second loop), the loop viz cursor, the track viz taps, then the
