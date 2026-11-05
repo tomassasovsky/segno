@@ -52,36 +52,34 @@ class LoopFocusable extends StatelessWidget {
         },
       ),
     },
-    child: _focus(context),
-  );
-
-  Widget _focus(BuildContext context) => Focus(
-    focusNode: focusNode,
-    canRequestFocus: enabled,
-    autofocus: autofocus,
-    onKeyEvent: (_, event) {
-      if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
-      if (event.logicalKey == LogicalKeyboardKey.enter ||
-          event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-          event.logicalKey == LogicalKeyboardKey.space) {
-        onActivate();
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
-    },
-    child: Builder(
-      builder: (context) => DecoratedBox(
-        position: DecorationPosition.foreground,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(radius),
-          border: Border.all(
-            color: Focus.of(context).hasFocus
-                ? context.surface.encoderFocus
-                : Colors.transparent,
-            width: 3,
+    child: Focus(
+      focusNode: focusNode,
+      canRequestFocus: enabled,
+      autofocus: autofocus,
+      onKeyEvent: (_, event) {
+        if (!enabled || event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+            event.logicalKey == LogicalKeyboardKey.space) {
+          onActivate();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Builder(
+        builder: (context) => DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: Focus.of(context).hasFocus
+                  ? context.surface.encoderFocus
+                  : Colors.transparent,
+              width: 3,
+            ),
           ),
+          child: child,
         ),
-        child: child,
       ),
     ),
   );
@@ -1335,107 +1333,99 @@ class _LoopSliderState extends State<LoopSlider> {
           onTurn: _step,
         ),
       },
-      child: _focus(context, surface, width, enabled, clamped),
-    );
-  }
-
-  Widget _focus(
-    BuildContext context,
-    SurfaceTheme surface,
-    double width,
-    bool enabled,
-    double clamped,
-  ) {
-    return Focus(
-      canRequestFocus: enabled,
-      onKeyEvent: _handleKey,
-      onFocusChange: (focused) {
-        if (!focused && _keyboardDraft != null) _cancelEdit();
-      },
-      child: Builder(
-        builder: (context) {
-          final focused = Focus.of(context).hasFocus;
-          return Semantics(
-            slider: true,
-            label: widget.semanticLabel,
-            value: _semanticValue(clamped),
-            increasedValue: _semanticValue(
-              (clamped + widget.keyboardStep).clamp(0.0, widget.max),
-            ),
-            decreasedValue: _semanticValue(
-              (clamped - widget.keyboardStep).clamp(0.0, widget.max),
-            ),
-            enabled: enabled,
-            onIncrease: enabled && clamped < widget.max
-                ? () => _semanticStep(1)
-                : null,
-            onDecrease: enabled && clamped > 0 ? () => _semanticStep(-1) : null,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: enabled
-                  ? (details) {
-                      _touchSet(details.localPosition.dx);
-                      _touchCommit(_fraction(details.localPosition.dx));
-                    }
+      child: Focus(
+        canRequestFocus: enabled,
+        onKeyEvent: _handleKey,
+        onFocusChange: (focused) {
+          if (!focused && _keyboardDraft != null) _cancelEdit();
+        },
+        child: Builder(
+          builder: (context) {
+            final focused = Focus.of(context).hasFocus;
+            return Semantics(
+              slider: true,
+              label: widget.semanticLabel,
+              value: _semanticValue(clamped),
+              increasedValue: _semanticValue(
+                (clamped + widget.keyboardStep).clamp(0.0, widget.max),
+              ),
+              decreasedValue: _semanticValue(
+                (clamped - widget.keyboardStep).clamp(0.0, widget.max),
+              ),
+              enabled: enabled,
+              onIncrease: enabled && clamped < widget.max
+                  ? () => _semanticStep(1)
                   : null,
-              // Gesture arena arbitration withholds the single-tap write
-              // until a double tap is ruled out. A reset never sends an
-              // intermediate tempo/decay value to the engine or store.
-              onDoubleTap: enabled ? widget.onDoubleTap : null,
-              onHorizontalDragStart: enabled
-                  ? (details) => _touchSet(details.localPosition.dx)
+              onDecrease: enabled && clamped > 0
+                  ? () => _semanticStep(-1)
                   : null,
-              onHorizontalDragUpdate: enabled
-                  ? (details) => _touchSet(details.localPosition.dx)
-                  : null,
-              onHorizontalDragEnd: enabled
-                  ? (_) => _touchCommit(_touchPreview ?? widget.value)
-                  : null,
-              onHorizontalDragCancel: enabled
-                  ? () {
-                      _touchPreview = null;
-                      widget.onEditCancel?.call(widget.value);
-                    }
-                  : null,
-              child: Opacity(
-                opacity: enabled ? 1 : surface.disabledOpacity,
-                child: Container(
-                  width: width,
-                  height: LoopSlider.height,
-                  decoration: BoxDecoration(
-                    color: surface.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: focused
-                          ? surface.encoderFocus
-                          : surface.borderHairline,
-                      width: focused ? 3 : 1,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: enabled
+                    ? (details) {
+                        _touchSet(details.localPosition.dx);
+                        _touchCommit(_fraction(details.localPosition.dx));
+                      }
+                    : null,
+                // Gesture arena arbitration withholds the single-tap write
+                // until a double tap is ruled out. A reset never sends an
+                // intermediate tempo/decay value to the engine or store.
+                onDoubleTap: enabled ? widget.onDoubleTap : null,
+                onHorizontalDragStart: enabled
+                    ? (details) => _touchSet(details.localPosition.dx)
+                    : null,
+                onHorizontalDragUpdate: enabled
+                    ? (details) => _touchSet(details.localPosition.dx)
+                    : null,
+                onHorizontalDragEnd: enabled
+                    ? (_) => _touchCommit(_touchPreview ?? widget.value)
+                    : null,
+                onHorizontalDragCancel: enabled
+                    ? () {
+                        _touchPreview = null;
+                        widget.onEditCancel?.call(widget.value);
+                      }
+                    : null,
+                child: Opacity(
+                  opacity: enabled ? 1 : surface.disabledOpacity,
+                  child: Container(
+                    width: width,
+                    height: LoopSlider.height,
+                    decoration: BoxDecoration(
+                      color: surface.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: focused
+                            ? surface.encoderFocus
+                            : surface.borderHairline,
+                        width: focused ? 3 : 1,
+                      ),
                     ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: (width - 2) * clamped,
-                        child: ColoredBox(color: surface.controlStrong),
-                      ),
-                      Positioned(
-                        left: (width - 2) * clamped,
-                        top: 0,
-                        bottom: 0,
-                        width: 2,
-                        child: ColoredBox(color: surface.textSecondary),
-                      ),
-                    ],
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: (width - 2) * clamped,
+                          child: ColoredBox(color: surface.controlStrong),
+                        ),
+                        Positioned(
+                          left: (width - 2) * clamped,
+                          top: 0,
+                          bottom: 0,
+                          width: 2,
+                          child: ColoredBox(color: surface.textSecondary),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

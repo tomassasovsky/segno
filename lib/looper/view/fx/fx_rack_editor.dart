@@ -374,10 +374,10 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
             child: Opacity(
               opacity: effect.enabled ? 1 : surface.disabledOpacity,
               child: art == null
-                  ? _mark(surface, lit: effect.enabled)
+                  ? _PedalMark(lit: effect.enabled)
                   : FxArtView(
                       art: art,
-                      fallback: _mark(surface, lit: effect.enabled),
+                      fallback: _PedalMark(lit: effect.enabled),
                     ),
             ),
           ),
@@ -436,14 +436,26 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
       ),
     );
   }
+}
 
-  Widget _mark(SurfaceTheme surface, {required bool lit}) => Center(
-    child: Icon(
-      LucideIcons.audioWaveform,
-      size: 48,
-      color: lit ? surface.accent : surface.textTertiary,
-    ),
-  );
+/// The app's own mark, drawn where a pedal has no artwork.
+class _PedalMark extends StatelessWidget {
+  const _PedalMark({required this.lit});
+
+  /// Whether the pedal is on.
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Center(
+      child: Icon(
+        LucideIcons.audioWaveform,
+        size: 48,
+        color: lit ? surface.accent : surface.textTertiary,
+      ),
+    );
+  }
 }
 
 /// What a pedal is called: the catalogue's own name for the module, falling
