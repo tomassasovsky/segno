@@ -125,6 +125,83 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
       (cubit) => cubit.state.connection,
     );
     final draft = _draft;
+    // Read only by the views that show what can be mapped, so the page
+    // depends on it only while one of them is open.
+    late final availability = controlAvailability(context, watch: true);
+    // The picker views draw one full-width chooser under the title.
+    final picker = draft == null
+        ? null
+        : switch (_view) {
+            _MidiView.list || _MidiView.editor => null,
+            _MidiView.destinations => ExpressionDestinationPicker(
+              destinations: controlDestinations(
+                l10n,
+                context.watch<TracksCubit>().state.names,
+                availability,
+                withActivations: true,
+              ),
+              kind: _kind,
+              onKind: (kind) => setState(() => _kind = kind),
+              onOpen: (destination) => setState(() {
+                _destination = destination;
+                _view = _MidiView.parameters;
+              }),
+            ),
+            _MidiView.parameters => switch (_destination) {
+              null => null,
+              final destination => ExternalControlTargetList(
+                destination: destination,
+                taken: {
+                  for (final control in draft.controls)
+                    if (control is MidiParameterControl &&
+                        control.key != _replacing)
+                      ?_parameterTarget(control.key),
+                },
+                replacing: _replacing == null
+                    ? null
+                    : _parameterTarget(_replacing!),
+                onParameter: (control) =>
+                    _pickTarget(context, draft, control.target),
+                onActivation: (activation) =>
+                    _pickTarget(context, draft, activation.target),
+              ),
+            },
+            _MidiView.channel => MidiChoiceGrid<int?>(
+              keyPrefix: 'midi_channel',
+              selected: draft.source?.channel,
+              choices: [
+                MidiChoice(
+                  value: null,
+                  id: 'omni',
+                  label: l10n.midiOmniAllChannels,
+                ),
+                for (var channel = 0; channel < 16; channel++)
+                  MidiChoice(
+                    value: channel,
+                    id: '$channel',
+                    label: l10n.midiChannel(channel + 1),
+                  ),
+              ],
+              onPick: (channel) => setState(() {
+                _draft = draft.withChannel(channel);
+                _view = _MidiView.editor;
+              }),
+            ),
+            _MidiView.format => MidiChoiceGrid<MidiProtocol>(
+              keyPrefix: 'midi_format',
+              selected: _protocol,
+              choices: [
+                for (final protocol in MidiProtocol.values)
+                  MidiChoice(
+                    value: protocol,
+                    id: protocol.name,
+                    label: midiFormatLabel(l10n, protocol),
+                    detail: midiFormatDetail(l10n, protocol),
+                  ),
+              ],
+              onPick: (protocol) => _pickFormat(control, draft, protocol),
+            ),
+          };
     return PopScope(
       canPop: !_saving && _view == _MidiView.list,
       onPopInvokedWithResult: (didPop, _) {
@@ -173,21 +250,164 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 },
                 actions: switch (_view) {
-                  _MidiView.list => _listActions(context, control, connection),
-                  _MidiView.editor when draft != null => _editorActions(
-                    context,
-                    control,
-                    draft,
+                  _MidiView.list => _ListActions(
+                    state: control.state,
+                    connection: connection,
+                    onReset: () => unawaited(_resetConfiguration(control)),
+                    onControlEnabled: ({required enabled}) => unawaited(
+                      _setControlEnabled(control, enabled: enabled),
+                    ),
+                    onAdd: () => _add(control, connection),
+                    onRetryDevice: () =>
+                        unawaited(_selectDevice(connection.selectedId)),
                   ),
-                  _MidiView.destinations when _replacing == null =>
-                    _destinationActions(context, draft),
+                  _MidiView.editor when draft != null => _EditorActions(
+                    state: control.state,
+                    draft: draft,
+                    saving: _saving,
+                    onDelete: () => unawaited(_delete(control, draft)),
+                    onCancel: () => _leaveEditor(control),
+                    onSave: () => unawaited(_save(control, draft)),
+                  ),
+                  _MidiView.destinations
+                      when _replacing == null && draft != null =>
+                    _DestinationActions(
+                      carries: MidiMappingDraft.carriesActions(
+                        draft.source?.protocol ?? _protocol,
+                      ),
+                      onPick: () => unawaited(_pickAction(context)),
+                    ),
                   _ => null,
                 },
                 children: [
-                  if (_view == _MidiView.list)
-                    ..._list(context, control, connection)
-                  else if (draft != null)
-                    ..._editing(context, control, connection, draft),
+                  if (_view == _MidiView.list) ...[
+                    Positioned(
+                      left: 0,
+                      top: _top,
+                      right: 0,
+                      height: MidiDeviceCards.cardSize.height,
+                      child: MidiDeviceCards(
+                        cards: midiDeviceCards(
+                          connection,
+                          mapped: [
+                            for (final mapping
+                                in control.state.midiMappings.mappings)
+                              mapping.source.device,
+                          ],
+                        ),
+                        onSelect: (id) => unawaited(_selectDevice(id)),
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      top: _rowsTop,
+                      right: 0,
+                      bottom: 36,
+                      child: _MappingList(
+                        state: control.state,
+                        connection: connection,
+                        rows: [
+                          for (final mapping
+                              in control.state.midiMappings.mappings)
+                            if (mapping.source.device == connection.selectedId)
+                              _row(
+                                context,
+                                mapping,
+                                connection.status ==
+                                    MidiConnectionStatus.connected,
+                              ),
+                        ],
+                        notice: _notice,
+                        onEdit: (mapping) => _edit(control, mapping),
+                        onEnabled: (mapping, {required enabled}) => unawaited(
+                          _setMappingEnabled(
+                            control,
+                            mapping,
+                            enabled: enabled,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else if (draft != null && _view == _MidiView.editor) ...[
+                    Positioned(
+                      left: 0,
+                      top: _top,
+                      child: MidiSourcePanel(
+                        deviceName: _deviceName(connection, draft.device),
+                        draft: draft,
+                        protocol: _protocol,
+                        learn: control.state.midiEdit?.learn,
+                        connected:
+                            connection.statusOf(draft.device) ==
+                            MidiConnectionStatus.connected,
+                        conflicting:
+                            draft.conflictIn(control.state.midiMappings) !=
+                            null,
+                        notice: _notice,
+                        onFormat: () => _openPicker(control, _MidiView.format),
+                        onChannel: () =>
+                            _openPicker(control, _MidiView.channel),
+                        onLearn: () => _learn(control, draft, _protocol),
+                        onCancelLearn: () {
+                          if (_editOwner case final owner?) {
+                            control.cancelMidiLearn(owner);
+                          }
+                        },
+                        onEditExisting: () => _editExisting(control, draft),
+                        onBehavior: _behavior,
+                      ),
+                    ),
+                    Positioned(
+                      left: MidiSourcePanel.penSize.width + _editorGap,
+                      top: _top,
+                      child: MidiControlCards(
+                        cards: [
+                          for (final control in draft.controls)
+                            MidiControlCard(
+                              control: control,
+                              label: _controlLabel(context, control),
+                              activation:
+                                  control is MidiParameterControl &&
+                                  _parameterTarget(control.key)
+                                      is FxBindingTarget,
+                              available: switch (control) {
+                                MidiActionControl(:final key) =>
+                                  ControlAction.tryParse(key) != null,
+                                MidiParameterControl(:final key) =>
+                                  availability.resolvesKey(key),
+                              },
+                              disabledReason: control is MidiParameterControl
+                                  ? controlEditBlockLabel(
+                                      l10n,
+                                      availability.blockedBy(
+                                        ControlValueTarget.tryParse(
+                                          control.key,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                        ],
+                        behavior: draft.behavior,
+                        program: draft.isProgram,
+                        onAdd: () =>
+                            _openPicker(control, _MidiView.destinations),
+                        onChange: (key) => _changeControl(control, key),
+                        onRemove: (key) => _write(draft.without(key)),
+                        onRange: (key, {low, high}) =>
+                            _write(draft.withRange(key, low: low, high: high)),
+                        onTrigger: (key, trigger) =>
+                            _write(draft.withTrigger(key, trigger)),
+                      ),
+                    ),
+                  ] else if (picker != null)
+                    Positioned(
+                      left: 0,
+                      top: _top,
+                      right: 0,
+                      height: _pickerHeight,
+                      child: picker,
+                    ),
                 ],
               ),
             ),
@@ -200,196 +420,6 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   // ---------------------------------------------------------------------------
   // The list
   // ---------------------------------------------------------------------------
-
-  Widget _listActions(
-    BuildContext context,
-    ControlCubit control,
-    MidiConnection connection,
-  ) {
-    final l10n = context.l10n;
-    final on = control.state.midiControlEnabled;
-    final paused = control.state.midiRemotePaused;
-    final unavailable = control.state.midiUnavailable;
-    final loaded = control.state.midiLoaded;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (unavailable)
-          LoopOutlinedButton(
-            key: const Key('midi_reset_configuration'),
-            width: 260,
-            label: l10n.midiResetConfiguration,
-            onTap: loaded
-                ? () => unawaited(_resetConfiguration(control))
-                : null,
-          )
-        else if (paused && on) ...[
-          LoopOutlinedButton(
-            key: const Key('midi_retry_off'),
-            width: 195,
-            label: l10n.midiRetryOff,
-            onTap: loaded
-                ? () => unawaited(
-                    _setControlEnabled(control, enabled: false),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 16),
-          LoopOutlinedButton(
-            key: const Key('midi_resume_on'),
-            width: 195,
-            label: l10n.midiResumeOn,
-            onTap: loaded
-                ? () => unawaited(
-                    _setControlEnabled(control, enabled: true),
-                  )
-                : null,
-          ),
-        ] else
-          LoopChoiceButton(
-            key: const Key('midi_control_enabled'),
-            width: 219,
-            height: 64,
-            label: on ? l10n.midiControlOn : l10n.midiControlOff,
-            selected: on,
-            onTap: () {
-              if (loaded) {
-                unawaited(_setControlEnabled(control, enabled: !on));
-              }
-            },
-          ),
-        const SizedBox(width: 16),
-        LoopOutlinedButton(
-          key: const Key('midi_add_mapping'),
-          width: 192,
-          label: l10n.midiAddMapping,
-          onTap:
-              control.state.midiLoaded &&
-                  !control.state.midiUnavailable &&
-                  connection.hasSelection
-              ? () => _add(control, connection)
-              : null,
-        ),
-        if (connection.pinUncertain && connection.hasSelection) ...[
-          const SizedBox(width: 16),
-          LoopOutlinedButton(
-            key: const Key('midi_retry_device'),
-            width: 160,
-            label: l10n.midiRetryDevice,
-            onTap: () => unawaited(_selectDevice(connection.selectedId)),
-          ),
-        ],
-      ],
-    );
-  }
-
-  List<Widget> _list(
-    BuildContext context,
-    ControlCubit control,
-    MidiConnection connection,
-  ) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final device = connection.selectedId;
-    final connected = connection.status == MidiConnectionStatus.connected;
-    final rows = [
-      for (final mapping in control.state.midiMappings.mappings)
-        if (mapping.source.device == device) _row(context, mapping, connected),
-    ];
-    return [
-      Positioned(
-        left: 0,
-        top: _top,
-        right: 0,
-        height: MidiDeviceCards.cardSize.height,
-        child: MidiDeviceCards(
-          cards: midiDeviceCards(
-            connection,
-            mapped: [
-              for (final mapping in control.state.midiMappings.mappings)
-                mapping.source.device,
-            ],
-          ),
-          onSelect: (id) => unawaited(_selectDevice(id)),
-        ),
-      ),
-      Positioned(
-        left: 0,
-        top: _rowsTop,
-        right: 0,
-        bottom: 36,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!control.state.midiLoaded)
-              const Expanded(
-                child: Center(
-                  child: CircularProgressIndicator(key: Key('midi_loading')),
-                ),
-              )
-            else if (control.state.midiUnavailable)
-              Expanded(
-                child: Center(
-                  child: AppText(
-                    l10n.midiConfigurationUnavailable,
-                    key: const Key('midi_configuration_unavailable'),
-                    style: TextStyle(color: surface.warning, fontSize: 28),
-                  ),
-                ),
-              )
-            else if (rows.isEmpty)
-              Expanded(
-                child: Center(
-                  child: AppText(
-                    l10n.midiNoMappings,
-                    key: const Key('midi_no_mappings'),
-                    style: TextStyle(color: surface.textTertiary, fontSize: 32),
-                  ),
-                ),
-              )
-            else
-              // Loose, so a short list leaves the disconnected notice right
-              // under its last row rather than at the foot of the page.
-              Flexible(
-                child: MidiMappingRows(
-                  rows: rows,
-                  levels: control.state.midiLevels,
-                  onEdit: (mapping) => _edit(control, mapping),
-                  onEnabled: (mapping, {required enabled}) => unawaited(
-                    _setMappingEnabled(control, mapping, enabled: enabled),
-                  ),
-                ),
-              ),
-            // The page's notices sit under the rows, as the accepted design
-            // puts them, and are announced when they change.
-            if (connection.hasSelection &&
-                !connected &&
-                !connection.pinUncertain)
-              _Notice(
-                l10n.midiControllerDisconnected,
-                key: const Key('midi_controller_disconnected'),
-              ),
-            if (_notice case final notice?)
-              _Notice(notice, key: const Key('midi_notice')),
-            if (connection.pinUncertain)
-              _Notice(
-                l10n.midiDeviceSettingFailed,
-                key: const Key('midi_device_save_failed'),
-              ),
-            if (_notice == null &&
-                !control.state.midiUnavailable &&
-                (control.state.midiPersistenceUncertain ||
-                    control.state.midiRemotePaused &&
-                        control.state.midiControlEnabled))
-              _Notice(
-                l10n.midiSaveFailed,
-                key: const Key('midi_storage_notice'),
-              ),
-          ],
-        ),
-      ),
-    ];
-  }
 
   Future<void> _selectDevice(String id) async {
     if (_saving) return;
@@ -520,238 +550,6 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
   // ---------------------------------------------------------------------------
   // The editor and its pickers
   // ---------------------------------------------------------------------------
-
-  Widget _editorActions(
-    BuildContext context,
-    ControlCubit control,
-    MidiMappingDraft draft,
-  ) {
-    final l10n = context.l10n;
-    final state = control.state;
-    final listening = state.midiEdit?.learn?.isListening ?? false;
-    final canSave =
-        !listening && !_saving && draft.canSaveIn(state.midiMappings);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (draft.id != null) ...[
-          LoopOutlinedButton(
-            key: const Key('midi_delete'),
-            width: 120,
-            label: l10n.midiDelete,
-            onTap: _saving ? null : () => unawaited(_delete(control, draft)),
-          ),
-          const SizedBox(width: 16),
-        ],
-        LoopOutlinedButton(
-          key: const Key('midi_cancel'),
-          width: 125,
-          label: l10n.pedalSetupCancel,
-          onTap: _saving ? null : () => _leaveEditor(control),
-        ),
-        const SizedBox(width: 16),
-        LoopOutlinedButton(
-          key: const Key('midi_save'),
-          width: 107,
-          tone: LoopButtonTone.accent,
-          label: l10n.pedalSetupSave,
-          onTap: canSave ? () => unawaited(_save(control, draft)) : null,
-        ),
-      ],
-    );
-  }
-
-  Widget? _destinationActions(BuildContext context, MidiMappingDraft? draft) {
-    if (draft == null) return null;
-    final l10n = context.l10n;
-    final carries = MidiMappingDraft.carriesActions(
-      draft.source?.protocol ?? _protocol,
-    );
-    return LoopOutlinedButton(
-      key: const Key('midi_performance_actions'),
-      width: carries ? 280 : 460,
-      label: carries
-          ? l10n.midiPerformanceActions
-          : l10n.midiPerformanceActionsNeedButton,
-      onTap: carries ? () => unawaited(_pickAction(context)) : null,
-    );
-  }
-
-  List<Widget> _editing(
-    BuildContext context,
-    ControlCubit control,
-    MidiConnection connection,
-    MidiMappingDraft draft,
-  ) {
-    final state = control.state;
-    final availability = controlAvailability(context, watch: true);
-    final l10n = context.l10n;
-    Widget placed(Widget child) => Positioned(
-      left: 0,
-      top: _top,
-      right: 0,
-      height: _pickerHeight,
-      child: child,
-    );
-    switch (_view) {
-      case _MidiView.list:
-        return const [];
-      case _MidiView.editor:
-        final connected =
-            connection.statusOf(draft.device) == MidiConnectionStatus.connected;
-        return [
-          Positioned(
-            left: 0,
-            top: _top,
-            child: MidiSourcePanel(
-              deviceName: _deviceName(connection, draft.device),
-              draft: draft,
-              protocol: _protocol,
-              learn: state.midiEdit?.learn,
-              connected: connected,
-              conflicting: draft.conflictIn(state.midiMappings) != null,
-              notice: _notice,
-              onFormat: () => _openPicker(control, _MidiView.format),
-              onChannel: () => _openPicker(control, _MidiView.channel),
-              onLearn: () => _learn(control, draft, _protocol),
-              onCancelLearn: () {
-                if (_editOwner case final owner?) {
-                  control.cancelMidiLearn(owner);
-                }
-              },
-              onEditExisting: () => _editExisting(control, draft),
-              onBehavior: _behavior,
-            ),
-          ),
-          Positioned(
-            left: MidiSourcePanel.penSize.width + _editorGap,
-            top: _top,
-            child: MidiControlCards(
-              cards: [
-                for (final control in draft.controls)
-                  MidiControlCard(
-                    control: control,
-                    label: _controlLabel(context, control),
-                    activation:
-                        control is MidiParameterControl &&
-                        _parameterTarget(control.key) is FxBindingTarget,
-                    available: switch (control) {
-                      MidiActionControl(:final key) =>
-                        ControlAction.tryParse(key) != null,
-                      MidiParameterControl(:final key) =>
-                        availability.resolvesKey(key),
-                    },
-                    disabledReason: control is MidiParameterControl
-                        ? controlEditBlockLabel(
-                            l10n,
-                            availability.blockedBy(
-                              ControlValueTarget.tryParse(control.key),
-                            ),
-                          )
-                        : null,
-                  ),
-              ],
-              behavior: draft.behavior,
-              program: draft.isProgram,
-              onAdd: () => _openPicker(control, _MidiView.destinations),
-              onChange: (key) => _changeControl(control, key),
-              onRemove: (key) => _write(draft.without(key)),
-              onRange: (key, {low, high}) =>
-                  _write(draft.withRange(key, low: low, high: high)),
-              onTrigger: (key, trigger) =>
-                  _write(draft.withTrigger(key, trigger)),
-            ),
-          ),
-        ];
-      case _MidiView.destinations:
-        return [
-          placed(
-            ExpressionDestinationPicker(
-              destinations: controlDestinations(
-                l10n,
-                context.watch<TracksCubit>().state.names,
-                availability,
-                withActivations: true,
-              ),
-              kind: _kind,
-              onKind: (kind) => setState(() => _kind = kind),
-              onOpen: (destination) => setState(() {
-                _destination = destination;
-                _view = _MidiView.parameters;
-              }),
-            ),
-          ),
-        ];
-      case _MidiView.parameters:
-        final destination = _destination;
-        if (destination == null) return const [];
-        return [
-          placed(
-            ExternalControlTargetList(
-              destination: destination,
-              taken: {
-                for (final control in draft.controls)
-                  if (control is MidiParameterControl &&
-                      control.key != _replacing)
-                    ?_parameterTarget(control.key),
-              },
-              replacing: _replacing == null
-                  ? null
-                  : _parameterTarget(_replacing!),
-              onParameter: (control) =>
-                  _pickTarget(context, draft, control.target),
-              onActivation: (activation) =>
-                  _pickTarget(context, draft, activation.target),
-            ),
-          ),
-        ];
-      case _MidiView.channel:
-        return [
-          placed(
-            MidiChoiceGrid<int?>(
-              keyPrefix: 'midi_channel',
-              selected: draft.source?.channel,
-              choices: [
-                MidiChoice(
-                  value: null,
-                  id: 'omni',
-                  label: l10n.midiOmniAllChannels,
-                ),
-                for (var channel = 0; channel < 16; channel++)
-                  MidiChoice(
-                    value: channel,
-                    id: '$channel',
-                    label: l10n.midiChannel(channel + 1),
-                  ),
-              ],
-              onPick: (channel) => setState(() {
-                _draft = draft.withChannel(channel);
-                _view = _MidiView.editor;
-              }),
-            ),
-          ),
-        ];
-      case _MidiView.format:
-        return [
-          placed(
-            MidiChoiceGrid<MidiProtocol>(
-              keyPrefix: 'midi_format',
-              selected: _protocol,
-              choices: [
-                for (final protocol in MidiProtocol.values)
-                  MidiChoice(
-                    value: protocol,
-                    id: protocol.name,
-                    label: midiFormatLabel(l10n, protocol),
-                    detail: midiFormatDetail(l10n, protocol),
-                  ),
-              ],
-              onPick: (protocol) => _pickFormat(control, draft, protocol),
-            ),
-          ),
-        ];
-    }
-  }
 
   /// Applies what Learn heard, and says when it heard nothing.
   void _onLearn(BuildContext context, ControlState state) {
@@ -1132,6 +930,278 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
       if (card.id == device) return card.name;
     }
     return device;
+  }
+}
+
+/// The list's actions: MIDI control on or off (or the recovery choices when
+/// it cannot run), Add mapping, and a retry when the controller choice may not
+/// have been saved.
+class _ListActions extends StatelessWidget {
+  const _ListActions({
+    required this.state,
+    required this.connection,
+    required this.onReset,
+    required this.onControlEnabled,
+    required this.onAdd,
+    required this.onRetryDevice,
+  });
+
+  final ControlState state;
+  final MidiConnection connection;
+
+  /// Resets an unreadable configuration.
+  final VoidCallback onReset;
+
+  /// Turns MIDI control on or off.
+  final void Function({required bool enabled}) onControlEnabled;
+
+  /// Starts a new mapping on the selected controller.
+  final VoidCallback onAdd;
+
+  /// Saves the selected controller again.
+  final VoidCallback onRetryDevice;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final on = state.midiControlEnabled;
+    final paused = state.midiRemotePaused;
+    final unavailable = state.midiUnavailable;
+    final loaded = state.midiLoaded;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (unavailable)
+          LoopOutlinedButton(
+            key: const Key('midi_reset_configuration'),
+            width: 260,
+            label: l10n.midiResetConfiguration,
+            onTap: loaded ? onReset : null,
+          )
+        else if (paused && on) ...[
+          LoopOutlinedButton(
+            key: const Key('midi_retry_off'),
+            width: 195,
+            label: l10n.midiRetryOff,
+            onTap: loaded ? () => onControlEnabled(enabled: false) : null,
+          ),
+          const SizedBox(width: 16),
+          LoopOutlinedButton(
+            key: const Key('midi_resume_on'),
+            width: 195,
+            label: l10n.midiResumeOn,
+            onTap: loaded ? () => onControlEnabled(enabled: true) : null,
+          ),
+        ] else
+          LoopChoiceButton(
+            key: const Key('midi_control_enabled'),
+            width: 219,
+            height: 64,
+            label: on ? l10n.midiControlOn : l10n.midiControlOff,
+            selected: on,
+            onTap: () {
+              if (loaded) onControlEnabled(enabled: !on);
+            },
+          ),
+        const SizedBox(width: 16),
+        LoopOutlinedButton(
+          key: const Key('midi_add_mapping'),
+          width: 192,
+          label: l10n.midiAddMapping,
+          onTap:
+              state.midiLoaded &&
+                  !state.midiUnavailable &&
+                  connection.hasSelection
+              ? onAdd
+              : null,
+        ),
+        if (connection.pinUncertain && connection.hasSelection) ...[
+          const SizedBox(width: 16),
+          LoopOutlinedButton(
+            key: const Key('midi_retry_device'),
+            width: 160,
+            label: l10n.midiRetryDevice,
+            onTap: onRetryDevice,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The selected controller's mappings, or why there are none, with the
+/// page's notices under them.
+class _MappingList extends StatelessWidget {
+  const _MappingList({
+    required this.state,
+    required this.connection,
+    required this.rows,
+    required this.notice,
+    required this.onEdit,
+    required this.onEnabled,
+  });
+
+  final ControlState state;
+  final MidiConnection connection;
+
+  /// The selected controller's mappings.
+  final List<MidiMappingRow> rows;
+
+  /// What just happened, or what is in the way, or `null`.
+  final String? notice;
+
+  final ValueChanged<MidiMapping> onEdit;
+  final void Function(MidiMapping mapping, {required bool enabled}) onEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final connected = connection.status == MidiConnectionStatus.connected;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!state.midiLoaded)
+          const Expanded(
+            child: Center(
+              child: CircularProgressIndicator(key: Key('midi_loading')),
+            ),
+          )
+        else if (state.midiUnavailable)
+          Expanded(
+            child: Center(
+              child: AppText(
+                l10n.midiConfigurationUnavailable,
+                key: const Key('midi_configuration_unavailable'),
+                style: TextStyle(color: surface.warning, fontSize: 28),
+              ),
+            ),
+          )
+        else if (rows.isEmpty)
+          Expanded(
+            child: Center(
+              child: AppText(
+                l10n.midiNoMappings,
+                key: const Key('midi_no_mappings'),
+                style: TextStyle(color: surface.textTertiary, fontSize: 32),
+              ),
+            ),
+          )
+        else
+          // Loose, so a short list leaves the disconnected notice right
+          // under its last row rather than at the foot of the page.
+          Flexible(
+            child: MidiMappingRows(
+              rows: rows,
+              levels: state.midiLevels,
+              onEdit: onEdit,
+              onEnabled: onEnabled,
+            ),
+          ),
+        // The page's notices sit under the rows, as the accepted design
+        // puts them, and are announced when they change.
+        if (connection.hasSelection && !connected && !connection.pinUncertain)
+          _Notice(
+            l10n.midiControllerDisconnected,
+            key: const Key('midi_controller_disconnected'),
+          ),
+        if (notice case final notice?)
+          _Notice(notice, key: const Key('midi_notice')),
+        if (connection.pinUncertain)
+          _Notice(
+            l10n.midiDeviceSettingFailed,
+            key: const Key('midi_device_save_failed'),
+          ),
+        if (notice == null &&
+            !state.midiUnavailable &&
+            (state.midiPersistenceUncertain ||
+                state.midiRemotePaused && state.midiControlEnabled))
+          _Notice(l10n.midiSaveFailed, key: const Key('midi_storage_notice')),
+      ],
+    );
+  }
+}
+
+/// The editor's actions: Delete for a saved mapping, Cancel and Save.
+class _EditorActions extends StatelessWidget {
+  const _EditorActions({
+    required this.state,
+    required this.draft,
+    required this.saving,
+    required this.onDelete,
+    required this.onCancel,
+    required this.onSave,
+  });
+
+  final ControlState state;
+  final MidiMappingDraft draft;
+
+  /// Whether a write is in flight, which holds every action.
+  final bool saving;
+
+  final VoidCallback onDelete;
+  final VoidCallback onCancel;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final listening = state.midiEdit?.learn?.isListening ?? false;
+    final canSave =
+        !listening && !saving && draft.canSaveIn(state.midiMappings);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (draft.id != null) ...[
+          LoopOutlinedButton(
+            key: const Key('midi_delete'),
+            width: 120,
+            label: l10n.midiDelete,
+            onTap: saving ? null : onDelete,
+          ),
+          const SizedBox(width: 16),
+        ],
+        LoopOutlinedButton(
+          key: const Key('midi_cancel'),
+          width: 125,
+          label: l10n.pedalSetupCancel,
+          onTap: saving ? null : onCancel,
+        ),
+        const SizedBox(width: 16),
+        LoopOutlinedButton(
+          key: const Key('midi_save'),
+          width: 107,
+          tone: LoopButtonTone.accent,
+          label: l10n.pedalSetupSave,
+          onTap: canSave ? onSave : null,
+        ),
+      ],
+    );
+  }
+}
+
+/// The destination picker's way to the performance actions, which only a
+/// format that carries a press can run.
+class _DestinationActions extends StatelessWidget {
+  const _DestinationActions({required this.carries, required this.onPick});
+
+  /// Whether the mapping's format carries a press to run an action on.
+  final bool carries;
+
+  /// Opens the performance action picker.
+  final VoidCallback onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return LoopOutlinedButton(
+      key: const Key('midi_performance_actions'),
+      width: carries ? 280 : 460,
+      label: carries
+          ? l10n.midiPerformanceActions
+          : l10n.midiPerformanceActionsNeedButton,
+      onTap: carries ? onPick : null,
+    );
   }
 }
 
