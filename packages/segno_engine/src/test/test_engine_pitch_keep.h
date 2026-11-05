@@ -294,6 +294,57 @@ static void test_pitch_render_parity(void) {
   le_engine_destroy(e);
 }
 
+/* A Stop after a Follow tempo retime fades out on the stem as it does live
+ * (#1400) and stays silent (#1170): Pitch Follows speed plays the take at
+ * 16000 / 21333 of its rate, and the tail reads on at that rate from where
+ * the head stopped. The take is the arm snapshot, so its Stop is the 323
+ * with image 0. */
+static void test_pitch_stop_fade_render_parity(void) {
+  printf("test_pitch_stop_fade_render_parity\n");
+  le_engine* e = pk_fixture(1);
+  pk_pitch(e, -1, 1);
+  const char* dir = render_test_dir("pitch-stop-fade");
+  CHECK(perf_arm_dir_long(e, dir) == LE_OK);
+  drain(e);
+  static float live[3 * PK_LEN], replay[3 * PK_LEN];
+  int at = 0;
+  tf_process(e, live, 2000, 0.0f);
+  at += 2000;
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, live + at, 6000, 0.0f);
+  at += 6000;
+  const int stop_at = at;
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  tf_process(e, live + at, 2000, 0.0f);
+  at += 2000;
+  CHECK(le_perf_disarm(e) == LE_OK);
+  /* the fade sounded and ended */
+  CHECK(fabsf(live[stop_at + 8]) + fabsf(live[stop_at + 12]) > 0.0f);
+  CHECK(live[at - 1] == 0.0f);
+  static float pcm[PK_LEN];
+  CHECK(le_engine_export_track(e, 0, pcm, PK_LEN) == PK_LEN);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/track.wav", dir);
+  test_write_wav_mono(path, pcm, PK_LEN, PK_SR);
+  fade_finalize_manifest(dir,
+    "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[{\"channel\":0,\"volume\":1,"
+    "\"lanes\":[{\"lane\":0,\"deferred\":false,\"pcmRef\":\"track.wav\"}]}]}");
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  const int frames = test_read_wet_stem(dir, 0, replay, 3 * PK_LEN);
+  CHECK(frames == at);
+  int bad = 0, first = -1;
+  for (int i = 0; i < frames; ++i) {
+    if (fabsf(replay[i] - live[i]) >= 2e-3f) {
+      if (first < 0) first = i;
+      ++bad;
+    }
+  }
+  if (bad) printf("  %d mismatched from %d (stop at %d)\n", bad, first, stop_at);
+  CHECK(bad == 0);
+  le_engine_destroy(e);
+}
+
 static void run_pitch_keep_tests(void) {
   test_pitch_unchanged_across_retime();
   test_pitch_follows_speed_and_switch();
@@ -301,4 +352,5 @@ static void run_pitch_keep_tests(void) {
   test_pitch_small_retime_keeps_sources();
   test_pitch_unchanged_with_transpose();
   test_pitch_render_parity();
+  test_pitch_stop_fade_render_parity();
 }

@@ -1520,7 +1520,10 @@ typedef struct le_track {
    * material reset since); `perf_source_id` is 0 for snapshot provenance (the
    * arm image, a fresh take) and the staged image id (perf.slot_image) for a
    * callback-applied history image. A slot change under PLAYING/STOPPED looks
-   * the new slot up in perf.slot_image and logs 322 (image) or 323/0 (none). */
+   * the new slot up in perf.slot_image and logs 322 (image) or 323/0 (none).
+   * `perf_source_state` is the state the renderer last saw (-1 = none yet);
+   * the snapshot source logs 323 image 0 on its Stop and Play edges (#1170),
+   * and recording leaves it PLAYING, as the renderer sounds a take. */
   uint32_t perf_source_id;
   int32_t perf_source_slot;
   int perf_source_state, perf_source_next_pos;
