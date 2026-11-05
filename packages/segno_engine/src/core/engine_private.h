@@ -41,6 +41,7 @@ typedef enum le_midi_dispatch_kind {
 #include "le_clock_follow.h"   /* le_clock_follow (the MIDI clock follower, #1228) */
 #include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "engine_read_head.h"
+#include "engine_bridge.h"     /* le_bridge (the pitch bridge, #1675) */
 #include "engine_fade.h"
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
@@ -1900,6 +1901,15 @@ typedef struct le_track {
   le_wet_entry* _Atomic a_turn_src[LE_MAX_LANES];
   le_wet_entry* _Atomic a_src_pin[LE_MAX_LANES]; /* src_ent, published */
   _Atomic int32_t a_transpose_st, a_transpose_eff;
+  /* The pitch bridge (#1675, engine_bridge.h). bridge is 1 while the track
+   * wants a stretch render it does not hold yet (Follow tempo, Pitch
+   * Unchanged, off its span): its dry take, or its plain Transpose render,
+   * plays through each lane's bridge_lane at its own pitch instead of
+   * through the varispeed. turn_bridge says the old source of a swap still
+   * mixing was bridged, so the old head keeps its pitch through the window
+   * too. Callback-owned; set by le_transpose_select. */
+  int32_t bridge, turn_bridge;
+  le_bridge bridge_lane[LE_MAX_LANES];
   /* Control's view of the stored pitch while TRANSPOSE commands are in
    * flight (le_effective_transposed), like Reverse's. */
   uint32_t transpose_posted;

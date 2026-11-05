@@ -875,9 +875,10 @@ class TrackSnapshot {
   final PitchMode? pitchModeOverride;
 
   /// The pitch a tempo retime puts on what the track sounds now, in cents
-  /// (#1179): 0 at its own tempo or once its time-stretched render plays,
-  /// the tempo ratio's shift while that render is pending or with
-  /// [PitchMode.followsSpeed]. Speed and Transpose are not included.
+  /// (#1179): 0 at its own tempo, while the pitch bridge keeps the pitch
+  /// until its time-stretched render lands (#1675) and once that render
+  /// plays; the tempo ratio's shift with [PitchMode.followsSpeed]. Speed and
+  /// Transpose are not included.
   final int pitchEffectiveCents;
 
   /// The shared-clock length this track's take was laid down against once a
