@@ -240,6 +240,12 @@ class ScreenLinkWaveformService implements WaveformWindowService {
     if (revision == _readoutRevision) _lastReadout = readout;
   }
 
+  @override
+  void showRefusal(ReadoutRefusal refusal) {
+    if (!_open) return;
+    _screen?.send({'op': ScreenLinkOp.refused, 'refusal': refusal.name});
+  }
+
   /// Asks the readout whether it draws: `true` when it answered within
   /// [ackTimeout], which it does only once it has rasterized its first frame
   /// (the boot health gate's readout check, #976). `false` when it did not, or

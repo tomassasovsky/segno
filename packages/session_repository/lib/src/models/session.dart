@@ -62,6 +62,7 @@ class SessionLane {
     required this.history,
     this.pan = 0,
     this.balance = 1,
+    this.recordedInput = -1,
   });
 
   /// Projects a [SessionLane] from a decoded JSON map. The stored
@@ -79,6 +80,7 @@ class SessionLane {
     ],
     pan: (json['pan'] as num?)?.toDouble() ?? 0,
     balance: (json['balance'] as num?)?.toDouble() ?? 1,
+    recordedInput: (json['recordedInput'] as num).toInt(),
     history: TrackHistory(
       _readHistory(json['history']),
       undoCount: (json['undoCount'] as num).toInt(),
@@ -102,8 +104,15 @@ class SessionLane {
   /// Bitmask of output channels this lane plays to (bit c => output c).
   final int outputMask;
 
-  /// Hardware input channel this lane records (`-1` = none).
+  /// Hardware input channel this lane records (`-1` = none): the setting
+  /// for the next take.
   final int inputChannel;
+
+  /// The hardware input the lane's take was captured from (schema v18),
+  /// `-1` when unknown. Fixed when the take starts, so changing
+  /// [inputChannel] afterwards never renames the take. A session saved
+  /// before the field existed takes its [inputChannel] on conversion.
+  final int recordedInput;
 
   /// The lane's recorded image (slice 3), `-1` (left) .. `1` (right): where
   /// its input sat when the take was recorded, without the track's own pan
@@ -150,6 +159,7 @@ class SessionLane {
     'muted': muted,
     'outputMask': outputMask,
     'inputChannel': inputChannel,
+    'recordedInput': recordedInput,
     'layers': [for (final l in layers) l.toJson()],
     if (pan != 0) 'pan': pan,
     if (balance != 1) 'balance': balance,
@@ -175,6 +185,7 @@ class SessionLane {
           muted == other.muted &&
           outputMask == other.outputMask &&
           inputChannel == other.inputChannel &&
+          recordedInput == other.recordedInput &&
           pan == other.pan &&
           balance == other.balance &&
           history == other.history &&
@@ -187,6 +198,7 @@ class SessionLane {
     muted,
     outputMask,
     inputChannel,
+    recordedInput,
     pan,
     balance,
     history,
@@ -1105,8 +1117,9 @@ class Session {
   /// (`start`) and the grid in beats (`loopBeats`), since 15 (#1200) the
   /// backing setup and the click's pan, and since 16 (#1179 Part 4b) the
   /// recorded tempo, each take's span and the Audio & tempo settings, and
-  /// since 17 (#854) the lap each take was played on.
-  static const int formatVersion = 17;
+  /// since 17 (#854) the lap each take was played on, and since 18 (#1678)
+  /// the input each lane's take was captured from.
+  static const int formatVersion = 18;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';

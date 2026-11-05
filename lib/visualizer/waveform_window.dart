@@ -65,6 +65,7 @@ class WaveformWindowApp extends StatelessWidget {
     required this.readout,
     this.onActivity = _noActivity,
     this.onCommand = _noCommand,
+    this.refusals = const Stream.empty(),
     super.key,
   });
 
@@ -88,6 +89,9 @@ class WaveformWindowApp extends StatelessWidget {
   /// sends it to the main screen over the screen link.
   final ValueChanged<ReadoutCommand> onCommand;
 
+  /// Each command the main screen refused, for the Loop panel to say why.
+  final Stream<ReadoutRefusal> refusals;
+
   @override
   Widget build(BuildContext context) {
     // Real localization delegates, not a one-off `lookupAppLocalizations`
@@ -106,7 +110,7 @@ class WaveformWindowApp extends StatelessWidget {
   Widget _app() {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.neon,
+      theme: AppTheme.readout,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) =>
@@ -149,6 +153,7 @@ class WaveformWindowApp extends StatelessWidget {
                     frame: frame,
                     waveform: waveform,
                     onCommand: onCommand,
+                    refusals: refusals,
                   ),
                 ),
                 ReadoutGoodbyeFace(readout: readoutData),

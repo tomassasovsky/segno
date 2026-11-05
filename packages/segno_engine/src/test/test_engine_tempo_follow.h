@@ -17,6 +17,15 @@ static uint64_t tf_follow(le_engine* e, int channel, int value) {
   return id;
 }
 
+/* Pitch Follows speed for every track: the ramp oracles read the varispeed
+ * head itself. With Pitch Unchanged (the default) a retimed track plays
+ * through the pitch bridge until its stretch render lands (#1675), which
+ * test_engine_pitch_keep.h covers. */
+static void tf_varispeed(le_engine* e) {
+  uint64_t id = 0;
+  CHECK(le_engine_set_pitch_mode(e, -1, 1, &id) == LE_OK && id);
+}
+
 /* Processes `frames` frames of `input` in blocks of 64 into out (or a
  * scratch buffer). */
 static void tf_process(le_engine* e, float* out, int frames, float input) {
@@ -39,6 +48,7 @@ static le_engine* tf_fixture(int tracks, int follow, int max_frames) {
   CHECK(le_engine_commit_session(e, TF_LEN, 4) == LE_OK);
   CHECK(le_engine_restore_tempo(e, 120.0f, LE_TEMPO_SOURCE_MANUAL) == LE_OK);
   drain(e);
+  tf_varispeed(e);
   if (follow) {
     const uint64_t id = tf_follow(e, -1, 1);
     drain(e);
@@ -279,6 +289,7 @@ static void test_follow_division_and_mode_switch(void) {
   CHECK(le_engine_restore_tempo(e, 120.0f, LE_TEMPO_SOURCE_MANUAL) == LE_OK);
   drain(e);
   CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  tf_varispeed(e);
   uint64_t id = tf_follow(e, -1, 1);
   CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
   CHECK(le_engine_play(e, 0) == LE_OK);

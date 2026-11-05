@@ -455,10 +455,26 @@ class _InputCards extends StatelessWidget {
     );
   }
 
+  /// What the interface has set on [input], as the card's tags.
+  List<String> _tags(AppLocalizations l10n, int input) => [
+    if (interface.inputAt(input).level == InputLevel.inst) l10n.routingTagInst,
+    if (interface.phantomFor(input)?.on ?? false) l10n.routingTagPhantom,
+  ];
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final width = LoopSettingsFrame.contentWidthOf(context);
+    final tags = [for (var i = 0; i < count; i++) _tags(l10n, i)];
+    final tagLine = tags.any((t) => t.isNotEmpty);
+    // A card shows its ordinal over its name when the input has its own
+    // name; the others keep that line so every name sits on one line.
+    final ordinalLine =
+        tagLine ||
+        [
+          for (var i = 0; i < count; i++)
+            _ordinal(l10n, i) != l10n.inputName(names.names, i),
+        ].any((named) => named);
     return SizedBox(
       width: width,
       height: 112,
@@ -480,12 +496,9 @@ class _InputCards extends StatelessWidget {
           ordinal: _ordinal(l10n, index),
           name: l10n.inputName(names.names, index),
           selected: index == selected,
-          tags: [
-            if (interface.inputAt(index).level == InputLevel.inst)
-              l10n.routingTagInst,
-            if (interface.phantomFor(index)?.on ?? false)
-              l10n.routingTagPhantom,
-          ],
+          tags: tags[index],
+          ordinalLine: ordinalLine,
+          tagLine: tagLine,
           onTap: () => onSelected(index),
         ),
       ),

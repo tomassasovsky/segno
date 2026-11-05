@@ -9,6 +9,7 @@ void main() {
       TempoNudge(-1),
       TempoSet(92.5),
       TempoTap(),
+      TempoClear(),
       SignatureSet(6, 8),
       LengthSet(0),
       LengthSet(8),
@@ -23,7 +24,7 @@ void main() {
     }
 
     test('an unknown or missing kind is no command', () {
-      expect(ReadoutCommand.fromMap(const {'kind': 'tempo.clear'}), isNull);
+      expect(ReadoutCommand.fromMap(const {'kind': 'tempo.reset'}), isNull);
       expect(ReadoutCommand.fromMap(const {'delta': 1}), isNull);
       expect(ReadoutCommand.fromMap('tempo.tap'), isNull);
       expect(ReadoutCommand.fromMap(null), isNull);
@@ -58,6 +59,15 @@ void main() {
         ReadoutCommand.fromMap(const {'kind': 'timing.set', 'timing': 'beat'}),
         isNull,
       );
+    });
+
+    test('a refusal survives the link by name', () {
+      for (final refusal in ReadoutRefusal.values) {
+        expect(ReadoutRefusal.fromName(refusal.name), refusal);
+      }
+      expect(ReadoutRefusal.fromName('tempoClearSomehow'), isNull);
+      expect(ReadoutRefusal.fromName(null), isNull);
+      expect(ReadoutRefusal.fromName(3), isNull);
     });
 
     test('a whole number arrives as a nudge or a tempo', () {

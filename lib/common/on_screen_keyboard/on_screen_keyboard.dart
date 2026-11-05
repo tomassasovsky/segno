@@ -94,6 +94,14 @@ class OnScreenKeyboard extends StatefulWidget {
   /// from a guess that can drift out of step with them.
   static const double keyHeight = 54;
 
+  /// The gap between two keys, across and down. The keyboard's outer keys
+  /// sit on its own edges, so a sheet lines them up with the field above
+  /// (#1672).
+  static const double keyGap = 6;
+
+  /// The keyboard's height for [rows] rows of keys.
+  static double heightOf(int rows) => rows * keyHeight + (rows - 1) * keyGap;
+
   @override
   State<OnScreenKeyboard> createState() => _OnScreenKeyboardState();
 }
@@ -175,10 +183,12 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
         : _row3;
     return Column(
       mainAxisSize: MainAxisSize.min,
+      spacing: OnScreenKeyboard.keyGap,
       children: [
         if (widget.showNumberRow) _keyRow(_symRow1.split('')),
         for (final row in upper) _keyRow(row.split('')),
         Row(
+          spacing: OnScreenKeyboard.keyGap,
           children: [
             if (!_symbols)
               _special(
@@ -209,6 +219,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
           ],
         ),
         Row(
+          spacing: OnScreenKeyboard.keyGap,
           children: [
             _special(
               label: _symbols ? 'abc' : '?123',
@@ -236,9 +247,11 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
     return Column(
       mainAxisSize: MainAxisSize.min,
+      spacing: OnScreenKeyboard.keyGap,
       children: [
         for (var row = 0; row < 4; row++)
           Row(
+            spacing: OnScreenKeyboard.keyGap,
             children: [
               for (var col = 0; col < 3; col++)
                 if (row * 3 + col < keys.length)
@@ -268,17 +281,16 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     );
   }
 
-  Widget _keyRow(List<String> keys) =>
-      Row(children: [for (final k in keys) Expanded(child: _key(k))]);
+  Widget _keyRow(List<String> keys) => Row(
+    spacing: OnScreenKeyboard.keyGap,
+    children: [for (final k in keys) Expanded(child: _key(k))],
+  );
 
   Widget _key(String value, {String? label}) {
     final display = label ?? (_uppercase ? value.toUpperCase() : value);
-    return Padding(
-      padding: const EdgeInsets.all(3),
-      child: _KeyCap(
-        label: display,
-        onPressed: () => _tap(value),
-      ),
+    return _KeyCap(
+      label: display,
+      onPressed: () => _tap(value),
     );
   }
 
@@ -300,14 +312,11 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
       semanticLabel: semanticLabel,
       onPressed: onPressed,
     );
-    return Padding(
-      padding: const EdgeInsets.all(3),
-      child: label != null && !primary
-          ? SizedBox(width: 92, child: cap)
-          : primary
-          ? SizedBox(width: 108, child: cap)
-          : SizedBox(width: 72, child: cap),
-    );
+    return label != null && !primary
+        ? SizedBox(width: 92, child: cap)
+        : primary
+        ? SizedBox(width: 108, child: cap)
+        : SizedBox(width: 72, child: cap);
   }
 }
 

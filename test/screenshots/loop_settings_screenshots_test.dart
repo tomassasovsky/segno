@@ -543,6 +543,16 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
+  // In Spanish: the signature heading over its button, both ending at the
+  // content edge (#1672).
+  testWidgets('Tempo & click in Spanish', (tester) async {
+    await pump(tester, page: LoopSettingsTab.tempo, locale: const Locale('es'));
+    await expectLater(
+      find.byType(LoopSettingsPage),
+      matchesGoldenFile('goldens/loop_settings_tempo_es.png'),
+    );
+  }, skip: !rendersScreenshots);
+
   testWidgets('Tempo keypad, and an entry out of range (#1653)', (
     tester,
   ) async {

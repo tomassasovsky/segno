@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -34,6 +35,7 @@ void main() {
     int tsNum = 4,
     int tsDen = 4,
     String state = 'playing',
+    bool hasTempo = true,
   }) => PerformanceReadout(
     selected: ReadoutTrack(
       channel: 1,
@@ -43,7 +45,7 @@ void main() {
       bars: 4,
     ),
     tempoBpm: 84,
-    hasTempo: true,
+    hasTempo: hasTempo,
     tsNum: tsNum,
     tsDen: tsDen,
     tempoFollow: follow,
@@ -60,6 +62,7 @@ void main() {
     WidgetTester tester,
     PerformanceReadout readout, {
     Locale locale = const Locale('en'),
+    Stream<ReadoutRefusal> refusals = const Stream.empty(),
   }) async {
     tester.view
       ..physicalSize = const Size(1024, 600)
@@ -86,6 +89,7 @@ void main() {
         readout: pushed,
         onActivity: () => touches++,
         onCommand: sent.add,
+        refusals: refusals,
       ),
     );
     addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
@@ -557,6 +561,159 @@ void main() {
         expect(clippedTexts(tester, within: keypad), isEmpty);
         expect(await unbundledTexts(tester, within: keypad), isEmpty);
       });
+    }
+  });
+
+  group('clear tempo', () {
+    final refusal = find.byKey(const Key('readout_panel_refusal'));
+    final note = find.byKey(const Key('readout_panel_tempo_note'));
+
+    /// What the main screen sends back, delivered at once.
+    StreamController<ReadoutRefusal> refusalsOf() {
+      final refusals = StreamController<ReadoutRefusal>.broadcast(sync: true);
+      addTearDown(refusals.close);
+      return refusals;
+    }
+
+    testWidgets('sends on release, beside Tap, and only with a tempo set', (
+      tester,
+    ) async {
+      await pump(tester, readoutOf());
+      await open(tester);
+      final clear = find.byKey(const Key('readout_panel_clear_tempo'));
+      expect(find.text('Clear tempo'), findsOneWidget);
+      // Beside Tap, on its left, and as tall.
+      final tap = find.byKey(const Key('readout_panel_tap'));
+      expect(tester.getRect(clear).right, lessThan(tester.getRect(tap).left));
+      expect(tester.getSize(clear).height, tester.getSize(tap).height);
+
+      final gesture = await tester.startGesture(tester.getCenter(clear));
+      await tester.pump();
+      expect(sent, isEmpty);
+      await gesture.up();
+      await tester.pump();
+      expect(sent, const [TempoClear()]);
+
+      pushed.value = readoutOf(hasTempo: false);
+      await tester.pump();
+      expect(enabled(tester, 'readout_panel_clear_tempo'), isFalse);
+      await tester.tap(clear);
+      await tester.pump();
+      expect(sent, const [TempoClear()]);
+    });
+
+    testWidgets('stays available under the tempo lock: as on the main '
+        'screen, the engine decides', (tester) async {
+      await pump(tester, readoutOf(follow: TempoFollowState.busy));
+      await open(tester);
+      expect(enabled(tester, 'readout_panel_tap'), isFalse);
+      expect(enabled(tester, 'readout_panel_clear_tempo'), isTrue);
+      semanticTap(tester, 'readout_panel_clear_tempo');
+      await tester.pump();
+      expect(sent, const [TempoClear()]);
+    });
+
+    testWidgets("a refusal says the main screen's reason in the note's "
+        'place, then goes', (tester) async {
+      final refusals = refusalsOf();
+      await pump(tester, readoutOf(), refusals: refusals.stream);
+      await open(tester);
+      await tapKey(tester, 'readout_panel_clear_tempo');
+      refusals.add(ReadoutRefusal.tempoClearLocked);
+      await tester.pump();
+      expect(refusal, findsOneWidget);
+      expect(note, findsNothing);
+      expect(
+        find.textContaining(
+          'A recording or a count-in holds the tempo. Clear the tracks first.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Tempo not cleared'), findsOneWidget);
+
+      await tester.pump(ReadoutControls.refusalFor);
+      expect(refusal, findsNothing);
+      expect(note, findsOneWidget);
+    });
+
+    testWidgets('each reason, and a new change replaces it', (tester) async {
+      final refusals = refusalsOf();
+      await pump(tester, readoutOf(), refusals: refusals.stream);
+      await open(tester);
+      refusals.add(ReadoutRefusal.tempoClearStopped);
+      await tester.pump();
+      expect(
+        find.textContaining(
+          'The audio interface is stopped. Start it, then clear the tempo.',
+        ),
+        findsOneWidget,
+      );
+      refusals.add(ReadoutRefusal.tempoClearOther);
+      await tester.pump();
+      expect(find.textContaining('Tempo not cleared'), findsOneWidget);
+      expect(find.textContaining('The audio interface'), findsNothing);
+
+      await tapKey(tester, 'readout_panel_timing_half');
+      expect(refusal, findsNothing);
+    });
+
+    testWidgets('closing the panel drops it, and a closed panel hears '
+        'none', (tester) async {
+      final refusals = refusalsOf();
+      await pump(tester, readoutOf(), refusals: refusals.stream);
+      await open(tester);
+      refusals.add(ReadoutRefusal.tempoClearLocked);
+      await tester.pump();
+      expect(refusal, findsOneWidget);
+      await tapKey(tester, 'readout_panel_done');
+      refusals.add(ReadoutRefusal.tempoClearLocked);
+      await tester.pump();
+      await open(tester);
+      expect(refusal, findsNothing);
+    });
+
+    for (final locale in AppLocalizations.supportedLocales) {
+      for (final (name, readout) in [
+        ('free', readoutOf()),
+        (
+          'recording',
+          readoutOf(
+            follow: TempoFollowState.busy,
+            state: 'recording',
+            loop: const ReadoutLoopSettings(
+              lengthBars: 4,
+              timing: RecordTiming.bar,
+              captureLocked: true,
+              ready: true,
+            ),
+          ),
+        ),
+      ]) {
+        testWidgets('$name: every refusal in full (${locale.languageCode})', (
+          tester,
+        ) async {
+          final refusals = refusalsOf();
+          await pump(
+            tester,
+            readout,
+            locale: locale,
+            refusals: refusals.stream,
+          );
+          await open(tester);
+          for (final reason in ReadoutRefusal.values) {
+            refusals.add(reason);
+            await tester.pump();
+            expect(refusal, findsOneWidget, reason: reason.name);
+            // It takes the recording band's place while it is said.
+            expect(
+              find.byKey(const Key('readout_panel_recording')),
+              findsNothing,
+            );
+            expect(tester.takeException(), isNull, reason: reason.name);
+            expect(clippedTexts(tester), isEmpty, reason: reason.name);
+          }
+        });
+      }
     }
   });
 

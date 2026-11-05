@@ -694,7 +694,26 @@ typedef struct le_pr_segment {
    * render is not the image's length and is read mapped
    * (le_head_read_scaled); 0 = the image's. */
   int32_t src_len, turn_src_len;
+  /* The pitch bridge (#1675, LE_PLOG_SOURCE_LEN's `bridge`), in the last
+   * word's padding so the table does not grow: LE_PR_BRIDGE_ON when this
+   * segment's source plays through it, _TURN when a swap's old source did,
+   * _RESTART when this swap starts it (its grains are laid on the head
+   * again), and the Speed's numer << 8 | denom << 16, the grain rate. */
+  int32_t bridge_bits;
 } le_pr_segment;
+
+#define LE_PR_BRIDGE_ON 1
+#define LE_PR_BRIDGE_TURN 2
+#define LE_PR_BRIDGE_RESTART 4
+
+/* What the render loop carries for a track's bridge: the lane's grains and
+ * the clock they step on. */
+typedef struct le_pr_bridge_run {
+  le_bridge lane;
+  uint32_t clock0; /* the engine frame of capture frame 0 */
+  uint32_t offset;
+  int32_t hop, sample_rate;
+} le_pr_bridge_run;
 
 /* The head segment `seg` reads through, its origin anchored at start_frame. */
 static le_read_head le_pr_segment_head(const le_pr_segment* seg) {
@@ -716,16 +735,37 @@ static double le_pr_segment_index(const le_pr_segment* seg, uint64_t f) {
  * heard. A direction turn mixes the old head out with the callback's
  * equal-gain law for its window. A Stop's fade-out (#1400) reads the last
  * sounding segment on past its end the same way. */
-static float le_pr_segment_sample(const le_pr_segment* seg, uint64_t f) {
+static float le_pr_segment_sample(const le_pr_segment* seg, uint64_t f,
+                                  le_pr_bridge_run* br, int tail) {
   const le_read_head head = le_pr_segment_head(seg);
   const int64_t into = (int64_t)(f - seg->start_frame);
   const float* rb = seg->src != NULL ? seg->src : seg->image;
   const int32_t rl =
       seg->src != NULL && seg->src_len > 0 ? seg->src_len : seg->image_len;
-  float x = le_head_read_scaled(rb, rl, seg->image_len, &head,
-                                le_head_index(&head, into, seg->image_len));
+  const double index = le_head_index(&head, into, seg->image_len);
   const int64_t mixed = into + seg->turn_into0;
-  if (seg->turn_frames > 0 && mixed < seg->turn_frames) {
+  const int turning = seg->turn_frames > 0 && mixed < seg->turn_frames;
+  /* The pitch bridge (#1675), as mix_tracks_frame runs it: le_bridge_frame
+   * steps the grains and reads each bridged side. A Stop's fade (`tail` 1)
+   * reads them only while they go on from the frame before and nothing else
+   * plays the track (`tail` 2 reads plainly), as the callback's does. */
+  const uint32_t clock = br->clock0 + (uint32_t)f;
+  const int on = (seg->bridge_bits & LE_PR_BRIDGE_ON) &&
+                 (tail == 0 ||
+                  (tail == 1 && le_bridge_continues(&br->lane, clock)));
+  const int old_on =
+      !tail && turning && (seg->bridge_bits & LE_PR_BRIDGE_TURN);
+  const int32_t numer = (seg->bridge_bits >> 8) & 0xff;
+  const int32_t denom = (seg->bridge_bits >> 16) & 0xff;
+  const double g = denom > 0 ? (double)numer / (double)denom : 1.0;
+  const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
+  float bx = 0.0f, by = 0.0f;
+  le_bridge_frame(&br->lane, on, old_on, rb, ob, seg->image_len, &head, g,
+                  index, into, clock, br->offset, br->hop, br->sample_rate,
+                  &bx, &by);
+  float x =
+      on ? bx : le_head_read_scaled(rb, rl, seg->image_len, &head, index);
+  if (turning) {
     const double old = le_head_index(&seg->turn, into, seg->image_len);
     const float a = le_head_turn_mix((int32_t)mixed, seg->turn_frames,
                                      seg->turn_power);
@@ -734,11 +774,13 @@ static float le_pr_segment_sample(const le_pr_segment* seg, uint64_t f) {
             ? le_head_turn_mix(seg->turn_frames - (int32_t)mixed,
                                seg->turn_frames, 1)
             : 1.0f - a;
-    const float* ob = seg->turn_src != NULL ? seg->turn_src : seg->image;
     const int32_t ol = seg->turn_src != NULL && seg->turn_src_len > 0
                            ? seg->turn_src_len
                            : seg->image_len;
-    x = x * a + le_head_read_scaled(ob, ol, seg->image_len, &seg->turn, old) * b;
+    const float y =
+        old_on ? by
+               : le_head_read_scaled(ob, ol, seg->image_len, &seg->turn, old);
+    x = x * a + y * b;
   }
   return x;
 }
@@ -751,6 +793,7 @@ typedef struct le_pr_track_build {
    * take's own): a segment reads at le_head_rate of them and its image. */
   int32_t numer, denom, play_len;
   int32_t next_src_len; /* the last LE_PLOG_SOURCE_LEN, for the next 328 */
+  int32_t next_bridge;  /* and its bridge flag (#1675) */
   int load_failed; /* 1 if a pcmRef/layer file this track's manifest entries
                     * NAME could not actually be read — the per-stem failure
                     * the "partial success" acceptance criterion means. A
@@ -788,6 +831,17 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
       b->segment_count > 0 ? b->segments[b->segment_count - 1].src : NULL;
   const int32_t src_len =
       b->segment_count > 0 ? b->segments[b->segment_count - 1].src_len : 0;
+  /* ...and so is the bridge over that source, until the next 328; a
+   * restart logged at this same frame stays with the segment that
+   * supersedes it. */
+  const le_pr_segment* prior =
+      b->segment_count > 0 ? &b->segments[b->segment_count - 1] : NULL;
+  const int32_t bridge =
+      prior == NULL ? 0
+      : (prior->bridge_bits & LE_PR_BRIDGE_ON) |
+            (prior->start_frame == start_frame
+                 ? prior->bridge_bits & LE_PR_BRIDGE_RESTART
+                 : 0);
   le_pr_segment* seg = &b->segments[b->segment_count++];
   seg->owns_image = 1;
   seg->silent = 0;
@@ -807,6 +861,7 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->turn_power = 0;
   seg->src_len = src_len;
   seg->turn_src_len = 0;
+  seg->bridge_bits = bridge | (b->numer & 0xff) << 8 | (b->denom & 0xff) << 16;
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
@@ -859,6 +914,8 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   const float* carried_src = last->turn_src;
   const int32_t carried_src_len = last->turn_src_len;
   const int carried_power = last->turn_power;
+  const int carried_bridge_turn = (last->bridge_bits & LE_PR_BRIDGE_TURN) != 0;
+  const int was_bridged = (last->bridge_bits & LE_PR_BRIDGE_ON) != 0;
   if (carry) {
     old = last->turn;
     old_index = le_head_index(&last->turn,
@@ -886,6 +943,12 @@ static void le_pr_reanchor(le_pr_track_build* b, uint64_t frame, int reversed,
   seg->turn_src = carry ? carried_src : seg->src;
   seg->turn_src_len = carry ? carried_src_len : seg->src_len;
   seg->turn_power = carry ? carried_power : 0;
+  /* ...through the pitch bridge if it did (#1675): the callback's turn
+   * keeps the bridge it opened with (le_turn_begin) */
+  seg->bridge_bits &= ~LE_PR_BRIDGE_TURN;
+  if (carry ? carried_bridge_turn : turn_frames > 0 && was_bridged) {
+    seg->bridge_bits |= LE_PR_BRIDGE_TURN;
+  }
 }
 
 /* A direction fact (LE_PLOG_REVERSE, #1162) on this channel. A toggle or
@@ -924,7 +987,10 @@ static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
   const int32_t st = cmd->transpose_log.effective;
   const int32_t out_len =
       b->next_src_len > 0 ? b->next_src_len : last->image_len;
+  const int32_t bridge = b->next_bridge != 0;
+  const int32_t was_bridged = (last->bridge_bits & LE_PR_BRIDGE_ON) != 0;
   b->next_src_len = 0;
+  b->next_bridge = 0;
   if (st != 0 || out_len != last->image_len) {
     rendered = (float*)malloc((size_t)out_len * sizeof(float));
     if (rendered == NULL ||
@@ -951,6 +1017,11 @@ static int le_pr_apply_transpose(le_pr_track_build* b, uint64_t frame,
   seg->owns_src = rendered != NULL;
   seg->src_len = rendered != NULL ? out_len : 0;
   seg->turn_power = 1;
+  seg->bridge_bits &=
+      ~(LE_PR_BRIDGE_ON | LE_PR_BRIDGE_TURN | LE_PR_BRIDGE_RESTART);
+  if (bridge) seg->bridge_bits |= LE_PR_BRIDGE_ON;
+  if (was_bridged) seg->bridge_bits |= LE_PR_BRIDGE_TURN;
+  if (bridge && !was_bridged) seg->bridge_bits |= LE_PR_BRIDGE_RESTART;
   return 1;
 }
 
@@ -1113,6 +1184,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
   build.denom = 1;
   build.play_len = 0;
   build.next_src_len = 0;
+  build.next_bridge = 0;
   /* A baseline silence segment at frame 0 always exists first — even a
    * track absent from armSnapshot entirely (recorded fresh later, or
    * mid-overdub/deferred at arm) needs SOMETHING covering [0, first real
@@ -1393,6 +1465,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     } else if (e->cmd.code == LE_PLOG_SOURCE_LEN &&
                e->cmd.lanei.channel == channel) {
       build.next_src_len = e->cmd.lanei.value;
+      build.next_bridge = e->cmd.lanei.lane;
     } else if (e->cmd.code == LE_PLOG_HEAD_SPAN &&
                e->cmd.span_log.channel == channel) {
       le_pr_apply_span(&build, e->frame, &e->cmd);
@@ -1443,6 +1516,14 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
   const le_pr_segment* tail_seg = NULL; /* the stopped material */
   int seg_index = 0;
   int entered = -1;
+  /* The track's lane-0 pitch bridge (#1675), laid on the head at capture
+   * frame 0 as the callback lays it at the arm. */
+  le_pr_bridge_run bridge;
+  memset(&bridge, 0, sizeof(bridge));
+  bridge.clock0 = m->perf_arm_fx_clock;
+  bridge.hop = le_bridge_hop(m->sample_rate);
+  bridge.offset = le_bridge_offset(channel, 0, bridge.hop);
+  bridge.sample_rate = m->sample_rate;
   for (uint64_t f = 0; f < m->capture_frames; ++f) {
     while (seg_index + 1 < build.segment_count &&
           build.segments[seg_index + 1].start_frame <= f) {
@@ -1455,6 +1536,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
       const le_pr_segment* was =
           entered >= 0 ? &build.segments[entered] : NULL;
       entered = seg_index;
+      if (seg->bridge_bits & LE_PR_BRIDGE_RESTART) bridge.lane.live = 0;
       const uint8_t on = has_image && seg->image_len >= gate_min;
       if (runs != NULL && runs->count < LE_PR_MAX_SEGMENTS &&
           (runs->count == 0 || runs->on[runs->count - 1] != on)) {
@@ -1483,9 +1565,10 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     play_gain = le_gate_step(play_gain, audible ? 1.0f : 0.0f, gate_step);
     tail_gain = le_gate_step(tail_gain, 0.0f, gate_step);
     float x = 0.0f;
-    if (audible) x = le_pr_segment_sample(seg, f) * play_gain;
+    if (audible) x = le_pr_segment_sample(seg, f, &bridge, 0) * play_gain;
     if (tail_gain > 0.0f && tail_seg != NULL) {
-      x += le_pr_segment_sample(tail_seg, f) * tail_gain;
+      x += le_pr_segment_sample(tail_seg, f, &bridge, audible ? 2 : 1) *
+           tail_gain;
     }
     stem[f] = x;
   }
