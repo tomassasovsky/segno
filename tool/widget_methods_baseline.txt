@@ -3,20 +3,6 @@
 # and on any entry that no longer matches one, so this list only shrinks:
 # when you turn one of these into a widget class, delete its line.
 # Never add a line. The last refactor deletes this file.
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._loadedPage
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._body
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._expressionWorkspace
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._calibrateWorkspace
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._actions
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._toolbar
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._editor
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._editorTitle
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._controlsPanel
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._buttonPicker
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._hardware
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._gestureFields
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._changeField
-lib/control/view/pedal_setup/external_pedal_page.dart#_ExternalPedalPageState._field
 lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._actions
 lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._editor
 lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._tracksEditor
