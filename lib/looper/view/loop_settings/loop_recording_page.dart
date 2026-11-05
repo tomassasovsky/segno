@@ -83,8 +83,16 @@ class LoopRecordingPage extends StatefulWidget {
   /// ends inside the frame.
   static const double multipleHeight = 60;
 
-  /// The record timing heading; its row and note follow.
-  static const double timingTop = multipleTop + multipleHeight + 32;
+  /// The record timing heading band: the heading, its tag and Use default
+  /// centred in [timingBandHeight], as Playback draws Follow tempo and Pitch
+  /// (#1672). Its row and note follow.
+  static const double timingTop = multipleTop + multipleHeight;
+
+  /// The record timing heading band's height: Use default's.
+  static const double timingBandHeight = 64;
+
+  /// The record timing choices, 16 under the heading band.
+  static const double timingRowTop = timingTop + timingBandHeight + 16;
 
   @override
   State<LoopRecordingPage> createState() => _LoopRecordingPageState();
@@ -233,6 +241,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
     final lengthTop = LoopRecordingPage.lengthTop + shift;
     final multipleTop = LoopRecordingPage.multipleTop + shift;
     final timingTop = LoopRecordingPage.timingTop + shift;
+    final timingRowTop = LoopRecordingPage.timingRowTop + shift;
     return MultiBlocListener(
       listeners: [
         BlocListener<RecordOptionsCubit, RecordOptionsViewState>(
@@ -465,24 +474,28 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 ),
               ),
             ],
-            // ---- record timing
+            // ---- record timing: the heading and Use default share one band
+            // 16 above the choices.
             Positioned(
               left: 0,
               top: timingTop,
-              child: LoopFieldLabel(
-                title: l10n.loopTimingLabel,
-                originBeside: true,
-                origin: scopedOrigin(
-                  scoped: scope != null,
-                  custom: timingCustom,
+              height: LoopRecordingPage.timingBandHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: LoopFieldLabel(
+                  title: l10n.loopTimingLabel,
+                  originBeside: true,
+                  origin: scopedOrigin(
+                    scoped: scope != null,
+                    custom: timingCustom,
+                  ),
                 ),
               ),
             ),
             if (timingCustom && timingEnabled)
               Positioned(
                 right: 0,
-                // The button centred on the 28 high heading.
-                top: timingTop + 14 - 32,
+                top: timingTop,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_timing_use_default'),
                   onTap: () => _setTiming(null),
@@ -490,7 +503,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
               ),
             Positioned(
               left: 0,
-              top: timingTop + 48,
+              top: timingRowTop,
               child: LoopChoiceRow<RecordTiming>(
                 values: RecordTiming.values,
                 labelOf: (t) => recordTimingLabels(l10n)[t]!,
@@ -504,7 +517,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
             ),
             Positioned(
               left: 0,
-              top: timingTop + 48 + 96 + 20,
+              top: timingRowTop + 96 + 20,
               child: LoopNote(
                 timing == null
                     ? l10n.recordTimingUnavailable
