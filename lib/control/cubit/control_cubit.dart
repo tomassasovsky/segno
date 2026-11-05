@@ -3077,8 +3077,7 @@ class ControlCubit extends Cubit<ControlState> {
       case PedalButton.track3:
       case PedalButton.track4:
         final channel = state.bankBaseChannel + _trackIndex(button);
-        trackPressed(channel);
-        _armTrackHold(button);
+        _armTrackHold(button, press: () => trackPressed(channel));
     }
   }
 
@@ -3790,38 +3789,70 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
-  /// Track selection/transport remains immediate; Hold follows the current
-  /// bank position until the threshold fires.
-  void _armTrackHold(PedalButton button) {
-    if (state.pedalSetupUnavailable || state.mode != InteractionMode.record) {
-      return;
+  /// Runs the track [press] and arms the configured Track Hold. The Hold
+  /// follows the current bank position until the threshold fires.
+  ///
+  /// Record keeps its press on contact and runs either Hold. Mute runs only
+  /// Clear track (#1671), and then its press is the gesture's tap: it acts
+  /// on release, on the track pressed, and a clear that fires cancels it,
+  /// so nothing sounds, rejoins the mix or parks the loop before a clear.
+  /// Arm overdub, which starts an overdub, stays out of a mix-only mode,
+  /// and with it Mute keeps its press on contact. In Song, Mute's clear
+  /// leaves a capturing section alone, as Mute's press does.
+  void _armTrackHold(PedalButton button, {required void Function() press}) {
+    final hold = state.pedalSetupUnavailable
+        ? TrackHold.none
+        : state.pedalSetup.trackHold;
+    final mute = state.mode == InteractionMode.mute;
+    final armed = switch (state.mode) {
+      InteractionMode.record => hold != TrackHold.none,
+      InteractionMode.mute => hold == TrackHold.clearTrack,
+      _ => false,
+    };
+    final pressOnRelease = armed && mute;
+    if (!pressOnRelease) press();
+    if (!armed) return;
+    int channelNow() => state.bankBaseChannel + _trackIndex(button);
+    // [fresh] reads the engine now, for the one-shot action: a take can
+    // begin in the native callback before the next poll. The fill's 20 ms
+    // ticks use the polled tracks.
+    Track? trackNow({required bool fresh}) {
+      final channel = channelNow();
+      final tracks = fresh ? _looper.state.tracks : _tracks;
+      return channel >= 0 && channel < tracks.length ? tracks[channel] : null;
     }
-    final hold = state.pedalSetup.trackHold;
-    if (hold == TrackHold.none) return;
-    final clearTrack = hold == TrackHold.clearTrack;
+
+    bool songCapture({required bool fresh}) =>
+        mute &&
+        _l.transport.looperMode == LooperMode.song &&
+        (trackNow(fresh: fresh)?.isCapturing ?? false);
+    final clears = switch (hold) {
+      TrackHold.clearTrack => () => !songCapture(fresh: false),
+      TrackHold.none || TrackHold.armOverdub => null,
+    };
     _armGesture(
       _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
       cue: button,
-      clears: clearTrack ? () => true : null,
-      clearPause: clearTrack ? _clearTrackPause : Duration.zero,
+      clears: clears,
+      clearPause: clears == null ? Duration.zero : _clearTrackPause,
+      onTap: pressOnRelease ? press : null,
       onHold: () {
-        final channel = state.bankBaseChannel + _trackIndex(button);
         switch (hold) {
           case TrackHold.none:
             return;
           case TrackHold.armOverdub:
-            // This directional action must use a fresh capture fact. A take
-            // can begin in the native callback before the next UI poll.
-            final tracks = _looper.state.tracks;
-            if (channel >= 0 &&
-                channel < tracks.length &&
-                tracks[channel].hasContent &&
-                !tracks[channel].pending &&
-                !tracks[channel].isCapturing) {
-              _looper.record(channel: channel);
+            final track = trackNow(fresh: true);
+            if (track != null &&
+                track.hasContent &&
+                !track.pending &&
+                !track.isCapturing) {
+              _looper.record(channel: track.channel);
             }
           case TrackHold.clearTrack:
-            if (_looper.clear(channel: channel).isOk) _meetClearFill(button);
+            if (songCapture(fresh: true)) return;
+            if (_looper.clear(channel: channelNow()).isOk) {
+              _meetClearFill(button);
+            }
         }
       },
     );

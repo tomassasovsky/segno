@@ -23,37 +23,15 @@ final String _sdkPath = p.normalize(
   ),
 );
 
-var _fixtures = 0;
-
-/// Runs the check over [source], held in memory as a file under test/ so it
-/// resolves package:flutter through the app's package config.
-Future<List<WidgetMethod>> _find(String source) {
-  final path = p.join(_root, 'test', 'tool', '_fixture_${_fixtures++}.dart');
-  return findWidgetMethods(
-    root: _root,
-    files: [path],
-    resourceProvider: OverlayResourceProvider(
-      PhysicalResourceProvider.INSTANCE,
-    )..setOverlay(path, content: source, modificationStamp: 0),
-    sdkPath: _sdkPath,
-  );
-}
-
-/// The scopes the check flags in [source].
-Future<List<String>> _flagged(String source) async => [
-  for (final method in await _find(source)) method.scope,
-];
-
 const _imports = '''
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 ''';
 
-void main() {
-  group('findWidgetMethods', () {
-    test('flags methods, getters, functions and local functions', () async {
-      final flagged = await _flagged('''
+const _fixtures = <String, String>{
+  'flags':
+      '''
 $_imports
 Widget header() => const Text('');
 
@@ -92,28 +70,20 @@ mixin Rows {
 }
 
 T pick<T extends Widget>(T widget) => widget;
-''');
-      expect(flagged, [
-        'header',
-        'maybe',
-        'Panel._row',
-        'Panel._banner',
-        'Panel._bar',
-        'Panel._label',
-        'Panel._items',
-        'Panel._more',
-        'Panel._later',
-        'Panel.build.cell',
-        'extension.gap',
-        'Rows.row',
-        'pick',
-      ]);
-    });
 
-    test(
-      'flags a declaration without a return type that returns a widget',
-      () async {
-        final flagged = await _flagged('''
+Stream<Widget> stream() async* {}
+
+(Widget, int) pair() => (const SizedBox(), 1);
+
+({Widget? icon}) named() => (icon: null);
+
+// ignore: avoid_annotating_with_dynamic
+dynamic loose() => const SizedBox();
+
+Object? boxed(bool wide) => wide ? const SizedBox() : null;
+''',
+  'untyped':
+      '''
 $_imports
 // ignore: type_annotate_public_apis, always_declare_return_types
 untyped() => const SizedBox();
@@ -126,18 +96,21 @@ class Holder {
   count() => 1;
 
   // ignore: always_declare_return_types
+  nothing() {
+    return null;
+  }
+
+  Null get empty => null;
+
+  // ignore: always_declare_return_types
   row(bool wide) {
     if (wide) return const SizedBox();
     return null;
   }
 }
-''');
-        expect(flagged, ['untyped', 'Holder.label', 'Holder.row']);
-      },
-    );
-
-    test('does not flag framework overrides', () async {
-      final flagged = await _flagged('''
+''',
+  'overrides':
+      '''
 $_imports
 class Panel extends StatefulWidget {
   const Panel({super.key});
@@ -186,12 +159,9 @@ class Route extends PageRoute<void> {
     Animation<double> secondaryAnimation,
   ) => const SizedBox();
 }
-''');
-      expect(flagged, isEmpty);
-    });
-
-    test('flags an override of a member declared in app code', () async {
-      final flagged = await _flagged('''
+''',
+  'app_override':
+      '''
 $_imports
 abstract class Cell {
   Widget face();
@@ -201,14 +171,9 @@ class Square extends Cell {
   @override
   Widget face() => const SizedBox();
 }
-''');
-      expect(flagged, ['Cell.face', 'Square.face']);
-    });
-
-    test(
-      'does not flag closures, constructors, setters or other types',
-      () async {
-        final flagged = await _flagged('''
+''',
+  'not_flagged':
+      '''
 $_imports
 class Panel extends StatelessWidget {
   const Panel({super.key});
@@ -223,26 +188,120 @@ class Panel extends StatelessWidget {
 
   Map<String, Widget> _byName() => const {};
 
+  Object _value() => 1;
+
+  (int, String) _pair() => (1, '');
+
   @override
   Widget build(BuildContext context) => ListView.builder(
     itemBuilder: (context, index) => const SizedBox(),
     itemCount: [1].map((_) => const SizedBox()).length,
   );
 }
-''');
-        expect(flagged, isEmpty);
+''',
+  'report': '$_imports\nList<Widget> rows() => const [];\n',
+};
+
+/// The fixture [name], held in memory under test/ so it resolves
+/// package:flutter through the app's package config.
+String _fixturePath(String name) =>
+    p.join(_root, 'test', 'tool', '_fixture_$name.dart');
+
+/// Runs the check over [sources], keyed by fixture name.
+Future<List<WidgetMethod>> _find(Map<String, String> sources) {
+  final provider = OverlayResourceProvider(PhysicalResourceProvider.INSTANCE);
+  for (final MapEntry(:key, :value) in sources.entries) {
+    provider.setOverlay(
+      _fixturePath(key),
+      content: value,
+      modificationStamp: 0,
+    );
+  }
+  return findWidgetMethods(
+    root: _root,
+    files: [for (final name in sources.keys) _fixturePath(name)],
+    resourceProvider: provider,
+    sdkPath: _sdkPath,
+  );
+}
+
+/// What the check found in every fixture, resolved once: resolving the
+/// framework takes seconds.
+late List<WidgetMethod> _found;
+
+/// What the check found in the fixture [name].
+List<WidgetMethod> _foundIn(String name) => [
+  for (final method in _found)
+    if (method.path == 'test/tool/_fixture_$name.dart') method,
+];
+
+/// The scopes the check flags in the fixture [name].
+List<String> _flagged(String name) => [
+  for (final method in _foundIn(name)) method.scope,
+];
+
+void main() {
+  group('findWidgetMethods', () {
+    setUpAll(() async => _found = await _find(_fixtures));
+
+    test('flags methods, getters, functions and local functions', () {
+      expect(_flagged('flags'), [
+        'header',
+        'maybe',
+        'Panel._row',
+        'Panel._banner',
+        'Panel._bar',
+        'Panel._label',
+        'Panel._items',
+        'Panel._more',
+        'Panel._later',
+        'Panel.build.cell',
+        'extension.gap',
+        'Rows.row',
+        'pick',
+        'stream',
+        'pair',
+        'named',
+        'loose',
+        'boxed',
+      ]);
+    });
+
+    test(
+      'flags a declaration without a return type that returns a widget',
+      () {
+        expect(_flagged('untyped'), ['untyped', 'Holder.label', 'Holder.row']);
       },
     );
 
-    test('reports the path, line and type', () async {
-      final found = await _find(
-        '$_imports\nList<Widget> rows() => const [];\n',
-      );
-      final path = 'test/tool/_fixture_${_fixtures - 1}.dart';
-      expect(found.map((method) => '$method'), [
+    test('does not flag framework overrides', () {
+      expect(_flagged('overrides'), isEmpty);
+    });
+
+    test('flags an override of a member declared in app code', () {
+      expect(_flagged('app_override'), ['Cell.face', 'Square.face']);
+    });
+
+    test(
+      'does not flag closures, constructors, setters or other types',
+      () {
+        expect(_flagged('not_flagged'), isEmpty);
+      },
+    );
+
+    test('reports the path, line and type', () {
+      const path = 'test/tool/_fixture_report.dart';
+      expect(_foundIn('report').map((method) => '$method'), [
         '$path:5: rows returns List<Widget>',
       ]);
-      expect(found.single.key, '$path#rows');
+      expect(_foundIn('report').single.key, '$path#rows');
+    });
+
+    test('fails on a file that does not resolve', () {
+      expect(
+        _find({'broken': 'Widget row() => const SizedBox();\n'}),
+        throwsA(isA<StateError>()),
+      );
     });
   });
 
@@ -302,9 +361,10 @@ class Panel extends StatelessWidget {
 
   group('readBaseline', () {
     test('skips comments and blank lines', () {
-      final file = File(
-        p.join(Directory.systemTemp.createTempSync('nwm_').path, 'b.txt'),
-      )..writeAsStringSync('# header\n\nlib/a.dart#A._row\n  \n');
+      final directory = Directory.systemTemp.createTempSync('nwm_');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final file = File(p.join(directory.path, 'b.txt'))
+        ..writeAsStringSync('# header\n\nlib/a.dart#A._row\n  \n');
       expect(readBaseline(file), ['lib/a.dart#A._row']);
     });
 
