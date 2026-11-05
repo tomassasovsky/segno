@@ -90,6 +90,29 @@ void main() {
     expect(reset.customColorFor(_stop, PedalLedState.lit), _magenta);
   });
 
+  test('every mode keeps its own map: an edit in one leaves the rest', () {
+    for (final mode in InteractionMode.values) {
+      final leds = const PedalLedMap().withColor(
+        mode,
+        PedalLedGroup.mode,
+        PedalLedState.current,
+        _magenta,
+      );
+      for (final other in InteractionMode.values) {
+        expect(
+          leds.colorFor(other, PedalLedGroup.mode, PedalLedState.current),
+          other == mode
+              ? _magenta
+              : PedalLedMap.schema(
+                  other,
+                )[PedalLedGroup.mode]![PedalLedState.current],
+          reason: '${mode.name} edited, ${other.name} read',
+        );
+      }
+      expect(leds.resetMode(mode).isEmpty, isTrue, reason: mode.name);
+    }
+  });
+
   test('every slot of every mode round-trips through JSON', () {
     var leds = const PedalLedMap();
     var n = 1;
