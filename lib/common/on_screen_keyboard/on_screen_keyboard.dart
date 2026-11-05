@@ -62,6 +62,8 @@ class OnScreenKeyboard extends StatefulWidget {
     required this.onDone,
     this.doneLabel,
     this.showNumberRow = false,
+    this.keyHeight = standardKeyHeight,
+    this.labelSize = standardLabelSize,
     super.key,
   });
 
@@ -89,18 +91,29 @@ class OnScreenKeyboard extends StatefulWidget {
   /// and a layer switch per digit is unusable standing over a console.
   final bool showNumberRow;
 
-  /// Key height, sized for a foot-console: pressed while standing, often with
-  /// one hand. Public so the host sizes its panel from the keys rather than
-  /// from a guess that can drift out of step with them.
-  static const double keyHeight = 54;
+  /// The keys' height, sized for a foot-console: pressed while standing,
+  /// often with one hand. Public so the host sizes its panel from the keys
+  /// rather than from a guess that can drift out of step with them.
+  static const double standardKeyHeight = 54;
+
+  /// The keys' label size at [standardKeyHeight].
+  static const double standardLabelSize = 17;
+
+  /// This keyboard's key height: [standardKeyHeight] in the console's sheets
+  /// and panels, taller on a full-size page (#1672).
+  final double keyHeight;
+
+  /// This keyboard's label size; glyph keys scale with it.
+  final double labelSize;
 
   /// The gap between two keys, across and down. The keyboard's outer keys
   /// sit on its own edges, so a sheet lines them up with the field above
   /// (#1672).
   static const double keyGap = 6;
 
-  /// The keyboard's height for [rows] rows of keys.
-  static double heightOf(int rows) => rows * keyHeight + (rows - 1) * keyGap;
+  /// The keyboard's height for [rows] rows of keys [keyHeight] high.
+  static double heightOf(int rows, {double keyHeight = standardKeyHeight}) =>
+      rows * keyHeight + (rows - 1) * keyGap;
 
   @override
   State<OnScreenKeyboard> createState() => _OnScreenKeyboardState();
@@ -290,6 +303,8 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     final display = label ?? (_uppercase ? value.toUpperCase() : value);
     return _KeyCap(
       label: display,
+      height: widget.keyHeight,
+      labelSize: widget.labelSize,
       onPressed: () => _tap(value),
     );
   }
@@ -306,6 +321,8 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     final cap = _KeyCap(
       label: label,
       icon: icon,
+      height: widget.keyHeight,
+      labelSize: widget.labelSize,
       primary: primary,
       selected: selected,
       locked: locked,
@@ -330,6 +347,8 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
 class _KeyCap extends StatelessWidget {
   const _KeyCap({
     required this.onPressed,
+    required this.height,
+    required this.labelSize,
     this.label,
     this.icon,
     this.primary = false,
@@ -339,6 +358,8 @@ class _KeyCap extends StatelessWidget {
   });
 
   final VoidCallback onPressed;
+  final double height;
+  final double labelSize;
   final String? label;
   final IconData? icon;
   final bool primary;
@@ -368,7 +389,7 @@ class _KeyCap extends StatelessWidget {
         ? surface.textSecondary
         : surface.textPrimary;
     return SizedBox(
-      height: OnScreenKeyboard.keyHeight,
+      height: height,
       child: Material(
         color: fill,
         borderRadius: BorderRadius.circular(8),
@@ -386,7 +407,8 @@ class _KeyCap extends StatelessWidget {
             child: icon != null
                 ? Icon(
                     icon,
-                    size: 20,
+                    // 20 beside the standard 17 px labels.
+                    size: labelSize * 20 / 17,
                     color: tint,
                     semanticLabel: semanticLabel,
                   )
@@ -394,7 +416,7 @@ class _KeyCap extends StatelessWidget {
                     label ?? '',
                     style: TextStyle(
                       color: tint,
-                      fontSize: 17,
+                      fontSize: labelSize,
                       fontWeight: primary ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),

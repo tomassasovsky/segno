@@ -39,9 +39,9 @@ _TempoValues _tempoValues(LooperState state) => (
 /// types an exact tempo on the keypad), the tempo slider with whole and fine
 /// steps, Clear tempo and Tap tempo, the time signature (a button to its own
 /// page), and the Hear click and Count-in rows (the pen's `timing-layout`,
-/// 458 high at y 313, across the content width). While recording starts on
-/// Sound, a note under Count-in says a count-in switches the start to Pedal
-/// (#1659), since Start recording is on the Recording tab.
+/// 458 high, under the tabs and across the content width). While recording
+/// starts on Sound, a note under Count-in says a count-in switches the start
+/// to Pedal (#1659), since Start recording is on the Recording tab.
 class LoopTempoPage extends StatefulWidget {
   /// Creates a [LoopTempoPage].
   const LoopTempoPage({required this.onOpenSignature, super.key});
@@ -146,9 +146,10 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
     final width = LoopSettingsFrame.contentWidthOf(context);
     final sliderWidth = width - _controlsLeft - _sliderEndInset;
     final tapLeft = _controlsLeft + sliderWidth - _tapWidth;
+    // Under the tabs, where every Loop settings tab starts (#1672).
     return Positioned(
       left: 0,
-      top: 313,
+      top: kLoopTabContentTop,
       child: SizedBox(
         width: width,
         height: 458 + 45,
