@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 
-/// What a pedal binding points at: one whole chain, or one effect inside a
-/// chain (A9).
+/// What a pedal binding points at: one whole chain, one rack inside a chain
+/// (#1711), or one effect inside a chain (A9).
 ///
 /// ## Why this type lives app-side
 ///
@@ -18,10 +18,10 @@ import 'package:looper_repository/looper_repository.dart';
 ///
 /// The encoding EXTENDS part 3a's [FxAddress] canonical form rather than
 /// redeclaring it (R19): the address contributes its own fixed key order
-/// (`stage`, `index`, `lane`), and an effect-level target appends exactly one
-/// key, `slot`. A chain-level target adds nothing, so its string IS
-/// [FxAddress.canonicalString]. Byte-stable in both cases, so plain string
-/// equality is target identity.
+/// (`stage`, `index`, `lane`), an effect-level target appends exactly one
+/// key, `slot`, and a rack-level target exactly one key, `rack`. A chain-level
+/// target adds nothing, so its string IS [FxAddress.canonicalString].
+/// Byte-stable in every case, so plain string equality is target identity.
 ///
 /// This composes safely because [FxAddress.fromJson] ignores keys it does not
 /// know (its additive-only contract) — the same map decodes as an address
@@ -34,6 +34,8 @@ sealed class FxBindingTarget extends Equatable {
     FxChainTarget(:final address) => address.isStructurallyValid,
     FxSlotTarget(:final address, :final slotId) =>
       address.isStructurallyValid && slotId.isNotEmpty,
+    FxRackTarget(:final address, :final rackId) =>
+      address.isStructurallyValid && rackId.isNotEmpty,
   };
 
   /// Parses a [canonicalString] back to a target, or `null` when [encoded] is
@@ -53,17 +55,24 @@ sealed class FxBindingTarget extends Equatable {
     if (raw is! Map<String, dynamic>) return null;
     final address = FxAddress.fromJson(raw);
     if (address == null) return null;
-    final slot = raw['slot'];
-    if (!raw.containsKey('slot')) return FxChainTarget(address);
-    // A present-but-unusable `slot` is corruption, not a chain target:
-    // silently widening an effect binding to its whole chain would bypass far
-    // more than the user asked for on the next stomp.
-    if (slot is! String || slot.isEmpty) return null;
-    return FxSlotTarget(address: address, slotId: slot);
+    final hasSlot = raw.containsKey('slot');
+    final hasRack = raw.containsKey('rack');
+    if (!hasSlot && !hasRack) return FxChainTarget(address);
+    // A present-but-unusable `slot` or `rack` is corruption, not a chain
+    // target: silently widening an effect or rack binding to its whole chain
+    // would bypass far more than the user asked for on the next stomp. Both
+    // at once name two different things, which is corruption too.
+    if (hasSlot && hasRack) return null;
+    final id = raw[hasSlot ? 'slot' : 'rack'];
+    if (id is! String || id.isEmpty) return null;
+    return hasSlot
+        ? FxSlotTarget(address: address, slotId: id)
+        : FxRackTarget(address: address, rackId: id);
   }
 
   /// The chain this target lives on — the whole target for a
-  /// [FxChainTarget], the containing chain for a [FxSlotTarget].
+  /// [FxChainTarget], the containing chain for a [FxRackTarget] or a
+  /// [FxSlotTarget].
   FxAddress get address;
 
   /// The byte-stable canonical serialization (see the class doc).
@@ -109,4 +118,32 @@ final class FxSlotTarget extends FxBindingTarget {
 
   @override
   List<Object?> get props => [address, slotId];
+}
+
+/// A rack-level target: the stomp switches one rack inside the chain at
+/// [address] on or off as a whole (#1711), leaving each of its effects' own
+/// switches as they were — so a rack switched back on sounds as it did.
+///
+/// Keyed by the rack's INSTANCE id ([FxRack.id]), minted when the rack is
+/// added and saved with the chain, never by position or by the catalogue
+/// preset it came from: a reorder, a rename or a reload leaves the binding on
+/// the same rack, and a second copy of the same sound in one chain is a
+/// different rack. When the rack is removed or replaced the target goes
+/// inert, as a stale slot does (R25); it never falls back to the chain or to
+/// another rack.
+final class FxRackTarget extends FxBindingTarget {
+  /// Creates a rack-level target on [rackId] within [address]'s chain.
+  const FxRackTarget({required this.address, required this.rackId});
+
+  @override
+  final FxAddress address;
+
+  /// The bound rack's instance id ([FxRack.id]).
+  final String rackId;
+
+  @override
+  String canonicalString() => jsonEncode({...address.toJson(), 'rack': rackId});
+
+  @override
+  List<Object?> get props => [address, rackId];
 }

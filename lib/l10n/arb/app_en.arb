@@ -4929,9 +4929,9 @@
             }
         }
     },
-    "fxReAddRackBody": "{count, plural, =1{Adding it again gives its effects new identities, so 1 MIDI or pedal assignment will be removed.} other{Adding it again gives its effects new identities, so {count} MIDI and pedal assignments will be removed.}}",
+    "fxReAddRackBody": "{count, plural, =1{Adding it again gives the rack and its effects new identities, so 1 MIDI or pedal assignment to them will be removed.} other{Adding it again gives the rack and its effects new identities, so {count} MIDI and pedal assignments to them will be removed.}}",
     "@fxReAddRackBody": {
-        "description": "How many MIDI and pedal assignments re-adding a rack removes, and why.",
+        "description": "How many MIDI and pedal assignments re-adding a rack removes, and why: the ones to the rack itself and to its effects.",
         "placeholders": {
             "count": {
                 "type": "int"
@@ -5920,6 +5920,10 @@
     "externalActivationChain": "Every effect",
     "@externalActivationChain": {
         "description": "An activation on a whole chain rather than one effect in it."
+    },
+    "externalActivationRack": "Rack",
+    "@externalActivationRack": {
+        "description": "Names an activation on a rack whose name can no longer be read, because the rack was removed or replaced; the row also shows it as missing."
     },
     "externalActivationRow": "{name} · Activation",
     "@externalActivationRow": {

@@ -118,6 +118,42 @@ void main() {
       expect(FxBindingTarget.tryParse(encoded), const FxChainTarget(track));
     });
 
+    test('a rack target round-trips and appends exactly one key', () {
+      const target = FxRackTarget(address: loop, rackId: 'rack-1');
+      expect(FxBindingTarget.tryParse(target.canonicalString()), target);
+      expect(
+        jsonDecode(target.canonicalString()),
+        {...loop.toJson(), 'rack': 'rack-1'},
+      );
+      // A rack and an effect never share an identity, even with one id.
+      expect(
+        target,
+        isNot(const FxSlotTarget(address: loop, slotId: 'rack-1')),
+      );
+    });
+
+    test('a corrupt rack key never widens to the chain', () {
+      for (final rack in <Object?>['', 7, null]) {
+        expect(
+          FxBindingTarget.tryParse(
+            jsonEncode({...loop.toJson(), 'rack': rack}),
+          ),
+          isNull,
+          reason: '$rack',
+        );
+      }
+      expect(
+        FxBindingTarget.tryParse(
+          jsonEncode({...loop.toJson(), 'rack': 'r', 'slot': 's'}),
+        ),
+        isNull,
+      );
+      expect(
+        const FxRackTarget(address: loop, rackId: '').isStructurallyValid,
+        isFalse,
+      );
+    });
+
     test('address exposes the containing chain for both variants', () {
       expect(const FxChainTarget(loop).address, loop);
       expect(

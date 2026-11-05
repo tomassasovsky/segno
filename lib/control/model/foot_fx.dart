@@ -220,5 +220,9 @@ FxBindingTarget _scoped(
       address: address,
       slotId: slotId,
     ),
+    FxRackTarget(:final rackId) => FxRackTarget(
+      address: address,
+      rackId: rackId,
+    ),
   };
 }

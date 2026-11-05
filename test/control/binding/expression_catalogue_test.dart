@@ -246,6 +246,73 @@ void main() {
     });
   });
 
+  group('rack activations (#1711)', () {
+    const address = FxAddress(stage: FxStage.input);
+    const reverb = FxRack(id: 'r-1', name: 'Reverb + Delay', art: 'ambient');
+    const chords = FxRack(id: 'r-2', name: 'Soft Chords', art: 'guitar');
+    BuiltInEffect module(String slotId, FxRack rack) => BuiltInEffect(
+      type: TrackEffectType.drive,
+      slotId: slotId,
+      rack: rack,
+    );
+
+    List<ExpressionActivation> activations() => expressionDestinations(
+      l10n,
+      names,
+      looper,
+      withActivations: true,
+    ).firstWhere((d) => d.id == 'input:0').activations;
+
+    test('each rack is offered by its own name and picture, after the '
+        'whole chain', () {
+      monitorChains = {
+        0: [module('a', reverb), module('b', reverb), module('c', chords)],
+      };
+      final rows = activations();
+      expect(rows.map((row) => row.label), [
+        'Every effect',
+        'Reverb + Delay',
+        'Drive',
+        'Drive',
+        'Soft Chords',
+        'Drive',
+      ]);
+      expect(
+        rows[1].target,
+        const FxRackTarget(address: address, rackId: 'r-1'),
+      );
+      expect(rows[1].art, const FxRackPicture('ambient'));
+      expect(rows[4].art, const FxRackPicture('guitar'));
+    });
+
+    test('a chain that is one rack is offered as that rack, by its name', () {
+      monitorChains = {
+        0: [module('c', chords), module('d', chords)],
+      };
+      final rows = activations();
+      expect(
+        rows.first.target,
+        const FxRackTarget(address: address, rackId: 'r-2'),
+      );
+      expect(rows.first.label, 'Soft Chords');
+      expect(rows.where((row) => row.target is FxChainTarget), isEmpty);
+      // A whole-chain binding made before is still every effect.
+      expect(
+        expressionActivationName(l10n, looper, const FxChainTarget(address)),
+        'Every effect',
+      );
+    });
+
+    test('a rack that is gone says it was a rack and draws nothing', () {
+      monitorChains = {
+        0: [module('c', chords)],
+      };
+      const gone = FxRackTarget(address: address, rackId: 'r-1');
+      expect(expressionActivationName(l10n, looper, gone), 'Rack');
+      expect(expressionTargetArt(looper, gone), isNull);
+    });
+  });
+
   group('the catalogue', () {
     test('Click is a separate Outputs destination even with no output bus', () {
       when(() => looper.state).thenAnswer(

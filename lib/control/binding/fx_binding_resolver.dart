@@ -14,27 +14,41 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 ///
 /// Every method returns `null` / `false` rather than guessing when the target
 /// does not name something that exists — a chain on a stage the rig has not
-/// configured, or a [FxSlotTarget] whose `slotId` is no longer in the chain.
+/// configured, a [FxSlotTarget] whose `slotId` is no longer in the chain, or a
+/// [FxRackTarget] whose rack was removed or replaced.
 /// It NEVER falls back to the containing chain or to the slot that now sits at
 /// the old position: a stomp bound to a reverb must not start bypassing the
 /// delay that replaced it. A stale binding is a no-op with an unlit LED, and
 /// the assignment screen shows it as broken (R25).
 extension FxBindingResolver on LooperRepository {
   /// Every target the live rig can currently offer a binding, in signal
-  /// order: each configured chain followed by its own slots.
+  /// order: each configured chain, then each of its groups — a rack followed
+  /// by its own modules, or a standalone effect.
   ///
-  /// What the assignment screen's picker lists. Only slots carrying a stable
+  /// What the assignment screens' pickers list. Only slots carrying a stable
   /// `slotId` are offered — an entry without one cannot be re-found after a
   /// reorder, so binding to it would create a target that silently goes stale
   /// on the next edit (A9).
+  ///
+  /// Every rack INSTANCE is offered (#1711). A chain that is one rack end to
+  /// end ([fxSoleRack]) offers that rack in place of its whole-chain row: to
+  /// the player it IS the rack, and the rack's target switches what the
+  /// rack's card on the Effects page switches, so the card and the pedal's
+  /// LED always agree. A binding to such a chain made before still resolves.
   List<FxBindingTarget> availableBindingTargets() {
     final targets = <FxBindingTarget>[];
     void add(FxAddress address, List<TrackEffect> entries) {
-      targets.add(FxChainTarget(address));
-      for (final fx in entries) {
-        final slotId = fx.slotId;
-        if (slotId != null) {
-          targets.add(FxSlotTarget(address: address, slotId: slotId));
+      if (fxSoleRack(entries) == null) targets.add(FxChainTarget(address));
+      for (final group in fxChainGroups(entries)) {
+        final rack = group.rack;
+        if (rack != null) {
+          targets.add(FxRackTarget(address: address, rackId: rack.id));
+        }
+        for (final fx in group.entries) {
+          final slotId = fx.slotId;
+          if (slotId != null) {
+            targets.add(FxSlotTarget(address: address, slotId: slotId));
+          }
         }
       }
     }
@@ -80,7 +94,41 @@ extension FxBindingResolver on LooperRepository {
         final index = _slotIndex(address, slotId);
         if (index == null) return null;
         return chainEntriesAt(address)![index].enabled;
+      case FxRackTarget(:final address, :final rackId):
+        return rackGroupAt(address, rackId)?.isOn;
     }
+  }
+
+  /// The rack [rackId] in the chain at [address], or `null` when the chain or
+  /// the rack is gone.
+  FxChainGroup? rackGroupAt(FxAddress address, String rackId) {
+    final entries = chainEntriesAt(address);
+    if (entries == null) return null;
+    return fxChainGroups(
+      entries,
+    ).where((group) => group.rack?.id == rackId).firstOrNull;
+  }
+
+  /// Whether a pedal's LED for [target] is lit, or `null` when [target] does
+  /// not resolve: what the Effects page shows for it.
+  ///
+  /// A chain or a rack lights with its own switch, as its power button reads.
+  /// An effect lights only while it sounds — its own switch, its rack's and
+  /// its chain's all on, the chain not held off for room (#1515) — as the
+  /// page dims a pedal whose rack or chain is off. Pressing still flips the
+  /// effect's own switch ([bindingEnabled]).
+  bool? bindingLit(FxBindingTarget target) {
+    final enabled = bindingEnabled(target);
+    if (enabled == null) return null;
+    return switch (target) {
+      FxChainTarget() || FxRackTarget() => enabled,
+      FxSlotTarget(:final address, :final slotId) =>
+        chainEntriesAt(
+              address,
+            )![_slotIndex(address, slotId)!].effectiveEnabled &&
+            chainEnabledAt(address)! &&
+            !fxChainHeld(address),
+    };
   }
 
   /// Whether [target] names something that exists in the live rig.
@@ -104,6 +152,11 @@ extension FxBindingResolver on LooperRepository {
         slotId,
         enabled: enabled,
       ),
+      FxRackTarget(:final address, :final rackId) => setRackEnabled(
+        address: address,
+        rackId: rackId,
+        enabled: enabled,
+      ).isOk,
     };
   }
 

@@ -43,6 +43,62 @@ ControlState _cleaned(ControlState state, FxAddress address, Set<String> ids) {
 
 void main() {
   group('fxAssignmentsTo', () {
+    test('counts the replaced rack itself with its effects, in one count, '
+        'and a cleaning removes both (#1711)', () {
+      const rack = FxRackTarget(address: _track, rackId: 'r1');
+      const otherRack = FxRackTarget(address: _track, rackId: 'r2');
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+            target: rack.canonicalString(),
+          ),
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+            target: const FxSlotTarget(
+              address: _track,
+              slotId: 'a',
+            ).canonicalString(),
+          ),
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track3, bank: 0),
+            target: otherRack.canonicalString(),
+          ),
+        ]),
+        pedalSetup: PedalSetup(
+          external: ExternalPedalSetup(
+            jacks: {
+              PedalCtrlJack.ctrl1: ExternalJackSetup(
+                single: ExternalSwitchSetup(
+                  controls: ExternalControls(
+                    activations: const [ExternalActivation(target: rack)],
+                  ),
+                ),
+              ),
+            },
+          ),
+        ),
+      );
+
+      expect(fxAssignmentsTo(state, _track, {'a'}), 1);
+      expect(fxAssignmentsTo(state, _track, {'a'}, rackIds: {'r1'}), 3);
+
+      bool names(Object? target) =>
+          fxTargetNamesEffect(target, _track, {'a'}, rackIds: {'r1'});
+      final cleaned = state.copyWith(
+        globalBindings: state.globalBindings.withoutTargets(names),
+        pedalSetup: state.pedalSetup.copyWith(
+          external: state.pedalSetup.external.withoutTargets(names),
+        ),
+      );
+      expect(fxAssignmentsTo(cleaned, _track, {'a'}, rackIds: {'r1'}), 0);
+      // The other rack keeps its binding.
+      expect(
+        cleaned.globalBindings.bindings.map((b) => b.target),
+        [otherRack.canonicalString()],
+      );
+    });
+
     test('is zero when nothing points at the effects', () {
       expect(fxAssignmentsTo(const ControlState(), _track, {'a', 'b'}), 0);
     });

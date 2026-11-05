@@ -272,6 +272,54 @@ void main() {
       expect(find.text('Drive'), findsOneWidget);
     });
 
+    testWidgets('each rack is listed under its chain, by its own name, and '
+        'a switch bound to it says so (#1711)', (tester) async {
+      const reverb = FxRack(id: 'rack-a', name: 'Reverb + Delay');
+      const chords = FxRack(id: 'rack-b', name: 'Soft Chords');
+      masterChain = [
+        BuiltInEffect(
+          type: TrackEffectType.reverb,
+          slotId: 'slot-reverb',
+          rack: reverb,
+        ),
+        BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: 'slot-drive',
+          rack: chords,
+        ),
+      ];
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('pedal_switch_recPlay')));
+      await tester.pumpAndSettle();
+
+      final rack = const FxRackTarget(
+        address: _master,
+        rackId: 'rack-b',
+      ).canonicalString();
+      expect(find.byKey(Key('pedal_target_$rack')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(Key('pedal_target_$rack')),
+          matching: find.text('Soft Chords'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(find.byKey(Key('pedal_target_$rack')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('pedal_target_$rack')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('pedal_switch_recPlay')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('pedal_switch_recPlay')),
+          matching: find.textContaining('Soft Chords'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('choosing a target assigns it, and choosing it again clears', (
       tester,
     ) async {
