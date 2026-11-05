@@ -1151,8 +1151,7 @@ class _AppViewState extends State<_AppView> {
           : record.trackLengthPresetOverrides[cursor],
       timing: timing.defaultTiming,
       trackTiming: timing.trackOverrides[cursor],
-      captureLocked:
-          record.recordLengthCaptureLocked || timing.captureLocked,
+      captureLocked: record.recordLengthCaptureLocked || timing.captureLocked,
       ready: record.recordLengthReady && timing.recordTimingReady,
     );
   }
