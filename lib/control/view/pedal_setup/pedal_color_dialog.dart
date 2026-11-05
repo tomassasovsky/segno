@@ -50,13 +50,6 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
   static const double _columnGap = 48;
   static const double _bodyHeight = 404;
 
-  /// The pen's swatch: a 164 circle with the hex under it.
-  static const double _swatchSize = 164;
-
-  /// The pen's control block: a label row, then the rail.
-  static const double _controlHeight = 100;
-  static const double _controlGap = 28;
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -95,9 +88,28 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        SizedBox(height: _bodyHeight, child: _body(context)),
+                        SizedBox(
+                          height: _bodyHeight,
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: _previewWidth,
+                                child: _ColorPreview(color: _chosen),
+                              ),
+                              const SizedBox(width: _columnGap),
+                              SizedBox(
+                                width: _fieldsWidth,
+                                child: _ColorFields(
+                                  value: _value,
+                                  onChanged: (value) =>
+                                      setState(() => _value = value),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 24),
-                        _actions(context),
+                        _ColorActions(chosen: _chosen),
                       ],
                     ),
                   ),
@@ -110,19 +122,27 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
     );
   }
 
-  Widget _body(BuildContext context) => Row(
-    children: [
-      SizedBox(width: _previewWidth, child: _preview(context)),
-      const SizedBox(width: _columnGap),
-      SizedBox(width: _fieldsWidth, child: _fields(context)),
-    ],
-  );
+  /// What the sliders currently name, as the wire would carry it.
+  PedalColor get _chosen => pedalColorFromHsv(_value);
 
-  /// The hue, the size it will never be on the hardware, and its hex.
-  ///
-  /// The number is shown because it is the only part of a colour a performer
-  /// can write down or say out loud.
-  Widget _preview(BuildContext context) {
+  static HSVColor _toHsv(PedalColor color) => HSVColor.fromColor(color.display);
+}
+
+/// The hue, the size it will never be on the hardware, and its hex.
+///
+/// The number is shown because it is the only part of a colour a performer
+/// can write down or say out loud.
+class _ColorPreview extends StatelessWidget {
+  const _ColorPreview({required this.color});
+
+  /// The colour the sliders currently name.
+  final PedalColor color;
+
+  /// The pen's swatch: a 164 circle with the hex under it.
+  static const double _swatchSize = 164;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -132,14 +152,14 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
           width: _swatchSize,
           height: _swatchSize,
           decoration: BoxDecoration(
-            color: _swatchColor,
+            color: color.display,
             shape: BoxShape.circle,
             border: Border.all(color: surface.borderStrong),
           ),
         ),
         const SizedBox(height: 24),
         AppText(
-          _hex,
+          color.toString(),
           key: const Key('pedal_color_hex'),
           style: TextStyle(
             color: surface.textPrimary,
@@ -151,51 +171,85 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
       ],
     );
   }
+}
 
-  Widget _fields(BuildContext context) {
+/// Hue, Saturation and Brightness, one control each.
+class _ColorFields extends StatelessWidget {
+  const _ColorFields({required this.value, required this.onChanged});
+
+  /// The colour being mixed.
+  final HSVColor value;
+
+  /// Takes the colour with one of its three parts moved.
+  final ValueChanged<HSVColor> onChanged;
+
+  /// The pen's gap between two controls.
+  static const double _controlGap = 28;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _control(
-          context,
+        _ColorControl(
           id: 'hue',
           label: l10n.pedalColorHue,
-          readout: l10n.pedalColorDegrees(_value.hue.round()),
-          value: _value.hue / 360,
-          onChanged: (v) =>
-              setState(() => _value = _value.withHue((v * 360).clamp(0, 360))),
+          readout: l10n.pedalColorDegrees(value.hue.round()),
+          value: value.hue / 360,
+          onChanged: (v) => onChanged(value.withHue((v * 360).clamp(0, 360))),
         ),
         const SizedBox(height: _controlGap),
-        _control(
-          context,
+        _ColorControl(
           id: 'saturation',
           label: l10n.pedalColorSaturation,
-          readout: l10n.pedalColorPercent((_value.saturation * 100).round()),
-          value: _value.saturation,
-          onChanged: (v) => setState(() => _value = _value.withSaturation(v)),
+          readout: l10n.pedalColorPercent((value.saturation * 100).round()),
+          value: value.saturation,
+          onChanged: (v) => onChanged(value.withSaturation(v)),
         ),
         const SizedBox(height: _controlGap),
-        _control(
-          context,
+        _ColorControl(
           id: 'brightness',
           label: l10n.pedalColorBrightness,
-          readout: l10n.pedalColorPercent((_value.value * 100).round()),
-          value: _value.value,
-          onChanged: (v) => setState(() => _value = _value.withValue(v)),
+          readout: l10n.pedalColorPercent((value.value * 100).round()),
+          value: value.value,
+          onChanged: (v) => onChanged(value.withValue(v)),
         ),
       ],
     );
   }
+}
 
-  Widget _control(
-    BuildContext context, {
-    required String id,
-    required String label,
-    required String readout,
-    required double value,
-    required ValueChanged<double> onChanged,
-  }) {
+/// One of the three: its name and readout over its rail.
+class _ColorControl extends StatelessWidget {
+  const _ColorControl({
+    required this.id,
+    required this.label,
+    required this.readout,
+    required this.value,
+    required this.onChanged,
+  });
+
+  /// The control's key fragment.
+  final String id;
+
+  /// The control's name.
+  final String label;
+
+  /// Its value, as read out.
+  final String readout;
+
+  /// Its value along the rail, 0 to 1.
+  final double value;
+
+  /// Moves it.
+  final ValueChanged<double> onChanged;
+
+  /// The pen's control block: a label row, then the rail.
+  static const double _controlHeight = 100;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
     return SizedBox(
       height: _controlHeight,
@@ -234,7 +288,7 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
           LoopSlider(
             key: Key('pedal_color_slider_$id'),
             value: value,
-            width: _fieldsWidth,
+            width: _PedalColorDialogState._fieldsWidth,
             semanticLabel: label,
             onChanged: onChanged,
             onEditCancel: onChanged,
@@ -243,8 +297,17 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
       ),
     );
   }
+}
 
-  Widget _actions(BuildContext context) {
+/// Cancel and Done.
+class _ColorActions extends StatelessWidget {
+  const _ColorActions({required this.chosen});
+
+  /// The colour Done returns.
+  final PedalColor chosen;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -261,20 +324,11 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
           width: 200,
           tone: LoopButtonTone.accent,
           label: l10n.pedalColorEditConfirm,
-          onTap: () => Navigator.of(context).pop(_chosen),
+          onTap: () => Navigator.of(context).pop(chosen),
         ),
       ],
     );
   }
-
-  /// What the sliders currently name, as the wire would carry it.
-  PedalColor get _chosen => pedalColorFromHsv(_value);
-
-  Color get _swatchColor => _chosen.display;
-
-  String get _hex => _chosen.toString();
-
-  static HSVColor _toHsv(PedalColor color) => HSVColor.fromColor(color.display);
 }
 
 /// The wire colour an [HSVColor] names, rounded to the three bytes the LED can
