@@ -3222,6 +3222,10 @@ struct le_engine {
    * mixer's hot track state keeps its layout; le_track_bridge_of. */
   le_track_bridge bridges[LE_MAX_TRACKS];
   int32_t bridge_hop; /* le_bridge_hop of the rate, set per buffer */
+  /* Whether any track bridges this buffer (on, or a turn window's old head
+   * bridged), set by le_transpose_select: 0 keeps the mixer on its plain
+   * read with one check a frame. */
+  int32_t bridge_any;
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in
