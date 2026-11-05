@@ -39,6 +39,10 @@
 
 #include "engine_read_head.h"
 
+/* Which sides of a track's read go through the bridge this frame. */
+#define LE_BRIDGE_NEW 1 /* the new head */
+#define LE_BRIDGE_OLD 2 /* a turn window's old head */
+
 typedef struct le_bridge {
   double cur;          /* source index the current grain started at */
   double prev;         /* and the grain before it, one hop earlier */

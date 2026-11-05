@@ -567,8 +567,8 @@ static int le_engine_reset_material(le_engine* engine,
     tr->pitch_override = -1;
     store_i32(&tr->a_pitch_override, -1);
     store_i32(&tr->a_src_out, 0);
-    tr->bridge = 0; /* the pitch bridge (#1675) */
-    tr->turn_bridge = 0;
+    engine->bridges[t].on = 0; /* the pitch bridge (#1675) */
+    engine->bridges[t].turn = 0;
     tr->log_play_len = 0;
     tr->span_clock = 0;
     store_i32(&tr->a_span_clock, 0);

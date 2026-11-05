@@ -1901,15 +1901,6 @@ typedef struct le_track {
   le_wet_entry* _Atomic a_turn_src[LE_MAX_LANES];
   le_wet_entry* _Atomic a_src_pin[LE_MAX_LANES]; /* src_ent, published */
   _Atomic int32_t a_transpose_st, a_transpose_eff;
-  /* The pitch bridge (#1675, engine_bridge.h). bridge is 1 while the track
-   * wants a stretch render it does not hold yet (Follow tempo, Pitch
-   * Unchanged, off its span): its dry take, or its plain Transpose render,
-   * plays through each lane's bridge_lane at its own pitch instead of
-   * through the varispeed. turn_bridge says the old source of a swap still
-   * mixing was bridged, so the old head keeps its pitch through the window
-   * too. Callback-owned; set by le_transpose_select. */
-  int32_t bridge, turn_bridge;
-  le_bridge bridge_lane[LE_MAX_LANES];
   /* Control's view of the stored pitch while TRANSPOSE commands are in
    * flight (le_effective_transposed), like Reverse's. */
   uint32_t transpose_posted;
@@ -2254,6 +2245,18 @@ typedef struct le_lane_spares {
 #define LE_FX_PARAM_OWNERS                                          \
   (LE_MAX_TRACKS * LE_MAX_LANES + LE_MAX_TRACKS + LE_MAX_MONITORED_INPUTS + \
    LE_MAX_OUTPUT_BUSES + 1)
+
+/* The pitch bridge (#1675, engine_bridge.h) of one track. `on` is 1 while the
+ * track wants a stretch render it does not hold yet (Follow tempo, Pitch
+ * Unchanged, off its span): its dry take, or its plain Transpose render,
+ * plays through each lane's grains at its own pitch instead of through the
+ * varispeed. `turn` says the old head of a turn window still mixing was
+ * bridged, so it keeps its pitch through the window too. Callback-owned;
+ * set by le_transpose_select and le_turn_begin. */
+typedef struct le_track_bridge {
+  int32_t on, turn;
+  le_bridge lane[LE_MAX_LANES];
+} le_track_bridge;
 
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
@@ -3215,6 +3218,10 @@ struct le_engine {
   struct le_fx_pool* fx_pool;
   _Atomic int32_t fx_workers_req; /* read by any thread's telemetry pull */
   int32_t fx_cores[1 + LE_FX_WORKERS_MAX];
+  /* The pitch bridge per track (#1675, engine_bridge.h), at the end so the
+   * mixer's hot track state keeps its layout; le_track_bridge_of. */
+  le_track_bridge bridges[LE_MAX_TRACKS];
+  int32_t bridge_hop; /* le_bridge_hop of the rate, set per buffer */
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in
@@ -3385,6 +3392,12 @@ static inline int32_t le_track_play_span(le_engine* e, le_track* t) {
  * the take wants no stretch (4a-ii M1): the head absorbs the residual, so a
  * small tempo move keeps a transposed track on its plain render and an
  * untransposed one on its dry take, with no new render. */
+/* Track t's pitch bridge (#1675). */
+static inline le_track_bridge* le_track_bridge_of(le_engine* e,
+                                                  const le_track* t) {
+  return &e->bridges[t - e->tracks];
+}
+
 static inline int32_t le_track_want_out(le_engine* e, le_track* t) {
   const int32_t len = atomic_load_explicit(&t->lanes[0].a_len,
                                            memory_order_relaxed);
