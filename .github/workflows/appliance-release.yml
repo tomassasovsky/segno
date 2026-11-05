@@ -162,7 +162,18 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.1.1
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
+      # The core download comes from the package server on every run, and its
+      # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
+      - name: Cache the Arduino core and libraries
+        id: arduino-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-rp2040-6.0.0-neopixel-1.15.5-bus-2.8.4
       - name: Install the RP2040/RP2350 core and LED drivers
+        if: steps.arduino-cache.outputs.cache-hit != 'true'
         run: |
           set -eu
           arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
