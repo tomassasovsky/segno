@@ -33,7 +33,6 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/foot_mixer_view.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
-import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/mixer_column.dart';
 import 'package:segno/looper/view/stage_db_scale.dart';
@@ -1306,8 +1305,8 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  group('the footer opens Loop settings (#1653)', () {
-    Future<LoopSettingsPageId> opened(WidgetTester tester, String key) async {
+  group('the footer opens the Loop settings tabs (#1653, #1659)', () {
+    Future<LoopSettingsTab> opened(WidgetTester tester, String key) async {
       seed(const LooperState(tracks: [Track()]));
       final pushed = <Route<dynamic>>[];
       await pump(tester, navigatorObservers: [_PushObserver(pushed.add)]);
@@ -1331,17 +1330,17 @@ void main() {
       return page.initial;
     }
 
-    testWidgets('the BPM opens Tempo', (tester) async {
+    testWidgets('the BPM opens the Tempo & click tab', (tester) async {
       expect(
         await opened(tester, 'stage_footer_bpm'),
-        LoopSettingsPageId.tempo,
+        LoopSettingsTab.tempo,
       );
     });
 
-    testWidgets('the mode pill opens Loop mode', (tester) async {
+    testWidgets('the mode pill opens the Loop mode tab', (tester) async {
       expect(
         await opened(tester, 'stage_footer_mode'),
-        LoopSettingsPageId.mode,
+        LoopSettingsTab.mode,
       );
     });
 

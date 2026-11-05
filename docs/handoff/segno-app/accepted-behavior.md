@@ -144,8 +144,9 @@ Sources:
    retains `1 − decay/100` of existing audio before adding the new layer at full
    recorded level. Decay 100 replaces earlier audio, including with silence.
    Ordinary playback does not decay. Preserve layer recovery, not only a mixed file.
-6. Audio & tempo independently owns Follow tempo and pitch preservation. Following
-   On changes playback with song tempo and offers Unchanged pitch or Follows speed.
+6. Follow tempo and pitch preservation are their own per-track settings (Loop
+   settings, Playback tab, #1659). Following On changes playback with song
+   tempo and offers Unchanged pitch or Follows speed.
    Following Off preserves original-time playback and shows unchanged pitch; the
    stored pitch-follow preference returns when reenabled. Manual Speed and
    Transpose are independent contributions, not resets of these preferences.

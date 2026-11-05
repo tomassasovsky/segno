@@ -15,7 +15,6 @@ import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
-import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/notices/notices.dart';
@@ -600,7 +599,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     LooperState state = _rig,
-    LoopSettingsPageId initial = LoopSettingsPageId.hub,
+    LoopSettingsTab initial = LoopSettingsTab.mode,
     ClickMode? savedClickMode,
     int? savedCountIn,
     bool loadRecordStart = true,
@@ -740,6 +739,12 @@ void main() {
   AppLocalizations l10nOf(WidgetTester tester) =>
       AppLocalizations.of(tester.element(find.byType(LoopSettingsPage)));
 
+  // The decay readout showing [text]: Follow tempo's Off is on the same tab.
+  Finder decayReadout(String text) => find.descendant(
+    of: find.byKey(const Key('loop_decay_readout')),
+    matching: find.text(text),
+  );
+
   testWidgets('refused length tap explains failure and keeps saved choice', (
     tester,
   ) async {
@@ -752,7 +757,7 @@ void main() {
       failures.add(EngineResult.invalid);
       return EngineResult.invalid;
     });
-    await pump(tester, initial: LoopSettingsPageId.length);
+    await pump(tester, initial: LoopSettingsTab.recording);
     clearInteractions(repository);
 
     await tester.tap(find.byKey(const Key('loop_length_bars')));
@@ -792,7 +797,7 @@ void main() {
       failures.add(EngineResult.capacity);
       return EngineResult.capacity;
     });
-    await pump(tester, initial: LoopSettingsPageId.length);
+    await pump(tester, initial: LoopSettingsTab.recording);
     clearInteractions(repository);
 
     await tester.tap(find.byKey(const Key('loop_length_bars')));
@@ -817,7 +822,7 @@ void main() {
         addTearDown(pageIdentity.dispose);
         await pump(
           tester,
-          initial: LoopSettingsPageId.length,
+          initial: LoopSettingsTab.recording,
           pageIdentity: pageIdentity,
           state: const LooperState(
             tracks: [Track(lengthPresetOverride: 6)],
@@ -869,7 +874,7 @@ void main() {
     when(() => repository.lengthSettingsFailures).thenAnswer(
       (_) => failures.stream,
     );
-    await pump(tester, initial: LoopSettingsPageId.mode);
+    await pump(tester);
     failures.add(EngineResult.invalid);
     await tester.pumpAndSettle();
 
@@ -989,28 +994,29 @@ void main() {
     double titleLeft(WidgetTester tester) =>
         tester.getTopLeft(find.byKey(const Key('loop_settings_title'))).dx;
 
-    testWidgets('the hub rows span the content box under the title', (
+    testWidgets('the tabs end at the content box in the title row', (
       tester,
     ) async {
       await pump(tester);
-      final row = tester.getRect(find.byKey(const Key('loop_hub_mode')));
-      expect(titleLeft(tester), 32);
-      expect(row.left, 32);
-      expect(row.right, 1920 - 32);
-      // The chevron keeps the pen's 33 from the row's right end.
-      final chevron = tester.getRect(
-        find.descendant(
-          of: find.byKey(const Key('loop_hub_mode')),
-          matching: find.byType(Icon),
-        ),
+      final title = tester.getRect(
+        find.byKey(const Key('loop_settings_title')),
       );
-      expect(row.right - chevron.right, 33);
+      final first = tester.getRect(
+        find.byKey(const Key('loop_settings_tab_mode')),
+      );
+      final last = tester.getRect(
+        find.byKey(const Key('loop_settings_tab_playback')),
+      );
+      expect(title.left, 32);
+      expect(last.right, 1920 - 32);
+      expect(first.center.dy, title.center.dy);
+      expect(title.right, lessThan(first.left));
     });
 
     testWidgets('the mode cards fill the content box under the title', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.mode);
+      await pump(tester);
       final first = tester.getRect(
         find.byKey(Key('loop_mode_${LooperMode.values.first.name}')),
       );
@@ -1022,7 +1028,7 @@ void main() {
     });
 
     testWidgets('Recording starts under the title', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.recording);
+      await pump(tester, initial: LoopSettingsTab.recording);
       final l10n = AppLocalizations.of(
         tester.element(find.byKey(const Key('loop_settings_title'))),
       );
@@ -1033,7 +1039,7 @@ void main() {
     });
 
     testWidgets('Tempo starts under the title', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.tempo);
+      await pump(tester, initial: LoopSettingsTab.tempo);
       expect(
         tester.getTopLeft(find.byKey(const Key('loop_tempo_readout'))).dx,
         titleLeft(tester),
@@ -1041,77 +1047,369 @@ void main() {
     });
   });
 
-  group('hub', () {
-    testWidgets('arrow focus and Enter open the next submenu', (tester) async {
+  group('tabs (#1659)', () {
+    LoopChoiceButton tab(WidgetTester tester, String name) =>
+        tester.widget<LoopChoiceButton>(
+          find.byKey(Key('loop_settings_tab_$name')),
+        );
+
+    testWidgets('four tabs replace the hub and switch the page', (
+      tester,
+    ) async {
       await pump(tester);
-      final first = find.byKey(const Key('loop_hub_mode'));
-      final ink = find.descendant(of: first, matching: find.byType(InkWell));
-      Focus.of(tester.element(ink.first)).requestFocus();
+      final l10n = l10nOf(tester);
+      expect(find.byKey(const Key('loop_settings_page_mode')), findsOneWidget);
+      expect(find.text(l10n.loopSettingsTitle), findsOneWidget);
+      expect(find.text(l10n.loopSettingsCrumb), findsOneWidget);
+      for (final (name, label) in [
+        ('mode', l10n.loopTabMode),
+        ('tempo', l10n.loopTabTempo),
+        ('recording', l10n.loopTabRecording),
+        ('playback', l10n.loopTabPlayback),
+      ]) {
+        expect(tab(tester, name).label, label);
+        await tester.tap(find.byKey(Key('loop_settings_tab_$name')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(Key('loop_settings_page_$name')),
+          findsOneWidget,
+        );
+        for (final other in LoopSettingsTab.values) {
+          expect(tab(tester, other.name).selected, other.name == name);
+        }
+      }
+    });
+
+    testWidgets('Enter on a focused tab switches and keeps the focus there', (
+      tester,
+    ) async {
+      await pump(tester);
+      final recording = find.byKey(const Key('loop_settings_tab_recording'));
+      Focus.of(
+        tester.element(
+          find.descendant(of: recording, matching: find.byType(InkWell)).first,
+        ),
+      ).requestFocus();
       await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      final focused = FocusManager.instance.primaryFocus;
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('loop_settings_page_recording')),
         findsOneWidget,
       );
+      expect(FocusManager.instance.primaryFocus, same(focused));
+      expect(focused!.hasPrimaryFocus, isTrue);
     });
 
-    testWidgets('lists the six submenus with their current choices', (
-      tester,
-    ) async {
-      await pump(tester);
-      final l10n = l10nOf(tester);
-      expect(find.byKey(const Key('loop_settings_page_hub')), findsOneWidget);
-      expect(find.text(l10n.loopSettingsTitle), findsOneWidget);
-      for (final row in [
-        'mode',
-        'recording',
-        'tempo',
-        'length',
-        'playback',
-        'audioTempo',
-      ]) {
-        expect(find.byKey(Key('loop_hub_$row')), findsOneWidget);
-      }
-      expect(find.text(l10n.looperModeSongLabel), findsOneWidget);
-      expect(find.text(l10n.loopSummaryRecordPlayOverdub), findsOneWidget);
-      expect(find.text(l10n.loopSummaryTempo('120', '4/4')), findsOneWidget);
+    testWidgets('opens on the tab it is asked for', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.playback);
       expect(
-        find.text(
-          l10n.loopSummaryPair(l10n.loopLengthAuto, l10n.loopTimingImmediately),
-        ),
+        find.byKey(const Key('loop_settings_page_playback')),
         findsOneWidget,
       );
-      expect(
-        find.text(
-          l10n.loopSummaryPair(l10n.loopPlaybackLoop, l10n.loopSummaryNoDecay),
+      expect(tab(tester, 'playback').selected, isTrue);
+    });
+
+    testWidgets('Back leaves the route from any tab', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.recording);
+      segnoNavigatorKey.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const LoopSettingsPage(
+            initial: LoopSettingsTab.tempo,
+          ),
         ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_settings_page_tempo')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_settings_page_tempo')), findsNothing);
+      expect(
+        find.byKey(const Key('loop_settings_page_recording')),
         findsOneWidget,
       );
     });
 
-    testWidgets('a row opens its submenu and Back returns to the hub', (
-      tester,
-    ) async {
+    testWidgets('the next visit opens on the tab last open', (tester) async {
       await pump(tester);
-      await tester.tap(find.byKey(const Key('loop_hub_recording')));
+      unawaited(openLoopSettings());
+      await tester.pumpAndSettle();
+      // The pumped page is under the pushed one; only the top one is hit.
+      expect(find.byKey(const Key('loop_settings_page_mode')), findsWidgets);
+      await tester.tap(
+        find.byKey(const Key('loop_settings_tab_recording')).last,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_settings_back')).last);
+      await tester.pumpAndSettle();
+
+      unawaited(openLoopSettings());
       await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('loop_settings_page_recording')),
         findsOneWidget,
       );
-      expect(find.text(l10nOf(tester).loopSettingsCrumbNested), findsOneWidget);
-      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.tap(find.byKey(const Key('loop_settings_back')).last);
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('loop_settings_page_hub')), findsOneWidget);
+
+      // A tab asked for by name wins, and becomes the last one open.
+      unawaited(openLoopSettings(initial: LoopSettingsTab.tempo));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_settings_page_tempo')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('loop_settings_back')).last);
+      await tester.pumpAndSettle();
+      unawaited(openLoopSettings());
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_settings_page_tempo')), findsOneWidget);
+    });
+
+    testWidgets('a tab switch drops an unfinished edit without committing it', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsTab.playback);
+      final slider = find.byKey(const Key('loop_decay_slider'));
+      Focus.of(
+        tester.element(
+          find
+              .descendant(of: slider, matching: find.byType(GestureDetector))
+              .first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(find.text(l10nOf(tester).loopDecayPercent(1)), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('loop_settings_tab_recording')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_settings_tab_playback')));
+      await tester.pumpAndSettle();
+      expect(playback.state.overdubDecay, 0);
+      expect(decayReadout(l10nOf(tester).loopDecayOff), findsOneWidget);
+    });
+  });
+
+  group('one track selection for the visit (#1659)', () {
+    bool scoped(WidgetTester tester, String key) => tester
+        .widget<LoopChoiceButton>(find.byKey(Key('loop_scope_$key')))
+        .selected;
+
+    testWidgets('opens at Defaults on both scoped tabs', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.recording);
+      expect(scoped(tester, 'defaults'), isTrue);
+      await tester.tap(find.byKey(const Key('loop_settings_tab_playback')));
+      await tester.pumpAndSettle();
+      expect(scoped(tester, 'defaults'), isTrue);
+    });
+
+    testWidgets('a track picked on Recording is the one Playback shows, '
+        'and back', (tester) async {
+      await pump(
+        tester,
+        initial: LoopSettingsTab.recording,
+        state: const LooperState(
+          tracks: [
+            Track(),
+            Track(channel: 1, oneShotOverride: true),
+            Track(channel: 2, lengthPresetOverride: 6),
+          ],
+          transport: TransportState(looperMode: LooperMode.song),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('loop_settings_tab_playback')));
+      await tester.pumpAndSettle();
+      expect(scoped(tester, 'track_1'), isTrue);
+      expect(scoped(tester, 'defaults'), isFalse);
+      // The second track's own Once, not the default Loop.
+      expect(
+        tester
+            .widget<LoopChoiceButton>(
+              find.byKey(const Key('loop_playback_once')),
+            )
+            .selected,
+        isTrue,
+      );
+
+      await tester.tap(find.byKey(const Key('loop_scope_track_2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_settings_tab_mode')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_settings_tab_recording')));
+      await tester.pumpAndSettle();
+      expect(scoped(tester, 'track_2'), isTrue);
+      expect(
+        find.byKey(const Key('loop_length_use_default')),
+        findsOneWidget,
+      );
+      expect(find.text('6'), findsOneWidget);
+    });
+
+    testWidgets('a new visit starts at Defaults again', (tester) async {
+      await pump(tester);
+      unawaited(openLoopSettings(initial: LoopSettingsTab.playback));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      expect(scoped(tester, 'track_1'), isTrue);
+      await tester.tap(find.byKey(const Key('loop_settings_back')).last);
+      await tester.pumpAndSettle();
+
+      unawaited(openLoopSettings());
+      await tester.pumpAndSettle();
+      expect(scoped(tester, 'defaults'), isTrue);
+    });
+  });
+
+  group('locks (#1659)', () {
+    const recording = LooperState(
+      tracks: [
+        Track(state: TrackState.recording, lengthFrames: 10),
+        Track(channel: 1),
+      ],
+      transport: TransportState(looperMode: LooperMode.song),
+    );
+
+    List<LoopChoiceButton> choices(WidgetTester tester, List<String> keys) => [
+      for (final key in keys)
+        tester.widget<LoopChoiceButton>(find.byKey(Key(key))),
+    ];
+
+    testWidgets('a take recording locks everything on Recording', (
+      tester,
+    ) async {
+      await pump(tester, state: recording, initial: LoopSettingsTab.recording);
+      expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
+      for (final button in choices(tester, [
+        'loop_recording_pedal',
+        'loop_recording_sound',
+        'loop_recording_play',
+        'loop_recording_overdub',
+        'loop_length_auto',
+        'loop_length_bars',
+        'loop_default_multiple_0',
+        'loop_default_multiple_2',
+        for (final timing in RecordTiming.values) 'loop_timing_${timing.name}',
+      ])) {
+        expect(button.enabled, isFalse, reason: button.label);
+      }
+      // The selector still browses the tracks.
+      expect(
+        tester
+            .widget<LoopChoiceButton>(
+              find.byKey(const Key('loop_scope_track_1')),
+            )
+            .enabled,
+        isTrue,
+      );
+      clearInteractions(repository);
+      await tester.tap(find.byKey(const Key('loop_recording_overdub')));
+      await tester.tap(find.byKey(const Key('loop_default_multiple_2')));
+      await tester.pumpAndSettle();
+      expect(options.state.recDub, isFalse);
+      expect(options.state.defaultMultiple, 0);
+    });
+
+    testWidgets('the locked Recording layout ends inside the frame', (
+      tester,
+    ) async {
+      await pump(tester, state: recording, initial: LoopSettingsTab.recording);
+      final note = tester.getRect(find.byKey(const Key('loop_timing_note')));
+      expect(note.bottom, lessThanOrEqualTo(1080));
+      expect(
+        tester.getRect(find.byKey(const Key('loop_lock_banner'))).bottom,
+        lessThan(
+          tester.getRect(find.text(l10nOf(tester).loopRecordingStart)).top,
+        ),
+      );
+    });
+
+    testWidgets('nothing on Playback locks while a take records', (
+      tester,
+    ) async {
+      await pump(tester, state: recording, initial: LoopSettingsTab.playback);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_lock_banner')), findsNothing);
+      for (final button in choices(tester, [
+        'loop_playback_loop',
+        'loop_playback_once',
+        'loop_audio_follow_off',
+        'loop_audio_follow_on',
+      ])) {
+        expect(button.enabled, isTrue, reason: button.label);
+      }
+      await tester.tap(find.byKey(const Key('loop_playback_once')));
+      await tester.pumpAndSettle();
+      expect(playback.state.defaultOneShot, isTrue);
+    });
+  });
+
+  group('merged pages (#1659)', () {
+    testWidgets('Recording: start and second press side by side over the '
+        'selector, then length, later tracks and timing', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.recording);
+      Rect at(Finder finder) => tester.getRect(finder);
+      final pedal = at(find.byKey(const Key('loop_recording_pedal')));
+      final play = at(find.byKey(const Key('loop_recording_play')));
+      final selector = at(find.byKey(const Key('loop_scope_defaults')));
+      final length = at(find.byKey(const Key('loop_length_auto')));
+      final later = at(find.byKey(const Key('loop_default_multiple_0')));
+      final timing = at(find.byKey(const Key('loop_timing_immediately')));
+      expect(pedal.top, play.top);
+      expect(pedal.left, 32);
+      expect(
+        at(find.byKey(const Key('loop_recording_overdub'))).right,
+        moreOrLessEquals(1920 - 32),
+      );
+      expect(
+        at(find.byKey(const Key('loop_recording_note'))).bottom,
+        lessThan(selector.top),
+      );
+      expect(selector.bottom, lessThan(length.top));
+      expect(
+        at(find.byKey(const Key('loop_length_note'))).bottom,
+        lessThan(later.top),
+      );
+      expect(later.bottom, lessThan(timing.top));
+      expect(
+        at(find.byKey(const Key('loop_timing_sixteenth'))).right,
+        moreOrLessEquals(1920 - 32),
+      );
+    });
+
+    testWidgets('Playback: Follow tempo and Pitch side by side under decay', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsTab.playback);
+      await tester.pumpAndSettle();
+      Rect at(Finder finder) => tester.getRect(finder);
+      final follow = at(find.byKey(const Key('loop_audio_follow_off')));
+      final pitch = at(find.byKey(const Key('loop_audio_pitch_unchanged')));
+      expect(follow.top, pitch.top);
+      expect(follow.left, 32);
+      expect(
+        at(find.byKey(const Key('loop_audio_pitch_follows'))).right,
+        moreOrLessEquals(1920 - 32),
+      );
+      expect(
+        at(find.byKey(const Key('loop_decay_note'))).bottom,
+        lessThan(follow.top),
+      );
+      expect(
+        at(find.byKey(const Key('loop_audio_pitch_note'))).bottom,
+        lessThanOrEqualTo(1080),
+      );
     });
   });
 
   group('Loop mode', () {
     testWidgets('an open mode dispatches the change; the current one is '
         'marked', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.mode);
+      await pump(tester);
       final l10n = l10nOf(tester);
       expect(find.byKey(const Key('loop_mode_song')), findsOneWidget);
       expect(find.text(l10n.loopModeMultiDesc), findsOneWidget);
@@ -1131,7 +1429,7 @@ void main() {
       when(
         () => repository.looperModeGate(LooperMode.band),
       ).thenReturn(LooperModeGate.capturing);
-      await pump(tester, initial: LoopSettingsPageId.mode);
+      await pump(tester);
       final l10n = l10nOf(tester);
       expect(find.text(l10n.loopModeReasonEqualLengths), findsOneWidget);
       expect(find.text(l10n.modeChangeBlockedCapturing), findsOneWidget);
@@ -1146,7 +1444,7 @@ void main() {
       when(
         () => repository.looperModeGate(LooperMode.multi),
       ).thenReturn(LooperModeGate.playing);
-      await pump(tester, initial: LoopSettingsPageId.mode);
+      await pump(tester);
       final l10n = l10nOf(tester);
       await tester.tap(find.byKey(const Key('loop_mode_multi')));
       await tester.pumpAndSettle();
@@ -1170,7 +1468,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.recording,
+        initial: LoopSettingsTab.recording,
         loadRecordStart: false,
       );
       final l10n = l10nOf(tester);
@@ -1188,7 +1486,7 @@ void main() {
     testWidgets('the choices write the record options and the note follows', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.recording);
+      await pump(tester, initial: LoopSettingsTab.recording);
       final l10n = l10nOf(tester);
       expect(find.text(l10n.loopRecordingNoteCountIn(1)), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
@@ -1204,7 +1502,7 @@ void main() {
     testWidgets('a count-in names itself in the note', (tester) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.recording,
+        initial: LoopSettingsTab.recording,
         savedCountIn: 2,
       );
       await tester.pumpAndSettle();
@@ -1217,7 +1515,7 @@ void main() {
     testWidgets('recovery keeps the last Sound selection but blocks edits', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.recording);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
       await tester.pumpAndSettle();
       expect(tempo.state.confirmedRecordStart?.soundStart, isTrue);
@@ -1240,7 +1538,7 @@ void main() {
         state: const LooperState(
           tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
         ),
-        initial: LoopSettingsPageId.recording,
+        initial: LoopSettingsTab.recording,
       );
       expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_recording_sound')));
@@ -1250,10 +1548,47 @@ void main() {
   });
 
   group('Tempo & click', () {
+    testWidgets('a capture hides the Count-in Sound note with the row', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsTab.tempo);
+      await tempo.setSoundStart(enabled: true);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('loop_count_in_sound_note')),
+        findsOneWidget,
+      );
+      states.add(
+        const LooperState(
+          tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_count_in_sound_note')), findsNothing);
+    });
+
+    testWidgets('Count-in says a count-in switches a Sound start to Pedal '
+        '(#1659)', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.tempo);
+      final note = find.byKey(const Key('loop_count_in_sound_note'));
+      expect(note, findsNothing);
+      await tempo.setSoundStart(enabled: true);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(l10nOf(tester).loopTempoCountInSoundNote),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('loop_count_in_2')));
+      await tester.pumpAndSettle();
+      expect(tempo.state.confirmedRecordStart?.soundStart, isFalse);
+      expect(tempo.state.confirmedRecordStart?.countInBars, 2);
+      expect(note, findsNothing);
+    });
+
     testWidgets('click, count-in and tap reach the tempo cubit', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.tempo);
+      await pump(tester, initial: LoopSettingsTab.tempo);
       expect(find.byKey(const Key('loop_tempo_readout')), findsOneWidget);
       expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
       await tester.tap(find.byKey(const Key('loop_click_playRec')));
@@ -1276,7 +1611,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.tempo,
+        initial: LoopSettingsTab.tempo,
         state: LooperState(
           tracks: _rig.tracks,
           transport: const TransportState(
@@ -1298,7 +1633,7 @@ void main() {
       // engine's beat at the downbeat: neither means the music is moving.
       await pump(
         tester,
-        initial: LoopSettingsPageId.tempo,
+        initial: LoopSettingsTab.tempo,
         state: const LooperState(
           tracks: [
             Track(state: TrackState.stopped, lengthFrames: 96000),
@@ -1323,7 +1658,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.tempo,
+        initial: LoopSettingsTab.tempo,
         loadRecordStart: false,
       );
       expect(tempo.state.confirmedRecordStart, isNull);
@@ -1345,7 +1680,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.tempo,
+        initial: LoopSettingsTab.tempo,
         savedCountIn: 2,
       );
       expect(tempo.state.confirmedRecordStart?.countInBars, 2);
@@ -1374,9 +1709,9 @@ void main() {
           ),
         );
       }
-      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.tap(find.byKey(const Key('loop_settings_tab_mode')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('loop_hub_tempo')));
+      await tester.tap(find.byKey(const Key('loop_settings_tab_tempo')));
       await tester.pumpAndSettle();
       final reopened = tester.widget<LoopChoiceButton>(
         find.byKey(const Key('loop_count_in_2')),
@@ -1390,7 +1725,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.tempo,
+        initial: LoopSettingsTab.tempo,
         savedCountIn: 2,
       );
       states.add(
@@ -1423,7 +1758,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.tempo,
+        initial: LoopSettingsTab.tempo,
         savedClickMode: ClickMode.off,
       );
       expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
@@ -1470,7 +1805,7 @@ void main() {
       when(() => repository.setClickMode(any())).thenReturn(
         EngineResult.notReady,
       );
-      await pump(tester, initial: LoopSettingsPageId.tempo);
+      await pump(tester, initial: LoopSettingsTab.tempo);
       expect(tempo.state.clickModeSnapshot, isNull);
       expect(
         tester
@@ -1496,7 +1831,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        initial: LoopSettingsPageId.tempo,
+        initial: LoopSettingsTab.tempo,
         savedClickMode: ClickMode.recFirst,
       );
       expect(tempo.state.clickModeSnapshot?.mode, ClickMode.recFirst);
@@ -1512,9 +1847,9 @@ void main() {
       expect(first.enabled, isFalse);
       expect(find.text('Hear click is unavailable.'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.tap(find.byKey(const Key('loop_settings_tab_mode')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('loop_hub_tempo')));
+      await tester.tap(find.byKey(const Key('loop_settings_tab_tempo')));
       await tester.pumpAndSettle();
       final reopened = tester.widget<LoopChoiceButton>(
         find.byKey(const Key('loop_click_recFirst')),
@@ -1536,7 +1871,7 @@ void main() {
       }
 
       Future<void> openKeypad(WidgetTester tester) async {
-        await pump(tester, initial: LoopSettingsPageId.tempo);
+        await pump(tester, initial: LoopSettingsTab.tempo);
         await tester.tap(find.byKey(const Key('loop_tempo_entry')));
         await tester.pumpAndSettle();
         expect(sheet(), findsOneWidget);
@@ -1604,7 +1939,7 @@ void main() {
 
       testWidgets('Clear tempo returns the rig to no tempo', (tester) async {
         when(repository.clearTempo).thenReturn(EngineResult.ok);
-        await pump(tester, initial: LoopSettingsPageId.tempo);
+        await pump(tester, initial: LoopSettingsTab.tempo);
         await settings.saveTempoBpm(120);
         await tester.tap(find.byKey(const Key('loop_tempo_clear')));
         await tester.pumpAndSettle();
@@ -1640,7 +1975,7 @@ void main() {
 
       testWidgets('a locked tempo refuses Clear with a notice', (tester) async {
         when(repository.clearTempo).thenReturn(EngineResult.notReady);
-        await pump(tester, initial: LoopSettingsPageId.tempo);
+        await pump(tester, initial: LoopSettingsTab.tempo);
         await settings.saveTempoBpm(120);
         await tester.tap(find.byKey(const Key('loop_tempo_clear')));
         await tester.pumpAndSettle();
@@ -1654,7 +1989,7 @@ void main() {
     testWidgets('the signature button opens the grid and a pick returns', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.tempo);
+      await pump(tester, initial: LoopSettingsTab.tempo);
       await tester.tap(find.byKey(const Key('loop_tempo_signature')));
       await tester.pumpAndSettle();
       expect(
@@ -1688,7 +2023,7 @@ void main() {
         confirmedLength = bars;
         return EngineResult.ok;
       });
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
 
       await tester.tap(find.byKey(const Key('loop_length_bars')));
       await tester.pumpAndSettle();
@@ -1728,7 +2063,7 @@ void main() {
         confirmedLength = bars;
         return EngineResult.ok;
       });
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await options.setDefaultLengthBars(8);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_length_auto')));
@@ -1766,7 +2101,7 @@ void main() {
         confirmedLength = bars;
         return EngineResult.ok;
       });
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await options.setDefaultLengthBars(3);
       await tester.pumpAndSettle();
 
@@ -1789,7 +2124,7 @@ void main() {
       );
     });
 
-    testWidgets('late refusal keeps the count and Back discards it', (
+    testWidgets('late refusal keeps the count and a tab switch discards it', (
       tester,
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
@@ -1800,7 +2135,7 @@ void main() {
       when(() => repository.setDefaultLengthPreset(any())).thenReturn(
         EngineResult.invalid,
       );
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
 
       await tester.tap(find.byKey(const Key('loop_length_bars')));
       await tester.pump();
@@ -1812,9 +2147,9 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.byKey(const Key('loop_settings_back')));
+      await tester.tap(find.byKey(const Key('loop_settings_tab_playback')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('loop_hub_length')));
+      await tester.tap(find.byKey(const Key('loop_settings_tab_recording')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('loop_stepper_value')), findsNothing);
       expect(options.state.defaultLengthBars, 0);
@@ -1837,7 +2172,7 @@ void main() {
         confirmedLength = bars;
         return EngineResult.ok;
       });
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await tester.tap(find.byKey(const Key('loop_length_bars')));
       await tester.pumpAndSettle();
       final count = find.byKey(const Key('loop_stepper_value'));
@@ -1872,7 +2207,7 @@ void main() {
         failures.add(EngineResult.invalid);
         return EngineResult.invalid;
       });
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await tester.tap(find.byKey(const Key('loop_length_bars')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_scope_track_1')));
@@ -1907,7 +2242,7 @@ void main() {
         failures.add(EngineResult.invalid);
         return EngineResult.invalid;
       });
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await tester.tap(find.byKey(const Key('loop_length_bars')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('loop_stepper_value')), findsOneWidget);
@@ -1929,7 +2264,7 @@ void main() {
           defaultLengthPresetBars: 3,
         ),
       );
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await options.setDefaultLengthBars(3);
       await tester.pumpAndSettle();
       final count = find.byKey(const Key('loop_stepper_value'));
@@ -1985,7 +2320,7 @@ void main() {
         ],
         transport: TransportState(looperMode: LooperMode.song),
       );
-      await pump(tester, state: song, initial: LoopSettingsPageId.length);
+      await pump(tester, state: song, initial: LoopSettingsTab.recording);
       await options.setDefaultLengthBars(8);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_length_auto')));
@@ -2046,7 +2381,7 @@ void main() {
     testWidgets('bar draft cancels on Back and commits on Enter', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await options.setDefaultLengthBars(4);
       await tester.pumpAndSettle();
       final count = find.byKey(const Key('loop_stepper_value'));
@@ -2061,7 +2396,7 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_settings_back')));
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const Key('loop_settings_page_length')),
+        find.byKey(const Key('loop_settings_page_recording')),
         findsOneWidget,
       );
       expect(find.text('4'), findsOneWidget);
@@ -2077,7 +2412,7 @@ void main() {
     testWidgets('defaults write the cubits; a track writes overrides', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await tester.tap(find.byKey(const Key('loop_timing_quarter')));
       await tester.pumpAndSettle();
       expect(timing.state.defaultTiming, RecordTiming.quarter);
@@ -2103,7 +2438,7 @@ void main() {
     });
 
     testWidgets('the stepper moves a fixed default length', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       await options.setDefaultLengthBars(4);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('loop_stepper_value')), findsOneWidget);
@@ -2131,7 +2466,7 @@ void main() {
         ],
         transport: TransportState(looperMode: LooperMode.song),
       );
-      await pump(tester, state: state, initial: LoopSettingsPageId.length);
+      await pump(tester, state: state, initial: LoopSettingsTab.recording);
       final l10n = l10nOf(tester);
       await tester.tap(find.byKey(const Key('loop_scope_track_1')));
       await tester.pumpAndSettle();
@@ -2152,7 +2487,7 @@ void main() {
       const state = LooperState(
         tracks: [Track(state: TrackState.playing, lengthFrames: 96000)],
       );
-      await pump(tester, state: state, initial: LoopSettingsPageId.length);
+      await pump(tester, state: state, initial: LoopSettingsTab.recording);
       await options.setDefaultLengthBars(4);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('loop_scope_track_0')));
@@ -2170,7 +2505,7 @@ void main() {
         state: const LooperState(
           tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
         ),
-        initial: LoopSettingsPageId.length,
+        initial: LoopSettingsTab.recording,
       );
       expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_timing_quarter')));
@@ -2184,7 +2519,7 @@ void main() {
 
     testWidgets('Defaults sets how long later tracks record; a track scope '
         'does not offer it', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.length);
+      await pump(tester, initial: LoopSettingsTab.recording);
       expect(find.byKey(const Key('loop_default_multiple')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('loop_default_multiple_2')));
@@ -2212,15 +2547,19 @@ void main() {
         state: const LooperState(
           tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
         ),
-        initial: LoopSettingsPageId.length,
+        initial: LoopSettingsTab.recording,
       );
       expect(find.byKey(const Key('loop_lock_banner')), findsOneWidget);
       final row = tester.getRect(
         find.byKey(const Key('loop_default_multiple')),
       );
+      final timing = tester.getRect(
+        find.byKey(const Key('loop_timing_immediately')),
+      );
       final note = tester.getRect(find.byKey(const Key('loop_timing_note')));
-      expect(row.bottom, lessThanOrEqualTo(1080));
-      expect(row.top, greaterThan(note.bottom));
+      // Directly under Loop length, above Record timing (#1659).
+      expect(row.bottom, lessThan(timing.top));
+      expect(note.bottom, lessThanOrEqualTo(1080));
     });
   });
 
@@ -2251,7 +2590,7 @@ void main() {
             Track(channel: 1, oneShotOverride: false, overdubDecayOverride: 0),
           ],
         ),
-        initial: LoopSettingsPageId.playback,
+        initial: LoopSettingsTab.playback,
       );
       final l10n = l10nOf(tester);
       void expectCentred() {
@@ -2290,7 +2629,7 @@ void main() {
             Track(channel: 1, oneShotOverride: false, overdubDecayOverride: 0),
           ],
         ),
-        initial: LoopSettingsPageId.playback,
+        initial: LoopSettingsTab.playback,
       );
       await tester.tap(find.byKey(const Key('loop_scope_track_1')));
       await tester.pumpAndSettle();
@@ -2307,7 +2646,7 @@ void main() {
     testWidgets('decay draft cancels on Back and double tap resets', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.playback);
+      await pump(tester, initial: LoopSettingsTab.playback);
       final slider = find.byKey(const Key('loop_decay_slider'));
       final gesture = find.descendant(
         of: slider,
@@ -2343,7 +2682,7 @@ void main() {
     testWidgets('changing track discards an unfinished decay edit', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.playback);
+      await pump(tester, initial: LoopSettingsTab.playback);
       final slider = find.byKey(const Key('loop_decay_slider'));
       final gesture = find.descendant(
         of: slider,
@@ -2368,7 +2707,7 @@ void main() {
     testWidgets('capture transition discards an unfinished decay edit', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.playback);
+      await pump(tester, initial: LoopSettingsTab.playback);
       final slider = find.byKey(const Key('loop_decay_slider'));
       final gesture = find.descendant(
         of: slider,
@@ -2384,14 +2723,14 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(playback.state.overdubDecay, 0);
-      expect(find.text(l10nOf(tester).loopDecayOff), findsOneWidget);
+      expect(decayReadout(l10nOf(tester).loopDecayOff), findsOneWidget);
     });
 
     testWidgets('defaults write the playback options; a track writes '
         'overrides', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.playback);
+      await pump(tester, initial: LoopSettingsTab.playback);
       final l10n = l10nOf(tester);
-      expect(find.text(l10n.loopDecayOff), findsOneWidget);
+      expect(decayReadout(l10n.loopDecayOff), findsOneWidget);
       await tester.tap(find.byKey(const Key('loop_playback_once')));
       await tester.pumpAndSettle();
       expect(playback.state.defaultOneShot, isTrue);
@@ -2407,7 +2746,7 @@ void main() {
     });
 
     testWidgets('the decay slider writes a percent', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.playback);
+      await pump(tester, initial: LoopSettingsTab.playback);
       final slider = find.byKey(const Key('loop_decay_slider'));
       final box = tester.getRect(slider);
       await tester.tapAt(Offset(box.left + box.width / 2, box.center.dy));
@@ -2421,33 +2760,46 @@ void main() {
   });
 
   group('Audio & tempo (#1179)', () {
-    testWidgets('each label is centred on its choice row (#1590 LOOP-1)', (
-      tester,
-    ) async {
-      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+    testWidgets('each heading sits over its row, centred on its Use '
+        'default (#1659)', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.playback);
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
-      expect(
-        labelCentre(tester, l10n.loopAudioFollowLabel),
-        moreOrLessEquals(
-          tester.getCenter(find.byKey(const Key('loop_audio_follow_on'))).dy,
+      await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('loop_audio_follow_on')));
+      await tester.tap(find.byKey(const Key('loop_audio_pitch_follows')));
+      await tester.pumpAndSettle();
+      for (final (title, useDefault, row) in [
+        (
+          l10n.loopAudioFollowLabel,
+          'loop_audio_follow_use_default',
+          'loop_audio_follow_on',
         ),
-      );
-      expect(
-        labelCentre(tester, l10n.loopAudioPitchLabel),
-        moreOrLessEquals(
-          tester
-              .getCenter(find.byKey(const Key('loop_audio_pitch_unchanged')))
-              .dy,
+        (
+          l10n.loopAudioPitchLabel,
+          'loop_audio_pitch_use_default',
+          'loop_audio_pitch_follows',
         ),
-      );
+      ]) {
+        final button = tester.getRect(find.byKey(Key(useDefault)));
+        expect(labelCentre(tester, title), moreOrLessEquals(button.center.dy));
+        expect(
+          button.bottom,
+          lessThan(tester.getRect(find.byKey(Key(row))).top),
+        );
+        expect(
+          button.right,
+          moreOrLessEquals(tester.getRect(find.byKey(Key(row))).right),
+        );
+      }
     });
 
     testWidgets('nothing stored restores Follow on and Pitch unchanged '
         '(07/04): no tags on Defaults, the On and Unchanged notes', (
       tester,
     ) async {
-      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await pump(tester, initial: LoopSettingsTab.playback);
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
       expect(playback.state.followTempo?.defaultValue, isTrue);
@@ -2468,7 +2820,7 @@ void main() {
 
     testWidgets('Defaults Off writes the default and turns Pitch into the '
         'recorded-pitch readout; On brings the choice back', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await pump(tester, initial: LoopSettingsTab.playback);
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
       await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
@@ -2491,12 +2843,13 @@ void main() {
 
     testWidgets('a track inherits (Default tags), takes a Custom Pitch '
         '(07/05) and Use default removes only its override', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await pump(tester, initial: LoopSettingsTab.playback);
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
       await tester.tap(find.byKey(const Key('loop_scope_track_2')));
       await tester.pumpAndSettle();
-      expect(find.text(l10n.loopOriginDefault), findsNWidgets(2));
+      // Loop/Once, decay, Follow tempo and Pitch.
+      expect(find.text(l10n.loopOriginDefault), findsNWidgets(4));
       await tester.tap(find.byKey(const Key('loop_audio_pitch_follows')));
       await tester.pumpAndSettle();
       expect(confirmedTrackPitch, {2: PitchMode.followsSpeed});
@@ -2517,7 +2870,7 @@ void main() {
 
     testWidgets('a track that keeps its recorded speed (07/06): Custom Off, '
         'the readout, and Use default back to following', (tester) async {
-      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await pump(tester, initial: LoopSettingsTab.playback);
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
       await tester.tap(find.byKey(const Key('loop_scope_track_1')));
@@ -2544,42 +2897,13 @@ void main() {
     testWidgets('an owed Follow vector disables the choice: a tap requests '
         'nothing', (tester) async {
       followRecovery = true;
-      await pump(tester, initial: LoopSettingsPageId.audioTempo);
+      await pump(tester, initial: LoopSettingsTab.playback);
       await tester.pumpAndSettle();
       expect(playback.state.followTempo, isNull);
       final before = followRequests;
       await tester.tap(find.byKey(const Key('loop_audio_follow_off')));
       await tester.pumpAndSettle();
       expect(followRequests, before);
-    });
-
-    testWidgets('the hub reads the defaults: Follow tempo · Same pitch, '
-        'then Recorded speed, then Pitch follows speed', (tester) async {
-      await pump(tester);
-      await tester.pumpAndSettle();
-      final l10n = l10nOf(tester);
-      String summary(String follow, String pitch) =>
-          l10n.loopSummaryPair(follow, pitch);
-      expect(
-        find.text(summary(l10n.loopSummaryFollowOn, l10n.loopSummaryPitchSame)),
-        findsOneWidget,
-      );
-      await playback.setPitchMode(mode: PitchMode.followsSpeed);
-      await tester.pumpAndSettle();
-      expect(
-        find.text(
-          summary(l10n.loopSummaryFollowOn, l10n.loopSummaryPitchFollows),
-        ),
-        findsOneWidget,
-      );
-      await playback.setFollowTempo(follow: false);
-      await tester.pumpAndSettle();
-      expect(
-        find.text(
-          summary(l10n.loopSummaryFollowOff, l10n.loopSummaryPitchSame),
-        ),
-        findsOneWidget,
-      );
     });
   });
 }

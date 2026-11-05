@@ -12,7 +12,6 @@ import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_page.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
-import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/settings/settings.dart';
 import 'package:segno/theme/page_transitions.dart';
@@ -178,17 +177,24 @@ Future<void> openMidiControls({VoidCallback? onStage}) => _pushOnce(
       (_) => MidiControlsPage(onStage: onStage),
 );
 
-/// Pushes the Loop settings route (the accepted hub and its submenus) onto
-/// the root navigator, opened at [initial]; guarded against stacking
-/// duplicates like [openSegnoSettings].
+/// The Loop settings tab the player last had open, where the next visit
+/// opens when no tab is asked for. Kept for the run, not saved.
+LoopSettingsTab _loopSettingsTab = LoopSettingsTab.mode;
+
+/// Pushes the Loop settings route (four tabs, #1659) onto the root
+/// navigator, opened on [initial] or else the tab last open; guarded against
+/// stacking duplicates like [openSegnoSettings].
 Future<void> openLoopSettings({
-  LoopSettingsPageId initial = LoopSettingsPageId.hub,
+  LoopSettingsTab? initial,
   VoidCallback? onStage,
-}) => _pushOnce(
-  segnoLoopSettingsRouteName,
-  () =>
-      (_) => LoopSettingsPage(initial: initial, onStage: onStage),
-);
+}) => _pushOnce(segnoLoopSettingsRouteName, () {
+  final tab = _loopSettingsTab = initial ?? _loopSettingsTab;
+  return (_) => LoopSettingsPage(
+    initial: tab,
+    onTab: (tab) => _loopSettingsTab = tab,
+    onStage: onStage,
+  );
+});
 
 /// Pushes the Device settings page: the audio interface, its rate, buffer and
 /// latency, and what recording keeps in memory.
@@ -263,11 +269,13 @@ Future<void> showUpdateSettings() async {
 ///
 /// The guard is module-level and only released when a route pops, so a
 /// widget test that leaves a route open wedges it for every later test in the
-/// file: the open call then returns early and the page never appears.
+/// file: the open call then returns early and the page never appears. The
+/// remembered Loop settings tab goes back to Loop mode for the same reason.
 @visibleForTesting
 void resetSegnoNavigatorForTest() {
   _openRoutes.clear();
   _fxCatalogue = null;
+  _loopSettingsTab = LoopSettingsTab.mode;
 }
 
 /// Whether the Updates page is on screen (skip the update message).
