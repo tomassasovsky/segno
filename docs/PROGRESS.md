@@ -78,6 +78,18 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Clear tempo on the 7in readout (#1654)
+
+- The owner changed decision 6 after build 229: the readout's Loop panel
+  has Clear tempo beside Tap, offered whenever a tempo is set, as on the
+  main screen's Tempo page.
+- It sends `tempo.clear`; `ReadoutCommands` calls
+  `TempoSettings.clearTempo()` (#1653), so the engine's tempo lock decides.
+  A refusal is the screen link's one reply (`ScreenLinkOp.refused`, a
+  `ReadoutRefusal`), and the panel shows the main screen's notice, title and
+  reason, in the tempo note's place for 6 s. While it shows, it replaces the
+  recording band.
+
 ## November 2026 Tempo, length and start on the 7in readout (#1654)
 
 - The readout's footer is a strip that names the tempo, signature, length
