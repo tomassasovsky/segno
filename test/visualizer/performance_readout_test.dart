@@ -167,6 +167,15 @@ void main() {
       );
     });
 
+    test('a garbled clock or dim reads as none', () {
+      final decoded = PerformanceReadout.fromMap(const {
+        'clockOwnsTempo': 'yes',
+        'dimmed': 1,
+      });
+      expect(decoded.clockOwnsTempo, isFalse);
+      expect(decoded.dimmed, isFalse);
+    });
+
     test('garbled loop facts read as the defaults, not ready', () {
       final loop = PerformanceReadout.fromMap(const {
         'loop': {

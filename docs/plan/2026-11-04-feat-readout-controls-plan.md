@@ -53,6 +53,13 @@ There is no reply. The readout sees the accepted value in its next
 `PerformanceReadout` push. The Loop settings pages are not touched (#1659 is
 restructuring them); only the settings classes are called.
 
+The handler checks the tempo lock itself (`LooperState.tempoFollow` and an
+external clock) before it calls the tempo owner: the engine accepts a locked
+tempo or signature command and drops it later on the audio thread, while
+`TempoSettings` would already have published and saved it. It also drops
+every command while the console is idle-dimmed, so the waking touch presses
+nothing even when the readout's barrier is a push behind.
+
 A nudge is a delta so that a held button never works from the readout's stale
 copy of the tempo. The handler adds it to the live tempo. The live tempo lags
 a `setTempo` by one engine snapshot, so while it still reads what it read

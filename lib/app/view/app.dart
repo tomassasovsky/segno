@@ -987,7 +987,13 @@ class _AppViewState extends State<_AppView> {
       tempo: context.read<TempoSettings>(),
       record: context.read<RecordSettings>(),
       timing: context.read<RecordTimingSettings>(),
+      dimmed: () => mounted && context.read<IdleDimCubit>().state.dimmed,
     ).handle;
+    _display = WaveformDisplayController(
+      repository: context.read<LooperRepository>(),
+      window: widget.waveformWindow,
+      context: _displayContext(),
+    );
     _loopSettingsSubs = [
       context.read<RecordSettings>().stream.listen(
         (_) => _updateDisplayContext(),
@@ -996,11 +1002,6 @@ class _AppViewState extends State<_AppView> {
         (_) => _updateDisplayContext(),
       ),
     ];
-    _display = WaveformDisplayController(
-      repository: context.read<LooperRepository>(),
-      window: widget.waveformWindow,
-      context: _displayContext(),
-    );
     _displayFailures = _display.failures.listen((failure) {
       if (!mounted) return;
       switch (failure) {

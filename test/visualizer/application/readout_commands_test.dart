@@ -32,9 +32,14 @@ void main() {
   /// What the tempo owner accepted last.
   late double accepted;
 
-  /// Whether the engine takes a tempo now (D6).
+  /// Whether the owner takes a tempo when it is set.
   late bool tempoFree;
   late List<double> sets;
+
+  /// What the engine says a tempo change does now, and who sets the tempo.
+  late TempoFollowState follow;
+  late TempoSource source;
+  late bool dimmed;
 
   setUpAll(() => registerFallbackValue(RecordTiming.immediately));
 
@@ -47,6 +52,15 @@ void main() {
     accepted = 84;
     tempoFree = true;
     sets = [];
+    follow = TempoFollowState.free;
+    source = TempoSource.manual;
+    dimmed = false;
+    when(() => repository.lastState).thenAnswer(
+      (_) => LooperState(
+        tempoFollow: follow,
+        transport: TransportState(tempoBpm: live, tempoSource: source),
+      ),
+    );
     when(() => repository.sessionTransport).thenAnswer(
       (_) => TransportState(
         tempoBpm: live,
@@ -74,6 +88,7 @@ void main() {
       tempo: tempo,
       record: record,
       timing: timing,
+      dimmed: () => dimmed,
     );
   });
 
@@ -120,7 +135,7 @@ void main() {
       expect(sets, [119]);
     });
 
-    test('a refused nudge leaves nothing for the next to build on', () {
+    test('a set the owner did not take leaves nothing to build on', () {
       tempoFree = false;
       commands
         ..handle(const TempoNudge(1))
@@ -139,6 +154,65 @@ void main() {
         expect(sets, [85, 85]);
       });
     });
+  });
+
+  group('the tempo lock', () {
+    void sendTempo() {
+      commands
+        ..handle(const TempoNudge(1))
+        ..handle(const TempoSet(100))
+        ..handle(const TempoTap());
+    }
+
+    for (final locked in [
+      TempoFollowState.noGrid,
+      TempoFollowState.noFollower,
+      TempoFollowState.busy,
+    ]) {
+      test('${locked.name}: no tempo change reaches the owner', () {
+        follow = locked;
+        sendTempo();
+        expect(sets, isEmpty);
+        verifyNever(() => tempo.tapTempo());
+      });
+    }
+
+    test('an external clock: no tempo change reaches the owner', () {
+      source = TempoSource.external;
+      sendTempo();
+      expect(sets, isEmpty);
+      verifyNever(() => tempo.tapTempo());
+    });
+
+    test('a change that retimes the loops goes through', () {
+      follow = TempoFollowState.retimes;
+      sendTempo();
+      expect(sets, [85, 100]);
+      verify(() => tempo.tapTempo()).called(1);
+    });
+
+    test('the signature changes only while nothing is recorded', () {
+      follow = TempoFollowState.retimes;
+      commands.handle(const SignatureSet(6, 8));
+      verifyNever(() => tempo.setTimeSignature(any(), any()));
+      follow = TempoFollowState.free;
+      commands.handle(const SignatureSet(6, 8));
+      verify(() => tempo.setTimeSignature(6, 8)).called(1);
+    });
+  });
+
+  test('a dimmed console takes no command: the waking touch presses '
+      'nothing', () {
+    dimmed = true;
+    commands
+      ..handle(const TempoNudge(1))
+      ..handle(const TempoTap())
+      ..handle(const LengthSet(8))
+      ..handle(const TimingSet(RecordTiming.bar));
+    expect(sets, isEmpty);
+    verifyNever(() => tempo.tapTempo());
+    verifyNever(() => record.setDefaultLengthBars(any()));
+    verifyNever(() => timing.setTiming(any()));
   });
 
   group('an exact tempo', () {
