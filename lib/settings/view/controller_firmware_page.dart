@@ -60,7 +60,8 @@ class ControllerFirmwarePage extends StatelessWidget {
                       label: l10n.aboutConnectionRow,
                       value: controllerConnection(l10n, pedal.status),
                     ),
-                    ...controllerFactRows(l10n, facts),
+                    ControllerFirmwareRow(facts: facts),
+                    ControllerProtocolRow(facts: facts),
                     SettingsFactRow(
                       key: const Key('controller_power'),
                       label: l10n.controllerPowerRow,

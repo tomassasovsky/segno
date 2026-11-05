@@ -3,24 +3,7 @@
 # and on any entry that no longer matches one, so this list only shrinks:
 # when you turn one of these into a widget class, delete its line.
 # Never add a line. The last refactor deletes this file.
-lib/audio_setup/view/device_page.dart#_Workspace._banner
-lib/common/console_surface.dart#ConsoleRow.build.quiet
-lib/common/console_surface.dart#_ConsoleCaptionState._button
-lib/common/console_surface.dart#_ConsoleCaptionState._glyph
-lib/common/on_screen_keyboard/on_screen_keyboard_host.dart#_OnScreenKeyboardHostState._focusedEditable
 lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._actions
 lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._editor
 lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._tracksEditor
 lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._customEditor
-lib/library/view/library_audio_dialogs.dart#LibraryAudioDialog.build.button
-lib/library/view/library_audio_tab.dart#LibraryAudioActions.build.button
-lib/library/view/library_page.dart#_LibraryViewState._buildAudio
-lib/performance/view/performance_completion_sheet.dart#_PerformanceCompletionSheetState._face
-lib/settings/view/about_settings_page.dart#controllerFactRows
-lib/system/view/about_system_tab.dart#_AboutSystemTabState._card
-lib/system/view/console_licences_sheet.dart#_ConsoleLicencesSheetState._row
-lib/system/view/storage_system_tab.dart#_StorageSystemTabState._usageRow
-lib/theme/page_transitions.dart#buildFadeScaleTransition
-lib/visualizer/waveform_window.dart#WaveformWindowApp._app
-packages/routing_graph/lib/src/widgets/graph_canvas.dart#_ZoomControls.build.button
-packages/routing_graph/lib/src/widgets/graph_geometry.dart#positionedNode

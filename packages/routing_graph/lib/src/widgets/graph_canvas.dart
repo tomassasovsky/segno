@@ -170,22 +170,6 @@ class _ZoomControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.routingGraph;
-    Widget button(Key key, IconData icon, String tooltip, VoidCallback onTap) {
-      return Tooltip(
-        message: tooltip,
-        child: FocusableTapTarget(
-          key: key,
-          onTap: onTap,
-          semanticLabel: tooltip,
-          child: SizedBox(
-            width: 32,
-            height: 32,
-            child: Icon(icon, size: 18, color: theme.textPrimary),
-          ),
-        ),
-      );
-    }
-
     return DecoratedBox(
       decoration: BoxDecoration(
         color: theme.card.withValues(alpha: 0.9),
@@ -195,26 +179,61 @@ class _ZoomControls extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          button(
-            const Key('graphCanvas_zoomOut'),
-            Icons.remove,
-            'Zoom out',
-            onZoomOut,
+          _ZoomButton(
+            buttonKey: const Key('graphCanvas_zoomOut'),
+            icon: Icons.remove,
+            tooltip: 'Zoom out',
+            onTap: onZoomOut,
           ),
-          button(
-            const Key('graphCanvas_fit'),
-            Icons.fit_screen_outlined,
-            'Fit to view',
-            onFit,
+          _ZoomButton(
+            buttonKey: const Key('graphCanvas_fit'),
+            icon: Icons.fit_screen_outlined,
+            tooltip: 'Fit to view',
+            onTap: onFit,
           ),
-          button(
-            const Key('graphCanvas_zoomIn'),
-            Icons.add,
-            'Zoom in',
-            onZoomIn,
+          _ZoomButton(
+            buttonKey: const Key('graphCanvas_zoomIn'),
+            icon: Icons.add,
+            tooltip: 'Zoom in',
+            onTap: onZoomIn,
           ),
         ],
       ),
     );
   }
+}
+
+/// One of [_ZoomControls]' buttons: a labelled, focusable icon.
+class _ZoomButton extends StatelessWidget {
+  const _ZoomButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  /// The tap target's own key, which tests find it by.
+  final Key buttonKey;
+
+  final IconData icon;
+
+  /// The tooltip, which is also the announced label.
+  final String tooltip;
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: FocusableTapTarget(
+      key: buttonKey,
+      onTap: onTap,
+      semanticLabel: tooltip,
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: Icon(icon, size: 18, color: context.routingGraph.textPrimary),
+      ),
+    ),
+  );
 }

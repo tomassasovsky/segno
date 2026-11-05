@@ -403,8 +403,7 @@ class ConsoleRow extends StatelessWidget {
     // PIECE BY PIECE, and never to [leading] or [trailing] — a row with no tap
     // of its own is exactly the row whose only control is one of those two,
     // and silencing it would take the control away rather than the echo.
-    Widget quiet(Widget child) =>
-        onTap == null ? ExcludeSemantics(child: child) : child;
+    final silent = onTap == null;
 
     final row = AnimatedContainer(
       duration: consoleMotion(context),
@@ -437,8 +436,9 @@ class ConsoleRow extends StatelessWidget {
           // cut at half the row beside a short value (#1590 DEV-1).
           Expanded(
             flex: 2,
-            child: quiet(
-              Column(
+            child: _Quiet(
+              silent: silent,
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -479,8 +479,9 @@ class ConsoleRow extends StatelessWidget {
           ] else ...[
             if (state case final word?) ...[
               const SizedBox(width: kConsoleRowGap),
-              quiet(
-                AppText(
+              _Quiet(
+                silent: silent,
+                child: AppText(
                   word,
                   textAlign: TextAlign.right,
                   style: TextStyle(
@@ -497,8 +498,9 @@ class ConsoleRow extends StatelessWidget {
               const SizedBox(width: kConsoleRowGap),
               // A third of what the row has left, right-aligned.
               Expanded(
-                child: quiet(
-                  AppText(
+                child: _Quiet(
+                  silent: silent,
+                  child: AppText(
                     name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -515,11 +517,14 @@ class ConsoleRow extends StatelessWidget {
             ],
             if (mark case final glyph?) ...[
               const SizedBox(width: kConsoleRowGap),
-              quiet(glyph),
+              _Quiet(silent: silent, child: glyph),
             ],
             if (showDisclosure) ...[
               const SizedBox(width: kConsoleRowGap),
-              quiet(ConsoleDisclosure(expanded: expanded)),
+              _Quiet(
+                silent: silent,
+                child: ConsoleDisclosure(expanded: expanded),
+              ),
             ],
           ],
         ],
@@ -532,7 +537,7 @@ class ConsoleRow extends StatelessWidget {
       // of its own, so dropping them on this path would strand them in the
       // case the parameter exists for.
       //
-      // The row goes in as it is: `quiet` has already silenced the text that
+      // The row goes in as it is: [_Quiet] has already silenced the text that
       // would echo [label], and what is left is the controls this path exists
       // to carry.
       return Semantics(
@@ -548,6 +553,20 @@ class ConsoleRow extends StatelessWidget {
       child: InkWell(onTap: onTap, child: row),
     );
   }
+}
+
+/// [child], kept out of semantics when [silent]: a [ConsoleRow] with no tap
+/// of its own silences its text piece by piece, because its label already
+/// says it.
+class _Quiet extends StatelessWidget {
+  const _Quiet({required this.silent, required this.child});
+
+  final bool silent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      silent ? ExcludeSemantics(child: child) : child;
 }
 
 /// The caption over a group of rows — `TRANSPORT SWITCHES`, `MIDI FOOT
@@ -785,7 +804,13 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
           context,
         ).modalBarrierDismissLabel,
       ),
-      child: _button(surface, caption),
+      child: _CaptionButton(
+        anchorKey: _anchorKey,
+        open: _open,
+        label: widget.explainLabel,
+        onTap: _toggle,
+        caption: caption,
+      ),
     );
     // Shrink-wrapped to the words. The panel that hosts these captions lays
     // its children out with `CrossAxisAlignment.stretch`, so a bare return
@@ -824,67 +849,6 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
       ],
     );
   }
-
-  /// The caption and its glyph, which together ARE the button.
-  ///
-  /// The whole caption and not just the glyph, and a real 48px of it: an
-  /// `OverflowBox` around an 18px child grows what is PAINTED and not what is
-  /// hit — every ancestor's `hitTest` rejects a pointer outside its own size
-  /// before the larger child is consulted — so the earlier version drew a
-  /// 48px affordance you had to hit within 18px of centre. On a floor unit
-  /// aimed at with a foot-height finger that is the difference between a
-  /// control and a decoration.
-  ///
-  /// The label opens it too. A `?` that only answers when struck dead centre
-  /// teaches people it is broken; the words beside it are the same question.
-  Widget _button(SurfaceTheme surface, Widget caption) => Semantics(
-    key: _anchorKey,
-    button: true,
-    expanded: _open,
-    label: widget.explainLabel,
-    child: InkWell(
-      key: const Key('console_caption_explain'),
-      onTap: _toggle,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minHeight: ConsoleCaption._targetHeight,
-        ),
-        // Inside the InkWell, not around it: outside, the exclusion swallows
-        // the tap action too, and the node a reader lands on is a button it
-        // cannot press. Inside, the gesture survives and only the words go —
-        // the label already says them, and the bare "?" was being read out.
-        child: ExcludeSemantics(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [caption, const SizedBox(width: 8), _glyph(surface)],
-          ),
-        ),
-      ),
-    ),
-  );
-
-  /// The `?` itself. Drawn, never hit — [_button] is the target.
-  Widget _glyph(SurfaceTheme surface) => Container(
-    width: ConsoleCaption._glyphSize,
-    height: ConsoleCaption._glyphSize,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.all(color: _open ? surface.accent : surface.borderStrong),
-      color: _open ? surface.accent : null,
-    ),
-    child: Center(
-      child: Text(
-        '?',
-        style: TextStyle(
-          color: _open ? surface.onAccent : surface.textSecondary,
-          fontSize: 11,
-          height: 1,
-          fontWeight: FontWeight.w600,
-          leadingDistribution: TextLeadingDistribution.even,
-        ),
-      ),
-    ),
-  );
 
   /// Catches the caption up with wherever each frame put it, until it closes.
   ///
@@ -975,6 +939,108 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
         ),
       );
     }
+  }
+}
+
+/// The caption and its glyph, which together ARE the button.
+///
+/// The whole caption and not just the glyph, and a real 48px of it: an
+/// `OverflowBox` around an 18px child grows what is PAINTED and not what is
+/// hit — every ancestor's `hitTest` rejects a pointer outside its own size
+/// before the larger child is consulted — so the earlier version drew a
+/// 48px affordance you had to hit within 18px of centre. On a floor unit
+/// aimed at with a foot-height finger that is the difference between a
+/// control and a decoration.
+///
+/// The label opens it too. A `?` that only answers when struck dead centre
+/// teaches people it is broken; the words beside it are the same question.
+class _CaptionButton extends StatelessWidget {
+  const _CaptionButton({
+    required this.anchorKey,
+    required this.open,
+    required this.label,
+    required this.onTap,
+    required this.caption,
+  });
+
+  /// Where the explanation anchors: the caption measures this node.
+  final GlobalKey anchorKey;
+
+  /// Whether the explanation is showing.
+  final bool open;
+
+  /// The button's announced label.
+  final String? label;
+
+  /// Opens or closes the explanation.
+  final VoidCallback onTap;
+
+  /// The caption's words.
+  final Widget caption;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    key: anchorKey,
+    button: true,
+    expanded: open,
+    label: label,
+    child: InkWell(
+      key: const Key('console_caption_explain'),
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: ConsoleCaption._targetHeight,
+        ),
+        // Inside the InkWell, not around it: outside, the exclusion swallows
+        // the tap action too, and the node a reader lands on is a button it
+        // cannot press. Inside, the gesture survives and only the words go —
+        // the label already says them, and the bare "?" was being read out.
+        child: ExcludeSemantics(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              caption,
+              const SizedBox(width: 8),
+              _ExplainGlyph(open: open),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// The `?` itself. Drawn, never hit — [_CaptionButton] is the target.
+class _ExplainGlyph extends StatelessWidget {
+  const _ExplainGlyph({required this.open});
+
+  /// Whether the explanation is showing, which fills the glyph.
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Container(
+      width: ConsoleCaption._glyphSize,
+      height: ConsoleCaption._glyphSize,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: open ? surface.accent : surface.borderStrong),
+        color: open ? surface.accent : null,
+      ),
+      child: Center(
+        child: Text(
+          '?',
+          style: TextStyle(
+            color: open ? surface.onAccent : surface.textSecondary,
+            fontSize: 11,
+            height: 1,
+            fontWeight: FontWeight.w600,
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+        ),
+      ),
+    );
   }
 }
 
