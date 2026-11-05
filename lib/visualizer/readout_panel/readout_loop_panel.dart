@@ -939,9 +939,11 @@ class _SignatureGrid extends StatelessWidget {
     ];
     final rows = (cells.length / _columns).ceil();
     final gap = context.spacing.xs;
+    // One fixed gap across and down (#1672), the grid at the top of the
+    // column rather than spread to the tempo card's height.
     return Column(
       key: const Key('readout_panel_signatures'),
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      spacing: gap,
       children: [
         for (var row = 0; row < rows; row++)
           SizedBox(
