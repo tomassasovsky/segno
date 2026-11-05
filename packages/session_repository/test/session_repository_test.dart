@@ -1448,7 +1448,7 @@ void main() {
     ).read(dir)).session.tracks.single.lanes;
 
     expect(lanes[0].recordedInput, 3);
-    expect(lanes[0].inputChannel, isNot(3));
+    expect(lanes[0].inputChannel, 0);
     expect(lanes[1].recordedInput, 1);
   });
 

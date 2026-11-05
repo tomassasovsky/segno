@@ -15,6 +15,7 @@ EngineSnapshot _rig(
   TrackState state = TrackState.empty,
   bool pending = false,
   int outputBusCount = 0,
+  int lanes = 1,
 }) => EngineSnapshot(
   isRunning: true,
   devicePresent: true,
@@ -41,16 +42,17 @@ EngineSnapshot _rig(
         undoDepth: 0,
         rms: 0,
         peak: 0,
-        lanes: const [
-          LaneSnapshot(
-            inputChannel: 0,
-            outputMask: 3,
-            volume: 1,
-            muted: false,
-            lengthFrames: 0,
-            rms: 0,
-            peak: 0,
-          ),
+        lanes: [
+          for (var lane = 0; lane < lanes; lane++)
+            LaneSnapshot(
+              inputChannel: lane,
+              outputMask: 3,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              rms: 0,
+              peak: 0,
+            ),
         ],
       ),
     for (var i = count; i < 8; i++) const TrackSnapshot.empty(),
@@ -580,6 +582,20 @@ void main() {
       expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
       repo.setLaneInput(channel: 0, lane: 0, inputChannel: 0);
       expect(repo.state.tracks[0].lanes.single.recordedInput, 1);
+    });
+
+    test("a lane dropped by a lane-count change forgets its take's input", () {
+      engine.nextSnapshot = _rig(2, lanes: 2);
+      final repo = start()
+        ..setLaneCount(channel: 0, count: 2)
+        ..setLaneInput(channel: 0, lane: 1, inputChannel: 1)
+        ..record();
+      expect(repo.state.tracks[0].lanes[1].recordedInput, 1);
+      repo
+        ..setLaneCount(channel: 0, count: 1)
+        ..setLaneCount(channel: 0, count: 2);
+      expect(repo.state.tracks[0].lanes[0].recordedInput, 0);
+      expect(repo.state.tracks[0].lanes[1].recordedInput, -1);
     });
 
     test('a pair member records hard on its side at the balance gain', () {

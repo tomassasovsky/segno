@@ -945,6 +945,27 @@ void main() {
         ]);
       });
 
+      testWidgets('two parts on one input say which part they are', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 1, lengthFrames: 48000, recordedInput: 0),
+              Lane(),
+            ],
+            [1, 0],
+          ),
+        );
+        final l10n = l10nOf(tester);
+        expect(await parts(tester), [
+          l10n.fxPartNamedOrdinal('Acoustic guitar', 1),
+          l10n.fxPartNamedOrdinal('Acoustic guitar', 2),
+        ]);
+      });
+
       testWidgets('a single-input track lists that input only', (
         tester,
       ) async {

@@ -866,6 +866,9 @@ class LooperRepository {
     _laneBalance
       ..clear()
       ..addAll(value.balances);
+    // A take's source lives and dies with its image: a lane whose image a
+    // lane-count change dropped no longer names a take.
+    _laneSource.removeWhere((key, _) => !value.images.containsKey(key));
     _monitorVolume
       ..clear()
       ..addAll(value.monitorLevels);
@@ -4776,9 +4779,7 @@ class LooperRepository {
                     l.pan > 1 ||
                     !l.balance.isFinite ||
                     l.balance < 0 ||
-                    l.balance > 1 ||
-                    l.recordedInput < -1 ||
-                    l.recordedInput >= kMaxChannels,
+                    l.balance > 1,
               ),
         ) ||
         rig.monitors.any(
@@ -5119,8 +5120,10 @@ class LooperRepository {
     // Restore per-lane routing / mix through the cached setters so the caches
     // stay truthful (and a restart replays them). Lane count first — so an
     // added lane is activated — then per-lane input / output / volume / mute.
-    // The takes' sources are the session's, never the previous one's.
-    _laneSource.clear();
+    // The takes' sources, taken in once the session's images are (below).
+    // Labels only: one out of range is dropped rather than refusing the
+    // session.
+    final sources = <(int, int), int>{};
     for (final track in rig.tracks) {
       // Activate up to the highest imported lane index — not the lane *count*
       // —
@@ -5136,8 +5139,8 @@ class LooperRepository {
         // below lands on top of it.
         restoredMix.balances[(track.channel, lane.lane)] = lane.balance;
         restoredMix.images[(track.channel, lane.lane)] = lane.pan;
-        if (lane.recordedInput >= 0) {
-          _laneSource[(track.channel, lane.lane)] = lane.recordedInput;
+        if (lane.recordedInput >= 0 && lane.recordedInput < kMaxChannels) {
+          sources[(track.channel, lane.lane)] = lane.recordedInput;
         }
         restoredMix.levels[(track.channel, lane.lane)] = lane.volume;
         _requireSessionSetting(
@@ -5314,6 +5317,9 @@ class LooperRepository {
     // the pairs' balance; before the tracks' lanes are seeded by a later
     // record, which reads it.
     _requireSessionSetting(_requestMix(restoredMix, replay: true));
+    _laneSource
+      ..clear()
+      ..addAll(sources);
     _requireSessionSetting(
       await settleMixSettings(
         pollInterval: clearPollInterval,
