@@ -184,7 +184,18 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.layout == OnScreenKeyboardLayout.numeric) return _numericPad();
+    final height = widget.keyHeight;
+    final labelSize = widget.labelSize;
+    if (widget.layout == OnScreenKeyboardLayout.numeric) {
+      return _NumericPad(
+        doneLabel: widget.doneLabel ?? 'done',
+        height: height,
+        labelSize: labelSize,
+        onKey: _tap,
+        onBackspace: widget.onBackspace,
+        onDone: widget.onDone,
+      );
+    }
     // With the digit row drawn above the letters, the symbols layer no longer
     // has to spend its first row on digits, and gains the punctuation row the
     // mockups draw instead.
@@ -200,13 +211,27 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
       mainAxisSize: MainAxisSize.min,
       spacing: OnScreenKeyboard.keyGap,
       children: [
-        if (widget.showNumberRow) _keyRow(_symRow1.split('')),
-        for (final row in upper) _keyRow(row.split('')),
+        if (widget.showNumberRow)
+          _KeyRow(
+            keys: _symRow1.split(''),
+            uppercase: _uppercase,
+            height: height,
+            labelSize: labelSize,
+            onTap: _tap,
+          ),
+        for (final row in upper)
+          _KeyRow(
+            keys: row.split(''),
+            uppercase: _uppercase,
+            height: height,
+            labelSize: labelSize,
+            onTap: _tap,
+          ),
         Row(
           spacing: OnScreenKeyboard.keyGap,
           children: [
             if (!_symbols)
-              _special(
+              _SpecialKey(
                 // Each state reads at a glance: an outline arrow off, a filled
                 // arrow on a blue tint armed, and — emphatically apart from
                 // armed — the caps-lock glyph (arrow over a bar) on a SOLID
@@ -218,6 +243,8 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
                 },
                 selected: _shift == _ShiftState.oneShot,
                 locked: _shift == _ShiftState.locked,
+                height: height,
+                labelSize: labelSize,
                 onPressed: _onShiftTap,
                 semanticLabel: switch (_shift) {
                   _ShiftState.off => 'Shift',
@@ -225,9 +252,20 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
                   _ShiftState.locked => 'Caps lock',
                 },
               ),
-            ...third.split('').map((k) => Expanded(child: _key(k))),
-            _special(
+            for (final k in third.split(''))
+              Expanded(
+                child: _CharKey(
+                  value: k,
+                  display: _uppercase ? k.toUpperCase() : k,
+                  height: height,
+                  labelSize: labelSize,
+                  onTap: _tap,
+                ),
+              ),
+            _SpecialKey(
               icon: Icons.backspace_outlined,
+              height: height,
+              labelSize: labelSize,
               onPressed: widget.onBackspace,
               semanticLabel: 'Delete',
             ),
@@ -236,8 +274,10 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
         Row(
           spacing: OnScreenKeyboard.keyGap,
           children: [
-            _special(
+            _SpecialKey(
               label: _symbols ? 'abc' : '?123',
+              height: height,
+              labelSize: labelSize,
               onPressed: () => setState(() {
                 _symbols = !_symbols;
                 // A one-shot shift is spent by the layer change; a caps-lock
@@ -246,9 +286,20 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
                 if (_shift == _ShiftState.oneShot) _shift = _ShiftState.off;
               }),
             ),
-            Expanded(flex: 4, child: _key(' ', label: 'space')),
-            _special(
+            Expanded(
+              flex: 4,
+              child: _CharKey(
+                value: ' ',
+                display: 'space',
+                height: height,
+                labelSize: labelSize,
+                onTap: _tap,
+              ),
+            ),
+            _SpecialKey(
               label: widget.doneLabel ?? 'done',
+              height: height,
+              labelSize: labelSize,
               onPressed: widget.onDone,
               primary: true,
             ),
@@ -257,86 +308,182 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
       ],
     );
   }
+}
 
-  Widget _numericPad() {
-    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      spacing: OnScreenKeyboard.keyGap,
-      children: [
-        for (var row = 0; row < 4; row++)
-          Row(
-            spacing: OnScreenKeyboard.keyGap,
-            children: [
-              for (var col = 0; col < 3; col++)
-                if (row * 3 + col < keys.length)
-                  Expanded(child: _key(keys[row * 3 + col]))
-                else
-                  Expanded(
-                    child: _special(
-                      icon: Icons.backspace_outlined,
-                      onPressed: widget.onBackspace,
-                      semanticLabel: 'Delete',
-                    ),
-                  ),
-            ],
-          ),
+/// The numeric pad: three columns of digits, the point and delete, with
+/// the action key under them.
+class _NumericPad extends StatelessWidget {
+  const _NumericPad({
+    required this.doneLabel,
+    required this.height,
+    required this.labelSize,
+    required this.onKey,
+    required this.onBackspace,
+    required this.onDone,
+  });
+
+  static const _keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
+
+  final String doneLabel;
+  final double height;
+  final double labelSize;
+  final ValueChanged<String> onKey;
+  final VoidCallback onBackspace;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    spacing: OnScreenKeyboard.keyGap,
+    children: [
+      for (var row = 0; row < 4; row++)
         Row(
+          spacing: OnScreenKeyboard.keyGap,
           children: [
-            Expanded(
-              child: _special(
-                label: widget.doneLabel ?? 'done',
-                onPressed: widget.onDone,
-                primary: true,
-              ),
-            ),
+            for (var col = 0; col < 3; col++)
+              if (row * 3 + col < _keys.length)
+                Expanded(
+                  child: _CharKey(
+                    value: _keys[row * 3 + col],
+                    display: _keys[row * 3 + col],
+                    height: height,
+                    labelSize: labelSize,
+                    onTap: onKey,
+                  ),
+                )
+              else
+                Expanded(
+                  child: _SpecialKey(
+                    icon: Icons.backspace_outlined,
+                    height: height,
+                    labelSize: labelSize,
+                    onPressed: onBackspace,
+                    semanticLabel: 'Delete',
+                  ),
+                ),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _keyRow(List<String> keys) => Row(
-    spacing: OnScreenKeyboard.keyGap,
-    children: [for (final k in keys) Expanded(child: _key(k))],
+      Row(
+        children: [
+          Expanded(
+            child: _SpecialKey(
+              label: doneLabel,
+              height: height,
+              labelSize: labelSize,
+              onPressed: onDone,
+              primary: true,
+            ),
+          ),
+        ],
+      ),
+    ],
   );
+}
 
-  Widget _key(String value, {String? label}) {
-    final display = label ?? (_uppercase ? value.toUpperCase() : value);
-    return _KeyCap(
-      label: display,
-      height: widget.keyHeight,
-      labelSize: widget.labelSize,
-      onPressed: () => _tap(value),
-    );
-  }
+/// A row of character keys sharing the width.
+class _KeyRow extends StatelessWidget {
+  const _KeyRow({
+    required this.keys,
+    required this.uppercase,
+    required this.height,
+    required this.labelSize,
+    required this.onTap,
+  });
 
-  Widget _special({
-    required VoidCallback onPressed,
-    String? label,
-    IconData? icon,
-    bool primary = false,
-    bool selected = false,
-    bool locked = false,
-    String? semanticLabel,
-  }) {
-    final cap = _KeyCap(
+  final List<String> keys;
+  final bool uppercase;
+  final double height;
+  final double labelSize;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    spacing: OnScreenKeyboard.keyGap,
+    children: [
+      for (final k in keys)
+        Expanded(
+          child: _CharKey(
+            value: k,
+            display: uppercase ? k.toUpperCase() : k,
+            height: height,
+            labelSize: labelSize,
+            onTap: onTap,
+          ),
+        ),
+    ],
+  );
+}
+
+/// A key that types [value], showing [display].
+class _CharKey extends StatelessWidget {
+  const _CharKey({
+    required this.value,
+    required this.display,
+    required this.height,
+    required this.labelSize,
+    required this.onTap,
+  });
+
+  final String value;
+  final String display;
+  final double height;
+  final double labelSize;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) => _KeyCap(
+    label: display,
+    height: height,
+    labelSize: labelSize,
+    onPressed: () => onTap(value),
+  );
+}
+
+/// A key that does something other than type: shift, delete, the layer
+/// switch or the action. Its width is fixed by kind unless a row stretches
+/// it.
+class _SpecialKey extends StatelessWidget {
+  const _SpecialKey({
+    required this.onPressed,
+    required this.height,
+    required this.labelSize,
+    this.label,
+    this.icon,
+    this.primary = false,
+    this.selected = false,
+    this.locked = false,
+    this.semanticLabel,
+  });
+
+  final VoidCallback onPressed;
+  final double height;
+  final double labelSize;
+  final String? label;
+  final IconData? icon;
+  final bool primary;
+  final bool selected;
+  final bool locked;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: label != null && !primary
+        ? 92
+        : primary
+        ? 108
+        : 72,
+    child: _KeyCap(
       label: label,
       icon: icon,
-      height: widget.keyHeight,
-      labelSize: widget.labelSize,
+      height: height,
+      labelSize: labelSize,
       primary: primary,
       selected: selected,
       locked: locked,
       semanticLabel: semanticLabel,
       onPressed: onPressed,
-    );
-    return label != null && !primary
-        ? SizedBox(width: 92, child: cap)
-        : primary
-        ? SizedBox(width: 108, child: cap)
-        : SizedBox(width: 72, child: cap);
-  }
+    ),
+  );
 }
 
 /// One key.
