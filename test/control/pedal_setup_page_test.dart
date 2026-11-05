@@ -13,6 +13,7 @@ import 'package:segno/app/application/owned_value_port.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/control/binding/pedal_led_labels.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/view/console_pedal_layout.dart';
 import 'package:segno/control/view/pedal_setup/pedal_setup_map.dart';
@@ -1059,16 +1060,13 @@ void main() {
   }
 
   Future<void> ledMode(WidgetTester tester, InteractionMode mode) async {
-    await tester.tap(find.byKey(const Key('pedal_led_mode')));
-    await tester.pumpAndSettle();
-    final choice = find.byKey(
-      Key('pedal_choice_mode_${ModeAction(mode).token}'),
-    );
-    await tester.ensureVisible(choice);
-    await tester.pumpAndSettle();
-    await tester.tap(choice);
+    await tester.tap(find.byKey(Key('pedal_led_mode_${mode.name}')));
     await tester.pumpAndSettle();
   }
+
+  bool modeTabSelected(WidgetTester tester, InteractionMode mode) => tester
+      .widget<LoopChoiceButton>(find.byKey(Key('pedal_led_mode_${mode.name}')))
+      .selected;
 
   /// Opens the colour editor from [field] and commits it at zero brightness.
   Future<void> paintBlack(WidgetTester tester, Key field) async {
@@ -1140,7 +1138,8 @@ void main() {
           SpacingTheme.standard.xl,
         );
         for (final key in [
-          'pedal_led_mode',
+          for (final mode in InteractionMode.values)
+            'pedal_led_mode_${mode.name}',
           'pedal_setup_context_tracks',
           'pedal_setup_context_custom',
           'pedal_setup_context_leds',
@@ -1157,11 +1156,16 @@ void main() {
       },
     );
 
-    testWidgets('the mode picker switches the shown colour map', (
-      tester,
-    ) async {
+    testWidgets('the mode tabs switch the shown colour map, and only LED '
+        'colors shows them', (tester) async {
       await pump(tester);
+      final record = find.byKey(const Key('pedal_led_mode_record'));
+      expect(record, findsNothing);
+      await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+      await tester.pumpAndSettle();
+      expect(record, findsNothing);
       await openLeds(tester);
+      expect(record, findsOneWidget);
       await ledMode(tester, InteractionMode.mute);
       expect(capOf(tester, PedalButton.mode).ledColor, ledGreen);
       expect(capOf(tester, PedalButton.track1).ledColor, ledGreen);
@@ -1194,28 +1198,43 @@ void main() {
         final l10n = AppLocalizations.of(
           tester.element(find.byType(PedalSetupPage)),
         );
-        // The picker names the mode it shows, never the Exit action.
-        expect(find.text(l10n.pedalLedMode(l10n.pedalLedModeRecord)), findsOne);
-        await tester.tap(find.byKey(const Key('pedal_led_mode')));
-        await tester.pumpAndSettle();
+        // One tab per mode, each by its own name, never the Exit action,
+        // across the content box under the title row.
+        final content = tester.getRect(
+          find.byKey(const Key('pedal_setup_page')),
+        );
+        Rect? previous;
+        for (final mode in InteractionMode.values) {
+          final tab = find.byKey(Key('pedal_led_mode_${mode.name}'));
+          expect(
+            tester.widget<LoopChoiceButton>(tab).label,
+            pedalLedModeLabel(l10n, mode),
+          );
+          final rect = tester.getRect(tab);
+          expect(rect.height, 64, reason: mode.name);
+          if (previous != null) {
+            expect(rect.top, previous.top, reason: mode.name);
+            expect(
+              rect.left - previous.right,
+              moreOrLessEquals(SpacingTheme.standard.sm),
+              reason: mode.name,
+            );
+          }
+          previous = rect;
+        }
         expect(
-          tester
-              .widget<LoopChoiceButton>(
-                find.byKey(
-                  Key(
-                    'pedal_choice_mode_'
-                    '${const ModeAction(InteractionMode.record).token}',
-                  ),
-                ),
-              )
-              .label,
-          l10n.pedalLedModeRecord,
+          tester.getRect(find.byKey(const Key('pedal_led_mode_record'))).left,
+          content.left + SpacingTheme.standard.xxl,
+        );
+        expect(
+          previous!.right,
+          moreOrLessEquals(content.right - SpacingTheme.standard.xxl),
         );
         expect(find.text(l10n.actionModeExit), findsNothing);
-        await tester.tap(find.byKey(const Key('pedal_choice_close')));
-        await tester.pumpAndSettle();
+        expect(modeTabSelected(tester, InteractionMode.record), isTrue);
         await ledMode(tester, InteractionMode.mute);
-        expect(find.text(l10n.pedalLedMode(l10n.pedalLedModeMute)), findsOne);
+        expect(modeTabSelected(tester, InteractionMode.mute), isTrue);
+        expect(modeTabSelected(tester, InteractionMode.record), isFalse);
 
         await paintBlack(tester, const Key('pedal_led_state_armed'));
         await tester.tap(find.byKey(save));
@@ -1245,10 +1264,7 @@ void main() {
     testWidgets("opens on the console's mode", (tester) async {
       await pump(tester, mode: InteractionMode.mute);
       await openLeds(tester);
-      final l10n = AppLocalizations.of(
-        tester.element(find.byType(PedalSetupPage)),
-      );
-      expect(find.text(l10n.pedalLedMode(l10n.pedalLedModeMute)), findsOne);
+      expect(modeTabSelected(tester, InteractionMode.mute), isTrue);
       expect(find.byKey(const Key('pedal_led_state_armed')), findsOneWidget);
     });
 

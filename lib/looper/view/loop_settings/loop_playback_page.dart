@@ -40,7 +40,7 @@ class LoopPlaybackPage extends StatefulWidget {
   final ValueChanged<int?> onTrack;
 
   /// The track selector, under the title row.
-  static const double selectorTop = 124;
+  static const double selectorTop = kLoopTabContentTop;
 
   /// The Loop/Once row.
   static const double playbackTop = selectorTop + 64 + 32;
