@@ -152,7 +152,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.neon,
+            theme: AppTheme.readout,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(
