@@ -1458,6 +1458,7 @@
     "ampstim",
     "revstim",
     "pitchstim",
+    "idlestim",
     "trem",
     "tremstim",
     "Tukey",

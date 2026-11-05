@@ -5943,9 +5943,13 @@ static int le_hb_latency(int sr) {
  *   Vinyl       -44.5 -58.2 -70.4 / -45.9 -59.8 -72.0 / -59.9 -72.4
  *   Distortion  -53.8 -77.2 / -55.7 -80.5 / -80.3
  *
- * The Overdrive's clipped part (G up to 680 times the input into a tanh)
- * is close to a square wave, so each doubling lowers its aliasing by only
- * 8 dB.
+ * The Overdrive's clipped part (G / c up to 1090 times the input into a
+ * tanh) is close to a square wave, so each doubling lowers its aliasing by
+ * only 8 dB. The table predates the clipped part's small-signal refit
+ * (#1663), which raised that gain up to 1.6 times at high drive: its worst
+ * setting now reads -59.9 dB at 8x and 44.1 kHz (listed as a known failure
+ * in the effects matrix; 16x cleared it in a trial, at twice the kind's
+ * cost there), -62.7 dB at 8x and 48 kHz, and -62.7 dB at 4x and 96 kHz.
  * First-order antiderivative anti-aliasing on that tanh (its antiderivative
  * log cosh) reaches -69 dB at 2x and 44.1 kHz, but its exp and log1p in
  * double on every sample cost more than 8x plain: about 280 against 233 ns
@@ -6001,18 +6005,43 @@ static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
  * - a tone filter after both: a +1.5 dB rise about 680 Hz and a roll-off
  *   from 1.6 kHz (fitted within 0.24 dB rms from 30 Hz to 18 kHz);
  * - the polarity is inverted.
- * The model, u = K x + c tanh(G x / c), then (tanh(a (u + b)) -
+ * The model, u = K x + LP(c tanh(G x_d / c)), then (tanh(a (u + b)) -
  * tanh(a b)) / a, then the tone filter, matches the fundamental within
  * 0.9 dB and the third harmonic within 3 dB at every level and drive
- * (scratch fit, not committed). The drive's clipped-part gain follows
- * G = 3.98 e^(1.812 v), within 2 % of the three fitted gains. Only Tone
- * 50 % was captured: the tone setting moves the 1.6 kHz corner two octaves
- * either way, a choice (#891). */
+ * (scratch fit, not committed).
+ *
+ * Small signal (#1663, session s18idle: white noise at -90 dBFS, 1 kHz
+ * from -70 to -40 dBFS, Drive 0, 11.3, 50.3, 90 and 100 % at Tone 50.2 %,
+ * Tone 0, 25.4, 75 and 100 % at Drive 50.3 %): below the clipped part's
+ * knee the Looper X's pedal is a band-pass, rising 6 dB an octave to a peak
+ * near 800 Hz (+12.5 dB at Drive 0, +30.7 dB at 100 %), so it lifts 50 Hz hum
+ * 15 to 19 dB less than a flat gain would. The clipped part's input x_d is
+ * the input through a 434 Hz high-pass, and its output passes a low-pass
+ * whose corner falls as the drive rises, fg = 176.6 kHz / G, a fixed
+ * gain-bandwidth (a Tube Screamer's feedback network does both: a capacitor
+ * in series with its gain leg, one across its diodes); both run at the
+ * curve's rate. The low-pass sits after the curve because the captures
+ * put it there: before it, noise at -55 dBFS came out 2 to 3 dB louder than
+ * the Looper X's at Drive 90 % and up; after it, within 1.1 dB. G, the
+ * clipped part's small-signal gain, is e^(1.542 + 1.357 v + 0.792 v^2),
+ * 4.7 at Drive 0 and 40.1 at 100 %. The clean part stays flat. With the
+ * existing curve and filters, this fits the twelve captured settings'
+ * responses from 30 Hz to 16 kHz within 1.1 dB rms (worst: 3.7 dB at
+ * 16 kHz, 1.8 dB at 31 Hz), the 1 kHz ladders within 1.7 dB and the
+ * Phase 0 levels within 0.9 dB.
+ *
+ * The tone filter is post-curve (a tone setting moves the 1 kHz ladder by
+ * the same dB at every level): the 1.63 kHz corner the 50 % fit has, then
+ * a high shelf at 1419 Hz (q 0.463) and a bell at 1271 Hz (Q 0.274) whose
+ * gains were fitted at Tone 0, 25, 75 and 100 % (within 0.8 dB of the
+ * captured change from 50 %, 40 Hz to 16 kHz) and are flat at 50 %, which
+ * leaves the Phase 0 fit as it was. Between those the gains interpolate
+ * linearly, as the Amp+Cab's settings do. */
 static const le_fx_param_desc LE_FX_OVERDRIVE_PARAMS[] = {
     {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.09f,
      0},
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
+     0},
 };
 #define LE_OD_K 0.5166f      /* the clean part */
 #define LE_OD_C 0.0367f      /* the clipped part's ceiling */
@@ -6020,15 +6049,27 @@ static const le_fx_param_desc LE_FX_OVERDRIVE_PARAMS[] = {
 #define LE_OD_B 0.0772f      /* ... and its asymmetry */
 #define LE_OD_OFF 0.21893453f /* tanh(LE_OD_A LE_OD_B): its rest point */
 #define LE_OD_P 0.9752f      /* output, with the tone filter at 1 kHz */
-#define LE_OD_G0 3.9823      /* G at 0 % drive */
-#define LE_OD_GK 1.8122      /* ln G per unit of drive */
+#define LE_OD_LNG0 1.5423    /* ln G = LNG0 + LNG1 v + LNG2 v^2 */
+#define LE_OD_LNG1 1.3574
+#define LE_OD_LNG2 0.7915
+#define LE_OD_DHP_HZ 434.24  /* the clipped part's high-pass */
+#define LE_OD_GBW_HZ 176638.0 /* its low-pass: fg = GBW / G */
 #define LE_OD_HP_HZ 17.32
 #define LE_OD_PEAK_HZ 682.2
 #define LE_OD_PEAK_DB 1.552
 #define LE_OD_PEAK_Q 0.566
-#define LE_OD_TONE_HZ 1630.2 /* the tone corner at 50 % */
+#define LE_OD_TONE_HZ 1630.2 /* the tone corner */
 #define LE_OD_LP2_HZ 11110.0
 #define LE_OD_TONE_1K 0.98544 /* |tone filter| at 1 kHz, 50 %: the fit's unit */
+#define LE_OD_SH_HZ 1418.7    /* the tone's shelf */
+#define LE_OD_SH_Q 0.4626
+#define LE_OD_BL_HZ 1271.1    /* the tone's bell */
+#define LE_OD_BL_Q 0.2742
+#define LE_OD_TONE_PTS 5      /* Tone 0, 25, 50, 75 and 100 % */
+static const float LE_OD_SH_DB[LE_OD_TONE_PTS] = {-1.535f, 0.481f, 0.0f, 1.555f,
+                                                  13.70f};
+static const float LE_OD_BL_DB[LE_OD_TONE_PTS] = {-4.647f, -2.324f, 0.0f,
+                                                  1.489f, -0.19f};
 
 /* A one-pole filter in trapezoidal form: g = tan(pi fc / sr). */
 static inline float le_onepole_lp(float* s, float g1, float x) {
@@ -6045,55 +6086,92 @@ static float le_onepole_g1(double hz, int sr) {
 
 typedef struct le_fx_overdrive {
   le_fx_glide g;    /* the clipped part's gain over its ceiling, G / c */
-  float tone_lhz;   /* the tone corner now, log2 Hz */
+  float g_tgt;      /* where g is headed */
+  float dlp_g;      /* the glide point dlp_g1 was designed for, -1 for none */
+  float tone;       /* the tone setting now, 0..1 */
   float tone_tgt;
   float hp_g1;
+  float dhp_g1, dlp_g1; /* the clipped part's input high-pass and output
+                         * low-pass, one-poles at the curve's rate */
+  float s_dhp[2], s_dlp[2];
   float pk[5];      /* the 680 Hz rise, RBJ, a0-normalized */
-  float tone[5], lp2[5]; /* the tone corner and the 11 kHz pole, one-poles */
+  float tone_lp[5], sh[5], bl[5]; /* the tone: its corner, shelf and bell */
+  float lp2[5];     /* the 11 kHz pole */
   float s_hp[2];
-  float z_pk[2][LE_RS_PH][2], z_tone[2][LE_RS_PH][2], z_lp2[2][LE_RS_PH][2];
+  float z_pk[2][LE_RS_PH][2], z_tone[2][LE_RS_PH][2], z_sh[2][LE_RS_PH][2];
+  float z_bl[2][LE_RS_PH][2], z_lp2[2][LE_RS_PH][2];
   int32_t ph, nph; /* the sections' phase this frame (le_rs_phases) */
   le_os os; /* the curve's oversampling */
   le_hb hb; /* at 96 kHz, the curve's output under 24 kHz */
 } le_fx_overdrive;
+
+/* The tone's shelf or bell gain at setting [t], dB: [tab] read at Tone 0,
+ * 25, 50, 75 and 100 %, linear between. */
+static float le_od_tone_db(const float* tab, float t) {
+  const float x = (t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t) *
+                  (float)(LE_OD_TONE_PTS - 1);
+  int i = (int)x;
+  if (i > LE_OD_TONE_PTS - 2) i = LE_OD_TONE_PTS - 2;
+  const float w = x - (float)i;
+  return tab[i] + w * (tab[i + 1] - tab[i]);
+}
+
+static void le_od_coefs(float* dst, int kind, double hz, double db, double q,
+                        int sr) {
+  double c[5];
+  le_rate_design(kind, hz, db, q, sr, c);
+  for (int i = 0; i < 5; ++i) dst[i] = (float)c[i];
+}
 
 static void fx_overdrive_update(void* ks, le_fx_dyn_head* h, const float* p,
                                 int sr, int f) {
   le_fx_overdrive* o = (le_fx_overdrive*)ks;
   const int settle = (f & LE_FX_DYN_SETTLE) != 0;
   if (!f) return;
-  const double rate = (double)(sr > 0 ? sr : 48000);
+  const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
     le_os_design(&o->os, sr, le_os_stages(LE_FX_OVERDRIVE, sr));
     le_hb_design(&o->hb, sr);
     o->nph = le_rs_phases(sr);
+    memset(o->s_dhp, 0, sizeof(o->s_dhp));
+    memset(o->s_dlp, 0, sizeof(o->s_dlp));
     memset(o->z_pk, 0, sizeof(o->z_pk));
     memset(o->z_tone, 0, sizeof(o->z_tone));
+    memset(o->z_sh, 0, sizeof(o->z_sh));
+    memset(o->z_bl, 0, sizeof(o->z_bl));
     memset(o->z_lp2, 0, sizeof(o->z_lp2));
     o->ph = 0;
+    o->dlp_g = -1.0f; /* none designed at this rate yet */
     o->hp_g1 = le_onepole_g1(LE_OD_HP_HZ, sr);
-    double c[5];
-    le_rate_design(LE_RS_LP1, LE_OD_LP2_HZ, 0.0, 0.0, (int)rate, c);
-    for (int i = 0; i < 5; ++i) o->lp2[i] = (float)c[i];
-    le_rate_design(LE_EQ_LOMID, LE_OD_PEAK_HZ, LE_OD_PEAK_DB, LE_OD_PEAK_Q,
-                   (int)rate, c);
-    for (int i = 0; i < 5; ++i) o->pk[i] = (float)c[i];
+    o->dhp_g1 = le_onepole_g1(LE_OD_DHP_HZ, rate << o->os.stages);
+    le_od_coefs(o->lp2, LE_RS_LP1, LE_OD_LP2_HZ, 0.0, 0.0, rate);
+    le_od_coefs(o->pk, LE_EQ_LOMID, LE_OD_PEAK_HZ, LE_OD_PEAK_DB, LE_OD_PEAK_Q,
+                rate);
+    le_od_coefs(o->tone_lp, LE_RS_LP1, LE_OD_TONE_HZ, 0.0, 0.0, rate);
   }
   const float d = p[0] < 0.0f ? 0.0f : p[0] > 1.0f ? 1.0f : p[0];
   const float t = p[1] < 0.0f ? 0.0f : p[1] > 1.0f ? 1.0f : p[1];
   if (f & LE_FX_DYN_CHANGED) {
-    o->tone_tgt = (float)(log2(LE_OD_TONE_HZ) + 2.0 * (2.0 * t - 1.0));
+    o->tone_tgt = t;
+    o->g_tgt = (float)(exp(LE_OD_LNG0 + d * (LE_OD_LNG1 + d * LE_OD_LNG2)) /
+                       LE_OD_C);
   }
   const float k = settle ? 1.0f : h->k;
-  int moving = le_fx_glide_step(
-      &o->g, (float)(LE_OD_G0 * exp(LE_OD_GK * d) / LE_OD_C), k);
-  if (o->tone_lhz != o->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
-    le_fx_step_toward(&o->tone_lhz, o->tone_tgt, k);
-    double c[5];
-    le_rate_design(LE_RS_LP1, exp2((double)o->tone_lhz), 0.0, 0.0, sr, c);
-    for (int i = 0; i < 5; ++i) o->tone[i] = (float)c[i];
+  int moving = le_fx_glide_step(&o->g, o->g_tgt, k);
+  if (o->dlp_g != o->g.g) {
+    /* the low-pass follows the gain the glide is headed for this step */
+    o->dlp_g = o->g.g;
+    const double gain = (double)o->g.g * LE_OD_C;
+    o->dlp_g1 = le_onepole_g1(LE_OD_GBW_HZ / gain, rate << o->os.stages);
   }
-  moving |= o->tone_lhz != o->tone_tgt;
+  if (o->tone != o->tone_tgt || (f & LE_FX_DYN_NEW_RATE)) {
+    le_fx_step_toward(&o->tone, o->tone_tgt, k);
+    le_od_coefs(o->sh, LE_EQ_HIGH, LE_OD_SH_HZ,
+                le_od_tone_db(LE_OD_SH_DB, o->tone), LE_OD_SH_Q, rate);
+    le_od_coefs(o->bl, LE_EQ_LOMID, LE_OD_BL_HZ,
+                le_od_tone_db(LE_OD_BL_DB, o->tone), LE_OD_BL_Q, rate);
+  }
+  moving |= o->tone != o->tone_tgt;
   h->moving = moving;
 }
 
@@ -6105,16 +6183,22 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
     float os[1 << LE_OS_MAX_STAGES];
     const int n = le_os_up(&o->os, ch, io[ch], os);
     for (int i = 0; i < n; ++i) {
+      /* The clipped part: the 434 Hz high-pass before the curve, the
+       * drive's low-pass after it, at the curve's rate. */
       const float x = os[i];
-      const float u = LE_OD_K * x + LE_OD_C * tanhf(g * x);
+      const float xh = x - le_onepole_lp(&o->s_dhp[ch], o->dhp_g1, x);
+      const float u = LE_OD_K * x + le_onepole_lp(&o->s_dlp[ch], o->dlp_g1,
+                                                  LE_OD_C * tanhf(g * xh));
       os[i] = (tanhf(LE_OD_A * (u + LE_OD_B)) - LE_OD_OFF) * (1.0f / LE_OD_A);
     }
     float v = le_hb_tick(&o->hb, ch, o->ph, le_os_down(&o->os, ch, os));
     /* The tone filter: the 17 Hz high-pass, the 680 Hz rise, the tone
-     * corner and the 11 kHz pole. */
+     * corner, shelf and bell, and the 11 kHz pole. */
     v = v - le_onepole_lp(&o->s_hp[ch], o->hp_g1, v);
     v = le_biquad_tick(o->pk, o->z_pk[ch][o->ph], v);
-    v = le_biquad_tick(o->tone, o->z_tone[ch][o->ph], v);
+    v = le_biquad_tick(o->tone_lp, o->z_tone[ch][o->ph], v);
+    v = le_biquad_tick(o->sh, o->z_sh[ch][o->ph], v);
+    v = le_biquad_tick(o->bl, o->z_bl[ch][o->ph], v);
     v = le_biquad_tick(o->lp2, o->z_lp2[ch][o->ph], v);
     io[ch] = -(LE_OD_P / (float)LE_OD_TONE_1K) * v; /* inverted, as captured */
   }

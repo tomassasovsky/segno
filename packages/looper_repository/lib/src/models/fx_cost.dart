@@ -79,8 +79,14 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// Measured on the console as [kFxKindCostNs] is: `low` the largest of
 /// 44.1 and 48 kHz at 32- and 64-frame periods, `high` of 88.2 and 96 kHz.
 /// The Amp+Cab's cabinet runs twice the taps at 96 kHz.
+///
+/// The overdrive's figures are its console figures (812 and 481) scaled by
+/// what its small-signal refit (#1663: two one-poles around the clipped
+/// part at the curve's rate, and the tone's shelf and bell) added on an
+/// M4 Pro, the larger of two runs: 1.11 times at 44.1 and 48 kHz and 1.15
+/// times at 96 kHz, until the console measures them again.
 const Map<TrackEffectType, ({int low, int high})> kFxOversampledCostNs = {
-  TrackEffectType.overdrive: (low: 812, high: 481),
+  TrackEffectType.overdrive: (low: 905, high: 555),
   TrackEffectType.distortion: (low: 400, high: 272),
   TrackEffectType.vinyl: (low: 381, high: 203),
   TrackEffectType.ampCab: (low: 434, high: 441),

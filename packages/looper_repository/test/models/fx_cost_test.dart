@@ -165,8 +165,9 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,288 ns a frame at 96 kHz
-    // on the console's own table (#1508), 2,665 in the plan.
+    // Ed's Rack, the plan's unit (section 7): 3,362 ns a frame at 96 kHz
+    // on the console's own table (#1508, the overdrive's scaled for #1663),
+    // 2,665 in the plan.
     final rack = [
       for (final type in [
         TrackEffectType.dualOctaver,
@@ -199,7 +200,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 3288);
+      expect(rackNs, 3362);
       expect(fxBudgetNs(96000), 7145);
     });
 

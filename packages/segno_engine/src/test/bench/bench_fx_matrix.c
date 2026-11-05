@@ -244,6 +244,13 @@ static const mx_known k_known[] = {
      * the low band: with the band off it strays further (6.2 dB). #1616;
      * the hand-over's part went with #1580. */
     {"dualoct", MX_ENVELOPE, 96000, 4.0},
+    /* The Overdrive at 44.1 kHz (Lead Crunch, Drive 98.7 %): -59.9 dB at
+     * 8x. Its clipped part's small-signal gain, fitted to the Looper X in
+     * #1663, is 1.6 times the old fit's at that drive, so its square wave's
+     * edges are steeper. 16x cleared it in a trial but doubled the kind's
+     * cost at 44.1 kHz, which shares its admission charge with 48 kHz, the
+     * console's rate; 48 and 96 kHz read -62.7 dB. */
+    {"overdrive", MX_ALIAS, 44100, -58.9},
     {NULL, 0, 0, 0.0},
 };
 

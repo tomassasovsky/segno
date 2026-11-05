@@ -950,8 +950,8 @@ enum TrackEffectType {
         defaultValue: 0.619,
       ),
     ],
-    // Fit to the Guitar Rack's OvDrive (#891): the drive's law is measured,
-    // the tone's only at 50 %. Ed's Rack's defaults.
+    // Fit to the Guitar Rack's OvDrive (#891, #1663): the drive's and the
+    // tone's laws are measured. Ed's Rack's defaults.
     TrackEffectType.overdrive => const [
       FxParamInfo(
         key: 'drive',
@@ -966,7 +966,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
-        taperUnverified: true,
       ),
     ],
     // Fit to the amp captures (#891), the Studio Rack's Dist; the Lo-Fi
