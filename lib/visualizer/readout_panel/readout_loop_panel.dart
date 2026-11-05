@@ -104,11 +104,17 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
     final readout = widget.readout;
     final surface = context.surface;
     final recording = readout.loop.captureLocked;
+    final spacing = context.spacing;
     final panel = ColoredBox(
       key: const Key('readout_panel'),
       color: surface.background,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+        padding: EdgeInsets.fromLTRB(
+          spacing.lg,
+          spacing.sm,
+          spacing.lg,
+          spacing.sm,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -118,10 +124,10 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
               onDone: widget.onDone,
             ),
             if (recording) ...[
-              const SizedBox(height: 6),
+              SizedBox(height: spacing.sm),
               const _RecordingBand(),
             ],
-            const SizedBox(height: 8),
+            SizedBox(height: spacing.sm),
             Expanded(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -250,6 +256,7 @@ class _PanelHeader extends StatelessWidget {
       LooperMeterState.empty => surface.textMuted,
     };
     final bars = track?.bars ?? 0;
+    final spacing = context.spacing;
     return SizedBox(
       height: kReadoutMinTarget,
       child: Row(
@@ -271,10 +278,10 @@ class _PanelHeader extends StatelessWidget {
                 fontWeight: FontWeight.w400,
               ),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: spacing.sm),
             if (track.primary) ...[
               const PrimaryCrown(size: 18),
-              const SizedBox(width: 10),
+              SizedBox(width: spacing.sm),
             ],
             Expanded(
               child: AppText(
@@ -287,13 +294,13 @@ class _PanelHeader extends StatelessWidget {
                 style: title,
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: spacing.sm),
             AppText(
               word,
               style: TextStyle(color: wordColor, fontSize: 15, height: 1),
             ),
             if (bars > 0) ...[
-              const SizedBox(width: 10),
+              SizedBox(width: spacing.sm),
               AppText(
                 l10n.stageBarsFigure(bars),
                 style: TextStyle(
@@ -303,7 +310,7 @@ class _PanelHeader extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(width: 12),
+            SizedBox(width: spacing.md),
             SizedBox(
               width: 140,
               height: 28,
@@ -317,7 +324,7 @@ class _PanelHeader extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(width: 12),
+          SizedBox(width: spacing.md),
           SizedBox(
             width: 88,
             child: ReadoutButton(
@@ -345,7 +352,10 @@ class _RecordingBand extends StatelessWidget {
       liveRegion: true,
       child: Container(
         key: const Key('readout_panel_recording'),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: context.spacing.md,
+          vertical: context.spacing.sm,
+        ),
         decoration: BoxDecoration(
           color: surface.recTint,
           border: Border.all(color: surface.recLine),
@@ -402,13 +412,14 @@ class _SectionLabel extends StatelessWidget {
     );
     final subtitleText = subtitle;
     final noteText = note;
+    final gap = context.spacing.sm;
     return SizedBox(
       height: 16,
       child: Row(
         children: [
           AppText(title.toUpperCase(), style: style),
           if (subtitleText != null) ...[
-            const SizedBox(width: 6),
+            SizedBox(width: gap),
             AppText(
               '· $subtitleText',
               style: style.copyWith(
@@ -418,11 +429,11 @@ class _SectionLabel extends StatelessWidget {
             ),
           ],
           if (locked) ...[
-            const SizedBox(width: 6),
+            SizedBox(width: gap),
             Icon(LucideIcons.lock, size: 12, color: surface.textMuted),
           ],
           if (noteText != null) ...[
-            const SizedBox(width: 6),
+            SizedBox(width: gap),
             Flexible(
               child: AppText(
                 noteText,
@@ -438,7 +449,7 @@ class _SectionLabel extends StatelessWidget {
           ],
           // The beat lights give way at a long signature on a narrow card.
           if (trailing != null) ...[
-            const SizedBox(width: 8),
+            SizedBox(width: gap),
             Expanded(
               child: Align(
                 alignment: Alignment.centerRight,
@@ -655,7 +666,7 @@ class _BeatLights extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (var i = 0; i < beats; i++) ...[
-              if (i > 0) const SizedBox(width: 5),
+              if (i > 0) SizedBox(width: context.spacing.xs),
               DecoratedBox(
                 key: Key('readout_panel_beat_$i'),
                 decoration: BoxDecoration(
@@ -695,8 +706,6 @@ class _Choices extends StatelessWidget {
   final ValueChanged<int> onLength;
   final ValueChanged<RecordTiming> onTiming;
 
-  static const double _gap = 6;
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -708,9 +717,12 @@ class _Choices extends StatelessWidget {
     final channel = readout.selected?.channel;
     final trackLength = loop.trackLengthBars;
     final trackTiming = loop.trackTiming;
+    // One gap across and down the grid (#1672): the rows are xs apart,
+    // since the right column has only a few px to spare while a take records.
+    final gap = context.spacing.xs;
     List<Widget> spaced(List<Widget> children) => [
       for (final (i, child) in children.indexed) ...[
-        if (i > 0) const SizedBox(width: _gap),
+        if (i > 0) SizedBox(width: gap),
         child,
       ],
     ];
@@ -930,7 +942,7 @@ class _SignatureGrid extends StatelessWidget {
             child: Row(
               children: [
                 for (var col = 0; col < _columns; col++) ...[
-                  if (col > 0) const SizedBox(width: 6),
+                  if (col > 0) SizedBox(width: context.spacing.xs),
                   Expanded(
                     child: row * _columns + col < cells.length
                         ? cells[row * _columns + col]

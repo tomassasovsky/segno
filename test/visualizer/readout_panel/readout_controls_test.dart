@@ -397,6 +397,25 @@ void main() {
     });
   });
 
+  group('the panel layout', () {
+    testWidgets('the Start grid is one gap apart across and down (#1672)', (
+      tester,
+    ) async {
+      await pump(tester, readoutOf());
+      await open(tester);
+      Rect cell(RecordTiming timing) => tester.getRect(
+        find.byKey(Key('readout_panel_timing_${timing.name}')),
+      );
+      final across =
+          cell(RecordTiming.loopStart).left -
+          cell(RecordTiming.immediately).right;
+      final down =
+          cell(RecordTiming.quarter).top -
+          cell(RecordTiming.immediately).bottom;
+      expect(across, down);
+    });
+  });
+
   group('exact tempo', () {
     final keypad = find.byKey(const Key('readout_keypad'));
 
