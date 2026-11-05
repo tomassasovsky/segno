@@ -469,6 +469,62 @@ static void test_gate_fade_render_matches_live_snapshot_overdub(void) {
   le_engine_destroy(e);
 }
 
+/* A first take stopped while recording finalizes into STOPPED: live never
+ * sounds it, and neither does the stem (#1170). The defining take's
+ * finalize waits out the seam crossfade, so it lands inside a block. */
+static void test_gate_fade_render_take_stopped_while_recording(void) {
+  printf("test_gate_fade_render_take_stopped_while_recording\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, GF_SR, 1, 1, 2 * GF_LEN) == LE_OK);
+  const char* dir = render_test_dir("gate-fade-take-stop");
+  CHECK(perf_arm_dir(e, dir) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  feed_const(e, 0.25f, GF_LEN, NULL, NULL);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  feed_const(e, 0.0f, GF_LEN, NULL, NULL);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_track_snapshot s;
+  le_engine_get_track(e, 0, &s);
+  CHECK(s.state == LE_TRACK_STOPPED && s.settled_take_id > 0);
+  static float pcm[GF_LEN];
+  CHECK(le_engine_export_track(e, 0, pcm, GF_LEN) == GF_LEN);
+  CHECK(pcm[GF_LEN / 2] == 0.25f);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/take.wav", dir);
+  test_write_wav_mono(path, pcm, GF_LEN, GF_SR);
+  snprintf(path, sizeof(path), "%s/performance.json", dir);
+  char* json = malloc(1024 * 1024);
+  CHECK(json != NULL && read_file_for_test(path, json, 1024 * 1024) > 0);
+  char* end = json != NULL ? strrchr(json, '}') : NULL;
+  CHECK(end != NULL);
+  if (end != NULL) {
+    FILE* f = fopen(path, "wb");
+    CHECK(f != NULL);
+    if (f != NULL) {
+      fwrite(json, 1, (size_t)(end - json), f);
+      fprintf(f,
+              ",\"armSnapshot\":{\"followOutput\":false,\"captureMask\":1,"
+              "\"tracks\":[]},\"disarmSnapshot\":{\"tracks\":[{\"channel\":0,"
+              "\"lanes\":[{\"lane\":0,\"deferred\":false,\"takeId\":%d,"
+              "\"pcmRef\":\"take.wav\"}]}]}}",
+              s.settled_take_id);
+      CHECK(fclose(f) == 0);
+    }
+  }
+  free(json);
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+  static float stem[4 * GF_LEN];
+  const int frames = test_read_wet_stem(dir, 0, stem, 4 * GF_LEN);
+  CHECK(frames > GF_LEN);
+  int loud = 0;
+  for (int i = 0; i < frames; ++i) loud += stem[i] != 0.0f;
+  if (loud) printf("  %d loud frames\n", loud);
+  CHECK(loud == 0);
+  le_engine_destroy(e);
+}
+
 /* Cut all sound stays a cut: it silences at once rather than fading, so no
  * Stop fade-out feeds the chains whose tails it clears. A Post delay on the
  * lane does not ring after it. */
@@ -533,4 +589,5 @@ static void run_gate_fade_tests(void) {
   test_gate_fade_render_matches_live_snapshot_stop_and_play();
   test_gate_fade_render_matches_live_stopped_at_arm();
   test_gate_fade_render_matches_live_snapshot_overdub();
+  test_gate_fade_render_take_stopped_while_recording();
 }

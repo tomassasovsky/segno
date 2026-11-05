@@ -302,6 +302,14 @@ static void le_perf_source_transport(le_engine* e, le_track* t, uint64_t frame,
   }
 }
 
+/* A take finalizing into STOPPED (#1170): live never sounds it, so its Stop
+ * is logged with its RECORD_END rather than on the mix's next frame, where
+ * the renderer would already have started the take and faded it out. */
+static void le_perf_take_stopped(le_engine* e, le_track* t, uint64_t frame) {
+  le_perf_source_transport(e, t, frame, LE_TRACK_STOPPED, 0);
+  t->perf_source_state = LE_TRACK_STOPPED;
+}
+
 /* The sounding-pitch fact (#1179 Part 3a, LE_PLOG_TRANSPOSE): stored and
  * effective pitch, the swap's turn window and the exact index in Q32.32. */
 static void le_transpose_log(le_engine* e, le_track* t, uint64_t frame,
@@ -1377,6 +1385,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
                              .take = {.channel = fm_ch,
                                       .take_id = t->take_seq}});
     store_i32(&t->a_settled_take_id, t->take_seq);
+    if (end_state == LE_TRACK_STOPPED) le_perf_take_stopped(e, t, frame);
   }
   /* A6/D17: an N-bars length preset that finalizes WITHOUT its auto-finalize
    * target having been armed (click was off, or click was on but no tempo
@@ -2071,6 +2080,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
                (le_command){.code = LE_PLOG_RECORD_END,
                             .take = {.channel = ch, .take_id = t->take_seq}});
   store_i32(&t->a_settled_take_id, t->take_seq);
+  if (end_state == LE_TRACK_STOPPED) le_perf_take_stopped(e, t, frame);
   if (dub_continues) {
     const int fresh_session = !load_i32(&t->a_layer_in_flight);
     le_dub_session_start(e, t);
@@ -8931,7 +8941,8 @@ static inline void mix_tracks_frame(
       tr->perf_source_slot = live0;
       /* The written material sounds from here, as the renderer plays a
        * take or retired layer: an overdub on a stopped track is its Play,
-       * and a finalize into STOPPED logs its Stop above. */
+       * and a finalize into STOPPED logs its Stop with its RECORD_END
+       * (le_perf_take_stopped). */
       if (st[t] == LE_TRACK_OVERDUBBING &&
           tr->perf_source_state == LE_TRACK_STOPPED) {
         const int32_t len = load_i32(&tr->lanes[0].a_len);
