@@ -134,11 +134,10 @@ AudioEngine createNativeAudioEngine() => NativeAudioEngine();
 /// The Click stage's linear gain ceiling; unity is half of its travel.
 const double kMaxClickGain = 2;
 
-/// Where a track's history stands: whether it is empty, and its undo and
-/// redo depths. Every edit of the track's own moves one of them — a take, a
-/// layer, a peel, a length change, an undo or a redo — and a play, stop or
-/// mute moves none.
-typedef _HistoryMark = ({bool empty, int undo, int redo});
+/// Where the rig's history stood at the last undoable clear (#1707): the
+/// newest edit then filed on any track ([TrackSnapshot.historySeq]), the
+/// tracks that were empty, and the tracks a Clear all was refused on.
+typedef _ClearMark = ({int seq, Set<int> empty, Set<int> refused});
 
 /// Owns the [AudioEngine] and is the single source of looper truth.
 ///
@@ -4157,7 +4156,10 @@ class LooperRepository {
   EngineResult clear({int channel = 0}) {
     if (_transportReserved) return EngineResult.notReady;
     final result = _clearTrack(channel);
-    // A refused native clear leaves the prior restore/group ownership.
+    // A refused native clear leaves the prior restore/group ownership, and
+    // so does a clear with nothing to give back (an empty track): nothing
+    // was erased that an Undo could restore, as with an empty Clear all
+    // (#1642).
     if (result.isOk) _formClearGroup([channel], all: false);
     return result;
   }
@@ -4209,23 +4211,34 @@ class LooperRepository {
     _pendingClearGroupUndo = const {};
     if (channels.isEmpty) return EngineResult.ok;
     final cleared = <int>[];
+    final refused = <int>{};
     var result = EngineResult.ok;
     for (final channel in channels) {
       final rc = _clearTrack(channel);
       if (!rc.isOk) {
         result = rc;
+        refused.add(channel);
         continue;
       }
       cleared.add(channel);
     }
-    _formClearGroup(cleared, all: true);
+    _formClearGroup(cleared, all: true, refused: refused);
     return result;
   }
 
   /// Makes [cleared] the last undoable clear: one track's ([all] false) or a
   /// Clear all's. It replaces the clear before it, and its Undo is offered
-  /// from every track until something newer retires it.
-  void _formClearGroup(Iterable<int> cleared, {required bool all}) {
+  /// from every track until something newer retires it. A track's clear
+  /// that leaves nothing to restore keeps the clear before it. A Clear all
+  /// always replaces it, and its own redo group too; a track's clear leaves
+  /// the redo group of an undone clear to its members' Redo, as before.
+  /// [refused] are the tracks a Clear all could not clear: they keep their
+  /// take, and their Undo stays their own.
+  void _formClearGroup(
+    Iterable<int> cleared, {
+    required bool all,
+    Set<int> refused = const {},
+  }) {
     final group = <int>{};
     final pending = <int>{};
     for (final channel in cleared) {
@@ -4241,12 +4254,13 @@ class LooperRepository {
         pending.add(channel);
       }
     }
+    if (!all && group.isEmpty && pending.isEmpty) return;
     _clearGroup = group;
     _clearGroupPending = pending;
     _clearGroupIsAll = all;
-    _clearRedoGroup = const {};
+    if (all) _clearRedoGroup = const {};
     _pendingClearGroupUndo = const {};
-    _clearMarks = _historyMarks(_engine.snapshot());
+    _clearMark = _markClear(_engine.snapshot(), refused: refused);
   }
 
   /// The channels the last undoable clear ([clear] or [clearAll]) erased
@@ -4261,10 +4275,9 @@ class LooperRepository {
   /// Whether the last undoable clear is a [clearAll].
   bool _clearGroupIsAll = false;
 
-  /// Every track's history as the last undoable clear left it: a track whose
-  /// mark has moved since has an edit of its own newer than the clear
-  /// ([LooperState.editedSinceClear]).
-  Map<int, _HistoryMark> _clearMarks = const {};
+  /// The rig's history as the last undoable clear left it, which tells the
+  /// tracks with an edit of their own since ([LooperState.editedSinceClear]).
+  _ClearMark _clearMark = (seq: 0, empty: const {}, refused: const {});
 
   /// The channels an undone clear restored, and whether it was a [clearAll].
   Set<int> _clearRedoGroup = const {};
@@ -4311,28 +4324,39 @@ class LooperRepository {
     }
   }
 
-  static Map<int, _HistoryMark> _historyMarks(EngineSnapshot s) => {
-    for (var channel = 0; channel < s.tracks.length; channel++)
-      channel: _historyMark(s.tracks[channel]),
-  };
-
-  static _HistoryMark _historyMark(TrackSnapshot track) => (
-    empty: track.state == TrackState.empty,
-    undo: track.undoDepth,
-    redo: track.redoDepth,
+  static _ClearMark _markClear(
+    EngineSnapshot s, {
+    Set<int> refused = const {},
+  }) => (
+    seq: s.tracks.fold(
+      0,
+      (newest, t) => t.historySeq > newest ? t.historySeq : newest,
+    ),
+    empty: {
+      for (var channel = 0; channel < s.tracks.length; channel++)
+        if (s.tracks[channel].state == TrackState.empty) channel,
+    },
+    refused: refused,
   );
 
-  /// The tracks whose history moved since the last undoable clear; empty
-  /// while there is none. The cleared tracks are left out: the mark may
-  /// predate the clear's own erase, and a fresh take on one retires the
-  /// whole clear instead ([_intactClearGroup]).
+  /// The tracks with an edit of their own since the last undoable clear;
+  /// empty while there is none. A track has one when its next Undo takes
+  /// back an edit filed after the clear (the engine numbers every layer,
+  /// peel, length edit, bounce and redo in one order), when it was empty at
+  /// the clear and has a take now, or when the Clear all was refused on it.
+  /// The cleared tracks are left out: a fresh take on one retires the whole
+  /// clear instead ([_intactClearGroup]).
   Set<int> _editedSinceClear(EngineSnapshot s) {
     if (_clearGroup.isEmpty && _clearGroupPending.isEmpty) return const {};
+    final mark = _clearMark;
     return {
       for (var channel = 0; channel < s.tracks.length; channel++)
         if (!_clearGroup.contains(channel) &&
             !_clearGroupPending.contains(channel) &&
-            _clearMarks[channel] != _historyMark(s.tracks[channel]))
+            (s.tracks[channel].historySeq > mark.seq ||
+                (mark.empty.contains(channel) &&
+                    s.tracks[channel].state != TrackState.empty) ||
+                mark.refused.contains(channel)))
           channel,
     };
   }
@@ -4621,7 +4645,7 @@ class LooperRepository {
         _clearGroupPending = const {};
         _clearGroupIsAll = _clearRedoIsAll;
         // The re-clear is the newest edit now.
-        _clearMarks = _historyMarks(_engine.snapshot());
+        _clearMark = _markClear(_engine.snapshot());
         return EngineResult.ok;
       }
       _clearRedoGroup = const {};

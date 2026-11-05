@@ -530,10 +530,14 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult clearUndoable({int channel = 0}) {
     lastChannel = channel;
     calls.add('clearUndoable');
+    if (refuseClearChannels.contains(channel)) return EngineResult.notReady;
     return nextClearUndoableResult;
   }
 
   EngineResult nextClearUndoableResult = EngineResult.ok;
+
+  /// Channels whose undoable clear the engine refuses.
+  Set<int> refuseClearChannels = {};
 
   /// What the next [undo] would do. Tests set this to stand in for the engine's
   /// restore-point bookkeeping, which the real engine owns.
@@ -2401,6 +2405,7 @@ class _LengthTrack extends TrackSnapshot {
         peak: source.peak,
         clearRestore: source.clearRestore,
         redoDepth: source.redoDepth,
+        historySeq: source.historySeq,
         multiple: source.multiple,
         syncDivisor: source.syncDivisor,
         lengthHistoryRefusals: source.lengthHistoryRefusals,

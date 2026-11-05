@@ -102,6 +102,7 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->clear_restore = load_i32(&tr->a_clear_restore);
   out->redo_depth = load_i32(&tr->a_redo_depth);
   out->peel_depth = load_i32(&tr->a_peel_depth);
+  out->history_seq = load_i32(&tr->a_history_seq);
   /* The TRACK's level, summed across its lanes -- NOT lane 0's, which is what
    * this reported until #655 and which under-read any track playing more than
    * one layer. Per-lane figures are still published on the lane snapshots
@@ -726,6 +727,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->clear_restore = 0;
     out->redo_depth = 0;
     out->peel_depth = 0;
+    out->history_seq = 0;
     out->length_history_refusals = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;

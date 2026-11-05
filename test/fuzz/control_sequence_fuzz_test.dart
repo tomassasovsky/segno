@@ -268,6 +268,41 @@ void main() {
         expect(h.looper.tracks[2].undoDepth, before);
         expect(h.looper.tracks[1].state, TrackState.empty);
         expect(h.looper.tracks[1].clearRestore, isTrue);
+        // The overdub is taken back; the clear is the next newest edit.
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[1].hasContent, isTrue);
+        expect(h.looper.tracks[2].undoDepth, before);
+      });
+    }, skip: skip);
+
+    test('a Peel on the selected track since the clear is what Undo takes '
+        'back', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        // A second layer on track 3, so it has one to peel.
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        holdClearTrackTwo(h, fa);
+        final depth = h.looper.tracks[2].undoDepth;
+        final peelable = h.looper.tracks[2].peelDepth;
+        expect(peelable, greaterThan(0));
+        expect(h.repo.peel(channel: 2), EngineResult.ok);
+        h.settle(fa);
+        expect(h.looper.tracks[2].undoDepth, depth);
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].peelDepth, peelable);
+        expect(h.looper.tracks[1].state, TrackState.empty);
       });
     }, skip: skip);
 

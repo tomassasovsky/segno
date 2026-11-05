@@ -91,14 +91,26 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - `LooperState.undoRestoresClear(channel)` is the one rule: a clear can be
   undone, and the asked track has no record arm or Count-in launch and is
   either empty or not capturing and not edited since the clear
-  (`editedSinceClear`: its emptiness, undo depth or redo depth moved). For a
-  Clear all this is the old rule, since every other track was empty then.
+  (`editedSinceClear`).
+- "Edited since the clear" reads the engine's history order: every undo
+  entry (a layer, a Peel, a length edit, a Bounce, a Clear restore point)
+  is numbered as it is filed, and numbered again when a Redo files it back,
+  and `le_track_snapshot.history_seq` publishes the number of the entry the
+  next Undo takes back. A track is edited since the clear when that number
+  is newer than the newest one at the clear, when it was empty at the clear
+  and has a take now, or when a Clear all was refused on it. So Undo works
+  newest first across tracks: after an overdub on the selected track since
+  the clear, the first Undo takes the overdub back and the next restores
+  the clear.
 - The clear stops being "the last thing" as with Clear all: a later clear
   replaces it, a fresh take on the cleared track retires it, its Undo spends
-  it, and on the asked track a take, layer, peel, length change, undo or
-  redo since the clear, or a running capture, is that track's own Undo. An
-  edit on a third track does not stop it. Redo is unchanged: a Redo of the
-  restored clear on the cleared track makes it the last clear again.
+  it, and a newer edit on the asked track, or a running capture, is that
+  track's own Undo. An edit on a third track does not stop it. A clear of an
+  empty track, which leaves nothing to restore, keeps the clear before it
+  (as an empty Clear all does, #1642), and leaves an undone Clear all's
+  grouped Redo alone. Redo is unchanged otherwise: a Redo of the restored
+  clear on the cleared track makes it the last clear again, and a Redo on
+  another track is that track's own, as after Clear all (#1634).
 - The cleared notice still offers only a Clear all: `clearAllUndoable` is
   `undoableClear == UndoableClear.all`, so a later track clear ends it.
 

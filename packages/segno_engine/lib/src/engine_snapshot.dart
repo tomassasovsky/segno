@@ -692,6 +692,7 @@ class TrackSnapshot {
     this.clearRestore = false,
     this.redoDepth = 0,
     this.peelDepth = 0,
+    this.historySeq = 0,
     this.multiple = 1,
     this.syncDivisor = 0,
     this.inputMask = 0x1,
@@ -736,6 +737,7 @@ class TrackSnapshot {
       clearRestore = false,
       redoDepth = 0,
       peelDepth = 0,
+      historySeq = 0,
       rms = 0,
       peak = 0,
       multiple = 1,
@@ -794,6 +796,7 @@ class TrackSnapshot {
     clearRestore: native.clear_restore != 0,
     redoDepth: native.redo_depth,
     peelDepth: native.peel_depth,
+    historySeq: native.history_seq,
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
@@ -934,6 +937,12 @@ class TrackSnapshot {
   /// a layer disappears, so the layer count derives from this.
   final int peelDepth;
 
+  /// Where the edit the next undo on this track takes back stands in the
+  /// engine's history order (#1707): numbered when it was filed, and again
+  /// when a redo files it back. 0 with nothing to undo but the take itself.
+  /// Larger is newer, across every track.
+  final int historySeq;
+
   /// Whether an overdub undo layer is still being captured or drained (the
   /// punch-tail window). Session capture waits this out before exporting.
   final bool layerInFlight;
@@ -1051,6 +1060,7 @@ class TrackSnapshot {
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
           peelDepth == other.peelDepth &&
+          historySeq == other.historySeq &&
           rms == other.rms &&
           peak == other.peak &&
           inputMask == other.inputMask &&
@@ -1093,6 +1103,7 @@ class TrackSnapshot {
     undoDepth,
     redoDepth,
     peelDepth,
+    historySeq,
     rms,
     peak,
     inputMask,

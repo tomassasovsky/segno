@@ -1331,6 +1331,13 @@ typedef struct {
   uint32_t group_id;
   uint32_t cleared_mask;
   uint64_t start_iter;
+  /* #1707: the edit's place in the engine's history order, stamped by
+   * le_stamp_history once the entry is on the undo stack (0 before that).
+   * le_redo_push zeroes it, so an edit that is undone and redone counts as
+   * new when it comes back. */
+  int32_t seq;
+  int32_t layer_seq; /* PEEL: the consumed LAYER's seq, which its undo gives
+                      * back to the re-inserted LAYER */
 } le_hist_entry;
 
 /* Keep it an initializer rather than member assignments: aggregate init
@@ -1716,6 +1723,8 @@ typedef struct le_track {
   _Atomic int32_t a_peel_depth; /* published le_peel_depth: LAYER entries Peel
                                  * can still consume, under a_undo_depth's
                                  * gates (0 on an EMPTY track) — #1164 */
+  _Atomic int32_t a_history_seq; /* published seq of the top undo entry, 0
+                                  * with none (#1707) */
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
    * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
