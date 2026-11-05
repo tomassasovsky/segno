@@ -95,6 +95,22 @@ void le_platform_own_interface_routing(const char* capture_uid,
   (void)playback_uid;
 }
 
+void le_platform_interface_inputs_read(const char* uid,
+                                       le_interface_inputs* out) {
+  /* Core Audio exposes no interface's input switches: no controls. */
+  (void)uid;
+  (void)out;
+}
+
+int32_t le_platform_interface_input_set(const char* uid, int32_t control,
+                                        int32_t index, int32_t value) {
+  (void)uid;
+  (void)control;
+  (void)index;
+  (void)value;
+  return LE_ERR_UNSUPPORTED;
+}
+
 void le_platform_device_id_to_str(const ma_device_id* id, char* out,
                                   size_t cap) {
   /* Core Audio device ids are NUL-terminated char strings. */

@@ -131,6 +131,9 @@ void main() {
     );
     when(() => repository.allMonitors()).thenReturn(const {});
     when(
+      () => repository.readInterfaceInputs(),
+    ).thenAnswer((_) async => InterfaceInputs.none);
+    when(
       () => repository.setMonitorOutput(
         input: any(named: 'input'),
         mask: any(named: 'mask'),

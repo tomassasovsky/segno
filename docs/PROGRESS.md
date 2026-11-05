@@ -93,6 +93,37 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   Firmware is unchanged.
 - Device check owed: the pause and the fill's feel on the console.
 
+## November 2026 The interface's input switches (#1646)
+
+- Settings → Audio routing → Input setup has an **Interface** row for the
+  selected input: Inst or Line, Pad, Air (a switch, or Off / Presence /
+  Presence + Drive) and 48 V with the inputs its switch powers. Segno stores
+  nothing: `InterfaceInputsCubit` reads the interface at each device open,
+  after each change and twice a second while the tab shows, and each change
+  is written straight to the hardware and read back. 48 V asks first
+  (`showDeviceConfirmDialog`, naming the inputs) and never turns on by
+  itself; the row locks with a recording on the input or its 48 V group;
+  input cards carry `Inst` and `48 V` tags; a refused change is a passing
+  notice. Plan: `docs/plan/2026-11-04-feat-interface-input-controls-plan.md`.
+- Engine (`src/core/engine_interface_inputs.c`): a capability model
+  (`le_interface_inputs`) filled by per-family adapters chosen by the card's
+  USB vendor and control names: `scarlett2` (with the setup-mode and
+  pass-through checks), `scarlett` (1st Gen, with its own routing check) and
+  a generic keyword fallback that keeps only controls naming one input.
+  `le_mixer` gained the card's identity and control list; both libasound
+  symbol tables resolve under `pthread_once`, since the calls run on a Dart
+  worker isolate (`NativeAudioEngine.offIsolate`).
+- Tests: `test_engine_interface_inputs.h` against real public dumps in
+  `src/test/fixtures/alsa/` (Scarlett Gen 1/3/4 models, Vocaster Two,
+  Behringer UMC204HD, MOTU M2 and M4, Audient iD4, an HD-Audio codec), each
+  citing its source; the repository, cubit and widget suites; the
+  `audio_routing_input_setup*` screenshots.
+- The input meter carries the gain band (-18 to -6 dBFS,
+  `kInputGainTargetDb`) and a note to set the hardware gain knob against it.
+- Owed: the Penpot frames (plan part 3, #1658; geometry in PR #1651's
+  "Design writeback"), the device checks listed on PR #1655, and #1648 (the
+  routing rules into the same adapters).
+
 ## November 2026 Takes keep the lap they were played on (#854)
 
 - A take of several base loops reads segment

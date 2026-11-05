@@ -17,6 +17,7 @@ import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/history_entry.dart';
 import 'package:segno_engine/src/instruments.dart';
+import 'package:segno_engine/src/interface_inputs.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
@@ -239,6 +240,26 @@ class NativeAudioEngine implements AudioEngine {
       calloc.free(ptr);
     }
   }
+
+  @override
+  Future<InterfaceInputsInfo> readInterfaceInputs(String captureDeviceId) =>
+      _readInterfaceInputsOffIsolate(offIsolate, captureDeviceId);
+
+  @override
+  Future<EngineResult> setInterfaceInput(
+    String captureDeviceId, {
+    required InterfaceControl control,
+    required int index,
+    required int value,
+  }) async => EngineResult.fromCode(
+    await _setInterfaceInputOffIsolate(
+      offIsolate,
+      captureDeviceId,
+      control.code,
+      index,
+      value,
+    ),
+  );
 
   @override
   List<AudioDevice> enumerateDevices() {
@@ -3423,6 +3444,59 @@ _decodeAudition(String path, int rate, int maxFrames) {
       ..free(out)
       ..free(info);
     malloc.free(cPath);
+  }
+}
+
+/// Runs [_readInterfaceInputs] through [run]: the read reaches the USB
+/// device, so never on the calling (UI) isolate. Top-level, so the closure
+/// captures only these values.
+Future<InterfaceInputsInfo> _readInterfaceInputsOffIsolate(
+  OffIsolateRunner run,
+  String captureDeviceId,
+) => run(() => _readInterfaceInputs(captureDeviceId));
+
+/// Runs [_setInterfaceInput] through [run], as
+/// [_readInterfaceInputsOffIsolate] does.
+Future<int> _setInterfaceInputOffIsolate(
+  OffIsolateRunner run,
+  String captureDeviceId,
+  int control,
+  int index,
+  int value,
+) => run(() => _setInterfaceInput(captureDeviceId, control, index, value));
+
+/// Reads the interface's input switches (`le_interface_inputs_read`). Opens
+/// the library itself, since it runs inside `Isolate.run`.
+InterfaceInputsInfo _readInterfaceInputs(String captureDeviceId) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final out = calloc<le_interface_inputs>();
+  final uid = captureDeviceId.isEmpty
+      ? nullptr
+      : captureDeviceId.toNativeUtf8().cast<Char>();
+  try {
+    bindings.le_interface_inputs_read(uid, out);
+    return InterfaceInputsInfo.fromNative(out);
+  } finally {
+    calloc.free(out);
+    if (uid != nullptr) malloc.free(uid);
+  }
+}
+
+/// Sets one switch (`le_interface_input_set`); returns its le_result.
+int _setInterfaceInput(
+  String captureDeviceId,
+  int control,
+  int index,
+  int value,
+) {
+  final bindings = SegnoEngineBindings(openSegnoEngineLibrary());
+  final uid = captureDeviceId.isEmpty
+      ? nullptr
+      : captureDeviceId.toNativeUtf8().cast<Char>();
+  try {
+    return bindings.le_interface_input_set(uid, control, index, value);
+  } finally {
+    if (uid != nullptr) malloc.free(uid);
   }
 }
 

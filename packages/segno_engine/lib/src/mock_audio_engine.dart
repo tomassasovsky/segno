@@ -11,6 +11,7 @@ import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/history_entry.dart';
+import 'package:segno_engine/src/interface_inputs.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/mix_settings.dart';
@@ -486,6 +487,59 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
 
   @override
   LoopbackInfo detectLoopback() => const LoopbackInfo.none();
+
+  /// The input switches the mock simulates (#1646): a Scarlett 4i4 3rd Gen's,
+  /// Inst/Line, Pad and Air on inputs 1-2 and one 48 V switch for both, so
+  /// the mock app and the screenshots show them.
+  final List<int> _interfaceLevel = [0, 0];
+  final List<int> _interfacePad = [0, 0];
+  final List<int> _interfaceAir = [0, 0];
+  bool _interfacePhantom = false;
+
+  @override
+  Future<InterfaceInputsInfo> readInterfaceInputs(
+    String captureDeviceId,
+  ) async => InterfaceInputsInfo(
+    state: InterfaceInputsState.controls,
+    inputs: [
+      for (var i = 0; i < 2; i++)
+        InterfaceInputInfo(
+          level: _interfaceLevel[i],
+          pad: _interfacePad[i],
+          air: _interfaceAir[i],
+          airChoices: 2,
+          phantomGroup: 0,
+        ),
+    ],
+    phantom: [PhantomSwitchInfo(first: 0, last: 1, on: _interfacePhantom)],
+    adapter: 'scarlett2',
+  );
+
+  @override
+  Future<EngineResult> setInterfaceInput(
+    String captureDeviceId, {
+    required InterfaceControl control,
+    required int index,
+    required int value,
+  }) async {
+    if (value < 0 || value > 1) return EngineResult.invalid;
+    if (control == InterfaceControl.phantom) {
+      if (index != 0) return EngineResult.invalid;
+      _interfacePhantom = value == 1;
+      return EngineResult.ok;
+    }
+    final switches = switch (control) {
+      InterfaceControl.level => _interfaceLevel,
+      InterfaceControl.pad => _interfacePad,
+      InterfaceControl.air => _interfaceAir,
+      InterfaceControl.phantom || InterfaceControl.setupModeOff => null,
+    };
+    if (switches == null || index < 0 || index >= switches.length) {
+      return EngineResult.invalid;
+    }
+    switches[index] = value;
+    return EngineResult.ok;
+  }
 
   @override
   List<AudioDevice> enumerateDevices() => [

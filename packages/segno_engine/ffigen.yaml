@@ -38,6 +38,9 @@ structs:
     - 'le_backing_decode_info'
     - 'le_synth_patch_desc'
     - 'le_synth_param_desc'
+    - 'le_interface_input'
+    - 'le_interface_phantom'
+    - 'le_interface_inputs'
 enums:
   include:
     - 'le_result'
@@ -54,6 +57,8 @@ enums:
     - 'le_perf_stop_reason'
     - 'le_synth_family'
     - 'le_synth_param_unit'
+    - 'le_interface_state'
+    - 'le_interface_control'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file

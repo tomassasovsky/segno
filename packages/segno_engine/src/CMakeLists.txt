@@ -21,6 +21,7 @@ add_library(segno_engine SHARED
   core/rt_alloc.c            # the audio-thread allocator (rt_alloc.h)
   core/engine_session.c      # session export / import / commit
   core/engine_devices.c      # device discovery, loopback, id resolution, backend
+  core/engine_interface_inputs.c # the interface's input switches (#1646)
   core/engine_snapshot.c     # published-state snapshots + visualization reads
   core/engine_process.c      # THE audio-thread TU (le_engine_process + transport)
   core/engine_commands.c     # control-thread command producers

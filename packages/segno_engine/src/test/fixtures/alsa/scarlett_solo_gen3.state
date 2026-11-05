@@ -1,0 +1,113 @@
+# Focusrite Scarlett Solo 3rd Gen: alsactl state, block state.USB_1 of
+# alsa-scarlett-gui demo/Scarlett Gen 3 Solo.state, https://github.com/geoffreybennett/alsa-scarlett-gui (GPL-3.0-or-later), fetched 2026-11-04.
+# usb 1235:8211
+state.USB_1 {
+	control.1 {
+		iface PCM
+		name 'Playback Channel Map'
+		value.0 0
+		value.1 0
+		comment {
+			access 'read volatile'
+			type INTEGER
+			count 2
+			range '0 - 36'
+		}
+	}
+	control.2 {
+		iface PCM
+		name 'Capture Channel Map'
+		value.0 0
+		value.1 0
+		comment {
+			access 'read volatile'
+			type INTEGER
+			count 2
+			range '0 - 36'
+		}
+	}
+	control.3 {
+		iface CARD
+		name 'USB Internal Validity'
+		value true
+		comment {
+			access read
+			type BOOLEAN
+			count 1
+		}
+	}
+	control.4 {
+		iface CARD
+		name 'Firmware Version'
+		value 1605
+		comment {
+			access read
+			type INTEGER
+			count 1
+			range '0 - 0'
+		}
+	}
+	control.5 {
+		iface CARD
+		name 'Minimum Firmware Version'
+		value 0
+		comment {
+			access read
+			type INTEGER
+			count 1
+			range '0 - 0'
+		}
+	}
+	control.6 {
+		iface MIXER
+		name 'Line In 2 Level Capture Enum'
+		value Line
+		comment {
+			access 'read write'
+			type ENUMERATED
+			count 1
+			item.0 Line
+			item.1 Inst
+		}
+	}
+	control.7 {
+		iface MIXER
+		name 'Line In 1 Air Capture Switch'
+		value false
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 1
+		}
+	}
+	control.8 {
+		iface MIXER
+		name 'Line In 1 Phantom Power Capture Switch'
+		value false
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 1
+		}
+	}
+	control.9 {
+		iface MIXER
+		name 'Phantom Power Persistence Capture Switch'
+		value false
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 1
+		}
+	}
+	control.10 {
+		iface MIXER
+		name 'Direct Monitor Playback Switch'
+		value false
+		comment {
+			access 'read write'
+			type BOOLEAN
+			count 1
+		}
+	}
+}

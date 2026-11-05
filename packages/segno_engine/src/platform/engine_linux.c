@@ -372,17 +372,19 @@ static void le_alsa_syms_resolve(le_alsa_syms* s) {
  * alsa.conf) and caches it behind a library global; unloading the library drops
  * that global without freeing the tree, so a dlopen/dlclose per enumeration
  * would orphan a fresh copy on every pass. Holding the handle keeps ALSA's
- * cache alive to be reused instead, and also skips re-relocating the library.
- * Same cache-it-once idiom as le_alsa_only(): the control thread owns
- * enumeration (see engine_devices.c's ownership note), so no locking. */
+ * cache alive to be reused instead, and also skips re-relocating the library. */
+static le_alsa_syms le_alsa_syms_resolved;
+
+static void le_alsa_syms_once(void) {
+  le_alsa_syms_resolve(&le_alsa_syms_resolved);
+}
+
 static const le_alsa_syms* le_alsa_syms_get(void) {
-  static le_alsa_syms syms;
-  static int resolved = 0;
-  if (!resolved) {
-    resolved = 1;
-    le_alsa_syms_resolve(&syms);
-  }
-  return &syms;
+  /* Once, under pthread_once: device open calls it on the control thread,
+   * and the interface-input calls (#1646) on a Dart worker thread. */
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
+  pthread_once(&once, le_alsa_syms_once);
+  return &le_alsa_syms_resolved;
 }
 
 /* Swallows the probe's own ALSA diagnostics. Installed only around the open and
@@ -1159,56 +1161,93 @@ typedef struct le_alsa_ctl_syms {
   void (*value_set_enumerated)(void*, unsigned int, unsigned int);
   long (*value_get_boolean)(const void*, unsigned int);
   void (*value_set_boolean)(void*, unsigned int, long);
+  /* The card's control list and identity (#1646). */
+  int (*list_malloc)(void**);
+  void (*list_free)(void*);
+  int (*list)(void*, void*);
+  int (*list_alloc_space)(void*, unsigned int);
+  void (*list_free_space)(void*);
+  unsigned int (*list_get_used)(const void*);
+  unsigned int (*list_get_count)(const void*);
+  int (*list_get_interface)(const void*, unsigned int);
+  const char* (*list_get_name)(const void*, unsigned int);
+  int (*card_info_malloc)(void**);
+  void (*card_info_free)(void*);
+  int (*card_info)(void*, void*);
+  const char* (*card_info_get_components)(const void*);
 } le_alsa_ctl_syms;
 
-/* Resolved once from the process-lifetime libasound handle; NULL when ALSA or
- * any entry point is missing. Control thread only (device open), no locking. */
-static const le_alsa_ctl_syms* le_alsa_ctl_syms_get(void) {
-  static le_alsa_ctl_syms syms;
-  static int resolved = 0;
-  static int usable = 0;
-  if (!resolved) {
-    resolved = 1;
-    void* lib = le_alsa_syms_get()->lib;
-    if (lib == NULL) return NULL;
+static le_alsa_ctl_syms le_alsa_ctl_syms_resolved;
+static int le_alsa_ctl_syms_usable = 0;
+
+static void le_alsa_ctl_syms_once(void) {
+  le_alsa_ctl_syms syms;
+  memset(&syms, 0, sizeof(syms));
+  void* lib = le_alsa_syms_get()->lib;
+  if (lib == NULL) return;
 #define LE_CTL_SYM(field, name) \
   syms.field = (__typeof__(syms.field))dlsym(lib, name)
-    LE_CTL_SYM(ctl_open, "snd_ctl_open");
-    LE_CTL_SYM(ctl_close, "snd_ctl_close");
-    LE_CTL_SYM(id_malloc, "snd_ctl_elem_id_malloc");
-    LE_CTL_SYM(id_free, "snd_ctl_elem_id_free");
-    LE_CTL_SYM(id_set_interface, "snd_ctl_elem_id_set_interface");
-    LE_CTL_SYM(id_set_name, "snd_ctl_elem_id_set_name");
-    LE_CTL_SYM(info_malloc, "snd_ctl_elem_info_malloc");
-    LE_CTL_SYM(info_free, "snd_ctl_elem_info_free");
-    LE_CTL_SYM(info_set_id, "snd_ctl_elem_info_set_id");
-    LE_CTL_SYM(info, "snd_ctl_elem_info");
-    LE_CTL_SYM(info_get_type, "snd_ctl_elem_info_get_type");
-    LE_CTL_SYM(info_get_items, "snd_ctl_elem_info_get_items");
-    LE_CTL_SYM(info_set_item, "snd_ctl_elem_info_set_item");
-    LE_CTL_SYM(info_get_item_name, "snd_ctl_elem_info_get_item_name");
-    LE_CTL_SYM(value_malloc, "snd_ctl_elem_value_malloc");
-    LE_CTL_SYM(value_free, "snd_ctl_elem_value_free");
-    LE_CTL_SYM(value_clear, "snd_ctl_elem_value_clear");
-    LE_CTL_SYM(value_set_id, "snd_ctl_elem_value_set_id");
-    LE_CTL_SYM(elem_read, "snd_ctl_elem_read");
-    LE_CTL_SYM(elem_write, "snd_ctl_elem_write");
-    LE_CTL_SYM(value_get_enumerated, "snd_ctl_elem_value_get_enumerated");
-    LE_CTL_SYM(value_set_enumerated, "snd_ctl_elem_value_set_enumerated");
-    LE_CTL_SYM(value_get_boolean, "snd_ctl_elem_value_get_boolean");
-    LE_CTL_SYM(value_set_boolean, "snd_ctl_elem_value_set_boolean");
+  LE_CTL_SYM(ctl_open, "snd_ctl_open");
+  LE_CTL_SYM(ctl_close, "snd_ctl_close");
+  LE_CTL_SYM(id_malloc, "snd_ctl_elem_id_malloc");
+  LE_CTL_SYM(id_free, "snd_ctl_elem_id_free");
+  LE_CTL_SYM(id_set_interface, "snd_ctl_elem_id_set_interface");
+  LE_CTL_SYM(id_set_name, "snd_ctl_elem_id_set_name");
+  LE_CTL_SYM(info_malloc, "snd_ctl_elem_info_malloc");
+  LE_CTL_SYM(info_free, "snd_ctl_elem_info_free");
+  LE_CTL_SYM(info_set_id, "snd_ctl_elem_info_set_id");
+  LE_CTL_SYM(info, "snd_ctl_elem_info");
+  LE_CTL_SYM(info_get_type, "snd_ctl_elem_info_get_type");
+  LE_CTL_SYM(info_get_items, "snd_ctl_elem_info_get_items");
+  LE_CTL_SYM(info_set_item, "snd_ctl_elem_info_set_item");
+  LE_CTL_SYM(info_get_item_name, "snd_ctl_elem_info_get_item_name");
+  LE_CTL_SYM(value_malloc, "snd_ctl_elem_value_malloc");
+  LE_CTL_SYM(value_free, "snd_ctl_elem_value_free");
+  LE_CTL_SYM(value_clear, "snd_ctl_elem_value_clear");
+  LE_CTL_SYM(value_set_id, "snd_ctl_elem_value_set_id");
+  LE_CTL_SYM(elem_read, "snd_ctl_elem_read");
+  LE_CTL_SYM(elem_write, "snd_ctl_elem_write");
+  LE_CTL_SYM(value_get_enumerated, "snd_ctl_elem_value_get_enumerated");
+  LE_CTL_SYM(value_set_enumerated, "snd_ctl_elem_value_set_enumerated");
+  LE_CTL_SYM(value_get_boolean, "snd_ctl_elem_value_get_boolean");
+  LE_CTL_SYM(value_set_boolean, "snd_ctl_elem_value_set_boolean");
+  LE_CTL_SYM(list_malloc, "snd_ctl_elem_list_malloc");
+  LE_CTL_SYM(list_free, "snd_ctl_elem_list_free");
+  LE_CTL_SYM(list, "snd_ctl_elem_list");
+  LE_CTL_SYM(list_alloc_space, "snd_ctl_elem_list_alloc_space");
+  LE_CTL_SYM(list_free_space, "snd_ctl_elem_list_free_space");
+  LE_CTL_SYM(list_get_used, "snd_ctl_elem_list_get_used");
+  LE_CTL_SYM(list_get_count, "snd_ctl_elem_list_get_count");
+  LE_CTL_SYM(list_get_interface, "snd_ctl_elem_list_get_interface");
+  LE_CTL_SYM(list_get_name, "snd_ctl_elem_list_get_name");
+  LE_CTL_SYM(card_info_malloc, "snd_ctl_card_info_malloc");
+  LE_CTL_SYM(card_info_free, "snd_ctl_card_info_free");
+  LE_CTL_SYM(card_info, "snd_ctl_card_info");
+  LE_CTL_SYM(card_info_get_components, "snd_ctl_card_info_get_components");
 #undef LE_CTL_SYM
-    usable = syms.ctl_open && syms.ctl_close && syms.id_malloc && syms.id_free &&
-             syms.id_set_interface && syms.id_set_name && syms.info_malloc &&
-             syms.info_free && syms.info_set_id && syms.info &&
-             syms.info_get_type && syms.info_get_items && syms.info_set_item &&
-             syms.info_get_item_name && syms.value_malloc && syms.value_free &&
-             syms.value_clear && syms.value_set_id && syms.elem_read &&
-             syms.elem_write && syms.value_get_enumerated &&
-             syms.value_set_enumerated && syms.value_get_boolean &&
-             syms.value_set_boolean;
-  }
-  return usable ? &syms : NULL;
+  le_alsa_ctl_syms_usable = syms.ctl_open && syms.ctl_close && syms.id_malloc &&
+      syms.id_free && syms.id_set_interface && syms.id_set_name &&
+      syms.info_malloc && syms.info_free && syms.info_set_id && syms.info &&
+      syms.info_get_type && syms.info_get_items && syms.info_set_item &&
+      syms.info_get_item_name && syms.value_malloc && syms.value_free &&
+      syms.value_clear && syms.value_set_id && syms.elem_read &&
+      syms.elem_write && syms.value_get_enumerated &&
+      syms.value_set_enumerated && syms.value_get_boolean &&
+      syms.value_set_boolean && syms.list_malloc && syms.list_free &&
+      syms.list && syms.list_alloc_space && syms.list_free_space &&
+      syms.list_get_used && syms.list_get_count && syms.list_get_interface &&
+      syms.list_get_name && syms.card_info_malloc && syms.card_info_free &&
+      syms.card_info && syms.card_info_get_components;
+  le_alsa_ctl_syms_resolved = syms;
+}
+
+/* Resolved once from the process-lifetime libasound handle; NULL when ALSA or
+ * any entry point is missing. Under pthread_once: device open and the
+ * interface-input calls (#1646) run on different threads. */
+static const le_alsa_ctl_syms* le_alsa_ctl_syms_get(void) {
+  static pthread_once_t once = PTHREAD_ONCE_INIT;
+  pthread_once(&once, le_alsa_ctl_syms_once);
+  return le_alsa_ctl_syms_usable ? &le_alsa_ctl_syms_resolved : NULL;
 }
 
 /* One card's open control handle and scratch objects: the le_mixer the
@@ -1220,6 +1259,12 @@ typedef struct le_alsa_mixer {
   void* info;
   void* value;
   char item[64];
+  /* The card's control list, read at the first le_alsa_mixer_control_name:
+   * `list` and the positions of its mixer controls. */
+  void* list;
+  unsigned* mixer_at;
+  unsigned mixer_count;
+  char name[64];
 } le_alsa_mixer;
 
 /* Points the scratch id and info at mixer control `name`; 1 when the card has
@@ -1284,6 +1329,60 @@ static int le_alsa_mixer_write(void* ctx, const char* name, unsigned value) {
   return s->elem_write(c->ctl, c->value) < 0 ? -1 : 0;
 }
 
+/* Reads the card's control list into c->list and c->mixer_at; 0 when it
+ * cannot. */
+static int le_alsa_mixer_list(le_alsa_mixer* c) {
+  const le_alsa_ctl_syms* s = c->s;
+  if (s->list_malloc(&c->list) < 0) {
+    c->list = NULL;
+    return 0;
+  }
+  if (s->list(c->ctl, c->list) < 0) return 0;
+  const unsigned count = s->list_get_count(c->list);
+  if (count == 0) return 1;
+  if (s->list_alloc_space(c->list, count) < 0) return 0;
+  if (s->list(c->ctl, c->list) < 0) return 0;
+  const unsigned used = s->list_get_used(c->list);
+  c->mixer_at = (unsigned*)malloc(sizeof(unsigned) * (used > 0 ? used : 1));
+  if (c->mixer_at == NULL) return 0;
+  for (unsigned i = 0; i < used; ++i) {
+    if (s->list_get_interface(c->list, i) == LE_SND_CTL_ELEM_IFACE_MIXER) {
+      c->mixer_at[c->mixer_count++] = i;
+    }
+  }
+  return 1;
+}
+
+static const char* le_alsa_mixer_control_name(void* ctx, unsigned index) {
+  le_alsa_mixer* c = (le_alsa_mixer*)ctx;
+  if (c->list == NULL && !le_alsa_mixer_list(c)) return NULL;
+  if (index >= c->mixer_count) return NULL;
+  const char* name = c->s->list_get_name(c->list, c->mixer_at[index]);
+  if (name == NULL) return NULL;
+  strncpy(c->name, name, sizeof(c->name) - 1);
+  c->name[sizeof(c->name) - 1] = '\0';
+  return c->name;
+}
+
+/* The card's USB ids from its components string ("USB1235:8212", which
+ * snd-usb-audio adds); 0 for any other card. */
+static void le_alsa_mixer_identity(le_alsa_mixer* c, le_mixer* m) {
+  const le_alsa_ctl_syms* s = c->s;
+  void* info = NULL;
+  if (s->card_info_malloc(&info) < 0 || info == NULL) return;
+  if (s->card_info(c->ctl, info) >= 0) {
+    const char* components = s->card_info_get_components(info);
+    const char* usb = components != NULL ? strstr(components, "USB") : NULL;
+    unsigned vendor = 0;
+    unsigned product = 0;
+    if (usb != NULL && sscanf(usb, "USB%4x:%4x", &vendor, &product) == 2) {
+      m->usb_vendor = vendor;
+      m->usb_product = product;
+    }
+  }
+  s->card_info_free(info);
+}
+
 /* Opens control device `card` ("hw:2") as an le_mixer; 0 (nothing to close)
  * when it cannot, or there is no libasound. */
 static int le_alsa_mixer_open(const char* card, le_alsa_mixer* c,
@@ -1300,15 +1399,23 @@ static int le_alsa_mixer_open(const char* card, le_alsa_mixer* c,
     c->s->ctl_close(c->ctl);
     return 0;
   }
+  memset(m, 0, sizeof(*m));
   m->ctx = c;
+  m->control_name = le_alsa_mixer_control_name;
   m->find = le_alsa_mixer_find;
   m->item_name = le_alsa_mixer_item_name;
   m->read = le_alsa_mixer_read;
   m->write = le_alsa_mixer_write;
+  le_alsa_mixer_identity(c, m);
   return 1;
 }
 
 static void le_alsa_mixer_close(le_alsa_mixer* c) {
+  if (c->list != NULL) {
+    c->s->list_free_space(c->list);
+    c->s->list_free(c->list);
+  }
+  free(c->mixer_at);
   c->s->value_free(c->value);
   c->s->info_free(c->info);
   c->s->id_free(c->id);
@@ -1366,6 +1473,45 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
   const uint32_t mask = le_scarlett2_loopback_mask(&m, channel_count);
   le_alsa_mixer_close(&c);
   return mask;
+}
+
+/* ---- the interface's input switches (#1646) ----
+ *
+ * The adapters are portable and tested (engine_interface_inputs.c); this
+ * gives them the card behind the capture id, opened for the one call. */
+
+void le_platform_interface_inputs_read(const char* uid,
+                                       le_interface_inputs* out) {
+  char card[64];
+  le_alsa_mixer c;
+  le_mixer m;
+  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card)) ||
+      !le_alsa_mixer_open(card, &c, &m)) {
+    return;
+  }
+  le_interface_inputs_scan(&m, out);
+  le_alsa_mixer_close(&c);
+}
+
+int32_t le_platform_interface_input_set(const char* uid, int32_t control,
+                                        int32_t index, int32_t value) {
+  char card[64];
+  le_alsa_mixer c;
+  le_mixer m;
+  /* No card behind the id has no switches; a card that will not open is a
+   * device failure. */
+  if (!le_alsa_ctl_name_from_uid(uid, card, sizeof(card))) {
+    return LE_ERR_INVALID;
+  }
+  if (!le_alsa_mixer_open(card, &c, &m)) return LE_ERR_DEVICE;
+  const int32_t result = le_interface_inputs_write(&m, control, index, value);
+  le_alsa_mixer_close(&c);
+  if (result != LE_OK) {
+    fprintf(stderr,
+            "segno/audio: %s input switch %d of %d not set to %d (%d)\n", card,
+            control, index, value, result);
+  }
+  return result;
 }
 
 void le_platform_device_id_to_str(const ma_device_id* id, char* out,
