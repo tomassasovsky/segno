@@ -30,7 +30,11 @@ Future<double?> showTempoEntrySheet(
     // override, so the keypad spans the console like every other keyboard.
     constraints: const BoxConstraints(),
     isScrollControlled: true,
-    builder: (_) => _TempoEntrySheet(current: current),
+    // Full size it is about 690 high: on a window shorter than that (a
+    // desktop build) it scrolls rather than overflowing.
+    builder: (_) => SingleChildScrollView(
+      child: _TempoEntrySheet(current: current),
+    ),
   );
 }
 

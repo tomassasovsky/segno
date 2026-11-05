@@ -507,7 +507,7 @@ class LoopTimeSignaturePage extends StatelessWidget {
     final cell = (width - 4 * gap) / 5;
     return Positioned(
       left: 0,
-      top: 124,
+      top: kLoopTabContentTop,
       child: SizedBox(
         width: width,
         height: 424,

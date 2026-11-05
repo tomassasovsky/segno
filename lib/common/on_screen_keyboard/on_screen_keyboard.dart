@@ -100,7 +100,9 @@ class OnScreenKeyboard extends StatefulWidget {
   static const double standardLabelSize = 17;
 
   /// This keyboard's key height: [standardKeyHeight] in the console's sheets
-  /// and panels, taller on a full-size page (#1672).
+  /// and panels, taller on a full-size page (#1672). The text layout's
+  /// special keys keep their fixed widths, so a taller keyboard is the
+  /// numeric pad's.
   final double keyHeight;
 
   /// This keyboard's label size; glyph keys scale with it.
@@ -111,9 +113,9 @@ class OnScreenKeyboard extends StatefulWidget {
   /// (#1672).
   static const double keyGap = 6;
 
-  /// The keyboard's height for [rows] rows of keys [keyHeight] high.
-  static double heightOf(int rows, {double keyHeight = standardKeyHeight}) =>
-      rows * keyHeight + (rows - 1) * keyGap;
+  /// The keyboard's height for [rows] rows of [standardKeyHeight] keys.
+  static double heightOf(int rows) =>
+      rows * standardKeyHeight + (rows - 1) * keyGap;
 
   @override
   State<OnScreenKeyboard> createState() => _OnScreenKeyboardState();

@@ -69,6 +69,9 @@ class LoopRecordingPage extends StatefulWidget {
   /// and Playback).
   static const double choiceHeight = 120;
 
+  /// The choices' label size, Playback's.
+  static const double choiceFontSize = 28;
+
   /// Every take's choice rows, 12 under their 28 high headings.
   static const double globalRowTop = top + 28 + 12;
 
@@ -313,7 +316,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 ),
                 width: half,
                 height: LoopRecordingPage.choiceHeight,
-                fontSize: 28,
+                fontSize: LoopRecordingPage.choiceFontSize,
               ),
             ),
             Positioned(
@@ -348,7 +351,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 ),
                 width: half,
                 height: LoopRecordingPage.choiceHeight,
-                fontSize: 28,
+                fontSize: LoopRecordingPage.choiceFontSize,
               ),
             ),
             // ---- the track selector, over the fields it scopes
@@ -395,7 +398,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 ),
                 width: 392,
                 height: LoopRecordingPage.choiceHeight,
-                fontSize: 28,
+                fontSize: LoopRecordingPage.choiceFontSize,
               ),
             ),
             if (shownBars > 0)
@@ -526,7 +529,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 onSelected: _setTiming,
                 width: width,
                 height: LoopRecordingPage.choiceHeight,
-                fontSize: 28,
+                fontSize: LoopRecordingPage.choiceFontSize,
                 gap: 16,
               ),
             ),
