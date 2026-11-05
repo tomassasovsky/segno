@@ -25,6 +25,11 @@ void main() {
           pedalLedModeLabel(l10n, mode),
       };
       expect(modes, hasLength(InteractionMode.values.length));
+      // Record goes by its own name, never the catalogue's Exit action.
+      expect(
+        pedalLedModeLabel(l10n, InteractionMode.record),
+        isNot(l10n.actionModeExit),
+      );
     });
   }
 
@@ -37,9 +42,5 @@ void main() {
     final l10n = lookupAppLocalizations(const Locale('en'));
     expect(pedalLedModeLabel(l10n, InteractionMode.record), 'Record');
     expect(pedalLedModeLabel(l10n, InteractionMode.mute), 'Mute');
-    expect(
-      pedalLedModeLabel(l10n, InteractionMode.record),
-      isNot(l10n.actionModeExit),
-    );
   });
 }

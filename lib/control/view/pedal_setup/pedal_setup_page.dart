@@ -63,7 +63,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   @override
   void initState() {
     super.initState();
-    _initialLoad = context.read<ControlCubit>().load();
+    final control = context.read<ControlCubit>();
+    _initialLoad = control.load();
+    _ledMode = control.state.mode;
   }
 
   /// The edit in progress, or `null` when nothing has been touched since the
@@ -88,8 +90,9 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
 
   int _bank = 0;
 
-  /// The mode whose colours LED colors is showing.
-  InteractionMode _ledMode = InteractionMode.record;
+  /// The mode whose colours LED colors is showing: the console's mode when
+  /// the page opened, so the map shown is the one the pedals are lit from.
+  late InteractionMode _ledMode;
 
   bool _saved = false;
   bool _saving = false;
