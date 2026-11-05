@@ -120,7 +120,11 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             snapshot.hasError) {
           return Scaffold(
             body: LoopSettingsFrame(
-              tabs: _contextTabs(context, enabled: false),
+              tabs: _ContextTabs(
+                selected: _context,
+                onOpen: _openContext,
+                enabled: false,
+              ),
               title: l10n.pedalSetupTitle,
               onBack: () => Navigator.of(context).maybePop(),
               onStage: _stage,
@@ -153,7 +157,10 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
               child: Scaffold(
                 body: LoopSettingsFrame(
                   key: const Key('pedal_setup_page'),
-                  tabs: _contextTabs(context),
+                  tabs: _ContextTabs(
+                    selected: _context,
+                    onOpen: _openContext,
+                  ),
                   title: l10n.pedalSetupTitle,
                   onBack: () => Navigator.of(context).maybePop(),
                   onStage: _stage,
@@ -165,7 +172,11 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                         right: 0,
                         top: _modeTabsTop,
                         height: _modeTabHeight,
-                        child: _ledModeTabs(context),
+                        child: _LedModeTabs(
+                          selected: _ledMode,
+                          onShow: _showLedMode,
+                          height: _modeTabHeight,
+                        ),
                       ),
                     // The pedal map keeps its drawn geometry, centred on the
                     // page as on the console.
@@ -399,68 +410,6 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   // ---------------------------------------------------------------------------
   // Contexts
   // ---------------------------------------------------------------------------
-
-  /// The three contexts as the top bar's section tabs: peers, not a path,
-  /// as the Library draws Sessions and Audio.
-  ///
-  /// While the setup loads they are drawn but not [enabled], so the top bar
-  /// does not change when the page arrives.
-  Widget _contextTabs(BuildContext context, {bool enabled = true}) {
-    final l10n = context.l10n;
-    Widget tab(PedalSetupContext value, String label) => LoopChoiceButton(
-      key: Key('pedal_setup_context_${value.name}'),
-      label: label,
-      selected: _context == value,
-      enabled: enabled,
-      onTap: () => _openContext(value),
-      width: _contextTabWidth,
-      height: _contextTabHeight,
-    );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        tab(PedalSetupContext.tracks, l10n.pedalSetupContextTracks),
-        SizedBox(width: context.spacing.md),
-        tab(PedalSetupContext.custom, l10n.pedalSetupContextCustom),
-        SizedBox(width: context.spacing.md),
-        tab(PedalSetupContext.leds, l10n.pedalSetupContextLeds),
-      ],
-    );
-  }
-
-  /// Each context tab's size: "Custom controls", the longest English label,
-  /// at its full 24 px with the button's padding, and the top bar's height
-  /// less its margins.
-  static const double _contextTabWidth = 216;
-  static const double _contextTabHeight = 64;
-
-  /// LED colors' modes, one tab each across the content box, every mode with
-  /// a colour map of its own.
-  Widget _ledModeTabs(BuildContext context) {
-    final l10n = context.l10n;
-    final gap = context.spacing.sm;
-    final width = fillingCardWidth(
-      width: LoopSettingsFrame.contentWidthOf(context),
-      count: InteractionMode.values.length,
-      gap: gap,
-      minWidth: 0,
-    );
-    return Row(
-      children: [
-        for (final (i, mode) in InteractionMode.values.indexed) ...[
-          if (i > 0) SizedBox(width: gap),
-          LoopChoiceButton(
-            key: Key('pedal_led_mode_${mode.name}'),
-            label: pedalLedModeLabel(l10n, mode),
-            selected: mode == _ledMode,
-            onTap: () => _showLedMode(mode),
-            width: width,
-            height: _modeTabHeight,
-          ),
-        ],
-      ],
-    );
-  }
 
   void _openContext(PedalSetupContext next) {
     if (next == _context) return;
@@ -1006,6 +955,96 @@ class _PedalClearDialog extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The three contexts as the top bar's section tabs: peers, not a path, as
+/// the Library draws Sessions and Audio.
+///
+/// While the setup loads they are drawn but not [enabled], so the top bar
+/// does not change when the page arrives.
+class _ContextTabs extends StatelessWidget {
+  const _ContextTabs({
+    required this.selected,
+    required this.onOpen,
+    this.enabled = true,
+  });
+
+  final PedalSetupContext selected;
+  final ValueChanged<PedalSetupContext> onOpen;
+  final bool enabled;
+
+  /// Each tab's size: "Custom controls", the longest English label, at its
+  /// full 24 px with the button's padding, and the top bar's height less its
+  /// margins.
+  static const double _width = 216;
+  static const double _height = 64;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (i, (value, label)) in [
+          (PedalSetupContext.tracks, l10n.pedalSetupContextTracks),
+          (PedalSetupContext.custom, l10n.pedalSetupContextCustom),
+          (PedalSetupContext.leds, l10n.pedalSetupContextLeds),
+        ].indexed) ...[
+          if (i > 0) SizedBox(width: context.spacing.md),
+          LoopChoiceButton(
+            key: Key('pedal_setup_context_${value.name}'),
+            label: label,
+            selected: selected == value,
+            enabled: enabled,
+            onTap: () => onOpen(value),
+            width: _width,
+            height: _height,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// LED colors' modes, one tab each across the content box, every mode with
+/// a colour map of its own.
+class _LedModeTabs extends StatelessWidget {
+  const _LedModeTabs({
+    required this.selected,
+    required this.onShow,
+    required this.height,
+  });
+
+  final InteractionMode selected;
+  final ValueChanged<InteractionMode> onShow;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final gap = context.spacing.sm;
+    final width = fillingCardWidth(
+      width: LoopSettingsFrame.contentWidthOf(context),
+      count: InteractionMode.values.length,
+      gap: gap,
+      minWidth: 0,
+    );
+    return Row(
+      children: [
+        for (final (i, mode) in InteractionMode.values.indexed) ...[
+          if (i > 0) SizedBox(width: gap),
+          LoopChoiceButton(
+            key: Key('pedal_led_mode_${mode.name}'),
+            label: pedalLedModeLabel(l10n, mode),
+            selected: mode == selected,
+            onTap: () => onShow(mode),
+            width: width,
+            height: height,
+          ),
+        ],
+      ],
     );
   }
 }
