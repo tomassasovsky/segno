@@ -87,63 +87,87 @@ class PedalSetupMap extends StatelessWidget {
       children: [
         // Where the foot views draw them too (#1590 FT-4).
         for (final button in ConsolePedalLayout.rearRow)
-          _place(context, button, _rearSlot, _rearTop),
+          _MapCap(map: this, button: button, rear: true),
         for (final button in ConsolePedalLayout.frontRow)
-          _place(context, button, _frontSlot, _frontTop),
+          _MapCap(map: this, button: button, rear: false),
       ],
     ),
   );
 
-  /// [button]'s cap, centred where [ConsolePedalLayout] puts it.
-  Widget _place(
-    BuildContext context,
-    PedalButton button,
-    Size slot,
-    double top,
-  ) => Positioned(
-    left: ConsolePedalLayout.left(button, penSize.width, slot.width),
-    top: top,
-    child: _cap(context, button, slot),
-  );
+  String get _bankLetter => String.fromCharCode(65 + bank);
+}
 
-  Widget _cap(BuildContext context, PedalButton button, Size slot) {
+/// [button]'s cap on [map], centred where [ConsolePedalLayout] puts it.
+class _MapCap extends StatelessWidget {
+  const _MapCap({required this.map, required this.button, required this.rear});
+
+  /// The map the cap is drawn on, which holds what every cap shows.
+  final PedalSetupMap map;
+
+  final PedalButton button;
+
+  /// Whether [button] is on the raised rear row.
+  final bool rear;
+
+  @override
+  Widget build(BuildContext context) {
+    final slot = rear ? PedalSetupMap._rearSlot : PedalSetupMap._frontSlot;
+    final PedalSetupMap(
+      :frame,
+      :preview,
+      :physicalLabels,
+      :selected,
+      :editable,
+      :bank,
+      :bankSelectable,
+      :onSelect,
+      :onToggleBank,
+    ) = map;
     final channel = pedalTrackChannel(button, physicalLabels ? 0 : bank);
     final live =
         editable.contains(button) ||
         (button == PedalButton.bank && bankSelectable);
-    return PedalSetupCap(
-      key: Key('pedal_setup_cap_${button.name}'),
-      // The cap's own silkscreen. A track cap prints the channel its bank
-      // drives, so the map says 5 6 7 8 while bank B is being edited — the
-      // same thing the plate under the foot says.
-      legend: channel == null
-          ? pedalButtonLegend(button)
-          : 'TRACK ${channel + 1}',
-      badge: button == PedalButton.bank && !physicalLabels ? _bankLetter : null,
-      slot: slot,
-      selected: selected.contains(button),
-      ledColor:
-          preview?[button] ??
-          frame?.colorFor(button) ??
-          PedalColor.defaultColor,
-      // A draft bank is not a performance bank change. Do not show another
-      // track's live state beside a different assignment's label.
-      ledActive: preview != null
-          ? preview!.containsKey(button)
-          : (frame?.isLit(button) ?? false) &&
-                (physicalLabels ||
-                    channel == null ||
-                    frame?.activeBank == bank),
-      enabled: live,
-      onTap: !live
-          ? null
-          : button == PedalButton.bank && bankSelectable
-          ? onToggleBank
-          : () => onSelect(button),
+    return Positioned(
+      left: ConsolePedalLayout.left(
+        button,
+        PedalSetupMap.penSize.width,
+        slot.width,
+      ),
+      top: rear ? PedalSetupMap._rearTop : PedalSetupMap._frontTop,
+      child: PedalSetupCap(
+        key: Key('pedal_setup_cap_${button.name}'),
+        // The cap's own silkscreen. A track cap prints the channel its bank
+        // drives, so the map says 5 6 7 8 while bank B is being edited — the
+        // same thing the plate under the foot says.
+        legend: channel == null
+            ? pedalButtonLegend(button)
+            : 'TRACK ${channel + 1}',
+        badge: button == PedalButton.bank && !physicalLabels
+            ? map._bankLetter
+            : null,
+        slot: slot,
+        selected: selected.contains(button),
+        ledColor:
+            preview?[button] ??
+            frame?.colorFor(button) ??
+            PedalColor.defaultColor,
+        // A draft bank is not a performance bank change. Do not show another
+        // track's live state beside a different assignment's label.
+        ledActive: preview != null
+            ? preview.containsKey(button)
+            : (frame?.isLit(button) ?? false) &&
+                  (physicalLabels ||
+                      channel == null ||
+                      frame?.activeBank == bank),
+        enabled: live,
+        onTap: !live
+            ? null
+            : button == PedalButton.bank && bankSelectable
+            ? onToggleBank
+            : () => onSelect(button),
+      ),
     );
   }
-
-  String get _bankLetter => String.fromCharCode(65 + bank);
 }
 
 /// One hardware pedal and its LED, with one touch and encoder target.

@@ -72,11 +72,13 @@ class ExpressionPositionPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: _inset),
-          _readout(context, position),
+          _PositionReadout(position: position),
           const SizedBox(height: _inset),
-          _meter(context, position ?? (reading == null ? null : reading / 255)),
+          _PositionMeter(
+            fraction: position ?? (reading == null ? null : reading / 255),
+          ),
           const SizedBox(height: _inset),
-          _ends(context),
+          const _TravelEnds(),
           if (status != null) ...[
             const SizedBox(height: 26),
             SizedBox(
@@ -109,12 +111,22 @@ class ExpressionPositionPanel extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _readout(BuildContext context, double? position) {
+/// The position in the taught travel, as a percentage.
+class _PositionReadout extends StatelessWidget {
+  const _PositionReadout({required this.position});
+
+  /// The position in the taught travel, or `null` when there is none.
+  final double? position;
+
+  @override
+  Widget build(BuildContext context) {
+    final position = this.position;
     final l10n = context.l10n;
     final surface = context.surface;
     return SizedBox(
-      width: _visual.width,
+      width: ExpressionPositionPanel._visual.width,
       height: 42,
       child: Row(
         children: [
@@ -147,11 +159,20 @@ class ExpressionPositionPanel extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _meter(BuildContext context, double? fraction) {
+/// A bar filled to where the pedal is.
+class _PositionMeter extends StatelessWidget {
+  const _PositionMeter({required this.fraction});
+
+  /// How far along the bar is filled, or `null` for empty.
+  final double? fraction;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
     return SizedBox(
-      width: _visual.width,
+      width: ExpressionPositionPanel._visual.width,
       height: 12,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(6),
@@ -172,8 +193,14 @@ class ExpressionPositionPanel extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _ends(BuildContext context) {
+/// The heel and toe labels under the meter.
+class _TravelEnds extends StatelessWidget {
+  const _TravelEnds();
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final style = TextStyle(
@@ -182,7 +209,7 @@ class ExpressionPositionPanel extends StatelessWidget {
       height: 1,
     );
     return SizedBox(
-      width: _visual.width,
+      width: ExpressionPositionPanel._visual.width,
       height: 24,
       child: Row(
         children: [

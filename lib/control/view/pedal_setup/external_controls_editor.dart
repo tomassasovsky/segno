@@ -168,20 +168,55 @@ class ExternalControlsEditor extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          SizedBox(height: _listHeight(open), child: _list(context)),
+          SizedBox(
+            height: _listHeight(open),
+            child: _ControlsList(
+              rows: rows,
+              selected: selected,
+              onSelect: onSelect,
+            ),
+          ),
           if (open != null) ...[
             const SizedBox(height: 20),
             if (open.activation case final activation?)
-              _activationRule(context, activation, repair: !open.available)
+              _ActivationRule(
+                activation: activation,
+                repair: !open.available,
+                latching: latching,
+                onCondition: onCondition,
+                onChange: onChange,
+                onRemove: onRemove,
+              )
             else
-              _parameterRule(context, open),
+              _ParameterRule(
+                row: open,
+                latching: latching,
+                onValueCondition: onValueCondition,
+                onValue: onValue,
+                onChange: onChange,
+                onRemove: onRemove,
+              ),
           ],
         ],
       ),
     );
   }
+}
 
-  Widget _list(BuildContext context) {
+/// Everything the button drives, or a note that it drives nothing yet.
+class _ControlsList extends StatelessWidget {
+  const _ControlsList({
+    required this.rows,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<ExternalControlRow> rows;
+  final Object? selected;
+  final ValueChanged<Object> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     if (rows.isEmpty) {
@@ -230,12 +265,27 @@ class ExternalControlsEditor extends StatelessWidget {
       },
     );
   }
+}
 
-  Widget _ruleTitle(
-    BuildContext context,
-    String title, {
-    required bool repair,
-  }) {
+/// The open rule's title, with Change (when the target needs repairing) and
+/// Remove beside it.
+class _RuleTitle extends StatelessWidget {
+  const _RuleTitle({
+    required this.title,
+    required this.repair,
+    required this.onChange,
+    required this.onRemove,
+  });
+
+  final String title;
+
+  /// Whether the target is gone, which offers Change.
+  final bool repair;
+  final VoidCallback onChange;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     return Column(
@@ -281,12 +331,33 @@ class ExternalControlsEditor extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _activationRule(
-    BuildContext context,
-    ExternalActivation activation, {
-    required bool repair,
-  }) {
+/// When an open activation is on: one of the four conditions, and a note on
+/// what it means.
+class _ActivationRule extends StatelessWidget {
+  const _ActivationRule({
+    required this.activation,
+    required this.repair,
+    required this.latching,
+    required this.onCondition,
+    required this.onChange,
+    required this.onRemove,
+  });
+
+  final ExternalActivation activation;
+
+  /// Whether the target is gone, which offers Change.
+  final bool repair;
+
+  /// Whether the switch is latching, which has no Held or Released.
+  final bool latching;
+  final ValueChanged<ExternalCondition> onCondition;
+  final VoidCallback onChange;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final condition = activation.condition;
@@ -301,7 +372,12 @@ class ExternalControlsEditor extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ruleTitle(context, l10n.externalActiveWhen, repair: repair),
+        _RuleTitle(
+          title: l10n.externalActiveWhen,
+          repair: repair,
+          onChange: onChange,
+          onRemove: onRemove,
+        ),
         SizedBox(
           height: 64,
           child: Row(
@@ -341,18 +417,42 @@ class ExternalControlsEditor extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _parameterRule(BuildContext context, ExternalControlRow row) {
+/// What an open parameter is set to: its behavior, and its two values.
+class _ParameterRule extends StatelessWidget {
+  const _ParameterRule({
+    required this.row,
+    required this.latching,
+    required this.onValueCondition,
+    required this.onValue,
+    required this.onChange,
+    required this.onRemove,
+  });
+
+  /// The open row, which is a parameter.
+  final ExternalControlRow row;
+
+  /// Whether the switch is latching, which has no Held or Released.
+  final bool latching;
+  final ValueChanged<ExternalValueCondition> onValueCondition;
+  final void Function({required bool active, required double value}) onValue;
+  final VoidCallback onChange;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final parameter = row.parameter!;
     final held = parameter.condition == ExternalValueCondition.heldReleased;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ruleTitle(
-          context,
-          row.disabledReason ?? l10n.externalButtonValues,
+        _RuleTitle(
+          title: row.disabledReason ?? l10n.externalButtonValues,
           repair: !row.available,
+          onChange: onChange,
+          onRemove: onRemove,
         ),
         SizedBox(
           height: 64,
@@ -381,19 +481,19 @@ class ExternalControlsEditor extends StatelessWidget {
         const SizedBox(height: 18),
         Row(
           children: [
-            _value(
-              context,
-              row,
+            _ParameterValue(
+              row: row,
               active: false,
+              onValue: onValue,
               name: held
                   ? l10n.externalConditionReleased
                   : l10n.externalConditionOff,
             ),
             const SizedBox(width: 40),
-            _value(
-              context,
-              row,
+            _ParameterValue(
+              row: row,
               active: true,
+              onValue: onValue,
               name: held
                   ? l10n.externalConditionHeld
                   : l10n.externalConditionOn,
@@ -403,13 +503,30 @@ class ExternalControlsEditor extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _value(
-    BuildContext context,
-    ExternalControlRow row, {
-    required bool active,
-    required String name,
-  }) {
+/// One of an open parameter's two values: its name, its readout, and the
+/// control that moves it.
+class _ParameterValue extends StatelessWidget {
+  const _ParameterValue({
+    required this.row,
+    required this.active,
+    required this.name,
+    required this.onValue,
+  });
+
+  /// The open row, which is a parameter.
+  final ExternalControlRow row;
+
+  /// Whether this is the value while the button is active.
+  final bool active;
+
+  /// What this value is called.
+  final String name;
+  final void Function({required bool active, required double value}) onValue;
+
+  @override
+  Widget build(BuildContext context) {
     final surface = context.surface;
     final parameter = row.parameter!;
     final value = active ? parameter.active : parameter.inactive;
