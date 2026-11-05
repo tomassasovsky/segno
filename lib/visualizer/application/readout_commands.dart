@@ -11,8 +11,10 @@ import 'package:segno/visualizer/readout_command.dart';
 /// Applies the changes a player asks for on the readout's Loop panel (#1654)
 /// through the settings classes the Loop settings pages use, so a change
 /// from the readout is persisted, recalled and refused exactly as one from
-/// the main screen. Nothing is answered: the readout sees the accepted value
-/// in its next readout push.
+/// the main screen. An accepted change is not answered: the readout sees the
+/// accepted value in its next readout push. A refused Clear tempo is, through
+/// [ReadoutCommands.new]'s `onRefused`, because nothing in the push says it
+/// was refused.
 ///
 /// The tempo lock is checked here, not left to the engine: the engine takes
 /// a locked tempo or signature command and drops it later on the audio
@@ -27,11 +29,13 @@ class ReadoutCommands {
     required RecordSettings record,
     required RecordTimingSettings timing,
     required bool Function() dimmed,
+    required void Function(ReadoutRefusal refusal) onRefused,
   }) : _repository = repository,
        _tempo = tempo,
        _record = record,
        _timing = timing,
-       _dimmed = dimmed;
+       _dimmed = dimmed,
+       _onRefused = onRefused;
 
   /// Where a nudge starts when no tempo is set: where the main screen's Tempo
   /// page starts its slider.
@@ -46,6 +50,7 @@ class ReadoutCommands {
   final RecordSettings _record;
   final RecordTimingSettings _timing;
   final bool Function() _dimmed;
+  final void Function(ReadoutRefusal refusal) _onRefused;
 
   /// The tempo the last accepted set put in, the live tempo it replaced,
   /// and a stopwatch running since (monotonic, so a clock step cannot
@@ -72,6 +77,11 @@ class ReadoutCommands {
         if (_tempoLocked) return;
         _pending = null;
         _tempo.tapTempo();
+      case TempoClear():
+        // No lock check here: the engine's tempo lock decides, as it does
+        // for the main screen's Clear tempo.
+        _pending = null;
+        unawaited(_clearTempo());
       case SignatureSet(:final num, :final den):
         // Only before the first take, as on the RC-600 (D6).
         if (_repository.lastState.tempoFollow != TempoFollowState.free) return;
@@ -82,6 +92,18 @@ class ReadoutCommands {
       case TimingSet(:final timing):
         unawaited(_timing.setTiming(timing));
     }
+  }
+
+  /// Clears the tempo, and reports a refusal with the reason the main
+  /// screen's notice gives.
+  Future<void> _clearTempo() async {
+    final result = await _tempo.clearTempo();
+    if (result.isOk) return;
+    _onRefused(switch (result) {
+      EngineResult.notReady => ReadoutRefusal.tempoClearLocked,
+      EngineResult.notRunning => ReadoutRefusal.tempoClearStopped,
+      _ => ReadoutRefusal.tempoClearOther,
+    });
   }
 
   /// Whether the tempo takes no change now: an external clock owns it, or

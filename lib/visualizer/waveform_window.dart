@@ -65,6 +65,7 @@ class WaveformWindowApp extends StatelessWidget {
     required this.readout,
     this.onActivity = _noActivity,
     this.onCommand = _noCommand,
+    this.refusals = const Stream.empty(),
     super.key,
   });
 
@@ -87,6 +88,9 @@ class WaveformWindowApp extends StatelessWidget {
   /// Called with each change asked for on the Loop panel; the readout screen
   /// sends it to the main screen over the screen link.
   final ValueChanged<ReadoutCommand> onCommand;
+
+  /// Each command the main screen refused, for the Loop panel to say why.
+  final Stream<ReadoutRefusal> refusals;
 
   @override
   Widget build(BuildContext context) {
@@ -149,6 +153,7 @@ class WaveformWindowApp extends StatelessWidget {
                     frame: frame,
                     waveform: waveform,
                     onCommand: onCommand,
+                    refusals: refusals,
                   ),
                 ),
                 ReadoutGoodbyeFace(readout: readoutData),

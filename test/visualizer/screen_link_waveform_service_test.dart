@@ -290,6 +290,34 @@ void main() {
     expect(commands, isEmpty);
   });
 
+  test("a refusal reaches the readout's Loop panel (#1654)", () async {
+    final link = startReadout();
+    final refusals = <ReadoutRefusal>[];
+    final sub = link.refusals.listen(refusals.add);
+    addTearDown(sub.cancel);
+    await service.open();
+    await settle();
+
+    service
+      ..showRefusal(ReadoutRefusal.tempoClearLocked)
+      ..showRefusal(ReadoutRefusal.tempoClearStopped);
+    await settle();
+    expect(refusals, const [
+      ReadoutRefusal.tempoClearLocked,
+      ReadoutRefusal.tempoClearStopped,
+    ]);
+
+    // A garbled one is dropped, and a closed readout hears none.
+    directory.ports[screenLinkReadoutPort]!.send({
+      'op': ScreenLinkOp.refused,
+      'refusal': 'later',
+    });
+    await service.close();
+    service.showRefusal(ReadoutRefusal.tempoClearOther);
+    await settle();
+    expect(refusals, hasLength(2));
+  });
+
   group('touch calibration', () {
     test('draws a target on the readout and brings its taps back', () async {
       final link = startReadout();

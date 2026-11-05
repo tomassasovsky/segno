@@ -26,6 +26,7 @@ sealed class ReadoutCommand extends Equatable {
         _ => null,
       },
       TempoTap.kind => const TempoTap(),
+      TempoClear.kind => const TempoClear(),
       SignatureSet.kind => switch ((map['num'], map['den'])) {
         (final int beats, final int note) => SignatureSet(beats, note),
         _ => null,
@@ -99,6 +100,22 @@ final class TempoTap extends ReadoutCommand {
   List<Object?> get props => const [];
 }
 
+/// Clears the tempo, as the main screen's Clear tempo does (#1653). The
+/// engine's tempo lock decides; a refusal comes back as a [ReadoutRefusal].
+final class TempoClear extends ReadoutCommand {
+  /// Creates a [TempoClear].
+  const TempoClear();
+
+  /// The wire name.
+  static const kind = 'tempo.clear';
+
+  @override
+  Map<String, Object?> toMap() => {'kind': kind};
+
+  @override
+  List<Object?> get props => const [];
+}
+
 /// Sets the time signature to [num]/[den].
 final class SignatureSet extends ReadoutCommand {
   /// Creates a [SignatureSet].
@@ -154,4 +171,20 @@ final class TimingSet extends ReadoutCommand {
 
   @override
   List<Object?> get props => [timing];
+}
+
+/// Why the main screen refused a readout's [TempoClear], sent back over the
+/// screen link: the reasons the main screen's own notice gives (#1653).
+enum ReadoutRefusal {
+  /// A recording, a count-in or recorded material holds the tempo.
+  tempoClearLocked,
+
+  /// The audio interface is stopped.
+  tempoClearStopped,
+
+  /// Refused for another reason, such as an external clock owning the tempo.
+  tempoClearOther;
+
+  /// The refusal [name] names, or null when it names none.
+  static ReadoutRefusal? fromName(Object? name) => values.asNameMap()[name];
 }

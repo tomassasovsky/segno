@@ -988,6 +988,7 @@ class _AppViewState extends State<_AppView> {
       record: context.read<RecordSettings>(),
       timing: context.read<RecordTimingSettings>(),
       dimmed: () => mounted && context.read<IdleDimCubit>().state.dimmed,
+      onRefused: widget.waveformWindow.showRefusal,
     ).handle;
     _display = WaveformDisplayController(
       repository: context.read<LooperRepository>(),

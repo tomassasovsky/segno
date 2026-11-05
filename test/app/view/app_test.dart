@@ -154,6 +154,12 @@ class _RecordingWindowService implements WaveformWindowService {
   @override
   void Function(ReadoutCommand command)? onReadoutCommand;
 
+  /// Every refusal the app sent back to the readout.
+  final refusals = <ReadoutRefusal>[];
+
+  @override
+  void showRefusal(ReadoutRefusal refusal) => refusals.add(refusal);
+
   @override
   Future<bool> showCalibrationTarget(
     ({double x, double y})? target, {
@@ -4870,6 +4876,27 @@ void main() {
       final transport = repository.sessionTransport;
       expect((transport.tsNum, transport.tsDen), (6, 8));
       expect(await settings.loadTimeSignature(), (6, 8));
+    });
+
+    testWidgets('a refused Clear tempo from the readout comes back with the '
+        "main screen's reason (#1654)", (tester) async {
+      settings = SettingsRepository(store: FakeKeyValueStore());
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+      await tester.pump(const Duration(milliseconds: 40));
+      final tempo = tester
+          .element(find.byType(LooperPage))
+          .read<TempoSettings>();
+      await tempo.setTempo(100);
+
+      // This harness never starts the audio engine, so the clear is
+      // refused as the main screen's is: the interface is stopped.
+      windowService.onReadoutCommand!(const TempoClear());
+      await tester.pump(const Duration(milliseconds: 40));
+
+      expect(windowService.refusals, [ReadoutRefusal.tempoClearStopped]);
+      expect(tempo.state.bpm, 100);
+      expect(await settings.loadTempoBpm(), 100);
     });
 
     testWidgets('the readout knows when the console is dimmed (#1654)', (
