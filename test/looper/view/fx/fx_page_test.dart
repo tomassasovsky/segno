@@ -144,6 +144,8 @@ final _rig = LooperState(
     ),
     const Track(channel: 1, lanes: [Lane(inputChannel: 2, outputMask: 0xC)]),
   ],
+  laneCounts: const {0: 2},
+  laneInputs: const {(0, 0): 0, (0, 1): 1, (1, 0): 2},
   outputChains: {
     0: FxChainEnvelope(entries: [_fx('o1', TrackEffectType.reverb)]),
   },
@@ -427,6 +429,8 @@ void main() {
           ],
           status: rig.status,
           outputBusCount: rig.outputBusCount,
+          laneInputs: rig.laneInputs,
+          laneCounts: rig.laneCounts,
           outputChains: {
             for (final entry in outputEntries.entries)
               entry.key: FxChainEnvelope(entries: entry.value),
@@ -796,6 +800,104 @@ void main() {
       expect(find.text(l10nOf(tester).fxPlacementPost), findsNothing);
       // And it is the All tracks chain that is showing, not a track's.
       expect(find.text(l10nOf(tester).effectEcho), findsOneWidget);
+    });
+
+    group('the part picker lists the inputs the track records', () {
+      /// The track [lanes] on channel 0, recorded or not, set to record
+      /// [inputs] lane by lane.
+      LooperState rigWith(List<Lane> lanes, List<int> inputs) => LooperState(
+        tracks: [Track(state: TrackState.playing, lanes: lanes)],
+        laneCounts: {0: inputs.length},
+        laneInputs: {
+          for (final (lane, input) in inputs.indexed) (0, lane): input,
+        },
+        status: _rig.status,
+        outputBusCount: _rig.outputBusCount,
+      );
+
+      Future<List<String>> parts(WidgetTester tester) async {
+        await tapKey(tester, 'fx_part_picker');
+        final labels = [
+          for (var lane = 0; lane < 8; lane++)
+            if (find.byKey(Key('fx_part_$lane')).evaluate().isNotEmpty)
+              tester
+                  .widget<Text>(
+                    find
+                        .descendant(
+                          of: find.byKey(Key('fx_part_$lane')),
+                          matching: find.byType(Text),
+                        )
+                        .first,
+                  )
+                  .data!,
+        ];
+        expect(find.byKey(const Key('fx_part_whole')), findsWidgets);
+        return labels;
+      }
+
+      testWidgets('an empty track lists both of its inputs', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+            [0, 1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('a recorded track lists both of its inputs', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 0, lengthFrames: 48000),
+              Lane(inputChannel: 1, lengthFrames: 48000),
+            ],
+            [0, 1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('a lane taken off the track keeps its row while it holds '
+          'audio, and drops it once empty', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 0, lengthFrames: 48000),
+              Lane(lengthFrames: 48000),
+              Lane(),
+            ],
+            [0, -1, -1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          l10nOf(tester).fxPartOrdinal(2),
+        ]);
+      });
+
+      testWidgets('a single-input track lists that input only', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(const [Lane(inputChannel: 2)], [2]),
+        );
+        expect(await parts(tester), ['Keyboard left']);
+      });
     });
 
     testWidgets('switching tracks returns the part picker to Whole track', (

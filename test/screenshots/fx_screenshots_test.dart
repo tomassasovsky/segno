@@ -133,6 +133,8 @@ final _rig = LooperState(
     ),
     const Track(channel: 1, lanes: [Lane(inputChannel: 2, outputMask: 0xC)]),
   ],
+  laneCounts: const {0: 2},
+  laneInputs: const {(0, 0): 0, (0, 1): 1, (1, 0): 2},
   outputChains: {
     0: FxChainEnvelope(entries: [_fx('o1', TrackEffectType.reverb)]),
   },
@@ -363,6 +365,16 @@ void main() {
   testWidgets('Recorded track, whole track', (tester) async {
     await pump(tester, destination: const FxDestination.recordedTrack(0));
     await shoot(tester, 'recorded_track');
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Recorded track, the part picker', (tester) async {
+    await pump(tester, destination: const FxDestination.recordedTrack(0));
+    await tester.tap(find.byKey(const Key('fx_part_picker')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/fx_recorded_track_parts.png'),
+    );
   }, skip: !rendersScreenshots);
 
   testWidgets('All tracks', (tester) async {
