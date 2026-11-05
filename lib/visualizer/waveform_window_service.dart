@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_command.dart';
 
 /// Manages the readout on the Track display (the 7"): showing and hiding it and
 /// pushing waveform frames to it. The appliance's is the screen link
@@ -83,6 +84,11 @@ abstract interface class WaveformWindowService {
   /// display, which wakes an idle-dimmed console like a touch on the main
   /// one.
   abstract void Function()? onWindowActivity;
+
+  /// Fired with each change a player asks for on the readout's Loop panel
+  /// (#1654). The caller applies it; the readout sees the result in its next
+  /// readout push.
+  abstract void Function(ReadoutCommand command)? onReadoutCommand;
 }
 
 /// A no-op service: tests, and the macOS dev host, which has no Track display.
@@ -98,6 +104,9 @@ class NoopWaveformWindowService implements WaveformWindowService {
 
   @override
   void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
+  void Function(ReadoutCommand command)? onReadoutCommand;
 
   @override
   Future<bool> open() async => true;

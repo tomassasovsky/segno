@@ -3,7 +3,9 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart' show RecordTiming;
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_command.dart';
 import 'package:segno/visualizer/readout_screen.dart';
 import 'package:segno/visualizer/screen_link.dart';
 import 'package:segno/visualizer/screen_link_waveform_service.dart';
@@ -255,6 +257,37 @@ void main() {
     await settle();
 
     expect(touches, 1);
+  });
+
+  test('a command on the readout reaches the main screen (#1654)', () async {
+    final link = startReadout();
+    final commands = <ReadoutCommand>[];
+    service.onReadoutCommand = commands.add;
+    await service.open();
+    await settle();
+
+    link
+      ..sendCommand(const TempoNudge(0.1))
+      ..sendCommand(const TimingSet(RecordTiming.half));
+    await settle();
+
+    expect(commands, const [TempoNudge(0.1), TimingSet(RecordTiming.half)]);
+  });
+
+  test('a garbled command is dropped', () async {
+    startReadout();
+    final commands = <ReadoutCommand>[];
+    service.onReadoutCommand = commands.add;
+    await service.open();
+    await settle();
+
+    directory.ports[screenLinkMainPort]!.send({
+      'op': ScreenLinkOp.command,
+      'command': {'kind': 'tempo.set', 'bpm': 'fast'},
+    });
+    await settle();
+
+    expect(commands, isEmpty);
   });
 
   group('touch calibration', () {

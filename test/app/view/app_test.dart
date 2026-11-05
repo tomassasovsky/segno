@@ -22,6 +22,7 @@ import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_gate.dart';
 import 'package:segno/appliance/power_off/power_key_source.dart';
@@ -149,6 +150,9 @@ class _RecordingWindowService implements WaveformWindowService {
 
   @override
   void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
+  void Function(ReadoutCommand command)? onReadoutCommand;
 
   @override
   Future<bool> showCalibrationTarget(
@@ -4841,6 +4845,50 @@ void main() {
           );
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.activeBank, 1);
+    });
+
+    testWidgets('a change on the readout reaches the rig and comes back in '
+        'the readout (#1654)', (tester) async {
+      // Construct the writer under the widget clock so startup completes here.
+      settings = SettingsRepository(store: FakeKeyValueStore());
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.loop.ready, isTrue);
+
+      windowService.onReadoutCommand!(const LengthSet(8));
+      windowService.onReadoutCommand!(const TimingSet(RecordTiming.half));
+      windowService.onReadoutCommand!(const SignatureSet(6, 8));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pump(const Duration(milliseconds: 40));
+
+      final readout = windowService.readouts.last;
+      expect(readout.loop.lengthBars, 8);
+      expect(readout.loop.timing, RecordTiming.half);
+      // This harness's engine publishes no snapshots, so the signature is
+      // read from the rig rather than from the readout.
+      final transport = repository.sessionTransport;
+      expect((transport.tsNum, transport.tsDen), (6, 8));
+      expect(await settings.loadTimeSignature(), (6, 8));
+    });
+
+    testWidgets('the readout knows when the console is dimmed (#1654)', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.dimmed, isFalse);
+
+      final idle = tester.element(find.byType(LooperPage)).read<IdleDimCubit>();
+      await idle.setSeconds(120);
+      await tester.pump(const Duration(seconds: 121));
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.dimmed, isTrue);
+
+      windowService.onWindowActivity!();
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.dimmed, isFalse);
     });
 
     testWidgets('the readout bands what the main screen says (#1562)', (

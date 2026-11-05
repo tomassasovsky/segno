@@ -120,6 +120,11 @@ abstract final class ScreenLinkOp {
   /// Readout to main: a tap during calibration, `x` and `y` in the readout's
   /// normalized coordinates.
   static const calibrationTap = 'calibrationTap';
+
+  /// Readout to main: a change the player asked for on the readout's Loop
+  /// panel (#1654), a `ReadoutCommand` map under `command`. No reply: the
+  /// readout sees the result in its next [readout].
+  static const command = 'command';
 }
 
 /// A copy of [value] that a [SendPort] can carry between isolate groups.

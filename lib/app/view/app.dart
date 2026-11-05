@@ -42,7 +42,10 @@ import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/application/record_settings.dart';
+import 'package:segno/looper/application/record_timing_settings.dart';
 import 'package:segno/looper/application/settings_owner.dart';
+import 'package:segno/looper/application/tempo_settings.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/owned_setting.dart';
 import 'package:segno/notices/notices.dart';
@@ -57,6 +60,7 @@ import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/visualizer/application/readout_commands.dart';
 import 'package:segno/visualizer/application/waveform_display_controller.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:session_repository/session_repository.dart';
@@ -915,6 +919,10 @@ class _AppView extends StatefulWidget {
 class _AppViewState extends State<_AppView> {
   late final WaveformDisplayController _display;
   StreamSubscription<WaveformDisplayFailure>? _displayFailures;
+
+  /// The length and record timing owners' publications, which the readout's
+  /// Loop panel shows (#1654).
+  late final List<StreamSubscription<void>> _loopSettingsSubs;
   StreamSubscription<RecoveryRefusal>? _recoverySub;
   bool _restoreNoticeScheduled = false;
 
@@ -972,6 +980,22 @@ class _AppViewState extends State<_AppView> {
     widget.waveformWindow.onWindowActivity = () {
       if (mounted) context.read<IdleDimCubit>().activity();
     };
+    // The readout's Loop panel changes the tempo, the length and the record
+    // timing through the owners the Loop settings pages use (#1654).
+    widget.waveformWindow.onReadoutCommand = ReadoutCommands(
+      repository: context.read<LooperRepository>(),
+      tempo: context.read<TempoSettings>(),
+      record: context.read<RecordSettings>(),
+      timing: context.read<RecordTimingSettings>(),
+    ).handle;
+    _loopSettingsSubs = [
+      context.read<RecordSettings>().stream.listen(
+        (_) => _updateDisplayContext(),
+      ),
+      context.read<RecordTimingSettings>().stream.listen(
+        (_) => _updateDisplayContext(),
+      ),
+    ];
     _display = WaveformDisplayController(
       repository: context.read<LooperRepository>(),
       window: widget.waveformWindow,
@@ -1109,6 +1133,27 @@ class _AppViewState extends State<_AppView> {
       brightness: context.read<DisplayBrightnessCubit>().state.softwareOf(
         DisplayRole.track,
       ),
+      loop: _readoutLoop(control.cursor),
+      dimmed: context.read<IdleDimCubit>().state.dimmed,
+    );
+  }
+
+  /// The length and record timing the readout's Loop panel shows: the
+  /// defaults it edits, and the selected track's own values, which it names.
+  ReadoutLoopSettings _readoutLoop(int cursor) {
+    final record = context.read<RecordSettings>().state;
+    final timing = context.read<RecordTimingSettings>().state;
+    return ReadoutLoopSettings(
+      lengthBars: record.defaultLengthBars,
+      // Multi shares the default: a track's own length does not apply there.
+      trackLengthBars: record.recordLengthMode == LooperMode.multi
+          ? null
+          : record.trackLengthPresetOverrides[cursor],
+      timing: timing.defaultTiming,
+      trackTiming: timing.trackOverrides[cursor],
+      captureLocked:
+          record.recordLengthCaptureLocked || timing.captureLocked,
+      ready: record.recordLengthReady && timing.recordTimingReady,
     );
   }
 
@@ -1150,6 +1195,10 @@ class _AppViewState extends State<_AppView> {
   @override
   void dispose() {
     widget.waveformWindow.onWindowActivity = null;
+    widget.waveformWindow.onReadoutCommand = null;
+    for (final subscription in _loopSettingsSubs) {
+      unawaited(subscription.cancel());
+    }
     unawaited(_displayFailures?.cancel());
     unawaited(
       _display.close().catchError((Object error, StackTrace stack) {
@@ -1631,6 +1680,10 @@ class _AppViewState extends State<_AppView> {
           listener: (_, _) => _updateDisplayContext(),
         ),
         BlocListener<PowerCubit, PowerState>(
+          listener: (_, _) => _updateDisplayContext(),
+        ),
+        BlocListener<IdleDimCubit, IdleDimState>(
+          listenWhen: (previous, current) => previous.dimmed != current.dimmed,
           listener: (_, _) => _updateDisplayContext(),
         ),
         BlocListener<DisplayBrightnessCubit, DisplayBrightnessState>(

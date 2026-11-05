@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_command.dart';
 import 'package:segno/visualizer/screen_link.dart';
 import 'package:segno/visualizer/waveform_window_service.dart';
 
@@ -64,6 +65,9 @@ class ScreenLinkWaveformService implements WaveformWindowService {
   void Function(({double x, double y}) tap)? onCalibrationTap;
 
   @override
+  void Function(ReadoutCommand command)? onReadoutCommand;
+
+  @override
   void Function()? onWindowReady;
 
   @override
@@ -120,6 +124,9 @@ class ScreenLinkWaveformService implements WaveformWindowService {
         if (seq is int) _acks.remove(seq)?.complete();
       case ScreenLinkOp.activity:
         onWindowActivity?.call();
+      case ScreenLinkOp.command:
+        final command = ReadoutCommand.fromMap(message['command']);
+        if (command != null) onReadoutCommand?.call(command);
       case ScreenLinkOp.calibrationTap:
         final x = message['x'];
         final y = message['y'];

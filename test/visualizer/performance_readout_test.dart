@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart'
+    show RecordTiming, TempoFollowState;
 import 'package:segno/appliance/power_off/power_step.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/visualizer/performance_readout.dart';
@@ -133,6 +135,65 @@ void main() {
       const dimmed = PerformanceReadout(brightness: 0.3);
       expect(PerformanceReadout.fromMap(dimmed.toMap()).brightness, 0.3);
       expect(PerformanceReadout.fromMap(const {}).brightness, 1);
+    });
+
+    test('the Loop panel facts cross the channel (#1654)', () {
+      const panel = PerformanceReadout(
+        tempoFollow: TempoFollowState.retimes,
+        clockOwnsTempo: true,
+        loop: ReadoutLoopSettings(
+          lengthBars: 4,
+          trackLengthBars: 8,
+          timing: RecordTiming.bar,
+          trackTiming: RecordTiming.eighth,
+          captureLocked: true,
+          ready: true,
+        ),
+        dimmed: true,
+      );
+      expect(PerformanceReadout.fromMap(panel.toMap()), panel);
+      final none = PerformanceReadout.fromMap(const {});
+      expect(none.tempoFollow, TempoFollowState.free);
+      expect(none.clockOwnsTempo, isFalse);
+      expect(none.loop, const ReadoutLoopSettings());
+      expect(none.loop.editable, isFalse);
+      expect(none.dimmed, isFalse);
+    });
+
+    test('an unknown tempo follow reads as locked, never as free', () {
+      expect(
+        PerformanceReadout.fromMap(const {'tempoFollow': 'later'}).tempoFollow,
+        TempoFollowState.busy,
+      );
+    });
+
+    test('garbled loop facts read as the defaults, not ready', () {
+      final loop = PerformanceReadout.fromMap(const {
+        'loop': {
+          'lengthBars': '4',
+          'trackLengthBars': 2.0,
+          'timing': 'beat',
+          'captureLocked': 1,
+          'ready': true,
+        },
+      }).loop;
+      expect(loop.lengthBars, 0);
+      expect(loop.trackLengthBars, isNull);
+      expect(loop.timing, RecordTiming.immediately);
+      expect(loop.captureLocked, isFalse);
+      expect(loop.ready, isFalse);
+      expect(
+        PerformanceReadout.fromMap(const {'loop': 'Auto'}).loop,
+        const ReadoutLoopSettings(),
+      );
+    });
+
+    test('loop settings are editable when ready and no take holds them', () {
+      expect(const ReadoutLoopSettings(ready: true).editable, isTrue);
+      expect(
+        const ReadoutLoopSettings(ready: true, captureLocked: true).editable,
+        isFalse,
+      );
     });
   });
 }
