@@ -429,3 +429,70 @@ s4 Pumper passes (s4/25-27) agree among themselves the same way.
   constant offset brings the 25 % pass within 0.19 dB rms.
 - The kernel's ladder compresses less than the Looper X's at this level. At
   0 dBFS, #1445 read -17.1 dB, and the kernel gives -14.4.
+
+## The Guitar Rack on an idle input, and the OvDrive below its knee (#1644, #1663, session s18idle)
+
+Captured on 2026-11-04 to answer whether segno's drive presets lift an idle
+input's noise more than the Looper X does. Stimulus `idlestim` (48 kHz as
+the engine sees it): 3 s of silence; white noise at -90, -80 and -55 dBFS
+RMS, 6 s each; 8 s of silence; "hum" (50 Hz with its odd harmonics to
+950 Hz at 1/k, 60 % of the power, plus white noise, 40 %) at the same three
+levels; 8 s of silence; 1 kHz at -70, -60, -50 and -40 dBFS RMS, 2 s each.
+Levels are read over the last 3.3 s of each 6 s segment, as the mean of
+outputs 1 and 2. Passes: Full Drive Power, Full Drive and Lead Crunch in
+their factory settings (Master Vol as stored), then each with only OvDrive
+and Amp on, OvDrive alone, Amp alone and every pedal off; then the OvDrive
+alone at Master Vol 0.0 dB over Drive 0, 11.3, 50.3, 90 and 100 % (Tone
+50.2 %) and Tone 0, 25.4, 75 and 100 % (Drive 50.3 %). Every reading
+scales with the input from -90 to -80 dBFS within 0.1 dB, so the drives
+are linear there.
+
+**The whole rack.** Output dBFS on the Looper X, and segno at 2c1c561dc
+(before this fit) as its difference from the Looper X, dB:
+
+| preset | white -90 | white -80 | white -55 | hum -90 | hum -80 | hum -55 |
+|---|---|---|---|---|---|---|
+| Full Drive Power, Looper X | -47.7 | -37.8 | -22.2 | -49.4 | -39.5 | -21.7 |
+| Full Drive Power, segno | -7.2 | -7.2 | -3.1 | +1.2 | +1.5 | +4.1 |
+| Full Drive, Looper X | -60.2 | -50.1 | -26.9 | -63.2 | -53.2 | -29.1 |
+| Full Drive, segno | -5.6 | -5.6 | -5.1 | +2.9 | +2.9 | +2.9 |
+| Lead Crunch, Looper X | -61.5 | -51.5 | -32.6 | -63.6 | -53.7 | -33.1 |
+| Lead Crunch, segno | -1.3 | -1.3 | +0.1 | +3.8 | +3.8 | +4.2 |
+
+The Looper X has no gate or expander here: the gain at -90 dBFS is the gain
+at -80. With every pedal off it passes the input at Master Vol, and at
+Drive 0 the OvDrive alone still adds 12.5 dB at 1 kHz.
+
+**Which stage.** The OvDrive. Alone, segno's lifted the hum 3.0 to 4.5 dB
+more than the Looper X's at every level and setting, and white noise 2.4 to
+3.7 dB less. The Looper X's OvDrive is a band-pass below its knee: from
+31 Hz it rises 6 dB an octave to a peak near 800 Hz, then falls. Its gain,
+dB, at Tone 50.2 % (Drive 0 / 50.3 / 100 %) and Drive 50.3 % (Tone 0 /
+100 %):
+
+| Hz | 50 | 100 | 250 | 500 | 1000 | 2000 | 4000 |
+|---|---|---|---|---|---|---|---|
+| Drive 0 | -1.3 | 1.9 | 7.7 | 11.5 | 12.5 | 9.6 | 4.3 |
+| Drive 50.3 % | 2.9 | 7.9 | 14.8 | 18.9 | 19.8 | 16.9 | 11.4 |
+| Drive 100 % | 12.5 | 18.5 | 25.9 | 30.0 | 30.7 | 27.0 | 19.3 |
+| Tone 0 | 2.8 | 7.6 | 13.6 | 15.7 | 14.7 | 11.2 | 6.9 |
+| Tone 100 % | 2.9 | 8.0 | 15.4 | 20.7 | 24.6 | 25.5 | 23.0 |
+
+segno's was flat from 30 Hz to 1 kHz at about the 1 kHz gain, so it lifted
+50 Hz 15 to 19 dB more. Its 1 kHz gain at -48 dBFS (the Phase 0 fit) was
+right; its true small-signal gain at high drive was 3 to 5 dB low, because
+the fit read it where the clipped part already compresses. The fit that
+replaces it (engine_fx.c, Overdrive) puts a 434 Hz high-pass before the
+clipped part and a low-pass at 176.6 kHz / G after it, with G =
+e^(1.542 + 1.357 v + 0.792 v^2), and replaces the tone's moving corner by a
+shelf and a bell fitted at the five tone points. Over the twelve OvDrive
+settings it is within 1.1 dB rms from 30 Hz to 16 kHz, its 1 kHz ladders
+within 1.7 dB, and its noise levels within 1.1 dB at every level. The tone
+moves the 1 kHz ladder by the same dB at every level (Tone 0: -5.2, Tone
+100 %: +4.7), so it acts after the curve.
+
+**The Amp.** Alone, segno's is 3.9 to 4.7 dB quieter than the Looper X's at
+Drive 93.5 % (Full Drive Power), 1.1 to 1.8 dB at 66.6 % (Full Drive) and
+0.3 to 0.9 dB louder at 22.7 % (Lead Crunch), with the same spectrum
+within 0.5 dB from 50 Hz to 8 kHz. Its small-signal gain between the
+captured drives is not the Looper X's (#1664).

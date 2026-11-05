@@ -587,18 +587,16 @@ void main() {
     test('only the chosen mappings carry the taper-unverified flag', () {
       // The seven built-ins are segno's own; the Looper X kinds' ranges are
       // the Looper X's, and the EQ, dynamics, doubler, chorus, wah, vinyl,
-      // degrade, low-pass filter and Mod are measured (#891, #1445). The
-      // controls whose
-      // effect is chosen or inferred from one capture carry it: the
-      // overdrive's tone (captured at 50 % only), the distortion (fit to
-      // the Studio Rack's, used for Lo-Fi's too) and the Dual Octaver's
-      // Octave 1 level (always at 100 % in the presets).
+      // degrade, low-pass filter, Mod and the overdrive's tone are measured
+      // (#891, #1445, #1663). The controls whose effect is chosen or
+      // inferred from one capture carry it: the distortion (fit to the
+      // Studio Rack's, used for Lo-Fi's too) and the Dual Octaver's Octave 1
+      // level (always at 100 % in the presets).
       for (final type in TrackEffectType.values) {
         for (final p in type.params) {
           expect(
             p.taperUnverified,
             type == TrackEffectType.distortion ||
-                (type == TrackEffectType.overdrive && p.key == 'tone') ||
                 (type == TrackEffectType.dualOctaver &&
                     p.key == 'octave_1_vol'),
             reason: '${type.name}.${p.key}',
