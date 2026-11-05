@@ -8565,5 +8565,106 @@
     "consoleLedsCalibrateNote": "In a dark room, with the lights as they are on stage, wait 10 seconds and tap Dark room. Then do the same in a bright room. Each takes the Reading on the right. Dark room needs half the Bright room reading or less, and Bright room twice the Dark room reading or more.",
     "@consoleLedsCalibrateNote": {
         "description": "How to calibrate the light sensor."
+    },
+    "readoutPanelOpen": "Tempo, length and start",
+    "@readoutPanelOpen": {
+        "description": "Announced name of the readout's footer strip, which opens its Loop panel (#1654)."
+    },
+    "readoutPanelTempo": "Tempo",
+    "@readoutPanelTempo": {
+        "description": "Title of the tempo card on the readout's Loop panel."
+    },
+    "readoutPanelTap": "Tap",
+    "@readoutPanelTap": {
+        "description": "Tap tempo button on the readout's Loop panel."
+    },
+    "readoutPanelMore": "More",
+    "@readoutPanelMore": {
+        "description": "Opens every time signature on the readout's Loop panel."
+    },
+    "readoutPanelBack": "Back",
+    "@readoutPanelBack": {
+        "description": "Leaves the time signature list on the readout's Loop panel."
+    },
+    "readoutPanelLength": "Length",
+    "@readoutPanelLength": {
+        "description": "Title of the length row on the readout's Loop panel."
+    },
+    "readoutPanelNextTake": "next take",
+    "@readoutPanelNextTake": {
+        "description": "Says the length applies to the next take, after the Length title."
+    },
+    "readoutPanelStart": "Start",
+    "@readoutPanelStart": {
+        "description": "Title of the record timing choices on the readout's Loop panel."
+    },
+    "readoutPanelRecordTiming": "record timing",
+    "@readoutPanelRecordTiming": {
+        "description": "Names the setting after the Start title."
+    },
+    "readoutPanelShorter": "Shorter",
+    "@readoutPanelShorter": {
+        "description": "Announced name of the length minus button."
+    },
+    "readoutPanelLonger": "Longer",
+    "@readoutPanelLonger": {
+        "description": "Announced name of the length plus button."
+    },
+    "readoutTimingNow": "Now",
+    "@readoutTimingNow": {
+        "description": "Record timing Immediately, short, on the readout."
+    },
+    "readoutTimingLoopTop": "Loop top",
+    "@readoutTimingLoopTop": {
+        "description": "Record timing Loop start, short, on the readout."
+    },
+    "readoutStripStart": "Start {timing}",
+    "@readoutStripStart": {
+        "description": "The record timing on the readout's footer strip.",
+        "placeholders": {
+            "timing": {
+                "type": "String"
+            }
+        }
+    },
+    "readoutPanelRetimes": "Changing the tempo retimes the recorded loops.",
+    "@readoutPanelRetimes": {
+        "description": "Said on the readout's tempo card while a tempo change retimes the loops."
+    },
+    "readoutPanelNoGrid": "Locked: the loops have no bar grid.",
+    "@readoutPanelNoGrid": {
+        "description": "Why the tempo is locked: the loops were recorded without a bar grid."
+    },
+    "readoutPanelNoFollower": "Locked: no track follows the tempo.",
+    "@readoutPanelNoFollower": {
+        "description": "Why the tempo is locked: no track with material follows the tempo."
+    },
+    "readoutPanelBusy": "Locked while a take is armed or recording.",
+    "@readoutPanelBusy": {
+        "description": "Why the tempo is locked: a take is armed, counting in or recording."
+    },
+    "readoutPanelClock": "MIDI clock sets the tempo.",
+    "@readoutPanelClock": {
+        "description": "Why the tempo is locked: an external MIDI clock sets it."
+    },
+    "readoutPanelSignatureLocked": "Clear all tracks to change it",
+    "@readoutPanelSignatureLocked": {
+        "description": "Why the time signature is locked once loops exist."
+    },
+    "readoutPanelRecording": "Recording: tempo, length and start are locked until the take ends",
+    "@readoutPanelRecording": {
+        "description": "The band on the readout's Loop panel while a take records."
+    },
+    "readoutPanelTrackOwn": "Track {track} uses {value}",
+    "@readoutPanelTrackOwn": {
+        "description": "Says the selected track has its own length or record timing, which the panel does not change.",
+        "placeholders": {
+            "track": {
+                "type": "int"
+            },
+            "value": {
+                "type": "String"
+            }
+        }
     }
 }

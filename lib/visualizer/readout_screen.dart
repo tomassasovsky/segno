@@ -213,6 +213,7 @@ class ReadoutScreen extends StatelessWidget {
                   frame: link.frame,
                   readout: link.readout,
                   onActivity: link.sendActivity,
+                  onCommand: link.sendCommand,
                 )
               : ColoredBox(color: AppTheme.neon.scaffoldBackgroundColor),
         );

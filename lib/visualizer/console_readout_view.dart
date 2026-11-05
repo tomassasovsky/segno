@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/track_column.dart' show PrimaryCrown;
 import 'package:segno/notices/model/notice.dart' show NoticeTone;
@@ -7,12 +10,15 @@ import 'package:segno/notices/view/notice_palette.dart';
 import 'package:segno/notices/view/notice_sentence.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_panel/readout_button.dart';
+import 'package:segno/visualizer/readout_panel/readout_labels.dart';
 
 /// The console's 7" second screen (the accepted design): it follows the
 /// selected track — number, crown, name, then the state word and the bar
-/// count over the track's own waveform — with the tempo and the current
-/// function · bank as a secondary footer. A readout: nothing here takes a
-/// tap, and encoder focus stays on the main display.
+/// count over the track's own waveform — with the tempo, the length and
+/// start of the next take and the current function · bank in a footer strip.
+/// The strip is the one thing here that takes a touch: it opens the Loop
+/// panel (#1654). Encoder focus stays on the main display.
 ///
 /// **Proportional, not absolute.** The prototype draws the screen at 1280×720,
 /// but the view's logical size depends on its `pixel_ratio` in
@@ -25,6 +31,7 @@ class ConsoleReadoutView extends StatelessWidget {
   const ConsoleReadoutView({
     required this.readout,
     required this.waveform,
+    this.onOpenControls,
     super.key,
   });
 
@@ -34,6 +41,9 @@ class ConsoleReadoutView extends StatelessWidget {
   /// The selected track's waveform region, injected so this widget stays pure
   /// presentation (the window wires the frame stream into it).
   final Widget waveform;
+
+  /// Opens the Loop panel; null leaves the footer strip inert.
+  final VoidCallback? onOpenControls;
 
   /// The reference frame's size — what every dimension is drawn against.
   static const Size referenceSize = Size(1280, 720);
@@ -81,7 +91,7 @@ class ConsoleReadoutView extends StatelessWidget {
                 ),
               ),
               SizedBox(height: 28 * s),
-              _Footer(readout: readout, s: s),
+              _Footer(readout: readout, s: s, onTap: onOpenControls),
             ],
           ),
         );
@@ -327,13 +337,17 @@ class _StateLine extends StatelessWidget {
   }
 }
 
-/// `84 BPM  4/4` at the leading edge; `Tracks · Bank A` at the trailing
-/// edge — tempo and the current function/bank stay secondary here.
+/// `84 BPM  4/4 · 4 bars · Start 1 bar` at the leading edge, `Tracks ·
+/// Bank A` at the trailing edge, in a strip that is one touch target: it
+/// opens the Loop panel (#1654). The facts stay secondary here, sized to the
+/// reference like the rest of the readout; the strip never goes under the
+/// 48 px a finger needs.
 class _Footer extends StatelessWidget {
-  const _Footer({required this.readout, required this.s});
+  const _Footer({required this.readout, required this.s, this.onTap});
 
   final PerformanceReadout readout;
   final double s;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -353,7 +367,11 @@ class _Footer extends StatelessWidget {
       fontSize: 28 * s,
       height: 1,
     );
-    return Row(
+    final dot = AppText(
+      ' · ',
+      style: secondary.copyWith(color: surface.textMuted),
+    );
+    final facts = Row(
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
       children: [
@@ -379,13 +397,66 @@ class _Footer extends StatelessWidget {
           key: const Key('console_readout_signature'),
           style: secondary,
         ),
-        const Spacer(),
+        dot,
+        AppText(
+          readoutLengthLabel(l10n, readout.loop.lengthBars),
+          key: const Key('console_readout_length'),
+          style: secondary,
+        ),
+        dot,
+        AppText(
+          l10n.readoutStripStart(readoutTimingLabel(l10n, readout.loop.timing)),
+          key: const Key('console_readout_start'),
+          style: secondary,
+        ),
+      ],
+    );
+    final content = Row(
+      children: [
+        // The facts give way first: on a narrow panel they scale down
+        // rather than run under the function and bank.
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(fit: BoxFit.scaleDown, child: facts),
+          ),
+        ),
+        SizedBox(width: 24 * s),
         AppText(
           l10n.readoutFunctionBank(function, bank),
           key: const Key('console_readout_function'),
           style: secondary.copyWith(color: surface.textPrimary),
         ),
+        SizedBox(width: 20 * s),
+        Icon(
+          LucideIcons.slidersHorizontal,
+          size: 32 * s,
+          color: surface.textSecondary,
+        ),
       ],
+    );
+    return Semantics(
+      button: true,
+      label: l10n.readoutPanelOpen,
+      onTap: onTap,
+      child: Material(
+        key: const Key('console_readout_strip'),
+        color: surface.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16 * s),
+          side: BorderSide(color: surface.borderSubtle),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            height: math.max(kReadoutMinTarget, 110 * s),
+            padding: EdgeInsets.symmetric(horizontal: 24 * s),
+            alignment: Alignment.centerLeft,
+            child: content,
+          ),
+        ),
+      ),
     );
   }
 }

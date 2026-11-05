@@ -211,10 +211,18 @@ void main() {
       expect(find.byKey(const Key('console_readout_name')), findsNothing);
     });
 
-    testWidgets('nothing on the face takes a tap', (tester) async {
+    testWidgets('only the footer strip takes a tap (#1654)', (tester) async {
       await pump(tester);
-      expect(find.byType(InkWell), findsNothing);
-      expect(find.byType(GestureDetector), findsNothing);
+      final strip = find.byKey(const Key('console_readout_strip'));
+      expect(
+        find.byType(InkWell),
+        findsOneWidget,
+        reason: 'the strip is the one target on the face',
+      );
+      expect(
+        find.descendant(of: strip, matching: find.byType(InkWell)),
+        findsOneWidget,
+      );
     });
 
     group('notice band (#1562)', () {
