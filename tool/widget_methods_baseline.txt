@@ -7,7 +7,6 @@ lib/audio_setup/view/device_page.dart#_Workspace._banner
 lib/common/console_surface.dart#ConsoleRow.build.quiet
 lib/common/console_surface.dart#_ConsoleCaptionState._button
 lib/common/console_surface.dart#_ConsoleCaptionState._glyph
-lib/common/on_screen_keyboard/on_screen_keyboard.dart#_OnScreenKeyboardState._numericPad
 lib/common/on_screen_keyboard/on_screen_keyboard_host.dart#_OnScreenKeyboardHostState._focusedEditable
 lib/control/view/fx_pedal_assignments_body.dart#_FxPedalAssignmentsBodyState._trackRow
 lib/control/view/fx_pedal_assignments_body.dart#_FxPedalAssignmentsBodyState._assignSection
