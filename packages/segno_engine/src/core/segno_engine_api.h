@@ -2788,8 +2788,8 @@ LE_EXPORT int32_t le_engine_restore_tempo(le_engine* engine, float bpm,
 /* Clears the tempo (#1653): BPM 0, tempo_source NONE and no bar grid, so the
  * next defining loop sets the tempo again. Refused exactly while the tempo is
  * locked (D6): a track holds material on a grid or under a tempo, a take or a
- * count-in is under way, or a record is armed, launching or not yet
- * acknowledged — LE_ERR_NOT_READY, nothing posted. LE_ERR_EXTERNAL_CLOCK
+ * count-in is under way, or a record is waiting, launching or not yet
+ * applied — LE_ERR_NOT_READY, nothing posted. LE_ERR_EXTERNAL_CLOCK
  * while an external clock owns the tempo; LE_ERR_NOT_RUNNING unconfigured;
  * LE_ERR_INVALID for a null handle. The callback rechecks the lock before
  * applying. Not perf-logged: the effect chains' musical time picks up the

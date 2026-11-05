@@ -102,13 +102,18 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
   Future<void> _clearTempo() async {
     final notices = context.read<NoticesCubit>();
     setState(() => _draftBpm = null);
-    if (await context.read<TempoCubit>().clearTempo()) return;
+    final result = await context.read<TempoCubit>().clearTempo();
+    if (result.isOk) return;
     notices.show(
       Notice(
         id: AppNoticeId.tempoClearRefused,
         tone: NoticeTone.warning,
         title: (l10n) => l10n.loopTempoClearRefused,
-        body: (l10n) => l10n.loopTempoClearRefusedBody,
+        body: switch (result) {
+          EngineResult.notReady => (l10n) => l10n.loopTempoClearRefusedBody,
+          EngineResult.notRunning => (l10n) => l10n.loopTempoClearStopped,
+          _ => null,
+        },
       ),
     );
   }
@@ -379,9 +384,8 @@ class _TempoReadout extends StatelessWidget {
     final value = bpm > 0 ? bpm.toStringAsFixed(2) : l10n.loopTempoUnset;
     return Semantics(
       button: true,
-      label: l10n.loopTempoSliderLabel,
+      label: l10n.loopTempoEdit,
       value: bpm > 0 ? '$value ${l10n.loopTempoBpmUnit}' : value,
-      hint: l10n.loopTempoEdit,
       onTap: onTap,
       excludeSemantics: true,
       child: LoopFocusable(

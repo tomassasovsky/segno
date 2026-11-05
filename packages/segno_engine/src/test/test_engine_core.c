@@ -6070,10 +6070,17 @@ static void test_clear_tempo_follows_the_tempo_lock(void) {
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
   CHECK(s.loop_bars == 0 && s.loop_beats == 0);
 
-  /* A take records under a tempo: refused, then a raw post changes nothing. */
+  /* Only the typed producer posts it. */
+  atomic_store_explicit(&e->a_running, 1, memory_order_release);
+  CHECK(le_engine_post_command(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) ==
+        LE_ERR_INVALID);
+  atomic_store_explicit(&e->a_running, 0, memory_order_release);
+
+  /* A record posted and not yet applied is refused in the same block. */
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
   tg_advance(e, 1);
   CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_READY);
   tg_advance(e, 100);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
@@ -6110,6 +6117,25 @@ static void test_clear_tempo_follows_the_tempo_lock(void) {
   CHECK(s.tempo_bpm == 0.0f);
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
   CHECK(s.loop_bars == 0 && s.loop_beats == 0);
+
+  /* A record waiting on sound, on an empty rig, keeps the tempo it was
+   * pressed under; a raw post in that window changes nothing either. */
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 10);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_READY);
+  CHECK(le_push(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.001f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* cancel the wait */
+  tg_advance(e, 10);
+  CHECK(record_start_sound(e, 0) == LE_OK);
+  tg_advance(e, 1);
 
   /* A count-in locks the tempo before any sample is captured. */
   CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);

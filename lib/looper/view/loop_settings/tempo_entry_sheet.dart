@@ -38,8 +38,14 @@ Future<double?> showTempoEntrySheet(
 @visibleForTesting
 String? typeTempoKey(String text, String key) {
   final next = text + key;
-  return RegExp(r'^\d{0,3}(\.\d{0,2})?$').hasMatch(next) ? next : null;
+  return _tempoText.hasMatch(next) ? next : null;
 }
+
+/// Up to three whole digits and two decimals.
+final _tempoText = RegExp(r'^\d{0,3}(\.\d{0,2})?$');
+
+/// A key that types into the tempo: a digit or the point.
+final _tempoKey = RegExp(r'^[\d.]$');
 
 /// The tempo [text] names, or null when it is outside [kTempoRange].
 @visibleForTesting
@@ -117,7 +123,7 @@ class _TempoEntrySheetState extends State<_TempoEntrySheet> {
       return KeyEventResult.handled;
     }
     final character = event.character;
-    if (character == null || !RegExp(r'^[\d.]$').hasMatch(character)) {
+    if (character == null || !_tempoKey.hasMatch(character)) {
       return KeyEventResult.ignored;
     }
     _type(character);

@@ -5219,8 +5219,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
     }
     case LE_CMD_CLEAR_TEMPO: {
       /* #1653: the D6 lock decides, with no retime: a tempo that holds
-       * material, a take or a count-in stays. An external clock owns it. */
-      if (le_tempo_locked(e) || e->clock_source >= 0) break;
+       * material, a take or a count-in stays, and so does one a record
+       * waits on. An external clock owns it. */
+      if (le_tempo_locked(e) || le_transport_edit_blocked(e) ||
+          e->clock_source >= 0) break;
       store_f32(&e->a_tempo_bpm_bits, 0.0f);
       store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_NONE);
       e->has_tap = 0;

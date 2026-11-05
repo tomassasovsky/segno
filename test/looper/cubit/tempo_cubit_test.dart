@@ -59,11 +59,11 @@ void main() {
   );
 
   test('clearTempo reports whether the engine took it', () async {
-    expect(await cubit.clearTempo(), isFalse); // no running engine
+    expect(await cubit.clearTempo(), EngineResult.notRunning);
     repository.startEngine(const EngineConfig());
     await cubit.setTempo(96);
     expect(cubit.state.bpm, 96);
-    expect(await cubit.clearTempo(), isTrue);
+    expect(await cubit.clearTempo(), EngineResult.ok);
     expect(cubit.state.bpm, 0);
     expect(store.values['tempo.bpm'], 0);
   });

@@ -79,7 +79,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
-## November 2026 Exact tempo, Clear tempo, and the footer's ways in (#1653)
+## November 2026 Exact tempo entry, Clear tempo, and footer shortcuts to Tempo and Loop mode (#1653)
 
 - The Tempo page's big BPM is a button: it opens the console keypad
   (`showTempoEntrySheet`, the numeric layout of `OnScreenKeyboard` in the

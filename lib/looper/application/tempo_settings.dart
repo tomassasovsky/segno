@@ -202,9 +202,10 @@ class TempoSettings {
   /// material under the tempo, a take records or a count-in runs, the
   /// refusal comes back and nothing changes or is saved.
   Future<EngineResult> clearTempo() async {
-    _userEditRevision++;
     final result = _repository.clearTempo();
     if (!result.isOk) return result;
+    // Only an applied clear is an edit a startup restore must not undo.
+    _userEditRevision++;
     _emit(state.copyWith(bpm: 0));
 
     await _settings.saveTempoBpm(0);

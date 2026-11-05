@@ -19,9 +19,9 @@ class TempoCubit extends Cubit<TempoState> {
 
   Future<void> setTempo(double bpm) => _settings.setTempo(bpm);
 
-  /// Clears the tempo; `false` when the engine's tempo lock refused it.
+  /// Clears the tempo; the engine's answer, so a refusal can say why.
   // ignore: prefer_void_public_cubit_methods
-  Future<bool> clearTempo() async => (await _settings.clearTempo()).isOk;
+  Future<EngineResult> clearTempo() => _settings.clearTempo();
   Future<void> setTimeSignature(int num, int den) =>
       _settings.setTimeSignature(num, den);
   Future<void> setClickOutput(int mask) => _settings.setClickOutput(mask);

@@ -2863,6 +2863,7 @@
     "loopTempoClear": "Quitar tempo",
     "loopTempoClearRefused": "No se quitó el tempo",
     "loopTempoClearRefusedBody": "Una grabación o una cuenta de entrada fija el tempo. Borrá las pistas primero.",
+    "loopTempoClearStopped": "La interfaz de audio está detenida. Iniciala y después quitá el tempo.",
     "loopTempoEntryTitle": "Tempo",
     "loopTempoEntryNow": "Ahora {bpm} BPM",
     "loopTempoEntryRange": "De {min} a {max} BPM",

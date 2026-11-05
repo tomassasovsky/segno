@@ -8568,7 +8568,7 @@
     },
     "loopTempoEdit": "Type a tempo",
     "@loopTempoEdit": {
-        "description": "Accessible hint of the Tempo page's readout: tapping it opens the keypad."
+        "description": "Accessible name of the Tempo page's readout: tapping it opens the keypad."
     },
     "loopTempoClear": "Clear tempo",
     "@loopTempoClear": {
@@ -8581,6 +8581,10 @@
     "loopTempoClearRefusedBody": "A recording or a count-in holds the tempo. Clear the tracks first.",
     "@loopTempoClearRefusedBody": {
         "description": "Why Clear tempo was refused."
+    },
+    "loopTempoClearStopped": "The audio interface is stopped. Start it, then clear the tempo.",
+    "@loopTempoClearStopped": {
+        "description": "Why Clear tempo was refused while the engine is stopped."
     },
     "loopTempoEntryTitle": "Tempo",
     "@loopTempoEntryTitle": {

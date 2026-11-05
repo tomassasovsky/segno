@@ -4119,16 +4119,19 @@ int32_t le_engine_restore_tempo(le_engine* engine, float bpm, int32_t source) {
 
 /* The control-thread reading of le_tempo_locked (engine_process.c), from the
  * published and posted state, plus anything about to start a take: a count-in,
- * an arm, a pending or launching record, or a state change not yet applied.
- * The callback rechecks le_tempo_locked itself, so a record posted in the same
- * block as the clear still wins. */
+ * a pending or launching record, a record or arm posted and not yet applied
+ * (the clocked commands), or a state change not yet applied. The callback
+ * rechecks the lock and a pending record itself. */
 static int le_clear_tempo_blocked(le_engine* engine) {
-  if (load_i32(&engine->a_counting_in)) return 1;
+  if (load_i32(&engine->a_counting_in) ||
+      engine->clock_commands_posted !=
+          atomic_load_explicit(&engine->a_clock_commands_applied,
+                               memory_order_acquire)) return 1;
   const int grid = load_i32(&engine->a_loop_beats) > 0 ||
                    load_i32(&engine->a_tempo_source) != LE_TEMPO_SOURCE_NONE;
   for (int32_t c = 0; c < engine->track_count; ++c) {
     le_track* t = &engine->tracks[c];
-    if (engine->armed[c] || load_i32(&t->a_pending) ||
+    if (load_i32(&t->a_pending) ||
         load_i32(&t->a_pending_launch) || t->cancel_pending ||
         t->clear_restore_pending ||
         t->state_cmds_posted !=
