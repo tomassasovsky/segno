@@ -323,7 +323,7 @@ Sources:
 
 | Function | Accepted behavior |
 | --- | --- |
-| Mute | Stays on the normal track columns. Track pedals mute/unmute without stopping playback; Mode restores normal controls. A Clear track Hold clears the held track as it does in Record, after its mute press (#1671); Arm overdub runs only in Record. |
+| Mute | Stays on the normal track columns. Track pedals mute/unmute without stopping playback; Mode restores normal controls. With Track Hold set to Clear track, holding a track pedal clears it as in Record, and the mute press acts on release instead, cancelled by a clear that fires, so nothing sounds or parks first (#1671); a capturing track is not cleared from Mute. With any other Track Hold the mute stays on contact; Arm overdub runs only in Record. |
 | FX | Four visible logical assignments plus Bank for four more; stateful activation, clear current actions and Exit. |
 | Transpose | Select tracks across banks; Undo/Clear lower/raise one semitone; hold either resets selection. Range ±12; timing unchanged. Global bypass preserves stored pitches and selection. Exit retains changes. |
 | Mixer by foot | One channel at a time. Tracks controls loop playback level; Inputs controls live monitoring only. Track/channel hold mutes without losing level. Undo/Clear step level; hold resets unity. Bank pages four; hold Bank switches Tracks/Inputs. Eighteen-input paging is supported. |

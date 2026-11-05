@@ -3076,11 +3076,24 @@ class ControlCubit extends Cubit<ControlState> {
       case PedalButton.track2:
       case PedalButton.track3:
       case PedalButton.track4:
-        final channel = state.bankBaseChannel + _trackIndex(button);
-        trackPressed(channel);
-        _armTrackHold(button);
+        if (_muteHoldClears) {
+          // The mute waits for the release, and a clear that fires cancels
+          // it (#1671): nothing sounds, rejoins or parks before a clear.
+          _armTrackHold(button, muteOnRelease: true);
+        } else {
+          trackPressed(state.bankBaseChannel + _trackIndex(button));
+          _armTrackHold(button);
+        }
     }
   }
+
+  /// Whether a Mute-mode track press is a Press/Hold pair: Track Hold is
+  /// Clear track, so the press moves to the release, as a Custom pair's
+  /// does (#1671).
+  bool get _muteHoldClears =>
+      state.mode == InteractionMode.mute &&
+      !state.pedalSetupUnavailable &&
+      state.pedalSetup.trackHold == TrackHold.clearTrack;
 
   /// The gesture shape is fixed on contact; its bank-keyed action and
   /// target are resolved only when the gesture fires.
@@ -3790,13 +3803,15 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
-  /// Track selection/transport remains immediate; Hold follows the current
-  /// bank position until the threshold fires.
+  /// Record's track press stays immediate; Hold follows the current bank
+  /// position until the threshold fires.
   ///
-  /// Record runs either Hold. Mute runs only Clear track (#1671), as the
-  /// Looper X's one Hold Track Pedal setting does: the press keeps its mute,
-  /// and Arm overdub, which starts a take, stays out of a mix-only mode.
-  void _armTrackHold(PedalButton button) {
+  /// Record runs either Hold. Mute runs only Clear track (#1671), with its
+  /// mute press as the gesture's tap on release ([muteOnRelease]), resolved
+  /// to the bank position then; Arm overdub, which starts an overdub, stays
+  /// out of a mix-only mode. A Mute clear leaves a capturing track alone,
+  /// as Mute's press does in Song.
+  void _armTrackHold(PedalButton button, {bool muteOnRelease = false}) {
     if (state.pedalSetupUnavailable) return;
     final hold = state.pedalSetup.trackHold;
     final armed = switch (state.mode) {
@@ -3806,13 +3821,29 @@ class ControlCubit extends Cubit<ControlState> {
     };
     if (!armed) return;
     final clearTrack = hold == TrackHold.clearTrack;
+    final mute = state.mode == InteractionMode.mute;
+    int channelNow() => state.bankBaseChannel + _trackIndex(button);
+    // Read fresh: a take can begin in the native callback before the poll.
+    bool capturing() {
+      final tracks = _looper.state.tracks;
+      final channel = channelNow();
+      return channel >= 0 &&
+          channel < tracks.length &&
+          tracks[channel].isCapturing;
+    }
+
     _armGesture(
       _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
       cue: button,
-      clears: clearTrack ? () => true : null,
+      clears: !clearTrack
+          ? null
+          : mute
+          ? () => !capturing()
+          : () => true,
       clearPause: clearTrack ? _clearTrackPause : Duration.zero,
+      onTap: muteOnRelease ? () => trackPressed(channelNow()) : null,
       onHold: () {
-        final channel = state.bankBaseChannel + _trackIndex(button);
+        final channel = channelNow();
         switch (hold) {
           case TrackHold.none:
             return;
@@ -3828,6 +3859,7 @@ class ControlCubit extends Cubit<ControlState> {
               _looper.record(channel: channel);
             }
           case TrackHold.clearTrack:
+            if (mute && capturing()) return;
             if (_looper.clear(channel: channel).isOk) _meetClearFill(button);
         }
       },
