@@ -74,7 +74,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
-| #1659 | Loop settings: regroup the six pages into four (Loop mode, Tempo & click, Recording, Playback); brainstorm awaiting the owner's direction | brainstorm | plan-gate | `claude/loop-settings-structure-1659` |
 
 ---
 
@@ -101,6 +100,31 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Device checks owed: tap-tempo latency from the readout against the main
   screen (within 0.5 BPM at 120), and reach at the panel's edges after touch
   calibration.
+
+## November 2026 Loop settings as four tabs (#1659)
+
+- Settings → Loop settings has four tabs on its title row in place of the
+  hub and its six pages: **Loop mode**, **Tempo & click**, **Recording** and
+  **Playback**. The next visit opens on the tab last open (kept for the run,
+  `openLoopSettings` in `segno_navigator.dart`); the stage footer's tempo and
+  mode open their tabs directly. Brainstorm with the owner's six answers:
+  `docs/brainstorm/2026-11-04-loop-settings-structure.md`.
+- **Recording** (`loop_recording_page.dart`) is everything about when a take
+  starts and ends: Start recording and Second pedal press side by side, the
+  track selector, Loop length with Later tracks directly under it (Defaults
+  only), then Record timing. A take recording locks the whole tab behind one
+  banner.
+- **Playback** (`loop_playback_page.dart`) is everything a loop does as it
+  repeats: Loop/Once, overdub decay, then Follow tempo and Pitch side by side.
+  Nothing on it locks. The name "Audio & tempo" is gone.
+- One track selection for the visit, owned by `LoopSettingsPage`: it opens
+  at Defaults, Recording and Playback share it, and Back or Stage ends it.
+- Count-in stays on Tempo & click and says, while Start is Sound, that a
+  count-in switches the start to Pedal. The loop-length capacity refusal
+  names Settings, Device instead of the old Audio setup.
+- No setting was added or removed; the engine and the settings owners are
+  untouched. Owed: the Penpot frames (geometry in the PR's "Design
+  writeback").
 
 ## November 2026 Exact tempo entry, Clear tempo, and footer shortcuts to Tempo and Loop mode (#1653)
 

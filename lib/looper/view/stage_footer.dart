@@ -9,7 +9,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/output_level_cubit.dart';
 import 'package:segno/looper/cubit/transport_clock_cubit.dart';
-import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/looper/view/slot_row.dart';
 import 'package:segno/looper/view/stage_top_bar.dart';
 import 'package:segno/theme/theme.dart';
@@ -18,7 +18,8 @@ import 'package:segno/theme/theme.dart';
 /// signature, the elapsed transport time, the output level with its clip
 /// warning, and the loop mode. Each readout is subscribed to its own slice so
 /// a level tick redraws one figure and a beat nothing at all. The tempo opens
-/// the Tempo page and the loop mode the Loop mode page (#1653).
+/// Loop settings on its Tempo & click tab and the loop mode on its Loop mode
+/// tab (#1653, #1659).
 class StageFooter extends StatelessWidget {
   /// Creates a [StageFooter].
   const StageFooter({super.key});
@@ -111,8 +112,7 @@ class _TempoBlock extends StatelessWidget {
     );
     return _FooterTarget(
       semanticLabel: l10n.a11yStageTempo(bpm, signature),
-      onTap: () =>
-          unawaited(openLoopSettings(initial: LoopSettingsPageId.tempo)),
+      onTap: () => unawaited(openLoopSettings(initial: LoopSettingsTab.tempo)),
       child: Row(
         key: const Key('stage_footer_tempo'),
         mainAxisSize: MainAxisSize.min,
@@ -266,8 +266,7 @@ class _LoopModePill extends StatelessWidget {
     return _FooterTarget(
       semanticLabel: l10n.a11yStageLoopMode(label),
       radius: _radius,
-      onTap: () =>
-          unawaited(openLoopSettings(initial: LoopSettingsPageId.mode)),
+      onTap: () => unawaited(openLoopSettings(initial: LoopSettingsTab.mode)),
       child: Container(
         key: const Key('stage_footer_mode'),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),

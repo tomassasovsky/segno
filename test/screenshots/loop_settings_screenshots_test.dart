@@ -17,7 +17,6 @@ import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/model/audio_tempo.dart';
 import 'package:segno/looper/model/one_shot.dart';
 import 'package:segno/looper/model/overdub_decay.dart';
-import 'package:segno/looper/view/loop_settings/loop_settings_hub.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_page.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -305,7 +304,7 @@ void main() {
 
   Future<void> pump(
     WidgetTester tester, {
-    required LoopSettingsPageId page,
+    required LoopSettingsTab page,
     LooperState state = _rig,
     Future<void> Function(TempoSettings tempo, RecordSettings options)? prepare,
     InheritSnapshot<bool>? followTempo,
@@ -418,14 +417,6 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('Loop settings hub', (tester) async {
-    await pump(tester, page: LoopSettingsPageId.hub);
-    await expectLater(
-      find.byType(LoopSettingsPage),
-      matchesGoldenFile('goldens/loop_settings_hub.png'),
-    );
-  }, skip: !rendersScreenshots);
-
   testWidgets('Loop mode with a refused card and the stop dialog', (
     tester,
   ) async {
@@ -435,7 +426,7 @@ void main() {
     when(
       () => repository.looperModeGate(LooperMode.free),
     ).thenReturn(LooperModeGate.playing);
-    await pump(tester, page: LoopSettingsPageId.mode);
+    await pump(tester, page: LoopSettingsTab.mode);
     await expectLater(
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_mode.png'),
@@ -448,26 +439,53 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('Recording, and locked while recording', (tester) async {
-    await pump(tester, page: LoopSettingsPageId.recording);
-    await expectLater(
-      find.byType(LoopSettingsPage),
-      matchesGoldenFile('goldens/loop_settings_recording.png'),
-    );
-  }, skip: !rendersScreenshots);
+  // The merged Recording tab (#1659), in English and Spanish: Defaults with a
+  // fixed length, then locked while a take records.
+  for (final locale in const [Locale('en'), Locale('es')]) {
+    final suffix = locale.languageCode == 'en' ? '' : '_es';
+    testWidgets('Recording defaults $locale', (tester) async {
+      await pump(
+        tester,
+        page: LoopSettingsTab.recording,
+        locale: locale,
+        prepare: (_, options) => options.setDefaultLengthBars(4),
+      );
+      await expectLater(
+        find.byType(LoopSettingsPage),
+        matchesGoldenFile('goldens/loop_settings_recording$suffix.png'),
+      );
+    }, skip: !rendersScreenshots);
 
-  testWidgets('Recording locked', (tester) async {
-    await pump(
-      tester,
-      page: LoopSettingsPageId.recording,
-      state: const LooperState(
-        tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
-        transport: TransportState(deviceRunning: true, tempoBpm: 84),
-      ),
-    );
+    testWidgets('Recording locked $locale', (tester) async {
+      await pump(
+        tester,
+        page: LoopSettingsTab.recording,
+        locale: locale,
+        state: const LooperState(
+          tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
+          transport: TransportState(deviceRunning: true, tempoBpm: 84),
+        ),
+      );
+      await expectLater(
+        find.byType(LoopSettingsPage),
+        matchesGoldenFile('goldens/loop_settings_recording_locked$suffix.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
+  testWidgets('Recording, a custom track, kept on Playback', (tester) async {
+    await pump(tester, page: LoopSettingsTab.recording);
+    await tester.tap(find.byKey(const Key('loop_scope_track_1')));
+    await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
-      matchesGoldenFile('goldens/loop_settings_recording_locked.png'),
+      matchesGoldenFile('goldens/loop_settings_recording_custom.png'),
+    );
+    await tester.tap(find.byKey(const Key('loop_settings_tab_playback')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(LoopSettingsPage),
+      matchesGoldenFile('goldens/loop_settings_playback_custom.png'),
     );
   }, skip: !rendersScreenshots);
 
@@ -476,7 +494,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      page: LoopSettingsPageId.recording,
+      page: LoopSettingsTab.recording,
       prepare: (tempo, _) async {
         expect(
           (await tempoOwner.recordStartControl.setCountInBars(0)).isOk,
@@ -510,7 +528,7 @@ void main() {
   }, skip: !rendersScreenshots);
 
   testWidgets('Tempo & click, and the time signature grid', (tester) async {
-    await pump(tester, page: LoopSettingsPageId.tempo);
+    await pump(tester, page: LoopSettingsTab.tempo);
     expect(find.byKey(const Key('loop_click_recFirst')), findsOneWidget);
     expect(confirmedClickMode, ClickMode.recFirst);
     await expectLater(
@@ -528,7 +546,7 @@ void main() {
   testWidgets('Tempo keypad, and an entry out of range (#1653)', (
     tester,
   ) async {
-    await pump(tester, page: LoopSettingsPageId.tempo);
+    await pump(tester, page: LoopSettingsTab.tempo);
     await tester.tap(find.byKey(const Key('loop_tempo_entry')));
     await tester.pumpAndSettle();
     final sheet = find.byKey(const Key('tempo_entry_sheet'));
@@ -571,7 +589,7 @@ void main() {
   }, skip: !rendersScreenshots);
 
   testWidgets('Author Count-in Off and 2-bar captures', (tester) async {
-    await pump(tester, page: LoopSettingsPageId.tempo);
+    await pump(tester, page: LoopSettingsTab.tempo);
     expect(
       (await tempoOwner.recordStartControl.setCountInBars(0)).isOk,
       isTrue,
@@ -590,54 +608,34 @@ void main() {
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/tempo_count_in_2.png'),
     );
-  }, skip: !rendersScreenshots);
-
-  testWidgets('Length & quantize, defaults and a custom track', (
-    tester,
-  ) async {
-    await pump(
-      tester,
-      page: LoopSettingsPageId.length,
-      prepare: (_, options) => options.setDefaultLengthBars(4),
+    expect(
+      (await tempoOwner.recordStartControl.setSoundStart(enabled: true)).isOk,
+      isTrue,
     );
-    await expectLater(
-      find.byType(LoopSettingsPage),
-      matchesGoldenFile('goldens/loop_settings_length_defaults.png'),
-    );
-    await tester.tap(find.byKey(const Key('loop_scope_track_1')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(LoopSettingsPage),
-      matchesGoldenFile('goldens/loop_settings_length_custom.png'),
+      matchesGoldenFile('goldens/tempo_count_in_sound.png'),
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('Playback & overdub, a custom track', (tester) async {
-    await pump(tester, page: LoopSettingsPageId.playback);
-    await tester.tap(find.byKey(const Key('loop_scope_track_1')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(LoopSettingsPage),
-      matchesGoldenFile('goldens/loop_settings_playback_custom.png'),
-    );
-  }, skip: !rendersScreenshots);
-
-  // The pen's 07/04 to 07/06 (#1179 Audio & tempo), in English and Spanish.
+  // The merged Playback tab (#1659) with the pen's 07/04 to 07/06 Follow
+  // tempo and Pitch states, in English and Spanish.
   for (final locale in const [Locale('en'), Locale('es')]) {
     final suffix = locale.languageCode == 'en' ? '' : '_es';
-    testWidgets('Audio & tempo defaults (07/04) $locale', (tester) async {
-      await pump(tester, page: LoopSettingsPageId.audioTempo, locale: locale);
+    testWidgets('Playback defaults (07/04) $locale', (tester) async {
+      await pump(tester, page: LoopSettingsTab.playback, locale: locale);
       await expectLater(
         find.byType(LoopSettingsPage),
-        matchesGoldenFile('goldens/loop_settings_audio_tempo$suffix.png'),
+        matchesGoldenFile('goldens/loop_settings_playback$suffix.png'),
       );
     }, skip: !rendersScreenshots);
 
-    testWidgets('Audio & tempo, a track whose pitch follows speed (07/05) '
+    testWidgets('Playback, a track whose pitch follows speed (07/05) '
         '$locale', (tester) async {
       await pump(
         tester,
-        page: LoopSettingsPageId.audioTempo,
+        page: LoopSettingsTab.playback,
         locale: locale,
         pitchMode: InheritSnapshot(
           defaultValue: PitchMode.unchanged,
@@ -649,16 +647,16 @@ void main() {
       await expectLater(
         find.byType(LoopSettingsPage),
         matchesGoldenFile(
-          'goldens/loop_settings_audio_tempo_pitch_follows$suffix.png',
+          'goldens/loop_settings_playback_pitch_follows$suffix.png',
         ),
       );
     }, skip: !rendersScreenshots);
 
-    testWidgets('Audio & tempo, a track that keeps its recorded speed (07/06) '
+    testWidgets('Playback, a track that keeps its recorded speed (07/06) '
         '$locale', (tester) async {
       await pump(
         tester,
-        page: LoopSettingsPageId.audioTempo,
+        page: LoopSettingsTab.playback,
         locale: locale,
         followTempo: InheritSnapshot(
           defaultValue: true,
@@ -670,7 +668,7 @@ void main() {
       await expectLater(
         find.byType(LoopSettingsPage),
         matchesGoldenFile(
-          'goldens/loop_settings_audio_tempo_recorded_speed$suffix.png',
+          'goldens/loop_settings_playback_recorded_speed$suffix.png',
         ),
       );
     }, skip: !rendersScreenshots);
