@@ -180,6 +180,20 @@ void main() {
     expect(decoded.first.enabled, isFalse);
   });
 
+  test('the arm snapshot carries what was heard: a bypassed rack is off', () {
+    final chain = [
+      _module('a1', _reverb.copyWith(bypassed: true)),
+      _module('b1', _chords),
+    ];
+
+    final snapshot = trackEffectsToEngine(chain);
+
+    expect(snapshot.map((fx) => (fx as engine.BuiltInEffect).enabled), [
+      false,
+      true,
+    ]);
+  });
+
   test('the fingerprint folds what the engine holds, not the own bit', () {
     final on = [_module('a1', _reverb)];
     final bypassed = [_module('a1', _reverb.copyWith(bypassed: true))];

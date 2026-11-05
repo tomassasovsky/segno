@@ -1085,8 +1085,22 @@ FxRack? _rackFromEngine(engine.FxRack? rack) => rack == null
 /// private behind [encodeTrackEffects] / [decodeTrackEffects]. Callers never
 /// need to name the engine types — and must not re-derive this mapping
 /// themselves, or the domain and engine models would silently drift.
+///
+/// Each entry carries the bit the engine holds for it,
+/// [TrackEffect.effectiveEnabled], not its own switch: the snapshot is what
+/// was heard, and its native reader (`perf_render.c`) knows no racks, so a
+/// rack bypassed at arm (#1711) must reach it as entries that are off.
 List<engine.TrackEffect> trackEffectsToEngine(List<TrackEffect> effects) =>
-    _chainToEngine(effects);
+    _chainToEngine([
+      for (final fx in effects)
+        if (fx.enabled == fx.effectiveEnabled)
+          fx
+        else
+          switch (fx) {
+            BuiltInEffect() => fx.copyWith(enabled: false),
+            PluginEffect() => fx.copyWith(enabled: false),
+          },
+    ]);
 
 /// [effects] mapped one by one, each with its rack path ([fxEntryPaths]),
 /// which only the whole chain decides.

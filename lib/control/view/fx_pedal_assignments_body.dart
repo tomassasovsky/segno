@@ -310,14 +310,11 @@ class _AssignSection extends StatelessWidget {
       await cubit.setGlobalBindings(next);
     }
 
-    final targets = looper.availableBindingTargets();
-    // Chains and their racks always, each rack under its chain (#1711); the
-    // individual effects one tap deeper.
-    final slots = targets.whereType<FxSlotTarget>().toList();
-    final listed = <FxBindingTarget>[
-      for (final target in targets)
-        if (target is! FxSlotTarget) target,
-      if (showEffects) ...slots,
+    // In signal order: each chain, then its racks (#1711), each rack's own
+    // effects under it once the list is asked for them.
+    final listed = [
+      for (final target in looper.availableBindingTargets())
+        if (showEffects || target is! FxSlotTarget) target,
     ];
 
     return Column(
@@ -438,7 +435,8 @@ class _TargetRow extends StatelessWidget {
       titleColor: target is FxSlotTarget ? surface.textSecondary : null,
       state: switch (target) {
         FxChainTarget() => stage,
-        FxRackTarget() || FxSlotTarget() => l10n.controlEffectIn(stage),
+        FxRackTarget() => stage,
+        FxSlotTarget() => l10n.controlEffectIn(stage),
       },
       valueColor: chosen ? surface.accent : surface.textMuted,
       indented: target is! FxChainTarget,

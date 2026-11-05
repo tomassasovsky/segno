@@ -4132,12 +4132,20 @@ class ControlCubit extends Cubit<ControlState> {
           _reportFxRefusal(FootFxRefusal.failed);
           return false;
         }
-        _fxPersistence
-          ..ordinaryTarget(target, enabled: !prior)
-          // A toggle is the player's new setting, so the chain it changed is
-          // saved and a reload keeps it — a rack's switch (#1711) as much as
-          // a chain's or an effect's. A momentary returns to what is saved.
-          ..scheduleSave(target.address, _settings, debounce: Duration.zero);
+        _fxPersistence.ordinaryTarget(target, enabled: !prior);
+        // A toggle is the player's new setting, so the chain it changed is
+        // saved and a reload keeps it — a rack's switch (#1711) as much as a
+        // chain's or an effect's. A momentary returns to what is saved. An
+        // empty chain switched off is not saved, as the Effects page's own
+        // switch does not save it: every boot would restore a bypass on the
+        // effects added there later.
+        if (_looper.chainEntriesAt(target.address)?.isNotEmpty ?? false) {
+          _fxPersistence.scheduleSave(
+            target.address,
+            _settings,
+            debounce: Duration.zero,
+          );
+        }
       case BindingBehavior.momentary:
         if (_heldRestore.containsKey(binding.key)) return false;
         _log('binding momentary ${binding.key.button.name} (was $prior)');

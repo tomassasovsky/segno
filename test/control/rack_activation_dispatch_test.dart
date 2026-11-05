@@ -275,6 +275,32 @@ void main() {
     }
   });
 
+  test('a stomp that switches an empty chain off saves nothing', () async {
+    final rig = _Rig();
+    try {
+      await rig.control.load();
+      await rig.control.setGlobalBindings(
+        PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+            target: const FxChainTarget(
+              FxAddress(stage: FxStage.allTracks),
+            ).canonicalString(),
+          ),
+        ]),
+      );
+      rig.control.setMode(InteractionMode.fx);
+      await rig._settle();
+
+      await rig.stomp(PedalButton.track1);
+
+      expect(rig.looper.allTracksChainEnabled, isFalse);
+      expect(await rig.settings.loadAllTracksFxChain(), isNull);
+    } finally {
+      await rig.close();
+    }
+  });
+
   test(
     'a binding whose rack was removed is missing and switches nothing',
     () async {
