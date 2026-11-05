@@ -306,6 +306,29 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
+  // An input whose only switch is 48 V: its label starts on the column
+  // line, and every card keeps its ordinal and name on the same lines as
+  // the tagged ones (#1672).
+  testWidgets('Input setup, 48 V the only switch', (tester) async {
+    interfaceInputs = const InterfaceInputs(
+      status: InterfaceInputsStatus.controls,
+      inputs: [
+        InterfaceInput(level: InputLevel.inst, pad: false, air: InputAir.off),
+        InterfaceInput(level: InputLevel.line, pad: false, air: InputAir.off),
+        InterfaceInput(phantomSwitch: 0),
+        InterfaceInput(phantomSwitch: 0),
+      ],
+      phantomSwitches: [PhantomSwitch(firstInput: 2, lastInput: 3, on: true)],
+    );
+    await pump(tester, tab: AudioRoutingTab.setup);
+    await tester.tap(find.byKey(const Key('routing_input_card_2')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(AudioRoutingPage),
+      matchesGoldenFile('goldens/audio_routing_input_setup_phantom_only.png'),
+    );
+  }, skip: !rendersScreenshots);
+
   testWidgets('Input setup, locked', (tester) async {
     await pump(
       tester,

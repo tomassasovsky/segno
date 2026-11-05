@@ -50,8 +50,9 @@ class InterfaceSwitchesRow extends StatelessWidget {
   /// The Line / Inst choice.
   static const double levelWidth = 260;
 
-  /// The three-way Air choice.
-  static const double airChoiceWidth = 560;
+  /// The three-way Air choice: each option fits "Presence + Drive" at the
+  /// row's 22 px (#1672).
+  static const double airChoiceWidth = 3 * 212 + 2 * 8;
 
   @override
   Widget build(BuildContext context) {
@@ -150,8 +151,12 @@ class _Switches extends StatelessWidget {
   final bool locked;
   final bool Function() canChange;
 
-  /// The gap between the row's controls.
+  /// The visible gap between the row's controls.
   static const double _gap = 32;
+
+  /// How far a control's ink sits inside its box: a switch's touch margin.
+  static double _margin(Widget control) =>
+      control is LoopSwitch ? LoopSwitch.touchMargin : 0;
 
   Future<void> _phantomChanged(BuildContext context, {required bool on}) async {
     final cubit = context.read<InterfaceInputsCubit>();
@@ -281,14 +286,24 @@ class _Switches extends StatelessWidget {
           onChanged: locked ? null : (on) => _phantomChanged(context, on: on),
         ),
     ];
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < controls.length; i++) ...[
-          if (i > 0) const SizedBox(width: _gap),
-          controls[i],
+    // One visible gap between controls: a switch's touch margin counts
+    // towards it, and a leading switch's margin sits left of the column so
+    // its label starts on the column line.
+    final lead = controls.isEmpty ? 0.0 : _margin(controls.first);
+    return Transform.translate(
+      offset: Offset(-lead, 0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < controls.length; i++) ...[
+            if (i > 0)
+              SizedBox(
+                width: _gap - _margin(controls[i - 1]) - _margin(controls[i]),
+              ),
+            controls[i],
+          ],
         ],
-      ],
+      ),
     );
   }
 }

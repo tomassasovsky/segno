@@ -238,6 +238,11 @@ class LoopSwitch extends StatelessWidget {
   /// The knob's diameter.
   static const double knobSize = 30;
 
+  /// The touch margin left and right of the label and pill, inside the
+  /// switch's tap area and focus outline. A row of controls takes it out of
+  /// its gaps, so the visible gap is the row's (#1672).
+  static const double touchMargin = 12;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -286,7 +291,7 @@ class LoopSwitch extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 64),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: touchMargin),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

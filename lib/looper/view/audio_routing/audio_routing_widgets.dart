@@ -23,6 +23,7 @@ class RoutingSourceCard extends StatelessWidget {
     this.width = 264,
     this.status,
     this.tags = const [],
+    this.tagLine = false,
     super.key,
   });
 
@@ -50,6 +51,12 @@ class RoutingSourceCard extends StatelessWidget {
   /// input ("Inst", "48 V", #1646).
   final List<String> tags;
 
+  /// Whether the card keeps the ordinal and tag lines even when it has no
+  /// ordinal or tags: set on every card of a row where any card has tags,
+  /// so the ordinals and names stay on one line across the row (#1672).
+  final bool tagLine;
+
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -76,15 +83,24 @@ class RoutingSourceCard extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (ordinal case final ordinal? when ordinal != name) ...[
-                  AppText(
-                    ordinal,
-                    style: TextStyle(
-                      color: selected
-                          ? surface.textSecondary
-                          : surface.textTertiary,
-                      fontSize: 18,
-                      height: 1,
+                // A card whose name is its ordinal keeps the ordinal's line
+                // empty when the row keeps its tag line, so its name sits on
+                // the other cards' name line.
+                if (ordinal case final ordinal?
+                    when ordinal != name || tagLine) ...[
+                  _KeptLine(
+                    visible: ordinal != name,
+                    child: AppText(
+                      // The kept line's height, without a second copy of
+                      // the name for a finder or a reader to meet.
+                      ordinal != name ? ordinal : ' ',
+                      style: TextStyle(
+                        color: selected
+                            ? surface.textSecondary
+                            : surface.textTertiary,
+                        fontSize: 18,
+                        height: 1,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -117,16 +133,23 @@ class RoutingSourceCard extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (tags.isNotEmpty) ...[
+                if (tags.isNotEmpty || tagLine) ...[
                   const SizedBox(height: 8),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < tags.length; i++) ...[
-                        if (i > 0) const SizedBox(width: 8),
-                        RoutingTag(tags[i], key: Key('routing_source_tag_$i')),
+                  _KeptLine(
+                    visible: tags.isNotEmpty,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (tags.isEmpty) const RoutingTag(''),
+                        for (var i = 0; i < tags.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 8),
+                          RoutingTag(
+                            tags[i],
+                            key: Key('routing_source_tag_$i'),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ],
               ],
@@ -136,6 +159,24 @@ class RoutingSourceCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A card line that keeps its height when hidden, so the lines under and
+/// over it stay where the other cards draw them.
+class _KeptLine extends StatelessWidget {
+  const _KeptLine({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Visibility(
+    visible: visible,
+    maintainSize: true,
+    maintainAnimation: true,
+    maintainState: true,
+    child: child,
+  );
 }
 
 /// A short label on a source card for a setting the interface holds on that
