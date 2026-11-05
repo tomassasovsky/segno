@@ -526,7 +526,36 @@ class RoutingPairMembers extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    Widget member(String name, String tag) => Row(
+    return SizedBox(
+      height: 40,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _PairMember(name: leftName, tag: leftTag),
+          Container(
+            width: 44,
+            height: 2,
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            color: surface.borderStrong,
+          ),
+          _PairMember(name: rightName, tag: rightTag),
+        ],
+      ),
+    );
+  }
+}
+
+/// One jack of a linked pair: its label and its side tag.
+class _PairMember extends StatelessWidget {
+  const _PairMember({required this.name, required this.tag});
+
+  final String name;
+  final String tag;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         AppText(
@@ -556,22 +585,6 @@ class RoutingPairMembers extends StatelessWidget {
           ),
         ),
       ],
-    );
-    return SizedBox(
-      height: 40,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          member(leftName, leftTag),
-          Container(
-            width: 44,
-            height: 2,
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            color: surface.borderStrong,
-          ),
-          member(rightName, rightTag),
-        ],
-      ),
     );
   }
 }
