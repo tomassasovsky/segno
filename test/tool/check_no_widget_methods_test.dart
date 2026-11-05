@@ -70,6 +70,17 @@ mixin Rows {
 }
 
 T pick<T extends Widget>(T widget) => widget;
+
+Stream<Widget> stream() async* {}
+
+(Widget, int) pair() => (const SizedBox(), 1);
+
+({Widget? icon}) named() => (icon: null);
+
+// ignore: avoid_annotating_with_dynamic
+dynamic loose() => const SizedBox();
+
+Object? boxed(bool wide) => wide ? const SizedBox() : null;
 ''',
   'untyped':
       '''
@@ -177,6 +188,10 @@ class Panel extends StatelessWidget {
 
   Map<String, Widget> _byName() => const {};
 
+  Object _value() => 1;
+
+  (int, String) _pair() => (1, '');
+
   @override
   Widget build(BuildContext context) => ListView.builder(
     itemBuilder: (context, index) => const SizedBox(),
@@ -244,6 +259,11 @@ void main() {
         'extension.gap',
         'Rows.row',
         'pick',
+        'stream',
+        'pair',
+        'named',
+        'loose',
+        'boxed',
       ]);
     });
 

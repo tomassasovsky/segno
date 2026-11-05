@@ -9,10 +9,11 @@
 // Checked: every method, top-level function, getter and local function
 // declaration in lib/ and packages/*/lib whose declared or inferred return
 // type is a widget: Widget and its subtypes (PreferredSizeWidget, Container,
-// a type parameter bounded by Widget), nullable or not, and a Future,
-// FutureOr, List, Iterable or other Iterable of one. A method or function
-// written without a return type is `dynamic` to Dart; for those, the types of
-// the expressions it returns decide.
+// a type parameter bounded by Widget), nullable or not, a Future, FutureOr,
+// Stream, List or other Iterable of one, and a record with one among its
+// fields. A declaration that returns `dynamic` (which is what Dart types one
+// written without a return type), `Object` or `Object?` is judged by the
+// types of the expressions it returns.
 //
 // Not checked: a method that overrides a member declared outside this
 // repository (State.build, StatelessWidget.build, SliverChildDelegate.build
@@ -88,43 +89,29 @@ List<String> checkedDirectories(String root) => [
       p.join(package.path, 'lib'),
 ];
 
-/// Whether [path] is generated code, which the check skips.
+/// Whether [path], relative to the repository root, is generated code,
+/// which the check skips.
 bool isGenerated(String path) {
   final posix = p.split(path);
   return path.endsWith('.g.dart') ||
       path.endsWith('.freezed.dart') ||
       posix.contains('generated') ||
-      _containsRun(posix, const ['lib', 'l10n', 'gen']);
+      p.posix.joinAll(posix).startsWith('lib/l10n/gen/');
 }
 
-bool _containsRun(List<String> parts, List<String> run) {
-  for (var i = 0; i + run.length <= parts.length; i++) {
-    var match = true;
-    for (var j = 0; j < run.length; j++) {
-      if (parts[i + j] != run[j]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) return true;
-  }
-  return false;
-}
-
-/// Finds every widget-returning declaration in the Dart files of
-/// [directories] (or in the files [files] when given), resolved through the
-/// package config of the repository at [root].
+/// Finds every widget-returning declaration in the checked directories of
+/// the repository at [root] (or in [files] when given), resolved through its
+/// package config.
 ///
 /// [resourceProvider] and [sdkPath] are for tests, which analyze fixtures
 /// held in memory and run under flutter_tester rather than the Dart VM.
 Future<List<WidgetMethod>> findWidgetMethods({
   required String root,
-  List<String>? directories,
   List<String>? files,
   ResourceProvider? resourceProvider,
   String? sdkPath,
 }) async {
-  final included = files ?? directories ?? checkedDirectories(root);
+  final included = files ?? checkedDirectories(root);
   final collection = AnalysisContextCollectionImpl(
     includedPaths: included,
     packageConfigFile: p.join(root, '.dart_tool', 'package_config.json'),
@@ -214,7 +201,7 @@ class _Visitor extends RecursiveAstVisitor<void> {
     if (element != null &&
         !node.isSetter &&
         !_overridesExternal(element, <Element>{})) {
-      _check(node, node.name, _returnType(element, node.returnType, node.body));
+      _check(node, node.name, _returnType(element, node.body));
     }
     super.visitMethodDeclaration(node);
   }
@@ -226,21 +213,21 @@ class _Visitor extends RecursiveAstVisitor<void> {
       _check(
         node,
         node.name,
-        _returnType(element, node.returnType, node.functionExpression.body),
+        _returnType(element, node.functionExpression.body),
       );
     }
     super.visitFunctionDeclaration(node);
   }
 
-  /// The return type of [element], or for a declaration written without one
-  /// (which Dart types `dynamic`), the first widget type its body returns.
+  /// The return type of [element], or for a declaration that returns
+  /// `dynamic`, `Object` or `Object?` (which is what Dart types one written
+  /// without a return type), the first widget type its body returns.
   DartType _returnType(
     ExecutableElement element,
-    TypeAnnotation? declared,
     FunctionBody body,
   ) {
     final type = element.returnType;
-    if (declared != null || type is! DynamicType) return type;
+    if (type is! DynamicType && !type.isDartCoreObject) return type;
     final returned = _Returned();
     body.accept(returned);
     return returned.types.firstWhere(_returnsWidget, orElse: () => type);
@@ -264,8 +251,16 @@ class _Visitor extends RecursiveAstVisitor<void> {
     if (type is NeverType || type is InvalidType || type.isDartCoreNull) {
       return false;
     }
+    if (type is RecordType) {
+      return [
+        ...type.positionalFields,
+        ...type.namedFields,
+      ].any((field) => _returnsWidget(field.type));
+    }
     if (type is InterfaceType) {
-      if (type.isDartAsyncFuture || type.isDartAsyncFutureOr) {
+      if (type.isDartAsyncFuture ||
+          type.isDartAsyncFutureOr ||
+          type.isDartAsyncStream) {
         return _returnsWidget(type.typeArguments.single);
       }
       final iterable = type.asInstanceOf(
