@@ -153,8 +153,12 @@ class _ReadoutPressButtonState extends State<ReadoutPressButton> {
   @override
   void didUpdateWidget(ReadoutPressButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // A lock that lands mid-hold ends the hold.
-    if (!widget.enabled) _release();
+    // A lock that lands mid-hold ends the hold; build follows anyway.
+    if (!widget.enabled) {
+      _hold?.cancel();
+      _hold = null;
+      _down = false;
+    }
   }
 
   @override
