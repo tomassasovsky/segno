@@ -23,6 +23,7 @@ class RoutingSourceCard extends StatelessWidget {
     this.width = 264,
     this.status,
     this.tags = const [],
+    this.ordinalLine = false,
     this.tagLine = false,
     super.key,
   });
@@ -51,11 +52,14 @@ class RoutingSourceCard extends StatelessWidget {
   /// input ("Inst", "48 V", #1646).
   final List<String> tags;
 
-  /// Whether the card keeps the ordinal and tag lines even when it has no
-  /// ordinal or tags: set on every card of a row where any card has tags,
-  /// so the ordinals and names stay on one line across the row (#1672).
-  final bool tagLine;
+  /// Whether the card keeps the ordinal line when its name is its ordinal:
+  /// set on every card of a row where any card shows an ordinal over a
+  /// name, so the names stay on one line across the row (#1672).
+  final bool ordinalLine;
 
+  /// Whether the card keeps the tag line when it has no tags: set on every
+  /// card of a row where any card has tags (#1672).
+  final bool tagLine;
 
   @override
   Widget build(BuildContext context) {
@@ -84,10 +88,10 @@ class RoutingSourceCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // A card whose name is its ordinal keeps the ordinal's line
-                // empty when the row keeps its tag line, so its name sits on
-                // the other cards' name line.
+                // empty when the row keeps it, so its name sits on the other
+                // cards' name line.
                 if (ordinal case final ordinal?
-                    when ordinal != name || tagLine) ...[
+                    when ordinal != name || ordinalLine) ...[
                   _KeptLine(
                     visible: ordinal != name,
                     child: AppText(

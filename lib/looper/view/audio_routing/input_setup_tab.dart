@@ -467,6 +467,14 @@ class _InputCards extends StatelessWidget {
     final width = LoopSettingsFrame.contentWidthOf(context);
     final tags = [for (var i = 0; i < count; i++) _tags(l10n, i)];
     final tagLine = tags.any((t) => t.isNotEmpty);
+    // A card shows its ordinal over its name when the input has its own
+    // name; the others keep that line so every name sits on one line.
+    final ordinalLine =
+        tagLine ||
+        [
+          for (var i = 0; i < count; i++)
+            _ordinal(l10n, i) != l10n.inputName(names.names, i),
+        ].any((named) => named);
     return SizedBox(
       width: width,
       height: 112,
@@ -489,6 +497,7 @@ class _InputCards extends StatelessWidget {
           name: l10n.inputName(names.names, index),
           selected: index == selected,
           tags: tags[index],
+          ordinalLine: ordinalLine,
           tagLine: tagLine,
           onTap: () => onSelected(index),
         ),

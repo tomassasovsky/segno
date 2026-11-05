@@ -50,9 +50,9 @@ class InterfaceSwitchesRow extends StatelessWidget {
   /// The Line / Inst choice.
   static const double levelWidth = 260;
 
-  /// The three-way Air choice: each option fits "Presence + Drive" at the
-  /// row's 22 px (#1672).
-  static const double airChoiceWidth = 3 * 212 + 2 * 8;
+  /// Each option of the three-way Air choice: wide enough for
+  /// "Presence + Drive" at the row's 22 px (#1672).
+  static const double airOptionWidth = 212;
 
   @override
   Widget build(BuildContext context) {
@@ -154,10 +154,6 @@ class _Switches extends StatelessWidget {
   /// The visible gap between the row's controls.
   static const double _gap = 32;
 
-  /// How far a control's ink sits inside its box: a switch's touch margin.
-  static double _margin(Widget control) =>
-      control is LoopSwitch ? LoopSwitch.touchMargin : 0;
-
   Future<void> _phantomChanged(BuildContext context, {required bool on}) async {
     final cubit = context.read<InterfaceInputsCubit>();
     final index = phantomIndex;
@@ -209,87 +205,108 @@ class _Switches extends StatelessWidget {
             phantom.firstInput + 1,
             phantom.lastInput + 1,
           );
-    final controls = <Widget>[
+    // Each control with how far its ink sits inside its box: a switch's
+    // touch margin.
+    const switchMargin = LoopSwitch.touchMargin;
+    final controls = <(Widget, double)>[
       if (level != null)
-        LoopChoiceRow<InputLevel>(
-          key: const Key('routing_interface_level'),
-          values: InputLevel.values,
-          labelOf: (v) => switch (v) {
-            InputLevel.line => l10n.routingInterfaceLine,
-            InputLevel.inst => l10n.routingInterfaceInst,
-          },
-          keyOf: (v) => Key('routing_interface_level_${v.name}'),
-          selected: level,
-          enabled: !locked,
-          onSelected: (v) {
-            if (v != level) cubit.setLevel(input, v);
-          },
-          width: InterfaceSwitchesRow.levelWidth,
-          height: InterfaceSwitchesRow.height,
-          gap: context.spacing.sm,
-          fontSize: 22,
+        (
+          LoopChoiceRow<InputLevel>(
+            key: const Key('routing_interface_level'),
+            values: InputLevel.values,
+            labelOf: (v) => switch (v) {
+              InputLevel.line => l10n.routingInterfaceLine,
+              InputLevel.inst => l10n.routingInterfaceInst,
+            },
+            keyOf: (v) => Key('routing_interface_level_${v.name}'),
+            selected: level,
+            enabled: !locked,
+            onSelected: (v) {
+              if (v != level) cubit.setLevel(input, v);
+            },
+            width: InterfaceSwitchesRow.levelWidth,
+            height: InterfaceSwitchesRow.height,
+            gap: context.spacing.sm,
+            fontSize: 22,
+          ),
+          0.0,
         ),
       if (pad != null)
-        LoopSwitch(
-          key: const Key('routing_interface_pad'),
-          label: l10n.routingInterfacePad,
-          semanticLabel: l10n.routingInterfacePad,
-          value: pad,
-          onChanged: locked ? null : (on) => cubit.setPad(input, on: on),
+        (
+          LoopSwitch(
+            key: const Key('routing_interface_pad'),
+            label: l10n.routingInterfacePad,
+            semanticLabel: l10n.routingInterfacePad,
+            value: pad,
+            onChanged: locked ? null : (on) => cubit.setPad(input, on: on),
+          ),
+          switchMargin,
         ),
       if (air != null && !switches.airThreeWay)
-        LoopSwitch(
-          key: const Key('routing_interface_air'),
-          label: l10n.routingInterfaceAir,
-          semanticLabel: l10n.routingInterfaceAir,
-          value: air != InputAir.off,
-          onChanged: locked
-              ? null
-              : (on) => cubit.setAir(
-                  input,
-                  on ? InputAir.presence : InputAir.off,
-                ),
+        (
+          LoopSwitch(
+            key: const Key('routing_interface_air'),
+            label: l10n.routingInterfaceAir,
+            semanticLabel: l10n.routingInterfaceAir,
+            value: air != InputAir.off,
+            onChanged: locked
+                ? null
+                : (on) => cubit.setAir(
+                    input,
+                    on ? InputAir.presence : InputAir.off,
+                  ),
+          ),
+          switchMargin,
         ),
       if (air != null && switches.airThreeWay)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            LoopSectionLabel(l10n.routingInterfaceAir, fontSize: 26),
-            const SizedBox(width: 26),
-            LoopChoiceRow<InputAir>(
-              key: const Key('routing_interface_air_choice'),
-              values: InputAir.values,
-              labelOf: (v) => switch (v) {
-                InputAir.off => l10n.routingInterfaceAirOff,
-                InputAir.presence => l10n.routingInterfaceAirPresence,
-                InputAir.presenceDrive => l10n.routingInterfaceAirDrive,
-              },
-              keyOf: (v) => Key('routing_interface_air_${v.name}'),
-              selected: air,
-              enabled: !locked,
-              onSelected: (v) {
-                if (v != air) cubit.setAir(input, v);
-              },
-              width: InterfaceSwitchesRow.airChoiceWidth,
-              height: InterfaceSwitchesRow.height,
-              gap: context.spacing.sm,
-              fontSize: 22,
-            ),
-          ],
+        (
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LoopSectionLabel(l10n.routingInterfaceAir, fontSize: 26),
+              const SizedBox(width: 26),
+              LoopChoiceRow<InputAir>(
+                key: const Key('routing_interface_air_choice'),
+                values: InputAir.values,
+                labelOf: (v) => switch (v) {
+                  InputAir.off => l10n.routingInterfaceAirOff,
+                  InputAir.presence => l10n.routingInterfaceAirPresence,
+                  InputAir.presenceDrive => l10n.routingInterfaceAirDrive,
+                },
+                keyOf: (v) => Key('routing_interface_air_${v.name}'),
+                selected: air,
+                enabled: !locked,
+                onSelected: (v) {
+                  if (v != air) cubit.setAir(input, v);
+                },
+                width:
+                    InputAir.values.length *
+                        InterfaceSwitchesRow.airOptionWidth +
+                    (InputAir.values.length - 1) * context.spacing.sm,
+                height: InterfaceSwitchesRow.height,
+                gap: context.spacing.sm,
+                fontSize: 22,
+              ),
+            ],
+          ),
+          0.0,
         ),
       if (phantom != null)
-        LoopSwitch(
-          key: const Key('routing_interface_phantom'),
-          label: phantomLabel,
-          semanticLabel: phantomLabel,
-          value: phantom.on,
-          onChanged: locked ? null : (on) => _phantomChanged(context, on: on),
+        (
+          LoopSwitch(
+            key: const Key('routing_interface_phantom'),
+            label: phantomLabel,
+            semanticLabel: phantomLabel,
+            value: phantom.on,
+            onChanged: locked ? null : (on) => _phantomChanged(context, on: on),
+          ),
+          switchMargin,
         ),
     ];
     // One visible gap between controls: a switch's touch margin counts
     // towards it, and a leading switch's margin sits left of the column so
     // its label starts on the column line.
-    final lead = controls.isEmpty ? 0.0 : _margin(controls.first);
+    final lead = controls.isEmpty ? 0.0 : controls.first.$2;
     return Transform.translate(
       offset: Offset(-lead, 0),
       child: Row(
@@ -297,10 +314,8 @@ class _Switches extends StatelessWidget {
         children: [
           for (var i = 0; i < controls.length; i++) ...[
             if (i > 0)
-              SizedBox(
-                width: _gap - _margin(controls[i - 1]) - _margin(controls[i]),
-              ),
-            controls[i],
+              SizedBox(width: _gap - controls[i - 1].$2 - controls[i].$2),
+            controls[i].$1,
           ],
         ],
       ),
