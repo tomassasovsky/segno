@@ -117,7 +117,8 @@ void main() {
       await step();
       expect(engine.snapshot().masterLengthFrames, 21333);
       expect(repository.state.tracks[0].pitchEffectiveCents, -498);
-      // Unchanged: the stretch render lands and the pitch is its own again.
+      // Unchanged: the pitch bridge (#1675) and then the stretch render keep
+      // the take's own pitch.
       expect(
         repository.setPitchModeSettings(
           defaultMode: PitchMode.unchanged,

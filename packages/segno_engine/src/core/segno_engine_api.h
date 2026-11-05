@@ -1326,9 +1326,10 @@ typedef struct le_track_snapshot {
   /* Trailing (#1179 Part 4a-ii): this track's Pitch override (-1 inherits
    * le_snapshot.pitch_follows_speed, 0 Unchanged, 1 Follows speed), and the
    * pitch the tempo retime puts on what it sounds now, in cents: 0 at its
-   * own span or once a stretch render plays (within the 0.5 % tolerance,
-   * about 9 cents), the varispeed's shift while that render is pending or
-   * with Follows speed. Speed and Transpose are not included. */
+   * own span, while the pitch bridge keeps its pitch until the stretch
+   * render lands (#1675) and once that render plays (within the 0.5 %
+   * tolerance, about 9 cents), the varispeed's shift with Follows speed.
+   * Speed and Transpose are not included. */
   int32_t pitch_override;
   int32_t pitch_effective_cents;
   /* Trailing (#1179 Part 4b): the shared-clock length this track's take was
@@ -4582,9 +4583,11 @@ LE_EXPORT int32_t le_engine_set_follow_tempo(le_engine* engine,
  * over another span than its take's either keeps its pitch (0 Unchanged,
  * the default): the cache worker renders the take time-stretched to the
  * span (with its Transpose pitch, one render) and the track crossfades to
- * it at the same position; until it lands the take plays through the
- * varispeed head, timing exact, its pitch off by the tempo ratio and
- * reported in le_track_snapshot.pitch_effective_cents. A render within
+ * it at the same position; until it lands (or when the cache cannot host
+ * it) the take plays through the pitch bridge (#1675, engine_bridge.h), a
+ * real-time WSOLA stretch: timing exact, its own pitch from the first frame
+ * of the change. le_track_snapshot.pitch_effective_cents reports the pitch
+ * the tempo puts on what sounds. A render within
  * 0.5 % of the span serves it (the head absorbs the rest), so a small tempo
  * move does not re-render. Or its pitch follows the ratio (1 Follows
  * speed), with no render. [channel] -1 sets the default ([value] 0/1); a
