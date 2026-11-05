@@ -97,7 +97,10 @@ static void test_amp_drive_and_modern_match_the_capture(void) {
            {0.75f, 0.25f, 4.45},   {0.75f, 0.75f, 18.48},
            {1.0f, 0.25f, 8.70},    {1.0f, 1.0f, 38.50},
            {0.935f, 0.25f, 7.66},  {0.935f, 0.608f, 22.94},
-           {0.935f, 0.75f, 28.68}, {0.875f, 0.5f, 13.96}};
+           {0.935f, 0.75f, 28.68}, {0.875f, 0.5f, 13.96},
+           {1.0f, 0.0f, 6.43},     {0.75f, 0.0f, 2.20},
+           {0.25f, 0.0f, -9.47},   {0.25f, 1.0f, 2.63},
+           {0.0f, 0.0f, -13.5},    {0.0f, 1.0f, 0.6}};
   double worst = 0.0;
   for (size_t i = 0; i < sizeof(c) / sizeof(c[0]); ++i) {
     const float p[LE_FX_PARAMS] = {c[i].drive, 0.5f, 0.5f, c[i].modern, 0.0f};

@@ -516,7 +516,7 @@ The 1 kHz gain at small signal, dB (Drive down, Modern across):
 | 75 % | 2.2 | 4.5 | 6.8 | 18.5 | 25.2 |
 | 100 % | 6.4 | 8.7 | 20.3 | 31.9 | 38.5 |
 
-Modern's reach grows with the drive: from 25 to 75 % it moves the gain by
+The gain Modern adds grows with the drive: from 25 to 75 % it moves it by
 6.6 dB at Drive 0 and 23 dB at 100 %. segno's Drive and Modern tables, read
 apart, gave 4 to 6 dB at every drive, so it was up to 9.4 dB quiet at high
 Modern and up to 9.0 dB loud at low Modern with high drive. Elsewhere it
