@@ -496,3 +496,39 @@ Drive 93.5 % (Full Drive Power), 1.1 to 1.8 dB at 66.6 % (Full Drive) and
 0.3 to 0.9 dB louder at 22.7 % (Lead Crunch), with the same spectrum
 within 0.5 dB from 50 Hz to 8 kHz. Its small-signal gain between the
 captured drives is not the Looper X's (#1664).
+
+## The Amp's Drive and Modern together (#1664, session s18amp)
+
+Captured on 2026-11-04 with `idlestim`, the Amp alone, D.I., Bass and Treble
+at 50 %, Master Vol 0.0 dB: Drive 62.5 to 100 % at Modern 50 %; Drive 25,
+50, 75 and 100 % at Modern 0, 25, 75 and 100 %; Drive 93.5 % at Modern 25,
+60.8 and 75 %; and the Amp settings of Full Drive Power, Full Drive, Lead
+Crunch, Lead Dirty, Rhythm Power Chor and Rhythm Wet+Dirty. Every pass is
+linear from -90 to -55 dBFS.
+
+The 1 kHz gain at small signal, dB (Drive down, Modern across):
+
+| Drive | 0 | 25 % | 50 % | 75 % | 100 % |
+|---|---|---|---|---|---|
+| 0 (s6) | -13.5 | -10.4 | -7.6 | -3.9 | 0.6 |
+| 25 % | -9.4 | -6.8 | -4.3 | -1.2 | 2.6 |
+| 50 % | -3.1 | -0.7 | 1.3 | 3.6 | 7.8 |
+| 75 % | 2.2 | 4.5 | 6.8 | 18.5 | 25.2 |
+| 100 % | 6.4 | 8.7 | 20.3 | 31.9 | 38.5 |
+
+Modern's reach grows with the drive: from 25 to 75 % it moves the gain by
+6.6 dB at Drive 0 and 23 dB at 100 %. segno's Drive and Modern tables, read
+apart, gave 4 to 6 dB at every drive, so it was up to 9.4 dB quiet at high
+Modern and up to 9.0 dB loud at low Modern with high drive. Elsewhere it
+matched: along Drive at Modern 50 % within 1.4 dB, and the response's shape
+within 1 dB from 100 Hz to 4 kHz (high-gain settings read 3 to 5 dB bright
+at 8 kHz, and Modern 0 with drive 4 to 7 dB light at 50 Hz).
+
+The fit adds the difference at each grid point (LE_AMP_DM_DB) to the level
+into the clipper, bilinear between points. The extra gain belongs there: at
+-40 dBFS the Looper X's output reaches the same ceiling (-21 dBFS) at every
+high-gain setting. Off the grid it holds within 1.2 dB: Drive 62.5 to 95 %
+at Modern 50 %, Drive 93.5 % at Modern 60.8 %, and the six presets (Lead
+Dirty from 8.7 to 0.7 dB quiet, Rhythm Power Chor from 8.5 to 0.8). The
+1 kHz ladder from -70 to -40 dBFS and the noise at -55 dBFS stay within
+3 dB.

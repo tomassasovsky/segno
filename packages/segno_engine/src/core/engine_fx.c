@@ -5950,6 +5950,9 @@ static int le_hb_latency(int sr) {
  * setting now reads -59.9 dB at 8x and 44.1 kHz (listed as a known failure
  * in the effects matrix; 16x cleared it in a trial, at twice the kind's
  * cost there), -62.7 dB at 8x and 48 kHz, and -62.7 dB at 4x and 96 kHz.
+ * Likewise the Amp+Cab's row predates its Drive-by-Modern table (#1664),
+ * which drives its clipper up to 9.4 dB harder: its worst setting now reads
+ * -63.6, -63.7 and -63.8 dB at 44.1, 48 and 96 kHz.
  * First-order antiderivative anti-aliasing on that tanh (its antiderivative
  * log cosh) reaches -69 dB at 2x and 44.1 kHz, but its exp and log1p in
  * double on every sample cost more than 8x plain: about 280 against 233 ns
@@ -6233,7 +6236,9 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
  *
  * Drive, Bass, Treble and Modern were captured at 0, 25, 50, 75 and 100 %
  * (s6); between those the settings interpolate linearly (gains in dB,
- * corners in octaves), the plainest reading of five points. */
+ * corners in octaves), the plainest reading of five points. Drive and
+ * Modern do not act apart: the level into the clipper also reads a
+ * Drive-by-Modern table (LE_AMP_DM_DB, s18amp, #1664). */
 
 #include "engine_fx_cabs.inc"
 
@@ -6416,6 +6421,20 @@ static const float LE_AMP_MPK_DB[LE_AMP_PTS] = {-3.55f, -2.69f, 0.0f, 4.00f, 8.3
 static const float LE_AMP_MHS_DB[LE_AMP_PTS] = {-2.09f, -1.21f, 0.0f, 0.44f, 0.07f};
 static const float LE_AMP_MPRE_DB[LE_AMP_PTS] = {-1.763f, -0.4865f, 0.0f, 3.377f, 6.943f};
 static const float LE_AMP_MPOST_DB[LE_AMP_PTS] = {-3.187f, -1.593f, 0.0f, -1.137f, -2.273f};
+/* Drive and Modern together (#1664, session s18amp: white noise at
+ * -90 dBFS, D.I., tone at 50 %): the level into the clipper the two tables
+ * above miss, dB, on a Drive (rows) by Modern (columns) grid at 0, 25, 50,
+ * 75 and 100 %, bilinear between. On the Looper X, Modern's reach grows with
+ * the drive: from 25 to 75 % it moves the small-signal gain by 6.6 dB at
+ * Drive 0, 14 dB at 75 % and 23 dB at 100 %, where the tables gave 4 to
+ * 6 dB. Each entry is the capture's gain minus the tables', 200 Hz to
+ * 2 kHz; the rest of the response already matched within 1 dB. */
+static const float LE_AMP_DM_DB[LE_AMP_PTS][LE_AMP_PTS] = {
+    {-0.23f, -0.25f, -0.34f, -0.39f, -0.36f},
+    {0.58f, 0.15f, -0.32f, -1.01f, -1.62f},
+    {1.04f, 0.40f, -0.55f, -1.92f, -2.18f},
+    {0.37f, -0.50f, -1.12f, 6.74f, 8.99f},
+    {-8.16f, -9.02f, -0.36f, 7.35f, 9.43f}};
 /* Bass and Treble: each setting's shelf (corner Hz, gain dB, Q). 50 % is
  * flat: between 25 and 75 % the gain goes to 0 dB on its neighbour's corner
  * and Q. */
@@ -6433,6 +6452,17 @@ static float le_amp_lerp(const float* tab, float t) {
   if (i > LE_AMP_PTS - 2) i = LE_AMP_PTS - 2;
   const float f = x - (float)i;
   return tab[i] + f * (tab[i + 1] - tab[i]);
+}
+
+/* [d] and [m] (0..1) on a five-by-five table, bilinearly. */
+static float le_amp_lerp2(const float tab[LE_AMP_PTS][LE_AMP_PTS], float d,
+                          float m) {
+  const float x = (d < 0.0f ? 0.0f : d > 1.0f ? 1.0f : d) * (float)(LE_AMP_PTS - 1);
+  int i = (int)x;
+  if (i > LE_AMP_PTS - 2) i = LE_AMP_PTS - 2;
+  const float f = x - (float)i;
+  const float lo = le_amp_lerp(tab[i], m);
+  return lo + f * (le_amp_lerp(tab[i + 1], m) - lo);
 }
 
 /* A shelf setting on a five-point table: log2 corner, gain, Q. The row
@@ -6604,7 +6634,8 @@ static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
   const float tgt[8] = {le_amp_lerp(LE_AMP_GA_DB, drive),
                         le_amp_lerp(LE_AMP_GB_DB, drive),
                         le_amp_lerp(LE_AMP_K, modern),
-                        le_amp_lerp(LE_AMP_MPRE_DB, modern),
+                        le_amp_lerp(LE_AMP_MPRE_DB, modern) +
+                            le_amp_lerp2(LE_AMP_DM_DB, drive, modern),
                         le_amp_lerp(LE_AMP_MPOST_DB, modern) +
                             le_amp_lerp(LE_AMP_OUT_DB, drive),
                         le_amp_lerp(LE_AMP_MLS_DB, modern),
