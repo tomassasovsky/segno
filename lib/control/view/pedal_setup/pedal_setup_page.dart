@@ -160,7 +160,12 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       left: 0,
                       right: 0,
                       top: _controlsTop,
-                      child: _contexts(context),
+                      child: _PedalSetupContexts(
+                        selected: _context,
+                        ledMode: _ledMode,
+                        onPickLedMode: () => unawaited(_pickLedMode()),
+                        onOpen: _openContext,
+                      ),
                     ),
                     // The pedal map keeps its drawn geometry, centred on the
                     // page as on the console.
@@ -394,53 +399,6 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   // ---------------------------------------------------------------------------
   // Contexts
   // ---------------------------------------------------------------------------
-
-  Widget _contexts(BuildContext context) {
-    final l10n = context.l10n;
-    return SizedBox(
-      height: 72,
-      child: Row(
-        children: [
-          // Which mode's colours are shown. Left of the raised row, where the
-          // map leaves the band free.
-          if (_context == PedalSetupContext.leds)
-            LoopOutlinedButton(
-              key: const Key('pedal_led_mode'),
-              width: 420,
-              label: l10n.pedalLedMode(pedalLedModeLabel(l10n, _ledMode)),
-              onTap: () => unawaited(_pickLedMode()),
-            ),
-          const Spacer(),
-          LoopChoiceButton(
-            key: const Key('pedal_setup_context_tracks'),
-            label: l10n.pedalSetupContextTracks,
-            selected: _context == PedalSetupContext.tracks,
-            onTap: () => _openContext(PedalSetupContext.tracks),
-            width: 202,
-            height: 64,
-          ),
-          const SizedBox(width: 8),
-          LoopChoiceButton(
-            key: const Key('pedal_setup_context_custom'),
-            label: l10n.pedalSetupContextCustom,
-            selected: _context == PedalSetupContext.custom,
-            onTap: () => _openContext(PedalSetupContext.custom),
-            width: 225,
-            height: 64,
-          ),
-          const SizedBox(width: 8),
-          LoopChoiceButton(
-            key: const Key('pedal_setup_context_leds'),
-            label: l10n.pedalSetupContextLeds,
-            selected: _context == PedalSetupContext.leds,
-            onTap: () => _openContext(PedalSetupContext.leds),
-            width: 225,
-            height: 64,
-          ),
-        ],
-      ),
-    );
-  }
 
   void _openContext(PedalSetupContext next) {
     if (next == _context) return;
@@ -1007,6 +965,70 @@ class _PedalClearDialog extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The contexts row: Track controls, Custom controls and LED colors at its
+/// right end, and in LED colors the mode whose colours are shown at its left.
+class _PedalSetupContexts extends StatelessWidget {
+  const _PedalSetupContexts({
+    required this.selected,
+    required this.ledMode,
+    required this.onPickLedMode,
+    required this.onOpen,
+  });
+
+  final PedalSetupContext selected;
+  final InteractionMode ledMode;
+  final VoidCallback onPickLedMode;
+  final ValueChanged<PedalSetupContext> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return SizedBox(
+      height: 72,
+      child: Row(
+        children: [
+          // Which mode's colours are shown. Left of the raised row, where the
+          // map leaves the band free.
+          if (selected == PedalSetupContext.leds)
+            LoopOutlinedButton(
+              key: const Key('pedal_led_mode'),
+              width: 420,
+              label: l10n.pedalLedMode(pedalLedModeLabel(l10n, ledMode)),
+              onTap: onPickLedMode,
+            ),
+          const Spacer(),
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_tracks'),
+            label: l10n.pedalSetupContextTracks,
+            selected: selected == PedalSetupContext.tracks,
+            onTap: () => onOpen(PedalSetupContext.tracks),
+            width: 202,
+            height: 64,
+          ),
+          const SizedBox(width: 8),
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_custom'),
+            label: l10n.pedalSetupContextCustom,
+            selected: selected == PedalSetupContext.custom,
+            onTap: () => onOpen(PedalSetupContext.custom),
+            width: 225,
+            height: 64,
+          ),
+          const SizedBox(width: 8),
+          LoopChoiceButton(
+            key: const Key('pedal_setup_context_leds'),
+            label: l10n.pedalSetupContextLeds,
+            selected: selected == PedalSetupContext.leds,
+            onTap: () => onOpen(PedalSetupContext.leds),
+            width: 225,
+            height: 64,
+          ),
+        ],
       ),
     );
   }
