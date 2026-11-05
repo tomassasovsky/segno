@@ -206,7 +206,7 @@ class RoutingTag extends StatelessWidget {
         text,
         style: TextStyle(
           color: surface.textSecondary,
-          fontSize: 14,
+          fontSize: 18,
           height: 1,
         ),
       ),
