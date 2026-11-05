@@ -181,9 +181,10 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
           onDismiss: () => setState(() => _keypad = false),
         ),
         Positioned(
-          top: 8,
-          right: 16,
-          bottom: 10,
+          // The panel's own padding, so the keypad covers its content.
+          top: spacing.sm,
+          right: spacing.lg,
+          bottom: spacing.sm,
           width: 424,
           child: ReadoutTempoKeypad(
             onSet: (bpm) {
@@ -354,7 +355,7 @@ class _RecordingBand extends StatelessWidget {
         key: const Key('readout_panel_recording'),
         padding: EdgeInsets.symmetric(
           horizontal: context.spacing.md,
-          vertical: context.spacing.sm,
+          vertical: context.spacing.xs,
         ),
         decoration: BoxDecoration(
           color: surface.recTint,
@@ -655,6 +656,7 @@ class _BeatLights extends StatelessWidget {
         bars > 0 &&
         (state == LooperMeterState.playing ||
             state == LooperMeterState.overdubbing);
+    final gap = context.spacing.xs;
     return ValueListenableBuilder<WaveformFrame>(
       valueListenable: frame,
       builder: (context, data, _) {
@@ -666,7 +668,7 @@ class _BeatLights extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (var i = 0; i < beats; i++) ...[
-              if (i > 0) SizedBox(width: context.spacing.xs),
+              if (i > 0) SizedBox(width: gap),
               DecoratedBox(
                 key: Key('readout_panel_beat_$i'),
                 decoration: BoxDecoration(
@@ -741,6 +743,7 @@ class _Choices extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _section(
+          gap: gap,
           label: _SectionLabel(
             title: l10n.loopTempoSignature,
             locked: !signatureEditable,
@@ -781,6 +784,7 @@ class _Choices extends StatelessWidget {
           ],
         ),
         _section(
+          gap: gap,
           label: _SectionLabel(
             title: l10n.readoutPanelLength,
             subtitle: trackLength == null || channel == null
@@ -847,6 +851,7 @@ class _Choices extends StatelessWidget {
           ],
         ),
         _section(
+          gap: gap,
           label: _SectionLabel(
             title: l10n.readoutPanelStart,
             subtitle: trackTiming == null || channel == null
@@ -879,13 +884,14 @@ class _Choices extends StatelessWidget {
   Widget _section({
     required Widget label,
     required List<List<Widget>> rows,
+    required double gap,
   }) => Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       label,
       for (final row in rows) ...[
-        const SizedBox(height: 4),
+        SizedBox(height: gap),
         SizedBox(
           height: kReadoutMinTarget,
           child: Row(children: row),
@@ -932,6 +938,7 @@ class _SignatureGrid extends StatelessWidget {
       ),
     ];
     final rows = (cells.length / _columns).ceil();
+    final gap = context.spacing.xs;
     return Column(
       key: const Key('readout_panel_signatures'),
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -942,7 +949,7 @@ class _SignatureGrid extends StatelessWidget {
             child: Row(
               children: [
                 for (var col = 0; col < _columns; col++) ...[
-                  if (col > 0) SizedBox(width: context.spacing.xs),
+                  if (col > 0) SizedBox(width: gap),
                   Expanded(
                     child: row * _columns + col < cells.length
                         ? cells[row * _columns + col]

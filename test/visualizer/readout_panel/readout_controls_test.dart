@@ -414,6 +414,36 @@ void main() {
           cell(RecordTiming.immediately).bottom;
       expect(across, down);
     });
+
+    testWidgets('fits while a take records, in Spanish (#1672)', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        readoutOf(
+          state: 'recording',
+          loop: const ReadoutLoopSettings(
+            lengthBars: 4,
+            trackLengthBars: 8,
+            timing: RecordTiming.loopStart,
+            trackTiming: RecordTiming.eighth,
+            captureLocked: true,
+            ready: true,
+          ),
+        ),
+        locale: const Locale('es'),
+      );
+      await open(tester);
+      expect(tester.takeException(), isNull);
+      Rect cell(RecordTiming timing) => tester.getRect(
+        find.byKey(Key('readout_panel_timing_${timing.name}')),
+      );
+      expect(
+        cell(RecordTiming.loopStart).left -
+            cell(RecordTiming.immediately).right,
+        cell(RecordTiming.quarter).top - cell(RecordTiming.immediately).bottom,
+      );
+    });
   });
 
   group('exact tempo', () {
