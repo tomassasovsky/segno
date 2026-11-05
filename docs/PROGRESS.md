@@ -76,8 +76,23 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
+| #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 
 ---
+
+## November 2026 Readout palette (#1674)
+
+- The 7in readout draws with `AppTheme.readout`: `AppTheme.neon` with
+  `SurfaceTheme.readout`, which lifts only the two dimmest tiers of
+  `SurfaceTheme.dark` (owner decision 3 on #1674). Muted text takes the
+  `textTertiary` grey 8A8A92 (5.9:1 on the readout's background, 3.8:1
+  before), and `borderSubtle` is an opaque 4A4A50 (2.05:1 against the card,
+  1.41:1 before). The ink tiers stay translucent. The main screen keeps
+  `SurfaceTheme.dark`.
+- Everything muted on the readout lifts together: "Empty", the BPM unit, the
+  Loop panel's section labels, lock icons and dotted rule, the keypad title
+  and the waveform's bar numbers; so do the footer strip's border, the tempo
+  card's border and the plain buttons' edges.
 
 ## November 2026 Clear tempo on the 7in readout (#1654)
 

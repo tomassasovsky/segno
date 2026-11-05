@@ -363,6 +363,49 @@ void main() {
       );
     });
 
+    // #1674 decision 3: the 7" readout lifts its two dimmest tiers for a
+    // panel whose backlight bleeds, and only those. The main screen keeps
+    // SurfaceTheme.dark.
+    test('the readout lifts muted text and borders, and nothing else', () {
+      const dark = SurfaceTheme.dark;
+      final readout = AppTheme.readout.extension<SurfaceTheme>()!;
+      expect(readout, same(SurfaceTheme.readout));
+      expect(AppTheme.neon.extension<SurfaceTheme>(), same(dark));
+      expectRoutingGraphMatchesSurface(
+        AppTheme.readout.extension<RoutingGraphTheme>(),
+        readout,
+      );
+      expect(readout.textMuted, dark.textTertiary);
+      expect(readout.borderSubtle, const Color(0xFF4A4A50));
+      expect(
+        _colors(
+          readout.copyWith(
+            textMuted: dark.textMuted,
+            borderSubtle: dark.borderSubtle,
+          ),
+        ),
+        _colors(dark),
+        reason: 'the readout changes no other token',
+      );
+      // The ink tiers stay translucent: an opaque highlight would cover a
+      // pressed button.
+      expect(AppTheme.readout.highlightColor, AppTheme.neon.highlightColor);
+      expect(
+        AppTheme.readout.extension<LooperTheme>(),
+        same(AppTheme.neon.extension<LooperTheme>()),
+      );
+
+      final background = AppTheme.readout
+          .extension<LooperTheme>()!
+          .waveformBackground;
+      expect(ratio(readout.textMuted, background), greaterThanOrEqualTo(5.9));
+      expect(ratio(readout.textMuted, readout.card), greaterThanOrEqualTo(5.2));
+      expect(
+        ratio(readout.borderSubtle, readout.card),
+        greaterThanOrEqualTo(2.05),
+      );
+    });
+
     // The ColorScheme carries hand-written copies of SurfaceTheme tokens
     // (Material widgets resolve from the scheme, not the extension). Pin them
     // so a palette change that misses a mirror fails here instead of drifting
