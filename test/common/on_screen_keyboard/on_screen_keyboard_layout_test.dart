@@ -43,6 +43,16 @@ void main() {
         );
         expect(one.left, board.left);
         expect(one.top, board.top);
+        final first = layout == OnScreenKeyboardLayout.numeric ? '1' : 'q';
+        final next = layout == OnScreenKeyboardLayout.numeric ? '2' : 'w';
+        final below = layout == OnScreenKeyboardLayout.numeric ? '4' : 'a';
+        Rect keyOf(String text) => tester.getRect(
+          find
+              .ancestor(of: find.text(text), matching: find.byType(SizedBox))
+              .first,
+        );
+        expect(keyOf(next).left - keyOf(first).right, OnScreenKeyboard.keyGap);
+        expect(keyOf(below).top - keyOf(first).bottom, OnScreenKeyboard.keyGap);
       });
     }
   });

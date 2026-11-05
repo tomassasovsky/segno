@@ -83,9 +83,11 @@ class LoopRecordingPage extends StatefulWidget {
   /// ends inside the frame.
   static const double multipleHeight = 60;
 
-  /// The record timing heading band: the heading, its tag and Use default
-  /// centred in [timingBandHeight], as Playback draws Follow tempo and Pitch
-  /// (#1672). Its row and note follow.
+  /// The record timing heading band: the heading with its tag, and Use
+  /// default, on one bottom line 16 above the choices (#1672). The band
+  /// starts where the later-tracks row ends; the heading keeps its distance
+  /// from that row, and Use default, shown only on a track scope, rises into
+  /// the empty later-tracks band. Its row and note follow.
   static const double timingTop = multipleTop + multipleHeight;
 
   /// The record timing heading band's height: Use default's.
@@ -474,14 +476,14 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                 ),
               ),
             ],
-            // ---- record timing: the heading and Use default share one band
-            // 16 above the choices.
+            // ---- record timing: the heading and Use default end on one
+            // line, 16 above the choices.
             Positioned(
               left: 0,
               top: timingTop,
               height: LoopRecordingPage.timingBandHeight,
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: Alignment.bottomLeft,
                 child: LoopFieldLabel(
                   title: l10n.loopTimingLabel,
                   originBeside: true,

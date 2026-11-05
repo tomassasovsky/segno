@@ -204,7 +204,8 @@ class LoopChoiceButton extends StatelessWidget {
 /// A Loop button's box: [width] x [height] with the label centred 12 in
 /// from the sides. A label longer than the box scales down rather than
 /// overflowing (the pen's boxes fit the English labels, and a translation
-/// may not), unless [fitLabel], where the box grows from [width] to fit it.
+/// may not), unless [fitLabel], where the box grows from [width] to fit it
+/// as far as its parent allows.
 class _LoopButtonBox extends StatelessWidget {
   const _LoopButtonBox({
     required this.width,
@@ -220,11 +221,11 @@ class _LoopButtonBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // With fitLabel the label still scales down where the parent cannot
+    // give it room to grow.
     final label = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: fitLabel
-          ? child
-          : FittedBox(fit: BoxFit.scaleDown, child: child),
+      child: FittedBox(fit: BoxFit.scaleDown, child: child),
     );
     if (!fitLabel) {
       return SizedBox(width: width, height: height, child: label);

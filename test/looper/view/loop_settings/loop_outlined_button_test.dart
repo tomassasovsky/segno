@@ -29,13 +29,18 @@ void main() {
     });
 
     group('fitLabel (#1672)', () {
+      const long = 'A label longer than its button';
+      double drawnScale(WidgetTester tester) =>
+          tester.getRect(find.text(long)).width /
+          tester.getSize(find.text(long)).width;
+
       Future<void> pump(WidgetTester tester, {required bool fitLabel}) =>
           tester.pumpApp(
             Center(
               child: LoopOutlinedButton(
                 width: 100,
                 fitLabel: fitLabel,
-                label: 'A label longer than its button',
+                label: long,
                 onTap: () {},
               ),
             ),
@@ -47,7 +52,8 @@ void main() {
           tester.getSize(find.byType(LoopOutlinedButton)).width,
           greaterThan(100),
         );
-        expect(find.byType(FittedBox), findsNothing);
+        // Drawn at its own size, not scaled into the box.
+        expect(drawnScale(tester), 1);
       });
 
       testWidgets('keeps the width when the label fits', (tester) async {
@@ -69,7 +75,7 @@ void main() {
       ) async {
         await pump(tester, fitLabel: false);
         expect(tester.getSize(find.byType(LoopOutlinedButton)).width, 100);
-        expect(find.byType(FittedBox), findsOneWidget);
+        expect(drawnScale(tester), lessThan(1));
       });
     });
 
