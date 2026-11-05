@@ -58,7 +58,7 @@ class WidgetMethod {
   final int line;
 
   /// The enclosing declarations and the name, joined by `.`, such as
-  /// `_PedalSetupPageState._actions` or `_PanelState.build.row`.
+  /// `_PanelState._row` or `_PanelState.build.cell`.
   final String scope;
 
   /// The return type, as Dart writes it.

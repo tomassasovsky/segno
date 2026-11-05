@@ -148,6 +148,12 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
           );
         }
         final setup = _draft ?? control.state.pedalSetup;
+        // The rig may not hold the setup shown, so it can be saved again with
+        // nothing edited.
+        final pending =
+            control.state.pedalSetupPersistenceUncertain ||
+            control.state.pedalSetupUnavailable ||
+            control.state.pedalSetupRuntimeUnsaved;
         return PopScope(
           canPop: !_saving,
           child: AbsorbPointer(
@@ -169,14 +175,13 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                     dirty: _draft != null,
                     saving: _saving,
                     saved: _saved,
-                    // A setup the rig may not hold yet can be saved again
-                    // with nothing edited.
-                    pending:
-                        control.state.pedalSetupPersistenceUncertain ||
-                        control.state.pedalSetupUnavailable ||
-                        control.state.pedalSetupRuntimeUnsaved,
-                    ledsEdited: setup.leds.isEdited(_ledMode),
-                    hasCustomAssignments: setup.hasCustomAssignments,
+                    pending: pending,
+                    ledsEdited:
+                        _context == PedalSetupContext.leds &&
+                        setup.leds.isEdited(_ledMode),
+                    hasCustomAssignments:
+                        _context == PedalSetupContext.custom &&
+                        setup.hasCustomAssignments,
                     canRestore: _cleared != null,
                     onResetLeds: _resetLeds,
                     onClearCustom: () => unawaited(_confirmClear(setup)),
@@ -224,10 +229,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                         ),
                       ),
                     ),
-                    if (control.state.pedalSetupUnavailable ||
-                        control.state.pedalSetupPersistenceUncertain ||
-                        control.state.pedalSetupRuntimeUnsaved ||
-                        _saveFailed)
+                    if (pending || _saveFailed)
                       Positioned(
                         left: 0,
                         right: 0,
@@ -266,10 +268,22 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       right: 0,
                       top: _editorTop,
                       child: switch (_context) {
-                        PedalSetupContext.tracks => _TracksEditor(
+                        // One widget for both, so switching between them
+                        // updates the same fields rather than rebuilding them.
+                        PedalSetupContext.tracks ||
+                        PedalSetupContext.custom => _GestureEditor(
                           title: _controlName(context),
+                          custom: _context == PedalSetupContext.custom,
                           selected: _selected,
                           setup: setup,
+                          bank: _bank,
+                          customLeds: {
+                            for (final state in PedalLedMap.customStates)
+                              state: setup.leds.customColorFor(
+                                _customKey,
+                                state,
+                              ),
+                          },
                           onEditModePress: () =>
                               unawaited(_editModePress(setup)),
                           onEditModeHold: () => unawaited(_editModeHold(setup)),
@@ -277,21 +291,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                               unawaited(_editRecordHold(setup)),
                           onEditTrackHold: () =>
                               unawaited(_editTrackHold(setup)),
-                        ),
-                        PedalSetupContext.custom => _CustomEditor(
-                          title: _controlName(context),
-                          pair: setup.customFor(_selected, bank: _bank),
-                          colors: {
-                            for (final state in PedalLedMap.customStates)
-                              state: setup.leds.customColorFor(
-                                _customKey,
-                                state,
-                              ),
-                          },
-                          onEditPress: () =>
-                              unawaited(_editCustom(setup, hold: false)),
-                          onEditHold: () =>
-                              unawaited(_editCustom(setup, hold: true)),
+                          onEditCustom: ({required hold}) =>
+                              unawaited(_editCustom(setup, hold: hold)),
                           onEditColor: (state) =>
                               unawaited(_editCustomColor(state)),
                         ),
@@ -824,39 +825,92 @@ class _SetupActions extends StatelessWidget {
   }
 }
 
-/// Track controls: the fixed plate's three configurable gestures.
-///
-/// Press is shown on every one of them and editable on none but MODE. A
-/// field that simply disappeared on the fixed switches would leave the
-/// performer guessing what the press does; the accepted design shows it and
-/// dims it.
-class _TracksEditor extends StatelessWidget {
-  const _TracksEditor({
+/// The selected switch's Press and Hold, in Track controls or Custom
+/// controls.
+class _GestureEditor extends StatelessWidget {
+  const _GestureEditor({
     required this.title,
+    required this.custom,
     required this.selected,
     required this.setup,
+    required this.bank,
+    required this.customLeds,
     required this.onEditModePress,
     required this.onEditModeHold,
     required this.onEditRecordHold,
     required this.onEditTrackHold,
+    required this.onEditCustom,
+    required this.onEditColor,
   });
 
   final String title;
+
+  /// Whether this is Custom controls rather than Track controls.
+  final bool custom;
 
   /// The switch being edited.
   final PedalButton selected;
 
   final PedalSetup setup;
 
+  /// The bank Custom controls is editing.
+  final int bank;
+
+  /// The selected Custom assignment's colour for each state.
+  final Map<PedalLedState, PedalColor> customLeds;
+
   final VoidCallback onEditModePress;
   final VoidCallback onEditModeHold;
   final VoidCallback onEditRecordHold;
   final VoidCallback onEditTrackHold;
+  final void Function({required bool hold}) onEditCustom;
+  final ValueChanged<PedalLedState> onEditColor;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
+    if (custom) {
+      // Custom controls: both gestures, both from the shared catalogue.
+      final pair = setup.customFor(selected, bank: bank);
+      String label(ControlAction? action) => action == null
+          ? controlActionNone(l10n)
+          : controlActionLabel(l10n, names, action);
+      return PedalSetupEditor(
+        title: title,
+        press: PedalSetupField(
+          key: const Key('pedal_setup_press'),
+          label: l10n.pedalSetupPress,
+          value: label(pair.press),
+          width: PedalSetupField.compactWidth,
+          onTap: () => onEditCustom(hold: false),
+        ),
+        hold: PedalSetupField(
+          key: const Key('pedal_setup_hold'),
+          label: l10n.pedalSetupHold,
+          value: label(pair.hold),
+          width: PedalSetupField.compactWidth,
+          onTap: () => onEditCustom(hold: true),
+        ),
+        // The pedal's own colours, beside the assignment they light for.
+        trailing: [
+          for (final MapEntry(key: state, value: color) in customLeds.entries)
+            PedalColorField(
+              key: Key('pedal_setup_color_${state.name}'),
+              label: pedalLedStateLabel(l10n, state),
+              color: color,
+              width: PedalColorField.compactWidth,
+              onTap: () => onEditColor(state),
+            ),
+        ],
+      );
+    }
+    // Track controls: the fixed plate's three configurable gestures.
+    //
+    // Press is shown on every one of them and editable on none but MODE. A
+    // field that simply disappeared on the fixed switches would leave the
+    // performer guessing what the press does; the accepted design shows it
+    // and dims it.
     final (press, hold) = switch (selected) {
       PedalButton.mode => (
         PedalSetupField(
@@ -925,67 +979,6 @@ class _TracksEditor extends StatelessWidget {
       ),
     };
     return PedalSetupEditor(title: title, press: press, hold: hold);
-  }
-}
-
-/// Custom controls: both gestures, both from the shared catalogue.
-class _CustomEditor extends StatelessWidget {
-  const _CustomEditor({
-    required this.title,
-    required this.pair,
-    required this.colors,
-    required this.onEditPress,
-    required this.onEditHold,
-    required this.onEditColor,
-  });
-
-  final String title;
-
-  /// The selected switch's Press and Hold.
-  final ControlGesturePair pair;
-
-  /// The switch's own colour for each Custom state.
-  final Map<PedalLedState, PedalColor> colors;
-
-  final VoidCallback onEditPress;
-  final VoidCallback onEditHold;
-  final ValueChanged<PedalLedState> onEditColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final names = context.watch<TracksCubit>().state.names;
-    String label(ControlAction? action) => action == null
-        ? controlActionNone(l10n)
-        : controlActionLabel(l10n, names, action);
-    return PedalSetupEditor(
-      title: title,
-      press: PedalSetupField(
-        key: const Key('pedal_setup_press'),
-        label: l10n.pedalSetupPress,
-        value: label(pair.press),
-        width: PedalSetupField.compactWidth,
-        onTap: onEditPress,
-      ),
-      hold: PedalSetupField(
-        key: const Key('pedal_setup_hold'),
-        label: l10n.pedalSetupHold,
-        value: label(pair.hold),
-        width: PedalSetupField.compactWidth,
-        onTap: onEditHold,
-      ),
-      // The pedal's own colours, beside the assignment they light for.
-      trailing: [
-        for (final MapEntry(key: state, value: color) in colors.entries)
-          PedalColorField(
-            key: Key('pedal_setup_color_${state.name}'),
-            label: pedalLedStateLabel(l10n, state),
-            color: color,
-            width: PedalColorField.compactWidth,
-            onTap: () => onEditColor(state),
-          ),
-      ],
-    );
   }
 }
 
