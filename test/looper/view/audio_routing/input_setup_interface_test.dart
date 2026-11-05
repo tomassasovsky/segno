@@ -10,6 +10,7 @@ import 'package:segno/app/app_notices.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/notices/notices.dart';
@@ -437,6 +438,25 @@ void main() {
       expect(tag(second, l10n.routingTagPhantom), findsOneWidget);
       expect(tag(third, l10n.routingTagPhantom), findsNothing);
     });
+  });
+
+  group('the meter', () {
+    for (final interface in [_fourI4(), InterfaceInputs.none]) {
+      testWidgets('shows the gain band and how to use it, '
+          '${interface.status.name}', (tester) async {
+        onInterface = interface;
+        await pump(tester);
+        expect(
+          tester
+              .widget<RoutingInputMeter>(
+                find.byKey(const Key('routing_input_meter')),
+              )
+              .target,
+          kInputGainTargetDb,
+        );
+        expect(find.byKey(const Key('routing_gain_note')), findsOneWidget);
+      });
+    }
   });
 
   testWidgets('a change the interface refuses is said', (tester) async {

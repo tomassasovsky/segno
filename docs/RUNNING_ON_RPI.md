@@ -290,9 +290,47 @@ amixer -c USB get 'Analogue Output 01'
 
 - **Not controllable:** on the 4i4 (3rd gen) the headphone jack plays line
   outputs 3-4, and no routing separates them.
-- **Monitor level, input gain and 48 V phantom power** are hardware controls on
-  most models. A weak input that the gain knob barely changes is the classic
-  sign of a condenser mic with 48 V off.
+- **Monitor level and input gain** are hardware knobs on most models. The
+  input meter on Settings → Audio routing → Input setup reads the input
+  before Segno's trim and marks a band from -18 to -6 dBFS: turn the gain knob
+  until the loudest playing peaks there.
+
+### The interface's input switches (#1646)
+
+Settings → Audio routing → Input setup has an **Interface** row for the
+selected input: Inst or Line, Pad, Air and 48 V, as far as the interface lets
+software set them. Segno stores none of them. It reads what the interface
+holds twice a second while the tab is open (so a front-panel press shows),
+and writes a change straight to it; the interface keeps it across power
+cycles. 48 V asks first and names every input the switch powers. The row is
+read-only while a track fed by the input, or by an input its 48 V switch
+powers, is armed or recording. A change the interface refuses (a Gen 4 unit
+while its Autogain runs) is said in the top bar.
+
+Which switches an interface has comes from an adapter in the engine
+(`engine_interface_inputs.c`):
+
+- **`scarlett2`** (Scarlett Gen 2, 3 and 4 Solo/2i2/4i4, Clarett, Vocaster):
+  `Line In N Level`, `Pad`, `Air` and `Phantom Power` controls. They describe
+  Segno's input N only while the capture routing is pass-through, which
+  Segno sets at every open (above).
+- **`scarlett`** (Scarlett 1st Gen): `Input N Impedance` and `Pad`, while
+  `Input Source NN Capture Route` records `Analog N`.
+- **generic** (any other card): mixer controls whose name says `phantom`,
+  `48v`, `pad`, `hi-z`, `inst` or `air` and names exactly one input.
+
+Most class-compliant interfaces (Behringer UMC, MOTU M2/M4, Audient iD) have
+hardware-only switches; the row says to use them. A Focusrite unit in its
+setup (MSD) mode shows neither its controls nor its routing: the row offers
+**Turn off setup mode**, after which the unit needs a power cycle. To read
+the switches by hand:
+
+```bash
+amixer -c USB contents | grep -A2 -E "Line In|Phantom|MSD"
+```
+
+Adding an interface is a table entry and a fixture: see "Adding an
+interface" in `docs/plan/2026-11-04-feat-interface-input-controls-plan.md`.
 
 To check the input level without Segno, stop the app first, since it holds the
 device:

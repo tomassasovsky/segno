@@ -74,9 +74,39 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
-| #1646 | The interface's input switches (Inst/Line, Pad, Air, 48 V) on the Input setup tab, through per-family adapters (scarlett2, Scarlett Gen 1, generic); part 1 (engine adapters, FFI, fixtures) in review | build | auto | `claude/input-controls-1646-p*` |
 
 ---
+
+## November 2026 The interface's input switches (#1646)
+
+- Settings → Audio routing → Input setup has an **Interface** row for the
+  selected input: Inst or Line, Pad, Air (a switch, or Off / Presence /
+  Presence + Drive) and 48 V with the inputs its switch powers. Segno stores
+  nothing: `InterfaceInputsCubit` reads the interface at each device open,
+  after each change and twice a second while the tab shows, and each change
+  is written straight to the hardware and read back. 48 V asks first
+  (`showDeviceConfirmDialog`, naming the inputs) and never turns on by
+  itself; the row locks with a recording on the input or its 48 V group;
+  input cards carry `Inst` and `48 V` tags; a refused change is a passing
+  notice. Plan: `docs/plan/2026-11-04-feat-interface-input-controls-plan.md`.
+- Engine (`src/core/engine_interface_inputs.c`): a capability model
+  (`le_interface_inputs`) filled by per-family adapters chosen by the card's
+  USB vendor and control names: `scarlett2` (with the setup-mode and
+  pass-through checks), `scarlett` (1st Gen, with its own routing check) and
+  a generic keyword fallback that keeps only controls naming one input.
+  `le_mixer` gained the card's identity and control list; both libasound
+  symbol tables resolve under `pthread_once`, since the calls run on a Dart
+  worker isolate (`NativeAudioEngine.offIsolate`).
+- Tests: `test_engine_interface_inputs.h` against real public dumps in
+  `src/test/fixtures/alsa/` (Scarlett Gen 1/3/4 models, Vocaster Two,
+  Behringer UMC204HD, MOTU M2 and M4, Audient iD4, an HD-Audio codec), each
+  citing its source; the repository, cubit and widget suites; the
+  `audio_routing_input_setup*` screenshots.
+- The input meter carries the gain band (-18 to -6 dBFS,
+  `kInputGainTargetDb`) and a note to set the hardware gain knob against it.
+- Owed: the Penpot frames (plan part 3, #1658; geometry in PR #1651's
+  "Design writeback"), the device checks listed on PR #1655, and #1648 (the
+  routing rules into the same adapters).
 
 ## November 2026 Takes keep the lap they were played on (#854)
 

@@ -4195,6 +4195,10 @@
             }
         }
     },
+    "routingGainNote": "Set the gain knob so your loudest playing peaks in the band.",
+    "@routingGainNote": {
+        "description": "Under the input meter: how to set the interface's hardware gain against the meter's target band."
+    },
     "routingTrimNote": "New recordings only. Live level stays in Mixer.",
     "@routingTrimNote": {
         "description": "Note under the recording trim."
