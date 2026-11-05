@@ -104,7 +104,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
     final engine = context.watch<AudioSetupCubit>().state.engineStatus;
     final packages = _packages;
 
-    final thisConsole = _card([
+    final thisConsole = <_FactRow>[
       if (facts.consoleName.isNotEmpty)
         ({required last}) => ConsoleRow(
           key: const Key('system_about_name'),
@@ -150,9 +150,9 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
           showDisclosure: false,
           showDivider: !last,
         ),
-    ]);
+    ];
 
-    final hardware = _card([
+    final hardware = <_FactRow>[
       // Always drawn, even with no firmware version to report — because the
       // case worth seeing is the one where there is none. The link status
       // used to live only in the full-screen Settings page, and the console
@@ -192,9 +192,9 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
           showDisclosure: false,
           showDivider: !last,
         ),
-    ]);
+    ];
 
-    final legal = _card([
+    final legal = <_FactRow>[
       ({required last}) => ConsoleRow(
         key: const Key('system_about_licence'),
         title: l10n.aboutLicenceRow,
@@ -218,7 +218,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
         showDivider: !last,
         onTap: () => _showLicences(context),
       ),
-    ]);
+    ];
 
     return KeyedSubtree(
       key: const Key('system_about_tab'),
@@ -229,18 +229,23 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
             kConsoleRowHeight * 2 +
             ConsoleCard.borderExtent,
         groups: [
-          if (thisConsole != null)
+          // A card with no rows is a 2px line, so a group whose facts this
+          // build lacks is left out.
+          if (thisConsole.isNotEmpty)
             ConsoleGroup(
               caption: l10n.systemThisConsoleGroup,
-              blocks: [thisConsole],
+              blocks: [_FactCard(rows: thisConsole)],
             ),
-          if (hardware != null)
+          if (hardware.isNotEmpty)
             ConsoleGroup(
               caption: l10n.systemHardwareGroup,
-              blocks: [hardware],
+              blocks: [_FactCard(rows: hardware)],
             ),
-          // Never null: the licence is a fact of the build, not of the rig.
-          ConsoleGroup(caption: l10n.systemLegalGroup, blocks: [legal!]),
+          // Never empty: the licence is a fact of the build, not of the rig.
+          ConsoleGroup(
+            caption: l10n.systemLegalGroup,
+            blocks: [_FactCard(rows: legal)],
+          ),
         ],
       ),
     );
@@ -250,21 +255,28 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
   /// vocabulary rather than Material's master-detail route.
   void _showLicences(BuildContext context) =>
       unawaited(showConsoleLicences(context, packages: _licences));
+}
 
-  /// Builds a card from the rows that survived, and tells the LAST survivor
-  /// that it is last.
-  ///
-  /// The rows arrive as builders taking `last` rather than as widgets, because
-  /// whether a row is last depends on which facts this build happens to have —
-  /// a row that decides its own closing hairline is a row that is wrong on the
-  /// next rig. Null when nothing survived: a card with no rows is a 2px line.
-  static Widget? _card(List<ConsoleRow Function({required bool last})> rows) {
-    if (rows.isEmpty) return null;
-    return ConsoleCard(
-      children: [
-        for (final (index, row) in rows.indexed)
-          row(last: index == rows.length - 1),
-      ],
-    );
-  }
+/// One row of a [_FactCard], built once the card knows whether it is last.
+typedef _FactRow = ConsoleRow Function({required bool last});
+
+/// A card of the rows that survived, which tells the LAST survivor that it is
+/// last.
+///
+/// The rows arrive as builders taking `last` rather than as widgets, because
+/// whether a row is last depends on which facts this build happens to have —
+/// a row that decides its own closing hairline is a row that is wrong on the
+/// next rig.
+class _FactCard extends StatelessWidget {
+  const _FactCard({required this.rows});
+
+  final List<_FactRow> rows;
+
+  @override
+  Widget build(BuildContext context) => ConsoleCard(
+    children: [
+      for (final (index, row) in rows.indexed)
+        row(last: index == rows.length - 1),
+    ],
+  );
 }

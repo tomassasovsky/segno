@@ -181,7 +181,8 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
                       label: l10n.aboutConnectionRow,
                       value: controllerConnection(l10n, pedal.status),
                     ),
-                    ...controllerFactRows(l10n, controller),
+                    ControllerFirmwareRow(facts: controller),
+                    ControllerProtocolRow(facts: controller),
                     SettingsFactRow(
                       key: const Key('about_controller_firmware_row'),
                       label: l10n.aboutControllerFirmwareRow,
@@ -226,26 +227,48 @@ String controllerConnection(AppLocalizations l10n, PedalLinkStatus status) =>
       PedalLinkStatus.incompatible => l10n.aboutConnectionIncompatible,
     };
 
-/// The Firmware and Wire protocol rows for [facts], shared by About and the
-/// Controller firmware page: the values, and under the firmware where they
-/// came from when that was not the board itself.
-List<Widget> controllerFactRows(
-  AppLocalizations l10n,
-  ControllerFacts facts,
-) => [
-  SettingsFactRow(
-    key: const Key('controller_firmware'),
-    label: l10n.aboutFirmwareRow,
-    value: facts.firmware ?? l10n.aboutNotReported,
-    caption: switch (facts.source) {
-      ControllerFactsSource.reported => null,
-      ControllerFactsSource.lastFlashed => l10n.aboutLastFlashedCaption,
-      ControllerFactsSource.notReported => l10n.aboutNotReportedCaption,
-    },
-  ),
-  SettingsFactRow(
-    key: const Key('controller_protocol'),
-    label: l10n.aboutWireProtocolRow,
-    value: facts.protocol?.toString() ?? l10n.aboutNotReported,
-  ),
-];
+/// The Firmware row for [facts], shared by About and the Controller firmware
+/// page: the version, and under it where it came from when that was not the
+/// board itself.
+class ControllerFirmwareRow extends StatelessWidget {
+  /// Creates the Firmware row for [facts].
+  const ControllerFirmwareRow({required this.facts, super.key});
+
+  /// What the console knows about the board.
+  final ControllerFacts facts;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return SettingsFactRow(
+      key: const Key('controller_firmware'),
+      label: l10n.aboutFirmwareRow,
+      value: facts.firmware ?? l10n.aboutNotReported,
+      caption: switch (facts.source) {
+        ControllerFactsSource.reported => null,
+        ControllerFactsSource.lastFlashed => l10n.aboutLastFlashedCaption,
+        ControllerFactsSource.notReported => l10n.aboutNotReportedCaption,
+      },
+    );
+  }
+}
+
+/// The Wire protocol row for [facts], shared by About and the Controller
+/// firmware page.
+class ControllerProtocolRow extends StatelessWidget {
+  /// Creates the Wire protocol row for [facts].
+  const ControllerProtocolRow({required this.facts, super.key});
+
+  /// What the console knows about the board.
+  final ControllerFacts facts;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return SettingsFactRow(
+      key: const Key('controller_protocol'),
+      label: l10n.aboutWireProtocolRow,
+      value: facts.protocol?.toString() ?? l10n.aboutNotReported,
+    );
+  }
+}

@@ -677,52 +677,42 @@ class LibraryAudioActions extends StatelessWidget {
     final deleteHeld = context.select<LibraryAudioCubit, bool>(
       (c) => c.state.deleteBlockedBy != null,
     );
-    Widget button(String key, String label, VoidCallback? onTap) => Opacity(
-      opacity: onTap == null ? context.surface.disabledOpacity : 1,
-      child: LoopOutlinedButton(
-        key: Key(key),
-        width: 299,
-        fontSize: 23,
-        label: label,
-        onTap: onTap,
-      ),
-    );
     final rows = switch (item) {
       LibraryRecording() => [
         [
-          button(
-            'library_audio_export',
-            l10n.libraryAudioExportUsb,
-            () => unawaited(_exportRecording(context)),
+          _ActionButton(
+            buttonKey: const Key('library_audio_export'),
+            label: l10n.libraryAudioExportUsb,
+            onTap: () => unawaited(_exportRecording(context)),
           ),
-          button(
-            'library_audio_daw_project',
-            l10n.libraryAudioDawProject,
-            () => unawaited(cubit.writeProject()),
+          _ActionButton(
+            buttonKey: const Key('library_audio_daw_project'),
+            label: l10n.libraryAudioDawProject,
+            onTap: () => unawaited(cubit.writeProject()),
           ),
         ],
         [
-          button(
-            'library_audio_delete',
-            l10n.libraryAudioDelete,
+          _ActionButton(
+            buttonKey: const Key('library_audio_delete'),
+            label: l10n.libraryAudioDelete,
             // An export of this take holds it; the line names the export.
-            deleteHeld ? null : () => unawaited(_delete(context)),
+            onTap: deleteHeld ? null : () => unawaited(_delete(context)),
           ),
         ],
       ],
       LibraryMixdown() => [
         [
-          button(
-            'library_audio_export',
-            l10n.libraryAudioExportUsb,
-            () => unawaited(
+          _ActionButton(
+            buttonKey: const Key('library_audio_export'),
+            label: l10n.libraryAudioExportUsb,
+            onTap: () => unawaited(
               cubit.export(LibraryAudioExportKind.mixdown, purpose: purpose),
             ),
           ),
-          button(
-            'library_audio_export_stems',
-            l10n.libraryAudioExportStems,
-            () => unawaited(
+          _ActionButton(
+            buttonKey: const Key('library_audio_export_stems'),
+            label: l10n.libraryAudioExportStems,
+            onTap: () => unawaited(
               cubit.export(LibraryAudioExportKind.stems, purpose: purpose),
             ),
           ),
@@ -746,6 +736,35 @@ class LibraryAudioActions extends StatelessWidget {
       ],
     );
   }
+}
+
+/// One of [LibraryAudioActions]' buttons, dimmed while it has no action.
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.buttonKey,
+    required this.label,
+    required this.onTap,
+  });
+
+  /// The button's own key, which tests find it by.
+  final Key buttonKey;
+
+  final String label;
+
+  /// What it does, or null while it cannot.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+    opacity: onTap == null ? context.surface.disabledOpacity : 1,
+    child: LoopOutlinedButton(
+      key: buttonKey,
+      width: 299,
+      fontSize: 23,
+      label: label,
+      onTap: onTap,
+    ),
+  );
 }
 
 /// Pen 20/08: the export's name, where it goes, how far it is, and
