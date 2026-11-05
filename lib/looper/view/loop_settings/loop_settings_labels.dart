@@ -2,7 +2,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 
 /// What each [RecordTiming] is called on the Loop settings pages. One table
-/// for the choice buttons, the hub summary and the notes.
+/// for the choice buttons and the notes.
 Map<RecordTiming, String> recordTimingLabels(AppLocalizations l10n) => {
   RecordTiming.immediately: l10n.loopTimingImmediately,
   RecordTiming.loopStart: l10n.loopTimingLoopStart,
@@ -21,7 +21,7 @@ String recordTimingNote(AppLocalizations l10n, RecordTiming timing) =>
       _ => l10n.loopTimingNoteGrid(recordTimingLabels(l10n)[timing]!),
     };
 
-/// A length preset as the hub and the editor name it: Auto, or the bars.
+/// A length preset as the editor names it: Auto, or the bars.
 String lengthPresetLabel(AppLocalizations l10n, int bars) =>
     bars <= 0 ? l10n.loopLengthAuto : l10n.lengthPresetBars(bars);
 

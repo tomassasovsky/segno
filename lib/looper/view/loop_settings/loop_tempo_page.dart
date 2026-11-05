@@ -356,8 +356,10 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                   ),
                 ),
               ),
-            // Choosing a count-in turns Sound off (the pair is exclusive).
-            if (confirmedRecordStart?.soundStart ?? false)
+            // Choosing a count-in turns Sound off (the pair is exclusive);
+            // said only while the row can be used.
+            if ((confirmedRecordStart?.soundStart ?? false) &&
+                (recordStartSnapshot?.canEdit ?? false))
               Positioned(
                 left: _controlsLeft,
                 top: 362 + 96 + 16,

@@ -1080,6 +1080,28 @@ void main() {
       }
     });
 
+    testWidgets('Enter on a focused tab switches and keeps the focus there', (
+      tester,
+    ) async {
+      await pump(tester);
+      final recording = find.byKey(const Key('loop_settings_tab_recording'));
+      Focus.of(
+        tester.element(
+          find.descendant(of: recording, matching: find.byType(InkWell)).first,
+        ),
+      ).requestFocus();
+      await tester.pump();
+      final focused = FocusManager.instance.primaryFocus;
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('loop_settings_page_recording')),
+        findsOneWidget,
+      );
+      expect(FocusManager.instance.primaryFocus, same(focused));
+      expect(focused!.hasPrimaryFocus, isTrue);
+    });
+
     testWidgets('opens on the tab it is asked for', (tester) async {
       await pump(tester, initial: LoopSettingsTab.playback);
       expect(
@@ -1142,7 +1164,9 @@ void main() {
       expect(find.byKey(const Key('loop_settings_page_tempo')), findsOneWidget);
     });
 
-    testWidgets('a tab switch cancels an unfinished edit', (tester) async {
+    testWidgets('a tab switch drops an unfinished edit without committing it', (
+      tester,
+    ) async {
       await pump(tester, initial: LoopSettingsTab.playback);
       final slider = find.byKey(const Key('loop_decay_slider'));
       Focus.of(
@@ -1524,6 +1548,25 @@ void main() {
   });
 
   group('Tempo & click', () {
+    testWidgets('a capture hides the Count-in Sound note with the row', (
+      tester,
+    ) async {
+      await pump(tester, initial: LoopSettingsTab.tempo);
+      await tempo.setSoundStart(enabled: true);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('loop_count_in_sound_note')),
+        findsOneWidget,
+      );
+      states.add(
+        const LooperState(
+          tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('loop_count_in_sound_note')), findsNothing);
+    });
+
     testWidgets('Count-in says a count-in switches a Sound start to Pedal '
         '(#1659)', (tester) async {
       await pump(tester, initial: LoopSettingsTab.tempo);

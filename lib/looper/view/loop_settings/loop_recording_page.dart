@@ -24,15 +24,10 @@ const int kMaxLengthPresetBars = 64;
 const List<int> kDefaultMultiples = [0, 1, 2, 3];
 
 /// What the Recording tab reads off the looper.
-typedef _RecordingValues = ({
-  int count,
-  LooperMode mode,
-  bool capturing,
-});
+typedef _RecordingValues = ({int count, bool capturing});
 
 _RecordingValues _recordingValues(LooperState state) => (
   count: state.tracks.length,
-  mode: state.transport.looperMode,
   capturing: state.tracks.any((t) => t.isCapturing),
 );
 

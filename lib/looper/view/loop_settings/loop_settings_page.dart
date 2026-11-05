@@ -105,6 +105,7 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final tabs = _LoopSettingsTabs(selected: _tab, onShow: _show);
+    final page = Key('loop_settings_page_${_tab.name}');
     return BlocProvider(
       create: (context) => LoopSettingsFeedbackCubit(
         repository: context.read<LooperRepository>(),
@@ -137,27 +138,32 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
                         onStage: _stage,
                         children: [LoopTimeSignaturePage(onChosen: _back)],
                       )
+                    // One frame for every tab, so a tab switch keeps the tab
+                    // row (and the focus on it); only the content is keyed.
                     : LoopSettingsFrame(
-                        key: Key('loop_settings_page_${_tab.name}'),
                         crumb: l10n.loopSettingsCrumb,
                         title: l10n.loopSettingsTitle,
                         actions: tabs,
                         // The title ends before the tabs, a gap short.
                         titleRight:
-                            _LoopSettingsTabs.width + context.spacing.xl,
+                            _LoopSettingsTabs.widthOf(context) +
+                            context.spacing.xl,
                         onBack: _back,
                         onStage: _stage,
                         children: [
                           switch (_tab) {
-                            LoopSettingsTab.mode => const LoopModePage(),
+                            LoopSettingsTab.mode => LoopModePage(key: page),
                             LoopSettingsTab.tempo => LoopTempoPage(
+                              key: page,
                               onOpenSignature: _openSignature,
                             ),
                             LoopSettingsTab.recording => LoopRecordingPage(
+                              key: page,
                               track: _track,
                               onTrack: _selectTrack,
                             ),
                             LoopSettingsTab.playback => LoopPlaybackPage(
+                              key: page,
                               track: _track,
                               onTrack: _selectTrack,
                             ),
@@ -185,12 +191,12 @@ class _LoopSettingsTabs extends StatelessWidget {
   static const double tabWidth = 220;
 
   /// The gap between two tabs.
-  static const double gap = 8;
+  static double gapOf(BuildContext context) => context.spacing.sm;
 
   /// The whole row's width.
-  static double get width =>
+  static double widthOf(BuildContext context) =>
       LoopSettingsTab.values.length * tabWidth +
-      (LoopSettingsTab.values.length - 1) * gap;
+      (LoopSettingsTab.values.length - 1) * gapOf(context);
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +205,7 @@ class _LoopSettingsTabs extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final (i, tab) in LoopSettingsTab.values.indexed) ...[
-          if (i > 0) const SizedBox(width: gap),
+          if (i > 0) SizedBox(width: gapOf(context)),
           LoopChoiceButton(
             key: Key('loop_settings_tab_${tab.name}'),
             label: switch (tab) {

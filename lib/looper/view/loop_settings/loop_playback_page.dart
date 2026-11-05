@@ -367,7 +367,7 @@ class _LoopPlaybackPageState extends State<LoopPlaybackPage> {
             ),
             if (followCustom)
               Positioned(
-                left: half - 172,
+                right: width - half,
                 top: tempoTop,
                 child: LoopUseDefaultButton(
                   key: const Key('loop_audio_follow_use_default'),
