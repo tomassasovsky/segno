@@ -870,7 +870,6 @@
     "paramSustain": "Sustain",
     "paramHighpass": "High-pass",
     "paramGateThreshold": "Gate threshold",
-    "paramGateHold": "Gate hold",
     "paramGateRelease": "Gate release",
     "paramGateDetector": "Gate detector",
     "effectDoubler": "Doubler",

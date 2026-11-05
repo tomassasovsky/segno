@@ -844,10 +844,10 @@ enum TrackEffectType {
     ],
     // The corner the high-pass applies, half the Looper X's display, and off
     // at its lowest, which the Looper X shows as 1 Hz (#891). The Vocal
-    // Rack's defaults: the high-pass off, the gate at -120 dB. The hold,
-    // release and detector are segno's (#1644), each at its lowest the
-    // Looper X's measured gate: a 250 ms hold, a 3.2 ms close, keyed on
-    // each sample's peak (the detector off).
+    // Rack's defaults: the high-pass off, the gate at -120 dB. The release
+    // and detector are segno's (#1644), each at its lowest the Looper X's
+    // measured gate: a 3.2 ms close, keyed on each sample's peak (the
+    // detector off).
     TrackEffectType.hpGate => const [
       FxParamInfo(
         key: 'highpass',
@@ -863,14 +863,6 @@ enum TrackEffectType {
         unit: FxParamUnit.db,
         atMin: -120,
         atMax: 0,
-        defaultValue: 0,
-      ),
-      FxParamInfo(
-        key: 'gate_hold',
-        unit: FxParamUnit.ms,
-        atMin: 250,
-        atMax: 2000,
-        curve: FxParamCurve.exponential,
         defaultValue: 0,
       ),
       FxParamInfo(

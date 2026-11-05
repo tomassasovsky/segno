@@ -133,7 +133,6 @@ extension EngineLocalizations on AppLocalizations {
     'sustain' => paramSustain,
     'highpass' => paramHighpass,
     'gate_threshold' => paramGateThreshold,
-    'gate_hold' => paramGateHold,
     'gate_release' => paramGateRelease,
     'gate_detector' => paramGateDetector,
     'separation' => paramSeparation,

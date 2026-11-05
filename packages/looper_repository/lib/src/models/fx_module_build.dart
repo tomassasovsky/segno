@@ -690,15 +690,16 @@ const FxModuleBuild _hpGate = FxModuleBuild(
 );
 
 // Guitar Rack (segno's, #1644: the Looper X's has no gate): the same
-// controls, timed for a guitar's decay. It keys on the input's RMS over
+// controls, timed for a guitar's decay. It closes on the input's RMS over
 // 10 ms, so a steady floor reads as its level and not as its highest
-// peaks, and a fading note closes it as it reaches the floor. It holds
-// 250 ms (the Looper X's hold) and then fades with a 120 ms time constant,
-// 60 dB in about 0.8 s, where the Vocal Rack's shuts in 3.2 ms.
+// peaks, and a fading note closes it as it reaches the floor; a note's
+// first crest opens it at once. After the Looper X's 250 ms hold it fades
+// with a 120 ms time constant, 60 dB in about 0.8 s, where the Vocal
+// Rack's shuts in 3.2 ms.
 const FxModuleBuild _guitarGate = FxModuleBuild(
   type: TrackEffectType.hpGate,
   params: ['Highpass', 'Gate Thresh'],
-  fixed: {2: 250, 3: 120, 4: 10},
+  fixed: {2: 120, 3: 10},
 );
 
 // The EQ layouts (the kind's "layout" choice).
