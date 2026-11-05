@@ -38,7 +38,7 @@ void main() {
           ),
         ),
       );
-      return (text) => tester.getRect(find.text(text)).top;
+      return (String text) => tester.getRect(find.text(text)).top;
     }
 
     testWidgets('a row that keeps the ordinal line puts every name on one '
