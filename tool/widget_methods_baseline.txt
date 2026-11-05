@@ -1,9 +1,0 @@
-# Declarations that still return a widget (#1697). The check in
-# tool/check_no_widget_methods.dart fails on any declaration not listed here
-# and on any entry that no longer matches one, so this list only shrinks:
-# when you turn one of these into a widget class, delete its line.
-# Never add a line. The last refactor deletes this file.
-lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._actions
-lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._editor
-lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._tracksEditor
-lib/control/view/pedal_setup/pedal_setup_page.dart#_PedalSetupPageState._customEditor

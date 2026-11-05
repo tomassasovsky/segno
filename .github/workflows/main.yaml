@@ -189,27 +189,10 @@ jobs:
   # widget (#1697): UI is built from widget classes. The check resolves the
   # code with package:analyzer, so it needs flutter pub get. Its own job
   # because dart analyze and bloc lint run inside the reusable workflow above.
-  # tool/widget_methods_baseline.txt lists what is left to convert; the check
-  # fails on anything new and on stale entries, and the first step fails when
-  # the baseline gains an entry.
   no-widget-methods:
     runs-on: ubuntu-latest
     steps:
-      # Depth 2 brings the commit before this one (the base, for a pull
-      # request's merge commit), to compare the baseline with.
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-      - name: The widget-method baseline only shrinks
-        run: |
-          baseline=tool/widget_methods_baseline.txt
-          git cat-file -e "HEAD^1:$baseline" 2>/dev/null || exit 0
-          added=$(git diff HEAD^1 HEAD -- "$baseline" | grep -E '^\+[^+#]' || true)
-          if [ -n "$added" ]; then
-            echo "$baseline gained entries; make them widget classes instead:"
-            echo "$added"
-            exit 1
-          fi
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.47.x"

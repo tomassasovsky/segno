@@ -426,6 +426,28 @@ void main() {
       );
     });
 
+    testWidgets('a renamed track renames the assignment that names it', (
+      tester,
+    ) async {
+      await pump(tester);
+      await openCustom(tester);
+      await choose(
+        tester,
+        field: press,
+        group: 'fixed',
+        choice: 'direct:mute:0',
+      );
+      unawaited(tracks.rename(0, 'Bassline'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(press),
+          matching: find.textContaining('Bassline'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a track switch carries a pair per bank', (tester) async {
       await pump(tester);
       await openCustom(tester);

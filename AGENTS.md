@@ -129,10 +129,8 @@ Run these before calling a change done:
 - `bloc lint lib test packages` must be clean. CI runs it as the `Bloc Lint`
   step, and it enforces rules `dart analyze` does not (a cubit method
   returning anything but void fails here and passes there).
-- `dart run tool/check_no_widget_methods.dart` must pass: no new method,
-  function or getter that returns a widget (Engineering principles). It
-  fails too when `tool/widget_methods_baseline.txt` names a declaration that
-  is gone; delete that line.
+- `dart run tool/check_no_widget_methods.dart` must pass: no method,
+  function or getter returns a widget (Engineering principles).
 - Formatting is automatic: a PostToolUse hook runs `dart format` on every
   edited `.dart` file that has a `.dart_tool/package_config.json` in its
   directory or an ancestor (it skips unresolved checkouts). Do not

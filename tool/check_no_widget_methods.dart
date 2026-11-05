@@ -21,11 +21,6 @@
 // callbacks), constructors, generated code (*.g.dart, *.freezed.dart,
 // lib/l10n/gen/, generated/ directories such as ffigen's) and tests.
 //
-// tool/widget_methods_baseline.txt lists the declarations that still break
-// the rule, one `path#Scope.name` per line; lines starting with `#` and blank
-// lines are ignored. The check fails on a declaration missing from it and on
-// an entry that no longer matches one, so the list only shrinks.
-//
 // Usage: dart run tool/check_no_widget_methods.dart (after flutter pub get)
 
 import 'dart:io';
@@ -45,9 +40,6 @@ import 'package:analyzer/file_system/file_system.dart' show ResourceProvider;
 import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart';
 import 'package:path/path.dart' as p;
 
-/// The baseline, relative to the repository root.
-const baselinePath = 'tool/widget_methods_baseline.txt';
-
 const _frameworkUri = 'package:flutter/src/widgets/framework.dart';
 
 /// One declaration that returns a widget.
@@ -66,14 +58,11 @@ class WidgetMethod {
   final int line;
 
   /// The enclosing declarations and the name, joined by `.`, such as
-  /// `_PedalSetupPageState._actions` or `_PanelState.build.row`.
+  /// `_PanelState._row` or `_PanelState.build.cell`.
   final String scope;
 
   /// The return type, as Dart writes it.
   final String type;
-
-  /// The baseline key: stable while lines move.
-  String get key => '$path#$scope';
 
   @override
   String toString() => '$path:$line: $scope returns $type';
@@ -343,87 +332,20 @@ class _Returned extends RecursiveAstVisitor<void> {
   void visitFunctionDeclarationStatement(FunctionDeclarationStatement node) {}
 }
 
-/// Reads the baseline keys from [file], or none when it does not exist.
-List<String> readBaseline(File file) {
-  if (!file.existsSync()) return const [];
-  return [
-    for (final raw in file.readAsLinesSync())
-      if (raw.trim() case final line
-          when line.isNotEmpty && !line.startsWith('#'))
-        line,
-  ];
-}
-
-/// The outcome of comparing what the check found with the baseline.
-class Comparison {
-  const Comparison({required this.violations, required this.stale});
-
-  /// Found and not in the baseline.
-  final List<WidgetMethod> violations;
-
-  /// In the baseline and not found.
-  final List<String> stale;
-
-  bool get passes => violations.isEmpty && stale.isEmpty;
-}
-
-/// Compares [found] with [baseline], counting repeated keys: a key listed
-/// twice allows two declarations with that key.
-Comparison compare(List<WidgetMethod> found, List<String> baseline) {
-  final allowed = <String, int>{};
-  for (final key in baseline) {
-    allowed[key] = (allowed[key] ?? 0) + 1;
-  }
-  final violations = <WidgetMethod>[];
-  for (final method in found) {
-    final left = allowed[method.key] ?? 0;
-    if (left > 0) {
-      allowed[method.key] = left - 1;
-    } else {
-      violations.add(method);
-    }
-  }
-  return Comparison(
-    violations: violations,
-    stale: [
-      for (final MapEntry(:key, :value) in allowed.entries)
-        for (var i = 0; i < value; i++) key,
-    ],
-  );
-}
-
 Future<void> main() async {
   final root = p.normalize(
     p.join(p.dirname(Platform.script.toFilePath()), '..'),
   );
   final found = await findWidgetMethods(root: root);
-  final comparison = compare(
-    found,
-    readBaseline(File(p.join(root, baselinePath))),
-  );
-  comparison.violations.forEach(stdout.writeln);
-  for (final key in comparison.stale) {
-    stdout.writeln('$baselinePath: stale entry $key');
-  }
-  if (comparison.passes) {
-    stdout.writeln(
-      'No new widget-returning methods '
-      '(${found.length} left in $baselinePath).',
-    );
+  if (found.isEmpty) {
+    stdout.writeln('No widget-returning methods.');
     return;
   }
-  if (comparison.violations.isNotEmpty) {
-    stdout.writeln(
-      '\nA method, function or getter must not return a widget. Make it a '
-      'StatelessWidget or StatefulWidget class that takes its data through '
-      'constructor parameters (AGENTS.md, Engineering principles).',
-    );
-  }
-  if (comparison.stale.isNotEmpty) {
-    stdout.writeln(
-      '\nRemove the stale entries from $baselinePath: the declarations they '
-      'name are gone.',
-    );
-  }
+  found.forEach(stdout.writeln);
+  stdout.writeln(
+    '\nA method, function or getter must not return a widget. Make it a '
+    'StatelessWidget or StatefulWidget class that takes its data through '
+    'constructor parameters (AGENTS.md, Engineering principles).',
+  );
   exitCode = 1;
 }
