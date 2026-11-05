@@ -10379,7 +10379,8 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
-/* The version perf_drain.c writes today. 9 = LE_PLOG_TRANSPOSE and 8 =
+/* The version perf_drain.c writes today. 15 = the snapshot source's 323
+ * (#1170); 9 = LE_PLOG_TRANSPOSE and 8 =
  * LE_PLOG_SPEED (#1179); 7 =
  * Reverse and Peel (#1162, #1164); 6 = every callback-applied history
  * image logs 322 and LE_CMD_UNDO_TO_EMPTY is raw-logged (#1143); 5 = applied
@@ -10388,7 +10389,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 14
+#define LE_TEST_EVENTS_VERSION 15
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {

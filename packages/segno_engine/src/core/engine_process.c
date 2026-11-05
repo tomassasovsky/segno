@@ -283,6 +283,25 @@ static void le_speed_log(le_engine* e, le_track* t, uint64_t frame,
                     (uint32_t)q, (uint32_t)(q >> 32)}});
 }
 
+/* The source fact (#1143, #1170): 322 names the staged image that became
+ * the live source (the first fact for a slot), 323 the source's new state or
+ * discontinuous phase, its image id 0 for the snapshot source. Both carry
+ * the integral phase; off whole samples the exact index follows (E3, M1),
+ * so the stem re-anchors exactly. */
+static void le_perf_source_transport(le_engine* e, le_track* t, uint64_t frame,
+                                     int32_t state, int32_t phase) {
+  le_plog_push(e, frame, (le_command){
+      .code = t->perf_source_state < 0 ? LE_PLOG_SOURCE_APPLIED
+                                       : LE_PLOG_SOURCE_TRANSPORT,
+      .restore_log = {(int32_t)(t - e->tracks), t->perf_source_id, state,
+                      phase}});
+  if (state == LE_TRACK_PLAYING && !le_head_is_integral(&t->head)) {
+    int32_t hl;
+    const int64_t song = le_track_song_position(e, t, &hl);
+    le_speed_log(e, t, frame, le_head_index(&t->head, song, hl), 0);
+  }
+}
+
 /* The sounding-pitch fact (#1179 Part 3a, LE_PLOG_TRANSPOSE): stored and
  * effective pitch, the swap's turn window and the exact index in Q32.32. */
 static void le_transpose_log(le_engine* e, le_track* t, uint64_t frame,
@@ -6212,6 +6231,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
         if (atomic_load_explicit(&e->perf.slot_image[t][live],
                                  memory_order_relaxed) == 0) {
           tr->perf_source_slot = live;
+          /* The renderer sounds the arm image, so a track stopped at arm
+           * logs its Stop at capture frame 0 (#1170). */
+          tr->perf_source_state = LE_TRACK_PLAYING;
         }
       }
       e->perf.armed = 1;
@@ -8866,20 +8888,18 @@ static inline void mix_tracks_frame(
         if (tr->perf_source_id == 0) le_perf_source_lost(e, tr, frame);
         tr->perf_source_state = -1;
       }
-      if (tr->perf_source_id != 0 &&
-          (tr->perf_source_state != st[t] ||
-           (st[t] == LE_TRACK_PLAYING && tr->perf_source_next_pos != phase))) {
-        le_plog_push(e, frame, (le_command){
-            .code = tr->perf_source_state < 0 ? LE_PLOG_SOURCE_APPLIED
-                                              : LE_PLOG_SOURCE_TRANSPORT,
-            .restore_log = {t, tr->perf_source_id, st[t], phase}});
-        /* 322/323 carry the integral phase; off whole samples the exact
-         * index follows (E3, M1), so the stem re-anchors exactly. */
-        if (st[t] == LE_TRACK_PLAYING && !le_head_is_integral(&tr->head)) {
-          int32_t hl;
-          const int64_t song = le_track_song_position(e, tr, &hl);
-          le_speed_log(e, tr, frame, le_head_index(&tr->head, song, hl), 0);
-        }
+      /* An image source logs its state and every phase jump. The snapshot
+       * source (image 0: the arm snapshot, or a take or layer recorded in
+       * the capture) logs only its Stop and Play edges (#1170): its phase is
+       * the arm, record and retire facts' to carry, so a state the renderer
+       * has not seen (-1) logs nothing. */
+      if (tr->perf_source_id != 0
+              ? tr->perf_source_state != st[t] ||
+                    (st[t] == LE_TRACK_PLAYING &&
+                     tr->perf_source_next_pos != phase)
+              : tr->perf_source_state >= 0 &&
+                    tr->perf_source_state != st[t]) {
+        le_perf_source_transport(e, tr, frame, st[t], phase);
       }
       tr->perf_source_state = st[t];
       /* The phase steps in the track's direction (#1162) at its rate
@@ -8909,6 +8929,16 @@ static inline void mix_tracks_frame(
         le_perf_source_lost(e, tr, frame);
       }
       tr->perf_source_slot = live0;
+      /* The written material sounds from here, as the renderer plays a
+       * take or retired layer: an overdub on a stopped track is its Play,
+       * and a finalize into STOPPED logs its Stop above. */
+      if (st[t] == LE_TRACK_OVERDUBBING &&
+          tr->perf_source_state == LE_TRACK_STOPPED) {
+        const int32_t len = load_i32(&tr->lanes[0].a_len);
+        le_perf_source_transport(e, tr, frame, LE_TRACK_PLAYING,
+                                 len > 0 ? e->trk_play_pos[t] % len : 0);
+      }
+      tr->perf_source_state = LE_TRACK_PLAYING;
     } /* EMPTY: no fact; le_transform_reset already dropped the source */
   }
 

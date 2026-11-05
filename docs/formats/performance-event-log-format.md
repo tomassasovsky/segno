@@ -58,6 +58,7 @@ when the 28-byte record does.
 | `12`     | Pitch across a retime (#1179 Part 4a-ii): `LE_PLOG_SOURCE_LEN` (331) names the length of the render a track sounds, just before every 328: a stretch render (Pitch Unchanged, the take time-stretched to the span it plays over, within 0.5 %) is read with its index mapped by its length over the take's. The renderer renders the image to that length through the same loop render and reads it mapped. A version-11 reader plays the dry take through the varispeed head (the pitch off by the tempo ratio). |
 | `13`     | Octaver hop clock (#941): `LE_PLOG_PERF_ARMED` (315) carries a fourth field, `fx_clock`, the engine frame (mod 2^32) of capture frame 0. The live octaver anchors its analysis hop to the engine frame, so the offline renderer sets its chains' clock to `fx_clock + frame` and reproduces the live hop schedule. In an older file the field reads 0 (the writer zeroed the payload tail), and a render anchors the hop to capture frame 0 instead. |
 | `14`     | The effect chains' musical time (#887 part 10): `LE_PLOG_FX_TEMPO` (332) logs every anchor the engine moves it to, and one at `PERF_ARM`: the beat in quarter notes (a double's bits), the quarter notes a frame advances, and the time signature. From an anchor at frame N the beat at frame f is beat + (f - N) x qpf, the very sum the live chains use, so a tempo-synced effect (the Pumper) renders as it played. A version-13 reader runs those effects at 120 BPM from beat 0. |
+| `15`     | The snapshot source's transport (#1170): `323` with image ID zero and state `PLAYING` or `STOPPED` is a Stop or Play of a track sounding the arm snapshot, or a take or layer recorded in the capture. A track stopped at `PERF_ARM` logs its Stop at capture frame 0, an overdub started on a stopped track logs its Play, and a finalize into `STOPPED` logs its Stop. The renderer silences the current material from the fact, with the Stop's fade-out (#1400), and a layer that retires after the Stop stays silent. A version-14 reader keeps such a track sounding to the end of the capture. |
 
 Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
 `EventLogReader`) gates on the field — both check the magic and skip these four
@@ -391,6 +392,17 @@ previous slot in the fact's frame, but a lane `k >= 1` may mix the new slot up
 to one frame before it (the live pool slot is published per lane, not per
 track). A future multi-lane renderer must treat lanes `1..n` as switching
 within one frame of the fact.
+
+From version 15, `323` with image ID zero and state `PLAYING` or `STOPPED`
+is the snapshot source's own transport (#1170): the arm snapshot, or a take
+or retired layer recorded in the capture, has no staged image, so its Stop
+and Play edges carry image 0. Only the edges are logged; the snapshot
+source's phase stays with the arm, record and retire facts. A track stopped
+at `PERF_ARM` logs its Stop at capture frame 0, an overdub on a stopped track
+logs its Play, and recording otherwise leaves the source sounding, as a
+reader plays a finished take. The reader applies the fact to whatever
+material the channel sounds at that frame and fails the stem if a staged
+image is current instead.
 
 Code `323` with image ID zero and state EMPTY means provenance was lost: a
 slot became live without a staged image (staging refused or the id space
