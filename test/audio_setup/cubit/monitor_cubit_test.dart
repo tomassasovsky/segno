@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -2246,35 +2247,46 @@ void main() {
       fxPersistDebounce: debounce,
     );
 
-    test('a drag writes the engine per move and the store once', () async {
-      final cubit = buildDebounced()..addEffect(0);
-      addTearDown(cubit.close);
-      // The structural add persists straight through; only the knob is
-      // coalesced, so count from here.
-      await pumpEventQueue();
-      final writesBeforeDrag = store.stringWrites;
+    // On a fake clock: a real-time wait for the debounce failed on loaded CI
+    // runners, where the timer had not fired by the time the test looked.
+    test('a drag writes the engine per move and the store once', () {
+      fakeAsync((async) {
+        final cubit = buildDebounced()..addEffect(0);
+        addTearDown(cubit.close);
+        // The structural add persists straight through; only the knob is
+        // coalesced, so count from here.
+        async.flushMicrotasks();
+        final writesBeforeDrag = store.stringWrites;
 
-      for (var i = 0; i < 8; i++) {
-        cubit.setEffectParam(0, 0, 0, i / 10);
-      }
+        for (var i = 0; i < 8; i++) {
+          cubit.setEffectParam(0, 0, 0, i / 10);
+        }
 
-      // Every move reached the engine on the move that made it.
-      verify(
-        () => repository.setMonitorEffectParam(
-          input: 0,
-          index: 0,
-          param: 0,
-          value: any(named: 'value'),
-        ),
-      ).called(8);
-      expect(store.stringWrites, writesBeforeDrag);
+        // Every move reached the engine on the move that made it.
+        verify(
+          () => repository.setMonitorEffectParam(
+            input: 0,
+            index: 0,
+            param: 0,
+            value: any(named: 'value'),
+          ),
+        ).called(8);
+        expect(store.stringWrites, writesBeforeDrag);
 
-      await Future<void>.delayed(debounce * 3);
+        async
+          ..elapse(debounce * 3)
+          ..flushMicrotasks();
 
-      expect(store.stringWrites, writesBeforeDrag + 1);
-      final persisted = decodeFxChain(await settings.loadMonitorEffects(0));
-      // The value the user let go on, not the one that scheduled the write.
-      expect((persisted.entries.single as BuiltInEffect).params.first, 0.7);
+        expect(store.stringWrites, writesBeforeDrag + 1);
+        String? persisted;
+        unawaited(
+          settings.loadMonitorEffects(0).then((value) => persisted = value),
+        );
+        async.flushMicrotasks();
+        // The value the user let go on, not the one that scheduled the write.
+        final entry = decodeFxChain(persisted).entries.single as BuiltInEffect;
+        expect(entry.params.first, 0.7);
+      });
     });
 
     test('closing flushes a drag that ended inside the window', () async {
