@@ -135,6 +135,7 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
               children: [
                 for (final (index, button) in kTrackSwitches.indexed)
                   _TrackRow(
+                    key: Key('pedal_switch_${button.name}'),
                     button: button,
                     bank: bank,
                     binding: _bindingFor(state, button, bank),
@@ -200,6 +201,7 @@ class _TrackRow extends StatelessWidget {
     required this.open,
     required this.last,
     required this.onTap,
+    super.key,
   });
 
   final PedalButton button;
@@ -228,7 +230,6 @@ class _TrackRow extends StatelessWidget {
     final resolves = target != null && looper.bindingResolves(target);
 
     return ConsoleRow(
-      key: Key('pedal_switch_${button.name}'),
       title: pedalSwitchLabel(l10n, button, bank),
       value: switch ((binding, resolves)) {
         (null, _) => l10n.controlUnassigned,
@@ -334,6 +335,7 @@ class _AssignSection extends StatelessWidget {
             children: [
               for (final (index, target) in listed.indexed)
                 _TargetRow(
+                  key: Key('pedal_target_${target.canonicalString()}'),
                   target: target,
                   chosen: target == current,
                   onTap: key == null
@@ -378,6 +380,7 @@ class _TargetRow extends StatelessWidget {
     required this.chosen,
     required this.onTap,
     required this.last,
+    super.key,
   });
 
   final FxBindingTarget target;
@@ -399,7 +402,6 @@ class _TargetRow extends StatelessWidget {
     final trackNames = context.watch<TracksCubit>().state.names;
     final stage = fxStageLabel(l10n, trackNames, target.address);
     return ConsoleRow(
-      key: Key('pedal_target_${target.canonicalString()}'),
       title: switch (target) {
         FxChainTarget() => bindingTargetLabel(l10n, trackNames, target),
         // Named by its own effect rather than by repeating the chain above

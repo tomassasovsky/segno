@@ -1008,10 +1008,7 @@ class _ListActions extends StatelessWidget {
           key: const Key('midi_add_mapping'),
           width: 192,
           label: l10n.midiAddMapping,
-          onTap:
-              state.midiLoaded &&
-                  !state.midiUnavailable &&
-                  connection.hasSelection
+          onTap: loaded && !unavailable && connection.hasSelection
               ? onAdd
               : null,
         ),
