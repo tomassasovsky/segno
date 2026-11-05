@@ -54,9 +54,15 @@ typedef struct le_bridge {
   uint32_t last_clock; /* engine frame of the last frame stepped */
   int32_t cur_rev;     /* the direction each reads in */
   int32_t prev_rev;
-  int32_t live;        /* 0: the next step lays both grains on the head */
-  int32_t tonal;       /* the last search found a continuation (le_bridge_align) */
+  /* 0: the next step lays both grains on the head; else LE_BRIDGE_LIVE,
+   * | LE_BRIDGE_TONAL once a search found the material repeats
+   * (le_bridge_align's `tonal`). One word, so the per-track bridge state
+   * keeps the size the mixer's layout was measured with (#1698). */
+  int32_t live;
 } le_bridge;
+
+#define LE_BRIDGE_LIVE 1
+#define LE_BRIDGE_TONAL 2
 
 /* The grain hop: the power of two nearest 40 ms (4096 frames at 96 kHz, 2048
  * at 44.1 and 48 kHz), so a grain edge is a mask of the engine clock and
@@ -133,7 +139,7 @@ static inline double le_bridge_score(const float* sub, const float* target,
  * - material that repeats nowhere within the search, away from the
  *   continuation itself (noise, cymbals: normalized correlation under 0.5),
  *   keeps to +-10 ms, for the search and for how far a grain may continue
- *   (`tonal`), so its hits stay on time.
+ *   (`tonal`, LE_BRIDGE_TONAL), so its hits stay on time.
  *
  * Grains start on whole samples, so at a whole Speed they read the take's
  * samples rather than interpolations that would dull the top end by a
@@ -335,8 +341,7 @@ static inline int32_t le_bridge_step(le_bridge* b, const float* buf,
         (double)le_bridge_round(le_head_index(h, pos - phase - hop, len), len);
     b->cur_g = b->prev_g = g;
     b->cur_rev = b->prev_rev = h->reversed;
-    b->live = 1;
-    b->tonal = 0;
+    b->live = LE_BRIDGE_LIVE;
   } else if (phase == 0) {
     const double dir = b->cur_rev ? -1.0 : 1.0;
     const double cont =
@@ -344,9 +349,11 @@ static inline int32_t le_bridge_step(le_bridge* b, const float* buf,
     b->prev = b->cur;
     b->prev_g = b->cur_g;
     b->prev_rev = b->cur_rev;
+    int32_t tonal = (b->live & LE_BRIDGE_TONAL) != 0;
     b->cur = le_bridge_align(buf, len, index, cont, g, h->reversed,
                              b->cur_rev != h->reversed || b->cur_g != g,
-                             sample_rate, &b->tonal);
+                             sample_rate, &tonal);
+    b->live = LE_BRIDGE_LIVE | (tonal ? LE_BRIDGE_TONAL : 0);
     b->cur_g = g;
     b->cur_rev = h->reversed;
   }
