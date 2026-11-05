@@ -227,7 +227,7 @@ class ReadoutScreen extends StatelessWidget {
                   onCommand: link.sendCommand,
                   refusals: link.refusals,
                 )
-              : ColoredBox(color: AppTheme.neon.scaffoldBackgroundColor),
+              : ColoredBox(color: AppTheme.readout.scaffoldBackgroundColor),
         );
       },
     );
@@ -255,7 +255,7 @@ class ReadoutCalibrationFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: AppTheme.neon,
+      data: AppTheme.readout,
       child: Directionality(
         textDirection: TextDirection.ltr,
         child: Builder(

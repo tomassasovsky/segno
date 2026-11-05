@@ -1469,7 +1469,8 @@
     "penpot",
     "blobless",
     "SIGUSR",
-    "scanout"
+    "scanout",
+    "msaa"
   ],
   "overrides": [
     {

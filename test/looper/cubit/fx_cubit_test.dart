@@ -557,7 +557,11 @@ void main() {
 
       expect(result.status, FxEditStatus.applied);
       final rack = rackOf(rackId);
-      expect(rack.length, 4);
+      // Three Ed's pedals, then the Guitar Rack's gate (segno's, #1644; off
+      // here) and its Spring.
+      expect(rack.length, 5);
+      expect(rack.entries[3].module, 'High-pass gate');
+      expect(rack.entries[3].enabled, isFalse);
       expect(rack.entries.last.module, 'Spring reverb');
       expect(rack.channels.level, 0.8);
     });

@@ -31,6 +31,7 @@ class SessionRigLane {
     required this.inputChannel,
     this.pan = 0,
     this.balance = 1,
+    this.recordedInput = -1,
     this.history = TrackHistory.none,
   });
 
@@ -41,6 +42,10 @@ class SessionRigLane {
   /// The gain the input pair's balance gave the lane's side when the take
   /// started, `0..1` (`Lane.balance`); [volume] is the level.
   final double balance;
+
+  /// The hardware input the lane's take was captured from
+  /// (`Lane.recordedInput`); `-1` when unknown.
+  final int recordedInput;
 
   /// Lane index within the track.
   final int lane;

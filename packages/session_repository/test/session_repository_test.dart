@@ -1331,8 +1331,8 @@ void main() {
         settings: const SessionSettings(
           trackLevels: {0: .5},
           laneMix: {
-            (0, 0): (level: .25, imagePan: 0, balance: 1),
-            (0, 1): (level: 1.5, imagePan: 0, balance: 1),
+            (0, 0): (level: .25, imagePan: 0, balance: 1, recordedInput: 0),
+            (0, 1): (level: 1.5, imagePan: 0, balance: 1, recordedInput: 1),
           },
         ),
       );
@@ -1413,7 +1413,7 @@ void main() {
       dir,
       settings: const SessionSettings(
         laneMix: {
-          (0, 0): (level: 0.5, imagePan: 0, balance: 0.5),
+          (0, 0): (level: 0.5, imagePan: 0, balance: 0.5, recordedInput: 0),
         },
       ),
     );
@@ -1425,6 +1425,31 @@ void main() {
     for (final sample in wav.samples) {
       expect(sample, closeTo(0.25, 1e-6));
     }
+  });
+
+  test("a lane's recorded input survives save and reopen, apart from its "
+      'input setting; a lane the settings do not describe takes the setting '
+      '(#1678)', () async {
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..seedLane(0, 1, Float32List.fromList([1, 1, 1, 1]), inputChannel: 1);
+    final dir = '${tempDir.path}/recorded_input';
+
+    await repoFor(engine).save(
+      dir,
+      settings: const SessionSettings(
+        laneMix: {
+          (0, 0): (level: 1, imagePan: 0, balance: 1, recordedInput: 3),
+        },
+      ),
+    );
+    final lanes = (await repoFor(
+      FakeSessionEngine(),
+    ).read(dir)).session.tracks.single.lanes;
+
+    expect(lanes[0].recordedInput, 3);
+    expect(lanes[0].inputChannel, 0);
+    expect(lanes[1].recordedInput, 1);
   });
 
   test('mixdown excludes a muted lane of a multi-lane track', () async {
