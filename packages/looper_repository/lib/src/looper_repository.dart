@@ -4256,6 +4256,17 @@ class LooperRepository {
       }
     }
     if (!all && group.isEmpty && pending.isEmpty) return;
+    // A track's clear whose only point is still to be filed may turn out to
+    // have frozen a capture that held nothing: keep the clear before it
+    // until the engine says, so that one is not lost ([_intactClearGroup]).
+    _clearFallback = !all && group.isEmpty
+        ? (
+            group: _clearGroup,
+            pending: _clearGroupPending,
+            all: _clearGroupIsAll,
+            mark: _clearMark,
+          )
+        : null;
     _clearGroup = group;
     _clearGroupPending = pending;
     _clearGroupIsAll = all;
@@ -4279,6 +4290,11 @@ class LooperRepository {
   /// The rig's history as the last undoable clear left it, which tells the
   /// tracks with an edit of their own since ([LooperState.editedSinceClear]).
   _ClearMark _clearMark = (seq: 0, empty: const {}, refused: const {});
+
+  /// The clear before a track's clear whose point is still to be filed: the
+  /// last clear again if that point never lands, dropped once it does.
+  ({Set<int> group, Set<int> pending, bool all, _ClearMark mark})?
+  _clearFallback;
 
   /// The channels an undone [clearAll] restored, and the tracks it was
   /// refused on. A track's undone clear needs no group: its Redo is the
@@ -4390,6 +4406,19 @@ class LooperRepository {
       }
       _clearGroup = group;
       _clearGroupPending = pending;
+      final fallback = _clearFallback;
+      if (fallback != null && (group.isNotEmpty || pending.isEmpty)) {
+        _clearFallback = null;
+        // The frozen capture held nothing: the clear before it is the last
+        // clear again.
+        if (group.isEmpty) {
+          _clearGroup = fallback.group;
+          _clearGroupPending = fallback.pending;
+          _clearGroupIsAll = fallback.all;
+          _clearMark = fallback.mark;
+          return _intactClearGroup();
+        }
+      }
     }
     for (final channel in _clearGroup) {
       if (_engine.undoRestoresClear(channel: channel)) continue;
@@ -4655,6 +4684,7 @@ class LooperRepository {
         _clearGroup = group;
         _clearGroupPending = const {};
         _clearGroupIsAll = true;
+        _clearFallback = null;
         // The re-clear is the newest edit now.
         _clearMark = _markClear(
           _engine.snapshot(),

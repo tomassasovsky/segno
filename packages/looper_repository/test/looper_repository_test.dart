@@ -1365,6 +1365,33 @@ void main() {
           expect(repo.state.undoRestoresClear(2), isFalse);
         });
 
+        test('a clear of a capture that held nothing keeps the clear before '
+            'it', () async {
+          final repo = clearedTrackTwo();
+          // Track 4 is cleared in its first block: the frozen point is still
+          // to be filed, then the capture turns out to have held nothing.
+          engine.clearRestorePendingChannels = {3};
+          repo.clear(channel: 3);
+          engine.clearRestorePendingChannels = {};
+          await pollHistory(repo);
+          expect(repo.state.undoableClear, UndoableClear.track);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [1]);
+        });
+
+        test('a clear of a capture whose point lands replaces the clear '
+            'before it', () async {
+          final repo = clearedTrackTwo();
+          engine.clearRestorePendingChannels = {3};
+          repo.clear(channel: 3);
+          engine
+            ..clearRestorePendingChannels = {}
+            ..undoRestoresClearChannels = {1, 3};
+          await pollHistory(repo);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [3]);
+        });
+
         test('an overdub running on the asked track keeps its own Undo', () {
           final repo = clearedTrackTwo();
           engine.nextSnapshot = rig([
