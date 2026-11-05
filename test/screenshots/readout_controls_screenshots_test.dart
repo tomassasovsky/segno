@@ -167,6 +167,30 @@ void main() {
     await shoot(tester, 'panel_recording_es');
   }, skip: !rendersScreenshots);
 
+  testWidgets('the exact-tempo keypad', (tester) async {
+    await pump(tester, readout());
+    await openPanel(tester);
+    await tester.tap(find.byKey(const Key('readout_panel_bpm_button')));
+    await tester.pump();
+    for (final key in ['9', '2', '.', '5']) {
+      await tester.tap(find.text(key).last);
+      await tester.pump();
+    }
+    await shoot(tester, 'keypad');
+
+    // Out of range: the keypad stays up and gives the range.
+    await tester.tap(find.byKey(const Key('readout_keypad_cancel')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('readout_panel_bpm_button')));
+    await tester.pump();
+    for (final key in ['3', '5', '0']) {
+      await tester.tap(find.text(key).last);
+      await tester.pump();
+    }
+    await tester.tap(find.textContaining('Set').last);
+    await shoot(tester, 'keypad_range');
+  }, skip: !rendersScreenshots);
+
   testWidgets('every time signature', (tester) async {
     await pump(tester, readout(tsNum: 7, tsDen: 8));
     await openPanel(tester);

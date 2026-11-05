@@ -8731,5 +8731,9 @@
                 "type": "String"
             }
         }
+    },
+    "readoutPanelTypeHint": "Tap the figure to type it.",
+    "@readoutPanelTypeHint": {
+        "description": "Says the tempo figure on the readout's Loop panel opens the keypad."
     }
 }

@@ -316,6 +316,130 @@ void main() {
     });
   });
 
+  group('exact tempo', () {
+    final keypad = find.byKey(const Key('readout_keypad'));
+
+    Future<void> openKeypad(WidgetTester tester) async {
+      await open(tester);
+      await tapKey(tester, 'readout_panel_bpm_button');
+      expect(keypad, findsOneWidget);
+    }
+
+    Future<void> type(WidgetTester tester, String keys) async {
+      for (final key in keys.split('')) {
+        await tester.tap(
+          find.descendant(of: keypad, matching: find.text(key)).last,
+        );
+        await tester.pump();
+      }
+    }
+
+    Future<void> set(WidgetTester tester) async {
+      await tester.tap(
+        find.descendant(of: keypad, matching: find.textContaining('Set')),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('typing 128.47 and Set sends exactly that', (tester) async {
+      await pump(tester, readoutOf());
+      await openKeypad(tester);
+      await type(tester, '128.47');
+      expect(find.text('Set 128.47'), findsOneWidget);
+      await set(tester);
+      expect(sent, const [TempoSet(128.47)]);
+      expect(keypad, findsNothing);
+      expect(panel, findsOneWidget);
+    });
+
+    testWidgets('a third decimal and a fourth digit are not typed', (
+      tester,
+    ) async {
+      await pump(tester, readoutOf());
+      await openKeypad(tester);
+      await type(tester, '92.505');
+      expect(
+        find.descendant(of: keypad, matching: find.text('92.50')),
+        findsOne,
+      );
+      await tapKey(tester, 'readout_keypad_cancel');
+      await tapKey(tester, 'readout_panel_bpm_button');
+      await type(tester, '1200');
+      expect(find.descendant(of: keypad, matching: find.text('120')), findsOne);
+    });
+
+    for (final bad in ['350', '3']) {
+      testWidgets('$bad is refused with the range, and the keypad stays', (
+        tester,
+      ) async {
+        await pump(tester, readoutOf());
+        await openKeypad(tester);
+        await type(tester, bad);
+        await set(tester);
+        expect(sent, isEmpty);
+        expect(keypad, findsOneWidget);
+        expect(
+          find.text('Enter a tempo from 30.00 to 300.00 BPM'),
+          findsOneWidget,
+        );
+        // Typing again takes the refusal away.
+        await tester.tap(find.byIcon(Icons.backspace_outlined));
+        await tester.pump();
+        expect(find.byKey(const Key('readout_keypad_error')), findsNothing);
+      });
+    }
+
+    testWidgets('Cancel and an empty Set send nothing', (tester) async {
+      await pump(tester, readoutOf());
+      await openKeypad(tester);
+      await type(tester, '99');
+      await tapKey(tester, 'readout_keypad_cancel');
+      expect(keypad, findsNothing);
+      await tapKey(tester, 'readout_panel_bpm_button');
+      await set(tester);
+      expect(keypad, findsNothing);
+      expect(sent, isEmpty);
+    });
+
+    testWidgets('a locked tempo opens no keypad, and a lock closes it', (
+      tester,
+    ) async {
+      await pump(tester, readoutOf(follow: TempoFollowState.noFollower));
+      await open(tester);
+      await tapKey(tester, 'readout_panel_bpm_button');
+      expect(keypad, findsNothing);
+
+      pushed.value = readoutOf();
+      await tester.pump();
+      await tapKey(tester, 'readout_panel_bpm_button');
+      expect(keypad, findsOneWidget);
+      pushed.value = readoutOf(follow: TempoFollowState.busy);
+      await tester.pump();
+      expect(keypad, findsNothing);
+    });
+
+    for (final locale in AppLocalizations.supportedLocales) {
+      testWidgets('the keypad fits (${locale.languageCode})', (tester) async {
+        await pump(tester, readoutOf(), locale: locale);
+        await openKeypad(tester);
+        await type(tester, '350');
+        await tester.tap(
+          find.descendant(
+            of: keypad,
+            matching: find.text(
+              lookupAppLocalizations(locale).loopTempoEntrySet,
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(find.byKey(const Key('readout_keypad_error')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        expect(clippedTexts(tester, within: keypad), isEmpty);
+        expect(await unbundledTexts(tester, within: keypad), isEmpty);
+      });
+    }
+  });
+
   group('locks', () {
     const tempoKeys = [
       'readout_panel_nudge_-1',
@@ -340,7 +464,7 @@ void main() {
       ]) {
         expect(enabled(tester, key), isTrue, reason: key);
       }
-      expect(note, findsNothing);
+      expect(find.text('Tap the figure to type it.'), findsOneWidget);
       expect(band, findsNothing);
     });
 
