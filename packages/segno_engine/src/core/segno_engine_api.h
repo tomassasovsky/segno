@@ -4508,7 +4508,7 @@ LE_EXPORT int32_t le_engine_set_speed(le_engine* engine, int32_t numer,
                                      int32_t denom, uint64_t* request);
 /* Transpose (#1179 Part 3a): plays track [channel] as a pitch-shifted render
  * of its own takes at unchanged timing. The render is built off the audio
- * thread by the cache worker (about 100 ms after the last step, plus the
+ * thread by the cache worker (about 30 ms after the last step, plus the
  * render); until it lands the track plays its dry take at true pitch and
  * le_track_snapshot.transpose_effective_st reads 0, then it crossfades to the
  * render at the same position. Step moves the stored pitch by [delta] (+1 or
