@@ -4,6 +4,7 @@ import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/tempo_entry.dart';
 import 'package:segno/looper/model/tempo_state.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -31,29 +32,6 @@ Future<double?> showTempoEntrySheet(
     isScrollControlled: true,
     builder: (_) => _TempoEntrySheet(current: current),
   );
-}
-
-/// [text] with [key] typed after it, or null when the key would make it no
-/// tempo: a second point, a third decimal, or a fourth whole digit.
-@visibleForTesting
-String? typeTempoKey(String text, String key) {
-  final next = text + key;
-  return _tempoText.hasMatch(next) ? next : null;
-}
-
-/// Up to three whole digits and two decimals.
-final _tempoText = RegExp(r'^\d{0,3}(\.\d{0,2})?$');
-
-/// A key that types into the tempo: a digit or the point.
-final _tempoKey = RegExp(r'^[\d.]$');
-
-/// The tempo [text] names, or null when it is outside [kTempoRange].
-@visibleForTesting
-double? parseTempoEntry(String text) {
-  final bpm = double.tryParse(text);
-  if (bpm == null) return null;
-  final (min, max) = kTempoRange;
-  return bpm >= min && bpm <= max ? bpm : null;
 }
 
 class _TempoEntrySheet extends StatefulWidget {
@@ -123,7 +101,7 @@ class _TempoEntrySheetState extends State<_TempoEntrySheet> {
       return KeyEventResult.handled;
     }
     final character = event.character;
-    if (character == null || !_tempoKey.hasMatch(character)) {
+    if (character == null || !isTempoKey(character)) {
       return KeyEventResult.ignored;
     }
     _type(character);

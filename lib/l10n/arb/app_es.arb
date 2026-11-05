@@ -2877,5 +2877,7 @@
     "readoutPanelClock": "El reloj MIDI marca el tempo.",
     "readoutPanelSignatureLocked": "Borrá todas las pistas para cambiarlo",
     "readoutPanelRecording": "Grabando: tempo, duración y entrada quedan bloqueados hasta que termine la toma",
-    "readoutPanelTrackOwn": "La pista {track} usa {value}"
+    "readoutPanelTrackOwn": "La pista {track} usa {value}",
+    "readoutPanelTypeHint": "Tocá el número para escribirlo.",
+    "readoutKeypadSet": "Aplicar {bpm}"
 }

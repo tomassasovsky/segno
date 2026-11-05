@@ -14,6 +14,7 @@ import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/readout_command.dart';
 import 'package:segno/visualizer/readout_panel/readout_button.dart';
 import 'package:segno/visualizer/readout_panel/readout_labels.dart';
+import 'package:segno/visualizer/readout_panel/readout_tempo_keypad.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 
@@ -59,6 +60,7 @@ class ReadoutLoopPanel extends StatefulWidget {
 
 class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
   bool _allSignatures = false;
+  bool _keypad = false;
   int? _lengthDraft;
   Timer? _lengthDraftTimer;
 
@@ -66,6 +68,9 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
   void didUpdateWidget(ReadoutLoopPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.readout.loop.lengthBars == _lengthDraft) _clearLengthDraft();
+    // A lock that lands while the keypad is up takes it down: Set could
+    // only be refused.
+    if (_keypad && !readoutTempoEditable(widget.readout)) _keypad = false;
   }
 
   @override
@@ -99,7 +104,7 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
     final readout = widget.readout;
     final surface = context.surface;
     final recording = readout.loop.captureLocked;
-    return ColoredBox(
+    final panel = ColoredBox(
       key: const Key('readout_panel'),
       color: surface.background,
       child: Padding(
@@ -127,6 +132,7 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
                       readout: readout,
                       frame: widget.frame,
                       onCommand: widget.onCommand,
+                      onTypeTempo: () => setState(() => _keypad = true),
                       recordingBand: recording,
                     ),
                   ),
@@ -157,6 +163,31 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
           ],
         ),
       ),
+    );
+    if (!_keypad) return panel;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        panel,
+        // The panel stays in view; a touch on it backs out of the keypad.
+        ModalBarrier(
+          color: surface.scrim.withValues(alpha: 0.5),
+          onDismiss: () => setState(() => _keypad = false),
+        ),
+        Positioned(
+          top: 8,
+          right: 16,
+          bottom: 10,
+          width: 424,
+          child: ReadoutTempoKeypad(
+            onSet: (bpm) {
+              widget.onCommand(TempoSet(bpm));
+              setState(() => _keypad = false);
+            },
+            onCancel: () => setState(() => _keypad = false),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -427,12 +458,16 @@ class _TempoCard extends StatelessWidget {
     required this.readout,
     required this.frame,
     required this.onCommand,
+    required this.onTypeTempo,
     required this.recordingBand,
   });
 
   final PerformanceReadout readout;
   final ValueListenable<WaveformFrame> frame;
   final ValueChanged<ReadoutCommand> onCommand;
+
+  /// Opens the keypad for an exact tempo.
+  final VoidCallback onTypeTempo;
 
   /// The band above already says why everything is locked.
   final bool recordingBand;
@@ -471,35 +506,66 @@ class _TempoCard extends StatelessWidget {
             trailing: _BeatLights(readout: readout, frame: frame),
           ),
           const SizedBox(height: 4),
-          Opacity(
-            opacity: editable ? 1 : surface.disabledOpacity,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                AppText(
-                  readoutExactTempo(
-                    hasTempo: readout.hasTempo,
-                    bpm: readout.tempoBpm,
-                  ),
-                  key: const Key('readout_panel_bpm'),
-                  style: TextStyle(
-                    fontFamily: SurfaceTheme.monoFont,
-                    color: surface.textPrimary,
-                    fontSize: 44,
-                    height: 1,
+          Semantics(
+            button: true,
+            enabled: editable,
+            label: l10n.loopTempoEdit,
+            onTap: editable ? onTypeTempo : null,
+            child: GestureDetector(
+              key: const Key('readout_panel_bpm_button'),
+              behavior: HitTestBehavior.opaque,
+              onTap: editable ? onTypeTempo : null,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: kReadoutMinTarget,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Opacity(
+                    opacity: editable ? 1 : surface.disabledOpacity,
+                    // As wide as the figure, so the rule underlines it.
+                    child: IntrinsicWidth(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              AppText(
+                                readoutExactTempo(
+                                  hasTempo: readout.hasTempo,
+                                  bpm: readout.tempoBpm,
+                                ),
+                                key: const Key('readout_panel_bpm'),
+                                style: TextStyle(
+                                  fontFamily: SurfaceTheme.monoFont,
+                                  color: surface.textPrimary,
+                                  fontSize: 44,
+                                  height: 1,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              AppText(
+                                l10n.stageBpmUnit,
+                                style: TextStyle(
+                                  color: surface.textSecondary,
+                                  fontSize: 15,
+                                  height: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          // The keypad's affordance, as on the mockup.
+                          if (editable) const _DottedRule(),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                AppText(
-                  l10n.stageBpmUnit,
-                  style: TextStyle(
-                    color: surface.textSecondary,
-                    fontSize: 15,
-                    height: 1,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -551,7 +617,7 @@ class _TempoCard extends StatelessWidget {
     // The band above says why everything is locked.
     if (recordingBand) return (null, false);
     return switch (readout.tempoFollow) {
-      TempoFollowState.free => (null, false),
+      TempoFollowState.free => (l10n.readoutPanelTypeHint, false),
       TempoFollowState.retimes => (l10n.readoutPanelRetimes, true),
       TempoFollowState.noGrid => (l10n.readoutPanelNoGrid, false),
       TempoFollowState.noFollower => (l10n.readoutPanelNoFollower, false),
@@ -877,4 +943,34 @@ class _SignatureGrid extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The dotted line under the tempo that says it can be typed.
+class _DottedRule extends StatelessWidget {
+  const _DottedRule();
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    key: const Key('readout_panel_bpm_rule'),
+    height: 2,
+    child: CustomPaint(painter: _DotsPainter(context.surface.textMuted)),
+  );
+}
+
+/// 3 px dashes, 3 px apart, across the width.
+class _DotsPainter extends CustomPainter {
+  const _DotsPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    for (var x = 0.0; x + 3 <= size.width; x += 6) {
+      canvas.drawRect(Rect.fromLTWH(x, 0, 3, size.height), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DotsPainter old) => old.color != color;
 }

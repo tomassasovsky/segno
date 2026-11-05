@@ -73,10 +73,33 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
-| #1654 | Tempo, loop length and record timing on the 7in readout: owner chose layout B and all six recommendations; plan and three stacked parts (link and handler, panel, keypad) | build | auto | `claude/readout-controls-1654-p*` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 
 ---
+
+## November 2026 Tempo, length and start on the 7in readout (#1654)
+
+- The readout's footer is a strip that names the tempo, signature, length
+  and start of the next take; touching it opens the Loop panel
+  (`lib/visualizer/readout_panel/`, layout B in
+  `docs/plan/2026-11-04-feat-readout-controls-plan.md`). The rest of the
+  readout is unchanged. Done or 10 s without a touch closes the panel.
+- The panel: the tempo in hundredths with -1, -0.1, +0.1, +1 (hold to
+  repeat) and Tap (sent on touch); the figure opens the #1653 keypad's rules
+  and pad, laid out for the 7"; the time signature (all 17 behind More); the
+  default length (1 to 64 bars or Auto) and record timing. A selected
+  track's own length or timing is named, and stays a main-screen edit.
+- Commands cross the screen link as `ReadoutCommand` (`op: command`) and
+  `ReadoutCommands` applies them through `TempoSettings`, `RecordSettings`
+  and `RecordTimingSettings`; the readout sees the result in its next push,
+  which now carries `tempoFollow`, `clockOwnsTempo`, the loop settings with
+  their capture lock, and the idle dim (a barrier eats the waking touch).
+- Locks follow `LooperState.tempoFollow`: a tempo change that stretches
+  the recorded loops is allowed and said first; the signature changes only
+  before the first take; length and start lock while a take records.
+- Device checks owed: tap-tempo latency from the readout against the main
+  screen (within 0.5 BPM at 120), and reach at the panel's edges after touch
+  calibration.
 
 ## November 2026 Loop settings as four tabs (#1659)
 

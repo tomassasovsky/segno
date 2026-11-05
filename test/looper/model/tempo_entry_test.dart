@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:segno/looper/view/loop_settings/tempo_entry_sheet.dart';
+import 'package:segno/looper/model/tempo_entry.dart';
 
 void main() {
   group('typeTempoKey', () {
