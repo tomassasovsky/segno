@@ -83,6 +83,39 @@ static void test_amp_drive_matches_the_capture(void) {
   printf("  worst %.2f dB\n", worst);
 }
 
+/* Drive and Modern together (#1664, session s18amp: D.I., tone at 50 %):
+ * the 1 kHz gain at -70 dBFS, well under the clipper's knee, within 1.5 dB
+ * of the captures, on the grid and between its points. Modern moves the
+ * gain far more at high drive than at low (23 dB from 25 to 75 % at Drive
+ * 100 %). */
+static void test_amp_drive_and_modern_match_the_capture(void) {
+  printf("test_amp_drive_and_modern_match_the_capture\n");
+  static const struct {
+    float drive, modern;
+    double want;
+  } c[] = {{0.5f, 0.0f, -3.16},    {0.5f, 1.0f, 7.88},
+           {0.75f, 0.25f, 4.45},   {0.75f, 0.75f, 18.48},
+           {1.0f, 0.25f, 8.70},    {1.0f, 1.0f, 38.50},
+           {0.935f, 0.25f, 7.66},  {0.935f, 0.608f, 22.94},
+           {0.935f, 0.75f, 28.68}, {0.875f, 0.5f, 13.96},
+           {1.0f, 0.0f, 6.43},     {0.75f, 0.0f, 2.20},
+           {0.25f, 0.0f, -9.47},   {0.25f, 1.0f, 2.63},
+           {0.0f, 0.0f, -13.5},    {0.0f, 1.0f, 0.6}};
+  double worst = 0.0;
+  for (size_t i = 0; i < sizeof(c) / sizeof(c[0]); ++i) {
+    const float p[LE_FX_PARAMS] = {c[i].drive, 0.5f, 0.5f, c[i].modern, 0.0f};
+    const double got = amp_level(p, 1000.0, -70.0) + 70.0;
+    const double e = fabs(got - c[i].want);
+    if (e > worst) worst = e;
+    if (e >= 1.5) {
+      printf("  drive %.3f modern %.3f: %+.2f dB, capture %+.2f\n",
+             c[i].drive, c[i].modern, got, c[i].want);
+    }
+    CHECK(e < 1.5);
+  }
+  printf("  worst %.2f dB\n", worst);
+}
+
 /* Bass, Treble and Modern at their ends, drive 0 (clean), D.I.: the level
  * at [hz] relative to every control at 50 %, within 1 dB of s6. */
 static void test_amp_tone_matches_the_capture(void) {
@@ -278,4 +311,5 @@ static void run_amp_cab_tests(void) {
   test_amp_cabinet_change_does_not_click();
   test_amp_drive_matches_the_capture();
   test_amp_tone_matches_the_capture();
+  test_amp_drive_and_modern_match_the_capture();
 }
