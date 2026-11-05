@@ -367,6 +367,7 @@ class _Footer extends StatelessWidget {
       fontSize: 28 * s,
       height: 1,
     );
+    final loop = readout.loop;
     final dot = AppText(
       ' · ',
       style: secondary.copyWith(color: surface.textMuted),
@@ -397,47 +398,63 @@ class _Footer extends StatelessWidget {
           key: const Key('console_readout_signature'),
           style: secondary,
         ),
-        dot,
-        AppText(
-          readoutLengthLabel(l10n, readout.loop.lengthBars),
-          key: const Key('console_readout_length'),
-          style: secondary,
-        ),
-        dot,
-        AppText(
-          l10n.readoutStripStart(readoutTimingLabel(l10n, readout.loop.timing)),
-          key: const Key('console_readout_start'),
-          style: secondary,
-        ),
+        // What the selected track's next take uses: its own value when it
+        // has one. Nothing until the owners have loaded, rather than the
+        // fallbacks.
+        if (loop.ready) ...[
+          dot,
+          AppText(
+            readoutLengthLabel(l10n, loop.trackLengthBars ?? loop.lengthBars),
+            key: const Key('console_readout_length'),
+            style: secondary,
+          ),
+          dot,
+          AppText(
+            l10n.readoutStripStart(
+              readoutTimingLabel(l10n, loop.trackTiming ?? loop.timing),
+            ),
+            key: const Key('console_readout_start'),
+            style: secondary,
+          ),
+        ],
       ],
     );
-    final content = Row(
-      children: [
-        // The facts give way first: on a narrow panel they scale down
-        // rather than run under the function and bank.
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FittedBox(fit: BoxFit.scaleDown, child: facts),
+    // The facts give way first: on a narrow panel they scale down rather
+    // than run under the function and bank, which keep the trailing edge
+    // and scale down only past two fifths of the strip.
+    final content = LayoutBuilder(
+      builder: (context, constraints) => Row(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(fit: BoxFit.scaleDown, child: facts),
+            ),
           ),
-        ),
-        SizedBox(width: 24 * s),
-        AppText(
-          l10n.readoutFunctionBank(function, bank),
-          key: const Key('console_readout_function'),
-          style: secondary.copyWith(color: surface.textPrimary),
-        ),
-        SizedBox(width: 20 * s),
-        Icon(
-          LucideIcons.slidersHorizontal,
-          size: 32 * s,
-          color: surface.textSecondary,
-        ),
-      ],
+          SizedBox(width: 24 * s),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.4),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: AppText(
+                l10n.readoutFunctionBank(function, bank),
+                key: const Key('console_readout_function'),
+                style: secondary.copyWith(color: surface.textPrimary),
+              ),
+            ),
+          ),
+          SizedBox(width: 20 * s),
+          Icon(
+            LucideIcons.slidersHorizontal,
+            size: 32 * s,
+            color: surface.textSecondary,
+          ),
+        ],
+      ),
     );
     return Semantics(
-      button: true,
-      label: l10n.readoutPanelOpen,
+      button: onTap != null,
+      label: onTap == null ? null : l10n.readoutPanelOpen,
       onTap: onTap,
       child: Material(
         key: const Key('console_readout_strip'),

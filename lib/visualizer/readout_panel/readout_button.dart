@@ -62,11 +62,13 @@ class ReadoutButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
+      container: true,
       button: true,
       selected: selected,
       enabled: enabled,
       label: semanticLabel ?? label,
       excludeSemantics: true,
+      onTap: enabled ? onPressed : null,
       child: ReadoutButtonFace(
         label: label,
         icon: icon,
@@ -150,6 +152,18 @@ class _ReadoutPressButtonState extends State<ReadoutPressButton> {
     if (_down && mounted) setState(() => _down = false);
   }
 
+  /// A finger that slides off the button ends the hold, as on any repeat
+  /// key: a step must not keep going under a finger that has moved away.
+  void _leave(PointerMoveEvent event) {
+    final box = context.findRenderObject();
+    if (box is RenderBox &&
+        !(Offset.zero & box.size).contains(
+          event.localPosition,
+        )) {
+      _release();
+    }
+  }
+
   @override
   void didUpdateWidget(ReadoutPressButton oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -170,6 +184,7 @@ class _ReadoutPressButtonState extends State<ReadoutPressButton> {
   @override
   Widget build(BuildContext context) {
     return Semantics(
+      container: true,
       button: true,
       enabled: widget.enabled,
       label: widget.semanticLabel ?? widget.label,
@@ -177,6 +192,7 @@ class _ReadoutPressButtonState extends State<ReadoutPressButton> {
       onTap: widget.enabled ? widget.onPressed : null,
       child: Listener(
         onPointerDown: _press,
+        onPointerMove: _leave,
         onPointerUp: _release,
         onPointerCancel: _release,
         child: ReadoutButtonFace(

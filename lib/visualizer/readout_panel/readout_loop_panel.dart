@@ -193,13 +193,16 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
 /// tempo, and not while the engine's tempo lock holds.
 bool readoutTempoEditable(PerformanceReadout readout) =>
     !readout.clockOwnsTempo &&
+    // A take holds the tempo as well; the owners can say so a push before
+    // the engine does.
+    !readout.loop.captureLocked &&
     (readout.tempoFollow == TempoFollowState.free ||
         readout.tempoFollow == TempoFollowState.retimes);
 
 /// Whether the time signature takes a change now: only before the first
 /// take, as on the RC-600.
 bool readoutSignatureEditable(PerformanceReadout readout) =>
-    readout.tempoFollow == TempoFollowState.free;
+    !readout.loop.captureLocked && readout.tempoFollow == TempoFollowState.free;
 
 /// `1 ♛ GUITAR`, then the state, the bars, a small waveform and Done.
 class _PanelHeader extends StatelessWidget {
@@ -430,7 +433,16 @@ class _SectionLabel extends StatelessWidget {
               ),
             ),
           ],
-          if (trailing != null) ...[const Spacer(), trailing!],
+          // The beat lights give way at a long signature on a narrow card.
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(fit: BoxFit.scaleDown, child: trailing),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -596,13 +608,14 @@ class _TempoCard extends StatelessWidget {
   /// retime before it happens, or why the tempo is locked.
   (String?, bool) _tempoNote(AppLocalizations l10n) {
     if (readout.clockOwnsTempo) return (l10n.readoutPanelClock, false);
+    // The band above says why everything is locked.
+    if (recordingBand) return (null, false);
     return switch (readout.tempoFollow) {
       TempoFollowState.free => (l10n.readoutPanelTypeHint, false),
       TempoFollowState.retimes => (l10n.readoutPanelRetimes, true),
       TempoFollowState.noGrid => (l10n.readoutPanelNoGrid, false),
       TempoFollowState.noFollower => (l10n.readoutPanelNoFollower, false),
-      TempoFollowState.busy =>
-        recordingBand ? (null, false) : (l10n.readoutPanelBusy, false),
+      TempoFollowState.busy => (l10n.readoutPanelBusy, false),
     };
   }
 }
