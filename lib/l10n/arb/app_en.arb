@@ -5595,15 +5595,6 @@
     "@pedalSetupContextLeds": {
         "description": "Opens the LED colors context of the Pedals setup: per mode, a color for every state each pedal group can show."
     },
-    "pedalLedMode": "Mode: {mode}",
-    "@pedalLedMode": {
-        "description": "The LED colors mode picker; {mode} is the mode whose colors are shown.",
-        "placeholders": {
-            "mode": {
-                "type": "String"
-            }
-        }
-    },
     "pedalLedModeRecord": "Record",
     "@pedalLedModeRecord": {
         "description": "LED colors mode picker: Record mode, by its own name (the catalogue calls its Mode action Exit)."
