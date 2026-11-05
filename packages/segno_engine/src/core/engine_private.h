@@ -1329,15 +1329,15 @@ typedef struct {
   int32_t divisor;
   int32_t reversed;
   uint32_t group_id;
-  uint32_t cleared_mask;
-  uint64_t start_iter;
   /* #1707: the edit's place in the engine's history order, stamped by
    * le_stamp_history once the entry is on the undo stack (0 before that).
    * le_redo_push zeroes it, so an edit that is undone and redone counts as
-   * new when it comes back. */
+   * new when it comes back. With layer_seq it fills the word before
+   * start_iter, so the entry, and every track's stacks, keep their size. */
   int32_t seq;
   int32_t layer_seq; /* PEEL: the consumed LAYER's seq, which its undo gives
                       * back to the re-inserted LAYER */
+  uint64_t start_iter;
 } le_hist_entry;
 
 /* Keep it an initializer rather than member assignments: aggregate init
@@ -1723,8 +1723,6 @@ typedef struct le_track {
   _Atomic int32_t a_peel_depth; /* published le_peel_depth: LAYER entries Peel
                                  * can still consume, under a_undo_depth's
                                  * gates (0 on an EMPTY track) — #1164 */
-  _Atomic int32_t a_history_seq; /* published seq of the top undo entry, 0
-                                  * with none (#1707) */
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
    * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
@@ -1963,6 +1961,10 @@ typedef struct le_track {
   /* Enabling Once during existing playback ends the current pass, even when
    * that pass began less than a full lap ago. */
   int once_current_pass;
+  /* Published seq of the top undo entry, 0 with none (#1707). Last, in the
+   * struct's tail padding: the track's size and every hot field's offset
+   * stay as they were. */
+  _Atomic int32_t a_history_seq;
 } le_track;
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
  * segno_engine_api.h). Rings are allocated CONTROL-side at arm and freed
