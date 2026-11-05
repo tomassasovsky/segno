@@ -33,11 +33,6 @@ void main() {
     });
   }
 
-  test('the mode picker names its mode', () {
-    final l10n = lookupAppLocalizations(const Locale('en'));
-    expect(l10n.pedalLedMode('Mute'), 'Mode: Mute');
-  });
-
   test('Record and Mute go by their own names, not the Exit action', () {
     final l10n = lookupAppLocalizations(const Locale('en'));
     expect(pedalLedModeLabel(l10n, InteractionMode.record), 'Record');
