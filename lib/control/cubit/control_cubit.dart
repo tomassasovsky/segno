@@ -158,10 +158,10 @@ class _HoldGesture {
 /// clock from the fill's start, the time the fill runs, and whether it can
 /// still fire.
 class _ClearFill {
-  _ClearFill({required this.threshold, required this.stillValid});
+  _ClearFill({required this.fillTime, required this.stillValid});
 
   final Stopwatch clock = Stopwatch()..start();
-  final Duration threshold;
+  final Duration fillTime;
   final bool Function() stillValid;
 }
 
@@ -3534,11 +3534,10 @@ class ControlCubit extends Cubit<ControlState> {
     if (_cueModes.contains(state.mode)) _setHoldPending(cue, true);
     if (clears == null) return;
     bool fills() => stillValid() && clears();
-    if (clearPause <= Duration.zero) {
+    if (clearPause == Duration.zero) {
       _startClearFill(cue, fillTime, fills);
       return;
     }
-    _clearPauses.remove(cue)?.cancel();
     _clearPauses[cue] = Timer(clearPause, () {
       _clearPauses.remove(cue);
       // A hold that can no longer fire never starts a fill.
@@ -3560,7 +3559,7 @@ class ControlCubit extends Cubit<ControlState> {
   ) {
     _clearFills
       ..remove(button)
-      ..[button] = _ClearFill(threshold: fillTime, stillValid: stillValid);
+      ..[button] = _ClearFill(fillTime: fillTime, stillValid: stillValid);
     _pushProjected(); // the pill's base turns from pressed to its own state
     _sendClearFill();
     _clearFillTicker ??= Timer.periodic(
@@ -3569,7 +3568,10 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
-  /// Ends [button]'s fill. Settling runs just before a fired hold's action,
+  /// Ends [button]'s fill, or drops its pause when the fill has not started
+  /// yet (#1652). Every hold that settles comes through here, which is what
+  /// keeps a pause from starting a fill on a hold that already ended.
+  /// Settling runs just before a fired hold's action,
   /// so the send waits a microtask: a hold that fires reaches
   /// [_meetClearFill] first, and the board never sees the fill end and come
   /// back full.
@@ -3611,7 +3613,7 @@ class ControlCubit extends Cubit<ControlState> {
         button,
         progress: clearHoldProgress(
           fill.clock.elapsed,
-          fill.threshold,
+          fill.fillTime,
         ).clamp(0, 254),
       );
     }

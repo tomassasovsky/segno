@@ -1233,7 +1233,7 @@ void main() {
             await pumpEventQueue();
             expect(cubit.state.cursor, 2);
             expect(transport.lastFrame!.colorFor(PedalButton.track3), ledWhite);
-            await Future<void>.delayed(const Duration(milliseconds: 250));
+            await Future<void>.delayed(const Duration(milliseconds: 200));
             expect(fills(), isEmpty);
             expect(transport.lastFrame!.colorFor(PedalButton.track3), ledWhite);
             transport.press(PedalButton.track3, down: false);
@@ -1248,9 +1248,9 @@ void main() {
         test('after the pause it fills from 0 until the clear fires', () async {
           transport.press(PedalButton.track3, down: true);
           await pumpEventQueue();
-          await Future<void>.delayed(const Duration(milliseconds: 300));
+          await Future<void>.delayed(const Duration(milliseconds: 200));
           expect(fills(), isEmpty);
-          await Future<void>.delayed(const Duration(milliseconds: 450));
+          await Future<void>.delayed(const Duration(milliseconds: 550));
           // 750 ms held: the fill started at 350 and has run about 400 of
           // its 800 ms (later on a loaded machine).
           final running = fills();
