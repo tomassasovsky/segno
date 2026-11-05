@@ -1,6 +1,7 @@
 @Tags(['screenshots'])
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -9,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
     show RecordTiming, TempoFollowState;
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_command.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 
 import '../helpers/helpers.dart';
@@ -60,6 +62,7 @@ void main() {
     WidgetTester tester,
     PerformanceReadout value, {
     Locale locale = const Locale('en'),
+    Stream<ReadoutRefusal> refusals = const Stream.empty(),
   }) async {
     tester.view
       ..physicalSize = const Size(1024, 600)
@@ -78,7 +81,9 @@ void main() {
     final pushed = ValueNotifier(value);
     addTearDown(frame.dispose);
     addTearDown(pushed.dispose);
-    await tester.pumpWidget(WaveformWindowApp(frame: frame, readout: pushed));
+    await tester.pumpWidget(
+      WaveformWindowApp(frame: frame, readout: pushed, refusals: refusals),
+    );
     addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
     await tester.pump();
   }
@@ -196,5 +201,25 @@ void main() {
     await openPanel(tester);
     await tester.tap(find.byKey(const Key('readout_panel_signature_more')));
     await shoot(tester, 'signatures');
+  }, skip: !rendersScreenshots);
+
+  testWidgets('a refused Clear tempo, in English and Spanish', (tester) async {
+    for (final (locale, name) in const [
+      (Locale('en'), 'panel_clear_refused'),
+      (Locale('es'), 'panel_clear_refused_es'),
+    ]) {
+      final refusals = StreamController<ReadoutRefusal>.broadcast(sync: true);
+      addTearDown(refusals.close);
+      await pump(
+        tester,
+        readout(follow: TempoFollowState.retimes),
+        locale: locale,
+        refusals: refusals.stream,
+      );
+      await openPanel(tester);
+      refusals.add(ReadoutRefusal.tempoClearLocked);
+      await shoot(tester, name);
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
   }, skip: !rendersScreenshots);
 }
