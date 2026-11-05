@@ -292,7 +292,7 @@ void main() {
       initialState: LooperState(
         transport: _rig.transport,
         status: _rig.status,
-        clearAllUndoable: true,
+        undoableClear: UndoableClear.all,
         tracks: [
           const Track(),
           const Track(channel: 1),

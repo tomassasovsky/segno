@@ -591,10 +591,14 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
         : channels.contains(channel);
   }
 
+  /// Every channel [undo] was asked for, in order.
+  final List<int> undoChannels = [];
+
   @override
   EngineResult undo({int channel = 0}) {
     lastChannel = channel;
     calls.add('undo');
+    undoChannels.add(channel);
     return nextUndoResult;
   }
 

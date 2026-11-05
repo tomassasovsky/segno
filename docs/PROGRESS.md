@@ -80,6 +80,28 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Undo after a track clear (#1707)
+
+- Undo right after a track clear restores the cleared track, whichever track
+  is selected. A Track Hold clear in Mute leaves the selection where it was
+  (#1671), so on build 234 the Undo pedal undid the selected track instead.
+  The clear from the screen, a Custom Clear track and the Track Hold all go
+  through `LooperRepository.clear`, which now records the clear as the last
+  undoable clear, the same group a Clear all forms (#1634).
+- `LooperState.undoRestoresClear(channel)` is the one rule: a clear can be
+  undone, and the asked track has no record arm or Count-in launch and is
+  either empty or not capturing and not edited since the clear
+  (`editedSinceClear`: its emptiness, undo depth or redo depth moved). For a
+  Clear all this is the old rule, since every other track was empty then.
+- The clear stops being "the last thing" as with Clear all: a later clear
+  replaces it, a fresh take on the cleared track retires it, its Undo spends
+  it, and on the asked track a take, layer, peel, length change, undo or
+  redo since the clear, or a running capture, is that track's own Undo. An
+  edit on a third track does not stop it. Redo is unchanged: a Redo of the
+  restored clear on the cleared track makes it the last clear again.
+- The cleared notice still offers only a Clear all: `clearAllUndoable` is
+  `undoableClear == UndoableClear.all`, so a later track clear ends it.
+
 ## November 2026 Clear track Hold also clears in Mute mode (#1671)
 
 - With Track Hold set to Clear track, holding a track pedal in Mute mode
@@ -2498,11 +2520,12 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Undo/redo** — multi-level, per track, overdub layers only. A **user clear
   is undoable**: it leaves a per-track restore point (take + layers + FX chains
   + mutes) that undo brings back; a post-clear-all toast and `⌘⇧C` restore the
-  whole rig at once (undo-clear-all, derived from live restore points). Any
-  Undo on an empty track with nothing of its own to undo (no take, arm or
-  restore point) restores a pending clear-all too (#1634): Clear all selects
-  track 1, so the Undo pedal, the keyboard and MIDI or CTRL bindings restore
-  the cleared tracks from there.
+  whole rig at once (undo-clear-all, derived from live restore points). The
+  last clear, a Clear all or one track's (#1634, #1707), is restored by an
+  Undo on any track with nothing newer of its own: no arm, and either empty
+  or not capturing and not edited since the clear. So the Undo pedal, the
+  keyboard and MIDI or CTRL bindings restore it from track 1 after Clear all
+  and from whatever track a Track Hold clear left selected.
   Session-load clears stay destructive. Immediate swap (tiny click on undo
   accepted).
 - **#4 loop multiples** — **auto-round on stop** (record freely from the loop
