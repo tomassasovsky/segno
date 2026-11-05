@@ -1319,6 +1319,52 @@ void main() {
           expect(repo.state.clearAllUndoable, isTrue);
         });
 
+        test('a first take recording at the clear keeps its own Undo once it '
+            'ends', () {
+          engine
+            ..undoRestoresClearChannels = {1}
+            ..nextSnapshot = rig([
+              take(),
+              take(),
+              take(state: TrackState.recording),
+            ]);
+          final repo = buildRepo()
+            ..startEngine(const EngineConfig())
+            ..clear(channel: 1);
+          engine.nextSnapshot = rig([take(), cleared, take()]);
+          repo.undo(channel: 2);
+          expect(engine.undoChannels, [2]);
+        });
+
+        test("undoing a track's clear leaves an undone Clear all its grouped "
+            'Redo', () {
+          engine.undoRestoresClearChannels = {0, 1};
+          final repo = rigOfThree()
+            ..clearAll([0, 1])
+            ..undo(channel: 1);
+          engine.undoRestoresClearChannels = {0, 1, 2};
+          repo
+            ..clear(channel: 2)
+            ..undo(channel: 2);
+          engine.redoReclearsChannels = {0, 1};
+          repo.redo(channel: 1);
+          expect(calls('redo'), 2);
+        });
+
+        test('a grouped Redo keeps the refused track its own Undo', () {
+          engine
+            ..undoRestoresClearChannels = {0, 1}
+            ..refuseClearChannels = {2};
+          final repo = rigOfThree()
+            ..clearAll([0, 1, 2])
+            ..undo(channel: 1);
+          engine.redoReclearsChannels = {0, 1};
+          repo.redo(channel: 1);
+          engine.nextSnapshot = rig([cleared, cleared, take()]);
+          expect(repo.state.clearAllUndoable, isTrue);
+          expect(repo.state.undoRestoresClear(2), isFalse);
+        });
+
         test('an overdub running on the asked track keeps its own Undo', () {
           final repo = clearedTrackTwo();
           engine.nextSnapshot = rig([

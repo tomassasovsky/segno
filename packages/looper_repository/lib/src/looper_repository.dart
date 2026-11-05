@@ -136,7 +136,8 @@ const double kMaxClickGain = 2;
 
 /// Where the rig's history stood at the last undoable clear (#1707): the
 /// newest edit then filed on any track ([TrackSnapshot.historySeq]), the
-/// tracks that were empty, and the tracks a Clear all was refused on.
+/// tracks that were empty or recording a first take, and the tracks a Clear
+/// all was refused on.
 typedef _ClearMark = ({int seq, Set<int> empty, Set<int> refused});
 
 /// Owns the [AudioEngine] and is the single source of looper truth.
@@ -4279,9 +4280,11 @@ class LooperRepository {
   /// tracks with an edit of their own since ([LooperState.editedSinceClear]).
   _ClearMark _clearMark = (seq: 0, empty: const {}, refused: const {});
 
-  /// The channels an undone clear restored, and whether it was a [clearAll].
+  /// The channels an undone [clearAll] restored, and the tracks it was
+  /// refused on. A track's undone clear needs no group: its Redo is the
+  /// track's own, and forms the clear again ([redo]).
   Set<int> _clearRedoGroup = const {};
-  bool _clearRedoIsAll = false;
+  Set<int> _clearRedoRefused = const {};
 
   /// A grouped undo waits for every frozen point before changing any member.
   Set<int> _pendingClearGroupUndo = const {};
@@ -4332,9 +4335,13 @@ class LooperRepository {
       0,
       (newest, t) => t.historySeq > newest ? t.historySeq : newest,
     ),
+    // A first take still recording files no undo entry when it ends, so it
+    // counts with the empty tracks: a take there later is newer.
     empty: {
       for (var channel = 0; channel < s.tracks.length; channel++)
-        if (s.tracks[channel].state == TrackState.empty) channel,
+        if (s.tracks[channel].state == TrackState.empty ||
+            s.tracks[channel].state == TrackState.recording)
+          channel,
     },
     refused: refused,
   );
@@ -4342,8 +4349,9 @@ class LooperRepository {
   /// The tracks with an edit of their own since the last undoable clear;
   /// empty while there is none. A track has one when its next Undo takes
   /// back an edit filed after the clear (the engine numbers every layer,
-  /// peel, length edit, bounce and redo in one order), when it was empty at
-  /// the clear and has a take now, or when the Clear all was refused on it.
+  /// peel, length edit, bounce and redo in one order), when it was empty or
+  /// recording its first take at the clear and has a take now, or when the
+  /// Clear all was refused on it.
   /// The cleared tracks are left out: a fresh take on one retires the whole
   /// clear instead ([_intactClearGroup]).
   Set<int> _editedSinceClear(EngineSnapshot s) {
@@ -4552,8 +4560,11 @@ class LooperRepository {
       final result = _undoTrack(member);
       if (!result.isOk) return result;
     }
-    _clearRedoGroup = group;
-    _clearRedoIsAll = _clearGroupIsAll;
+    // A track's clear leaves an undone Clear all's grouped Redo alone.
+    if (_clearGroupIsAll) {
+      _clearRedoGroup = group;
+      _clearRedoRefused = _clearMark.refused;
+    }
     _clearGroup = const {};
     _clearGroupPending = const {};
     return EngineResult.ok;
@@ -4643,14 +4654,21 @@ class LooperRepository {
         _clearRedoGroup = const {};
         _clearGroup = group;
         _clearGroupPending = const {};
-        _clearGroupIsAll = _clearRedoIsAll;
+        _clearGroupIsAll = true;
         // The re-clear is the newest edit now.
-        _clearMark = _markClear(_engine.snapshot());
+        _clearMark = _markClear(
+          _engine.snapshot(),
+          refused: _clearRedoRefused,
+        );
         return EngineResult.ok;
       }
       _clearRedoGroup = const {};
     }
-    return _redoTrack(channel);
+    final reclears = _engine.redoReclears(channel: channel);
+    final result = _redoTrack(channel);
+    // A redone clear is a clear again, and the last one (#1707).
+    if (result.isOk && reclears) _formClearGroup([channel], all: false);
+    return result;
   }
 
   /// Changes cached take metadata only after the native history edit succeeds.
