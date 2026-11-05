@@ -1274,17 +1274,19 @@ class _PartPicker extends StatelessWidget {
     final l10n = context.l10n;
     final cubit = context.read<FxCubit>();
     final names = context.watch<InputsCubit>().state;
-    final configured = context.select<LooperBloc, List<_TrackPart>>(
-      (b) => _trackParts(b.state, destination.index),
+    final parts = context.select<LooperBloc, List<_TrackPart>>(
+      (b) => _trackParts(
+        b.state,
+        destination.index,
+        // The part being edited keeps its row even after its input was taken
+        // off the track, so the picker always names what the editor points
+        // at.
+        editing: switch (destination.part) {
+          FxRecordedPart(:final lane) => lane,
+          _ => null,
+        },
+      ),
     );
-    // The part being edited keeps its row even after its input was taken
-    // off the track, so the picker always names what the editor points at.
-    final parts = switch (destination.part) {
-      FxRecordedPart(:final lane)
-          when !configured.any((part) => part.lane == lane) =>
-        [...configured, (lane: lane, input: -1)],
-      _ => configured,
-    };
     return LoopSelect<FxTrackPart>(
       key: const Key('fx_part_picker'),
       value: destination.part,
@@ -1317,18 +1319,24 @@ typedef _TrackPart = ({int lane, int input});
 /// The parts of track [channel], in lane order: every lane its confirmed
 /// lane count and lane inputs set to record an input, the configuration the
 /// engine records from and `FxCubit` accepts a part address against, plus
-/// any lane within that count that holds recorded audio. Each is named by
-/// the input it is set to record, else the one the engine reports for it.
-List<_TrackPart> _trackParts(LooperState state, int channel) {
+/// any lane within that count that holds recorded audio and the lane being
+/// [editing]. Each is named by the input it is set to record, else the one
+/// the engine reports for it.
+List<_TrackPart> _trackParts(
+  LooperState state,
+  int channel, {
+  int? editing,
+}) {
   final track = state.tracks.where((t) => t.channel == channel).firstOrNull;
   if (track == null) return const [];
   final count = state.laneCounts[channel] ?? 1;
   return [
-    for (var lane = 0; lane < count; lane++)
-      if (_partInput(state, track, lane) case final input
-          when input >= 0 ||
-              (track.lanes.elementAtOrNull(lane)?.lengthFrames ?? 0) > 0)
-        (lane: lane, input: input),
+    for (var lane = 0; lane < math.max(count, (editing ?? -1) + 1); lane++)
+      if (lane == editing ||
+          (lane < count &&
+              ((state.laneInputs[(channel, lane)] ?? lane) >= 0 ||
+                  (track.lanes.elementAtOrNull(lane)?.hasContent ?? false))))
+        (lane: lane, input: _partInput(state, track, lane)),
   ];
 }
 

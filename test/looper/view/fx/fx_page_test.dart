@@ -385,6 +385,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final rig = state ?? _rig;
+    when(() => repository.laneCount(any())).thenAnswer(
+      (call) => rig.laneCounts[call.positionalArguments.single as int] ?? 1,
+    );
     final ownUpdates = StreamController<LooperState>.broadcast();
     addTearDown(ownUpdates.close);
     final trackEntries = <int, List<TrackEffect>>{
@@ -885,6 +888,39 @@ void main() {
         expect(await parts(tester), [
           'Acoustic guitar',
           l10nOf(tester).fxPartOrdinal(2),
+        ]);
+      });
+
+      testWidgets('an empty lane taken off the track is dropped even while '
+          'the engine still reports its input', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+            [0, -1],
+          ),
+        );
+        expect(await parts(tester), ['Acoustic guitar']);
+      });
+
+      testWidgets('the part being edited keeps its row and its input name', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          destination: FxDestination.recordedTrack(
+            0,
+            part: FxTrackPart.part(1),
+          ),
+          state: rigWith(
+            const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
+            [0, -1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
         ]);
       });
 
