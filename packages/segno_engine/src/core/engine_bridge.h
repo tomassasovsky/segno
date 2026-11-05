@@ -123,7 +123,7 @@ static inline double le_bridge_score(const float* sub, const float* target,
  *
  * - a grain whose continuation is still within the tolerance of the head
  *   continues, with no splice and no search: WSOLA's best match is the
- *   continuation itself, whose score is the maximum (Cauchy-Schwarz);
+ *   continuation itself, which no other lag can outscore;
  * - once the continuation has drifted out, the search covers +-25 ms of
  *   the head, wide enough for a whole period of a five-string bass's low
  *   B (32 ms) and to find one lag that continues every note of a chord, and
