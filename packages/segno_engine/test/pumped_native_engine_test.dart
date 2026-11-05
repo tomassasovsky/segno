@@ -454,6 +454,35 @@ void main() {
     expect(engine.snapshot().tracks.first.state, TrackState.recording);
   }, skip: skip);
 
+  test('clear tempo unsets an empty rig and is refused under a take', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine.start(
+      const EngineConfig(
+        sampleRate: 48000,
+        inputChannels: 1,
+        outputChannels: 1,
+        maxLoopFrames: 48000,
+      ),
+    );
+    expect(engine.setTempo(97.5), EngineResult.ok);
+    engine.pump(frames: 0);
+    expect(engine.clearTempo(), EngineResult.ok);
+    engine.pump(frames: 0);
+    expect(engine.snapshot().tempoBpm, 0);
+    expect(engine.snapshot().tempoSource, TempoSource.none);
+
+    expect(engine.setTempo(120), EngineResult.ok);
+    engine.pump(frames: 0);
+    expect(engine.record(), EngineResult.ok);
+    engine.pump(frames: 32, input: 0.5);
+    expect(engine.snapshot().tracks.first.state, TrackState.recording);
+    expect(engine.clearTempo(), EngineResult.notReady);
+    engine.pump(frames: 0);
+    expect(engine.snapshot().tempoBpm, 120);
+    expect(engine.snapshot().tempoSource, TempoSource.manual);
+  }, skip: skip);
+
   test('session tempo checks a disposed handle', () {
     final engine = PumpedNativeEngine()..dispose();
     expect(

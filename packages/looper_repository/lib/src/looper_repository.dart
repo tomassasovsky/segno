@@ -8991,6 +8991,22 @@ class LooperRepository {
     return EngineResult.ok;
   }
 
+  /// Clears the tempo (#1653): no tempo and no bar grid, so the next defining
+  /// loop sets one. Needs the live engine, whose tempo lock decides: while a
+  /// track holds material under the tempo, a take records or a count-in runs
+  /// it answers [EngineResult.notReady] and nothing changes. Stopped, it
+  /// answers [EngineResult.notRunning]: material kept across a reopen would
+  /// come back without the tempo it was recorded under.
+  EngineResult clearTempo() {
+    if (!_intendRunning) return EngineResult.notRunning;
+    final result = _engine.clearTempo();
+    if (!result.isOk) return result;
+    _tempoBpm = 0;
+    _tempoSource = TempoSource.none;
+    _reproject();
+    return EngineResult.ok;
+  }
+
   /// Sets the time signature to [num]/[den] (only the 17 Sheeran-verified
   /// signatures are valid — the engine rejects anything else without
   /// applying). Remembered and re-applied on every (re)start. Ignored by the

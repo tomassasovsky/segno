@@ -155,13 +155,13 @@ class _HoldGesture {
 }
 
 /// A pending hold that clears, as its pill fill tracks it (#1534): its own
-/// clock from the press, the threshold it was armed with, and whether it can
+/// clock from the fill's start, the time the fill runs, and whether it can
 /// still fire.
 class _ClearFill {
-  _ClearFill({required this.threshold, required this.stillValid});
+  _ClearFill({required this.fillTime, required this.stillValid});
 
   final Stopwatch clock = Stopwatch()..start();
-  final Duration threshold;
+  final Duration fillTime;
   final bool Function() stillValid;
 }
 
@@ -1151,7 +1151,8 @@ class ControlCubit extends Cubit<ControlState> {
   double _masterGain = 1;
 
   // One threshold for Undo, Mode, Record/Play, track holds, Stop restore and
-  // assigned FX holds. Read at press time; the fresh default is 800 ms.
+  // assigned FX holds. Read at press time; the fresh default is 800 ms. A
+  // Clear track hold waits [_clearTrackPause] longer (#1652).
   Duration _longPress = const Duration(milliseconds: 800);
   Object _surfaceVisit = Object();
   (int, int)? _footMixerSource;
@@ -1269,6 +1270,15 @@ class ControlCubit extends Cubit<ControlState> {
   // sends 255 once, and the board flashes that pill on its own clock.
   final _clearFills = <PedalButton, _ClearFill>{};
   Timer? _clearFillTicker;
+
+  // How long a Clear track hold waits before its fill starts (#1652), so a
+  // press shows only the track's selection. The fill then runs the whole
+  // long-press threshold, and the hold fires at this plus the threshold.
+  static const _clearTrackPause = Duration(milliseconds: 350);
+
+  // The clear holds still inside their pause, which start their fill when
+  // the timer runs out and are dropped when the hold settles first.
+  final _clearPauses = <PedalButton, Timer>{};
 
   // Mirrors `PerformanceRepository.captureStatus` so the pedal frame can
   // render the armed LED without re-deriving it from the raw status stream on
@@ -3492,20 +3502,24 @@ class ControlCubit extends Cubit<ControlState> {
   /// CTRL jacks). A hold whose action [clears] (asked again on every fill
   /// step) also fills [cue]'s LED pill red until it settles (#1534). The
   /// action itself calls [_meetClearFill] once the clear is accepted, which
-  /// the board confirms with its flash.
+  /// the board confirms with its flash. A [clearPause] delays the fill and
+  /// lengthens the hold by the same time, so the fill still runs the whole
+  /// threshold and meets the centre as the hold fires.
   void _armGesture(
     _HoldGesture gesture, {
     required PedalButton? cue,
     required void Function() onHold,
     void Function()? onTap,
     bool Function()? clears,
+    Duration clearPause = Duration.zero,
   }) {
     final session = _looper.sessionRevision;
     final armed = gesture._active;
+    final fillTime = _longPress;
     bool stillValid() =>
         !isClosed && !_takeLocked() && _looper.sessionRevision == session;
     gesture.press(
-      threshold: _longPress,
+      threshold: fillTime + clearPause,
       stillValid: stillValid,
       onHold: onHold,
       onTap: onTap,
@@ -3518,21 +3532,34 @@ class ControlCubit extends Cubit<ControlState> {
     );
     if (cue == null || armed || !gesture._active) return;
     if (_cueModes.contains(state.mode)) _setHoldPending(cue, true);
-    if (clears != null) {
-      _startClearFill(cue, () => stillValid() && clears());
+    if (clears == null) return;
+    bool fills() => stillValid() && clears();
+    if (clearPause == Duration.zero) {
+      _startClearFill(cue, fillTime, fills);
+      return;
     }
+    _clearPauses[cue] = Timer(clearPause, () {
+      _clearPauses.remove(cue);
+      // A hold that can no longer fire never starts a fill.
+      if (fills()) _startClearFill(cue, fillTime, fills);
+    });
   }
 
   /// Fills [button]'s pill red from both ends while its clear hold runs
   /// (#1534): one message now and one per
-  /// [PedalLinkCodec.clearHoldIntervalMs], timed against the threshold the
-  /// gesture was armed with, until [_endClearFill]. The board shows one fill
-  /// at a time: the newest pending clear hold's, and an older one's again
-  /// when the newer one settles first.
-  void _startClearFill(PedalButton button, bool Function() stillValid) {
+  /// [PedalLinkCodec.clearHoldIntervalMs], timed against [fillTime] (the
+  /// long-press threshold the gesture was armed with), until
+  /// [_endClearFill]. The board shows one fill at a time: the newest pending
+  /// clear hold's, and an older one's again when the newer one settles
+  /// first.
+  void _startClearFill(
+    PedalButton button,
+    Duration fillTime,
+    bool Function() stillValid,
+  ) {
     _clearFills
       ..remove(button)
-      ..[button] = _ClearFill(threshold: _longPress, stillValid: stillValid);
+      ..[button] = _ClearFill(fillTime: fillTime, stillValid: stillValid);
     _pushProjected(); // the pill's base turns from pressed to its own state
     _sendClearFill();
     _clearFillTicker ??= Timer.periodic(
@@ -3541,11 +3568,15 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
-  /// Ends [button]'s fill. Settling runs just before a fired hold's action,
+  /// Ends [button]'s fill, or drops its pause when the fill has not started
+  /// yet (#1652). Every hold that settles comes through here, which is what
+  /// keeps a pause from starting a fill on a hold that already ended.
+  /// Settling runs just before a fired hold's action,
   /// so the send waits a microtask: a hold that fires reaches
   /// [_meetClearFill] first, and the board never sees the fill end and come
   /// back full.
   void _endClearFill(PedalButton button) {
+    _clearPauses.remove(button)?.cancel();
     if (_clearFills.remove(button) == null) return;
     if (!_closing) _pushProjected(); // back to pressed, or to its own state
     scheduleMicrotask(_sendClearFill);
@@ -3582,7 +3613,7 @@ class ControlCubit extends Cubit<ControlState> {
         button,
         progress: clearHoldProgress(
           fill.clock.elapsed,
-          fill.threshold,
+          fill.fillTime,
         ).clamp(0, 254),
       );
     }
@@ -3767,10 +3798,12 @@ class ControlCubit extends Cubit<ControlState> {
     }
     final hold = state.pedalSetup.trackHold;
     if (hold == TrackHold.none) return;
+    final clearTrack = hold == TrackHold.clearTrack;
     _armGesture(
       _trackHoldGestures.putIfAbsent(button, _HoldGesture.new),
       cue: button,
-      clears: hold == TrackHold.clearTrack ? () => true : null,
+      clears: clearTrack ? () => true : null,
+      clearPause: clearTrack ? _clearTrackPause : Duration.zero,
       onHold: () {
         final channel = state.bankBaseChannel + _trackIndex(button);
         switch (hold) {

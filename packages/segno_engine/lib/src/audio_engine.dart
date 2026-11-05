@@ -719,6 +719,14 @@ abstract interface class TempoControl {
   /// track is playing, recording or armed. Preserves the saved tempo origin.
   EngineResult restoreTempo({required double bpm, required TempoSource source});
 
+  /// Clears the tempo (#1653): `0` BPM, [TempoSource.none] and no bar grid,
+  /// so the next defining loop sets it again. Refused with
+  /// [EngineResult.notReady] exactly while the tempo is locked (see the
+  /// class doc; a running count-in locks it too) or a record is armed,
+  /// launching or not yet applied. The engine rechecks the lock before it
+  /// applies.
+  EngineResult clearTempo();
+
   /// Sets the time signature to [num]/[den]. Only the 17 Sheeran-verified
   /// signatures are valid — `num` 2..7 for `den == 4`, `num` 5..15 for
   /// `den == 8` — anything else returns [EngineResult.invalid] without

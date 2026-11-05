@@ -6048,6 +6048,113 @@ static void test_restore_tempo_preserves_exact_source_and_unset(void) {
   le_engine_destroy(e);
 }
 
+/* Clear tempo (#1653): back to no tempo exactly when the D6 lock allows it.
+ * Refused, with nothing posted, while material sits on a grid, while a take
+ * records and while a count-in runs; a raw post in those windows is a
+ * callback no-op. Clearing every track releases the lock. */
+static void test_clear_tempo_follows_the_tempo_lock(void) {
+  printf("test_clear_tempo_follows_the_tempo_lock\n");
+  CHECK(le_engine_clear_tempo(NULL) == LE_ERR_INVALID);
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_RUNNING);
+  CHECK(le_engine_configure(e, 1000, 1, 1, 20000) == LE_OK);
+  le_snapshot s;
+
+  /* An empty rig: a tapped or set tempo clears. */
+  CHECK(le_engine_set_tempo(e, 123.45f) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_clear_tempo(e) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_bpm == 0.0f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
+  CHECK(s.loop_bars == 0 && s.loop_beats == 0);
+
+  /* Only the typed producer posts it. */
+  atomic_store_explicit(&e->a_running, 1, memory_order_release);
+  CHECK(le_engine_post_command(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) ==
+        LE_ERR_INVALID);
+  atomic_store_explicit(&e->a_running, 0, memory_order_release);
+
+  /* A record posted and not yet applied is refused in the same block. */
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_READY);
+  tg_advance(e, 100);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_READY);
+  CHECK(le_push(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.001f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  /* The finished loop sits on a bar grid: still refused, grid kept. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1900 + e->sample_rate / 100);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 1);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  tg_advance(e, 10);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_READY);
+  CHECK(le_push(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.001f);
+  CHECK(s.loop_bars == 1);
+
+  /* Clearing the track releases the lock; the tempo survived the clear. */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  tg_advance(e, 10);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  CHECK(le_engine_clear_tempo(e) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_bpm == 0.0f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
+  CHECK(s.loop_bars == 0 && s.loop_beats == 0);
+
+  /* A record waiting on sound, on an empty rig, keeps the tempo it was
+   * pressed under; a raw post in that window changes nothing either. */
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(record_start_sound(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 10);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_READY);
+  CHECK(le_push(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.001f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* cancel the wait */
+  tg_advance(e, 10);
+  CHECK(record_start_sound(e, 0) == LE_OK);
+  tg_advance(e, 1);
+
+  /* A count-in locks the tempo before any sample is captured. */
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(record_start_count(e, 1) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 10);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(le_engine_clear_tempo(e) == LE_ERR_NOT_READY);
+  CHECK(le_push(e, LE_CMD_CLEAR_TEMPO, 0, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.001f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  le_engine_destroy(e);
+}
+
 static void test_session_import_restores_musical_grid_without_resizing(void) {
   printf("test_session_import_restores_musical_grid_without_resizing\n");
   le_engine* e = tg_make_engine(1000);
@@ -39932,6 +40039,7 @@ int main(void) {
   test_quantize_div_failure_keeps_published_setting();
   test_command_settlement_waits_for_snapshot_publication();
   test_restore_tempo_preserves_exact_source_and_unset();
+  test_clear_tempo_follows_the_tempo_lock();
   test_session_import_restores_musical_grid_without_resizing();
   test_session_import_preserves_actual_bar_count();
   test_loop_syncs_tempo();
