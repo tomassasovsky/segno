@@ -41,6 +41,10 @@ void main() {
   late TempoSource source;
   late bool dimmed;
 
+  /// What the engine answers a Clear tempo, and what came back refused.
+  late EngineResult clearResult;
+  late List<ReadoutRefusal> refusals;
+
   setUpAll(() => registerFallbackValue(RecordTiming.immediately));
 
   setUp(() {
@@ -55,6 +59,8 @@ void main() {
     follow = TempoFollowState.free;
     source = TempoSource.manual;
     dimmed = false;
+    clearResult = EngineResult.ok;
+    refusals = [];
     when(() => repository.lastState).thenAnswer(
       (_) => LooperState(
         tempoFollow: follow,
@@ -76,6 +82,7 @@ void main() {
       if (tempoFree) accepted = bpm;
     });
     when(() => tempo.tapTempo()).thenReturn(EngineResult.ok);
+    when(() => tempo.clearTempo()).thenAnswer((_) async => clearResult);
     when(() => tempo.setTimeSignature(any(), any())).thenAnswer((_) async {});
     when(() => record.setDefaultLengthBars(any())).thenAnswer(
       (_) async => const RecordLengthOutcome(RecordLengthStatus.applied),
@@ -89,6 +96,7 @@ void main() {
       record: record,
       timing: timing,
       dimmed: () => dimmed,
+      onRefused: refusals.add,
     );
   });
 
@@ -207,10 +215,12 @@ void main() {
     commands
       ..handle(const TempoNudge(1))
       ..handle(const TempoTap())
+      ..handle(const TempoClear())
       ..handle(const LengthSet(8))
       ..handle(const TimingSet(RecordTiming.bar));
     expect(sets, isEmpty);
     verifyNever(() => tempo.tapTempo());
+    verifyNever(() => tempo.clearTempo());
     verifyNever(() => record.setDefaultLengthBars(any()));
     verifyNever(() => timing.setTiming(any()));
   });
@@ -240,6 +250,67 @@ void main() {
   test('a tap is one tap tempo', () {
     commands.handle(const TempoTap());
     verify(() => tempo.tapTempo()).called(1);
+  });
+
+  test('the touch that woke the console presses nothing, even one that '
+      'acts on release', () {
+    fakeAsync((async) {
+      commands
+        ..woke()
+        ..handle(const TempoClear())
+        ..handle(const LengthSet(8))
+        ..handle(const TempoNudge(1));
+      async.flushMicrotasks();
+      verifyNever(() => tempo.clearTempo());
+      verifyNever(() => record.setDefaultLengthBars(any()));
+      expect(sets, isEmpty);
+
+      async.elapse(ReadoutCommands.wakeGesture);
+      commands.handle(const LengthSet(8));
+      verify(() => record.setDefaultLengthBars(8)).called(1);
+    });
+  });
+
+  group('Clear tempo (#1653)', () {
+    test('clears through the tempo owner and answers nothing', () async {
+      commands.handle(const TempoClear());
+      await pumpEventQueue();
+      verify(() => tempo.clearTempo()).called(1);
+      expect(refusals, isEmpty);
+    });
+
+    test("leaves the lock to the engine, as the main screen's does", () async {
+      // The panel's own tempo locks do not stop it: the engine decides.
+      follow = TempoFollowState.busy;
+      source = TempoSource.external;
+      commands.handle(const TempoClear());
+      await pumpEventQueue();
+      verify(() => tempo.clearTempo()).called(1);
+    });
+
+    test('a refused clear keeps the nudge it did not clear', () async {
+      clearResult = EngineResult.notReady;
+      commands
+        ..handle(const TempoNudge(1))
+        ..handle(const TempoClear());
+      await pumpEventQueue();
+      commands.handle(const TempoNudge(1));
+      expect(sets, [85, 86]);
+    });
+
+    test("a refusal comes back with the main screen's reason", () async {
+      for (final (result, refusal) in [
+        (EngineResult.notReady, ReadoutRefusal.tempoClearLocked),
+        (EngineResult.notRunning, ReadoutRefusal.tempoClearStopped),
+        (EngineResult.unsupported, ReadoutRefusal.tempoClearOther),
+      ]) {
+        clearResult = result;
+        commands.handle(const TempoClear());
+        await pumpEventQueue();
+        expect(refusals.last, refusal, reason: result.name);
+      }
+      expect(refusals, hasLength(3));
+    });
   });
 
   test('a time signature from the valid set is set', () {

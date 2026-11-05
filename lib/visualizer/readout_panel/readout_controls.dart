@@ -22,11 +22,16 @@ class ReadoutControls extends StatefulWidget {
     required this.frame,
     required this.waveform,
     required this.onCommand,
+    this.refusals = const Stream.empty(),
     super.key,
   });
 
   /// How long the panel stays open without a touch.
   static const Duration idleClose = Duration(seconds: 10);
+
+  /// How long the panel says why a command was refused: as long as the main
+  /// screen shows a warning notice.
+  static const Duration refusalFor = Duration(seconds: 6);
 
   /// What the main screen last pushed.
   final PerformanceReadout readout;
@@ -40,6 +45,9 @@ class ReadoutControls extends StatefulWidget {
   /// Sends a change to the main screen.
   final ValueChanged<ReadoutCommand> onCommand;
 
+  /// Each command the main screen refused.
+  final Stream<ReadoutRefusal> refusals;
+
   @override
   State<ReadoutControls> createState() => _ReadoutControlsState();
 }
@@ -47,6 +55,39 @@ class ReadoutControls extends StatefulWidget {
 class _ReadoutControlsState extends State<ReadoutControls> {
   bool _open = false;
   Timer? _closeTimer;
+  StreamSubscription<ReadoutRefusal>? _refusalSub;
+  ReadoutRefusal? _refusal;
+  Timer? _refusalTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refusalSub = widget.refusals.listen(_onRefused);
+  }
+
+  @override
+  void didUpdateWidget(ReadoutControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refusals != oldWidget.refusals) {
+      unawaited(_refusalSub?.cancel());
+      _refusalSub = widget.refusals.listen(_onRefused);
+    }
+  }
+
+  /// Says why [refusal]'s command was refused, while the panel that sent it
+  /// is open.
+  void _onRefused(ReadoutRefusal refusal) {
+    if (!mounted || !_open) return;
+    setState(() => _refusal = refusal);
+    _refusalTimer?.cancel();
+    _refusalTimer = Timer(ReadoutControls.refusalFor, _clearRefusal);
+  }
+
+  void _clearRefusal() {
+    _refusalTimer?.cancel();
+    _refusalTimer = null;
+    if (mounted && _refusal != null) setState(() => _refusal = null);
+  }
 
   void _openPanel() {
     setState(() => _open = true);
@@ -56,6 +97,7 @@ class _ReadoutControlsState extends State<ReadoutControls> {
   void _close() {
     _closeTimer?.cancel();
     _closeTimer = null;
+    _clearRefusal();
     if (mounted && _open) setState(() => _open = false);
   }
 
@@ -67,12 +109,16 @@ class _ReadoutControlsState extends State<ReadoutControls> {
   void _send(ReadoutCommand command) {
     // A held step sends without new touches; it is a touch all the same.
     _keepOpen();
+    // A new change replaces what the last refusal said.
+    _clearRefusal();
     widget.onCommand(command);
   }
 
   @override
   void dispose() {
     _closeTimer?.cancel();
+    _refusalTimer?.cancel();
+    unawaited(_refusalSub?.cancel());
     super.dispose();
   }
 
@@ -87,6 +133,7 @@ class _ReadoutControlsState extends State<ReadoutControls> {
               frame: widget.frame,
               onCommand: _send,
               onDone: _close,
+              refusal: _refusal,
             ),
           )
         : ConsoleReadoutView(

@@ -65,9 +65,6 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
   /// The room right of the slider, where the time signature sits.
   static const double _sliderEndInset = 328;
 
-  /// Where the time signature's column starts, from the right edge.
-  static const double _signatureInset = 280;
-
   /// The Tap and Clear tempo buttons' width.
   static const double _tapWidth = 213;
 
@@ -252,15 +249,17 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                 onTap: tempo.tapTempo,
               ),
             ),
-            // ---- time signature
+            // ---- time signature: label and button end at the content edge,
+            // where the click rows and the tabs end, and the button starts on
+            // the tools row's top line (#1672).
             Positioned(
-              left: width - _signatureInset + 48,
+              right: 0,
               top: 21,
               child: LoopSectionLabel(l10n.loopTempoSignature),
             ),
             Positioned(
-              left: width - _signatureInset + 80,
-              top: 77,
+              right: 0,
+              top: 81,
               child: LoopOutlinedButton(
                 key: const Key('loop_tempo_signature'),
                 width: 120,

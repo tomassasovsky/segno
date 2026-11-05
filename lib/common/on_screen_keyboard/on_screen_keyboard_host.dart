@@ -189,11 +189,11 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
     final open = widget.enabled && field != null && !_readOnly;
 
     final layout = layoutForInputType(field?.keyboardType);
-    // Five rows of 54px keys plus 3px padding either side, plus the panel's
-    // own 6px inset. Sized from the keys rather than guessed, so a key-height
-    // change cannot silently overflow the panel.
+    // The keyboard's rows, plus the panel's own 6px inset. Sized from the
+    // keys rather than guessed, so a key-height change cannot silently
+    // overflow the panel.
     final rows = layout == OnScreenKeyboardLayout.numeric ? 5 : 4;
-    final height = open ? rows * (OnScreenKeyboard.keyHeight + 6) + 12 : 0.0;
+    final height = open ? OnScreenKeyboard.heightOf(rows) + 12 : 0.0;
     final media = MediaQuery.of(context);
 
     // The SAME shape open or closed. Returning the child bare when closed

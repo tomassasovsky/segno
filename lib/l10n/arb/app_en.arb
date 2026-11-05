@@ -4847,6 +4847,18 @@
             }
         }
     },
+    "fxPartNamedOrdinal": "{input} · part {number}",
+    "@fxPartNamedOrdinal": {
+        "description": "A recorded part named by its input, when another part of the same track has the same input.",
+        "placeholders": {
+            "input": {
+                "type": "String"
+            },
+            "number": {
+                "type": "int"
+            }
+        }
+    },
     "fxPartOrdinal": "Part {number}",
     "@fxPartOrdinal": {
         "description": "A recorded part with no input to name it after.",

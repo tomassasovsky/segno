@@ -76,6 +76,12 @@ class ReadoutScreenLink {
   /// calibrated.
   final calibration = ValueNotifier<ReadoutCalibration?>(null);
 
+  final _refusals = StreamController<ReadoutRefusal>.broadcast();
+
+  /// Each command the main screen refused and says why (a Clear tempo the
+  /// tempo lock keeps).
+  Stream<ReadoutRefusal> get refusals => _refusals.stream;
+
   /// Publishes this end's inbox and announces it to the main screen, if the
   /// main screen is already up. If it is not, its greeting prompts the
   /// announcement later.
@@ -98,7 +104,8 @@ class ReadoutScreenLink {
   }
 
   /// Sends [command] to the main screen, which applies it. Fire-and-forget:
-  /// the result comes back in the next readout push.
+  /// the result comes back in the next readout push, and a refusal the
+  /// player needs to hear on [refusals].
   void sendCommand(ReadoutCommand command) {
     _mainPort()?.send({'op': ScreenLinkOp.command, 'command': command.toMap()});
   }
@@ -120,6 +127,7 @@ class ReadoutScreenLink {
     frame.dispose();
     readout.dispose();
     calibration.dispose();
+    unawaited(_refusals.close());
   }
 
   SendPort? _mainPort() => _main ??= _directory.lookup(screenLinkMainPort);
@@ -159,6 +167,9 @@ class ReadoutScreenLink {
           readout.value = PerformanceReadout.fromMap(map);
         }
         _ack(message['seq']);
+      case ScreenLinkOp.refused:
+        final refusal = ReadoutRefusal.fromName(message['refusal']);
+        if (refusal != null) _refusals.add(refusal);
       case ScreenLinkOp.ping:
         if (_rastered) _ack(message['seq']);
       case ScreenLinkOp.calibrate:
@@ -214,8 +225,9 @@ class ReadoutScreen extends StatelessWidget {
                   readout: link.readout,
                   onActivity: link.sendActivity,
                   onCommand: link.sendCommand,
+                  refusals: link.refusals,
                 )
-              : ColoredBox(color: AppTheme.neon.scaffoldBackgroundColor),
+              : ColoredBox(color: AppTheme.readout.scaffoldBackgroundColor),
         );
       },
     );
@@ -243,7 +255,7 @@ class ReadoutCalibrationFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: AppTheme.neon,
+      data: AppTheme.readout,
       child: Directionality(
         textDirection: TextDirection.ltr,
         child: Builder(

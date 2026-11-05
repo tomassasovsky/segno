@@ -214,13 +214,16 @@ typedef enum le_perf_log_code {
   LE_PLOG_RETIME = 330, /* retime_log: a song-tempo change that retimed the
                          * shared clock with content (#1179 Part 4a): the new
                          * length and the position it continues from. */
-  LE_PLOG_SOURCE_LEN = 331, /* lanei {channel, 0, out_len}: the length of the
-                             * render a track sounds (#1179 Part 4a-ii,
+  LE_PLOG_SOURCE_LEN = 331, /* lanei {channel, bridge, out_len}: the length
+                             * of the render a track sounds (#1179 Part 4a-ii,
                              * events.log version 12), 0 for the take itself
                              * or a render of its own length; logged just
                              * before every 328, so a stretch render (Pitch
                              * Unchanged across a retime) replays at its
-                             * length. */
+                             * length. `bridge` (version 15, #1675) is 1 when
+                             * that source plays through the pitch bridge
+                             * (engine_bridge.h) while its stretch render is
+                             * pending; 0 in older files. */
   LE_PLOG_FX_TEMPO = 332, /* fx_tempo_log: the effect chains' musical time
                            * (#887 part 10, events.log version 14), at every
                            * anchor the engine moves it to (a loop top, a
