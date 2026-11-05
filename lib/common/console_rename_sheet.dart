@@ -249,8 +249,13 @@ class ConsoleEntryField extends StatelessWidget {
     required this.text,
     required this.label,
     this.textKey,
+    this.fontSize = 18,
     super.key,
   });
+
+  /// The typed text's size: 18 in the console's sheets, larger on a
+  /// full-size page (#1672). The caret follows it.
+  final double fontSize;
 
   /// What has been typed so far.
   final String text;
@@ -286,14 +291,18 @@ class ConsoleEntryField extends StatelessWidget {
                 style: TextStyle(
                   color: surface.textPrimary,
                   fontFamily: SurfaceTheme.monoFont,
-                  fontSize: 18,
+                  fontSize: fontSize,
                   height: 1.17,
                   leadingDistribution: TextLeadingDistribution.even,
                 ),
               ),
             ),
             const SizedBox(width: 2),
-            Container(width: 2, height: 22, color: surface.accent),
+            Container(
+              width: 2,
+              height: fontSize * 22 / 18,
+              color: surface.accent,
+            ),
           ],
         ),
       ),

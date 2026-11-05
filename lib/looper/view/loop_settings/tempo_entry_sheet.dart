@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:segno/common/console_rename_sheet.dart';
-import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/tempo_entry.dart';
 import 'package:segno/looper/model/tempo_state.dart';
+import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Asks for an exact tempo on the console's numeric keypad (#1653): BPM in
@@ -30,7 +30,11 @@ Future<double?> showTempoEntrySheet(
     // override, so the keypad spans the console like every other keyboard.
     constraints: const BoxConstraints(),
     isScrollControlled: true,
-    builder: (_) => _TempoEntrySheet(current: current),
+    // Full size it is about 690 high: on a window shorter than that (a
+    // desktop build) it scrolls rather than overflowing.
+    builder: (_) => SingleChildScrollView(
+      child: _TempoEntrySheet(current: current),
+    ),
   );
 }
 
@@ -44,6 +48,13 @@ class _TempoEntrySheet extends StatefulWidget {
 }
 
 class _TempoEntrySheetState extends State<_TempoEntrySheet> {
+  /// The typed tempo's size, above the sheet's 24 px notes.
+  static const double _fieldSize = 32;
+
+  /// The keys: 80 high with 28 px labels, the page's choice text.
+  static const double _keyHeight = 80;
+  static const double _keyLabelSize = 28;
+
   String _text = '';
 
   /// Whether the last Set was outside the range; typing clears it.
@@ -121,6 +132,8 @@ class _TempoEntrySheetState extends State<_TempoEntrySheet> {
     final now = widget.current > 0
         ? l10n.loopTempoEntryNow(widget.current.toStringAsFixed(2))
         : l10n.loopTempoUnset;
+    // Full size, as the page under it (#1672): the page's 32 inset, its
+    // 28 px heading and 24 px notes, a 64 high Cancel, and 80 high keys.
     return Focus(
       autofocus: true,
       onKeyEvent: _onKey,
@@ -130,47 +143,32 @@ class _TempoEntrySheetState extends State<_TempoEntrySheet> {
           color: surface.card,
           border: Border.all(color: surface.borderStrong),
         ),
-        padding: EdgeInsets.all(spacing.xl),
+        padding: EdgeInsets.all(spacing.xxl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                AppText(
-                  l10n.loopTempoEntryTitle,
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 18,
-                    height: 1.17,
-                    leadingDistribution: TextLeadingDistribution.even,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(width: spacing.md),
-                Expanded(
-                  child: AppText(
-                    '$now · $range',
-                    style: TextStyle(
-                      color: surface.textMuted,
-                      fontSize: 14,
-                      height: 1.21,
-                      leadingDistribution: TextLeadingDistribution.even,
-                    ),
-                  ),
-                ),
-                ConsoleDialogButton(
+                LoopSectionLabel(l10n.loopTempoEntryTitle),
+                SizedBox(width: spacing.xl),
+                Expanded(child: LoopNote('$now · $range')),
+                SizedBox(width: spacing.xl),
+                LoopOutlinedButton(
                   key: const Key('tempo_entry_cancel'),
+                  width: 172,
+                  fitLabel: true,
                   label: l10n.cancel,
-                  onPressed: () => Navigator.of(context).pop(),
+                  onTap: () => Navigator.of(context).pop(),
                 ),
               ],
             ),
-            SizedBox(height: spacing.md),
+            SizedBox(height: spacing.lg),
             ConsoleEntryField(
               text: _text,
               label: l10n.loopTempoEntryField,
               textKey: const Key('tempo_entry_field'),
+              fontSize: _fieldSize,
             ),
             if (_rejected) ...[
               SizedBox(height: spacing.sm),
@@ -182,16 +180,17 @@ class _TempoEntrySheetState extends State<_TempoEntrySheet> {
                 key: const Key('tempo_entry_error'),
                 style: TextStyle(
                   color: surface.warning,
-                  fontSize: 14,
-                  height: 1.21,
-                  leadingDistribution: TextLeadingDistribution.even,
+                  fontSize: 24,
+                  height: 1.2,
                 ),
               ),
             ],
-            SizedBox(height: spacing.md),
+            SizedBox(height: spacing.lg),
             OnScreenKeyboard(
               layout: OnScreenKeyboardLayout.numeric,
               doneLabel: l10n.loopTempoEntrySet,
+              keyHeight: _keyHeight,
+              labelSize: _keyLabelSize,
               onKey: _type,
               onBackspace: _backspace,
               onDone: _submit,

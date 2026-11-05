@@ -70,7 +70,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 | #1590 | Screen audit fixes: class (a) batches 1 to 7 and the owner's class (b) answers, one PR per batch | build | auto | `claude/audit-*-1590-p*` |
-| #1672 | Screen audit 2 (Loop settings tabs, Interface row, readout Loop panel): class (a) fixes in three PRs; class (b) questions on the issue | build | auto | `claude/audit-*-1672-p*` |
 | #1540 | Drive pedals' aliasing at 48 kHz: bench and blind A/B built, the owner's listening decides on oversampling | in-review | auto | `claude/alias-ab-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
