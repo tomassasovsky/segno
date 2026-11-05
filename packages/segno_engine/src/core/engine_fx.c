@@ -4506,11 +4506,19 @@ static const le_fx_param_desc LE_FX_TRANSIENT_PARAMS[] = {
  * 1..1000 Hz control puts it at half the value it shows, and at its lowest
  * (shown as 1 Hz) runs no high-pass at all: a 60 dB drop there leaves no
  * low-frequency tail, which any filter at 0.5 Hz would. */
+/* The release and detector rows are segno's (#1644). Each starts at the
+ * Looper X's measured gate (a 3.2 ms close, keyed on each sample's peak), so
+ * a rack that sets only the first two rows, or leaves the rest at 0, plays
+ * as the Looper X's. */
 static const le_fx_param_desc LE_FX_HP_GATE_PARAMS[] = {
     {"highpass", LE_FX_UNIT_HZ, 0, 0.5f, 500.0f, LE_FX_CURVE_EXPONENTIAL, 0.0f,
      LE_FX_PARAM_OFF_AT_MIN},
     {"gate_threshold", LE_FX_UNIT_DB, 0, -120.0f, 0.0f, LE_FX_CURVE_LINEAR, 0.0f,
      0},
+    {"gate_release", LE_FX_UNIT_MS, 0, 3.2f, 2000.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.0f, 0},
+    {"gate_detector", LE_FX_UNIT_MS, 0, 0.5f, 100.0f, LE_FX_CURVE_EXPONENTIAL,
+     0.0f, LE_FX_PARAM_OFF_AT_MIN},
 };
 
 /* 20 log10 |x| and back, through log2 and exp2. */
@@ -4780,12 +4788,22 @@ static void fx_transient_kprocess(void* ks, float* l, float* r) {
  * filtered signal: it opens on the first sample whose level (the louder
  * channel's |x|) reaches the threshold, and closes LE_GATE_HOLD_S after the
  * level last reached LE_GATE_HYST_DB under it. Opening and closing ramp the
- * gain; the close is the Looper X's 2.7 dB/ms fall. */
+ * gain; the close is the Looper X's 2.7 dB/ms fall (a 3.2 ms time constant),
+ * or the release row's.
+ *
+ * With the detector row on (#1644), the gate closes on the level averaged
+ * over that time constant (the louder channel's mean square), so a steady
+ * floor reads as its RMS rather than its highest peaks and a fading note
+ * closes it as it reaches the floor. It opens on that average reaching the
+ * threshold, or on a single peak LE_GATE_PEAK_DB over it, which no noise
+ * floor that closes it reaches (white noise's peaks stand about 13 dB over
+ * its RMS within a hold) and the first crest of a note does: the attack is
+ * not lost while the average catches up. Such a gate starts shut. */
 #define LE_HPG_DAMP 1.5f /* 1 / Q */
 #define LE_GATE_HYST_DB 6.0
 #define LE_GATE_HOLD_S 0.250
 #define LE_GATE_OPEN_S 0.00005
-#define LE_GATE_CLOSE_S 0.0032
+#define LE_GATE_PEAK_DB 10.0 /* the detector on: a peak opens this far over */
 
 typedef struct le_fx_hp_gate {
   float lhz; /* the corner now, log2 Hz */
@@ -4798,6 +4816,11 @@ typedef struct le_fx_hp_gate {
   float open_c;      /* gate coefficients */
   float close_c;
   int32_t hold_n;
+  int32_t rms;  /* close on the mean square (the detector row on) */
+  float env_c;  /* its smoothing coefficient */
+  float env;    /* the mean square now */
+  float peak_at; /* the detector on: the peak that opens at once */
+  float rel_p, det_p; /* the release and detector rows the coefficients are for */
   float gain; /* gate gain now */
   int32_t hold;
   int32_t open;
@@ -4819,8 +4842,17 @@ static void fx_hp_gate_update(void* ks, le_fx_dyn_head* h, const float* p,
   const le_fx_param_desc* d = LE_FX_HP_GATE_PARAMS;
   if (new_rate) {
     q->open_c = le_one_pole(LE_GATE_OPEN_S, sr);
-    q->close_c = le_one_pole(LE_GATE_CLOSE_S, sr);
     q->hold_n = (int32_t)(LE_GATE_HOLD_S * (double)(sr > 0 ? sr : 48000));
+  }
+  if (new_rate || settle || p[2] != q->rel_p) {
+    q->rel_p = p[2];
+    q->close_c = le_one_pole(le_fx_desc_value(&d[2], p[2]) * 1e-3, sr);
+  }
+  if (new_rate || settle || p[3] != q->det_p) {
+    q->det_p = p[3];
+    q->rms = p[3] > 0.0f;
+    if (q->rms) q->env_c = le_one_pole(le_fx_desc_value(&d[3], p[3]) * 1e-3, sr);
+    q->env = 0.0f;
   }
   if (f & LE_FX_DYN_CHANGED) {
     q->tgt_lhz = (float)log2(le_fx_desc_value(&d[0], p[0]));
@@ -4828,15 +4860,23 @@ static void fx_hp_gate_update(void* ks, le_fx_dyn_head* h, const float* p,
     const double thr = le_fx_desc_value(&d[1], p[1]);
     q->open_at = le_gain_of_db((float)thr);
     q->close_at = le_gain_of_db((float)(thr - LE_GATE_HYST_DB));
+    q->peak_at = le_gain_of_db((float)(thr + LE_GATE_PEAK_DB));
+    if (q->rms) { /* compared as mean squares */
+      q->open_at *= q->open_at;
+      q->close_at *= q->close_at;
+    }
   }
   /* The corner glides in octaves; the filter is redesigned while it moves
    * (a state-variable filter takes a coefficient change without a click). */
   if (settle) {
-    /* A fresh gate starts open, so it never cuts into the first sound it
-     * is handed; with nothing to hold it open it closes after the hold. */
-    q->open = 1;
-    q->gain = 1.0f;
-    q->hold = q->hold_n;
+    /* A fresh peak gate starts open, so it never cuts into the first sound
+     * it is handed; with nothing to hold it open it closes after the hold.
+     * One that opens on a peak or the average starts shut: it opens on the
+     * first crest anyway, and starting open would let the floor through
+     * for the hold and the release. */
+    q->open = !q->rms;
+    q->gain = q->open ? 1.0f : 0.0f;
+    q->hold = q->open ? q->hold_n : 0;
   }
   if (q->lhz != q->tgt_lhz || new_rate) {
     le_fx_step_toward(&q->lhz, q->tgt_lhz, settle ? 1.0f : h->k);
@@ -4861,11 +4901,16 @@ static void fx_hp_gate_kprocess(void* ks, float* l, float* r) {
       y[c] = q->wet >= 1.0f ? hp : y[c] + q->wet * (hp - y[c]);
     }
   }
-  const float x = fmaxf(fabsf(y[0]), fabsf(y[1]));
+  float x = fmaxf(fabsf(y[0]), fabsf(y[1]));
+  const int crest = q->rms && x >= q->peak_at;
+  if (q->rms) {
+    q->env = x * x + q->env_c * (q->env - x * x);
+    x = q->env;
+  }
   /* Open at the threshold; the hold restarts whenever the level is back
    * within the hysteresis, so the gate closes only once it has stayed under
    * close_at for the whole hold. */
-  if (x >= q->open_at) {
+  if (crest || x >= q->open_at) {
     q->open = 1;
     q->hold = q->hold_n;
   } else if (x >= q->close_at) {

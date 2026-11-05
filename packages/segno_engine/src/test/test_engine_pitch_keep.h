@@ -1,10 +1,11 @@
-/* Pitch across a retime (#1179 Part 4a-ii). A following track with Pitch
- * Unchanged plays its take through the varispeed head (timing exact, pitch
- * off by the tempo ratio, reported) until the cache worker's stretch render
- * to the new span lands, then crossfades to it and sounds its own pitch.
- * Spectral oracles on a 220 Hz sine of a whole number of cycles: one 4/4 bar
- * at 120 BPM is 16000 frames at 8 kHz (440 cycles); at 90 BPM the span is
- * 21333 frames, the varispeed's 220 x 16000 / 21333 = 165 Hz. */
+/* Pitch across a retime (#1179 Part 4a-ii, #1675). A following track with
+ * Pitch Unchanged keeps its pitch from the first frame of a tempo change: it
+ * plays its take through the pitch bridge (engine_bridge.h, timing exact)
+ * until the cache worker's stretch render to the new span lands, then
+ * crossfades to it. Spectral oracles on a 220 Hz sine of a whole number of
+ * cycles: one 4/4 bar at 120 BPM is 16000 frames at 8 kHz (440 cycles); at
+ * 90 BPM the span is 21333 frames, the varispeed's 220 x 16000 / 21333 =
+ * 165 Hz. */
 
 #define PK_SR 8000
 #define PK_LEN 16000
@@ -67,24 +68,70 @@ static int pk_renders(le_engine* e, int ch) {
   return info.renders;
 }
 
-/* Unchanged (the default): dry through the varispeed at 165 Hz, reported
- * -498 cents, until the stretch render lands; then 220 Hz, 0 cents, the lap
- * exactly the clock's (the output repeats every 21333 frames). */
+/* The length of the render track ch sounds (0: its take, or the bridge). */
+static int32_t pk_sounding(le_engine* e, int ch) {
+  le_lane_cache_info info;
+  le_engine_get_transpose_cache(e, ch, &info);
+  return info.entry_frames;
+}
+
+/* Plays (polling the cache) until track ch sounds a render of `out_len`
+ * frames, appending to `out` from `*at` when given; the frames it took, or
+ * -1. */
+static int pk_until_render(le_engine* e, int ch, int32_t out_len, float* out,
+                           int* at, int max) {
+  static float scratch[256];
+  for (int n = 0; n < max; n += 256) {
+    if (pk_sounding(e, ch) == out_len) return n;
+    test_sleep_ms(1);
+    tf_process(e, out ? out + *at : scratch, 256, 0.0f);
+    if (at) *at += 256;
+  }
+  return pk_sounding(e, ch) == out_len ? max : -1;
+}
+
+/* Whether every `win`-frame window of out[from, to) sounds `hz` at least
+ * `ratio` times (in power) over `wrong`. */
+static int pk_windows_at(const float* out, int from, int to, int win,
+                         double hz, double wrong, double ratio) {
+  int bad = 0;
+  for (int i = from; i + win <= to; i += win) {
+    bad += !(stretch_power_at(out, i, i + win, hz, PK_SR) >
+             ratio * stretch_power_at(out, i, i + win, wrong, PK_SR));
+  }
+  return bad == 0;
+}
+
+/* Unchanged (the default) keeps 220 Hz from the change on (#1675): the
+ * bridge plays the take at its own pitch through the settle and the render,
+ * reported 0 cents, in every 512-frame window after the 10 ms swap (the
+ * true pitch 15 dB over the varispeed's, which would be 20 dB under); then the
+ * stretch render, the lap exactly the clock's (the output repeats every
+ * 21333 frames). */
 static void test_pitch_unchanged_across_retime(void) {
   printf("test_pitch_unchanged_across_retime\n");
-  static float out[4 * PK_LEN90];
+  static float out[48 * PK_LEN];
   le_engine* e = pk_fixture(1);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.pitch_follows_speed == 0 && s.tracks[0].pitch_override == -1);
   CHECK(pk_cents(e, 0) == 0);
   CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  int at = 0;
   tf_process(e, out, 4096, 0.0f);
-  CHECK(pk_cents(e, 0) == -498); /* the settle: still dry */
-  CHECK(stretch_power_at(out, 0, 4096, 165.0, PK_SR) >
-        100.0 * stretch_power_at(out, 0, 4096, 220.0, PK_SR));
-  CHECK(pk_until(e, 0, 0, 40 * PK_LEN) >= 0);
+  at += 4096;
+  CHECK(pk_cents(e, 0) == 0);  /* the settle: the bridge keeps the pitch */
+  CHECK(pk_sounding(e, 0) == 0); /* no render yet */
+  CHECK(pk_until_render(e, 0, PK_LEN90, out, &at, 40 * PK_LEN) >= 0);
   CHECK(pk_renders(e, 0) == 1);
+  /* every window from just past the swap to the render keeps the pitch */
+  CHECK(at > 4096);
+  CHECK(pk_windows_at(out, 128, at - 512, 512, 220.0, 165.0, 30.0));
+  /* and the level: the bridge's grains sum to the take's */
+  double sum = 0.0;
+  for (int i = 128; i < at - 512; ++i) sum += (double)out[i] * out[i];
+  const double rms = sqrt(sum / (double)(at - 640));
+  CHECK(rms > 0.5 / sqrt(2.0) * 0.85 && rms < 0.5 / sqrt(2.0) * 1.15);
   tf_process(e, out, 1024, 0.0f); /* past the swap window */
   tf_process(e, out, 2 * PK_LEN90 + 64, 0.0f);
   CHECK(stretch_power_at(out, 0, PK_LEN90, 220.0, PK_SR) >
@@ -114,8 +161,8 @@ static void test_pitch_follows_speed_and_switch(void) {
   CHECK(snap.pitch_override == 1);
   CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
   tf_process(e, out, 64, 0.0f);
-  CHECK(pk_cents(e, 0) == -498 && pk_cents(e, 1) == -498);
-  CHECK(pk_until(e, 0, 0, 40 * PK_LEN) >= 0); /* track 0 keeps its pitch */
+  CHECK(pk_cents(e, 0) == 0 && pk_cents(e, 1) == -498); /* 0 keeps its pitch */
+  CHECK(pk_until_render(e, 0, PK_LEN90, NULL, NULL, 40 * PK_LEN) >= 0);
   for (int k = 0; k < 40; ++k) {
     tf_process(e, out, 256, 0.0f);
     (void)pk_renders(e, 1);
@@ -147,8 +194,8 @@ static void test_pitch_tolerance(void) {
   le_engine* e = pk_fixture(1);
   CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
   tf_process(e, out, 64, 0.0f);
-  CHECK(pk_cents(e, 0) == -498);
-  CHECK(pk_until(e, 0, 0, 40 * PK_LEN) >= 0);
+  CHECK(pk_cents(e, 0) == 0); /* bridged */
+  CHECK(pk_until_render(e, 0, PK_LEN90, NULL, NULL, 40 * PK_LEN) >= 0);
   CHECK(pk_renders(e, 0) == 1);
   CHECK(le_engine_set_tempo(e, 90.3f) == LE_OK);
   tf_process(e, out, 1024, 0.0f);
@@ -161,8 +208,8 @@ static void test_pitch_tolerance(void) {
   CHECK(pk_renders(e, 0) == 1 && pk_cents(e, 0) == 6);
   CHECK(le_engine_set_tempo(e, 95.0f) == LE_OK);
   tf_process(e, out, 64, 0.0f);
-  CHECK(pk_cents(e, 0) == -404); /* dry: 1200 log2(16000 / 20211) */
-  CHECK(pk_until(e, 0, 0, 40 * PK_LEN) >= 0);
+  CHECK(pk_cents(e, 0) == 0 && pk_sounding(e, 0) == 0); /* bridged again */
+  CHECK(pk_until_render(e, 0, 20211, NULL, NULL, 40 * PK_LEN) >= 0);
   CHECK(pk_renders(e, 0) == 2);
   le_engine_destroy(e);
 }
@@ -209,7 +256,8 @@ static void test_pitch_small_retime_keeps_sources(void) {
 }
 
 /* Transpose and the stretch are one render: +7 st kept across the retime
- * peaks at 220 x 2^(7/12) = 329.6 Hz. */
+ * peaks at 220 x 2^(7/12) = 329.6 Hz, and so does the bridge before it,
+ * over the track's plain +7 st render (#1675). */
 static void test_pitch_unchanged_with_transpose(void) {
   printf("test_pitch_unchanged_with_transpose\n");
   static float out[2 * PK_LEN90];
@@ -218,16 +266,28 @@ static void test_pitch_unchanged_with_transpose(void) {
   CHECK(le_engine_install_transpose(e, 0, 7, &id) == LE_OK);
   tf_process(e, out, 64, 0.0f);
   fade_result(e, id, LE_OK);
-  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
-  tf_process(e, out, 64, 0.0f);
-  CHECK(pk_cents(e, 0) == -498);
-  CHECK(pk_until(e, 0, 0, 40 * PK_LEN) >= 0);
-  tf_process(e, out, 1024, 0.0f);
+  /* the plain render first, so the bridge has it */
   le_track_snapshot snap;
+  for (int k = 0; k < 4000; ++k) {
+    le_engine_get_track(e, 0, &snap);
+    if (snap.transpose_effective_st == 7) break;
+    (void)pk_renders(e, 0);
+    test_sleep_ms(1);
+    tf_process(e, out, 256, 0.0f);
+  }
+  CHECK(snap.transpose_effective_st == 7);
+  const double want = 220.0 * pow(2.0, 7.0 / 12.0);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, out, 2048, 0.0f);
+  CHECK(pk_cents(e, 0) == 0);
+  le_engine_get_track(e, 0, &snap);
+  CHECK(snap.transpose_effective_st == 7); /* the bridge keeps it */
+  CHECK(pk_windows_at(out, 128, 2048, 512, want, want * 0.75, 30.0));
+  CHECK(pk_until_render(e, 0, PK_LEN90, NULL, NULL, 40 * PK_LEN) >= 0);
+  tf_process(e, out, 1024, 0.0f);
   le_engine_get_track(e, 0, &snap);
   CHECK(snap.transpose_effective_st == 7);
   tf_process(e, out, PK_LEN90, 0.0f);
-  const double want = 220.0 * pow(2.0, 7.0 / 12.0);
   CHECK(stretch_power_at(out, 0, PK_LEN90, want, PK_SR) >
         100.0 * stretch_power_at(out, 0, PK_LEN90, want * 0.75, PK_SR));
   CHECK(stretch_power_at(out, 0, PK_LEN90, want, PK_SR) >
@@ -235,9 +295,9 @@ static void test_pitch_unchanged_with_transpose(void) {
   le_engine_destroy(e);
 }
 
-/* The offline stem reproduces the live mix through the retime, the dry
- * pending stretch and the swap to the stretch render, from 329, 331 and
- * 328. */
+/* The offline stem reproduces the live mix through the retime, the bridge
+ * while the stretch is pending and the swap to the stretch render, from 329,
+ * 331 (with its bridge flag) and 328. */
 static void test_pitch_render_parity(void) {
   printf("test_pitch_render_parity\n");
   le_engine* e = pk_fixture(1);
@@ -251,15 +311,14 @@ static void test_pitch_render_parity(void) {
   CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
   tf_process(e, live + at, 64, 0.0f);
   at += 64;
-  CHECK(pk_cents(e, 0) == -498);
-  le_lane_cache_info info;
-  for (int k = 0; k < 2000 && pk_cents(e, 0) != 0; ++k) {
-    le_engine_get_transpose_cache(e, 0, &info);
-    test_sleep_ms(1);
-    tf_process(e, live + at, 256, 0.0f);
-    at += 256;
-  }
-  CHECK(pk_cents(e, 0) == 0);
+  CHECK(pk_cents(e, 0) == 0 && pk_sounding(e, 0) == 0); /* bridged */
+  /* A lap through the bridge with no cache poll (so no render can land),
+   * across many grain edges and the loop point. */
+  tf_process(e, live + at, PK_LEN90, 0.0f);
+  at += PK_LEN90;
+  CHECK(pk_sounding(e, 0) == 0);
+  CHECK(pk_until_render(e, 0, PK_LEN90, live, &at,
+                        8 * PK_LEN - 2 * PK_LEN90 - at) >= 0);
   tf_process(e, live + at, PK_LEN90, 0.0f);
   at += PK_LEN90;
   CHECK(le_perf_disarm(e) == LE_OK);
@@ -267,9 +326,10 @@ static void test_pitch_render_parity(void) {
   /* the tail sounds the take's own pitch: the stretch render played */
   CHECK(stretch_power_at(live, at - PK_LEN90, at, 220.0, PK_SR) >
         100.0 * stretch_power_at(live, at - PK_LEN90, at, 165.0, PK_SR));
+  /* 331: the bridge first (the take, bridged), then the stretch render */
   le_perf_log_entry fact;
   const int facts = speed_count_facts(dir, LE_PLOG_SOURCE_LEN, 0, &fact);
-  CHECK(facts >= 1 && fact.cmd.lanei.value == PK_LEN90);
+  CHECK(facts >= 2 && fact.cmd.lanei.lane == 1 && fact.cmd.lanei.value == 0);
   static float pcm[PK_LEN];
   CHECK(le_engine_export_track(e, 0, pcm, PK_LEN) == PK_LEN);
   char path[700];
@@ -294,6 +354,180 @@ static void test_pitch_render_parity(void) {
   le_engine_destroy(e);
 }
 
+
+/* A rig whose stretch the cache cannot host (#1675): the render is refused
+ * and the bridge keeps the pitch for as long as the tempo stays, reported 0
+ * cents; Follows speed drops it to the varispeed and Unchanged brings it
+ * back, each through the equal-power swap. */
+static void test_pitch_bridge_when_refused(void) {
+  printf("test_pitch_bridge_when_refused\n");
+  static float out[4 * PK_LEN90];
+  le_engine* e = pk_fixture(1);
+  CHECK(le_engine_set_fx_cache_cap(e, 1024) == LE_OK); /* fits no render */
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  for (int k = 0; k < 200; ++k) {
+    tf_process(e, out, 256, 0.0f);
+    (void)pk_renders(e, 0);
+    test_sleep_ms(1);
+  }
+  le_lane_cache_info info;
+  le_engine_get_transpose_cache(e, 0, &info);
+  CHECK(info.reason == LE_CACHE_REASON_BUDGET && info.renders == 0);
+  CHECK(pk_cents(e, 0) == 0 && pk_sounding(e, 0) == 0);
+  tf_process(e, out, 2 * PK_LEN90, 0.0f);
+  CHECK(pk_windows_at(out, 0, 2 * PK_LEN90, 512, 220.0, 165.0, 30.0));
+  uint64_t id = pk_pitch(e, -1, 1); /* Follows speed: the varispeed */
+  tf_process(e, out, 64, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(pk_cents(e, 0) == -498);
+  tf_process(e, out, PK_LEN90, 0.0f);
+  CHECK(pk_windows_at(out, 128, PK_LEN90, 512, 165.0, 220.0, 30.0));
+  id = pk_pitch(e, -1, 0); /* Unchanged: the bridge again */
+  tf_process(e, out, 64, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(pk_cents(e, 0) == 0);
+  tf_process(e, out, PK_LEN90, 0.0f);
+  CHECK(pk_windows_at(out, 128, PK_LEN90, 512, 220.0, 165.0, 30.0));
+  le_engine_destroy(e);
+}
+
+/* The bridge is a function of the take, the head and the engine clock, so
+ * the same change sounds the same at any block size (#1547's rule): blocks
+ * of 32, 64 and 256 frames, the tempo set on a frame all three share, give
+ * identical output over a lap and a half of bridge. */
+static void test_pitch_bridge_block_invariance(void) {
+  printf("test_pitch_bridge_block_invariance\n");
+  static float ref[2 * PK_LEN90], got[2 * PK_LEN90];
+  const int blocks[] = {64, 32, 256};
+  const int n = PK_LEN90 + PK_LEN90 / 2;
+  for (int b = 0; b < 3; ++b) {
+    le_engine* e = pk_fixture(1);
+    CHECK(le_engine_set_fx_cache_cap(e, 1024) == LE_OK); /* no render lands */
+    float* out = b == 0 ? ref : got;
+    CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+    rev_process(e, out, n, blocks[b]);
+    if (b > 0) {
+      int bad = 0;
+      for (int i = 0; i < n; ++i) bad += got[i] != ref[i];
+      CHECK(bad == 0);
+    }
+    le_engine_destroy(e);
+  }
+}
+
+/* Speed keeps its coupled pitch through the bridge: at 2x a retime to 90
+ * sounds 440 Hz (the Speed's octave) rather than the varispeed's
+ * 2 x 165 = 330 Hz. */
+static void test_pitch_bridge_with_speed(void) {
+  printf("test_pitch_bridge_with_speed\n");
+  static float out[2 * PK_LEN90];
+  le_engine* e = pk_fixture(1);
+  CHECK(le_engine_set_fx_cache_cap(e, 1024) == LE_OK);
+  uint64_t id = 0;
+  CHECK(le_engine_set_speed(e, 2, 1, &id) == LE_OK && id);
+  tf_process(e, out, 1024, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, out, PK_LEN90, 0.0f);
+  CHECK(pk_cents(e, 0) == 0);
+  CHECK(pk_windows_at(out, 128, PK_LEN90, 512, 440.0, 330.0, 30.0));
+  le_engine_destroy(e);
+}
+
+/* A bridged track keeps its pitch through a second retime (the span moves,
+ * the snapshot follows) and a Stop (#1675 review): the Stop's fade reads the
+ * grains on rather than dropping to the varispeed, so the fade has no step;
+ * and the stem reproduces the retime. */
+static void test_pitch_bridge_retime_and_stop(void) {
+  printf("test_pitch_bridge_retime_and_stop\n");
+  le_engine* e = pk_fixture(1);
+  CHECK(le_engine_set_fx_cache_cap(e, 1024) == LE_OK); /* bridge for good */
+  const char* dir = render_test_dir("pitch-bridge-stop");
+  CHECK(perf_arm_dir_long(e, dir) == LE_OK);
+  drain(e);
+  static float live[8 * PK_LEN], replay[8 * PK_LEN];
+  int at = 0;
+  tf_process(e, live, 2000, 0.0f);
+  at += 2000;
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, live + at, 6000, 0.0f);
+  at += 6000;
+  CHECK(le_engine_set_tempo(e, 80.0f) == LE_OK); /* still bridged */
+  tf_process(e, live + at, 64, 0.0f);
+  at += 64;
+  CHECK(pk_cents(e, 0) == 0);
+  tf_process(e, live + at, 8000, 0.0f);
+  at += 8000;
+  CHECK(pk_windows_at(live, at - 4096, at, 512, 220.0, 220.0 * 80 / 120,
+                      30.0));
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  const int stop_at = at;
+  tf_process(e, live + at, 2000, 0.0f);
+  at += 2000;
+  /* the fade-out continues the waveform: no step past a sine's own slope */
+  const float slope = (float)(0.5 * 2.0 * M_PI * 220.0 / PK_SR);
+  int steps = 0;
+  for (int i = stop_at - 64; i < stop_at + 400; ++i) {
+    steps += fabsf(live[i + 1] - live[i]) > 1.2f * slope;
+  }
+  CHECK(steps == 0);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  static float pcm[PK_LEN];
+  CHECK(le_engine_export_track(e, 0, pcm, PK_LEN) == PK_LEN);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/track.wav", dir);
+  test_write_wav_mono(path, pcm, PK_LEN, PK_SR);
+  fade_finalize_manifest(dir,
+    "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[{\"channel\":0,\"volume\":1,"
+    "\"lanes\":[{\"lane\":0,\"deferred\":false,\"pcmRef\":\"track.wav\"}]}]}");
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  const int frames = test_read_wet_stem(dir, 0, replay, 8 * PK_LEN);
+  CHECK(frames == at);
+  /* Up to the Stop: the renderer's Stop fade on a retimed take differs from
+   * the callback's with or without the bridge (a varispeed track shows the
+   * same), a stem gap of its own. */
+  int bad = 0, first = -1;
+  for (int i = 0; i < stop_at; ++i) {
+    if (fabsf(replay[i] - live[i]) >= 2e-3f) {
+      if (first < 0) first = i;
+      ++bad;
+    }
+  }
+  if (bad) printf("  %d mismatched from %d\n", bad, first);
+  CHECK(bad == 0);
+  le_engine_destroy(e);
+}
+
+/* Reverse and Speed reach the next grain while bridged (#1675 review): the
+ * pitch stays the take's through the toggle and the step (2x: its octave),
+ * and nothing steps by more than the sine's own slope. */
+static void test_pitch_bridge_reverse_and_speed(void) {
+  printf("test_pitch_bridge_reverse_and_speed\n");
+  static float out[3 * PK_LEN90];
+  le_engine* e = pk_fixture(1);
+  CHECK(le_engine_set_fx_cache_cap(e, 1024) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, out, 4096, 0.0f);
+  uint64_t id = 0;
+  CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK && id);
+  tf_process(e, out, PK_LEN90, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(pk_windows_at(out, 0, PK_LEN90, 512, 220.0, 165.0, 30.0));
+  const float slope = (float)(0.5 * 2.0 * M_PI * 220.0 / PK_SR);
+  int steps = 0;
+  for (int i = 0; i + 1 < 2048; ++i) {
+    steps += fabsf(out[i + 1] - out[i]) > 1.3f * slope;
+  }
+  CHECK(steps == 0); /* across the toggle and its first grains */
+  CHECK(le_engine_set_speed(e, 2, 1, &id) == LE_OK && id);
+  tf_process(e, out, PK_LEN90, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(pk_cents(e, 0) == 0);
+  CHECK(pk_windows_at(out, 1024, PK_LEN90, 512, 440.0, 330.0, 30.0));
+  le_engine_destroy(e);
+}
+
 static void run_pitch_keep_tests(void) {
   test_pitch_unchanged_across_retime();
   test_pitch_follows_speed_and_switch();
@@ -301,4 +535,9 @@ static void run_pitch_keep_tests(void) {
   test_pitch_small_retime_keeps_sources();
   test_pitch_unchanged_with_transpose();
   test_pitch_render_parity();
+  test_pitch_bridge_when_refused();
+  test_pitch_bridge_block_invariance();
+  test_pitch_bridge_with_speed();
+  test_pitch_bridge_retime_and_stop();
+  test_pitch_bridge_reverse_and_speed();
 }

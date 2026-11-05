@@ -870,6 +870,8 @@
     "paramSustain": "Sustain",
     "paramHighpass": "High-pass",
     "paramGateThreshold": "Gate threshold",
+    "paramGateRelease": "Gate release",
+    "paramGateDetector": "Gate detector",
     "effectDoubler": "Doubler",
     "effectChorus": "Chorus",
     "effectWah": "Wah",
@@ -4844,6 +4846,18 @@
                 "optionalParameters": {
                     "decimalDigits": 2
                 }
+            }
+        }
+    },
+    "fxPartNamedOrdinal": "{input} · part {number}",
+    "@fxPartNamedOrdinal": {
+        "description": "A recorded part named by its input, when another part of the same track has the same input.",
+        "placeholders": {
+            "input": {
+                "type": "String"
+            },
+            "number": {
+                "type": "int"
             }
         }
     },

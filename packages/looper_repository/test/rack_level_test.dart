@@ -68,7 +68,8 @@ void main() {
       engine.fxRecipes[(FxOwner.track, 0, 0)]!.slots.last.channels.level,
       closeTo(level, 1e-6),
     );
-    expect(engine.fxRecipes[(FxOwner.track, 0, 0)]!.slots, hasLength(7));
+    // Its seven Looper X pedals behind segno's High-pass gate (#1644).
+    expect(engine.fxRecipes[(FxOwner.track, 0, 0)]!.slots, hasLength(8));
   });
 
   test("the recipe marks each rack's first and last entry, so the engine "

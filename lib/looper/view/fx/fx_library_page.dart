@@ -362,11 +362,12 @@ class _PresetList extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, i) {
         final preset = family.presets[i];
-        final needed = fxPresetModules(preset).length;
+        final entries = fxRackEntries(preset);
+        final needed = entries.length;
         // Offered whatever the room, and explained when there is not enough:
         // a rack that half-landed would be a sound nobody chose.
         final slots = needed <= freeSlots;
-        final fits = slots && fitsRoom(fxRackEntries(preset));
+        final fits = slots && fitsRoom(entries);
         return _PresetRow(
           key: Key('fx_preset_${preset.id}'),
           name: preset.name,

@@ -915,6 +915,39 @@ void main() {
       tracks: tracks,
     );
 
+    test("carries each lane's recorded input to the rig (#1678)", () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final rig = rigFromBundle((
+        session: sessionWith([
+          const SessionTrack(
+            fadeAmount: 1,
+            reversed: false,
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            lanes: [
+              SessionLane(
+                lane: 0,
+                volume: 1,
+                muted: false,
+                outputMask: 0x3,
+                inputChannel: 0,
+                recordedInput: 2,
+                layers: [SessionLayer(file: 'track0_lane0_L0.wav')],
+                history: TrackHistory.none,
+              ),
+            ],
+          ),
+        ]),
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      ));
+      final lane = rig.tracks.single.lanes.single;
+      expect(lane.inputChannel, 0);
+      expect(lane.recordedInput, 2);
+    });
+
     test('maps bare-array FX payloads and current chain envelopes', () {
       final pcm = Float32List.fromList([1, 1, 1, 1]);
       final bare = encodeTrackEffects([

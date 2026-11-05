@@ -10388,7 +10388,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 14
+#define LE_TEST_EVENTS_VERSION 15
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -22414,7 +22414,7 @@ static void test_fx_param_descriptors_match_kernels(void) {
 
   /* Counts: the parameters each kernel reads; none for NONE and PLUGIN. */
   const int32_t counts[] = {0, 2, 2, 3, 2, 5, 3, 3, 0, 15, 5, 3,
-                            2, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 9, 4,
+                            4, 2, 3, 1, 2, 2, 4, 3, 4, 2, 2, 3, 2, 2, 3, 9, 4,
                             5, 4, 7, 4};
   for (int32_t t = 0; t < 33; ++t) CHECK(le_fx_param_count(t) == counts[t]);
   CHECK(le_fx_param_count(33) == LE_ERR_INVALID);
