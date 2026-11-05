@@ -2874,6 +2874,7 @@
     "readoutPanelLonger": "Más largo",
     "readoutTimingNow": "Ahora",
     "readoutTimingLoopTop": "Inicio del loop",
+    "readoutButtonLoopTop": "Inicio",
     "readoutStripStart": "Entrada {timing}",
     "readoutPanelRetimes": "Cambiar el tempo reajusta los loops grabados.",
     "readoutPanelNoGrid": "Bloqueado: los loops no tienen grilla de compases.",

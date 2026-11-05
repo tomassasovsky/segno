@@ -8618,6 +8618,10 @@
     "@readoutTimingLoopTop": {
         "description": "Record timing Loop start, short, on the readout."
     },
+    "readoutButtonLoopTop": "Loop top",
+    "@readoutButtonLoopTop": {
+        "description": "Record timing Loop start on the readout panel's Start button, the narrowest place it is named (#1672)."
+    },
     "readoutStripStart": "Start {timing}",
     "@readoutStripStart": {
         "description": "The record timing on the readout's footer strip.",
