@@ -22,6 +22,7 @@ class RoutingSourceCard extends StatelessWidget {
     required this.onTap,
     this.width = 264,
     this.status,
+    this.tags = const [],
     super.key,
   });
 
@@ -44,6 +45,10 @@ class RoutingSourceCard extends StatelessWidget {
   /// A warning about this source under its name, or `null` (the Effects
   /// page's "Effects off", #1452).
   final String? status;
+
+  /// Short labels under the name for what the interface has set on this
+  /// input ("Inst", "48 V", #1646).
+  final List<String> tags;
 
   @override
   Widget build(BuildContext context) {
@@ -112,9 +117,52 @@ class RoutingSourceCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < tags.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        RoutingTag(tags[i], key: Key('routing_source_tag_$i')),
+                      ],
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A short label on a source card for a setting the interface holds on that
+/// input ("Inst", "48 V", #1646): an outlined pill in the card's secondary
+/// text.
+class RoutingTag extends StatelessWidget {
+  /// Creates a [RoutingTag].
+  const RoutingTag(this.text, {super.key});
+
+  /// The label.
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        border: Border.all(color: surface.borderStrong),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: AppText(
+        text,
+        style: TextStyle(
+          color: surface.textSecondary,
+          fontSize: 14,
+          height: 1,
         ),
       ),
     );

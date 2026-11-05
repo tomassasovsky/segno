@@ -282,6 +282,7 @@ final _messages = <_Copy>[
   _copy('new loop not saved', (l) => l.sessionNewLoopNotSaved('New loop 12')),
   _copy('track names', (l) => l.sessionTrackNamesNotSaved),
   _copy('low disk', (l) => l.perfLowDiskBlocked),
+  _copy('interface switch refused', (l) => l.routingInterfaceRefused),
   _copy('drive unavailable', (l) => l.perfArmDriveUnavailable),
   for (final kind in GuardKind.values)
     _copy(

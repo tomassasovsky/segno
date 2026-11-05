@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
+import 'package:segno/audio_setup/cubit/interface_inputs_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
+import 'package:segno/looper/view/audio_routing/interface_switches_row.dart';
 import 'package:segno/looper/view/audio_routing/routing_facts.dart';
 import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// What the Input setup tab draws, read in one `select` so a meter tick does
@@ -18,10 +22,26 @@ typedef _SetupValues = ({
   int inputCount,
   int clipMask,
   bool locked,
+  bool interfaceLocked,
   int mixGeneration,
 });
 
-_SetupValues _setupValues(LooperState state, int selected) {
+/// Whether a track fed by [input] is armed or capturing, or holds it for a
+/// recording: what freezes a jack's settings.
+bool _inputLocked(LooperState state, int input) =>
+    inputBusy(state, input) ||
+    state.recordingInputLocks.any((channel) {
+      final track = state.tracks.where((t) => t.channel == channel);
+      return track.any(
+        (t) => t.lanes.any((lane) => lane.inputChannel == input),
+      );
+    });
+
+_SetupValues _setupValues(
+  LooperState state,
+  int selected,
+  InterfaceInputs interface,
+) {
   final count = state.status.isConnected && state.status.devicePresent
       ? state.status.inputChannels
       : 0;
@@ -31,6 +51,11 @@ _SetupValues _setupValues(LooperState state, int selected) {
   final input = selected < count ? selected : 0;
   final setup = state.inputSetup;
   final lower = setup.pairOf(input) ?? (input.isEven ? input : input - 1);
+  // The interface's switches freeze with every input their 48 V switch
+  // powers: a shared switch changes the level of all of them (#1646).
+  final phantom = interface.phantomFor(input);
+  final first = phantom?.firstInput ?? input;
+  final last = phantom?.lastInput ?? input;
   return (
     setup: setup,
     inputCount: count,
@@ -40,33 +65,43 @@ _SetupValues _setupValues(LooperState state, int selected) {
     // EITHER member of the pair is armed or capturing. Both members, because
     // that is the rule `setInputPair` enforces — asking about the shown jack
     // alone would draw a live control the repository then refuses.
-    locked:
-        inputBusy(state, lower) ||
-        inputBusy(state, lower + 1) ||
-        state.recordingInputLocks.any((channel) {
-          final track = state.tracks.where((t) => t.channel == channel);
-          return track.any(
-            (t) => t.lanes.any(
-              (lane) =>
-                  lane.inputChannel == lower || lane.inputChannel == lower + 1,
-            ),
-          );
-        }),
+    locked: _inputLocked(state, lower) || _inputLocked(state, lower + 1),
+    // Only a jack with switches has anything to lock.
+    interfaceLocked:
+        interface.inputAt(input).hasSwitches &&
+        [
+          for (var jack = first; jack <= last; jack++) jack,
+        ].any((jack) => _inputLocked(state, jack)),
   );
 }
 
-/// Input setup (accepted design, Audio routing): pick a jack, record it on
-/// its own or as one half of a stereo pair, place it, and set the gain the
-/// capture branch records it at.
-class InputSetupTab extends StatefulWidget {
+/// Input setup (accepted design, Audio routing): pick a jack, set the
+/// interface's own switches for it, record it on its own or as one half of a
+/// stereo pair, place it, and set the gain the capture branch records it at.
+///
+/// The interface's switches (#1646) are read while the tab is showing, so a
+/// change made on the interface itself shows here.
+class InputSetupTab extends StatelessWidget {
   /// Creates an [InputSetupTab].
   const InputSetupTab({super.key});
 
   @override
-  State<InputSetupTab> createState() => _InputSetupTabState();
+  Widget build(BuildContext context) => BlocProvider(
+    create: (context) => InterfaceInputsCubit(
+      repository: context.read<LooperRepository>(),
+    )..startWatching(),
+    child: const _InputSetupView(),
+  );
 }
 
-class _InputSetupTabState extends State<InputSetupTab> {
+class _InputSetupView extends StatefulWidget {
+  const _InputSetupView();
+
+  @override
+  State<_InputSetupView> createState() => _InputSetupTabState();
+}
+
+class _InputSetupTabState extends State<_InputSetupView> {
   int _input = 0;
 
   /// The placement being dragged, so the slider previews without persisting
@@ -90,11 +125,20 @@ class _InputSetupTabState extends State<InputSetupTab> {
   /// The gap between the pan and trim columns, which share the width.
   static const double _columnGap = 64;
 
+  /// Where the format row sits, under the cards.
+  static const double _formatTop = 415;
+
+  /// Where the interface's switches sit, under the format row (#1646).
+  static const double _interfaceTop = 505;
+
+  /// Where the lock note sits, under the interface row.
+  static const double _lockTop = 603;
+
   /// Where the pan and trim columns sit.
   ///
-  /// The lock note is a line of its own between the format row and these
+  /// The lock note is a line of its own between the interface row and these
   /// columns, so they move down by its height rather than sitting under it.
-  static double _columnsTop({required bool locked}) => locked ? 636 : 563;
+  static double _columnsTop({required bool locked}) => locked ? 669 : 627;
 
   void _select(int input) => setState(() {
     _input = input;
@@ -107,8 +151,9 @@ class _InputSetupTabState extends State<InputSetupTab> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final interface = context.watch<InterfaceInputsCubit>().state;
     final values = context.select<LooperBloc, _SetupValues>(
-      (bloc) => _setupValues(bloc.state, _input),
+      (bloc) => _setupValues(bloc.state, _input, interface.inputs),
     );
     final named = context.watch<InputsCubit>().state;
     final status = context.read<LooperBloc>().state.status;
@@ -164,168 +209,219 @@ class _InputSetupTabState extends State<InputSetupTab> {
       );
     }
 
-    return Stack(
-      children: [
-        Positioned(
-          left: 0,
-          top: 263,
-          child: _InputCards(
-            count: count,
-            selected: input,
-            names: names,
-            setup: setup,
-            onSelected: _select,
-          ),
+    final anyLock = values.locked || values.interfaceLocked;
+    return BlocListener<InterfaceInputsCubit, InterfaceInputsState>(
+      listenWhen: (previous, current) => current.failures > previous.failures,
+      listener: (context, _) => context.read<NoticesCubit>().show(
+        Notice(
+          id: AppNoticeId.interfaceSwitchRefused,
+          tone: NoticeTone.warning,
+          title: (l10n) => l10n.routingInterfaceRefused,
         ),
-        Positioned(
-          left: 0,
-          top: 431,
-          child: _FormatRow(
-            input: input,
-            inputCount: count,
-            paired: paired,
-            lower: lower,
-            names: names,
-            locked: values.locked,
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 263,
+            child: _InputCards(
+              count: count,
+              selected: input,
+              names: names,
+              setup: setup,
+              interface: interface.inputs,
+              onSelected: _select,
+            ),
           ),
-        ),
-        Positioned(
-          left: 0,
-          top: _columnsTop(locked: values.locked),
-          child: _PlacementColumn(
-            key: ValueKey((
-              input,
-              paired,
-              confirmedPlacement,
-              device,
-              values.mixGeneration,
-            )),
-            label: paired ? l10n.routingBalance : l10n.routingPan,
-            value: placement,
-            onCancel: () => setState(() {
-              _dragPlacement = null;
-              _placementBase = null;
-            }),
-            onReset: () {
-              final current = context.read<LooperBloc>().state;
-              if (current.mixGeneration != values.mixGeneration ||
-                  !current.status.devicePresent) {
-                return;
-              }
-              if (paired) {
-                context.read<LooperBloc>().add(
-                  LooperInputBalanceChanged(lower, balance: 0),
-                );
-              } else {
-                context.read<LooperBloc>().add(
-                  LooperInputPanChanged(input, pan: 0),
-                );
-              }
-            },
-            onChanged: (v) => setState(() {
-              final current = context.read<LooperBloc>().state;
-              if (current.mixGeneration != values.mixGeneration ||
-                  !current.status.devicePresent ||
-                  (paired
-                          ? current.inputSetup.balanceOf(lower)
-                          : current.inputSetup.panOf(input)) !=
-                      confirmedPlacement) {
-                return;
-              }
-              _placementBase ??= confirmedPlacement;
-              _dragPlacement = v;
-            }),
-            onCommit: (v) {
-              final current = context.read<LooperBloc>().state;
-              final currentInput = input < current.status.inputChannels;
-              final currentPlacement = paired
-                  ? current.inputSetup.balanceOf(lower)
-                  : current.inputSetup.panOf(input);
-              final valid =
-                  current.status.isConnected &&
-                  current.status.devicePresent &&
-                  current.status.deviceName == device &&
-                  current.mixGeneration == values.mixGeneration &&
-                  currentInput &&
-                  (current.inputSetup.pairOf(input) != null) == paired &&
-                  currentPlacement == _placementBase;
-              setState(() {
+          Positioned(
+            left: 0,
+            top: _formatTop,
+            child: _FormatRow(
+              input: input,
+              inputCount: count,
+              paired: paired,
+              lower: lower,
+              names: names,
+              locked: values.locked,
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: _interfaceTop,
+            child: InterfaceSwitchesRow(
+              input: input,
+              state: interface,
+              locked: values.interfaceLocked,
+              canChange: () {
+                if (!mounted) return false;
+                final current = context.read<LooperBloc>().state;
+                return current.status.isConnected &&
+                    current.status.devicePresent &&
+                    current.status.deviceName == device &&
+                    current.mixGeneration == values.mixGeneration &&
+                    !_setupValues(
+                      current,
+                      input,
+                      context.read<InterfaceInputsCubit>().state.inputs,
+                    ).interfaceLocked;
+              },
+            ),
+          ),
+          // The lock is a line of its own under the rows, as the pen draws it:
+          // it says why a choice is frozen without taking away the sentence
+          // that says what the choice currently means.
+          if (anyLock)
+            Positioned(
+              left: _FormatRow.choiceLeft,
+              top: _lockTop,
+              child: LoopNote(
+                key: const Key('routing_lock_note'),
+                values.locked && values.interfaceLocked
+                    ? l10n.routingLockedSetup
+                    : values.locked
+                    ? l10n.routingLockedFormat
+                    : l10n.routingLockedInterface,
+              ),
+            ),
+          Positioned(
+            left: 0,
+            top: _columnsTop(locked: anyLock),
+            child: _PlacementColumn(
+              key: ValueKey((
+                input,
+                paired,
+                confirmedPlacement,
+                device,
+                values.mixGeneration,
+              )),
+              label: paired ? l10n.routingBalance : l10n.routingPan,
+              value: placement,
+              onCancel: () => setState(() {
                 _dragPlacement = null;
                 _placementBase = null;
-              });
-              if (!valid) return;
-              final bloc = context.read<LooperBloc>();
-              if (paired) {
-                bloc.add(LooperInputBalanceChanged(lower, balance: v));
-              } else {
-                bloc.add(LooperInputPanChanged(input, pan: v));
-              }
-            },
+              }),
+              onReset: () {
+                final current = context.read<LooperBloc>().state;
+                if (current.mixGeneration != values.mixGeneration ||
+                    !current.status.devicePresent) {
+                  return;
+                }
+                if (paired) {
+                  context.read<LooperBloc>().add(
+                    LooperInputBalanceChanged(lower, balance: 0),
+                  );
+                } else {
+                  context.read<LooperBloc>().add(
+                    LooperInputPanChanged(input, pan: 0),
+                  );
+                }
+              },
+              onChanged: (v) => setState(() {
+                final current = context.read<LooperBloc>().state;
+                if (current.mixGeneration != values.mixGeneration ||
+                    !current.status.devicePresent ||
+                    (paired
+                            ? current.inputSetup.balanceOf(lower)
+                            : current.inputSetup.panOf(input)) !=
+                        confirmedPlacement) {
+                  return;
+                }
+                _placementBase ??= confirmedPlacement;
+                _dragPlacement = v;
+              }),
+              onCommit: (v) {
+                final current = context.read<LooperBloc>().state;
+                final currentInput = input < current.status.inputChannels;
+                final currentPlacement = paired
+                    ? current.inputSetup.balanceOf(lower)
+                    : current.inputSetup.panOf(input);
+                final valid =
+                    current.status.isConnected &&
+                    current.status.devicePresent &&
+                    current.status.deviceName == device &&
+                    current.mixGeneration == values.mixGeneration &&
+                    currentInput &&
+                    (current.inputSetup.pairOf(input) != null) == paired &&
+                    currentPlacement == _placementBase;
+                setState(() {
+                  _dragPlacement = null;
+                  _placementBase = null;
+                });
+                if (!valid) return;
+                final bloc = context.read<LooperBloc>();
+                if (paired) {
+                  bloc.add(LooperInputBalanceChanged(lower, balance: v));
+                } else {
+                  bloc.add(LooperInputPanChanged(input, pan: v));
+                }
+              },
+            ),
           ),
-        ),
-        Positioned(
-          right: 0,
-          top: _columnsTop(locked: values.locked),
-          child: _TrimColumn(
-            key: ValueKey((
-              input,
-              setup.trimDbOf(input),
-              device,
-              values.mixGeneration,
-            )),
-            side: paired
-                ? (input == lower
-                      ? l10n.routingPairLeft
-                      : l10n.routingPairRight)
-                : null,
-            trimDb: trimDb,
-            input: input,
-            clipping: clipping,
-            onCancel: () => setState(() {
-              _dragTrim = null;
-              _trimBase = null;
-            }),
-            onReset: () {
-              final current = context.read<LooperBloc>().state;
-              if (current.mixGeneration != values.mixGeneration ||
-                  !current.status.devicePresent) {
-                return;
-              }
-              context.read<LooperBloc>().add(
-                LooperInputTrimChanged(input, db: 0),
-              );
-            },
-            onChanged: (db) => setState(() {
-              final current = context.read<LooperBloc>().state;
-              if (current.mixGeneration != values.mixGeneration ||
-                  !current.status.devicePresent ||
-                  current.inputSetup.trimDbOf(input) != setup.trimDbOf(input)) {
-                return;
-              }
-              _trimBase ??= setup.trimDbOf(input);
-              _dragTrim = db;
-            }),
-            onCommit: (db) {
-              final current = context.read<LooperBloc>().state;
-              final valid =
-                  current.status.isConnected &&
-                  current.status.devicePresent &&
-                  current.status.deviceName == device &&
-                  current.mixGeneration == values.mixGeneration &&
-                  input < current.status.inputChannels &&
-                  current.inputSetup.trimDbOf(input) == _trimBase;
-              setState(() {
+          Positioned(
+            right: 0,
+            top: _columnsTop(locked: anyLock),
+            child: _TrimColumn(
+              key: ValueKey((
+                input,
+                setup.trimDbOf(input),
+                device,
+                values.mixGeneration,
+              )),
+              side: paired
+                  ? (input == lower
+                        ? l10n.routingPairLeft
+                        : l10n.routingPairRight)
+                  : null,
+              trimDb: trimDb,
+              input: input,
+              clipping: clipping,
+              onCancel: () => setState(() {
                 _dragTrim = null;
                 _trimBase = null;
-              });
-              if (!valid) return;
-              context.read<LooperBloc>().add(
-                LooperInputTrimChanged(input, db: db),
-              );
-            },
+              }),
+              onReset: () {
+                final current = context.read<LooperBloc>().state;
+                if (current.mixGeneration != values.mixGeneration ||
+                    !current.status.devicePresent) {
+                  return;
+                }
+                context.read<LooperBloc>().add(
+                  LooperInputTrimChanged(input, db: 0),
+                );
+              },
+              onChanged: (db) => setState(() {
+                final current = context.read<LooperBloc>().state;
+                if (current.mixGeneration != values.mixGeneration ||
+                    !current.status.devicePresent ||
+                    current.inputSetup.trimDbOf(input) !=
+                        setup.trimDbOf(input)) {
+                  return;
+                }
+                _trimBase ??= setup.trimDbOf(input);
+                _dragTrim = db;
+              }),
+              onCommit: (db) {
+                final current = context.read<LooperBloc>().state;
+                final valid =
+                    current.status.isConnected &&
+                    current.status.devicePresent &&
+                    current.status.deviceName == device &&
+                    current.mixGeneration == values.mixGeneration &&
+                    input < current.status.inputChannels &&
+                    current.inputSetup.trimDbOf(input) == _trimBase;
+                setState(() {
+                  _dragTrim = null;
+                  _trimBase = null;
+                });
+                if (!valid) return;
+                context.read<LooperBloc>().add(
+                  LooperInputTrimChanged(input, db: db),
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -336,6 +432,7 @@ class _InputCards extends StatelessWidget {
     required this.selected,
     required this.names,
     required this.setup,
+    required this.interface,
     required this.onSelected,
   });
 
@@ -343,6 +440,9 @@ class _InputCards extends StatelessWidget {
   final int selected;
   final InputsState names;
   final InputSetup setup;
+
+  /// The interface's switches, for each card's Inst and 48 V tags.
+  final InterfaceInputs interface;
   final ValueChanged<int> onSelected;
 
   /// The pen's ordinal line: the jack, and which half of a linked pair it is.
@@ -380,6 +480,12 @@ class _InputCards extends StatelessWidget {
           ordinal: _ordinal(l10n, index),
           name: l10n.inputName(names.names, index),
           selected: index == selected,
+          tags: [
+            if (interface.inputAt(index).level == InputLevel.inst)
+              l10n.routingTagInst,
+            if (interface.phantomFor(index)?.on ?? false)
+              l10n.routingTagPhantom,
+          ],
           onTap: () => onSelected(index),
         ),
       ),
@@ -405,7 +511,7 @@ class _FormatRow extends StatelessWidget {
   final bool locked;
 
   /// Where the choice starts, after its label.
-  static const double _choiceLeft = 328;
+  static const double choiceLeft = 328;
 
   /// Wide enough for "Separate mono" at the row's 22 px, so neither label is
   /// scaled down to fit its button.
@@ -425,7 +531,7 @@ class _FormatRow extends StatelessWidget {
             child: LoopSectionLabel(l10n.routingRecordAs),
           ),
           Positioned(
-            left: _choiceLeft,
+            left: choiceLeft,
             top: 0,
             child: LoopChoiceRow<bool>(
               values: const [false, true],
@@ -444,7 +550,7 @@ class _FormatRow extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: _choiceLeft + _choiceWidth + 40,
+            left: choiceLeft + _choiceWidth + 40,
             top: 22,
             child: paired
                 ? RoutingPairMembers(
@@ -455,15 +561,6 @@ class _FormatRow extends StatelessWidget {
                   )
                 : LoopNote(l10n.routingFormatMonoNote),
           ),
-          // The lock is a line of its own under the row, as the pen draws it:
-          // it says why the choice is frozen without taking away the sentence
-          // that says what the choice currently means.
-          if (locked)
-            Positioned(
-              left: _choiceLeft,
-              top: 116,
-              child: LoopNote(l10n.routingLockedFormat),
-            ),
         ],
       ),
     );
