@@ -171,11 +171,8 @@ enum {
   LE_CACHE_JOB_COPYING = 6,
 };
 
-/* Copy-at-enqueue chunk size, in frames (~192 KB, ~1 s of audio): the most
- * dry PCM one tick will copy per job, bounding the UI-poll drain path's
- * per-call cost. A typical loop stages in one or two ticks; a maximal 8-min
- * loop takes ~50 ticks — irrelevant next to the 250 ms settle debounce. */
-#define LE_CACHE_COPY_CHUNK_FRAMES 48000
+/* (LE_CACHE_COPY_TICK_FRAMES, the copy budget per tick, lives in
+ * engine_cache.h beside the settle windows.) */
 
 /* One render job. `dry` is control-allocated at enqueue and control-freed at
  * collection (the worker only reads it); `wet` is worker-allocated and either
@@ -1522,7 +1519,17 @@ static int le_cache_assemble_chunk(le_engine* e, le_cache_job* job,
   return 1;
 }
 
+/* The frames per lane a job copies this tick out of *budget: what it has
+ * left, at most the budget shared among its `ways` lanes or channels. */
+static int32_t le_cache_copy_take(int64_t* budget, int32_t left, int32_t ways) {
+  int64_t n = *budget / (ways > 0 ? ways : 1);
+  if (n > left) n = left;
+  *budget -= n * (ways > 0 ? ways : 1);
+  return (int32_t)n;
+}
+
 static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
+  int64_t budget = LE_CACHE_COPY_TICK_FRAMES;
   for (int j = 0; j < LE_CACHE_JOB_SLOTS; ++j) {
     le_cache_job* job = &c->jobs[j];
     if (atomic_load_explicit(&job->a_state, memory_order_relaxed) !=
@@ -1533,8 +1540,8 @@ static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
     int discard = !le_cache_source_readable(e, job->channel) ||
                   !le_cache_copy_key_matches(e, job);
     if (!discard && job->kind == LE_CACHE_KIND_SOURCE) {
-      int32_t n = job->len - job->copy_pos;
-      if (n > LE_CACHE_COPY_CHUNK_FRAMES) n = LE_CACHE_COPY_CHUNK_FRAMES;
+      const int32_t n =
+          le_cache_copy_take(&budget, job->len - job->copy_pos, job->lanes);
       for (int32_t l = 0; l < job->lanes && !discard; ++l) {
         le_lane* ln = &tr->lanes[l];
         const float* src = ln->pool[load_i32(&ln->a_live)];
@@ -1551,8 +1558,9 @@ static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
         discard = !le_cache_copy_key_matches(e, job);
       }
     } else if (!discard && job->kind == LE_CACHE_KIND_TRACK) {
-      int32_t n = job->len - job->copy_pos;
-      if (n > LE_CACHE_COPY_CHUNK_FRAMES) n = LE_CACHE_COPY_CHUNK_FRAMES;
+      /* both channels of every part */
+      const int32_t n = le_cache_copy_take(
+          &budget, job->len - job->copy_pos, 2 * le_lanes_active(tr));
       discard = !le_cache_assemble_chunk(e, job, job->copy_pos, n);
       if (!discard) {
         job->copy_pos += n;
@@ -1565,8 +1573,8 @@ static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
       const float* src = ln->pool[load_i32(&ln->a_live)];
       discard = src == NULL;
       if (discard) goto copy_done;
-      int32_t n = job->len - job->copy_pos;
-      if (n > LE_CACHE_COPY_CHUNK_FRAMES) n = LE_CACHE_COPY_CHUNK_FRAMES;
+      const int32_t n =
+          le_cache_copy_take(&budget, job->len - job->copy_pos, 1);
       memcpy(job->dry + job->copy_pos, src + job->copy_pos,
              (size_t)n * sizeof(float));
       job->copy_pos += n;
@@ -1772,6 +1780,13 @@ int le_cache_source_ready(le_engine* engine, int32_t channel) {
 
 /* ---- the render worker [B6] ---- */
 
+/* Whether a track sounds now, for the order renders are scheduled and
+ * picked in [B6]. */
+static int le_cache_track_audible(le_track* tr) {
+  const int32_t st = load_i32(&tr->a_state);
+  return st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING;
+}
+
 /* Picks the next queued job for a lane currently audible [B6], or NULL with
  * the first queued stopped-lane job in *out_fallback. */
 static le_cache_job* le_cache_pick(le_engine* e, struct le_fx_cache* c,
@@ -1783,8 +1798,7 @@ static le_cache_job* le_cache_pick(le_engine* e, struct le_fx_cache* c,
         LE_CACHE_JOB_QUEUED) {
       continue;
     }
-    const int32_t st = load_i32(&e->tracks[job->channel].a_state);
-    if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) return job;
+    if (le_cache_track_audible(&e->tracks[job->channel])) return job;
     if (fallback == NULL) fallback = job;
   }
   *out_fallback = fallback;
@@ -1884,11 +1898,12 @@ static void le_ca_worker_main(void* arg) {
    * the UI thread (nice is per thread on Linux; the audio thread is FIFO). */
   setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 10);
 #endif
-  /* Idle backoff: 1 ms while work is flowing, doubling to a 32 ms ceiling
-   * when the queue stays empty — ~30 wakeups/s idle instead of ~1000, which
-   * matters on the battery/appliance targets. Pickup latency stays far below
-   * the 250 ms settle debounce, and shutdown join latency is bounded by one
-   * ceiling sleep. */
+  /* Idle backoff: 1 ms while work is flowing, doubling to an 8 ms ceiling
+   * when the queue stays empty — ~125 wakeups/s idle instead of ~1000, each
+   * a few microseconds. Pickup latency is part of how long a track plays
+   * through the pitch bridge after a tempo change (#1675): a 32 ms ceiling
+   * added 16 ms on average. Shutdown join latency is bounded by one ceiling
+   * sleep. */
   int idle_ms = 1;
   /* Prints for audible lanes come first; a render recipe (engine_render.c)
    * takes one slice next, then prints for stopped lanes. Aging: once
@@ -1908,7 +1923,7 @@ static void le_ca_worker_main(void* arg) {
     if (job == NULL) job = fallback;
     if (job == NULL) {
       le_ca_sleep_ms(idle_ms);
-      if (idle_ms < 32) idle_ms *= 2;
+      if (idle_ms < 8) idle_ms *= 2;
       continue;
     }
     idle_ms = 1;
@@ -2022,10 +2037,10 @@ void le_cache_tick(le_engine* engine) {
       atomic_load_explicit(&engine->a_fx_cache_cap, memory_order_relaxed);
   c->lru_clock++;
   le_cache_sweep_graveyard(engine, c, 0); /* passive quiescent frees [R2](c) */
-  le_cache_copy_step(engine, c);          /* chunked enqueue copies [R2](a) */
   le_render_tick(engine);                 /* the render recipe's staging */
   le_cache_collect(engine, c, cap);
   if (cap <= 0) {
+    le_cache_copy_step(engine, c); /* in-flight copies finish, then drop */
     /* Caching disabled: free everything; lanes report live. In-flight jobs
      * finish and are discarded by the collect above on later ticks. */
     le_cache_free_all_entries(engine, c);
@@ -2037,6 +2052,16 @@ void le_cache_tick(le_engine* engine) {
       if (!c->src_tracks[t].job_pending) c->src_tracks[t].state = LE_CACHE_LIVE;
     }
     return;
+  }
+  /* The stretch and Transpose renders of the tracks that sound go first: a
+   * track off its span plays through the pitch bridge until its render
+   * lands (#1675), and there are fewer job slots than tracks, so a stopped
+   * track's job must not hold a slot one that sounds is waiting for. The
+   * worker picks the jobs of tracks that sound first too (le_cache_pick). */
+  int audible[LE_MAX_TRACKS];
+  for (int t = 0; t < engine->track_count; ++t) {
+    audible[t] = le_cache_track_audible(&engine->tracks[t]);
+    if (audible[t]) le_cache_schedule_source(engine, c, cap, t);
   }
   for (int t = 0; t < engine->track_count; ++t) {
     const int32_t lanes = le_lanes_active(&engine->tracks[t]);
@@ -2055,8 +2080,12 @@ void le_cache_tick(le_engine* engine) {
      * their printed material: a part that settles this tick is available to
      * the track on the next one. */
     le_cache_schedule_track(engine, c, cap, t);
-    le_cache_schedule_source(engine, c, cap, t);
+    if (!audible[t]) le_cache_schedule_source(engine, c, cap, t);
   }
+  /* Bounded enqueue copies [R2](a), after the scheduling so a job enqueued
+   * this tick copies in it: a stretch render the pitch bridge waits for
+   * (#1675) starts a tick sooner. */
+  le_cache_copy_step(engine, c);
   /* The cap may have shrunk since entries were installed. */
   (void)le_cache_ensure_budget(engine, c, cap, 0);
 }

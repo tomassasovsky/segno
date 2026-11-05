@@ -528,6 +528,166 @@ static void test_pitch_bridge_reverse_and_speed(void) {
   le_engine_destroy(e);
 }
 
+/* The bridge's search on its own (#1675, after the owner heard the first
+ * version as grainy on held notes), at the console's 48 kHz: the bridge run
+ * over a 4 s take as the mixer runs it, a tempo change from 120 BPM to
+ * `bpm` at a quarter of the lap. Fills out[0, frames) and, per hop, where
+ * the grain started (starts[]) and where the head was (heads[]). */
+#define PB_SR 48000
+#define PB_LEN (4 * PB_SR)
+
+static float pb_take[PB_LEN];
+
+static int pb_run(double bpm, float* out, int frames, double* starts,
+                  double* heads, int max_hops) {
+  const int32_t play_len = (int32_t)(PB_LEN * 120.0 / bpm + 0.5);
+  le_read_head h = {0, 0.0, (double)PB_LEN / (double)play_len};
+  const int64_t pos0 = 3 * (int64_t)PB_LEN + PB_LEN / 4;
+  h.origin = le_head_origin(&h, (double)(PB_LEN / 4), pos0, PB_LEN);
+  const int32_t hop = le_bridge_hop(PB_SR);
+  le_bridge b;
+  memset(&b, 0, sizeof(b));
+  int hops = 0;
+  for (int i = 0; i < frames; ++i) {
+    const int64_t pos = pos0 + i;
+    const double index = le_head_index(&h, pos, PB_LEN);
+    float x = 0.0f, y = 0.0f;
+    le_bridge_frame(&b, 1, 0, pb_take, NULL, PB_LEN, &h, 1.0, index, pos,
+                    (uint32_t)i, 0, hop, PB_SR, &x, &y);
+    out[i] = x;
+    if ((i & (hop - 1)) == 0 && hops < max_hops) {
+      starts[hops] = b.cur;
+      heads[hops] = index;
+      ++hops;
+    }
+  }
+  return hops;
+}
+
+/* x - y on the loop, nearest zero. */
+static double pb_near(double x, double y) {
+  double d = x - y;
+  while (d > PB_LEN / 2) d -= PB_LEN;
+  while (d < -PB_LEN / 2) d += PB_LEN;
+  return d;
+}
+
+/* A small tempo change (120 -> 118 BPM: the head falls behind a grain by 34
+ * frames a hop) needs no splice for many hops: each grain continues the one
+ * before it, on whole samples, so the bridge plays the take itself. */
+static void test_pitch_bridge_continues_the_take(void) {
+  printf("test_pitch_bridge_continues_the_take\n");
+  static const double notes[] = {130.8, 164.8, 196.0, 246.9, 293.7};
+  for (int i = 0; i < PB_LEN; ++i) {
+    double v = 0.0;
+    for (int k = 0; k < 5; ++k) {
+      for (int m = 1; m <= 6; ++m) {
+        v += sin(2.0 * M_PI * notes[k] * m * i / PB_SR + 0.3 * m) / m;
+      }
+    }
+    pb_take[i] = (float)(0.05 * v);
+  }
+  const int hop = le_bridge_hop(PB_SR);
+  static float out[16 * 2048];
+  double starts[16], heads[16];
+  const int hops = pb_run(118.0, out, 16 * hop, starts, heads, 16);
+  CHECK(hops == 16);
+  for (int k = 1; k < hops; ++k) {
+    CHECK(starts[k] == (double)(int64_t)starts[k]); /* whole samples */
+    CHECK(fabs(pb_near(starts[k], starts[k - 1] + hop)) < 0.5);
+  }
+  /* from the second hop on, the take sample for sample */
+  int bad = 0;
+  for (int i = hop; i < 16 * hop; ++i) {
+    const int64_t at = ((int64_t)starts[1] + (i - hop)) % PB_LEN;
+    bad += fabsf(out[i] - pb_take[at]) > 1e-6f;
+  }
+  CHECK(bad == 0);
+}
+
+/* A low E on a bass (41.25 Hz, 24 ms a period) through a 120 -> 100 BPM
+ * retime: the search reaches a whole period, so the note never beats. The
+ * first version (+-10 ms) moved its level by 0.47 dB at its splices. */
+static void test_pitch_bridge_holds_a_bass_note(void) {
+  printf("test_pitch_bridge_holds_a_bass_note\n");
+  for (int i = 0; i < PB_LEN; ++i) {
+    double v = 0.0;
+    for (int m = 1; m <= 30; ++m) {
+      v += sin(2.0 * M_PI * 41.25 * m * i / PB_SR + 0.37 * m * m) / m;
+    }
+    pb_take[i] = (float)(0.2 * v);
+  }
+  static float out[3 * PB_SR];
+  double starts[1], heads[1];
+  pb_run(100.0, out, 3 * PB_SR, starts, heads, 0);
+  /* 8 periods a window: a steady note reads the same in every one */
+  const int win = 9309;
+  double lo = 1e9, hi = -1e9;
+  for (int i = 4096; i + win <= 3 * PB_SR; i += 1024) {
+    double sum = 0.0;
+    for (int j = 0; j < win; ++j) sum += (double)out[i + j] * out[i + j];
+    const double db = 10.0 * log10(sum / win);
+    if (db < lo) lo = db;
+    if (db > hi) hi = db;
+  }
+  CHECK(hi - lo < 0.1);
+}
+
+/* Noise continues nowhere, so its grains keep within 10 ms of the head,
+ * for the search and for how far a grain continues: drum hits stay on
+ * time. */
+static void test_pitch_bridge_keeps_noise_on_time(void) {
+  printf("test_pitch_bridge_keeps_noise_on_time\n");
+  uint32_t seed = 1675u;
+  for (int i = 0; i < PB_LEN; ++i) {
+    seed = seed * 1664525u + 1013904223u;
+    pb_take[i] = (float)((int32_t)(seed >> 8) - (1 << 23)) / (float)(1 << 23);
+  }
+  static float out[3 * PB_SR];
+  static double starts[80], heads[80];
+  const int hops = pb_run(100.0, out, 3 * PB_SR, starts, heads, 80);
+  CHECK(hops > 60);
+  const double inner = PB_SR * 10 / 1000;
+  int far = 0;
+  for (int k = 1; k < hops; ++k) {
+    far += fabs(pb_near(starts[k], heads[k])) > inner + 0.5;
+  }
+  CHECK(far == 0);
+}
+
+/* The renders of the tracks that sound are scheduled first: four stopped
+ * tracks that also follow the tempo fill the four job slots after a retime,
+ * and the playing track still gets one at the first tick that may start a
+ * render. */
+static void test_pitch_audible_render_first(void) {
+  printf("test_pitch_audible_render_first\n");
+  static float out[4096];
+  le_engine* e = pk_fixture(5);
+  for (int t = 1; t < 5; ++t) CHECK(le_engine_play(e, t) == LE_OK);
+  tf_process(e, out, 64, 0.0f);
+  for (int t = 0; t < 4; ++t) CHECK(le_engine_stop_track(e, t) == LE_OK);
+  static float laps[2 * PK_LEN];
+  tf_process(e, laps, 2 * PK_LEN, 0.0f); /* the Stops' fades */
+  le_track_snapshot snap;
+  for (int t = 0; t < 5; ++t) {
+    le_engine_get_track(e, t, &snap);
+    if (snap.state != (t < 4 ? LE_TRACK_STOPPED : LE_TRACK_PLAYING)) {
+      printf("  track %d state %d\n", t, snap.state);
+    }
+    CHECK(snap.state == (t < 4 ? LE_TRACK_STOPPED : LE_TRACK_PLAYING));
+  }
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, out, 64, 0.0f);
+  le_lane_cache_info info;
+  le_engine_get_transpose_cache(e, 4, &info); /* the new key, settling */
+  CHECK(info.state == LE_CACHE_LIVE);
+  tf_process(e, out, PK_SR * (LE_CACHE_SOURCE_SETTLE_MS + 20) / 1000, 0.0f);
+  le_engine_get_transpose_cache(e, 4, &info); /* one tick: the enqueue */
+  CHECK(info.state == LE_CACHE_RENDERING);
+  CHECK(pk_until_render(e, 4, PK_LEN90, NULL, NULL, 40 * PK_LEN) >= 0);
+  le_engine_destroy(e);
+}
+
 static void run_pitch_keep_tests(void) {
   test_pitch_unchanged_across_retime();
   test_pitch_follows_speed_and_switch();
@@ -540,4 +700,8 @@ static void run_pitch_keep_tests(void) {
   test_pitch_bridge_with_speed();
   test_pitch_bridge_retime_and_stop();
   test_pitch_bridge_reverse_and_speed();
+  test_pitch_bridge_continues_the_take();
+  test_pitch_bridge_holds_a_bass_note();
+  test_pitch_bridge_keeps_noise_on_time();
+  test_pitch_audible_render_first();
 }
