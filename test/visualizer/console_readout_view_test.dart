@@ -211,10 +211,31 @@ void main() {
       expect(find.byKey(const Key('console_readout_name')), findsNothing);
     });
 
-    testWidgets('nothing on the face takes a tap', (tester) async {
+    testWidgets('without a panel to open, the strip is no button', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
       await pump(tester);
-      expect(find.byType(InkWell), findsNothing);
-      expect(find.byType(GestureDetector), findsNothing);
+      expect(
+        tester.getSemantics(find.byKey(const Key('console_readout_strip'))),
+        isNot(matchesSemantics(isButton: true)),
+      );
+      expect(find.bySemanticsLabel('Tempo, length and start'), findsNothing);
+      semantics.dispose();
+    });
+
+    testWidgets('only the footer strip takes a tap (#1654)', (tester) async {
+      await pump(tester);
+      final strip = find.byKey(const Key('console_readout_strip'));
+      expect(
+        find.byType(InkWell),
+        findsOneWidget,
+        reason: 'the strip is the one target on the face',
+      );
+      expect(
+        find.descendant(of: strip, matching: find.byType(InkWell)),
+        findsOneWidget,
+      );
     });
 
     group('notice band (#1562)', () {

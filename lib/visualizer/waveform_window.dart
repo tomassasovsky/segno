@@ -6,6 +6,8 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_command.dart';
+import 'package:segno/visualizer/readout_panel/readout_controls.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
 
 /// A loop waveform frame pushed from the main window: the loop peaks plus the
@@ -62,11 +64,15 @@ class WaveformWindowApp extends StatelessWidget {
     required this.frame,
     required this.readout,
     this.onActivity = _noActivity,
+    this.onCommand = _noCommand,
     super.key,
   });
 
   /// Default [onActivity]: drops the touch, for hosts that wire nothing.
   static void _noActivity() {}
+
+  /// Default [onCommand]: drops the change, for hosts that wire nothing.
+  static void _noCommand(ReadoutCommand _) {}
 
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
@@ -78,14 +84,18 @@ class WaveformWindowApp extends StatelessWidget {
   /// the main screen over the screen link.
   final VoidCallback onActivity;
 
+  /// Called with each change asked for on the Loop panel; the readout screen
+  /// sends it to the main screen over the screen link.
+  final ValueChanged<ReadoutCommand> onCommand;
+
   @override
   Widget build(BuildContext context) {
     // Real localization delegates, not a one-off `lookupAppLocalizations`
     // against the platform locale: the readout has real copy in it now, and a
     // second engine is still an app.
     // A touch on the Track display is activity: it wakes an idle-dimmed
-    // console. Nothing here is pressable, so the waking touch needs no
-    // barrier of its own.
+    // console. The Loop panel's barrier (ReadoutControls) keeps the waking
+    // touch from pressing anything.
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => onActivity(),
@@ -134,9 +144,11 @@ class WaveformWindowApp extends StatelessWidget {
               children: [
                 SoftwareBrightness(
                   brightness: readoutData.brightness,
-                  child: ConsoleReadoutView(
+                  child: ReadoutControls(
                     readout: readoutData,
+                    frame: frame,
                     waveform: waveform,
+                    onCommand: onCommand,
                   ),
                 ),
                 ReadoutGoodbyeFace(readout: readoutData),
