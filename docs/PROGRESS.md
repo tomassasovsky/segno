@@ -77,8 +77,26 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
+| #1676 | LED colors names every mode (#1677); modes as a row of tabs (stacked follow-up) | in-review | auto | `claude/led-colors-per-mode-1676*` |
 
 ---
+
+## November 2026 Clear track Hold also clears in Mute mode (#1671)
+
+- With Track Hold set to Clear track, holding a track pedal in Mute mode
+  clears the held track as in Record: the 350 ms pause, the pill fill and
+  the flash (#1534, #1652). Bank-following, take locks and mode changes end
+  it as before.
+- With Clear track set, Mute's track press acts on release, and a hold that
+  fires cancels it (the owner's option B on #1671), the rule Custom pairs
+  follow. So nothing unmutes, rejoins the mix or parks the loop before a
+  clear, and Undo brings the track back as it was. With Arm overdub or None
+  set, Mute keeps its press on contact.
+- Arm overdub still runs only in Record (`ControlCubit._armTrackHold`). A
+  Song section that is capturing is not cleared from Mute, as Mute's press
+  leaves it alone. The Looper X's Hold Track Pedal is one setting with no
+  mode limit; the RC-600 has no Mute mode but puts Clear on the long press
+  of its Play/Stop and Stop track functions.
 
 ## November 2026 Readout palette (#1674)
 

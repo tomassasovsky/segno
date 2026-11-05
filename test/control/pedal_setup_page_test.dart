@@ -108,6 +108,7 @@ void main() {
     WidgetTester tester, {
     bool preload = true,
     VoidCallback? onStage,
+    InteractionMode mode = InteractionMode.record,
   }) async {
     settings = SettingsRepository(store: store);
     tester.view
@@ -154,6 +155,7 @@ void main() {
     addTearDown(() => unawaited(control.close()));
     addTearDown(() => unawaited(tracks.close()));
     if (preload) await control.load();
+    control.setMode(mode);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -1182,6 +1184,72 @@ void main() {
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'Record and Mute are separate modes, each named and with its own map',
+      (tester) async {
+        await pump(tester);
+        await openLeds(tester);
+        final l10n = AppLocalizations.of(
+          tester.element(find.byType(PedalSetupPage)),
+        );
+        // The picker names the mode it shows, never the Exit action.
+        expect(find.text(l10n.pedalLedMode(l10n.pedalLedModeRecord)), findsOne);
+        await tester.tap(find.byKey(const Key('pedal_led_mode')));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<LoopChoiceButton>(
+                find.byKey(
+                  Key(
+                    'pedal_choice_mode_'
+                    '${const ModeAction(InteractionMode.record).token}',
+                  ),
+                ),
+              )
+              .label,
+          l10n.pedalLedModeRecord,
+        );
+        expect(find.text(l10n.actionModeExit), findsNothing);
+        await tester.tap(find.byKey(const Key('pedal_choice_close')));
+        await tester.pumpAndSettle();
+        await ledMode(tester, InteractionMode.mute);
+        expect(find.text(l10n.pedalLedMode(l10n.pedalLedModeMute)), findsOne);
+
+        await paintBlack(tester, const Key('pedal_led_state_armed'));
+        await tester.tap(find.byKey(save));
+        await tester.pumpAndSettle();
+        final leds = control.state.pedalSetup.leds;
+        expect(
+          leds.colorFor(
+            InteractionMode.mute,
+            PedalLedGroup.tracks,
+            PedalLedState.armed,
+          ),
+          black,
+        );
+        expect(leds.isEdited(InteractionMode.record), isFalse);
+        // The console lights from the active mode's map: a dark track pedal
+        // carries its group's first colour, Mute's armed or Record's
+        // recording.
+        control.setMode(InteractionMode.mute);
+        await tester.pumpAndSettle();
+        expect(pedal.lastFrame!.colorFor(PedalButton.track2), black);
+        control.setMode(InteractionMode.record);
+        await tester.pumpAndSettle();
+        expect(pedal.lastFrame!.colorFor(PedalButton.track2), ledRed);
+      },
+    );
+
+    testWidgets("opens on the console's mode", (tester) async {
+      await pump(tester, mode: InteractionMode.mute);
+      await openLeds(tester);
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(PedalSetupPage)),
+      );
+      expect(find.text(l10n.pedalLedMode(l10n.pedalLedModeMute)), findsOne);
+      expect(find.byKey(const Key('pedal_led_state_armed')), findsOneWidget);
     });
 
     testWidgets(
