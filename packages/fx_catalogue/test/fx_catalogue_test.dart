@@ -560,10 +560,19 @@ void main() {
       ],
     };
 
-    test('every family runs its modules in the measured order', () {
+    test('every family runs its modules in the measured order, after the '
+        'modules segno adds ahead of them', () {
+      // The Guitar Rack's High-pass gate is segno's (#1644): no source
+      // preset names it, so the schema test below does not see it.
+      const added = {
+        'Guitar Rack': ['High-pass gate'],
+      };
       expect(kFxRackOrders.keys.toSet(), kFxFamilySlugs.keys.toSet());
       for (final MapEntry(key: family, value: order) in expected.entries) {
-        expect(kFxRackOrders[family], order, reason: family);
+        expect(kFxRackOrders[family], [
+          ...?added[family],
+          ...order,
+        ], reason: family);
         for (final name in order) {
           final module = fxModuleNamed(name);
           expect(module, isNotNull, reason: '$family / $name');

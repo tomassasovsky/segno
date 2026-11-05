@@ -1700,4 +1700,111 @@ void main() {
       expect(e.type.params[0].valueAt(e.params[0]), closeTo(2.0, 1e-4));
     });
   });
+
+  group("the Guitar Rack's gate (#1644, segno's)", () {
+    FxPreset guitar(String name) => FxPreset.tryParse(
+      'Guitar Rack',
+      File(
+        '../fx_catalogue/assets/presets/Guitar Rack/$name.fxpreset',
+      ).readAsStringSync(),
+    )!;
+    test('opens every Guitar Rack preset, on in the drive presets and off '
+        'in the rest, timed for a guitar', () {
+      // Every preset the catalogue ships, read from its files.
+      final names = [
+        for (final f in Directory(
+          '../fx_catalogue/assets/presets/Guitar Rack',
+        ).listSync())
+          f.uri.pathSegments.last.replaceAll('.fxpreset', ''),
+      ];
+      expect(names, hasLength(14));
+      expect(kFxGuitarGateOn.every(names.contains), isTrue);
+      for (final name in names) {
+        final entries = fxRackEntries(guitar(name));
+        final gate = entries.first;
+        expect(entries, hasLength(8), reason: name);
+        expect(gate.module, 'High-pass gate', reason: name);
+        expect(gate.type, TrackEffectType.hpGate, reason: name);
+        expect(gate.variant, 'Guitar Rack', reason: name);
+        expect(gate.enabled, kFxGuitarGateOn.contains(name), reason: name);
+        final p = gate.type.params;
+        expect(p[0].isOffAt(gate.params[0]), isTrue, reason: name);
+        expect(p[1].valueAt(gate.params[1]), closeTo(-70.5, 1e-6));
+        expect(p[2].valueAt(gate.params[2]), closeTo(120, 1e-3));
+        expect(p[3].valueAt(gate.params[3]), closeTo(10, 1e-4));
+        expect(fxEntryBuild(gate)!.readiness, FxModuleReadiness.full);
+      }
+    });
+
+    test('leaves the source preset and its other pedals as they were', () {
+      final source = guitar('Full Drive Power');
+      expect(source.params.containsKey('HP/Gate'), isFalse);
+      expect(fxPresetModules(source).map((m) => m.name), [
+        'Whammy',
+        'Overdrive',
+        'Wah',
+        'Amp',
+        'Modulation',
+        'Spring reverb',
+        'Delay',
+      ]);
+      final built = fxRackEntries(source);
+      final pedals = [
+        for (final module in fxPresetModules(source))
+          fxModuleEntry(module, source),
+      ];
+      expect(built.skip(1).take(6), pedals.take(6));
+      // The rack level still rides the last entry.
+      expect(built.last.channels.level, fxRackLevelGainAt(0.45));
+    });
+
+    test("keeps the Vocal Rack's gate the Looper X's: its release and "
+        'detector at their lowest', () {
+      final vocal = FxPreset.tryParse(
+        'Vocal Rack',
+        File(
+          '../fx_catalogue/assets/presets/Vocal Rack/Compression Only.fxpreset',
+        ).readAsStringSync(),
+      )!;
+      final gate = fxRackEntries(
+        vocal,
+      ).firstWhere((e) => e.module == 'High-pass gate');
+      expect(gate.variant, 'Vocal Rack');
+      expect(gate.params.sublist(2, 4), [0.0, 0.0]);
+    });
+
+    test('a gate saved before entries stored their variant still reads as '
+        "the Vocal Rack's: the Guitar gate's keys tie with it, and the "
+        'Vocal one is listed first', () {
+      final legacy = BuiltInEffect(
+        type: TrackEffectType.hpGate,
+        module: 'High-pass gate',
+        source: const {'HP/Gate': 1, 'Highpass': 0.2, 'Gate Thresh': 0.4},
+      );
+      expect(legacy.variant, isNull);
+      final decoded =
+          decodeTrackEffects(encodeTrackEffects([legacy])).single
+              as BuiltInEffect;
+      expect(decoded.variant, 'Vocal Rack');
+    });
+
+    test('a Guitar Rack saved before the gate decodes and builds as it was '
+        'saved, with no gate', () {
+      final source = guitar('Lead Crunch');
+      const rack = FxRack(id: 'r', name: 'Lead Crunch');
+      final saved = [
+        for (final module in fxPresetModules(source))
+          fxModuleEntry(module, source).copyWith(rack: rack),
+      ];
+      final decoded = decodeTrackEffects(encodeTrackEffects(saved));
+      expect(decoded, saved);
+      expect(
+        decoded.whereType<BuiltInEffect>().map((e) => e.module),
+        isNot(contains('High-pass gate')),
+      );
+      for (final e in decoded.whereType<BuiltInEffect>()) {
+        expect(fxEntryBuild(e), isNotNull, reason: e.module);
+      }
+    });
+  });
 }
