@@ -12,6 +12,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/audio_routing/input_setup_tab.dart';
+import 'package:segno/looper/view/audio_routing/interface_switches_row.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
@@ -179,6 +180,45 @@ void main() {
       expect(key('routing_interface_level'), findsNothing);
       expect(key('routing_interface_phantom'), findsNothing);
       expect(key('routing_interface_no_switches'), findsOneWidget);
+    });
+
+    testWidgets('its controls are one visible gap apart (#1672)', (
+      tester,
+    ) async {
+      await pump(tester);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      Rect textOf(String text) => tester.getRect(find.text(text));
+      Rect pillOf(String name) => tester.getRect(
+        find.descendant(
+          of: key(name),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      final level = tester.getRect(key('routing_interface_level'));
+      final pad = textOf(l10n.routingInterfacePad);
+      final air = textOf(l10n.routingInterfaceAir);
+      final phantom = textOf(l10n.routingInterfacePhantomInputs(1, 2));
+      expect(pad.left - level.right, 32);
+      expect(air.left - pillOf('routing_interface_pad').right, 32);
+      expect(phantom.left - pillOf('routing_interface_air').right, 32);
+    });
+
+    testWidgets('a row that starts with a switch starts on the column line '
+        '(#1672)', (tester) async {
+      onInterface = const InterfaceInputs(
+        status: InterfaceInputsStatus.controls,
+        inputs: [InterfaceInput(phantomSwitch: 0)],
+        phantomSwitches: [
+          PhantomSwitch(firstInput: 0, lastInput: 0, on: false),
+        ],
+      );
+      await pump(tester);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      final row = tester.getRect(find.byType(InterfaceSwitchesRow));
+      expect(
+        tester.getRect(find.text(l10n.routingInterfacePhantom)).left,
+        row.left + InterfaceSwitchesRow.contentLeft,
+      );
     });
 
     testWidgets('a shared 48 V switch shows on both inputs and names both', (
@@ -437,6 +477,22 @@ void main() {
       expect(tag(second, l10n.routingTagInst), findsNothing);
       expect(tag(second, l10n.routingTagPhantom), findsOneWidget);
       expect(tag(third, l10n.routingTagPhantom), findsNothing);
+    });
+
+    testWidgets('keep their names on one line whether or not they have tags '
+        '(#1672)', (tester) async {
+      onInterface = _fourI4(phantom: true);
+      await pump(tester);
+      double nameTop(int index) => tester
+          .getRect(
+            find.descendant(
+              of: find.byKey(Key('routing_input_card_$index')),
+              matching: find.text('Input ${index + 1}'),
+            ),
+          )
+          .top;
+      // The first card has tags and the third none.
+      expect(nameTop(2), nameTop(0));
     });
   });
 

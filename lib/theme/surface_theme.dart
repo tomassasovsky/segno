@@ -701,6 +701,26 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     traceDimOpacity: 0.28,
   );
 
+  /// The 7" readout's variant of [dark], read from two metres on a panel
+  /// whose backlight bleeds into its blacks (#1674, owner decision 3). Only
+  /// its two dimmest tiers change; every other token is [dark]'s, and the
+  /// main screen keeps [dark] unchanged.
+  ///
+  /// - [textMuted] takes [dark]'s [textTertiary] grey: 5.9:1 on the readout's
+  ///   background and 5.3:1 on [card], up from 3.8:1 and 3.4:1. Everything the
+  ///   readout draws in the muted tier lifts with it: "Empty", the BPM unit,
+  ///   the Loop panel's section labels, lock icons and dotted rule, the tempo
+  ///   keypad's title, and the waveform's bar numbers.
+  /// - [borderSubtle] is an opaque grey, 2.05:1 against [card] instead of the
+  ///   12% white's 1.41:1: the footer strip, the Loop panel's tempo card and
+  ///   the plain buttons' edges. Opaque, so its contrast does not depend on
+  ///   what is under it. On the readout this token is only ever a border; the
+  ///   theme's ink tiers keep [dark]'s alpha (`AppTheme.readout`).
+  static final SurfaceTheme readout = dark.copyWith(
+    textMuted: dark.textTertiary,
+    borderSubtle: const Color(0xFF4A4A50),
+  );
+
   /// High-contrast variant of [dark], selected automatically when the OS
   /// reports a high-contrast preference (macOS "Increase Contrast" / Windows
   /// High Contrast, surfaced via `MediaQuery.highContrast`). Text rises toward

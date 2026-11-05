@@ -4,7 +4,7 @@
 
 A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-current **v17** schema. Decode accepts the current schema only (see
+current **v18** schema. Decode accepts the current schema only (see
 [Versioning](#versioning)).
 
 Related: the performance-capture path stores retiring layers with its own
@@ -181,11 +181,11 @@ Note what is *not* here: there are no per-flag manifest fields, and no per-flag
 settings keys either. Every enable bit and every slot id lives inside the one
 string per chain.
 
-## Manifest schema (v17)
+## Manifest schema (v18)
 
 ```jsonc
 {
-  "version": 17,
+  "version": 18,
   "sampleRate": 48000,
   "channels": 1,
   "baseLengthFrames": 96000,
@@ -205,6 +205,7 @@ string per chain.
           "muted": false,
           "outputMask": 3,
           "inputChannel": 0,
+          "recordedInput": 0,       // v18: see "The input a take came from"
           "layers": [
             { "file": "track0_lane0_L0.wav" },
             { "file": "track0_lane0_L1.wav" },
@@ -321,6 +322,15 @@ Stop-all, a reopen and undo, and publishes it as
 (`le_engine_import_anchor`) before the commit, so Play starts every take where
 it sat against the others.
 
+### The input a take came from (v18)
+
+`inputChannel` is the input the lane records next. `recordedInput` is the
+input its take was captured from, `-1` when unknown. It is fixed when the take
+starts, like the lane's `pan` and `balance`, so changing the lane's input
+afterwards never renames the take. The Recorded tracks part picker names a
+part that holds audio by it. A recall restores it; a value outside the
+device's channel range is dropped rather than refusing the session.
+
 Audio never appears in the manifest; it lives in the referenced WAVs.
 
 Chains exist **independently of audio**: a `laneChains`/`trackChains` entry may
@@ -331,14 +341,14 @@ channel survives a save.
 
 ## Versioning
 
-Writing is always the current version (v17). `Session.fromJson` accepts the
+Writing is always the current version (v18). `Session.fromJson` accepts the
 current version only: any other `version` fails with
 `SessionUnsupportedVersion`, and a non-integer `version` with a
 `FormatException`. Inside the current schema, fields that `toJson` omits at
 their defaults (`pan`, `balance`, the optional maps) read as those defaults.
 
 Opening a bundle goes through `decodeSessionManifest` (#1196,
-`session_migration.dart`). A manifest from v1 to v16 is converted in memory,
+`session_migration.dart`). A manifest from v1 to v17 is converted in memory,
 one step per schema bump, and must then pass the strict decoder; a newer one
 fails with `SessionUnsupportedVersion` and one that cannot be converted with
 `SessionUnconvertible`, leaving the bundle untouched. Once the converted
@@ -460,3 +470,6 @@ envelope):
 - **v17** — the lap each take was played on (`anchorLap`, #854). Every
   earlier schema recalled its takes from lap 0, so a v16 bundle loads with
   every take at lap 0, as it did.
+- **v18** — the input each lane's take was captured from (`recordedInput`,
+  #1678). Earlier schemas never stored it; the lane's saved `inputChannel` is
+  the closest record of it, so a v17 bundle's takes take that.

@@ -503,10 +503,10 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v17) and the grid in beats', () {
+    test('serializes the manifest version (v18) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 17);
+      expect(json['version'], 18);
       // Constructed with bars only, the beats are the bars' (#1168).
       expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);
@@ -1047,6 +1047,7 @@ void main() {
         'muted': false,
         'outputMask': 0x3,
         'inputChannel': 0,
+        'recordedInput': -1,
         'layers': [
           {'file': 'track0_lane0_L0.wav'},
         ],

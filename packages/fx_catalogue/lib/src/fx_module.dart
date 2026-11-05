@@ -348,7 +348,11 @@ const Map<String, List<String>> kFxRackOrders = {
     'Delay',
     'Four-band EQ',
   ],
+  // The High-pass gate is segno's (#1644, the owner's decision): the Looper
+  // X's Guitar Rack has none. It opens the rack, so the floor it shuts is the
+  // input's, before any pedal lifts it.
   'Guitar Rack': [
+    'High-pass gate',
     'Whammy',
     'Overdrive',
     'Wah',
