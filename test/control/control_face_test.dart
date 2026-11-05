@@ -396,7 +396,10 @@ void main() {
 
       final l10n = l10nOf(tester);
       final row = tester.widget<ConsoleRow>(
-        find.byKey(const Key('pedal_switch_track1')),
+        find.descendant(
+          of: find.byKey(const Key('pedal_switch_track1')),
+          matching: find.byType(ConsoleRow),
+        ),
       );
       expect(row.value, l10n.controlTargetMissing);
       expect(
