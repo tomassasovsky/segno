@@ -13,7 +13,8 @@ import 'package:looper_repository/looper_repository.dart'
         LooperState,
         ReopenOutcome,
         Track,
-        TrackState;
+        TrackState,
+        UndoableClear;
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/view/standing_notices.dart';
@@ -363,7 +364,7 @@ void main() {
   group('the Clear all message (#1642)', () {
     const undoable = LooperState(
       status: EngineStatus(isConnected: true),
-      clearAllUndoable: true,
+      undoableClear: UndoableClear.all,
     );
 
     // As the stage raises it after a Clear all.
@@ -417,7 +418,7 @@ void main() {
       looperStates.add(
         const LooperState(
           status: EngineStatus(isConnected: true),
-          clearAllUndoable: true,
+          undoableClear: UndoableClear.all,
           tracks: [Track(clearRestore: true)],
         ),
       );

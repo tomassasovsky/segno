@@ -167,6 +167,166 @@ void main() {
     );
   });
 
+  group('Undo after a Track Hold clear (#1707)', () {
+    /// Tracks 1, 2 and 3 hold a take each and play, Track Hold is Clear
+    /// track, and [mode] is the interaction mode.
+    void threeTakes(_Harness h, FakeAsync fa, InteractionMode mode) {
+      for (var channel = 0; channel < 3; channel++) {
+        h.control.selectTrack(channel);
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+      }
+      unawaited(
+        h.control.setPedalSetup(
+          h.control.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
+        ),
+      );
+      fa.flushMicrotasks();
+      h.control.setMode(mode);
+      h.settle(fa);
+      for (var channel = 0; channel < 3; channel++) {
+        expect(h.looper.tracks[channel].hasContent, isTrue);
+        expect(h.looper.tracks[channel].isCapturing, isFalse);
+      }
+    }
+
+    /// Holds track 2's pedal through the pause and the fill, then lets go.
+    void holdClearTrackTwo(_Harness h, FakeAsync fa) {
+      h.run(const [_Hold(PedalButton.track2)], fa);
+      fa
+        ..elapse(const Duration(milliseconds: 1500))
+        ..flushMicrotasks();
+      h
+        ..run(const [_Release(PedalButton.track2)], fa)
+        ..settle(fa);
+      expect(h.looper.tracks[1].state, TrackState.empty);
+      expect(h.looper.tracks[1].clearRestore, isTrue);
+    }
+
+    test('in Mute, the Undo pedal brings the cleared track back while track '
+        '3 stays selected', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        final third = h.looper.tracks[2];
+        holdClearTrackTwo(h, fa);
+        expect(h.control.state.cursor, 2);
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[1].hasContent, isTrue);
+        expect(h.looper.tracks[1].clearRestore, isFalse);
+        // Track 3's own take is untouched.
+        expect(h.looper.tracks[2].undoDepth, third.undoDepth);
+        expect(h.looper.tracks[2].hasContent, isTrue);
+      });
+    }, skip: skip);
+
+    test('in Record, the Undo pedal brings it back after the selection '
+        'moved on', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.record);
+        holdClearTrackTwo(h, fa);
+        // A tap on track 3 only selects it: nothing is capturing.
+        h
+          ..run(const [_Tap(PedalButton.track3)], fa)
+          ..settle(fa);
+        expect(h.control.state.cursor, 2);
+        final third = h.looper.tracks[2];
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[1].hasContent, isTrue);
+        expect(h.looper.tracks[2].undoDepth, third.undoDepth);
+        expect(h.looper.tracks[2].hasContent, isTrue);
+      });
+    }, skip: skip);
+
+    test('an overdub on the selected track since the clear is what Undo '
+        'takes back', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        holdClearTrackTwo(h, fa);
+        final before = h.looper.tracks[2].undoDepth;
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].undoDepth, before + 1);
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].undoDepth, before);
+        expect(h.looper.tracks[1].state, TrackState.empty);
+        expect(h.looper.tracks[1].clearRestore, isTrue);
+        // The overdub is taken back; the clear is the next newest edit.
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[1].hasContent, isTrue);
+        expect(h.looper.tracks[2].undoDepth, before);
+      });
+    }, skip: skip);
+
+    test('a Peel on the selected track since the clear is what Undo takes '
+        'back', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        // A second layer on track 3, so it has one to peel.
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        expect(h.repo.record(channel: 2), EngineResult.ok);
+        h
+          ..run(const [_Pump(512, 0.5)], fa)
+          ..settle(fa);
+        holdClearTrackTwo(h, fa);
+        final depth = h.looper.tracks[2].undoDepth;
+        final peelable = h.looper.tracks[2].peelDepth;
+        expect(peelable, greaterThan(0));
+        expect(h.repo.peel(channel: 2), EngineResult.ok);
+        h.settle(fa);
+        expect(h.looper.tracks[2].undoDepth, depth);
+        h
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].peelDepth, peelable);
+        expect(h.looper.tracks[1].state, TrackState.empty);
+      });
+    }, skip: skip);
+
+    test('a later clear is what Undo takes back first', () {
+      _inHarness((h, fa) {
+        threeTakes(h, fa, InteractionMode.mute);
+        h.control.selectTrack(2);
+        holdClearTrackTwo(h, fa);
+        h.run(const [_Hold(PedalButton.track1)], fa);
+        fa
+          ..elapse(const Duration(milliseconds: 1500))
+          ..flushMicrotasks();
+        h
+          ..run(const [_Release(PedalButton.track1)], fa)
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.undo)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].hasContent, isTrue);
+        expect(h.looper.tracks[1].state, TrackState.empty);
+        expect(h.looper.tracks[1].clearRestore, isTrue);
+      });
+    }, skip: skip);
+  });
+
   group('corpus (found-bug regressions, replayed every run)', () {
     test('redo after undo-to-empty relights the LED (2026-07-04)', () {
       _inHarness((h, fa) {

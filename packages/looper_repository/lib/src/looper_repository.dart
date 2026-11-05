@@ -134,6 +134,12 @@ AudioEngine createNativeAudioEngine() => NativeAudioEngine();
 /// The Click stage's linear gain ceiling; unity is half of its travel.
 const double kMaxClickGain = 2;
 
+/// Where the rig's history stood at the last undoable clear (#1707): the
+/// newest edit then filed on any track ([TrackSnapshot.historySeq]), the
+/// tracks that were empty or recording a first take, and the tracks a Clear
+/// all was refused on.
+typedef _ClearMark = ({int seq, Set<int> empty, Set<int> refused});
+
 /// Owns the [AudioEngine] and is the single source of looper truth.
 ///
 /// Polls the engine snapshot on a ticker, projects it into a [LooperState], and
@@ -1142,7 +1148,7 @@ class LooperRepository {
     _historyFx.clear();
     _restoreFxStaged.clear();
     _pendingClearUndo.clear();
-    _pendingClearAllUndo = const {};
+    _pendingClearGroupUndo = const {};
     return keys;
   }
 
@@ -1169,8 +1175,8 @@ class LooperRepository {
     for (final channel in channels) {
       _restoreFxStaged.remove(channel);
       _pendingClearUndo.remove(channel);
-      if (_pendingClearAllUndo.contains(channel)) {
-        _pendingClearAllUndo = const {};
+      if (_pendingClearGroupUndo.contains(channel)) {
+        _pendingClearGroupUndo = const {};
       }
     }
     return keys;
@@ -1325,8 +1331,8 @@ class LooperRepository {
         _mix.pending?.balances.addAll(entry.value.balances);
         if (pending.clearOnCommit) {
           if (_pendingClearUndo.remove(ch)) _clearRestore.remove(ch);
-          if (_pendingClearAllUndo.contains(ch)) {
-            _pendingClearAllUndo = const {};
+          if (_pendingClearGroupUndo.contains(ch)) {
+            _pendingClearGroupUndo = const {};
           }
         }
         _forgetLaneMutes(ch);
@@ -2433,8 +2439,8 @@ class LooperRepository {
     _settleLatencyWait(snapshot);
     _settlePendingClearUndos();
     // Remember retired restore points even when no Undo is waiting. A later
-    // individual clear must not re-form an obsolete clear-all group.
-    _intactClearAllGroup();
+    // clear must not re-form an obsolete group.
+    _intactClearGroup();
     final next = _project(snapshot);
     _rememberLooperMode(next, snapshot.looperMode);
     // Settlement also reaches persistence when the visible state is unchanged.
@@ -2597,7 +2603,12 @@ class LooperRepository {
     mixGeneration: _mixGeneration,
     // As last settled: [undo] and the poll settle the group just before
     // they project.
-    clearAllUndoable: _clearAllGroup.isNotEmpty || _clearAllPending.isNotEmpty,
+    undoableClear: _clearGroup.isEmpty && _clearGroupPending.isEmpty
+        ? UndoableClear.none
+        : _clearGroupIsAll
+        ? UndoableClear.all
+        : UndoableClear.track,
+    editedSinceClear: _editedSinceClear(s),
     tuner: TunerReading(
       hz: s.tunerHz,
       confidence: s.tunerConfidence,
@@ -4138,15 +4149,19 @@ class LooperRepository {
   ///
   /// This is the USER's clear. [applySession] uses [_clearDestructive]
   /// instead — loading a session must never be undoable.
+  ///
+  /// The clear is the last undoable clear, as a [clearAll] is (#1707): while
+  /// it stands, an Undo on another track with nothing newer of its own
+  /// restores it ([LooperState.undoRestoresClear]), so a hold-clear that left
+  /// the selection elsewhere comes back from the Undo pedal.
   EngineResult clear({int channel = 0}) {
     if (_transportReserved) return EngineResult.notReady;
     final result = _clearTrack(channel);
-    if (result.isOk) {
-      // A refused native clear leaves the prior restore/group ownership.
-      _clearAllGroup = const {};
-      _clearAllPending = const {};
-      _pendingClearAllUndo = const {};
-    }
+    // A refused native clear leaves the prior restore/group ownership, and
+    // so does a clear with nothing to give back (an empty track): nothing
+    // was erased that an Undo could restore, as with an empty Clear all
+    // (#1642).
+    if (result.isOk) _formClearGroup([channel], all: false);
     return result;
   }
 
@@ -4194,17 +4209,40 @@ class LooperRepository {
   /// is erased, so the last group stays undoable (#1642).
   EngineResult clearAll(Iterable<int> channels) {
     if (_transportReserved) return EngineResult.notReady;
-    _pendingClearAllUndo = const {};
+    _pendingClearGroupUndo = const {};
     if (channels.isEmpty) return EngineResult.ok;
-    final group = <int>{};
-    final pending = <int>{};
+    final cleared = <int>[];
+    final refused = <int>{};
     var result = EngineResult.ok;
     for (final channel in channels) {
       final rc = _clearTrack(channel);
       if (!rc.isOk) {
         result = rc;
+        refused.add(channel);
         continue;
       }
+      cleared.add(channel);
+    }
+    _formClearGroup(cleared, all: true, refused: refused);
+    return result;
+  }
+
+  /// Makes [cleared] the last undoable clear: one track's ([all] false) or a
+  /// Clear all's. It replaces the clear before it, and its Undo is offered
+  /// from every track until something newer retires it. A track's clear
+  /// that leaves nothing to restore keeps the clear before it. A Clear all
+  /// always replaces it, and its own redo group too; a track's clear leaves
+  /// the redo group of an undone clear to its members' Redo, as before.
+  /// [refused] are the tracks a Clear all could not clear: they keep their
+  /// take, and their Undo stays their own.
+  void _formClearGroup(
+    Iterable<int> cleared, {
+    required bool all,
+    Set<int> refused = const {},
+  }) {
+    final group = <int>{};
+    final pending = <int>{};
+    for (final channel in cleared) {
       // Members are the takes the clear can give back, by the engine's own
       // account: a restore point filed now (a playing or stopped take), or
       // one still to be filed (a capture the clear froze — confirmed once
@@ -4217,25 +4255,55 @@ class LooperRepository {
         pending.add(channel);
       }
     }
-    _clearAllGroup = group;
-    _clearAllPending = pending;
-    _clearAllRedoGroup = const {};
-    return result;
+    if (!all && group.isEmpty && pending.isEmpty) return;
+    // A track's clear whose only point is still to be filed may turn out to
+    // have frozen a capture that held nothing: keep the clear before it
+    // until the engine says, so that one is not lost ([_intactClearGroup]).
+    _clearFallback = !all && group.isEmpty
+        ? (
+            group: _clearGroup,
+            pending: _clearGroupPending,
+            all: _clearGroupIsAll,
+            mark: _clearMark,
+          )
+        : null;
+    _clearGroup = group;
+    _clearGroupPending = pending;
+    _clearGroupIsAll = all;
+    if (all) _clearRedoGroup = const {};
+    _pendingClearGroupUndo = const {};
+    _clearMark = _markClear(_engine.snapshot(), refused: refused);
   }
 
-  /// The channels the last [clearAll] erased with a restore point.
-  Set<int> _clearAllGroup = const {};
+  /// The channels the last undoable clear ([clear] or [clearAll]) erased
+  /// with a restore point.
+  Set<int> _clearGroup = const {};
 
-  /// Frozen captures of the last [clearAll] whose restore point is still to
-  /// be filed: promoted to [_clearAllGroup] when it lands, dropped when the
+  /// Frozen captures of the last undoable clear whose restore point is still
+  /// to be filed: promoted to [_clearGroup] when it lands, dropped when the
   /// capture turned out to hold nothing.
-  Set<int> _clearAllPending = const {};
+  Set<int> _clearGroupPending = const {};
 
-  /// The channels an undone [clearAll] restored.
-  Set<int> _clearAllRedoGroup = const {};
+  /// Whether the last undoable clear is a [clearAll].
+  bool _clearGroupIsAll = false;
+
+  /// The rig's history as the last undoable clear left it, which tells the
+  /// tracks with an edit of their own since ([LooperState.editedSinceClear]).
+  _ClearMark _clearMark = (seq: 0, empty: const {}, refused: const {});
+
+  /// The clear before a track's clear whose point is still to be filed: the
+  /// last clear again if that point never lands, dropped once it does.
+  ({Set<int> group, Set<int> pending, bool all, _ClearMark mark})?
+  _clearFallback;
+
+  /// The channels an undone [clearAll] restored, and the tracks it was
+  /// refused on. A track's undone clear needs no group: its Redo is the
+  /// track's own, and forms the clear again ([redo]).
+  Set<int> _clearRedoGroup = const {};
+  Set<int> _clearRedoRefused = const {};
 
   /// A grouped undo waits for every frozen point before changing any member.
-  Set<int> _pendingClearAllUndo = const {};
+  Set<int> _pendingClearGroupUndo = const {};
 
   /// Tracks whose undo waits for the clear's frozen restore point to land:
   /// tapped at a frozen clear, restored on the first poll after the engine
@@ -4249,13 +4317,13 @@ class LooperRepository {
   /// leftover chain (the rule [_dropTakeState] enforces at the clear).
   void _settlePendingClearUndos() {
     _drainHistoryFx();
-    if (_pendingClearAllUndo.isNotEmpty &&
-        !_pendingClearAllUndo.any(
+    if (_pendingClearGroupUndo.isNotEmpty &&
+        !_pendingClearGroupUndo.any(
           (channel) => _engine.clearRestorePending(channel: channel),
         )) {
-      final requested = _pendingClearAllUndo;
-      _pendingClearAllUndo = const {};
-      final group = _intactClearAllGroup();
+      final requested = _pendingClearGroupUndo;
+      _pendingClearGroupUndo = const {};
+      final group = _intactClearGroup();
       if (group.isNotEmpty && requested.containsAll(group)) {
         _undoClearGroup(group);
       }
@@ -4270,56 +4338,116 @@ class LooperRepository {
         _clearRestore.remove(channel);
         _restoreFxStaged.remove(channel);
         // A void member has no re-clear to offer the restored group.
-        _clearAllRedoGroup = _clearAllRedoGroup.difference({channel});
+        _clearRedoGroup = _clearRedoGroup.difference({channel});
       }
     }
   }
 
-  /// The clear-all group while every member still restores a cleared take;
-  /// empty while one does not.
+  static _ClearMark _markClear(
+    EngineSnapshot s, {
+    Set<int> refused = const {},
+  }) => (
+    seq: s.tracks.fold(
+      0,
+      (newest, t) => t.historySeq > newest ? t.historySeq : newest,
+    ),
+    // A first take still recording files no undo entry when it ends, so it
+    // counts with the empty tracks: a take there later is newer.
+    empty: {
+      for (var channel = 0; channel < s.tracks.length; channel++)
+        if (s.tracks[channel].state == TrackState.empty ||
+            s.tracks[channel].state == TrackState.recording)
+          channel,
+    },
+    refused: refused,
+  );
+
+  /// The tracks with an edit of their own since the last undoable clear;
+  /// empty while there is none. A track has one when its next Undo takes
+  /// back an edit filed after the clear (the engine numbers every layer,
+  /// peel, length edit, bounce and redo in one order), when it was empty or
+  /// recording its first take at the clear and has a take now, or when the
+  /// Clear all was refused on it.
+  /// The cleared tracks are left out: a fresh take on one retires the whole
+  /// clear instead ([_intactClearGroup]).
+  Set<int> _editedSinceClear(EngineSnapshot s) {
+    if (_clearGroup.isEmpty && _clearGroupPending.isEmpty) return const {};
+    final mark = _clearMark;
+    return {
+      for (var channel = 0; channel < s.tracks.length; channel++)
+        if (!_clearGroup.contains(channel) &&
+            !_clearGroupPending.contains(channel) &&
+            (s.tracks[channel].historySeq > mark.seq ||
+                (mark.empty.contains(channel) &&
+                    s.tracks[channel].state != TrackState.empty) ||
+                mark.refused.contains(channel)))
+          channel,
+    };
+  }
+
+  /// The last clear's group while every member still restores a cleared
+  /// take; empty while one does not.
   ///
   /// A frozen member whose point is still to be filed counts as a member.
   /// The repository parks the whole group's Undo until every point lands,
   /// then asks the engine to check all recovered lengths before restoring.
-  Set<int> _intactClearAllGroup() {
+  Set<int> _intactClearGroup() {
     // Frozen members first: a filed point makes a member; neither pending
     // nor filed means the capture held nothing to give back.
-    if (_clearAllPending.isNotEmpty) {
-      final group = {..._clearAllGroup};
+    if (_clearGroupPending.isNotEmpty) {
+      final group = {..._clearGroup};
       final pending = <int>{};
-      for (final channel in _clearAllPending) {
+      for (final channel in _clearGroupPending) {
         if (_engine.clearRestorePending(channel: channel)) {
           pending.add(channel);
         } else if (_engine.undoRestoresClear(channel: channel)) {
           group.add(channel);
         }
       }
-      _clearAllGroup = group;
-      _clearAllPending = pending;
+      _clearGroup = group;
+      _clearGroupPending = pending;
+      final fallback = _clearFallback;
+      if (fallback != null && (group.isNotEmpty || pending.isEmpty)) {
+        _clearFallback = null;
+        // The frozen capture held nothing: the clear before it is the last
+        // clear again.
+        if (group.isEmpty) {
+          _clearGroup = fallback.group;
+          _clearGroupPending = fallback.pending;
+          _clearGroupIsAll = fallback.all;
+          _clearMark = fallback.mark;
+          return _intactClearGroup();
+        }
+      }
     }
-    for (final channel in _clearAllGroup) {
+    for (final channel in _clearGroup) {
       if (_engine.undoRestoresClear(channel: channel)) continue;
       // The engine retired the point (a fresh take): the group is gone, and
       // a later single clear on that track must not re-form it.
-      _clearAllGroup = const {};
-      _clearAllPending = const {};
+      _clearGroup = const {};
+      _clearGroupPending = const {};
       return const {};
     }
-    return {..._clearAllGroup, ..._clearAllPending};
+    return {..._clearGroup, ..._clearGroupPending};
   }
 
   /// Whole-rig recovery from a clear-all: the intact group comes back as one
   /// operation; otherwise every track that still holds a clear restore point
-  /// is restored on its own (a group the engine partly retired).
+  /// is restored on its own (a group the engine partly retired, or a single
+  /// clear since).
   EngineResult undoClearAll() {
     if (_transportReserved) return EngineResult.notReady;
     _settlePendingClearUndos();
-    final group = _intactClearAllGroup();
-    if (group.isNotEmpty) return undo(channel: group.first);
+    final group = _intactClearGroup();
+    if (group.isNotEmpty && _clearGroupIsAll) return _undoClearGroup(group);
     var result = EngineResult.ok;
     for (final track in lastState.tracks) {
       if (!track.clearRestore) continue;
-      final rc = undo(channel: track.channel);
+      // Each point once: the single clear's group is restored as itself, and
+      // no other track's restore is redirected to it.
+      final rc = group.contains(track.channel)
+          ? _undoClearGroup(group)
+          : _undoTrack(track.channel);
       if (!rc.isOk) result = rc;
     }
     return result;
@@ -4329,7 +4457,7 @@ class LooperRepository {
   EngineResult _clearDestructive({int channel = 0}) {
     final result = _engine.clear(channel: channel);
     if (!result.isOk) return result;
-    _pendingClearAllUndo = const {};
+    _pendingClearGroupUndo = const {};
     _pendingClearUndo.remove(channel);
     _clearRestore.remove(channel);
     _restoreFxStaged.remove(channel);
@@ -4417,22 +4545,24 @@ class LooperRepository {
   /// describes the next tap, and the snapshot it derives from does not flip
   /// until the audio thread applies the restore.
   ///
-  /// While a [clearAll] can still be undone, an undo on an empty track with
-  /// nothing newer of its own restores that clear-all
-  /// ([LooperState.undoRestoresClearAll], #1634). Clear all selects track 1,
-  /// which is often not a member, so every surface's Undo (pedal, keyboard,
-  /// MIDI and CTRL bindings) reaches the restore from it. A restore point of
-  /// the track's own does not stop it: a single clear ends the group, so
-  /// that point predates the clear-all, and the next Undo reaches it.
+  /// While the last clear ([clear] or [clearAll]) can still be undone, an
+  /// undo on a track with nothing newer of its own restores that clear
+  /// ([LooperState.undoRestoresClear], #1634, #1707). Clear all selects
+  /// track 1, which is often not a member, and a track's hold-clear can
+  /// leave the selection on another track, so every surface's Undo (pedal,
+  /// keyboard, MIDI and CTRL bindings) reaches the restore from there. A
+  /// restore point of the track's own does not stop it: the later clear
+  /// replaced that one as the last clear, so it is older, and the next Undo
+  /// reaches it.
   EngineResult undo({int channel = 0}) {
     if (_transportReserved) {
       return EngineResult.notReady;
     }
     _settlePendingClearUndos();
     // A grouped clear comes back as one operation, whichever member is asked.
-    final group = _intactClearAllGroup();
+    final group = _intactClearGroup();
     if (group.contains(channel) ||
-        (group.isNotEmpty && state.undoRestoresClearAll(channel))) {
+        (group.isNotEmpty && state.undoRestoresClear(channel))) {
       return _undoClearGroup(group);
     }
     return _undoTrack(channel);
@@ -4440,14 +4570,14 @@ class LooperRepository {
 
   EngineResult _undoClearGroup(Set<int> group) {
     if (group.any((channel) => _engine.clearRestorePending(channel: channel))) {
-      _pendingClearAllUndo = group;
+      _pendingClearGroupUndo = group;
       return EngineResult.ok;
     }
     final ordered = group.toList()
       ..sort()
       ..forEach(_stageClearUndoFx);
     if (ordered.any((member) => !_clearUndoFxReady(member))) {
-      _pendingClearAllUndo = group;
+      _pendingClearGroupUndo = group;
       return EngineResult.ok;
     }
     final gate = _historyModeGate(ordered, redo: false);
@@ -4459,9 +4589,13 @@ class LooperRepository {
       final result = _undoTrack(member);
       if (!result.isOk) return result;
     }
-    _clearAllRedoGroup = group;
-    _clearAllGroup = const {};
-    _clearAllPending = const {};
+    // A track's clear leaves an undone Clear all's grouped Redo alone.
+    if (_clearGroupIsAll) {
+      _clearRedoGroup = group;
+      _clearRedoRefused = _clearMark.refused;
+    }
+    _clearGroup = const {};
+    _clearGroupPending = const {};
     return EngineResult.ok;
   }
 
@@ -4526,9 +4660,9 @@ class LooperRepository {
       return EngineResult.notReady;
     }
     // Cancel a grouped undo before settling it: every member is still clear.
-    if (_pendingClearAllUndo.contains(channel)) {
-      _pendingClearAllUndo.forEach(_cancelStagedClearUndoFx);
-      _pendingClearAllUndo = const {};
+    if (_pendingClearGroupUndo.contains(channel)) {
+      _pendingClearGroupUndo.forEach(_cancelStagedClearUndoFx);
+      _pendingClearGroupUndo = const {};
       return EngineResult.ok;
     }
     if (_pendingClearUndo.remove(channel)) {
@@ -4536,8 +4670,8 @@ class LooperRepository {
       return EngineResult.ok;
     }
     _settlePendingClearUndos();
-    if (_clearAllRedoGroup.contains(channel)) {
-      final group = _clearAllRedoGroup;
+    if (_clearRedoGroup.contains(channel)) {
+      final group = _clearRedoGroup;
       if (group.every((member) => _engine.redoReclears(channel: member))) {
         final ordered = group.toList()..sort();
         final gate = _historyModeGate(ordered, redo: true);
@@ -4546,14 +4680,25 @@ class LooperRepository {
           final result = _redoTrack(member);
           if (!result.isOk) return result;
         }
-        _clearAllRedoGroup = const {};
-        _clearAllGroup = group;
-        _clearAllPending = const {};
+        _clearRedoGroup = const {};
+        _clearGroup = group;
+        _clearGroupPending = const {};
+        _clearGroupIsAll = true;
+        _clearFallback = null;
+        // The re-clear is the newest edit now.
+        _clearMark = _markClear(
+          _engine.snapshot(),
+          refused: _clearRedoRefused,
+        );
         return EngineResult.ok;
       }
-      _clearAllRedoGroup = const {};
+      _clearRedoGroup = const {};
     }
-    return _redoTrack(channel);
+    final reclears = _engine.redoReclears(channel: channel);
+    final result = _redoTrack(channel);
+    // A redone clear is a clear again, and the last one (#1707).
+    if (result.isOk && reclears) _formClearGroup([channel], all: false);
+    return result;
   }
 
   /// Changes cached take metadata only after the native history edit succeeds.

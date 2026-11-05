@@ -1342,6 +1342,13 @@ typedef struct le_track_snapshot {
    * EMPTY track read 0. Kept through Stop-all, a reopen and undo-restore; a
    * Session saves it and gives it back with le_engine_import_anchor. */
   int32_t anchor_lap;
+  /* Trailing (#1707): where the edit the next Undo on this track takes back
+   * stands in the engine's history order — a take's layer, a Peel, a length
+   * edit, a Bounce or a Clear restore point, numbered as it was filed, and
+   * numbered again when a Redo files it back. 0 with no undo entry. Larger
+   * means newer, across every track, so the host can tell whether this
+   * track's Undo would take back something newer than a given edit. */
+  int32_t history_seq;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
