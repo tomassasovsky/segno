@@ -974,10 +974,12 @@ void main() {
         await pumpEventQueue();
       }
 
-      Future<void> hold(PedalButton button) async {
+      // A Clear track Hold fires at 1150 ms: its 350 ms pause plus the
+      // 800 ms threshold (#1652). Every other Hold fires at 800 ms.
+      Future<void> hold(PedalButton button, {int ms = 850}) async {
         transport.press(button, down: true);
         await pumpEventQueue();
-        await Future<void>.delayed(const Duration(milliseconds: 850));
+        await Future<void>.delayed(Duration(milliseconds: ms));
         transport.press(button, down: false);
         await pumpEventQueue();
       }
@@ -1097,7 +1099,7 @@ void main() {
         await cubit.setPedalSetup(
           cubit.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
         );
-        await hold(PedalButton.track3);
+        await hold(PedalButton.track3, ms: 1200);
         expect(cubit.state.cursor, 2);
         verify(() => looper.clear(channel: 2)).called(1);
       });
@@ -1111,7 +1113,7 @@ void main() {
           transport.press(PedalButton.track1, down: true);
           await pumpEventQueue();
           cubit.browseBank(1);
-          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await Future<void>.delayed(const Duration(milliseconds: 1200));
           verify(() => looper.clear(channel: 4)).called(1);
           verifyNever(() => looper.clear());
           transport.press(PedalButton.track1, down: false);
@@ -1204,7 +1206,7 @@ void main() {
         },
       );
 
-      group('Clear track Hold fills its pill (#1534)', () {
+      group('Clear track Hold fills its pill (#1534, #1652)', () {
         List<ClearHoldMessage> fills() =>
             transport.sent.whereType<ClearHoldMessage>().toList();
 
@@ -1215,26 +1217,57 @@ void main() {
           transport.sent.clear();
         });
 
-        test('from the press until the clear fires', () async {
+        test(
+          'nothing shows in the first 350 ms, and a release then is a press',
+          () async {
+            setEngine(
+              _tracksWith(const [
+                Track(
+                  channel: 2,
+                  state: TrackState.playing,
+                  lengthFrames: 48000,
+                ),
+              ]),
+            );
+            transport.press(PedalButton.track3, down: true);
+            await pumpEventQueue();
+            expect(cubit.state.cursor, 2);
+            expect(transport.lastFrame!.colorFor(PedalButton.track3), ledWhite);
+            await Future<void>.delayed(const Duration(milliseconds: 200));
+            expect(fills(), isEmpty);
+            expect(transport.lastFrame!.colorFor(PedalButton.track3), ledWhite);
+            transport.press(PedalButton.track3, down: false);
+            await pumpEventQueue();
+            expect(transport.lastFrame!.colorFor(PedalButton.track3), ledGreen);
+            await Future<void>.delayed(const Duration(milliseconds: 1000));
+            expect(fills(), isEmpty);
+            verifyNever(() => looper.clear(channel: any(named: 'channel')));
+          },
+        );
+
+        test('after the pause it fills from 0 until the clear fires', () async {
           transport.press(PedalButton.track3, down: true);
           await pumpEventQueue();
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          expect(fills(), isEmpty);
+          await Future<void>.delayed(const Duration(milliseconds: 550));
+          // 750 ms held: the fill started at 350 and has run about 400 of
+          // its 800 ms (later on a loaded machine).
+          final running = fills();
           expect(
-            fills().first,
+            running.first,
             const ClearHoldMessage(button: PedalButton.track3),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 400));
-          final running = fills();
           expect(running.length, greaterThan(2));
           expect(running.every((m) => m.button == PedalButton.track3), isTrue);
           final progress = [for (final m in running) m.progress];
           for (var i = 1; i < progress.length; i++) {
             expect(progress[i], greaterThanOrEqualTo(progress[i - 1]));
           }
-          // 400 of 800 ms: about half way (later on a loaded machine).
           expect(progress.last, inInclusiveRange(64, 200));
           verifyNever(() => looper.clear(channel: any(named: 'channel')));
 
-          await Future<void>.delayed(const Duration(milliseconds: 450));
+          await Future<void>.delayed(const Duration(milliseconds: 500));
           verify(() => looper.clear(channel: 2)).called(1);
           // The ends meet when it fires: 255 once, straight from the last
           // step with no empty message between, then the end of the fill.
@@ -1260,12 +1293,61 @@ void main() {
           expect(fills(), hasLength(settled));
         });
 
+        test('the clear fires at 1150 ms, not 800', () async {
+          transport.press(PedalButton.track3, down: true);
+          await pumpEventQueue();
+          await Future<void>.delayed(const Duration(milliseconds: 900));
+          verifyNever(() => looper.clear(channel: any(named: 'channel')));
+          expect(fills().where((m) => m.progress == 255), isEmpty);
+          await Future<void>.delayed(const Duration(milliseconds: 350));
+          verify(() => looper.clear(channel: 2)).called(1);
+          transport.press(PedalButton.track3, down: false);
+          await pumpEventQueue();
+        });
+
+        test('other Holds keep the 800 ms threshold', () async {
+          // Undo's Hold redoes at 800 ms while Track Hold clears.
+          await hold(PedalButton.undo);
+          verify(() => looper.redo()).called(1);
+          verifyNever(() => looper.undo(channel: any(named: 'channel')));
+          // A Custom Clear all Hold fills from the press and fires at 800 ms.
+          await cubit.setPedalSetup(
+            cubit.state.pedalSetup.withCustom(
+              PedalButton.track1,
+              bank: 0,
+              pair: const ControlGesturePair(
+                hold: CommandAction(ControlCommand.clearAll),
+              ),
+            ),
+          );
+          cubit.setMode(InteractionMode.custom);
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          transport.sent.clear();
+          transport.press(PedalButton.track1, down: true);
+          await pumpEventQueue();
+          expect(
+            fills().first,
+            const ClearHoldMessage(button: PedalButton.track1),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await pumpEventQueue();
+          verify(() => looper.clearAll([0])).called(1);
+          transport.press(PedalButton.track1, down: false);
+          await pumpEventQueue();
+        });
+
         test(
-          'a release before the threshold ends it and clears nothing',
+          'a release after the pause, before it fires, ends it and clears '
+          'nothing',
           () async {
             transport.press(PedalButton.track1, down: true);
             await pumpEventQueue();
-            await Future<void>.delayed(const Duration(milliseconds: 200));
+            await Future<void>.delayed(const Duration(milliseconds: 600));
+            expect(fills().last.button, PedalButton.track1);
             transport.press(PedalButton.track1, down: false);
             await pumpEventQueue();
             expect(fills().last, const ClearHoldMessage());
@@ -1279,13 +1361,26 @@ void main() {
         test('a mode change ends it', () async {
           transport.press(PedalButton.track2, down: true);
           await pumpEventQueue();
-          await Future<void>.delayed(const Duration(milliseconds: 100));
+          await Future<void>.delayed(const Duration(milliseconds: 450));
+          expect(fills().last.button, PedalButton.track2);
           cubit.setMode(InteractionMode.mute);
           await pumpEventQueue();
           expect(fills().last, const ClearHoldMessage());
           final settled = fills().length;
           await Future<void>.delayed(const Duration(milliseconds: 100));
           expect(fills(), hasLength(settled));
+          transport.press(PedalButton.track2, down: false);
+          await pumpEventQueue();
+        });
+
+        test('a mode change in the pause sends nothing', () async {
+          transport.press(PedalButton.track2, down: true);
+          await pumpEventQueue();
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          cubit.setMode(InteractionMode.mute);
+          await Future<void>.delayed(const Duration(milliseconds: 1100));
+          expect(fills(), isEmpty);
+          verifyNever(() => looper.clear(channel: any(named: 'channel')));
           transport.press(PedalButton.track2, down: false);
           await pumpEventQueue();
         });
@@ -1304,6 +1399,7 @@ void main() {
             );
             transport.press(PedalButton.track3, down: true);
             await pumpEventQueue();
+            await Future<void>.delayed(const Duration(milliseconds: 450));
             expect(transport.lastFrame!.colorFor(PedalButton.track3), ledGreen);
             // Released early: the fill ends and the pill reads as before.
             transport.press(PedalButton.track3, down: false);
@@ -1335,8 +1431,9 @@ void main() {
           ).thenReturn(EngineResult.notReady);
           transport.press(PedalButton.track3, down: true);
           await pumpEventQueue();
-          await Future<void>.delayed(const Duration(milliseconds: 850));
+          await Future<void>.delayed(const Duration(milliseconds: 1200));
           verify(() => looper.clear(channel: 2)).called(1);
+          expect(fills(), isNotEmpty);
           expect(fills().where((m) => m.progress == 255), isEmpty);
           expect(fills().last, const ClearHoldMessage());
           transport.press(PedalButton.track3, down: false);
@@ -1346,7 +1443,7 @@ void main() {
         test('a hold that can no longer fire stops filling', () async {
           transport.press(PedalButton.track2, down: true);
           await pumpEventQueue();
-          await Future<void>.delayed(const Duration(milliseconds: 100));
+          await Future<void>.delayed(const Duration(milliseconds: 450));
           takeIsLocked = true;
           await Future<void>.delayed(const Duration(milliseconds: 60));
           expect(fills().last, const ClearHoldMessage());
@@ -1360,22 +1457,40 @@ void main() {
         });
 
         test(
+          'a hold that can no longer fire in the pause never fills',
+          () async {
+            transport.press(PedalButton.track2, down: true);
+            await pumpEventQueue();
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+            takeIsLocked = true;
+            await Future<void>.delayed(const Duration(milliseconds: 1100));
+            expect(fills(), isEmpty);
+            verifyNever(() => looper.clear(channel: any(named: 'channel')));
+            takeIsLocked = false;
+            transport.press(PedalButton.track2, down: false);
+            await pumpEventQueue();
+          },
+        );
+
+        test(
           'an older pending hold fills again when a newer one settles',
           () async {
             transport.press(PedalButton.track1, down: true);
             await pumpEventQueue();
-            await Future<void>.delayed(const Duration(milliseconds: 100));
+            await Future<void>.delayed(const Duration(milliseconds: 450));
             transport.press(PedalButton.track2, down: true);
             await pumpEventQueue();
+            // Track 2 is still in its pause: track 1 keeps filling.
+            expect(fills().last.button, PedalButton.track1);
+            await Future<void>.delayed(const Duration(milliseconds: 400));
             expect(fills().last.button, PedalButton.track2);
-            await Future<void>.delayed(const Duration(milliseconds: 100));
             transport.press(PedalButton.track2, down: false);
             await pumpEventQueue();
             final resumed = fills().last;
             expect(resumed.button, PedalButton.track1);
-            // Track 1's own clock: about 200 of its 800 ms.
-            expect(resumed.progress, greaterThanOrEqualTo(50));
-            await Future<void>.delayed(const Duration(milliseconds: 700));
+            // Track 1's own clock: about 500 of its 800 ms.
+            expect(resumed.progress, greaterThanOrEqualTo(120));
+            await Future<void>.delayed(const Duration(milliseconds: 400));
             verify(() => looper.clear()).called(1);
             transport.press(PedalButton.track1, down: false);
             await pumpEventQueue();
@@ -1396,7 +1511,7 @@ void main() {
           cubit.state.pedalSetup.copyWith(trackHold: TrackHold.clearTrack),
         );
         cubit.setMode(InteractionMode.mute);
-        await hold(PedalButton.track2);
+        await hold(PedalButton.track2, ms: 1200);
         verifyNever(() => looper.clear(channel: 1));
       });
 
