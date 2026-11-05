@@ -4185,8 +4185,10 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
   }
   t->transpose_eff = 0;
   store_i32(&t->a_transpose_eff, 0);
-  /* A bridge goes on over the new take, its grains laid on the new head. */
-  for (int l = 0; l < LE_MAX_LANES; ++l) t->bridge_lane[l].live = 0;
+  /* ...and so does a pitch bridge (#1675): the next buffer's
+   * le_transpose_select starts it again over the new take, logged. */
+  const int was_bridged = t->bridge;
+  t->bridge = 0;
   int32_t new_len;
   const int64_t new_pos = le_track_song_position(e, t, &new_len);
   t->head.origin = le_head_origin(&t->head, index, new_pos, len);
@@ -4196,7 +4198,8 @@ static void le_length_apply(le_engine* e, le_track* t, const le_command* cmd,
   le_audio_rev_bump(t); /* [R1] length edit: other audio */
   le_plog_push(e, frame, (le_command){.code = LE_PLOG_LENGTH,
       .length_log = {ch, cmd->length.pool_slot, len, cmd->length.image_id}});
-  if (was_transposed) le_transpose_log(e, t, frame, 0);
+  if (was_bridged) le_source_len_log(e, t, frame);
+  if (was_transposed || was_bridged) le_transpose_log(e, t, frame, 0);
   /* Off whole samples the exact index rides a Speed fact (#1179, E3). */
   if (!le_head_is_integral(&t->head)) le_speed_log(e, t, frame, index, 0);
 }
@@ -4219,6 +4222,7 @@ static int32_t le_turn_begin(le_engine* e, le_track* t, int32_t len) {
   t->turn_frames = turn;
   t->turn_left = turn;
   le_turn_sources(t, 0); /* the old head reads the source in force */
+  t->turn_bridge = t->bridge; /* ...through the pitch bridge if it was */
   return turn;
 }
 
@@ -7758,6 +7762,9 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
       if (!engaged) pick[l] = NULL;
       changed |= pick[l] != tr->src_ent[l];
     }
+    /* A bridge sounds the span in force: a later retime while it bridges
+     * moves the span, not the source. */
+    if (!changed && bridge) store_i32(&tr->a_src_out, want_out);
     if (!changed) continue;
     int32_t len;
     (void)le_track_song_position(e, tr, &len);
@@ -8838,6 +8845,7 @@ static inline void mix_tracks_frame(
   int64_t bridge_pos[LE_MAX_TRACKS];
   int bridged[LE_MAX_TRACKS], turn_bridged[LE_MAX_TRACKS];
   const int32_t bridge_hop = le_bridge_hop(sr);
+  const double bridge_g = (double)e->speed_numer / (double)e->speed_denom;
   for (int t = 0; t < tc; ++t) {
     le_track* tr = &e->tracks[t];
     head_idx[t] = -1.0;
@@ -8866,7 +8874,7 @@ static inline void mix_tracks_frame(
     if (!le_head_is_integral(&tr->head) || stretched) head_idx[t] = index;
     bridge_pos[t] = song;
     bridged[t] = tr->bridge;
-    turn_bridged[t] = tr->turn_left > 0 && tr->turn_bridge && tr->turn_power;
+    turn_bridged[t] = tr->turn_left > 0 && tr->turn_bridge;
     if (tr->turn_left > 0) {
       turn_idx[t] = le_head_index(&tr->prev_head, song, len);
       turn_x[t] = le_head_turn_mix(tr->turn_frames - tr->turn_left,
@@ -9291,29 +9299,24 @@ static inline void mix_tracks_frame(
          * its dry take (le_transpose_select). Writes stay on lbuf. */
         const le_wet_entry* se = tr->src_ent[l];
         const le_wet_entry* oe = tr->turn_ent[l];
-        /* The pitch bridge (#1675) steps the lane's grains once a frame over
-         * the source it reads (the new head's, or a swap's old one), then
-         * reads them from each side that is bridged. Both sources are of the
-         * take's length. */
-        int32_t bphase = 0;
-        const int32_t bhop = bridge_hop;
-        const double bg = (double)e->speed_numer / (double)e->speed_denom;
-        if (bridged[t] || turn_bridged[t]) {
-          const le_wet_entry* be = bridged[t] ? se : oe;
-          bphase = le_bridge_step(
-              &tr->bridge_lane[l], be ? be->pcm : lbuf, src_len[t],
-              &tr->head, bg, head_idx[t], bridge_pos[t],
-              e->fx_clock_base + f, le_bridge_offset(t, l, bhop), bhop, sr);
-        }
+        /* The pitch bridge (#1675): le_bridge_frame steps the lane's grains
+         * once a frame and reads them for each side that is bridged (the new
+         * head's source, a turn window's old one); both are of the take's
+         * length. Sides not bridged read through their heads. */
+        const float* sb = se ? se->pcm : lbuf;
+        const float* ob = oe ? oe->pcm : lbuf;
+        float bx = 0.0f, by = 0.0f;
+        le_bridge_frame(&tr->bridge_lane[l], bridged[t], turn_bridged[t], sb,
+                        ob, src_len[t], &tr->head, bridge_g, head_idx[t],
+                        bridge_pos[t], e->fx_clock_base + f,
+                        le_bridge_offset(t, l, bridge_hop), bridge_hop, sr,
+                        &bx, &by);
         if (bridged[t]) {
-          loopsample = le_bridge_read(&tr->bridge_lane[l], se ? se->pcm : lbuf,
-                                      src_len[t], tr->head.reversed, bg,
-                                      bphase, bhop);
+          loopsample = bx;
         } else {
           loopsample =
               head_idx[t] >= 0.0
-                  ? le_head_read_scaled(se ? se->pcm : lbuf,
-                                        se ? se->out_len : src_len[t],
+                  ? le_head_read_scaled(sb, se ? se->out_len : src_len[t],
                                         src_len[t], &tr->head, head_idx[t])
                   : lbuf[seg_base[t] + trk_pos[t]];
         }
@@ -9323,11 +9326,8 @@ static inline void mix_tracks_frame(
         if (turn_idx[t] >= 0.0) {
           const float old =
               turn_bridged[t]
-                  ? le_bridge_read(&tr->bridge_lane[l], oe ? oe->pcm : lbuf,
-                                   src_len[t], tr->head.reversed, bg, bphase,
-                                   bhop)
-                  : le_head_read_scaled(oe ? oe->pcm : lbuf,
-                                        oe ? oe->out_len : src_len[t],
+                  ? by
+                  : le_head_read_scaled(ob, oe ? oe->out_len : src_len[t],
                                         src_len[t], &tr->prev_head,
                                         turn_idx[t]);
           loopsample = loopsample * turn_x[t] + old * turn_y[t];
@@ -9354,7 +9354,18 @@ static inline void mix_tracks_frame(
         /* The Stop's fade-out (#1400): read on past the stop, never past
          * this lane's allocated slot. */
         float x = 0.0f;
-        if (tail_head) {
+        const uint32_t clock = e->fx_clock_base + f;
+        if (tr->bridge && !sounding && tail_len <= cap[t][l] &&
+            le_bridge_continues(&tr->bridge_lane[l], clock)) {
+          /* A bridged track's Stop fades its grains out (#1675), so the
+           * fade keeps the pitch and the waveform it stopped on. */
+          const le_wet_entry* se = tr->src_ent[l];
+          float y = 0.0f;
+          le_bridge_frame(&tr->bridge_lane[l], 1, 0, se ? se->pcm : lbuf,
+                          NULL, tail_len, &tr->head, bridge_g, tail_at, 0,
+                          clock, le_bridge_offset(t, l, bridge_hop),
+                          bridge_hop, sr, &x, &y);
+        } else if (tail_head) {
           const le_wet_entry* se = tr->src_ent[l];
           if (tail_len <= cap[t][l]) {
             x = le_head_read_scaled(se ? se->pcm : lbuf,

@@ -20,11 +20,12 @@
  * One pure header for the audio callback (mix_tracks_frame) and the offline
  * renderer (perf_render.c), which run the same arithmetic on the same frames,
  * so a stem reproduces what the performer heard. No allocation and no libm.
- * The state per lane is the two grains' start indices, their rate and
- * direction, and the engine frame of the last frame read: a read that does
- * not follow the last one (the first frame of a bridge, a track that stopped
- * and plays again) or that reads at another Speed or direction starts both
- * grains on the head again, so no grain jumps mid-read. Grain edges sit on
+ * The state per lane is the two grains' start indices, the rate and
+ * direction each reads at, and the engine frame of the last frame stepped:
+ * a step that does not follow the last one (the first frame of a bridge, a
+ * track that stopped and plays again) lays both grains on the head again. A
+ * Speed step or a Reverse toggle reaches the next grain, so no grain jumps
+ * mid-read and the change crossfades over one grain. Grain edges sit on
  * the engine clock (the frame the effect chains count, perf_arm_fx_clock + f
  * in the renderer) offset per lane, so at most one lane's search lands in
  * any period.
@@ -41,10 +42,12 @@
 typedef struct le_bridge {
   double cur;          /* source index the current grain started at */
   double prev;         /* and the grain before it, one hop earlier */
-  double g;            /* the grain rate they read at */
-  uint32_t last_clock; /* engine frame of the last frame read */
-  int32_t reversed;    /* and the direction */
-  int32_t live;        /* 0: the next read starts both grains on the head */
+  double cur_g;        /* the grain rate each reads at: the Speed in force */
+  double prev_g;       /* when it started */
+  uint32_t last_clock; /* engine frame of the last frame stepped */
+  int32_t cur_rev;     /* the direction each reads in */
+  int32_t prev_rev;
+  int32_t live;        /* 0: the next step lays both grains on the head */
 } le_bridge;
 
 /* The grain hop: the power of two nearest 40 ms (4096 frames at 96 kHz, 2048
@@ -203,13 +206,19 @@ static inline double le_bridge_align(const float* buf, int32_t len,
   return le_head_wrap(ideal + (double)lag, len);
 }
 
+/* Whether a step at engine frame `clock` follows the lane's last one, so the
+ * grains go on rather than being laid on the head again. */
+static inline int le_bridge_continues(const le_bridge* b, uint32_t clock) {
+  return b->live && clock == b->last_clock + 1u;
+}
+
 /* Advances a lane's grains to song position `pos`, whose head index is
  * `index` (le_head_index(h, pos, len)), at engine frame `clock`, and returns
  * the frame's phase in the hop. `buf` holds `len` frames at the take's own
  * timing (the dry take or a plain Transpose render) and is what a new grain
- * is aligned on; `g` is the grain rate, source frames per song frame (the
- * Speed). Call once per frame the lane sounds through the bridge, then read
- * with le_bridge_read. */
+ * is aligned on; `g` is the grain rate a new grain reads at, source frames
+ * per song frame (the Speed), in the head's direction. Call once per frame
+ * the lane sounds through the bridge, then read with le_bridge_read. */
 static inline int32_t le_bridge_step(le_bridge* b, const float* buf,
                                      int32_t len, const le_read_head* h,
                                      double g, double index, int64_t pos,
@@ -217,19 +226,23 @@ static inline int32_t le_bridge_step(le_bridge* b, const float* buf,
                                      int32_t hop, int32_t sample_rate) {
   if (len <= 0 || hop <= 0) return 0;
   const int32_t phase = (int32_t)((clock + offset) & (uint32_t)(hop - 1));
-  if (!b->live || clock != b->last_clock + 1u || b->g != g ||
-      b->reversed != h->reversed) {
+  if (!le_bridge_continues(b, clock)) {
     b->cur = le_head_index(h, pos - phase, len);
     b->prev = le_head_index(h, pos - phase - hop, len);
-    b->g = g;
-    b->reversed = h->reversed;
+    b->cur_g = b->prev_g = g;
+    b->cur_rev = b->prev_rev = h->reversed;
     b->live = 1;
   } else if (phase == 0) {
-    const double dir = h->reversed ? -1.0 : 1.0;
-    const double cont = le_head_wrap(b->cur + dir * g * (double)hop, len);
+    const double dir = b->cur_rev ? -1.0 : 1.0;
+    const double cont =
+        le_head_wrap(b->cur + dir * b->cur_g * (double)hop, len);
     b->prev = b->cur;
+    b->prev_g = b->cur_g;
+    b->prev_rev = b->cur_rev;
     b->cur = le_bridge_align(buf, len, index, cont, g, h->reversed,
                              sample_rate);
+    b->cur_g = g;
+    b->cur_rev = h->reversed;
   }
   b->last_clock = clock;
   return phase;
@@ -245,33 +258,46 @@ static inline double le_bridge_wrap_near(double x, int32_t len) {
   return x;
 }
 
+/* The sample one grain reads from `buf` `into` frames after it started. */
+static inline float le_bridge_grain(const float* buf, int32_t len,
+                                    double start, double g, int32_t reversed,
+                                    int32_t into) {
+  const le_read_head gh = {reversed, 0.0, g};
+  const double x = le_bridge_wrap_near(
+      start + (reversed ? -g : g) * (double)into, len);
+  return le_head_read(buf, len, &gh, x);
+}
+
 /* The sample the lane's two grains read from `buf` (`len` frames, the take's
  * timing) at `phase`: the current grain fading in over the hop as the one
  * before it fades out, sin^2 and its complement. */
 static inline float le_bridge_read(const le_bridge* b, const float* buf,
-                                   int32_t len, int32_t reversed, double g,
-                                   int32_t phase, int32_t hop) {
+                                   int32_t len, int32_t phase, int32_t hop) {
   if (len <= 0 || hop <= 0) return 0.0f;
-  const double dir = reversed ? -1.0 : 1.0;
-  const le_read_head gh = {reversed, 0.0, g};
-  const double xc = le_bridge_wrap_near(b->cur + dir * g * (double)phase, len);
-  const double xp =
-      le_bridge_wrap_near(b->prev + dir * g * (double)(phase + hop), len);
   const float m = le_head_turn_mix(phase, hop, 1);
   const float w = m * m;
-  return w * le_head_read(buf, len, &gh, xc) +
-         (1.0f - w) * le_head_read(buf, len, &gh, xp);
+  return w * le_bridge_grain(buf, len, b->cur, b->cur_g, b->cur_rev, phase) +
+         (1.0f - w) * le_bridge_grain(buf, len, b->prev, b->prev_g,
+                                      b->prev_rev, phase + hop);
 }
 
-/* le_bridge_step then le_bridge_read over the same source. */
-static inline float le_bridge_sample(le_bridge* b, const float* buf,
-                                     int32_t len, const le_read_head* h,
-                                     double g, double index, int64_t pos,
-                                     uint32_t clock, uint32_t offset,
-                                     int32_t hop, int32_t sample_rate) {
-  const int32_t phase = le_bridge_step(b, buf, len, h, g, index, pos, clock,
-                                       offset, hop, sample_rate);
-  return le_bridge_read(b, buf, len, h->reversed, g, phase, hop);
+/* One lane's frame through the bridge, the one sequence the callback and the
+ * renderer both run: the grains step over the bridged side's source (`fresh`
+ * when the new head is bridged, else `old`, a turn window's old source),
+ * then each bridged side reads them, *x from `fresh` when `on`, *y from
+ * `old` when `old_on`. Sides that are not bridged are left alone. */
+static inline void le_bridge_frame(le_bridge* b, int on, int old_on,
+                                   const float* fresh, const float* old,
+                                   int32_t len, const le_read_head* h,
+                                   double g, double index, int64_t pos,
+                                   uint32_t clock, uint32_t offset,
+                                   int32_t hop, int32_t sample_rate, float* x,
+                                   float* y) {
+  if (!on && !old_on) return;
+  const int32_t phase = le_bridge_step(b, on ? fresh : old, len, h, g, index,
+                                       pos, clock, offset, hop, sample_rate);
+  if (on) *x = le_bridge_read(b, fresh, len, phase, hop);
+  if (old_on) *y = le_bridge_read(b, old, len, phase, hop);
 }
 
 #endif /* LE_ENGINE_BRIDGE_H */

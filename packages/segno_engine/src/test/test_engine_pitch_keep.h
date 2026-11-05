@@ -434,6 +434,100 @@ static void test_pitch_bridge_with_speed(void) {
   le_engine_destroy(e);
 }
 
+/* A bridged track keeps its pitch through a second retime (the span moves,
+ * the snapshot follows) and a Stop (#1675 review): the Stop's fade reads the
+ * grains on rather than dropping to the varispeed, so the fade has no step;
+ * and the stem reproduces the retime. */
+static void test_pitch_bridge_retime_and_stop(void) {
+  printf("test_pitch_bridge_retime_and_stop\n");
+  le_engine* e = pk_fixture(1);
+  CHECK(le_engine_set_fx_cache_cap(e, 1024) == LE_OK); /* bridge for good */
+  const char* dir = render_test_dir("pitch-bridge-stop");
+  CHECK(perf_arm_dir_long(e, dir) == LE_OK);
+  drain(e);
+  static float live[8 * PK_LEN], replay[8 * PK_LEN];
+  int at = 0;
+  tf_process(e, live, 2000, 0.0f);
+  at += 2000;
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, live + at, 6000, 0.0f);
+  at += 6000;
+  CHECK(le_engine_set_tempo(e, 80.0f) == LE_OK); /* still bridged */
+  tf_process(e, live + at, 64, 0.0f);
+  at += 64;
+  CHECK(pk_cents(e, 0) == 0);
+  tf_process(e, live + at, 8000, 0.0f);
+  at += 8000;
+  CHECK(pk_windows_at(live, at - 4096, at, 512, 220.0, 220.0 * 80 / 120,
+                      30.0));
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  const int stop_at = at;
+  tf_process(e, live + at, 2000, 0.0f);
+  at += 2000;
+  /* the fade-out continues the waveform: no step past a sine's own slope */
+  const float slope = (float)(0.5 * 2.0 * M_PI * 220.0 / PK_SR);
+  int steps = 0;
+  for (int i = stop_at - 64; i < stop_at + 400; ++i) {
+    steps += fabsf(live[i + 1] - live[i]) > 1.2f * slope;
+  }
+  CHECK(steps == 0);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  static float pcm[PK_LEN];
+  CHECK(le_engine_export_track(e, 0, pcm, PK_LEN) == PK_LEN);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/track.wav", dir);
+  test_write_wav_mono(path, pcm, PK_LEN, PK_SR);
+  fade_finalize_manifest(dir,
+    "{\"followOutput\":false,\"captureMask\":1,\"tracks\":[{\"channel\":0,\"volume\":1,"
+    "\"lanes\":[{\"lane\":0,\"deferred\":false,\"pcmRef\":\"track.wav\"}]}]}");
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  const int frames = test_read_wet_stem(dir, 0, replay, 8 * PK_LEN);
+  CHECK(frames == at);
+  /* Up to the Stop: the renderer's Stop fade on a retimed take differs from
+   * the callback's with or without the bridge (a varispeed track shows the
+   * same), a stem gap of its own. */
+  int bad = 0, first = -1;
+  for (int i = 0; i < stop_at; ++i) {
+    if (fabsf(replay[i] - live[i]) >= 2e-3f) {
+      if (first < 0) first = i;
+      ++bad;
+    }
+  }
+  if (bad) printf("  %d mismatched from %d\n", bad, first);
+  CHECK(bad == 0);
+  le_engine_destroy(e);
+}
+
+/* Reverse and Speed reach the next grain while bridged (#1675 review): the
+ * pitch stays the take's through the toggle and the step (2x: its octave),
+ * and nothing steps by more than the sine's own slope. */
+static void test_pitch_bridge_reverse_and_speed(void) {
+  printf("test_pitch_bridge_reverse_and_speed\n");
+  static float out[3 * PK_LEN90];
+  le_engine* e = pk_fixture(1);
+  CHECK(le_engine_set_fx_cache_cap(e, 1024) == LE_OK);
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tf_process(e, out, 4096, 0.0f);
+  uint64_t id = 0;
+  CHECK(le_engine_toggle_reverse(e, 0, &id) == LE_OK && id);
+  tf_process(e, out, PK_LEN90, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(pk_windows_at(out, 0, PK_LEN90, 512, 220.0, 165.0, 30.0));
+  const float slope = (float)(0.5 * 2.0 * M_PI * 220.0 / PK_SR);
+  int steps = 0;
+  for (int i = 0; i + 1 < 2048; ++i) {
+    steps += fabsf(out[i + 1] - out[i]) > 1.3f * slope;
+  }
+  CHECK(steps == 0); /* across the toggle and its first grains */
+  CHECK(le_engine_set_speed(e, 2, 1, &id) == LE_OK && id);
+  tf_process(e, out, PK_LEN90, 0.0f);
+  fade_result(e, id, LE_OK);
+  CHECK(pk_cents(e, 0) == 0);
+  CHECK(pk_windows_at(out, 1024, PK_LEN90, 512, 440.0, 330.0, 30.0));
+  le_engine_destroy(e);
+}
+
 static void run_pitch_keep_tests(void) {
   test_pitch_unchanged_across_retime();
   test_pitch_follows_speed_and_switch();
@@ -444,4 +538,6 @@ static void run_pitch_keep_tests(void) {
   test_pitch_bridge_when_refused();
   test_pitch_bridge_block_invariance();
   test_pitch_bridge_with_speed();
+  test_pitch_bridge_retime_and_stop();
+  test_pitch_bridge_reverse_and_speed();
 }
