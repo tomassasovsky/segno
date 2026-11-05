@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "engine_core.h"     /* le_push */
+#include "engine_heard.h"    /* the heard image (#1713) */
 #include "engine_private.h"  /* le_engine, le_track, le_lane, load/store_i32 */
 #include "rt_alloc.h"        /* le_rt_alloc: the imported live slot */
 #include "segno_engine_api.h"
@@ -77,6 +78,8 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   if (engine->lane_growth_command > atomic_load_explicit(
         &engine->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
+  /* An attach in flight may still install into this lane's live slot. */
+  if (le_heard_attach_pending(engine, channel)) return LE_ERR_NOT_READY;
   /* Importing targets an empty track: its buffers are not read by the audio
    * thread, so the control thread can fill any lane directly. An undone-to-empty
    * track qualifies, but its redo stack must go first — the live buffer being
@@ -136,6 +139,8 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   le_retire_buffer(engine, ln->pool[live]);
   ln->pool[live] = fresh;
   ln->pool_cap[live] = engine->max_loop_frames;
+  /* An imported take has no heard image (#1713): it plays clean. */
+  (void)le_heard_match(engine, channel, lane, live, 0, LE_HEARD_RETIRE);
   store_i32(&ln->a_len, frames);
   /* #595: imported content IS captured audio — the recoverable flag rides the
    * session round-trip (export only ever covers lanes that recorded, so this
@@ -370,6 +375,8 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   if (want > engine->max_loop_frames) want = engine->max_loop_frames;
   const int got = le_lane_ensure_slot(engine, ln, ordinal, want);
   if (got == LE_SLOT_FAILED) return LE_ERR_INVALID;
+  /* An imported image has no heard image (#1713): it plays clean. */
+  (void)le_heard_match(engine, channel, lane, ordinal, 0, LE_HEARD_RETIRE);
   le_forget_slot_images(engine, channel); /* #1143: slot content redefined */
   memcpy(ln->pool[ordinal], pcm, (size_t)frames * sizeof(float));
   /* A fresh slot's tail is already zero, and untouched; only a reused one

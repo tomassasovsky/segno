@@ -38,6 +38,7 @@
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
+#include "engine_heard.h" /* the heard image (#1713) */
 #include "engine_instruments.h" /* instrument synth lifecycle (#1197) */
 #include "engine_internal.h"
 #include "engine_miniaudio.h"
@@ -592,6 +593,7 @@ static int le_engine_reset_material(le_engine* engine,
       }
       le_lane_release_standby(engine, &engine->spares[t][l]);
       le_lane_release_zero_spare(engine, &engine->spares[t][l]);
+      le_heard_free_lane(engine, t, l); /* #1713: the slots' images */
       ln->image_gain = 1.0f;
       ln->image_pan = 0.0f;
       store_i32(&ln->a_live, 0);
@@ -1384,6 +1386,15 @@ le_engine* le_engine_create(void) {
   /* The audibility gains (#1400) start at their gates on the first frame each
    * track is mixed. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
+  /* The heard image (#1713): outside the first frame loop, every lane's
+   * crossfade on its image (what a take that has one plays), no attach. */
+  engine->heard_i = -1;
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      engine->heard[t][l].mix = 1.0f;
+      engine->heard[t][l].attach_slot = -1;
+    }
+  }
   /* No take has dropped a frame (#1198): 0 would name frame 0. */
   atomic_store_explicit(&engine->a_perf_first_drop_frame, UINT64_MAX,
                         memory_order_relaxed);
@@ -1531,6 +1542,7 @@ void le_engine_destroy(le_engine* engine) {
       }
       le_free_audio_buffer(engine, engine->spares[t][l].standby);
       le_free_audio_buffer(engine, engine->spares[t][l].zero_spare);
+      le_heard_free_lane(engine, t, l); /* #1713 */
       for (int s = 0; s < LE_FX_MAX; ++s) {
         le_fx_free_slot(&ln->fx, s);
         /* The device is already closed (no audio thread), so any hosted plugin

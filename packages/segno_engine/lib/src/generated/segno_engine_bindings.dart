@@ -317,6 +317,66 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<le_record_image>)
       >();
 
+  /// What lane [lane] of [channel] plays: LE_LANE_SOURCE_HEARD, its image where
+  /// it has one, or LE_LANE_SOURCE_CLEAN, its clean take through its chain (an
+  /// edited take, re-amped). A direct store; works while stopped.
+  int le_engine_set_lane_source(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int source,
+  ) {
+    return _le_engine_set_lane_source(
+      engine,
+      channel,
+      lane,
+      source,
+    );
+  }
+
+  late final _le_engine_set_lane_sourcePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_lane_source');
+  late final _le_engine_set_lane_source = _le_engine_set_lane_sourcePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Gives lane [lane]'s live take an image that is its clean signal in both
+  /// planes (what a take with no effects was heard as), so an overdub through
+  /// the input's effects can be captured into it. LE_OK when the live slot
+  /// already holds one. LE_ERR_NOT_READY while the track captures, drains a
+  /// punch-out, edits its length or bounces, or while an earlier attach is in
+  /// flight; LE_ERR_INVALID for a track or lane with no take, or on allocation
+  /// failure. The image is installed by the next callback, ahead of anything
+  /// posted after this, so a punch-in posted next captures into it.
+  int le_engine_heard_attach(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+  ) {
+    return _le_engine_heard_attach(
+      engine,
+      channel,
+      lane,
+    );
+  }
+
+  late final _le_engine_heard_attachPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_heard_attach');
+  late final _le_engine_heard_attach = _le_engine_heard_attachPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Returns the miniaudio + engine version string (never NULL).
   ffi.Pointer<ffi.Char> le_version() {
     return _le_version();
@@ -8667,6 +8727,11 @@ enum le_command_code {
   /// no-op while le_tempo_locked or an external clock owns the tempo.
   LE_CMD_CLEAR_TEMPO(142),
 
+  /// The heard image (#1713): installs planes le_engine_heard_attach copied
+  /// from a lane's live clean slot, if that slot is still live. lanei arm:
+  /// channel, lane, value = the slot. Typed producer only.
+  LE_CMD_HEARD_ATTACH(144),
+
   /// render recipe (#1202): the callback records
   /// every source's read law; never raw-posted
   LE_CMD_RENDER_FREEZE(112),
@@ -8797,6 +8862,7 @@ enum le_command_code {
     140 => LE_CMD_MEASURE_LATENCY_PATH,
     141 => LE_CMD_CANCEL_LATENCY,
     142 => LE_CMD_CLEAR_TEMPO,
+    144 => LE_CMD_HEARD_ATTACH,
     112 => LE_CMD_RENDER_FREEZE,
     113 => LE_CMD_BOUNCE,
     114 => LE_CMD_BOUNCE_RECOVER,
@@ -9127,6 +9193,16 @@ final class le_record_image extends ffi.Struct {
   external int fx_lane_mask;
 
   external ffi.Pointer<le_fx_recipe> lane_fx;
+
+  /// Lanes whose take records its heard image (#1713): the output of the
+  /// input chain the lane records, captured beside the clean take and played
+  /// back instead of re-running that chain (le_engine_set_lane_source). Bit l
+  /// for lane l; read only when the arm starts a fresh take on an EMPTY
+  /// track. A lane outside the mask records clean only. An overdub on a take
+  /// keeps capturing into whatever image the take has; one without an image
+  /// gets one from le_engine_heard_attach.
+  @ffi.Uint32()
+  external int heard_mask;
 }
 
 /// Per-lane state published via le_engine_get_lane: one recordable input lane of
@@ -9176,6 +9252,16 @@ final class le_lane_snapshot extends ffi.Struct {
   /// (right), 0 centre — see le_engine_set_lane_pan.
   @ffi.Float()
   external double pan;
+
+  /// Trailing (#1713): 0/1, the live slot holds a heard image (the input
+  /// chain's output captured while the take recorded); and the lane's source,
+  /// LE_LANE_SOURCE_HEARD or LE_LANE_SOURCE_CLEAN (le_engine_set_lane_source).
+  /// The lane plays its image while both say so.
+  @ffi.Int32()
+  external int heard;
+
+  @ffi.Int32()
+  external int source;
 }
 
 /// Per-track state published in le_snapshot.tracks.
@@ -11202,6 +11288,10 @@ const int LE_FX_WORKERS_MAX = 3;
 const int LE_FX_WAKE_BUCKETS = 16;
 
 const int LE_FX_WAKE_BUCKET_NS = 2000;
+
+const int LE_LANE_SOURCE_HEARD = 0;
+
+const int LE_LANE_SOURCE_CLEAN = 1;
 
 const int LE_INTERFACE_MAX_INPUTS = 16;
 

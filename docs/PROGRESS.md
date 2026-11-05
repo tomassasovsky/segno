@@ -76,9 +76,41 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
+| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine part 1 (heard capture and playback, dormant) in review | build | auto | `claude/take-plays-heard-1713-p*` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
+
+## November 2026 A take plays back what was heard (#1713, in progress)
+
+- Plan and the owner's decisions: the comment on #1713. Engine part 1
+  (`engine_heard.c`): a lane pool slot can hold a heard image, two more
+  planes (left, right) beside the clean take, in lockstep with it (same slot,
+  same capacity, the same allocation, retire, standby and zero-spare rules),
+  so Undo, Redo, Peel and Clear's restore carry it with no code of their own.
+- Capture: `le_record_image.heard_mask` gives a fresh take an image. The
+  first frame loop logs where it wrote the clean take and the content
+  operations it made mid-block (seam folds, #730 tapers and fades, the stop
+  tail copy); after the monitor jobs the post-pass writes the input chain's
+  output (times the capture trim) at the same places and replays the
+  operations in order. Block-start operations (the punch-out drain,
+  truncation) apply to the planes at once. A layer with heard images is
+  announced to control only after its post-pass. The input chain runs while
+  a lane captures through it even if its monitor is muted or off.
+- Playback: a lane with source HEARD (the default) whose live slot holds an
+  image reads its planes through the same head as the clean take and does
+  not run its chain; `le_engine_set_lane_source` switches to the clean take
+  through the chain with a 10 ms crossfade (the chain re-enters through its
+  re-enable ramp). The wet cache does not print such a lane and its track
+  has no whole-track print. `le_engine_heard_attach` gives a dry take an
+  image copied from its clean take, for an overdub through effects.
+- Not yet: length edits, Bounce, the render recipe, session export and
+  import, Transpose and the pitch bridge, performance stems and rendered
+  tails (later parts); an edited or imported image has no heard image and
+  plays clean. Nothing in the app records an image until the last part.
+- Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
+  every take recording an image of an input with no chain, which must equal
+  the clean take after every callback.
 
 ## November 2026 Undo after a track clear (#1707)
 
