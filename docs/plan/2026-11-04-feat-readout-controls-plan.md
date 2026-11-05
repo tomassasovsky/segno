@@ -31,7 +31,9 @@ recommended:
 4. Tempo changes that retime recorded loops are allowed from the readout,
    and the panel says so before the player changes anything.
 5. No count-in on the panel.
-6. No Clear tempo on the readout.
+6. No Clear tempo on the readout. Changed by the owner on 2026-11-05 after
+   build 229: Clear tempo is on the panel, beside Tap (see "Clear tempo"
+   below).
 
 ## What crosses the screen link
 
@@ -48,17 +50,31 @@ dropped.
 | `signature.set` | `num`, `den` | `TempoSettings.setTimeSignature` |
 | `length.set` | `bars` (0 is Auto) | `RecordSettings.setDefaultLengthBars` |
 | `timing.set` | `timing` (`RecordTiming.name`) | `RecordTimingSettings.setTiming` |
+| `tempo.clear` | none | `TempoSettings.clearTempo` |
 
-There is no reply. The readout sees the accepted value in its next
-`PerformanceReadout` push. The Loop settings pages are not touched (#1659 is
-restructuring them); only the settings classes are called.
+An accepted command has no reply. The readout sees the accepted value in its
+next `PerformanceReadout` push. The Loop settings pages are not touched
+(#1659 is restructuring them); only the settings classes are called.
 
 The handler checks the tempo lock itself (`LooperState.tempoFollow` and an
 external clock) before it calls the tempo owner: the engine accepts a locked
 tempo or signature command and drops it later on the audio thread, while
 `TempoSettings` would already have published and saved it. It also drops
-every command while the console is idle-dimmed, so the waking touch presses
-nothing even when the readout's barrier is a push behind.
+every command while the console is idle-dimmed, and for a second after a
+touch on the readout woke it, so the waking touch presses nothing even when
+the readout's barrier is a push behind and the button acts on release.
+
+### Clear tempo
+
+`tempo.clear` is the one command with a reply. Like the main screen's Clear
+tempo (#1653), it is offered whenever a tempo is set and the handler checks
+no lock: the engine's tempo lock decides. A refusal comes back main to
+readout as `{op: 'refused', refusal: <ReadoutRefusal.name>}`, one of
+`tempoClearLocked` (`notReady`), `tempoClearStopped` (`notRunning`) or
+`tempoClearOther`, and the panel says the main screen's notice, its title
+and reason, in the tempo note's place for 6 s (the main screen's warning
+time), until the next command, or until the panel closes. While it is said
+it takes the recording band's place, because the 7" has no room for both.
 
 A nudge is a delta so that a held button never works from the readout's stale
 copy of the tempo. The handler adds it to the live tempo. The live tempo lags

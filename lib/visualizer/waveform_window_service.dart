@@ -89,6 +89,11 @@ abstract interface class WaveformWindowService {
   /// (#1654). The caller applies it; the readout sees the result in its next
   /// readout push.
   abstract void Function(ReadoutCommand command)? onReadoutCommand;
+
+  /// Tells the readout the main screen refused a command it sent, for it to
+  /// say why. Dropped when the readout is not linked: the panel that sent
+  /// the command is gone with it.
+  void showRefusal(ReadoutRefusal refusal);
 }
 
 /// A no-op service: tests, and the macOS dev host, which has no Track display.
@@ -122,6 +127,9 @@ class NoopWaveformWindowService implements WaveformWindowService {
 
   @override
   Future<void> pushReadout(PerformanceReadout readout) async {}
+
+  @override
+  void showRefusal(ReadoutRefusal refusal) {}
 
   @override
   Future<void> pushWaveform(
