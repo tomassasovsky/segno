@@ -47,11 +47,18 @@ class FxChainGroup extends Equatable {
   /// moves a whole instance, so every entry of one rack shares a placement.
   FxPlacement get placement => chain[start].placement;
 
-  /// Whether the group is switched on: a single effect by its own switch, a
-  /// rack by its rack switch ([FxRack.bypassed]) with at least one module on.
-  /// A rack whose every module is off is drawn off, as a bypassed one is.
-  bool get isOn {
-    if (rack?.bypassed ?? false) return false;
+  /// Whether the group's own switch is on: a single effect's power, or a
+  /// rack's switch ([FxRack.bypassed], #1711), whatever its modules' own
+  /// switches say. What the card's power button and a rack binding read.
+  bool get isOn => switch (rack) {
+    final rack? => !rack.bypassed,
+    null => chain[start].enabled,
+  };
+
+  /// Whether anything in the group sounds: its switch is on and at least one
+  /// entry is too. A rack whose every module is off is drawn bypassed.
+  bool get audible {
+    if (!isOn) return false;
     for (var i = start; i < end; i++) {
       if (chain[i].enabled) return true;
     }
@@ -269,11 +276,9 @@ List<TrackEffect> fxRenameRack(
 /// Returns [chain] with the rack [rackId] switched on or off as a whole
 /// (#1711), or `null` when [chain] holds no such rack.
 ///
-/// Off bypasses the rack ([FxRack.bypassed]) and leaves every module's own
-/// switch as it is, so on restores them as they were. On with every module's
-/// own switch off has nothing to restore, so it switches them all on: the
-/// rack's switch then always leaves the rack sounding, as [FxChainGroup.isOn]
-/// reads it.
+/// Only the rack's own switch ([FxRack.bypassed]) changes: every module keeps
+/// its own, so off then on is exactly where the rack started, whoever pressed
+/// it and however a hold or a Released value replays it.
 List<TrackEffect>? fxWithRackEnabled(
   List<TrackEffect> chain,
   String rackId, {
@@ -284,17 +289,9 @@ List<TrackEffect>? fxWithRackEnabled(
   ).where((g) => g.rack?.id == rackId).firstOrNull;
   if (group == null) return null;
   final rack = group.rack!.copyWith(bypassed: !enabled);
-  final restore = enabled && !group.entries.any((fx) => fx.enabled);
   return [
     for (final (i, fx) in chain.indexed)
-      if (i < group.start || i >= group.end)
-        fx
-      else
-        switch (_withRack(fx, rack)) {
-          final BuiltInEffect e when restore => e.copyWith(enabled: true),
-          final PluginEffect e when restore => e.copyWith(enabled: true),
-          final e => e,
-        },
+      if (i < group.start || i >= group.end) fx else _withRack(fx, rack),
   ];
 }
 

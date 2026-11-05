@@ -175,15 +175,17 @@ void main() {
       expect(groups.map((g) => g.start), [0, 1, 2]);
     });
 
-    test('a rack is bypassed only when every module is', () {
+    test('a rack is drawn bypassed only when every module is', () {
       final chain = [
         _fx('a', rackId: 'r1', enabled: false),
         _fx('b', rackId: 'r1', enabled: false),
       ];
 
-      expect(fxChainGroups(chain).single.isOn, isFalse);
+      expect(fxChainGroups(chain).single.audible, isFalse);
+      // Its own switch is still on: the modules are off on their own.
+      expect(fxChainGroups(chain).single.isOn, isTrue);
       expect(
-        fxChainGroups([chain.first, _fx('b', rackId: 'r1')]).single.isOn,
+        fxChainGroups([chain.first, _fx('b', rackId: 'r1')]).single.audible,
         isTrue,
       );
     });
@@ -202,6 +204,7 @@ void main() {
 
       final groups = fxChainGroups(off);
       expect(groups.map((g) => g.isOn), [false, true, true]);
+      expect(groups.map((g) => g.audible), [false, true, true]);
       expect(off.map((fx) => fx.enabled), [true, false, true, true]);
       expect(off.map((fx) => fx.rack?.bypassed), [true, true, false, null]);
     });
@@ -212,16 +215,16 @@ void main() {
       expect(fxWithRackEnabled(off, 'r1', enabled: true), chain());
     });
 
-    test('on with every module off switches them all on', () {
+    test('on and off touch only the rack switch, so a round trip is '
+        'exact even with every module off', () {
       final silent = [
         _fx('a', rackId: 'r1', enabled: false),
         _fx('b', rackId: 'r1', enabled: false),
       ];
 
-      final on = fxWithRackEnabled(silent, 'r1', enabled: true)!;
-
-      expect(on.map((fx) => fx.enabled), [true, true]);
-      expect(fxChainGroups(on).single.isOn, isTrue);
+      final off = fxWithRackEnabled(silent, 'r1', enabled: false)!;
+      expect(off.map((fx) => fx.enabled), [false, false]);
+      expect(fxWithRackEnabled(off, 'r1', enabled: true), silent);
     });
 
     test('names no rack it does not hold', () {

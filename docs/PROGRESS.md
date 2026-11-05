@@ -90,8 +90,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   never fall back to the chain or the other rack.
 - A rack's switch is `FxRack.bypassed`, on every module of the rack and
   saved with the chain (session file, settings and performance snapshot
-  alike). Off leaves each pedal's own `enabled` as it was; on restores them,
-  and switches them all on only when every one was off (nothing to restore).
+  alike). Off and on change only that flag, so each pedal's own `enabled`
+  is as it was, and a round trip (a hold, a Released value) is exact.
   `TrackEffect.effectiveEnabled` is the pedal's own switch with its rack's
   applied. The engine has no rack switch: the repository hands it the
   effective state through the existing per-entry atomic stores and recipe
@@ -103,12 +103,17 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   that is one rack end to end (`fxSoleRack`) offers only its chain row,
   named by the rack instead of "Every effect". Custom controls carry actions,
   not activations, so they offer none.
-- The Effects page's rack power is the same switch: the card reads
-  `FxChainGroup.isOn`, and a bypassed rack's editor dims its pedals, which
-  keep their own switches.
+- The Effects page's rack power is the same switch: its button reads
+  `FxChainGroup.isOn` (the rack's switch), the card lights when
+  `FxChainGroup.audible` (switch on and a pedal on), and a bypassed rack's
+  editor dims its pedals, which keep their own switches.
+- A console or external binding to one pedal reads that pedal's own switch,
+  inside a bypassed rack as inside a chain that is off.
 - A console binding's toggle now saves the chain it changed, so a rack (or a
   chain or an effect) switched from the pedal survives a reload. A momentary
-  returns to what is saved.
+  returns to what is saved, and an empty chain switched off is not saved.
+- The performance arm snapshot carries each entry's effective state, since
+  its native reader knows no racks.
 - One external switch with Rack A active while On and Rack B active while
   Off alternates them on every press (the Line 6 Helix pattern);
   `test/control/rack_activation_dispatch_test.dart` drives exactly that

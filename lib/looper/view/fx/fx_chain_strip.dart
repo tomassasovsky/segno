@@ -174,7 +174,7 @@ class _FxChainCard extends StatelessWidget {
     // border, a bypassed one the plain card and a muted edge. Bypassed is
     // drawn, not hidden — a chain reads as a chain whether or not every link
     // is passing signal.
-    final lit = group.isOn && !dimmed;
+    final lit = group.audible && !dimmed;
     return Opacity(
       opacity: dimmed ? surface.disabledOpacity : 1,
       child: Material(

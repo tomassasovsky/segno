@@ -4139,7 +4139,8 @@ class ControlCubit extends Cubit<ControlState> {
         // empty chain switched off is not saved, as the Effects page's own
         // switch does not save it: every boot would restore a bypass on the
         // effects added there later.
-        if (_looper.chainEntriesAt(target.address)?.isNotEmpty ?? false) {
+        if (!prior ||
+            (_looper.chainEntriesAt(target.address)?.isNotEmpty ?? false)) {
           _fxPersistence.scheduleSave(
             target.address,
             _settings,
