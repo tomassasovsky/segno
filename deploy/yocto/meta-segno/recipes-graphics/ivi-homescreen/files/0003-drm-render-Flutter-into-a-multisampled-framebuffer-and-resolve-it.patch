@@ -1,4 +1,4 @@
-From fab7818c7b6fa033e4d7f6ce22bba33beb3d9f94 Mon Sep 17 00:00:00 2001
+From 530373a2e5345f15343c7c5c6d7e92de7cd4f7c7 Mon Sep 17 00:00:00 2001
 From: Segno <noreply@segno.invalid>
 Date: Thu, 5 Nov 2026 00:44:55 -0300
 Subject: [PATCH] drm: render Flutter into a multisampled framebuffer and
@@ -25,6 +25,10 @@ before any path scans the slot out or composites it. The samples are
 then invalidated so a tiler need not write them back. store.fbo becomes
 only the resolve target, so its single-sample depth/stencil goes.
 
+Only under Impeller. Skia anti-aliases analytically and wraps the
+backing store as single-sample, so a multisampled one would only break
+its read-backs (dst reads, backdrop filters) and cost memory.
+
 IVI_DRM_MSAA_SAMPLES sets the sample count (default 4, capped at
 GL_MAX_SAMPLES; 0 or 1 turns it off). A store whose multisampled FBO is
 incomplete, or whose trial resolve fails (a colour format the driver
@@ -38,27 +42,35 @@ resolve blit per frame per output.
 Upstream-Status: Pending
 ---
  shell/backend/drm_kms_egl/README.md         |   1 +
- shell/backend/drm_kms_egl/drm_compositor.cc | 187 +++++++++++++++++++-
+ shell/backend/drm_kms_egl/drm_compositor.cc | 192 +++++++++++++++++++-
  shell/backend/drm_kms_egl/drm_compositor.h  |  29 +++
- 3 files changed, 216 insertions(+), 1 deletion(-)
+ 3 files changed, 221 insertions(+), 1 deletion(-)
 
 diff --git a/shell/backend/drm_kms_egl/README.md b/shell/backend/drm_kms_egl/README.md
-index e101bee2..642a4ceb 100644
+index e101bee2..9c56f915 100644
 --- a/shell/backend/drm_kms_egl/README.md
 +++ b/shell/backend/drm_kms_egl/README.md
 @@ -501,6 +501,7 @@ Pacing and scheduling are separate problems and both have to be right — see
  | `IVI_DRM_FLIP_TRACE` | (off) | `1` logs every PAGE_FLIP_EVENT (frame-cadence diagnostic) |
  | `IVI_DRM_PROFILE` | (off) | Anything non-empty enables per-frame composite profiling. Every 60 frames, `PresentFramed` / `PresentLayers` log a line: `framed/planes profile (n=60): wait=Xms compose=Yms commit=Zms total=Wms` with both per-stage mean and max. Useful for diagnosing where the per-frame budget goes. |
  | `IVI_DRM_NO_DIRECT_SCANOUT` | (off) | `1` forces GL composite even when REFLECT_Y is available. Diagnostic — bisects visual artifacts that may live on the direct-scanout path. |
-+| `IVI_DRM_MSAA_SAMPLES` | `4` | Samples per pixel in the framebuffer Flutter renders into, capped at `GL_MAX_SAMPLES`; `0` or `1` renders single-sample. Each present resolves it into the scanout buffer with `glBlitFramebuffer`. Impeller's OpenGL ES backend anti-aliases geometry only through MSAA, so without it every edge is aliased on drivers that lack `GL_EXT_multisampled_render_to_texture` (Mesa V3D, for one). Costs a multisampled colour and depth/stencil buffer per backing store (66 MB at 1920x1080, 4x) and one resolve per frame |
++| `IVI_DRM_MSAA_SAMPLES` | `4` | Samples per pixel in the framebuffer Flutter renders into under Impeller, capped at `GL_MAX_SAMPLES`; `0` or `1` renders single-sample. Skia always renders single-sample: it anti-aliases on its own. Each present resolves it into the scanout buffer with `glBlitFramebuffer`. Impeller's OpenGL ES backend anti-aliases geometry only through MSAA, so without it every edge is aliased on drivers that lack `GL_EXT_multisampled_render_to_texture` (Mesa V3D, for one). Costs a multisampled colour and depth/stencil buffer per backing store (66 MB at 1920x1080, 4x) and one resolve per frame |
  | `VIDEO_PLAYER_AUDIO_SINK` | — | Set to `alsasink` on bare TTY (no PipeWire) |
  
  #### Real-time scheduling: capability setup
 diff --git a/shell/backend/drm_kms_egl/drm_compositor.cc b/shell/backend/drm_kms_egl/drm_compositor.cc
-index 20e1e78a..e9eb7e95 100644
+index 20e1e78a..e6342a8d 100644
 --- a/shell/backend/drm_kms_egl/drm_compositor.cc
 +++ b/shell/backend/drm_kms_egl/drm_compositor.cc
-@@ -121,6 +121,31 @@ bool AllocDebug() {
+@@ -53,6 +53,7 @@
+ #include "drm-cxx/src/display/connector_info.hpp"  // ColorimetryInfo / Chromaticity
+ #include "drm-cxx/src/display/hdr_metadata.hpp"  // HdrSourceMetadata / TransferFunction
+ #include "drm-cxx/src/modeset/atomic.hpp"
++#include "engine_switches.h"
+ #include "ihs/platform_view.h"
+ #include "libflutter_engine.h"
+ #include "logging.h"
+@@ -121,6 +122,31 @@ bool AllocDebug() {
    return enabled;
  }
  
@@ -90,14 +102,18 @@ index 20e1e78a..e9eb7e95 100644
  // Map the ABI's container colorimetry (IhsColorSpace/IhsColorRange, carried on
  // the platform view's Dmabuf) to the drm-cxx plane CSC. DEFAULT -> nullopt lets
  // LayerScene write its own default (BT.709 / limited). Only meaningful for YUV
-@@ -1149,6 +1174,28 @@ void DrmCompositor::EnsureGlCapsProbed() {
+@@ -1149,6 +1175,32 @@ void DrmCompositor::EnsureGlCapsProbed() {
    }
    gl_caps_.Probe();
    gl_compositor_ = std::make_unique<GlCompositor>(&gl_caps_);
 +
-+  // MSAA needs a multisample renderbuffer, a blit to resolve it and a packed
-+  // depth/stencil, all ES3 core.
-+  msaa_samples_ = RequestedMsaaSamples();
++  // Only Impeller needs it: Skia anti-aliases analytically, and it wraps the
++  // backing store as single-sample, so reading back from a multisampled one
++  // (dst reads, backdrop filters) would fail. MSAA also needs a multisample
++  // renderbuffer, a blit to resolve it and a packed depth/stencil, all ES3
++  // core.
++  msaa_samples_ =
++      ihs::engine_switches::ImpellerActive() ? RequestedMsaaSamples() : 0;
 +  if (msaa_samples_ > 1) {
 +    GLint max_samples = 0;
 +    if (gl_caps_.has_multisampled_renderbuffer &&
@@ -119,7 +135,7 @@ index 20e1e78a..e9eb7e95 100644
    if (!InitEglExtensions()) {
      ihs::log::error("[DrmCompositor] missing EGL_KHR_image / GL_OES_EGL_image");
    }
-@@ -1405,8 +1452,140 @@ uint32_t DrmCompositor::ImportBoAsFb(gbm_bo* bo) const {
+@@ -1405,8 +1457,140 @@ uint32_t DrmCompositor::ImportBoAsFb(gbm_bo* bo) const {
    return fb_id;
  }
  
@@ -260,7 +276,7 @@ index 20e1e78a..e9eb7e95 100644
    if (store.fbo != 0) {
      glDeleteFramebuffers(1, &store.fbo);
      store.fbo = 0;
-@@ -2709,6 +2888,8 @@ bool DrmCompositor::PresentLayersLocked(const FlutterLayer** layers,
+@@ -2709,6 +2893,8 @@ bool DrmCompositor::PresentLayersLocked(const FlutterLayer** layers,
  
    backend_->MaybeCaptureSnapshot();
    EnsureGlCapsProbed();
@@ -269,7 +285,7 @@ index 20e1e78a..e9eb7e95 100644
    // The path this present takes is settled from here; a latch to the GL
    // fallback during it shows from the next.
    PublishLatchLead();
-@@ -4915,6 +5096,9 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
+@@ -4915,6 +5101,9 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
      if (!CreateGbmStore(*store, w, h, backing_format, pool_size)) {
        return false;
      }
@@ -279,7 +295,7 @@ index 20e1e78a..e9eb7e95 100644
      ++store_pool_misses_;
    }
  
-@@ -4936,7 +5120,8 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
+@@ -4936,7 +5125,8 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
    out->open_gl.type = kFlutterOpenGLTargetTypeFramebuffer;
    out->open_gl.framebuffer.target =
        gl_caps_.has_rgb8_rgba8 ? GL_RGBA8_OES : GL_RGBA;
