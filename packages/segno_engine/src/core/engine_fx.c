@@ -6014,7 +6014,7 @@ static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
  * from -70 to -40 dBFS, Drive 0, 11.3, 50.3, 90 and 100 % at Tone 50.2 %,
  * Tone 0, 25.4, 75 and 100 % at Drive 50.3 %): below the clipped part's
  * knee the Looper X's pedal is a band-pass, rising 6 dB an octave to a peak
- * near 800 Hz (+12.6 dB at Drive 0, +31 dB at 100 %), so it lifts 50 Hz hum
+ * near 800 Hz (+12.5 dB at Drive 0, +30.7 dB at 100 %), so it lifts 50 Hz hum
  * 15 to 19 dB less than a flat gain would. The clipped part's input x_d is
  * the input through a 434 Hz high-pass, and its output passes a low-pass
  * whose corner falls as the drive rises, fg = 176.6 kHz / G, a fixed
@@ -6086,8 +6086,8 @@ static float le_onepole_g1(double hz, int sr) {
 
 typedef struct le_fx_overdrive {
   le_fx_glide g;    /* the clipped part's gain over its ceiling, G / c */
-  float g_tgt;      /* where g is headed, and the low-pass corner it was */
-  float dlp_g;      /* designed for (G / c), -1 for none */
+  float g_tgt;      /* where g is headed */
+  float dlp_g;      /* the glide point dlp_g1 was designed for, -1 for none */
   float tone;       /* the tone setting now, 0..1 */
   float tone_tgt;
   float hp_g1;

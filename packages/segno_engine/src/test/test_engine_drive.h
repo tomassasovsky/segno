@@ -78,13 +78,12 @@ static void test_overdrive_controls(void) {
 /* Below its knee the overdrive has the Guitar Rack OvDrive's band-pass
  * response (#1663, session s18idle, white noise at -90 dBFS): at Drive 0,
  * 50.3 and 100 % with Tone 50.2 %, and at Tone 0 and 100 % with Drive
- * 50.3 %, from 50 Hz to 4 kHz within 2 dB, at 48 kHz as captured. It lifts
- * 50 Hz 12 to 18 dB less than 1 kHz, so it does not raise an input's mains
- * hum by the full drive gain. */
+ * 50.3 %, from 50 Hz to 4 kHz within 2 dB, at 48 kHz as captured and at
+ * 44.1 and 96 kHz. It lifts 50 Hz 12 to 22 dB less than 1 kHz, so it does
+ * not raise an input's mains hum by the full drive gain. */
 static void test_overdrive_small_signal_matches_the_capture(void) {
   printf("test_overdrive_small_signal_matches_the_capture\n");
-  const int sr = 48000;
-  const int n = 1 << 15;
+  const int rates[3] = {48000, 44100, 96000};
   const float amp = 1e-5f; /* far under the clipped part's knee */
   const double hz[7] = {50, 100, 250, 500, 1000, 2000, 4000};
   const float set[5][2] = {
@@ -97,28 +96,33 @@ static void test_overdrive_small_signal_matches_the_capture(void) {
       {12.45, 18.52, 25.94, 29.99, 30.73, 26.98, 19.25},
       {2.83, 7.64, 13.55, 15.70, 14.65, 11.19, 6.91},
       {2.93, 8.00, 15.39, 20.73, 24.56, 25.47, 23.00}};
-  float* in = (float*)calloc((size_t)n, sizeof(float));
-  float* h = (float*)calloc((size_t)n, sizeof(float));
-  in[0] = amp;
-  for (int k = 0; k < 5; ++k) {
-    float p[LE_FX_PARAMS] = {0};
-    p[0] = set[k][0];
-    p[1] = set[k][1];
-    le_fx_state* fx = dyn_state(LE_FX_OVERDRIVE, sr);
-    uint32_t clock = 0;
-    dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, h, NULL, n, &clock);
-    dyn_free(fx);
-    for (int i = 0; i < 7; ++i) {
-      const double got = eq_measured_db(h, n, hz[i], sr) - 20.0 * log10(amp);
-      if (fabs(got - want[k][i]) >= 2.0) {
-        printf("  drive %.3f tone %.3f at %.0f Hz: %+.2f dB, capture %+.2f\n",
-               set[k][0], set[k][1], hz[i], got, want[k][i]);
+  for (int r = 0; r < 3; ++r) {
+    const int sr = rates[r];
+    const int n = sr == 96000 ? 1 << 16 : 1 << 15;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* h = (float*)calloc((size_t)n, sizeof(float));
+    in[0] = amp;
+    for (int k = 0; k < 5; ++k) {
+      float p[LE_FX_PARAMS] = {0};
+      p[0] = set[k][0];
+      p[1] = set[k][1];
+      le_fx_state* fx = dyn_state(LE_FX_OVERDRIVE, sr);
+      uint32_t clock = 0;
+      dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, h, NULL, n, &clock);
+      dyn_free(fx);
+      for (int i = 0; i < 7; ++i) {
+        const double got = eq_measured_db(h, n, hz[i], sr) - 20.0 * log10(amp);
+        if (fabs(got - want[k][i]) >= 2.0) {
+          printf("  %d Hz: drive %.3f tone %.3f at %.0f Hz: %+.2f dB, capture "
+                 "%+.2f\n",
+                 sr, set[k][0], set[k][1], hz[i], got, want[k][i]);
+        }
+        CHECK(fabs(got - want[k][i]) < 2.0);
       }
-      CHECK(fabs(got - want[k][i]) < 2.0);
     }
+    free(in);
+    free(h);
   }
-  free(in);
-  free(h);
 }
 
 /* ---- Distortion ---- */
