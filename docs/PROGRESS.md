@@ -71,14 +71,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1342 | Ring carrier firmware updates from the console | in-review | blocked-verify | `claude/ring-update-1342` |
 | #1437 | Recover from and record a freeze (watchdog, pstore, journal sync, lockup policy) | in-review | auto | `claude/appliance-freeze-recovery-1437` |
 | #1590 | Screen audit fixes: class (a) batches 1 to 7 and the owner's class (b) answers, one PR per batch | build | auto | `claude/audit-*-1590-p*` |
-| #1672 | Screen audit 2 (Loop settings tabs, Interface row, readout Loop panel): class (a) fixes in three PRs; class (b) questions on the issue | build | auto | `claude/audit-*-1672-p*` |
 | #1540 | Drive pedals' aliasing at 48 kHz: bench and blind A/B built, the owner's listening decides on oversampling | in-review | auto | `claude/alias-ab-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
-| #1676 | LED colors names every mode (#1677); modes as a row of tabs (stacked follow-up) | in-review | auto | `claude/led-colors-per-mode-1676*` |
 
 ---
 
