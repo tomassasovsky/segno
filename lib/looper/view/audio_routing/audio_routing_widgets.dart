@@ -22,6 +22,7 @@ class RoutingSourceCard extends StatelessWidget {
     required this.onTap,
     this.width = 264,
     this.status,
+    this.tags = const [],
     super.key,
   });
 
@@ -44,6 +45,10 @@ class RoutingSourceCard extends StatelessWidget {
   /// A warning about this source under its name, or `null` (the Effects
   /// page's "Effects off", #1452).
   final String? status;
+
+  /// Short labels under the name for what the interface has set on this
+  /// input ("Inst", "48 V", #1646).
+  final List<String> tags;
 
   @override
   Widget build(BuildContext context) {
@@ -112,9 +117,52 @@ class RoutingSourceCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < tags.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        RoutingTag(tags[i], key: Key('routing_source_tag_$i')),
+                      ],
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A short label on a source card for a setting the interface holds on that
+/// input ("Inst", "48 V", #1646): an outlined pill in the card's secondary
+/// text.
+class RoutingTag extends StatelessWidget {
+  /// Creates a [RoutingTag].
+  const RoutingTag(this.text, {super.key});
+
+  /// The label.
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        border: Border.all(color: surface.borderStrong),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: AppText(
+        text,
+        style: TextStyle(
+          color: surface.textSecondary,
+          fontSize: 14,
+          height: 1,
         ),
       ),
     );
@@ -233,17 +281,29 @@ String routingDbfsLabel(AppLocalizations l10n, double peak) {
 /// cells that disagree with the scale drawn directly under them.
 double routingMeterPosition(double level) {
   if (level <= 0) return 0;
-  final db = 20 * (math.log(level) / math.ln10);
+  return routingMeterPositionOfDb(20 * (math.log(level) / math.ln10));
+}
+
+/// [routingMeterPosition] for a level already in dBFS.
+double routingMeterPositionOfDb(double db) {
   if (db <= kMeterFloorDb) return 0;
   if (db >= 0) return 1;
   if (db <= -24) return (db - kMeterFloorDb) / (-24 - kMeterFloorDb) / 3;
   return (1 + (db + 24) / 12) / 3;
 }
 
+/// Where the loudest playing should peak on an input's meter, in dBFS
+/// (#1646): low enough to leave headroom over a 32-bit capture, high enough
+/// to keep the source well above the converter's noise. The player sets the
+/// interface's gain knob against it.
+const ({double low, double high}) kInputGainTargetDb = (low: -18, high: -6);
+
 /// The pen's `input-meter-segments`: a segmented level meter over a dBFS
 /// scale. [level] is the block peak in `0..1`; [clipping] lights the tail
 /// whatever the level, so a clip that has already decayed is still visible
-/// for as long as the engine holds the flag.
+/// for as long as the engine holds the flag. A [target] band shades the cells
+/// between its two levels that the level has not reached, and a line under
+/// the cells marks it whatever the level.
 class RoutingInputMeter extends StatelessWidget {
   /// Creates a [RoutingInputMeter].
   const RoutingInputMeter({
@@ -254,11 +314,21 @@ class RoutingInputMeter extends StatelessWidget {
     this.segments = 41,
     this.tail = 2,
     this.height = 28,
+    this.target,
     super.key,
   });
 
   /// The block peak, `0..1`.
   final double level;
+
+  /// The band, in dBFS, where the loudest playing should peak, or null.
+  final ({double low, double high})? target;
+
+  /// The gap between the cells and the band's line.
+  static const double markerGap = 3;
+
+  /// The band line's thickness.
+  static const double markerHeight = 3;
 
   /// Whether the engine is holding a clip on this input.
   final bool clipping;
@@ -284,14 +354,24 @@ class RoutingInputMeter extends StatelessWidget {
     final step = width / segments;
     final cell = step - 2.4;
     final lit = (routingMeterPosition(level) * segments).round();
+    final band = targetCells;
     return Semantics(
       label: semanticLabel,
       value: '${(routingMeterPosition(level) * 100).round()}%',
       child: SizedBox(
         width: width,
-        height: height,
+        height: band == null ? height : height + markerGap + markerHeight,
         child: Stack(
           children: [
+            if (band != null)
+              Positioned(
+                key: const Key('routing_meter_target'),
+                left: band.first * step,
+                top: height + markerGap,
+                width: (band.last - band.first) * step - 2.4,
+                height: markerHeight,
+                child: ColoredBox(color: surface.textSecondary),
+              ),
             for (var i = 0; i < segments; i++)
               Positioned(
                 left: i * step,
@@ -299,7 +379,10 @@ class RoutingInputMeter extends StatelessWidget {
                 child: Container(
                   width: cell,
                   height: height,
-                  color: _cellColor(surface, i, lit),
+                  key: band != null && i >= band.first && i < band.last
+                      ? const Key('routing_meter_target_cell')
+                      : null,
+                  color: _cellColor(surface, i, lit, band),
                 ),
               ),
           ],
@@ -308,13 +391,32 @@ class RoutingInputMeter extends StatelessWidget {
     );
   }
 
-  Color _cellColor(SurfaceTheme surface, int index, int lit) {
+  /// The cells [target] covers, `first` inclusive to `last` exclusive: the
+  /// cells that light at a level inside it. Cell `i` lights once the level
+  /// reaches position `(i + 0.5) / segments` (the fill rounds), so a peak at
+  /// the band's low edge lights its first cell. Null without a target.
+  ({int first, int last})? get targetCells {
+    final target = this.target;
+    if (target == null) return null;
+    double at(double db) => routingMeterPositionOfDb(db) * segments - 0.5;
+    return (first: at(target.low).ceil(), last: at(target.high).floor() + 1);
+  }
+
+  Color _cellColor(
+    SurfaceTheme surface,
+    int index,
+    int lit,
+    ({int first, int last})? band,
+  ) {
     // The last cells are the clip tail: they light on the engine's held clip
     // flag, not on the level, because a clip is a fact about the source that a
     // decayed meter would hide.
     final isTail = index >= segments - tail;
     if (isTail && clipping) return surface.rec;
     if (index < lit) return surface.accent;
+    if (band != null && index >= band.first && index < band.last) {
+      return surface.accentSurface;
+    }
     return surface.card;
   }
 }

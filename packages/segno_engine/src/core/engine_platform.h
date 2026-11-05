@@ -147,6 +147,18 @@ void le_platform_prefault_audio_code(void);
 void le_platform_own_interface_routing(const char* capture_uid,
                                        const char* playback_uid);
 
+/* The interface's input switches (#1646): reads those of the card behind
+ * capture id `uid` into *out (already cleared to LE_INTERFACE_NO_CONTROLS),
+ * and sets one as le_interface_input_set describes. Linux opens the card's
+ * controls through libasound and runs le_interface_inputs_scan /
+ * le_interface_inputs_write on them; any thread but the audio thread, each
+ * call with its own handle. macOS leaves *out as it is and refuses the set
+ * with LE_ERR_UNSUPPORTED. */
+void le_platform_interface_inputs_read(const char* uid,
+                                       le_interface_inputs* out);
+int32_t le_platform_interface_input_set(const char* uid, int32_t control,
+                                        int32_t index, int32_t value);
+
 /* Excluded-input-channel mask: the input channels that are loopbacks. macOS
  * reads Core Audio channel labels (le_label_is_loopback). Linux reads the
  * capture sources of a scarlett2 card's routing (le_capture_source_is_loopback,

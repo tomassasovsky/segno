@@ -408,6 +408,68 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
       >();
 
+  /// Reads the switches of the card behind capture-device id `uid` (NULL: the
+  /// system default, which reports LE_INTERFACE_NO_CONTROLS) into *out. Returns
+  /// LE_OK, or LE_ERR_INVALID for a NULL `out`.
+  int le_interface_inputs_read(
+    ffi.Pointer<ffi.Char> uid,
+    ffi.Pointer<le_interface_inputs> out,
+  ) {
+    return _le_interface_inputs_read(
+      uid,
+      out,
+    );
+  }
+
+  late final _le_interface_inputs_readPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<le_interface_inputs>,
+          )
+        >
+      >('le_interface_inputs_read');
+  late final _le_interface_inputs_read = _le_interface_inputs_readPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, ffi.Pointer<le_interface_inputs>)
+      >();
+
+  /// Sets one switch (le_interface_control) of input or phantom group `index`
+  /// (0-based) on the card behind `uid`, writing only when it differs, and reads
+  /// it back. Returns LE_OK; LE_ERR_INVALID when the card has no such switch or
+  /// `value` is out of range; LE_ERR_DEVICE when the card cannot be opened,
+  /// refuses the write or does not keep the value (a Gen 4 unit refuses while
+  /// its Autogain runs);
+  /// LE_ERR_UNSUPPORTED off Linux.
+  int le_interface_input_set(
+    ffi.Pointer<ffi.Char> uid,
+    int control,
+    int index,
+    int value,
+  ) {
+    return _le_interface_input_set(
+      uid,
+      control,
+      index,
+      value,
+    );
+  }
+
+  late final _le_interface_input_setPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_interface_input_set');
+  late final _le_interface_input_set = _le_interface_input_setPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Char>, int, int, int)>();
+
   /// Starts an async scan. Returns LE_OK once the scan thread is launched, or
   /// LE_ERR_INVALID for a null engine, LE_ERR_ALREADY_RUNNING if a scan is already
   /// in progress.
@@ -10274,6 +10336,125 @@ final class le_plugin_desc extends ffi.Struct {
   external int version;
 }
 
+enum le_interface_state {
+  /// nothing to set from here: use the
+  /// interface's own switches
+  LE_INTERFACE_NO_CONTROLS(0),
+  LE_INTERFACE_CONTROLS(1),
+
+  /// a Focusrite unit in its setup (MSD) mode,
+  /// which hides its controls and its routing
+  LE_INTERFACE_SETUP_MODE(2),
+
+  /// setup mode turned off; the unit
+  /// needs a power cycle
+  LE_INTERFACE_SETUP_MODE_RESTART(3);
+
+  final int value;
+  const le_interface_state(this.value);
+
+  static le_interface_state fromValue(int value) => switch (value) {
+    0 => LE_INTERFACE_NO_CONTROLS,
+    1 => LE_INTERFACE_CONTROLS,
+    2 => LE_INTERFACE_SETUP_MODE,
+    3 => LE_INTERFACE_SETUP_MODE_RESTART,
+    _ => throw ArgumentError('Unknown value for le_interface_state: $value'),
+  };
+}
+
+/// What le_interface_input_set changes.
+enum le_interface_control {
+  /// index = input; 0 Line, 1 Inst
+  LE_INTERFACE_LEVEL(0),
+
+  /// index = input; 0 off, 1 on
+  LE_INTERFACE_PAD(1),
+
+  /// index = input; 0 off, 1 on (or Presence),
+  /// 2 Presence + Drive
+  LE_INTERFACE_AIR(2),
+
+  /// index = phantom group; 0 off, 1 on
+  LE_INTERFACE_PHANTOM(3),
+
+  /// index and value unused
+  LE_INTERFACE_SETUP_MODE_OFF(4);
+
+  final int value;
+  const le_interface_control(this.value);
+
+  static le_interface_control fromValue(int value) => switch (value) {
+    0 => LE_INTERFACE_LEVEL,
+    1 => LE_INTERFACE_PAD,
+    2 => LE_INTERFACE_AIR,
+    3 => LE_INTERFACE_PHANTOM,
+    4 => LE_INTERFACE_SETUP_MODE_OFF,
+    _ => throw ArgumentError('Unknown value for le_interface_control: $value'),
+  };
+}
+
+/// One input's switches; -1 where the interface has none.
+final class le_interface_input extends ffi.Struct {
+  /// 0 Line, 1 Inst
+  @ffi.Int32()
+  external int level;
+
+  /// 0 off, 1 on
+  @ffi.Int32()
+  external int pad;
+
+  /// 0 off, 1 on or Presence, 2 Presence + Drive
+  @ffi.Int32()
+  external int air;
+
+  /// 0 none, 2 a switch, 3 Off/Presence/Presence + Drive
+  @ffi.Int32()
+  external int air_choices;
+
+  /// index into le_interface_inputs.phantom, or -1
+  @ffi.Int32()
+  external int phantom_group;
+}
+
+/// One 48 V switch and the inputs it powers.
+final class le_interface_phantom extends ffi.Struct {
+  /// 1-based, as the interface labels its inputs
+  @ffi.Int32()
+  external int first;
+
+  @ffi.Int32()
+  external int last;
+
+  /// 0/1
+  @ffi.Int32()
+  external int on$;
+}
+
+final class le_interface_inputs extends ffi.Struct {
+  /// le_interface_state
+  @ffi.Int32()
+  external int state;
+
+  /// inputs[0..input_count) are described; input k is
+  /// Segno's input k (capture channel k)
+  @ffi.Int32()
+  external int input_count;
+
+  @ffi.Array.multi([16])
+  external ffi.Array<le_interface_input> inputs;
+
+  @ffi.Int32()
+  external int phantom_count;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<le_interface_phantom> phantom;
+
+  /// the adapter that claimed the card ("scarlett2",
+  /// "scarlett", "generic"), or ""
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Char> adapter;
+}
+
 /// Bit flags for le_plugin_param_info.flags.
 enum le_plugin_param_flags {
   LE_PARAM_AUTOMATABLE(1),
@@ -11009,6 +11190,10 @@ const int LE_FX_WORKERS_MAX = 3;
 const int LE_FX_WAKE_BUCKETS = 16;
 
 const int LE_FX_WAKE_BUCKET_NS = 2000;
+
+const int LE_INTERFACE_MAX_INPUTS = 16;
+
+const int LE_INTERFACE_MAX_PHANTOM = 8;
 
 const int LE_BACKING_MAX_BUFFERS = 4;
 

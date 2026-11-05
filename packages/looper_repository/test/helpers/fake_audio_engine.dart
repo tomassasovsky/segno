@@ -162,6 +162,37 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return loopback;
   }
 
+  /// What [readInterfaceInputs] returns (#1646).
+  InterfaceInputsInfo interfaceInputs = const InterfaceInputsInfo.none();
+
+  /// What [setInterfaceInput] returns.
+  EngineResult interfaceInputResult = EngineResult.ok;
+
+  /// Every [setInterfaceInput] call: (capture id, control, index, value).
+  final List<(String, InterfaceControl, int, int)> interfaceInputWrites = [];
+
+  /// Every capture id [readInterfaceInputs] was asked for.
+  final List<String> interfaceInputReads = [];
+
+  @override
+  Future<InterfaceInputsInfo> readInterfaceInputs(
+    String captureDeviceId,
+  ) async {
+    interfaceInputReads.add(captureDeviceId);
+    return interfaceInputs;
+  }
+
+  @override
+  Future<EngineResult> setInterfaceInput(
+    String captureDeviceId, {
+    required InterfaceControl control,
+    required int index,
+    required int value,
+  }) async {
+    interfaceInputWrites.add((captureDeviceId, control, index, value));
+    return interfaceInputResult;
+  }
+
   /// Devices returned by [enumerateDevices].
   List<AudioDevice> devices = const [];
 

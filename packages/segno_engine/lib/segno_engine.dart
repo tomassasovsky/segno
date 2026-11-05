@@ -21,6 +21,7 @@ export 'src/audio_engine.dart'
         EngineRouting,
         EngineSelectedRender,
         InstrumentHost,
+        InterfaceInputControl,
         LengthEdit,
         LooperModeControl,
         LooperTransport,
@@ -99,6 +100,13 @@ export 'src/instruments.dart'
         kMaxMidiPorts,
         kMaxRemapNotes,
         kMaxVoiceLimit;
+export 'src/interface_inputs.dart'
+    show
+        InterfaceControl,
+        InterfaceInputInfo,
+        InterfaceInputsInfo,
+        InterfaceInputsState,
+        PhantomSwitchInfo;
 export 'src/lane_cache.dart' show LaneCacheState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mix_settings.dart'

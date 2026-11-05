@@ -2,6 +2,7 @@
 # Scarlett 4i4 3rd gen, firmware 1605, kernel 6.12.25, build
 # 0.1.0-experimental.226. The routing was set by hand to pass-through
 # before this dump (#1046). Lines starting with '#' are not amixer's.
+# usb 1235:8212
 numid=4,iface=CARD,name='Firmware Version'
   ; type=INTEGER,access=r-------,values=1,min=0,max=0,step=0
   : values=1605

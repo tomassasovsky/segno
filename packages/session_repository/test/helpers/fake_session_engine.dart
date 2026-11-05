@@ -585,6 +585,17 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   @override
   LoopbackInfo detectLoopback() => const LoopbackInfo.none();
   @override
+  Future<InterfaceInputsInfo> readInterfaceInputs(
+    String captureDeviceId,
+  ) async => const InterfaceInputsInfo.none();
+  @override
+  Future<EngineResult> setInterfaceInput(
+    String captureDeviceId, {
+    required InterfaceControl control,
+    required int index,
+    required int value,
+  }) async => EngineResult.invalid;
+  @override
   List<AudioDevice> enumerateDevices() => const [];
   @override
   EngineResult measureLatencyPath({

@@ -2011,6 +2011,84 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
 
+/* ---- The interface's input switches (#1646, engine_interface_inputs.c) ----
+ *
+ * What the interface Segno records from lets software set on each input:
+ * the level (Line or Inst, which some drivers call Hi-Z), Pad, Air and 48 V
+ * phantom power. The engine reads them from the interface and writes a change
+ * straight to it; the interface keeps its own settings, so nothing is stored
+ * or re-applied. Which switches a card has comes from an adapter chosen by
+ * what the card is (its USB vendor and its control names): one per driver
+ * family, and a generic one. Linux only; elsewhere every card reports
+ * LE_INTERFACE_NO_CONTROLS. These calls reach the USB device, so call them
+ * off the UI thread; never from the audio thread. */
+
+#define LE_INTERFACE_MAX_INPUTS 16
+#define LE_INTERFACE_MAX_PHANTOM 8
+
+typedef enum le_interface_state {
+  LE_INTERFACE_NO_CONTROLS = 0, /* nothing to set from here: use the
+                                 * interface's own switches */
+  LE_INTERFACE_CONTROLS = 1,
+  LE_INTERFACE_SETUP_MODE = 2,  /* a Focusrite unit in its setup (MSD) mode,
+                                 * which hides its controls and its routing */
+  LE_INTERFACE_SETUP_MODE_RESTART = 3, /* setup mode turned off; the unit
+                                        * needs a power cycle */
+} le_interface_state;
+
+/* What le_interface_input_set changes. */
+typedef enum le_interface_control {
+  LE_INTERFACE_LEVEL = 0,   /* index = input; 0 Line, 1 Inst */
+  LE_INTERFACE_PAD = 1,     /* index = input; 0 off, 1 on */
+  LE_INTERFACE_AIR = 2,     /* index = input; 0 off, 1 on (or Presence),
+                             * 2 Presence + Drive */
+  LE_INTERFACE_PHANTOM = 3, /* index = phantom group; 0 off, 1 on */
+  LE_INTERFACE_SETUP_MODE_OFF = 4, /* index and value unused */
+} le_interface_control;
+
+/* One input's switches; -1 where the interface has none. */
+typedef struct le_interface_input {
+  int32_t level;         /* 0 Line, 1 Inst */
+  int32_t pad;           /* 0 off, 1 on */
+  int32_t air;           /* 0 off, 1 on or Presence, 2 Presence + Drive */
+  int32_t air_choices;   /* 0 none, 2 a switch, 3 Off/Presence/Presence + Drive */
+  int32_t phantom_group; /* index into le_interface_inputs.phantom, or -1 */
+} le_interface_input;
+
+/* One 48 V switch and the inputs it powers. */
+typedef struct le_interface_phantom {
+  int32_t first; /* 1-based, as the interface labels its inputs */
+  int32_t last;
+  int32_t on;    /* 0/1 */
+} le_interface_phantom;
+
+typedef struct le_interface_inputs {
+  int32_t state;       /* le_interface_state */
+  int32_t input_count; /* inputs[0..input_count) are described; input k is
+                        * Segno's input k (capture channel k) */
+  le_interface_input inputs[LE_INTERFACE_MAX_INPUTS];
+  int32_t phantom_count;
+  le_interface_phantom phantom[LE_INTERFACE_MAX_PHANTOM];
+  char adapter[16]; /* the adapter that claimed the card ("scarlett2",
+                     * "scarlett", "generic"), or "" */
+} le_interface_inputs;
+
+/* Reads the switches of the card behind capture-device id `uid` (NULL: the
+ * system default, which reports LE_INTERFACE_NO_CONTROLS) into *out. Returns
+ * LE_OK, or LE_ERR_INVALID for a NULL `out`. */
+LE_EXPORT int32_t le_interface_inputs_read(const char* uid,
+                                           le_interface_inputs* out);
+
+/* Sets one switch (le_interface_control) of input or phantom group `index`
+ * (0-based) on the card behind `uid`, writing only when it differs, and reads
+ * it back. Returns LE_OK; LE_ERR_INVALID when the card has no such switch or
+ * `value` is out of range; LE_ERR_DEVICE when the card cannot be opened,
+ * refuses the write or does not keep the value (a Gen 4 unit refuses while
+ * its Autogain runs);
+ * LE_ERR_UNSUPPORTED off Linux. */
+LE_EXPORT int32_t le_interface_input_set(const char* uid, int32_t control,
+                                         int32_t index, int32_t value);
+
 /* ---- Plugin scanning (control thread; runs on a dedicated scan thread) ----
  *
  * le_plugin_scan_begin spawns ONE dedicated OS scan thread (the engine has no

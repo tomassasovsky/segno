@@ -4195,6 +4195,10 @@
             }
         }
     },
+    "routingGainNote": "Set the gain knob so your loudest playing peaks in the band.",
+    "@routingGainNote": {
+        "description": "Under the input meter: how to set the interface's hardware gain against the meter's target band."
+    },
     "routingTrimNote": "New recordings only. Live level stays in Mixer.",
     "@routingTrimNote": {
         "description": "Note under the recording trim."
@@ -4210,6 +4214,123 @@
     "routingLockedFormat": "Finish recording to change mono or stereo.",
     "@routingLockedFormat": {
         "description": "Why the recording format cannot change right now."
+    },
+    "routingLockedSetup": "Finish recording to change these settings.",
+    "@routingLockedSetup": {
+        "description": "Why both the recording format and the interface's switches cannot change right now."
+    },
+    "routingLockedInterface": "Finish recording to change the interface's switches.",
+    "@routingLockedInterface": {
+        "description": "Why the interface's input switches cannot change right now."
+    },
+    "routingInterface": "Interface",
+    "@routingInterface": {
+        "description": "Heading of the row with the audio interface's own switches for the selected input."
+    },
+    "routingInterfaceLine": "Line",
+    "@routingInterfaceLine": {
+        "description": "The interface's line-level setting for an input."
+    },
+    "routingInterfaceInst": "Inst",
+    "@routingInterfaceInst": {
+        "description": "The interface's instrument (Hi-Z) setting for an input; keep it short, as printed on interfaces."
+    },
+    "routingInterfacePad": "Pad",
+    "@routingInterfacePad": {
+        "description": "The interface's input pad switch."
+    },
+    "routingInterfaceAir": "Air",
+    "@routingInterfaceAir": {
+        "description": "The interface's Air switch (Focusrite's name, not translated)."
+    },
+    "routingInterfaceAirOff": "Off",
+    "@routingInterfaceAirOff": {
+        "description": "Air turned off, on a three-way Air choice."
+    },
+    "routingInterfaceAirPresence": "Presence",
+    "@routingInterfaceAirPresence": {
+        "description": "The Presence setting of a three-way Air choice (Focusrite's name)."
+    },
+    "routingInterfaceAirDrive": "Presence + Drive",
+    "@routingInterfaceAirDrive": {
+        "description": "The Presence + Drive setting of a three-way Air choice (Focusrite's name)."
+    },
+    "routingInterfacePhantom": "48 V",
+    "@routingInterfacePhantom": {
+        "description": "The interface's phantom power switch for one input."
+    },
+    "routingInterfacePhantomInputs": "48 V, inputs {first}–{last}",
+    "@routingInterfacePhantomInputs": {
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        },
+        "description": "A phantom power switch that powers several inputs at once."
+    },
+    "routingInterfaceNone": "Set Inst, Pad and 48 V with the interface's own switches.",
+    "@routingInterfaceNone": {
+        "description": "Shown when the audio interface lets no software set its input switches."
+    },
+    "routingInterfaceNoSwitches": "This input has no switches the console can set.",
+    "@routingInterfaceNoSwitches": {
+        "description": "Shown for an input of the interface that has none of the switches the console can set (a rear line input)."
+    },
+    "routingInterfaceSetupMode": "The interface is in setup mode, which hides its controls and its routing.",
+    "@routingInterfaceSetupMode": {
+        "description": "Shown when a Focusrite interface is in its setup (MSD) mode."
+    },
+    "routingInterfaceSetupModeOff": "Turn off setup mode",
+    "@routingInterfaceSetupModeOff": {
+        "description": "Button that turns off an interface's setup (MSD) mode."
+    },
+    "routingInterfaceRestart": "Setup mode is off. Turn the interface off and on again to finish.",
+    "@routingInterfaceRestart": {
+        "description": "Shown after setup mode was turned off, until the interface is power-cycled."
+    },
+    "routingInterfaceRefused": "The interface did not take that change.",
+    "@routingInterfaceRefused": {
+        "description": "Passing notice when the interface refuses a switch change."
+    },
+    "routingPhantomTitle": "Turn on 48 V phantom power?",
+    "@routingPhantomTitle": {
+        "description": "Title of the confirmation before phantom power turns on."
+    },
+    "routingPhantomBodyOne": "48 V will reach input {input}. Use it only for a condenser microphone that needs it, and plug or unplug microphones only while it is off.",
+    "@routingPhantomBodyOne": {
+        "placeholders": {
+            "input": {
+                "type": "int"
+            }
+        },
+        "description": "Body of the phantom power confirmation for a switch that powers one input."
+    },
+    "routingPhantomBodyRange": "48 V will reach inputs {first}–{last}. Use it only for condenser microphones that need it, and plug or unplug microphones only while it is off.",
+    "@routingPhantomBodyRange": {
+        "placeholders": {
+            "first": {
+                "type": "int"
+            },
+            "last": {
+                "type": "int"
+            }
+        },
+        "description": "Body of the phantom power confirmation for a switch that powers several inputs."
+    },
+    "routingPhantomConfirm": "Turn on 48 V",
+    "@routingPhantomConfirm": {
+        "description": "Confirm button that turns phantom power on."
+    },
+    "routingTagInst": "Inst",
+    "@routingTagInst": {
+        "description": "Tag on an input card whose interface input is set to instrument (Hi-Z)."
+    },
+    "routingTagPhantom": "48 V",
+    "@routingTagPhantom": {
+        "description": "Tag on an input card that the interface powers with 48 V phantom power."
     },
     "routingRecordFrom": "Record from",
     "@routingRecordFrom": {
