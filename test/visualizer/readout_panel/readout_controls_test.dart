@@ -426,8 +426,32 @@ void main() {
       // 2/4 3/4 4/4 5/4 on the first row, 6/4 under 2/4.
       expect(
         cell(3, 4).left - cell(2, 4).right,
-        cell(6, 4).top - cell(2, 4).bottom,
+        moreOrLessEquals(cell(6, 4).top - cell(2, 4).bottom),
       );
+      // At the top of the column, not spread down it.
+      expect(
+        cell(2, 4).top,
+        tester.getTopLeft(find.byKey(const Key('readout_panel_signatures'))).dy,
+      );
+    });
+
+    testWidgets('the full signature grid still fits when a take starts '
+        '(#1672)', (tester) async {
+      await pump(tester, readoutOf());
+      await open(tester);
+      await tapKey(tester, 'readout_panel_signature_more');
+      pushed.value = readoutOf(
+        state: 'recording',
+        loop: const ReadoutLoopSettings(
+          lengthBars: 4,
+          timing: RecordTiming.bar,
+          captureLocked: true,
+          ready: true,
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const Key('readout_panel_recording')), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('every Start label fits on one line in Spanish (#1672)', (

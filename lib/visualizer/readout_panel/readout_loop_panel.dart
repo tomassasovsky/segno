@@ -731,7 +731,7 @@ class _Choices extends StatelessWidget {
     Widget timing(RecordTiming value) => Expanded(
       child: ReadoutButton(
         key: Key('readout_panel_timing_${value.name}'),
-        label: readoutTimingLabel(l10n, value),
+        label: readoutTimingButtonLabel(l10n, value),
         selected: loop.timing == value,
         enabled: editable,
         fontSize: 14,
