@@ -371,6 +371,10 @@ void main() {
       final readout = AppTheme.readout.extension<SurfaceTheme>()!;
       expect(readout, same(SurfaceTheme.readout));
       expect(AppTheme.neon.extension<SurfaceTheme>(), same(dark));
+      expectRoutingGraphMatchesSurface(
+        AppTheme.readout.extension<RoutingGraphTheme>(),
+        readout,
+      );
       expect(readout.textMuted, dark.textTertiary);
       expect(readout.borderSubtle, const Color(0xFF4A4A50));
       expect(

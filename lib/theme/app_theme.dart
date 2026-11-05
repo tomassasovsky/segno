@@ -141,7 +141,8 @@ abstract final class AppTheme {
   }
 
   /// The 7" readout's theme: [neon] with [SurfaceTheme.readout] in place of
-  /// [SurfaceTheme.dark] (#1674). Everything else is [neon]'s, including the
+  /// [SurfaceTheme.dark] (#1674), and the routing-graph tokens mapped from it.
+  /// Everything else is [neon]'s, including the
   /// ink tiers, which stay [SurfaceTheme.dark]'s translucent borders: the
   /// readout's opaque border would make a pressed button an opaque grey.
   static ThemeData get readout {
@@ -149,7 +150,13 @@ abstract final class AppTheme {
     return theme.copyWith(
       extensions: [
         for (final extension in theme.extensions.values)
-          if (extension is SurfaceTheme) SurfaceTheme.readout else extension,
+          switch (extension) {
+            SurfaceTheme() => SurfaceTheme.readout,
+            RoutingGraphTheme() => routingGraphThemeFromSurface(
+              SurfaceTheme.readout,
+            ),
+            _ => extension,
+          },
       ],
     );
   }
