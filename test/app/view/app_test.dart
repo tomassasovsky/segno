@@ -4899,6 +4899,34 @@ void main() {
       expect(await settings.loadTempoBpm(), 100);
     });
 
+    testWidgets('the touch on the readout that wakes the console presses '
+        'nothing, even a button that acts on release (#1654)', (tester) async {
+      settings = SettingsRepository(store: FakeKeyValueStore());
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+      await tester.pump(const Duration(milliseconds: 40));
+      final record = tester
+          .element(find.byType(LooperPage))
+          .read<RecordSettings>();
+      final before = record.state.defaultLengthBars;
+      final idle = tester.element(find.byType(LooperPage)).read<IdleDimCubit>();
+      await idle.setSeconds(120);
+      await tester.pump(const Duration(seconds: 121));
+
+      // Touch down wakes the console; the release then sends the length.
+      windowService.onWindowActivity!();
+      windowService.onReadoutCommand!(LengthSet(before == 8 ? 4 : 8));
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(record.state.defaultLengthBars, before);
+
+      // A touch after the waking one acts.
+      await tester.pump(const Duration(seconds: 1));
+      windowService.onWindowActivity!();
+      windowService.onReadoutCommand!(LengthSet(before == 8 ? 4 : 8));
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(record.state.defaultLengthBars, before == 8 ? 4 : 8);
+    });
+
     testWidgets('the readout knows when the console is dimmed (#1654)', (
       tester,
     ) async {

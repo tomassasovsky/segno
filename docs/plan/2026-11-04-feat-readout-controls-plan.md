@@ -52,16 +52,17 @@ dropped.
 | `timing.set` | `timing` (`RecordTiming.name`) | `RecordTimingSettings.setTiming` |
 | `tempo.clear` | none | `TempoSettings.clearTempo` |
 
-There is no reply. The readout sees the accepted value in its next
-`PerformanceReadout` push. The Loop settings pages are not touched (#1659 is
-restructuring them); only the settings classes are called.
+An accepted command has no reply. The readout sees the accepted value in its
+next `PerformanceReadout` push. The Loop settings pages are not touched
+(#1659 is restructuring them); only the settings classes are called.
 
 The handler checks the tempo lock itself (`LooperState.tempoFollow` and an
 external clock) before it calls the tempo owner: the engine accepts a locked
 tempo or signature command and drops it later on the audio thread, while
 `TempoSettings` would already have published and saved it. It also drops
-every command while the console is idle-dimmed, so the waking touch presses
-nothing even when the readout's barrier is a push behind.
+every command while the console is idle-dimmed, and for a second after a
+touch on the readout woke it, so the waking touch presses nothing even when
+the readout's barrier is a push behind and the button acts on release.
 
 ### Clear tempo
 

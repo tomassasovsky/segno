@@ -976,20 +976,25 @@ class _AppViewState extends State<_AppView> {
     _recoverySub = context.read<LooperRepository>().recoveryRefusals.listen(
       _showRecoveryRefusal,
     );
-    // A touch on the Track display wakes an idle-dimmed console.
-    widget.waveformWindow.onWindowActivity = () {
-      if (mounted) context.read<IdleDimCubit>().activity();
-    };
     // The readout's Loop panel changes the tempo, the length and the record
     // timing through the owners the Loop settings pages use (#1654).
-    widget.waveformWindow.onReadoutCommand = ReadoutCommands(
+    final readoutCommands = ReadoutCommands(
       repository: context.read<LooperRepository>(),
       tempo: context.read<TempoSettings>(),
       record: context.read<RecordSettings>(),
       timing: context.read<RecordTimingSettings>(),
       dimmed: () => mounted && context.read<IdleDimCubit>().state.dimmed,
       onRefused: widget.waveformWindow.showRefusal,
-    ).handle;
+    );
+    widget.waveformWindow.onReadoutCommand = readoutCommands.handle;
+    // A touch on the Track display wakes an idle-dimmed console, and the
+    // touch that wakes it presses nothing on the readout.
+    widget.waveformWindow.onWindowActivity = () {
+      if (!mounted) return;
+      final idle = context.read<IdleDimCubit>();
+      if (idle.state.dimmed) readoutCommands.woke();
+      idle.activity();
+    };
     _display = WaveformDisplayController(
       repository: context.read<LooperRepository>(),
       window: widget.waveformWindow,

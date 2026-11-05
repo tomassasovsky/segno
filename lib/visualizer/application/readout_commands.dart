@@ -45,6 +45,10 @@ class ReadoutCommands {
   /// caught up with it.
   static const Duration _pendingFor = Duration(seconds: 1);
 
+  /// How long after a touch on the readout wakes the console its commands
+  /// are dropped: the length of the waking touch.
+  static const Duration wakeGesture = Duration(seconds: 1);
+
   final LooperRepository _repository;
   final TempoSettings _tempo;
   final RecordSettings _record;
@@ -58,6 +62,15 @@ class ReadoutCommands {
   /// read then.
   ({double target, double from, Stopwatch age})? _pending;
 
+  /// Running since a touch on the readout woke the console.
+  Stopwatch? _woke;
+
+  /// A touch on the readout woke the dimmed console. A button that acts on
+  /// release (Clear tempo, a length, a signature) sends its command after
+  /// the wake, when the console is no longer dimmed, so for [wakeGesture]
+  /// commands are dropped as the dimmed console drops them.
+  void woke() => _woke = clock.stopwatch()..start();
+
   /// Applies [command].
   void handle(ReadoutCommand command) {
     // The touch that wakes a dimmed console presses nothing. The readout's
@@ -65,6 +78,8 @@ class ReadoutCommands {
     // word on it. A step and Tap act on touch, before the waking activity
     // arrives, so they are dropped here too.
     if (_dimmed()) return;
+    final woke = _woke;
+    if (woke != null && woke.elapsed < wakeGesture) return;
     switch (command) {
       case TempoNudge(:final delta):
         if (_tempoLocked) return;
@@ -80,7 +95,6 @@ class ReadoutCommands {
       case TempoClear():
         // No lock check here: the engine's tempo lock decides, as it does
         // for the main screen's Clear tempo.
-        _pending = null;
         unawaited(_clearTempo());
       case SignatureSet(:final num, :final den):
         // Only before the first take, as on the RC-600 (D6).
@@ -98,7 +112,11 @@ class ReadoutCommands {
   /// screen's notice gives.
   Future<void> _clearTempo() async {
     final result = await _tempo.clearTempo();
-    if (result.isOk) return;
+    if (result.isOk) {
+      // No tempo is left for a pending nudge to build on.
+      _pending = null;
+      return;
+    }
     _onRefused(switch (result) {
       EngineResult.notReady => ReadoutRefusal.tempoClearLocked,
       EngineResult.notRunning => ReadoutRefusal.tempoClearStopped,

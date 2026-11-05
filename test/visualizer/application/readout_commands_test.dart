@@ -252,6 +252,25 @@ void main() {
     verify(() => tempo.tapTempo()).called(1);
   });
 
+  test('the touch that woke the console presses nothing, even one that '
+      'acts on release', () {
+    fakeAsync((async) {
+      commands
+        ..woke()
+        ..handle(const TempoClear())
+        ..handle(const LengthSet(8))
+        ..handle(const TempoNudge(1));
+      async.flushMicrotasks();
+      verifyNever(() => tempo.clearTempo());
+      verifyNever(() => record.setDefaultLengthBars(any()));
+      expect(sets, isEmpty);
+
+      async.elapse(ReadoutCommands.wakeGesture);
+      commands.handle(const LengthSet(8));
+      verify(() => record.setDefaultLengthBars(8)).called(1);
+    });
+  });
+
   group('Clear tempo (#1653)', () {
     test('clears through the tempo owner and answers nothing', () async {
       commands.handle(const TempoClear());
@@ -267,6 +286,16 @@ void main() {
       commands.handle(const TempoClear());
       await pumpEventQueue();
       verify(() => tempo.clearTempo()).called(1);
+    });
+
+    test('a refused clear keeps the nudge it did not clear', () async {
+      clearResult = EngineResult.notReady;
+      commands
+        ..handle(const TempoNudge(1))
+        ..handle(const TempoClear());
+      await pumpEventQueue();
+      commands.handle(const TempoNudge(1));
+      expect(sets, [85, 86]);
     });
 
     test("a refusal comes back with the main screen's reason", () async {

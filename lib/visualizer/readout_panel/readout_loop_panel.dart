@@ -109,8 +109,9 @@ class _ReadoutLoopPanelState extends State<ReadoutLoopPanel> {
   Widget build(BuildContext context) {
     final readout = widget.readout;
     final surface = context.surface;
-    // A refusal takes the recording band's place while it is said: its
-    // reason names the take, and the 7" has no room for both.
+    // A refusal takes the recording band's place while it is said, because
+    // the 7" has no room for both. The header still names the take, and the
+    // locked controls stay dimmed.
     final recordingBand = readout.loop.captureLocked && widget.refusal == null;
     final panel = ColoredBox(
       key: const Key('readout_panel'),
