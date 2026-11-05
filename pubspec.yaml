@@ -72,6 +72,8 @@ dependencies:
     path: packages/wifi_repository
 
 dev_dependencies:
+  # tool/check_no_widget_methods.dart resolves the app with it.
+  analyzer: ^12.1.0
   bloc_lint: ^0.4.1
   bloc_test: ^10.0.0
   bloc_tools: ^0.1.0-dev.25
@@ -89,6 +91,7 @@ dev_dependencies:
   midi_client:
     path: packages/midi_client
   mocktail: ^1.0.5
+  path: ^1.9.1
   segno_engine:
     path: packages/segno_engine
   very_good_analysis: ^10.3.0

@@ -129,6 +129,10 @@ Run these before calling a change done:
 - `bloc lint lib test packages` must be clean. CI runs it as the `Bloc Lint`
   step, and it enforces rules `dart analyze` does not (a cubit method
   returning anything but void fails here and passes there).
+- `dart run tool/check_no_widget_methods.dart` must pass: no new method,
+  function or getter that returns a widget (Engineering principles). It
+  fails too when `tool/widget_methods_baseline.txt` names a declaration that
+  is gone; delete that line.
 - Formatting is automatic: a PostToolUse hook runs `dart format` on every
   edited `.dart` file that has a `.dart_tool/package_config.json` in its
   directory or an ancestor (it skips unresolved checkouts). Do not
@@ -170,3 +174,10 @@ Stale-issue triage is a separate procedure:
   capability without checking its documentation and types.
 - Make architectural decisions for the long term. Do not accept a stopgap
   that only works for now and is meant to be replaced later.
+- No method, function or getter returns a widget: no `Widget _buildRow()`,
+  no `Widget get _header`, no `List<Widget> _items()`. Each piece of UI is a
+  `StatelessWidget` or `StatefulWidget` class that takes its data through its
+  constructor, so it rebuilds on its own and can be `const`. Map a list of
+  items inline in `build`, or make the list its own widget. Builder callbacks
+  passed as arguments and the framework's own `build` overrides are fine.
+  `tool/check_no_widget_methods.dart` enforces this in CI.

@@ -185,6 +185,39 @@ jobs:
         run: flutter pub get
       - name: Check the app and its runtime dependencies for dart:io process starts
         run: bash tool/check_no_dart_process.sh
+  # No method, function or getter in lib/ or packages/*/lib may return a
+  # widget (#1697): UI is built from widget classes. The check resolves the
+  # code with package:analyzer, so it needs flutter pub get. Its own job
+  # because dart analyze and bloc lint run inside the reusable workflow above.
+  # tool/widget_methods_baseline.txt lists what is left to convert; the check
+  # fails on anything new and on stale entries, and the first step fails when
+  # the baseline gains an entry.
+  no-widget-methods:
+    runs-on: ubuntu-latest
+    steps:
+      # Depth 2 brings the commit before this one (the base, for a pull
+      # request's merge commit), to compare the baseline with.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: The widget-method baseline only shrinks
+        run: |
+          baseline=tool/widget_methods_baseline.txt
+          git cat-file -e "HEAD^1:$baseline" 2>/dev/null || exit 0
+          added=$(git diff HEAD^1 HEAD -- "$baseline" | grep -E '^\+[^+#]' || true)
+          if [ -n "$added" ]; then
+            echo "$baseline gained entries; make them widget classes instead:"
+            echo "$added"
+            exit 1
+          fi
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.x"
+          channel: stable
+      - name: Resolve the app's dependencies
+        run: flutter pub get
+      - name: No widget-returning methods
+        run: dart run tool/check_no_widget_methods.dart
   # The design side of a UI change. The design is the Penpot file segno-ui
   # (#1503); its snapshots, the frozen segno-ui.pen and the design studies
   # live in tomassasovsky/segno-design (#1496), cloned next to this checkout
