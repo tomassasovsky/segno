@@ -210,6 +210,23 @@ void main() {
       expect(sent, List.filled(4, const TempoNudge(0.1)));
     });
 
+    testWidgets('a lock that lands mid-hold stops the repeat', (tester) async {
+      await pump(tester, readoutOf());
+      await open(tester);
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('readout_panel_nudge_+1'))),
+      );
+      await tester.pump(ReadoutPressButton.repeatDelay);
+      await tester.pump(ReadoutPressButton.repeatEvery);
+      final before = sent.length;
+      pushed.value = readoutOf(follow: TempoFollowState.busy);
+      await tester.pump();
+      await tester.pump(ReadoutPressButton.repeatEvery * 5);
+      expect(sent, hasLength(before));
+      await gesture.up();
+      await tester.pump();
+    });
+
     testWidgets('Tap sends on touch, before the finger lifts', (tester) async {
       await pump(tester, readoutOf());
       await open(tester);
