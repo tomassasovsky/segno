@@ -866,9 +866,9 @@ class LooperRepository {
     _laneBalance
       ..clear()
       ..addAll(value.balances);
-    // A take's source lives and dies with its image: a lane whose image a
-    // lane-count change dropped no longer names a take.
-    _laneSource.removeWhere((key, _) => !value.images.containsKey(key));
+    // A lane the accepted lane count drops takes its take's source with it,
+    // as it takes its image: regrown, it has never recorded.
+    _laneSource.removeWhere((key, _) => key.$2 >= (value.counts[key.$1] ?? 1));
     _monitorVolume
       ..clear()
       ..addAll(value.monitorLevels);
@@ -2703,7 +2703,12 @@ class LooperRepository {
                     volume: _laneVolume[(i, l)] ?? 1,
                     pan: s.tracks[i].lanes[l].pan,
                     imagePan: _laneBasePan[(i, l)] ?? 0,
-                    recordedInput: _laneSource[(i, l)] ?? -1,
+                    // A take whose image is still publishing already came
+                    // from its input; a save taken now must not lose it.
+                    recordedInput:
+                        _pendingImages[i]?.sources[(i, l)] ??
+                        _laneSource[(i, l)] ??
+                        -1,
                     balance: _laneBalance[(i, l)] ?? 1,
                     muted: s.tracks[i].lanes[l].muted,
                     lengthFrames: s.tracks[i].lanes[l].lengthFrames,
