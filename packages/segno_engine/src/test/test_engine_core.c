@@ -39520,6 +39520,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_tempo_follow.h"
 #include "test_engine_pitch_keep.h"
 #include "test_engine_peel.h"
+#include "test_engine_history_seq.h"
 #include "test_engine_tuner.h"
 #include "test_engine_synth.h"
 #include "test_engine_instruments.h"
@@ -39646,6 +39647,7 @@ int main(void) {
   run_history_replay_tests();
   if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_peel_tests();
+  run_history_seq_tests();
   run_backing_tests();
   run_audition_tests();
   run_render_tests();

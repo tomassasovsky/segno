@@ -102,6 +102,10 @@ class PerformanceCompletionSheet extends StatefulWidget {
       _PerformanceCompletionSheetState();
 }
 
+/// The last segment of [path], the capture's name.
+String _basename(String path) =>
+    path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
+
 class _PerformanceCompletionSheetState
     extends State<PerformanceCompletionSheet> {
   @override
@@ -109,27 +113,6 @@ class _PerformanceCompletionSheetState
     PerformanceCompletionSheet._open = false;
     super.dispose();
   }
-
-  static String _basename(String path) =>
-      path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
-
-  static String _revealLabel(AppLocalizations l10n) {
-    if (Platform.isMacOS) return l10n.perfRevealMacos;
-    return l10n.perfRevealOther;
-  }
-
-  /// `2:14` for the pen's subtitle — minutes unpadded, seconds padded — and
-  /// `1:15:04` past the hour, so a long set does not read as 75 minutes.
-  static String _mmss(Duration d) {
-    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    if (d.inHours > 0) {
-      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
-      return '${d.inHours}:$m:$s';
-    }
-    return '${d.inMinutes}:$s';
-  }
-
-  Future<void> _reveal(String path) => launchUrl(Uri.directory(path));
 
   Future<void> _rename(BuildContext context, String path) async {
     final cubit = context.read<PerformanceRecorderCubit>();
@@ -210,17 +193,53 @@ class _PerformanceCompletionSheetState
         listener: _popIfForeign,
         // Centered: the dialog route offers the full screen, and a shell
         // that is not wrapped takes that height as a tight max.
-        child: Center(child: _face(context, state)),
+        child: Center(
+          child: _Face(
+            state: state,
+            onRename: (path) => unawaited(_rename(context, path)),
+          ),
+        ),
       ),
     );
   }
+}
 
-  Widget _face(BuildContext context, PerformanceRecorderState state) {
+/// The face for [state]: the render in progress, the capture's outcome, or
+/// nothing while the dialog closes on a state it cannot draw.
+class _Face extends StatelessWidget {
+  const _Face({required this.state, required this.onRename});
+
+  final PerformanceRecorderState state;
+
+  /// Opens the rename sheet for the capture at the path.
+  final ValueChanged<String> onRename;
+
+  static String _revealLabel(AppLocalizations l10n) {
+    if (Platform.isMacOS) return l10n.perfRevealMacos;
+    return l10n.perfRevealOther;
+  }
+
+  /// `2:14` for the pen's subtitle — minutes unpadded, seconds padded — and
+  /// `1:15:04` past the hour, so a long set does not read as 75 minutes.
+  static String _mmss(Duration d) {
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    if (d.inHours > 0) {
+      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+      return '${d.inHours}:$m:$s';
+    }
+    return '${d.inMinutes}:$s';
+  }
+
+  Future<void> _reveal(String path) => launchUrl(Uri.directory(path));
+
+  @override
+  Widget build(BuildContext context) {
+    final state = this.state;
     // The rendering face: percent in the title, Hide as the only action.
     // Hiding is safe — the render carries on, the completion listener reopens
     // this dialog when it lands, and arming another capture is refused by the
     // CUBIT until then (`c/capture-rendering`). The pedal does not go through
-    // the cubit — see [_popIfForeign].
+    // the cubit — see the sheet's `_popIfForeign`.
     if (state is PerformanceRecorderRendering) {
       return _RenderingDialog(state: state);
     }
@@ -325,7 +344,7 @@ class _PerformanceCompletionSheetState
               ConsoleSmallButton(
                 key: const Key('perfCompletion_rename'),
                 label: l10n.perfRenameButton,
-                onPressed: () => unawaited(_rename(context, path)),
+                onPressed: () => onRename(path),
               ),
               ConsoleDialogButton(
                 key: const Key('perfCompletion_close'),

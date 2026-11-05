@@ -11,6 +11,18 @@ import 'package:looper_repository/src/models/tuner_reading.dart';
 import 'package:segno_engine/segno_engine.dart'
     show LooperMode, PitchMode, SpeedFactor, TempoFollowState, TrackState;
 
+/// The last clear that can still be undone as one edit (#1634, #1707).
+enum UndoableClear {
+  /// No clear can be undone as one edit.
+  none,
+
+  /// One track's clear.
+  track,
+
+  /// A Clear all.
+  all,
+}
+
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
 class LooperState extends Equatable {
@@ -40,7 +52,8 @@ class LooperState extends Equatable {
     this.defaultPitchMode = PitchMode.unchanged,
     this.fxHeld = const {},
     this.fxHoldNotice = const [],
-    this.clearAllUndoable = false,
+    this.undoableClear = UndoableClear.none,
+    this.editedSinceClear = const {},
     this.outputFxWaiting = const [],
   });
 
@@ -143,30 +156,44 @@ class LooperState extends Equatable {
   /// The Pitch default every track inherits (#1179).
   final PitchMode defaultPitchMode;
 
-  /// Whether the last Clear all can still be undone as one group: every
-  /// track it cleared still holds its restore point.
-  final bool clearAllUndoable;
+  /// The last clear that can still be undone as one edit: one track's
+  /// clear or a Clear all, while every track it cleared still holds its
+  /// restore point. A later clear replaces it.
+  final UndoableClear undoableClear;
 
-  /// Whether an Undo on [channel] restores the pending Clear all (#1634):
-  /// one can be undone, and the track is empty with nothing newer of its
-  /// own (no take, no record arm or Count-in launch). A member of the group
-  /// qualifies, and so does track 1, where Clear all leaves the selection.
+  /// Whether the last undoable clear is a Clear all, which the cleared
+  /// notice offers to undo.
+  bool get clearAllUndoable => undoableClear == UndoableClear.all;
+
+  /// The tracks with an edit of their own since the last undoable clear: a
+  /// take, a layer, a peel, a length change, an undo or a redo. Empty while
+  /// no clear can be undone.
+  final Set<int> editedSinceClear;
+
+  /// Whether an Undo on [channel] restores the last undoable clear (#1634,
+  /// #1707): one can be undone, and the track has nothing newer of its own.
+  /// It has no record arm or Count-in launch, and it is either empty or
+  /// neither capturing nor edited since the clear. A cleared track
+  /// qualifies, and so does the selected track wherever the clear left it:
+  /// track 1 after Clear all, or another track after a track's hold-clear.
   /// The one rule `LooperRepository.undo` applies and every surface that
   /// shows Undo reads.
-  bool undoRestoresClearAll(int channel) {
-    if (!clearAllUndoable || channel < 0 || channel >= tracks.length) {
+  bool undoRestoresClear(int channel) {
+    if (undoableClear == UndoableClear.none ||
+        channel < 0 ||
+        channel >= tracks.length) {
       return false;
     }
     final track = tracks[channel];
-    return track.state == TrackState.empty &&
-        !track.pending &&
-        track.pendingLaunch == null;
+    if (track.pending || track.pendingLaunch != null) return false;
+    return track.state == TrackState.empty ||
+        (!track.isCapturing && !editedSinceClear.contains(channel));
   }
 
   /// Whether an Undo on [channel] does anything: its own history
-  /// ([Track.canUndo]) or the pending Clear all ([undoRestoresClearAll]).
+  /// ([Track.canUndo]) or the last undoable clear ([undoRestoresClear]).
   bool canUndo(int channel) =>
-      undoRestoresClearAll(channel) ||
+      undoRestoresClear(channel) ||
       (channel >= 0 && channel < tracks.length && tracks[channel].canUndo);
 
   /// Output destination [bus]'s configured entries.
@@ -285,7 +312,8 @@ class LooperState extends Equatable {
     defaultPitchMode,
     fxHeld,
     fxHoldNotice,
-    clearAllUndoable,
+    undoableClear,
+    editedSinceClear,
     outputFxWaiting,
   ];
 }

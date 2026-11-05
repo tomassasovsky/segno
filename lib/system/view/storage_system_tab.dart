@@ -94,19 +94,19 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
                 ConsoleCard(
                   key: const Key('system_storage_card'),
                   children: [
-                    _usageRow(
-                      key: const Key('system_storage_sessions'),
+                    _UsageRow(
+                      rowKey: const Key('system_storage_sessions'),
                       title: l10n.storageSessionsTitle,
                       bytes: usage.sessionBytes,
                     ),
-                    _usageRow(
-                      key: const Key('system_storage_captures'),
+                    _UsageRow(
+                      rowKey: const Key('system_storage_captures'),
                       title: l10n.storageCapturesTitle,
                       subtitle: l10n.storageCapturesSubtitle,
                       bytes: usage.captureBytes,
                     ),
-                    _usageRow(
-                      key: const Key('system_storage_plugins'),
+                    _UsageRow(
+                      rowKey: const Key('system_storage_plugins'),
                       title: l10n.storagePluginsTitle,
                       subtitle: l10n.storagePluginsSubtitle(usage.pluginCount),
                       bytes: usage.pluginBytes,
@@ -114,8 +114,8 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
                     // No Free row: the Internal card above carries free
                     // space, read every few seconds; a second figure from a
                     // read made once on open would disagree with it.
-                    _usageRow(
-                      key: const Key('system_storage_system'),
+                    _UsageRow(
+                      rowKey: const Key('system_storage_system'),
                       title: l10n.storageSystemTitle,
                       subtitle: l10n.storageSystemSubtitle,
                       bytes: usage.systemBytes,
@@ -160,19 +160,36 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
       ),
     );
   }
+}
 
-  /// One line of the breakdown: what it is, and how much of the disk it is.
-  ///
-  /// The figure goes in [ConsoleRow.value] rather than `state`: `41.6 GB` is a
-  /// quantity a person reads, not a machine word about the row.
-  Widget _usageRow({
-    required Key key,
-    required String title,
-    required int bytes,
-    String? subtitle,
-    bool showDivider = true,
-  }) => ConsoleRow(
-    key: key,
+/// One line of the breakdown: what it is, and how much of the disk it is.
+///
+/// The figure goes in [ConsoleRow.value] rather than `state`: `41.6 GB` is a
+/// quantity a person reads, not a machine word about the row.
+class _UsageRow extends StatelessWidget {
+  const _UsageRow({
+    required this.rowKey,
+    required this.title,
+    required this.bytes,
+    this.subtitle,
+    this.showDivider = true,
+  });
+
+  /// The row's own key, which tests find it by.
+  final Key rowKey;
+
+  final String title;
+  final String? subtitle;
+
+  /// How much of the disk it takes.
+  final int bytes;
+
+  /// Whether to paint the hairline below; false on the card's last row.
+  final bool showDivider;
+
+  @override
+  Widget build(BuildContext context) => ConsoleRow(
+    key: rowKey,
     title: title,
     subtitle: subtitle,
     value: context.l10n.storageGigabytes(decimalGigabytes(bytes)),

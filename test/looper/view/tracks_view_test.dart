@@ -4162,7 +4162,7 @@ void main() {
           report(
             const LooperState(
               status: connected,
-              clearAllUndoable: true,
+              undoableClear: UndoableClear.all,
               tracks: [Track(clearRestore: true)],
             ),
           );

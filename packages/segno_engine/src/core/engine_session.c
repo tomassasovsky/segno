@@ -547,6 +547,7 @@ int32_t le_engine_finalize_history(le_engine* engine, int32_t channel,
   le_publish_live_image(engine, t, live, 0, 0);
   store_i32(&t->a_undo_depth, undo_count);
   store_i32(&t->a_peel_depth, le_peel_depth(t));
+  le_stamp_history(t);
   store_i32(&t->a_redo_depth, redo_count);
   (void)le_push(engine, LE_CMD_RESET_TRANSFORMS, channel, 0);
   return LE_OK;

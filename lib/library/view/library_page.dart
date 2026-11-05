@@ -141,8 +141,8 @@ class _LibraryViewState extends State<LibraryView> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final section = context.select<LibraryCubit, LibrarySection>(
-      (c) => c.state.section,
+    final audio = context.select<LibraryCubit, bool>(
+      (c) => c.state.section == LibrarySection.audio,
     );
     final session = context.watch<SessionCubit>().state;
     final failure = session.failureCount == _dismissed
@@ -209,18 +209,37 @@ class _LibraryViewState extends State<LibraryView> {
       ],
       // The listeners hold in both sections: a footswitch, a recording
       // track and a New loop act the same from Audio.
-      child: section == LibrarySection.audio
-          ? _buildAudio(context)
-          : Material(
-              type: MaterialType.transparency,
-              child: LoopSettingsFrame(
-                key: const Key('library_page'),
-                tabs: LibrarySectionTabs(onShow: (s) => _show(context, s)),
-                title: l10n.libraryTitle,
-                onBack: () => Navigator.pop(context),
-                onStage: _toTracks,
-                actions: const LibraryActions(),
-                children: [
+      child: Material(
+        type: MaterialType.transparency,
+        child: LoopSettingsFrame(
+          key: const Key('library_page'),
+          tabs: LibrarySectionTabs(onShow: (s) => _show(context, s)),
+          // The Audio section (pen 18/01): its title follows the export in
+          // front of the player (20/08 `Exporting audio`, 20/12 `Exported to
+          // USB`).
+          title: audio
+              ? switch (context.select<LibraryAudioCubit, LibraryAudioExport?>(
+                  (c) => c.state.export,
+                )) {
+                  LibraryExportRunning() => l10n.libraryAudioExporting,
+                  LibraryExportDone() => l10n.libraryAudioExported,
+                  _ => l10n.libraryAudioTitle,
+                }
+              : l10n.libraryTitle,
+          onBack: () => Navigator.pop(context),
+          onStage: _toTracks,
+          actions: audio ? null : const LibraryActions(),
+          children: audio
+              ? const [
+                  Positioned(
+                    left: 0,
+                    top: 128,
+                    right: 0,
+                    height: 820,
+                    child: LibraryAudioTab(),
+                  ),
+                ]
+              : [
                   // 19/05 shortens the layout by 60 to make room for the line.
                   Positioned(
                     left: 0,
@@ -241,39 +260,7 @@ class _LibraryViewState extends State<LibraryView> {
                       ),
                     ),
                 ],
-              ),
-            ),
-    );
-  }
-
-  /// The Audio section (pen 18/01): its title follows the export in front
-  /// of the player (20/08 `Exporting audio`, 20/12 `Exported to USB`).
-  Widget _buildAudio(BuildContext context) {
-    final l10n = context.l10n;
-    final export = context.select<LibraryAudioCubit, LibraryAudioExport?>(
-      (c) => c.state.export,
-    );
-    return Material(
-      type: MaterialType.transparency,
-      child: LoopSettingsFrame(
-        key: const Key('library_page'),
-        tabs: LibrarySectionTabs(onShow: (s) => _show(context, s)),
-        title: switch (export) {
-          LibraryExportRunning() => l10n.libraryAudioExporting,
-          LibraryExportDone() => l10n.libraryAudioExported,
-          _ => l10n.libraryAudioTitle,
-        },
-        onBack: () => Navigator.pop(context),
-        onStage: _toTracks,
-        children: const [
-          Positioned(
-            left: 0,
-            top: 128,
-            right: 0,
-            height: 820,
-            child: LibraryAudioTab(),
-          ),
-        ],
+        ),
       ),
     );
   }

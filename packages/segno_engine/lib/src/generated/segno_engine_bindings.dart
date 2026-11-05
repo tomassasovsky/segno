@@ -9450,6 +9450,15 @@ final class le_track_snapshot extends ffi.Struct {
   /// Session saves it and gives it back with le_engine_import_anchor.
   @ffi.Int32()
   external int anchor_lap;
+
+  /// Trailing (#1707): where the edit the next Undo on this track takes back
+  /// stands in the engine's history order — a take's layer, a Peel, a length
+  /// edit, a Bounce or a Clear restore point, numbered as it was filed, and
+  /// numbered again when a Redo files it back. 0 with no undo entry. Larger
+  /// means newer, across every track, so the host can tell whether this
+  /// track's Undo would take back something newer than a given edit.
+  @ffi.Int32()
+  external int history_seq;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

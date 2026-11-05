@@ -17,23 +17,6 @@ const double kRoutingCardGap = 16;
 /// The square slot reserved for the add-effect button at a chain's end.
 const double kRoutingAddSlot = 30;
 
-/// Positions [child] in a graph [Stack] by its [left] edge and vertical centre
-/// [centerY], sizing it [width]×[height], so callers think in node centres
-/// rather than top-left corners.
-Positioned positionedNode({
-  required double left,
-  required double centerY,
-  required double width,
-  required double height,
-  required Widget child,
-}) => Positioned(
-  left: left,
-  top: centerY - height / 2,
-  width: width,
-  height: height,
-  child: child,
-);
-
 /// One output send leaving a row: the channels in [mask] are fed from
 /// ([originX], [originY]) in [color], optionally [dashed].
 ///

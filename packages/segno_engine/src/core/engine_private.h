@@ -1329,7 +1329,14 @@ typedef struct {
   int32_t divisor;
   int32_t reversed;
   uint32_t group_id;
-  uint32_t cleared_mask;
+  /* #1707: the edit's place in the engine's history order, stamped by
+   * le_stamp_history once the entry is on the undo stack (0 before that).
+   * le_redo_push zeroes it, so an edit that is undone and redone counts as
+   * new when it comes back. With layer_seq it fills the word before
+   * start_iter, so the entry, and every track's stacks, keep their size. */
+  int32_t seq;
+  int32_t layer_seq; /* PEEL: the consumed LAYER's seq, which its undo gives
+                      * back to the re-inserted LAYER */
   uint64_t start_iter;
 } le_hist_entry;
 

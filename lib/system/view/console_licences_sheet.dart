@@ -187,11 +187,19 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                                   padding: EdgeInsets.zero,
                                   shrinkWrap: true,
                                   itemCount: packages.length,
-                                  itemBuilder: (context, index) => _row(
-                                    context,
-                                    packages[index],
-                                    last: index == packages.length - 1,
-                                  ),
+                                  itemBuilder: (context, index) {
+                                    final package = packages[index];
+                                    final open = _open == package.name;
+                                    return _LicenceRow(
+                                      package: package,
+                                      last: index == packages.length - 1,
+                                      open: open,
+                                      onToggle: () => setState(
+                                        () =>
+                                            _open = open ? null : package.name,
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                             ],
@@ -219,15 +227,33 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
       ),
     );
   }
+}
 
-  Widget _row(
-    BuildContext context,
-    ConsoleLicencePackage package, {
-    required bool last,
-  }) {
+/// One package of the licence list: its row, and the drawer of its licences
+/// that opens under it.
+class _LicenceRow extends StatelessWidget {
+  const _LicenceRow({
+    required this.package,
+    required this.last,
+    required this.open,
+    required this.onToggle,
+  });
+
+  final ConsoleLicencePackage package;
+
+  /// Whether it is the list's last row.
+  final bool last;
+
+  /// Whether its drawer is open.
+  final bool open;
+
+  /// Opens or closes its drawer.
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final open = _open == package.name;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -241,7 +267,7 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
           // The last row keeps its hairline while it is OPEN: the drawer under
           // it is what the line now separates.
           showDivider: !last || open,
-          onTap: () => setState(() => _open = open ? null : package.name),
+          onTap: onToggle,
         ),
         ConsoleChooser(
           key: Key('console_licence_drawer_${package.name}'),

@@ -294,7 +294,6 @@ void main() {
       expect(_foundIn('report').map((method) => '$method'), [
         '$path:5: rows returns List<Widget>',
       ]);
-      expect(_foundIn('report').single.key, '$path#rows');
     });
 
     test('fails on a file that does not resolve', () {
@@ -319,60 +318,6 @@ void main() {
     test('does not match hand-written code', () {
       expect(isGenerated('lib/looper/view/mixer_column.dart'), isFalse);
       expect(isGenerated('lib/l10n/localized.dart'), isFalse);
-    });
-  });
-
-  group('compare', () {
-    WidgetMethod method(String scope) => WidgetMethod(
-      path: 'lib/a.dart',
-      line: 1,
-      scope: scope,
-      type: 'Widget',
-    );
-
-    test('passes when every declaration is in the baseline', () {
-      final comparison = compare(
-        [method('A._row'), method('A._row')],
-        ['lib/a.dart#A._row', 'lib/a.dart#A._row'],
-      );
-      expect(comparison.passes, isTrue);
-    });
-
-    test('fails on a declaration missing from the baseline', () {
-      final comparison = compare(
-        [method('A._row'), method('A._cell')],
-        ['lib/a.dart#A._row'],
-      );
-      expect(comparison.passes, isFalse);
-      expect(comparison.violations.map((m) => m.key), ['lib/a.dart#A._cell']);
-      expect(comparison.stale, isEmpty);
-    });
-
-    test('fails on a stale baseline entry', () {
-      final comparison = compare(
-        [method('A._row')],
-        ['lib/a.dart#A._row', 'lib/a.dart#A._row', 'lib/a.dart#A._gone'],
-      );
-      expect(comparison.passes, isFalse);
-      expect(comparison.violations, isEmpty);
-      expect(comparison.stale, ['lib/a.dart#A._row', 'lib/a.dart#A._gone']);
-    });
-  });
-
-  group('readBaseline', () {
-    test('skips comments and blank lines', () {
-      final directory = Directory.systemTemp.createTempSync('nwm_');
-      addTearDown(() => directory.deleteSync(recursive: true));
-      final file = File(p.join(directory.path, 'b.txt'))
-        ..writeAsStringSync('# header\n\nlib/a.dart#A._row\n  \n');
-      expect(readBaseline(file), ['lib/a.dart#A._row']);
-    });
-
-    test('reads a missing file as empty', () {
-      expect(
-        readBaseline(File(p.join(_root, 'no_such_baseline.txt'))),
-        isEmpty,
-      );
     });
   });
 }

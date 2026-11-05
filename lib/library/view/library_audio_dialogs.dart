@@ -116,14 +116,6 @@ class LibraryAudioDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    Widget button(LibraryDialogAction a) => LoopOutlinedButton(
-      key: a.key,
-      width: a.role.width,
-      label: a.label,
-      tone: a.role.tone,
-      borderColor: a.role.destructive ? surface.rec : null,
-      onTap: () => Navigator.of(context).pop(a.value),
-    );
     return Center(
       child: Material(
         color: Colors.transparent,
@@ -162,7 +154,7 @@ class LibraryAudioDialog extends StatelessWidget {
                 ],
                 for (final c in choices) ...[
                   const SizedBox(height: 16),
-                  button(c),
+                  _DialogButton(action: c),
                 ],
                 const SizedBox(height: 24),
                 Row(
@@ -170,7 +162,7 @@ class LibraryAudioDialog extends StatelessWidget {
                   children: [
                     for (final (i, a) in actions.indexed) ...[
                       if (i > 0) const SizedBox(width: 16),
-                      button(a),
+                      _DialogButton(action: a),
                     ],
                   ],
                 ),
@@ -181,6 +173,24 @@ class LibraryAudioDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One of [LibraryAudioDialog]'s answers, which closes the dialog with its
+/// value.
+class _DialogButton extends StatelessWidget {
+  const _DialogButton({required this.action});
+
+  final LibraryDialogAction action;
+
+  @override
+  Widget build(BuildContext context) => LoopOutlinedButton(
+    key: action.key,
+    width: action.role.width,
+    label: action.label,
+    tone: action.role.tone,
+    borderColor: action.role.destructive ? context.surface.rec : null,
+    onTap: () => Navigator.of(context).pop(action.value),
+  );
 }
 
 /// Asks what a recording's `Export to USB` writes: the recording alone, or

@@ -146,11 +146,10 @@ class _Workspace extends StatelessWidget {
       return outputs > 0 &&
           List.generate(outputs, looper.isOutputEnabled).every((on) => !on);
     });
-    final banner = _banner(l10n, state);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (banner != null) ...[banner, const SizedBox(height: 16)],
+        _OutcomeBanner(state: state),
         if (silent) ...[
           ConsoleBanner(
             key: const Key('audio_no_outputs_banner'),
@@ -189,13 +188,35 @@ class _Workspace extends StatelessWidget {
       ],
     );
   }
+}
 
-  /// What the last request turned out to be, or null when the page simply
-  /// shows what runs.
-  Widget? _banner(AppLocalizations l10n, AudioSetupState state) {
+/// What the last request turned out to be, with the gap below it, or
+/// nothing when the page simply shows what runs.
+class _OutcomeBanner extends StatelessWidget {
+  const _OutcomeBanner({required this.state});
+
+  final AudioSetupState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final outcome = _outcome(context.l10n);
+    if (outcome == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: ConsoleBanner(
+        key: outcome.key,
+        message: outcome.message,
+        tone: outcome.tone,
+      ),
+    );
+  }
+
+  ({Key key, String message, ConsoleBannerTone tone})? _outcome(
+    AppLocalizations l10n,
+  ) {
     final refusal = state.refusal;
     if (refusal != null) {
-      return ConsoleBanner(
+      return (
         key: const Key('audio_apply_refused_banner'),
         message: _refusalMessage(l10n, refusal),
         // The device stays as it was: a press that did nothing (#1562).
@@ -204,7 +225,7 @@ class _Workspace extends StatelessWidget {
     }
     final error = state.error;
     if (error != null) {
-      return ConsoleBanner(
+      return (
         key: const Key('audio_open_failed_banner'),
         message: switch (error) {
           AudioSetupError.openDeviceFailed => l10n.failedToOpenDevice(
@@ -215,7 +236,7 @@ class _Workspace extends StatelessWidget {
       );
     }
     if (state.phase == ConfigPhase.settled) return null;
-    return ConsoleBanner(
+    return (
       key: const Key('audio_refused_banner'),
       message: l10n.audioRefusedConfig(
         l10n.audioRateBufferValue(
