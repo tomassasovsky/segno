@@ -1156,11 +1156,16 @@ void main() {
       },
     );
 
-    testWidgets('the mode picker switches the shown colour map', (
-      tester,
-    ) async {
+    testWidgets('the mode tabs switch the shown colour map, and only LED '
+        'colors shows them', (tester) async {
       await pump(tester);
+      final record = find.byKey(const Key('pedal_led_mode_record'));
+      expect(record, findsNothing);
+      await tester.tap(find.byKey(const Key('pedal_setup_context_custom')));
+      await tester.pumpAndSettle();
+      expect(record, findsNothing);
       await openLeds(tester);
+      expect(record, findsOneWidget);
       await ledMode(tester, InteractionMode.mute);
       expect(capOf(tester, PedalButton.mode).ledColor, ledGreen);
       expect(capOf(tester, PedalButton.track1).ledColor, ledGreen);

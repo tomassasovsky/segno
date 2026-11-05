@@ -99,12 +99,12 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
   bool _saveFailed = false;
 
   /// The offsets inside the frame's content box. The LED colors mode tabs
-  /// take the row at [_controlsTop]; the map starts an xl gap under it and
-  /// the editor follows the map.
-  static const double _controlsTop = 120;
-  static const double _tabHeight = 64;
+  /// take the row at [_modeTabsTop]; the map starts an xl gap under it, and
+  /// the editor box ends at the content box's bottom edge.
+  static const double _modeTabsTop = 120;
+  static const double _modeTabHeight = 64;
   static const double _mapTop = 208;
-  static const double _editorTop = 748;
+  static const double _editorTop = 772;
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +120,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             snapshot.hasError) {
           return Scaffold(
             body: LoopSettingsFrame(
-              crumb: l10n.pedalSetupCrumb,
+              tabs: _contextTabs(context, enabled: false),
               title: l10n.pedalSetupTitle,
               onBack: () => Navigator.of(context).maybePop(),
               onStage: _stage,
@@ -163,8 +163,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
                       Positioned(
                         left: 0,
                         right: 0,
-                        top: _controlsTop,
-                        height: _tabHeight,
+                        top: _modeTabsTop,
+                        height: _modeTabHeight,
                         child: _ledModeTabs(context),
                       ),
                     // The pedal map keeps its drawn geometry, centred on the
@@ -402,15 +402,19 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
 
   /// The three contexts as the top bar's section tabs: peers, not a path,
   /// as the Library draws Sessions and Audio.
-  Widget _contextTabs(BuildContext context) {
+  ///
+  /// While the setup loads they are drawn but not [enabled], so the top bar
+  /// does not change when the page arrives.
+  Widget _contextTabs(BuildContext context, {bool enabled = true}) {
     final l10n = context.l10n;
     Widget tab(PedalSetupContext value, String label) => LoopChoiceButton(
       key: Key('pedal_setup_context_${value.name}'),
       label: label,
       selected: _context == value,
+      enabled: enabled,
       onTap: () => _openContext(value),
       width: _contextTabWidth,
-      height: _tabHeight,
+      height: _contextTabHeight,
     );
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -424,8 +428,11 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     );
   }
 
-  /// Each context tab's width: the longest English label with its padding.
-  static const double _contextTabWidth = 200;
+  /// Each context tab's size: "Custom controls", the longest English label,
+  /// at its full 24 px with the button's padding, and the top bar's height
+  /// less its margins.
+  static const double _contextTabWidth = 216;
+  static const double _contextTabHeight = 64;
 
   /// LED colors' modes, one tab each across the content box, every mode with
   /// a colour map of its own.
@@ -448,7 +455,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
             selected: mode == _ledMode,
             onTap: () => _showLedMode(mode),
             width: width,
-            height: _tabHeight,
+            height: _modeTabHeight,
           ),
         ],
       ],
