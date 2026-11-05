@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/visualizer/application/waveform_display_controller.dart';
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_command.dart';
 import 'package:segno/visualizer/waveform_window_service.dart';
 
 class _Looper extends Mock implements LooperRepository {}
@@ -33,6 +34,9 @@ class _Window implements WaveformWindowService {
 
   @override
   void Function(({double x, double y}) tap)? onCalibrationTap;
+
+  @override
+  void Function(ReadoutCommand command)? onReadoutCommand;
 
   @override
   Future<bool> showCalibrationTarget(
@@ -376,6 +380,100 @@ void main() {
       );
       clock.elapse(const Duration(milliseconds: 40));
       expect(window.readouts.last.brightness, 0.3);
+      unawaited(display.close());
+      clock.flushMicrotasks();
+    });
+  });
+
+  test('a change in what a tempo change does reaches the readout (#1654)', () {
+    fakeAsync((clock) {
+      final display = build()..start(enabled: true);
+      clock
+        ..flushMicrotasks()
+        ..elapse(const Duration(milliseconds: 40));
+      expect(window.readouts.last.tempoFollow, TempoFollowState.free);
+      final pushes = window.readouts.length;
+
+      // Only the follow state moves: the tracks, tempo and grid stand still.
+      when(() => repository.lastState).thenReturn(
+        const LooperState(
+          tracks: [Track(), Track(channel: 1)],
+          tempoFollow: TempoFollowState.retimes,
+        ),
+      );
+      clock.elapse(const Duration(milliseconds: 40));
+      expect(window.readouts, hasLength(pushes + 1));
+      expect(window.readouts.last.tempoFollow, TempoFollowState.retimes);
+      unawaited(display.close());
+      clock.flushMicrotasks();
+    });
+  });
+
+  test('an external clock owning the tempo reaches the readout', () {
+    when(() => repository.lastState).thenReturn(
+      const LooperState(
+        tracks: [Track()],
+        transport: TransportState(
+          tempoBpm: 120,
+          tempoSource: TempoSource.external,
+        ),
+      ),
+    );
+    fakeAsync((clock) {
+      final display = build()..start(enabled: true);
+      clock
+        ..flushMicrotasks()
+        ..elapse(const Duration(milliseconds: 40));
+      expect(window.readouts.last.clockOwnsTempo, isTrue);
+      unawaited(display.close());
+      clock.flushMicrotasks();
+    });
+  });
+
+  test('the loop settings and the dim reach the readout through the '
+      'context', () {
+    fakeAsync((clock) {
+      final display = build()..start(enabled: true);
+      clock
+        ..flushMicrotasks()
+        ..elapse(const Duration(milliseconds: 40));
+      final pushes = window.readouts.length;
+
+      const loop = ReadoutLoopSettings(
+        lengthBars: 4,
+        timing: RecordTiming.bar,
+        ready: true,
+      );
+      display.updateContext(
+        const WaveformDisplayContext(
+          cursor: 0,
+          name: 'Track 1',
+          defaultName: true,
+          mode: 'record',
+          bank: 0,
+          goodbye: ReadoutGoodbye.none,
+          loop: loop,
+        ),
+      );
+      clock.elapse(const Duration(milliseconds: 40));
+      expect(window.readouts, hasLength(pushes + 1));
+      expect(window.readouts.last.loop, loop);
+
+      display.updateContext(
+        const WaveformDisplayContext(
+          cursor: 0,
+          name: 'Track 1',
+          defaultName: true,
+          mode: 'record',
+          bank: 0,
+          goodbye: ReadoutGoodbye.none,
+          loop: loop,
+          dimmed: true,
+        ),
+      );
+      clock.elapse(const Duration(milliseconds: 40));
+      expect(window.readouts, hasLength(pushes + 2));
+      expect(window.readouts.last.dimmed, isTrue);
       unawaited(display.close());
       clock.flushMicrotasks();
     });

@@ -1,4 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/looper_repository.dart'
+    show RecordTiming, TempoFollowState;
 import 'package:segno/appliance/power_off/power_step.dart';
 import 'package:segno/notices/model/notice.dart';
 
@@ -125,6 +127,84 @@ class ReadoutNotice extends Equatable {
   List<Object?> get props => [title, body, tone, track];
 }
 
+/// The length and record timing the next take uses, as the readout's Loop
+/// panel shows and edits them (#1654): the defaults for all tracks, and the
+/// selected track's own values when it has them, which stay main-screen
+/// edits.
+class ReadoutLoopSettings extends Equatable {
+  /// Creates a [ReadoutLoopSettings].
+  const ReadoutLoopSettings({
+    this.lengthBars = 0,
+    this.trackLengthBars,
+    this.timing = RecordTiming.immediately,
+    this.trackTiming,
+    this.captureLocked = false,
+    this.ready = false,
+  });
+
+  /// Rebuilds the settings from [map] as pushed across the window channel;
+  /// anything missing or garbled reads as the defaults, not ready.
+  factory ReadoutLoopSettings.fromMap(Object? map) {
+    if (map is! Map<Object?, Object?>) return const ReadoutLoopSettings();
+    final timings = RecordTiming.values.asNameMap();
+    final lengthBars = map['lengthBars'];
+    final trackLengthBars = map['trackLengthBars'];
+    final timing = timings[map['timing']];
+    final captureLocked = map['captureLocked'];
+    final ready = map['ready'];
+    return ReadoutLoopSettings(
+      lengthBars: lengthBars is int ? lengthBars : 0,
+      trackLengthBars: trackLengthBars is int ? trackLengthBars : null,
+      timing: timing ?? RecordTiming.immediately,
+      trackTiming: timings[map['trackTiming']],
+      captureLocked: captureLocked is bool && captureLocked,
+      // A garbled timing is not a confirmed one.
+      ready: ready is bool && ready && timing != null,
+    );
+  }
+
+  /// The default length of the next take in bars, `0` for Auto.
+  final int lengthBars;
+
+  /// The selected track's own length, when it has one that applies.
+  final int? trackLengthBars;
+
+  /// The default record timing.
+  final RecordTiming timing;
+
+  /// The selected track's own record timing, when it has one.
+  final RecordTiming? trackTiming;
+
+  /// A take is recording or overdubbing, which holds both until it ends.
+  final bool captureLocked;
+
+  /// Both settings have loaded and can take an edit.
+  final bool ready;
+
+  /// Whether the length and record timing can be changed now.
+  bool get editable => ready && !captureLocked;
+
+  /// Channel-encodable form.
+  Map<String, Object?> toMap() => {
+    'lengthBars': lengthBars,
+    'trackLengthBars': trackLengthBars,
+    'timing': timing.name,
+    'trackTiming': trackTiming?.name,
+    'captureLocked': captureLocked,
+    'ready': ready,
+  };
+
+  @override
+  List<Object?> get props => [
+    lengthBars,
+    trackLengthBars,
+    timing,
+    trackTiming,
+    captureLocked,
+    ready,
+  ];
+}
+
 /// Which power face the 7" shows over its readout (pen 32).
 enum ReadoutGoodbye {
   /// The live readout, no face.
@@ -169,6 +249,10 @@ class PerformanceReadout extends Equatable {
     this.savingStep,
     this.savingProgress = 0,
     this.brightness = 1,
+    this.tempoFollow = TempoFollowState.free,
+    this.clockOwnsTempo = false,
+    this.loop = const ReadoutLoopSettings(),
+    this.dimmed = false,
   });
 
   /// Rebuilds a readout from [map] as pushed across the window channel.
@@ -192,6 +276,16 @@ class PerformanceReadout extends Equatable {
       savingStep: _stepOf(map['savingStep']),
       savingProgress: (map['savingProgress'] as num? ?? 0).toDouble(),
       brightness: (map['brightness'] as num? ?? 1).toDouble(),
+      // An unknown token reads as busy, locked, as the engine's own
+      // projection does: never claim a change is free when it may not be.
+      tempoFollow: switch (map['tempoFollow']) {
+        null => TempoFollowState.free,
+        final Object token =>
+          TempoFollowState.values.asNameMap()[token] ?? TempoFollowState.busy,
+      },
+      clockOwnsTempo: map['clockOwnsTempo'] == true,
+      loop: ReadoutLoopSettings.fromMap(map['loop']),
+      dimmed: map['dimmed'] == true,
     );
   }
 
@@ -239,6 +333,21 @@ class PerformanceReadout extends Equatable {
   /// its panel's brightness and idle dim when the panel cannot dim itself.
   final double brightness;
 
+  /// What a tempo change does now (`LooperState.tempoFollow`): whether the
+  /// readout's tempo and signature controls are free, retime the loops, or
+  /// are locked and why.
+  final TempoFollowState tempoFollow;
+
+  /// An external MIDI clock sets the tempo, so the readout cannot.
+  final bool clockOwnsTempo;
+
+  /// The length and record timing of the next take.
+  final ReadoutLoopSettings loop;
+
+  /// The console is idle-dimmed: the touch that wakes it must press
+  /// nothing on the readout.
+  final bool dimmed;
+
   /// Channel-encodable form.
   Map<String, Object?> toMap() => {
     'selected': selected?.toMap(),
@@ -253,6 +362,10 @@ class PerformanceReadout extends Equatable {
     'savingStep': savingStep?.name,
     'savingProgress': savingProgress,
     'brightness': brightness,
+    'tempoFollow': tempoFollow.name,
+    'clockOwnsTempo': clockOwnsTempo,
+    'loop': loop.toMap(),
+    'dimmed': dimmed,
   };
 
   @override
@@ -269,6 +382,10 @@ class PerformanceReadout extends Equatable {
     savingStep,
     savingProgress,
     brightness,
+    tempoFollow,
+    clockOwnsTempo,
+    loop,
+    dimmed,
   ];
 }
 

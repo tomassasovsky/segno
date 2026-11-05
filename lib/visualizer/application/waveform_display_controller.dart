@@ -22,6 +22,8 @@ class WaveformDisplayContext extends Equatable {
     this.savingStep,
     this.savingProgress = 0,
     this.brightness = 1,
+    this.loop = const ReadoutLoopSettings(),
+    this.dimmed = false,
   });
 
   /// Selected track channel.
@@ -54,6 +56,13 @@ class WaveformDisplayContext extends Equatable {
   /// The software dim over the second screen's window (`1` = none).
   final double brightness;
 
+  /// The length and record timing of the next take, from their settings
+  /// owners.
+  final ReadoutLoopSettings loop;
+
+  /// The console is idle-dimmed.
+  final bool dimmed;
+
   @override
   List<Object?> get props => [
     cursor,
@@ -66,6 +75,8 @@ class WaveformDisplayContext extends Equatable {
     savingStep,
     savingProgress,
     brightness,
+    loop,
+    dimmed,
   ];
 }
 
@@ -320,6 +331,7 @@ class WaveformDisplayController {
 
   static bool _sameReadoutFacts(LooperState a, LooperState b, int cursor) {
     if (identical(a, b)) return true;
+    if (a.tempoFollow != b.tempoFollow) return false;
     final ta = a.transport;
     final tb = b.transport;
     if (ta.tempoBpm != tb.tempoBpm ||
@@ -377,6 +389,10 @@ class WaveformDisplayController {
       savingStep: _context.savingStep,
       savingProgress: _context.savingProgress,
       brightness: _context.brightness,
+      tempoFollow: looper.tempoFollow,
+      clockOwnsTempo: transport.tempoSource == TempoSource.external,
+      loop: _context.loop,
+      dimmed: _context.dimmed,
     );
   }
 }

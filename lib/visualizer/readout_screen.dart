@@ -7,6 +7,7 @@ import 'package:segno/appliance/screen_capture.dart';
 import 'package:segno/settings/touch_calibration/view/calibration_target.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_command.dart';
 import 'package:segno/visualizer/screen_link.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 
@@ -94,6 +95,12 @@ class ReadoutScreenLink {
   /// next touch says the same thing.
   void sendActivity() {
     _mainPort()?.send({'op': ScreenLinkOp.activity});
+  }
+
+  /// Sends [command] to the main screen, which applies it. Fire-and-forget:
+  /// the result comes back in the next readout push.
+  void sendCommand(ReadoutCommand command) {
+    _mainPort()?.send({'op': ScreenLinkOp.command, 'command': command.toMap()});
   }
 
   /// Tells the main screen where a calibration tap landed, in the readout's
