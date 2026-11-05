@@ -102,7 +102,11 @@ static void le_fill_track_snapshot(le_engine* engine, int32_t ch,
   out->clear_restore = load_i32(&tr->a_clear_restore);
   out->redo_depth = load_i32(&tr->a_redo_depth);
   out->peel_depth = load_i32(&tr->a_peel_depth);
-  out->history_seq = load_i32(&tr->a_history_seq);
+  /* #1707: control-thread state, read like the stacks the drain above just
+   * settled; nothing on the audio side writes it. */
+  out->history_seq = active && tr->undo_count > 0
+                         ? tr->undo_stack[tr->undo_count - 1].seq
+                         : 0;
   /* The TRACK's level, summed across its lanes -- NOT lane 0's, which is what
    * this reported until #655 and which under-read any track playing more than
    * one layer. Per-lane figures are still published on the lane snapshots

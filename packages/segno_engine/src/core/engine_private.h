@@ -1961,10 +1961,6 @@ typedef struct le_track {
   /* Enabling Once during existing playback ends the current pass, even when
    * that pass began less than a full lap ago. */
   int once_current_pass;
-  /* Published seq of the top undo entry, 0 with none (#1707). Last, in the
-   * struct's tail padding: the track's size and every hot field's offset
-   * stay as they were. */
-  _Atomic int32_t a_history_seq;
 } le_track;
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
  * segno_engine_api.h). Rings are allocated CONTROL-side at arm and freed

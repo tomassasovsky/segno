@@ -99,8 +99,6 @@ void le_stamp_history(le_track* t) {
         atomic_fetch_add_explicit(&le_history_clock, 1, memory_order_relaxed) +
         1;
   }
-  store_i32(&t->a_history_seq,
-            t->undo_count > 0 ? t->undo_stack[t->undo_count - 1].seq : 0);
 }
 
 static void le_publish_undo_depth(le_track* t) {
