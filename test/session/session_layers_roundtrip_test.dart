@@ -256,6 +256,33 @@ void main() {
   );
 
   test(
+    'a take keeps the input it was captured from through save and load, '
+    "apart from its lane's input setting (#1678)",
+    () async {
+      expect(looper.record(), EngineResult.ok);
+      engine.pump(frames: loopFrames, input: 0.25);
+      expect(looper.record(), EngineResult.ok);
+      engine.pump(frames: 0);
+      ticker.add(null); // observe the published take image
+      expect(looper.state.tracks[0].lanes[0].recordedInput, 0);
+      // The next take would record nothing; this one still came from 0.
+      expect(
+        looper.setLaneInput(channel: 0, lane: 0, inputChannel: -1),
+        EngineResult.ok,
+      );
+
+      await saveThenLoad('${tempDir.path}/recorded_input');
+      ticker.add(null);
+
+      final lane = looper.state.tracks[0].lanes[0];
+      expect(lane.hasContent, isTrue);
+      expect(lane.recordedInput, 0);
+      expect(looper.state.laneInputs[(0, 0)], -1);
+    },
+    skip: skip,
+  );
+
+  test(
     'fuzz: random overdub/undo histories all round-trip identically',
     () async {
       // Seeded for reproducibility; on failure the shape is in each reason.

@@ -110,7 +110,7 @@ class WaveformWindowApp extends StatelessWidget {
   Widget _app() {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.neon,
+      theme: AppTheme.readout,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) =>

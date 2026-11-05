@@ -88,6 +88,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   // #1179's Audio & tempo; landed after #1168's 14 and #1200's 15.
   15: _addAudioTempo,
   16: _addAnchors,
+  17: _addRecordedInputs,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -470,6 +471,21 @@ void _addAnchors(Map<String, dynamic> m, SessionMigrationContext c) {
   for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
     track['anchorLap'] = 0;
     c.note('tracks[${track['channel']}].anchorLap', 'played from lap 0');
+  }
+}
+
+/// 17 → 18: the input each lane's take was captured from (#1678). Earlier
+/// schemas never stored it; the lane's input setting at save time is the
+/// closest record of it, so the take takes that.
+void _addRecordedInputs(Map<String, dynamic> m, SessionMigrationContext c) {
+  for (final track in _list(m, 'tracks').cast<Map<String, dynamic>>()) {
+    for (final lane in _list(track, 'lanes').cast<Map<String, dynamic>>()) {
+      lane['recordedInput'] = lane['inputChannel'];
+      c.note(
+        'tracks[${track['channel']}].lanes[${lane['lane']}].recordedInput',
+        'taken from inputChannel',
+      );
+    }
   }
 }
 
