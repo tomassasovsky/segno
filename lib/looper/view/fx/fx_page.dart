@@ -1264,6 +1264,8 @@ class _HearLive extends StatelessWidget {
 /// anything has been recorded yet: a part is a lane, and its chain can be
 /// set up before the first take. A lane that records no input any more but
 /// still holds audio stays, since that audio still plays through its chain.
+/// Each part is named by [_partInput]: a recorded part by the input its take
+/// came from, an empty one by the input it is set to record.
 class _PartPicker extends StatelessWidget {
   const _PartPicker({required this.destination});
 
@@ -1287,6 +1289,16 @@ class _PartPicker extends StatelessWidget {
         },
       ),
     );
+    String nameOf(int input) =>
+        input < 0 ? '' : l10n.inputName(names.names, input);
+    // Two parts can share an input (a take from the guitar, and an empty
+    // lane now set to the guitar): those say which part they are.
+    final shared = <String>{
+      for (final (i, a) in parts.indexed)
+        for (final b in parts.skip(i + 1))
+          if (a.input >= 0 && nameOf(a.input) == nameOf(b.input))
+            nameOf(a.input),
+    };
     return LoopSelect<FxTrackPart>(
       key: const Key('fx_part_picker'),
       value: destination.part,
@@ -1301,12 +1313,13 @@ class _PartPicker extends StatelessWidget {
           LoopSelectItem(
             key: Key('fx_part_$lane'),
             value: FxTrackPart.part(lane),
-            // A part is named by the INPUT it records, which is what makes
-            // "edit only the guitar in this take" a thing the player can
-            // point at.
+            // A part is named by its INPUT, which is what makes "edit only
+            // the guitar in this take" a thing the player can point at.
             label: input < 0
                 ? l10n.fxPartOrdinal(lane + 1)
-                : l10n.inputName(names.names, input),
+                : shared.contains(nameOf(input))
+                ? l10n.fxPartNamedOrdinal(nameOf(input), lane + 1)
+                : nameOf(input),
           ),
       ],
     );
@@ -1320,8 +1333,7 @@ typedef _TrackPart = ({int lane, int input});
 /// lane count and lane inputs set to record an input, the configuration the
 /// engine records from and `FxCubit` accepts a part address against, plus
 /// any lane within that count that holds recorded audio and the lane being
-/// [editing]. Each is named by the input it is set to record, else the one
-/// the engine reports for it.
+/// [editing]. Each is named by [_partInput].
 List<_TrackPart> _trackParts(
   LooperState state,
   int channel, {
@@ -1340,12 +1352,20 @@ List<_TrackPart> _trackParts(
   ];
 }
 
-/// The input lane [lane] of [track] is set to record, else the one the
-/// engine reports for it; `-1` for neither.
+/// The input lane [lane] of [track] is named by: the one its take was
+/// captured from while it holds audio, so changing the lane's input never
+/// renames a recording; else the one it is set to record; else the one the
+/// engine reports for it; `-1` for none.
 int _partInput(LooperState state, Track track, int lane) {
+  final engineLane = track.lanes.elementAtOrNull(lane);
+  if (engineLane != null &&
+      engineLane.hasContent &&
+      engineLane.recordedInput >= 0) {
+    return engineLane.recordedInput;
+  }
   final configured = state.laneInputs[(track.channel, lane)] ?? lane;
   if (configured >= 0) return configured;
-  return track.lanes.elementAtOrNull(lane)?.inputChannel ?? -1;
+  return engineLane?.inputChannel ?? -1;
 }
 
 /// The chain at the selected destination.

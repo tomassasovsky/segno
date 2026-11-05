@@ -2072,6 +2072,7 @@
     "fxValueRatio": "{ratio}:1",
     "fxValueQ": "{q}",
     "fxValueOff": "Apagado",
+    "fxPartNamedOrdinal": "{input} · parte {number}",
     "fxPartOrdinal": "Parte {number}",
     "fxUnassigned": "Sin asignar",
     "fxModuleCount": "{count, plural, =1{1 efecto} other{{count} efectos}}",

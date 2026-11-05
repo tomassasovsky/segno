@@ -424,6 +424,8 @@ void main() {
                           rig.tracks[channel].lanes[lane].inputChannel,
                       lengthFrames:
                           rig.tracks[channel].lanes[lane].lengthFrames,
+                      recordedInput:
+                          rig.tracks[channel].lanes[lane].recordedInput,
                       effects: laneEntries[(channel, lane)] ?? const [],
                     ),
                 ],
@@ -921,6 +923,46 @@ void main() {
         expect(await parts(tester), [
           'Acoustic guitar',
           'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('a recorded part keeps the name of the input it was '
+          'captured from after the lane input changes', (tester) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 2, lengthFrames: 48000, recordedInput: 0),
+              Lane(inputChannel: 1),
+            ],
+            [2, 1],
+          ),
+        );
+        expect(await parts(tester), [
+          'Acoustic guitar',
+          'Lead vocal microphone',
+        ]);
+      });
+
+      testWidgets('two parts on one input say which part they are', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          destination: const FxDestination.recordedTrack(0),
+          state: rigWith(
+            const [
+              Lane(inputChannel: 1, lengthFrames: 48000, recordedInput: 0),
+              Lane(),
+            ],
+            [1, 0],
+          ),
+        );
+        final l10n = l10nOf(tester);
+        expect(await parts(tester), [
+          l10n.fxPartNamedOrdinal('Acoustic guitar', 1),
+          l10n.fxPartNamedOrdinal('Acoustic guitar', 2),
         ]);
       });
 

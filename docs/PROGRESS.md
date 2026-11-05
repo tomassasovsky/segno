@@ -76,7 +76,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
-| #1678 | Recorded tracks lists a track's configured inputs (#1679); takes remember the input they were recorded from (stacked follow-up) | in-review | auto | `claude/recorded-inputs-1678*` |
 
 ---
 
@@ -206,6 +205,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Owed: the Penpot frames (plan part 3, #1658; geometry in PR #1651's
   "Design writeback"), the device checks listed on PR #1655, and #1648 (the
   routing rules into the same adapters).
+
+## November 2026 Takes remember the input they were recorded from (#1678)
+
+- A lane's take keeps the input it was captured from (`Lane.recordedInput`),
+  fixed when the take starts, the same way the lane's image pan and balance
+  are fixed (`_laneSource` in `LooperRepository`, filled from the pending
+  image when the take publishes). Changing the lane's input afterwards only
+  changes where the next take comes from.
+- A Session saves it per lane (`recordedInput`, schema 18). Older bundles
+  convert by taking the lane's saved `inputChannel`. A recall restores it.
+- Effects → Recorded tracks lists the inputs a track is set to record
+  (`laneCounts`, `laneInputs`), whether or not anything is recorded yet, and
+  names a part that holds audio by its recorded input.
 
 ## November 2026 Takes keep the lap they were played on (#854)
 
