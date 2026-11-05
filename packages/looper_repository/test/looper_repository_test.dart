@@ -5896,6 +5896,40 @@ void main() {
       expect(engine.tempoRestores, [(bpm: 128.0, source: TempoSource.manual)]);
     });
 
+    test('clearTempo needs the running engine', () {
+      final repo = buildRepo()..setTempo(140);
+      expect(repo.clearTempo(), EngineResult.notRunning);
+      expect(engine.calls, isNot(contains('clearTempo')));
+      repo.startEngine(const EngineConfig());
+      expect(engine.tempoRestores, [(bpm: 140.0, source: TempoSource.manual)]);
+    });
+
+    test('a cleared tempo is not pushed again on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTempo(128);
+      expect(repo.clearTempo(), EngineResult.ok);
+      expect(engine.calls, contains('clearTempo'));
+      expect(repo.sessionTransport.tempoBpm, 0);
+      expect(repo.sessionTransport.tempoSource, TempoSource.none);
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tempoRestores, isEmpty);
+    });
+
+    test('a refused clear keeps the tempo for restart', () {
+      engine.clearTempoResult = EngineResult.notReady;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTempo(128);
+      expect(repo.clearTempo(), EngineResult.notReady);
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tempoRestores, [(bpm: 128.0, source: TempoSource.manual)]);
+    });
+
     test('setTimeSignature is deferred until running, then re-applied', () {
       final repo = buildRepo()..setTimeSignature(3, 4);
       expect(engine.lastTimeSignature, isNull); // not running yet

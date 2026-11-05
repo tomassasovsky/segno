@@ -387,10 +387,12 @@ void main() {
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           fontFamily: SurfaceTheme.displayFont,
-          extensions: const [
+          extensions: [
             SurfaceTheme.dark,
             SpacingTheme.standard,
             NoticeTheme.standard,
+            // The tempo keypad's Cancel is a console tap target.
+            routingGraphThemeFromSurface(SurfaceTheme.dark),
           ],
         ),
         home: RepositoryProvider<LooperRepository>.value(
@@ -520,6 +522,51 @@ void main() {
     await expectLater(
       find.byType(LoopSettingsPage),
       matchesGoldenFile('goldens/loop_settings_signature.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Tempo keypad, and an entry out of range (#1653)', (
+    tester,
+  ) async {
+    await pump(tester, page: LoopSettingsPageId.tempo);
+    await tester.tap(find.byKey(const Key('loop_tempo_entry')));
+    await tester.pumpAndSettle();
+    final sheet = find.byKey(const Key('tempo_entry_sheet'));
+    Future<void> type(String keys) async {
+      for (final key in keys.split('')) {
+        await tester.tap(find.descendant(of: sheet, matching: find.text(key)));
+        await tester.pump();
+      }
+    }
+
+    await type('128.5');
+    await expectLater(
+      find.byType(Navigator),
+      matchesGoldenFile('goldens/loop_settings_tempo_keypad.png'),
+    );
+    await tester.tap(
+      find.descendant(
+        of: sheet,
+        matching: find.byIcon(Icons.backspace_outlined),
+      ),
+    );
+    await tester.pump();
+    await type('5');
+    await tester.tap(
+      find.descendant(of: sheet, matching: find.text('Set')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('tempo_entry_error')), findsNothing);
+    await tester.tap(find.byKey(const Key('loop_tempo_entry')));
+    await tester.pumpAndSettle();
+    await type('350');
+    await tester.tap(
+      find.descendant(of: sheet, matching: find.text('Set')),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(Navigator),
+      matchesGoldenFile('goldens/loop_settings_tempo_keypad_range.png'),
     );
   }, skip: !rendersScreenshots);
 

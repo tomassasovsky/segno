@@ -2858,5 +2858,16 @@
     "consoleLedsBrightRow": "Sala iluminada",
     "consoleLedsNowRow": "LEDs ahora",
     "consoleLedsCalibrate": "Calibrar",
-    "consoleLedsCalibrateNote": "En una sala oscura, con las luces como en el escenario, esperá 10 segundos y tocá Sala oscura. Después hacé lo mismo en una sala iluminada. Cada uno toma la Lectura de la derecha. Sala oscura necesita la mitad de la lectura de Sala iluminada o menos, y Sala iluminada el doble de la de Sala oscura o más."
+    "consoleLedsCalibrateNote": "En una sala oscura, con las luces como en el escenario, esperá 10 segundos y tocá Sala oscura. Después hacé lo mismo en una sala iluminada. Cada uno toma la Lectura de la derecha. Sala oscura necesita la mitad de la lectura de Sala iluminada o menos, y Sala iluminada el doble de la de Sala oscura o más.",
+    "loopTempoEdit": "Escribir un tempo",
+    "loopTempoClear": "Quitar tempo",
+    "loopTempoClearRefused": "No se quitó el tempo",
+    "loopTempoClearRefusedBody": "Una grabación o una cuenta de entrada fija el tempo. Borrá las pistas primero.",
+    "loopTempoClearStopped": "La interfaz de audio está detenida. Iniciala y después quitá el tempo.",
+    "loopTempoEntryTitle": "Tempo",
+    "loopTempoEntryNow": "Ahora {bpm} BPM",
+    "loopTempoEntryRange": "De {min} a {max} BPM",
+    "loopTempoEntryField": "Tempo en BPM",
+    "loopTempoEntryOutOfRange": "Escribí un tempo de {min} a {max} BPM",
+    "loopTempoEntrySet": "Aplicar"
 }

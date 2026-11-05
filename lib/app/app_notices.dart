@@ -80,6 +80,7 @@ abstract final class AppNoticeId {
   static const performance = 'performance';
   static const looperMode = 'looperMode';
   static const loopSettings = 'loopSettings';
+  static const tempoClearRefused = 'tempoClearRefused';
   static const fx = 'fx';
   static const fxPreset = 'fxPreset';
   static const brightnessSave = 'brightnessSave';

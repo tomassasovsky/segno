@@ -1395,6 +1395,17 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// The mock records no material, so the tempo lock never holds here.
+  @override
+  EngineResult clearTempo() {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _tempoBpm = 0;
+    _tempoSource = TempoSource.none;
+    _lastTapAt = null;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setTimeSignature(int num, int den) {
     final result = _requireRunning();
