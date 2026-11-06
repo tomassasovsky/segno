@@ -29,6 +29,12 @@
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
+/* #1718: LE_AUDIO_TU came before every include, so the pins took. */
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__)) && \
+    !defined(LE_AUDIO_HOT_PINNED)
+#error "define LE_AUDIO_TU before the first include (engine_hot.h)"
+#endif
+
 #ifndef LE_PI
 #define LE_PI 3.14159265358979323846f
 #endif
