@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -151,8 +152,25 @@ class _Rig {
 }
 
 void main() {
+  // The body runs on a fake clock, so the 800 ms hold threshold moves only
+  // with the body's pumps. On the wall clock a stalled isolate let a hold
+  // fire before the checks that precede it.
   void check(String name, Future<void> Function(_Clock) body) =>
-      test(name, () => body(_Clock()));
+      test(name, () async {
+        final clock = FakeAsync();
+        var done = false;
+        // Created outside the fake zone, so awaiting it needs no fake
+        // microtask flush.
+        final run = clock.run((_) => body(_Clock())).whenComplete(() {
+          done = true;
+        })..ignore();
+        while (!done) {
+          clock.elapse(const Duration(milliseconds: 1));
+          // `await subscription.cancel()` completes on the real root zone.
+          await Future<void>.delayed(Duration.zero);
+        }
+        await run;
+      });
 
   late _Rig rig;
   blocTest<ControlCubit, ControlState>(
