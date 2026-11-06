@@ -174,6 +174,13 @@ static inline void le_heard_log_write(le_engine* e, int t, int32_t live,
  * whose lanes holds an image. */
 void le_heard_op(le_engine* e, le_track* t, le_heard_rec op);
 
+/* The seam fold (#728) of track [t]'s live slot over [len] by [F] frames,
+ * made on its images (le_heard_op), and with [shadow] first the same fold of
+ * its in-flight overdub shadow, as le_seam_fold_dub_shadow makes it. Kept
+ * out of the folds themselves so the plain mixer compiles as before. */
+void le_heard_seam_fold(le_engine* e, le_track* t, int32_t len, int32_t F,
+                        int shadow);
+
 /* The post-pass: every logged record of the block, in order, on the planes,
  * with each lane's input chain output for the frame ([par]'s monitor rows,
  * where the chain ran; the input itself where its chain is empty), times

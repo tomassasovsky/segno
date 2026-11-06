@@ -3377,6 +3377,9 @@ struct le_engine {
   int32_t heard_input[LE_MAX_TRACKS][LE_MAX_LANES];
   /* Dropped records over the engine's life (le_heard_log), for tests. */
   _Atomic uint32_t a_heard_dropped;
+  /* Lanes holding an image in any slot (le_heard.a_slots > 0), so a block
+   * where none does skips le_heard_block_begin's walk. */
+  _Atomic int32_t a_heard_lanes;
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in
