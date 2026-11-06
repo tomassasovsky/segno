@@ -521,6 +521,13 @@ void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n) {
     const uint32_t entered = lanes & ~e->heard_lanes[t];
     for (int l = 0; l < LE_MAX_LANES && entered != 0u; ++l) {
       if (entered & (1u << l)) e->heard[t][l].mix = 0.0f;
+#ifdef LE_NATIVE_TESTS
+      /* le_test_heard_force 2 plays the image from its first frame, so the
+       * suite's exact sound checks see no crossfade rounding. */
+      if ((entered & (1u << l)) && le_test_heard_force == 2) {
+        e->heard[t][l].mix = 1.0f;
+      }
+#endif
     }
     e->heard_lanes[t] = lanes;
     if (lanes == 0u) continue;
