@@ -8594,14 +8594,19 @@ static inline void le_chain_run_step(le_chain_run* run, const le_track* tr,
  * rendered from. */
 static inline int le_track_print_run_matches(
     le_track* tr, int32_t lanes, const le_wet_entry** lane_ent,
-    const int32_t* lane_fx_count, const le_heard* heard) {
+    const int32_t* lane_fx_count
+#ifdef LE_MIX_HEARD_TU
+    , const le_heard* heard
+#endif
+    ) {
   if (!le_run_matches_print(tr, &tr->bus_run)) return 0;
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &tr->lanes[l];
     if (lane_fx_count[l] == 0) continue;
-    /* A part playing its heard image runs no chain (#1713). [heard] is
-     * NULL from the plain mixer, where no lane holds one. */
-    if (heard != NULL && heard[l].mix >= 1.0f) continue;
+#ifdef LE_MIX_HEARD_TU
+    /* A part playing its heard image runs no chain (#1713). */
+    if (heard[l].mix >= 1.0f) continue;
+#endif
     if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
     if (!le_run_matches_print(tr, &ln->run)) return 0;
   }
@@ -9521,8 +9526,12 @@ void mix_tracks_frame_heard(
         le_head_is_integral(&tr->head) &&
         (tr->transpose_st == 0 || e->transpose_bypass) &&
         !load_i32(&tr->a_track_cache_active) && trk_rp == 0 &&
+#ifdef LE_MIX_HEARD_TU
         le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t],
-                                   heard_on ? e->heard[t] : NULL)) {
+                                   e->heard[t])) {
+#else
+        le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t])) {
+#endif
       store_i32(&tr->a_track_cache_active, 1);
       for (int l = 0; l < lane_n[t]; ++l) {
         le_lane* el = &e->tracks[t].lanes[l];
