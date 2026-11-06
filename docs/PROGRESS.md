@@ -101,8 +101,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   image reads its planes through the same head as the clean take and does
   not run its chain; `le_engine_set_lane_source` switches to the clean take
   through the chain with a 10 ms crossfade (the chain re-enters through its
-  re-enable ramp). The wet cache does not print such a lane and its track
-  has no whole-track print. `le_engine_heard_attach` gives a dry take an
+  re-enable ramp). The wet cache does not print such a lane.
+  `le_engine_heard_attach` gives a dry take an
   image copied from its clean take, for an overdub through effects.
 - Part 2a: Double and the halves build the edited image's heard image with
   the clean take's arithmetic (and their Undo shrinks both). The render

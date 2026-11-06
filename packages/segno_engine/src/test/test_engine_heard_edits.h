@@ -157,6 +157,11 @@ static void test_heard_session_layers(void) {
   le_engine* b = heard_engine(48000 * 4);
   for (int32_t o = 0; o < images; ++o) {
     CHECK(le_engine_import_layer(b, 0, 0, o, clean[o], N) == LE_OK);
+    /* Only at the clean image's own length, and only on a staged lane. */
+    CHECK(le_engine_import_layer_heard(b, 0, 0, o, heard[o], N - 1) ==
+          LE_ERR_INVALID);
+    CHECK(le_engine_import_layer_heard(b, 0, 1, o, heard[o], N) ==
+          LE_ERR_INVALID);
     CHECK(le_engine_import_layer_heard(b, 0, 0, o, heard[o], N) == LE_OK);
   }
   int32_t lens[4] = {N, N, N, N};

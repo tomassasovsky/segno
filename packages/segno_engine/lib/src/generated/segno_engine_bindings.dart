@@ -6546,10 +6546,12 @@ class SegnoEngineBindings {
 
   /// Gives the image le_engine_import_layer just staged at (`channel`, `lane`,
   /// `ordinal`) its heard image (#1713): `frames` frames of INTERLEAVED STEREO
-  /// at `pcm`, at most the clean image's slot. Call after that image's
-  /// le_engine_import_layer and before le_engine_finalize_history. Returns
-  /// LE_OK, or LE_ERR_INVALID when no clean image is staged there, the track is
-  /// not EMPTY, or `frames` does not fit.
+  /// at `pcm`, exactly the clean image's length. Call right after that image's
+  /// le_engine_import_layer (before the lane's next one) and before
+  /// le_engine_finalize_history. Returns LE_OK, LE_ERR_NOT_READY while an
+  /// attach is in flight, or LE_ERR_INVALID when the lane's last staged clean
+  /// image is not this one at this length, or for any reason
+  /// le_engine_import_layer would refuse.
   int le_engine_import_layer_heard(
     ffi.Pointer<le_engine> engine,
     int channel,

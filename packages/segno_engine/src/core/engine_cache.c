@@ -933,7 +933,7 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   /* A lane playing its heard image (#1713) does not run its chain, so there
    * is nothing to print. A print already published stays for the moment the
    * lane goes back to its clean take. */
-  if (le_heard_any(e, t, l) && le_heard_lane_plays(e, t, l)) {
+  if (le_heard_lane_plays(e, t, l)) {
     lc->state = LE_CACHE_LIVE;
     return;
   }
@@ -1320,7 +1320,7 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &tr->lanes[l];
     /* A part playing its heard image contributes the image (#1713). */
-    if (le_heard_any(e, t, l) && le_heard_lane_plays(e, t, l)) continue;
+    if (le_heard_lane_plays(e, t, l)) continue;
     if (atomic_load_explicit(&ln->a_wet, memory_order_acquire) != NULL) {
       continue;
     }
@@ -1562,8 +1562,7 @@ static int le_cache_assemble_chunk(le_engine* e, le_cache_job* job,
      * its pan, as the mixer plays it. */
     float* hl;
     float* hr;
-    if (le_heard_any(e, job->channel, l) &&
-        le_heard_lane_plays(e, job->channel, l) &&
+    if (le_heard_lane_plays(e, job->channel, l) &&
         le_heard_planes(e, job->channel, l, load_i32(&ln->a_live), &hl, &hr)) {
       const float vol = load_f32(&ln->a_vol_bits);
       for (int32_t f = from; f < from + n; ++f) {
