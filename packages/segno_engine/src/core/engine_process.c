@@ -8596,8 +8596,9 @@ static LE_MIX_ONCE int le_track_print_run_matches(
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &tr->lanes[l];
     if (lane_fx_count[l] == 0) continue;
-    /* A part playing its heard image runs no chain (#1713). */
-    if (heard[l].mix >= 1.0f) continue;
+    /* A part playing its heard image runs no chain (#1713). [heard] is
+     * NULL from the plain mixer, where no lane holds one. */
+    if (heard != NULL && heard[l].mix >= 1.0f) continue;
     if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
     if (!le_run_matches_print(tr, &ln->run)) return 0;
   }
@@ -9519,7 +9520,7 @@ static LE_MIX_INLINE void mix_tracks_frame_body(
         (tr->transpose_st == 0 || e->transpose_bypass) &&
         !load_i32(&tr->a_track_cache_active) && trk_rp == 0 &&
         le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t],
-                                   e->heard[t])) {
+                                   heard_on ? e->heard[t] : NULL)) {
       store_i32(&tr->a_track_cache_active, 1);
       for (int l = 0; l < lane_n[t]; ++l) {
         le_lane* el = &e->tracks[t].lanes[l];
