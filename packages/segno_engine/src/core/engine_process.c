@@ -17,6 +17,9 @@
  * comp_pos, le_lanes_active) come from engine_core.h; the chain runner from
  * engine_fx.h.
  */
+/* #1718: this unit's audio-callback functions go to the hot section (engine_hot.h). */
+#define LE_AUDIO_TU 1
+
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -25,6 +28,7 @@
 #include "engine_core.h"     /* valid_channel, le_track_set_len, le_mask_to_channel */
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
 #include "engine_heard.h"    /* the heard image (#1713) */
+#include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
 #include "engine_instruments.h" /* le_instruments_block / _cut (#1197) */
 #include "engine_internal.h" /* le_engine_process prototype */
 #include "engine_workers.h"  /* le_fx_jobs_run (#1515) */
@@ -44,6 +48,12 @@
  * keeps its one caller here, so the plain mixer compiles as it did before
  * the heard image. That copy defines none of this file's external
  * functions. */
+
+/* #1718: LE_AUDIO_TU came before every include, so the pins took. */
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__)) && \
+    !defined(LE_AUDIO_HOT_PINNED)
+#error "define LE_AUDIO_TU before the first include (engine_hot.h)"
+#endif
 
 /* The loopback-latency-harness and auto-record tuning constants (LE_LATENCY_* /
  * LE_AUTO_RECORD_THRESHOLD) live in engine_core.h — shared with le_engine_configure
@@ -1111,7 +1121,7 @@ static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
  * frame, the very sum a render computes from the logged anchors. Returns 1
  * when it re-anchored, which the frame loop records for the chains that run
  * after it (le_fx_par). */
-static inline int le_fx_tempo_tick(le_engine* e, uint32_t clock,
+static inline LE_AUDIO_HOT_AT(0) int le_fx_tempo_tick(le_engine* e, uint32_t clock,
                                    uint64_t frame, int free_or_song) {
   const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   float bpm = load_f32(&e->a_tempo_bpm_bits);
@@ -3971,7 +3981,7 @@ static inline void le_store_pan(_Atomic uint32_t* pan_bits,
  * into a scratch frame instead of the output buffer when the All tracks chain
  * has something on it — the stage runs on the recorded mix per destination,
  * which is exactly this array. */
-static void le_fx_route_frame(float* o, int ch_out, uint32_t mask, float l,
+static LE_AUDIO_HOT_AT(0) void le_fx_route_frame(float* o, int ch_out, uint32_t mask, float l,
                               float r) {
   const float mid = 0.5f * (l + r);
   int n = 0;
@@ -6626,7 +6636,7 @@ static inline float le_one_pole_coeff(float seconds, float sr) {
  * bit-transparent below the ceiling), then output metering. Accumulates
  * *out_sumsq and tracks *frame_out_peak (both start at the caller's per-block /
  * per-frame seed). `lim_hold` is the hold window in frames (>= 1). */
-static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
+static inline LE_AUDIO_HOT_AT(4) void master_bus_frame(le_engine* e, float* out, uint32_t f,
                                     int ch_out, float master_gain, int limiter_on,
                                     float limiter_ceiling, int32_t lim_hold,
                                     float lim_attack, float lim_release,
@@ -7266,7 +7276,7 @@ static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
  * crosses its top, fires the loop-top (quantize) pending records on the grid;
  * with nothing active, holds the transport at the top. [st] is the frame's
  * per-track state snapshot. */
-static inline void advance_transport_frame(le_engine* e, int tc,
+static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int tc,
                                            const int32_t* st, uint64_t frame,
                                            int free_or_song) {
   for (int t = 0; t < tc; ++t) {
@@ -7470,7 +7480,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
  * is UNCHANGED by the enable flags: a lane with a disabled chain still enters
  * fx_apply_chain so in-flight enable ramps can settle — only settled slots
  * are skipped, inside the chain (D-BITEXACT). */
-static inline void snapshot_lane_fx(
+static inline LE_AUDIO_HOT_AT(0) void snapshot_lane_fx(
     le_engine* e, int tc, uint32_t track_mask, const int32_t* lane_n,
     int32_t fx_count[][LE_MAX_LANES], int32_t fx_pre_count[][LE_MAX_LANES],
     int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
@@ -7561,7 +7571,7 @@ static inline void snapshot_lane_fx(
  * enable (gated by loopback exclusion) plus the chain's output mask / volume /
  * mute / effects — the monitor mirror of snapshot_lane_fx, one chain per input,
  * including the per-slot effective enable bits (D-EFFBITS). */
-static inline void snapshot_monitor_fx(
+static inline LE_AUDIO_HOT_AT(12) void snapshot_monitor_fx(
     le_engine* e, int ch_in, uint32_t excluded, int* mon_on, uint32_t* mon_out,
     float* mon_vol, int* mon_mut, int32_t* mon_fx_count,
     int32_t mon_fx_type[][LE_FX_MAX],
@@ -7631,7 +7641,7 @@ static inline void snapshot_monitor_fx(
  * keys routing off exactly this bit — an empty chain must leave the
  * legacy path untouched (bit-identical), while enabled-ness only ever toggles
  * DSP inside fx_apply_chain, never topology. */
-static inline void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
+static inline LE_AUDIO_HOT_AT(1) void snapshot_bus_fx(le_engine* e, le_fx_bus* b,
                                    int32_t* bus_fx_count,
                                    int32_t* bus_fx_pre_count,
                                    int32_t bus_fx_type[LE_FX_MAX],
@@ -8832,11 +8842,12 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
  * [lane_sumsq] / [lane_peak] metering. [pos] is the playhead (read by the caller
  * before the transport advances). */
 #ifndef LE_MIX_HEARD_TU
-static inline void mix_tracks_frame(
+static inline LE_AUDIO_HOT_AT(4) void mix_tracks_frame(
 #else
 /* The mixer with its heard-image code (#1713), which le_engine_process calls
- * for a block where a lane holds a heard image (engine_mix_heard.c). */
-void mix_tracks_frame_heard(
+ * for a block where a lane holds a heard image (engine_mix_heard.c), pinned
+ * as the plain one is (#1718). */
+LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
 #endif
     le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
     int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
@@ -10404,7 +10415,7 @@ static LE_BRIDGE_NOINLINE void le_heard_block_end(
 #endif
 
 #ifndef LE_MIX_HEARD_TU
-void le_engine_process(le_engine* e, float* output, const float* input,
+LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
   le_flush_denormals(); /* per-thread; cheap to reassert every callback */
 
