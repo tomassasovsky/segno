@@ -3368,6 +3368,13 @@ struct le_engine {
    * its retire announced after the block's post-pass (le_dub_boundary). */
   uint64_t heard_retire_frame[LE_MAX_TRACKS];
   uint32_t heard_retire_mask;
+  /* Control: le_record_impl's verdict that the fresh take it prepares zeroes
+   * its live slots, for le_post_record_image. */
+  int heard_zero;
+  /* Callback: inputs whose chain ran as a job this block and the last one,
+   * and each lane's input as the block started (le_heard_block_begin). */
+  uint64_t heard_jobs, heard_jobs_prev;
+  int32_t heard_input[LE_MAX_TRACKS][LE_MAX_LANES];
   /* Dropped records over the engine's life (le_heard_log), for tests. */
   _Atomic uint32_t a_heard_dropped;
 };

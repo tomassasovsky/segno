@@ -8686,6 +8686,15 @@ static LE_BRIDGE_NOINLINE float le_heard_lane_frame(
   const float* pr = le_heard_plane(h, 1, live);
   float m = h->mix;
   if (pl == NULL) {
+    /* Nothing to fade from: the clean take at once, its chain back through
+     * its re-enable ramp if the image was playing. */
+    if (m > 0.0f) {
+      le_lane* ln = &tr->lanes[l];
+      for (int32_t s = 0; s < fx_n; ++s) {
+        le_fx_enable_force_bypass(&ln->fx, s);
+        le_fx_rack_reset(&ln->fx, s);
+      }
+    }
     m = 0.0f;
   } else {
     const int target =
@@ -10640,14 +10649,26 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * that may capture this block records, whose chains run here whether or
    * not they are monitored (the take records their output). */
   le_heard_block_begin(e, tc, lane_n);
+  e->heard_jobs_prev = e->heard_jobs;
+  e->heard_jobs = 0u;
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
     if (!instrument && (in == NULL || c >= ch_in)) continue;
     const int heard = (e->heard_inputs >> c) & 1u &&
                       !(c < LE_MAX_CHANNELS && (excluded & (1u << c)));
-    if ((mon_on[c] && !mon_mut[c] && mon_has_fx[c]) ||
-        (heard && mon_has_fx[c])) {
+    const int monitored = mon_on[c] && !mon_mut[c] && mon_has_fx[c];
+    if (monitored || (heard && mon_has_fx[c])) {
       par->job_mon[par->jobs++] = c;
+      e->heard_jobs |= UINT64_C(1) << c;
+      /* A chain that starts running only because a take records it held
+       * whatever it last ran on: it comes in through its re-enable ramp,
+       * as a chain switched back on does (#1713). */
+      if (!monitored && !((e->heard_jobs_prev >> c) & 1u)) {
+        for (int32_t s = 0; s < mon_fx_count[c]; ++s) {
+          le_fx_enable_force_bypass(&e->monitors[c].fx, s);
+          le_fx_rack_reset(&e->monitors[c].fx, s);
+        }
+      }
     }
   }
   par->in = in;

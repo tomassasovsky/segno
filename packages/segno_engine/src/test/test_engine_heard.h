@@ -309,34 +309,50 @@ static void test_heard_source_switch(void) {
 }
 
 /* The image is captured from the chain whether or not the monitor plays it:
- * muted, the take's image is still the chain's output. */
+ * muted, the take still gets the chain's (stereo, wet) output, silent at the
+ * outputs. A chain that runs only for a take starts from a reset state, so a
+ * later take's image carries nothing from the last one's tail. */
 static void test_heard_records_an_unmonitored_chain(void) {
   printf("test_heard_records_an_unmonitored_chain\n");
-  enum { N = 4800 };
-  le_engine* a = heard_engine(48000); /* monitored: the reference */
-  le_engine* b = heard_engine(48000); /* muted */
-  heard_monitor_reverb(a);
-  heard_monitor_reverb(b);
-  CHECK(le_engine_set_monitor_input_mute(b, 0, 1) == LE_OK);
-  drain(b);
+  enum { N = 4800, F = 480 };
+  le_engine* e = heard_engine(48000);
+  heard_monitor_reverb(e);
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
+  drain(e);
   le_record_image image = heard_image(4, 1);
-  CHECK(le_engine_record_with_image(a, 0, &image) == LE_OK);
-  CHECK(le_engine_record_with_image(b, 0, &image) == LE_OK);
-  static float out_a[2 * N];
-  static float out_b[2 * N];
-  heard_feed(a, 0, N, 64, out_a);
-  heard_feed(b, 0, N, 64, out_b);
-  for (int32_t i = 0; i < 2 * N; ++i) CHECK(out_b[i] == 0.0f); /* silent */
-  const int32_t live = load_i32(&b->tracks[0].lanes[0].a_live);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  static float out[2 * N];
+  heard_feed(e, 0, N, 64, out);
+  for (int32_t i = 0; i < 2 * N; ++i) CHECK(out[i] == 0.0f); /* silent */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  heard_feed(e, N, 2 * F, 64, NULL);
+  int32_t live = load_i32(&e->tracks[0].lanes[0].a_live);
   float* pl;
   float* pr;
-  CHECK(le_heard_planes(b, 0, 0, live, &pl, &pr));
-  for (int32_t i = 0; i < N && pl != NULL; ++i) {
-    CHECK(pl[i] == out_a[2 * i]);
-    CHECK(pr[i] == out_a[2 * i + 1]);
+  CHECK(le_heard_planes(e, 0, 0, live, &pl, &pr));
+  int wet = 0;
+  int sides_differ = 0;
+  for (int32_t i = F; i < N && pl != NULL; ++i) {
+    if (fabsf(pl[i] - heard_signal(i)) > 1e-3f) wet = 1;
+    if (pl[i] != pr[i]) sides_differ = 1;
   }
-  le_engine_destroy(a);
-  le_engine_destroy(b);
+  CHECK(wet);
+  CHECK(sides_differ);
+  /* Take A's tail must not reach take B: B records silence on track 1. */
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
+  heard_silence(e, 4 * N, 64, NULL);
+  image = heard_image(13, 1);
+  CHECK(le_engine_record_with_image(e, 1, &image) == LE_OK);
+  heard_silence(e, N, 64, NULL);
+  live = load_i32(&e->tracks[1].lanes[0].a_live);
+  CHECK(le_heard_planes(e, 1, 0, live, &pl, &pr));
+  float peak = 0.0f;
+  for (int32_t i = 0; i < N && pl != NULL; ++i) {
+    if (fabsf(pl[i]) > peak) peak = fabsf(pl[i]);
+    if (fabsf(pr[i]) > peak) peak = fabsf(pr[i]);
+  }
+  CHECK(peak < 1e-6f);
+  le_engine_destroy(e);
 }
 
 /* The image does not depend on the callback's size: blocks of 1, 37, 64 and
@@ -583,7 +599,33 @@ static void test_heard_lane_is_not_printed(void) {
   le_engine_destroy(e);
 }
 
+/* An attach is refused for a take with a chain of its own (it was not heard
+ * as its clean signal), and an engine torn down between the callback
+ * installing an attach and control settling it frees the planes once. */
+static void test_heard_attach_edges(void) {
+  printf("test_heard_attach_edges\n");
+  enum { N = 4800, F = 480 };
+  le_engine* e = heard_engine(48000);
+  le_record_image image = heard_image(14, 0);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  heard_feed(e, 0, N, 64, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  heard_feed(e, N, 2 * F, 64, NULL);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_heard_attach(e, 0, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 0, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_heard_attach(e, 0, 0) == LE_OK);
+  drain(e); /* installed, not yet settled by control */
+  CHECK(le_heard_any(e, 0, 0));
+  CHECK(e->heard[0][0].attach[0] != NULL);
+  le_engine_destroy(e); /* frees each plane once (ASan: no double free) */
+}
+
 static void run_heard_tests(void) {
+  test_heard_attach_edges();
   test_heard_take_records_the_chain_output();
   test_heard_take_plays_its_image();
   test_heard_source_switch();

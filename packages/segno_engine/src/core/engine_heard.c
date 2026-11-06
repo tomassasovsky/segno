@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "engine_core.h"
+#include "engine_fx.h" /* le_fx_enable_force_bypass, le_fx_rack_reset */
 #include "engine_instruments.h"
 #include "engine_prefault.h"
 #include "rt_alloc.h"
@@ -236,13 +237,22 @@ static void le_heard_release_zero_spare(le_engine* e, le_heard* h) {
 
 void le_heard_free_lane(le_engine* e, int32_t ch, int32_t l) {
   le_heard* h = &e->heard[ch][l];
+  /* An attach the callback installed but control has not settled yet is in
+   * the table now, and freed there: forget the second reference first. */
+  if (h->attach[0] != NULL && h->attach_slot >= 0 &&
+      le_heard_plane(h, 0, h->attach_slot) == h->attach[0]) {
+    h->attach[0] = NULL;
+    h->attach[1] = NULL;
+  }
   for (int32_t s = 0; s < LE_POOL_SLOTS; ++s) {
     le_heard_drop(e, ch, l, s, LE_HEARD_FREE);
   }
   le_heard_release_standby(e, h);
   le_heard_release_zero_spare(e, h);
-  /* An attach in flight on a device that is being torn down cannot be
-   * installed any more (no callback runs): its planes are freed here. */
+  /* An attach not installed cannot be any more: every caller runs with no
+   * callback and its command gone (configure re-initialises the ring), or
+   * on a lane le_release_removed_lanes leaves alone while one is posted.
+   * Its planes are freed here and the counters start over. */
   for (int p = 0; p < LE_HEARD_PLANES; ++p) {
     le_free_audio_buffer(e, h->attach[p]);
     h->attach[p] = NULL;
@@ -251,7 +261,7 @@ void le_heard_free_lane(le_engine* e, int32_t ch, int32_t l) {
   h->attach_posted = 0;
   atomic_store_explicit(&h->a_attach_done, 0, memory_order_relaxed);
   atomic_store_explicit(&h->a_slots, 0, memory_order_relaxed);
-  h->mix = 1.0f; /* no callback runs: the next take starts on its image */
+  h->mix = 0.0f; /* no callback runs */
 }
 
 int le_heard_take_standby(le_engine* e, int32_t ch, int32_t l, int32_t slot) {
@@ -406,6 +416,11 @@ int32_t le_engine_heard_attach(le_engine* engine, int32_t channel,
   const int32_t len = load_i32(&ln->a_len);
   const int32_t cap = ln->pool_cap[live];
   if (ln->pool[live] == NULL || len <= 0 || cap < len) return LE_ERR_INVALID;
+  /* Only a take that sounds as its clean signal was heard as it: one with
+   * a chain of its own sounds through that chain. */
+  for (int32_t s = 0; s < load_i32(&ln->a_fx_count) && s < LE_FX_MAX; ++s) {
+    if (load_i32(&ln->a_fx_type[s]) != LE_FX_NONE) return LE_ERR_INVALID;
+  }
   float* pl;
   float* pr;
   if (!le_heard_alloc(cap, &pl, &pr)) return LE_ERR_INVALID;
@@ -465,20 +480,48 @@ void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n) {
   e->heard_inputs = 0u;
   for (int t = 0; t < tc; ++t) {
     e->heard_log[t].n = 0;
+    le_track* tr = &e->tracks[t];
     uint32_t lanes = 0u;
     for (int l = 0; l < lane_n[t]; ++l) {
       if (le_heard_any(e, t, l)) lanes |= 1u << l;
     }
+    /* A lane whose last image went (a fresh clean take, a reset) leaves the
+     * heard path while it may still be playing it: its chain comes back
+     * through its re-enable ramp, as on a source switch. A lane that gets
+     * its first one starts on its clean take and fades to the image (a take
+     * that records one has done so by the time it plays). */
+    const uint32_t left = e->heard_lanes[t] & ~lanes;
+    for (int l = 0; l < LE_MAX_LANES && left != 0u; ++l) {
+      if (!(left & (1u << l))) continue;
+      le_heard* h = &e->heard[t][l];
+      if (h->mix > 0.0f) {
+        le_lane* ln = &tr->lanes[l];
+        int32_t n = load_i32(&ln->a_fx_count);
+        if (n > LE_FX_MAX) n = LE_FX_MAX;
+        for (int32_t s = 0; s < n; ++s) {
+          le_fx_enable_force_bypass(&ln->fx, s);
+          le_fx_rack_reset(&ln->fx, s);
+        }
+      }
+      h->mix = 0.0f;
+    }
+    const uint32_t entered = lanes & ~e->heard_lanes[t];
+    for (int l = 0; l < LE_MAX_LANES && entered != 0u; ++l) {
+      if (entered & (1u << l)) e->heard[t][l].mix = 0.0f;
+    }
     e->heard_lanes[t] = lanes;
     if (lanes == 0u) continue;
     e->heard_trk |= 1u << t;
-    le_track* tr = &e->tracks[t];
+    /* The inputs as the block starts: the post-pass reads the same. */
+    for (int l = 0; l < lane_n[t]; ++l) {
+      e->heard_input[t][l] = load_i32(&tr->lanes[l].a_input_channel);
+    }
     if (!le_heard_may_write(tr)) continue;
     for (int l = 0; l < lane_n[t]; ++l) {
       if (!(lanes & (1u << l))) continue;
       const int32_t live = load_i32(&tr->lanes[l].a_live);
       if (!le_heard_has(e, t, l, live)) continue;
-      const int32_t c = load_i32(&tr->lanes[l].a_input_channel);
+      const int32_t c = e->heard_input[t][l];
       if (c >= 0 && c < LE_MAX_MONITORED_INPUTS) {
         e->heard_inputs |= UINT64_C(1) << c;
       }
@@ -573,7 +616,10 @@ static void le_heard_input(const le_engine* e, const le_fx_par* par,
   /* The capture trim scales what records (slice 3): the clean take, and so
    * its image. An instrument has none. */
   const float trim = instrument ? 1.0f : in_trim[c];
-  if (mon_has_fx[c]) {
+  /* The chain's output where it ran as a job this block; its input where
+   * it has no chain. */
+  (void)mon_has_fx;
+  if ((e->heard_jobs >> c) & 1u) {
     *wl = par->mon_l[c][i] * trim;
     *wr = par->mon_r[c][i] * trim;
     return;
@@ -594,10 +640,7 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
     if (lg->n == 0 && lg->dropped == 0) continue;
     le_track* tr = &e->tracks[t];
     const int32_t lanes = le_lanes_active(tr);
-    int32_t input[LE_MAX_LANES];
-    for (int32_t l = 0; l < lanes; ++l) {
-      input[l] = load_i32(&tr->lanes[l].a_input_channel);
-    }
+    const int32_t* input = e->heard_input[t];
     for (int32_t k = 0; k < lg->n; ++k) {
       const le_heard_rec* r = &lg->rec[k];
       if (r->kind != LE_HEARD_REC_WRITE) {

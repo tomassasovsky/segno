@@ -1386,12 +1386,12 @@ le_engine* le_engine_create(void) {
   /* The audibility gains (#1400) start at their gates on the first frame each
    * track is mixed. */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) engine->trk_gate_stale[t] = 1;
-  /* The heard image (#1713): outside the first frame loop, every lane's
-   * crossfade on its image (what a take that has one plays), no attach. */
+  /* The heard image (#1713): outside the first frame loop, no attach, and
+   * a fresh take zeroes its image unless told otherwise. */
   engine->heard_i = -1;
+  engine->heard_zero = 1;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
-      engine->heard[t][l].mix = 1.0f;
       engine->heard[t][l].attach_slot = -1;
     }
   }

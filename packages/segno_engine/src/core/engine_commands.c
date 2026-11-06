@@ -640,6 +640,9 @@ static void le_release_removed_lanes(le_engine* e) {
     for (int32_t l = le_lanes_active(t); l < LE_MAX_LANES; ++l) {
       le_lane* ln = &t->lanes[l];
       if (load_i32(&ln->a_recoverable)) continue;
+      /* An attach the callback has not handled may still install into
+       * this lane: leave it for a later pass (#1713). */
+      if (e->heard[ch][l].attach[0] != NULL) continue;
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         if (ln->pool[i] == NULL) continue;
         le_free_audio_buffer(e, ln->pool[i]);
@@ -2009,6 +2012,10 @@ static int le_prepare_routing(le_engine* e, const le_mix_settings* mix) {
          * starts (le_track_prefault_capture). */
         if (got == LE_SLOT_REUSED && !load_i32(&ln->a_recoverable))
           memset(ln->pool[live], 0, (size_t)e->max_loop_frames * sizeof(float));
+        /* An image from the lane's earlier life no longer belongs to what
+         * the slot holds (#1713). The lane is inactive: free at once. */
+        if (got == LE_SLOT_FRESH || !load_i32(&ln->a_recoverable))
+          (void)le_heard_match(e, ch, l, live, 0, LE_HEARD_FREE);
         /* A take can start on the lane at once: fault its head in. And on a
          * track that already plays, the callback reads the new lane over the
          * whole loop from its next block, where the first read of an
@@ -2106,7 +2113,7 @@ static int32_t le_post_record_image(le_engine* e, int32_t channel,
      * slot the image asks for (none elsewhere), and the pre-armed shadow's
      * to match, before anything is faulted in or posted. */
     (void)le_heard_prepare_capture(e, channel, image ? image->heard_mask : 0u,
-                                   !(action == LE_CMD_RECORD && clocked));
+                                   e->heard_zero);
     if (fresh_shadow >= 0) (void)le_heard_match_shadow(e, channel, fresh_shadow, 0u);
     /* A Band section's Sound start becomes a handoff from its loop top if a
      * section sounds by the time the signal arrives: fault in that start
@@ -2367,6 +2374,10 @@ static int32_t le_record_impl(le_engine* engine, int32_t channel,
   const int quantized_arm = !handoff_arm &&
       (le_effective_quantize(engine, channel) || sync_force_arm) &&
       capture_has_master && le_transport_active(engine);
+  /* Whether a fresh take zeroes its live slots (le_prepare_new_capture
+   * below): its heard image is zeroed with them, and the #1146 guard weighs
+   * the same verdict (#1713). */
+  engine->heard_zero = sound_arm || quantized_arm || capture_has_master;
   /* Preparing a new capture while a structural command is unpublished
    * would allocate shadows for the old lane count. The callback could then
    * activate more lanes before RECORD, making their first Undo lose audio.
@@ -3939,6 +3950,8 @@ static void le_length_collect(le_engine* e, le_track* t) {
   const le_hist_entry f = t->length_file;
   for (int32_t l = 0; l < le_lanes_active(t); ++l) {
     le_lane_shrink_slot(e, &t->lanes[l], f.slot, le_layer_slot_frames(e, f.len));
+    le_heard_shrink(e, (int32_t)(t - e->tracks), l, f.slot,
+                    le_layer_slot_frames(e, f.len));
   }
   const int32_t ch = (int32_t)(t - e->tracks);
   if (t->length_op == 1) {
