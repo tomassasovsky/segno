@@ -121,11 +121,11 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   heard images (after the clean lanes in its file, `heard_mask` in the
   manifest), logs each heard lane's source (`LE_PLOG_HEARD_SOURCE`,
   events.log version 16), and the wet stem plays lane 0's heard image where
-  it sounded, crossfading at a switch as the callback does. The arm and
+  it sounded, with a crossfade at a switch as the callback does. The arm and
   disarm snapshots' `heardPcmRef` is read when the app writes it (part 4).
 - CPU: a block where no lane holds an image runs the trunk's mixer
   (`mix_tracks_frame`, the heard copy is `mix_tracks_frame_heard`), checked
-  under callgrind against the trunk's instruction count.
+  under Valgrind against the trunk's instruction count.
 - Not yet: rendered tails (part 3) and the app (parts 4 and 5). Nothing in
   the app records an image until the last part.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
