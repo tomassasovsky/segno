@@ -40,6 +40,12 @@
 #include "perf_log_ring.h" /* le_perf_log_ring_push, le_perf_log_code (perf event log) */
 #include "tempo_grid.h"    /* le_grid_* (pure tempo/bar/subdivision math) */
 
+/* #1718: LE_AUDIO_TU came before every include, so the pins took. */
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__)) && \
+    !defined(LE_AUDIO_HOT_PINNED)
+#error "define LE_AUDIO_TU before the first include (engine_hot.h)"
+#endif
+
 /* The loopback-latency-harness and auto-record tuning constants (LE_LATENCY_* /
  * LE_AUTO_RECORD_THRESHOLD) live in engine_core.h — shared with le_engine_configure
  * (engine.c), which sizes the latency capture buffer from LE_LATENCY_CAPTURE_DIV. */
