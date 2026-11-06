@@ -13,6 +13,9 @@
  * (recordings stay dry) and stageless (every active entry colours in order). The
  * cross-TU surface and the PV/PSOLA tuning constants live in engine_fx.h.
  */
+/* #1718: this unit's chain driver goes to the hot section (engine_hot.h). */
+#define LE_AUDIO_TU 1
+
 #include <math.h>
 #include <pthread.h>
 #include <stddef.h>
@@ -20,10 +23,17 @@
 #include <string.h>
 
 #include "engine_fx.h"
+#include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
 #include "engine_internal.h" /* le_psola_detect_band prototype (below) */
 #include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
+
+/* #1718: LE_AUDIO_TU came before every include, so the pins took. */
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__)) && \
+    !defined(LE_AUDIO_HOT_PINNED)
+#error "define LE_AUDIO_TU before the first include (engine_hot.h)"
+#endif
 
 #ifndef LE_PI
 #define LE_PI 3.14159265358979323846f
@@ -2013,7 +2023,7 @@ void le_fx_enable_seed_at(le_fx_state* fx, int slot, int effective) {
  * re-enters through the clean re-enable path. Enabled slots are deliberately
  * left alone: their state persisting across a gap is the pre-existing
  * behavior for engaged effects. */
-int le_fx_enable_settled_bypassed(const le_fx_state* fx, int slot) {
+LE_AUDIO_HOT_AT(12) int le_fx_enable_settled_bypassed(const le_fx_state* fx, int slot) {
   return fx->enable_mix[slot] == 0.0f && fx->enable_target[slot] == 0 &&
          fx->enable_warmup[slot] == 0 && fx->enable_drain[slot] == 0 &&
          fx->enable_quiet[slot] == 0;
@@ -10246,7 +10256,7 @@ static inline void fx_section_merge(le_fx_state* fx, const fx_section* sec,
   *xr = out[1];
 }
 
-void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+LE_AUDIO_HOT_AT(4) void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
                     const int32_t* enabled, int gain_at, float gain) {
@@ -10468,7 +10478,7 @@ void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int cap, float* l, float*
   *r = xr;
 }
 
-void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
+LE_AUDIO_HOT_AT(8) void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
                     const int32_t* enabled) {
