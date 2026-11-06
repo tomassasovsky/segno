@@ -9335,17 +9335,18 @@ final class le_record_image extends ffi.Struct {
   @ffi.Uint32()
   external int fx_lane_mask;
 
-  external ffi.Pointer<le_fx_recipe> lane_fx;
-
   /// Lanes whose take records its heard image (#1713): the output of the
   /// input chain the lane records, captured beside the clean take and played
   /// back instead of re-running that chain (le_engine_set_lane_source). Bit l
   /// for lane l; read only when the arm starts a fresh take on an EMPTY
   /// track. A lane outside the mask records clean only. An overdub on a take
   /// keeps capturing into whatever image the take has; one without an image
-  /// gets one from le_engine_heard_attach.
+  /// gets one from le_engine_heard_attach. In what was the padding before
+  /// lane_fx, so the struct (and le_track, which holds one) keeps its size.
   @ffi.Uint32()
   external int heard_mask;
+
+  external ffi.Pointer<le_fx_recipe> lane_fx;
 }
 
 /// Per-lane state published via le_engine_get_lane: one recordable input lane of

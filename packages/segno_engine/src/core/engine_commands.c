@@ -1137,7 +1137,17 @@ static int le_stage_retired_layer(le_engine* engine, int32_t channel,
                                 memory_order_relaxed);
       return 0;
     }
-    float* copy = (float*)malloc((size_t)frame_count * sizeof(float));
+    /* The lane's heard image of the same slot (#1713) follows its clean
+     * take as (L, R) pairs. A copy that cannot be made fails the layer: a
+     * stem must not replay the clean take where the player heard the
+     * image. */
+    float* pl;
+    float* pr;
+    const int heard = le_heard_planes(engine, channel, l, slot, &pl, &pr);
+    float* copy = heard && engine->heard[channel][l].cap[slot] < frame_count
+                      ? NULL
+                      : (float*)malloc((heard ? 3 : 1) * (size_t)frame_count *
+                                       sizeof(float));
     if (copy == NULL) {
       le_staged_layer_free(&entry);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
@@ -1146,26 +1156,12 @@ static int le_stage_retired_layer(le_engine* engine, int32_t channel,
     }
     memcpy(copy, src, (size_t)frame_count * sizeof(float));
     entry.lane_pcm[l] = copy;
-    /* The lane's heard image of the same slot (#1713), as (L, R) pairs. A
-     * copy that cannot be made fails the layer: a stem must not replay the
-     * clean take where the player heard the image. */
-    float* pl;
-    float* pr;
-    if (!le_heard_planes(engine, channel, l, slot, &pl, &pr)) continue;
-    float* pairs = engine->heard[channel][l].cap[slot] >= frame_count
-                       ? (float*)malloc(2 * (size_t)frame_count * sizeof(float))
-                       : NULL;
-    if (pairs == NULL) {
-      le_staged_layer_free(&entry);
-      atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
-                                memory_order_relaxed);
-      return 0;
-    }
+    if (!heard) continue;
+    float* pairs = copy + frame_count;
     for (int32_t i = 0; i < frame_count; ++i) {
       pairs[2 * i] = pl[i];
       pairs[2 * i + 1] = pr[i];
     }
-    entry.heard_pcm[l] = pairs;
     entry.heard_mask |= 1u << l;
   }
 

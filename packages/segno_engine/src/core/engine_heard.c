@@ -508,8 +508,40 @@ void le_heard_perf_armed(le_engine* e) {
   }
 }
 
-void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
-                          uint64_t frame) {
+/* The monitor chains a heard block runs beside the monitored ones (#1713):
+ * every input a capturing heard lane records, monitored or not, since the
+ * take records the chain's output. Notes in heard_jobs every chain that runs
+ * this block, for the post-pass (le_heard_input) and the next block. A chain
+ * that starts running only because a take records it held whatever it last
+ * ran on: it comes in through its re-enable ramp, as a chain switched back on
+ * does. */
+static void le_heard_add_jobs(
+    le_engine* e, le_fx_par* par, const float* in, int ch_in,
+    uint32_t excluded, const int* mon_has_fx, const int32_t* mon_fx_count) {
+  uint64_t ran = 0u;
+  for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    const uint64_t bit = UINT64_C(1) << c;
+    if (!(e->heard_inputs & bit) || (ran & bit) || !mon_has_fx[c]) continue;
+    const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
+    if (!instrument && (in == NULL || c >= ch_in)) continue;
+    if (c < LE_MAX_CHANNELS && (excluded & (1u << c))) continue;
+    par->job_mon[par->jobs++] = c;
+    ran |= bit;
+    if (!(e->heard_jobs_prev & bit)) {
+      for (int32_t s = 0; s < mon_fx_count[c]; ++s) {
+        le_fx_enable_force_bypass(&e->monitors[c].fx, s);
+        le_fx_rack_reset(&e->monitors[c].fx, s);
+      }
+    }
+  }
+  e->heard_jobs = ran;
+}
+
+int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
+                         le_fx_par* par, const float* in, int ch_in,
+                         uint32_t excluded, const int* mon_has_fx,
+                         const int32_t* mon_fx_count, uint64_t frame) {
   /* The chains the last block ran, if it was a heard block (le_heard_add_jobs
    * notes them); after a plain one, none counts as running. */
   e->heard_jobs_prev = e->heard_trk != 0u ? e->heard_jobs : 0u;
@@ -519,7 +551,7 @@ void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
    * enter, leave or log. */
   if (e->heard_trk == 0u &&
       atomic_load_explicit(&e->a_heard_lanes, memory_order_relaxed) == 0) {
-    return;
+    return 0;
   }
   e->heard_trk = 0u;
   for (int t = 0; t < tc; ++t) {
@@ -609,6 +641,9 @@ void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
       }
     }
   }
+  if (e->heard_trk == 0u) return 0;
+  le_heard_add_jobs(e, par, in, ch_in, excluded, mon_has_fx, mon_fx_count);
+  return 1;
 }
 
 /* One plane's share of each logged content operation: the clean helpers'
@@ -756,8 +791,8 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
         const int32_t cap = tr->lanes[l].pool_cap[s];
         float wl;
         float wr;
-        le_heard_input(e, par, b0, r->i, in, ch_in, in_trim, excluded,
-                       mon_has_fx, input[l], &wl, &wr);
+        le_heard_input(e, par, b0, (uint32_t)r->i - b0, in, ch_in, in_trim,
+                       excluded, mon_has_fx, input[l], &wl, &wr);
         if (r->a >= 0 && r->a < cap) {
           hl[r->a] = wl;
           hr[r->a] = wr;

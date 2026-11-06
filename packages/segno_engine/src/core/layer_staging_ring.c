@@ -53,8 +53,6 @@ void le_layer_staging_ring_drain_free(le_layer_staging_ring* ring) {
 void le_staged_layer_free(le_staged_layer* entry) {
   for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
     free(entry->lane_pcm[l]);
-    free(entry->heard_pcm[l]);
     entry->lane_pcm[l] = NULL;
-    entry->heard_pcm[l] = NULL;
   }
 }

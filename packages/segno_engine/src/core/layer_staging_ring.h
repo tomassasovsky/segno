@@ -38,8 +38,9 @@ extern "C" {
 
 /* One retiring layer's staged PCM. `lane_pcm[i]` for `i < lane_count` is a
  * heap buffer of `frame_count` floats (mono per lane — the same shape as the
- * live pool buffer it was copied from); entries at `i >= lane_count` are
- * unused. The consumer (perf_drain.c) takes ownership on pop and must free
+ * live pool buffer it was copied from), followed, for a lane in
+ * `heard_mask`, by its heard image as `frame_count` (L, R) pairs (#1713);
+ * entries at `i >= lane_count` are unused. The consumer (perf_drain.c) takes ownership on pop and must free
  * every `lane_pcm[i] < lane_count` once written.
  *
  * `frame` is a control-thread snapshot of a_perf_frames taken when the copy
@@ -54,14 +55,13 @@ typedef struct le_staged_layer {
   uint32_t restore_id; /* nonzero only for kind 1, unique within this capture */
   int32_t lane_count;
   float* lane_pcm[LE_MAX_LANES];
-  /* The heard images (#1713): `heard_pcm[i]` is lane i's image as
-   * interleaved (L, R) pairs, `frame_count` of them, for each lane in
-   * `heard_mask`; NULL elsewhere. Owned and freed like `lane_pcm`. */
-  uint32_t heard_mask;
-  float* heard_pcm[LE_MAX_LANES];
   int32_t frame_count;
   int32_t slot;
   uint32_t generation;
+  /* The lanes whose heard image follows their clean take in lane_pcm
+   * (#1713). In what was padding, so the staging storage inside le_engine
+   * keeps its size. */
+  uint32_t heard_mask;
   uint64_t frame;
 } le_staged_layer;
 
@@ -103,7 +103,7 @@ int le_layer_staging_ring_pop(le_layer_staging_ring* ring,
  * gone, so a layer staged after that sits here until teardown. */
 void le_layer_staging_ring_drain_free(le_layer_staging_ring* ring);
 
-/* Frees every buffer `entry` owns (its lanes' clean and heard images). */
+/* Frees every buffer `entry` owns. */
 void le_staged_layer_free(le_staged_layer* entry);
 
 #ifdef __cplusplus

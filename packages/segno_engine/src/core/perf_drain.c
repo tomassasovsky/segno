@@ -1068,8 +1068,7 @@ static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring,
  * (lane0[0], lane1[0], ..., lane0[1], lane1[1], ...), then, for a layer with
  * heard images (#1713), the images of the lanes in `heard_mask` the same
  * way, each lane a (L, R) pair (laneA.L[0], laneA.R[0], laneB.L[0], ...).
- * ALWAYS frees every `entry->lane_pcm[l]` and `entry->heard_pcm[l]` before
- * returning, success or failure — this function
+ * ALWAYS frees every `entry->lane_pcm[l]` before returning, success or failure — this function
  * takes ownership of the staged copy unconditionally, matching
  * layer_staging_ring.h's documented handoff contract. Only records a
  * manifest entry on success, and only once the file is fclose'd — i.e. once
@@ -1141,8 +1140,9 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
       for (int32_t i = 0; i < n; ++i) {
         for (int32_t l = 0; l < entry->lane_count; ++l) {
           if (!(entry->heard_mask & (1u << l))) continue;
-          chunk[k++] = entry->heard_pcm[l][2 * (size_t)(fr + i)];
-          chunk[k++] = entry->heard_pcm[l][2 * (size_t)(fr + i) + 1];
+          const float* pairs = entry->lane_pcm[l] + entry->frame_count;
+          chunk[k++] = pairs[2 * (size_t)(fr + i)];
+          chunk[k++] = pairs[2 * (size_t)(fr + i) + 1];
         }
       }
       if (!le_pd_write(f, chunk, (size_t)k * sizeof(float))) ok = 0;
