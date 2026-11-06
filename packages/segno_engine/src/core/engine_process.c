@@ -8838,24 +8838,13 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
  * effect chain) into `out`. Fills [st] (the per-track state snapshot the
  * transport advance reads) and accumulates [frame_trk_peak] (per-track) and the
  * [lane_sumsq] / [lane_peak] metering. [pos] is the playhead (read by the caller
- * before the transport advances).
- *
- * Aligned to a cache line (#1713): the compiler aligns a function and its
- * loops only when the padding is short, so code added anywhere before the
- * mixer in the binary moved its loops across fetch and cache-line boundaries
- * and the 64-lane mixer measured half a point of its budget slower with the
- * same instructions. A line-aligned start keeps its layout fixed. */
-#if defined(__GNUC__)
-#define LE_MIX_ALIGN __attribute__((aligned(64)))
-#else
-#define LE_MIX_ALIGN
-#endif
+ * before the transport advances). */
 #ifndef LE_MIX_HEARD_TU
-static inline LE_MIX_ALIGN void mix_tracks_frame(
+static inline void mix_tracks_frame(
 #else
 /* The mixer with its heard-image code (#1713), which le_engine_process calls
  * for a block where a lane holds a heard image (engine_mix_heard.c). */
-LE_MIX_ALIGN void mix_tracks_frame_heard(
+void mix_tracks_frame_heard(
 #endif
     le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
     int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
