@@ -325,6 +325,97 @@ int32_t le_engine_export_layer(le_engine* engine, int32_t channel, int32_t lane,
   return n;
 }
 
+int32_t le_engine_export_layer_heard(le_engine* engine, int32_t channel,
+                                     int32_t lane, int32_t ordinal, float* out,
+                                     int32_t max_frames) {
+  if (engine == NULL || (out == NULL && max_frames > 0)) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (ordinal < 0 || max_frames < 0) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  le_lane* ln = &t->lanes[lane];
+  int32_t n;
+  const int32_t slot = le_layer_slot_for_ordinal(
+      t, ordinal, load_i32(&ln->a_live), load_i32(&ln->a_len), &n);
+  if (slot < 0) return LE_ERR_INVALID;
+  float* pl;
+  float* pr;
+  if (n <= 0 || ln->pool[slot] == NULL ||
+      !le_heard_planes(engine, channel, lane, slot, &pl, &pr)) {
+    return 0;
+  }
+  if (ln->pool_cap[slot] < n) return LE_ERR_INVALID;
+  if (max_frames == 0) return n;
+  if (n > max_frames) n = max_frames;
+  for (int32_t f = 0; f < n; ++f) {
+    out[2 * f] = pl[f];
+    out[2 * f + 1] = pr[f];
+  }
+  return n;
+}
+
+int32_t le_engine_export_track_lane_heard(le_engine* engine, int32_t channel,
+                                          int32_t lane, float* out,
+                                          int32_t max_frames) {
+  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (max_frames <= 0) return LE_ERR_INVALID;
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  int32_t n = load_i32(&ln->a_len);
+  if (n > max_frames) n = max_frames;
+  if (n <= 0) return 0;
+  const int live = load_i32(&ln->a_live);
+  float* pl;
+  float* pr;
+  if (ln->pool[live] == NULL ||
+      !le_heard_planes(engine, channel, lane, live, &pl, &pr)) {
+    return 0;
+  }
+  for (int32_t f = 0; f < n; ++f) {
+    out[2 * f] = pl[f];
+    out[2 * f + 1] = pr[f];
+  }
+  return n;
+}
+
+int32_t le_engine_import_layer_heard(le_engine* engine, int32_t channel,
+                                     int32_t lane, int32_t ordinal,
+                                     const float* pcm, int32_t frames) {
+  if (engine == NULL || pcm == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (ordinal < 0 || ordinal >= LE_POOL_SLOTS || frames <= 0) {
+    return LE_ERR_INVALID;
+  }
+  le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
+  if (le_heard_attach_pending(engine, channel)) return LE_ERR_NOT_READY;
+  le_lane* ln = &t->lanes[lane];
+  if (ln->pool[ordinal] == NULL || ln->pool_cap[ordinal] < frames) {
+    return LE_ERR_INVALID;
+  }
+  /* The staged slot is not live yet (finalize publishes it): free at once.
+   * Fresh planes read zeros past `frames` without a page touched. */
+  (void)le_heard_match(engine, channel, lane, ordinal, 0, LE_HEARD_FREE);
+  if (!le_heard_match(engine, channel, lane, ordinal, 1, LE_HEARD_FREE)) {
+    return LE_ERR_INVALID;
+  }
+  float* pl;
+  float* pr;
+  if (!le_heard_planes(engine, channel, lane, ordinal, &pl, &pr)) {
+    return LE_ERR_INVALID;
+  }
+  for (int32_t f = 0; f < frames; ++f) {
+    pl[f] = pcm[2 * f];
+    pr[f] = pcm[2 * f + 1];
+  }
+  return LE_OK;
+}
+
 int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
                                int32_t ordinal, const float* pcm,
                                int32_t frames) {

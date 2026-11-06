@@ -39556,6 +39556,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_anchor.h"
 #include "test_engine_interface_routing.h"
 #include "test_engine_interface_inputs.h"
+#include "test_engine_heard_edits.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -39584,6 +39585,7 @@ int main(void) {
     le_test_heard_check = heard_lockstep_check;
   } else {
     run_heard_tests();
+    run_heard_edit_tests();
     if (getenv("SEGNO_HEARD_TESTS_ONLY")) return g_failures ? 1 : 0;
   }
   test_platform_names_the_calling_thread();

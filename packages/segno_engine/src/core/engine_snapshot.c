@@ -334,11 +334,11 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    /* A part that plays its heard image (#1713): the track's print is
-     * assembled from clean parts only, so the track's Pre run stays live. */
+    /* A part that plays its heard image (#1713) runs no chain: its image is
+     * its printed material. */
     if (le_heard_any(engine, channel, l) &&
         le_heard_lane_plays(engine, channel, l)) {
-      return 0;
+      continue;
     }
     int32_t count = load_i32(&ln->a_fx_count);
     if (count < 0) count = 0;
@@ -399,6 +399,11 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_pan_gr_bits, memory_order_relaxed));
     h = le_fx_fp_u32(h, load_i32(&ln->a_muted) ? 1u : 0u);
+    /* Whether the part's material is its heard image (#1713). */
+    h = le_fx_fp_u32(h, le_heard_any(engine, channel, l) &&
+                                le_heard_lane_plays(engine, channel, l)
+                            ? 1u
+                            : 0u);
   }
   return h;
 }
