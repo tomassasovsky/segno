@@ -46,6 +46,19 @@ int le_heard_lane_plays(const le_engine* e, int32_t ch, int32_t l) {
   return le_heard_has(e, ch, l, live);
 }
 
+/* Counts [d] (+1 or -1) slots of [h] holding an image, and the lanes
+ * holding one in the engine (a_heard_lanes) as [h] gains its first or loses
+ * its last. Either thread (the callback installs an attach). */
+static void le_heard_slots_add(le_engine* e, le_heard* h, int32_t d) {
+  const int32_t was =
+      atomic_fetch_add_explicit(&h->a_slots, d, memory_order_relaxed);
+  if (was == 0 && d > 0) {
+    atomic_fetch_add_explicit(&e->a_heard_lanes, 1, memory_order_relaxed);
+  } else if (was > 0 && was + d == 0) {
+    atomic_fetch_sub_explicit(&e->a_heard_lanes, 1, memory_order_relaxed);
+  }
+}
+
 /* ---- control thread ---- */
 
 static void le_heard_set(le_engine* e, int32_t ch, int32_t l, int32_t slot,
@@ -56,9 +69,7 @@ static void le_heard_set(le_engine* e, int32_t ch, int32_t l, int32_t slot,
   le_heard_plane_set(h, 1, slot, pr);
   h->cap[slot] = pl != NULL ? cap : 0;
   const int has = pl != NULL;
-  if (has != had) {
-    atomic_fetch_add_explicit(&h->a_slots, has ? 1 : -1, memory_order_relaxed);
-  }
+  if (has != had) le_heard_slots_add(e, h, has ? 1 : -1);
 }
 
 static void le_heard_drop(le_engine* e, int32_t ch, int32_t l, int32_t slot,
@@ -273,7 +284,9 @@ void le_heard_free_lane(le_engine* e, int32_t ch, int32_t l) {
   h->attach_slot = -1;
   h->attach_posted = 0;
   atomic_store_explicit(&h->a_attach_done, 0, memory_order_relaxed);
-  atomic_store_explicit(&h->a_slots, 0, memory_order_relaxed);
+  if (atomic_exchange_explicit(&h->a_slots, 0, memory_order_relaxed) > 0) {
+    atomic_fetch_sub_explicit(&e->a_heard_lanes, 1, memory_order_relaxed);
+  }
   h->mix = 0.0f; /* no callback runs */
 }
 
@@ -489,8 +502,18 @@ static int le_heard_may_write(le_track* t) {
 }
 
 void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n) {
-  e->heard_trk = 0u;
+  /* The chains the last block ran, if it was a heard block (le_heard_add_jobs
+   * notes them); after a plain one, none counts as running. */
+  e->heard_jobs_prev = e->heard_trk != 0u ? e->heard_jobs : 0u;
+  e->heard_jobs = 0u;
   e->heard_inputs = 0u;
+  /* No lane anywhere holds an image, and none did last block: nothing to
+   * enter, leave or log. */
+  if (e->heard_trk == 0u &&
+      atomic_load_explicit(&e->a_heard_lanes, memory_order_relaxed) == 0) {
+    return;
+  }
+  e->heard_trk = 0u;
   for (int t = 0; t < tc; ++t) {
     e->heard_log[t].n = 0;
     le_track* tr = &e->tracks[t];
@@ -605,6 +628,9 @@ static void le_heard_apply(le_engine* e, int32_t ch, const le_heard_rec* r) {
 
 void le_heard_op(le_engine* e, le_track* t, le_heard_rec op) {
   const int32_t ch = (int32_t)(t - e->tracks);
+  /* In the frame loop only a track of the block's heard set logs: the
+   * post-pass replays no other. */
+  if (e->heard_i >= 0 && !(e->heard_trk & (1u << ch))) return;
   const int32_t n = le_lanes_active(t);
   int any = 0;
   for (int32_t l = 0; l < n && !any; ++l) any = le_heard_any(e, ch, l);
@@ -620,6 +646,20 @@ void le_heard_op(le_engine* e, le_track* t, le_heard_rec op) {
   }
   op.i = (uint16_t)e->heard_i;
   lg->rec[lg->n++] = op;
+}
+
+void le_heard_seam_fold(le_engine* e, le_track* t, int32_t len, int32_t F,
+                        int shadow) {
+  const int16_t live = (int16_t)load_i32(&t->lanes[0].a_live);
+  if (shadow && t->dub_slot >= 0 && load_i32(&t->a_layer_in_flight)) {
+    le_heard_op(e, t, (le_heard_rec){.kind = LE_HEARD_REC_SHADOW_FOLD,
+                                     .slot = live,
+                                     .slot2 = (int16_t)t->dub_slot,
+                                     .a = len, .b = F});
+  }
+  le_heard_op(e, t, (le_heard_rec){.kind = LE_HEARD_REC_SEAM_FOLD,
+                                   .slot = live, .slot2 = -1, .a = len,
+                                   .b = F});
 }
 
 /* Lane l's input chain output at block frame [i], times its capture trim. */
@@ -767,7 +807,7 @@ void le_heard_attach_apply(le_engine* e, int32_t ch, int32_t l) {
       le_heard_plane(h, 0, slot) == NULL) {
     le_heard_plane_set(h, 0, slot, h->attach[0]);
     le_heard_plane_set(h, 1, slot, h->attach[1]);
-    atomic_fetch_add_explicit(&h->a_slots, 1, memory_order_relaxed);
+    le_heard_slots_add(e, h, 1);
     ok = 1;
   }
   atomic_store_explicit(&h->a_attach_ok, ok, memory_order_relaxed);
