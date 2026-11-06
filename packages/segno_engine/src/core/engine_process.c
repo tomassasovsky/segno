@@ -7739,15 +7739,19 @@ static int le_src_pick(le_engine* e, int t, int32_t lanes, uint32_t rev,
   le_track* tr = &e->tracks[t];
   for (int l = 0; l < lanes; ++l) {
     pick[l] = NULL;
-    /* A lane holding a heard image needs a render of it too (#1713). */
-    const int heard =
-        le_heard_has(e, t, l, load_i32(&tr->lanes[l].a_live));
-    for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
-      const le_wet_entry* c =
-          atomic_load_explicit(&tr->lanes[l].a_src[i], memory_order_acquire);
-      if (c != NULL &&
-          le_src_entry_fits(c, rev, take, semitones, out_len, heard)) {
-        pick[l] = c;
+    /* A lane playing its heard image (#1713) takes a render that carries
+     * the image first. Until one lands it takes the clean take's render,
+     * and the lane plays its clean take at the track's pitch
+     * (le_heard_lane_wet), never the image at its own. */
+    for (int need = le_heard_lane_plays(e, t, l);
+         need >= 0 && pick[l] == NULL; --need) {
+      for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
+        const le_wet_entry* c = atomic_load_explicit(&tr->lanes[l].a_src[i],
+                                                     memory_order_acquire);
+        if (c != NULL &&
+            le_src_entry_fits(c, rev, take, semitones, out_len, need)) {
+          pick[l] = c;
+        }
       }
     }
     if (pick[l] == NULL) return 0;
@@ -8707,6 +8711,16 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   le_lane* ln = &tr->lanes[l];
   const float* pl = le_heard_plane(h, 0, live);
   const float* pr = le_heard_plane(h, 1, live);
+  /* The source renders each head reads (#1713 part 2b). One made before the
+   * image was (le_src_pick's fallback) cannot play it at the track's pitch,
+   * so the lane plays its clean take there until a render with the image
+   * lands. */
+  const le_wet_entry* se = tr->src_ent[l];
+  const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
+  if ((se != NULL && se->planes <= 1) || (oe != NULL && oe->planes <= 1)) {
+    pl = NULL;
+    pr = NULL;
+  }
   float m = h->mix;
   int target = 0;
   if (pl == NULL) {
@@ -8739,16 +8753,14 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   h->mix = m;
   if (m <= 0.0f) return out; /* settled on the clean take */
   const int32_t cap = ln->pool_cap[live];
-  /* The planes each head reads (#1713 part 2b): its source render's when
-   * that carries the image (Transpose, a tempo stretch), else the live
-   * slot's own; through the pitch bridge, read by the grains the clean take
-   * stepped this frame (le_mix_bridge_lane), so both keep its timing. */
-  const le_wet_entry* se = tr->src_ent[l];
-  const le_wet_entry* oe = tr->turn_ent[l];
+  /* The planes each head reads (#1713 part 2b): its source render's when it
+   * has one (Transpose, a tempo stretch), else the live slot's own; through
+   * the pitch bridge, read by the grains the clean take stepped this frame
+   * (le_mix_bridge_lane), so both keep its timing. */
   const float* nl = pl;
   const float* nr = pr;
   int32_t nlen = src_n;
-  if (se != NULL && se->planes > 1) {
+  if (se != NULL) {
     nl = se->pcm + se->out_len;
     nr = se->pcm + 2 * (size_t)se->out_len;
     nlen = se->out_len;
@@ -8756,7 +8768,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const float* ol = pl;
   const float* orr = pr;
   int32_t olen = src_n;
-  if (oe != NULL && oe->planes > 1) {
+  if (oe != NULL) {
     ol = oe->pcm + oe->out_len;
     orr = oe->pcm + 2 * (size_t)oe->out_len;
     olen = oe->out_len;
@@ -8805,7 +8817,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
       c += le_bridge_read(b, nr, tail_len, phase, hop) * tg;
     } else if (tail_head) {
       if (tail_len <= cap) {
-        const int32_t n = se != NULL && se->planes > 1 ? se->out_len : tail_len;
+        const int32_t n = se != NULL ? se->out_len : tail_len;
         a += le_head_read_scaled(nl, n, tail_len, &tr->head, tail_at) * tg;
         c += le_head_read_scaled(nr, n, tail_len, &tr->head, tail_at) * tg;
       }

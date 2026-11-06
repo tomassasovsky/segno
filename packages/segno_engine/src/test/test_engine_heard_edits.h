@@ -244,8 +244,69 @@ static void test_heard_transpose(void) {
   le_engine_destroy(e);
 }
 
+/* #1713 part 2b review: a transposed dry take that gets an image (an
+ * attach) keeps the track's pitch: until a render with the image lands the
+ * lane plays its clean take from the clean render, never the image at its
+ * own pitch, and then it plays the image from the new render. */
+static void test_heard_attach_under_transpose(void) {
+  printf("test_heard_attach_under_transpose\n");
+  static float take[TP_LEN];
+  for (int i = 0; i < TP_LEN; ++i) {
+    take[i] = 0.5f * (float)sin(2.0 * M_PI * 220.0 * i / TP_SR);
+  }
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, TP_SR, 1, 2, 30000) == LE_OK);
+  CHECK(le_engine_import_layer(e, 0, 0, 0, take, TP_LEN) == LE_OK);
+  int32_t lens[1] = {TP_LEN};
+  CHECK(le_engine_finalize_history(e, 0, NULL, NULL, NULL, 0, 0, lens, 1) ==
+        LE_OK);
+  CHECK(le_engine_commit_session(e, TP_LEN, 0) == LE_OK);
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  drain(e);
+  (void)tp_install(e, 0, 12);
+  static float out[2 * 8 * TP_LEN];
+  float in[64] = {0};
+  int engaged = 0;
+  for (int at = 0; at < 4 * TP_LEN && !engaged; at += 64) {
+    le_lane_cache_info info;
+    le_engine_get_transpose_cache(e, 0, &info);
+    test_sleep_ms(1);
+    le_engine_process(e, out, in, 64);
+    engaged = tp_effective(e, 0) == 12;
+  }
+  CHECK(engaged);
+  CHECK(e->tracks[0].src_ent[0] != NULL &&
+        e->tracks[0].src_ent[0]->planes <= 1);
+  CHECK(le_engine_heard_attach(e, 0, 0) == LE_OK);
+  /* The blocks right after the attach: still at the track's pitch. */
+  for (int at = 0; at < 2 * TP_LEN; at += 64) {
+    le_engine_process(e, out + 2 * at, in, 64);
+  }
+  le_engine_drain_events(e);
+  CHECK(le_heard_has(e, 0, 0, load_i32(&e->tracks[0].lanes[0].a_live)));
+  CHECK(tp_effective(e, 0) == 12);
+  static float lch[2 * TP_LEN];
+  for (int i = 0; i < 2 * TP_LEN; ++i) lch[i] = out[2 * i];
+  CHECK(tp_power(lch, TP_LEN / 2, 2 * TP_LEN, 440.0) >
+        100.0 * tp_power(lch, TP_LEN / 2, 2 * TP_LEN, 220.0));
+  /* Then the render with the image lands and the lane plays it. */
+  int planes = 0;
+  for (int at = 0; at < 8 * TP_LEN && !planes; at += 64) {
+    le_lane_cache_info info;
+    le_engine_get_transpose_cache(e, 0, &info);
+    test_sleep_ms(1);
+    le_engine_process(e, out, in, 64);
+    const le_wet_entry* se = e->tracks[0].src_ent[0];
+    planes = se != NULL && se->planes == 3;
+  }
+  CHECK(planes);
+  CHECK(tp_effective(e, 0) == 12);
+  le_engine_destroy(e);
+}
+
 static void run_heard_edit_tests(void) {
   test_heard_transpose();
+  test_heard_attach_under_transpose();
   test_heard_length_edits();
   test_heard_render_reads_the_image();
   test_heard_track_print();

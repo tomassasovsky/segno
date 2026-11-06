@@ -524,7 +524,9 @@ void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n) {
 #ifdef LE_NATIVE_TESTS
       /* le_test_heard_force 2 plays the image from its first frame, so the
        * suite's exact sound checks see no crossfade rounding. */
-      if ((entered & (1u << l)) && le_test_heard_force == 2) {
+      if ((entered & (1u << l)) && le_test_heard_force == 2 &&
+          atomic_load_explicit(&e->heard[t][l].a_source,
+                               memory_order_relaxed) == LE_HEARD_SOURCE_HEARD) {
         e->heard[t][l].mix = 1.0f;
       }
 #endif

@@ -209,12 +209,13 @@ typedef struct le_cache_job {
   int32_t lanes;
   int32_t semitones;
   int32_t out_len; /* LE_CACHE_KIND_SOURCE: the render's length (#1179) */
-  /* LE_CACHE_KIND_SOURCE, #1713: the lanes whose slot holds a heard image,
-   * whose two planes are staged after the clean takes (le_ca_src_buf), and
-   * the staged buffers in all. */
+  /* LE_CACHE_KIND_SOURCE, #1713: the lanes that play a heard image, whose
+   * two planes are staged after the clean takes (le_ca_src_buf), and the
+   * staged buffers in all. Such a lane's `src` holds its clean render and
+   * its image's two, back to back (le_wet_entry.planes 3). */
   uint32_t heard_mask;
   int32_t nbuf;
-  float* src[3 * LE_MAX_LANES];
+  float* src[LE_MAX_LANES];
   float* dry;
   float* wet;
 } le_cache_job;
@@ -234,14 +235,13 @@ static int32_t le_ca_src_channels(int32_t kind) {
   return kind == LE_CACHE_KIND_TRACK ? 2 : 1;
 }
 
-/* The lanes of [t] whose live slot holds a heard image (#1713): their source
- * renders carry the image's planes too. */
+/* The lanes of [t] that play a heard image (#1713): their source renders
+ * carry the image's planes too. A lane holding one it does not play (its
+ * source CLEAN) renders its clean take alone. */
 static uint32_t le_ca_heard_mask(le_engine* e, int t, int32_t lanes) {
   uint32_t mask = 0u;
   for (int32_t l = 0; l < lanes; ++l) {
-    if (le_heard_has(e, t, l, load_i32(&e->tracks[t].lanes[l].a_live))) {
-      mask |= 1u << l;
-    }
+    if (le_heard_lane_plays(e, t, l)) mask |= 1u << l;
   }
   return mask;
 }
@@ -531,10 +531,12 @@ static int le_ca_evictable(le_engine* e, int32_t kind, int t, int l,
   const int32_t want_out = le_track_want_out(e, tr);
   return load_i32(&tr->a_state) == LE_TRACK_EMPTY ||
          (st == 0 && want_out == len) ||
+         /* Any render the lane can play is in use (le_src_pick falls back
+          * to one without its image). */
          !le_src_entry_fits(
              ent, atomic_load_explicit(&tr->a_src_key, memory_order_acquire),
-             len, st, want_out,
-             le_heard_has(e, t, l, load_i32(&tr->lanes[l].a_live)));
+             len, st, want_out, 0);
+  (void)l;
 }
 
 /* LRU eviction until [needed] more bytes fit under [cap]: Pre prints first
@@ -783,27 +785,14 @@ static void le_cache_collect(le_engine* e, struct le_fx_cache* c,
                                   .semitones = job->semitones,
                                   .out_len = job->out_len,
                                   .planes = heard ? 3 : 0};
-        if (publish && heard && job->src[l] != NULL) {
-          /* The clean render and the image's two planes', back to back. */
-          const size_t n = (size_t)job->out_len;
-          float* all = (float*)malloc(3 * n * sizeof(float));
-          const int32_t b = le_ca_src_buf(job, l, 0);
-          if (all != NULL && job->src[b] != NULL && job->src[b + 1] != NULL) {
-            memcpy(all, job->src[l], n * sizeof(float));
-            memcpy(all + n, job->src[b], n * sizeof(float));
-            memcpy(all + 2 * n, job->src[b + 1], n * sizeof(float));
-            le_cache_install_entry(e, c, LE_CACHE_KIND_SOURCE, job->channel,
-                                   l, &key, &all);
-          }
-          free(all);
-        } else if (publish && job->src[l] != NULL) {
+        if (publish && job->src[l] != NULL) {
           le_cache_install_entry(e, c, LE_CACHE_KIND_SOURCE, job->channel, l,
                                  &key, &job->src[l]);
         }
       }
-      for (int k = 0; k < job->nbuf; ++k) {
-        free(job->src[k]);
-        job->src[k] = NULL;
+      for (int l = 0; l < job->lanes; ++l) {
+        free(job->src[l]);
+        job->src[l] = NULL;
       }
       atomic_store_explicit(&job->a_state, LE_CACHE_JOB_EMPTY,
                             memory_order_release);
@@ -1430,9 +1419,11 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
   const uint32_t copy_rev =
       atomic_load_explicit(&tr->a_audio_rev, memory_order_acquire);
   const uint64_t now = atomic_load_explicit(&e->a_frames, memory_order_relaxed);
+  /* The lanes that play a heard image render it too (#1713). */
+  const uint32_t heard_mask = le_ca_heard_mask(e, t, lanes);
   const uint64_t key_hash = le_ca_key_hash(
       rev, (uint64_t)(uint32_t)want_st | ((uint64_t)(uint32_t)want_out << 32),
-      (uint32_t)lanes | (le_ca_heard_mask(e, t, lanes) << 8), len);
+      (uint32_t)lanes | (heard_mask << 8), len);
   if (!lc->has_key || key_hash != lc->last_key_hash) {
     lc->has_key = 1;
     lc->last_key_hash = key_hash;
@@ -1440,8 +1431,6 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
     lc->reason = LE_CACHE_REASON_NONE;
     if (lc->state == LE_CACHE_GAVE_UP) lc->state = LE_CACHE_LIVE;
   }
-  /* The lanes whose take has a heard image render it too (#1713). */
-  const uint32_t heard_mask = le_ca_heard_mask(e, t, lanes);
   le_wet_entry* hit[LE_MAX_LANES];
   int all = lanes > 0;
   for (int l = 0; l < lanes && all; ++l) {
@@ -1915,28 +1904,43 @@ static le_cache_job* le_cache_pick(le_engine* e, struct le_fx_cache* c,
 static void le_cache_render_source(le_engine* e, struct le_fx_cache* c,
                                    le_cache_job* job) {
   int32_t outcome = LE_CACHE_JOB_DONE;
-  /* Every staged buffer alike: each lane's clean take, then each heard
-   * image's planes (#1713), with the same seed, so the planes stay aligned. */
-  for (int32_t l = 0; l < job->nbuf && outcome == LE_CACHE_JOB_DONE; ++l) {
+  const size_t n = (size_t)job->out_len;
+  const float tonality = 8000.0f / (float)job->sample_rate;
+  const int32_t fold = job->sample_rate * LE_CACHE_SOURCE_FOLD_MS / 1000;
+  for (int32_t l = 0; l < job->lanes && outcome == LE_CACHE_JOB_DONE; ++l) {
     if (atomic_load_explicit(&c->a_shutdown, memory_order_acquire) ||
         !le_ca_source_current(e, job)) {
       outcome = LE_CACHE_JOB_ABORTED;
       break;
     }
-    job->src[l] = (float*)malloc((size_t)job->out_len * sizeof(float));
+    /* A lane playing its heard image (#1713) renders the image's two planes
+     * as one stereo render after its clean take, into the same buffer, with
+     * the same seed and preset, so all three keep the take's timing. */
+    const int heard = (job->heard_mask >> l) & 1u;
+    job->src[l] = (float*)malloc((heard ? 3 : 1) * n * sizeof(float));
     if (job->src[l] == NULL ||
         le_stretch_render_loop(job->dry + (size_t)l * (size_t)job->len,
                                job->len, job->out_len, job->sample_rate,
-                               (float)job->semitones,
-                               8000.0f / (float)job->sample_rate, 1,
-                               LE_CACHE_SOURCE_SEED,
-                               job->sample_rate * LE_CACHE_SOURCE_FOLD_MS / 1000,
+                               (float)job->semitones, tonality, 1,
+                               LE_CACHE_SOURCE_SEED, fold,
                                job->src[l]) != LE_STRETCH_OK) {
+      outcome = LE_CACHE_JOB_FAILED;
+      break;
+    }
+    if (!heard) continue;
+    const int32_t b = le_ca_src_buf(job, l, 0);
+    const float* planes[2] = {job->dry + (size_t)b * (size_t)job->len,
+                              job->dry + (size_t)(b + 1) * (size_t)job->len};
+    float* rendered[2] = {job->src[l] + n, job->src[l] + 2 * n};
+    if (le_stretch_render_loop_planar(planes, 2, job->len, job->out_len,
+                                      job->sample_rate, (float)job->semitones,
+                                      tonality, 1, LE_CACHE_SOURCE_SEED, fold,
+                                      rendered) != LE_STRETCH_OK) {
       outcome = LE_CACHE_JOB_FAILED;
     }
   }
   if (outcome != LE_CACHE_JOB_DONE) {
-    for (int32_t l = 0; l < job->nbuf; ++l) {
+    for (int32_t l = 0; l < job->lanes; ++l) {
       free(job->src[l]);
       job->src[l] = NULL;
     }

@@ -919,13 +919,14 @@ static inline int le_src_len_within(int32_t have, int32_t want) {
  * (le_track_want_out), which the plain render matches exactly. */
 static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
                                     int32_t len, int32_t semitones,
-                                    int32_t want_out, int heard) {
+                                    int32_t want_out, int need_planes) {
   if (!le_wet_entry_key_matches_kind(ent, key, 0, 0, len, 1, semitones,
                                      ent->out_len)) {
     return 0;
   }
-  /* A lane holding a heard image needs it rendered too (#1713). */
-  if ((ent->planes > 1) != (heard != 0)) return 0;
+  /* [need_planes]: only a render that carries the lane's heard image too
+   * (#1713). Any render serves the clean take. */
+  if (need_planes && ent->planes <= 1) return 0;
   if (want_out == len || ent->out_len == len) return ent->out_len == want_out;
   return le_src_len_within(ent->out_len, want_out);
 }
