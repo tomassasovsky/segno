@@ -112,6 +112,51 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.
 
+## November 2026 A pedal switches a rack, so one switch alternates two racks (#1711)
+
+- Each rack INSTANCE in a chain is a binding target of its own,
+  `FxRackTarget` (`{stage, index, lane?, rack}`), keyed by `FxRack.id`. That
+  id is already an instance id: every addition mints one (`SlotIds.mint`), it
+  is saved with the chain, and a rename or reorder never rewrites it, so a
+  second copy of the same sound in one chain is a different rack. A rack
+  that is removed makes its bindings show as missing (R25); they never fall
+  back to the chain or the other rack. Re-adding a factory rack asks first,
+  counting bindings to the rack with those to its pedals in its one
+  question, and removes them on confirm.
+- A rack's switch is `FxRack.bypassed`, on every module of the rack and
+  saved with the chain (session file, settings and performance snapshot
+  alike). Off and on change only that flag, so each pedal's own `enabled`
+  is as it was, and a round trip (a hold, a Released value) is exact.
+  `TrackEffect.effectiveEnabled` is the pedal's own switch with its rack's
+  applied. The engine has no rack switch: the repository hands it the
+  effective state through the existing per-entry atomic stores and recipe
+  slots (`LooperRepository.setRackEnabled`), so the callback, wet cache,
+  fingerprints and performance log see it without knowing racks, and nothing
+  native changed.
+- Offered in External pedals Controls, MIDI controls and FX pedal
+  assignments, each rack after its chain and before its own effects. A chain
+  that is one rack end to end (`fxSoleRack`) offers that rack in place of
+  its "Every effect" row, so the pedal switches what the rack's card
+  switches; an older binding to such a chain still works. Custom controls
+  carry actions, not activations, so they offer none.
+- The Effects page's rack power is the same switch: its button reads
+  `FxChainGroup.isOn` (the rack's switch), the card lights when
+  `FxChainGroup.audible` (switch on and a pedal on), and a bypassed rack's
+  editor dims its pedals, which keep their own switches.
+- A pedal LED follows what the Effects page shows (`bindingLit`): a chain or
+  rack binding lights with its own switch, an effect binding only while the
+  effect sounds (its own switch, its rack's and its chain's on, the chain not
+  held off for room). Pressing still flips the effect's own switch.
+- A console binding's toggle now saves the chain it changed, so a rack (or a
+  chain or an effect) switched from the pedal survives a reload. A momentary
+  returns to what is saved, and an empty chain switched off is not saved.
+- The performance arm snapshot carries each entry's effective state, since
+  its native reader knows no racks.
+- One external switch with Rack A active while On and Rack B active while
+  Off alternates them on every press (the Line 6 Helix pattern);
+  `test/control/rack_activation_dispatch_test.dart` drives exactly that
+  through the control path.
+
 ## November 2026 Undo after a track clear (#1707)
 
 - Undo right after a track clear restores the cleared track, whichever track

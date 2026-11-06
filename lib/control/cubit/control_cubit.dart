@@ -3882,8 +3882,9 @@ class ControlCubit extends Cubit<ControlState> {
     await _settings.savePedalBindings(next.encode());
   }
 
-  /// Removes every MIDI and pedal assignment to the effects [slotIds] of the
-  /// chain at [address] (the ones `fxAssignmentsTo` counts) and saves each
+  /// Removes every MIDI and pedal assignment to the effects [slotIds] and the
+  /// racks [rackIds] of the chain at [address] (the ones `fxAssignmentsTo`
+  /// counts) and saves each
   /// store that changed: the session and global pedal bindings, the external
   /// pedal setup and the MIDI mappings.
   ///
@@ -3897,9 +3898,11 @@ class ControlCubit extends Cubit<ControlState> {
   // ignore: prefer_void_public_cubit_methods
   Future<bool> removeFxAssignments(
     FxAddress address,
-    Set<String> slotIds,
-  ) async {
-    bool names(Object? target) => fxTargetNamesEffect(target, address, slotIds);
+    Set<String> slotIds, {
+    Set<String> rackIds = const {},
+  }) async {
+    bool names(Object? target) =>
+        fxTargetNamesEffect(target, address, slotIds, rackIds: rackIds);
     var saved = true;
     Future<void> attempt(Future<void> Function() write) async {
       try {
@@ -3926,7 +3929,7 @@ class ControlCubit extends Cubit<ControlState> {
     );
     await attempt(() async {
       final midi = await removeMidiControls(
-        (key) => fxMidiKeyNamesEffect(key, address, slotIds),
+        (key) => fxMidiKeyNamesEffect(key, address, slotIds, rackIds: rackIds),
       );
       if (!midi.saved) saved = false;
     });
@@ -4133,6 +4136,20 @@ class ControlCubit extends Cubit<ControlState> {
           return false;
         }
         _fxPersistence.ordinaryTarget(target, enabled: !prior);
+        // A toggle is the player's new setting, so the chain it changed is
+        // saved and a reload keeps it — a rack's switch (#1711) as much as a
+        // chain's or an effect's. A momentary returns to what is saved. An
+        // empty chain switched off is not saved, as the Effects page's own
+        // switch does not save it: every boot would restore a bypass on the
+        // effects added there later.
+        if (!prior ||
+            (_looper.chainEntriesAt(target.address)?.isNotEmpty ?? false)) {
+          _fxPersistence.scheduleSave(
+            target.address,
+            _settings,
+            debounce: Duration.zero,
+          );
+        }
       case BindingBehavior.momentary:
         if (_heldRestore.containsKey(binding.key)) return false;
         _log('binding momentary ${binding.key.button.name} (was $prior)');
@@ -4189,6 +4206,10 @@ class ControlCubit extends Cubit<ControlState> {
       FxSlotTarget(:final slotId) => FxSlotTarget(
         address: address,
         slotId: slotId,
+      ),
+      FxRackTarget(:final rackId) => FxRackTarget(
+        address: address,
+        rackId: rackId,
       ),
     };
   }
@@ -4258,7 +4279,7 @@ class ControlCubit extends Cubit<ControlState> {
       target = _scoped(binding.decodeTarget(), binding.scope);
       behavior = binding.behavior;
     }
-    final enabled = target == null ? null : _looper.bindingEnabled(target);
+    final enabled = target == null ? null : _looper.bindingLit(target);
     if (enabled == null) return (lit: false, stale: true);
     return (
       lit: behavior == BindingBehavior.momentary ? held : enabled,

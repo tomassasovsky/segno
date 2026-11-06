@@ -551,6 +551,23 @@ void main() {
       return EngineResult.ok;
     });
     when(
+      () => repository.setRackEnabled(
+        address: const FxAddress(stage: FxStage.track),
+        rackId: any(named: 'rackId'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenAnswer((call) {
+      final next = fxWithRackEnabled(
+        trackEntries[0]!,
+        call.namedArguments[#rackId]! as String,
+        enabled: call.namedArguments[#enabled]! as bool,
+      );
+      if (next == null) return EngineResult.invalid;
+      trackEntries[0] = next;
+      publish();
+      return EngineResult.ok;
+    });
+    when(
       () => repository.setOutputEffectEnabled(
         bus: 0,
         index: any(named: 'index'),
@@ -618,7 +635,11 @@ void main() {
     control = _MockControlCubit();
     when(() => control.state).thenReturn(controlState);
     when(
-      () => control.removeFxAssignments(any(), any()),
+      () => control.removeFxAssignments(
+        any(),
+        any(),
+        rackIds: any(named: 'rackIds'),
+      ),
     ).thenAnswer((_) async => true);
 
     await tester.pumpWidget(
@@ -1798,19 +1819,35 @@ void main() {
         expect(find.text(l10nOf(tester).fxModuleCount(3)), findsOneWidget);
       });
 
-      testWidgets("the card's power writes every pedal, because a rack is one "
-          'thing to the player', (tester) async {
+      testWidgets("the card's power switches the rack as one thing and keeps "
+          "each pedal's own switch (#1711)", (tester) async {
         await pumpRack(tester);
         await tapKey(tester, 'fx_power_R1');
 
-        final written = verify(
-          () => repository.setTrackEffectEnabled(
-            channel: 0,
-            index: captureAny(named: 'index'),
+        verify(
+          () => repository.setRackEnabled(
+            address: const FxAddress(stage: FxStage.track),
+            rackId: 'R1',
             enabled: false,
           ),
-        ).captured.cast<int>();
-        expect(written, [1, 2, 3]);
+        ).called(1);
+        verifyNever(
+          () => repository.setTrackEffectEnabled(
+            channel: any(named: 'channel'),
+            index: any(named: 'index'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+        // The card reads the rack's switch, so the same switch turns it back
+        // on.
+        await tapKey(tester, 'fx_power_R1');
+        verify(
+          () => repository.setRackEnabled(
+            address: const FxAddress(stage: FxStage.track),
+            rackId: 'R1',
+            enabled: true,
+          ),
+        ).called(1);
       });
 
       testWidgets('opens into one column per pedal, each with its own power '
@@ -2470,6 +2507,44 @@ void main() {
       await tapKey(tester, 'fx_preset_ed53e7b8');
     }
 
+    testWidgets('a switch bound to the rack itself is asked about in the same '
+        'question, and removed with the pedals (#1711)', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: withRack,
+        controlState: ControlState(
+          globalBindings: PedalBindingSet([
+            ...bound.globalBindings.bindings,
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+              target: const FxRackTarget(
+                address: FxAddress(stage: FxStage.track),
+                rackId: 'old-rack',
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      );
+      await chooseTheSameRack(tester);
+
+      final l10n = l10nOf(tester);
+      // One question, counting the rack's binding with its pedal's.
+      expect(find.text(l10n.fxReAddRackBody(2)), findsOneWidget);
+      await tapKey(tester, 'console_confirm_confirm');
+
+      final racks = verify(
+        () => control.removeFxAssignments(
+          const FxAddress(stage: FxStage.track),
+          {'old-0', 'old-1', 'old-2'},
+          rackIds: captureAny(named: 'rackIds'),
+        ),
+      ).captured;
+      expect(racks, [
+        {'old-rack'},
+      ]);
+    });
+
     testWidgets('asks first when assignments point at it, and says how many', (
       tester,
     ) async {
@@ -2493,7 +2568,13 @@ void main() {
           effects: any(named: 'effects'),
         ),
       );
-      verifyNever(() => control.removeFxAssignments(any(), any()));
+      verifyNever(
+        () => control.removeFxAssignments(
+          any(),
+          any(),
+          rackIds: any(named: 'rackIds'),
+        ),
+      );
     });
 
     testWidgets('confirmed, it replaces the rack in place with new pedals', (
@@ -2530,6 +2611,7 @@ void main() {
         () => control.removeFxAssignments(
           const FxAddress(stage: FxStage.track),
           {'old-0', 'old-1', 'old-2'},
+          rackIds: captureAny(named: 'rackIds'),
         ),
       ).called(1);
     });
@@ -2543,7 +2625,11 @@ void main() {
         controlState: bound,
       );
       when(
-        () => control.removeFxAssignments(any(), any()),
+        () => control.removeFxAssignments(
+          any(),
+          any(),
+          rackIds: any(named: 'rackIds'),
+        ),
       ).thenAnswer((_) async => false);
       await chooseTheSameRack(tester);
       await tapKey(tester, 'console_confirm_confirm');
@@ -2566,7 +2652,13 @@ void main() {
       final written = lastTrackWrite();
       expect(written, hasLength(withRack.tracks.first.effects.length));
       expect(fxChainGroups(written).last.rack!.id, isNot('old-rack'));
-      verifyNever(() => control.removeFxAssignments(any(), any()));
+      verifyNever(
+        () => control.removeFxAssignments(
+          any(),
+          any(),
+          rackIds: any(named: 'rackIds'),
+        ),
+      );
     });
   });
 

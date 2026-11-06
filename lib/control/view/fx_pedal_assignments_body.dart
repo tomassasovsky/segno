@@ -234,7 +234,7 @@ class _TrackRow extends StatelessWidget {
       value: switch ((binding, resolves)) {
         (null, _) => l10n.controlUnassigned,
         (_, false) => l10n.controlTargetMissing,
-        _ => bindingTargetLabel(l10n, trackNames, target!),
+        _ => _boundLabel(l10n, trackNames, looper, target!),
       },
       // A binding whose target is gone takes the warning tone. Drawing it in
       // the muted grey of "unassigned" would state a different and wrong fact:
@@ -310,10 +310,12 @@ class _AssignSection extends StatelessWidget {
       await cubit.setGlobalBindings(next);
     }
 
-    final targets = looper.availableBindingTargets();
-    final chains = targets.whereType<FxChainTarget>().toList();
-    final slots = targets.whereType<FxSlotTarget>().toList();
-    final listed = <FxBindingTarget>[...chains, if (showEffects) ...slots];
+    // In signal order: each chain, then its racks (#1711), each rack's own
+    // effects under it once the list is asked for them.
+    final listed = [
+      for (final target in looper.availableBindingTargets())
+        if (showEffects || target is! FxSlotTarget) target,
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -373,6 +375,22 @@ class _AssignSection extends StatelessWidget {
   }
 }
 
+/// What a switch's row or card says it is bound to: the rack by its own name
+/// when the binding names a rack, which the pure [bindingTargetLabel] cannot
+/// read from the rig.
+String _boundLabel(
+  AppLocalizations l10n,
+  List<String> trackNames,
+  LooperRepository looper,
+  FxBindingTarget target,
+) => switch (target) {
+  final FxRackTarget rack => switch (fxRackName(looper, rack)) {
+    final name? => '${fxStageLabel(l10n, trackNames, rack.address)} · $name',
+    null => bindingTargetLabel(l10n, trackNames, rack),
+  },
+  _ => bindingTargetLabel(l10n, trackNames, target),
+};
+
 /// One target in the assign list, checked when the switch holds it.
 class _TargetRow extends StatelessWidget {
   const _TargetRow({
@@ -409,10 +427,15 @@ class _TargetRow extends StatelessWidget {
         final FxSlotTarget slot =>
           fxSlotName(looper, slot) ??
               bindingTargetLabel(l10n, trackNames, slot),
+        // A rack is named by its own name, as on the Effects page.
+        final FxRackTarget rack =>
+          fxRackName(looper, rack) ??
+              bindingTargetLabel(l10n, trackNames, rack),
       },
       titleColor: target is FxSlotTarget ? surface.textSecondary : null,
       state: switch (target) {
         FxChainTarget() => stage,
+        FxRackTarget() => stage,
         FxSlotTarget() => l10n.controlEffectIn(stage),
       },
       valueColor: chosen ? surface.accent : surface.textMuted,
@@ -458,7 +481,7 @@ class _SwitchCard extends StatelessWidget {
     final label = switch ((binding, resolves)) {
       (null, _) => l10n.controlUnassigned,
       (_, false) => l10n.controlTargetMissing,
-      _ => bindingTargetLabel(l10n, trackNames, target!),
+      _ => _boundLabel(l10n, trackNames, looper, target!),
     };
 
     return FocusableTapTarget(

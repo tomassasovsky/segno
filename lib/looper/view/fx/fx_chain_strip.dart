@@ -174,7 +174,7 @@ class _FxChainCard extends StatelessWidget {
     // border, a bypassed one the plain card and a muted edge. Bypassed is
     // drawn, not hidden — a chain reads as a chain whether or not every link
     // is passing signal.
-    final lit = group.anyEnabled && !dimmed;
+    final lit = group.audible && !dimmed;
     return Opacity(
       opacity: dimmed ? surface.disabledOpacity : 1,
       child: Material(
@@ -251,10 +251,9 @@ class _FxChainCard extends StatelessWidget {
                         ),
                         _PowerButton(
                           key: Key('fx_power_${fxGroupId(group)}'),
-                          on: group.anyEnabled,
+                          on: group.isOn,
                           name: name,
-                          onTap: () =>
-                              onTogglePower(enabled: !group.anyEnabled),
+                          onTap: () => onTogglePower(enabled: !group.isOn),
                         ),
                       ],
                     ),

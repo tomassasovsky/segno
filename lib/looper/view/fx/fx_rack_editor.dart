@@ -94,6 +94,9 @@ class FxRackEditor extends StatelessWidget {
     // dimmed, keep the rest: their own switches still work, so a sound can be
     // prepared before the chain goes back on.
     final band = chainOn ? 0.0 : FxChainOffNotice.height + 12;
+    // A rack switched off as a whole (#1711) dims its pedals the same way:
+    // each keeps its own switch, and the rack's brings them back as they are.
+    final heard = chainOn && !(group.rack?.bypassed ?? false);
     final pedalHeight = kFxPedalHeight - band;
     return Material(
       type: MaterialType.transparency,
@@ -132,10 +135,10 @@ class FxRackEditor extends StatelessWidget {
                 LoopSettingsFrame.contentWidthOf(context) - _kActionsFromRight,
             top: 32,
             child: _RackActions(
-              enabled: group.anyEnabled,
+              enabled: group.isOn,
               onToggle: () => edits.setGroupEnabled(
                 fxGroupId(group),
-                enabled: !group.anyEnabled,
+                enabled: !group.isOn,
               ),
               onOptions: onOptions,
               onSavePreset: onSavePreset,
@@ -159,7 +162,7 @@ class FxRackEditor extends StatelessWidget {
             height: pedalHeight,
             child: Opacity(
               key: const Key('fx_pedal_strip'),
-              opacity: chainOn ? 1 : context.surface.disabledOpacity,
+              opacity: heard ? 1 : context.surface.disabledOpacity,
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -175,7 +178,7 @@ class FxRackEditor extends StatelessWidget {
                         key: Key('fx_pedal_${entries[i].slotId ?? i}'),
                         height: pedalHeight,
                         effect: entries[i],
-                        chainOn: chainOn,
+                        chainOn: heard,
                         onTogglePower: () {
                           final id = entries[i].slotId;
                           if (id != null) {
@@ -306,8 +309,8 @@ class FxPedalColumn extends StatefulWidget {
     super.key,
   });
 
-  /// Whether the rack's chain is switched on: the pedal's LED is dark while
-  /// it is off, as nothing passes through it.
+  /// Whether the pedal's chain and its rack are switched on: the pedal's LED
+  /// is dark while either is off, as nothing passes through it.
   final bool chainOn;
 
   /// How tall the column is: the pen's strip, less the chain-off band when

@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -482,7 +483,13 @@ class FxCubit extends Cubit<FxState> {
     return const FxEditResult(FxEditStatus.applied);
   }
 
-  /// Changes every current module of a rack using its stable rack identity.
+  /// Switches one group on or off by its stable identity ([fxGroupId]).
+  ///
+  /// A rack switches as a whole (#1711): off bypasses it and leaves each
+  /// pedal's own switch as it is, on restores them ([fxWithRackEnabled]). It
+  /// is the same switch a pedal binding to the rack flips (`FxRackTarget`),
+  /// so the card and the pedal's LED read one state. A standalone effect
+  /// switches its own power.
   // ignore: prefer_void_public_cubit_methods
   FxEditResult setGroupEnabled(
     FxAddress address,
@@ -490,11 +497,29 @@ class FxCubit extends Cubit<FxState> {
     required bool enabled,
   }) {
     final chain = _currentChain(address);
-    if (chain == null) return const FxEditResult(FxEditStatus.refused);
+    if (chain == null || isClosed) {
+      return const FxEditResult(FxEditStatus.refused);
+    }
     final group = fxChainGroups(
       chain,
     ).where((entry) => fxGroupId(entry) == groupId).firstOrNull;
     if (group == null) return const FxEditResult(FxEditStatus.refused);
+    if (group.rack case final rack?) {
+      if (group.isOn == enabled) {
+        return const FxEditResult(FxEditStatus.unchanged);
+      }
+      if (!_repository
+          .setRackEnabled(address: address, rackId: rack.id, enabled: enabled)
+          .isOk) {
+        return const FxEditResult(FxEditStatus.refused);
+      }
+      _persistence.ordinaryTarget(
+        FxRackTarget(address: address, rackId: rack.id),
+        enabled: enabled,
+      );
+      _persistence.scheduleSave(address, _settings);
+      return const FxEditResult(FxEditStatus.applied);
+    }
     var changed = false;
     for (final entry in group.entries) {
       final id = entry.slotId;

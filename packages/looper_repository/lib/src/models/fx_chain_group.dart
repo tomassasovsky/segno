@@ -47,9 +47,18 @@ class FxChainGroup extends Equatable {
   /// moves a whole instance, so every entry of one rack shares a placement.
   FxPlacement get placement => chain[start].placement;
 
-  /// Whether any entry in the group is audible. A rack whose every module is
-  /// bypassed is drawn bypassed.
-  bool get anyEnabled {
+  /// Whether the group's own switch is on: a single effect's power, or a
+  /// rack's switch ([FxRack.bypassed], #1711), whatever its modules' own
+  /// switches say. What the card's power button and a rack binding read.
+  bool get isOn => switch (rack) {
+    final rack? => !rack.bypassed,
+    null => chain[start].enabled,
+  };
+
+  /// Whether anything in the group sounds: its switch is on and at least one
+  /// entry is too. A rack whose every module is off is drawn bypassed.
+  bool get audible {
+    if (!isOn) return false;
     for (var i = start; i < end; i++) {
       if (chain[i].enabled) return true;
     }
@@ -263,6 +272,40 @@ List<TrackEffect> fxRenameRack(
     else
       fx,
 ];
+
+/// Returns [chain] with the rack [rackId] switched on or off as a whole
+/// (#1711), or `null` when [chain] holds no such rack.
+///
+/// Only the rack's own switch ([FxRack.bypassed]) changes: every module keeps
+/// its own, so off then on is exactly where the rack started, whoever pressed
+/// it and however a hold or a Released value replays it.
+List<TrackEffect>? fxWithRackEnabled(
+  List<TrackEffect> chain,
+  String rackId, {
+  required bool enabled,
+}) {
+  final group = fxChainGroups(
+    chain,
+  ).where((g) => g.rack?.id == rackId).firstOrNull;
+  if (group == null) return null;
+  final rack = group.rack!.copyWith(bypassed: !enabled);
+  return [
+    for (final (i, fx) in chain.indexed)
+      if (i < group.start || i >= group.end) fx else _withRack(fx, rack),
+  ];
+}
+
+/// The one rack [chain] is, end to end, or `null` when it is empty, holds a
+/// standalone effect, or holds more than one rack.
+///
+/// Such a chain IS its rack to the player: its picture is the rack's, and a
+/// binding to the whole chain is named by the rack.
+FxRack? fxSoleRack(List<TrackEffect> chain) {
+  if (chain.isEmpty) return null;
+  final rack = chain.first.rack;
+  if (rack == null) return null;
+  return chain.every((fx) => fx.rack?.id == rack.id) ? rack : null;
+}
 
 /// Returns [chain] without the group starting at [start] and ending at [end].
 ///

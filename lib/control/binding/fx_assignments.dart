@@ -4,18 +4,22 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 
 /// Whether [target] names one of the effects [slotIds] in the chain at
-/// [address], or one of their parameters.
+/// [address], one of their parameters, or one of the racks [rackIds] there
+/// (#1711).
 ///
 /// A whole-chain target names the chain, not an effect, so it never matches.
 bool fxTargetNamesEffect(
   Object? target,
   FxAddress address,
-  Set<String> slotIds,
-) => switch (target) {
+  Set<String> slotIds, {
+  Set<String> rackIds = const {},
+}) => switch (target) {
   FxSlotTarget(address: final a, :final slotId) =>
     a == address && slotIds.contains(slotId),
   FxParamTarget(address: final a, :final slotId) =>
     a == address && slotIds.contains(slotId),
+  FxRackTarget(address: final a, :final rackId) =>
+    a == address && rackIds.contains(rackId),
   _ => false,
 };
 
@@ -23,14 +27,23 @@ bool fxTargetNamesEffect(
 Object? _midiTarget(String key) =>
     ControlValueTarget.tryParse(key) ?? FxBindingTarget.tryParse(key);
 
-/// Whether the MIDI control [key] names one of the effects [slotIds] in the
-/// chain at [address] (see [fxTargetNamesEffect]).
-bool fxMidiKeyNamesEffect(String key, FxAddress address, Set<String> slotIds) =>
-    fxTargetNamesEffect(_midiTarget(key), address, slotIds);
+/// Whether the MIDI control [key] names one of the effects [slotIds] or the
+/// racks [rackIds] in the chain at [address] (see [fxTargetNamesEffect]).
+bool fxMidiKeyNamesEffect(
+  String key,
+  FxAddress address,
+  Set<String> slotIds, {
+  Set<String> rackIds = const {},
+}) => fxTargetNamesEffect(
+  _midiTarget(key),
+  address,
+  slotIds,
+  rackIds: rackIds,
+);
 
 /// How many MIDI and pedal assignments removing the assignments to the
-/// effects [slotIds] in the chain at [address] takes out of [control]: the
-/// ones `ControlCubit.removeFxAssignments` removes.
+/// effects [slotIds] and the racks [rackIds] in the chain at [address] takes
+/// out of [control]: the ones `ControlCubit.removeFxAssignments` removes.
 ///
 /// Counts every stored assignment that names one of those effects or one of
 /// their parameters: each MIDI control, each console pedal binding's press
@@ -41,11 +54,14 @@ bool fxMidiKeyNamesEffect(String key, FxAddress address, Set<String> slotIds) =>
 int fxAssignmentsTo(
   ControlState control,
   FxAddress address,
-  Set<String> slotIds,
-) {
+  Set<String> slotIds, {
+  Set<String> rackIds = const {},
+}) {
+  bool names(Object? target) =>
+      fxTargetNamesEffect(target, address, slotIds, rackIds: rackIds);
   var count = 0;
   void add(Object? target) {
-    if (fxTargetNamesEffect(target, address, slotIds)) count++;
+    if (names(target)) count++;
   }
 
   for (final mapping in control.midiMappings.mappings) {
@@ -55,11 +71,7 @@ int fxAssignmentsTo(
   }
   for (final set in [control.globalBindings, control.sessionBindings]) {
     for (final binding in set.bindings) {
-      final pressGoes = fxTargetNamesEffect(
-        binding.decodeTarget(),
-        address,
-        slotIds,
-      );
+      final pressGoes = names(binding.decodeTarget());
       if (pressGoes) {
         count += binding.hasHold ? 2 : 1;
       } else {

@@ -209,17 +209,16 @@ class _FootFxPedal extends StatelessWidget {
 /// several racks.
 String? _chainName(AppLocalizations l10n, List<TrackEffect> entries) {
   if (entries.isEmpty) return null;
-  final rack = entries.first.rack;
-  if (rack != null && entries.every((entry) => entry.rack?.id == rack.id)) {
-    return rack.name;
-  }
+  if (fxSoleRack(entries) case final rack?) return rack.name;
   if (entries.length == 1) return fxBlockName(l10n, entries.single);
   return null;
 }
 
 /// The name of what [target] drives: the chain's rack or effect for a chain
-/// target, the one effect a slot target names; null when [entries] (the
-/// chain the target reaches) is empty, gone or spans several racks.
+/// target, the rack a rack target names, the one effect a slot target names;
+/// null when [entries] (the chain the target reaches) is empty or gone, when
+/// a chain target's chain spans several racks, or when the named rack or
+/// effect is gone.
 String? _targetName(
   AppLocalizations l10n,
   FxBindingTarget target,
@@ -234,5 +233,9 @@ String? _targetName(
       final matches when matches.isNotEmpty => fxBlockName(l10n, matches.first),
       _ => null,
     },
+    FxRackTarget(:final rackId) => fxSoleRack([
+      for (final entry in entries)
+        if (entry.rack?.id == rackId) entry,
+    ])?.name,
   };
 }

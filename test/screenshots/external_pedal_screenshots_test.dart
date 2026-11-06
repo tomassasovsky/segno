@@ -555,6 +555,68 @@ void main() {
     await shot(tester, 'controls_pick');
   }, skip: !rendersScreenshots);
 
+  group('two racks on one chain (#1711)', () {
+    const reverb = FxRack(id: 'rack-a', name: 'Reverb + Delay', art: 'guitar');
+    const chords = FxRack(id: 'rack-b', name: 'Soft Chords', art: 'guitar');
+    const address = FxAddress(stage: FxStage.track);
+    setUp(() {
+      when(() => looper.trackEffects(0)).thenReturn([
+        BuiltInEffect(
+          type: TrackEffectType.reverb,
+          slotId: 'reverb-1',
+          rack: reverb,
+          module: 'Reverb',
+        ),
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          slotId: 'delay-1',
+          rack: reverb,
+          module: 'Delay',
+        ),
+        BuiltInEffect(
+          type: TrackEffectType.drive,
+          slotId: 'chords-1',
+          rack: chords.copyWith(bypassed: true),
+          module: 'Overdrive',
+        ),
+      ]);
+    });
+
+    screenshotTestWidgets('each rack is offered on its own', (tester) async {
+      await pump(tester, jack: controlled);
+      await tap(tester, 'external_panel_controls');
+      await tap(tester, 'external_add_control');
+      await tap(tester, 'expression_kind_recordedTrack');
+      await tap(tester, 'expression_destination_track:0');
+      await shot(tester, 'controls_pick_racks');
+    }, skip: !rendersScreenshots);
+
+    screenshotTestWidgets('one button alternates the two racks', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        jack: ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            controls: ExternalControls(
+              activations: const [
+                ExternalActivation(
+                  target: FxRackTarget(address: address, rackId: 'rack-a'),
+                ),
+                ExternalActivation(
+                  target: FxRackTarget(address: address, rackId: 'rack-b'),
+                  condition: ExternalCondition.off,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tap(tester, 'external_panel_controls');
+      await shot(tester, 'controls_rack_ab');
+    }, skip: !rendersScreenshots);
+  });
+
   screenshotTestWidgets('a button sets track pan while held', (tester) async {
     await pump(
       tester,
