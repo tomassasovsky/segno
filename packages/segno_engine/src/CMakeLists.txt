@@ -135,6 +135,11 @@ if(UNIX AND NOT APPLE)
   # resolver on the callback, which writes the GOT and runs code in ld.so that
   # nothing has prefaulted (rt_alloc.h, engine_platform.h).
   target_link_options(segno_engine PRIVATE "LINKER:-z,now")
+  # The audio callback's hot section (#1718, core/engine_hot.h): GNU ld keeps
+  # .text.hot.* together by default; lld and mold do so only when asked.
+  if(CMAKE_C_COMPILER_LINKER_ID MATCHES "^(LLD|MOLD)$")
+    target_link_options(segno_engine PRIVATE "LINKER:-z,keep-text-section-prefix")
+  endif()
 endif()
 
 # The CocoaPods (macOS/iOS) build compiles these sources via the podspec, not
