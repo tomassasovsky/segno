@@ -6261,6 +6261,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      le_heard_perf_armed(e); /* #1713: every lane's source is logged again */
       /* A performance arm ends a Library preview (#1178): the take starts
        * with the rig alone sounding. */
       le_audition_clear(e);
@@ -8743,8 +8744,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     }
     m = 0.0f;
   } else {
-    target = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
-             LE_HEARD_SOURCE_HEARD;
+    target = h->src_blk; /* as the block started (le_heard_block_begin) */
     if (!target && m >= 1.0f) {
       for (int32_t s = 0; s < fx_n; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
@@ -10880,7 +10880,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * that may capture this block records, whose chains run here whether or
    * not they are monitored (the take records their output). A block where
    * no lane holds one picks the plain mixer and skips every step below. */
-  le_heard_block_begin(e, tc, lane_n);
+  le_heard_block_begin(e, tc, lane_n, perf_frame_base);
   const int heard_block = e->heard_trk != 0u;
   if (heard_block) {
     le_heard_add_jobs(e, par, in, ch_in, excluded, mon_has_fx, mon_fx_count);

@@ -76,7 +76,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
-| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant) and 2a (length edits, render recipe, track print, session layers) in review | build | auto | `claude/take-plays-heard-1713-p*` |
+| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant), 2a (length edits, render recipe, track print, session layers), 2b (Transpose and the bridge) and 2c (performance stems) in review | build | auto | `claude/take-plays-heard-1713-p*` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
@@ -112,9 +112,22 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   plays its image). Sessions: `le_engine_export_layer_heard`,
   `le_engine_import_layer_heard` and `le_engine_export_track_lane_heard`
   carry each image's heard image as interleaved stereo.
-- Not yet: Transpose and the pitch bridge, performance stems and rendered
-  tails (later parts). Nothing in the app records an image until the last
-  part.
+- Part 2b: a lane's Transpose and stretch renders carry its image (one
+  stereo-linked stretch of the two planes, `le_stretch_render_loop_planar`),
+  and the pitch bridge reads the image with the clean take's grains. Until a
+  render with the image lands the lane plays its clean take at the track's
+  pitch.
+- Part 2c: a performance capture stages each layer's and restore image's
+  heard images (after the clean lanes in its file, `heard_mask` in the
+  manifest), logs each heard lane's source (`LE_PLOG_HEARD_SOURCE`,
+  events.log version 16), and the wet stem plays lane 0's heard image where
+  it sounded, crossfading at a switch as the callback does. The arm and
+  disarm snapshots' `heardPcmRef` is read when the app writes it (part 4).
+- CPU: a block where no lane holds an image runs the trunk's mixer
+  (`mix_tracks_frame`, the heard copy is `mix_tracks_frame_heard`), checked
+  under callgrind against the trunk's instruction count.
+- Not yet: rendered tails (part 3) and the app (parts 4 and 5). Nothing in
+  the app records an image until the last part.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.

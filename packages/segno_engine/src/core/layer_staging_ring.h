@@ -54,6 +54,11 @@ typedef struct le_staged_layer {
   uint32_t restore_id; /* nonzero only for kind 1, unique within this capture */
   int32_t lane_count;
   float* lane_pcm[LE_MAX_LANES];
+  /* The heard images (#1713): `heard_pcm[i]` is lane i's image as
+   * interleaved (L, R) pairs, `frame_count` of them, for each lane in
+   * `heard_mask`; NULL elsewhere. Owned and freed like `lane_pcm`. */
+  uint32_t heard_mask;
+  float* heard_pcm[LE_MAX_LANES];
   int32_t frame_count;
   int32_t slot;
   uint32_t generation;
@@ -97,6 +102,9 @@ int le_layer_staging_ring_pop(le_layer_staging_ring* ring,
  * the ring" invariant: a drain thread that SELF-stopped (write failure) is
  * gone, so a layer staged after that sits here until teardown. */
 void le_layer_staging_ring_drain_free(le_layer_staging_ring* ring);
+
+/* Frees every buffer `entry` owns (its lanes' clean and heard images). */
+void le_staged_layer_free(le_staged_layer* entry);
 
 #ifdef __cplusplus
 }

@@ -152,7 +152,12 @@ int le_lane_slot_buffers(const le_engine* e, int32_t ch, int32_t l,
 
 /* The block's heard facts (le_engine.heard_trk, heard_lanes, heard_inputs),
  * the logs emptied. Called once per callback before the frame loop. */
-void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n);
+void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
+                          uint64_t frame);
+
+/* A performance arm (LE_CMD_PERF_ARM, callback): every lane's source is
+ * logged again at its next heard block. */
+void le_heard_perf_armed(le_engine* e);
 
 /* Logs frame [i]'s writes for track [t] (see le_heard_rec). */
 static inline void le_heard_log_write(le_engine* e, int t, int32_t live,

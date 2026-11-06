@@ -185,6 +185,14 @@ are **not** copied into `loops/` — they exist for the offline renderer (parts
 7-8) to reconstruct overdub-pass-by-pass audibility, not as a directly
 playable deliverable of this part.
 
+A layer whose lanes hold heard images (#1713: what the player heard, the input
+chain's output recorded with the take) also carries `"heard_mask"`, the lanes
+that have one, and its file holds them after the clean lanes: `frame_count`
+frames of one (L, R) pair per lane in the mask, in lane order. A layer with no
+heard image has no `heard_mask` and its file is as before. The renderer plays
+lane 0's heard image in the wet stem where the lane played it (see
+`LE_PLOG_HEARD_SOURCE` in the event log format).
+
 ## `armSnapshot`
 
 The capture's initial state. Lane, monitor and track chains come from the
@@ -286,6 +294,7 @@ reads it; absent reads as 0, the placement every capture before #854 used.
 | `chainEnabled` | The lane chain's per-chain bypass flag, written only when `false` (absent = engaged, or legacy — see the marker above). |
 | `deferred` | `true` when this lane was mid-overdub at snapshot time (D-SNAP) — the audio thread was still writing its buffer, so there is no stable PCM to export here. Its content instead reaches disk via the retired-layer path (`layers[]` above) once the pass retires, or via `disarmSnapshot` if it finishes before disarm. |
 | `pcmRef` | The lane's exported WAV filename, relative to the bundle directory (e.g. `loops/track0-lane0.wav`). Absent when `deferred`, or when the lane was empty. |
+| `heardPcmRef` | #1713: the lane's heard image as a stereo 32-bit float WAV, beside `pcmRef`. Absent when the take has none. The renderer's wet stem plays it where the lane played its image; the dry stem keeps `pcmRef`. |
 | `takeId` | The monotonic id of the take this lane-0 image is the result of (#819), carried from the engine snapshot's `settledTakeId` (`le_track_snapshot.settled_take_id`). **Disarm-time lane 0 only**, presence-keyed (written only when `> 0`): the offline renderer (`perf_render.c`) matches it against the `LE_PLOG_RECORD_END` payloads' `take_id` in `events.log` to anchor the DISARM image by identity rather than by "the first `RECORD_END` on this channel" (which mis-anchored on a clear-then-re-record or an abort-before-content, #264). Absent means "no identity recorded" (an arm entry, a non-zero lane, or a settled take that predates the id machinery), and the renderer then places no disarm segment. |
 | `effects` | The lane's effect chain, in order, **only on an arm-time snapshot** ("chain at t=0"). Each entry is a `TrackEffect.toJson()` map verbatim: `{type, params}` for a built-in effect (`type` = the native `le_fx_type` code, `params` = up to 4 normalized `0..1` values), or `{type: 8, plugin: {...}, paramValues?, state?, name?}` for a hosted VST3/CLAP plugin (`PluginRef` identity — `daw_export`'s `fx-chains.txt`, part 10, reads this for third-party plugin identity + passthrough notes). Any entry may also carry `"enabled": false` (its own bypass; absent = audible) and `"slotId"` (its stable per-slot identity, the same id pedal bindings address). Absent (not an empty array) when there is nothing to report. |
 

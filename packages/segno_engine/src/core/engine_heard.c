@@ -22,6 +22,7 @@
 #include "engine_core.h"
 #include "engine_fx.h" /* le_fx_enable_force_bypass, le_fx_rack_reset */
 #include "engine_instruments.h"
+#include "engine_internal.h" /* le_plog_push */
 #include "engine_prefault.h"
 #include "rt_alloc.h"
 
@@ -501,7 +502,14 @@ static int le_heard_may_write(le_track* t) {
          load_i32(&t->a_pending) || load_i32(&t->a_pending_launch);
 }
 
-void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n) {
+void le_heard_perf_armed(le_engine* e) {
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) e->heard[t][l].src_logged = -1;
+  }
+}
+
+void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
+                          uint64_t frame) {
   /* The chains the last block ran, if it was a heard block (le_heard_add_jobs
    * notes them); after a plain one, none counts as running. */
   e->heard_jobs_prev = e->heard_trk != 0u ? e->heard_jobs : 0u;
@@ -557,6 +565,20 @@ void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n) {
     e->heard_lanes[t] = lanes;
     if (lanes == 0u) continue;
     e->heard_trk |= 1u << t;
+    /* Each lane's source for the block, logged for the performance render
+     * when it is not the one last logged. */
+    for (int l = 0; l < lane_n[t]; ++l) {
+      if (!(lanes & (1u << l))) continue;
+      le_heard* h = &e->heard[t][l];
+      h->src_blk = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
+                   LE_HEARD_SOURCE_HEARD;
+      if (e->perf.armed && h->src_blk != h->src_logged) {
+        le_plog_push(e, frame,
+                     (le_command){.code = LE_PLOG_HEARD_SOURCE,
+                                  .lanei = {t, l, h->src_blk}});
+        h->src_logged = h->src_blk;
+      }
+    }
     /* The inputs as the block starts: the post-pass reads the same. */
     for (int l = 0; l < lane_n[t]; ++l) {
       e->heard_input[t][l] = load_i32(&tr->lanes[l].a_input_channel);

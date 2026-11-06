@@ -10389,7 +10389,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 15
+#define LE_TEST_EVENTS_VERSION 16
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -38704,6 +38704,9 @@ static void test_plog_codes_are_distinct(void) {
       LE_PLOG_RECORD_ABORT,
       LE_PLOG_PERF_ARMED,
       LE_PLOG_TRANSPORT_HELD,
+      LE_PLOG_SOURCE_LEN,
+      LE_PLOG_FX_TEMPO,
+      LE_PLOG_HEARD_SOURCE,
   };
   const int n = (int)(sizeof(codes) / sizeof(codes[0]));
   for (int i = 0; i < n; ++i) {
@@ -39557,6 +39560,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_interface_routing.h"
 #include "test_engine_interface_inputs.h"
 #include "test_engine_heard_edits.h"
+#include "test_engine_heard_perf.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -39586,6 +39590,7 @@ int main(void) {
   } else {
     run_heard_tests();
     run_heard_edit_tests();
+    run_heard_perf_tests();
     if (getenv("SEGNO_HEARD_TESTS_ONLY")) return g_failures ? 1 : 0;
   }
   test_platform_names_the_calling_thread();

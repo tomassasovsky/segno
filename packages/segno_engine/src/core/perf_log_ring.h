@@ -231,6 +231,13 @@ typedef enum le_perf_log_code {
                            * from this frame the beat is beat + (f - frame)
                            * * qpf. A render with none runs at 120 BPM from
                            * beat 0. */
+  LE_PLOG_HEARD_SOURCE = 333, /* lanei {channel, lane, value}: what a lane
+                               * that holds a heard image plays from this
+                               * frame (#1713, events.log version 16): 1 its
+                               * image, 0 its clean take through its chain.
+                               * Logged at a block's first frame for every
+                               * such lane at its first block after
+                               * PERF_ARM, and at every change. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's

@@ -728,6 +728,7 @@ typedef struct le_pd_layer_manifest_entry {
   uint64_t frame;
   int32_t frame_count;
   int32_t lane_count;
+  uint32_t heard_mask; /* lanes whose heard image follows (#1713) */
   char filename[64];
 } le_pd_layer_manifest_entry;
 
@@ -1005,7 +1006,7 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 15; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
+  const uint32_t version = 16; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
                                  * 10: LE_PLOG_LENGTH (#1168);
                                  * 11: LE_PLOG_HEAD_SPAN, LE_PLOG_RETIME;
                                  * 12: LE_PLOG_SOURCE_LEN (#1179);
@@ -1016,7 +1017,9 @@ static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
                                  * 14: LE_PLOG_FX_TEMPO, the chains' musical
                                  *     time (#887 part 10);
                                  * 15: LE_PLOG_SOURCE_LEN carries the pitch
-                                 *     bridge's flag (#1675) */
+                                 *     bridge's flag (#1675);
+                                 * 16: LE_PLOG_HEARD_SOURCE, a lane's heard
+                                 *     image source (#1713) */
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;
@@ -1062,8 +1065,11 @@ static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring,
 
 /* Writes one retired layer's PCM to its own file, interleaving lanes the same
  * way multi-channel PCM is interleaved everywhere else in this format
- * (lane0[0], lane1[0], ..., lane0[1], lane1[1], ...). ALWAYS frees every
- * `entry->lane_pcm[l]` before returning, success or failure — this function
+ * (lane0[0], lane1[0], ..., lane0[1], lane1[1], ...), then, for a layer with
+ * heard images (#1713), the images of the lanes in `heard_mask` the same
+ * way, each lane a (L, R) pair (laneA.L[0], laneA.R[0], laneB.L[0], ...).
+ * ALWAYS frees every `entry->lane_pcm[l]` and `entry->heard_pcm[l]` before
+ * returning, success or failure — this function
  * takes ownership of the staged copy unconditionally, matching
  * layer_staging_ring.h's documented handoff contract. Only records a
  * manifest entry on success, and only once the file is fclose'd — i.e. once
@@ -1071,7 +1077,7 @@ static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring,
  * which is not the same as being on the device (no fsync here or anywhere else
  * in this module) — see le_pd_layer_manifest_entry's doc comment for why. */
 static int le_pd_write_staged_layer(le_perf_drain* d,
-                                    const le_staged_layer* entry) {
+                                    le_staged_layer* entry) {
   char filename[64];
   if (entry->kind == 1)
     snprintf(filename, sizeof(filename), "restore-%d-%u.pcm", entry->channel, entry->restore_id);
@@ -1082,18 +1088,20 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
   snprintf(path, sizeof(path), "%s/%s", d->capture_dir, filename);
 
   if (d->layer_count >= LE_PD_MAX_LAYERS) {
-    for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+    le_staged_layer_free(entry);
     d->layers_dropped++;
     return 1;
   }
   /* A layer the reserve budget cannot pay for is not written: the take stops
    * at the reserve now (le_pd_drain_cycle) rather than run the volume out
    * and end as a failed write (#1198). Counted like any unpersisted layer. */
-  if (d->has_budget &&
-      (uint64_t)entry->frame_count * (uint64_t)entry->lane_count *
-              sizeof(float) >
-          le_pd_budget(d)) {
-    for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+  int32_t heard_n = 0;
+  for (uint32_t m = entry->heard_mask; m != 0u; m &= m - 1u) ++heard_n;
+  const uint64_t layer_bytes = (uint64_t)entry->frame_count *
+                               (uint64_t)(entry->lane_count + 2 * heard_n) *
+                               sizeof(float);
+  if (d->has_budget && layer_bytes > le_pd_budget(d)) {
+    le_staged_layer_free(entry);
     d->layers_dropped++;
     d->layer_over_budget = 1;
     return 1;
@@ -1121,14 +1129,32 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
       }
       fr += n;
     }
+    /* The heard images, in chunks of the same buffer: a pair per lane. */
+    const int32_t per = heard_n > 0 ? LE_PD_LAYER_CHUNK_FRAMES * LE_MAX_LANES /
+                                          (2 * heard_n)
+                                    : 0;
+    fr = 0;
+    while (ok && heard_n > 0 && fr < entry->frame_count) {
+      const int32_t remaining = entry->frame_count - fr;
+      const int32_t n = remaining < per ? remaining : per;
+      int32_t k = 0;
+      for (int32_t i = 0; i < n; ++i) {
+        for (int32_t l = 0; l < entry->lane_count; ++l) {
+          if (!(entry->heard_mask & (1u << l))) continue;
+          chunk[k++] = entry->heard_pcm[l][2 * (size_t)(fr + i)];
+          chunk[k++] = entry->heard_pcm[l][2 * (size_t)(fr + i) + 1];
+        }
+      }
+      if (!le_pd_write(f, chunk, (size_t)k * sizeof(float))) ok = 0;
+      fr += n;
+    }
     if (fclose(f) != 0) ok = 0;
   }
 
-  for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+  le_staged_layer_free(entry);
 
   if (ok) {
-    le_pd_count_bytes(d, (uint64_t)entry->frame_count *
-                             (uint64_t)entry->lane_count * sizeof(float));
+    le_pd_count_bytes(d, layer_bytes);
     le_pd_layer_manifest_entry* m = &d->layers[d->layer_count];
     m->channel = entry->channel;
     m->kind = entry->kind;
@@ -1138,6 +1164,7 @@ static int le_pd_write_staged_layer(le_perf_drain* d,
     m->frame = entry->frame;
     m->frame_count = entry->frame_count;
     m->lane_count = entry->lane_count;
+    m->heard_mask = entry->heard_mask;
     snprintf(m->filename, sizeof(m->filename), "%s", filename);
     d->layer_count++;
   }
@@ -1679,10 +1706,18 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "%s{\"channel\": %d, \"slot\": %d, \"generation\": %u, "
                    "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": %d, "
-                   "\"kind\": %d, \"restore_id\": %u, \"filename\": \"%s\"}",
+                   "\"kind\": %d, \"restore_id\": %u, \"filename\": \"%s\"",
                    i == 0 ? "" : ", ", m->channel, m->slot, m->generation,
                    (unsigned long long)m->frame, m->frame_count,
                    m->lane_count, m->kind, m->restore_id, m->filename);
+    /* The heard images' lanes (#1713), only on a layer that has them. */
+    if (m->heard_mask != 0u && off >= 0 && off < LE_PD_JSON_BUF) {
+      off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                      ", \"heard_mask\": %u", m->heard_mask);
+    }
+    if (off >= 0 && off < LE_PD_JSON_BUF) {
+      off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "}");
+    }
   }
   if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
   off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
