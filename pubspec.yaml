@@ -73,7 +73,7 @@ dependencies:
 
 dev_dependencies:
   # tool/check_no_widget_methods.dart resolves the app with it.
-  analyzer: ^12.1.0
+  analyzer: ^13.3.0
   bloc_lint: ^0.4.1
   bloc_test: ^10.0.0
   bloc_tools: ^0.1.0-dev.25
