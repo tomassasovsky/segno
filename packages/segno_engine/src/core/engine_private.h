@@ -2333,7 +2333,7 @@ enum {
 };
 
 typedef struct le_heard_rec {
-  uint16_t i;   /* the frame in the block */
+  uint16_t i;   /* the callback frame (le_engine.heard_i) */
   uint8_t kind; /* LE_HEARD_REC_* */
   uint8_t pad;
   int16_t slot, slot2;
@@ -3352,8 +3352,9 @@ struct le_engine {
   int32_t bridge_any;
   /* The heard image (#1713, engine_heard.c), at the end so no field the
    * mixer already reads moves. heard: per lane, see le_heard. heard_log:
-   * per track, the block's records (callback-owned). heard_i: the frame of
-   * the block the first frame loop is on, -1 outside it, which is how a
+   * per track, the block's records (callback-owned). heard_i: the callback
+   * frame the heard mixer last mixed in a sub-block's first frame loop
+   * (mix_tracks_frame_heard sets it), -1 outside that loop, which is how a
    * content operation knows to log itself rather than run (le_heard_op).
    * heard_trk: tracks with a lane that holds an image, by block (callback).
    * heard_inputs: the inputs a capturing heard lane records, by block, whose
