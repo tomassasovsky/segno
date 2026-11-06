@@ -15,6 +15,7 @@
 
 #include "engine_core.h"    /* le_lanes_active */
 #include "engine_fx.h"      /* le_octaver_latency */
+#include "engine_heard.h"   /* the heard image (#1713) */
 #include "engine_internal.h" /* le_perf_drain_self_stopped */
 #include "engine_private.h" /* le_engine, le_track, le_lane, load/store helpers */
 #include "segno_engine_api.h"
@@ -333,6 +334,11 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
+    /* A part that plays its heard image (#1713) runs no chain: its image is
+     * its printed material. */
+    if (le_heard_lane_plays(engine, channel, l)) {
+      continue;
+    }
     int32_t count = load_i32(&ln->a_fx_count);
     if (count < 0) count = 0;
     if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -381,10 +387,14 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
   h = le_fx_fp_u32(h, (uint32_t)n);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    const uint64_t lane_fp = le_lane_pre_fx_fingerprint(engine, channel, l);
+    /* A part playing its heard image (#1713) contributes the image: its
+     * chain, which does not run, is not part of what the print covers. */
+    const int heard = le_heard_lane_plays(engine, channel, l);
+    const uint64_t lane_fp =
+        heard ? 0u : le_lane_pre_fx_fingerprint(engine, channel, l);
     h = le_fx_fp_u32(h, (uint32_t)lane_fp);
     h = le_fx_fp_u32(h, (uint32_t)(lane_fp >> 32));
-    h = le_fx_fp_u32(h, (uint32_t)load_i32(&ln->a_fx_count));
+    h = le_fx_fp_u32(h, heard ? 0u : (uint32_t)load_i32(&ln->a_fx_count));
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed));
     h = le_fx_fp_u32(
@@ -392,6 +402,8 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_pan_gr_bits, memory_order_relaxed));
     h = le_fx_fp_u32(h, load_i32(&ln->a_muted) ? 1u : 0u);
+    /* Whether the part's material is its heard image (#1713). */
+    h = le_fx_fp_u32(h, heard ? 1u : 0u);
   }
   return h;
 }
@@ -774,6 +786,8 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
     out->peak = 0.0f;
     out->recoverable = 0;
     out->pan = 0.0f;
+    out->heard = 0;
+    out->source = LE_LANE_SOURCE_HEARD;
     return;
   }
   le_lane* ln = &engine->tracks[channel].lanes[lane];
@@ -787,6 +801,21 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
   out->peak = load_f32(&ln->a_peak_bits);
   out->recoverable = load_i32(&ln->a_recoverable); /* #595 */
   out->pan = load_f32(&ln->a_pan_bits);
+  {
+    /* #1713. An attach the callback has not handled yet is the one entry it
+     * may be writing, so it is reported from what was posted. */
+    const le_heard* h = &engine->heard[channel][lane];
+    const int32_t live = load_i32(&ln->a_live);
+    const int attaching =
+        h->attach[0] != NULL && h->attach_slot == live &&
+        h->attach_posted !=
+            atomic_load_explicit(&h->a_attach_done, memory_order_acquire);
+    out->heard = attaching || le_heard_has(engine, channel, lane, live);
+    out->source = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
+                          LE_HEARD_SOURCE_CLEAN
+                      ? LE_LANE_SOURCE_CLEAN
+                      : LE_LANE_SOURCE_HEARD;
+  }
 }
 
 int32_t le_engine_read_visual(le_engine* engine, float* out,

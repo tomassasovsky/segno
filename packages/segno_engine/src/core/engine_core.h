@@ -192,6 +192,48 @@ static inline void le_seam_fold_head(float* head, const float* continuation,
   }
 }
 
+/* One buffer's share of the content operations a take's ends get, shared by
+ * the clean slot's helpers (engine_process.c) and the heard image's replay
+ * (engine_heard.c), so the two cannot drift. */
+
+/* A linear fade out over `f` frames that ends (weight 0) at position `last`,
+ * modulo `len` (le_lanes_fade_out_to). */
+static inline void le_plane_fade_out_to(float* b, int32_t last, int32_t len,
+                                        int32_t f) {
+  if (len <= 0 || f <= 0 || f > len || last < 0 || last >= len) return;
+  for (int32_t i = 0; i < f; ++i) {
+    int32_t p = last - i;
+    if (p < 0) p += len;
+    b[p] *= (float)i / (float)f;
+  }
+}
+
+/* A linear fade in over `f` frames from `start`, modulo `len`, out of the
+ * silence before it (the #730 taper's start). */
+static inline void le_plane_fade_in_at(float* b, int32_t start, int32_t len,
+                                       int32_t f) {
+  if (len <= 0 || f <= 0 || f > len || start < 0 || start >= len) return;
+  for (int32_t i = 0; i < f; ++i) {
+    const float x = (float)i / (float)f; /* 0 .. 1 across the fade */
+    int32_t in = start + i;
+    if (in >= len) in -= len;
+    b[in] *= x;
+  }
+}
+
+/* Copies `k` frames from `from` on, modulo `len`, from `src` to `dst`
+ * (le_dub_stop_tail's shadow copy). */
+static inline void le_plane_copy_wrapped(float* dst, const float* src,
+                                         int32_t from, int32_t k,
+                                         int32_t len) {
+  if (len <= 0 || from < 0 || from >= len) return;
+  for (int32_t i = 0; i < k; ++i) {
+    int32_t p = from + i;
+    if (p >= len) p -= len;
+    dst[p] = src[p];
+  }
+}
+
 /* Whether a recalled track of `len` frames fits a Session's `base`: a whole
  * multiple, or exactly half or a quarter of it (a Sync division, #1168). */
 static inline int le_session_length_fits(int32_t base, int32_t len) {

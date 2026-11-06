@@ -231,7 +231,23 @@ typedef enum le_perf_log_code {
                            * from this frame the beat is beat + (f - frame)
                            * * qpf. A render with none runs at 120 BPM from
                            * beat 0. */
+  LE_PLOG_HEARD_SOURCE = 333, /* lanei {channel, lane, value}: what a lane
+                               * that holds a heard image plays from this
+                               * frame (#1713, events.log version 16), one of
+                               * LE_PLOG_HEARD_* below. Logged at a block's
+                               * first frame for every such lane at its first
+                               * block after PERF_ARM, and at every change. */
 } le_perf_log_code;
+
+/* LE_PLOG_HEARD_SOURCE's value: the lane plays its clean take through its
+ * chain (source CLEAN, a 10 ms crossfade); its image (source HEARD); or its
+ * clean take at once because its source render cannot play the image at the
+ * track's pitch yet (source HEARD, a render made before the image was). */
+enum {
+  LE_PLOG_HEARD_CLEAN = 0,
+  LE_PLOG_HEARD_IMAGE = 1,
+  LE_PLOG_HEARD_UNAVAILABLE = 2,
+};
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
  * `fx.index` field (see above) — one definition shared by both emission call
