@@ -123,7 +123,9 @@ int le_heard_prepare_capture(le_engine* e, int32_t ch, uint32_t mask,
   if (le_test_heard_force) {
     mask = 0xffu;
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
-      atomic_store_explicit(&e->heard[ch][l].a_source, LE_HEARD_SOURCE_CLEAN,
+      atomic_store_explicit(&e->heard[ch][l].a_source,
+                            le_test_heard_force == 2 ? LE_HEARD_SOURCE_HEARD
+                                                     : LE_HEARD_SOURCE_CLEAN,
                             memory_order_relaxed);
       e->heard[ch][l].mix = 0.0f;
     }

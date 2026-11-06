@@ -7733,15 +7733,20 @@ static inline void snapshot_track_fx(
 
 /* Fills pick[0 .. lanes) with each lane's render for the key {rev, take,
  * semitones, out_len}; 0 (pick partly filled) unless every lane holds one. */
-static int le_src_pick(le_track* tr, int32_t lanes, uint32_t rev,
+static int le_src_pick(le_engine* e, int t, int32_t lanes, uint32_t rev,
                        int32_t take, int32_t semitones, int32_t out_len,
                        const le_wet_entry** pick) {
+  le_track* tr = &e->tracks[t];
   for (int l = 0; l < lanes; ++l) {
     pick[l] = NULL;
+    /* A lane holding a heard image needs a render of it too (#1713). */
+    const int heard =
+        le_heard_has(e, t, l, load_i32(&tr->lanes[l].a_live));
     for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
       const le_wet_entry* c =
           atomic_load_explicit(&tr->lanes[l].a_src[i], memory_order_acquire);
-      if (c != NULL && le_src_entry_fits(c, rev, take, semitones, out_len)) {
+      if (c != NULL &&
+          le_src_entry_fits(c, rev, take, semitones, out_len, heard)) {
         pick[l] = c;
       }
     }
@@ -7780,14 +7785,14 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     const uint32_t rev =
         atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
     int engaged = (want != 0 || want_out != take) && lane_n[t] > 0 &&
-                  le_src_pick(tr, lane_n[t], rev, take, want, want_out, pick);
+                  le_src_pick(e, t, lane_n[t], rev, take, want, want_out, pick);
     /* Off its span with no stretch render yet (Pitch Unchanged pending, or
      * refused by the cache cap): the pitch bridge plays the take at its own
      * pitch (#1675), from the track's plain Transpose render when every
      * lane holds one, so a transposed track keeps its pitch too. */
     const int bridge = !engaged && want_out != take && lane_n[t] > 0;
     if (bridge && want != 0) {
-      engaged = le_src_pick(tr, lane_n[t], rev, take, want, take, pick);
+      engaged = le_src_pick(e, t, lane_n[t], rev, take, want, take, pick);
     }
     le_track_bridge* tb = &e->bridges[t];
     int changed = bridge != tb->on;
@@ -8674,15 +8679,18 @@ static LE_BRIDGE_NOINLINE float le_mix_bridge_tail(le_engine* e, int t, int l,
  * With a nonzero mix, *xl and *xr get the image read the way the clean take
  * is (mix_tracks_frame): the same index, the same head (Speed, Reverse, a
  * relaunch origin), the turn window's old head, then the Stop's fade-out
- * reading on from where the track stopped, at the same gains. Transpose's
- * stretch renders and the pitch bridge read the clean take's renders; the
- * image reads through the head without them for now (#1713 part 2b). */
+ * reading on from where the track stopped, at the same gains. Under
+ * Transpose or a tempo stretch the image is read from the lane's source
+ * render, which carries its planes (le_wet_entry.planes); through the pitch
+ * bridge it is read by the grains the clean take stepped this frame
+ * (le_mix_bridge_lane), so both sides keep the take's timing (#1713 part
+ * 2b). [bridging] is the track's bridging bits, 0 off the bridge. */
 static LE_BRIDGE_NOINLINE float le_heard_lane_frame(
     le_engine* e, le_track* tr, int t, int l, int32_t live, int sounding,
     int32_t plain, double head_i, int32_t src_n, double turn_i, float turn_x,
     float turn_y, float pg, int tail, int tail_head, int32_t tail_len,
-    double tail_at, float tg, float od_step, int32_t fx_n, float* xl,
-    float* xr) {
+    double tail_at, float tg, float od_step, int32_t fx_n, int bridging,
+    uint32_t f, float* xl, float* xr) {
   le_heard* h = &e->heard[t][l];
   const float* pl = le_heard_plane(h, 0, live);
   const float* pr = le_heard_plane(h, 1, live);
@@ -8722,45 +8730,84 @@ static LE_BRIDGE_NOINLINE float le_heard_lane_frame(
   *xr = 0.0f;
   if (m <= 0.0f) return m;
   const int32_t cap = tr->lanes[l].pool_cap[live];
+  /* The planes each head reads: its source render's, when that carries the
+   * image, else the live slot's own. */
+  const le_wet_entry* se = tr->src_ent[l];
+  const le_wet_entry* oe = tr->turn_ent[l];
+  const float* nl = pl;
+  const float* nr = pr;
+  int32_t nlen = src_n;
+  if (se != NULL && se->planes > 1) {
+    nl = se->pcm + se->out_len;
+    nr = se->pcm + 2 * (size_t)se->out_len;
+    nlen = se->out_len;
+  }
+  const float* ol = pl;
+  const float* orr = pr;
+  int32_t olen = src_n;
+  if (oe != NULL && oe->planes > 1) {
+    ol = oe->pcm + oe->out_len;
+    orr = oe->pcm + 2 * (size_t)oe->out_len;
+    olen = oe->out_len;
+  }
+  const int32_t hop = e->bridge_hop;
+  const uint32_t clock = e->fx_clock_base + f;
+  const int32_t phase =
+      hop > 0 ? (int32_t)((clock + le_bridge_offset(t, l, hop)) &
+                          (uint32_t)(hop - 1))
+              : 0;
+  const le_bridge* b = &e->bridges[t].lane[l];
   float a = 0.0f;
-  float b = 0.0f;
+  float c = 0.0f;
   if (sounding) {
-    if (head_i >= 0.0) {
-      a = le_head_read_scaled(pl, src_n, src_n, &tr->head, head_i);
-      b = le_head_read_scaled(pr, src_n, src_n, &tr->head, head_i);
+    if (bridging & LE_BRIDGE_NEW) {
+      a = le_bridge_read(b, nl, src_n, phase, hop);
+      c = le_bridge_read(b, nr, src_n, phase, hop);
+    } else if (head_i >= 0.0) {
+      a = le_head_read_scaled(nl, nlen, src_n, &tr->head, head_i);
+      c = le_head_read_scaled(nr, nlen, src_n, &tr->head, head_i);
     } else if (plain >= 0 && plain < cap) {
       a = pl[plain];
-      b = pr[plain];
+      c = pr[plain];
     }
     if (turn_i >= 0.0) {
-      a = a * turn_x +
-          le_head_read_scaled(pl, src_n, src_n, &tr->prev_head, turn_i) *
-              turn_y;
-      b = b * turn_x +
-          le_head_read_scaled(pr, src_n, src_n, &tr->prev_head, turn_i) *
-              turn_y;
+      float y0;
+      float y1;
+      if (bridging & LE_BRIDGE_OLD) {
+        y0 = le_bridge_read(b, ol, src_n, phase, hop);
+        y1 = le_bridge_read(b, orr, src_n, phase, hop);
+      } else {
+        y0 = le_head_read_scaled(ol, olen, src_n, &tr->prev_head, turn_i);
+        y1 = le_head_read_scaled(orr, olen, src_n, &tr->prev_head, turn_i);
+      }
+      a = a * turn_x + y0 * turn_y;
+      c = c * turn_x + y1 * turn_y;
     }
   }
   a *= pg;
-  b *= pg;
+  c *= pg;
   if (tail && tail_len > 0) {
-    if (tail_head) {
+    if (e->bridge_any && e->bridges[t].on && !sounding && tail_len <= cap &&
+        b->live && b->last_clock == clock) {
+      /* The clean take's tail stepped the grains this frame. */
+      a += le_bridge_read(b, nl, tail_len, phase, hop) * tg;
+      c += le_bridge_read(b, nr, tail_len, phase, hop) * tg;
+    } else if (tail_head) {
       if (tail_len <= cap) {
-        a += le_head_read_scaled(pl, tail_len, tail_len, &tr->head, tail_at) *
-             tg;
-        b += le_head_read_scaled(pr, tail_len, tail_len, &tr->head, tail_at) *
-             tg;
+        const int32_t n = se != NULL && se->planes > 1 ? se->out_len : tail_len;
+        a += le_head_read_scaled(nl, n, tail_len, &tr->head, tail_at) * tg;
+        c += le_head_read_scaled(nr, n, tail_len, &tr->head, tail_at) * tg;
       }
     } else {
       const int32_t i = (int32_t)tail_at;
       if (i < cap) {
         a += pl[i] * tg;
-        b += pr[i] * tg;
+        c += pr[i] * tg;
       }
     }
   }
   *xl = a;
-  *xr = b;
+  *xr = c;
   return m;
 }
 
@@ -9688,7 +9735,7 @@ static inline void mix_tracks_frame(
             e, tr, t, l, live_idx[t], sounding, seg_base[t] + trk_pos[t],
             head_idx[t], src_len[t], turn_idx[t], turn_x[t], turn_y[t], pg,
             tail, tail_head, tail_len, tail_at, tg, od_step, fx_count[t][l],
-            &hxl, &hxr);
+            bridge_block ? bridging[t] : 0, f, &hxl, &hxr);
         if (hmix >= 1.0f) {
           const int32_t hrp = seg_base[t] + trk_pos[t];
           if (ln->run.restart) le_chain_run_begin(&ln->run, tr, sounding, hrp);

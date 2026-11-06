@@ -209,7 +209,12 @@ typedef struct le_cache_job {
   int32_t lanes;
   int32_t semitones;
   int32_t out_len; /* LE_CACHE_KIND_SOURCE: the render's length (#1179) */
-  float* src[LE_MAX_LANES];
+  /* LE_CACHE_KIND_SOURCE, #1713: the lanes whose slot holds a heard image,
+   * whose two planes are staged after the clean takes (le_ca_src_buf), and
+   * the staged buffers in all. */
+  uint32_t heard_mask;
+  int32_t nbuf;
+  float* src[3 * LE_MAX_LANES];
   float* dry;
   float* wet;
 } le_cache_job;
@@ -227,6 +232,33 @@ enum {
  * job cannot under-reserve. */
 static int32_t le_ca_src_channels(int32_t kind) {
   return kind == LE_CACHE_KIND_TRACK ? 2 : 1;
+}
+
+/* The lanes of [t] whose live slot holds a heard image (#1713): their source
+ * renders carry the image's planes too. */
+static uint32_t le_ca_heard_mask(le_engine* e, int t, int32_t lanes) {
+  uint32_t mask = 0u;
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (le_heard_has(e, t, l, load_i32(&e->tracks[t].lanes[l].a_live))) {
+      mask |= 1u << l;
+    }
+  }
+  return mask;
+}
+
+static int32_t le_ca_popcount(uint32_t m) {
+  int32_t n = 0;
+  for (; m != 0u; m &= m - 1u) ++n;
+  return n;
+}
+
+/* A source job's staged buffer for plane [p] (0 left, 1 right) of lane
+ * [l]'s heard image: after the lanes' clean takes, two per heard lane in
+ * lane order. */
+static int32_t le_ca_src_buf(const struct le_cache_job* job, int32_t l,
+                             int32_t p) {
+  return job->lanes + 2 * le_ca_popcount(job->heard_mask & ((1u << l) - 1u)) +
+         p;
 }
 
 /* Bytes a job in flight holds: its staged source plus the stereo wet it will
@@ -344,7 +376,10 @@ static uint64_t le_ca_key_hash(uint32_t rev, uint64_t fp, uint32_t vol_bits,
 /* ---- quiescent reclaim [R2](c) — passive, never sleeps ---- */
 
 static int64_t le_ca_entry_bytes(const le_wet_entry* ent) {
-  if (ent->kind == 1) return (int64_t)ent->out_len * (int64_t)sizeof(float);
+  if (ent->kind == 1) {
+    return (int64_t)ent->out_len * (ent->planes > 1 ? ent->planes : 1) *
+           (int64_t)sizeof(float);
+  }
   return 2ll * (int64_t)ent->len * (int64_t)sizeof(float); /* stereo [R5] */
 }
 
@@ -485,7 +520,7 @@ static void le_cache_free_all_entries(le_engine* e, struct le_fx_cache* c) {
  * evicting it would drop the track to its dry take, a silent pitch change,
  * now (PLAYING) or at its next Play (STOPPED, review L2). A job that needs
  * its room is refused instead. */
-static int le_ca_evictable(le_engine* e, int32_t kind, int t,
+static int le_ca_evictable(le_engine* e, int32_t kind, int t, int l,
                            const le_wet_entry* ent) {
   if (kind != LE_CACHE_KIND_SOURCE) return 1;
   le_track* tr = &e->tracks[t];
@@ -498,7 +533,8 @@ static int le_ca_evictable(le_engine* e, int32_t kind, int t,
          (st == 0 && want_out == len) ||
          !le_src_entry_fits(
              ent, atomic_load_explicit(&tr->a_src_key, memory_order_acquire),
-             len, st, want_out);
+             len, st, want_out,
+             le_heard_has(e, t, l, load_i32(&tr->lanes[l].a_live)));
 }
 
 /* LRU eviction until [needed] more bytes fit under [cap]: Pre prints first
@@ -523,7 +559,7 @@ static int le_cache_ensure_budget(le_engine* e, struct le_fx_cache* c,
         const le_lane_cache* book = le_ca_book(c, kind, t, l);
         for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
           if (book->entries[i] != NULL &&
-              le_ca_evictable(e, kind, t, book->entries[i])) {
+              le_ca_evictable(e, kind, t, l, book->entries[i])) {
             evictable += le_ca_entry_bytes(book->entries[i]);
           }
         }
@@ -546,7 +582,7 @@ static int le_cache_ensure_budget(le_engine* e, struct le_fx_cache* c,
           const le_lane_cache* book = le_ca_book(c, kind, t, l);
           for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
             le_wet_entry* ent = book->entries[i];
-            if (ent == NULL || !le_ca_evictable(e, kind, t, ent)) continue;
+            if (ent == NULL || !le_ca_evictable(e, kind, t, l, ent)) continue;
             if (bk < 0 || ent->last_used < best) {
               best = ent->last_used;
               bk = kind;
@@ -700,9 +736,10 @@ static int le_ca_source_current(le_engine* e, const le_cache_job* job) {
                              .semitones = job->semitones,
                              .out_len = job->out_len};
   return le_lanes_active(tr) == job->lanes &&
+         le_ca_heard_mask(e, job->channel, job->lanes) == job->heard_mask &&
          le_src_entry_fits(
              &made, atomic_load_explicit(&tr->a_src_key, memory_order_acquire),
-             load_i32(&tr->lanes[0].a_len), st, le_track_want_out(e, tr));
+             load_i32(&tr->lanes[0].a_len), st, le_track_want_out(e, tr), 0);
 }
 
 /* Collects finished jobs: frees the enqueue copy, publishes a DONE render iff
@@ -723,7 +760,10 @@ static void le_cache_collect(le_engine* e, struct le_fx_cache* c,
     /* The enqueue copy and the pre-accounted wet leave the books here; a
      * published wet re-enters as entry bytes in le_cache_install. */
     c->used_bytes -=
-        le_ca_job_bytes(job->kind, job->len, job->lanes, job->out_len);
+        le_ca_job_bytes(job->kind, job->len,
+                        job->kind == LE_CACHE_KIND_SOURCE ? job->nbuf
+                                                          : job->lanes,
+                        job->out_len);
     free(job->dry);
     job->dry = NULL;
     if (job->kind == LE_CACHE_KIND_SOURCE) {
@@ -736,17 +776,34 @@ static void le_cache_collect(le_engine* e, struct le_fx_cache* c,
         lc->reason = LE_CACHE_REASON_RENDER_FAILED;
       }
       for (int l = 0; l < job->lanes; ++l) {
+        const int heard = (job->heard_mask >> l) & 1u;
         const le_wet_entry key = {.audio_rev = job->audio_rev,
                                   .len = job->len,
                                   .kind = 1,
                                   .semitones = job->semitones,
-                                  .out_len = job->out_len};
-        if (publish && job->src[l] != NULL) {
+                                  .out_len = job->out_len,
+                                  .planes = heard ? 3 : 0};
+        if (publish && heard && job->src[l] != NULL) {
+          /* The clean render and the image's two planes', back to back. */
+          const size_t n = (size_t)job->out_len;
+          float* all = (float*)malloc(3 * n * sizeof(float));
+          const int32_t b = le_ca_src_buf(job, l, 0);
+          if (all != NULL && job->src[b] != NULL && job->src[b + 1] != NULL) {
+            memcpy(all, job->src[l], n * sizeof(float));
+            memcpy(all + n, job->src[b], n * sizeof(float));
+            memcpy(all + 2 * n, job->src[b + 1], n * sizeof(float));
+            le_cache_install_entry(e, c, LE_CACHE_KIND_SOURCE, job->channel,
+                                   l, &key, &all);
+          }
+          free(all);
+        } else if (publish && job->src[l] != NULL) {
           le_cache_install_entry(e, c, LE_CACHE_KIND_SOURCE, job->channel, l,
                                  &key, &job->src[l]);
         }
-        free(job->src[l]);
-        job->src[l] = NULL;
+      }
+      for (int k = 0; k < job->nbuf; ++k) {
+        free(job->src[k]);
+        job->src[k] = NULL;
       }
       atomic_store_explicit(&job->a_state, LE_CACHE_JOB_EMPTY,
                             memory_order_release);
@@ -1375,7 +1432,7 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
   const uint64_t now = atomic_load_explicit(&e->a_frames, memory_order_relaxed);
   const uint64_t key_hash = le_ca_key_hash(
       rev, (uint64_t)(uint32_t)want_st | ((uint64_t)(uint32_t)want_out << 32),
-      (uint32_t)lanes, len);
+      (uint32_t)lanes | (le_ca_heard_mask(e, t, lanes) << 8), len);
   if (!lc->has_key || key_hash != lc->last_key_hash) {
     lc->has_key = 1;
     lc->last_key_hash = key_hash;
@@ -1383,13 +1440,16 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
     lc->reason = LE_CACHE_REASON_NONE;
     if (lc->state == LE_CACHE_GAVE_UP) lc->state = LE_CACHE_LIVE;
   }
+  /* The lanes whose take has a heard image render it too (#1713). */
+  const uint32_t heard_mask = le_ca_heard_mask(e, t, lanes);
   le_wet_entry* hit[LE_MAX_LANES];
   int all = lanes > 0;
   for (int l = 0; l < lanes && all; ++l) {
     hit[l] = NULL;
     for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
       le_wet_entry* ent = c->src_lanes[t][l].entries[i];
-      if (ent != NULL && le_src_entry_fits(ent, rev, len, want_st, want_out)) {
+      if (ent != NULL && le_src_entry_fits(ent, rev, len, want_st, want_out,
+                                           (heard_mask >> l) & 1u)) {
         hit[l] = ent;
       }
     }
@@ -1415,8 +1475,9 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
     lc->state = LE_CACHE_LIVE;
     return;
   }
+  const int32_t nbuf = lanes + 2 * le_ca_popcount(heard_mask);
   const int64_t job_bytes =
-      le_ca_job_bytes(LE_CACHE_KIND_SOURCE, len, lanes, want_out);
+      le_ca_job_bytes(LE_CACHE_KIND_SOURCE, len, nbuf, want_out);
   if (!le_cache_ensure_budget(e, c, cap, job_bytes)) {
     lc->state = LE_CACHE_GAVE_UP; /* re-armed by any key change */
     lc->reason = LE_CACHE_REASON_BUDGET;
@@ -1430,7 +1491,7 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
     }
   }
   float* dry = job != NULL
-                   ? (float*)malloc((size_t)lanes * (size_t)len * sizeof(float))
+                   ? (float*)malloc((size_t)nbuf * (size_t)len * sizeof(float))
                    : NULL;
   if (dry == NULL) {
     lc->state = LE_CACHE_LIVE; /* queue full or no memory: retry next tick */
@@ -1441,6 +1502,8 @@ static void le_cache_schedule_source(le_engine* e, struct le_fx_cache* c,
   job->channel = t;
   job->lane = -1;
   job->lanes = lanes;
+  job->heard_mask = heard_mask;
+  job->nbuf = nbuf;
   job->semitones = want_st;
   job->out_len = want_out;
   job->audio_rev = rev;
@@ -1574,15 +1637,26 @@ static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
                   !le_cache_copy_key_matches(e, job);
     if (!discard && job->kind == LE_CACHE_KIND_SOURCE) {
       const int32_t n =
-          le_cache_copy_take(&budget, job->len - job->copy_pos, job->lanes);
+          le_cache_copy_take(&budget, job->len - job->copy_pos, job->nbuf);
       for (int32_t l = 0; l < job->lanes && !discard; ++l) {
         le_lane* ln = &tr->lanes[l];
-        const float* src = ln->pool[load_i32(&ln->a_live)];
+        const int32_t live = load_i32(&ln->a_live);
+        const float* src = ln->pool[live];
         discard = src == NULL;
         if (!discard) {
           memcpy(job->dry + (size_t)l * (size_t)job->len + job->copy_pos,
                  src + job->copy_pos, (size_t)n * sizeof(float));
         }
+        if (discard || !((job->heard_mask >> l) & 1u)) continue;
+        float* pl;
+        float* pr;
+        discard = !le_heard_planes(e, job->channel, l, live, &pl, &pr);
+        if (discard) break;
+        const int32_t b = le_ca_src_buf(job, l, 0);
+        memcpy(job->dry + (size_t)b * (size_t)job->len + job->copy_pos,
+               pl + job->copy_pos, (size_t)n * sizeof(float));
+        memcpy(job->dry + (size_t)(b + 1) * (size_t)job->len + job->copy_pos,
+               pr + job->copy_pos, (size_t)n * sizeof(float));
       }
       if (!discard) {
         job->copy_pos += n;
@@ -1620,7 +1694,10 @@ static void le_cache_copy_step(le_engine* e, struct le_fx_cache* c) {
   copy_done:
     if (discard) {
       c->used_bytes -=
-          le_ca_job_bytes(job->kind, job->len, job->lanes, job->out_len);
+          le_ca_job_bytes(job->kind, job->len,
+                          job->kind == LE_CACHE_KIND_SOURCE ? job->nbuf
+                                                            : job->lanes,
+                          job->out_len);
       free(job->dry);
       job->dry = NULL;
       le_lane_cache* book = le_ca_book(c, job->kind, job->channel, job->lane);
@@ -1839,7 +1916,9 @@ static le_cache_job* le_cache_pick(le_engine* e, struct le_fx_cache* c,
 static void le_cache_render_source(le_engine* e, struct le_fx_cache* c,
                                    le_cache_job* job) {
   int32_t outcome = LE_CACHE_JOB_DONE;
-  for (int32_t l = 0; l < job->lanes && outcome == LE_CACHE_JOB_DONE; ++l) {
+  /* Every staged buffer alike: each lane's clean take, then each heard
+   * image's planes (#1713), with the same seed, so the planes stay aligned. */
+  for (int32_t l = 0; l < job->nbuf && outcome == LE_CACHE_JOB_DONE; ++l) {
     if (atomic_load_explicit(&c->a_shutdown, memory_order_acquire) ||
         !le_ca_source_current(e, job)) {
       outcome = LE_CACHE_JOB_ABORTED;
@@ -1858,7 +1937,7 @@ static void le_cache_render_source(le_engine* e, struct le_fx_cache* c,
     }
   }
   if (outcome != LE_CACHE_JOB_DONE) {
-    for (int32_t l = 0; l < job->lanes; ++l) {
+    for (int32_t l = 0; l < job->nbuf; ++l) {
       free(job->src[l]);
       job->src[l] = NULL;
     }

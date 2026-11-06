@@ -858,7 +858,12 @@ typedef struct le_wet_entry {
   int32_t kind;
   int32_t semitones;
   int32_t out_len;
-  float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
+  /* A source render of a lane whose slot holds a heard image (#1713): 3,
+   * its pcm the clean take's render then the image's two planes', each
+   * out_len frames; otherwise 0 (the clean take's alone). */
+  int32_t planes;
+  float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len
+                       * (times `planes` when set) */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
   /* 0 for a print whose key does not hold the top's place on the lap grid;
    * else 1 + that place (le_fx_lap_position) for the top it was rendered
@@ -914,11 +919,13 @@ static inline int le_src_len_within(int32_t have, int32_t want) {
  * (le_track_want_out), which the plain render matches exactly. */
 static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
                                     int32_t len, int32_t semitones,
-                                    int32_t want_out) {
+                                    int32_t want_out, int heard) {
   if (!le_wet_entry_key_matches_kind(ent, key, 0, 0, len, 1, semitones,
                                      ent->out_len)) {
     return 0;
   }
+  /* A lane holding a heard image needs it rendered too (#1713). */
+  if ((ent->planes > 1) != (heard != 0)) return 0;
   if (want_out == len || ent->out_len == len) return ent->out_len == want_out;
   return le_src_len_within(ent->out_len, want_out);
 }
