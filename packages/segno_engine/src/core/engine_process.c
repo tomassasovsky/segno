@@ -8723,11 +8723,11 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const float* pr = le_heard_plane(h, 1, live);
   /* The source renders each head reads (#1713 part 2b). One made before the
    * image was (le_src_pick's fallback) cannot play it at the track's pitch,
-   * so the lane plays its clean take there until a render with the image
-   * lands. */
+   * so the lane plays its clean take there for the block
+   * (le_heard_block_begin) until a render with the image lands. */
   const le_wet_entry* se = tr->src_ent[l];
   const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
-  if ((se != NULL && se->planes <= 1) || (oe != NULL && oe->planes <= 1)) {
+  if (!h->img_blk) {
     pl = NULL;
     pr = NULL;
   }

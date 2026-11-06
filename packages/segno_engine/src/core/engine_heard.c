@@ -572,11 +572,26 @@ void le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
       le_heard* h = &e->heard[t][l];
       h->src_blk = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
                    LE_HEARD_SOURCE_HEARD;
-      if (e->perf.armed && h->src_blk != h->src_logged) {
+      /* le_transpose_select has picked this block's renders. */
+      const le_wet_entry* se = tr->src_ent[l];
+      const le_wet_entry* oe = tr->turn_left > 0 ? tr->turn_ent[l] : NULL;
+      h->img_blk = !(se != NULL && se->planes <= 1) &&
+                   !(oe != NULL && oe->planes <= 1);
+      const int32_t v = !h->src_blk ? LE_PLOG_HEARD_CLEAN
+                        : h->img_blk ? LE_PLOG_HEARD_IMAGE
+                                     : LE_PLOG_HEARD_UNAVAILABLE;
+      if (e->perf.armed && v != h->src_logged) {
+        /* A full log ring drops the fact (and counts it): kept unlogged, so
+         * the next block tries again. */
+        const uint32_t drops = atomic_load_explicit(&e->a_perf_log_overruns,
+                                                    memory_order_relaxed);
         le_plog_push(e, frame,
                      (le_command){.code = LE_PLOG_HEARD_SOURCE,
-                                  .lanei = {t, l, h->src_blk}});
-        h->src_logged = h->src_blk;
+                                  .lanei = {t, l, v}});
+        if (atomic_load_explicit(&e->a_perf_log_overruns,
+                                 memory_order_relaxed) == drops) {
+          h->src_logged = v;
+        }
       }
     }
     /* The inputs as the block starts: the post-pass reads the same. */

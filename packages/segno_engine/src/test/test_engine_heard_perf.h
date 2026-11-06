@@ -146,10 +146,16 @@ static void test_heard_perf_wet_stem_plays_the_images(void) {
 
 /* A logged source switch crossfades the wet stem over 10 ms, as the rig
  * does: from the image to the clean take through its (empty) chain, and
- * back. */
+ * back; an image its renders cannot play yet snaps to the clean take. */
 static void test_heard_perf_source_switch(void) {
   printf("test_heard_perf_source_switch\n");
-  enum { CAP = 240, TO_CLEAN = 16, TO_HEARD = 120, XF = HP_SR / 100 };
+  enum {
+    CAP = 240,
+    TO_CLEAN = 16,
+    TO_HEARD = 120,
+    UNAVAILABLE = 200,
+    XF = HP_SR / 100
+  };
   const char* dir = heard_perf_dir("heard-source");
   FILE* lf = heard_perf_fixture(dir, CAP, "");
   if (lf != NULL) {
@@ -159,6 +165,9 @@ static void test_heard_perf_source_switch(void) {
     test_write_log_entry(lf, TO_HEARD,
                          (le_command){.code = LE_PLOG_HEARD_SOURCE,
                                       .lanei = {0, 0, 1}});
+    test_write_log_entry(lf, UNAVAILABLE,
+                         (le_command){.code = LE_PLOG_HEARD_SOURCE,
+                                      .lanei = {0, 0, 2}});
     fclose(lf);
   }
   le_engine* e = le_engine_create();
@@ -167,9 +176,9 @@ static void test_heard_perf_source_switch(void) {
   float wet[CAP];
   CHECK(test_read_wet_stem(dir, 0, wet, CAP) == CAP);
   for (int f = 0; f < CAP; ++f) {
-    if (f < TO_CLEAN || f >= TO_HEARD + XF) {
+    if (f < TO_CLEAN || (f >= TO_HEARD + XF && f < UNAVAILABLE)) {
       CHECK(fabsf(wet[f] - 0.2f) < 1e-5f);
-    } else if (f >= TO_CLEAN + XF && f < TO_HEARD) {
+    } else if ((f >= TO_CLEAN + XF && f < TO_HEARD) || f >= UNAVAILABLE) {
       CHECK(fabsf(wet[f] - 0.5f) < 1e-5f);
     } else {
       CHECK(wet[f] > 0.2f - 1e-5f && wet[f] < 0.5f + 1e-5f);
