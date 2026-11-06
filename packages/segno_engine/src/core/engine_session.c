@@ -391,17 +391,30 @@ int32_t le_engine_import_layer_heard(le_engine* engine, int32_t channel,
   if (ordinal < 0 || ordinal >= LE_POOL_SLOTS || frames <= 0) {
     return LE_ERR_INVALID;
   }
+  /* le_engine_import_layer's own preconditions. */
+  if (engine->lane_growth_command > atomic_load_explicit(
+        &engine->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
-  if (le_heard_attach_pending(engine, channel)) return LE_ERR_NOT_READY;
-  le_lane* ln = &t->lanes[lane];
-  if (ln->pool[ordinal] == NULL || ln->pool_cap[ordinal] < frames) {
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
     return LE_ERR_INVALID;
   }
-  /* The staged slot is not live yet (finalize publishes it): free at once.
-   * Fresh planes read zeros past `frames` without a page touched. */
-  (void)le_heard_match(engine, channel, lane, ordinal, 0, LE_HEARD_FREE);
-  if (!le_heard_match(engine, channel, lane, ordinal, 1, LE_HEARD_FREE)) {
+  if (t->bounce_inflight) return LE_ERR_INVALID;
+  if (le_heard_attach_pending(engine, channel)) return LE_ERR_NOT_READY;
+  if (lane >= le_lanes_active(t)) return LE_ERR_INVALID; /* not staged */
+  le_lane* ln = &t->lanes[lane];
+  /* The clean image staged last on this lane is this one, at this length:
+   * le_engine_import_layer marks it with a_len and a_recoverable. */
+  if (ln->pool[ordinal] == NULL || ln->pool_cap[ordinal] < frames ||
+      load_i32(&ln->a_len) != frames || !load_i32(&ln->a_recoverable)) {
+    return LE_ERR_INVALID;
+  }
+  /* Retired, not freed: an EMPTY track's former live slot may still be held
+   * by a block that emptied it. Fresh planes read zeros past `frames`
+   * without a page touched. */
+  (void)le_heard_match(engine, channel, lane, ordinal, 0, LE_HEARD_RETIRE);
+  if (!le_heard_match(engine, channel, lane, ordinal, 1, LE_HEARD_RETIRE)) {
     return LE_ERR_INVALID;
   }
   float* pl;

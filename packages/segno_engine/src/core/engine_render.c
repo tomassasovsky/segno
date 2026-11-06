@@ -622,8 +622,10 @@ static void le_render_after_freeze(le_engine* e, le_render_job* j) {
         return;
       }
       if (!s->lane[l].heard) continue;
-      /* The frozen slot must hold the image the lane played at begin. */
-      if (!le_heard_has(e, s->channel, l, s->slot)) {
+      /* The frozen slot must hold the image the lane played at begin, and
+       * the lane still play it (a source switch since begin re-renders). */
+      if (!le_heard_has(e, s->channel, l, s->slot) ||
+          !le_heard_lane_plays(e, s->channel, l)) {
         le_render_fail(j, LE_ERR_TRACKS_CHANGED);
         return;
       }
@@ -698,6 +700,10 @@ static void le_render_stage(le_engine* e, le_render_job* j) {
       le_render_lane* rl = &s->lane[j->stage_lane];
       float* pl;
       float* pr;
+      if (rl->heard && !le_heard_lane_plays(e, s->channel, j->stage_lane)) {
+        le_render_fail(j, LE_ERR_TRACKS_CHANGED); /* its source switched */
+        return;
+      }
       if (rl->heard &&
           le_heard_planes(e, s->channel, j->stage_lane, s->slot, &pl, &pr)) {
         /* The heard image (#1713), at level like a print. */

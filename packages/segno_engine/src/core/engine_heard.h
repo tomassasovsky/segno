@@ -45,9 +45,9 @@ static inline int le_heard_any(const le_engine* e, int32_t ch, int32_t l) {
 /* Whether any active lane of [ch] holds an image in [slot]. */
 int le_heard_track_has(const le_engine* e, int32_t ch, int32_t slot);
 
-/* Whether lane (ch, l) plays its heard image now (control's view): its
- * source is HEARD and its live slot holds one. The cache does not print
- * such a lane, and a track with one has no whole-track print. */
+/* Whether lane (ch, l) plays its heard image now: it holds one, its source
+ * is HEARD and its live slot holds one. The cache does not print such a
+ * lane; a whole-track print takes its image as the part's material. */
 int le_heard_lane_plays(const le_engine* e, int32_t ch, int32_t l);
 
 /* ---- control thread ---- */
@@ -95,6 +95,16 @@ int le_heard_capture_replaces(le_engine* e, int32_t ch, uint32_t mask,
  * a standby (already faulted in). */
 uint32_t le_heard_match_shadow(le_engine* e, int32_t ch, int32_t slot,
                                uint32_t standby_mask);
+
+/* Installs [pl] and [pr] (fresh mappings of [cap] frames, the clean slot's
+ * size) as slot [slot]'s planes, freeing what it held: for a caller that
+ * allocated them before a point it may not fail past. The slot must not be
+ * one the callback can name. */
+void le_heard_adopt(le_engine* e, int32_t ch, int32_t l, int32_t slot,
+                    float* pl, float* pr, int32_t cap);
+
+/* Two fresh untouched mappings of [frames] frames, or neither (returns 0). */
+int le_heard_alloc_planes(int32_t frames, float** pl, float** pr);
 
 /* le_lane_shrink_slot's twin. */
 void le_heard_shrink(le_engine* e, int32_t ch, int32_t l, int32_t slot,
