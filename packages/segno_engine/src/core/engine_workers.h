@@ -33,7 +33,8 @@ void le_fx_jobs_run(le_engine* e);
  * le_trk_jobs_begin decides at a block's start whether its track chains run
  * as jobs: only with workers running and two jobs at least, counting the
  * monitor jobs already queued. If so it queues a job per track with a chain
- * (le_fx_par.job_mon = -1 - track), points every track chain's clock and
+ * (le_engine.trk_job_t, after the le_engine.trk_job_mon_n monitor jobs of
+ * le_fx_par), points every track chain's clock and
  * tempo at its job's (le_trk_job.time) and the All tracks chains' at
  * le_engine.at_time, and returns the tracks queued; le_engine.trk_jobs_live
  * is then nonzero until le_trk_jobs_end, and le_engine_process mixes the
