@@ -28,6 +28,38 @@
  * runs them in job order. Audio thread only; no allocation, no lock. */
 void le_fx_jobs_run(le_engine* e);
 
+/* ---- Track chains as jobs (#1729), engine_mix_jobs.c ----
+ *
+ * le_trk_jobs_begin decides at a block's start whether its track chains run
+ * as jobs: only with workers running and two jobs at least, counting the
+ * monitor jobs already queued. If so it queues a job per track with a chain
+ * (le_fx_par.job_mon = -1 - track), points every track chain's clock and
+ * tempo at its job's (le_trk_job.time) and the All tracks chains' at
+ * le_engine.at_time, and returns the tracks queued; le_engine.trk_jobs_live
+ * is then nonzero until le_trk_jobs_end, and le_engine_process mixes the
+ * block with mix_tracks_frame_jobs. le_trk_job_run runs track [t]'s job
+ * over the block's frames up to [upto] (on a worker or the callback).
+ * le_trk_jobs_flush runs the jobs of [tracks] up to the frame the mixer is
+ * at, on the callback, before it changes what they read; a no-op outside
+ * such a block. le_trk_jobs_end, after the join, runs whatever is left,
+ * sums every track onto [out] in the mixer's order, runs the All tracks
+ * stage and points the chains back at the engine's clock. Audio thread
+ * only; no allocation, no lock. */
+uint32_t le_trk_jobs_begin(le_engine* e, int tc, const int32_t* lane_n,
+                           const int* lane_fx_any);
+#ifdef LE_NATIVE_TESTS
+/* Native tests only: every block with a track chain runs its track chains as
+ * jobs, with no workers too (the callback runs them, in job order), so the
+ * whole suite exercises the records, the jobs and the join against its own
+ * expectations (a local tool: run with SEGNO_TRK_JOBS_FORCE=1). */
+extern int le_test_trk_jobs_force;
+#endif
+void le_trk_job_run(le_engine* e, int t, uint32_t upto);
+void le_trk_jobs_flush(le_engine* e, uint32_t tracks);
+void le_trk_jobs_end(le_engine* e, float* out, int ch_out,
+                     uint32_t out_enabled, float* trk_lpeak,
+                     float* trk_rpeak);
+
 /* Starts the requested workers (le_engine_set_fx_workers) unless they run
  * already. Control thread, while no callback runs. */
 void le_fx_pool_start(le_engine* e);

@@ -39,7 +39,10 @@
  *     switched off and the other on, as a pedal alternating two racks does,
  *     so the delays and reverbs of the one switched off drain their tails
  *     while the other runs (le_fx_type_drains). --click puts the click on
- *     output pair 0 at 120 BPM and -40 dB, a signal for those tails; The workers' faults are judged with the
+ *     output pair 0 at 120 BPM and -40 dB, a signal for those tails;
+ *     --track-racks N puts one of Ed's Racks on each of tracks 0..N-1's own
+ *     chains, which run every frame, played or not: on the callback, or as
+ *     the tracks' jobs with --fx-workers (#1729); The workers' faults are judged with the
  *     callback's, and the report adds their telemetry, the CPU the callback
  *     and the workers used and the whole machine's, as shares of the whole
  *     machine (100 % = every core), and the SoC temperature;
@@ -111,6 +114,7 @@ typedef struct {
   int bus_racks;
   int ab_ms;
   int click;
+  int track_racks;
 } rt_opts;
 
 static double now_s(void) {
@@ -557,7 +561,8 @@ static void usage(void) {
           "         [--period FRAMES] [--trace-late] [--timeline]\n"
           "         [--playback ID] [--capture ID] [--list]\n"
           "         [--fx-workers N] [--fx-cores C,W1,..] [--racks N]\n"
-          "         [--bus-racks N] [--ab-ms N] [--click]\n");
+          "         [--bus-racks N] [--ab-ms N] [--click]\n"
+          "         [--track-racks N]\n");
 }
 
 static void list_devices(void) {
@@ -631,6 +636,8 @@ int main(int argc, char** argv) {
       o.racks = atoi(v), ++i;
     } else if (v != NULL && strcmp(a, "--bus-racks") == 0) {
       o.bus_racks = atoi(v), ++i;
+    } else if (v != NULL && strcmp(a, "--track-racks") == 0) {
+      o.track_racks = atoi(v), ++i;
     } else if (v != NULL && strcmp(a, "--ab-ms") == 0) {
       o.ab_ms = atoi(v), ++i;
     } else if (strcmp(a, "--click") == 0) {
@@ -723,6 +730,16 @@ int main(int argc, char** argv) {
       ab_switch(); /* one of the pair on from the start */
       printf("the last two an A/B pair, switched every %d ms\n", g_ab_ms);
     }
+  }
+  if (o.track_racks > 0) {
+    const int n = o.track_racks < LE_MAX_TRACKS ? o.track_racks : LE_MAX_TRACKS;
+    for (int t = 0; t < n; ++t) {
+      static le_fx_recipe trk;
+      eds_rack(&trk, 2 * LE_MAX_CHANNELS + t);
+      le_engine_set_fx_recipe(g_e, LE_FX_OWNER_TRACK, t, 0, ++g_rack_rev,
+                              &trk);
+    }
+    printf("Ed's Rack on the chains of tracks 1-%d\n", n);
   }
   if (o.click) {
     const int rc = le_engine_set_tempo(g_e, 120.0f) |

@@ -444,14 +444,17 @@ static void rt_step(rt_audio_thread* a, int fork_first, int blocks, float level)
  * overdub. The control thread does what the app does between callbacks. */
 static size_t g_rt_deepest_stack = 0;
 
-static long rt_run_performance(int fork_first, int shielded, long* worst,
-                               long* blocks) {
+static long rt_run_performance_on(int fork_first, int shielded, long* worst,
+                                  long* blocks, int32_t workers) {
   /* Unshielded: every allocation of the run skips MADV_DONTFORK, which is
    * what the engine's memory was before #900. The control case. */
   if (!shielded) le_rt_set_fork_shield_failure_for_test(1);
   le_engine* e = le_engine_create();
   const int loop_blocks = 48000 / 2 / RT_BLOCK; /* a 0.5 s loop */
   CHECK(le_engine_configure(e, 48000, 2, 2, 48000 * 10) == LE_OK);
+  /* With workers the lanes' chains run as jobs beside the monitor's (#1729),
+   * so the callback mixes through the jobs' records and their join. */
+  CHECK(le_engine_set_fx_workers(e, workers, NULL) == LE_OK);
   CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK); /* a stereo track */
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY) == LE_OK);
   CHECK(le_engine_set_lane_fx(e, 0, 1, 0, LE_FX_REVERB) == LE_OK);
@@ -540,6 +543,25 @@ static long rt_run_performance(int fork_first, int shielded, long* worst,
   le_engine_destroy(e);
   le_rt_set_fork_shield_failure_for_test(0);
   return a.faults;
+}
+
+static long rt_run_performance(int fork_first, int shielded, long* worst,
+                               long* blocks) {
+  return rt_run_performance_on(fork_first, shielded, worst, blocks, 0);
+}
+
+/* The same performance with two effects workers: the lanes' and the
+ * monitor's chains run as jobs (#1729), and the callback still takes no
+ * fault, in the jobs' records, the join or the tracks' sum. */
+static void test_audio_thread_takes_no_page_faults_with_track_jobs(void) {
+  printf("test_audio_thread_takes_no_page_faults_with_track_jobs\n");
+  long worst = 0;
+  long blocks = 0;
+  const long faults = rt_run_performance_on(0, 1, &worst, &blocks, 2);
+  printf("  %ld blocks: %ld faults on the audio thread (worst block %ld)\n",
+         blocks, faults, worst);
+  CHECK(blocks > 0);
+  CHECK(faults == 0);
 }
 
 static void test_audio_thread_takes_no_page_faults(void) {
@@ -1095,6 +1117,7 @@ static void run_rt_memory_tests(void) {
   test_audio_buffers_are_locked();
   test_audio_thread_takes_no_page_faults();
   test_audio_thread_takes_no_page_faults_across_forks();
+  test_audio_thread_takes_no_page_faults_with_track_jobs();
   test_long_take_is_followed_by_the_prefaulter();
   test_late_take_is_walked_from_the_playhead();
   test_standbys_stay_in_budget();

@@ -591,7 +591,9 @@ typedef struct le_fx_par {
   const float* in; /* the device input */
   int32_t ch_in, sr, fx_cap;
   int32_t jobs;
-  int32_t job_mon[LE_MAX_MONITORED_INPUTS]; /* the monitor each job runs */
+  /* The monitor each job runs; a job from le_engine.trk_job_mon_n on runs a
+   * track's chains instead (#1729). */
+  int32_t job_mon[LE_MAX_MONITORED_INPUTS];
   /* The chains' tempo before the block's first frame, and every anchor the
    * first loop set: tev[k] from frame tev_at[k] of the block on. */
   le_fx_tempo tempo0;
@@ -609,6 +611,60 @@ typedef struct le_fx_par {
   uint8_t click_sounds[LE_FX_BLOCK];
   int32_t viz[LE_FX_BLOCK]; /* LE_FX_VIZ_* or the bucket to store */
 } le_fx_par;
+
+/* ---- A track's chains as a job (#1729) ----
+ *
+ * In a block whose track chains run as jobs, the mixer (mix_tracks_frame_jobs,
+ * engine_mix_jobs.c) runs everything a frame needs up to each lane's chain and
+ * records, per frame, what the rest of the track's frame needs: each lane's
+ * pair before its chain, its pan, gain and gates, and the track's own facts.
+ * A job then runs the track's lane chains, pans, gains and its track chain
+ * over the block, frame by frame (le_trk_job_run), and the callback sums
+ * every track onto the outputs after the join, in the order the mixer did
+ * (le_trk_jobs_end), so the output is the same sample for sample. The
+ * callback runs a track's job itself, up to the frame it is at, before it
+ * changes anything the job reads (le_trk_jobs_flush): a print engaging, a
+ * Stop's tail clear, a capture image's recipes, a heard lane's own chain. */
+#define LE_TJ_PRESENT 1u /* the lane was mixed at this frame */
+#define LE_TJ_CHAIN 2u   /* its chain runs (has_fx and no print covers it) */
+#define LE_TJ_ROUTES 4u  /* its pair reaches its route */
+#define LE_TJ_GATE_OK 8u /* its gate is open */
+#define LE_TJ_TRK_FX 1u      /* the track's own chain is non-empty */
+#define LE_TJ_TRK_PRINTED 2u /* the whole-track print plays */
+
+typedef struct le_trk_job_lane {
+  /* In: the lane's pair before its chain (the mixer's wl, wr), or its heard
+   * pair, which runs no chain. The job overwrites them with the pair after
+   * its chain, pan and (with no track chain) gain. */
+  float l[LE_FX_BLOCK];
+  float r[LE_FX_BLOCK];
+  float pan_l[LE_FX_BLOCK];
+  float pan_r[LE_FX_BLOCK];
+  float gain[LE_FX_BLOCK]; /* the track's gain x fade x the lane's gate */
+  float mg[LE_FX_BLOCK];   /* the lane's mute gain */
+  uint32_t mask[LE_FX_BLOCK]; /* its outputs (out_mask & out_enabled) */
+  uint8_t flags[LE_FX_BLOCK]; /* LE_TJ_* */
+} le_trk_job_lane;
+
+typedef struct le_trk_job {
+  le_trk_job_lane lane[LE_MAX_LANES];
+  /* In: the track's facts at each frame. */
+  uint8_t flags[LE_FX_BLOCK]; /* LE_TJ_TRK_* */
+  float print_l[LE_FX_BLOCK]; /* the whole-track print's pair, when printed */
+  float print_r[LE_FX_BLOCK];
+  float bus_gain[LE_FX_BLOCK]; /* the track's gain x fade, for its chain */
+  float sg[LE_FX_BLOCK];       /* the track's solo gain */
+  /* Out: the track chain's pair after its gates, and its outputs. */
+  float bus_l[LE_FX_BLOCK];
+  float bus_r[LE_FX_BLOCK];
+  uint32_t bus_mask[LE_FX_BLOCK];
+  int32_t lane_n;  /* the block's active lanes */
+  uint32_t done;   /* the block's frames the job has run */
+  int32_t tev;     /* the next of the block's tempo anchors to replay */
+  /* The clock and tempo the track's chains read while the block runs as
+   * jobs (le_fx_time): set per frame by the job. */
+  le_fx_time time;
+} le_trk_job;
 
 /* One worker's telemetry, written by that worker only (le_fx_workers_
  * telemetry has the meaning), plus the test hook that holds it. */
@@ -3411,6 +3467,22 @@ struct le_engine {
   /* Lanes holding an image in any slot (le_heard.a_slots > 0), so a block
    * where none does skips le_heard_block_begin's walk. */
   _Atomic int32_t a_heard_lanes;
+  /* Track chains as jobs (#1729, le_trk_job), at the end so no field the
+   * mixer reads moves. trk_jobs_live: the tracks the block records, 0
+   * outside a block whose track chains run as jobs (callback). trk_job_rec:
+   * the block's frames the mixer has recorded so far. trk_job_tc: the
+   * block's track count. at_time: the All tracks chains' clock and tempo
+   * while their stage runs after the join. */
+  le_trk_job trk_job[LE_MAX_TRACKS];
+  /* The block's track jobs: job k of le_fx_par from trk_job_mon_n on runs
+   * track trk_job_t[k - trk_job_mon_n]; the ones before are monitors. */
+  int32_t trk_job_mon_n;
+  int32_t trk_job_t[LE_MAX_TRACKS];
+  uint32_t trk_jobs_live;
+  uint32_t trk_job_rec;
+  int32_t trk_job_tc;
+  int32_t trk_job_at_tev;
+  le_fx_time at_time;
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in

@@ -58,6 +58,7 @@
 #include "engine_internal.h"
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_read_head.h"  /* the fractional read coordinate (#1179) */
+#include "engine_workers.h" /* le_test_trk_jobs_force (#1729) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "fft.h"              /* le_rfft_plan, le_rfft_fwd/_inv, le_hann_init */
@@ -39561,6 +39562,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_interface_inputs.h"
 #include "test_engine_heard_edits.h"
 #include "test_engine_heard_perf.h"
+#include "test_engine_trk_jobs.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -39583,6 +39585,12 @@ int main(void) {
   /* #1713: the whole suite with every take recording a heard image, checked
    * against its clean take after every callback (a local tool: run with
    * SEGNO_HEARD_FORCE=1). */
+  /* #1729: the whole suite with every track chain run as a job (a local
+   * tool: run with SEGNO_TRK_JOBS_FORCE=1). */
+  if (getenv("SEGNO_TRK_JOBS_FORCE")) {
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    le_test_trk_jobs_force = 1;
+  }
   if (getenv("SEGNO_HEARD_FORCE")) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     le_test_heard_force = atoi(getenv("SEGNO_HEARD_FORCE")) == 2 ? 2 : 1;
@@ -39597,6 +39605,7 @@ int main(void) {
   run_rt_memory_tests();
   if (getenv("SEGNO_RT_MEMORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   run_fx_workers_tests();
+  run_trk_jobs_tests();
   if (getenv("SEGNO_FX_WORKERS_TESTS_ONLY")) return g_failures ? 1 : 0;
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
     test_fade_restore_staging_and_manifest_capacity();
