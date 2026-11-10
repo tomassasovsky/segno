@@ -328,6 +328,16 @@ void main() {
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
       });
 
+      test('an overdub over a take recorded dry, through an input that is '
+          'all Post, records it into an image', () {
+        engine.nextSnapshot = _playing;
+        repo
+          ..setMonitorEffects(input: 0, effects: [delay])
+          ..record();
+        expect(engine.calls, contains('heardAttach'));
+        expect(engine.heardLanes, {(0, 0)});
+      });
+
       test('an input chain that is all Post records clean, its effects live '
           'on the lane', () {
         repo

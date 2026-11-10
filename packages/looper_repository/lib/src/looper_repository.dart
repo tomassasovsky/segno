@@ -4107,11 +4107,11 @@ class LooperRepository {
     if (state != TrackState.empty) {
       for (var lane = 0; lane < laneCount(channel); lane++) {
         final key = (channel, lane);
-        final input = _inheritableChain(channel, lane);
+        // The lane has no chain, so the image holds the input's whole chain,
+        // Post entries included (#1741).
         if (_laneHeard.contains(key) ||
             (_laneEffects[key]?.isNotEmpty ?? false) ||
-            input == null ||
-            fxPreCount(input) == 0) {
+            _inheritableChain(channel, lane) == null) {
           continue;
         }
         final attached = _engine.heardAttach(channel: channel, lane: lane);

@@ -3507,6 +3507,7 @@ struct le_engine {
    * heard_tap_at the run's length for each, and heard_tap_l/r the signal,
    * written by the job, read by the post-pass. */
   _Atomic int32_t heard_mon_pre[LE_MAX_MONITORED_INPUTS];
+  uint64_t heard_post_inputs; /* inputs a capturing lane with Post entries records */
   uint64_t heard_tap_mask;
   int32_t heard_tap_at[LE_MAX_MONITORED_INPUTS];
   float heard_tap_l[LE_MAX_MONITORED_INPUTS][LE_FX_BLOCK];

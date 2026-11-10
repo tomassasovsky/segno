@@ -544,7 +544,7 @@ static void le_heard_add_jobs(
    * Post entries its job notes the signal after the run for the post-pass. */
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     const uint64_t bit = UINT64_C(1) << c;
-    if (!(e->heard_inputs & ran & bit)) continue;
+    if (!(e->heard_post_inputs & ran & bit)) continue;
     int32_t pre = atomic_load_explicit(&e->heard_mon_pre[c],
                                        memory_order_relaxed);
     if (pre < 0) pre = 0;
@@ -566,6 +566,7 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
   for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
   e->heard_jobs = ran;
   e->heard_inputs = 0u;
+  e->heard_post_inputs = 0u;
   e->heard_tap_mask = 0u;
   /* A pass's end and a published tail first: an image dropped since must
    * still end its pass and let go of its tail (part 3). */
@@ -665,6 +666,11 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
       const int32_t c = e->heard_input[t][l];
       if (c >= 0 && c < LE_MAX_MONITORED_INPUTS) {
         e->heard_inputs |= UINT64_C(1) << c;
+        /* A lane running Post entries live records the Pre run (#1741). */
+        const le_lane* ln = &tr->lanes[l];
+        if (load_i32(&ln->a_fx_count) > load_i32(&ln->a_fx_pre_count)) {
+          e->heard_post_inputs |= UINT64_C(1) << c;
+        }
       }
     }
   }

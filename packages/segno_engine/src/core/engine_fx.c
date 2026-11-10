@@ -10503,8 +10503,12 @@ void fx_apply_chain_from(le_fx_state* fx, int sr, int cap, float* l,
                          float* r, int from, int count, const int32_t* types,
                          const float params[LE_FX_MAX][LE_FX_PARAMS],
                          const int32_t* enabled, int counted) {
+  const int32_t cooldown = fx->enable_clear_cooldown;
   if (from <= 0) {
     fx_apply_chain(fx, sr, cap, l, r, count, types, params, enabled);
+    if (counted && fx->enable_clear_cooldown == (cooldown > 0 ? cooldown - 1 : 0)) {
+      fx->enable_clear_cooldown = cooldown;
+    }
     return;
   }
   if (from >= count) return;
@@ -10521,7 +10525,6 @@ void fx_apply_chain_from(le_fx_state* fx, int sr, int cap, float* l,
     racks[s] = fx->chan[s].rack;
     fx->chan[s].rack = 0;
   }
-  const int32_t cooldown = fx->enable_clear_cooldown;
   fx_apply_chain_with_gain(fx, sr, cap, l, r, count, ty, params, enabled, 0, 1);
   if (counted && fx->enable_clear_cooldown == (cooldown > 0 ? cooldown - 1 : 0)) {
     fx->enable_clear_cooldown = cooldown;

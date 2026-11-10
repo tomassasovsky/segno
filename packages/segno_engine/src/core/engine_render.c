@@ -419,9 +419,20 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
     pitch += le_render_pitch_entries(&s->track);
     states += 2;
     for (int32_t l = 0; l < s->lanes; ++l) {
-      entries += le_render_ring_entries(&s->lane[l].chain);
-      duals += le_render_dual_octavers(&s->lane[l].chain);
-      pitch += le_render_pitch_entries(&s->lane[l].chain);
+      /* A heard lane runs its Post entries alone (#1741): the image stands
+       * for its Pre run. */
+      const le_fx_frozen_chain* c = &s->lane[l].chain;
+      le_fx_frozen_chain post;
+      if (s->lane[l].heard && c->pre > 0) {
+        post.count = c->count > c->pre ? c->count - c->pre : 0;
+        for (int32_t k = 0; k < post.count && c->pre + k < LE_FX_MAX; ++k) {
+          post.type[k] = c->type[c->pre + k];
+        }
+        c = &post;
+      }
+      entries += le_render_ring_entries(c);
+      duals += le_render_dual_octavers(c);
+      pitch += le_render_pitch_entries(c);
       states += 2;
     }
   }
