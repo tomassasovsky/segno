@@ -6046,6 +6046,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->monitors[input].a_fx_count, count);
+      /* A chain set up entry by entry has no split: a take records all of
+       * it (#1741); a recipe carries one. */
+      store_i32(&e->heard_mon_pre[input], count);
       break;
     }
     /* ---- Track-stage + output bus chains ----
@@ -8626,7 +8629,7 @@ static inline int le_track_print_run_matches(
     le_lane* ln = &tr->lanes[l];
     if (lane_fx_count[l] == 0) continue;
 #ifdef LE_MIX_HEARD_TU
-    /* A part playing its heard image runs no chain (#1713). */
+    /* A part playing its heard image runs no Pre run (#1713, #1741). */
     if (heard[l].mix >= 1.0f) continue;
 #endif
     if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
@@ -8713,9 +8716,11 @@ typedef struct le_heard_pair {
  * Steps the lane's source crossfade toward its target (playing the image:
  * its source is HEARD and its live slot holds one) by [od_step]: 1 plays the
  * image alone, 0 the clean take through the chain, anything between both.
- * Leaving the image alone settles the chain to bypass, so it comes back
- * through its re-enable ramp (as a print's live fallback does) rather than
- * resuming state from whenever it last ran. A live slot with no image snaps
+ * The image stands for the chain's Pre run (#1741): leaving the image alone
+ * settles that run to bypass, so it comes back through its re-enable ramp
+ * (as a print's live fallback does) rather than resuming state from
+ * whenever it last ran, and the Post entries run live over whatever plays,
+ * the image alone included. A live slot with no image snaps
  * to the clean take at once: there is nothing to fade from. Settled on the
  * clean take it returns not done, and the mixer's own path plays the lane
  * (its print, its run, its chain) exactly as for a lane with no image.
@@ -8724,10 +8729,11 @@ typedef struct le_heard_pair {
  * is (mix_tracks_frame): the same index, the same head (Speed, Reverse, a
  * relaunch origin), the turn window's old head, then the Stop's fade-out
  * reading on from where the track stopped, at the same gains, at level.
- * Played alone it stands in for the print and the chain, which do not run.
- * During a crossfade the clean side is the lane's engaged print or its live
- * chain over [loopsample], mixed at equal gain (the same performance either
- * way). [chain_live] is the mixer's has_fx && !track_printed. */
+ * Played alone it stands in for the print and the Pre run, which do not
+ * run. During a crossfade the clean side is the lane's engaged print or its
+ * live Pre run over [loopsample], mixed at equal gain (the same performance
+ * either way) ahead of the Post entries. [chain_live] is the mixer's
+ * has_fx && !track_printed. */
 static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     le_engine* e, le_track* tr, int t, int l, int32_t live, int sounding,
     int32_t plain, double head_i, int32_t src_n, double turn_i, float turn_x,
@@ -8876,7 +8882,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     le_chain_run_step(&ln->run, tr, sounding, rp, 0);
     if (post_from < fx_n) {
       fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from,
-                          fx_n, fx_type, fx_params, fx_enabled);
+                          fx_n, fx_type, fx_params, fx_enabled, 0);
     }
     return out;
   }
@@ -8916,7 +8922,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     out.l = m * out.l + (1.0f - m) * cl;
     out.r = m * out.r + (1.0f - m) * cr;
     fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from, fx_n,
-                        fx_type, fx_params, fx_enabled);
+                        fx_type, fx_params, fx_enabled, 1);
     return out;
   }
   if (chain_live) {

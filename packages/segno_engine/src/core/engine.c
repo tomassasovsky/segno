@@ -989,6 +989,8 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
    * routed through the per-input monitor graph (le_engine_set_monitor_input). */
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input_reset(&engine->monitors[c]);
+    /* Its chain is empty, and so its Pre run (#1741). */
+    atomic_store_explicit(&engine->heard_mon_pre[c], 0, memory_order_relaxed);
   }
   /* Capture trim, solo and the per-channel meters (slice 3): unity, off and
    * silent on every (re)configure; the caller re-applies its intent. */
@@ -1504,11 +1506,6 @@ le_engine* le_engine_create(void) {
   }
   le_fx_seed_owner(&engine->all_tracks.fx, engine, le_fx_all_tracks_hop_seed(0));
   le_engine_bind_fx_rows(engine);
-  /* An input chain no recipe has split records whole (#1741). */
-  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    atomic_store_explicit(&engine->heard_mon_pre[c], LE_FX_MAX,
-                          memory_order_relaxed);
-  }
   /* No effects workers and nothing pinned until le_engine_set_fx_workers. */
   for (int k = 0; k <= LE_FX_WORKERS_MAX; ++k) engine->fx_cores[k] = -1;
   return engine;

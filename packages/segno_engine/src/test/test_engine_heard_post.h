@@ -43,28 +43,46 @@ static const float* heard_post_take(le_engine* e, int32_t n) {
   return pl;
 }
 
-/* The image is what the chain's Pre run made: the same as a take through
- * the reverb alone, and not what the monitor played through the delay
- * after it. */
+/* The lane takes the take's copy of the input chain: a reverb at Pre and a
+ * delay at Post. */
+static void heard_post_lane_copy(le_engine* e) {
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 1, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 2, 1) == LE_OK);
+  drain(e);
+}
+
+/* The image holds what the lane does not run live: the input chain's Pre
+ * run where the lane carries the Post entries (the same as a take through
+ * the reverb alone), and the whole chain where the lane has none (an
+ * overdub over a take recorded dry). */
 static void test_heard_records_the_pre_run(void) {
   printf("test_heard_records_the_pre_run\n");
   enum { N = 4800, F = 480 };
   le_engine* both = heard_engine(48000);
   heard_post_monitor(both, 2, 1, 1);
+  heard_post_lane_copy(both);
+  le_engine* bare = heard_engine(48000);
+  heard_post_monitor(bare, 2, 1, 1);
   le_engine* pre = heard_engine(48000);
   heard_post_monitor(pre, 1, 1, 1);
   const float* a = heard_post_take(both, N);
+  const float* w = heard_post_take(bare, N);
   const float* b = heard_post_take(pre, N);
-  CHECK(a != NULL && b != NULL);
+  CHECK(a != NULL && b != NULL && w != NULL);
   int same = a != NULL && b != NULL;
+  int whole = 0;
   double energy = 0.0;
   for (int32_t i = F; same && i < N; ++i) {
     if (a[i] != b[i]) same = 0;
+    if (w != NULL && w[i] != b[i]) whole = 1;
     energy += fabs((double)a[i]);
   }
   CHECK(same);
+  CHECK(whole);
   CHECK(energy > 1e-2);
   le_engine_destroy(both);
+  le_engine_destroy(bare);
   le_engine_destroy(pre);
 }
 

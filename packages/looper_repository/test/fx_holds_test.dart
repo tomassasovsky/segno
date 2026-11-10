@@ -311,6 +311,23 @@ void main() {
         expect(engine.laneSources[(0, 0)], LaneSource.clean);
       });
 
+      test("a heard take whose Post entries do not fit has its own chain "
+          'switched off, said by the standing notice', () {
+        final post = [
+          for (final fx in _rack())
+            (fx as BuiltInEffect).copyWith(placement: FxPlacement.post),
+        ];
+        repo
+          ..setMonitorEffects(input: 1, effects: _rack())
+          ..setMonitorEffects(input: 0, effects: [reverb, ...post])
+          ..record();
+        expect(engine.lastRecordImage!.heardLanes, {0});
+        expect(repo.fxChainHeld(_lane(0)), isTrue);
+        expect(repo.state.fxHoldNotice, contains(_lane(0)));
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      });
+
       test('an input chain that is all Post records clean, its effects live '
           'on the lane', () {
         repo

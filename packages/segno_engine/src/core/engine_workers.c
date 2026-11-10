@@ -114,7 +114,7 @@ static void le_fx_monitor_job(le_engine* e, int32_t c) {
       e->heard_tap_r[c][i] = r;
       fx_apply_chain_from(&m->fx, p->sr, p->fx_cap, &l, &r, at,
                           snap->mon_count[c], snap->mon_type[c],
-                          snap->mon_params[c], snap->mon_enabled[c]);
+                          snap->mon_params[c], snap->mon_enabled[c], 1);
     } else {
       fx_apply_chain(&m->fx, p->sr, p->fx_cap, &l, &r, snap->mon_count[c],
                      snap->mon_type[c], snap->mon_params[c],

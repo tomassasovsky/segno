@@ -2371,7 +2371,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
       r = heard_mix * hr + (1.0f - heard_mix) * r;
       fx_apply_chain_from(fx, m->sample_rate, m->sample_rate, &l, &r,
                           post_from, chain.count, chain.type, chain.params,
-                          effective);
+                          effective, heard_mix < 1.0f);
     }
     const float gain =
         track_gain * le_fade_tick(&fade, m->sample_rate) * gate;

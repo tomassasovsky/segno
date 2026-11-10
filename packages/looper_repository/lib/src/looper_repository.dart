@@ -1385,8 +1385,9 @@ class LooperRepository {
           }
           onLaneChainChanged?.call(ch, lane);
         }
-        // A take the engine could not give an image plays its chain live
-        // (#1713). When that does not fit, its own chains are switched off,
+        // What a take runs live: its chain where the engine could not give
+        // it an image (#1713), its Post entries over the image where it did
+        // (#1741). When that does not fit, its own chains are switched off,
         // as a chain the rig cannot run is (R2), never another track's.
         _holdUnheardTake(ch, pending);
         _pendingImages.remove(ch);
@@ -1407,7 +1408,12 @@ class LooperRepository {
     final budget = fxBudgetNs(rate, period: period);
     for (final MapEntry(key: lane, value: effects)
         in pending.inherited.entries) {
-      if (effects.isEmpty || _laneHeard.contains((channel, lane))) continue;
+      // A lane playing its image still runs its Post entries (#1741).
+      if (effects.isEmpty) continue;
+      if (_laneHeard.contains((channel, lane)) &&
+          fxPreCount(effects) == effects.length) {
+        continue;
+      }
       if (_fxLoadAt(rate, period) <= budget) return;
       final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
       _fxHeld.add(at);
@@ -1469,13 +1475,12 @@ class LooperRepository {
       var source = _laneSourceOf(key);
       if (_laneSourceSent[key] == source) continue;
       // A re-amp the Effects page did not weigh (a parameter from the bloc,
-      // a control's press) that does not fit is held, as R2 holds a chain,
-      // and the take keeps playing what was heard. The standing notice names
-      // it, as it names every chain R2 holds: nothing is switched off
-      // unsaid. Weighed by the numbers the page admits an edit with
-      // ([fxRoomNs], workers and controls' reach included). A chain the
-      // player switched off plays dry and charges what an off chain does,
-      // so it is never held here.
+      // a control's press) that does not fit is held, as R2 holds a chain:
+      // the take plays its image, without its Post entries while the chain
+      // is off. The standing notice names it, as it names every chain R2
+      // holds: nothing is switched off unsaid. A chain the player switched
+      // off plays dry and charges what an off chain does, so it is never
+      // held here.
       if (source == LaneSource.clean &&
           (_laneChainEnabled[key] ?? true) &&
           fxRoomNs < 0) {
@@ -8896,7 +8901,8 @@ class LooperRepository {
   /// lane counts in full: its print stands in for its Pre entries only
   /// between edits, overdubs, evictions and renders, and the worst block is
   /// the one in between. A lane playing its take's heard image (#1713)
-  /// charges nothing: it runs no chain.
+  /// charges its Post entries only: the image stands for its Pre run
+  /// (#1741).
   ///
   /// An effect is charged when it runs or a control can make it run (#1723):
   /// its own switch, its rack's and its chain's are each on, or a control
@@ -9219,12 +9225,14 @@ class LooperRepository {
   void _noteFxSwitchOffs(EngineSnapshot snapshot) {
     final running = <FxAddress, Set<String?>>{
       for (final MapEntry(key: at, value: chain) in _fxChains().entries)
-        // A take playing its heard image runs no chain (#1713).
-        if (!_fxHeld.contains(at) &&
-            _chainSwitchAt(at) &&
-            !_playsImage(at, chain))
+        if (!_fxHeld.contains(at) && _chainSwitchAt(at))
           at: {
-            for (final fx in chain)
+            // A take playing its heard image runs its Post entries alone
+            // (#1713, #1741).
+            for (final fx
+                in _playsImage(at, chain)
+                    ? chain.sublist(fxPreCount(chain))
+                    : chain)
               if (fxDrains(fx) && fx.effectiveEnabled) fx.slotId,
           },
     }..removeWhere((_, ids) => ids.isEmpty);
@@ -9272,8 +9280,8 @@ class LooperRepository {
 
   /// Whether the lane at [at] would play its heard image with [chain] as its
   /// chain (#1713): it holds one, and [chain] is the one it was recorded
-  /// through. Such a lane runs no chain, so it charges nothing; an edit that
-  /// re-amps it is weighed like any other.
+  /// through (its Pre run, #1741). Such a lane runs only its Post entries,
+  /// so it charges those; an edit that re-amps it is weighed like any other.
   bool _playsImage(
     FxAddress at,
     List<TrackEffect> chain, {
@@ -9308,7 +9316,8 @@ class LooperRepository {
 
   /// The chains switched off because they did not fit the effects budget:
   /// chains the rig could not run when it came up (R2). A take playing its
-  /// heard image is never held (#1713): it runs no chain. Runtime state
+  /// heard image runs its Post entries alone (#1713, #1741), and is held only
+  /// for those. Runtime state
   /// only, never saved: each chain keeps its entries and its saved switch,
   /// plays as off and charges nothing, and switching it on is refused until
   /// the rig has room for it.
@@ -9666,7 +9675,8 @@ class LooperRepository {
   /// What is left of the effects budget ([fxBudgetNs]) at the running rate
   /// and block length, in nanoseconds per frame; negative once the chains
   /// went over (a removal is never refused, and a take is never refused
-  /// either: it plays what it was heard as, which runs no chain).
+  /// either: it plays what it was heard as, over which only its Post entries
+  /// run).
   int get fxRoomNs {
     return fxBudgetNs(_fxRate, period: _fxPeriod) - fxCostNs;
   }
