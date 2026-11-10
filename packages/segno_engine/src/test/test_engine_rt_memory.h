@@ -444,6 +444,8 @@ static void rt_step(rt_audio_thread* a, int fork_first, int blocks, float level)
  * overdub. The control thread does what the app does between callbacks. */
 static size_t g_rt_deepest_stack = 0;
 
+static le_fx_workers_telemetry g_rt_workers_tm;
+
 static long rt_run_performance_on(int fork_first, int shielded, long* worst,
                                   long* blocks, int32_t workers) {
   /* Unshielded: every allocation of the run skips MADV_DONTFORK, which is
@@ -537,6 +539,7 @@ static long rt_run_performance_on(int fork_first, int shielded, long* worst,
   rt_step(&a, fork_first, 2 * loop_blocks, 0.0f);
 
   rt_audio_stop(&a);
+  le_engine_get_fx_workers_telemetry(e, &g_rt_workers_tm);
   *worst = a.worst_block;
   *blocks = a.blocks_run;
   if (a.deepest > g_rt_deepest_stack) g_rt_deepest_stack = a.deepest;
@@ -558,10 +561,15 @@ static void test_audio_thread_takes_no_page_faults_with_track_jobs(void) {
   long worst = 0;
   long blocks = 0;
   const long faults = rt_run_performance_on(0, 1, &worst, &blocks, 2);
-  printf("  %ld blocks: %ld faults on the audio thread (worst block %ld)\n",
-         blocks, faults, worst);
+  printf("  %ld blocks: %ld faults on the audio thread (worst block %ld), "
+         "%llu rounds\n",
+         blocks, faults, worst,
+         (unsigned long long)g_rt_workers_tm.rounds);
   CHECK(blocks > 0);
   CHECK(faults == 0);
+  /* The workers ran, and so did the rounds the track jobs are in. */
+  CHECK(g_rt_workers_tm.running == 2);
+  CHECK(g_rt_workers_tm.rounds > 0);
 }
 
 static void test_audio_thread_takes_no_page_faults(void) {

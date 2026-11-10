@@ -8759,6 +8759,9 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     /* Nothing to fade from: the clean take at once, its chain back through
      * its re-enable ramp if the image was playing. */
     if (m > 0.0f) {
+#ifdef LE_MIX_JOBS_TU
+      le_trk_jobs_flush(e, 1u << t); /* the job runs to here first (#1729) */
+#endif
       for (int32_t s = 0; s < fx_n; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
         le_fx_rack_reset(&ln->fx, s);
@@ -8768,6 +8771,9 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   } else {
     target = pitched && h->src_blk; /* as the block started */
     if (!target && m >= 1.0f) {
+#ifdef LE_MIX_JOBS_TU
+      le_trk_jobs_flush(e, 1u << t);
+#endif
       for (int32_t s = 0; s < fx_n; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
         le_fx_rack_reset(&ln->fx, s);
@@ -8884,6 +8890,10 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   le_chain_run_step(&ln->run, tr, sounding, rp, !printed && !track_printed);
   float cl = 0.0f;
   float cr = 0.0f;
+#ifdef LE_MIX_JOBS_TU
+  /* The clean side runs here, on the callback: the job runs to here first. */
+  le_trk_jobs_flush(e, 1u << t);
+#endif
   if (printed) {
     /* The print's Pre slots stay bypassed, as on the mixer's printed path. */
     for (int32_t s = 0; s < fx_pre; ++s) fx_enabled[s] = 0;
@@ -8929,18 +8939,6 @@ static inline int le_trk_view_set(int32_t lanes, const int32_t* lane_count,
     if (le_trk_bits_set(lane_bits[l], lane_count[l])) return 1;
   }
   return le_trk_bits_set(trk_bits, trk_pre);
-}
-
-/* Whether le_heard_lane_wet may settle or run the lane's chain this frame:
- * not while the lane plays its image alone and stays there, nor while it is
- * on its clean take and stays there (the plain path, which records). */
-static inline int le_heard_lane_may_touch_chain(le_engine* e, int t, int l,
-                                                int32_t live) {
-  const le_heard* h = &e->heard[t][l];
-  const int to_image =
-      le_heard_plane(h, 0, live) != NULL && h->img_blk && h->src_blk;
-  if (to_image) return h->mix < 1.0f;
-  return h->mix > 0.0f;
 }
 #endif /* LE_MIX_JOBS_TU */
 
@@ -9930,12 +9928,6 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
        * clean take, makes its pair in le_heard_lane_wet. */
       le_heard_pair hp = {0.0f, 0.0f, 0};
       if ((hlanes >> l) & 1u) {
-#ifdef LE_MIX_JOBS_TU
-        /* Its chain may run or settle here, on the callback (#1729). */
-        if (le_heard_lane_may_touch_chain(e, t, l, live_idx[t])) {
-          le_trk_jobs_flush(e, 1u << t);
-        }
-#endif
         hp = le_heard_lane_wet(
             e, tr, t, l, live_idx[t], sounding, seg_base[t] + trk_pos[t],
             head_idx[t], src_len[t], turn_idx[t], turn_x[t], turn_y[t], pg,

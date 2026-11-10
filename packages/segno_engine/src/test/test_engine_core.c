@@ -39583,15 +39583,15 @@ static void test_platform_names_the_calling_thread(void) {
 }
 
 int main(void) {
-  /* #1713: the whole suite with every take recording a heard image, checked
-   * against its clean take after every callback (a local tool: run with
-   * SEGNO_HEARD_FORCE=1). */
   /* #1729: the whole suite with every track chain run as a job (a local
    * tool: run with SEGNO_TRK_JOBS_FORCE=1). */
   if (getenv("SEGNO_TRK_JOBS_FORCE")) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     le_test_trk_jobs_force = 1;
   }
+  /* #1713: the whole suite with every take recording a heard image, checked
+   * against its clean take after every callback (a local tool: run with
+   * SEGNO_HEARD_FORCE=1). */
   if (getenv("SEGNO_HEARD_FORCE")) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     le_test_heard_force = atoi(getenv("SEGNO_HEARD_FORCE")) == 2 ? 2 : 1;

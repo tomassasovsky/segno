@@ -168,12 +168,13 @@ static void test_trk_jobs_output_is_bit_identical(void) {
     CHECK(tm.rounds > 0);
     uint64_t worker_jobs = 0;
     for (int32_t k = 0; k < w; ++k) worker_jobs += tm.worker[k].jobs;
-    CHECK(worker_jobs > 0);
+    /* Workers' job counts are callback telemetry (LE_CALLBACK_TELEMETRY). */
+    CHECK_TIMING(worker_jobs > 0);
     /* More jobs than the two monitors': the tracks' ran as jobs too. */
     printf("  %d workers: %llu rounds, %llu jobs\n", (int)w,
            (unsigned long long)tm.rounds,
            (unsigned long long)(worker_jobs + tm.callback_jobs));
-    CHECK(worker_jobs + tm.callback_jobs > 2u * tm.rounds);
+    CHECK_TIMING(worker_jobs + tm.callback_jobs > 2u * tm.rounds);
   }
 }
 
