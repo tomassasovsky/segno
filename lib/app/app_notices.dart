@@ -45,7 +45,6 @@ abstract final class AppNoticeId {
   static const waveformFailed = 'waveformWindowFailed';
   static const bootModeRetired = 'bootModeRetired';
   static const fxStopChanged = 'fxStopChanged';
-  static const fxTakeHeld = 'fxTakeHeld';
   static const saveToFellBack = 'saveToFellBack';
   static const bluetoothRetired = 'bluetoothRetired';
   static const recoveryRefused = 'recoveryRefused';

@@ -232,7 +232,6 @@ class _AppState extends State<App> {
   final _ownerSubscriptions = <StreamSubscription<void>>[];
   StreamSubscription<int>? _recordingInputRequiredSubscription;
   StreamSubscription<int>? _recordRefusedSubscription;
-  StreamSubscription<int>? _fxTakeHeldSubscription;
   StreamSubscription<int>? _overdubRefusedSubscription;
   StreamSubscription<int>? _lengthHistoryRefusedSubscription;
   late final PlaybackOptionsCubit _playbackView;
@@ -287,9 +286,6 @@ class _AppState extends State<App> {
         .repository
         .recordingInputRequired
         .listen(_showRecordingInputRequired);
-    _fxTakeHeldSubscription = widget.repository.fxTakeHeld.listen(
-      _showFxTakeHeld,
-    );
     _recordRefusedSubscription = widget.repository.recordRefusals.listen(
       (channel) => _showTrackRefused(channel, _recordRefused),
     );
@@ -324,7 +320,6 @@ class _AppState extends State<App> {
     }
     unawaited(_recordingInputRequiredSubscription?.cancel());
     unawaited(_recordRefusedSubscription?.cancel());
-    unawaited(_fxTakeHeldSubscription?.cancel());
     unawaited(_overdubRefusedSubscription?.cancel());
     unawaited(_lengthHistoryRefusedSubscription?.cancel());
     unawaited(_notices.close());
@@ -455,25 +450,6 @@ class _AppState extends State<App> {
       refused: (l10n) => l10n.instrumentsSettingsRefusedTitle,
     ),
   };
-
-  /// A take whose inherited effects did not fit came in with them switched
-  /// off (#1515, the owner's R1). The take sounds dry until the player makes
-  /// room, which matters little in the moment: a message on its track. While
-  /// the standing effects-off message is up the repository adds the take to
-  /// it instead.
-  void _showFxTakeHeld(int channel) {
-    if (!mounted) return;
-    _notices.showOnTrack(
-      channel,
-      Notice(
-        id: AppNoticeId.fxTakeHeld,
-        tone: NoticeTone.warning,
-        overline: (l10n) => l10n.noticeEffectsOff,
-        title: (l10n) => l10n.fxTakeHeldToast,
-        body: (l10n) => l10n.fxTakeHeldBody,
-      ),
-    );
-  }
 
   /// A Record press on a track with no recording input: said on its track.
   void _showRecordingInputRequired(int channel) {

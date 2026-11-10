@@ -387,11 +387,17 @@ Future<AutoStartResult> _tryAutoStartEngine({
       )) {
         return (started: false, recoveryConfig: null);
       }
-      repository.setLaneChainMeta(
-        channel: track.channel,
-        lane: lane,
-        inheritedFrom: chain.meta?.inheritedFrom ?? const [],
-      );
+      repository
+        ..setLaneChainMeta(
+          channel: track.channel,
+          lane: lane,
+          inheritedFrom: chain.meta?.inheritedFrom ?? const [],
+        )
+        ..restoreLanePrinted(
+          channel: track.channel,
+          lane: lane,
+          printed: chain.meta?.printed,
+        );
       if (chain.entries.any((e) => e.slotId == null)) {
         final channel = track.channel;
         final laneIndex = lane;

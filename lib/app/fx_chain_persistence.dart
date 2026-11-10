@@ -804,6 +804,10 @@ Future<void> _writeFxOwner({
               address.index,
               address.lane!,
             ),
+            printed: looper.lanePrintedWhenEdited(
+              address.index,
+              address.lane!,
+            ),
           ),
         ),
       );
