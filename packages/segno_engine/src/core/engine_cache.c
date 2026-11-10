@@ -59,6 +59,7 @@
 #include "engine_render.h" /* the recipe job on this worker */
 #include "engine_core.h"    /* le_lanes_active, le_engine_drain_events */
 #include "engine_fx.h"      /* fx_apply_chain, le_fx_prepare, seed/bypass */
+#include "engine_heard.h"   /* the heard image (#1713) */
 #include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_private.h" /* le_engine, le_wet_entry, load/store helpers */
 #include "segno_engine_api.h"
@@ -869,6 +870,13 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
   le_lane* ln = &tr->lanes[l];
   le_lane_cache* lc = &c->lanes[t][l];
   if (!le_cache_source_readable(e, t)) {
+    lc->state = LE_CACHE_LIVE;
+    return;
+  }
+  /* A lane playing its heard image (#1713) does not run its chain, so there
+   * is nothing to print. A print already published stays for the moment the
+   * lane goes back to its clean take. */
+  if (le_heard_any(e, t, l) && le_heard_lane_plays(e, t, l)) {
     lc->state = LE_CACHE_LIVE;
     return;
   }

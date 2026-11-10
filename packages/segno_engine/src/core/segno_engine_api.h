@@ -592,6 +592,10 @@ typedef enum le_command_code {
    * grid). Typed producer only (le_engine_clear_tempo); the callback is a
    * no-op while le_tempo_locked or an external clock owns the tempo. */
   LE_CMD_CLEAR_TEMPO = 142,
+  /* The heard image (#1713): installs planes le_engine_heard_attach copied
+   * from a lane's live clean slot, if that slot is still live. lanei arm:
+   * channel, lane, value = the slot. Typed producer only. */
+  LE_CMD_HEARD_ATTACH = 144,
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
   LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
@@ -1149,6 +1153,15 @@ typedef struct le_record_image {
   /* Optional per-lane recipes frozen with this arm. The producer copies the
    * array during this call; the caller retains its own memory. */
   uint32_t fx_lane_mask;
+  /* Lanes whose take records its heard image (#1713): the output of the
+   * input chain the lane records, captured beside the clean take and played
+   * back instead of re-running that chain (le_engine_set_lane_source). Bit l
+   * for lane l; read only when the arm starts a fresh take on an EMPTY
+   * track. A lane outside the mask records clean only. An overdub on a take
+   * keeps capturing into whatever image the take has; one without an image
+   * gets one from le_engine_heard_attach. In what was the padding before
+   * lane_fx, so the struct (and le_track, which holds one) keeps its size. */
+  uint32_t heard_mask;
   const le_fx_recipe* lane_fx;
 } le_record_image;
 
@@ -1181,6 +1194,12 @@ typedef struct le_lane_snapshot {
   /* Trailing (accepted design, slice 3): the lane's pan, -1 (left) .. 1
    * (right), 0 centre — see le_engine_set_lane_pan. */
   float pan;
+  /* Trailing (#1713): 0/1, the live slot holds a heard image (the input
+   * chain's output captured while the take recorded); and the lane's source,
+   * LE_LANE_SOURCE_HEARD or LE_LANE_SOURCE_CLEAN (le_engine_set_lane_source).
+   * The lane plays its image while both say so. */
+  int32_t heard;
+  int32_t source;
 } le_lane_snapshot;
 
 /* Per-track state published in le_snapshot.tracks.
@@ -1997,6 +2016,37 @@ LE_EXPORT int32_t le_engine_set_mix(le_engine* engine,
                                     const le_mix_settings* settings);
 LE_EXPORT int32_t le_engine_record_with_image(le_engine* engine, int32_t channel,
                                               const le_record_image* image);
+
+/* ---- The heard image (#1713) ----
+ *
+ * A take recorded through effects keeps two recordings: its clean input (the
+ * lane's take, which every edit, export and session reads as before) and its
+ * heard image, the stereo output of the input chain it recorded through,
+ * captured sample-aligned with it (le_record_image.heard_mask). The image
+ * follows the take through overdubs, Undo, Redo, Peel and Clear's restore:
+ * each undo layer has its own. A lane plays its image instead of running
+ * its own chain whenever its source is HEARD (the default) and its live
+ * slot holds one; a lane without an image plays its clean take through its
+ * chain, exactly as before. Switching crossfades over about 10 ms. */
+#define LE_LANE_SOURCE_HEARD 0
+#define LE_LANE_SOURCE_CLEAN 1
+
+/* What lane [lane] of [channel] plays: LE_LANE_SOURCE_HEARD, its image where
+ * it has one, or LE_LANE_SOURCE_CLEAN, its clean take through its chain (an
+ * edited take, re-amped). A direct store; works while stopped. */
+LE_EXPORT int32_t le_engine_set_lane_source(le_engine* engine, int32_t channel,
+                                            int32_t lane, int32_t source);
+
+/* Gives lane [lane]'s live take an image that is its clean signal in both
+ * planes (what a take with no effects was heard as), so an overdub through
+ * the input's effects can be captured into it. LE_OK when the live slot
+ * already holds one. LE_ERR_NOT_READY while the track captures, drains a
+ * punch-out, edits its length or bounces, or while an earlier attach is in
+ * flight; LE_ERR_INVALID for a track or lane with no take, or on allocation
+ * failure. The image is installed by the next callback, ahead of anything
+ * posted after this, so a punch-in posted next captures into it. */
+LE_EXPORT int32_t le_engine_heard_attach(le_engine* engine, int32_t channel,
+                                         int32_t lane);
 
 /* Returns the miniaudio + engine version string (never NULL). */
 LE_EXPORT const char* le_version(void);
