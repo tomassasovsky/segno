@@ -924,8 +924,9 @@ void main() {
       // Dub, 19 Studio, 17 Vocal and 25 Vocal Tuner (compressor and gate).
       // Modulation (part 6): the doubler in 11 Dub, 19 Studio, 17 Vocal and
       // 25 Vocal Tuner; the chorus and the wah in 36 Ed's; the wah in 14
-      // Guitar. Drives (part 7): the overdrive in 36 Ed's and 14 Guitar; the
-      // distortion in 15 Lo-Fi and 19 Studio. Lo-fi (part 7): the vinyl, the
+      // Guitar. Drives (part 7): the overdrive in 36 Ed's, 14 Guitar and 15
+      // Lo-Fi (its Distort, #1737); the distortion in 19 Studio. Lo-fi (part
+      // 7): the vinyl, the
       // degrade and the low-pass filter in 15 Lo-Fi, the filter in 10
       // Rhythmic. Reverbs (part 8): the spring in 14 Guitar. The Mod (part
       // 13) in 14 Guitar and 19 Studio.

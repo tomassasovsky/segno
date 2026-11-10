@@ -170,8 +170,13 @@ static void test_overdrive_level(void) {
   dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in + n / 2, moved + n / 2, NULL,
           n - n / 2, &clock);
   dyn_free(fx);
+  /* From the first sample the change reaches (the next update boundary),
+   * eight samples move only part of the way. */
+  int first = n / 2;
+  while (first < n && moved[first] == plain[first]) ++first;
+  CHECK(first < n / 2 + 64);
   double early = 0.0, late = 0.0;
-  for (int i = n / 2; i < n / 2 + 8; ++i) {
+  for (int i = first; i < first + 8 && i < n; ++i) {
     const double d = fabs((double)moved[i] - (double)plain[i]);
     if (d > early) early = d;
   }
