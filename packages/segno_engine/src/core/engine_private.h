@@ -2412,6 +2412,11 @@ typedef struct le_heard_ring {
   _Atomic int32_t a_started;
   _Atomic uint32_t a_begin;
   _Atomic uint32_t a_end;
+  /* The run before the current one, [a_prev_begin, a_prev_end): its frames
+   * stay readable until the current run writes over them, for a pass on
+   * another track that ended in it. */
+  _Atomic uint32_t a_prev_begin;
+  _Atomic uint32_t a_prev_end;
 } le_heard_ring;
 
 /* A track's capture pass as the callback sees it (callback only): whether
@@ -3481,11 +3486,11 @@ struct le_engine {
   le_heard_end heard_end[LE_MAX_TRACKS];
   struct le_heard_tail* _Atomic heard_tail[LE_MAX_TRACKS];
   struct le_heard_tail* heard_tail_ctl[LE_MAX_TRACKS];
+  /* Control: a newer pass end's tail, built at once (its input window is
+   * copied before the ring moves on) while the older one is still in flight
+   * and queued once that one is freed. */
+  struct le_heard_tail* heard_tail_next[LE_MAX_TRACKS];
   struct le_heard_tail* _Atomic heard_tail_queue[LE_MAX_TRACKS];
-  /* Control: a pass end that came while the track's last tail was still in
-   * flight (its generation, 0 for none), built once that one is gone; the
-   * older tail is then not added. */
-  uint32_t heard_tail_pend_gen[LE_MAX_TRACKS];
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in

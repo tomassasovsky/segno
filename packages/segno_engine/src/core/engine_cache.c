@@ -2032,14 +2032,19 @@ static void le_ca_worker_main(void* arg) {
    * the recipe's next slice goes first, so continuous re-keys cannot starve
    * it and a slice never holds an audible print back by more than one. */
   int yields = 0;
+  /* A heard image's tail (#1713 part 3) goes first, a lane per step (its
+   * callback adds it behind the read head, so every frame it waits plays a
+   * lap without), and the cache's own work gets the worker between two
+   * tail steps. */
+  int after_tail = 0;
   while (!atomic_load_explicit(&c->a_shutdown, memory_order_acquire)) {
-    /* A heard image's tail (#1713 part 3) first: its callback adds it
-     * behind the read head, so every frame it waits plays a lap without. */
-    if (le_heard_tail_worker_ready(e)) {
+    if (!after_tail && le_heard_tail_worker_ready(e)) {
       idle_ms = 1;
       le_heard_tail_worker_step(e);
+      after_tail = 1;
       continue;
     }
+    after_tail = 0;
     le_cache_job* fallback = NULL;
     le_cache_job* job = le_cache_pick(e, c, &fallback);
     if (le_render_worker_choice(job != NULL, le_render_worker_ready(e),
@@ -2050,6 +2055,7 @@ static void le_ca_worker_main(void* arg) {
     }
     if (job == NULL) job = fallback;
     if (job == NULL) {
+      if (le_heard_tail_worker_ready(e)) continue; /* a tail's next lane */
       le_ca_sleep_ms(idle_ms);
       if (idle_ms < 8) idle_ms *= 2;
       continue;
