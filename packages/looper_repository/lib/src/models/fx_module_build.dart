@@ -205,9 +205,10 @@ class FxSourceScale {
   }
 }
 
-/// The rack variants of the Looper X modules, by module and family: one engine
-/// kind per module (a Looper X kind, or for the Pitch Shift the octaver), each
-/// variant exposing the controls its racks show
+/// The rack variants of the Looper X modules, by module and family: each an
+/// engine kind (a Looper X kind, or for the Pitch Shift the octaver; one per
+/// module, except the Distortion, whose Lo-Fi variant is the Overdrive,
+/// #1737), each variant exposing the controls its racks show
 /// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest:
 /// - the EQ and the compressor: at the values measured on the Looper X
 ///   (#891, docs/plan/2026-10-23-looperx-eq-measured.md and
@@ -220,7 +221,7 @@ class FxSourceScale {
 ///
 /// The first variant of each module is its default, the one "Add an effect"
 /// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
-/// Rack's doubler, the Lo-Fi Rack's distortion).
+/// Rack's doubler, the Lo-Fi Rack's Distort).
 const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Four-band EQ': {
     "Ed's Rack": _edsEq,
@@ -572,11 +573,17 @@ const FxModuleBuild _rhythmicLpf = FxModuleBuild(
   params: ['LPF Cutoff', 'LPF Reso', 'LPF LFO Depth', 'LPF LFO Rate'],
 );
 
-// Lo-Fi Rack: drive and tone.
+// Lo-Fi Rack: drive and tone, on the Overdrive. The Looper X's Lo-Fi Distort
+// is its overdrive, the Guitar Rack's OvDrive times 1.6 to a residual of
+// -73 dB (#1737, session s19lofi), so the level is fixed there.
 const FxModuleBuild _loFiDistortion = FxModuleBuild(
-  type: TrackEffectType.distortion,
+  type: TrackEffectType.overdrive,
   params: ['Dist Drive', 'Dist Tone'],
+  fixed: {2: _loFiDistortLevelDb},
 );
+
+/// The Lo-Fi Distort's gain over the OvDrive, 1.6, in dB.
+const double _loFiDistortLevelDb = 4.082399653118496;
 
 // Studio Rack: the drive, the tone flat.
 const FxModuleBuild _distortion = FxModuleBuild(

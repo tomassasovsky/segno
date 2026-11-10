@@ -924,8 +924,9 @@ void main() {
       // Dub, 19 Studio, 17 Vocal and 25 Vocal Tuner (compressor and gate).
       // Modulation (part 6): the doubler in 11 Dub, 19 Studio, 17 Vocal and
       // 25 Vocal Tuner; the chorus and the wah in 36 Ed's; the wah in 14
-      // Guitar. Drives (part 7): the overdrive in 36 Ed's and 14 Guitar; the
-      // distortion in 15 Lo-Fi and 19 Studio. Lo-fi (part 7): the vinyl, the
+      // Guitar. Drives (part 7): the overdrive in 36 Ed's, 14 Guitar and 15
+      // Lo-Fi (its Distort, #1737); the distortion in 19 Studio. Lo-fi (part
+      // 7): the vinyl, the
       // degrade and the low-pass filter in 15 Lo-Fi, the filter in 10
       // Rhythmic. Reverbs (part 8): the spring in 14 Guitar. The Mod (part
       // 13) in 14 Guitar and 19 Studio.
@@ -1080,8 +1081,9 @@ void main() {
       }
     });
 
-    test('the Lo-Fi Rack shows drive and tone, the Studio Rack the drive '
-        'with the tone flat', () {
+    test("the Lo-Fi Rack's Distort is the Overdrive at +4.08 dB, showing "
+        'drive and tone; the Studio Rack the distortion, the drive with the '
+        'tone flat', () {
       final lofi = fxModuleEntry(
         _module('Distortion'),
         preset('Lo-Fi Rack', const {
@@ -1090,16 +1092,39 @@ void main() {
           'Dist Tone': 0.7,
         }),
       );
-      expect(lofi.type, TrackEffectType.distortion);
+      expect(lofi.type, TrackEffectType.overdrive);
+      expect(lofi.module, 'Distortion');
       expect(lofi.enabled, isTrue);
       expect(fxEntryBuild(lofi)!.exposed, [0, 1]);
       expect(lofi.params.take(2), [0.2, 0.7]);
+      // A gain of 1.6 (#1737, s19lofi).
+      expect(
+        math.pow(
+          10,
+          TrackEffectType.overdrive.params[2].valueAt(
+                lofi.params[2],
+              ) /
+              20,
+        ),
+        closeTo(1.6, 1e-6),
+      );
       final studio = fxModuleEntry(
         _module('Distortion'),
         preset('Studio Rack', const {'Dist Drive': 0.5}),
       );
+      expect(studio.type, TrackEffectType.distortion);
       expect(fxEntryBuild(studio)!.exposed, [0]);
       expect(studio.params.take(2), [0.5, 0.5]);
+    });
+
+    test("the Guitar and Ed's racks' OvDrive keeps the level at 0 dB", () {
+      for (final family in const ["Ed's Rack", 'Guitar Rack']) {
+        final od = fxModuleEntry(
+          _module('Overdrive'),
+          preset(family, const {'OD Drive': 0.5, 'OD Tone': 0.5}),
+        );
+        expect(od.params[2], 0, reason: family);
+      }
     });
   });
 
