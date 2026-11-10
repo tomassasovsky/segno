@@ -81,10 +81,16 @@ static void test_dual_octaver_matches_the_capture(void) {
          db[1], db[2]);
   CHECK(fabs(db[1] + 3.0) < 0.1);
   CHECK(fabs(db[2] + 3.04) < 0.1);
-  /* Octave 1 Vol scales the voice (its taper unmeasured: linear here). */
-  const float quiet[LE_FX_PARAMS] = {0.0f, 0.5f, 1.0f};
-  do_levels(quiet, db);
-  CHECK(fabs(db[0] - (-0.26 + 20.0 * log10(0.5))) < 0.1);
+  /* Octave 1 Vol scales the voice linearly in amplitude, as the Looper X's
+   * does (#1731, s19oct: -2.50, -6.02, -12.04 and -19.17 dB at 75, 50, 25
+   * and 11 %, read against 100 % at 110 to 440 Hz). */
+  const float vols[4] = {0.75f, 0.5f, 0.25f, 0.1098f};
+  const double want[4] = {-2.50, -6.02, -12.04, -19.17};
+  for (int k = 0; k < 4; ++k) {
+    const float quiet[LE_FX_PARAMS] = {0.0f, vols[k], 1.0f};
+    do_levels(quiet, db);
+    CHECK(fabs(db[0] - (-0.26 + want[k])) < 0.1);
+  }
 }
 
 /* High mode is a switch: flipped under a tone, the voice dips out and comes

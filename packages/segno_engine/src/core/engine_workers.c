@@ -63,7 +63,8 @@ struct le_fx_pool {
 };
 
 /* The claim word (le_fx_par.a_claim): the epoch, the round's jobs, the next
- * job. LE_MAX_MONITORED_INPUTS bounds the jobs well below 16 bits. */
+ * job. LE_MAX_MONITORED_INPUTS + LE_MAX_TRACKS bounds the jobs well below
+ * 16 bits. */
 static inline uint64_t le_fx_claim_word(uint32_t epoch, uint32_t jobs,
                                         uint32_t next) {
   return ((uint64_t)epoch << 32) | ((uint64_t)(jobs & 0xFFFFu) << 16) |
@@ -127,6 +128,22 @@ static void le_fx_monitor_job(le_engine* e, int32_t c) {
   atomic_store_explicit(&t->a_frame, p->clock + p->n, memory_order_relaxed);
 }
 
+#ifdef LE_NATIVE_TESTS
+int le_test_trk_jobs_force = 0;
+uint64_t le_test_trk_jobs_blocks = 0;
+#endif
+
+/* Job [k] of the block: a monitor input's chain, or a track's chains
+ * (#1729, le_engine.trk_job_mon_n). */
+static inline void le_fx_job(le_engine* e, uint32_t k) {
+  const int32_t mon_n = e->trk_job_mon_n;
+  if ((int32_t)k < mon_n) {
+    le_fx_monitor_job(e, e->fx_par.job_mon[k]);
+  } else {
+    le_trk_job_run(e, e->trk_job_t[(int32_t)k - mon_n], e->fx_par.n);
+  }
+}
+
 static inline void le_fx_max_u32(_Atomic uint32_t* slot, uint64_t v) {
   const uint32_t x = v > UINT32_MAX ? UINT32_MAX : (uint32_t)v;
   /* Single writer (the worker or the callback that owns the slot). */
@@ -154,7 +171,7 @@ static uint32_t le_fx_claim(le_engine* e, uint32_t epoch, le_fx_worker_tm* tm) {
 #if LE_CALLBACK_TELEMETRY
     const uint64_t t0 = tm != NULL ? le_now_ns() : 0u;
 #endif
-    le_fx_monitor_job(e, p->job_mon[next]);
+    le_fx_job(e, next);
 #if LE_CALLBACK_TELEMETRY
     if (tm != NULL) {
       const uint64_t dt = le_now_ns() - t0;
@@ -179,7 +196,7 @@ void le_fx_jobs_run(le_engine* e) {
   /* One job gains nothing from a worker: the callback would wait for it
    * instead of running it. */
   if (workers <= 0 || jobs < 2u) {
-    for (uint32_t k = 0; k < jobs; ++k) le_fx_monitor_job(e, p->job_mon[k]);
+    for (uint32_t k = 0; k < jobs; ++k) le_fx_job(e, k);
     return;
   }
   /* The callback is the only writer of a_gen while it runs (the pool's start
