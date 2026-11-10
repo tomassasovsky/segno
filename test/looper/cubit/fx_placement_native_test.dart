@@ -168,7 +168,10 @@ void main() {
       ..setMonitorEffects(
         input: 0,
         effects: [
-          BuiltInEffect(type: TrackEffectType.reverb, placement: FxPlacement.pre),
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            placement: FxPlacement.pre,
+          ),
         ],
       )
       ..setMonitorMute(input: 0, muted: true);
@@ -176,7 +179,10 @@ void main() {
       repository.setTrackEffects(
         channel: 0,
         effects: [
-          BuiltInEffect(type: TrackEffectType.delay, placement: FxPlacement.pre),
+          BuiltInEffect(
+            type: TrackEffectType.delay,
+            placement: FxPlacement.pre,
+          ),
         ],
       );
     }
@@ -192,9 +198,9 @@ void main() {
     await playFor(3000);
   }
 
-  const input = FxAddress(stage: FxStage.input, index: 0);
-  const part = FxAddress(stage: FxStage.loop, index: 0, lane: 0);
-  const whole = FxAddress(stage: FxStage.track, index: 0);
+  const input = FxAddress(stage: FxStage.input);
+  const part = FxAddress(stage: FxStage.loop, lane: 0);
+  const whole = FxAddress(stage: FxStage.track);
 
   for (final order in [
     [input, whole],
@@ -206,23 +212,15 @@ void main() {
         'take rings out past Stop', () async {
       await recordThroughPreReverb(track: true);
       for (final address in order) {
-        final result = await movePost(address);
-        // ignore: avoid_print
-        print('${address.stage.name}: ${result.status}');
+        expect((await movePost(address)).status, FxEditStatus.applied);
       }
       await playFor(500);
-      final lane = engine.snapshot().tracks[0].lanes[0];
-      // ignore: avoid_print
-      print('lane fx ${repository.laneEffects(0, 0).map((e) => e.placement)} '
-          'track fx ${repository.trackEffects(0).map((e) => e.placement)} '
-          'source ${lane.source}');
-      final tail = tailAfterStop(4800);
-      // ignore: avoid_print
-      print('tail $tail');
-      expect(tail, greaterThan(1e-3));
+      expect(tailAfterStop(4800), greaterThan(1e-3));
     }, skip: skip);
   }
 
+  // The owner's sequence (#1741): the input's reverb and the take's copy,
+  // from the Recorded tracks tab with the part selected, both to Post.
   for (final order in [
     [input, part],
     [part, input],
@@ -231,19 +229,11 @@ void main() {
         'to Post, and the take rings out past Stop', () async {
       await recordThroughPreReverb();
       for (final address in order) {
-        final result = await movePost(address);
-        // ignore: avoid_print
-        print('${address.stage.name}: ${result.status}');
+        expect((await movePost(address)).status, FxEditStatus.applied);
       }
-      final lane = engine.snapshot().tracks[0].lanes[0];
-      // ignore: avoid_print
-      print('lane fx ${repository.laneEffects(0, 0).map((e) => e.placement)} '
-          'source ${lane.source} heard ${lane.heard}');
-      expect(lane.source, LaneSource.clean);
-      final tail = tailAfterStop(4800);
-      // ignore: avoid_print
-      print('tail $tail');
-      expect(tail, greaterThan(1e-3));
+      expect(repository.laneEffects(0, 0).single.placement, FxPlacement.post);
+      expect(engine.snapshot().tracks[0].lanes[0].source, LaneSource.clean);
+      expect(tailAfterStop(4800), greaterThan(1e-3));
     }, skip: skip);
   }
 }

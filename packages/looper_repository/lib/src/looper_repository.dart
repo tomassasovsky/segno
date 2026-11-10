@@ -1448,13 +1448,16 @@ class LooperRepository {
   }) {
     final printed = _lanePrinted[key] ?? const <TrackEffect>[];
     if (!(chainOn ?? _laneChainEnabled[key] ?? true)) return false;
-    return identical(chain, printed) || _wireOf(chain) == _wireOf(printed);
+    return identical(chain, printed) ||
+        _preWireOf(chain) == _preWireOf(printed);
   }
 
-  /// [chain] as it persists, kept per chain instance: chains are replaced,
-  /// never changed in place, so each is encoded once.
-  String _wireOf(List<TrackEffect> chain) =>
-      _chainWire[chain] ??= encodeTrackEffects(chain);
+  /// [chain]'s Pre run as it persists, kept per chain instance: chains are
+  /// replaced, never changed in place, so each is encoded once. The image is
+  /// what the Pre run made (#1741): the Post entries run live over it, so
+  /// an edit of one is not a re-amp.
+  String _preWireOf(List<TrackEffect> chain) => _chainWire[chain] ??=
+      encodeTrackEffects(chain.sublist(0, fxPreCount(chain)));
   final Expando<String> _chainWire = Expando();
 
   /// Gives the engine every lane's source ([_laneSourceOf]) that changed
@@ -4002,7 +4005,9 @@ class LooperRepository {
             }
             continue;
           }
-          heardLanes.add(lane);
+          // What a take records is the chain's Pre run (#1741): a chain
+          // with none is recorded clean, its Post entries live on the lane.
+          if (fxPreCount(chain) > 0) heardLanes.add(lane);
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
@@ -4097,9 +4102,11 @@ class LooperRepository {
     if (state != TrackState.empty) {
       for (var lane = 0; lane < laneCount(channel); lane++) {
         final key = (channel, lane);
+        final input = _inheritableChain(channel, lane);
         if (_laneHeard.contains(key) ||
             (_laneEffects[key]?.isNotEmpty ?? false) ||
-            _inheritableChain(channel, lane) == null) {
+            input == null ||
+            fxPreCount(input) == 0) {
           continue;
         }
         final attached = _engine.heardAttach(channel: channel, lane: lane);
@@ -8444,7 +8451,7 @@ class LooperRepository {
         (_laneHeard.contains(key) ? const <TrackEffect>[] : null);
     if (printed == null) return null;
     final chain = _laneEffects[key] ?? const <TrackEffect>[];
-    return _wireOf(chain) == _wireOf(printed) ? null : printed;
+    return _preWireOf(chain) == _preWireOf(printed) ? null : printed;
   }
 
   /// Lane [lane] of track [channel]'s inheritance provenance: the inputs its
@@ -8635,9 +8642,10 @@ class LooperRepository {
         lane: lane,
         recipe: FxRecipe(
           slots: slots,
-          // The live monitor processes its whole chain before capture. Its
-          // Pre/Post split is metadata for the inherited recording recipe.
-          preCount: owner == FxOwner.monitor ? 0 : fxPreCount(effects),
+          // The live monitor processes its whole chain; a take records its
+          // Pre run, and its Post entries run live on the take's lane
+          // (#1741).
+          preCount: fxPreCount(effects),
           // A chain held off because it did not fit stays off on the engine
           // whatever its saved switch says (#1515).
           enabled: _engineOn(_fxAddressOf(owner, channel, lane), enabled),
@@ -9074,13 +9082,13 @@ class LooperRepository {
     return worst;
   }
 
-  /// What the chain [chain] at [address] charges ([fxChainCostNs]), its
+  /// What the chain [entries] at [address] charges ([fxChainCostNs]), its
   /// switch [chainOn]: each effect whose own switch, rack's and chain's are
   /// each on or reached by a control of [reach] (by default the rig's), the
   /// switches [reach] alternates on exactly when [state] has them.
   int _fxChainChargeNs(
     FxAddress address,
-    List<TrackEffect> chain, {
+    List<TrackEffect> entries, {
     required int rate,
     required int period,
     required bool chainOn,
@@ -9089,8 +9097,11 @@ class LooperRepository {
     bool held = false,
   }) {
     final controls = reach ?? _fxReach;
-    // A take playing its heard image runs no chain (#1713).
-    if (_playsImage(address, chain, chainOn: chainOn)) return 0;
+    // A take playing its heard image runs no Pre run (#1713): only its Post
+    // entries play, over the image (#1741).
+    final chain = _playsImage(address, entries, chainOn: chainOn)
+        ? entries.sublist(fxPreCount(entries))
+        : entries;
     if (held) {
       // Held, its effects stop: what still runs are the tails already
       // draining, not the effects it was running (#1733).

@@ -1504,6 +1504,11 @@ le_engine* le_engine_create(void) {
   }
   le_fx_seed_owner(&engine->all_tracks.fx, engine, le_fx_all_tracks_hop_seed(0));
   le_engine_bind_fx_rows(engine);
+  /* An input chain no recipe has split records whole (#1741). */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    atomic_store_explicit(&engine->heard_mon_pre[c], LE_FX_MAX,
+                          memory_order_relaxed);
+  }
   /* No effects workers and nothing pinned until le_engine_set_fx_workers. */
   for (int k = 0; k <= LE_FX_WORKERS_MAX; ++k) engine->fx_cores[k] = -1;
   return engine;

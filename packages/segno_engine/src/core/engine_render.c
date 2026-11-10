@@ -516,16 +516,14 @@ int32_t le_engine_render_begin(le_engine* engine,
       le_lane* src = &tr->lanes[l];
       le_render_lane* ln = &s->lane[l];
       LE_FX_FROZEN_CAPTURE(&ln->chain, src);
-      /* A lane playing its heard image runs no chain live, so none here. */
+      /* A lane playing its heard image plays it for its Pre run, so that
+       * is not printed; its Post entries run over it (#1741). */
       ln->heard = le_heard_lane_plays(engine, t, l);
-      if (ln->heard) {
-        ln->chain.count = 0;
-        ln->chain.pre = 0;
-      }
       ln->vol = load_f32(&src->a_vol_bits);
       ln->gl = load_f32(&src->a_pan_gl_bits);
       ln->gr = load_f32(&src->a_pan_gr_bits);
-      ln->has_pre = le_fx_frozen_has(&ln->chain, 0, ln->chain.pre, LE_FX_NONE);
+      ln->has_pre = !ln->heard &&
+                    le_fx_frozen_has(&ln->chain, 0, ln->chain.pre, LE_FX_NONE);
       ln->has_post = le_fx_frozen_has(&ln->chain, ln->chain.pre,
                                       ln->chain.count, LE_FX_NONE);
       le_fx_frozen_bits(&ln->chain, ln->chain.pre, ln->chain.count,

@@ -1765,6 +1765,7 @@ static float le_pr_bits_to_f32(uint32_t bits) {
  * arms from a default-enabled engine). */
 typedef struct le_pr_fx_chain {
   int32_t count;
+  int32_t pre; /* leading Pre entries (#1741: what a heard image stands for) */
   int32_t type[LE_FX_MAX];
   float params[LE_FX_MAX][LE_FX_PARAMS];
   int32_t enabled[LE_FX_MAX];
@@ -1773,6 +1774,7 @@ typedef struct le_pr_fx_chain {
 
 static void le_pr_fx_chain_init_empty(le_pr_fx_chain* c) {
   c->count = 0;
+  c->pre = 0;
   c->chain_enabled = 1;
   for (int i = 0; i < LE_FX_MAX; ++i) {
     c->type[i] = LE_FX_NONE;
@@ -1802,6 +1804,14 @@ static void le_pr_fx_chain_init_from_lane(le_pr_fx_chain* c,
     const le_json_value* params = le_json_get(entry, "params");
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       c->params[i][p] = (float)le_json_number(le_json_at(params, p), 0.0);
+    }
+    /* The Pre run leads the chain (an entry's "placement", absent = Post). */
+    char placement[8];
+    if (c->pre == i &&
+        le_json_string(le_json_get(entry, "placement"), placement,
+                       sizeof(placement)) &&
+        strcmp(placement, "pre") == 0) {
+      c->pre = i + 1;
     }
   }
 }
@@ -2333,17 +2343,21 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
       heard_mix = image && to_image ? 1.0f : 0.0f;
     }
     was_image = image;
+    /* The image is the take's Pre run (#1741): the Post entries play over
+     * it, so only the Pre run idles and settles. */
+    const int32_t post_from = chain.pre < chain.count ? chain.pre : chain.count;
     if (!image) {
-      if (heard_mix > 0.0f) le_pr_settle_chain(fx, chain.count);
+      if (heard_mix > 0.0f) le_pr_settle_chain(fx, post_from);
       heard_mix = 0.0f;
     } else {
-      if (!to_image && heard_mix >= 1.0f) le_pr_settle_chain(fx, chain.count);
+      if (!to_image && heard_mix >= 1.0f) le_pr_settle_chain(fx, post_from);
       heard_mix += to_image ? heard_step : -heard_step;
       heard_mix = heard_mix > 1.0f ? 1.0f : heard_mix < 0.0f ? 0.0f : heard_mix;
     }
     if (heard_mix < 1.0f) {
-      fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r, chain.count,
-                     chain.type, chain.params, effective);
+      fx_apply_chain(fx, m->sample_rate, m->sample_rate, &l, &r,
+                     heard_mix > 0.0f ? post_from : chain.count, chain.type,
+                     chain.params, effective);
     }
     if (heard_mix > 0.0f) {
       /* Fading out because the render cannot play the image: the
@@ -2355,6 +2369,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
           fed ? (unpitched ? dry[f] : heard_r[f]) * cut_gain * volume : 0.0f;
       l = heard_mix * hl + (1.0f - heard_mix) * l;
       r = heard_mix * hr + (1.0f - heard_mix) * r;
+      fx_apply_chain_from(fx, m->sample_rate, m->sample_rate, &l, &r,
+                          post_from, chain.count, chain.type, chain.params,
+                          effective);
     }
     const float gain =
         track_gain * le_fade_tick(&fade, m->sample_rate) * gate;

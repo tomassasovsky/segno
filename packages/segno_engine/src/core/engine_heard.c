@@ -540,6 +540,18 @@ static void le_heard_add_jobs(
     }
   }
   e->heard_jobs = ran;
+  /* A take records an input chain's Pre run (#1741): where the chain has
+   * Post entries its job notes the signal after the run for the post-pass. */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    const uint64_t bit = UINT64_C(1) << c;
+    if (!(e->heard_inputs & ran & bit)) continue;
+    int32_t pre = atomic_load_explicit(&e->heard_mon_pre[c],
+                                       memory_order_relaxed);
+    if (pre < 0) pre = 0;
+    if (pre >= mon_fx_count[c]) continue;
+    e->heard_tap_at[c] = pre;
+    e->heard_tap_mask |= bit;
+  }
 }
 
 int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
@@ -554,6 +566,7 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
   for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
   e->heard_jobs = ran;
   e->heard_inputs = 0u;
+  e->heard_tap_mask = 0u;
   /* A pass's end and a published tail first: an image dropped since must
    * still end its pass and let go of its tail (part 3). */
   le_heard_tail_block(e, tc);
@@ -764,8 +777,13 @@ static void le_heard_input(const le_engine* e, const le_fx_par* par,
   /* The capture trim scales what records (slice 3): the clean take, and so
    * its image. An instrument has none. */
   const float trim = instrument ? 1.0f : in_trim[c];
-  /* The chain's output where it ran as a job this block; its input where
-   * it has no chain. */
+  /* The chain's Pre run where it has Post entries (#1741), its output where
+   * it ran as a job this block, its input where it has no chain. */
+  if ((e->heard_tap_mask >> c) & 1u) {
+    *wl = e->heard_tap_l[c][i] * trim;
+    *wr = e->heard_tap_r[c][i] * trim;
+    return;
+  }
   if ((e->heard_jobs >> c) & 1u) {
     *wl = par->mon_l[c][i] * trim;
     *wr = par->mon_r[c][i] * trim;

@@ -10499,6 +10499,33 @@ LE_AUDIO_HOT_AT(8) void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* 
   fx_apply_chain_with_gain(fx, sr, cap, l, r, count, types, params, enabled, 0, 1);
 }
 
+void fx_apply_chain_from(le_fx_state* fx, int sr, int cap, float* l,
+                         float* r, int from, int count, const int32_t* types,
+                         const float params[LE_FX_MAX][LE_FX_PARAMS],
+                         const int32_t* enabled) {
+  if (from <= 0) {
+    fx_apply_chain(fx, sr, cap, l, r, count, types, params, enabled);
+    return;
+  }
+  if (from >= count) return;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  /* The entries before [from] pass the signal on as an empty slot does,
+   * their racks' edges out of the walk; the cooldown counts the frame once,
+   * in the pass that ran them. The shared walk stays the one the mixer
+   * runs. */
+  int32_t ty[LE_FX_MAX];
+  int32_t racks[LE_FX_MAX];
+  for (int s = 0; s < count; ++s) ty[s] = s < from ? LE_FX_NONE : types[s];
+  for (int s = 0; s < from; ++s) {
+    racks[s] = fx->chan[s].rack;
+    fx->chan[s].rack = 0;
+  }
+  const int32_t cooldown = fx->enable_clear_cooldown;
+  fx_apply_chain_with_gain(fx, sr, cap, l, r, count, ty, params, enabled, 0, 1);
+  fx->enable_clear_cooldown = cooldown;
+  for (int s = 0; s < from; ++s) fx->chan[s].rack = racks[s];
+}
+
 int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type, int sr) {
   if (type > LE_FX_NONE && type < LE_FX_TYPE_COUNT && LE_FX[type].latency) {
     return LE_FX[type].latency(fx, slot, type, sr);

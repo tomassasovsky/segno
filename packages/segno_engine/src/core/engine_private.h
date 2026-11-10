@@ -3498,6 +3498,19 @@ struct le_engine {
    * and queued once that one is freed. */
   struct le_heard_tail* heard_tail_next[LE_MAX_TRACKS];
   struct le_heard_tail* _Atomic heard_tail_queue[LE_MAX_TRACKS];
+  /* #1741: what a take records of each input's chain is its Pre run; its
+   * Post entries are the lane's, running live (slice 3e's rule: the print
+   * is the Pre printer). heard_mon_pre: each input chain's Pre run, from its
+   * recipe (the monitor's own processing ignores it). heard_tap_mask: the
+   * inputs whose job notes the signal after that run this block, where a
+   * capturing heard lane records a chain with Post entries (callback);
+   * heard_tap_at the run's length for each, and heard_tap_l/r the signal,
+   * written by the job, read by the post-pass. */
+  _Atomic int32_t heard_mon_pre[LE_MAX_MONITORED_INPUTS];
+  uint64_t heard_tap_mask;
+  int32_t heard_tap_at[LE_MAX_MONITORED_INPUTS];
+  float heard_tap_l[LE_MAX_MONITORED_INPUTS][LE_FX_BLOCK];
+  float heard_tap_r[LE_MAX_MONITORED_INPUTS][LE_FX_BLOCK];
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in

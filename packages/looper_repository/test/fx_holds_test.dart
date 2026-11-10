@@ -23,7 +23,8 @@ List<TrackEffect> _rack() => [
     TrackEffectType.modeDelay,
     TrackEffectType.eq,
   ])
-    BuiltInEffect(type: type),
+    // At Pre, as an input's effects come by default: a take records them.
+    BuiltInEffect(type: type, placement: FxPlacement.pre),
 ];
 
 const _empty = [
@@ -240,8 +241,7 @@ void main() {
         engine.fxWorkersRunning = 2;
         repo
           ..stopEngine()
-          ..startEngine(const EngineConfig(sampleRate: 96000));
-        repo
+          ..startEngine(const EngineConfig(sampleRate: 96000))
           ..setMonitorEffects(input: 0, effects: _rack())
           ..record();
         expect(
@@ -259,6 +259,65 @@ void main() {
         expect(repo.fxChainHeld(_lane(0)), isFalse);
         expect(repo.state.fxHoldNotice, isEmpty);
         expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      });
+    });
+
+    group("an input chain's Post entries (#1741)", () {
+      final reverb = BuiltInEffect(
+        type: TrackEffectType.reverb,
+        placement: FxPlacement.pre,
+      );
+      final delay = BuiltInEffect(type: TrackEffectType.delay);
+
+      test('a take records the Pre run heard, and its lane runs and is '
+          'charged for the Post entries', () {
+        repo.setMonitorEffects(input: 0, effects: [reverb, delay]);
+        final input = repo.fxCostNs;
+        repo.record();
+        expect(engine.lastRecordImage!.heardLanes, {0});
+        final lane = repo.laneEffects(0, 0);
+        expect(lane.map((fx) => fx.placement), [
+          FxPlacement.pre,
+          FxPlacement.post,
+        ]);
+        expect(engine.recipes[(le.FxOwner.lane, 0, 0)]!.preCount, 1);
+        expect(engine.recipes[(le.FxOwner.monitor, 0, 0)]!.preCount, 1);
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        expect(repo.fxCostNs - input, fxChainCostNs([delay]));
+      });
+
+      test('an edit of a Post entry is no re-amp; one of the Pre run is', () {
+        repo
+          ..setMonitorEffects(input: 0, effects: [reverb, delay])
+          ..record();
+        final lane = repo.laneEffects(0, 0);
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            lane[0],
+            (lane[1] as BuiltInEffect).copyWith(params: const [.1, .1, .1]),
+          ],
+        );
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            (lane[0] as BuiltInEffect).copyWith(params: const [.1, .1, .1]),
+            lane[1],
+          ],
+        );
+        expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      });
+
+      test('an input chain that is all Post records clean, its effects live '
+          'on the lane', () {
+        repo
+          ..setMonitorEffects(input: 0, effects: [delay])
+          ..record();
+        expect(engine.lastRecordImage!.heardLanes, isEmpty);
+        expect(repo.laneEffects(0, 0).single.placement, FxPlacement.post);
       });
     });
 

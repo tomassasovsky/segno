@@ -367,6 +367,12 @@ static le_heard_tail* le_heard_tail_build(le_engine* e, int32_t t,
                          m->a_fx_chan_gl_bits, m->a_fx_chan_gr_bits,
                          m->a_fx_chan_level_bits, m->a_fx_chan_rack,
                          m->fx.hop_seed);
+    /* What the take recorded of the chain is its Pre run (#1741): its Post
+     * entries run live on the lane and ring out there, so the tail is the
+     * Pre run's alone. */
+    const int32_t pre =
+        atomic_load_explicit(&e->heard_mon_pre[c], memory_order_relaxed);
+    if (pre >= 0 && pre < j->chain[l].count) j->chain[l].count = pre;
     if (!le_fx_frozen_has(&j->chain[l], 0, j->chain[l].count, LE_FX_NONE)) {
       continue; /* no chain: the input itself, which leaves no tail */
     }

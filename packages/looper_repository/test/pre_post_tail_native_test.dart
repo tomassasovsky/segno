@@ -144,4 +144,48 @@ void main() {
     },
     skip: skip,
   );
+
+  for (final (placement, outcome) in [
+    (FxPlacement.post, 'rings out past Stop on its lane'),
+    (FxPlacement.pre, 'plays what was heard, cut at Stop'),
+  ]) {
+    test(
+      'a take recorded through an input reverb at ${placement.name} '
+      '$outcome (#1741)',
+      () async {
+        final subscription = repository.looperState.listen((_) {});
+        addTearDown(subscription.cancel);
+        await Future<void>.delayed(Duration.zero);
+        repository
+          ..setMonitorEffects(
+            input: 0,
+            effects: [
+              BuiltInEffect(type: TrackEffectType.reverb, placement: placement),
+            ],
+          )
+          ..setMonitorMute(input: 0, muted: true);
+        await settle();
+        expect(repository.record(), EngineResult.ok);
+        engine
+          ..pump(frames: 2400, input: .5)
+          ..pump(frames: 21600);
+        expect(repository.record(), EngineResult.ok); // close into play
+        engine.pump(frames: 24000);
+        ticks.add(null);
+        final lane = engine.snapshot().tracks[0].lanes[0];
+        expect(repository.laneEffects(0, 0).single.placement, placement);
+        if (placement == FxPlacement.post) {
+          // Nothing of the input chain is Pre: recorded clean, the reverb
+          // live on the lane.
+          expect(lane.heard, isFalse);
+          expect(tailAfterStop(), greaterThan(1e-3));
+        } else {
+          expect(lane.heard, isTrue);
+          expect(lane.source, LaneSource.heard);
+          expect(tailAfterStop(), 0);
+        }
+      },
+      skip: skip,
+    );
+  }
 }

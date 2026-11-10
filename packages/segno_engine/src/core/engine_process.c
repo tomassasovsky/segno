@@ -8751,13 +8751,18 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const le_wet_entry* se = tr->src_ent[l];
   const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
   const int pitched = h->img_blk;
+  /* The image is the take's Pre run (#1741): the lane's Post entries run
+   * live over it, as over a print, so they ring out past a Stop. Only the
+   * Pre run idles while the image plays, and only it comes back through its
+   * re-enable ramp when the lane leaves the image. */
+  const int32_t post_from = chain_live && fx_pre < fx_n ? fx_pre : fx_n;
   float m = h->mix;
   int target = 0;
   if (pl == NULL) {
     /* Nothing to fade from: the clean take at once, its chain back through
      * its re-enable ramp if the image was playing. */
     if (m > 0.0f) {
-      for (int32_t s = 0; s < fx_n; ++s) {
+      for (int32_t s = 0; s < post_from; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
         le_fx_rack_reset(&ln->fx, s);
       }
@@ -8766,7 +8771,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   } else {
     target = pitched && h->src_blk; /* as the block started */
     if (!target && m >= 1.0f) {
-      for (int32_t s = 0; s < fx_n; ++s) {
+      for (int32_t s = 0; s < post_from; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
         le_fx_rack_reset(&ln->fx, s);
       }
@@ -8865,9 +8870,14 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const int32_t rp = plain;
   if (ln->run.restart) le_chain_run_begin(&ln->run, tr, sounding, rp);
   if (m >= 1.0f) {
-    /* The image alone: the print and the chain are idle. */
+    /* The image alone: the print and the Pre run are idle; the Post entries
+     * play over it. */
     if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
     le_chain_run_step(&ln->run, tr, sounding, rp, 0);
+    if (post_from < fx_n) {
+      fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from,
+                          fx_n, fx_type, fx_params, fx_enabled);
+    }
     return out;
   }
   /* A crossfade: the clean side, its engaged print or its live chain. The
@@ -8897,6 +8907,17 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   } else {
     cl = audible ? loopsample * vol : 0.0f;
     cr = cl;
+  }
+  if (post_from < fx_n) {
+    /* The clean side's Pre run, the two sides blended where the image
+     * stands for it, and the Post entries once over the blend. */
+    fx_apply_chain(&ln->fx, sr, fx_cap, &cl, &cr, post_from, fx_type,
+                   fx_params, fx_enabled);
+    out.l = m * out.l + (1.0f - m) * cl;
+    out.r = m * out.r + (1.0f - m) * cr;
+    fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from, fx_n,
+                        fx_type, fx_params, fx_enabled);
+    return out;
   }
   if (chain_live) {
     fx_apply_chain(&ln->fx, sr, fx_cap, &cl, &cr, fx_n, fx_type, fx_params,
