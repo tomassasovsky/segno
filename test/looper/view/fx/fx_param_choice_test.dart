@@ -20,16 +20,18 @@ void main() {
 
     setUp(() => written = []);
 
+    // The single effect page's width; a rack pedal's column is 250.
     Future<void> pump(
       WidgetTester tester,
       BuiltInEffect effect,
-      int index,
-    ) => tester.pumpApp(
+      int index, {
+      double width = 493,
+    }) => tester.pumpApp(
       Center(
         child: FxBuiltInParamControl(
           effect: effect,
           index: index,
-          width: 493,
+          width: width,
           onChanged: written.add,
         ),
       ),
@@ -96,6 +98,33 @@ void main() {
       );
     });
 
+    testWidgets("a three-way choice is a list in a rack pedal's narrow "
+        'column', (tester) async {
+      // The Guitar Rack's Mod: Chorus, Phaser, Flanger.
+      final module = kFxModules.firstWhere((m) => m.name == 'Modulation');
+      final entry = fxModuleEntry(
+        module,
+        const FxPreset(
+          family: 'Guitar Rack',
+          name: 'p',
+          id: 'p',
+          type: 0,
+          params: {'Mod': 1},
+        ),
+      );
+      final index = fxEntryControls(entry).params.firstWhere(
+        (i) => fxEntryParam(entry, i).unit == FxParamUnit.choice,
+      );
+      expect(fxEntryParam(entry, index).steps, 3);
+
+      await pump(tester, entry, index, width: 250);
+      expect(find.byType(LoopSelect<int>), findsOneWidget);
+      expect(find.byType(LoopChoiceButton), findsNothing);
+
+      await pump(tester, entry, index);
+      expect(find.byType(LoopChoiceButton), findsNWidgets(3));
+    });
+
     testWidgets('a continuous parameter stays a slider', (tester) async {
       await pump(tester, BuiltInEffect(type: TrackEffectType.octaver), 1);
 
@@ -117,7 +146,10 @@ void main() {
           final reason = '${type.name} ${param.key}';
           expect(find.byType(LoopSlider), findsNothing, reason: reason);
           final name = l10n.fxParamValueText(param, 1);
-          if (param.steps <= kFxChoiceRowMost) {
+          final row = find.byType(LoopChoiceButton).evaluate().isNotEmpty;
+          // Five buttons never fit the page's 493 at a readable width.
+          if (param.steps > 4) expect(row, isFalse, reason: reason);
+          if (row) {
             final button = tester.widget<LoopChoiceButton>(
               find.byKey(Key('fx_choice_${param.key}_$last')),
             );

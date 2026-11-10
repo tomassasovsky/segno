@@ -50,11 +50,13 @@ typedef FxEdits = ({
   return (valueText: l10n.fxParamValueText(param, setting), note: null);
 }
 
-/// The most positions a choice parameter shows as a row of buttons, the way
-/// Loop settings shows its choices. One with more opens a list, as the
-/// footer's input choice does: four buttons in a rack pedal's column would
-/// shrink their names past reading.
-const int kFxChoiceRowMost = 3;
+/// The narrowest a choice parameter's button may be. A choice whose
+/// positions each get at least this much of the control's width shows them
+/// as a row of buttons, the way Loop settings shows its choices; one that
+/// does not opens a list, as the footer's input choice does, because a
+/// narrower button shrinks its name past reading. In a rack pedal's column
+/// that is two positions, on the single effect's page three or four.
+const double kFxChoiceButtonLeast = 112;
 
 /// Whether [param] is a choice: a few named positions ([FxParamUnit.choice],
 /// stepped), which its control offers by name rather than as a slider.
@@ -229,8 +231,8 @@ class FxParamControl extends StatelessWidget {
 }
 
 /// A choice parameter: its name over its named positions, a row of
-/// [LoopChoiceButton]s while they are [kFxChoiceRowMost] or fewer and a
-/// [LoopSelect] past that, across the width its parent gives it.
+/// [LoopChoiceButton]s while each gets [kFxChoiceButtonLeast] of the width
+/// its parent gives it, and a [LoopSelect] otherwise.
 class _ChoiceParamControl extends StatelessWidget {
   const _ChoiceParamControl({
     required this.label,
@@ -264,6 +266,7 @@ class _ChoiceParamControl extends StatelessWidget {
     final surface = context.surface;
     final positions = [for (var k = 0; k < choices.length; k++) k];
     Key keyOf(int k) => Key('fx_choice_${paramKey}_$k');
+    final gap = context.spacing.sm;
     return LayoutBuilder(
       builder: (context, constraints) => Semantics(
         container: true,
@@ -271,18 +274,23 @@ class _ChoiceParamControl extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppText(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 22,
-                height: 1,
+            // Named once, by the container: the title is its visible copy.
+            ExcludeSemantics(
+              child: AppText(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.textPrimary,
+                  fontSize: 22,
+                  height: 1,
+                ),
               ),
             ),
             const SizedBox(height: 14),
-            if (choices.length <= kFxChoiceRowMost)
+            if ((constraints.maxWidth - gap * (choices.length - 1)) /
+                    choices.length >=
+                kFxChoiceButtonLeast)
               LoopChoiceRow<int>(
                 values: positions,
                 labelOf: (k) => choices[k],
@@ -291,7 +299,7 @@ class _ChoiceParamControl extends StatelessWidget {
                 onSelected: onSelected,
                 width: constraints.maxWidth,
                 height: 64,
-                gap: context.spacing.sm,
+                gap: gap,
                 fontSize: 22,
               )
             else

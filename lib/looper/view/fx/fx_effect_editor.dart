@@ -70,7 +70,7 @@ class FxEffectEditor extends StatelessWidget {
   /// The effect's own actions' left edge, from the same right edge.
   static const double _actionsFromRight = 541;
 
-  /// The parameters' inset from each side of the content box.
+  /// The parameters' right edge, in from the content box's.
   static const double _parametersInset = 203;
 
   /// How wide the parameters' two columns are together.
@@ -150,18 +150,14 @@ class FxEffectEditor extends StatelessWidget {
           Positioned(
             left: 0,
             top: 124 + band,
-            width:
-                LoopSettingsFrame.contentWidthOf(context) -
-                _parametersInset -
-                _parametersWidth -
-                _pedalGap,
+            right: _parametersInset + _parametersWidth + _pedalGap,
             height: _pedalHeight,
             child: _EffectPedal(effect: effect, chainOn: chainOn),
           ),
           Positioned(
-            left: _parametersInset,
             top: 124 + band,
             right: _parametersInset,
+            width: _parametersWidth,
             height: 650 - band,
             child: Opacity(
               key: const Key('fx_effect_parameters'),
@@ -194,8 +190,9 @@ class FxEffectEditor extends StatelessWidget {
 }
 
 /// The effect's pedal, drawn live: its knobs follow the parameters and its
-/// LED the effect's power. Dimmed while the effect or its chain is off, as
-/// the parameters beside it are.
+/// LED the effect's power. Dimmed while the effect is bypassed, as a rack
+/// pedal's picture is, and while its chain is off, as the parameters beside
+/// it are.
 class _EffectPedal extends StatelessWidget {
   const _EffectPedal({required this.effect, required this.chainOn});
 
@@ -280,31 +277,25 @@ class _Parameters extends StatelessWidget {
     final effect = this.effect;
     if (effect == null) return const SizedBox.shrink();
     final controls = fxEntryControls(effect);
-    return Align(
-      alignment: Alignment.topRight,
-      child: SizedBox(
-        width: FxEffectEditor._parametersWidth,
-        child: Wrap(
-          spacing: 58,
-          runSpacing: 46,
-          children: [
-            for (var j = 0; j < controls.params.length; j++)
-              FxBuiltInParamControl(
-                key: Key('fx_param_${controls.params[j]}'),
-                effect: effect,
-                index: controls.params[j],
-                labelKey: controls.keys[j],
-                width: 493,
-                onChanged: (value) {
-                  final id = slotId;
-                  if (id != null) {
-                    edits.setParam(id, controls.params[j], value);
-                  }
-                },
-              ),
-          ],
-        ),
-      ),
+    return Wrap(
+      spacing: 58,
+      runSpacing: 46,
+      children: [
+        for (var j = 0; j < controls.params.length; j++)
+          FxBuiltInParamControl(
+            key: Key('fx_param_${controls.params[j]}'),
+            effect: effect,
+            index: controls.params[j],
+            labelKey: controls.keys[j],
+            width: 493,
+            onChanged: (value) {
+              final id = slotId;
+              if (id != null) {
+                edits.setParam(id, controls.params[j], value);
+              }
+            },
+          ),
+      ],
     );
   }
 }

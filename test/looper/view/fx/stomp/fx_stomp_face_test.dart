@@ -43,7 +43,7 @@ void main() {
     );
   });
 
-  test('every standalone built-in wears its look and shows its own '
+  test('every standalone built-in is drawn with its look and shows its own '
       'controls (#1730)', () {
     final singles = [
       for (final type in TrackEffectType.values)
@@ -65,13 +65,18 @@ void main() {
     }
   });
 
-  test('an entry that names a catalogue module wears the module, not its '
-      "engine type's look", () {
+  test('an entry that names a catalogue module is drawn as the module, '
+      "not as its engine type's look", () {
     final entry = BuiltInEffect(
       type: TrackEffectType.reverb,
       module: 'Ambience',
     );
     expect(faceOf(entry).spec, kFxStompSpecs['Ambience']);
+    // A module name the catalogue no longer has falls back to the type's.
+    expect(
+      faceOf(entry.copyWith(module: 'Removed module')).spec,
+      kFxStompSpecs['Reverb'],
+    );
   });
 
   test('every typeface a look names is bundled with the app', () {

@@ -91,8 +91,9 @@ const Map<TrackEffectType, String> kFxBuiltInLooks = {
 /// The pedal [effect] is drawn as, or `null` when it is neither one of the
 /// catalogue's pedals nor a standalone built-in.
 ///
-/// An entry that names a catalogue module wears that module's look, whatever
-/// engine type it runs on. Any other built-in wears its type's
+/// An entry that names a catalogue module is drawn with that module's look,
+/// whatever engine type it runs on. Any other built-in, including one whose
+/// module name the catalogue no longer has, is drawn with its type's
 /// [kFxBuiltInLooks] entry.
 ///
 /// [live] says whether the surface asking rebuilds when the effect's
@@ -103,11 +104,9 @@ FxPedalPicture? fxEntryArt(
   bool chainOn = true,
 }) {
   final name = effect.module;
-  final look = name != null
-      ? fxModuleNamed(name)?.name
-      : effect is BuiltInEffect
-      ? kFxBuiltInLooks[effect.type]
-      : null;
+  final look =
+      (name == null ? null : fxModuleNamed(name)?.name) ??
+      (effect is BuiltInEffect ? kFxBuiltInLooks[effect.type] : null);
   if (look == null) return null;
   return FxPedalPicture._(
     effect,

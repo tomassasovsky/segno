@@ -602,32 +602,23 @@ void _double(Canvas canvas, double x, double y, double w, double h, Color c) {
 void _tremolo(Canvas canvas, double x, double y, double w, double h) {
   // A fast wave inside a slow one: the level rising and falling.
   final yc = y + h / 2;
-  final points = [
-    for (var i = 0; i <= 600; i++)
-      () {
-        final t = i / 600;
-        final swell = .5 - .5 * math.cos(t * 3 * 2 * math.pi);
-        return Offset(
-          x + w * t,
-          yc + h * .42 * swell * math.sin(t * 27 * 2 * math.pi),
-        );
-      }(),
-  ];
+  final amp = h * .42;
+  double swell(double t) => .5 - .5 * math.cos(t * 3 * 2 * math.pi);
+  final envelope = Path()..moveTo(x, yc);
+  final wave = Path()..moveTo(x, yc);
+  const steps = 600;
+  for (var i = 1; i <= steps; i++) {
+    final t = i / steps;
+    final level = amp * swell(t);
+    envelope.lineTo(x + w * t, yc - level);
+    wave.lineTo(x + w * t, yc + level * math.sin(t * 27 * 2 * math.pi));
+  }
+  const colour = Color(0xFFF3E3C3);
   canvas
+    ..drawPath(envelope, fxStompStroke(colour, 3, .35))
     ..drawPath(
-      _poly([
-        for (var i = 0; i <= 120; i++)
-          Offset(
-            x + w * i / 120,
-            yc - h * .42 * (.5 - .5 * math.cos(i / 120 * 3 * 2 * math.pi)),
-          ),
-      ]),
-      fxStompStroke(const Color(0xFFF3E3C3), 3, .35),
-    )
-    ..drawPath(
-      _poly(points),
-      fxStompStroke(const Color(0xFFF3E3C3), 4, .6)
-        ..strokeJoin = StrokeJoin.round,
+      wave,
+      fxStompStroke(colour, 4, .6)..strokeJoin = StrokeJoin.round,
     );
 }
 
