@@ -6099,12 +6099,21 @@ static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
  * gains were fitted at Tone 0, 25, 75 and 100 % (within 0.8 dB of the
  * captured change from 50 %, 40 Hz to 16 kHz) and are flat at 50 %, which
  * leaves the Phase 0 fit as it was. Between those the gains interpolate
- * linearly, as the Amp+Cab's settings do. */
+ * linearly, as the Amp+Cab's settings do.
+ *
+ * The level is a gain after all of it, 0 to +12 dB, 0 dB by default (the
+ * OvDrive's).
+ * The Lo-Fi Rack's Distort is this pedal at +4.08 dB, a gain of 1.6
+ * (#1737, session s19lofi: at Drive 0, 53.5 and 100 % and Tone 0, 50 and
+ * 100 % it is the Guitar Rack's OvDrive times 1.600 to a residual of -73
+ * dB, -149 dB at Drive 0). */
 static const le_fx_param_desc LE_FX_OVERDRIVE_PARAMS[] = {
     {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.09f,
      0},
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
      0},
+    /* 0 dB at setting 0, so a setting nobody wrote leaves the pedal as fit */
+    {"level", LE_FX_UNIT_DB, 0, 0.0f, 12.0f, LE_FX_CURVE_LINEAR, 0.0f, 0},
 };
 #define LE_OD_K 0.5166f      /* the clean part */
 #define LE_OD_C 0.0367f      /* the clipped part's ceiling */
@@ -6149,10 +6158,12 @@ static float le_onepole_g1(double hz, int sr) {
 
 typedef struct le_fx_overdrive {
   le_fx_glide g;    /* the clipped part's gain over its ceiling, G / c */
+  le_fx_glide level; /* the gain after the tone filter */
   float g_tgt;      /* where g is headed */
   float dlp_g;      /* the glide point dlp_g1 was designed for, -1 for none */
   float tone;       /* the tone setting now, 0..1 */
   float tone_tgt;
+  float level_tgt;  /* where level is headed, a gain */
   float hp_g1;
   float dhp_g1, dlp_g1; /* the clipped part's input high-pass and output
                          * low-pass, one-poles at the curve's rate */
@@ -6218,9 +6229,14 @@ static void fx_overdrive_update(void* ks, le_fx_dyn_head* h, const float* p,
     o->tone_tgt = t;
     o->g_tgt = (float)(exp(LE_OD_LNG0 + d * (LE_OD_LNG1 + d * LE_OD_LNG2)) /
                        LE_OD_C);
+    /* 0 dB is a gain of exactly 1, so the default leaves the output as it
+     * was. */
+    o->level_tgt = le_gain_of_db(
+        (float)le_fx_desc_value(&LE_FX_OVERDRIVE_PARAMS[2], p[2]));
   }
   const float k = settle ? 1.0f : h->k;
   int moving = le_fx_glide_step(&o->g, o->g_tgt, k);
+  moving |= le_fx_glide_step(&o->level, o->level_tgt, k);
   if (o->dlp_g != o->g.g) {
     /* the low-pass follows the gain the glide is headed for this step */
     o->dlp_g = o->g.g;
@@ -6241,6 +6257,7 @@ static void fx_overdrive_update(void* ks, le_fx_dyn_head* h, const float* p,
 static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
   le_fx_overdrive* o = (le_fx_overdrive*)ks;
   const float g = le_fx_glide_next(&o->g);
+  const float level = le_fx_glide_next(&o->level);
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   for (int ch = 0; ch < 2; ++ch) {
     float os[1 << LE_OS_MAX_STAGES];
@@ -6263,7 +6280,8 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
     v = le_biquad_tick(o->sh, o->z_sh[ch][o->ph], v);
     v = le_biquad_tick(o->bl, o->z_bl[ch][o->ph], v);
     v = le_biquad_tick(o->lp2, o->z_lp2[ch][o->ph], v);
-    io[ch] = -(LE_OD_P / (float)LE_OD_TONE_1K) * v; /* inverted, as captured */
+    /* inverted, as captured */
+    io[ch] = (-(LE_OD_P / (float)LE_OD_TONE_1K) * v) * level;
   }
   if (++o->ph >= o->nph) o->ph = 0;
   *l = io[0];
@@ -6897,9 +6915,9 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
  * 100 %, linear, in both racks, and shows the stored value as that percent.
  * Dist Tone is 0 to 100 %, linear, on the Looper X too, and reads as that
  * percent. What it does here is ours, a 2 kHz high shelf of
- * LE_DIST_TONE_DB x (2 tone - 1) dB: the only rack that shows it, the
- * Lo-Fi, has an overdrive-class Dist whose tone this does not model
- * (#1737). */
+ * LE_DIST_TONE_DB x (2 tone - 1) dB; the Studio Rack, the only one with
+ * this Dist, holds it flat. (The Lo-Fi Rack's Distort is the Overdrive,
+ * #1737.) */
 static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
     {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},

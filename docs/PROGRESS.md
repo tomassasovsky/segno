@@ -74,12 +74,31 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
-| #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
+| #1729 | Track and lane chains on the effects workers (#1515 part 2): engine part 1 and the admission (part 2, kFxTrackJobNs from the console stress) in review | in-review | auto | `claude/fx-track-workers-1729*` |
+| #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
+
+## November 2026 The Lo-Fi Rack's Distort is the overdrive (#1737)
+
+- The Looper X's Lo-Fi Distort is its overdrive: the Guitar Rack's OvDrive
+  times 1.6 (+4.08 dB) to a residual of -73 dB at Drive 0, 53.5 and 100 %
+  and Tone 0, 50 and 100 % (#891 rig, session s19lofi). The Lo-Fi variant
+  (`_loFiDistortion`) now builds the Overdrive kind, Dist Drive and Dist
+  Tone on its drive and tone (both 0 to 100 % on the Looper X), with the
+  Overdrive's new level (0 to +12 dB, 0 dB by default) fixed at +4.08 dB.
+  The module is still the catalogue's Distortion; the Studio Rack's Dist
+  stays on the Distortion kind.
+- Each Lo-Fi preset's Distort against the capture at its settings: the
+  response from 63 Hz to 8 kHz within 1.7 dB, the 1 kHz ladder within
+  2.1 dB, the level 0.6 to 1.4 dB under (the Overdrive kind's own fit error
+  against the OvDrive, to the hundredth); the Distortion kind it replaced was
+  17 to 25 dB off in response. Every other rack builds the same entries, and
+  the Ed's and Guitar overdrives render the same samples (level 0 dB is a
+  gain of exactly 1). A Lo-Fi rack charges the Overdrive's cost now.
 
 ## November 2026 Every FX control reads in units (#1731)
 

@@ -8878,12 +8878,12 @@ class LooperRepository {
 
   /// What the effects charge the audio thread's worst block ([fxLoadNs]), in
   /// nanoseconds per frame at the running block length: the live inputs'
-  /// chains shared with the effects workers the engine runs (#1515), and the
-  /// tracks, All tracks, the destinations and the lanes on the callback. A
-  /// lane counts in full: its print stands in for its Pre entries only
-  /// between edits, overdubs, evictions and renders, and the worst block is
-  /// the one in between. A lane playing its take's heard image (#1713)
-  /// charges nothing: it runs no chain.
+  /// chains (#1515) and each track's lanes' and own chains (#1729) shared
+  /// with the effects workers the engine runs, and All tracks and the
+  /// destinations on the callback. A lane counts in full: its print stands
+  /// in for its Pre entries only between edits, overdubs, evictions and
+  /// renders, and the worst block is the one in between. A lane playing its
+  /// take's heard image (#1713) charges nothing: it runs no chain.
   ///
   /// An effect is charged when it runs or a control can make it run (#1723):
   /// its own switch, its rack's and its chain's are each on, or a control
@@ -9049,20 +9049,33 @@ class LooperRepository {
     var worst = 0;
     for (final state in controls.states(isOn)) {
       int cost(FxAddress at) => fixed[at] ?? costAt(at, state);
+      // An input's chain is a job (#1515), and so are a track's lanes'
+      // chains and its own chain together (#1729): every one with an effect
+      // in it. A held chain is still part of a job (the engine releases one
+      // for any chain with an effect in it), one that runs nothing, and so
+      // is a chain whose effects are all off. All tracks and the outputs run
+      // on the callback.
+      var serial = 0;
+      final inputJobs = <int>[];
+      final trackJobs = <int, int>{};
+      for (final MapEntry(key: at, :value) in chains.entries) {
+        switch (at.stage) {
+          case FxStage.input:
+            if (value.isNotEmpty) inputJobs.add(cost(at));
+          case FxStage.loop || FxStage.track:
+            if (value.isNotEmpty) {
+              trackJobs[at.index] = (trackJobs[at.index] ?? 0) + cost(at);
+            }
+          case FxStage.allTracks || FxStage.output:
+            serial += cost(at);
+        }
+      }
       final load = fxLoadNs(
-        serial: [
-          for (final at in chains.keys)
-            if (at.stage != FxStage.input) cost(at),
-        ].fold(0, (a, b) => a + b),
-        // A held input chain is still a job (the engine releases one for any
-        // chain with an effect in it), one that runs nothing, and so is a
-        // chain whose effects are all off.
-        jobs: [
-          for (final MapEntry(key: at, :value) in chains.entries)
-            if (at.stage == FxStage.input && value.isNotEmpty) cost(at),
-        ],
+        serial: serial,
+        jobs: [...inputJobs, ...trackJobs.values],
         workers: _fxWorkers,
         period: period,
+        trackJobs: trackJobs.length,
       );
       if (load > worst) worst = load;
     }

@@ -30,6 +30,7 @@ add_library(segno_engine SHARED
   core/engine_heard.c        # the heard image: what a take was heard as (#1713)
   core/engine_heard_tail.c   # the heard image's rendered tails (#1713)
   core/engine_mix_heard.c    # the mixer with the heard image compiled in (#1713)
+  core/engine_mix_jobs.c     # the mixer whose track chains run as jobs (#1729)
   core/engine_render.c       # shared render recipe: Bounce + Save selected audio
   core/engine_wav.c          # the one native streaming float WAV writer
   core/engine_backing.c      # backing player buffers + control API (#1200)
