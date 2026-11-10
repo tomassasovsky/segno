@@ -1467,10 +1467,15 @@ class LooperRepository {
       if (_laneSourceSent[key] == source) continue;
       // A re-amp the Effects page did not weigh (a parameter from the bloc,
       // a control's press) that does not fit is held, as R2 holds a chain,
-      // and the take keeps playing what was heard.
+      // and the take keeps playing what was heard. The standing notice names
+      // it, as it names every chain R2 holds: nothing is switched off
+      // unsaid. Weighed by the numbers the page admits an edit with
+      // ([fxRoomNs], workers and controls' reach included). A chain the
+      // player switched off plays dry and charges what an off chain does,
+      // so it is never held here.
       if (source == LaneSource.clean &&
-          _fxLoadAt(_fxRate, _fxPeriod) >
-              fxBudgetNs(_fxRate, period: _fxPeriod)) {
+          (_laneChainEnabled[key] ?? true) &&
+          fxRoomNs < 0) {
         final at = FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2);
         _fxHeld.add(at);
         _pushChainSwitch(at, on: false);

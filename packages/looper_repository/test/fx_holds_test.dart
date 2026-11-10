@@ -193,6 +193,75 @@ void main() {
       expect(repo.allLaneChains()[(0, 0)]?.meta?.printed, isNull);
     });
 
+    group('a re-amp the Effects page did not weigh (#1741)', () {
+      /// A take through input 0's rack, and a second rack on input 1: the
+      /// two input racks fit; the take's own copy, re-amped, would be a
+      /// third.
+      void rig() => repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record()
+        ..setMonitorEffects(input: 1, effects: _rack());
+
+      List<TrackEffect> edited() {
+        final chain = repo.laneEffects(0, 0);
+        final first = chain.first as BuiltInEffect;
+        return [
+          first.copyWith(params: [for (final p in first.params) p / 2]),
+          ...chain.skip(1),
+        ];
+      }
+
+      test('is held where the page would refuse it, said by the standing '
+          'notice, and the take plays what was heard', () {
+        rig();
+        expect(
+          repo.fxGrowthNs({_lane(0): edited()}),
+          greaterThan(repo.fxRoomNs),
+          reason: 'the page would refuse this edit',
+        );
+        expect(
+          repo.setLaneEffectParam(
+            channel: 0,
+            lane: 0,
+            index: 0,
+            param: 0,
+            value: 0.1,
+          ),
+          EngineResult.ok,
+        );
+        expect(repo.fxChainHeld(_lane(0)), isTrue);
+        expect(repo.state.fxHeld, contains(_lane(0)));
+        expect(repo.state.fxHoldNotice, contains(_lane(0)));
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      });
+
+      test('runs where the page would admit it, workers included', () {
+        engine.fxWorkersRunning = 2;
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig(sampleRate: 96000));
+        repo
+          ..setMonitorEffects(input: 0, effects: _rack())
+          ..record();
+        expect(
+          repo.fxGrowthNs({_lane(0): edited()}),
+          lessThanOrEqualTo(repo.fxRoomNs),
+          reason: 'the page would admit this edit',
+        );
+        repo.setLaneEffectParam(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          param: 0,
+          value: 0.1,
+        );
+        expect(repo.fxChainHeld(_lane(0)), isFalse);
+        expect(repo.state.fxHoldNotice, isEmpty);
+        expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      });
+    });
+
     test("switching a take's chain off plays it clean and dry", () {
       repo
         ..setMonitorEffects(input: 0, effects: _rack())
