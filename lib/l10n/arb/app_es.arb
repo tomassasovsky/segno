@@ -2028,6 +2028,7 @@
     "fxChainFull": "Esta cadena está llena",
     "fxRackTooLong": "{name} necesita {needed} espacios y aquí quedan {free}",
     "fxOverBudget": "No queda procesamiento para agregar esto",
+    "fxBindOverBudget": "No queda procesamiento para lo que este interruptor puede encender",
     "fxTakeHeldToast": "Los efectos de esta toma están apagados",
     "fxTakeHeldBody": "No entran en el equipo. Quita un efecto para encenderlos.",
     "fxHeldBanner": "{count, plural, =1{Apagado} other{Apagados}}: {chains}",

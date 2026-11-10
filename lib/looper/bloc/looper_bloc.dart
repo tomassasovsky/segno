@@ -301,21 +301,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (!result.isOk) return;
       _persistRepositoryLaneChain(event.channel, event.lane);
     });
-    on<LooperLaneEffectEnabledToggled>((event, _) {
-      final result = _repository.setLaneEffectEnabled(
-        channel: event.channel,
-        lane: event.lane,
-        index: event.index,
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinarySlotAt(
-        FxAddress(stage: FxStage.loop, index: event.channel, lane: event.lane),
-        event.index,
-        enabled: event.enabled,
-      );
-      _persistLaneChain(event.channel, event.lane);
-    });
     on<LooperLaneChainResyncedFromInput>((event, _) {
       // A re-copy replaces every entry and reseats the lane's slots, so any
       // editor-sync poll keyed by a now-stale chain index must be cancelled —
@@ -501,20 +486,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (!result.isOk) return;
       _persistAfterFx(FxAddress(stage: FxStage.track, index: event.channel));
     });
-    on<LooperTrackEffectEnabledToggled>((event, _) {
-      final result = _repository.setTrackEffectEnabled(
-        channel: event.channel,
-        index: event.index,
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinarySlotAt(
-        FxAddress(stage: FxStage.track, index: event.channel),
-        event.index,
-        enabled: event.enabled,
-      );
-      _persistTrackChain(event.channel);
-    });
     on<LooperTrackChainToggled>((event, _) {
       // Resolved here, against the repository's remembered intent — the same
       // truth `ControlCubit` toggles from, and the same shape as the mute
@@ -585,19 +556,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _persistAfterFx(const FxAddress(stage: FxStage.allTracks));
       _confirmFxReceipt(event.receipt, result, cancelled: event.cancelled);
     });
-    on<LooperAllTracksEffectEnabledToggled>((event, _) {
-      final result = _repository.setAllTracksEffectEnabled(
-        index: event.index,
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinarySlotAt(
-        const FxAddress(stage: FxStage.allTracks),
-        event.index,
-        enabled: event.enabled,
-      );
-      _persistAllTracksChain();
-    });
     on<LooperAllTracksEffectParamChanged>((event, _) {
       // Granular, NOT a whole-chain push — see the bus param handler: a
       // re-push would reset every slot's DSP state at pointer-move rate.
@@ -614,20 +572,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         event.value,
       );
       _persistAllTracksChain();
-    });
-    on<LooperOutputEffectEnabledToggled>((event, _) {
-      final result = _repository.setOutputEffectEnabled(
-        bus: event.bus,
-        index: event.index,
-        enabled: event.enabled,
-      );
-      if (!result.isOk) return;
-      _fxPersistence.ordinarySlotAt(
-        FxAddress(stage: FxStage.output, index: event.bus),
-        event.index,
-        enabled: event.enabled,
-      );
-      _persistAfterFx(FxAddress(stage: FxStage.output, index: event.bus));
     });
     on<LooperLanePluginEditorOpened>((event, _) {
       final key = (event.channel, event.lane, event.index);
@@ -906,15 +850,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     }());
   }
 
-  /// Persists lane [lane] of [channel]'s current chain — the sink for the
-  /// repository's [LooperRepository.onLaneChainChanged] notification (F3: the
-  /// record-time snapshot copy). Reads the repository's enriched chain so a
-  /// persisted plugin entry keeps its resolved name.
-  void _persistLaneChain(int channel, int lane) =>
-      _persistRepositoryLaneChain(channel, lane);
-
-  /// Coalesced twin of [_persistLaneChain], for the paths a knob drag drives.
-  /// Keyed per lane, so dragging one lane's knob never delays another's write.
+  /// Coalesced twin of [_persistRepositoryLaneChain], for the paths a knob
+  /// drag drives. Keyed per lane, so dragging one lane's knob never delays
+  /// another's write.
   void _schedulePersistLaneChain(int channel, int lane) =>
       _schedulePersistBusChain(
         FxAddress(stage: FxStage.loop, index: channel, lane: lane),

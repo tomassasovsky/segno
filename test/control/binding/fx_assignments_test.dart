@@ -231,4 +231,185 @@ void main() {
       expect(binding.hasHold, isFalse);
     });
   });
+
+  group('fxReachOf (#1723)', () {
+    const input = FxAddress(stage: FxStage.input);
+    const rackA = FxRackTarget(address: input, rackId: 'a');
+    const rackB = FxRackTarget(address: input, rackId: 'b');
+
+    MidiMapping button(
+      MidiBehavior behavior,
+      List<MidiControl> controls, {
+      bool enabled = true,
+    }) => MidiMapping(
+      id: 'm',
+      source: MidiSource(
+        device: 'buttons',
+        kind: ControllerSourceKind.midiCc,
+        number: 20,
+      ),
+      behavior: behavior,
+      controls: controls,
+      enabled: enabled,
+    );
+
+    MidiParameterControl power(
+      FxBindingTarget target,
+      double low,
+      double high,
+    ) => MidiParameterControl(
+      key: target.canonicalString(),
+      low: low,
+      high: high,
+    );
+
+    /// The reach of [state] beside the Track-stage chains every state
+    /// reaches.
+    List<FxControlReach> reach(ControlState state) => [
+      for (final control in fxReachOf(state))
+        if (!control.whenOn.any((key) => key.address.stage == FxStage.track))
+          control,
+    ];
+
+    test('every Track-stage chain is reached, whatever is bound', () {
+      final keys = fxReachOf(const ControlState()).expand((c) => c.whenOn);
+      expect(keys, {
+        for (var channel = 0; channel < 8; channel++)
+          FxSwitchKey.chain(FxAddress(stage: FxStage.track, index: channel)),
+      });
+    });
+
+    test('a console binding reaches its press and its hold, a selected one '
+        'on every track', () {
+      const lane = FxSlotTarget(
+        address: FxAddress(stage: FxStage.loop, lane: 0),
+        slotId: 's',
+      );
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+            target: rackA.canonicalString(),
+            holdTarget: rackB.canonicalString(),
+          ),
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+            target: lane.canonicalString(),
+            scope: BindingScope.selected,
+          ),
+        ]),
+      );
+      expect(reach(state), [
+        FxControlReach(whenOn: {rackA.switchKey}),
+        FxControlReach(whenOn: {rackB.switchKey}),
+        FxControlReach(
+          whenOn: {
+            for (var track = 0; track < 8; track++)
+              FxSwitchKey.slot(
+                FxAddress(stage: FxStage.loop, index: track, lane: 0),
+                's',
+              ),
+          },
+        ),
+      ]);
+    });
+
+    test('a MIDI button with opposite ranges alternates; a knob, or a '
+        'disabled mapping, does not', () {
+      ControlState with_(MidiMapping mapping) =>
+          ControlState(midiMappings: MidiMappingSet(mappings: [mapping]));
+      final controls = [power(rackA, 0, 1), power(rackB, 1, 0)];
+      expect(reach(with_(button(MidiBehavior.toggle, controls))), [
+        FxControlReach(whenOn: {rackA.switchKey}, whenOff: {rackB.switchKey}),
+      ]);
+      expect(reach(with_(button(MidiBehavior.continuous, controls))), [
+        FxControlReach(whenOn: {rackA.switchKey, rackB.switchKey}),
+      ]);
+      expect(
+        reach(with_(button(MidiBehavior.toggle, controls, enabled: false))),
+        isEmpty,
+      );
+      // A control held off at both ends turns nothing on.
+      expect(
+        reach(with_(button(MidiBehavior.toggle, [power(rackA, 0, 0)]))),
+        [const FxControlReach()],
+      );
+    });
+
+    test('an external switch alternates On with Off and Held with Released, '
+        "under its jack's type only", () {
+      final controls = ExternalControls(
+        activations: const [
+          ExternalActivation(target: rackA),
+          ExternalActivation(target: rackB, condition: ExternalCondition.off),
+        ],
+      );
+      ControlState jack(ExternalJackSetup setup) => ControlState(
+        pedalSetup: PedalSetup(
+          external: ExternalPedalSetup(jacks: {PedalCtrlJack.ctrl1: setup}),
+        ),
+      );
+      expect(
+        reach(
+          jack(
+            ExternalJackSetup(single: ExternalSwitchSetup(controls: controls)),
+          ),
+        ),
+        [
+          FxControlReach(whenOn: {rackA.switchKey}, whenOff: {rackB.switchKey}),
+          const FxControlReach(),
+        ],
+      );
+      // A latching switch reports no contact: its Held rows reach nothing.
+      final held = ExternalControls(
+        activations: const [
+          ExternalActivation(target: rackA, condition: ExternalCondition.held),
+        ],
+      );
+      expect(
+        reach(
+          jack(
+            ExternalJackSetup(
+              single: ExternalSwitchSetup(
+                hardware: ExternalSwitchHardware.latching,
+                controls: held,
+              ),
+            ),
+          ),
+        ),
+        [const FxControlReach()],
+      );
+      expect(
+        reach(
+          jack(ExternalJackSetup(single: ExternalSwitchSetup(controls: held))),
+        ),
+        [
+          const FxControlReach(),
+          FxControlReach(whenOn: {rackA.switchKey}),
+        ],
+      );
+      // Kept for the dual type, but a single switch is plugged in.
+      expect(
+        reach(
+          jack(
+            ExternalJackSetup(
+              dualFirst: ExternalSwitchSetup(controls: controls),
+            ),
+          ),
+        ),
+        [const FxControlReach(), const FxControlReach()],
+      );
+      // The A/B pair it makes charges its larger side.
+      final pair = FxReach(
+        fxReachOf(
+          jack(
+            ExternalJackSetup(single: ExternalSwitchSetup(controls: controls)),
+          ),
+        ),
+      );
+      expect(pair.alternations, [
+        FxControlReach(whenOn: {rackA.switchKey}, whenOff: {rackB.switchKey}),
+      ]);
+    });
+  });
 }

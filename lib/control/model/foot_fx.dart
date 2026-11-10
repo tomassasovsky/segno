@@ -174,7 +174,7 @@ FootFxPedal _project(
     final decoded = binding.decodeTarget();
     final target = decoded == null
         ? null
-        : _scoped(decoded, binding.scope, control.cursor);
+        : resolveBindingTarget(decoded, binding.scope, control.cursor);
     final hold = binding.decodeHoldTarget();
     return FootFxPedal(
       button: button,
@@ -205,24 +205,4 @@ FootFxPedal _project(
     lit: track?.chainEnabled ?? false,
     available: track != null,
   );
-}
-
-FxBindingTarget _scoped(
-  FxBindingTarget target,
-  BindingScope scope,
-  int cursor,
-) {
-  final address = resolveBindingAddress(target.address, scope, cursor);
-  if (address == target.address) return target;
-  return switch (target) {
-    FxChainTarget() => FxChainTarget(address),
-    FxSlotTarget(:final slotId) => FxSlotTarget(
-      address: address,
-      slotId: slotId,
-    ),
-    FxRackTarget(:final rackId) => FxRackTarget(
-      address: address,
-      rackId: rackId,
-    ),
-  };
 }

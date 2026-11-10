@@ -280,6 +280,8 @@ void main() {
     EngineStatus status = _previewStatus,
   }) {
     final looper = _MockLooperRepository();
+    registerFallbackValue(<FxControlReach>[]);
+    when(() => looper.fxReachFits(any())).thenReturn(true);
     when(() => looper.sessionRevision).thenReturn(0);
     stubScreenshotSettings(looper);
     when(() => looper.recordStartSettingsFailures).thenAnswer(

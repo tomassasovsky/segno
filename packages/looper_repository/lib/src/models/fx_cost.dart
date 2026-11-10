@@ -111,6 +111,25 @@ const List<int> kFxPsolaCostNs = [
 /// through them: a fixed part and a part for each frame ([fxBaseNs]).
 const List<double> kFxBaseUs = [42.3, 74.8, 45.4, 73.5, 43.1, 74.4, 43.8, 75.9];
 
+/// The kinds that keep running after they are switched off, until their tail
+/// has drained (engine_fx.c, `le_fx_type_drains`: the delay, the echo, the
+/// Mode delay and the reverbs). Switching one off frees nothing until then,
+/// so the budget charges one an alternation turns off as if it ran (#1723).
+const Set<TrackEffectType> kFxDrainingKinds = {
+  TrackEffectType.delay,
+  TrackEffectType.echo,
+  TrackEffectType.modeDelay,
+  TrackEffectType.reverb,
+  TrackEffectType.spring,
+  TrackEffectType.dubVerb,
+  TrackEffectType.ambVerb,
+  TrackEffectType.roomVerb,
+};
+
+/// Whether [fx] keeps running after it is switched off ([kFxDrainingKinds]).
+bool fxDrains(TrackEffect fx) =>
+    fx is BuiltInEffect && kFxDrainingKinds.contains(fx.type);
+
 /// The block a per-block cost is spread over at most ([_perBlock]), and the
 /// block the charges default to.
 const int kFxBenchPeriod = 64;
@@ -151,15 +170,16 @@ int fxCostSetting(int sampleRate, int period) {
 }
 
 /// What [fx] charges, in nanoseconds per frame at [sampleRate] and
-/// [period]-frame blocks, whether or not it is on, so switching a pedal on is
-/// never refused: its kind's figure ([kFxKindCostNs]), or at the setting
-/// ([fxCostSetting]) for a kind whose work depends on it
+/// [period]-frame blocks while it runs: its kind's figure ([kFxKindCostNs]),
+/// or at the setting ([fxCostSetting]) for a kind whose work depends on it
 /// ([kFxSettingCostNs], [kFxPsolaCostNs]). Outside what was measured the
 /// figure only grows: a block under 32 frames charges the 32-frame figure
 /// times 32 over its length (a hop quarter or a block's own work lands in
 /// every block), and a rate under 44.1 kHz charges a setting kind's 44.1 kHz
 /// figure times 44.1 kHz over the rate (its 48 kHz kernel runs more samples
-/// a frame). A hosted plugin charges nothing here; its cost is its own.
+/// a frame). Which instances the rig is charged for, those on and those a
+/// control can turn on, is the repository's (`LooperRepository.fxCostNs`,
+/// #1723). A hosted plugin charges nothing here; its cost is its own.
 int fxEntryCostNs(
   TrackEffect fx, {
   int period = kFxBenchPeriod,
@@ -180,7 +200,8 @@ int fxEntryCostNs(
   return ((kFxKindCostNs[fx.type] ?? 0) * short).ceil();
 }
 
-/// What [chain] charges ([fxEntryCostNs]), in nanoseconds per frame.
+/// What [chain] charges with every entry in it running ([fxEntryCostNs]),
+/// in nanoseconds per frame.
 int fxChainCostNs(
   Iterable<TrackEffect> chain, {
   int period = kFxBenchPeriod,

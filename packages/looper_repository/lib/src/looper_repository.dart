@@ -12,6 +12,7 @@ import 'package:looper_repository/src/models/fx_address.dart';
 import 'package:looper_repository/src/models/fx_chain_envelope.dart';
 import 'package:looper_repository/src/models/fx_chain_group.dart';
 import 'package:looper_repository/src/models/fx_cost.dart';
+import 'package:looper_repository/src/models/fx_reach.dart';
 import 'package:looper_repository/src/models/fx_slot_ids.dart';
 import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/input_setup.dart';
@@ -8651,21 +8652,92 @@ class LooperRepository {
   /// tracks, All tracks, the destinations and the lanes on the callback. A
   /// lane counts in full: its print stands in for its Pre entries only
   /// between edits, overdubs, evictions and renders, and the worst block is
-  /// the one in between. Every pedal counts whether it is on or off, so
-  /// switching one on is never refused; a chain switched off because it did
-  /// not fit charges nothing, and switching it back on is weighed
-  /// ([fxHeldChainFits]).
+  /// the one in between.
+  ///
+  /// An effect is charged when it runs or a control can make it run (#1723):
+  /// its own switch, its rack's and its chain's are each on, or a control
+  /// reaches it ([setFxReach]), so a press is never refused. An effect that
+  /// is off and that no control reaches charges nothing; switching it on
+  /// from the screen is weighed then ([fxGrowthNs]). Switches one control
+  /// alternates charge their larger side ([FxReach.states]). A chain switched
+  /// off because it did not fit charges nothing, and switching it back on is
+  /// weighed ([fxHeldChainFits]).
   int get fxCostNs => _fxLoadAt(_fxRate, _fxPeriod);
 
   /// How much [fxCostNs] would grow, in nanoseconds per frame, with the
   /// chain at each address of [chains] replaced by its value (an empty one
-  /// removes it); negative when it would shrink. What an edit is weighed by
-  /// against [fxRoomNs]: one chain for an effects edit, several for a New
-  /// loop template.
-  int fxGrowthNs(Map<FxAddress, List<TrackEffect>> chains) {
+  /// removes it) and the chain switch at each address of [chainSwitches]
+  /// set to its value; negative when it would shrink. What an edit is
+  /// weighed by against [fxRoomNs]: one chain for an effects edit or for a
+  /// switch the screen turns on, several for a New loop template.
+  int fxGrowthNs(
+    Map<FxAddress, List<TrackEffect>> chains, {
+    Map<FxAddress, bool> chainSwitches = const {},
+  }) {
     final period = _fxPeriod;
     final rate = _fxRate;
-    return _fxLoadAt(rate, period, chains) - _fxLoadAt(rate, period);
+    return _fxLoadAt(
+          rate,
+          period,
+          replaced: chains,
+          switches: chainSwitches,
+        ) -
+        _fxLoadAt(rate, period);
+  }
+
+  /// What the rig's controls can turn on (#1723): the console bindings,
+  /// MIDI mappings and external switches, as the control layer works them
+  /// out. [fxCostNs] reserves room for it.
+  FxReach _fxReach = FxReach.none;
+
+  /// Takes what the rig's controls can now turn on ([FxReach]) and charges
+  /// for it from now on ([fxCostNs]).
+  ///
+  /// A new binding that would not fit is refused before it gets here
+  /// ([fxReachFits]); a reach that comes in over budget anyway (a session's
+  /// bindings) is admitted as a restore is, holding chains off until the
+  /// rest fits (R2), and one that shrank brings back what it held off.
+  void setFxReach(Iterable<FxControlReach> controls) {
+    final next = FxReach(controls);
+    if (next == _fxReach) return;
+    _fxReach = next;
+    if (!_intendRunning) return;
+    // Worked out again from nothing: a reach that shrank brings back what
+    // it had held off.
+    _admitRig(release: true);
+    _reproject();
+  }
+
+  /// The chains one control's press is writing (#1723), with each chain's
+  /// switch: [_fitRig] weighs them as landed, so the side an A/B press
+  /// switches on is admitted beside the side it switches off, not on top of
+  /// it.
+  Map<FxAddress, ({List<TrackEffect> entries, bool on})> _fxPress = const {};
+
+  /// Runs [write], the chain writes of one control's [press], with every
+  /// chain of the press weighed as landed ([_fxPress]).
+  T fxPress<T>(
+    Map<FxAddress, ({List<TrackEffect> entries, bool on})> press,
+    T Function() write,
+  ) {
+    _fxPress = press;
+    try {
+      return write();
+    } finally {
+      _fxPress = const {};
+    }
+  }
+
+  /// Whether the controls [controls] could turn on would fit the effects
+  /// budget: what binding a control checks before it is saved (#1723).
+  /// Reach that adds no charge always fits.
+  bool fxReachFits(Iterable<FxControlReach> controls) {
+    final period = _fxPeriod;
+    final rate = _fxRate;
+    final grows =
+        _fxLoadAt(rate, period, reach: FxReach(controls)) -
+        _fxLoadAt(rate, period);
+    return grows <= 0 || grows <= fxRoomNs;
   }
 
   /// The effects workers the engine runs beside the callback (#1515): 0 on
@@ -8682,63 +8754,156 @@ class LooperRepository {
   }
 
   /// [fxLoadNs] for every chain as it is, or with the chains at the
-  /// addresses of [replaced] replaced by its values. A chain in [held]
-  /// (the chains switched off because they did not fit, unless the caller
-  /// asks about another set) charges nothing: it uses no audio-thread time.
+  /// addresses of [replaced] replaced by its values and the chain switches
+  /// at the addresses of [switches] set to its values, charging what the
+  /// controls [reach] (by default the rig's, [setFxReach]) can turn on. A
+  /// chain in [held] (the chains switched off because they did not fit,
+  /// unless the caller asks about another set) charges nothing: it uses no
+  /// audio-thread time.
+  ///
+  /// An effect is charged when its own switch, its rack's and its chain's
+  /// are each on or reachable. The switches one control alternates take each
+  /// of [FxReach.states] in turn, and the load is the largest.
   int _fxLoadAt(
     int rate,
-    int period, [
+    int period, {
     Map<FxAddress, List<TrackEffect>> replaced = const {},
     Set<FxAddress>? held,
-  ]) {
+    Map<FxAddress, bool> switches = const {},
+    FxReach? reach,
+  }) {
     final off = held ?? _fxHeld;
-    int costAt(FxAddress at, List<TrackEffect> c) => off.contains(at)
-        ? 0
-        : fxChainCostNs(c, period: period, sampleRate: rate);
-    final monitors = {..._monitorEffects};
-    final tracks = {..._trackEffects};
-    final outputs = {..._outputEffects};
-    final lanes = {..._laneEffects};
-    var allTracks = _allTracksEffects;
-    for (final MapEntry(key: at, value: chain) in replaced.entries) {
-      switch (at.stage) {
-        case FxStage.input:
-          monitors[at.index] = chain;
-        case FxStage.loop:
-          lanes[(at.index, at.lane ?? 0)] = chain;
-        case FxStage.track:
-          tracks[at.index] = chain;
-        case FxStage.allTracks:
-          allTracks = chain;
-        case FxStage.output:
-          outputs[at.index] = chain;
+    final controls = reach ?? _fxReach;
+    final chains = <FxAddress, List<TrackEffect>>{
+      for (final MapEntry(:key, :value) in _monitorEffects.entries)
+        FxAddress(stage: FxStage.input, index: key): value,
+      for (final MapEntry(:key, :value) in _laneEffects.entries)
+        FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2): value,
+      for (final MapEntry(:key, :value) in _trackEffects.entries)
+        FxAddress(stage: FxStage.track, index: key): value,
+      const FxAddress(stage: FxStage.allTracks): _allTracksEffects,
+      for (final MapEntry(:key, :value) in _outputEffects.entries)
+        FxAddress(stage: FxStage.output, index: key): value,
+      for (final MapEntry(key: at, :value) in replaced.entries)
+        if (at.stage == FxStage.loop)
+          FxAddress(stage: FxStage.loop, index: at.index, lane: at.lane ?? 0):
+              value
+        else
+          at: value,
+    };
+    bool chainOn(FxAddress at) => switches[at] ?? _chainSwitchAt(at);
+    bool isOn(FxSwitchKey key) {
+      final chain = chains[key.address] ?? const <TrackEffect>[];
+      if (key.slotId case final slot?) {
+        return chain.any((fx) => fx.slotId == slot && fx.enabled);
       }
+      if (key.rackId case final rack?) {
+        return chain.any((fx) => fx.rack?.id == rack && !fx.rack!.bypassed);
+      }
+      return chainOn(key.address);
     }
-    final serial = [
-      for (final MapEntry(:key, :value) in tracks.entries)
-        costAt(FxAddress(stage: FxStage.track, index: key), value),
-      for (final MapEntry(:key, :value) in outputs.entries)
-        costAt(FxAddress(stage: FxStage.output, index: key), value),
-      costAt(const FxAddress(stage: FxStage.allTracks), allTracks),
-      for (final MapEntry(:key, :value) in lanes.entries)
-        costAt(
-          FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2),
-          value,
-        ),
-    ].fold(0, (a, b) => a + b);
-    return fxLoadNs(
-      serial: serial,
-      // A held input chain is still a job (the engine releases one for any
-      // chain with an effect in it), one that runs nothing.
-      jobs: [
-        for (final MapEntry(:key, :value) in monitors.entries)
-          if (value.isNotEmpty)
-            costAt(FxAddress(stage: FxStage.input, index: key), value),
+
+    int costAt(FxAddress at, Set<FxSwitchKey> state) => off.contains(at)
+        ? 0
+        : _fxChainChargeNs(
+            at,
+            chains[at]!,
+            rate: rate,
+            period: period,
+            chainOn: chainOn(at),
+            state: state,
+            reach: controls,
+          );
+
+    // Only the chains an alternation has a switch in change from state to
+    // state.
+    final alternated = controls.alternatedChains;
+    final fixed = {
+      for (final at in chains.keys)
+        if (!alternated.contains(at)) at: costAt(at, const {}),
+    };
+    var worst = 0;
+    for (final state in controls.states(isOn)) {
+      int cost(FxAddress at) => fixed[at] ?? costAt(at, state);
+      final load = fxLoadNs(
+        serial: [
+          for (final at in chains.keys)
+            if (at.stage != FxStage.input) cost(at),
+        ].fold(0, (a, b) => a + b),
+        // A held input chain is still a job (the engine releases one for any
+        // chain with an effect in it), one that runs nothing, and so is a
+        // chain whose effects are all off.
+        jobs: [
+          for (final MapEntry(key: at, :value) in chains.entries)
+            if (at.stage == FxStage.input && value.isNotEmpty) cost(at),
+        ],
+        workers: _fxWorkers,
+        period: period,
+      );
+      if (load > worst) worst = load;
+    }
+    return worst;
+  }
+
+  /// What the chain [chain] at [address] charges ([fxChainCostNs]), its
+  /// switch [chainOn]: each effect whose own switch, rack's and chain's are
+  /// each on or reached by a control of [reach] (by default the rig's), the
+  /// switches [reach] alternates on exactly when [state] has them.
+  int _fxChainChargeNs(
+    FxAddress address,
+    List<TrackEffect> chain, {
+    required int rate,
+    required int period,
+    required bool chainOn,
+    required Set<FxSwitchKey> state,
+    FxReach? reach,
+  }) {
+    final controls = reach ?? _fxReach;
+    // A switch an alternation sets is on in the states that have it, but an
+    // effect that drains its tail keeps running after its side goes off
+    // (le_fx_type_drains): it is charged in every state, as a press can
+    // leave it draining beside the side going on.
+    bool runs(FxSwitchKey key, {required bool now, required bool drains}) =>
+        controls.alternates(key)
+        ? drains || state.contains(key)
+        : now || controls.free.contains(key);
+    if (chain.isEmpty) return 0;
+    final chainKey = FxSwitchKey.chain(address);
+    return fxChainCostNs(
+      [
+        for (final fx in chain)
+          if (_fxCharged(
+            fx,
+            address,
+            (key, {required now}) => runs(key, now: now, drains: fxDrains(fx)),
+            chainKey: chainKey,
+            chainOn: chainOn,
+          ))
+            fx,
       ],
-      workers: _fxWorkers,
       period: period,
+      sampleRate: rate,
     );
   }
+
+  /// Whether [fx] in the chain at [address] is charged: its chain's switch,
+  /// its rack's and its own each [runs].
+  static bool _fxCharged(
+    TrackEffect fx,
+    FxAddress address,
+    bool Function(FxSwitchKey key, {required bool now}) runs, {
+    required FxSwitchKey chainKey,
+    required bool chainOn,
+  }) =>
+      runs(chainKey, now: chainOn) &&
+      (fx.rack == null ||
+          runs(
+            FxSwitchKey.rack(address, fx.rack!.id),
+            now: !fx.rack!.bypassed,
+          )) &&
+      (fx.slotId == null
+          ? fx.enabled
+          : runs(FxSwitchKey.slot(address, fx.slotId!), now: fx.enabled));
 
   // ---- Chains that do not fit (#1515, the owner's R1 and R2) ----
 
@@ -8875,8 +9040,14 @@ class LooperRepository {
     if (!_fxHeld.contains(address)) return true;
     final period = _fxPeriod;
     final rate = _fxRate;
+    // Switching it on also switches on its saved switch, if that was off.
     final grows =
-        _fxLoadAt(rate, period, const {}, {..._fxHeld}..remove(address)) -
+        _fxLoadAt(
+          rate,
+          period,
+          held: {..._fxHeld}..remove(address),
+          switches: {address: true},
+        ) -
         _fxLoadAt(rate, period);
     return grows <= 0 || grows <= fxRoomNs;
   }
@@ -8930,7 +9101,14 @@ class LooperRepository {
   }) {
     const nothing = (held: <FxAddress>{}, dropped: false);
     if (!_intendRunning) return nothing;
-    final replaced = {if (incoming != null && chain != null) incoming: chain};
+    final replaced = {
+      for (final MapEntry(:key, :value) in _fxPress.entries) key: value.entries,
+      if (incoming != null && chain != null) incoming: chain,
+    };
+    final switches = {
+      for (final MapEntry(:key, :value) in _fxPress.entries) key: value.on,
+      if (incoming != null && incomingOn != null) incoming: incomingOn,
+    };
     // A chain that goes empty has nothing left to hold.
     var dropped = false;
     if (incoming != null && chain != null && chain.isEmpty) {
@@ -8945,7 +9123,8 @@ class LooperRepository {
     final rate = _fxRate;
     final period = _fxPeriod;
     final budget = fxBudgetNs(rate, period: period);
-    if (_fxLoadAt(rate, period, replaced) <= budget) {
+    if (_fxLoadAt(rate, period, replaced: replaced, switches: switches) <=
+        budget) {
       _pruneFxHoldNotice();
       return (held: <FxAddress>{}, dropped: dropped);
     }
@@ -8984,8 +9163,24 @@ class LooperRepository {
     final named = <FxAddress>[];
     final held = <FxAddress>{};
     for (final at in order) {
-      if (_fxLoadAt(rate, period, replaced) <= budget) break;
+      if (_fxLoadAt(rate, period, replaced: replaced, switches: switches) <=
+          budget) {
+        break;
+      }
       if (_fxHeld.contains(at) || chainOf(at).isEmpty) continue;
+      // A chain that charges nothing in any state (off, and no control
+      // reaches it, #1723) frees nothing: it stays as it is.
+      if (_fxChainChargeNs(
+            at,
+            chainOf(at),
+            rate: rate,
+            period: period,
+            chainOn: switches[at] ?? _chainSwitchAt(at),
+            state: _fxReach.alternated,
+          ) ==
+          0) {
+        continue;
+      }
       _fxHeld.add(at);
       held.add(at);
       if (at != incoming) _pushChainSwitch(at, on: false);
@@ -9090,7 +9285,12 @@ class LooperRepository {
     final held = {..._fxHeld}
       ..removeAll(replaced.keys)
       ..removeAll(pending.keys);
-    final load = _fxLoadAt(rate, period, {...pending, ...replaced}, held);
+    final load = _fxLoadAt(
+      rate,
+      period,
+      replaced: {...pending, ...replaced},
+      held: held,
+    );
     return load > fxBudgetNs(rate, period: period);
   }
 

@@ -82,6 +82,58 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The effects budget reserves room only for what a switch can turn on (#1723)
+
+- An effect is charged when it runs or a control can make it run: its own
+  switch, its rack's (`FxRack.bypassed`) and its chain's are each on, or a
+  control reaches that switch. An effect that is off and that no control
+  reaches charges nothing. The rule lives in the repository's load
+  (`LooperRepository._fxLoadAt`), so every admission (adds, loads, takes,
+  rate and buffer changes, the rig coming up) and every readout follows it.
+- What the controls reach is worked out from the binding set by
+  `fxReachOf(ControlState)` (`lib/control/binding/fx_assignments.dart`,
+  beside `fxAssignmentsTo`, which walks the same stores) and handed to
+  `LooperRepository.setFxReach` on every change. It counts the console
+  bindings in force (press and hold, a selected-scope binding on every
+  track), every Track-stage chain (an unbound track switch in FX mode, the
+  digit keys and the Track effects on command), each enabled MIDI mapping's
+  effect switches and each external switch's activations under its jack's
+  type.
+- Switches one control alternates and no other control reaches (an
+  external switch's On rows against its Off rows, Held against Released, a
+  MIDI button's top against its bottom) charge their larger side
+  (`FxReach.states`): the load is the largest over each side of each
+  alternation, plus the state the screen left them in. An external or MIDI
+  press weighs all the chains it writes as landed together
+  (`LooperRepository.fxPress`), so the side it switches on is never admitted
+  on top of the side it switches off.
+- The screen weighs switching on an effect, a rack or a chain
+  (`FxCubit.setEffectEnabled`, `setGroupEnabled`, `setChainEnabled`) and
+  refuses it with the over-budget notice when it does not fit. A press never
+  is: what it can turn on is already charged. The per-effect enable paths no
+  view used (`MonitorCubit.setEffectEnabled`, LooperBloc's
+  `Looper*EffectEnabledToggled`) are gone, so `FxCubit` is the screen's only
+  writer of an effect's switch.
+- A binding that would put the reservation over budget is refused at save
+  (`ControlCubit.setGlobalBindings`, the pedal setup's save and the MIDI
+  save throw `FxReachOverBudget` or return `MidiSaveResult.overBudget()`),
+  and the screen says "Not enough processing left for what this switch can
+  turn on". Those three saves share one queue (`ControlCubit._serializeReach`),
+  so a check and its commit are one step and two pages cannot both pass. A
+  change that only takes reach away (`fxReachShrinks`) is never refused; if
+  the charge rises anyway (an alternation moving past the cap of 6), chains
+  are held off as R2 does and come back once it fits. A session's bindings that come in over budget are admitted as a
+  restore is (R2): chains are held off until the rest fits, and a reach that
+  shrinks brings them back. R2 never holds a chain that charges nothing.
+- A switched-off delay, echo, Mode delay or reverb keeps running until its
+  tail drains (`le_fx_type_drains`; `kFxDrainingKinds` mirrors it and a test
+  reads the engine's table). The side a press turns off is still charged for
+  those, so an alternation charges the larger of each side plus the other
+  side's draining effects (a console stress test switching an A/B pair every
+  second at the limit showed the xruns without this). Room freed by switching
+  an unreached effect off from the screen is still counted before its tail
+  ends.
+
 ## November 2026 A take plays back what was heard (#1713, in progress)
 
 - Plan and the owner's decisions: the comment on #1713. Engine part 1
