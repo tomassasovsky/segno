@@ -1638,12 +1638,28 @@ class PerformanceRepository {
             channels: 1,
           ),
         );
+        // What the player heard (#1713): the wet stem plays it where the lane
+        // played it. Exported in the same settled window as the clean take,
+        // so the two stand frame for frame.
+        final heard = _engine.exportTrackLaneHeard(channel, laneIndex);
+        String? heardFile;
+        if (heard.length == 2 * pcm.length) {
+          heardFile = 'loops/track$channel-lane$laneIndex-heard.wav';
+          File('$dir/$heardFile').writeAsBytesSync(
+            WavCodec.encodeFloat32(
+              samples: heard,
+              sampleRate: snapshot.sampleRate,
+              channels: 2,
+            ),
+          );
+        }
         lanes.add(
           PerformanceLaneSnapshot(
             lane: laneIndex,
             lengthFrames: pcm.length,
             deferred: false,
             pcmFile: filename,
+            heardFile: heardFile,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
             volume: lane.volume,

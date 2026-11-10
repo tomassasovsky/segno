@@ -5560,6 +5560,21 @@ class LooperRepository {
                 'layer $ordinal: ${result.name}',
               );
             }
+            // The image's heard image (#1713) goes in right behind it.
+            final heard = lane.heardAt(ordinal);
+            if (heard.isEmpty) continue;
+            final staged = _engine.importLayerHeard(
+              track.channel,
+              lane.lane,
+              ordinal,
+              heard,
+            );
+            if (!staged.isOk) {
+              throw StateError(
+                'failed to import track ${track.channel} lane ${lane.lane} '
+                'heard layer $ordinal: ${staged.name}',
+              );
+            }
           }
         }
         // The history is track-wide (shared across lanes) — take lane 0's,

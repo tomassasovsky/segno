@@ -19,10 +19,14 @@ import 'package:wav_codec/wav_codec.dart';
 
 /// The decoded contents of a `.segno` session bundle: the manifest plus each
 /// lane's ordinal-ordered layer PCM (undo… live … redo), keyed by
-/// `(channel, lane)`.
+/// `(channel, lane)`, and `heardStems`: for a lane whose layers hold heard
+/// images (#1713), each layer's interleaved stereo heard image in the same
+/// order, empty for a layer without one. A lane with no heard image has no
+/// `heardStems` entry.
 typedef SessionBundle = ({
   Session session,
   Map<(int, int), List<Float32List>> laneStems,
+  Map<(int, int), List<Float32List>> heardStems,
 });
 
 /// A bundle opened for loading: its decoded [SessionBundle] and, when the
@@ -1230,8 +1234,9 @@ class SessionRepository {
 
   /// Copies every lane's live layer of the saved bundle [id] into
   /// [directory] as `track{c}_lane{l}_L0.wav` — the stems a DAW expects, one
-  /// per lane, history dropped. Reads the saved bundle, never the live
-  /// engine. Throws the typed [SessionException]s a load would and
+  /// per lane, history dropped — and a live layer's heard image beside it as
+  /// `track{c}_lane{l}_L0_heard.wav` (#1713). Reads the saved bundle, never
+  /// the live engine. Throws the typed [SessionException]s a load would and
   /// [StateError] when the bundle is missing.
   Future<void> exportStems(SessionId id, String directory) async {
     _requireId(id);
@@ -1245,11 +1250,14 @@ class SessionRepository {
       for (final lane in track.lanes) {
         if (lane.layers.isEmpty) continue;
         final live = lane.undoCount < lane.layers.length
-            ? lane.layers[lane.undoCount].file
-            : lane.layers.last.file;
-        await File('$path/$live').copy(
-          '$directory/track${track.channel}_lane${lane.lane}_L0.wav',
-        );
+            ? lane.layers[lane.undoCount]
+            : lane.layers.last;
+        final stem = '$directory/track${track.channel}_lane${lane.lane}_L0';
+        await File('$path/${live.file}').copy('$stem.wav');
+        // What the player heard (#1713), beside the clean take a DAW can
+        // re-amp.
+        final heard = live.heard;
+        if (heard != null) await File('$path/$heard').copy('${stem}_heard.wav');
       }
     }
   }
@@ -1417,18 +1425,27 @@ class SessionRepository {
     for (final track in captured.tracks) {
       for (final lane in track.lanes) {
         final layerPcm = captured.laneStems[(track.channel, lane.lane)]!;
+        final heardPcm = captured.heardStems[(track.channel, lane.lane)];
         for (var o = 0; o < lane.layers.length; o++) {
-          final file = lane.layers[o].file;
-          written.add(file);
-          await File('$path/$file').writeAsBytes(
-            WavCodec.encodeFloat32(
-              samples: layerPcm[o],
-              sampleRate: captured.snapshot.sampleRate,
-              channels: 1,
-            ),
-            flush: true,
+          final layer = lane.layers[o];
+          await _writeLayer(
+            path,
+            layer.file,
+            layerPcm[o],
+            captured.snapshot.sampleRate,
+            channels: 1,
           );
-          debugOnSaveWrite?.call('$path/$file');
+          written.add(layer.file);
+          final heard = layer.heard;
+          if (heard == null) continue;
+          await _writeLayer(
+            path,
+            heard,
+            heardPcm![o],
+            captured.snapshot.sampleRate,
+            channels: 2,
+          );
+          written.add(heard);
         }
       }
     }
@@ -1469,6 +1486,26 @@ class SessionRepository {
     // orphaned layer WAVs. The just-written manifest is the source of truth.
     await _pruneOrphanLayers(path, written);
     return session;
+  }
+
+  /// Writes one layer image [samples] ([channels] interleaved) as [file] in
+  /// the directory [path], flushed to the device.
+  Future<void> _writeLayer(
+    String path,
+    String file,
+    Float32List samples,
+    int sampleRate, {
+    required int channels,
+  }) async {
+    await File('$path/$file').writeAsBytes(
+      WavCodec.encodeFloat32(
+        samples: samples,
+        sampleRate: sampleRate,
+        channels: channels,
+      ),
+      flush: true,
+    );
+    debugOnSaveWrite?.call('$path/$file');
   }
 
   /// Copies into the staged bundle [to] every file of the previous bundle
@@ -1648,9 +1685,9 @@ class SessionRepository {
       for (final lane in track['lanes'] as List<dynamic>? ?? const []) {
         if (lane is! Map<String, dynamic>) continue;
         for (final layer in lane['layers'] as List<dynamic>? ?? const []) {
-          if (layer is Map<String, dynamic> && layer['file'] is String) {
-            yield layer['file'] as String;
-          }
+          if (layer is! Map<String, dynamic>) continue;
+          if (layer['file'] case final String file) yield file;
+          if (layer['heard'] case final String heard) yield heard;
         }
       }
     }
@@ -1799,9 +1836,10 @@ class SessionRepository {
   );
 
   /// The pattern of a bundle's per-layer WAV filenames
-  /// (`track{c}_lane{l}_L{n}.wav`).
+  /// (`track{c}_lane{l}_L{n}.wav`, and `track{c}_lane{l}_L{n}_heard.wav` for
+  /// a layer's heard image).
   static final RegExp _layerFilePattern = RegExp(
-    r'^track\d+_lane\d+_L\d+\.wav$',
+    r'^track\d+_lane\d+_L\d+(_heard)?\.wav$',
   );
 
   /// Deletes every layer WAV in [directory] not in the [keep] set — the
@@ -1878,13 +1916,36 @@ class SessionRepository {
 
     // Decode every lane's layers in ordinal order (undo… live … redo).
     final laneStems = <(int, int), List<Float32List>>{};
+    final heardStems = <(int, int), List<Float32List>>{};
     for (final track in session.tracks) {
       List<int>? trackLengths;
       for (final lane in track.lanes) {
         final layers = <Float32List>[];
+        final heardLayers = <Float32List>[];
         for (final layer in lane.layers) {
           final bytes = await File('$directory/${layer.file}').readAsBytes();
-          layers.add(WavCodec.decodeFloat32(bytes).samples);
+          final clean = WavCodec.decodeFloat32(bytes).samples;
+          layers.add(clean);
+          final heard = layer.heard;
+          if (heard == null) {
+            heardLayers.add(Float32List(0));
+            continue;
+          }
+          // The heard image stands frame for frame beside the clean take
+          // (#1713); the engine refuses any other import.
+          final wav = WavCodec.decodeFloat32(
+            await File('$directory/$heard').readAsBytes(),
+          );
+          if (wav.channels != 2 || wav.frames != clean.length) {
+            throw SessionCorruptLayers(
+              channel: track.channel,
+              lane: lane.lane,
+              reason:
+                  'heard image $heard is ${wav.channels} channels of '
+                  '${wav.frames} frames, not stereo beside ${clean.length}',
+            );
+          }
+          heardLayers.add(wav.samples);
         }
         // Every image is as long as its lineage gives (#1168), and every
         // lane of the track carries the same lengths: refused here, before
@@ -1933,10 +1994,17 @@ class SessionRepository {
         }
         trackLengths ??= lengths;
         laneStems[(track.channel, lane.lane)] = layers;
+        if (heardLayers.any((pcm) => pcm.isNotEmpty)) {
+          heardStems[(track.channel, lane.lane)] = heardLayers;
+        }
       }
     }
     return (
-      bundle: (session: session, laneStems: laneStems),
+      bundle: (
+        session: session,
+        laneStems: laneStems,
+        heardStems: heardStems,
+      ),
       conversion: conversion,
     );
   }
@@ -2080,6 +2148,7 @@ class SessionRepository {
   _Capture _capture(SessionSettings settings) {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
+    final heardStems = <(int, int), List<Float32List>>{};
     final tracks = <SessionTrack>[];
     final trackLevels = <int, double>{};
     for (var i = 0; i < snapshot.tracks.length; i++) {
@@ -2103,19 +2172,30 @@ class SessionRepository {
         final live = _engine.exportLayer(i, l, undoCount);
         if (live.isEmpty) continue;
         final layerPcm = <Float32List>[];
+        final layerHeard = <Float32List>[];
         final layerFiles = <SessionLayer>[];
         for (var ordinal = 0; ordinal < total; ordinal++) {
           final pcm = ordinal == undoCount
               ? live
               : _engine.exportLayer(i, l, ordinal);
           if (pcm.isEmpty) break; // torn history — drop this lane
+          // The image's heard image (#1713), stereo beside the clean take.
+          final heard = _engine.exportLayerHeard(i, l, ordinal);
           layerPcm.add(pcm);
+          layerHeard.add(heard);
+          final name = 'track${i}_lane${l}_L$ordinal';
           layerFiles.add(
-            SessionLayer(file: 'track${i}_lane${l}_L$ordinal.wav'),
+            SessionLayer(
+              file: '$name.wav',
+              heard: heard.isEmpty ? null : '${name}_heard.wav',
+            ),
           );
         }
         if (layerPcm.length != total) continue;
         laneStems[(i, l)] = layerPcm;
+        if (layerHeard.any((pcm) => pcm.isNotEmpty)) {
+          heardStems[(i, l)] = layerHeard;
+        }
         final laneSnap = track.lanes[l];
         // The lane's mix (slice 3) comes from the looper repository, not
         // the engine: the engine holds the level times the balance and the
@@ -2157,6 +2237,7 @@ class SessionRepository {
     return _Capture(
       snapshot: snapshot,
       laneStems: laneStems,
+      heardStems: heardStems,
       tracks: tracks,
       trackLevels: trackLevels,
     );
@@ -2369,10 +2450,14 @@ class _Capture {
     required this.laneStems,
     required this.tracks,
     required this.trackLevels,
+    this.heardStems = const {},
   });
 
   final EngineSnapshot snapshot;
   final Map<(int, int), List<Float32List>> laneStems;
+
+  /// As a [SessionBundle]'s `heardStems`.
+  final Map<(int, int), List<Float32List>> heardStems;
   final List<SessionTrack> tracks;
   final Map<int, double> trackLevels;
 }

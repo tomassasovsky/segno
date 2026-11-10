@@ -503,10 +503,10 @@ void main() {
       );
     });
 
-    test('serializes the manifest version (v18) and the grid in beats', () {
+    test('serializes the manifest version (v19) and the grid in beats', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 18);
+      expect(json['version'], 19);
       // Constructed with bars only, the beats are the bars' (#1168).
       expect(json['loopBeats'], session.loopBars * session.tsNum);
       expect(json['baseLengthFrames'], 96000);

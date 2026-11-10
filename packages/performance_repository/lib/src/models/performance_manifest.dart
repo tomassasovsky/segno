@@ -66,6 +66,7 @@ class PerformanceLaneSnapshot {
     required this.lengthFrames,
     required this.deferred,
     this.pcmFile,
+    this.heardFile,
     this.effects = const [],
     this.chainEnabled = true,
     this.takeId = 0,
@@ -84,6 +85,7 @@ class PerformanceLaneSnapshot {
         lengthFrames: (json['lenFrames'] as num).toInt(),
         deferred: json['deferred'] as bool,
         pcmFile: json['pcmRef'] as String?,
+        heardFile: json['heardPcmRef'] as String?,
         chainEnabled: json['chainEnabled'] as bool? ?? true,
         takeId: (json['takeId'] as num?)?.toInt() ?? 0,
         volume: (json['volume'] as num?)?.toDouble() ?? 1,
@@ -108,6 +110,12 @@ class PerformanceLaneSnapshot {
   /// The lane's exported WAV filename relative to the bundle directory (e.g.
   /// `loops/track0-lane0.wav`), or `null` when [deferred] or empty.
   final String? pcmFile;
+
+  /// The lane's heard image (#1713) as a stereo WAV beside [pcmFile]
+  /// (e.g. `loops/track0-lane0-heard.wav`), or `null` when the take has
+  /// none. The offline renderer's wet stem plays it where the lane played
+  /// its image; the dry stem keeps [pcmFile].
+  final String? heardFile;
 
   /// The lane's effect chain, in order (each entry carrying its own `enabled`
   /// bit). Only ever populated on an arm-time snapshot ("chain at t=0" — the
@@ -160,6 +168,7 @@ class PerformanceLaneSnapshot {
     'lenFrames': lengthFrames,
     'deferred': deferred,
     if (pcmFile != null) 'pcmRef': pcmFile,
+    'heardPcmRef': ?heardFile,
     if (!chainEnabled) 'chainEnabled': false,
     if (takeId > 0) 'takeId': takeId,
     'volume': volume,

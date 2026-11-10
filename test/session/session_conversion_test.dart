@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
@@ -110,6 +111,7 @@ void main() {
     'v16_audio_tempo',
     'v17_anchor',
     'v18_recorded_input',
+    'v19_heard',
   ]) {
     test('$name maps to a valid rig', () async {
       final opened = await SessionRepository(
@@ -120,7 +122,7 @@ void main() {
       expect(MixSettingsSnapshot.fromRig(rig).isValid, isTrue);
       expect(
         opened.conversion?.fromVersion,
-        name.startsWith('v18') ? isNull : isNotNull,
+        name.startsWith('v19') ? isNull : isNotNull,
       );
     });
   }
@@ -186,6 +188,43 @@ void main() {
         TrackEffectType.reverb,
       ]);
       expect(nativeLooper.monitorMode(0), MonitorMode.auto);
+    }, skip: skip);
+
+    test('a schema-19 bundle applies with its heard images (#1713)', () async {
+      // The fixture's count-in with Sound start, its 4-bar length preset and
+      // its retime are settings this one-second engine refuses at restore,
+      // which is not what this test is about: the rig recalls unretimed.
+      final dir = copyFixture('v19_heard');
+      final manifest = File('$dir/${Session.manifestName}');
+      manifest.writeAsStringSync(
+        jsonEncode({
+          ...jsonDecode(manifest.readAsStringSync()) as Map<String, dynamic>,
+          'autoRecord': false,
+          'defaultLengthPresetBars': 0,
+          'trackLengthPresetOverrides': <String, dynamic>{},
+          'recordedTempoBpm': 0,
+          'recordedLengthFrames': 0,
+        }),
+      );
+      final opened = await SessionRepository(
+        guards: GuardRegistry(),
+        engine: native,
+      ).open(dir);
+
+      await nativeLooper.applySession(
+        rigFromBundle(opened.bundle),
+        clearPollInterval: const Duration(milliseconds: 1),
+      );
+
+      // Track 0's undo images are ordinals 0 and 1, its live image 2.
+      final heard = opened.bundle.heardStems[(0, 0)]!;
+      expect(native.snapshot().tracks[0].lanes[0].heard, isTrue);
+      expect(native.exportLayerHeard(0, 0, 0), heard[0]);
+      expect(native.exportLayerHeard(0, 0, 1), isEmpty);
+      expect(native.exportLayerHeard(0, 0, 2), heard[2]);
+      expect(native.exportTrackLaneHeard(0, 0), heard[2]);
+      // A take restored without one plays clean through its chain.
+      expect(native.snapshot().tracks[1].lanes[0].heard, isFalse);
     }, skip: skip);
 
     for (final (name, lengths) in const [

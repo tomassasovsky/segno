@@ -8,6 +8,9 @@ class _FakeLane {
   bool muted = false;
   int lengthFrames = 0;
   Float32List pcm = Float32List(0);
+
+  /// The take's heard image (#1713), interleaved stereo; empty for none.
+  Float32List heard = Float32List(0);
 }
 
 class _FakeTrack {
@@ -114,6 +117,7 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
     double laneVolume = 1,
     double lanePan = 0,
     bool laneMuted = false,
+    Float32List? heard,
   }) {
     final track = _tracks[channel]
       ..state = trackState
@@ -130,6 +134,7 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
       ..pan = lanePan
       ..muted = laneMuted
       ..pcm = pcm
+      ..heard = heard ?? Float32List(0)
       ..lengthFrames = pcm.length;
   }
 
@@ -264,7 +269,26 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
       EngineResult.ok;
 
   @override
+  Float32List exportTrackLaneHeard(int channel, int lane) {
+    final lanes = _tracks[channel].lanes;
+    if (lane < 0 || lane >= lanes.length) return Float32List(0);
+    return Float32List.fromList(lanes[lane].heard);
+  }
+
+  @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) =>
+      Float32List(0);
+
+  @override
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) => EngineResult.ok;
 
   @override
   int trackAudioRev(int channel) => 0;
@@ -839,6 +863,15 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
     required int lane,
     required bool enabled,
   }) => EngineResult.ok;
+  @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) => EngineResult.ok;
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) =>
+      EngineResult.ok;
   @override
   EngineResult setLaneFxChannels({
     required int channel,

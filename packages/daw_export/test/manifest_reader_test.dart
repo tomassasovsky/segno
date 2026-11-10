@@ -217,6 +217,59 @@ void main() {
     );
 
     test(
+      "a take's session clip is its heard image where it has one (#1713)",
+      () {
+        Directory('${dir.path}/loops').createSync(recursive: true);
+        for (final name in [
+          'track0-lane0',
+          'track0-lane0-heard',
+          'track1-lane0',
+        ]) {
+          File('${dir.path}/loops/$name.wav').writeAsBytesSync([0]);
+        }
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'loops/track0-lane0.wav',
+                      'heardPcmRef': 'loops/track0-lane0-heard.wav',
+                    },
+                  ],
+                },
+                {
+                  'channel': 1,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'loops/track1-lane0.wav',
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final project = DawManifestReader.read(dir.path)!;
+        expect(
+          [for (final t in project.tracks) t.sessionClips.single.fileRef],
+          ['loops/track0-lane0-heard.wav', 'loops/track1-lane0.wav'],
+        );
+      },
+    );
+
+    test(
       'prefers a disarm-time pcmRef over an arm-time one for the same lane',
       () {
         Directory('${dir.path}/loops').createSync(recursive: true);

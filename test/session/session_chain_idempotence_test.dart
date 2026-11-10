@@ -38,6 +38,7 @@ void main() {
       trackChains: chains.trackChains,
       outputChains: chains.outputChains,
     ),
+    heardStems: const <(int, int), List<Never>>{},
     laneStems: const {},
   );
 
@@ -81,6 +82,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Never>>{},
         laneStems: const <(int, int), List<Never>>{},
       );
 
@@ -172,6 +174,7 @@ void main() {
             SessionLaneChain(channel: 0, lane: 0, encoded: bare),
           ],
         ),
+        heardStems: const <(int, int), List<Never>>{},
         laneStems: const {},
       ));
 
