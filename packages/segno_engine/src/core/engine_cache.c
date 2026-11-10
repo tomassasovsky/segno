@@ -59,6 +59,7 @@
 #include "engine_render.h" /* the recipe job on this worker */
 #include "engine_core.h"    /* le_lanes_active, le_engine_drain_events */
 #include "engine_fx.h"      /* fx_apply_chain, le_fx_prepare, seed/bypass */
+#include "engine_heard.h"   /* the heard image (#1713) */
 #include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_private.h" /* le_engine, le_wet_entry, load/store helpers */
 #include "segno_engine_api.h"
@@ -872,6 +873,13 @@ static void le_cache_schedule_lane(le_engine* e, struct le_fx_cache* c,
     lc->state = LE_CACHE_LIVE;
     return;
   }
+  /* A lane playing its heard image (#1713) does not run its chain, so there
+   * is nothing to print. A print already published stays for the moment the
+   * lane goes back to its clean take. */
+  if (le_heard_lane_plays(e, t, l)) {
+    lc->state = LE_CACHE_LIVE;
+    return;
+  }
 
   /* Chain snapshot (atomics -> locals) + its identity.
    *
@@ -1254,6 +1262,8 @@ static void le_cache_schedule_track(le_engine* e, struct le_fx_cache* c,
   const int32_t lanes = le_lanes_active(tr);
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &tr->lanes[l];
+    /* A part playing its heard image contributes the image (#1713). */
+    if (le_heard_lane_plays(e, t, l)) continue;
     if (atomic_load_explicit(&ln->a_wet, memory_order_acquire) != NULL) {
       continue;
     }
@@ -1485,6 +1495,19 @@ static int le_cache_assemble_chunk(le_engine* e, le_cache_job* job,
     if (load_i32(&ln->a_muted)) continue;
     const float gl = load_f32(&ln->a_pan_gl_bits);
     const float gr = load_f32(&ln->a_pan_gr_bits);
+    /* A part playing its heard image (#1713): the image at level, placed by
+     * its pan, as the mixer plays it. */
+    float* hl;
+    float* hr;
+    if (le_heard_lane_plays(e, job->channel, l) &&
+        le_heard_planes(e, job->channel, l, load_i32(&ln->a_live), &hl, &hr)) {
+      const float vol = load_f32(&ln->a_vol_bits);
+      for (int32_t f = from; f < from + n; ++f) {
+        job->dry[2 * f] += hl[f] * vol * gl;
+        job->dry[2 * f + 1] += hr[f] * vol * gr;
+      }
+      continue;
+    }
     le_wet_entry* ent =
         atomic_load_explicit(&ln->a_wet, memory_order_acquire);
     if (ent != NULL) {

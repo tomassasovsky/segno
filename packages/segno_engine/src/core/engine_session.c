@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "engine_core.h"     /* le_push */
+#include "engine_heard.h"    /* the heard image (#1713) */
 #include "engine_private.h"  /* le_engine, le_track, le_lane, load/store_i32 */
 #include "rt_alloc.h"        /* le_rt_alloc: the imported live slot */
 #include "segno_engine_api.h"
@@ -77,6 +78,8 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   if (engine->lane_growth_command > atomic_load_explicit(
         &engine->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
+  /* An attach in flight may still install into this lane's live slot. */
+  if (le_heard_attach_pending(engine, channel)) return LE_ERR_NOT_READY;
   /* Importing targets an empty track: its buffers are not read by the audio
    * thread, so the control thread can fill any lane directly. An undone-to-empty
    * track qualifies, but its redo stack must go first — the live buffer being
@@ -136,6 +139,8 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
   le_retire_buffer(engine, ln->pool[live]);
   ln->pool[live] = fresh;
   ln->pool_cap[live] = engine->max_loop_frames;
+  /* An imported take has no heard image (#1713): it plays clean. */
+  (void)le_heard_match(engine, channel, lane, live, 0, LE_HEARD_RETIRE);
   store_i32(&ln->a_len, frames);
   /* #595: imported content IS captured audio — the recoverable flag rides the
    * session round-trip (export only ever covers lanes that recorded, so this
@@ -320,6 +325,111 @@ int32_t le_engine_export_layer(le_engine* engine, int32_t channel, int32_t lane,
   return n;
 }
 
+int32_t le_engine_export_layer_heard(le_engine* engine, int32_t channel,
+                                     int32_t lane, int32_t ordinal, float* out,
+                                     int32_t max_frames) {
+  if (engine == NULL || (out == NULL && max_frames > 0)) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (ordinal < 0 || max_frames < 0) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  le_lane* ln = &t->lanes[lane];
+  int32_t n;
+  const int32_t slot = le_layer_slot_for_ordinal(
+      t, ordinal, load_i32(&ln->a_live), load_i32(&ln->a_len), &n);
+  if (slot < 0) return LE_ERR_INVALID;
+  float* pl;
+  float* pr;
+  if (n <= 0 || ln->pool[slot] == NULL ||
+      !le_heard_planes(engine, channel, lane, slot, &pl, &pr)) {
+    return 0;
+  }
+  if (ln->pool_cap[slot] < n) return LE_ERR_INVALID;
+  if (max_frames == 0) return n;
+  if (n > max_frames) n = max_frames;
+  for (int32_t f = 0; f < n; ++f) {
+    out[2 * f] = pl[f];
+    out[2 * f + 1] = pr[f];
+  }
+  return n;
+}
+
+int32_t le_engine_export_track_lane_heard(le_engine* engine, int32_t channel,
+                                          int32_t lane, float* out,
+                                          int32_t max_frames) {
+  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (max_frames <= 0) return LE_ERR_INVALID;
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  int32_t n = load_i32(&ln->a_len);
+  if (n > max_frames) n = max_frames;
+  if (n <= 0) return 0;
+  const int live = load_i32(&ln->a_live);
+  float* pl;
+  float* pr;
+  if (ln->pool[live] == NULL ||
+      !le_heard_planes(engine, channel, lane, live, &pl, &pr)) {
+    return 0;
+  }
+  for (int32_t f = 0; f < n; ++f) {
+    out[2 * f] = pl[f];
+    out[2 * f + 1] = pr[f];
+  }
+  return n;
+}
+
+int32_t le_engine_import_layer_heard(le_engine* engine, int32_t channel,
+                                     int32_t lane, int32_t ordinal,
+                                     const float* pcm, int32_t frames) {
+  if (engine == NULL || pcm == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (ordinal < 0 || ordinal >= LE_POOL_SLOTS || frames <= 0) {
+    return LE_ERR_INVALID;
+  }
+  /* le_engine_import_layer's own preconditions. */
+  if (engine->lane_growth_command > atomic_load_explicit(
+        &engine->a_commands_published, memory_order_acquire)) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return LE_ERR_INVALID;
+  }
+  if (t->bounce_inflight) return LE_ERR_INVALID;
+  if (le_heard_attach_pending(engine, channel)) return LE_ERR_NOT_READY;
+  if (lane >= le_lanes_active(t)) return LE_ERR_INVALID; /* not staged */
+  le_lane* ln = &t->lanes[lane];
+  /* The clean image staged last on this lane is this one, at this length:
+   * le_engine_import_layer marks it with a_len and a_recoverable. */
+  if (engine->heard[channel][lane].import_ordinal != ordinal ||
+      ln->pool[ordinal] == NULL || ln->pool_cap[ordinal] < frames ||
+      load_i32(&ln->a_len) != frames || !load_i32(&ln->a_recoverable)) {
+    return LE_ERR_INVALID;
+  }
+  /* Retired, not freed: an EMPTY track's former live slot may still be held
+   * by a block that emptied it. Fresh planes read zeros past `frames`
+   * without a page touched. */
+  (void)le_heard_match(engine, channel, lane, ordinal, 0, LE_HEARD_RETIRE);
+  if (!le_heard_match(engine, channel, lane, ordinal, 1, LE_HEARD_RETIRE)) {
+    return LE_ERR_INVALID;
+  }
+  float* pl;
+  float* pr;
+  if (!le_heard_planes(engine, channel, lane, ordinal, &pl, &pr)) {
+    return LE_ERR_INVALID;
+  }
+  for (int32_t f = 0; f < frames; ++f) {
+    pl[f] = pcm[2 * f];
+    pr[f] = pcm[2 * f + 1];
+  }
+  return LE_OK;
+}
+
 int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
                                int32_t ordinal, const float* pcm,
                                int32_t frames) {
@@ -370,6 +480,8 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   if (want > engine->max_loop_frames) want = engine->max_loop_frames;
   const int got = le_lane_ensure_slot(engine, ln, ordinal, want);
   if (got == LE_SLOT_FAILED) return LE_ERR_INVALID;
+  /* An imported image has no heard image (#1713): it plays clean. */
+  (void)le_heard_match(engine, channel, lane, ordinal, 0, LE_HEARD_RETIRE);
   le_forget_slot_images(engine, channel); /* #1143: slot content redefined */
   memcpy(ln->pool[ordinal], pcm, (size_t)frames * sizeof(float));
   /* A fresh slot's tail is already zero, and untouched; only a reused one
@@ -382,6 +494,7 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
    * not the loop length: le_engine_finalize_history publishes the live one. */
   store_i32(&ln->a_len, frames);
   store_i32(&ln->a_recoverable, 1); /* #595: see le_engine_import_track_lane */
+  engine->heard[channel][lane].import_ordinal = ordinal; /* #1713 */
   return LE_OK;
 }
 
