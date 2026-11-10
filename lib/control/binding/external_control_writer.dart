@@ -28,10 +28,7 @@ extension ExternalControlWriter on LooperRepository {
       ...resolved.where(switchesOn),
     ];
     final accepted = <FxAddress>{};
-    var offPending = false;
     for (final address in owners) {
-      // Until every switch-off landed, the switch-ons wait for the retry.
-      if (offPending && switchesOn(address)) continue;
       final original = chainEntriesAt(address);
       final currentPower = bindingEnabled(FxChainTarget(address));
       if (original == null || currentPower == null) continue;
@@ -87,11 +84,7 @@ extension ExternalControlWriter on LooperRepository {
           chainEnabled: power,
         ),
       };
-      if (result.isOk) {
-        accepted.add(address);
-      } else if (!switchesOn(address)) {
-        offPending = true;
-      }
+      if (result.isOk) accepted.add(address);
     }
     return accepted;
   }

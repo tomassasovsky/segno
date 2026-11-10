@@ -3,6 +3,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_controls.dart';
+import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 
@@ -111,8 +112,10 @@ int fxAssignmentsTo(
 ///   turns on at its bottom; a knob or a Program Change may leave any of
 ///   them on.
 /// - Each external switch's activations under the type its jack is set to:
-///   those active while On alternate with those active while Off, and those
-///   active while Held with those active while Released.
+///   those active while On alternate with those active while Off, and, on a
+///   momentary switch, those active while Held with those active while
+///   Released. MIDI mappings count while MIDI control is off, since switching
+///   it back on is never weighed.
 List<FxControlReach> fxReachOf(ControlState control) {
   const channels = ControlState.tracksPerBank * ControlState.bankCount;
   Set<FxSwitchKey> keys(FxBindingTarget? target, BindingScope scope) => {
@@ -145,11 +148,14 @@ List<FxControlReach> fxReachOf(ControlState control) {
             ExternalCondition.on,
             ExternalCondition.off,
           ),
-          _externalReach(
-            setup.controls,
-            ExternalCondition.held,
-            ExternalCondition.released,
-          ),
+          // A latching switch reports no contact, so its Held and Released
+          // rows never switch anything.
+          if (setup.hardware == ExternalSwitchHardware.momentary)
+            _externalReach(
+              setup.controls,
+              ExternalCondition.held,
+              ExternalCondition.released,
+            ),
         ],
   ];
 }

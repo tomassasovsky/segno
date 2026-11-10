@@ -285,6 +285,17 @@ void main() {
       expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
     });
 
+    test('a chain the player has off that no control reaches is never held: '
+        'holding it frees nothing (#1723)', () {
+      repo
+        ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: _rack());
+      expect(repo.fxChainHeld(_input(3)), isFalse);
+      expect(repo.fxChainHeld(_input(2)), isTrue);
+    });
+
     test('dismissing the notice keeps the chains off', () {
       repo
         ..setMonitorEffects(input: 0, effects: _rack())

@@ -9085,13 +9085,21 @@ class LooperRepository {
     final previously = before ?? {..._fxHeld};
     final named = <FxAddress>[];
     final held = <FxAddress>{};
+    int load() =>
+        _fxLoadAt(rate, period, replaced: replaced, switches: switches);
+    var now = load();
     for (final at in order) {
-      if (_fxLoadAt(rate, period, replaced: replaced, switches: switches) <=
-          budget) {
-        break;
-      }
+      if (now <= budget) break;
       if (_fxHeld.contains(at) || chainOf(at).isEmpty) continue;
       _fxHeld.add(at);
+      // A chain that charges nothing (off, and no control reaches it,
+      // #1723) frees nothing: it stays as it is.
+      final next = load();
+      if (next >= now) {
+        _fxHeld.remove(at);
+        continue;
+      }
+      now = next;
       held.add(at);
       if (at != incoming) _pushChainSwitch(at, on: false);
       if (!previously.contains(at) && switchOf(at)) named.add(at);

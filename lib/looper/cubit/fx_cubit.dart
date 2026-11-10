@@ -548,7 +548,10 @@ class FxCubit extends Cubit<FxState> {
       final id = entry.slotId;
       if (id == null) return const FxEditResult(FxEditStatus.refused);
       final outcome = setEffectEnabled(address, id, enabled: enabled);
-      if (outcome.status == FxEditStatus.refused) return outcome;
+      if (outcome.status == FxEditStatus.refused ||
+          outcome.status == FxEditStatus.overBudget) {
+        return outcome;
+      }
       changed |= outcome.status == FxEditStatus.applied;
     }
     return FxEditResult(

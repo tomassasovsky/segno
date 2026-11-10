@@ -360,6 +360,34 @@ void main() {
           const FxControlReach(),
         ],
       );
+      // A latching switch reports no contact: its Held rows reach nothing.
+      final held = ExternalControls(
+        activations: const [
+          ExternalActivation(target: rackA, condition: ExternalCondition.held),
+        ],
+      );
+      expect(
+        reach(
+          jack(
+            ExternalJackSetup(
+              single: ExternalSwitchSetup(
+                hardware: ExternalSwitchHardware.latching,
+                controls: held,
+              ),
+            ),
+          ),
+        ),
+        [const FxControlReach()],
+      );
+      expect(
+        reach(
+          jack(ExternalJackSetup(single: ExternalSwitchSetup(controls: held))),
+        ),
+        [
+          const FxControlReach(),
+          FxControlReach(whenOn: {rackA.switchKey}),
+        ],
+      );
       // Kept for the dual type, but a single switch is plugged in.
       expect(
         reach(

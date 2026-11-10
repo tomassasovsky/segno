@@ -542,6 +542,11 @@ void main() {
         );
 
         expect(result.status, FxEditStatus.overBudget);
+        // Its card's power says the same.
+        expect(
+          fx.setGroupEnabled(spare.address, 'spare', enabled: true).status,
+          FxEditStatus.overBudget,
+        );
         expect(rig.looper.trackEffects(1).single.enabled, isFalse);
         // Binding it now would not fit either: refused at bind time.
         await expectLater(
@@ -549,6 +554,34 @@ void main() {
           throwsA(isA<FxReachOverBudget>()),
         );
         expect(rig.control.state.globalBindings, PedalBindingSet.empty);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('replacing a session remap is weighed as one change: the globals '
+        'it replaced are never weighed on their own', () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await putSpare(rig);
+        await rig.control.setGlobalBindings(bound(spare));
+        // A session remap in force: the globals, and the spare they reach,
+        // are not.
+        rig.control.applySessionBindings(
+          bound(const FxChainTarget(FxAddress(stage: FxStage.track))),
+        );
+        expect(rig.looper.fxCostNs, 0);
+        await rig.fill();
+
+        await rig.control.setGlobalBindings(
+          PedalBindingSet.empty,
+          promote: true,
+        );
+
+        expect(rig.control.state.sessionBindings, PedalBindingSet.empty);
+        expect(rig.control.state.globalBindings, PedalBindingSet.empty);
+        expect(rig.looper.state.fxHeld, isEmpty);
       } finally {
         await rig.close();
       }

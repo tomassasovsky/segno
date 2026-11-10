@@ -1569,7 +1569,9 @@ class ControlCubit extends Cubit<ControlState> {
         !state.pedalSetupRuntimeUnsaved) {
       return;
     }
-    _refuseOverBudget(state.copyWith(pedalSetup: setup));
+    if (!setup.external.sameConfigurationAs(state.pedalSetup.external)) {
+      _refuseOverBudget(state.copyWith(pedalSetup: setup));
+    }
     _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
@@ -3903,10 +3905,13 @@ class ControlCubit extends Cubit<ControlState> {
     _refuseOverBudget(
       state.copyWith(globalBindings: next, sessionBindings: session),
     );
-    if (session != state.sessionBindings) applySessionBindings(session);
-    if (next == state.globalBindings) return;
+    // One emit for both sets: the old globals never come in force between
+    // them, so the effects budget never weighs that in-between set.
+    final saves = next != state.globalBindings;
+    if (session != state.sessionBindings) _customLastActions.clear();
     _invalidateGestures();
-    emit(state.copyWith(globalBindings: next));
+    emit(state.copyWith(globalBindings: next, sessionBindings: session));
+    if (!saves) return;
     _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
   }
@@ -4595,11 +4600,14 @@ class ControlCubit extends Cubit<ControlState> {
 
   @override
   void emit(ControlState state) {
+    final external = state.pedalSetup.external;
     final reachChanged =
         !identical(state.globalBindings, this.state.globalBindings) ||
         !identical(state.sessionBindings, this.state.sessionBindings) ||
         !identical(state.midiMappings, this.state.midiMappings) ||
-        !identical(state.pedalSetup.external, this.state.pedalSetup.external);
+        // A press's logical state is in the setup too, and reaches nothing.
+        !identical(external, this.state.pedalSetup.external) &&
+            !external.sameConfigurationAs(this.state.pedalSetup.external);
     super.emit(state);
     // What the controls can turn on is what the effects budget reserves room
     // for (#1723), so the repository hears every change to it.
