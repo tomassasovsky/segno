@@ -187,7 +187,7 @@ static void test_distortion_cabinet(void) {
 
 /* The drive's law is the Studio Rack's Dist's (#1731, session s19std, the
  * Dist alone at Drive 0 to 100 % as the Looper X shows them): the 1 kHz
- * fundamental at -48 dBFS in is within 3.5 dB of the capture at every
+ * fundamental at -48 dBFS in is within 3.1 dB of the capture at every
  * setting, and rises with it as the capture does. */
 static void test_distortion_drive_is_the_studio_dist(void) {
   printf("test_distortion_drive_is_the_studio_dist\n");
@@ -201,10 +201,10 @@ static void test_distortion_drive_is_the_studio_dist(void) {
     p[0] = drives[d];
     p[1] = 0.5f;
     const double got = drive_h1(LE_FX_DISTORTION, p, -48.0, NULL);
-    if (fabs(got - want[d]) >= 3.5) {
+    if (fabs(got - want[d]) >= 3.1) {
       printf("  drive %.3f: %.2f, capture %.2f\n", drives[d], got, want[d]);
     }
-    CHECK(fabs(got - want[d]) < 3.5);
+    CHECK(fabs(got - want[d]) < 3.1);
     CHECK(got > last);
     last = got;
   }

@@ -1368,8 +1368,8 @@ enum TrackEffectType {
       ),
     ],
     // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
-    // level (its taper unmeasured), the mix, Octave 2's level (linear,
-    // measured at 50 and 100 %).
+    // level (linear, measured at 11 to 100 %, #1731), the mix, Octave 2's
+    // level (linear, measured at 50 and 100 %).
     TrackEffectType.dualOctaver => const [
       FxParamInfo(
         key: 'oct_high_mode',

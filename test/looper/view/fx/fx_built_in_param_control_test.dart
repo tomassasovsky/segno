@@ -76,6 +76,19 @@ void main() {
       expect(await _valueText(tester, effect, 1), '9.0 dB');
     });
 
+    testWidgets("an EQ's mid frequency reads as the value it applies, "
+        'measured (#891)', (tester) async {
+      final effect = BuiltInEffect(
+        type: TrackEffectType.eq,
+        module: 'Four-band EQ',
+        params: [
+          for (final p in TrackEffectType.eq.params) p.defaultValue,
+        ]..[5] = 0.5,
+      );
+
+      expect(await _valueText(tester, effect, 5), '632 Hz');
+    });
+
     testWidgets('the Pitch Shift reads in semitones', (tester) async {
       expect(await _valueText(tester, _pitchShift(), 0), '+7 st');
     });
