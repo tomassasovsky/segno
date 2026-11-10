@@ -1631,6 +1631,22 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) {
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
+    return EngineResult.ok;
+  }
+
+  /// The mock holds no audio, so no lane has a take to attach to.
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) =>
+      EngineResult.invalid;
+
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
   // Mirrors the lane family: ring-backed setters keep the running gate,
   // enable flips record + succeed while stopped (direct-store contract).
@@ -1984,12 +2000,27 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
 
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) =>
+      Float32List(0);
+
+  @override
+  Float32List exportTrackLaneHeard(int channel, int lane) => Float32List(0);
+
   /// The mock holds no audio, so no track's content ever changes.
   @override
   int trackAudioRev(int channel) => 0;
 
   @override
   EngineResult importLayer(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) => _requireRunning();
+
+  @override
+  EngineResult importLayerHeard(
     int channel,
     int lane,
     int ordinal,

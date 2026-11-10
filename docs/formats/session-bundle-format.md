@@ -4,7 +4,7 @@
 
 A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-current **v18** schema. Decode accepts the current schema only (see
+current **v19** schema. Decode accepts the current schema only (see
 [Versioning](#versioning)).
 
 Related: the performance-capture path stores retiring layers with its own
@@ -21,6 +21,7 @@ sessions/
     session.json          # the manifest (source of truth)
     mixdown.wav           # flattened preview: every unmuted lane's live buffer summed
     track0_lane0_L0.wav   # per (track, lane, layer-ordinal) mono 32-bit-float WAV
+    track0_lane0_L0_heard.wav  # v19: that layer's heard image, stereo 32-bit float
     track0_lane0_L1.wav
     track0_lane0_L2.wav
     track0_lane1_L0.wav
@@ -31,8 +32,9 @@ sessions/
 ```
 
 The **manifest is the only source of truth** inside a bundle. WAV files are
-opaque and named purely by index (`track{channel}_lane{lane}_L{ordinal}.wav`);
-a file the manifest does not reference is ignored on load and pruned on the
+opaque and named purely by index (`track{channel}_lane{lane}_L{ordinal}.wav`,
+and `track{channel}_lane{lane}_L{ordinal}_heard.wav` for a heard image); a file
+the manifest does not reference is ignored on load and pruned on the
 next save.
 
 **Identity and name.** A bundle's directory name is its id for its whole life
@@ -70,7 +72,9 @@ files.
 
 **Mixdown.** `mixdown.wav` is written when the saved mix has any audible
 content and deleted when it has none (every track empty or muted), so a
-re-save of an emptied rig never leaves audio the session no longer holds.
+re-save of an emptied rig never leaves audio the session no longer holds. A
+lane playing its heard image (#1713) is summed as that image, its two sides
+averaged; any other lane as its clean live layer.
 
 ## Layers, ordinals, and undo/redo
 
@@ -181,11 +185,11 @@ Note what is *not* here: there are no per-flag manifest fields, and no per-flag
 settings keys either. Every enable bit and every slot id lives inside the one
 string per chain.
 
-## Manifest schema (v18)
+## Manifest schema (v19)
 
 ```jsonc
 {
-  "version": 18,
+  "version": 19,
   "sampleRate": 48000,
   "channels": 1,
   "baseLengthFrames": 96000,
@@ -209,7 +213,8 @@ string per chain.
           "layers": [
             { "file": "track0_lane0_L0.wav" },
             { "file": "track0_lane0_L1.wav" },
-            { "file": "track0_lane0_L2.wav" }
+            // v19: see "What a take was heard as"
+            { "file": "track0_lane0_L2.wav", "heard": "track0_lane0_L2_heard.wav" }
           ],
           // "pan" and "balance" are written only off their defaults (0, 1).
           "history": [                // v12: one entry per undo/redo step
@@ -331,6 +336,23 @@ afterwards never renames the take. The Recorded tracks part picker names a
 part that holds audio by it. A recall restores it; a value outside the
 device's channel range is dropped rather than refusing the session.
 
+### What a take was heard as (v19)
+
+A take recorded through effects keeps two recordings (#1713): its clean input,
+the layer's `file`, and its heard image, the output of the input chain it was
+recorded through, the layer's `heard`. The heard image is a stereo 32-bit float
+WAV exactly as long as the clean one in frames. Each undo and redo image has its
+own, or none: an image recorded dry has no `heard` key, and a recall plays it
+clean through its lane's chain, as every take played before v19. A lane plays its heard image while its chain is the one the take was
+recorded through: the lane envelope's `meta.printed` names that chain when
+the lane's chain was edited since, and is omitted while the two are the same.
+A recall
+imports each image's heard image right after the image
+(`le_engine_import_layer_heard`); a heard image that is not stereo or not the
+clean image's length refuses the session (`SessionCorruptLayers`). The stem
+export writes the live layer's heard image beside its clean stem as
+`track{c}_lane{l}_L0_heard.wav`.
+
 Audio never appears in the manifest; it lives in the referenced WAVs.
 
 Chains exist **independently of audio**: a `laneChains`/`trackChains` entry may
@@ -341,7 +363,7 @@ channel survives a save.
 
 ## Versioning
 
-Writing is always the current version (v18). `Session.fromJson` accepts the
+Writing is always the current version (v19). `Session.fromJson` accepts the
 current version only: any other `version` fails with
 `SessionUnsupportedVersion`, and a non-integer `version` with a
 `FormatException`. Inside the current schema, fields that `toJson` omits at
@@ -473,3 +495,6 @@ envelope):
 - **v18** — the input each lane's take was captured from (`recordedInput`,
   #1678). Earlier schemas never stored it; the lane's saved `inputChannel` is
   the closest record of it, so a v17 bundle's takes take that.
+- **v19** — each layer's heard image (`heard`, #1713). Earlier schemas
+  recorded none, and a layer without one plays clean through its lane's chain
+  as it always did, so a v18 bundle converts with nothing filled in.

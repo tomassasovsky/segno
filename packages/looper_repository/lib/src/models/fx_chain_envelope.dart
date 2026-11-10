@@ -3,18 +3,20 @@ import 'dart:convert';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 
-/// Envelope-level chain metadata (R13): inherited provenance.
+/// Envelope-level chain metadata (R13): inherited provenance, and for a lane
+/// the chain its take was recorded through (#1713).
 ///
 /// Owned by `looper_repository` — the engine never consumes it; it rides the
 /// persisted envelope only.
 class FxChainMeta extends Equatable {
   /// Creates an [FxChainMeta].
-  const FxChainMeta({this.inheritedFrom = const []});
+  const FxChainMeta({this.inheritedFrom = const [], this.printed});
 
   /// Rebuilds an [FxChainMeta] from its [toJson] map; malformed entries are
   /// dropped. Unknown keys are ignored (additive-only contract).
   factory FxChainMeta.fromJson(Map<String, dynamic> json) {
     final raw = json['inheritedFrom'];
+    final printed = json['printed'];
     return FxChainMeta(
       inheritedFrom: raw is List
           ? [
@@ -22,6 +24,7 @@ class FxChainMeta extends Equatable {
                 if (v is num) v.toInt(),
             ]
           : const [],
+      printed: printed is List ? decodeTrackEffects(jsonEncode(printed)) : null,
     );
   }
 
@@ -31,14 +34,28 @@ class FxChainMeta extends Equatable {
   /// marker).
   final List<int> inheritedFrom;
 
+  /// The chain a lane's take was recorded through, when it differs from the
+  /// lane's chain (#1713): the take plays its heard image while the lane's
+  /// chain is this one, and its clean take through the lane's chain once
+  /// the chain was edited. Null when the two are the same (or the lane has
+  /// no take recorded through effects), which an envelope omits.
+  final List<TrackEffect>? printed;
+
   /// Whether the chain carries an inheritance marker.
   bool get isInherited => inheritedFrom.isNotEmpty;
 
+  /// Whether there is anything to persist.
+  bool get isEmpty => inheritedFrom.isEmpty && printed == null;
+
   /// A JSON-friendly map for persistence.
-  Map<String, dynamic> toJson() => {'inheritedFrom': inheritedFrom};
+  Map<String, dynamic> toJson() => {
+    if (inheritedFrom.isNotEmpty) 'inheritedFrom': inheritedFrom,
+    if (printed case final printed?)
+      'printed': jsonDecode(encodeTrackEffects(printed)),
+  };
 
   @override
-  List<Object?> get props => [inheritedFrom];
+  List<Object?> get props => [inheritedFrom, printed];
 }
 
 /// The chain wire envelope `{chainEnabled, meta, entries}` (R13/R15) — the
@@ -77,7 +94,7 @@ String encodeFxChain(FxChainEnvelope envelope) {
   final meta = envelope.meta;
   return jsonEncode({
     'chainEnabled': envelope.chainEnabled,
-    if (meta != null && meta.isInherited) 'meta': meta.toJson(),
+    if (meta != null && !meta.isEmpty) 'meta': meta.toJson(),
     // Wraps the engine entries codec: encode through it, then embed its array
     // so the entry wire format has exactly one definition.
     'entries': jsonDecode(encodeTrackEffects(envelope.entries)),
@@ -115,7 +132,7 @@ FxChainEnvelope decodeFxChain(String? encoded) {
   final rawChainEnabled = raw['chainEnabled'];
   return FxChainEnvelope(
     chainEnabled: rawChainEnabled is! bool || rawChainEnabled,
-    meta: meta != null && meta.isInherited ? meta : null,
+    meta: meta != null && !meta.isEmpty ? meta : null,
     entries: decodeTrackEffects(jsonEncode(raw['entries'])),
   );
 }

@@ -412,6 +412,7 @@ class _NoticeSessionRepository extends SessionRepository {
         ),
       ],
     ),
+    heardStems: const <(int, int), List<Float32List>>{},
     laneStems: <(int, int), List<Float32List>>{},
   );
 }
@@ -1790,41 +1791,6 @@ void main() {
         },
       );
     }
-
-    testWidgets("a take whose effects don't fit says so in a toast "
-        '(#1515)', (tester) async {
-      repository = LooperRepository(
-        engine: engine,
-        ticker: const Stream<void>.empty(),
-      );
-      addTearDown(repository.dispose);
-      await pumpApp(tester, NoopWaveformWindowService());
-      repository.startEngine(const EngineConfig());
-      final rack = [
-        for (final type in [
-          TrackEffectType.dualOctaver,
-          TrackEffectType.ampCab,
-          TrackEffectType.roomVerb,
-        ])
-          BuiltInEffect(type: type),
-      ];
-      // Room for the input's chain, not for the take's copy beside it.
-      expect(
-        repository.setMonitorEffects(
-          input: 0,
-          effects: [for (var i = 0; i < 2; i++) ...rack],
-        ),
-        EngineResult.ok,
-      );
-      expect(repository.record(), EngineResult.ok);
-      repository.laneEffects(0, 0); // the take lands on the next read
-      await tester.pumpAndSettle();
-      expect(noticeTracks(AppNoticeId.fxTakeHeld), [0]);
-      expect(saidTitles, contains("This take's effects are off"));
-      await tester.pump(const Duration(seconds: 7));
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-    });
 
     testWidgets('a Record press on a reversed track says overdub is '
         'unavailable', (tester) async {

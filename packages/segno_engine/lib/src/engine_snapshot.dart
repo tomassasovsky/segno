@@ -500,6 +500,25 @@ enum LooperModeGate {
   };
 }
 
+/// What a lane plays (#1713): its heard image, the input chain's output
+/// recorded with the take, or its clean take through its own chain.
+enum LaneSource {
+  /// The heard image where the live take has one (the default); a take
+  /// without one plays clean through its chain.
+  heard,
+
+  /// The clean take through the lane's chain: a take whose effects were
+  /// edited after it was recorded.
+  clean;
+
+  /// The native `LE_LANE_SOURCE_*` code.
+  int get code => index;
+
+  /// Decodes a native `LE_LANE_SOURCE_*` code; anything else reads as
+  /// [heard], the engine's default.
+  static LaneSource fromCode(int code) => code == 1 ? clean : heard;
+}
+
 /// An immutable per-lane projection of the native `le_lane_snapshot`.
 ///
 /// A lane is a track's fundamental recordable unit: it records one hardware
@@ -518,6 +537,8 @@ class LaneSnapshot {
     required this.peak,
     this.recoverable = false,
     this.pan = 0,
+    this.heard = false,
+    this.source = LaneSource.heard,
   });
 
   /// An empty lane recording no input.
@@ -530,7 +551,9 @@ class LaneSnapshot {
       rms = 0,
       peak = 0,
       recoverable = false,
-      pan = 0;
+      pan = 0,
+      heard = false,
+      source = LaneSource.heard;
 
   /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
   factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
@@ -543,6 +566,8 @@ class LaneSnapshot {
     peak: native.peak,
     recoverable: native.recoverable != 0,
     pan: native.pan,
+    heard: native.heard != 0,
+    source: LaneSource.fromCode(native.source),
   );
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -580,6 +605,14 @@ class LaneSnapshot {
   /// `EngineRouting.setLanePan` for the balance law.
   final double pan;
 
+  /// Whether the live take holds a heard image (#1713), the input chain's
+  /// output captured while it recorded. The lane plays it while [source] is
+  /// [LaneSource.heard].
+  final bool heard;
+
+  /// What the lane plays (`EffectsControl.setLaneSource`).
+  final LaneSource source;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -593,7 +626,9 @@ class LaneSnapshot {
           rms == other.rms &&
           peak == other.peak &&
           recoverable == other.recoverable &&
-          pan == other.pan;
+          pan == other.pan &&
+          heard == other.heard &&
+          source == other.source;
 
   @override
   int get hashCode => Object.hash(
@@ -606,6 +641,8 @@ class LaneSnapshot {
     peak,
     recoverable,
     pan,
+    heard,
+    source,
   );
 }
 

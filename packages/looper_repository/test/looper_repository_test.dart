@@ -7654,6 +7654,41 @@ void main() {
       expect(engine.recipes[(FxOwner.monitor, 0, 0)]?.enabled, isFalse);
     });
 
+    test(
+      "restores the chain a lane's take was recorded through (#1713)",
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        final printed = [
+          BuiltInEffect(type: TrackEffectType.reverb, slotId: 'p'),
+        ];
+        final edited = [
+          BuiltInEffect(type: TrackEffectType.drive, slotId: 'e'),
+        ];
+
+        await repo.applySession(
+          SessionRig(
+            laneChains: {
+              (0, 0): FxChainEnvelope(
+                meta: FxChainMeta(printed: printed),
+                entries: edited,
+              ),
+              (0, 1): FxChainEnvelope(entries: printed),
+            },
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        // Edited after it was recorded: the save names what it was.
+        expect(repo.lanePrintedWhenEdited(0, 0), printed);
+        expect(repo.allLaneChains()[(0, 0)]!.meta!.printed, printed);
+        // Not named: it was recorded through the chain it has.
+        expect(repo.lanePrintedWhenEdited(0, 1), isNull);
+        expect(repo.allLaneChains()[(0, 1)]!.meta, isNull);
+      },
+    );
+
     test('fully resets a leftover monitor the rig does not define — routing '
         'and mix, not just its chain (F2)', () async {
       engine.nextSnapshot = clearedSnapshot();
@@ -7931,6 +7966,98 @@ void main() {
         expect(engine.importedLayers.containsKey((0, 0, 3)), isFalse);
         // The reconstructed stacks are published with their kinds.
         expect(engine.finalizedHistory[0], history);
+      },
+    );
+
+    test(
+      'imports each heard image right behind its layer, and none for a layer '
+      'without one (#1713)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final undo0 = Float32List.fromList([1, 1]);
+        final live = Float32List.fromList([2, 2]);
+        final heard0 = Float32List.fromList([.5, -.5, .5, -.5]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 2,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [undo0, live],
+                    heard: [heard0, Float32List(0)],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    history: const TrackHistory([
+                      HistoryEntry(HistoryKind.layer),
+                    ], undoCount: 1),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.importedHeard, {(0, 0, 0): heard0});
+        final imports = engine.calls
+            .where((c) => c == 'importLayer' || c == 'importLayerHeard')
+            .toList();
+        expect(imports, ['importLayer', 'importLayerHeard', 'importLayer']);
+      },
+    );
+
+    test(
+      'retries a heard image the engine is not ready for (#1713)',
+      () async {
+        engine
+          ..nextSnapshot = clearedSnapshot()
+          ..importHeardNotReadyCountdown = 2;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final heard = Float32List.fromList([.5, -.5, .5, -.5]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 2,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [
+                      Float32List.fromList([1, 1]),
+                    ],
+                    heard: [heard],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.importedHeard, {(0, 0, 0): heard});
+        expect(
+          engine.calls.where((c) => c == 'importLayerHeard'),
+          hasLength(3),
+        );
       },
     );
 

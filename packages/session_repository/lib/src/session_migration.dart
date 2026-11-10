@@ -89,6 +89,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
   15: _addAudioTempo,
   16: _addAnchors,
   17: _addRecordedInputs,
+  18: _addHeardImages,
 };
 
 /// A manifest written by an older schema, converted in memory: the exact
@@ -488,6 +489,11 @@ void _addRecordedInputs(Map<String, dynamic> m, SessionMigrationContext c) {
     }
   }
 }
+
+/// 18 → 19: each layer's heard image (#1713). Earlier schemas recorded none,
+/// and a layer without one plays its clean take through its lane's chain, as
+/// every take played before, so there is nothing to fill in.
+void _addHeardImages(Map<String, dynamic> m, SessionMigrationContext c) {}
 
 // ---- shared pieces ----
 
