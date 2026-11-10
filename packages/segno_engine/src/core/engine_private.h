@@ -2385,14 +2385,14 @@ typedef struct le_heard_log {
 /* The heard image's rendered tails (#1713 part 3, engine_heard_tail.c).
  * When a capture pass on a lane holding an image ends (a take closing into
  * play, a punch-out), the input chain keeps ringing: the player hears that
- * ringout live on the first repeat, and from the second repeat on it belongs
+ * ring-out live on the first repeat, and from the second repeat on it belongs
  * in the image, as a chain on the lane would have wrapped it. The cache
  * worker renders the chain's tail from the last LE_HEARD_TAIL_WINDOW_S
  * seconds of its input (a fresh state warmed by that input, then silence
  * until the tail falls below -80 dBFS or LE_HEARD_TAIL_MAX_S passes), and
  * the callback adds it into the image after the pass's last written
  * position, one frame per frame of time since the end, wrapping at the
- * loop: always behind the read head, so the live ringout is never heard
+ * loop: always behind the read head, so the live ring-out is never heard
  * twice. A new capture on the track, Stop, a length or slot change, Reverse
  * or Speed drop what is not added yet. */
 #define LE_HEARD_TAIL_WINDOW_S 12
