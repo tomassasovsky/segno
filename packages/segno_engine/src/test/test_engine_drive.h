@@ -158,6 +158,30 @@ static void test_overdrive_level(void) {
     if (d > worst) worst = d;
   }
   CHECK(worst < 1e-5);
+
+  /* Changed on a running pedal, the level glides there: it has not jumped
+   * a few samples after the change, and it has arrived by the end. */
+  float* moved = (float*)malloc(sizeof(float) * (size_t)n);
+  fx = dyn_state(LE_FX_OVERDRIVE, sr);
+  clock = 0;
+  p[2] = 0.0f;
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, moved, NULL, n / 2, &clock);
+  p[2] = (float)(20.0 * log10(1.6) / 12.0);
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in + n / 2, moved + n / 2, NULL,
+          n - n / 2, &clock);
+  dyn_free(fx);
+  double early = 0.0, late = 0.0;
+  for (int i = n / 2; i < n / 2 + 8; ++i) {
+    const double d = fabs((double)moved[i] - (double)plain[i]);
+    if (d > early) early = d;
+  }
+  for (int i = n - 2000; i < n; ++i) {
+    const double d = fabs((double)moved[i] - 1.6 * (double)plain[i]);
+    if (d > late) late = d;
+  }
+  CHECK(early < 0.05 * 0.6 * 0.25); /* well short of the 60 % step */
+  CHECK(late < 1e-4);
+  free(moved);
   free(in);
   free(plain);
   free(lofi);

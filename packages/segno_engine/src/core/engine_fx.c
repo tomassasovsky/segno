@@ -6171,6 +6171,7 @@ typedef struct le_fx_overdrive {
   float dlp_g;      /* the glide point dlp_g1 was designed for, -1 for none */
   float tone;       /* the tone setting now, 0..1 */
   float tone_tgt;
+  float level_tgt;  /* where level is headed, a gain */
   float hp_g1;
   float dhp_g1, dlp_g1; /* the clipped part's input high-pass and output
                          * low-pass, one-poles at the curve's rate */
@@ -6236,14 +6237,14 @@ static void fx_overdrive_update(void* ks, le_fx_dyn_head* h, const float* p,
     o->tone_tgt = t;
     o->g_tgt = (float)(exp(LE_OD_LNG0 + d * (LE_OD_LNG1 + d * LE_OD_LNG2)) /
                        LE_OD_C);
+    /* 0 dB is a gain of exactly 1, so the default leaves the output as it
+     * was. */
+    o->level_tgt = le_gain_of_db(
+        (float)le_fx_desc_value(&LE_FX_OVERDRIVE_PARAMS[2], p[2]));
   }
   const float k = settle ? 1.0f : h->k;
   int moving = le_fx_glide_step(&o->g, o->g_tgt, k);
-  /* 0 dB lands on exactly 1, so the default leaves the output as it was. */
-  moving |= le_fx_glide_step(
-      &o->level,
-      le_gain_of_db((float)le_fx_desc_value(&LE_FX_OVERDRIVE_PARAMS[2], p[2])),
-      k);
+  moving |= le_fx_glide_step(&o->level, o->level_tgt, k);
   if (o->dlp_g != o->g.g) {
     /* the low-pass follows the gain the glide is headed for this step */
     o->dlp_g = o->g.g;
@@ -6924,9 +6925,9 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
  * percent. What it does here is ours, a 2 kHz high shelf of
  * LE_DIST_TONE_DB x (2 tone - 1) dB; the Studio Rack, the only one with
  * this Dist, holds it flat. (The Lo-Fi Rack's Distort is the Overdrive,
- * #1737.) The defaults are the Studio Rack's. */
+ * #1737.) */
 static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
-    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 #define LE_DIST_ALPHA 3.4467f /* the early asymmetry */

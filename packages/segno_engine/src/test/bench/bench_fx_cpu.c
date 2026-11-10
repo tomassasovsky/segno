@@ -242,6 +242,7 @@ static float* source_for(int32_t kind, float* src) {
  *  - the Amp+Cab for Ed's and the Guitar racks' Amp, at heavy drive on the
  *    4x12" cabinet.
  *  - Smart Tune for the Vocal Tuner's.
+ *  - the Overdrive for the Lo-Fi Rack's Distort (#1737).
  * Left out, not built yet: the Harmonizer.
  * Each list ends at the first LE_FX_NONE. */
 typedef struct {
@@ -257,7 +258,7 @@ static const rack_spec k_racks[] = {
      {LE_FX_DOUBLER, LE_FX_MODE_DELAY, LE_FX_DUB_VERB, LE_FX_AMB_VERB,
       LE_FX_COMPRESSOR, LE_FX_EQ}},
     {"lofi", 60.0,
-     {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_DISTORTION, LE_FX_EQ,
+     {LE_FX_LPF, LE_FX_VINYL, LE_FX_DEGRADE, LE_FX_OVERDRIVE, LE_FX_EQ,
       LE_FX_MODE_DELAY}},
     {"rhythmic", 60.0,
      {LE_FX_LPF, LE_FX_SLICER, LE_FX_PUMPER, LE_FX_EQ, LE_FX_MODE_DELAY,

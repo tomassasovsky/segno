@@ -90,8 +90,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   Tone on its drive and tone (both 0 to 100 % on the Looper X), with the
   Overdrive's new level (0 to +12 dB, 0 dB by default) fixed at +4.08 dB.
   The module is still the catalogue's Distortion; the Studio Rack's Dist
-  stays on the Distortion kind, whose defaults are now the Studio Rack's
-  (Drive 50 %).
+  stays on the Distortion kind.
 - Each Lo-Fi preset's Distort against the capture at its settings: the
   response from 63 Hz to 8 kHz within 1.7 dB, the 1 kHz ladder within
   2.1 dB, the level 0.6 to 1.4 dB under (the Overdrive kind's own fit error
