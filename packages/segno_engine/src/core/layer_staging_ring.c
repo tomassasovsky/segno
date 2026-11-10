@@ -47,9 +47,12 @@ int le_layer_staging_ring_pop(le_layer_staging_ring* ring,
 void le_layer_staging_ring_drain_free(le_layer_staging_ring* ring) {
   if (ring == NULL || ring->buffer == NULL) return;
   le_staged_layer entry;
-  while (le_layer_staging_ring_pop(ring, &entry)) {
-    for (int32_t l = 0; l < entry.lane_count && l < LE_MAX_LANES; ++l) {
-      free(entry.lane_pcm[l]);
-    }
+  while (le_layer_staging_ring_pop(ring, &entry)) le_staged_layer_free(&entry);
+}
+
+void le_staged_layer_free(le_staged_layer* entry) {
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    free(entry->lane_pcm[l]);
+    entry->lane_pcm[l] = NULL;
   }
 }

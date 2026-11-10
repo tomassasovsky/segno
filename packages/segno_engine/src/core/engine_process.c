@@ -6274,6 +6274,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      le_heard_perf_armed(e); /* #1713: every lane's source is logged again */
       /* A performance arm ends a Library preview (#1178): the take starts
        * with the rig alone sounding. */
       le_audition_clear(e);
@@ -7754,16 +7755,25 @@ static inline void snapshot_track_fx(
 
 /* Fills pick[0 .. lanes) with each lane's render for the key {rev, take,
  * semitones, out_len}; 0 (pick partly filled) unless every lane holds one. */
-static int le_src_pick(le_track* tr, int32_t lanes, uint32_t rev,
+static int le_src_pick(le_engine* e, int t, int32_t lanes, uint32_t rev,
                        int32_t take, int32_t semitones, int32_t out_len,
                        const le_wet_entry** pick) {
+  le_track* tr = &e->tracks[t];
   for (int l = 0; l < lanes; ++l) {
     pick[l] = NULL;
-    for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
-      const le_wet_entry* c =
-          atomic_load_explicit(&tr->lanes[l].a_src[i], memory_order_acquire);
-      if (c != NULL && le_src_entry_fits(c, rev, take, semitones, out_len)) {
-        pick[l] = c;
+    /* A lane playing its heard image (#1713) takes a render that carries
+     * the image first. Until one lands it takes the clean take's render,
+     * and the lane plays its clean take at the track's pitch
+     * (le_heard_lane_wet), never the image at its own. */
+    for (int need = le_heard_lane_plays(e, t, l);
+         need >= 0 && pick[l] == NULL; --need) {
+      for (int i = 0; i < LE_SRC_CANDIDATES && pick[l] == NULL; ++i) {
+        const le_wet_entry* c = atomic_load_explicit(&tr->lanes[l].a_src[i],
+                                                     memory_order_acquire);
+        if (c != NULL &&
+            le_src_entry_fits(c, rev, take, semitones, out_len, need)) {
+          pick[l] = c;
+        }
       }
     }
     if (pick[l] == NULL) return 0;
@@ -7801,14 +7811,14 @@ static void le_transpose_select(le_engine* e, int tc, const int32_t* lane_n,
     const uint32_t rev =
         atomic_load_explicit(&tr->a_src_key, memory_order_acquire);
     int engaged = (want != 0 || want_out != take) && lane_n[t] > 0 &&
-                  le_src_pick(tr, lane_n[t], rev, take, want, want_out, pick);
+                  le_src_pick(e, t, lane_n[t], rev, take, want, want_out, pick);
     /* Off its span with no stretch render yet (Pitch Unchanged pending, or
      * refused by the cache cap): the pitch bridge plays the take at its own
      * pitch (#1675), from the track's plain Transpose render when every
      * lane holds one, so a transposed track keeps its pitch too. */
     const int bridge = !engaged && want_out != take && lane_n[t] > 0;
     if (bridge && want != 0) {
-      engaged = le_src_pick(tr, lane_n[t], rev, take, want, take, pick);
+      engaged = le_src_pick(e, t, lane_n[t], rev, take, want, take, pick);
     }
     le_track_bridge* tb = &e->bridges[t];
     int changed = bridge != tb->on;
@@ -8606,11 +8616,19 @@ static inline void le_chain_run_step(le_chain_run* run, const le_track* tr,
  * rendered from. */
 static inline int le_track_print_run_matches(
     le_track* tr, int32_t lanes, const le_wet_entry** lane_ent,
-    const int32_t* lane_fx_count) {
+    const int32_t* lane_fx_count
+#ifdef LE_MIX_HEARD_TU
+    , const le_heard* heard
+#endif
+    ) {
   if (!le_run_matches_print(tr, &tr->bus_run)) return 0;
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &tr->lanes[l];
     if (lane_fx_count[l] == 0) continue;
+#ifdef LE_MIX_HEARD_TU
+    /* A part playing its heard image runs no chain (#1713). */
+    if (heard[l].mix >= 1.0f) continue;
+#endif
     if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
     if (!le_run_matches_print(tr, &ln->run)) return 0;
   }
@@ -8718,12 +8736,21 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     float loopsample, const le_wet_entry* wce, int chain_live,
     int track_printed, int32_t fx_n, int32_t fx_pre,
     const int32_t* fx_type, const float (*fx_params)[LE_FX_PARAMS],
-    int32_t* fx_enabled, int sr, int fx_cap, uint32_t f) {
+    int32_t* fx_enabled, int sr, int fx_cap, int bridging, uint32_t f) {
   le_heard_pair out = {0.0f, 0.0f, 0};
   le_heard* h = &e->heard[t][l];
   le_lane* ln = &tr->lanes[l];
   const float* pl = le_heard_plane(h, 0, live);
   const float* pr = le_heard_plane(h, 1, live);
+  /* The source renders each head reads (#1713 part 2b). One made before the
+   * image was (le_src_pick's fallback) cannot play it at the track's pitch,
+   * so the lane fades to its clean take there, for the block
+   * (le_heard_block_begin, so the performance log can name it), until a
+   * render with the image lands; the fade reads the clean render on that
+   * head's image side. */
+  const le_wet_entry* se = tr->src_ent[l];
+  const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
+  const int pitched = h->img_blk;
   float m = h->mix;
   int target = 0;
   if (pl == NULL) {
@@ -8737,8 +8764,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     }
     m = 0.0f;
   } else {
-    target = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
-             LE_HEARD_SOURCE_HEARD;
+    target = pitched && h->src_blk; /* as the block started */
     if (!target && m >= 1.0f) {
       for (int32_t s = 0; s < fx_n; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
@@ -8756,34 +8782,73 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   h->mix = m;
   if (m <= 0.0f) return out; /* settled on the clean take */
   const int32_t cap = ln->pool_cap[live];
+  /* The planes each head reads (#1713 part 2b): its source render's when it
+   * has one (Transpose, a tempo stretch), else the live slot's own; through
+   * the pitch bridge, read by the grains the clean take stepped this frame
+   * (le_mix_bridge_lane), so both keep its timing. */
+  const float* nl = pl;
+  const float* nr = pr;
+  int32_t nlen = src_n;
+  if (se != NULL) {
+    nl = se->planes > 1 ? se->pcm + se->out_len : se->pcm;
+    nr = se->planes > 1 ? se->pcm + 2 * (size_t)se->out_len : se->pcm;
+    nlen = se->out_len;
+  }
+  const float* ol = pl;
+  const float* orr = pr;
+  int32_t olen = src_n;
+  if (oe != NULL) {
+    ol = oe->planes > 1 ? oe->pcm + oe->out_len : oe->pcm;
+    orr = oe->planes > 1 ? oe->pcm + 2 * (size_t)oe->out_len : oe->pcm;
+    olen = oe->out_len;
+  }
+  const int32_t hop = e->bridge_hop;
+  const uint32_t clock = e->fx_clock_base + f;
+  const int32_t phase =
+      hop > 0 ? (int32_t)((clock + le_bridge_offset(t, l, hop)) &
+                          (uint32_t)(hop - 1))
+              : 0;
+  const le_bridge* b = &e->bridges[t].lane[l];
   float a = 0.0f;
   float c = 0.0f;
   if (sounding) {
-    if (head_i >= 0.0) {
-      a = le_head_read_scaled(pl, src_n, src_n, &tr->head, head_i);
-      c = le_head_read_scaled(pr, src_n, src_n, &tr->head, head_i);
+    if (bridging & LE_BRIDGE_NEW) {
+      a = le_bridge_read(b, nl, src_n, phase, hop);
+      c = le_bridge_read(b, nr, src_n, phase, hop);
+    } else if (head_i >= 0.0) {
+      a = le_head_read_scaled(nl, nlen, src_n, &tr->head, head_i);
+      c = le_head_read_scaled(nr, nlen, src_n, &tr->head, head_i);
     } else if (plain >= 0 && plain < cap) {
       a = pl[plain];
       c = pr[plain];
     }
     if (turn_i >= 0.0) {
-      a = a * turn_x +
-          le_head_read_scaled(pl, src_n, src_n, &tr->prev_head, turn_i) *
-              turn_y;
-      c = c * turn_x +
-          le_head_read_scaled(pr, src_n, src_n, &tr->prev_head, turn_i) *
-              turn_y;
+      float y0;
+      float y1;
+      if (bridging & LE_BRIDGE_OLD) {
+        y0 = le_bridge_read(b, ol, src_n, phase, hop);
+        y1 = le_bridge_read(b, orr, src_n, phase, hop);
+      } else {
+        y0 = le_head_read_scaled(ol, olen, src_n, &tr->prev_head, turn_i);
+        y1 = le_head_read_scaled(orr, olen, src_n, &tr->prev_head, turn_i);
+      }
+      a = a * turn_x + y0 * turn_y;
+      c = c * turn_x + y1 * turn_y;
     }
   }
   a *= pg;
   c *= pg;
   if (tail && tail_len > 0) {
-    if (tail_head) {
+    if (e->bridge_any && e->bridges[t].on && !sounding && tail_len <= cap &&
+        b->live && b->last_clock == clock) {
+      /* The clean take's tail stepped the grains this frame. */
+      a += le_bridge_read(b, nl, tail_len, phase, hop) * tg;
+      c += le_bridge_read(b, nr, tail_len, phase, hop) * tg;
+    } else if (tail_head) {
       if (tail_len <= cap) {
-        a += le_head_read_scaled(pl, tail_len, tail_len, &tr->head, tail_at) *
-             tg;
-        c += le_head_read_scaled(pr, tail_len, tail_len, &tr->head, tail_at) *
-             tg;
+        const int32_t n = se != NULL ? se->out_len : tail_len;
+        a += le_head_read_scaled(nl, n, tail_len, &tr->head, tail_at) * tg;
+        c += le_head_read_scaled(nr, n, tail_len, &tr->head, tail_at) * tg;
       }
     } else {
       const int32_t i = (int32_t)tail_at;
@@ -9567,7 +9632,12 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
         le_head_is_integral(&tr->head) &&
         (tr->transpose_st == 0 || e->transpose_bypass) &&
         !load_i32(&tr->a_track_cache_active) && trk_rp == 0 &&
+#ifdef LE_MIX_HEARD_TU
+        le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t],
+                                   e->heard[t])) {
+#else
         le_track_print_run_matches(tr, lane_n[t], cache_ent[t], fx_count[t])) {
+#endif
       store_i32(&tr->a_track_cache_active, 1);
       for (int l = 0; l < lane_n[t]; ++l) {
         le_lane* el = &e->tracks[t].lanes[l];
@@ -9805,7 +9875,7 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
             has_fx[t][l] && !track_printed, track_printed, fx_count[t][l],
             fx_pre_count[t][l], fx_type[t][l],
             (const float (*)[LE_FX_PARAMS])fx_params[t][l], fx_enabled[t][l],
-            sr, fx_cap, f);
+            sr, fx_cap, bridge_block ? bridging[t] : 0, f);
         if (hp.done) goto lane_heard;
       }
 #endif
@@ -10812,7 +10882,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
    * no lane holds one picks the plain mixer and skips every step below. */
   const int heard_block = le_heard_block_begin(e, tc, lane_n, par, in, ch_in,
                                               excluded, mon_has_fx,
-                                              mon_fx_count);
+                                              mon_fx_count, perf_frame_base);
   par->in = in;
   par->ch_in = ch_in;
   par->sr = sr;

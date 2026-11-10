@@ -45,9 +45,9 @@ static inline int le_heard_any(const le_engine* e, int32_t ch, int32_t l) {
 /* Whether any active lane of [ch] holds an image in [slot]. */
 int le_heard_track_has(const le_engine* e, int32_t ch, int32_t slot);
 
-/* Whether lane (ch, l) plays its heard image now (control's view): its
- * source is HEARD and its live slot holds one. The cache does not print
- * such a lane, and a track with one has no whole-track print. */
+/* Whether lane (ch, l) plays its heard image now: it holds one, its source
+ * is HEARD and its live slot holds one. The cache does not print such a
+ * lane; a whole-track print takes its image as the part's material. */
 int le_heard_lane_plays(const le_engine* e, int32_t ch, int32_t l);
 
 /* ---- control thread ---- */
@@ -95,6 +95,16 @@ int le_heard_capture_replaces(le_engine* e, int32_t ch, uint32_t mask,
  * a standby (already faulted in). */
 uint32_t le_heard_match_shadow(le_engine* e, int32_t ch, int32_t slot,
                                uint32_t standby_mask);
+
+/* Installs [pl] and [pr] (fresh mappings of [cap] frames, the clean slot's
+ * size) as slot [slot]'s planes, freeing what it held: for a caller that
+ * allocated them before a point it may not fail past. The slot must not be
+ * one the callback can name. */
+void le_heard_adopt(le_engine* e, int32_t ch, int32_t l, int32_t slot,
+                    float* pl, float* pr, int32_t cap);
+
+/* Two fresh untouched mappings of [frames] frames, or neither (returns 0). */
+int le_heard_alloc_planes(int32_t frames, float** pl, float** pr);
 
 /* le_lane_shrink_slot's twin. */
 void le_heard_shrink(le_engine* e, int32_t ch, int32_t l, int32_t slot,
@@ -145,11 +155,16 @@ int le_lane_slot_buffers(const le_engine* e, int32_t ch, int32_t l,
  * to the block's jobs [par] after the monitored ones. Called once per
  * callback, after le_engine_process queues the monitor jobs and before the
  * frame loop. Returns whether any lane holds an image this block (a heard
- * block: le_engine_process mixes it with mix_tracks_frame_heard). */
+ * block: le_engine_process mixes it with mix_tracks_frame_heard). Each
+ * heard lane's source change is logged at [frame] (LE_PLOG_HEARD_SOURCE). */
 int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
                          le_fx_par* par, const float* in, int ch_in,
                          uint32_t excluded, const int* mon_has_fx,
-                         const int32_t* mon_fx_count);
+                         const int32_t* mon_fx_count, uint64_t frame);
+
+/* A performance arm (LE_CMD_PERF_ARM, callback): every lane's source is
+ * logged again at its next heard block. */
+void le_heard_perf_armed(le_engine* e);
 
 /* Logs frame [i]'s writes for track [t] (see le_heard_rec). */
 static inline void le_heard_log_write(le_engine* e, int t, int32_t live,
@@ -212,9 +227,11 @@ void le_heard_truncate(le_engine* e, le_track* t, int64_t from, int64_t to,
 void le_heard_attach_apply(le_engine* e, int32_t ch, int32_t l);
 
 #ifdef LE_NATIVE_TESTS
-/* Native tests only: every fresh take on every lane records an image, played
- * CLEAN, so the whole suite exercises the lockstep with each lane's clean
- * take (le_test_heard_check after every callback). */
+/* Native tests only: every fresh take on every lane records an image, so the
+ * whole suite exercises the lockstep with each lane's clean take
+ * (le_test_heard_check after every callback). 1 plays it CLEAN (the suite's
+ * own sound unchanged); 2 plays it HEARD, so wherever a lane has no chain
+ * the suite's sound checks also check the image's playback. */
 extern int le_test_heard_force;
 extern void (*le_test_heard_check)(le_engine*);
 #endif

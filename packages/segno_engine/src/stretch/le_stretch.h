@@ -124,6 +124,19 @@ int32_t le_stretch_render_loop(const float* in, int32_t frames,
                                uint32_t seed, int32_t fold,
                                float* out) LE_STRETCH_NOEXCEPT;
 
+/* le_stretch_render_loop over `channels` planar laps rendered as one
+ * instance (#1713: a heard image's two planes), so the stretcher's phase
+ * decisions are shared and a stereo image keeps its width; the loop point's
+ * fold takes one gain from the power of every channel. With one channel it is
+ * le_stretch_render_loop, sample for sample. */
+int32_t le_stretch_render_loop_planar(const float* const* in,
+                                      int32_t channels, int32_t frames,
+                                      int32_t out_frames, int32_t sample_rate,
+                                      float semitones, float tonality_limit,
+                                      int32_t cheaper, uint32_t seed,
+                                      int32_t fold,
+                                      float* const* out) LE_STRETCH_NOEXCEPT;
+
 #ifdef __cplusplus
 }
 #endif

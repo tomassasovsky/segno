@@ -1132,24 +1132,41 @@ static int le_stage_retired_layer(le_engine* engine, int32_t channel,
       /* Shouldn't happen for an active lane whose track just retired a pass
        * on this slot (le_post_dub_shadows allocates every active lane's
        * buffer before posting it) — fail closed rather than copy garbage. */
-      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      le_staged_layer_free(&entry);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
       return 0;
     }
-    float* copy = (float*)malloc((size_t)frame_count * sizeof(float));
+    /* The lane's heard image of the same slot (#1713) follows its clean
+     * take as (L, R) pairs. A copy that cannot be made fails the layer: a
+     * stem must not replay the clean take where the player heard the
+     * image. */
+    float* pl;
+    float* pr;
+    const int heard = le_heard_planes(engine, channel, l, slot, &pl, &pr);
+    float* copy = heard && engine->heard[channel][l].cap[slot] < frame_count
+                      ? NULL
+                      : (float*)malloc((heard ? 3 : 1) * (size_t)frame_count *
+                                       sizeof(float));
     if (copy == NULL) {
-      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      le_staged_layer_free(&entry);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
       return 0;
     }
     memcpy(copy, src, (size_t)frame_count * sizeof(float));
     entry.lane_pcm[l] = copy;
+    if (!heard) continue;
+    float* pairs = copy + frame_count;
+    for (int32_t i = 0; i < frame_count; ++i) {
+      pairs[2 * i] = pl[i];
+      pairs[2 * i + 1] = pr[i];
+    }
+    entry.heard_mask |= 1u << l;
   }
 
   if (!le_layer_staging_ring_push(&engine->perf.layer_staging_ring, entry)) {
-    for (int32_t l = 0; l < lane_count; ++l) free(entry.lane_pcm[l]);
+    le_staged_layer_free(&entry);
     atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                               memory_order_relaxed);
     return 0;
@@ -3768,32 +3785,47 @@ static int32_t le_length_post(le_engine* e, int32_t ch, int32_t slot,
   return LE_OK;
 }
 
+/* One buffer's share of le_length_build. */
+static void le_length_build_buffer(float* dst, const float* src, int32_t edit,
+                                   int32_t old_len, int32_t len, int32_t F) {
+  if (src == NULL) {
+    memset(dst, 0, (size_t)len * sizeof(float));
+  } else if (edit == LE_LENGTH_DOUBLE) {
+    memcpy(dst, src, (size_t)old_len * sizeof(float));
+    memcpy(dst + old_len, src, (size_t)old_len * sizeof(float));
+  } else {
+    const int32_t from = edit == LE_LENGTH_LAST_HALF ? old_len - len : 0;
+    memcpy(dst, src + from, (size_t)len * sizeof(float));
+    if (F > 0 && len >= 2 * F) {
+      le_seam_fold_head(dst, edit == LE_LENGTH_LAST_HALF ? src : src + len, F);
+    }
+  }
+}
+
 /* Writes the edited image of [t]'s live slot into `slot` on every active lane
- * (its buffers already hold `len` frames). Double repeats the image; a half
- * copies its region in place and folds its new wrap with the material it
- * omits — the continuation of the last kept frame, which is the next region
- * for First half and the already folded head for Last half — under the seam's
- * threshold (len >= 2F). */
+ * (its buffers already hold `len` frames), and of its heard image (#1713).
+ * Double repeats the image; a half copies its region in place and folds its
+ * new wrap with the material it omits — the continuation of the last kept
+ * frame, which is the next region for First half and the already folded head
+ * for Last half — under the seam's threshold (len >= 2F). */
 static void le_length_build(le_engine* e, le_track* t, int32_t slot,
                             int32_t edit, int32_t old_len, int32_t len) {
   const int32_t live = load_i32(&t->lanes[0].a_live);
   const int32_t F = (e->sample_rate > 0 ? e->sample_rate : 48000) / 100;
+  const int32_t ch = (int32_t)(t - e->tracks);
   for (int32_t l = 0; l < le_lanes_active(t); ++l) {
     le_lane* ln = &t->lanes[l];
-    float* dst = ln->pool[slot];
-    const float* src = ln->pool[live];
-    if (src == NULL) {
-      memset(dst, 0, (size_t)len * sizeof(float));
-    } else if (edit == LE_LENGTH_DOUBLE) {
-      memcpy(dst, src, (size_t)old_len * sizeof(float));
-      memcpy(dst + old_len, src, (size_t)old_len * sizeof(float));
-    } else {
-      const int32_t from = edit == LE_LENGTH_LAST_HALF ? old_len - len : 0;
-      memcpy(dst, src + from, (size_t)len * sizeof(float));
-      if (F > 0 && len >= 2 * F) {
-        le_seam_fold_head(dst, edit == LE_LENGTH_LAST_HALF ? src : src + len,
-                          F);
-      }
+    le_length_build_buffer(ln->pool[slot], ln->pool[live], edit, old_len, len,
+                           F);
+    /* The heard image's planes get the same edit (#1713). */
+    float* dl;
+    float* dr;
+    float* sl;
+    float* sr;
+    if (le_heard_planes(e, ch, l, slot, &dl, &dr) &&
+        le_heard_planes(e, ch, l, live, &sl, &sr)) {
+      le_length_build_buffer(dl, sl, edit, old_len, len, F);
+      le_length_build_buffer(dr, sr, edit, old_len, len, F);
     }
   }
 }
@@ -3814,6 +3846,8 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
   if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || old_len <= 0 ||
       (edit != LE_LENGTH_DOUBLE && old_len < 2)) return LE_ERR_INVALID;
   if (le_length_busy(e, channel)) return LE_ERR_NOT_READY;
+  /* An attach in flight would land on the image this edit replaces. */
+  if (le_heard_attach_pending(e, channel)) return LE_ERR_NOT_READY;
   /* The image is read from the live slot: not while the callback may still
    * write it (a seam fold, a punch tail; its end-of-block view). The payload
    * names the revision read, so a write that slips in before the callback
@@ -3851,17 +3885,31 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
   const int32_t want = le_layer_slot_frames(e, len);
   const int32_t lanes = le_lanes_active(t);
   float* fresh[LE_MAX_LANES] = {0};
-  for (int32_t l = 0; l < lanes; ++l) {
-    if (t->lanes[l].pool[slot] != NULL && t->lanes[l].pool_cap[slot] >= want) {
-      continue;
+  /* The edited image's heard image (#1713), where the take has one: its
+   * planes, the size the clean slot will have, mapped here too, so a
+   * refusal leaves nothing changed and an edit never drops an image. */
+  float* hfresh[LE_MAX_LANES][LE_HEARD_PLANES] = {{0}};
+  int failed = 0;
+  for (int32_t l = 0; l < lanes && !failed; ++l) {
+    const int reuse =
+        t->lanes[l].pool[slot] != NULL && t->lanes[l].pool_cap[slot] >= want;
+    if (!reuse) {
+      fresh[l] = (float*)le_rt_alloc((size_t)want * sizeof(float));
+      failed = fresh[l] == NULL;
     }
-    fresh[l] = (float*)le_rt_alloc((size_t)want * sizeof(float));
-    if (fresh[l] != NULL) continue;
-    for (int32_t k = 0; k < l; ++k) le_rt_free(fresh[k]);
-    return LE_ERR_INVALID;
+    if (!failed &&
+        le_heard_has(e, channel, l, load_i32(&t->lanes[l].a_live))) {
+      failed = !le_heard_alloc_planes(reuse ? t->lanes[l].pool_cap[slot] : want,
+                                      &hfresh[l][0], &hfresh[l][1]);
+    }
   }
-  if (track_acquire_slot(t) != slot) { /* the same pure selection, applied */
-    for (int32_t l = 0; l < lanes; ++l) le_rt_free(fresh[l]);
+  if (failed || track_acquire_slot(t) != slot) {
+    /* the same pure selection, applied, or out of memory */
+    for (int32_t l = 0; l < lanes; ++l) {
+      le_rt_free(fresh[l]);
+      le_rt_free(hfresh[l][0]);
+      le_rt_free(hfresh[l][1]);
+    }
     return LE_ERR_INVALID;
   }
   for (int32_t l = 0; l < lanes; ++l) {
@@ -3870,9 +3918,13 @@ int32_t le_engine_edit_length(le_engine* e, int32_t channel, int32_t edit,
       t->lanes[l].pool[slot] = fresh[l];
       t->lanes[l].pool_cap[slot] = want;
     }
-    /* No heard image for the edited image yet (#1713 part 2a): it plays its
-     * clean take. Whatever the reused slot held goes. */
-    (void)le_heard_match(e, channel, l, slot, 0, LE_HEARD_FREE);
+    /* The slot is not live yet: what it held is freed at once. */
+    if (hfresh[l][0] != NULL) {
+      le_heard_adopt(e, channel, l, slot, hfresh[l][0], hfresh[l][1],
+                     t->lanes[l].pool_cap[slot]);
+    } else {
+      (void)le_heard_match(e, channel, l, slot, 0, LE_HEARD_FREE);
+    }
   }
   le_length_build(e, t, slot, edit, old_len, len);
   le_hist_entry file =

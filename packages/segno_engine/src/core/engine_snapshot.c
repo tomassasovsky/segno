@@ -334,11 +334,11 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    /* A part that plays its heard image (#1713): the track's print is
-     * assembled from clean parts only, so the track's Pre run stays live. */
+    /* A part that plays its heard image (#1713) runs no chain: its image is
+     * its printed material. */
     if (le_heard_any(engine, channel, l) &&
         le_heard_lane_plays(engine, channel, l)) {
-      return 0;
+      continue;
     }
     int32_t count = load_i32(&ln->a_fx_count);
     if (count < 0) count = 0;
@@ -388,10 +388,15 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
   h = le_fx_fp_u32(h, (uint32_t)n);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    const uint64_t lane_fp = le_lane_pre_fx_fingerprint(engine, channel, l);
+    /* A part playing its heard image (#1713) contributes the image: its
+     * chain, which does not run, is not part of what the print covers. */
+    const int heard = le_heard_any(engine, channel, l) &&
+                      le_heard_lane_plays(engine, channel, l);
+    const uint64_t lane_fp =
+        heard ? 0u : le_lane_pre_fx_fingerprint(engine, channel, l);
     h = le_fx_fp_u32(h, (uint32_t)lane_fp);
     h = le_fx_fp_u32(h, (uint32_t)(lane_fp >> 32));
-    h = le_fx_fp_u32(h, (uint32_t)load_i32(&ln->a_fx_count));
+    h = le_fx_fp_u32(h, heard ? 0u : (uint32_t)load_i32(&ln->a_fx_count));
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_vol_bits, memory_order_relaxed));
     h = le_fx_fp_u32(
@@ -399,6 +404,8 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
     h = le_fx_fp_u32(
         h, atomic_load_explicit(&ln->a_pan_gr_bits, memory_order_relaxed));
     h = le_fx_fp_u32(h, load_i32(&ln->a_muted) ? 1u : 0u);
+    /* Whether the part's material is its heard image (#1713). */
+    h = le_fx_fp_u32(h, heard ? 1u : 0u);
   }
   return h;
 }

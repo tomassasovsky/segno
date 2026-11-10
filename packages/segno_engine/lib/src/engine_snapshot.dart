@@ -1310,10 +1310,11 @@ class CallbackWindowStats {
   /// dropping it would under-report reality.
   final List<int> xruns;
 
-  /// Services longer than the effects budget's share of their deadline (80 %,
+  /// Services longer than the effects budget's share of their deadline (77 %,
   /// `kFxBudgetShare`): blocks the effects admission promises never happen
-  /// (#1515). Every late period is one of these too. **Zero on a rig the
-  /// admission let in, on healthy hardware.**
+  /// (#1515). Every late period is one of these too. The share is set so the
+  /// p99.9 service fits it (#1724), so a rig the admission let in can still
+  /// show a few of these an hour; a steady count means the rig is over.
   final int overSharePeriods;
 
   /// Dropouts of [kind] in this window.

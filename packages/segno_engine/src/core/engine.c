@@ -1393,6 +1393,7 @@ le_engine* le_engine_create(void) {
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       engine->heard[t][l].attach_slot = -1;
+      engine->heard[t][l].import_ordinal = -1;
     }
   }
   /* No take has dropped a frame (#1198): 0 would name frame 0. */

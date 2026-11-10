@@ -611,7 +611,6 @@ static void test_heard_lane_is_not_printed(void) {
   CHECK(le_engine_record(e, 0) == LE_OK);
   heard_feed(e, N, 2 * F, 64, NULL);
   CHECK(le_heard_lane_plays(e, 0, 0));
-  CHECK(!le_track_pre_printable(e, 0));
   /* Long enough for a print to settle and render, were it scheduled. */
   for (int k = 0; k < 400; ++k) {
     heard_silence(e, 64, 64, NULL);

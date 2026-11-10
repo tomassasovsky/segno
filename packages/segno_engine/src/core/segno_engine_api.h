@@ -1510,7 +1510,7 @@ typedef struct le_cb_window_snapshot {
    * happened. Folding it into an existing bucket instead would corrupt the
    * breakdown; dropping it entirely would under-report reality. */
   uint64_t xruns[LE_XRUN_KINDS];
-  /* Services longer than the effects budget's share of their deadline (80 %,
+  /* Services longer than the effects budget's share of their deadline (77 %,
    * kFxBudgetShare in fx_cost.dart): what the admission model promises never
    * happens (#1515). Every late period is one of these too. */
   uint64_t over_share_periods;
@@ -4410,6 +4410,25 @@ LE_EXPORT int32_t le_engine_export_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          float* out, int32_t max_frames);
 
+/* The heard image (#1713) of the same image: up to `max_frames` frames as
+ * INTERLEAVED STEREO (left, right) into `out` (2 * max_frames floats).
+ * Returns the frames written, 0 when the image has no heard image (or is
+ * empty), and the image's length without copying for `max_frames` 0.
+ * Otherwise as le_engine_export_layer. */
+LE_EXPORT int32_t le_engine_export_layer_heard(le_engine* engine,
+                                               int32_t channel, int32_t lane,
+                                               int32_t ordinal, float* out,
+                                               int32_t max_frames);
+
+/* The live image's heard image (#1713) of track `channel`'s lane `lane`, as
+ * le_engine_export_track_lane but interleaved stereo (2 * max_frames floats
+ * at `out`). Returns the frames written, or 0 when the live take has no
+ * heard image. */
+LE_EXPORT int32_t le_engine_export_track_lane_heard(le_engine* engine,
+                                                    int32_t channel,
+                                                    int32_t lane, float* out,
+                                                    int32_t max_frames);
+
 /* Loads `frames` mono frames into track `channel`'s lane `lane` at image
  * `ordinal` (which becomes the pool slot index), staging a reconstruction into
  * an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
@@ -4420,6 +4439,20 @@ LE_EXPORT int32_t le_engine_export_layer(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_import_layer(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t ordinal,
                                          const float* pcm, int32_t frames);
+
+/* Gives the image le_engine_import_layer just staged at (`channel`, `lane`,
+ * `ordinal`) its heard image (#1713): `frames` frames of INTERLEAVED STEREO
+ * at `pcm`, exactly the clean image's length. Call right after that image's
+ * le_engine_import_layer (before the lane's next one) and before
+ * le_engine_finalize_history. Returns LE_OK, LE_ERR_NOT_READY while an
+ * attach is in flight, or LE_ERR_INVALID when the lane's last staged clean
+ * image is not this one at this length, or for any reason
+ * le_engine_import_layer would refuse. */
+LE_EXPORT int32_t le_engine_import_layer_heard(le_engine* engine,
+                                               int32_t channel, int32_t lane,
+                                               int32_t ordinal,
+                                               const float* pcm,
+                                               int32_t frames);
 
 /* Publishes a track reconstructed by le_engine_import_layer with its history
  * (#1164, #1168): `count` entries in le_engine_export_history order

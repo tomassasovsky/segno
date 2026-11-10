@@ -516,15 +516,21 @@ void main() {
       expect(repo.fxRoomAt(96000, 128), lessThan(repo.fxRoomAt(48000, 128)));
     });
 
-    test("an oversampled kind is charged at the target rate's figure", () {
+    test("a kind is charged at the target setting's figure", () {
       final repo = running()
         ..setTrackEffects(
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.overdrive)],
         );
-      final od = kFxOversampledCostNs[TrackEffectType.overdrive]!;
-      expect(repo.fxRoomAt(48000, 64), fxBudgetNs(48000) - od.low);
-      expect(repo.fxRoomAt(96000, 64), fxBudgetNs(96000) - od.high);
+      final od = kFxSettingCostNs[TrackEffectType.overdrive]!;
+      expect(
+        repo.fxRoomAt(48000, 32),
+        fxBudgetNs(48000, period: 32) - od[fxCostSetting(48000, 32)],
+      );
+      expect(
+        repo.fxRoomAt(96000, 64),
+        fxBudgetNs(96000) - od[fxCostSetting(96000, 64)],
+      );
     });
   });
 }

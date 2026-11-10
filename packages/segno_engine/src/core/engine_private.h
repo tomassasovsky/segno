@@ -858,7 +858,12 @@ typedef struct le_wet_entry {
   int32_t kind;
   int32_t semitones;
   int32_t out_len;
-  float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len */
+  /* A source render of a lane whose slot holds a heard image (#1713): 3,
+   * its pcm the clean take's render then the image's two planes', each
+   * out_len frames; otherwise 0 (the clean take's alone). */
+  int32_t planes;
+  float* pcm;         /* print: interleaved stereo, 2*len; source: mono, out_len
+                       * (times `planes` when set) */
   uint64_t last_used; /* control-side LRU stamp (tick counter) */
   /* 0 for a print whose key does not hold the top's place on the lap grid;
    * else 1 + that place (le_fx_lap_position) for the top it was rendered
@@ -914,11 +919,14 @@ static inline int le_src_len_within(int32_t have, int32_t want) {
  * (le_track_want_out), which the plain render matches exactly. */
 static inline int le_src_entry_fits(const le_wet_entry* ent, uint32_t key,
                                     int32_t len, int32_t semitones,
-                                    int32_t want_out) {
+                                    int32_t want_out, int need_planes) {
   if (!le_wet_entry_key_matches_kind(ent, key, 0, 0, len, 1, semitones,
                                      ent->out_len)) {
     return 0;
   }
+  /* [need_planes]: only a render that carries the lane's heard image too
+   * (#1713). Any render serves the clean take. */
+  if (need_planes && ent->planes <= 1) return 0;
   if (want_out == len || ent->out_len == len) return ent->out_len == want_out;
   return le_src_len_within(ent->out_len, want_out);
 }
@@ -2311,6 +2319,18 @@ typedef struct le_heard {
   uint32_t attach_posted;
   _Atomic uint32_t a_attach_done;
   _Atomic int32_t a_attach_ok;
+  /* Callback, as the block started (le_heard_block_begin), so each change
+   * lands on a block edge the performance log can name: whether the lane's
+   * source is HEARD, and whether its source renders can play the image at
+   * the track's pitch (a render made before the image was cannot, and the
+   * lane plays its clean take there). src_logged: the LE_PLOG_HEARD_SOURCE
+   * value last logged, -1 for none since the arm. */
+  int32_t src_blk;
+  int32_t img_blk;
+  int32_t src_logged;
+  /* Control: the ordinal le_engine_import_layer staged last on this lane
+   * (-1: none), the only one le_engine_import_layer_heard accepts. */
+  int32_t import_ordinal;
 } le_heard;
 
 /* One record of a track's heard log, in the order the first frame loop made
