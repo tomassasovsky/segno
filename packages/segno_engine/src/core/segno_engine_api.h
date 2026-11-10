@@ -4299,8 +4299,8 @@ LE_EXPORT int32_t le_perf_render_begin(le_engine* engine,
 
 /* Reads the current render's progress: `*done` (0 while rendering, 1 once
  * finished), `*progress_pct` (0..100, monotonic), `*track_count` (how many
- * entries `le_perf_render_track_status` can currently read — grows
- * progressively as each track's stem completes, not only once `*done`).
+ * entries `le_perf_render_track_status` can currently read: every track's,
+ * once the stems are written, before `*done`).
  * Safe to call whether or not a render is active — with none active,
  * `*done` reads 1, `*progress_pct` reads 100, `*track_count` reads 0. Any
  * output pointer may be NULL to skip that field. Returns LE_OK while
@@ -4326,9 +4326,9 @@ LE_EXPORT int32_t le_perf_render_track_status(le_engine* engine,
                                               int32_t* succeeded);
 
 /* Cancels an in-progress render and joins the worker thread; a no-op when no
- * render is active. Cancellation is checked once per per-track work chunk
- * (never mid-stem), so this only returns once the worker has actually
- * stopped, leaving no partial stem file for whichever track was in flight.
+ * render is active. Cancellation is checked once per block of the render
+ * (#1747), so this returns once the worker has stopped, a block later at
+ * most, and removes the stems it had begun: no partial stem file stays.
  * Returns LE_OK, or LE_ERR_INVALID for a null engine. */
 LE_EXPORT int32_t le_perf_render_cancel(le_engine* engine);
 
