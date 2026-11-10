@@ -336,7 +336,8 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
     le_lane* ln = &t->lanes[l];
     /* A part that plays its heard image (#1713) runs no chain: its image is
      * its printed material. */
-    if (le_heard_lane_plays(engine, channel, l)) {
+    if (le_heard_any(engine, channel, l) &&
+        le_heard_lane_plays(engine, channel, l)) {
       continue;
     }
     int32_t count = load_i32(&ln->a_fx_count);
@@ -389,7 +390,8 @@ uint64_t le_track_pre_fingerprint(le_engine* engine, int32_t channel) {
     le_lane* ln = &t->lanes[l];
     /* A part playing its heard image (#1713) contributes the image: its
      * chain, which does not run, is not part of what the print covers. */
-    const int heard = le_heard_lane_plays(engine, channel, l);
+    const int heard = le_heard_any(engine, channel, l) &&
+                      le_heard_lane_plays(engine, channel, l);
     const uint64_t lane_fp =
         heard ? 0u : le_lane_pre_fx_fingerprint(engine, channel, l);
     h = le_fx_fp_u32(h, (uint32_t)lane_fp);
