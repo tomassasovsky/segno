@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
+import 'package:segno_engine/segno_engine.dart'
+    show FxDraining, FxOwner, MockAudioEngine;
 
 BuiltInEffect _fx(TrackEffectType type) => BuiltInEffect(type: type);
 
@@ -320,6 +322,86 @@ void main() {
     }
     expect(draining, isNotEmpty);
     expect({for (final kind in kFxDrainingKinds) kind.name}, draining);
+  });
+
+  group('tails still draining (#1733)', () {
+    late MockAudioEngine engine;
+    late StreamController<void> ticks;
+    late LooperRepository repo;
+
+    const one = FxAddress(stage: FxStage.track, index: 1);
+    const two = FxAddress(stage: FxStage.track, index: 2);
+    final drive = _cost(TrackEffectType.overdrive);
+    final room = _cost(TrackEffectType.roomVerb);
+
+    setUp(() async {
+      engine = MockAudioEngine();
+      ticks = StreamController<void>.broadcast(sync: true);
+      repo = LooperRepository(engine: engine, ticker: ticks.stream)
+        ..startEngine(const EngineConfig(sampleRate: 96000));
+      final polling = repo.looperState.listen((_) {});
+      addTearDown(() async {
+        unawaited(polling.cancel());
+        await repo.dispose();
+        await ticks.close();
+      });
+      await pumpEventQueue();
+    });
+
+    List<TrackEffect> drives(int count) => [
+      for (var i = 0; i < count; i++)
+        BuiltInEffect(type: TrackEffectType.overdrive, slotId: 'd$i'),
+    ];
+
+    void poll() => ticks
+      ..add(null)
+      ..add(null)
+      ..add(null);
+
+    test('a held chain still charges the tails it drains', () {
+      // Track 1 fills the budget; track 2's Room reverb then does not fit
+      // and is held off (R2).
+      repo.setTrackEffects(channel: 0, effects: drives(repo.fxRoomNs ~/ drive));
+      final full = repo.fxCostNs;
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.roomVerb, slotId: 'r'),
+        ],
+      );
+      expect(repo.fxChainHeld(two), isTrue);
+      // Held, its reverb drains on: it is charged until it is quiet.
+      engine.fxDraining = FxDraining(const {(FxOwner.track, 2, 0): 1});
+      poll();
+      expect(repo.fxCostNs, full + room);
+      engine.fxDraining = FxDraining.none;
+      poll();
+      expect(repo.fxCostNs, full);
+    });
+
+    test('a chain whose hold frees nothing is never held: its draining '
+        'tail runs either way', () {
+      // Track 3: an Echo switched off, still draining.
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.echo,
+            slotId: 'e',
+            enabled: false,
+          ),
+        ],
+      );
+      engine.fxDraining = FxDraining(const {(FxOwner.track, 2, 0): 1});
+      poll();
+      // Track 2 nearly fills the budget, then track 1 goes over.
+      repo
+        ..setTrackEffects(channel: 1, effects: drives(repo.fxRoomNs ~/ drive))
+        ..setTrackEffects(channel: 0, effects: drives(2));
+      expect(repo.fxChainHeld(two), isFalse);
+      expect(repo.fxChainHeld(one), isTrue);
+      expect(repo.state.fxHoldNotice, isNot(contains(two)));
+    });
   });
 
   group('what a control can turn on (#1723)', () {

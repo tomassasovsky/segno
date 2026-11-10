@@ -32,6 +32,17 @@ final class FxDraining {
   /// Whether no slot drains anywhere.
   bool get isEmpty => _masks.isEmpty;
 
+  /// Every chain with a slot draining, and its mask.
+  Iterable<({FxOwner owner, int channel, int lane, int mask})> get chains =>
+      _masks.entries.map(
+        (entry) => (
+          owner: entry.key.$1,
+          channel: entry.key.$2,
+          lane: entry.key.$3,
+          mask: entry.value,
+        ),
+      );
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;

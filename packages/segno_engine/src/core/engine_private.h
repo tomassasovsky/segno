@@ -813,6 +813,9 @@ typedef struct le_fx_state {
    * Last in the struct so nothing before it moves. */
   struct le_fx_kinds *_Atomic kinds;
 } le_fx_state;
+#ifndef __cplusplus
+_Static_assert(LE_FX_MAX <= 64, "le_fx_state.a_draining is one bit per slot");
+#endif
 
 /* The unity-centre pan/balance law (accepted design, slice 3; documented on
  * le_engine_set_lane_pan): the near side stays at unity and the far side falls
