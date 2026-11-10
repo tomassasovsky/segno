@@ -8743,14 +8743,12 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const float* pr = le_heard_plane(h, 1, live);
   /* The source renders each head reads (#1713 part 2b). One made before the
    * image was (le_src_pick's fallback) cannot play it at the track's pitch,
-   * so the lane plays its clean take there until a render with the image
-   * lands. */
+   * so the lane fades to its clean take there until a render with the image
+   * lands; the fade reads the clean render on that head's image side. */
   const le_wet_entry* se = tr->src_ent[l];
   const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
-  if ((se != NULL && se->planes <= 1) || (oe != NULL && oe->planes <= 1)) {
-    pl = NULL;
-    pr = NULL;
-  }
+  const int pitched = !((se != NULL && se->planes <= 1) ||
+                        (oe != NULL && oe->planes <= 1));
   float m = h->mix;
   int target = 0;
   if (pl == NULL) {
@@ -8764,8 +8762,9 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     }
     m = 0.0f;
   } else {
-    target = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
-             LE_HEARD_SOURCE_HEARD;
+    target = pitched &&
+             atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
+                 LE_HEARD_SOURCE_HEARD;
     if (!target && m >= 1.0f) {
       for (int32_t s = 0; s < fx_n; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
@@ -8791,16 +8790,16 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const float* nr = pr;
   int32_t nlen = src_n;
   if (se != NULL) {
-    nl = se->pcm + se->out_len;
-    nr = se->pcm + 2 * (size_t)se->out_len;
+    nl = se->planes > 1 ? se->pcm + se->out_len : se->pcm;
+    nr = se->planes > 1 ? se->pcm + 2 * (size_t)se->out_len : se->pcm;
     nlen = se->out_len;
   }
   const float* ol = pl;
   const float* orr = pr;
   int32_t olen = src_n;
   if (oe != NULL) {
-    ol = oe->pcm + oe->out_len;
-    orr = oe->pcm + 2 * (size_t)oe->out_len;
+    ol = oe->planes > 1 ? oe->pcm + oe->out_len : oe->pcm;
+    orr = oe->planes > 1 ? oe->pcm + 2 * (size_t)oe->out_len : oe->pcm;
     olen = oe->out_len;
   }
   const int32_t hop = e->bridge_hop;

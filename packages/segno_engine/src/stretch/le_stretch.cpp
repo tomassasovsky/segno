@@ -339,17 +339,19 @@ int32_t le_stretch_render_loop_planar(const float* const* in,
     std::vector<double> suv((size_t)fold + 1), suu((size_t)fold + 1),
         svv((size_t)fold + 1);
     for (int32_t k = 0; k < fold; ++k) {
-      double puv = 0.0, puu = 0.0, pvv = 0.0;
+      /* Accumulated straight onto the running sums, so one channel computes
+       * exactly what the mono render always did (one fused add per sum). */
+      double puv = suv[(size_t)k], puu = suu[(size_t)k], pvv = svv[(size_t)k];
       for (int32_t ch = 0; ch < channels; ++ch) {
         const double u = outs[ch][(size_t)frames + (size_t)k];
         const double v = outs[ch][(size_t)k];
-        puv += u * v;
-        puu += u * u;
-        pvv += v * v;
+        puv = puv + u * v;
+        puu = puu + u * u;
+        pvv = pvv + v * v;
       }
-      suv[(size_t)k + 1] = suv[(size_t)k] + puv;
-      suu[(size_t)k + 1] = suu[(size_t)k] + puu;
-      svv[(size_t)k + 1] = svv[(size_t)k] + pvv;
+      suv[(size_t)k + 1] = puv;
+      suu[(size_t)k + 1] = puu;
+      svv[(size_t)k + 1] = pvv;
     }
     for (int32_t k = 0; k < fold; ++k) {
       const size_t lo = (size_t)std::max(0, k - half);
