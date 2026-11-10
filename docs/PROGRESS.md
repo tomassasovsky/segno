@@ -91,14 +91,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   carries the masks by chain (`fx_draining_monitor`, `_lane`, `_track`,
   `_all_tracks`, `_output`) and `EngineSnapshot.fxDraining` (`FxDraining`)
   reads them; no new polling.
-- The repository reads the masks against its chains at each snapshot and
+- The repository reads the masks against its chains at each snapshot (a
+  chain whose recipe the engine has not adopted keeps its last reading) and
   charges an effect of a draining kind while its slot drains, however it was
-  switched off (the screen, a chain switch, a rack, a hold: a held chain
-  charges the tails it still drains, and a chain whose hold would free
-  nothing is not held). A switch-off counts as draining until the engine has
-  run two blocks past the poll that first saw it (two polls if it processes
-  nothing), so one the engine has not yet seen still counts. Once the engine
-  reports the tail quiet, the room comes back on the next poll.
+  switched off: the screen, a chain switch, a rack, or a hold. A held chain
+  charges the tails it already drains, not the effects it was running, so
+  R2 can still hold a running chain of reverbs; a chain whose hold would
+  free nothing is not held, and a hold the engine has not taken yet charges
+  the chain in full. Every snapshot (each poll and each write's
+  re-projection) notes the draining-kind effects that stopped running, and
+  one counts as draining until the engine has run two blocks past that
+  snapshot (two snapshots if it processes nothing), so a switch-off the
+  engine has not yet seen still counts. Once the engine reports the tail
+  quiet, the room comes back with the next snapshot.
 - `test/looper/cubit/fx_drain_budget_test.dart`: a Room reverb switched off
   at the limit refuses an Overdrive switched on until its tail drains, then
   admits it; a kind without a tail frees its room at once.

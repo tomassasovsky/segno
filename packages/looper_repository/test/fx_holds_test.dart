@@ -324,8 +324,14 @@ void main() {
         ..setFxReach([
           FxControlReach(whenOn: {FxSwitchKey.chain(_lane(2))}),
         ])
-        ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
-        ..setLaneChainEnabled(channel: 2, lane: 0, enabled: false)
+        // Off from the start: switched off just now, its reverb and Mode
+        // delay would still be draining (#1733).
+        ..setLaneEffects(
+          channel: 2,
+          lane: 0,
+          effects: _rack(),
+          chainEnabled: false,
+        )
         ..setMonitorEffects(input: 0, effects: _rack())
         ..setMonitorEffects(input: 1, effects: _rack());
       expect(repo.fxChainHeld(_lane(2)), isTrue);

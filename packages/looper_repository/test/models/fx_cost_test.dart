@@ -379,6 +379,53 @@ void main() {
       expect(repo.fxCostNs, full);
     });
 
+    test('a running chain of reverbs can still be held: held, it stops '
+        'once its tails drain', () {
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          BuiltInEffect(type: TrackEffectType.roomVerb, slotId: 'r'),
+          BuiltInEffect(type: TrackEffectType.echo, slotId: 'e'),
+        ],
+      );
+      poll();
+      repo.setTrackEffects(
+        channel: 0,
+        effects: drives(repo.fxRoomNs ~/ drive + 1),
+      );
+      expect(repo.fxChainHeld(two), isTrue);
+      expect(repo.fxChainHeld(one), isFalse);
+    });
+
+    test('a reverb added and switched off between two polls still counts '
+        'as draining', () {
+      // Room for the reverb, and less than an Overdrive more.
+      repo.setTrackEffects(
+        channel: 0,
+        effects: drives((repo.fxRoomNs - room) ~/ drive),
+      );
+      final full = repo.fxCostNs;
+      repo
+        ..setTrackEffects(
+          channel: 1,
+          effects: [
+            BuiltInEffect(
+              type: TrackEffectType.roomVerb,
+              slotId: 'r',
+              enabled: false,
+            ),
+          ],
+        )
+        ..setTrackEffects(
+          channel: 1,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.roomVerb, slotId: 'r'),
+          ],
+        )
+        ..setTrackEffectEnabled(channel: 1, index: 0, enabled: false);
+      expect(repo.fxCostNs, full + room);
+    });
+
     test('a chain whose hold frees nothing is never held: its draining '
         'tail runs either way', () {
       // Track 3: an Echo switched off, still draining.
