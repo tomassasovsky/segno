@@ -11,8 +11,20 @@ void main() {
     test('every table has a figure for every setting and every kind', () {
       final n = kFxCostSettings.length;
       expect(n, 8);
-      expect(kFxKindCostNs.keys, unorderedEquals(TrackEffectType.values));
-      for (final MapEntry(key: type, value: ns) in kFxKindCostNs.entries) {
+      // Every kind has one figure, or one per setting, or PSOLA's.
+      expect(
+        {
+          ...kFxKindCostNs.keys,
+          ...kFxSettingCostNs.keys,
+          TrackEffectType.smartTune,
+        },
+        unorderedEquals(TrackEffectType.values),
+      );
+      expect(
+        kFxKindCostNs.keys.toSet().intersection(kFxSettingCostNs.keys.toSet()),
+        isEmpty,
+      );
+      for (final MapEntry(key: type, value: ns) in kFxSettingCostNs.entries) {
         expect(ns, hasLength(n), reason: type.name);
       }
       expect(kFxPsolaCostNs, hasLength(n));
@@ -50,12 +62,20 @@ void main() {
       expect(at(192000, 64), 96000064);
       // No rate reported: the bench's.
       expect(at(0, 0), 96000064);
-      final delay = _fx(TrackEffectType.delay);
+      final overdrive = _fx(TrackEffectType.overdrive);
       final i = fxCostSetting(48000, 32);
       expect(
-        fxEntryCostNs(delay, period: 32, sampleRate: 48000),
-        kFxKindCostNs[TrackEffectType.delay]![i],
+        fxEntryCostNs(overdrive, period: 32, sampleRate: 48000),
+        kFxSettingCostNs[TrackEffectType.overdrive]![i],
       );
+      // A kind whose work is the same a frame everywhere charges the same.
+      final delay = _fx(TrackEffectType.delay);
+      for (final (:rate, :period) in kFxCostSettings) {
+        expect(
+          fxEntryCostNs(delay, period: period, sampleRate: rate),
+          kFxKindCostNs[TrackEffectType.delay],
+        );
+      }
     });
 
     test('an entry charges its kind, on or off; PSOLA its own', () {
@@ -63,7 +83,7 @@ void main() {
       final octaver = _fx(TrackEffectType.octaver);
       int at4832(TrackEffect fx) =>
           fxEntryCostNs(fx, period: 32, sampleRate: 48000);
-      expect(at4832(octaver), kFxKindCostNs[TrackEffectType.octaver]![i]);
+      expect(at4832(octaver), kFxSettingCostNs[TrackEffectType.octaver]![i]);
       expect(at4832(octaver.copyWith(enabled: false)), at4832(octaver));
       // PSOLA, in the octaver or the Smart Tune.
       final psola = octaver.copyWith(params: [...octaver.params]..[3] = 1);
@@ -115,9 +135,48 @@ void main() {
       }
     });
 
+    test('outside the measured settings a charge only grows', () {
+      final octaver = _fx(TrackEffectType.octaver);
+      final delay = _fx(TrackEffectType.delay);
+      // A 16-frame block still takes a hop quarter, and a block's own work.
+      expect(
+        fxEntryCostNs(octaver, period: 16, sampleRate: 48000),
+        2 * fxEntryCostNs(octaver, period: 32, sampleRate: 48000),
+      );
+      expect(
+        fxEntryCostNs(delay, period: 16),
+        2 * fxEntryCostNs(delay, period: 32),
+      );
+      // Under 44.1 kHz the 48 kHz kernel runs more samples a frame.
+      expect(
+        fxEntryCostNs(octaver, sampleRate: 22050),
+        2 * fxEntryCostNs(octaver, sampleRate: 44100),
+      );
+      expect(
+        fxEntryCostNs(delay, sampleRate: 22050),
+        fxEntryCostNs(delay, sampleRate: 44100),
+      );
+      // Between 32 and 64 frames, the 32-frame figure, the larger.
+      expect(
+        fxEntryCostNs(octaver, period: 48, sampleRate: 48000),
+        fxEntryCostNs(octaver, period: 32, sampleRate: 48000),
+      );
+    });
+
     test("the budget is the share of a frame less the engine's own cost", () {
-      final i = fxCostSetting(48000, 32);
-      expect(fxBaseNs(48000, period: 32), (kFxBaseUs[i] * 1000 / 32).ceil());
+      final i32 = fxCostSetting(48000, 32);
+      final i64 = fxCostSetting(48000, 64);
+      expect(fxBaseNs(48000, period: 32), (kFxBaseUs[i32] * 1000 / 32).ceil());
+      expect(fxBaseNs(48000), (kFxBaseUs[i64] * 1000 / 64).ceil());
+      // Between the two, the line through them: 48 frames take the base's
+      // fixed part over fewer frames than 64 do.
+      final perFrame = (kFxBaseUs[i64] - kFxBaseUs[i32]) / 32;
+      final fixed = kFxBaseUs[i32] - 32 * perFrame;
+      expect(
+        fxBaseNs(48000, period: 48),
+        ((fixed + 48 * perFrame) * 1000 / 48).ceil(),
+      );
+      expect(fxBaseNs(48000, period: 48), greaterThan(fxBaseNs(48000)));
       // Per frame of a 64-frame block from 64 frames up.
       expect(fxBaseNs(96000, period: 256), fxBaseNs(96000));
       expect(
@@ -182,7 +241,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,256 ns a frame at 96 kHz / 64
+    // Ed's Rack, the plan's unit (section 7): 3,407 ns a frame at 96 kHz / 64
     // on the console's own table (#1508, #1724), 2,665 in the plan.
     final rack = [
       for (final type in [
@@ -216,8 +275,8 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 3256);
-      expect(fxBudgetNs(96000), 6626);
+      expect(rackNs, 3407);
+      expect(fxBudgetNs(96000), 6834);
     });
 
     test("at the owner's 48 kHz / 32, three of Ed's Racks fit the callback "
@@ -225,8 +284,8 @@ void main() {
         'the worst of eight at 80 % admitted)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      expect(ns, 4592);
-      expect(budget, 14206);
+      expect(ns, 4640);
+      expect(budget, 14622);
       expect(3 * ns, lessThanOrEqualTo(budget));
       expect(4 * ns, greaterThan(budget));
       int load(int racks) => fxLoadNs(
@@ -267,12 +326,13 @@ void main() {
       expect(fxLoadNs(serial: 0, jobs: [12, 12], workers: 3), 97 + 15);
     });
 
-    // The plan's table admitted 2, 4, 6 and 7 at its 2,665 ns.
-    test('admits 2, 3, 4 and 5 racks with 0 to 3 workers', () {
+    // The plan's table admitted 2, 4, 6 and 7 at its 2,665 ns; the worst of
+    // eight at 80 % admitted 2, 3, 4 and 5.
+    test('admits 2, 2, 3 and 4 racks with 0 to 3 workers at 96 kHz', () {
       expect(racksAdmitted(0), 2);
-      expect(racksAdmitted(1), 3);
-      expect(racksAdmitted(2), 4);
-      expect(racksAdmitted(3), 5);
+      expect(racksAdmitted(1), 2);
+      expect(racksAdmitted(2), 3);
+      expect(racksAdmitted(3), 4);
     });
 
     group('LooperRepository', () {
@@ -296,19 +356,19 @@ void main() {
         addTearDown(repo.dispose);
       });
 
-      test('four racks on the inputs fit two workers, five do not', () {
-        putRacks(4);
+      test('three racks on the inputs fit two workers, four do not', () {
+        putRacks(3);
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
         expect(repo.state.fxHeld, isEmpty);
-        // A fifth is weighed by what it adds to the critical path.
-        final fifth = repo.fxGrowthNs({
-          const FxAddress(stage: FxStage.input, index: 4): rack,
+        // A fourth is weighed by what it adds to the critical path.
+        final fourth = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.input, index: 3): rack,
         });
-        expect(fifth, greaterThan(repo.fxRoomNs));
+        expect(fourth, greaterThan(repo.fxRoomNs));
         // Restored anyway, it comes up switched off (the owner's R2).
-        putRacks(5);
+        putRacks(4);
         expect(
-          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 4)),
+          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 3)),
           isTrue,
         );
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));

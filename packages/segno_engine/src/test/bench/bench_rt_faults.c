@@ -718,18 +718,22 @@ int main(int argc, char** argv) {
                             &g_bus);
     printf("%d of Ed's Racks (%d effects) on output pair 0, on the callback\n",
            o.bus_racks, (int)g_bus.count);
-    if (o.ab_ms > 0 && o.bus_racks >= 2) {
+    if (o.ab_ms > 0 && o.bus_racks >= 2 && o.bus_racks * 9 <= LE_FX_MAX) {
       g_ab_ms = o.ab_ms;
       ab_switch(); /* one of the pair on from the start */
       printf("the last two an A/B pair, switched every %d ms\n", g_ab_ms);
     }
   }
   if (o.click) {
-    le_engine_set_tempo(g_e, 120.0f);
-    le_engine_set_click_output(g_e, 0x3);
-    le_engine_set_click_volume(g_e, 0.01f);
-    le_engine_set_click_mode(g_e, LE_CLICK_PLAY_REC);
-    printf("click on output pair 0 at 120 BPM, -40 dB\n");
+    const int rc = le_engine_set_tempo(g_e, 120.0f) |
+                   le_engine_set_click_output(g_e, 0x3) |
+                   le_engine_set_click_volume(g_e, 0.01f) |
+                   le_engine_set_click_mode(g_e, LE_CLICK_PLAY_REC);
+    if (rc != LE_OK) {
+      fprintf(stderr, "--click: the engine refused the click (%d)\n", rc);
+      return 2;
+    }
+    printf("click on output pair 0 at 120 BPM (a manual tempo), -40 dB\n");
   }
   g_workers_found = find_fx_workers(g_wtid, LE_FX_WORKERS_MAX);
   {
@@ -861,7 +865,7 @@ int main(int argc, char** argv) {
              (unsigned long long)(y->jobs - x->jobs), y->job_max_ns);
     }
   }
-  printf("over the effects budget's share (75 %%): %llu periods\n",
+  printf("over the effects budget's share (77 %%): %llu periods\n",
          (unsigned long long)(t1.session.over_share_periods -
                               t0.session.over_share_periods));
   faults += worker_faults;

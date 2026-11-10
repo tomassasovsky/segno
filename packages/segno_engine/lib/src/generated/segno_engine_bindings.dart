@@ -9810,7 +9810,7 @@ final class le_cb_window_snapshot extends ffi.Struct {
   @ffi.Array.multi([4])
   external ffi.Array<ffi.Uint64> xruns;
 
-  /// Services longer than the effects budget's share of their deadline (75 %,
+  /// Services longer than the effects budget's share of their deadline (77 %,
   /// kFxBudgetShare in fx_cost.dart): what the admission model promises never
   /// happens (#1515). Every late period is one of these too.
   @ffi.Uint64()

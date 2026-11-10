@@ -522,7 +522,7 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.overdrive)],
         );
-      final od = kFxKindCostNs[TrackEffectType.overdrive]!;
+      final od = kFxSettingCostNs[TrackEffectType.overdrive]!;
       expect(
         repo.fxRoomAt(48000, 32),
         fxBudgetNs(48000, period: 32) - od[fxCostSetting(48000, 32)],
