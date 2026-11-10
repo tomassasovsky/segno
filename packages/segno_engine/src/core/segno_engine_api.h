@@ -1962,6 +1962,17 @@ typedef struct le_snapshot {
    * the track and the progress are decoded from ONE atomic word, so they
    * always describe the same request. */
   int32_t song_queue_record;
+  /* Trailing (#1733): the chain slots still running a tail after their
+   * switch went off (bit s: slot s, le_fx_type_drains), by chain: each
+   * monitored input's, each lane's, each track's, the All tracks chain's
+   * (any of its per-output instances) and each output's. A slot is clear
+   * once its tail is quiet for its whole delay memory, when it is switched
+   * back on, retyped, or leaves the chain. */
+  uint64_t fx_draining_monitor[LE_MAX_MONITORED_INPUTS];
+  uint64_t fx_draining_lane[LE_MAX_TRACKS][LE_MAX_LANES];
+  uint64_t fx_draining_track[LE_MAX_TRACKS];
+  uint64_t fx_draining_all_tracks;
+  uint64_t fx_draining_output[LE_MAX_OUTPUT_BUSES];
 } le_snapshot;
 
 /* What a song-tempo change does now (le_snapshot.tempo_follow, #1179 Part

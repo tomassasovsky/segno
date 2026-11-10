@@ -33469,11 +33469,18 @@ static void test_fx_bypass_drains_tail_then_settles(void) {
   }
   CHECK(peak > 1e-3f);
   CHECK(e->monitors[0].fx.enable_drain[0] > 0); /* draining */
+  /* ... and the snapshot says so, for the effects budget (#1733). */
+  static le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 1u);
+  CHECK(snap.fx_draining_monitor[1] == 0u);
 
   /* The repeats decay by 0.6 each: under the floor within ~20 repeats, then
    * the quiet window settles the slot. Two seconds is ample. */
   for (int blk = 0; blk < 96000 / 4096; ++blk) process_n(e, 0.0f, 4096, cap);
   CHECK(e->monitors[0].fx.enable_drain[0] == 0); /* settled */
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 0u);
   process_n(e, 0.0f, 1024, cap);
   for (int i = 0; i < 1024; ++i) CHECK(cap[i] == 0.0f);
 
@@ -33483,6 +33490,17 @@ static void test_fx_bypass_drains_tail_then_settles(void) {
   CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
   process_n(e, 0.0f, 1024, cap);
   for (int i = 0; i < 1024; ++i) CHECK(cap[i] == 0.0f);
+
+  /* Switched back on mid-drain, the slot drains no longer. */
+  process_n(e, 1.0f, 64, cap);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 1u);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 0u);
 
   le_engine_destroy(e);
 }
