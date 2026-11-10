@@ -111,6 +111,25 @@ const List<int> kFxPsolaCostNs = [
 /// through them: a fixed part and a part for each frame ([fxBaseNs]).
 const List<double> kFxBaseUs = [42.3, 74.8, 45.4, 73.5, 43.1, 74.4, 43.8, 75.9];
 
+/// The kinds that keep running after they are switched off, until their tail
+/// has drained (engine_fx.c, `le_fx_type_drains`: the delay, the echo, the
+/// Mode delay and the reverbs). Switching one off frees nothing until then,
+/// so the budget charges one an alternation turns off as if it ran (#1723).
+const Set<TrackEffectType> kFxDrainingKinds = {
+  TrackEffectType.delay,
+  TrackEffectType.echo,
+  TrackEffectType.modeDelay,
+  TrackEffectType.reverb,
+  TrackEffectType.spring,
+  TrackEffectType.dubVerb,
+  TrackEffectType.ambVerb,
+  TrackEffectType.roomVerb,
+};
+
+/// Whether [fx] keeps running after it is switched off ([kFxDrainingKinds]).
+bool fxDrains(TrackEffect fx) =>
+    fx is BuiltInEffect && kFxDrainingKinds.contains(fx.type);
+
 /// The block a per-block cost is spread over at most ([_perBlock]), and the
 /// block the charges default to.
 const int kFxBenchPeriod = 64;

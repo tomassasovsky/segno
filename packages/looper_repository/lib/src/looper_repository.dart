@@ -8859,32 +8859,51 @@ class LooperRepository {
     FxReach? reach,
   }) {
     final controls = reach ?? _fxReach;
-    bool runs(FxSwitchKey key, {required bool now}) => controls.alternates(key)
-        ? state.contains(key)
+    // A switch an alternation sets is on in the states that have it, but an
+    // effect that drains its tail keeps running after its side goes off
+    // (le_fx_type_drains): it is charged in every state, as a press can
+    // leave it draining beside the side going on.
+    bool runs(FxSwitchKey key, {required bool now, required bool drains}) =>
+        controls.alternates(key)
+        ? drains || state.contains(key)
         : now || controls.free.contains(key);
-    if (chain.isEmpty || !runs(FxSwitchKey.chain(address), now: chainOn)) {
-      return 0;
-    }
+    if (chain.isEmpty) return 0;
+    final chainKey = FxSwitchKey.chain(address);
     return fxChainCostNs(
       [
         for (final fx in chain)
-          if ((fx.rack == null ||
-                  runs(
-                    FxSwitchKey.rack(address, fx.rack!.id),
-                    now: !fx.rack!.bypassed,
-                  )) &&
-              (fx.slotId == null
-                  ? fx.enabled
-                  : runs(
-                      FxSwitchKey.slot(address, fx.slotId!),
-                      now: fx.enabled,
-                    )))
+          if (_fxCharged(
+            fx,
+            address,
+            (key, {required now}) => runs(key, now: now, drains: fxDrains(fx)),
+            chainKey: chainKey,
+            chainOn: chainOn,
+          ))
             fx,
       ],
       period: period,
       sampleRate: rate,
     );
   }
+
+  /// Whether [fx] in the chain at [address] is charged: its chain's switch,
+  /// its rack's and its own each [runs].
+  static bool _fxCharged(
+    TrackEffect fx,
+    FxAddress address,
+    bool Function(FxSwitchKey key, {required bool now}) runs, {
+    required FxSwitchKey chainKey,
+    required bool chainOn,
+  }) =>
+      runs(chainKey, now: chainOn) &&
+      (fx.rack == null ||
+          runs(
+            FxSwitchKey.rack(address, fx.rack!.id),
+            now: !fx.rack!.bypassed,
+          )) &&
+      (fx.slotId == null
+          ? fx.enabled
+          : runs(FxSwitchKey.slot(address, fx.slotId!), now: fx.enabled));
 
   // ---- Chains that do not fit (#1515, the owner's R1 and R2) ----
 

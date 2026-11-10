@@ -125,10 +125,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   are held off as R2 does and come back once it fits. A session's bindings that come in over budget are admitted as a
   restore is (R2): chains are held off until the rest fits, and a reach that
   shrinks brings them back. R2 never holds a chain that charges nothing.
-- Known limit: a switched-off delay, echo or reverb keeps running until its
-  tail drains (`le_fx_type_drains`), so for that window an A/B switch runs
-  both sides, and room freed by switching an unreached effect off is
-  counted before its tail ends.
+- A switched-off delay, echo, Mode delay or reverb keeps running until its
+  tail drains (`le_fx_type_drains`; `kFxDrainingKinds` mirrors it and a test
+  reads the engine's table). The side a press turns off is still charged for
+  those, so an alternation charges the larger of each side plus the other
+  side's draining effects (a console stress test switching an A/B pair every
+  second at the limit showed the xruns without this). Room freed by switching
+  an unreached effect off from the screen is still counted before its tail
+  ends.
 
 ## November 2026 A take plays back what was heard (#1713, in progress)
 

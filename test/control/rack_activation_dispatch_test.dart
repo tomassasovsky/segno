@@ -123,27 +123,28 @@ class _Rig {
     expect(await looper.settleFxRecipes(), EngineResult.ok);
   }
 
-  /// What one Room reverb charges at the rig's rate and block.
-  int get roomVerbNs => looper.fxGrowthNs({
+  /// What one Overdrive charges at the rig's rate and block: a heavy kind
+  /// with no tail, so switched off it stops at once (#1723).
+  int get overdriveNs => looper.fxGrowthNs({
     const FxAddress(stage: FxStage.track, index: 7): [
-      BuiltInEffect(type: TrackEffectType.roomVerb),
+      BuiltInEffect(type: TrackEffectType.overdrive),
     ],
   });
 
-  /// Input 1's A/B pair (#1711) as two Room reverbs: rack A (Reverb +
-  /// Delay) switched off, rack B (Soft Chords) on.
+  /// Input 1's A/B pair (#1711) as two Overdrives: rack A (Reverb + Delay)
+  /// switched off, rack B (Soft Chords) on.
   Future<void> heavyRacks() async {
     expect(
       looper.setMonitorEffects(
         input: 0,
         effects: [
           BuiltInEffect(
-            type: TrackEffectType.roomVerb,
+            type: TrackEffectType.overdrive,
             slotId: 'reverb',
             rack: _reverb.copyWith(bypassed: true),
           ),
           BuiltInEffect(
-            type: TrackEffectType.roomVerb,
+            type: TrackEffectType.overdrive,
             slotId: 'chords',
             rack: _chords,
           ),
@@ -154,16 +155,16 @@ class _Rig {
     expect(await looper.settleFxRecipes(), EngineResult.ok);
   }
 
-  /// Fills track 1's chain with Room reverbs that are on until less than
+  /// Fills track 1's chain with Overdrives that are on until less than
   /// [spare] + 1 more fit the effects budget.
   Future<void> fill({int spare = 0}) async {
-    final count = looper.fxRoomNs ~/ roomVerbNs - spare;
+    final count = looper.fxRoomNs ~/ overdriveNs - spare;
     expect(
       looper.setTrackEffects(
         channel: 0,
         effects: [
           for (var i = 0; i < count; i++)
-            BuiltInEffect(type: TrackEffectType.roomVerb),
+            BuiltInEffect(type: TrackEffectType.overdrive),
         ],
       ),
       EngineResult.ok,
@@ -171,7 +172,7 @@ class _Rig {
     expect(await looper.settleFxRecipes(), EngineResult.ok);
     expect(
       looper.fxRoomNs,
-      inInclusiveRange(spare * roomVerbNs, (spare + 1) * roomVerbNs - 1),
+      inInclusiveRange(spare * overdriveNs, (spare + 1) * overdriveNs - 1),
     );
   }
 
@@ -449,14 +450,14 @@ void main() {
       slotId: 'spare',
     );
 
-    /// Track 2's chain: one Room reverb, switched off.
+    /// Track 2's chain: one Overdrive, switched off.
     Future<void> putSpare(_Rig rig) async {
       expect(
         rig.looper.setTrackEffects(
           channel: 1,
           effects: [
             BuiltInEffect(
-              type: TrackEffectType.roomVerb,
+              type: TrackEffectType.overdrive,
               slotId: 'spare',
               enabled: false,
             ),
@@ -495,8 +496,8 @@ void main() {
         await rig.heavyRacks();
         await rig.control.load();
         await rig._settle();
-        // One rack's Room reverb, not two.
-        expect(rig.looper.fxCostNs, rig.roomVerbNs);
+        // One rack's Overdrive, not two.
+        expect(rig.looper.fxCostNs, rig.overdriveNs);
         await rig.fill();
 
         for (final expected in [
@@ -597,7 +598,7 @@ void main() {
         await rig.control.load();
         await putSpare(rig);
         await rig.control.setGlobalBindings(bound(spare));
-        expect(rig.looper.fxCostNs, rig.roomVerbNs);
+        expect(rig.looper.fxCostNs, rig.overdriveNs);
         await rig.fill();
         rig.control.setMode(InteractionMode.fx);
         await rig._settle();
@@ -613,8 +614,8 @@ void main() {
       }
     });
 
-    /// Track 2's chain: one off effect per id, Room reverbs unless named in
-    /// [light] (Delays).
+    /// Track 2's chain: one off effect per id, Overdrives unless named in
+    /// [light] (Filters).
     Future<void> putOff(
       _Rig rig,
       List<String> ids, {
@@ -627,8 +628,8 @@ void main() {
             for (final id in ids)
               BuiltInEffect(
                 type: light.contains(id)
-                    ? TrackEffectType.delay
-                    : TrackEffectType.roomVerb,
+                    ? TrackEffectType.filter
+                    : TrackEffectType.overdrive,
                 slotId: id,
                 enabled: false,
               ),
@@ -683,7 +684,7 @@ void main() {
       try {
         await rig.control.load();
         await putOff(rig, ['x', 'y']);
-        // Room for one more Room reverb, not two.
+        // Room for one more Overdrive, not two.
         await rig.fill(spare: 1);
 
         var externalRefused = false;
@@ -728,8 +729,8 @@ void main() {
         try {
           await rig.control.load();
           // Six MIDI buttons that alternate two pedals each, five of them
-          // Delays and the last two Room reverbs; and before them one that
-          // alternates two Delays, one of which another mapping also reaches,
+          // Delays and the last two Overdrives; and before them one that
+          // alternates two Filters, one of which another mapping also reaches,
           // so it alternates nothing.
           final light = {
             'p',
@@ -765,7 +766,7 @@ void main() {
           expect(rig.looper.state.fxHeld, isEmpty);
 
           // Without the shared one, the first pair alternates and takes the
-          // last place under the cap: the Room reverbs are charged together.
+          // last place under the cap: the Overdrives are charged together.
           final removed = await rig.control.deleteMidiMapping(
             shared.mappingId!,
           );
@@ -775,7 +776,7 @@ void main() {
           expect(rig.looper.state.fxHeld, isNotEmpty);
           expect(rig.looper.fxRoomNs, greaterThanOrEqualTo(0));
 
-          // Taking the Room reverbs' button away too, the rest fits again.
+          // Taking the Overdrives' button away too, the rest fits again.
           expect(
             (await rig.control.deleteMidiMapping(heavy.mappingId!)).saved,
             isTrue,
