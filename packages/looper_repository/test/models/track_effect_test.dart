@@ -34,7 +34,7 @@ void main() {
           expect(d.atMin, e.atMin, reason: reason);
           expect(d.atMax, e.atMax, reason: reason);
           expect(d.defaultValue, e.defaultValue, reason: reason);
-          expect(d.taperUnverified, e.taperUnverified, reason: reason);
+          expect(d.off.name, e.off.name, reason: reason);
           for (final v in [0.0, 0.3, 0.5, 1.0]) {
             expect(d.valueAt(v), e.valueAt(v), reason: '$reason at $v');
           }

@@ -21,46 +21,15 @@ typedef FxEdits = ({
   void Function(String groupId, FxPlacement placement) setPlacement,
 });
 
-/// What a built-in parameter's row reads: the value text beside its name and
-/// the note under its slider.
-///
-/// An entry built from a factory rack module onto one of the seven built-ins
-/// (`effect.module != null`) keeps the raw two-decimal setting and the "Scale
-/// unverified" note: its preset values were written against the Looper X's
-/// own scales, which the built-in does not share, so printing them in its
-/// units would state numbers nobody verified. A Looper X kind
-/// ([TrackEffectType.isRackKind]) or a rack variant ([fxEntryBuild], the
-/// Pitch Shift on the octaver) carries the module's own scales, and like a
-/// plain built-in reads in its descriptor's units with no note, unless the
-/// descriptor itself is marked [FxParamInfo.taperUnverified], in which case
-/// it reads like a module's.
-({String valueText, String? note}) fxParamReading(
-  AppLocalizations l10n,
-  TrackEffect effect,
-  FxParamInfo param,
-  double setting,
-) {
-  final rackKind =
-      effect is BuiltInEffect &&
-      (effect.type.isRackKind || fxEntryBuild(effect) != null);
-  if ((effect.module != null && !rackKind) || param.taperUnverified) {
-    return (
-      valueText: setting.toStringAsFixed(2),
-      note: l10n.fxScaleUnverified,
-    );
-  }
-  return (valueText: l10n.fxParamValueText(param, setting), note: null);
-}
-
 /// Whether [param] is a choice: a few named positions ([FxParamUnit.choice],
 /// stepped), which its control offers by name rather than as a slider.
 bool fxParamIsChoice(FxParamInfo param) =>
     param.unit == FxParamUnit.choice && param.isStepped;
 
 /// Built-in parameter [index] of [effect] as a control: its localized name,
-/// and, for a continuous parameter, an [FxParamControl] with the value text
-/// and note [fxParamReading] gives it; for a choice ([fxParamIsChoice]), its
-/// named positions to pick from (#1730).
+/// and, for a continuous parameter, an [FxParamControl] with its value in its
+/// descriptor's units; for a choice ([fxParamIsChoice]), its named positions
+/// to pick from (#1730).
 ///
 /// A choice writes the setting of the position picked, which is where the
 /// engine reads every setting of that position, so the parameter does what
@@ -99,7 +68,6 @@ class FxBuiltInParamControl extends StatelessWidget {
     // control works in that range and reports the kind's setting.
     final param = fxEntryParam(effect, index);
     final setting = fxEntryShownSetting(effect, index);
-    final reading = fxParamReading(l10n, effect, param, setting);
     final label = l10n.fxParamKeyName(labelKey ?? param.key);
     if (fxParamIsChoice(param)) {
       final last = param.steps - 1;
@@ -113,10 +81,6 @@ class FxBuiltInParamControl extends StatelessWidget {
               l10n.fxParamValueText(param, k / last),
           ],
           selected: param.positionOf(setting),
-          // A named position is exact: the "Scale unverified" note is about
-          // a module value read on a scale nobody measured, which a choice
-          // does not have.
-          note: param.taperUnverified ? reading.note : null,
           onSelected: (k) =>
               onChanged(fxEntryKindSetting(effect, index, k / last)),
         ),
@@ -125,16 +89,14 @@ class FxBuiltInParamControl extends StatelessWidget {
     return FxParamControl(
       label: label,
       value: setting,
-      valueText: reading.valueText,
+      valueText: l10n.fxParamValueText(param, setting),
       width: width,
-      note: reading.note,
       onChanged: (v) => onChanged(fxEntryKindSetting(effect, index, v)),
     );
   }
 }
 
-/// One parameter: its name, its value text, the slider, and an optional note
-/// under it.
+/// One parameter: its name, its value text and the slider.
 class FxParamControl extends StatelessWidget {
   /// Creates an [FxParamControl].
   const FxParamControl({
@@ -143,7 +105,6 @@ class FxParamControl extends StatelessWidget {
     required this.valueText,
     required this.width,
     required this.onChanged,
-    this.note,
     super.key,
   });
 
@@ -161,14 +122,6 @@ class FxParamControl extends StatelessWidget {
 
   /// Reports a new value.
   final ValueChanged<double> onChanged;
-
-  /// The line under the slider, or `null` for a control that needs none.
-  ///
-  /// A preset parameter carries the accepted "Scale unverified" note when its
-  /// real-world mapping was never recovered (see [fxParamReading]). The rack's
-  /// own level is not one of those: it is a plain gain this build defines, so
-  /// a note saying its scale is unknown would be false.
-  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -210,17 +163,6 @@ class FxParamControl extends StatelessWidget {
             semanticLabel: label,
             onChanged: onChanged,
           ),
-          if (note case final note?) ...[
-            const SizedBox(height: 14),
-            AppText(
-              note,
-              style: TextStyle(
-                color: surface.textTertiary,
-                fontSize: 16,
-                height: 1,
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -241,7 +183,6 @@ class _ChoiceParamControl extends StatelessWidget {
     required this.choices,
     required this.selected,
     required this.onSelected,
-    this.note,
   });
 
   /// The parameter's own name.
@@ -258,9 +199,6 @@ class _ChoiceParamControl extends StatelessWidget {
 
   /// Reports the position picked.
   final ValueChanged<int> onSelected;
-
-  /// The line under the control, as [FxParamControl.note].
-  final String? note;
 
   /// The size the position names are set in.
   static const double _choiceFontSize = 22;
@@ -340,17 +278,6 @@ class _ChoiceParamControl extends StatelessWidget {
                     LoopSelectItem(key: keyOf(k), value: k, label: choices[k]),
                 ],
               ),
-            if (note case final note?) ...[
-              const SizedBox(height: 14),
-              AppText(
-                note,
-                style: TextStyle(
-                  color: surface.textTertiary,
-                  fontSize: 16,
-                  height: 1,
-                ),
-              ),
-            ],
           ],
         ),
       ),

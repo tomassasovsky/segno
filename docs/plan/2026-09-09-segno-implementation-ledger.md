@@ -2095,7 +2095,9 @@ the effect actually has, each reading its own value.
 Every control says **Scale unverified** under it. That is the accepted
 design's own position: raw source values are shown WITHOUT invented physical
 units, and a control whose mapping was never recovered says so rather than
-printing a number in milliseconds nobody verified.
+printing a number in milliseconds nobody verified. (Superseded: the racks'
+kinds now read in measured units, and #1731 removed the note from the last
+controls that had it.)
 
 ### The Pre/Post switch
 

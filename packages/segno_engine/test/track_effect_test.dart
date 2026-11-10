@@ -584,27 +584,6 @@ void main() {
       expect(formants.defaultValue, 0);
     });
 
-    test('only the chosen mappings carry the taper-unverified flag', () {
-      // The seven built-ins are segno's own; the Looper X kinds' ranges are
-      // the Looper X's, and the EQ, dynamics, doubler, chorus, wah, vinyl,
-      // degrade, low-pass filter, Mod and the overdrive's tone are measured
-      // (#891, #1445, #1663). The controls whose effect is chosen or
-      // inferred from one capture carry it: the distortion (fit to the
-      // Studio Rack's, used for Lo-Fi's too) and the Dual Octaver's Octave 1
-      // level (always at 100 % in the presets).
-      for (final type in TrackEffectType.values) {
-        for (final p in type.params) {
-          expect(
-            p.taperUnverified,
-            type == TrackEffectType.distortion ||
-                (type == TrackEffectType.dualOctaver &&
-                    p.key == 'octave_1_vol'),
-            reason: '${type.name}.${p.key}',
-          );
-        }
-      }
-    });
-
     test("the compressor's ratio is the Looper X's reciprocal taper", () {
       // 1 / (1 - v / 1.0101): 1 at 0, 100 at 1, and every Ed's preset's
       // 0.758 is 4:1.
@@ -748,15 +727,15 @@ void main() {
       );
       expect(linear, same);
       expect(linear.hashCode, same.hashCode);
-      const flagged = FxParamInfo(
+      const offAtMin = FxParamInfo(
         key: 'time',
         unit: FxParamUnit.ms,
         atMin: 0,
         atMax: 1000,
         defaultValue: 0.35,
-        taperUnverified: true,
+        off: FxParamOff.atMin,
       );
-      expect(linear, isNot(flagged));
+      expect(linear, isNot(offAtMin));
       expect(linear, isNot(exponential));
     });
   });
