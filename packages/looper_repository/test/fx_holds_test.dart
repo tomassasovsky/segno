@@ -2,7 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show EngineSnapshot, FxOwner, LatencyState, TrackSnapshot;
+    show EngineSnapshot, FxOwner, LatencyState, TrackSnapshot, TrackState;
+import 'package:segno_engine/segno_engine.dart' show LaneSource;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -52,6 +53,34 @@ const _running = le.EngineSnapshot(
   tracks: _empty,
 );
 
+/// Every track playing a take, so a record press overdubs.
+final _playing = le.EngineSnapshot(
+  isRunning: true,
+  sampleRate: 96000,
+  bufferFrames: 64,
+  inputChannels: 8,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  tracks: [
+    for (var t = 0; t < 8; t++)
+      const le.TrackSnapshot(
+        state: le.TrackState.playing,
+        volume: 1,
+        muted: false,
+        lengthFrames: 96000,
+        undoDepth: 0,
+        rms: 0,
+        peak: 0,
+      ),
+  ],
+);
+
 FxAddress _input(int index) => FxAddress(stage: FxStage.input, index: index);
 
 FxAddress _lane(int track, [int lane = 0]) =>
@@ -73,70 +102,34 @@ void main() {
     expect(fxBudgetNs(96000), 6834);
   });
 
-  group('R1: a take whose inherited chains do not fit', () {
-    test('a take with room keeps its inherited chain on', () {
-      repo
-        ..setMonitorEffects(input: 0, effects: _rack())
-        ..record();
+  group('a take plays what was heard (#1713)', () {
+    test('a take records its input chain heard, keeps the chain by value and '
+        'charges nothing for it', () {
+      repo.setMonitorEffects(input: 0, effects: _rack());
+      final input = repo.fxCostNs;
+      repo.record();
+      expect(engine.lastRecordImage!.heardLanes, {0});
       expect(repo.laneEffects(0, 0), hasLength(9));
       expect(repo.fxChainHeld(_lane(0)), isFalse);
-      expect(repo.state.fxHeld, isEmpty);
+      expect(repo.fxCostNs, input);
+      expect(engine.laneSources[(0, 0)], LaneSource.heard);
     });
 
-    test('records, keeps the chain by value switched off, says so once, '
-        'and never saves the switch-off', () async {
-      final toasts = <int>[];
-      final sub = repo.fxTakeHeld.listen(toasts.add);
-      addTearDown(sub.cancel);
-      repo
-        ..setMonitorEffects(input: 0, effects: _rack())
-        ..record()
-        ..record(channel: 1);
-      // The second take's rack would be the third on the callback.
-      expect(repo.laneEffects(1, 0), hasLength(9));
-      expect(repo.fxChainHeld(_lane(1)), isTrue);
-      expect(repo.fxChainHeld(_lane(0)), isFalse);
-      expect(repo.state.fxHeld, {_lane(1)});
-      // The engine runs it off from its first block: the take's recipe.
-      expect(engine.recipes[(le.FxOwner.lane, 1, 0)]!.enabled, isFalse);
-      expect(engine.recipes[(le.FxOwner.lane, 0, 0)]!.enabled, isTrue);
-      // Its saved switch is the player's: on.
-      expect(repo.laneChainEnabled(1, 0), isTrue);
-      expect(repo.allLaneChains()[(1, 0)]!.chainEnabled, isTrue);
-      // It charges nothing, so the rig fits.
-      expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
-      await pumpEventQueue();
-      expect(toasts, [1]);
-      // No standing notice for a take: the toast is its only notice.
+    test('takes never come in switched off, however many there are', () {
+      repo.setMonitorEffects(input: 0, effects: _rack());
+      for (var channel = 0; channel < 4; channel++) {
+        repo.record(channel: channel);
+      }
+      for (var channel = 0; channel < 4; channel++) {
+        expect(repo.laneEffects(channel, 0), hasLength(9));
+        expect(engine.recipes[(le.FxOwner.lane, channel, 0)]!.enabled, isTrue);
+      }
+      expect(repo.state.fxHeld, isEmpty);
       expect(repo.state.fxHoldNotice, isEmpty);
+      expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
     });
 
-    test('switching it on is refused while the rig has no room, and allowed '
-        'once room is made', () {
-      repo
-        ..setMonitorEffects(input: 0, effects: _rack())
-        ..record()
-        ..record(channel: 1);
-      expect(repo.fxHeldChainFits(_lane(1)), isFalse);
-      expect(
-        repo.setLaneChainEnabled(channel: 1, lane: 0, enabled: true),
-        EngineResult.capacity,
-      );
-      expect(repo.fxChainHeld(_lane(1)), isTrue);
-      // The input's own chain goes: one rack on the callback, room for one.
-      repo.setMonitorEffects(input: 0, effects: const []);
-      expect(repo.fxHeldChainFits(_lane(1)), isTrue);
-      expect(
-        repo.setLaneChainEnabled(channel: 1, lane: 0, enabled: true),
-        EngineResult.ok,
-      );
-      expect(repo.fxChainHeld(_lane(1)), isFalse);
-      expect(engine.laneFxChainEnabled[(1, 0)], isTrue);
-      expect(repo.state.fxHeld, isEmpty);
-    });
-
-    test('takes started together are weighed together', () {
-      // Neither take has had its first block: each must count the other.
+    test('takes started together are each heard', () {
       engine.publishRecordImages = false;
       repo
         ..setMonitorEffects(input: 0, effects: _rack())
@@ -147,13 +140,100 @@ void main() {
         ..publishImage(1);
       // The takes land on the next projection.
       repo.setTrackChainEnabled(channel: 7, enabled: true);
-      expect(repo.laneEffects(1, 0), hasLength(9));
       expect(repo.fxChainHeld(_lane(0)), isFalse);
-      expect(repo.fxChainHeld(_lane(1)), isTrue);
+      expect(repo.fxChainHeld(_lane(1)), isFalse);
+      expect(engine.heardLanes, {(0, 0), (1, 0)});
+    });
+
+    test("editing a take's chain re-amps it, charged like any chain, and "
+        'editing it back plays what was heard again', () {
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record();
+      final printed = repo.laneEffects(0, 0);
+      final before = repo.fxCostNs;
+      expect(
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: printed.sublist(1),
+        ),
+        EngineResult.ok,
+      );
+      expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      expect(repo.fxCostNs, greaterThan(before));
+      expect(repo.lanePrintedWhenEdited(0, 0), printed);
+      expect(repo.allLaneChains()[(0, 0)]!.meta!.printed, printed);
+      expect(
+        repo.setLaneEffects(channel: 0, lane: 0, effects: printed),
+        EngineResult.ok,
+      );
+      expect(engine.laneSources[(0, 0)], LaneSource.heard);
+      expect(repo.fxCostNs, before);
+      expect(repo.lanePrintedWhenEdited(0, 0), isNull);
+    });
+
+    test('a fresh take recorded dry forgets what an earlier take was '
+        'printed with', () {
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record()
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.eq)],
+        );
+      expect(repo.lanePrintedWhenEdited(0, 0), isNotNull);
+      engine.heardLanes.clear();
+      repo
+        ..setMonitorEffects(input: 0, effects: const [])
+        ..record();
+      expect(engine.lastRecordImage!.heardLanes, isEmpty);
+      expect(repo.lanePrintedWhenEdited(0, 0), isNull);
+      expect(repo.allLaneChains()[(0, 0)]?.meta?.printed, isNull);
+    });
+
+    test("switching a take's chain off plays it clean and dry", () {
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record()
+        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false);
+      expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      repo.setLaneChainEnabled(channel: 0, lane: 0, enabled: true);
+      expect(engine.laneSources[(0, 0)], LaneSource.heard);
+    });
+
+    test('a re-amped take whose chain the rig cannot run falls back to what '
+        'was heard, never to dry', () {
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record();
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: repo.laneEffects(0, 0).sublist(1),
+      );
+      expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      // A second input rack: the re-amped lane, the newest stage, is held.
+      repo.setMonitorEffects(input: 1, effects: _rack());
+      expect(repo.fxChainHeld(_lane(0)), isTrue);
+      expect(engine.laneSources[(0, 0)], LaneSource.heard);
+    });
+
+    test('a take the engine could not give an image plays its chain live, '
+        'weighed as a rig is', () {
+      engine.refuseHeardImages = true;
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..record();
+      expect(repo.laneEffects(0, 0), hasLength(9));
+      expect(repo.fxChainHeld(_lane(0)), isTrue);
+      expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
     });
 
     test("an input chain that is off because it didn't fit is heard dry, "
-        'so a take does not copy it', () {
+        'so a take does not copy it or record it heard', () {
       repo
         ..setMonitorEffects(input: 0, effects: _rack())
         ..setMonitorEffects(input: 1, effects: _rack())
@@ -163,12 +243,50 @@ void main() {
         ..setLaneInput(channel: 0, lane: 0, inputChannel: 2)
         ..record();
       expect(repo.laneEffects(0, 0), isEmpty);
+      expect(engine.lastRecordImage!.heardLanes, isEmpty);
     });
 
-    test('a dry input inherits as before', () {
+    test('a dry input records clean only', () {
       repo.record();
       expect(repo.laneEffects(0, 0), isEmpty);
+      expect(engine.lastRecordImage!.heardLanes, isEmpty);
       expect(repo.state.fxHeld, isEmpty);
+    });
+
+    test('an overdub that could not attach an image yet is refused, not '
+        'recorded dry', () {
+      engine
+        ..nextSnapshot = _playing
+        ..heardAttachResult = EngineResult.notReady;
+      repo.setMonitorEffects(input: 0, effects: _rack());
+      engine.calls.clear();
+      expect(repo.record(), EngineResult.notReady);
+      expect(engine.calls, isNot(contains('record')));
+      engine.heardAttachResult = EngineResult.ok;
+      expect(repo.record(), EngineResult.ok);
+      expect(engine.heardLanes, {(0, 0)});
+    });
+
+    test('an overdub over a dry take with no chain of its own records '
+        "through the input's effects; one over a take with its own chain "
+        'does not', () {
+      engine.nextSnapshot = _playing;
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record();
+      expect(engine.calls, contains('heardAttach'));
+      expect(engine.heardLanes, {(0, 0)});
+      expect(engine.laneSources[(0, 0)], LaneSource.heard);
+      // Its take was heard with no chain on the lane: one added re-amps it.
+      repo.setLaneEffects(channel: 0, lane: 0, effects: [_rack().first]);
+      expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      expect(repo.lanePrintedWhenEdited(0, 0), isEmpty);
+
+      engine.calls.clear();
+      repo.setLaneEffects(channel: 1, lane: 0, effects: _rack());
+      engine.calls.clear();
+      repo.record(channel: 1);
+      expect(engine.calls, isNot(contains('heardAttach')));
     });
   });
 
@@ -229,28 +347,14 @@ void main() {
       expect(repo.fxChainHeld(_input(2)), isFalse);
     });
 
-    test('a notice left over from a rig that fits no longer swallows a '
-        "take's toast", () async {
-      final toasts = <int>[];
-      final sub = repo.fxTakeHeld.listen(toasts.add);
-      addTearDown(sub.cancel);
+    test('a take never joins the standing notice', () {
       repo
         ..setMonitorEffects(input: 0, effects: _rack())
         ..setMonitorEffects(input: 1, effects: _rack())
-        ..setMonitorEffects(input: 2, effects: _rack());
+        ..setMonitorEffects(input: 2, effects: _rack())
+        ..record();
+      expect(repo.fxChainHeld(_lane(0)), isFalse);
       expect(repo.state.fxHoldNotice, [_input(2)]);
-      // More room at the next start: everything comes back on.
-      engine.fxWorkersRunning = 2;
-      repo
-        ..stopEngine()
-        ..startEngine(const EngineConfig(sampleRate: 96000));
-      expect(repo.state.fxHoldNotice, isEmpty);
-      // The three input racks fit the workers; a take's copy does not.
-      repo.record();
-      expect(repo.state.fxHoldNotice, isEmpty);
-      expect(repo.fxChainHeld(_lane(0)), isTrue);
-      await pumpEventQueue();
-      expect(toasts, [0]);
     });
 
     test('a chain the player has off goes first: holding it changes no '
@@ -305,22 +409,6 @@ void main() {
         ..dismissFxHoldNotice();
       expect(repo.state.fxHoldNotice, isEmpty);
       expect(repo.fxChainHeld(_input(2)), isTrue);
-    });
-
-    test('a take that does not fit while the notice stands joins it '
-        'instead of a toast', () async {
-      final toasts = <int>[];
-      final sub = repo.fxTakeHeld.listen(toasts.add);
-      addTearDown(sub.cancel);
-      repo
-        ..setMonitorEffects(input: 0, effects: _rack())
-        ..setMonitorEffects(input: 1, effects: _rack())
-        ..setMonitorEffects(input: 2, effects: _rack())
-        ..record();
-      expect(repo.fxChainHeld(_lane(0)), isTrue);
-      expect(repo.state.fxHoldNotice, [_input(2), _lane(0)]);
-      await pumpEventQueue();
-      expect(toasts, isEmpty);
     });
 
     test('the notice stands until every chain it names is back on', () {

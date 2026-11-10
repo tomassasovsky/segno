@@ -2155,6 +2155,7 @@ class SessionRepository {
     final snapshot = _engine.snapshot();
     final laneStems = <(int, int), List<Float32List>>{};
     final heardStems = <(int, int), List<Float32List>>{};
+    final playsHeard = <(int, int)>{};
     final tracks = <SessionTrack>[];
     final trackLevels = <int, double>{};
     for (var i = 0; i < snapshot.tracks.length; i++) {
@@ -2203,6 +2204,9 @@ class SessionRepository {
           heardStems[(i, l)] = layerHeard;
         }
         final laneSnap = track.lanes[l];
+        if (laneSnap.heard && laneSnap.source == LaneSource.heard) {
+          playsHeard.add((i, l));
+        }
         // The lane's mix (slice 3) comes from the looper repository, not
         // the engine: the engine holds the level times the balance and the
         // image plus the track's pan, and neither product can be taken
@@ -2244,6 +2248,7 @@ class SessionRepository {
       snapshot: snapshot,
       laneStems: laneStems,
       heardStems: heardStems,
+      playsHeard: playsHeard,
       tracks: tracks,
       trackLevels: trackLevels,
     );
@@ -2379,15 +2384,25 @@ class SessionRepository {
   /// fader applied once, over
   /// the session period — the LCM of the lane lengths, so every lane's loop
   /// closes cleanly. Lanes are summed, never merged: a two-lane track
-  /// contributes both lanes to the mix.
+  /// contributes both lanes to the mix. A lane playing its heard image
+  /// (#1713) contributes that, its two sides averaged, so the preview sounds
+  /// as the take plays.
   Float32List _mixdown(_Capture captured) {
     final active = <(Float32List, double)>[];
     for (final track in captured.tracks) {
       for (final lane in track.lanes) {
         if (lane.muted) continue;
-        final layerPcm = captured.laneStems[(track.channel, lane.lane)];
+        final key = (track.channel, lane.lane);
+        final layerPcm = captured.laneStems[key];
         if (layerPcm == null) continue;
-        final pcm = layerPcm[lane.liveIndex]; // mix the live buffer per lane
+        final heardLayers = captured.heardStems[key];
+        final heard = captured.playsHeard.contains(key) && heardLayers != null
+            ? heardLayers[lane.liveIndex]
+            : null;
+        // Mix the live buffer per lane.
+        final pcm = heard != null && heard.isNotEmpty
+            ? _foldToMono(heard)
+            : layerPcm[lane.liveIndex];
         if (pcm.isEmpty) continue;
         active.add((
           pcm,
@@ -2436,6 +2451,15 @@ class SessionRepository {
   }
 }
 
+/// The mean of each frame's two sides of interleaved stereo [pcm].
+Float32List _foldToMono(Float32List pcm) {
+  final mono = Float32List(pcm.length ~/ 2);
+  for (var f = 0; f < mono.length; f++) {
+    mono[f] = (pcm[2 * f] + pcm[2 * f + 1]) * 0.5;
+  }
+  return mono;
+}
+
 int _gcd(int a, int b) {
   var x = a;
   var y = b;
@@ -2457,6 +2481,7 @@ class _Capture {
     required this.tracks,
     required this.trackLevels,
     this.heardStems = const {},
+    this.playsHeard = const {},
   });
 
   final EngineSnapshot snapshot;
@@ -2464,6 +2489,9 @@ class _Capture {
 
   /// As a [SessionBundle]'s `heardStems`.
   final Map<(int, int), List<Float32List>> heardStems;
+
+  /// The lanes playing their heard image (#1713): the mixdown sums that.
+  final Set<(int, int)> playsHeard;
   final List<SessionTrack> tracks;
   final Map<int, double> trackLevels;
 }

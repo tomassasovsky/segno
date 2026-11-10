@@ -56,6 +56,7 @@ import 'package:segno_engine/segno_engine.dart'
         PluginRef,
         TrackEffect,
         TrackEffectType,
+        encodeTrackEffects,
         fxPreCount;
 
 /// The history action the player requested.
@@ -1317,6 +1318,13 @@ class LooperRepository {
     final commandsSettled = _engine.commandsSettled;
     final snapshot = _engine.snapshot();
     _noticeLengthHistoryRefusals(snapshot);
+    final heardBefore = _laneHeard;
+    _laneHeard = _heardLanesOf(snapshot);
+    // A take that came back with its image (an Undo of a Clear, a recall)
+    // charges nothing again, so what its return held comes back (#1713).
+    if (_fxHeld.isNotEmpty && _laneHeard.difference(heardBefore).isNotEmpty) {
+      _admitRig(release: true);
+    }
     for (final entry in _pendingImages.entries.toList()) {
       final ch = entry.key;
       if (ch >= snapshot.tracks.length) continue;
@@ -1337,22 +1345,28 @@ class LooperRepository {
           }
         }
         _forgetLaneMutes(ch);
-        final held = <FxAddress>[];
+        // A fresh take's lanes recorded dry hold no image: what an earlier
+        // take was printed with is not theirs.
+        if (pending.clearOnCommit) {
+          _lanePrinted.removeWhere(
+            (key, _) => key.$1 == ch && !pending.inherited.containsKey(key.$2),
+          );
+        }
         for (final inherited in pending.inherited.entries) {
           final lane = inherited.key;
           final effects = inherited.value;
           final key = (ch, lane);
-          final address = FxAddress(stage: FxStage.loop, index: ch, lane: lane);
-          if (pending.held && effects.isNotEmpty) {
-            _fxHeld.add(address);
-            held.add(address);
-          } else {
-            _fxHeld.remove(address);
-          }
+          _fxHeld.remove(
+            FxAddress(stage: FxStage.loop, index: ch, lane: lane),
+          );
+          // The take plays what it was heard as while the lane keeps the
+          // chain it was recorded through.
           if (effects.isEmpty) {
+            _lanePrinted.remove(key);
             _laneEffects.remove(key);
             _laneChainMeta.remove(key);
           } else {
+            _lanePrinted[key] = effects;
             _laneEffects[key] = effects;
             _laneChainMeta[key] = List<int>.unmodifiable([
               pending.inheritedInputs[lane],
@@ -1369,16 +1383,10 @@ class LooperRepository {
           }
           onLaneChainChanged?.call(ch, lane);
         }
-        if (held.isNotEmpty) {
-          // One notice per cause: while the standing notice is up the take's
-          // chains join it; otherwise the toast says so (R1).
-          _pruneFxHoldNotice();
-          if (_fxHoldNotice.isNotEmpty) {
-            _fxHoldNotice = [..._fxHoldNotice, ...held];
-          } else {
-            _fxTakeHeld.add(ch);
-          }
-        }
+        // A take the engine could not give an image plays its chain live
+        // (#1713). When that does not fit, its own chains are switched off,
+        // as a chain the rig cannot run is (R2), never another track's.
+        _holdUnheardTake(ch, pending);
         _pendingImages.remove(ch);
         _reproject();
       } else if (commandsSettled &&
@@ -1387,7 +1395,94 @@ class LooperRepository {
         _pendingImages.remove(ch);
       }
     }
+    _syncLaneSources();
     return snapshot;
+  }
+
+  void _holdUnheardTake(int channel, _PendingImage pending) {
+    final rate = _fxRate;
+    final period = _fxPeriod;
+    final budget = fxBudgetNs(rate, period: period);
+    for (final MapEntry(key: lane, value: effects)
+        in pending.inherited.entries) {
+      if (effects.isEmpty || _laneHeard.contains((channel, lane))) continue;
+      if (_fxLoadAt(rate, period) <= budget) return;
+      final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
+      _fxHeld.add(at);
+      _pushChainSwitch(at, on: false);
+      if (!_fxHoldNotice.contains(at)) _fxHoldNotice = [..._fxHoldNotice, at];
+    }
+  }
+
+  static Set<(int, int)> _heardLanesOf(EngineSnapshot snapshot) => {
+    for (var t = 0; t < snapshot.tracks.length; t++)
+      for (var l = 0; l < snapshot.tracks[t].lanes.length; l++)
+        if (snapshot.tracks[t].lanes[l].heard) (t, l),
+  };
+
+  /// What lane [key] plays (#1713): its heard image while its chain is the
+  /// one its take was recorded through, or while that chain is switched off
+  /// for not fitting (R2: an edited take falls back to its image, never to
+  /// dry); its clean take through its chain once the chain was edited.
+  LaneSource _laneSourceOf((int, int) key) {
+    // A chain the player switched off plays dry, held or not.
+    final on = _laneChainEnabled[key] ?? true;
+    final held = _fxHeld.contains(
+      FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2),
+    );
+    return (on && held) || _printMatches(key, _laneEffects[key] ?? const [])
+        ? LaneSource.heard
+        : LaneSource.clean;
+  }
+
+  /// Whether [chain] on lane [key], with the lane's chain switch, is the
+  /// chain its take was recorded through. Compared as the chains persist, so
+  /// transient state (a plugin's parameter list, a loading flag) does not
+  /// count as an edit.
+  bool _printMatches(
+    (int, int) key,
+    List<TrackEffect> chain, {
+    bool? chainOn,
+  }) {
+    final printed = _lanePrinted[key] ?? const <TrackEffect>[];
+    if (!(chainOn ?? _laneChainEnabled[key] ?? true)) return false;
+    return identical(chain, printed) || _wireOf(chain) == _wireOf(printed);
+  }
+
+  /// [chain] as it persists, kept per chain instance: chains are replaced,
+  /// never changed in place, so each is encoded once.
+  String _wireOf(List<TrackEffect> chain) =>
+      _chainWire[chain] ??= encodeTrackEffects(chain);
+  final Expando<String> _chainWire = Expando();
+
+  /// Gives the engine every lane's source ([_laneSourceOf]) that changed
+  /// since it was last sent. A lane without a heard image plays its clean
+  /// take whatever its source says, so only the lanes holding one are sent.
+  void _syncLaneSources() {
+    if (!_intendRunning) return;
+    for (final key in _laneHeard) {
+      var source = _laneSourceOf(key);
+      if (_laneSourceSent[key] == source) continue;
+      // A re-amp the Effects page did not weigh (a parameter from the bloc,
+      // a control's press) that does not fit is held, as R2 holds a chain,
+      // and the take keeps playing what was heard.
+      if (source == LaneSource.clean &&
+          _fxLoadAt(_fxRate, _fxPeriod) >
+              fxBudgetNs(_fxRate, period: _fxPeriod)) {
+        final at = FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2);
+        _fxHeld.add(at);
+        _pushChainSwitch(at, on: false);
+        if (!_fxHoldNotice.contains(at)) _fxHoldNotice = [..._fxHoldNotice, at];
+        source = _laneSourceOf(key);
+        if (_laneSourceSent[key] == source) continue;
+      }
+      final result = _engine.setLaneSource(
+        channel: key.$1,
+        lane: key.$2,
+        source: source,
+      );
+      if (result.isOk) _laneSourceSent[key] = source;
+    }
   }
 
   late final _timing = SettingsReceipt<_TimingIntent>(
@@ -1793,6 +1888,23 @@ class LooperRepository {
   /// input order. Absent => never inherited. Repository-owned meta the engine
   /// never sees; rides the persisted chain envelope.
   final Map<(int, int), List<int>> _laneChainMeta = {};
+
+  // ---- What a take was heard as (#1713) ----
+
+  /// The lanes whose live take holds a heard image (the input chain's output
+  /// recorded with the clean take), from the last snapshot.
+  Set<(int, int)> _laneHeard = const {};
+
+  /// The chain each lane's take was recorded through: the lane plays its
+  /// heard image while its chain is this one, and its clean take through its
+  /// chain once the chain was edited (a re-amp). Absent is an empty chain
+  /// (an image attached to a take recorded dry). Kept through Clear, so
+  /// Undo's restore finds it.
+  final Map<(int, int), List<TrackEffect>> _lanePrinted = {};
+
+  /// The source last given to the engine per lane; cleared when an engine
+  /// starts, so every lane's is sent again.
+  final Map<(int, int), LaneSource> _laneSourceSent = {};
 
   /// The Track-stage (per-track stereo bus) chains and the output destination
   /// chain (FX v3 part 1b), remembered and re-applied on every (re)start,
@@ -3179,6 +3291,8 @@ class LooperRepository {
       _offsetOwed = owesOffset;
       _refusedTarget = null;
       _intendRunning = true;
+      // A source for each image this engine holds is sent again (#1713).
+      _laneSourceSent.clear();
       // R2 (#1515): what the rig cannot run comes up held off, before any
       // chain is replayed.
       _admitRig();
@@ -3854,6 +3968,10 @@ class LooperRepository {
     }
     if (_pendingImages.containsKey(channel)) return EngineResult.notReady;
     final recipes = <int, FxRecipe>{};
+    // The lanes recording through an input chain record it heard (#1713),
+    // even when no entry of it could be copied onto the lane (a plugin whose
+    // state did not capture): the image does not need the copy.
+    final heardLanes = <int>{};
     final inherited = <int, List<TrackEffect>>{};
     final inheritedInputs = <int, int>{};
     final inheritedHandles = <int, Map<String, PluginSlotHandle>>{};
@@ -3877,6 +3995,7 @@ class LooperRepository {
             }
             continue;
           }
+          heardLanes.add(lane);
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
@@ -3959,22 +4078,45 @@ class LooperRepository {
       detached.forEach(_engine.discardPreparedPlugin);
       return preparationFailure;
     }
-    // R1 (#1515): a take always records and keeps its inherited chains by
-    // value; when they would not fit, they come in switched off.
-    final takeHeld = _takeOverBudget(channel, inherited);
-    if (takeHeld) {
-      for (final MapEntry(:key, :value) in recipes.entries.toList()) {
-        recipes[key] = FxRecipe(
-          slots: value.slots,
-          preCount: value.preCount,
-          enabled: false,
-        );
+    // A take records what the player heard through each lane's input chain
+    // beside its clean take, and plays that (#1713): its effects never come
+    // in switched off for the budget, since a lane playing its image runs no
+    // chain. The lane keeps the chain by value, to re-amp the clean take
+    // when it is edited.
+    // An overdub over a take recorded dry, on a lane with no chain of its
+    // own, records through the input's effects into an image made from the
+    // take's clean signal. A take with a chain of its own keeps playing
+    // through it, and its overdub records clean, as before.
+    if (state != TrackState.empty) {
+      for (var lane = 0; lane < laneCount(channel); lane++) {
+        final key = (channel, lane);
+        if (_laneHeard.contains(key) ||
+            (_laneEffects[key]?.isNotEmpty ?? false) ||
+            _inheritableChain(channel, lane) == null) {
+          continue;
+        }
+        final attached = _engine.heardAttach(channel: channel, lane: lane);
+        // Without the image the overdub would play back dry: while the
+        // engine cannot attach one yet the press is refused, as while a
+        // recipe is in flight. A lane with no take has nothing to attach to.
+        if (attached == EngineResult.notReady) {
+          // Owed one retry, as a fresh capture's refusal is; a retry that
+          // is still refused says so on the track.
+          if (!_retryingRecord) _recordRetry = _RecordRetry(channel);
+          return attached;
+        }
+        if (attached.isOk) _lanePrinted.remove(key);
       }
     }
     _imageRevision = (_imageRevision + 1) & 0xffffffff;
     if (_imageRevision == 0) _imageRevision = 1;
     final result = _engine.recordWithImage(
-      RecordImage(revision: _imageRevision, lanes: source, laneFx: recipes),
+      RecordImage(
+        revision: _imageRevision,
+        lanes: source,
+        laneFx: recipes,
+        heardLanes: heardLanes,
+      ),
       channel: channel,
     );
     if (result.isOk) {
@@ -3991,7 +4133,6 @@ class LooperRepository {
         inheritedInputs,
         inheritedHandles,
         clearOnCommit: state == TrackState.empty,
-        held: takeHeld,
       );
       _reproject();
     } else {
@@ -4468,6 +4609,7 @@ class LooperRepository {
     _laneEffects.removeWhere((key, _) => key.$1 == channel);
     _laneChainEnabled.removeWhere((key, _) => key.$1 == channel);
     _laneChainMeta.removeWhere((key, _) => key.$1 == channel);
+    _lanePrinted.removeWhere((key, _) => key.$1 == channel);
     return result;
   }
 
@@ -5367,6 +5509,11 @@ class LooperRepository {
           lane: key.$2,
           inheritedFrom: chain?.meta?.inheritedFrom ?? const [],
         );
+        restoreLanePrinted(
+          channel: key.$1,
+          lane: key.$2,
+          printed: chain?.meta?.printed,
+        );
       }
       for (final channel in <int>{
         ..._trackEffects.keys,
@@ -5713,6 +5860,9 @@ class LooperRepository {
               });
           if (!committed) throw StateError('session import commit was refused');
           _importTracks = null;
+          // The rig was admitted before its takes came in: those playing
+          // their image charge nothing, so what that held comes back (#1713).
+          _admitRig(release: true);
           _reproject();
           return;
         }
@@ -5815,23 +5965,31 @@ class LooperRepository {
       ..._laneEffects.keys,
       ..._laneChainEnabled.keys,
       ..._laneChainMeta.keys,
+      for (final key in {..._lanePrinted.keys, ..._laneHeard})
+        if (lanePrintedWhenEdited(key.$1, key.$2) != null) key,
     };
     return {
       for (final key in keys)
         key: FxChainEnvelope(
           chainEnabled: laneChainEnabled(key.$1, key.$2),
-          // Null — not an empty marker — when the chain was never inherited,
-          // matching [FxChainEnvelope.meta]'s contract and `decodeFxChain`'s
-          // own normalization, so an envelope read back here equals the one a
+          // Null — not an empty marker — when the chain was never inherited
+          // and is the one its take was recorded through, matching
+          // [FxChainEnvelope.meta]'s contract and `decodeFxChain`'s own
+          // normalization, so an envelope read back here equals the one a
           // decode produces.
-          meta: _metaOrNull(laneChainInheritedFrom(key.$1, key.$2)),
+          meta: _metaOrNull(
+            FxChainMeta(
+              inheritedFrom: laneChainInheritedFrom(key.$1, key.$2),
+              printed: lanePrintedWhenEdited(key.$1, key.$2),
+            ),
+          ),
           entries: laneEffects(key.$1, key.$2),
         ),
     };
   }
 
-  static FxChainMeta? _metaOrNull(List<int> inheritedFrom) =>
-      inheritedFrom.isEmpty ? null : FxChainMeta(inheritedFrom: inheritedFrom);
+  static FxChainMeta? _metaOrNull(FxChainMeta meta) =>
+      meta.isEmpty ? null : meta;
 
   /// Every remembered Track-stage (stereo bus) chain as the persisted
   /// envelope, keyed by track channel — the bus twin of [allLaneChains] (bus
@@ -7106,8 +7264,18 @@ class LooperRepository {
     if (handle == null) return false;
     final updated = _readBackParams(fx, handle);
     if (updated == null) return false;
-    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = updated;
+    final key = (channel, lane);
+    final next = List<TrackEffect>.of(effects)..[index] = updated;
+    // A take playing what was heard (#1713): the first read of values its
+    // copy did not name changes no sound, so it is not an edit.
+    if (_lanePrinted.containsKey(key) &&
+        _printMatches(key, effects) &&
+        updated.paramValues.entries.every(
+          (e) => (fx.paramValues[e.key] ?? e.value) == e.value,
+        )) {
+      _lanePrinted[key] = next;
+    }
+    _laneEffects[key] = next;
     _reproject();
     return true;
   }
@@ -8243,6 +8411,35 @@ class LooperRepository {
     _reproject();
   }
 
+  /// Restores the chain lane [lane] of track [channel]'s take was recorded
+  /// through (#1713) as saved: [printed], or the lane's chain as it is when
+  /// the save names none (the two were the same). Call after the lane's
+  /// chain is restored.
+  void restoreLanePrinted({
+    required int channel,
+    required int lane,
+    List<TrackEffect>? printed,
+  }) {
+    _lanePrinted[(channel, lane)] = List<TrackEffect>.unmodifiable(
+      printed ?? laneEffects(channel, lane),
+    );
+    _reproject();
+  }
+
+  /// The chain lane [lane] of track [channel]'s take was recorded through
+  /// (#1713), when it is not the lane's chain (the chain was edited, so the
+  /// take is re-amped): what [FxChainMeta.printed] persists. Null when the
+  /// two are the same, or the lane has none.
+  List<TrackEffect>? lanePrintedWhenEdited(int channel, int lane) {
+    final key = (channel, lane);
+    final printed =
+        _lanePrinted[key] ??
+        (_laneHeard.contains(key) ? const <TrackEffect>[] : null);
+    if (printed == null) return null;
+    final chain = _laneEffects[key] ?? const <TrackEffect>[];
+    return _wireOf(chain) == _wireOf(printed) ? null : printed;
+  }
+
   /// Lane [lane] of track [channel]'s inheritance provenance: the inputs its
   /// chain was copied from at record time, in input order; empty when never
   /// inherited.
@@ -8683,7 +8880,8 @@ class LooperRepository {
   /// tracks, All tracks, the destinations and the lanes on the callback. A
   /// lane counts in full: its print stands in for its Pre entries only
   /// between edits, overdubs, evictions and renders, and the worst block is
-  /// the one in between.
+  /// the one in between. A lane playing its take's heard image (#1713)
+  /// charges nothing: it runs no chain.
   ///
   /// An effect is charged when it runs or a control can make it run (#1723):
   /// its own switch, its rack's and its chain's are each on, or a control
@@ -8890,6 +9088,8 @@ class LooperRepository {
     FxReach? reach,
   }) {
     final controls = reach ?? _fxReach;
+    // A take playing its heard image runs no chain (#1713).
+    if (_playsImage(address, chain, chainOn: chainOn)) return 0;
     // A switch an alternation sets is on in the states that have it, but an
     // effect that drains its tail keeps running after its side goes off
     // (le_fx_type_drains): it is charged in every state, as a press can
@@ -8917,6 +9117,21 @@ class LooperRepository {
     );
   }
 
+  /// Whether the lane at [at] would play its heard image with [chain] as its
+  /// chain (#1713): it holds one, and [chain] is the one it was recorded
+  /// through. Such a lane runs no chain, so it charges nothing; an edit that
+  /// re-amps it is weighed like any other.
+  bool _playsImage(
+    FxAddress at,
+    List<TrackEffect> chain, {
+    bool? chainOn,
+  }) {
+    if (at.stage != FxStage.loop) return false;
+    final key = (at.index, at.lane ?? 0);
+    return _laneHeard.contains(key) &&
+        _printMatches(key, chain, chainOn: chainOn);
+  }
+
   /// Whether [fx] in the chain at [address] is charged: its chain's switch,
   /// its rack's and its own each [runs].
   static bool _fxCharged(
@@ -8938,24 +9153,17 @@ class LooperRepository {
 
   // ---- Chains that do not fit (#1515, the owner's R1 and R2) ----
 
-  /// The chains switched off because they did not fit the effects budget: a
-  /// take's inherited chains at record (R1), or chains the rig could not run
-  /// when it came up (R2). Runtime state only, never saved: each chain keeps
-  /// its entries and its saved switch, plays as off and charges nothing,
-  /// and switching it on is refused until the rig has room for it.
+  /// The chains switched off because they did not fit the effects budget:
+  /// chains the rig could not run when it came up (R2). A take playing its
+  /// heard image is never held (#1713): it runs no chain. Runtime state
+  /// only, never saved: each chain keeps its entries and its saved switch,
+  /// plays as off and charges nothing, and switching it on is refused until
+  /// the rig has room for it.
   final Set<FxAddress> _fxHeld = {};
 
   /// The chains the standing notice names (R2), in the order they were
   /// switched off; empty when no notice stands.
   List<FxAddress> _fxHoldNotice = const [];
-
-  final _fxTakeHeld = StreamController<int>.broadcast();
-
-  /// A take whose inherited chains came in switched off because they did not
-  /// fit (R1), by track channel: the toast's cause. Not sent while the
-  /// standing notice is up; the take's chains join that notice instead, so
-  /// one cause never shows two notices.
-  Stream<int> get fxTakeHeld => _fxTakeHeld.stream;
 
   /// Whether the chain at [address] is switched off because it did not fit.
   bool fxChainHeld(FxAddress address) =>
@@ -9045,7 +9253,7 @@ class LooperRepository {
     FxStage.output => outputChainEnabled(address.index),
   };
 
-  /// Switching a held chain on (R1, R2): refused with [EngineResult.capacity]
+  /// Switching a held chain on (R2): refused with [EngineResult.capacity]
   /// while the rig has no room for it; null when the switch may go ahead.
   /// A switch off, or a chain that is not held, always may (a held chain
   /// stays held when switched off). The hold itself is released by
@@ -9063,6 +9271,7 @@ class LooperRepository {
       for (final named in _fxHoldNotice)
         if (named != address) named,
     ];
+    _syncLaneSources();
   }
 
   /// Whether switching the held chain at [address] on would fit: what the
@@ -9100,6 +9309,9 @@ class LooperRepository {
   /// is held now). With [release], chains held now that the rig turns out to
   /// have room for are switched back on (a session's rig lands held).
   void _admitRig({Set<FxAddress>? before, bool release = false}) {
+    // Which takes play their image (and so charge nothing), as the engine
+    // holds them now (#1713).
+    _laneHeard = _heardLanesOf(_engine.snapshot());
     final previous = {..._fxHeld};
     _fxHeld.clear();
     _fxHoldUnpushed.clear();
@@ -9110,6 +9322,7 @@ class LooperRepository {
       }
     }
     _pruneFxHoldNotice();
+    _syncLaneSources();
   }
 
   /// R2: while the chains (with [incoming] replaced by [chain], when given)
@@ -9223,6 +9436,8 @@ class LooperRepository {
       for (final at in named)
         if (!_fxHoldNotice.contains(at)) at,
     ];
+    // A held re-amped take plays what was heard instead.
+    _syncLaneSources();
     return (held: held, dropped: dropped);
   }
 
@@ -9248,6 +9463,7 @@ class LooperRepository {
       if (at != incoming && _chainSwitchAt(at)) _pushChainSwitch(at, on: true);
     }
     _pruneFxHoldNotice();
+    _syncLaneSources();
   }
 
   /// Sets the engine switch of the chain at [address] to [on]; one with a
@@ -9294,41 +9510,10 @@ class LooperRepository {
     }
   }
 
-  /// R1, at record: whether the chains a take inherits ([lanes], by lane of
-  /// [channel]) would put the rig over budget, with those lanes' old chains
-  /// gone. Takes of other tracks still waiting for their first block charge
-  /// what they inherited, unless they came in off themselves, so takes
-  /// started together cannot each pass on the same room.
-  bool _takeOverBudget(int channel, Map<int, List<TrackEffect>> lanes) {
-    final replaced = {
-      for (final MapEntry(:key, :value) in lanes.entries)
-        FxAddress(stage: FxStage.loop, index: channel, lane: key): value,
-    };
-    if (replaced.values.every((chain) => chain.isEmpty)) return false;
-    final pending = {
-      for (final MapEntry(key: ch, value: image) in _pendingImages.entries)
-        if (ch != channel && !image.held)
-          for (final MapEntry(:key, :value) in image.inherited.entries)
-            FxAddress(stage: FxStage.loop, index: ch, lane: key): value,
-    };
-    final rate = _fxRate;
-    final period = _fxPeriod;
-    final held = {..._fxHeld}
-      ..removeAll(replaced.keys)
-      ..removeAll(pending.keys);
-    final load = _fxLoadAt(
-      rate,
-      period,
-      replaced: {...pending, ...replaced},
-      held: held,
-    );
-    return load > fxBudgetNs(rate, period: period);
-  }
-
   /// What is left of the effects budget ([fxBudgetNs]) at the running rate
   /// and block length, in nanoseconds per frame; negative once the chains
-  /// went over (a removal is never refused, and a take's inherited chain is
-  /// never refused either: a recording is not an edit).
+  /// went over (a removal is never refused, and a take is never refused
+  /// either: it plays what it was heard as, which runs no chain).
   int get fxRoomNs {
     return fxBudgetNs(_fxRate, period: _fxPeriod) - fxCostNs;
   }
@@ -9615,7 +9800,9 @@ class LooperRepository {
         ? snapshot.tracks[retry.channel]
         : null;
     if (track == null ||
-        track.state != TrackState.empty ||
+        (track.state != TrackState.empty &&
+            track.state != TrackState.playing &&
+            track.state != TrackState.stopped) ||
         track.pending ||
         track.pendingLaunch != null ||
         track.countInCancelGrace) {
@@ -10279,7 +10466,6 @@ class LooperRepository {
     await _followTempo.dispose();
     await _pitchMode.dispose();
     await _recordingInputRequired.close();
-    await _fxTakeHeld.close();
     await _recordRefusals.close();
     await _overdubRefusals.close();
     await _lengthHistoryRefusals.close();
@@ -10424,7 +10610,6 @@ class _PendingImage {
     this.inheritedInputs,
     this.inheritedHandles, {
     required this.clearOnCommit,
-    this.held = false,
   });
   final int revision;
   final Map<(int, int), double> images;
@@ -10435,9 +10620,6 @@ class _PendingImage {
   final Map<int, int> inheritedInputs;
   final Map<int, Map<String, PluginSlotHandle>> inheritedHandles;
   final bool clearOnCommit;
-
-  /// The inherited chains did not fit and came in switched off (R1).
-  final bool held;
 }
 
 /// One refused fresh-capture press waiting for its retry (#1146).
