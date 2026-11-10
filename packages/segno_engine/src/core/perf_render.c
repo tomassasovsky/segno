@@ -2278,8 +2278,9 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     float r = in;
     /* An image to play: the material holds one and the lane's renders can
      * play it at the track's pitch. */
-    const int image = heard != NULL && heard[f] &&
-                      heard_src != LE_PLOG_HEARD_UNAVAILABLE;
+    const int image = heard != NULL && heard[f];
+    /* UNAVAILABLE fades to the clean take as CLEAN does: the callback fades
+     * a lane whose render cannot play its image yet. */
     const int to_image = heard_src == LE_PLOG_HEARD_IMAGE;
     if (f == 0) {
       /* At capture frame 0 the lane plays as the arm found it, settled (a

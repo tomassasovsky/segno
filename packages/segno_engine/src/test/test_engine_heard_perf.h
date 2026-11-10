@@ -146,7 +146,8 @@ static void test_heard_perf_wet_stem_plays_the_images(void) {
 
 /* A logged source switch crossfades the wet stem over 10 ms, as the rig
  * does: from the image to the clean take through its (empty) chain, and
- * back; an image its renders cannot play yet snaps to the clean take. */
+ * back; an image its renders cannot play yet fades to the clean take the
+ * same way. */
 static void test_heard_perf_source_switch(void) {
   printf("test_heard_perf_source_switch\n");
   enum {
@@ -178,7 +179,8 @@ static void test_heard_perf_source_switch(void) {
   for (int f = 0; f < CAP; ++f) {
     if (f < TO_CLEAN || (f >= TO_HEARD + XF && f < UNAVAILABLE)) {
       CHECK(fabsf(wet[f] - 0.2f) < 1e-5f);
-    } else if ((f >= TO_CLEAN + XF && f < TO_HEARD) || f >= UNAVAILABLE) {
+    } else if ((f >= TO_CLEAN + XF && f < TO_HEARD) ||
+               f >= UNAVAILABLE + XF) {
       CHECK(fabsf(wet[f] - 0.5f) < 1e-5f);
     } else {
       CHECK(wet[f] > 0.2f - 1e-5f && wet[f] < 0.5f + 1e-5f);

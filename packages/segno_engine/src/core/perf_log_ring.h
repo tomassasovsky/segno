@@ -240,9 +240,10 @@ typedef enum le_perf_log_code {
 } le_perf_log_code;
 
 /* LE_PLOG_HEARD_SOURCE's value: the lane plays its clean take through its
- * chain (source CLEAN, a 10 ms crossfade); its image (source HEARD); or its
- * clean take at once because its source render cannot play the image at the
- * track's pitch yet (source HEARD, a render made before the image was). */
+ * chain (source CLEAN); its image (source HEARD); or its clean take because
+ * its source render cannot play the image at the track's pitch yet (source
+ * HEARD, a render made before the image was). A change crossfades over
+ * 10 ms either way. */
 enum {
   LE_PLOG_HEARD_CLEAN = 0,
   LE_PLOG_HEARD_IMAGE = 1,
