@@ -32,7 +32,14 @@
  *     pinned where --fx-cores C,W1,.. says (the callback's core first), and
  *     --racks N puts Ed's Rack (bench_fx_parallel's) on monitored inputs
  *     0..N-1; the monitor flips then stomp a rack's pedal instead of
- *     retyping the chain. The workers' faults are judged with the
+ *     retyping the chain. --bus-racks N puts N more of them in one chain on
+ *     output pair 0, which runs on the callback every frame, played or not:
+ *     the serial load the track and lane chains put there (#1724). With
+ *     --ab-ms N the last two of them are an A/B pair: every N ms one is
+ *     switched off and the other on, as a pedal alternating two racks does,
+ *     so the delays and reverbs of the one switched off drain their tails
+ *     while the other runs (le_fx_type_drains). --click puts the click on
+ *     output pair 0 at 120 BPM and -40 dB, a signal for those tails; The workers' faults are judged with the
  *     callback's, and the report adds their telemetry, the CPU the callback
  *     and the workers used and the whole machine's, as shares of the whole
  *     machine (100 % = every core), and the SoC temperature;
@@ -101,6 +108,9 @@ typedef struct {
   int32_t fx_cores[1 + LE_FX_WORKERS_MAX];
   int fx_cores_n;
   int racks;
+  int bus_racks;
+  int ab_ms;
+  int click;
 } rt_opts;
 
 static double now_s(void) {
@@ -302,6 +312,45 @@ static void eds_rack(le_fx_recipe* r, int input) {
   }
 }
 
+/* --bus-racks: N of Ed's Racks end to end in output pair 0's chain; with
+ * --ab-ms, its last two racks (g_ab_first on) alternate. */
+static le_fx_recipe g_bus;
+static int g_ab_ms = 0;
+static int g_ab_first = 0;
+static double g_ab_next = 0.0;
+static uint64_t g_ab_switches = 0;
+
+/* Switches the pair over: the rack that was on goes off, the other on. */
+static void ab_switch(void) {
+  const int n = g_bus.count / 9;
+  if (n < 2) return;
+  g_ab_first = !g_ab_first;
+  for (int s = 0; s < 9; ++s) {
+    g_bus.slot_enabled[(n - 2) * 9 + s] = g_ab_first;
+    g_bus.slot_enabled[(n - 1) * 9 + s] = !g_ab_first;
+  }
+  le_engine_set_fx_recipe(g_e, LE_FX_OWNER_OUTPUT, 0, 0, ++g_rack_rev, &g_bus);
+  ++g_ab_switches;
+}
+
+/* --bus-racks: N of Ed's Racks end to end in output pair 0's chain. */
+static void bus_racks(le_fx_recipe* r, int n) {
+  le_fx_recipe one;
+  memset(r, 0, sizeof(*r));
+  r->enabled = 1;
+  for (int k = 0; k < n; ++k) {
+    eds_rack(&one, LE_MAX_CHANNELS + k);
+    for (int s = 0; s < one.count && r->count < LE_FX_MAX; ++s) {
+      const int d = r->count++;
+      r->type[d] = one.type[s];
+      r->slot_enabled[d] = 1;
+      r->level[d] = 1.0f;
+      r->instance[d] = one.instance[s];
+      memcpy(r->params[d], one.params[s], sizeof(r->params[d]));
+    }
+  }
+}
+
 /* ---- --trace-late: which control action preceded each late period ---- */
 
 static int g_trace = 0;
@@ -426,6 +475,11 @@ static void play_for(int ms, int fx_ms, int track) {
   double next_fx = now_s() + fx_ms / 1000.0;
   le_snapshot s;
   while (time_left() && now_s() < end) {
+    if (g_ab_ms > 0 && now_s() >= g_ab_next) {
+      g_ab_next = now_s() + g_ab_ms / 1000.0;
+      note_action("ab-switch");
+      ab_switch();
+    }
     le_engine_get_snapshot(g_e, &s);
     trace_poll();
     if (fx_ms > 0 && now_s() >= next_fx) {
@@ -502,7 +556,8 @@ static void usage(void) {
           "         [--fx-ms N] [--fx-types T,T,...] [--rate HZ]\n"
           "         [--period FRAMES] [--trace-late] [--timeline]\n"
           "         [--playback ID] [--capture ID] [--list]\n"
-          "         [--fx-workers N] [--fx-cores C,W1,..] [--racks N]\n");
+          "         [--fx-workers N] [--fx-cores C,W1,..] [--racks N]\n"
+          "         [--bus-racks N] [--ab-ms N] [--click]\n");
 }
 
 static void list_devices(void) {
@@ -574,6 +629,12 @@ int main(int argc, char** argv) {
       o.fx_workers = atoi(v), ++i;
     } else if (v != NULL && strcmp(a, "--racks") == 0) {
       o.racks = atoi(v), ++i;
+    } else if (v != NULL && strcmp(a, "--bus-racks") == 0) {
+      o.bus_racks = atoi(v), ++i;
+    } else if (v != NULL && strcmp(a, "--ab-ms") == 0) {
+      o.ab_ms = atoi(v), ++i;
+    } else if (strcmp(a, "--click") == 0) {
+      o.click = 1;
     } else if (v != NULL && strcmp(a, "--fx-cores") == 0) {
       const char* q = v;
       while (o.fx_cores_n <= LE_FX_WORKERS_MAX) {
@@ -651,6 +712,29 @@ int main(int argc, char** argv) {
                             &g_rack[c]);
   }
   if (o.racks > 0) printf("Ed's Rack on %d monitored inputs\n", g_racks);
+  if (o.bus_racks > 0) {
+    bus_racks(&g_bus, o.bus_racks);
+    le_engine_set_fx_recipe(g_e, LE_FX_OWNER_OUTPUT, 0, 0, ++g_rack_rev,
+                            &g_bus);
+    printf("%d of Ed's Racks (%d effects) on output pair 0, on the callback\n",
+           o.bus_racks, (int)g_bus.count);
+    if (o.ab_ms > 0 && o.bus_racks >= 2 && o.bus_racks * 9 <= LE_FX_MAX) {
+      g_ab_ms = o.ab_ms;
+      ab_switch(); /* one of the pair on from the start */
+      printf("the last two an A/B pair, switched every %d ms\n", g_ab_ms);
+    }
+  }
+  if (o.click) {
+    const int rc = le_engine_set_tempo(g_e, 120.0f) |
+                   le_engine_set_click_output(g_e, 0x3) |
+                   le_engine_set_click_volume(g_e, 0.01f) |
+                   le_engine_set_click_mode(g_e, LE_CLICK_PLAY_REC);
+    if (rc != LE_OK) {
+      fprintf(stderr, "--click: the engine refused the click (%d)\n", rc);
+      return 2;
+    }
+    printf("click on output pair 0 at 120 BPM (a manual tempo), -40 dB\n");
+  }
   g_workers_found = find_fx_workers(g_wtid, LE_FX_WORKERS_MAX);
   {
     le_fx_workers_telemetry w;
@@ -781,7 +865,7 @@ int main(int argc, char** argv) {
              (unsigned long long)(y->jobs - x->jobs), y->job_max_ns);
     }
   }
-  printf("over the effects budget's share (80 %%): %llu periods\n",
+  printf("over the effects budget's share (77 %%): %llu periods\n",
          (unsigned long long)(t1.session.over_share_periods -
                               t0.session.over_share_periods));
   faults += worker_faults;
@@ -791,6 +875,7 @@ int main(int argc, char** argv) {
          "since start %u us\n",
          (unsigned long long)periods, expected,
          (unsigned long long)late, t1.session.max_us);
+  if (g_ab_ms > 0) printf("A/B switches: %llu\n", (unsigned long long)g_ab_switches);
   printf("xruns: %llu (capture overrun %llu, playback underrun %llu, "
          "playback resync %llu, backend overload %llu)\n",
          (unsigned long long)xruns,

@@ -239,6 +239,8 @@ void main() {
     setUp(() async {
       takeIsLocked = false;
       looper = _MockLooperRepository();
+      registerFallbackValue(<FxControlReach>[]);
+      when(() => looper.fxReachFits(any())).thenReturn(true);
       registerFallbackValue(const FxAddress(stage: FxStage.track));
       when(() => looper.fxChainHeld(any())).thenReturn(false);
       when(() => looper.sessionRevision).thenReturn(0);

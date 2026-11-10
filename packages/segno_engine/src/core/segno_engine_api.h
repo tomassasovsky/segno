@@ -1514,7 +1514,7 @@ typedef struct le_cb_window_snapshot {
    * happened. Folding it into an existing bucket instead would corrupt the
    * breakdown; dropping it entirely would under-report reality. */
   uint64_t xruns[LE_XRUN_KINDS];
-  /* Services longer than the effects budget's share of their deadline (80 %,
+  /* Services longer than the effects budget's share of their deadline (77 %,
    * kFxBudgetShare in fx_cost.dart): what the admission model promises never
    * happens (#1515). Every late period is one of these too. */
   uint64_t over_share_periods;
