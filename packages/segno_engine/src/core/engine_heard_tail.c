@@ -120,7 +120,12 @@ void le_heard_tail_post(le_engine* e, const le_fx_par* par, const float* in,
       }
       buf[(par->clock + i) % (uint32_t)r->cap] = x;
     }
-    if (!atomic_load_explicit(&r->a_started, memory_order_relaxed)) {
+    /* A gap since the last frame written (the input recorded by no heard
+     * lane meanwhile) leaves older frames in the ring: its history starts
+     * over here, so a window reaching back past the gap reads silence, not
+     * an earlier lap of the ring. */
+    if (!atomic_load_explicit(&r->a_started, memory_order_relaxed) ||
+        atomic_load_explicit(&r->a_end, memory_order_relaxed) != par->clock) {
       atomic_store_explicit(&r->a_begin, par->clock, memory_order_relaxed);
       atomic_store_explicit(&r->a_started, 1, memory_order_relaxed);
     }
