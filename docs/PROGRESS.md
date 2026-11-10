@@ -104,14 +104,16 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ## November 2026 A switched-off tail keeps its charge until it drains (#1733)
 
-- The engine publishes which chain slots still drain a tail: each
-  `le_fx_state` keeps `a_draining` (bit s for slot s), updated only where
-  `enable_drain` changes (`le_fx_drain_set` in `engine_fx.c`: the bypass
-  edge, the re-enable, the quiet settle, a retype, a forced bypass), so a
-  settled chain and the plain mixer path never touch it. `le_snapshot`
+- The snapshot reports which chain slots still drain a tail: `le_snapshot`
   carries the masks by chain (`fx_draining_monitor`, `_lane`, `_track`,
-  `_all_tracks`, `_output`) and `EngineSnapshot.fxDraining` (`FxDraining`)
-  reads them; no new polling.
+  `_all_tracks`, `_output`), and `EngineSnapshot.fxDraining` (`FxDraining`)
+  reads them; no new polling. `le_engine_get_snapshot` builds them on the
+  control thread from each chain's own `enable_drain` flags (one aligned
+  word per slot, read with a relaxed load), so the callback publishes
+  nothing: a first version kept an atomic mask in `le_fx_state`, which grew
+  the struct and the pinned `fx_apply_chain_with_gain` and moved the
+  64-lane mixer on CI's arm64 bench from 24.2 % to 24.95 % of its budget
+  (#1719 pins that code; keep the audio side of this byte-identical).
 - The repository reads the masks against its chains at each snapshot (a
   chain whose recipe the engine has not adopted keeps its last reading) and
   charges an effect of a draining kind while its slot drains, however it was
