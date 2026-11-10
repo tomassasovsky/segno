@@ -750,6 +750,81 @@ void main() {
     expect(engine.exportLayer(0, 0, live), everyElement(closeTo(1.0, 1e-6)));
   }, skip: skip);
 
+  test('heard images round-trip through the real FFI (#1713)', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+
+    expect(
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 2,
+          maxLoopFrames: 48000,
+        ),
+      ),
+      EngineResult.ok,
+    );
+
+    // A dry take has no heard image until one is attached from its clean
+    // signal, both sides.
+    expect(engine.record(), EngineResult.ok);
+    engine.pump(frames: 256, input: 0.5);
+    expect(engine.record(), EngineResult.ok); // finalize -> PLAYING
+    engine.pump(frames: 0);
+    expect(engine.snapshot().tracks.first.lanes.first.heard, isFalse);
+    expect(engine.exportTrackLaneHeard(0, 0), isEmpty);
+    expect(engine.exportLayerHeard(0, 0, 0), isEmpty);
+
+    expect(engine.heardAttach(channel: 0, lane: 0), EngineResult.ok);
+    engine.pump(frames: 0);
+    var lane = engine.snapshot().tracks.first.lanes.first;
+    expect(lane.heard, isTrue);
+    expect(lane.source, LaneSource.heard);
+    final attached = engine.exportTrackLaneHeard(0, 0);
+    expect(attached, hasLength(512));
+    expect(attached, everyElement(closeTo(0.5, 1e-6)));
+    expect(engine.exportLayerHeard(0, 0, 0), attached);
+
+    expect(
+      engine.setLaneSource(channel: 0, lane: 0, source: LaneSource.clean),
+      EngineResult.ok,
+    );
+    expect(
+      engine.snapshot().tracks.first.lanes.first.source,
+      LaneSource.clean,
+    );
+
+    // Rebuild the take with a heard image of its own beside the clean one.
+    final clean = engine.exportLayer(0, 0, 0);
+    final heard = Float32List(2 * clean.length);
+    for (var f = 0; f < clean.length; f++) {
+      heard[2 * f] = 0.25;
+      heard[2 * f + 1] = -0.25;
+    }
+    final history = engine.exportHistory(0);
+    expect(engine.clear(), EngineResult.ok);
+    engine.pump(frames: 0);
+    expect(engine.importLayer(0, 0, 0, clean), EngineResult.ok);
+    // A heard image must be exactly the clean image's length.
+    expect(
+      engine.importLayerHeard(0, 0, 0, Float32List(2 * clean.length - 2)),
+      EngineResult.invalid,
+    );
+    expect(engine.importLayerHeard(0, 0, 0, heard), EngineResult.ok);
+    expect(
+      engine.finalizeHistory(0, history, imageLengths: [clean.length]),
+      EngineResult.ok,
+    );
+    expect(engine.commitSession(256, loopBeats: 0), EngineResult.ok);
+    engine.pump(frames: 0);
+
+    lane = engine.snapshot().tracks.first.lanes.first;
+    expect(lane.heard, isTrue);
+    expect(engine.exportLayerHeard(0, 0, 0), heard);
+    expect(engine.exportTrackLaneHeard(0, 0), heard);
+  }, skip: skip);
+
   test(
     'performance-recording capture arms via the real FFI and advances frames',
     () {

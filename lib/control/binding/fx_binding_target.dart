@@ -77,6 +77,20 @@ sealed class FxBindingTarget extends Equatable {
 
   /// The byte-stable canonical serialization (see the class doc).
   String canonicalString();
+
+  /// The switch in the rig this target flips: what the effects budget
+  /// charges a control's reach by (#1723).
+  FxSwitchKey get switchKey => switch (this) {
+    FxChainTarget(:final address) => FxSwitchKey.chain(address),
+    FxRackTarget(:final address, :final rackId) => FxSwitchKey.rack(
+      address,
+      rackId,
+    ),
+    FxSlotTarget(:final address, :final slotId) => FxSwitchKey.slot(
+      address,
+      slotId,
+    ),
+  };
 }
 
 /// A whole-chain target: the stomp flips that chain's `enabled` flag —

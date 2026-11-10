@@ -22,14 +22,14 @@ final class FxRackPicture extends FxArt {
   List<Object?> get props => [slug];
 }
 
-/// A catalogue pedal, drawn in code from its [effect]: its module's look,
-/// its controls and, when [live], their current settings.
+/// A pedal drawn in code from its [effect]: its [look], its controls and,
+/// when [live], their current settings.
 ///
-/// Made by [fxEntryArt], which resolves the [module] and the [controls].
+/// Made by [fxEntryArt], which resolves the [look] and the [controls].
 final class FxPedalPicture extends FxArt {
   const FxPedalPicture._(
     this.effect,
-    this.module,
+    this.look,
     this.controls, {
     required this.live,
     this.chainOn = true,
@@ -42,8 +42,9 @@ final class FxPedalPicture extends FxArt {
   /// chain switched off is not engaged, whatever its own power.
   final bool chainOn;
 
-  /// The catalogue module it is.
-  final FxModule module;
+  /// The name of the look it is drawn with: a catalogue pedal's module
+  /// name, or for a standalone built-in its [kFxBuiltInLooks] entry.
+  final String look;
 
   /// The controls it shows knobs for: a built-in entry's
   /// ([fxEntryControls]), and none for an entry this build runs as a plugin.
@@ -59,19 +60,41 @@ final class FxPedalPicture extends FxArt {
   /// picture.
   @override
   List<Object?> get props => live
-      ? [effect, module.name, live, chainOn]
+      ? [effect, look, live, chainOn]
       : [
           effect.slotId,
           effect.rack?.art,
-          module.name,
+          look,
           effect.typeCode,
           ...controls.keys,
           live,
         ];
 }
 
-/// The pedal [effect] is drawn as, or `null` when it does not name one of
-/// the catalogue's pedals.
+/// The look each standalone built-in is drawn with, by type: the catalogue
+/// pedal's where the built-in is that kind of pedal, and one of its own
+/// (Tremolo, Echo) where no catalogue pedal is.
+///
+/// A standalone built-in names no catalogue module ([TrackEffect.module] is
+/// `null`: the singles library adds it by type), so without this table it
+/// would draw no pedal at all (#1730).
+const Map<TrackEffectType, String> kFxBuiltInLooks = {
+  TrackEffectType.drive: 'Overdrive',
+  TrackEffectType.filter: 'Low-pass filter',
+  TrackEffectType.delay: 'Delay',
+  TrackEffectType.tremolo: 'Tremolo',
+  TrackEffectType.octaver: 'Octaver',
+  TrackEffectType.echo: 'Echo',
+  TrackEffectType.reverb: 'Reverb',
+};
+
+/// The pedal [effect] is drawn as, or `null` when it is neither one of the
+/// catalogue's pedals nor a standalone built-in.
+///
+/// An entry that names a catalogue module is drawn with that module's look,
+/// whatever engine type it runs on, and one naming a module the catalogue
+/// does not have draws nothing. A built-in that names no module is drawn
+/// with its type's [kFxBuiltInLooks] entry.
 ///
 /// [live] says whether the surface asking rebuilds when the effect's
 /// settings change ([FxPedalPicture.live]).
@@ -81,11 +104,15 @@ FxPedalPicture? fxEntryArt(
   bool chainOn = true,
 }) {
   final name = effect.module;
-  final module = name == null ? null : fxModuleNamed(name);
-  if (module == null) return null;
+  final look = name != null
+      ? fxModuleNamed(name)?.name
+      : effect is BuiltInEffect
+      ? kFxBuiltInLooks[effect.type]
+      : null;
+  if (look == null) return null;
   return FxPedalPicture._(
     effect,
-    module,
+    look,
     effect is BuiltInEffect
         ? fxEntryControls(effect)
         : (params: const <int>[], keys: const <String>[]),

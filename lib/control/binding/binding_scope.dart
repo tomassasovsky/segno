@@ -1,4 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
 
 /// Which track a binding acts on (accepted design, controls 11: "Selected,
 /// fixed and all-track scopes are explicit and resolved once").
@@ -49,5 +50,28 @@ FxAddress resolveBindingAddress(
       lane: address.lane,
     ),
     FxStage.input || FxStage.allTracks || FxStage.output => address,
+  };
+}
+
+/// Returns [target] on the chain [resolveBindingAddress] resolves its address
+/// to: the same chain, rack or effect, on the [cursor] track when [scope] is
+/// [BindingScope.selected].
+FxBindingTarget resolveBindingTarget(
+  FxBindingTarget target,
+  BindingScope scope,
+  int cursor,
+) {
+  final address = resolveBindingAddress(target.address, scope, cursor);
+  if (address == target.address) return target;
+  return switch (target) {
+    FxChainTarget() => FxChainTarget(address),
+    FxSlotTarget(:final slotId) => FxSlotTarget(
+      address: address,
+      slotId: slotId,
+    ),
+    FxRackTarget(:final rackId) => FxRackTarget(
+      address: address,
+      rackId: rackId,
+    ),
   };
 }

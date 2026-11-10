@@ -1,5 +1,9 @@
+import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/external_controls.dart';
+import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 
@@ -94,3 +98,101 @@ int fxAssignmentsTo(
   }
   return count;
 }
+
+/// What every control in [control] can turn on (#1723): the reach the
+/// effects budget reserves room for (`LooperRepository.setFxReach`).
+///
+/// - Each console binding in force, its press and its hold, on every track
+///   when it acts on the selected one.
+/// - Every Track-stage chain: an unbound track switch in FX mode, the
+///   keyboard's digit keys and the Track effects on command all switch one
+///   on.
+/// - Each enabled MIDI mapping's effect switches. A button (toggle or
+///   momentary) alternates the switches it turns on at its top with those it
+///   turns on at its bottom; a knob or a Program Change may leave any of
+///   them on.
+/// - Each external switch's activations under the type its jack is set to:
+///   those active while On alternate with those active while Off, and, on a
+///   momentary switch, those active while Held with those active while
+///   Released. MIDI mappings count while MIDI control is off, since switching
+///   it back on is never weighed.
+List<FxControlReach> fxReachOf(ControlState control) {
+  const channels = ControlState.tracksPerBank * ControlState.bankCount;
+  Set<FxSwitchKey> keys(FxBindingTarget? target, BindingScope scope) => {
+    if (target != null)
+      for (var cursor = 0; cursor < channels; cursor++)
+        resolveBindingTarget(target, scope, cursor).switchKey,
+  };
+
+  return [
+    for (final binding in control.bindings.bindings) ...[
+      FxControlReach(whenOn: keys(binding.decodeTarget(), binding.scope)),
+      if (binding.hasHold)
+        FxControlReach(
+          whenOn: keys(binding.decodeHoldTarget(), binding.holdScope),
+        ),
+    ],
+    FxControlReach(
+      whenOn: {
+        for (var channel = 0; channel < channels; channel++)
+          FxSwitchKey.chain(FxAddress(stage: FxStage.track, index: channel)),
+      },
+    ),
+    for (final mapping in control.midiMappings.mappings)
+      if (mapping.enabled) _midiReach(mapping),
+    for (final jack in control.pedalSetup.external.jacks.values)
+      for (var index = 0; index < 2; index++)
+        if (jack.switchAt(index) case final setup?) ...[
+          _externalReach(
+            setup.controls,
+            ExternalCondition.on,
+            ExternalCondition.off,
+          ),
+          // A latching switch reports no contact, so its Held and Released
+          // rows never switch anything.
+          if (setup.hardware == ExternalSwitchHardware.momentary)
+            _externalReach(
+              setup.controls,
+              ExternalCondition.held,
+              ExternalCondition.released,
+            ),
+        ],
+  ];
+}
+
+/// The effect switches a MIDI [mapping] can turn on: an effect switch is on
+/// at a value of a half or more.
+FxControlReach _midiReach(MidiMapping mapping) {
+  final high = <FxSwitchKey>{};
+  final low = <FxSwitchKey>{};
+  for (final midi in mapping.controls) {
+    if (midi is! MidiParameterControl) continue;
+    final key = FxBindingTarget.tryParse(midi.key)?.switchKey;
+    if (key == null) continue;
+    if (midi.high >= 0.5) high.add(key);
+    if (midi.low >= 0.5) low.add(key);
+  }
+  return switch (mapping.behavior) {
+    MidiBehavior.toggle ||
+    MidiBehavior.momentary => FxControlReach(whenOn: high, whenOff: low),
+    MidiBehavior.continuous ||
+    MidiBehavior.trigger => FxControlReach(whenOn: {...high, ...low}),
+  };
+}
+
+/// One of an external switch's two facts ([on] and its opposite [off]):
+/// the switches active on each side.
+FxControlReach _externalReach(
+  ExternalControls controls,
+  ExternalCondition on,
+  ExternalCondition off,
+) => FxControlReach(
+  whenOn: {
+    for (final row in controls.activations)
+      if (row.condition == on) row.target.switchKey,
+  },
+  whenOff: {
+    for (final row in controls.activations)
+      if (row.condition == off) row.target.switchKey,
+  },
+);

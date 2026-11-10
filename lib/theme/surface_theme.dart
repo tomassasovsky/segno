@@ -384,6 +384,17 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// bundled under `assets/fonts/`.
   static const String monoFont = 'JetBrains Mono';
 
+  /// The bundled faces a character missing from a text's own face is drawn
+  /// from, in order: every text's fallback, set on the theme.
+  ///
+  /// Inter has no musical sharp or flat (U+266F, U+266D), which the Tuner's
+  /// note names use, and the appliance has no system fonts to fall back to,
+  /// so without these the glyph draws as nothing there (#1730). Arimo first,
+  /// a sans close to Inter in shape and weight, which has the sharp; then
+  /// JetBrains Mono, which has the flat and every other character the app's
+  /// strings use (`test/theme/font_coverage_test.dart`).
+  static const List<String> fontFallback = [frameFont, monoFont];
+
   @override
   SurfaceTheme copyWith({
     Color? background,

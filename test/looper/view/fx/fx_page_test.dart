@@ -28,6 +28,9 @@ import 'package:segno/looper/view/fx/fx_effect_editor.dart';
 import 'package:segno/looper/view/fx/fx_page.dart';
 import 'package:segno/looper/view/fx/fx_pedal_assignments_page.dart';
 import 'package:segno/looper/view/fx/fx_rack_editor.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
+import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
@@ -319,7 +322,13 @@ void main() {
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
     when(() => repository.fxChainHeld(any())).thenReturn(false);
     when(() => repository.fxHeldChainFits(any())).thenReturn(true);
-    when(() => repository.fxGrowthNs(any())).thenAnswer(
+    registerFallbackValue(<FxAddress, bool>{});
+    when(
+      () => repository.fxGrowthNs(
+        any(),
+        chainSwitches: any(named: 'chainSwitches'),
+      ),
+    ).thenAnswer(
       (call) => fxChainCostNs(
         (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
             .values
@@ -1601,6 +1610,27 @@ void main() {
       // parameter dialog the earlier study opened from a grid.
       expect(find.byKey(const Key('fx_param_0')), findsOneWidget);
       expect(find.byKey(const Key('fx_param_1')), findsOneWidget);
+    });
+
+    testWidgets("draws the effect's own pedal beside its controls (#1730)", (
+      tester,
+    ) async {
+      await pump(tester, destination: const FxDestination.recordedTrack(0));
+      await tapKey(tester, 'fx_card_t1');
+
+      final pedal = find.descendant(
+        of: find.byKey(const Key('fx_effect_pedal')),
+        matching: find.byType(FxStompPedal),
+      );
+      expect(pedal, findsOneWidget);
+      final face = tester.widget<FxStompPedal>(pedal).face;
+      // t1 is a filter, which wears the Low-pass filter's look, its LED on.
+      expect(face.spec, kFxStompSpecs['Low-pass filter']);
+      expect(face.led, FxStompLed.on);
+      expect(
+        tester.getRect(pedal).right,
+        lessThan(tester.getRect(find.byKey(const Key('fx_param_0'))).left),
+      );
     });
 
     testWidgets("carries the track's Solo too", (tester) async {

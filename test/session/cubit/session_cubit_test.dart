@@ -680,6 +680,7 @@ void main() {
                   ),
                 ],
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: {
                 (0, 0): [Float32List(128)],
               },
@@ -734,6 +735,7 @@ void main() {
             _opened(
               (_) async => (
                 session: _session,
+                heardStems: const <(int, int), List<Float32List>>{},
                 laneStems: <(int, int), List<Float32List>>{},
               ),
             ),
@@ -778,6 +780,7 @@ void main() {
           _opened(
             (_) async => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -810,6 +813,7 @@ void main() {
         (_) async => (
           bundle: (
             session: _session,
+            heardStems: const <(int, int), List<Float32List>>{},
             laneStems: <(int, int), List<Float32List>>{},
           ),
           conversion: null,
@@ -858,6 +862,7 @@ void main() {
         (_) async => (
           bundle: (
             session: _session,
+            heardStems: const <(int, int), List<Float32List>>{},
             laneStems: <(int, int), List<Float32List>>{},
           ),
           conversion: null,
@@ -1021,6 +1026,7 @@ void main() {
           _opened(
             (_) async => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -1072,6 +1078,7 @@ void main() {
             _opened(
               (_) async => (
                 session: _session,
+                heardStems: const <(int, int), List<Float32List>>{},
                 laneStems: <(int, int), List<Float32List>>{},
               ),
             ),
@@ -1323,6 +1330,7 @@ void main() {
           _opened(
             (_) async => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -1371,6 +1379,7 @@ void main() {
           (_) async => (
             bundle: (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
             conversion: _conversion,
@@ -1487,6 +1496,7 @@ void main() {
           _opened(
             (_) => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -2254,6 +2264,7 @@ void main() {
           _opened(
             (_) => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -2289,6 +2300,7 @@ void main() {
           _opened(
             (_) => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -2649,6 +2661,7 @@ void main() {
                     '{"chainEnabled":true,"entries":['
                     '{"type":1,"placement":"sideways"}]}',
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -2696,6 +2709,7 @@ void main() {
                   ),
                 ],
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -2734,6 +2748,7 @@ void main() {
           _opened(
             (_) async => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -2763,6 +2778,7 @@ void main() {
           _opened(
             (_) async => (
               session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -3369,6 +3385,7 @@ void main() {
               backing: saved,
               clickPan: -0.5,
             ),
+            heardStems: const <(int, int), List<Float32List>>{},
             laneStems: <(int, int), List<Float32List>>{},
           ),
         ),
@@ -3430,6 +3447,7 @@ void main() {
                 tracks: [],
                 pedalBindings: '[{"button":"stop","target":"t"}]',
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),
@@ -3485,6 +3503,7 @@ void main() {
                 tracks: [],
                 pedalBindings: '[{"button":"stop","target":"t"}]',
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: <(int, int), List<Float32List>>{},
             ),
           ),

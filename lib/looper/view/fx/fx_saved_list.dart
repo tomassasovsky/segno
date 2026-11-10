@@ -8,6 +8,7 @@ import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -168,7 +169,13 @@ class _SavedPreset extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Expanded(
-                        child: FxRackArt(slug: preset.art, lit: true),
+                        child: FxRackArt(
+                          slug: preset.art,
+                          pedal: preset.isRack
+                              ? null
+                              : fxEntryArt(preset.entries.first, live: false),
+                          lit: true,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       AppText(

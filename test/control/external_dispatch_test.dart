@@ -22,6 +22,7 @@ import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
+import 'package:segno/looper/cubit/fx_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart'
@@ -1321,20 +1322,28 @@ void main() {
         EngineResult.ok,
       );
       r.settle();
-      final monitor = MonitorCubit(
+      final fx = FxCubit(
         repository: looper,
         settings: r.settings,
-        mixSettings: r.mix,
-        fxPersistence: r.fx,
-      )..projectFromRepository();
+        persistence: r.fx,
+      );
       r
         ..clock.flushMicrotasks()
         ..settle()
         ..store.monitorFxGate = Completer<void>();
-      monitor.setEffectEnabled(0, 0, enabled: false);
+      expect(
+        fx
+            .setEffectEnabled(
+              const FxAddress(stage: FxStage.input),
+              'monitor-drive',
+              enabled: false,
+            )
+            .status,
+        FxEditStatus.applied,
+      );
       r.settle();
       done = false;
-      unawaited(monitor.flushPersistence().then((_) => done = true));
+      unawaited(r.fx.flush().then((_) => done = true));
       r.clock.flushMicrotasks();
       expect(done, isFalse);
       r
@@ -1342,7 +1351,7 @@ void main() {
         ..clock.flushMicrotasks()
         ..settle();
       expect(done, isTrue);
-      unawaited(monitor.close());
+      unawaited(fx.close());
       r.clock.flushMicrotasks();
     },
   );

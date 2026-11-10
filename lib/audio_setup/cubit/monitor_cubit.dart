@@ -788,42 +788,6 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_fxPersistence.trackSave(_persistAppliedFx(input)));
   }
 
-  /// Enables/disables monitor [input]'s chain entry [index] without losing its
-  /// type or parameters (R16; click-free ramp engine-side).
-  void setEffectEnabled(int input, int index, {required bool enabled}) {
-    if (!_editable) return;
-    final monitor = state.forInput(input);
-    if (index < 0 || index >= monitor.effects.length) return;
-    // Write first, then emit what actually landed — the repository owns the
-    // flag flip across the sealed entry hierarchy, so re-reading it is more
-    // honest than reproducing that dispatch here.
-    final result = _repository.setMonitorEffectEnabled(
-      input: input,
-      index: index,
-      enabled: enabled,
-    );
-    if (!result.isOk) return;
-    _fxPersistence.ordinarySlotAt(
-      FxAddress(stage: FxStage.input, index: input),
-      index,
-      enabled: enabled,
-    );
-    // Fall back to the optimistic chain when the repository reports nothing:
-    // it rejects the write (leaving its cache untouched) whenever it holds no
-    // chain for this input — engine not running yet, a session load that just
-    // cleared the key, or a unit-test fake. Emitting the empty read-back would
-    // wipe the user's chain from the UI *and* persist the wipe. Matches the
-    // guard [_pushEffects] and the restore path already carry.
-    final applied = _repository.monitorEffects(input);
-    final next = applied.isNotEmpty ? applied : monitor.effects;
-    emit(state.withInput(monitor.copyWith(effects: next)));
-    unawaited(
-      _fxPersistence.trackSave(
-        _persistMonitorAfterFx(state.forInput(input)),
-      ),
-    );
-  }
-
   /// Opens the native editor window for monitor [input]'s plugin chain entry
   /// [index] (D-WIN) and starts the ≤10 Hz inbound sync poll (D-SYNC): each
   /// tick mirrors editor-driven param moves onto the in-app knobs.

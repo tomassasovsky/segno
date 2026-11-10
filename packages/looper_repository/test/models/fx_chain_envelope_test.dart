@@ -30,6 +30,21 @@ void main() {
       expect(decoded.entries.first.enabled, isFalse);
     });
 
+    test('round-trips the chain a take was recorded through (#1713)', () {
+      final envelope = FxChainEnvelope(
+        meta: FxChainMeta(
+          printed: [BuiltInEffect(type: TrackEffectType.reverb, slotId: 'p')],
+        ),
+        entries: [BuiltInEffect(type: TrackEffectType.drive, slotId: 'e')],
+      );
+
+      final decoded = decodeFxChain(encodeFxChain(envelope));
+
+      expect(decoded, envelope);
+      expect(decoded.meta!.inheritedFrom, isEmpty);
+      expect(decoded.meta!.printed!.single.slotId, 'p');
+    });
+
     test('legacy bare-array payloads decode enabled with no meta (R15)', () {
       // Exactly what encodeTrackEffects wrote before FX v3.
       final legacy = encodeTrackEffects([

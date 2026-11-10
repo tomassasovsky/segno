@@ -131,6 +131,8 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    registerFallbackValue(<FxControlReach>[]);
+    when(() => repository.fxReachFits(any())).thenReturn(true);
     // Live levels reach the meters apart from the state (#1301); a test sets
     // them with [levels].
     when(() => repository.meters).thenReturn(const MeterLevels());
@@ -744,6 +746,7 @@ void main() {
     'monitoring',
     '18_inputs',
     'spanish',
+    'sharp',
   ]) {
     testWidgets('Foot Tuner $scene scene', (tester) async {
       when(
@@ -780,8 +783,11 @@ void main() {
       // E2 is 82.41 Hz; 18 cents flat is the pen's −18.0.
       const flat = 81.5539;
       const inTune = 82.4069;
+      // F sharp 2, 5 cents sharp: the note name carries U+266F (#1730).
+      const sharp = 92.7660;
       final hz = switch (scene) {
         'in_tune' => inTune,
+        'sharp' => sharp,
         'no_signal' || '18_inputs' => 0.0,
         _ => flat,
       };

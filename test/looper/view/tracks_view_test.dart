@@ -139,6 +139,8 @@ void main() {
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
+    registerFallbackValue(<FxControlReach>[]);
+    when(() => repository.fxReachFits(any())).thenReturn(true);
     // Live levels reach the meters apart from the state (#1301): silence
     // unless a test sets them with [setLevels].
     meterLevels = StreamController<MeterLevels>.broadcast();
