@@ -155,9 +155,9 @@ class _Rig {
   }
 
   /// Fills track 1's chain with Room reverbs that are on until less than
-  /// one more fits the effects budget.
-  Future<void> fill() async {
-    final count = looper.fxRoomNs ~/ roomVerbNs;
+  /// [spare] + 1 more fit the effects budget.
+  Future<void> fill({int spare = 0}) async {
+    final count = looper.fxRoomNs ~/ roomVerbNs - spare;
     expect(
       looper.setTrackEffects(
         channel: 0,
@@ -169,7 +169,10 @@ class _Rig {
       EngineResult.ok,
     );
     expect(await looper.settleFxRecipes(), EngineResult.ok);
-    expect(looper.fxRoomNs, inInclusiveRange(0, roomVerbNs - 1));
+    expect(
+      looper.fxRoomNs,
+      inInclusiveRange(spare * roomVerbNs, (spare + 1) * roomVerbNs - 1),
+    );
   }
 
   /// One press of the external switch: contact closed, then open.
@@ -609,5 +612,180 @@ void main() {
         await rig.close();
       }
     });
+
+    /// Track 2's chain: one off effect per id, Room reverbs unless named in
+    /// [light] (Delays).
+    Future<void> putOff(
+      _Rig rig,
+      List<String> ids, {
+      Set<String> light = const {},
+    }) async {
+      expect(
+        rig.looper.setTrackEffects(
+          channel: 1,
+          effects: [
+            for (final id in ids)
+              BuiltInEffect(
+                type: light.contains(id)
+                    ? TrackEffectType.delay
+                    : TrackEffectType.roomVerb,
+                slotId: id,
+                enabled: false,
+              ),
+          ],
+        ),
+        EngineResult.ok,
+      );
+      expect(await rig.looper.settleFxRecipes(), EngineResult.ok);
+    }
+
+    FxSlotTarget slot(String id) => FxSlotTarget(
+      address: const FxAddress(stage: FxStage.track, index: 1),
+      slotId: id,
+    );
+
+    MidiParameterControl power(String id, double low, double high) =>
+        MidiParameterControl(
+          key: slot(id).canonicalString(),
+          low: low,
+          high: high,
+        );
+
+    var number = 0;
+    Future<MidiSaveResult> saveMidi(
+      _Rig rig,
+      List<MidiControl> controls, {
+      MidiBehavior behavior = MidiBehavior.toggle,
+    }) {
+      final owner = Object();
+      rig.control.beginMidiEdit(device: 'buttons', owner: owner);
+      return rig.control
+          .saveMidiMapping(
+            MidiMapping(
+              id: 'draft',
+              source: MidiSource(
+                device: 'buttons',
+                kind: ControllerSourceKind.midiCc,
+                number: ++number,
+              ),
+              behavior: behavior,
+              controls: controls,
+            ),
+            owner: owner,
+            create: true,
+          )
+          .whenComplete(() => rig.control.endMidiEdit(owner));
+    }
+
+    test('two saves from different pages at once are admitted one after the '
+        'other: only one fits, so only one lands', () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await putOff(rig, ['x', 'y']);
+        // Room for one more Room reverb, not two.
+        await rig.fill(spare: 1);
+
+        var externalRefused = false;
+        final external = rig.control
+            .setPedalSetup(
+              rig.control.state.pedalSetup.copyWith(
+                external: ExternalPedalSetup(
+                  jacks: {
+                    PedalCtrlJack.ctrl1: ExternalJackSetup(
+                      single: ExternalSwitchSetup(
+                        controls: ExternalControls(
+                          activations: [ExternalActivation(target: slot('x'))],
+                        ),
+                      ),
+                    ),
+                  },
+                ),
+              ),
+            )
+            .then<void>(
+              (_) {},
+              onError: (Object error) =>
+                  externalRefused = error is FxReachOverBudget,
+            );
+        final midi = saveMidi(rig, [power('y', 0, 1)]);
+        await external;
+        final saved = (await midi).saved;
+
+        expect([externalRefused, !saved].where((refused) => refused), [true]);
+        expect(rig.looper.state.fxHeld, isEmpty);
+        expect(rig.looper.fxRoomNs, greaterThanOrEqualTo(0));
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test(
+      'removing a binding is never refused: a charge that rises past the '
+      'alternation cap holds chains off, and they come back once it fits',
+      () async {
+        final rig = _Rig();
+        try {
+          await rig.control.load();
+          // Six MIDI buttons that alternate two pedals each, five of them
+          // Delays and the last two Room reverbs; and before them one that
+          // alternates two Delays, one of which another mapping also reaches,
+          // so it alternates nothing.
+          final light = {
+            'p',
+            'q',
+            for (var i = 1; i <= 5; i++) ...['a$i', 'b$i'],
+          };
+          await putOff(rig, [...light, 'x1', 'x2', 'y1', 'y2'], light: light);
+          expect(
+            (await saveMidi(rig, [power('p', 0, 1), power('q', 1, 0)])).saved,
+            isTrue,
+          );
+          for (var i = 1; i <= 5; i++) {
+            expect(
+              (await saveMidi(rig, [
+                power('a$i', 0, 1),
+                power('b$i', 1, 0),
+              ])).saved,
+              isTrue,
+            );
+          }
+          final heavy = await saveMidi(rig, [
+            power('x1', 0, 1),
+            power('x2', 0, 1),
+            power('y1', 1, 0),
+            power('y2', 1, 0),
+          ]);
+          expect(heavy.saved, isTrue);
+          final shared = await saveMidi(rig, [
+            power('q', 0, 1),
+          ], behavior: MidiBehavior.continuous);
+          expect(shared.saved, isTrue);
+          await rig.fill();
+          expect(rig.looper.state.fxHeld, isEmpty);
+
+          // Without the shared one, the first pair alternates and takes the
+          // last place under the cap: the Room reverbs are charged together.
+          final removed = await rig.control.deleteMidiMapping(
+            shared.mappingId!,
+          );
+          await rig._settle();
+
+          expect(removed.saved, isTrue);
+          expect(rig.looper.state.fxHeld, isNotEmpty);
+          expect(rig.looper.fxRoomNs, greaterThanOrEqualTo(0));
+
+          // Taking the Room reverbs' button away too, the rest fits again.
+          expect(
+            (await rig.control.deleteMidiMapping(heavy.mappingId!)).saved,
+            isTrue,
+          );
+          await rig._settle();
+          expect(rig.looper.state.fxHeld, isEmpty);
+        } finally {
+          await rig.close();
+        }
+      },
+    );
   });
 }

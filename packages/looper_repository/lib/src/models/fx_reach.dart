@@ -167,3 +167,27 @@ final class FxReach extends Equatable {
   @override
   List<Object?> get props => [free, alternations];
 }
+
+/// Whether [after] only takes reach away from [before] (#1723): each of its
+/// controls, in order, turns on no more than one of [before]'s on each side,
+/// each of [before]'s standing for one of them at most. What deleting a
+/// binding, a MIDI mapping or a row, or emptying a store, leaves.
+bool fxReachShrinks(
+  List<FxControlReach> before,
+  List<FxControlReach> after,
+) {
+  var at = 0;
+  for (final control in after) {
+    // A control that turns nothing on (a switch with no activations) takes
+    // no reach.
+    if (control.whenOn.isEmpty && control.whenOff.isEmpty) continue;
+    while (at < before.length &&
+        !(before[at].whenOn.containsAll(control.whenOn) &&
+            before[at].whenOff.containsAll(control.whenOff))) {
+      at++;
+    }
+    if (at == before.length) return false;
+    at++;
+  }
+  return true;
+}

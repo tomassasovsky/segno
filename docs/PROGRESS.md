@@ -109,12 +109,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - The screen weighs switching on an effect, a rack or a chain
   (`FxCubit.setEffectEnabled`, `setGroupEnabled`, `setChainEnabled`) and
   refuses it with the over-budget notice when it does not fit. A press never
-  is: what it can turn on is already charged.
+  is: what it can turn on is already charged. The per-effect enable paths no
+  view used (`MonitorCubit.setEffectEnabled`, LooperBloc's
+  `Looper*EffectEnabledToggled`) are gone, so `FxCubit` is the screen's only
+  writer of an effect's switch.
 - A binding that would put the reservation over budget is refused at save
   (`ControlCubit.setGlobalBindings`, the pedal setup's save and the MIDI
   save throw `FxReachOverBudget` or return `MidiSaveResult.overBudget()`),
   and the screen says "Not enough processing left for what this switch can
-  turn on". A session's bindings that come in over budget are admitted as a
+  turn on". Those three saves share one queue (`ControlCubit._serializeReach`),
+  so a check and its commit are one step and two pages cannot both pass. A
+  change that only takes reach away (`fxReachShrinks`) is never refused; if
+  the charge rises anyway (an alternation moving past the cap of 6), chains
+  are held off as R2 does and come back once it fits. A session's bindings that come in over budget are admitted as a
   restore is (R2): chains are held off until the rest fits, and a reach that
   shrinks brings them back. R2 never holds a chain that charges nothing.
 - Known limit: a switched-off delay, echo or reverb keeps running until its

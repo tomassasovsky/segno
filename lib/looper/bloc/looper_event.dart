@@ -657,28 +657,6 @@ final class LooperLanePluginEditorClosed extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, index];
 }
 
-/// Entry [index] of lane [lane] of track [channel]'s chain was toggled to
-/// [enabled] — the loop-stage twin of [LooperTrackEffectEnabledToggled]
-/// (per-slot flag; click-free ramp engine-side).
-final class LooperLaneEffectEnabledToggled extends LooperLaneEvent {
-  /// Creates a [LooperLaneEffectEnabledToggled].
-  const LooperLaneEffectEnabledToggled(
-    super.channel,
-    super.lane,
-    this.index, {
-    required this.enabled,
-  });
-
-  /// The chain entry index (`0..kTrackEffectMax-1`).
-  final int index;
-
-  /// The new flag value.
-  final bool enabled;
-
-  @override
-  List<Object?> get props => [channel, lane, index, enabled];
-}
-
 /// Re-copies lane [lane] of track [channel]'s routed input chain onto the lane
 /// by value, with a fresh provenance stamp (A6/R13). Explicit and user
 /// initiated — inheritance is never automatic, and an overdub never
@@ -932,26 +910,6 @@ final class LooperTrackEffectsChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, effects];
 }
 
-/// Entry [index] of track [channel]'s Track-stage chain was toggled to
-/// [enabled] (per-slot flag; click-free ramp engine-side).
-final class LooperTrackEffectEnabledToggled extends LooperChannelEvent {
-  /// Creates a [LooperTrackEffectEnabledToggled].
-  const LooperTrackEffectEnabledToggled(
-    super.channel,
-    this.index, {
-    required this.enabled,
-  });
-
-  /// The chain entry index (`0..kTrackEffectMax-1`).
-  final int index;
-
-  /// The new flag value.
-  final bool enabled;
-
-  @override
-  List<Object?> get props => [channel, index, enabled];
-}
-
 /// Track [channel]'s Track-stage chain was FLIPPED, mirroring
 /// [LooperMuteToggled]. An absolute write goes through
 /// `FxCubit.setChainEnabled`.
@@ -981,29 +939,6 @@ final class LooperOutputEffectsChanged extends LooperEvent {
 
   @override
   List<Object?> get props => [bus, effects];
-}
-
-/// Entry [index] of output destination [bus]'s chain was toggled to
-/// [enabled].
-final class LooperOutputEffectEnabledToggled extends LooperEvent {
-  /// Creates a [LooperOutputEffectEnabledToggled].
-  const LooperOutputEffectEnabledToggled(
-    this.bus,
-    this.index, {
-    required this.enabled,
-  });
-
-  /// The output destination.
-  final int bus;
-
-  /// The chain entry index (`0..kTrackEffectMax-1`).
-  final int index;
-
-  /// The new flag value.
-  final bool enabled;
-
-  @override
-  List<Object?> get props => [bus, index, enabled];
 }
 
 /// Entry [slotId] of track [channel]'s Track-stage chain moved to [placement]
@@ -1094,24 +1029,6 @@ final class LooperAllTracksEffectsAppended extends LooperEvent {
     cancelled,
     expectedMixGeneration,
   ];
-}
-
-/// Entry [index] of the All tracks chain was toggled to [enabled].
-final class LooperAllTracksEffectEnabledToggled extends LooperEvent {
-  /// Creates a [LooperAllTracksEffectEnabledToggled].
-  const LooperAllTracksEffectEnabledToggled(
-    this.index, {
-    required this.enabled,
-  });
-
-  /// The chain entry index (`0..kTrackEffectMax-1`).
-  final int index;
-
-  /// The new flag value.
-  final bool enabled;
-
-  @override
-  List<Object?> get props => [index, enabled];
 }
 
 /// Parameter [param] of All tracks chain entry [index] changed to [value]

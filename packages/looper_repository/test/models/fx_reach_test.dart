@@ -87,4 +87,50 @@ void main() {
       });
     });
   });
+
+  group('fxReachShrinks', () {
+    final pair = FxControlReach(whenOn: {_a}, whenOff: {_b});
+    final console = FxControlReach(whenOn: {_c});
+
+    test('dropping or narrowing a control only takes reach away', () {
+      expect(fxReachShrinks([console, pair], [pair]), isTrue);
+      expect(
+        fxReachShrinks(
+          [pair],
+          [
+            FxControlReach(whenOn: {_a}),
+          ],
+        ),
+        isTrue,
+      );
+      expect(fxReachShrinks([pair], [pair]), isTrue);
+      expect(fxReachShrinks([pair], const []), isTrue);
+      // A switch set up with nothing on it takes no reach.
+      expect(fxReachShrinks([pair], [const FxControlReach(), pair]), isTrue);
+    });
+
+    test('a new control, or one more on a side, adds reach', () {
+      expect(fxReachShrinks([pair], [console, pair]), isFalse);
+      // Rack A bound to a console switch too: two controls where one was.
+      expect(
+        fxReachShrinks(
+          [pair],
+          [
+            FxControlReach(whenOn: {_a}),
+            pair,
+          ],
+        ),
+        isFalse,
+      );
+      expect(
+        fxReachShrinks(
+          [pair],
+          [
+            FxControlReach(whenOn: {_a, _c}, whenOff: {_b}),
+          ],
+        ),
+        isFalse,
+      );
+    });
+  });
 }
