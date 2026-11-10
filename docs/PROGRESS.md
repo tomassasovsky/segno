@@ -108,7 +108,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   carries the masks by chain (`fx_draining_monitor`, `_lane`, `_track`,
   `_all_tracks`, `_output`), and `EngineSnapshot.fxDraining` (`FxDraining`)
   reads them; no new polling. The chain's thread stores each slot's
-  `enable_drain` flag whole with a relaxed builtin store (`LE_FX_DRAIN_STORE`,
+  `enable_drain` flag whole with a relaxed atomic store (`LE_FX_DRAIN_STORE`,
   a plain `str` on arm64 and x86), and `le_engine_get_snapshot` reads the
   chain's own slots (up to `a_fx_count`) with relaxed loads. A first version
   kept an atomic mask in `le_fx_state` and set it from the pinned
