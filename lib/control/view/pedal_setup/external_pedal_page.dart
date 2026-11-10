@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/control/binding/binding_labels.dart';
 import 'package:segno/control/binding/control_action.dart';
 import 'package:segno/control/binding/control_action_labels.dart';
@@ -26,6 +27,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -726,6 +728,18 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
           _saved = true;
         }
       });
+    } on FxReachOverBudget {
+      // Refused, not failed: the draft stays open, and the notice says why
+      // (#1723).
+      if (mounted) {
+        context.read<NoticesCubit>().show(
+          Notice(
+            id: AppNoticeId.fxBindOverBudget,
+            tone: NoticeTone.warning,
+            title: (l10n) => l10n.fxBindOverBudget,
+          ),
+        );
+      }
     } on Object {
       if (mounted) setState(() => _saveFailed = true);
     } finally {

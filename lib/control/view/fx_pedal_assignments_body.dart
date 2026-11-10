@@ -5,11 +5,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/app_notices.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The vertical rhythm of this tab, as drawn: one gap between everything.
@@ -303,11 +305,21 @@ class _AssignSection extends StatelessWidget {
     // remap in the process. That is the full-screen plate's existing rule, and
     // two surfaces editing one binding must not disagree about where the edit
     // lands.
+    // A binding whose effects would not fit the budget is refused, and the
+    // notice says why (#1723).
     Future<void> write(PedalBindingSet next) async {
-      if (state.sessionBindings.isNotEmpty) {
-        cubit.applySessionBindings(PedalBindingSet.empty);
+      try {
+        await cubit.setGlobalBindings(next, promote: true);
+      } on FxReachOverBudget {
+        if (!context.mounted) return;
+        context.read<NoticesCubit>().show(
+          Notice(
+            id: AppNoticeId.fxBindOverBudget,
+            tone: NoticeTone.warning,
+            title: (l10n) => l10n.fxBindOverBudget,
+          ),
+        );
       }
-      await cubit.setGlobalBindings(next);
     }
 
     // In signal order: each chain, then its racks (#1711), each rack's own

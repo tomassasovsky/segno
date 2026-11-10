@@ -15,6 +15,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/application/fade_settings.dart';
+import 'package:segno/looper/cubit/fx_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno_engine/segno_engine.dart' show FxOwner;
@@ -120,6 +121,55 @@ class _Rig {
       EngineResult.ok,
     );
     expect(await looper.settleFxRecipes(), EngineResult.ok);
+  }
+
+  /// What one Room reverb charges at the rig's rate and block.
+  int get roomVerbNs => looper.fxGrowthNs({
+    const FxAddress(stage: FxStage.track, index: 7): [
+      BuiltInEffect(type: TrackEffectType.roomVerb),
+    ],
+  });
+
+  /// Input 1's A/B pair (#1711) as two Room reverbs: rack A (Reverb +
+  /// Delay) switched off, rack B (Soft Chords) on.
+  Future<void> heavyRacks() async {
+    expect(
+      looper.setMonitorEffects(
+        input: 0,
+        effects: [
+          BuiltInEffect(
+            type: TrackEffectType.roomVerb,
+            slotId: 'reverb',
+            rack: _reverb.copyWith(bypassed: true),
+          ),
+          BuiltInEffect(
+            type: TrackEffectType.roomVerb,
+            slotId: 'chords',
+            rack: _chords,
+          ),
+        ],
+      ),
+      EngineResult.ok,
+    );
+    expect(await looper.settleFxRecipes(), EngineResult.ok);
+  }
+
+  /// Fills track 1's chain with Room reverbs that are on until less than
+  /// one more fits the effects budget.
+  Future<void> fill() async {
+    final count = looper.fxRoomNs ~/ roomVerbNs;
+    expect(
+      looper.setTrackEffects(
+        channel: 0,
+        effects: [
+          for (var i = 0; i < count; i++)
+            BuiltInEffect(type: TrackEffectType.roomVerb),
+        ],
+      ),
+      EngineResult.ok,
+    );
+    expect(await looper.settleFxRecipes(), EngineResult.ok);
+    expect(looper.fxRoomNs, inInclusiveRange(0, roomVerbNs - 1));
   }
 
   /// One press of the external switch: contact closed, then open.
@@ -389,4 +439,142 @@ void main() {
       }
     },
   );
+
+  group('the effects budget (#1723)', () {
+    const spare = FxSlotTarget(
+      address: FxAddress(stage: FxStage.track, index: 1),
+      slotId: 'spare',
+    );
+
+    /// Track 2's chain: one Room reverb, switched off.
+    Future<void> putSpare(_Rig rig) async {
+      expect(
+        rig.looper.setTrackEffects(
+          channel: 1,
+          effects: [
+            BuiltInEffect(
+              type: TrackEffectType.roomVerb,
+              slotId: 'spare',
+              enabled: false,
+            ),
+          ],
+        ),
+        EngineResult.ok,
+      );
+      expect(await rig.looper.settleFxRecipes(), EngineResult.ok);
+    }
+
+    PedalBindingSet bound(FxBindingTarget target) => PedalBindingSet([
+      PedalBinding(
+        key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+        target: target.canonicalString(),
+      ),
+    ]);
+
+    test('the A/B pair one switch alternates charges its larger side, and '
+        'its presses are never refused', () async {
+      final rig = _Rig(
+        jack: ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            controls: ExternalControls(
+              activations: const [
+                ExternalActivation(target: _reverbRack),
+                ExternalActivation(
+                  target: _chordsRack,
+                  condition: ExternalCondition.off,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      try {
+        await rig.heavyRacks();
+        await rig.control.load();
+        await rig._settle();
+        // One rack's Room reverb, not two.
+        expect(rig.looper.fxCostNs, rig.roomVerbNs);
+        await rig.fill();
+
+        for (final expected in [
+          (reverb: true, chords: false),
+          (reverb: false, chords: true),
+          (reverb: true, chords: false),
+        ]) {
+          await rig.pressExternal();
+          expect(rig.sounding(), expected);
+          expect(rig.looper.state.fxHeld, isEmpty);
+          expect(rig.looper.fxRoomNs, greaterThanOrEqualTo(0));
+        }
+
+        // A console switch on rack A as well could turn both on: refused,
+        // with nothing saved.
+        await expectLater(
+          rig.control.setGlobalBindings(bound(_reverbRack)),
+          throwsA(isA<FxReachOverBudget>()),
+        );
+        expect(rig.control.state.globalBindings, PedalBindingSet.empty);
+        expect(await rig.settings.loadPedalBindings(), isNull);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('an off effect no control reaches charges nothing, and the screen '
+        'refuses to switch it on when it does not fit', () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await putSpare(rig);
+        expect(rig.looper.fxCostNs, 0);
+        await rig.fill();
+        final fx = FxCubit(
+          repository: rig.looper,
+          settings: rig.settings,
+          persistence: rig.persistence,
+        );
+        addTearDown(fx.close);
+
+        final result = fx.setEffectEnabled(
+          spare.address,
+          'spare',
+          enabled: true,
+        );
+
+        expect(result.status, FxEditStatus.overBudget);
+        expect(rig.looper.trackEffects(1).single.enabled, isFalse);
+        // Binding it now would not fit either: refused at bind time.
+        await expectLater(
+          rig.control.setGlobalBindings(bound(spare)),
+          throwsA(isA<FxReachOverBudget>()),
+        );
+        expect(rig.control.state.globalBindings, PedalBindingSet.empty);
+      } finally {
+        await rig.close();
+      }
+    });
+
+    test('an off effect a pedal reaches is charged, so its press is never '
+        'refused', () async {
+      final rig = _Rig();
+      try {
+        await rig.control.load();
+        await putSpare(rig);
+        await rig.control.setGlobalBindings(bound(spare));
+        expect(rig.looper.fxCostNs, rig.roomVerbNs);
+        await rig.fill();
+        rig.control.setMode(InteractionMode.fx);
+        await rig._settle();
+
+        await rig.stomp(PedalButton.track1);
+
+        expect(rig.looper.bindingEnabled(spare), isTrue);
+        expect(rig.looper.state.fxHeld, isEmpty);
+        expect(rig.looper.fxRoomNs, greaterThanOrEqualTo(0));
+        expect(rig.lit(PedalButton.track1), isTrue);
+      } finally {
+        await rig.close();
+      }
+    });
+  });
 }

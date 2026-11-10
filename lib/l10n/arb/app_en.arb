@@ -4530,6 +4530,10 @@
     "@fxOverBudget": {
         "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
     },
+    "fxBindOverBudget": "Not enough processing left for what this switch can turn on",
+    "@fxBindOverBudget": {
+        "description": "Shown when saving a pedal, MIDI or external switch assignment is refused: the effects it could switch on would not fit the audio processing, so nothing was saved."
+    },
     "fxTakeHeldToast": "This take's effects are off",
     "@fxTakeHeldToast": {
         "description": "On the track's card when a take came in with its inherited effects switched off (#1515, #1562)."

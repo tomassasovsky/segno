@@ -11,14 +11,27 @@ extension ExternalControlWriter on LooperRepository {
     required Map<FxBindingTarget, bool> activations,
     required Map<FxParamTarget, double> parameters,
   }) {
-    final owners = <FxAddress>{
+    final resolved = <FxAddress>{
       for (final target in activations.keys)
         if (bindingResolves(target)) target.address,
       for (final target in parameters.keys)
         if (valueTargetResolves(target)) target.address,
     };
+    // The chains a press only switches off go first (#1723): the budget
+    // charges switches one press alternates for their larger side, so the
+    // side going on must never land while the side going off still runs.
+    bool switchesOn(FxAddress address) => activations.entries.any(
+      (entry) => entry.value && entry.key.address == address,
+    );
+    final owners = [
+      ...resolved.where((address) => !switchesOn(address)),
+      ...resolved.where(switchesOn),
+    ];
     final accepted = <FxAddress>{};
+    var offPending = false;
     for (final address in owners) {
+      // Until every switch-off landed, the switch-ons wait for the retry.
+      if (offPending && switchesOn(address)) continue;
       final original = chainEntriesAt(address);
       final currentPower = bindingEnabled(FxChainTarget(address));
       if (original == null || currentPower == null) continue;
@@ -74,7 +87,11 @@ extension ExternalControlWriter on LooperRepository {
           chainEnabled: power,
         ),
       };
-      if (result.isOk) accepted.add(address);
+      if (result.isOk) {
+        accepted.add(address);
+      } else if (!switchesOn(address)) {
+        offPending = true;
+      }
     }
     return accepted;
   }

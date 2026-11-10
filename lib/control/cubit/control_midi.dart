@@ -124,6 +124,11 @@ extension MidiControlEditing on ControlCubit {
     // What is saved, played and shown is what a reload reads.
     final mappings = _decodeEndpoints(authored);
     try {
+      _refuseOverBudget(state.copyWith(midiMappings: mappings));
+    } on FxReachOverBudget {
+      return const MidiSaveResult.overBudget();
+    }
+    try {
       await _settings.saveMidiConfiguration(
         jsonEncode({
           'version': 1,

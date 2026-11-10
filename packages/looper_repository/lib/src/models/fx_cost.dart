@@ -158,9 +158,10 @@ const int kFxBenchRate = 96000;
 /// What [fx] charges, in nanoseconds per frame at [sampleRate] and
 /// [period]-frame blocks: its kind's ([kFxKindCostNs], [kFxOversampledCostNs]
 /// or [kFxPsolaCostNs] at the rate, or [kFxHopCostUs] for each hop quarter a
-/// block can take, spread over the block), whether or not it is on, so
-/// switching a pedal on is never refused. A hosted plugin charges nothing
-/// here; its cost is its own.
+/// block can take, spread over the block): what one instance costs while it
+/// runs. Which instances the rig is charged for, those on and those a control
+/// can turn on, is the repository's (`LooperRepository.fxCostNs`, #1723). A
+/// hosted plugin charges nothing here; its cost is its own.
 int fxEntryCostNs(
   TrackEffect fx, {
   int period = kFxBenchPeriod,
@@ -185,7 +186,8 @@ int fxEntryCostNs(
   return kFxKindCostNs[fx.type] ?? 0;
 }
 
-/// What [chain] charges ([fxEntryCostNs]), in nanoseconds per frame.
+/// What [chain] charges with every entry in it running ([fxEntryCostNs]),
+/// in nanoseconds per frame.
 int fxChainCostNs(
   Iterable<TrackEffect> chain, {
   int period = kFxBenchPeriod,
