@@ -997,7 +997,9 @@ enum TrackEffectType {
       ),
     ],
     // Fit to the Guitar Rack's OvDrive (#891, #1663): the drive's and the
-    // tone's laws are measured. Ed's Rack's defaults.
+    // tone's laws are measured. The level is a gain after it, 0 dB at
+    // setting 0; the Lo-Fi Rack's Distort is this at +4.08 dB (#1737). Ed's
+    // Rack's defaults.
     TrackEffectType.overdrive => const [
       FxParamInfo(
         key: 'drive',
@@ -1013,18 +1015,25 @@ enum TrackEffectType {
         atMax: 100,
         defaultValue: 0.5,
       ),
+      FxParamInfo(
+        key: 'level',
+        unit: FxParamUnit.db,
+        atMin: 0,
+        atMax: 12,
+        defaultValue: 0,
+      ),
     ],
     // The Studio Rack's Dist (#891): drive and tone are the Looper X's own
     // 0 to 100 %; the drive's law is fit to the amp captures and checked
     // against the Dist itself (#1731), the tone is our 2 kHz shelf. The
-    // Lo-Fi Rack's defaults.
+    // Studio Rack's defaults.
     TrackEffectType.distortion => const [
       FxParamInfo(
         key: 'drive',
         unit: FxParamUnit.percent,
         atMin: 0,
         atMax: 100,
-        defaultValue: 0.2,
+        defaultValue: 0.5,
       ),
       FxParamInfo(
         key: 'tone',

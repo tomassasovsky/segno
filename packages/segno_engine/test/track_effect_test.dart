@@ -510,9 +510,9 @@ void main() {
         TrackEffectType.doubler: [1.0, 1.0],
         TrackEffectType.chorus: [0.45, 0.21, 0.5],
         TrackEffectType.wah: [0.619],
-        // Ed's overdrive; the Lo-Fi Rack's distortion.
-        TrackEffectType.overdrive: [0.09, 0.5],
-        TrackEffectType.distortion: [0.2, 0.5],
+        // Ed's overdrive at 0 dB; the Studio Rack's distortion.
+        TrackEffectType.overdrive: [0.09, 0.5, 0.0],
+        TrackEffectType.distortion: [0.5, 0.5],
         // The Lo-Fi Rack's vinyl, degrade and low-pass filter.
         TrackEffectType.vinyl: [0.4, 0.35, 0.3, 0.9],
         TrackEffectType.degrade: [1.0, 1.0, 1.0],

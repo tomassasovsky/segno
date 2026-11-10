@@ -125,6 +125,44 @@ static void test_overdrive_small_signal_matches_the_capture(void) {
   }
 }
 
+/* The level is a gain after the pedal: the Lo-Fi Rack's Distort (#1737)
+ * is the OvDrive times 1.6, which its +4.08 dB gives sample for sample, and
+ * the default, 0 dB, leaves the output as the fit has it. */
+static void test_overdrive_level(void) {
+  printf("test_overdrive_level\n");
+  const le_fx_param_desc level = fxd_get(LE_FX_OVERDRIVE, 2);
+  CHECK(level.unit == LE_FX_UNIT_DB);
+  CHECK(level.def == 0.0f);
+  CHECK(fxd_value(&level, 0.0) == 0.0);
+  const int sr = 48000;
+  const int n = sr / 4;
+  float* in = (float*)malloc(sizeof(float) * (size_t)n);
+  float* plain = (float*)malloc(sizeof(float) * (size_t)n);
+  float* lofi = (float*)malloc(sizeof(float) * (size_t)n);
+  for (int i = 0; i < n; ++i) {
+    in[i] = 0.25f * sinf(2.0f * (float)M_PI * 220.0f * (float)i / sr);
+  }
+  float p[LE_FX_PARAMS] = {0.535f, 0.901f, 0.0f};
+  le_fx_state* fx = dyn_state(LE_FX_OVERDRIVE, sr);
+  uint32_t clock = 0;
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, plain, NULL, n, &clock);
+  dyn_free(fx);
+  p[2] = (float)(20.0 * log10(1.6) / 12.0);
+  fx = dyn_state(LE_FX_OVERDRIVE, sr);
+  clock = 0;
+  dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, lofi, NULL, n, &clock);
+  dyn_free(fx);
+  double worst = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double d = fabs((double)lofi[i] - 1.6 * (double)plain[i]);
+    if (d > worst) worst = d;
+  }
+  CHECK(worst < 1e-5);
+  free(in);
+  free(plain);
+  free(lofi);
+}
+
 /* ---- Distortion ---- */
 
 /* The distortion reproduces the amp captures with the 4x12" cabinet (#891:
@@ -364,6 +402,7 @@ static void run_drive_tests(void) {
   test_overdrive_matches_the_capture();
   test_overdrive_controls();
   test_overdrive_small_signal_matches_the_capture();
+  test_overdrive_level();
   test_distortion_matches_the_capture();
   test_distortion_cabinet();
   test_distortion_drive_is_the_studio_dist();
