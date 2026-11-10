@@ -107,9 +107,9 @@ extern "C" {
 #define LE_CB_GAP_SUPPRESS_PERIODS 4u
 
 /* The share of a deadline the effects admission budgets a service to fill:
- * 4/5, kFxBudgetShare in fx_cost.dart (#1515). */
-#define LE_CB_OVER_SHARE_NUM 4u
-#define LE_CB_OVER_SHARE_DEN 5u
+ * 77/100, kFxBudgetShare in fx_cost.dart (#1515, #1724). */
+#define LE_CB_OVER_SHARE_NUM 77u
+#define LE_CB_OVER_SHARE_DEN 100u
 
 /* Monotonic nanoseconds. Never wall-clock (CLOCK_REALTIME / the system time):
  * that clock STEPS — an NTP correction, a DST-less timezone database update or

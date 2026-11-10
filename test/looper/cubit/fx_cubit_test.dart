@@ -454,7 +454,7 @@ void main() {
     });
 
     test('an add that fits lands', () async {
-      room = kFxKindCostNs[TrackEffectType.delay]!;
+      room = fxEntryCostNs(BuiltInEffect(type: TrackEffectType.delay));
 
       final result = await cubit.appendChoice(
         track,

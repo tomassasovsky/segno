@@ -525,15 +525,14 @@ static int run_racks(const bench_opts* o, float* src, int32_t frames,
  * vocoder, PSOLA) can land a whole frame in one block, so it is charged the
  * larger of that and one instance's own p99 increment (p99 rather than the
  * racks' p99.9: a share of eight is steadier there). Prints a row per kind,
- * then the charges (looper_repository, fx_cost.dart). Each charge there is
- * the largest of runs at 44.1, 48, 88.2 and 96 kHz, each at 32 and 64
- * frames (#1508). The phase vocoder's go to kFxHopCostUs per hop quarter,
- * from the runs where a block takes one (not 44.1 kHz / 64). PSOLA, the
- * Smart Tune and the kinds that run oversampled (the Overdrive, Distortion,
- * Vinyl and Amp+Cab, #1547) charge by the rate, to kFxPsolaCostNs and
- * kFxOversampledCostNs: `low` from 44.1 and 48 kHz, `high` from 88.2 and
- * 96 kHz. Run it paced on the console; elsewhere the numbers are only a
- * proxy. */
+ * then the charges (looper_repository, fx_cost.dart, #1508, #1724), each
+ * per frame at this run's rate and period. The kinds whose work depends on
+ * the setting (the phase vocoder's, the oversampled Overdrive, Distortion,
+ * Vinyl and Amp+Cab, #1547) go to kFxSettingCostNs at this setting's
+ * column, PSOLA and the Smart Tune to kFxPsolaCostNs; every other kind
+ * charges kFxKindCostNs, the largest of its runs at the settings the Device
+ * page offers. Run it paced on the console; elsewhere the numbers are only
+ * a proxy. */
 typedef struct {
   const char* name;
   int32_t type;
@@ -635,18 +634,17 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
            ns[k] <= 0.0 ? " lost in the noise: rerun" : "");
     fflush(stdout);
   }
-  /* kFxKindCostNs takes these per frame; the phase-vocoder kinds go to
-   * kFxHopCostUs per hop quarter (1 x +us, from a run where a block takes
-   * one quarter); PSOLA and the Smart Tune go to kFxPsolaCostNs per frame,
-   * and the oversampled kinds to kFxOversampledCostNs, at this rate's end
-   * of each. */
+  /* fx_cost.dart takes these per frame: kFxSettingCostNs and
+   * kFxPsolaCostNs at this rate and period's column, kFxKindCostNs as the
+   * largest across the offered settings. */
   printf("charges, ns per frame:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     printf(" %s=%.0f", k_table[k].name, ns[k]);
   }
-  printf("\n(overdrive, distortion, vinyl and ampcab: kFxOversampledCostNs, "
-         "%s at %d Hz)\n",
-         o->rate < 88200 ? "low" : "high", o->rate);
+  printf("\n(octaver, whammy, dualoct, overdrive, distortion, vinyl and "
+         "ampcab: kFxSettingCostNs at %d Hz / %d; psola and smarttune: "
+         "kFxPsolaCostNs)\n",
+         o->rate, (int)o->period);
   printf("timed loops ran at: %s\n", g_timed_sched);
   return 0;
 }

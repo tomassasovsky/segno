@@ -8623,12 +8623,15 @@ class LooperRepository {
     return true;
   }
 
-  /// The running sample rate, or 96 kHz when the engine reports none: what
-  /// the oversampled kinds' charges follow ([kFxOversampledCostNs]) and the
-  /// budget is taken at.
+  /// The running sample rate, or the last config's while the engine reports
+  /// none (a device lost, an apply), so the rig's verdict does not move with
+  /// the device, or 96 kHz before any: the setting the charges
+  /// ([fxCostSetting]) and the budget are taken at.
   int get _fxRate {
     final rate = _engine.snapshot().sampleRate;
-    return rate > 0 ? rate : 96000;
+    if (rate > 0) return rate;
+    final last = _lastEngineConfig?.sampleRate ?? 0;
+    return last > 0 ? last : kFxBenchRate;
   }
 
   /// The running block length, or the bench's when the engine is stopped.
@@ -8637,7 +8640,9 @@ class LooperRepository {
     // what the player's own buffer will hold off.
     final target = _warmUpTarget?.bufferFrames ?? 0;
     final frames = target > 0 ? target : _engine.snapshot().bufferFrames;
-    return frames > 0 ? frames : kFxBenchPeriod;
+    if (frames > 0) return frames;
+    final last = _lastEngineConfig?.bufferFrames ?? 0;
+    return last > 0 ? last : kFxBenchPeriod;
   }
 
   /// What the effects charge the audio thread's worst block ([fxLoadNs]), in
