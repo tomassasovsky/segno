@@ -243,7 +243,8 @@ const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 /// per frame, at [period]-frame blocks with [workers] effects workers
 /// beside the callback (#1515): the chains that stay on the callback
 /// ([serial]) plus the critical path of the [jobs], the chains the workers
-/// share (one monitor input's non-empty chain each).
+/// share: one monitor input's non-empty chain each (#1515), and one track's
+/// lanes' and own chains each, when one of them is non-empty (#1729).
 ///
 /// With C cores (the callback and the workers) any greedy claiming finishes
 /// the jobs within J/C + (1 - 1/C) p of their release (Graham's bound for

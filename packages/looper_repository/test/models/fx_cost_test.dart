@@ -786,7 +786,8 @@ void main() {
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
       });
 
-      test('a rack on a track runs on the callback: it charges in full', () {
+      test("a rack on a track, or on a track's lane, is a job as one on an "
+          'input is (#1729); on an output it runs on the callback', () {
         putRacks(2);
         final onInput = repo.fxGrowthNs({
           const FxAddress(stage: FxStage.input, index: 2): rack,
@@ -794,8 +795,26 @@ void main() {
         final onTrack = repo.fxGrowthNs({
           const FxAddress(stage: FxStage.track): rack,
         });
-        expect(onTrack, rackNs);
-        expect(onInput, lessThan(onTrack));
+        final onLane = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.loop, index: 1): rack,
+        });
+        final onOutput = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.output): rack,
+        });
+        expect(onTrack, onInput);
+        expect(onLane, onInput);
+        expect(onOutput, rackNs);
+        expect(onInput, lessThan(onOutput));
+        // A track's lanes and its own chain are one job: a second rack on
+        // the same track grows the job, not the number of jobs.
+        repo.setTrackEffects(channel: 0, effects: rack);
+        final sameTrack = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.loop): rack,
+        });
+        final otherTrack = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.loop, index: 1): rack,
+        });
+        expect(sameTrack, greaterThan(otherTrack));
       });
 
       test('a pedal a control reaches is never refused: on or off it is '
