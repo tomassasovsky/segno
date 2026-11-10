@@ -51,8 +51,9 @@ enum {
  * catches up over a few blocks rather than in one. */
 #define LE_HEARD_TAIL_ADD_BUDGET 4096
 
-/* The level a tail is cut at once every frame of a 100 ms window is below
- * it: -80 dBFS. */
+/* The level a tail is cut at once every frame of a quiet run is below it:
+ * -80 dBFS. The run is the delay line plus 100 ms, so the gap before a
+ * delay's next repeat never ends the tail. */
 #define LE_HEARD_TAIL_FLOOR 1e-4f
 
 typedef struct le_heard_tail {
@@ -369,6 +370,12 @@ static le_heard_tail* le_heard_tail_build(le_engine* e, int32_t t,
     if (!le_fx_frozen_has(&j->chain[l], 0, j->chain[l].count, LE_FX_NONE)) {
       continue; /* no chain: the input itself, which leaves no tail */
     }
+    /* A hosted plugin runs only on the audio thread, and a frozen copy
+     * passes it dry: its tail would not be the one the image recorded, so a
+     * chain with one renders none, as the wet cache prints none. */
+    if (le_fx_frozen_has(&j->chain[l], 0, j->chain[l].count, LE_FX_PLUGIN)) {
+      continue;
+    }
     j->in[l] = (float*)malloc((size_t)j->window * sizeof(float));
     if (j->in[l] == NULL ||
         !le_heard_tail_copy(&e->heard_ring[c], end.last_clock, j->window,
@@ -451,12 +458,13 @@ void le_heard_tail_poll(le_engine* e) {
 }
 
 /* The tail of one lane: the window through a fresh copy of the chain, then
- * silence, kept from the window's end until it falls under the floor for a
- * 100 ms run or LE_HEARD_TAIL_MAX_S passes. */
+ * silence, kept from the window's end until it stays under the floor for a
+ * quiet run (the delay line plus 100 ms) or LE_HEARD_TAIL_MAX_S passes. 0
+ * when it fails, or stops because a newer pass end overtook it. */
 static int le_heard_tail_render_lane(le_engine* e, le_heard_tail* j, int l) {
   const int32_t sr = j->sample_rate;
   const int32_t most = sr * LE_HEARD_TAIL_MAX_S;
-  const int32_t quiet_run = sr / 10 > 0 ? sr / 10 : 1;
+  const int32_t quiet_run = j->fx_cap + (sr / 10 > 0 ? sr / 10 : 1);
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   if (fx == NULL) return 0;
   const le_fx_frozen_chain* c = &j->chain[l];
@@ -470,7 +478,9 @@ static int le_heard_tail_render_lane(le_engine* e, le_heard_tail* j, int l) {
   int32_t quiet = 0;
   const float trim = j->trim[l];
   for (int32_t f = 0; ok && f < j->window + most; ++f) {
-    if ((f & 4095) == 0 && le_cache_shutting_down(e)) {
+    if ((f & 4095) == 0 &&
+        (le_cache_shutting_down(e) ||
+         atomic_load_explicit(&j->a_stale, memory_order_relaxed))) {
       ok = 0;
       break;
     }

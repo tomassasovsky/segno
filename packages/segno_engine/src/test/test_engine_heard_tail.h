@@ -79,6 +79,53 @@ static void test_heard_tail_after_a_take(void) {
   le_engine_destroy(e);
 }
 
+/* A delay's repeats are seconds apart, with silence between them: the tail
+ * is not cut at the first gap. A burst at the take's start repeats every
+ * 500 ms; the take ends 100 ms into the second repeat, so 400 ms of silence
+ * comes before the third, which must land in the image. */
+static void test_heard_tail_keeps_a_delay_past_its_gap(void) {
+  printf("test_heard_tail_keeps_a_delay_past_its_gap\n");
+  enum { N = 48000 + 4800, F = 480, BURST = 4800 };
+  le_engine* e = heard_engine(48000 * 4);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 2, 0.5f) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  drain(e);
+  le_record_image image = heard_image(45, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  le_engine_drain_events(e);
+  float in[64];
+  float o[128];
+  for (int32_t done = 0; done < N; done += 64) {
+    for (int32_t i = 0; i < 64; ++i) {
+      in[i] = done + i < BURST ? heard_signal(done + i) : 0.0f;
+    }
+    le_engine_process(e, o, in, 64);
+  }
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
+  heard_silence(e, 2 * F, 64, NULL);
+  static float before_l[N];
+  static float before_r[N];
+  tail_image(e, 0, N, before_l, before_r);
+  CHECK(tail_settle(e, 0, 8 * N) < 8 * N);
+  static float after_l[N];
+  static float after_r[N];
+  tail_image(e, 0, N, after_l, after_r);
+  /* The third repeat: 400 ms of silence after the tail's start, 100 ms
+   * long. */
+  double third = 0.0;
+  for (int32_t k = 19200; k < 24000; ++k) {
+    const int32_t q = (F + k) % N;
+    third += fabs((double)after_l[q] - before_l[q]) +
+             fabs((double)after_r[q] - before_r[q]);
+  }
+  CHECK(third > 1e-2);
+  le_engine_destroy(e);
+}
+
 /* A take that runs straight into overdub keeps capturing: no pass ends at
  * the take's length, so no tail is rendered there. */
 static void test_heard_tail_not_while_capturing(void) {
@@ -199,6 +246,7 @@ static void test_heard_tail_stop_drops_it(void) {
 
 static void run_heard_tail_tests(void) {
   test_heard_tail_after_a_take();
+  test_heard_tail_keeps_a_delay_past_its_gap();
   test_heard_tail_not_while_capturing();
   test_heard_tail_after_a_punch_out();
   test_heard_tail_wraps_a_short_loop();
