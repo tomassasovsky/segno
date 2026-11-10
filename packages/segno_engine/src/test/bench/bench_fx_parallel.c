@@ -26,7 +26,7 @@
  * so the hop work of K Ed's racks spreads over the hop the way it does live.
  *
  * Reported per scenario: the callback's service time per period (p50, p99,
- * p99.9, max), the periods over the budget share (80 %) and over the whole
+ * p99.9, max), the periods over the budget share (75 %) and over the whole
  * period, the workers' wake latency (from the callback's wake to the worker
  * running; a worker that slept through whole periods counts from the first
  * wake it missed, and "skipped" counts those periods), the CPU the callback and the workers used (CLOCK_THREAD_CPUTIME,
@@ -76,7 +76,7 @@
 #define MAX_JOBS 16
 #define WORKER_RT_PRIO (BENCH_RT_PRIO - 1)
 /* The share of each period the worst block may fill (fx_cost.dart). */
-static const double kBudgetShare = 0.8;
+static const double kBudgetShare = 0.75;
 
 enum { WAIT_FUTEX = 0, WAIT_SPIN = 1 };
 
@@ -691,7 +691,7 @@ static int run_scenario(const bench_opts* o, rig* r, int jobs, int workers,
 
 static void print_result_header(void) {
   printf("| chains | workers | wait  |  p50 us |  p99 us | p99.9 us |  max us "
-         "| over 80%% | late | wake p99 us | wake max us | skipped | cb %% "
+         "| over 75%% | late | wake p99 us | wake max us | skipped | cb %% "
          "| workers %% | faults |\n");
   printf("|--------|---------|-------|---------|---------|----------|---------"
          "|----------|------|-------------|-------------|---------|------"

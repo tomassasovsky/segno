@@ -8623,9 +8623,8 @@ class LooperRepository {
     return true;
   }
 
-  /// The running sample rate, or 96 kHz when the engine reports none: what
-  /// the oversampled kinds' charges follow ([kFxOversampledCostNs]) and the
-  /// budget is taken at.
+  /// The running sample rate, or 96 kHz when the engine reports none: the
+  /// setting the charges ([fxCostSetting]) and the budget are taken at.
   int get _fxRate {
     final rate = _engine.snapshot().sampleRate;
     return rate > 0 ? rate : 96000;

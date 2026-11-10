@@ -1310,7 +1310,7 @@ class CallbackWindowStats {
   /// dropping it would under-report reality.
   final List<int> xruns;
 
-  /// Services longer than the effects budget's share of their deadline (80 %,
+  /// Services longer than the effects budget's share of their deadline (75 %,
   /// `kFxBudgetShare`): blocks the effects admission promises never happen
   /// (#1515). Every late period is one of these too. **Zero on a rig the
   /// admission let in, on healthy hardware.**
