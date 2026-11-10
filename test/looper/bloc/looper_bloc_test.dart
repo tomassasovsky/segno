@@ -2498,7 +2498,6 @@ void main() {
           expect(decodeFxChain(encoded).entries, masterChain);
         },
       );
-
     });
 
     blocTest<LooperBloc, LooperState>(
