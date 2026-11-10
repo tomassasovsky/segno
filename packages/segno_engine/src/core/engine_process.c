@@ -6048,6 +6048,9 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
       store_i32(&e->monitors[input].a_fx_count, count);
+      /* A chain set up entry by entry has no split: a take records all of
+       * it (#1741); a recipe carries one. */
+      store_i32(&e->heard_mon_pre[input], count);
       break;
     }
     /* ---- Track-stage + output bus chains ----
@@ -8628,7 +8631,7 @@ static inline int le_track_print_run_matches(
     le_lane* ln = &tr->lanes[l];
     if (lane_fx_count[l] == 0) continue;
 #ifdef LE_MIX_HEARD_TU
-    /* A part playing its heard image runs no chain (#1713). */
+    /* A part playing its heard image runs no Pre run (#1713, #1741). */
     if (heard[l].mix >= 1.0f) continue;
 #endif
     if (lane_ent[l] != NULL && load_i32(&ln->a_cache_active)) continue;
@@ -8700,12 +8703,37 @@ static LE_BRIDGE_NOINLINE float le_mix_bridge_tail(le_engine* e, int t, int l,
 }
 
 #ifdef LE_MIX_HEARD_TU
+#ifdef LE_MIX_JOBS_TU
+/* #1729: whether any of [n] effective bits is still set: a print masking
+ * them changes what its track's job reads only the first time. */
+static inline int le_trk_bits_set(const int32_t* bits, int32_t n) {
+  for (int32_t s = 0; s < n; ++s) {
+    if (bits[s]) return 1;
+  }
+  return 0;
+}
+
+/* The same over a whole-track print's view: every part's chain and the
+ * track chain's Pre slots. */
+static inline int le_trk_view_set(int32_t lanes, const int32_t* lane_count,
+                                  int32_t (*lane_bits)[LE_FX_MAX],
+                                  int32_t trk_pre, const int32_t* trk_bits) {
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (le_trk_bits_set(lane_bits[l], lane_count[l])) return 1;
+  }
+  return le_trk_bits_set(trk_bits, trk_pre);
+}
+#endif /* LE_MIX_JOBS_TU */
+
 /* What le_heard_lane_wet hands the mixer: the lane's pair before its pan,
  * when it made it (done), else nothing (the plain path runs). Returned by
  * value, so nothing on the plain path has its address taken. */
 typedef struct le_heard_pair {
   float l, r;
   int done;
+  /* The lane's Post entries are still to run over the pair (#1741): its
+   * track's job runs them (LE_MIX_JOBS_TU); 0 where they ran here. */
+  int chain;
 } le_heard_pair;
 
 /* One frame of a lane that holds a heard image (#1713), off the plain
@@ -8715,9 +8743,11 @@ typedef struct le_heard_pair {
  * Steps the lane's source crossfade toward its target (playing the image:
  * its source is HEARD and its live slot holds one) by [od_step]: 1 plays the
  * image alone, 0 the clean take through the chain, anything between both.
- * Leaving the image alone settles the chain to bypass, so it comes back
- * through its re-enable ramp (as a print's live fallback does) rather than
- * resuming state from whenever it last ran. A live slot with no image snaps
+ * The image stands for the chain's Pre run (#1741): leaving the image alone
+ * settles that run to bypass, so it comes back through its re-enable ramp
+ * (as a print's live fallback does) rather than resuming state from
+ * whenever it last ran, and the Post entries run live over whatever plays,
+ * the image alone included. A live slot with no image snaps
  * to the clean take at once: there is nothing to fade from. Settled on the
  * clean take it returns not done, and the mixer's own path plays the lane
  * (its print, its run, its chain) exactly as for a lane with no image.
@@ -8726,10 +8756,11 @@ typedef struct le_heard_pair {
  * is (mix_tracks_frame): the same index, the same head (Speed, Reverse, a
  * relaunch origin), the turn window's old head, then the Stop's fade-out
  * reading on from where the track stopped, at the same gains, at level.
- * Played alone it stands in for the print and the chain, which do not run.
- * During a crossfade the clean side is the lane's engaged print or its live
- * chain over [loopsample], mixed at equal gain (the same performance either
- * way). [chain_live] is the mixer's has_fx && !track_printed. */
+ * Played alone it stands in for the print and the Pre run, which do not
+ * run. During a crossfade the clean side is the lane's engaged print or its
+ * live Pre run over [loopsample], mixed at equal gain (the same performance
+ * either way) ahead of the Post entries. [chain_live] is the mixer's
+ * has_fx && !track_printed. */
 static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     le_engine* e, le_track* tr, int t, int l, int32_t live, int sounding,
     int32_t plain, double head_i, int32_t src_n, double turn_i, float turn_x,
@@ -8739,7 +8770,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     int track_printed, int32_t fx_n, int32_t fx_pre,
     const int32_t* fx_type, const float (*fx_params)[LE_FX_PARAMS],
     int32_t* fx_enabled, int sr, int fx_cap, int bridging, uint32_t f) {
-  le_heard_pair out = {0.0f, 0.0f, 0};
+  le_heard_pair out = {0.0f, 0.0f, 0, 0};
   le_heard* h = &e->heard[t][l];
   le_lane* ln = &tr->lanes[l];
   const float* pl = le_heard_plane(h, 0, live);
@@ -8753,6 +8784,11 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const le_wet_entry* se = tr->src_ent[l];
   const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
   const int pitched = h->img_blk;
+  /* The image is the take's Pre run (#1741): the lane's Post entries run
+   * live over it, as over a print, so they ring out past a Stop. Only the
+   * Pre run idles while the image plays, and only it comes back through its
+   * re-enable ramp when the lane leaves the image. */
+  const int32_t post_from = chain_live && fx_pre < fx_n ? fx_pre : fx_n;
   float m = h->mix;
   int target = 0;
   if (pl == NULL) {
@@ -8762,7 +8798,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
 #ifdef LE_MIX_JOBS_TU
       le_trk_lane_flush(e, t, l); /* the job runs to here first (#1729) */
 #endif
-      for (int32_t s = 0; s < fx_n; ++s) {
+      for (int32_t s = 0; s < post_from; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
         le_fx_rack_reset(&ln->fx, s);
       }
@@ -8774,7 +8810,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
 #ifdef LE_MIX_JOBS_TU
       le_trk_lane_flush(e, t, l);
 #endif
-      for (int32_t s = 0; s < fx_n; ++s) {
+      for (int32_t s = 0; s < post_from; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
         le_fx_rack_reset(&ln->fx, s);
       }
@@ -8873,9 +8909,34 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const int32_t rp = plain;
   if (ln->run.restart) le_chain_run_begin(&ln->run, tr, sounding, rp);
   if (m >= 1.0f) {
-    /* The image alone: the print and the chain are idle. */
+    /* The image alone: the print and the Pre run are idle; the Post entries
+     * play over it. */
     if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
     le_chain_run_step(&ln->run, tr, sounding, rp, 0);
+    if (post_from < fx_n) {
+#ifdef LE_MIX_JOBS_TU
+      /* The track's job runs the chain over the pair, its Pre run settled
+       * to bypass and masked off, as under a print (a bit-exact skip). */
+      int flushed = 0;
+      for (int32_t s = 0; s < post_from; ++s) {
+        if (le_fx_enable_settled_bypassed(&ln->fx, s)) continue;
+        if (!flushed) {
+          le_trk_lane_flush(e, t, l);
+          flushed = 1;
+        }
+        le_fx_enable_force_bypass(&ln->fx, s);
+        le_fx_rack_reset(&ln->fx, s);
+      }
+      if (!flushed && le_trk_bits_set(fx_enabled, post_from)) {
+        le_trk_lane_flush(e, t, l);
+      }
+      for (int32_t s = 0; s < post_from; ++s) fx_enabled[s] = 0;
+      out.chain = 1;
+#else
+      fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from,
+                          fx_n, fx_type, fx_params, fx_enabled, 0);
+#endif
+    }
     return out;
   }
   /* A crossfade: the clean side, its engaged print or its live chain. The
@@ -8911,6 +8972,17 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     cl = audible ? loopsample * vol : 0.0f;
     cr = cl;
   }
+  if (post_from < fx_n) {
+    /* The clean side's Pre run, the two sides blended where the image
+     * stands for it, and the Post entries once over the blend. */
+    fx_apply_chain(&ln->fx, sr, fx_cap, &cl, &cr, post_from, fx_type,
+                   fx_params, fx_enabled);
+    out.l = m * out.l + (1.0f - m) * cl;
+    out.r = m * out.r + (1.0f - m) * cr;
+    fx_apply_chain_from(&ln->fx, sr, fx_cap, &out.l, &out.r, post_from, fx_n,
+                        fx_type, fx_params, fx_enabled, 1);
+    return out;
+  }
   if (chain_live) {
     fx_apply_chain(&ln->fx, sr, fx_cap, &cl, &cr, fx_n, fx_type, fx_params,
                    fx_enabled);
@@ -8921,27 +8993,6 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
 }
 #endif /* LE_MIX_HEARD_TU */
 
-#ifdef LE_MIX_JOBS_TU
-/* #1729: whether any of [n] effective bits is still set: a print masking
- * them changes what its track's job reads only the first time. */
-static inline int le_trk_bits_set(const int32_t* bits, int32_t n) {
-  for (int32_t s = 0; s < n; ++s) {
-    if (bits[s]) return 1;
-  }
-  return 0;
-}
-
-/* The same over a whole-track print's view: every part's chain and the
- * track chain's Pre slots. */
-static inline int le_trk_view_set(int32_t lanes, const int32_t* lane_count,
-                                  int32_t (*lane_bits)[LE_FX_MAX],
-                                  int32_t trk_pre, const int32_t* trk_bits) {
-  for (int32_t l = 0; l < lanes; ++l) {
-    if (le_trk_bits_set(lane_bits[l], lane_count[l])) return 1;
-  }
-  return le_trk_bits_set(trk_bits, trk_pre);
-}
-#endif /* LE_MIX_JOBS_TU */
 
 /* The mixer's type, and its copy with the heard-image code compiled in
  * (#1713, engine_mix_heard.c), which le_engine_process takes for a block
@@ -10040,7 +10091,8 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
         jl->mask[ji] = out_mask[t][l] & out_enabled;
         jl->flags[ji] =
             (uint8_t)(LE_TJ_PRESENT |
-                      (has_fx[t][l] && !track_printed && !hp.done
+                      (has_fx[t][l] && !track_printed &&
+                               (!hp.done || hp.chain)
                            ? LE_TJ_CHAIN
                            : 0u) |
                       (routes ? LE_TJ_ROUTES : 0u) |

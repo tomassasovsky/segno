@@ -334,12 +334,6 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    /* A part that plays its heard image (#1713) runs no chain: its image is
-     * its printed material. */
-    if (le_heard_any(engine, channel, l) &&
-        le_heard_lane_plays(engine, channel, l)) {
-      continue;
-    }
     int32_t count = load_i32(&ln->a_fx_count);
     if (count < 0) count = 0;
     if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -347,6 +341,13 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
     if (pre < 0) pre = 0;
     if (pre > count) pre = count;
     if (count > pre) return 0; /* a Post entry on a part */
+    /* A part that plays its heard image (#1713) runs no Pre run: its image
+     * is its printed material. Its Post entries run over it (#1741), as
+     * any part's do. */
+    if (le_heard_any(engine, channel, l) &&
+        le_heard_lane_plays(engine, channel, l)) {
+      continue;
+    }
     for (int slot = 0; slot < count; ++slot)
       if (load_i32(&ln->a_fx_type[slot]) == LE_FX_PLUGIN) return 0;
   }

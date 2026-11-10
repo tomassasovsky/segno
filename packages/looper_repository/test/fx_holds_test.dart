@@ -23,7 +23,8 @@ List<TrackEffect> _rack() => [
     TrackEffectType.modeDelay,
     TrackEffectType.eq,
   ])
-    BuiltInEffect(type: type),
+    // At Pre, as an input's effects come by default: a take records them.
+    BuiltInEffect(type: type, placement: FxPlacement.pre),
 ];
 
 const _empty = [
@@ -191,6 +192,160 @@ void main() {
       expect(engine.lastRecordImage!.heardLanes, isEmpty);
       expect(repo.lanePrintedWhenEdited(0, 0), isNull);
       expect(repo.allLaneChains()[(0, 0)]?.meta?.printed, isNull);
+    });
+
+    group('a re-amp the Effects page did not weigh (#1741)', () {
+      /// A take through input 0's rack, and a second rack on input 1: the
+      /// two input racks fit; the take's own copy, re-amped, would be a
+      /// third.
+      void rig() => repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record()
+        ..setMonitorEffects(input: 1, effects: _rack());
+
+      List<TrackEffect> edited() {
+        final chain = repo.laneEffects(0, 0);
+        final first = chain.first as BuiltInEffect;
+        return [
+          first.copyWith(params: [for (final p in first.params) p / 2]),
+          ...chain.skip(1),
+        ];
+      }
+
+      test('is held where the page would refuse it, said by the standing '
+          'notice, and the take plays what was heard', () {
+        rig();
+        expect(
+          repo.fxGrowthNs({_lane(0): edited()}),
+          greaterThan(repo.fxRoomNs),
+          reason: 'the page would refuse this edit',
+        );
+        expect(
+          repo.setLaneEffectParam(
+            channel: 0,
+            lane: 0,
+            index: 0,
+            param: 0,
+            value: 0.1,
+          ),
+          EngineResult.ok,
+        );
+        expect(repo.fxChainHeld(_lane(0)), isTrue);
+        expect(repo.state.fxHeld, contains(_lane(0)));
+        expect(repo.state.fxHoldNotice, contains(_lane(0)));
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      });
+
+      test('runs where the page would admit it, workers included', () {
+        engine.fxWorkersRunning = 2;
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig(sampleRate: 96000))
+          ..setMonitorEffects(input: 0, effects: _rack())
+          ..record();
+        expect(
+          repo.fxGrowthNs({_lane(0): edited()}),
+          lessThanOrEqualTo(repo.fxRoomNs),
+          reason: 'the page would admit this edit',
+        );
+        repo.setLaneEffectParam(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          param: 0,
+          value: 0.1,
+        );
+        expect(repo.fxChainHeld(_lane(0)), isFalse);
+        expect(repo.state.fxHoldNotice, isEmpty);
+        expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      });
+    });
+
+    group("an input chain's Post entries (#1741)", () {
+      final reverb = BuiltInEffect(
+        type: TrackEffectType.reverb,
+        placement: FxPlacement.pre,
+      );
+      final delay = BuiltInEffect(type: TrackEffectType.delay);
+
+      test('a take records the Pre run heard, and its lane runs and is '
+          'charged for the Post entries', () {
+        repo.setMonitorEffects(input: 0, effects: [reverb, delay]);
+        final input = repo.fxCostNs;
+        repo.record();
+        expect(engine.lastRecordImage!.heardLanes, {0});
+        final lane = repo.laneEffects(0, 0);
+        expect(lane.map((fx) => fx.placement), [
+          FxPlacement.pre,
+          FxPlacement.post,
+        ]);
+        expect(engine.recipes[(le.FxOwner.lane, 0, 0)]!.preCount, 1);
+        expect(engine.recipes[(le.FxOwner.monitor, 0, 0)]!.preCount, 1);
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        expect(repo.fxCostNs - input, fxChainCostNs([delay]));
+      });
+
+      test('an edit of a Post entry is no re-amp; one of the Pre run is', () {
+        repo
+          ..setMonitorEffects(input: 0, effects: [reverb, delay])
+          ..record();
+        final lane = repo.laneEffects(0, 0);
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            lane[0],
+            (lane[1] as BuiltInEffect).copyWith(params: const [.1, .1, .1]),
+          ],
+        );
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            (lane[0] as BuiltInEffect).copyWith(params: const [.1, .1, .1]),
+            lane[1],
+          ],
+        );
+        expect(engine.laneSources[(0, 0)], LaneSource.clean);
+      });
+
+      test('a heard take whose Post entries do not fit has its own chain '
+          'switched off, said by the standing notice', () {
+        final post = [
+          for (final fx in _rack())
+            (fx as BuiltInEffect).copyWith(placement: FxPlacement.post),
+        ];
+        repo
+          ..setMonitorEffects(input: 1, effects: _rack())
+          ..setMonitorEffects(input: 0, effects: [reverb, ...post])
+          ..record();
+        expect(engine.lastRecordImage!.heardLanes, {0});
+        expect(repo.fxChainHeld(_lane(0)), isTrue);
+        expect(repo.state.fxHoldNotice, contains(_lane(0)));
+        expect(engine.laneSources[(0, 0)], LaneSource.heard);
+        expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      });
+
+      test('an overdub over a take recorded dry, through an input that is '
+          'all Post, records it into an image', () {
+        engine.nextSnapshot = _playing;
+        repo
+          ..setMonitorEffects(input: 0, effects: [delay])
+          ..record();
+        expect(engine.calls, contains('heardAttach'));
+        expect(engine.heardLanes, {(0, 0)});
+      });
+
+      test('an input chain that is all Post records clean, its effects live '
+          'on the lane', () {
+        repo
+          ..setMonitorEffects(input: 0, effects: [delay])
+          ..record();
+        expect(engine.lastRecordImage!.heardLanes, isEmpty);
+        expect(repo.laneEffects(0, 0).single.placement, FxPlacement.post);
+      });
     });
 
     test("switching a take's chain off plays it clean and dry", () {

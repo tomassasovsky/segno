@@ -52,7 +52,12 @@ void main() {
       expect(
         repository.setMonitorEffects(
           input: 0,
-          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          effects: [
+            BuiltInEffect(
+              type: TrackEffectType.delay,
+              placement: FxPlacement.pre,
+            ),
+          ],
         ),
         EngineResult.ok,
       );

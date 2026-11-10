@@ -105,9 +105,22 @@ static void le_fx_monitor_job(le_engine* e, int32_t c) {
                    : p->in[f * (uint32_t)p->ch_in + (uint32_t)c];
     float l = clean;
     float r = clean;
-    fx_apply_chain(&m->fx, p->sr, p->fx_cap, &l, &r, snap->mon_count[c],
-                   snap->mon_type[c], snap->mon_params[c],
-                   snap->mon_enabled[c]);
+    if ((e->heard_tap_mask >> c) & 1u) {
+      /* A take records the Pre run (#1741): the chain in two, with the
+       * signal between them noted. */
+      const int32_t at = e->heard_tap_at[c];
+      fx_apply_chain(&m->fx, p->sr, p->fx_cap, &l, &r, at, snap->mon_type[c],
+                     snap->mon_params[c], snap->mon_enabled[c]);
+      e->heard_tap_l[c][i] = l;
+      e->heard_tap_r[c][i] = r;
+      fx_apply_chain_from(&m->fx, p->sr, p->fx_cap, &l, &r, at,
+                          snap->mon_count[c], snap->mon_type[c],
+                          snap->mon_params[c], snap->mon_enabled[c], 1);
+    } else {
+      fx_apply_chain(&m->fx, p->sr, p->fx_cap, &l, &r, snap->mon_count[c],
+                     snap->mon_type[c], snap->mon_params[c],
+                     snap->mon_enabled[c]);
+    }
     ol[i] = l;
     orr[i] = r;
   }

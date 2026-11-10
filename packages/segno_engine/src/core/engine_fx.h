@@ -317,6 +317,16 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
                     const int32_t* enabled);
 
+/* Entries [from, count) of the chain alone (#1741): the earlier ones neither
+ * run nor have their state touched. With fx_apply_chain over [0, from)
+ * first ([counted] 1: that walk counted the frame), the two are the whole
+ * chain with the signal between them in hand: the heard image's tap of an
+ * input chain's Pre run, and a lane's Post run over its heard image. */
+void fx_apply_chain_from(le_fx_state* fx, int sr, int cap, float* l,
+                         float* r, int from, int count, const int32_t* types,
+                         const float params[LE_FX_MAX][LE_FX_PARAMS],
+                         const int32_t* enabled, int counted);
+
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay heads, one-pole memory, octaver runtime, reverb lines) so a
  * freshly engaged effect starts clean. [type] is the kind the slot runs from

@@ -10520,6 +10520,39 @@ LE_AUDIO_HOT_AT(8) void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* 
   fx_apply_chain_with_gain(fx, sr, cap, l, r, count, types, params, enabled, 0, 1);
 }
 
+void fx_apply_chain_from(le_fx_state* fx, int sr, int cap, float* l,
+                         float* r, int from, int count, const int32_t* types,
+                         const float params[LE_FX_MAX][LE_FX_PARAMS],
+                         const int32_t* enabled, int counted) {
+  const int32_t cooldown = fx->enable_clear_cooldown;
+  if (from <= 0) {
+    fx_apply_chain(fx, sr, cap, l, r, count, types, params, enabled);
+    if (counted && fx->enable_clear_cooldown == (cooldown > 0 ? cooldown - 1 : 0)) {
+      fx->enable_clear_cooldown = cooldown;
+    }
+    return;
+  }
+  if (from >= count) return;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  /* The entries before [from] pass the signal on as an empty slot does,
+   * their racks' edges out of the walk. The ring-clear cooldown counts a
+   * frame once: when a walk over [0, from) already counted this one
+   * ([counted]), this walk's count is taken back, unless a clear in it set
+   * the spacing anew. The shared walk stays the one the mixer runs. */
+  int32_t ty[LE_FX_MAX];
+  int32_t racks[LE_FX_MAX];
+  for (int s = 0; s < count; ++s) ty[s] = s < from ? LE_FX_NONE : types[s];
+  for (int s = 0; s < from; ++s) {
+    racks[s] = fx->chan[s].rack;
+    fx->chan[s].rack = 0;
+  }
+  fx_apply_chain_with_gain(fx, sr, cap, l, r, count, ty, params, enabled, 0, 1);
+  if (counted && fx->enable_clear_cooldown == (cooldown > 0 ? cooldown - 1 : 0)) {
+    fx->enable_clear_cooldown = cooldown;
+  }
+  for (int s = 0; s < from; ++s) fx->chan[s].rack = racks[s];
+}
+
 int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type, int sr) {
   if (type > LE_FX_NONE && type < LE_FX_TYPE_COUNT && LE_FX[type].latency) {
     return LE_FX[type].latency(fx, slot, type, sr);

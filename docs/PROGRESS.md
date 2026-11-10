@@ -284,6 +284,18 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   (`FxChainMeta.printed`) only while it differs from the lane's chain;
   absent, it is the lane's chain. The saved mixdown sums a lane playing its
   image as that image, its sides averaged.
+- #1741: a take records its input chain's Pre run only (the input
+  recipe now carries its split, `heard_mon_pre`; the monitor job notes the
+  signal after the run, `heard_tap_*`, where a heard lane records a chain
+  with Post entries). The Post entries are copied onto the take's lane as
+  before #1713 and run live over the image (`le_heard_lane_wet`,
+  `fx_apply_chain_from`), so they ring out past a Stop, and the render
+  recipe and the performance stems run them too. The lane plays its image
+  while its chain's Pre run is the one recorded, so an edit of a Post entry
+  is not a re-amp; a heard lane charges its Post entries. An input chain
+  with no Pre entry records clean. The rendered tail is the Pre run's. A
+  re-amp the Effects page did not weigh that does not fit is held and named
+  by the standing notice.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.

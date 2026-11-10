@@ -69,6 +69,8 @@ static int recipe_target(le_engine* e, int owner, int ch, int lane,
   } else if (owner == LE_FX_OWNER_MONITOR) {
     if (ch < 0 || ch >= LE_MAX_MONITORED_INPUTS) return 0;
     *target = LE_RECIPE_TARGET(&e->monitors[ch]);
+    /* The Pre run a take records (#1741); the monitor plays the whole. */
+    target->pre = &e->heard_mon_pre[ch];
   } else {
     if (owner != LE_FX_OWNER_TRACK && owner != LE_FX_OWNER_ALL_TRACKS && owner != LE_FX_OWNER_OUTPUT) return 0;
     if (owner == LE_FX_OWNER_OUTPUT && (ch < 0 || ch >= LE_MAX_OUTPUT_BUSES)) return 0;
@@ -140,7 +142,7 @@ static int prepare_recipe(le_engine* e, struct le_prepared_fx* edit,
   if (!recipe_target(e, edit->owner, edit->channel, lane, &t) || !r ||
       r->count < 0 || r->count > LE_FX_MAX || r->pre_count < 0 ||
       r->pre_count > r->count || (r->enabled != 0 && r->enabled != 1) ||
-      ((edit->owner == LE_FX_OWNER_MONITOR || edit->owner == LE_FX_OWNER_ALL_TRACKS || edit->owner == LE_FX_OWNER_OUTPUT)
+      ((edit->owner == LE_FX_OWNER_ALL_TRACKS || edit->owner == LE_FX_OWNER_OUTPUT)
        && r->pre_count)) return 0;
   if (le_fx_edit_pending(e, edit->owner, edit->channel, lane)) return 0;
   for (int s = 0; s < r->count; ++s) {
