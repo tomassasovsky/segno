@@ -30,7 +30,7 @@ static void tail_image(le_engine* e, int t, int32_t n, float* l, float* r) {
 }
 
 /* A take through the reverb closes into play: once its tail is rendered the
- * image holds the reverb's ringout after the take's last written position
+ * image holds the reverb's ring-out after the take's last written position
  * (the seam continuation's end), decaying, on both sides; the clean take is
  * untouched. */
 static void test_heard_tail_after_a_take(void) {

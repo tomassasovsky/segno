@@ -132,9 +132,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   16 s ring per input a heard lane records, mapped by the control poll) and
   the callback adds it into the image after the pass's last written
   position, one frame per frame of time since the end, wrapping at the loop:
-  always behind the read head, so the live ringout on the first repeat is
+  always behind the read head, so the live ring-out on the first repeat is
   not doubled and the tail plays from the second. A take running straight
-  into overdub renders none (the overdub records the ringout). A new
+  into overdub renders none (the overdub records the ring-out). A new
   capture, Stop, a slot or length change, Reverse or Speed drop what is not
   added yet; Undo of the pass takes its tail with it.
 - Not yet: the app (parts 4 and 5). Nothing in the app records an image
