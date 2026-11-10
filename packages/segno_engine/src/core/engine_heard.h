@@ -222,9 +222,11 @@ void le_heard_truncate(le_engine* e, le_track* t, int64_t from, int64_t to,
 void le_heard_attach_apply(le_engine* e, int32_t ch, int32_t l);
 
 #ifdef LE_NATIVE_TESTS
-/* Native tests only: every fresh take on every lane records an image, played
- * CLEAN, so the whole suite exercises the lockstep with each lane's clean
- * take (le_test_heard_check after every callback). */
+/* Native tests only: every fresh take on every lane records an image, so the
+ * whole suite exercises the lockstep with each lane's clean take
+ * (le_test_heard_check after every callback). 1 plays it CLEAN (the suite's
+ * own sound unchanged); 2 plays it HEARD, so wherever a lane has no chain
+ * the suite's sound checks also check the image's playback. */
 extern int le_test_heard_force;
 extern void (*le_test_heard_check)(le_engine*);
 #endif

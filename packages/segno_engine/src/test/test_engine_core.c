@@ -39581,7 +39581,7 @@ int main(void) {
    * SEGNO_HEARD_FORCE=1). */
   if (getenv("SEGNO_HEARD_FORCE")) {
     setvbuf(stdout, NULL, _IOLBF, 0);
-    le_test_heard_force = 1;
+    le_test_heard_force = atoi(getenv("SEGNO_HEARD_FORCE")) == 2 ? 2 : 1;
     le_test_heard_check = heard_lockstep_check;
   } else {
     run_heard_tests();

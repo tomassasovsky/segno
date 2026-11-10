@@ -145,7 +145,9 @@ int le_heard_prepare_capture(le_engine* e, int32_t ch, uint32_t mask,
   if (le_test_heard_force) {
     mask = 0xffu;
     for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
-      atomic_store_explicit(&e->heard[ch][l].a_source, LE_HEARD_SOURCE_CLEAN,
+      atomic_store_explicit(&e->heard[ch][l].a_source,
+                            le_test_heard_force == 2 ? LE_HEARD_SOURCE_HEARD
+                                                     : LE_HEARD_SOURCE_CLEAN,
                             memory_order_relaxed);
       e->heard[ch][l].mix = 0.0f;
     }
@@ -578,6 +580,15 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
     const uint32_t entered = lanes & ~e->heard_lanes[t];
     for (int l = 0; l < LE_MAX_LANES && entered != 0u; ++l) {
       if (entered & (1u << l)) e->heard[t][l].mix = 0.0f;
+#ifdef LE_NATIVE_TESTS
+      /* le_test_heard_force 2 plays the image from its first frame, so the
+       * suite's exact sound checks see no crossfade rounding. */
+      if ((entered & (1u << l)) && le_test_heard_force == 2 &&
+          atomic_load_explicit(&e->heard[t][l].a_source,
+                               memory_order_relaxed) == LE_HEARD_SOURCE_HEARD) {
+        e->heard[t][l].mix = 1.0f;
+      }
+#endif
     }
     e->heard_lanes[t] = lanes;
     if (lanes == 0u) continue;
