@@ -243,6 +243,7 @@ abstract final class AppTheme {
     // (#1590 FT-1).
     visualDensity: VisualDensity.standard,
     fontFamily: SurfaceTheme.displayFont,
+    fontFamilyFallback: SurfaceTheme.fontFallback,
     appBarTheme: AppBarTheme(backgroundColor: scheme.surfaceContainerHighest),
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {

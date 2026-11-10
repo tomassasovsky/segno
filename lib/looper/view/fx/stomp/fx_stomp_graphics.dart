@@ -204,6 +204,8 @@ void paintFxStompGraphic(
       _double(canvas, x, y, w, h, const Color(0xFF8F2A66));
     case FxStompGraphic.chevrons:
       _chevrons(canvas, x, y, w);
+    case FxStompGraphic.tremolo:
+      _tremolo(canvas, x + 24, y + h * .2, w - 48, h * .7);
   }
 }
 
@@ -595,6 +597,38 @@ void _double(Canvas canvas, double x, double y, double w, double h, Color c) {
       fxStompStroke(c, 7, .45),
     );
   }
+}
+
+void _tremolo(Canvas canvas, double x, double y, double w, double h) {
+  // A fast wave inside a slow one: the level rising and falling.
+  final yc = y + h / 2;
+  final points = [
+    for (var i = 0; i <= 600; i++)
+      () {
+        final t = i / 600;
+        final swell = .5 - .5 * math.cos(t * 3 * 2 * math.pi);
+        return Offset(
+          x + w * t,
+          yc + h * .42 * swell * math.sin(t * 27 * 2 * math.pi),
+        );
+      }(),
+  ];
+  canvas
+    ..drawPath(
+      _poly([
+        for (var i = 0; i <= 120; i++)
+          Offset(
+            x + w * i / 120,
+            yc - h * .42 * (.5 - .5 * math.cos(i / 120 * 3 * 2 * math.pi)),
+          ),
+      ]),
+      fxStompStroke(const Color(0xFFF3E3C3), 3, .35),
+    )
+    ..drawPath(
+      _poly(points),
+      fxStompStroke(const Color(0xFFF3E3C3), 4, .6)
+        ..strokeJoin = StrokeJoin.round,
+    );
 }
 
 void _chevrons(Canvas canvas, double x, double y, double w) {

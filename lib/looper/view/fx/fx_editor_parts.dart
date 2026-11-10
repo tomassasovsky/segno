@@ -50,8 +50,25 @@ typedef FxEdits = ({
   return (valueText: l10n.fxParamValueText(param, setting), note: null);
 }
 
-/// Built-in parameter [index] of [effect] as an [FxParamControl]: its
-/// localized name, and the value text and note [fxParamReading] gives it.
+/// The most positions a choice parameter shows as a row of buttons, the way
+/// Loop settings shows its choices. One with more opens a list, as the
+/// footer's input choice does: four buttons in a rack pedal's column would
+/// shrink their names past reading.
+const int kFxChoiceRowMost = 3;
+
+/// Whether [param] is a choice: a few named positions ([FxParamUnit.choice],
+/// stepped), which its control offers by name rather than as a slider.
+bool fxParamIsChoice(FxParamInfo param) =>
+    param.unit == FxParamUnit.choice && param.isStepped;
+
+/// Built-in parameter [index] of [effect] as a control: its localized name,
+/// and, for a continuous parameter, an [FxParamControl] with the value text
+/// and note [fxParamReading] gives it; for a choice ([fxParamIsChoice]), its
+/// named positions to pick from (#1730).
+///
+/// A choice writes the setting of the position picked, which is where the
+/// engine reads every setting of that position, so the parameter does what
+/// it did under the slider.
 class FxBuiltInParamControl extends StatelessWidget {
   /// Creates an [FxBuiltInParamControl].
   const FxBuiltInParamControl({
@@ -87,8 +104,27 @@ class FxBuiltInParamControl extends StatelessWidget {
     final param = fxEntryParam(effect, index);
     final setting = fxEntryShownSetting(effect, index);
     final reading = fxParamReading(l10n, effect, param, setting);
+    final label = l10n.fxParamKeyName(labelKey ?? param.key);
+    if (fxParamIsChoice(param)) {
+      final last = param.steps - 1;
+      return SizedBox(
+        width: width,
+        child: _ChoiceParamControl(
+          label: label,
+          paramKey: param.key,
+          choices: [
+            for (var k = 0; k <= last; k++)
+              l10n.fxParamValueText(param, k / last),
+          ],
+          selected: param.positionOf(setting),
+          note: reading.note,
+          onSelected: (k) =>
+              onChanged(fxEntryKindSetting(effect, index, k / last)),
+        ),
+      );
+    }
     return FxParamControl(
-      label: l10n.fxParamKeyName(labelKey ?? param.key),
+      label: label,
       value: setting,
       valueText: reading.valueText,
       width: width,
@@ -187,6 +223,101 @@ class FxParamControl extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A choice parameter: its name over its named positions, a row of
+/// [LoopChoiceButton]s while they are [kFxChoiceRowMost] or fewer and a
+/// [LoopSelect] past that, across the width its parent gives it.
+class _ChoiceParamControl extends StatelessWidget {
+  const _ChoiceParamControl({
+    required this.label,
+    required this.paramKey,
+    required this.choices,
+    required this.selected,
+    required this.onSelected,
+    this.note,
+  });
+
+  /// The parameter's own name.
+  final String label;
+
+  /// The parameter's stable key, which names each position's widget key.
+  final String paramKey;
+
+  /// Each position's name, in order.
+  final List<String> choices;
+
+  /// The current position.
+  final int selected;
+
+  /// Reports the position picked.
+  final ValueChanged<int> onSelected;
+
+  /// The line under the control, as [FxParamControl.note].
+  final String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final positions = [for (var k = 0; k < choices.length; k++) k];
+    Key keyOf(int k) => Key('fx_choice_${paramKey}_$k');
+    return LayoutBuilder(
+      builder: (context, constraints) => Semantics(
+        container: true,
+        label: label,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppText(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 22,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (choices.length <= kFxChoiceRowMost)
+              LoopChoiceRow<int>(
+                values: positions,
+                labelOf: (k) => choices[k],
+                keyOf: keyOf,
+                selected: selected,
+                onSelected: onSelected,
+                width: constraints.maxWidth,
+                height: 64,
+                gap: context.spacing.sm,
+                fontSize: 22,
+              )
+            else
+              LoopSelect<int>(
+                key: Key('fx_choice_$paramKey'),
+                value: selected,
+                onSelected: onSelected,
+                width: constraints.maxWidth,
+                items: [
+                  for (final k in positions)
+                    LoopSelectItem(key: keyOf(k), value: k, label: choices[k]),
+                ],
+              ),
+            if (note case final note?) ...[
+              const SizedBox(height: 14),
+              AppText(
+                note,
+                style: TextStyle(
+                  color: surface.textTertiary,
+                  fontSize: 16,
+                  height: 1,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

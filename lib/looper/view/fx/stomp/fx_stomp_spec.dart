@@ -133,6 +133,9 @@ enum FxStompGraphic {
 
   /// Chevrons along the side band (Whammy).
   chevrons,
+
+  /// A wave swelling and fading in turn (Tremolo).
+  tremolo,
 }
 
 /// The screen on a module face.
@@ -270,7 +273,12 @@ const Color kFxStompDarkInk = Color(0xFF16181C);
 /// The light print colour.
 const Color kFxStompLightInk = Color(0xFFF6F8FA);
 
-/// How every catalogue pedal looks, by module name.
+/// How every pedal looks, by look name: each catalogue module's, by its
+/// name, and the two standalone built-ins no catalogue pedal stands for,
+/// Tremolo and Echo (`kFxBuiltInLooks`).
+///
+/// The two built-ins' own are not in the approved design's table: they are
+/// drawn the same way, from its faces and finishes (#1730).
 const Map<String, FxStompSpec> kFxStompSpecs = {
   // treadle
   'Overdrive': FxStompSpec(
@@ -375,6 +383,31 @@ const Map<String, FxStompSpec> kFxStompSpecs = {
     led: Color(0xFF2FD9C5),
     graphic: FxStompGraphic.staff,
     titleY: 392,
+  ),
+  'Tremolo': FxStompSpec(
+    face: FxStompFaceKind.treadle,
+    name: 'Tremolo',
+    base: Color(0xFF7A1F2B),
+    font: 'Lobster',
+    size: 78,
+    knob: FxStompKnobStyle.cream,
+    led: Color(0xFFFFB02E),
+    finish: FxStompFinish.hammer,
+    graphic: FxStompGraphic.tremolo,
+    titleY: 392,
+    ink: Color(0xFFF3E3C3),
+  ),
+  'Echo': FxStompSpec(
+    face: FxStompFaceKind.treadle,
+    name: 'ECHO',
+    base: Color(0xFF2F5A47),
+    font: 'Bungee',
+    size: 84,
+    knob: FxStompKnobStyle.cream,
+    led: Color(0xFFFF6A1F),
+    finish: FxStompFinish.brush,
+    graphic: FxStompGraphic.reels,
+    titleY: 400,
   ),
   'Smart tune': FxStompSpec(
     face: FxStompFaceKind.treadle,

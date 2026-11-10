@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
+import 'package:segno/looper/view/fx/fx_art_view.dart';
 import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
@@ -11,8 +13,11 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One standalone effect, opened in place (accepted design, `02 Single
-/// effect`): its parameters as direct controls, and the channel-handling
-/// footer that carries the Pre/Post switch.
+/// effect`): its pedal, its parameters as direct controls, and the
+/// channel-handling footer that carries the Pre/Post switch.
+///
+/// The pedal stands left of the parameters, as each pedal of a rack stands
+/// over its own (#1730).
 ///
 /// **Direct controls, not a grid that opens a sheet.** The accepted design
 /// removed the generic parameter dialog: available controls are visible under
@@ -64,6 +69,18 @@ class FxEffectEditor extends StatelessWidget {
 
   /// The effect's own actions' left edge, from the same right edge.
   static const double _actionsFromRight = 541;
+
+  /// The parameters' inset from each side of the content box.
+  static const double _parametersInset = 203;
+
+  /// How wide the parameters' two columns are together.
+  static const double _parametersWidth = 1050;
+
+  /// The gap between the pedal and the parameters.
+  static const double _pedalGap = 48;
+
+  /// How tall the pedal is drawn, at most.
+  static const double _pedalHeight = 520;
 
   @override
   Widget build(BuildContext context) {
@@ -131,9 +148,20 @@ class FxEffectEditor extends StatelessWidget {
               ),
             ),
           Positioned(
-            left: 203,
+            left: 0,
             top: 124 + band,
-            right: 203,
+            width:
+                LoopSettingsFrame.contentWidthOf(context) -
+                _parametersInset -
+                _parametersWidth -
+                _pedalGap,
+            height: _pedalHeight,
+            child: _EffectPedal(effect: effect, chainOn: chainOn),
+          ),
+          Positioned(
+            left: _parametersInset,
+            top: 124 + band,
+            right: _parametersInset,
             height: 650 - band,
             child: Opacity(
               key: const Key('fx_effect_parameters'),
@@ -161,6 +189,27 @@ class FxEffectEditor extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The effect's pedal, drawn live: its knobs follow the parameters and its
+/// LED the effect's power. Dimmed while the effect or its chain is off, as
+/// the parameters beside it are.
+class _EffectPedal extends StatelessWidget {
+  const _EffectPedal({required this.effect, required this.chainOn});
+
+  final TrackEffect effect;
+  final bool chainOn;
+
+  @override
+  Widget build(BuildContext context) {
+    final art = fxEntryArt(effect, live: true, chainOn: chainOn);
+    if (art == null) return const SizedBox.shrink();
+    return Opacity(
+      key: const Key('fx_effect_pedal'),
+      opacity: effect.enabled && chainOn ? 1 : context.surface.disabledOpacity,
+      child: FxArtView(art: art),
     );
   }
 }
@@ -234,7 +283,7 @@ class _Parameters extends StatelessWidget {
     return Align(
       alignment: Alignment.topRight,
       child: SizedBox(
-        width: 1050,
+        width: FxEffectEditor._parametersWidth,
         child: Wrap(
           spacing: 58,
           runSpacing: 46,
