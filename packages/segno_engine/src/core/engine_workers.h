@@ -60,6 +60,10 @@ extern uint64_t le_test_trk_jobs_blocks;
 #endif
 void le_trk_job_run(le_engine* e, int t, uint32_t upto);
 void le_trk_jobs_flush(le_engine* e, uint32_t tracks);
+/* The same for lane [l] of track [t]'s chain alone, ahead of its job: what
+ * a heard lane's crossfade or a lane print needs, frame after frame, while
+ * the track's other chains stay on the job. */
+void le_trk_lane_flush(le_engine* e, int t, int l);
 void le_trk_jobs_end(le_engine* e, float* out, int ch_out,
                      uint32_t out_enabled, float* trk_lpeak,
                      float* trk_rpeak);

@@ -2058,7 +2058,6 @@
     "fxCentre": "Centro",
     "fxLeft": "Izquierda",
     "fxRight": "Derecha",
-    "fxScaleUnverified": "Escala sin verificar",
     "fxValuePercent": "{percent}%",
     "fxValueMs": "{milliseconds} ms",
     "fxValueDb": "{decibels} dB",

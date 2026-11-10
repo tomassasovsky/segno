@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron -->
+<!-- cspell:words heatsinks Omron lofi -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
@@ -81,6 +81,27 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
+
+## November 2026 Every FX control reads in units (#1731)
+
+- "Scale unverified" is gone, with `FxParamInfo.taperUnverified` and the
+  native `LE_FX_PARAM_TAPER_UNVERIFIED` flag. Every built-in parameter prints
+  its value in its descriptor's unit (`fxParamValueText`), a factory module
+  on one of the seven built-ins included (that case is reached only by a
+  chain saved before #887 moved those modules to Looper X kinds; it plays its
+  values on the built-in's scale, so those units are what it plays).
+- Measured on the #891 rig (sessions s19std, s19lofi, s19oct; rig check:
+  s6amp seg 0 repeats bit for bit, s7oct seg 0 within 0.01 dB):
+  the Dual Octaver's Octave 1 Vol is linear in amplitude as the kernel has it
+  (-2.50, -6.02, -12.04 dB at 75, 50, 25 %); the Studio Rack's Dist follows
+  the Distortion's drive law (1 kHz small-signal gain within 3.1 dB from 0
+  to 100 %). Dist Drive and Dist Tone are 0 to 100 % linear on the Looper X
+  in both racks, and read as that percent here; the tone plays our own 2 kHz
+  shelf. The settings and the sound are unchanged.
+- Found: the Lo-Fi Rack's Distort is the Looper X's overdrive (the Guitar
+  Rack's OvDrive at +4.08 dB, to -73 dB residual), not the amp simulator the
+  Distortion kind models. Rebuilding it on the overdrive kind changes the
+  Lo-Fi presets' sound, so it waits for the owner (#1737).
 
 ## November 2026 A switched-off tail keeps its charge until it drains (#1733)
 

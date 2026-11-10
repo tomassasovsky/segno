@@ -22439,7 +22439,7 @@ static void test_fx_param_descriptors_match_kernels(void) {
       const le_fx_param_desc desc = fxd_get(t, q);
       CHECK(desc.def == want_defaults[t][q]);
       CHECK(desc.key[0] != '\0');
-      CHECK(desc.flags == 0); /* segno's own effects: nothing unverified */
+      CHECK(desc.flags == 0); /* no Off end on the seven built-ins */
     }
   }
 

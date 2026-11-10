@@ -1014,8 +1014,9 @@ enum TrackEffectType {
         defaultValue: 0.5,
       ),
     ],
-    // Fit to the amp captures (#891), the Studio Rack's Dist; the Lo-Fi
-    // Rack's is taken to be the same module, so both carry the flag. The
+    // The Studio Rack's Dist (#891): drive and tone are the Looper X's own
+    // 0 to 100 %; the drive's law is fit to the amp captures and checked
+    // against the Dist itself (#1731), the tone is our 2 kHz shelf. The
     // Lo-Fi Rack's defaults.
     TrackEffectType.distortion => const [
       FxParamInfo(
@@ -1024,7 +1025,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.2,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'tone',
@@ -1032,7 +1032,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 0.5,
-        taperUnverified: true,
       ),
     ],
     // The Looper X's ranges and tapers, fit to its captures (#1445). The
@@ -1369,8 +1368,8 @@ enum TrackEffectType {
       ),
     ],
     // Ed's Rack's Dual Octaver (#891): high mode (off, on), Octave 1's
-    // level (its taper unmeasured), the mix, Octave 2's level (linear,
-    // measured at 50 and 100 %).
+    // level (linear, measured at 11 to 100 %, #1731), the mix, Octave 2's
+    // level (linear, measured at 50 and 100 %).
     TrackEffectType.dualOctaver => const [
       FxParamInfo(
         key: 'oct_high_mode',
@@ -1386,7 +1385,6 @@ enum TrackEffectType {
         atMin: 0,
         atMax: 100,
         defaultValue: 1,
-        taperUnverified: true,
       ),
       FxParamInfo(
         key: 'mix',
@@ -1645,7 +1643,6 @@ class FxParamInfo {
     required this.defaultValue,
     this.steps = 0,
     this.curve = FxParamCurve.linear,
-    this.taperUnverified = false,
     this.off = FxParamOff.none,
   });
 
@@ -1673,10 +1670,6 @@ class FxParamInfo {
 
   /// The setting a freshly engaged effect starts at.
   final double defaultValue;
-
-  /// Whether the mapping was chosen rather than measured against the effect
-  /// it reproduces (the native `LE_FX_PARAM_TAPER_UNVERIFIED` flag).
-  final bool taperUnverified;
 
   /// Where the parameter turns its effect off (the native
   /// `LE_FX_PARAM_OFF_AT_*` flags).
@@ -1742,7 +1735,6 @@ class FxParamInfo {
       other.atMax == atMax &&
       other.curve == curve &&
       other.defaultValue == defaultValue &&
-      other.taperUnverified == taperUnverified &&
       other.off == off;
 
   @override
@@ -1754,15 +1746,13 @@ class FxParamInfo {
     atMax,
     curve,
     defaultValue,
-    taperUnverified,
     off,
   );
 
   @override
   String toString() =>
       'FxParamInfo($key, ${unit.name}, steps: $steps, '
-      '$atMin..$atMax ${curve.name}, default: $defaultValue'
-      '${taperUnverified ? ', taper unverified' : ''})';
+      '$atMin..$atMax ${curve.name}, default: $defaultValue)';
 }
 
 /// The identity of a hosted plugin in a chain entry: its [format], stable [id]

@@ -81,7 +81,6 @@ static void test_chorus_matches_the_capture(void) {
    * 50 and 100 %, s3 at 32.6 and 79.7 %. (The kernel's own period was
    * checked above at 32.6 %.) */
   const le_fx_param_desc rate = fxd_get(LE_FX_CHORUS, 0);
-  CHECK(!(rate.flags & LE_FX_PARAM_TAPER_UNVERIFIED));
   const double rates[6][2] = {{0.0, 0.4005}, {0.25, 1.1107}, {0.5, 1.7998},
                               {1.0, 3.1994}, {0.326, 1.313},  {0.797, 2.638}};
   for (int i = 0; i < 6; ++i) {
