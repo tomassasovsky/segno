@@ -39,8 +39,9 @@ const List<({int rate, int period})> kFxCostSettings = [
 /// of its hop in a block up to 64 frames, and two at 44.1 kHz / 64, so its
 /// figure per frame is larger at 32 frames than at 64; one that runs
 /// oversampled (the Overdrive, the Distortion, the Vinyl, the Amp) runs
-/// fewer times over at 88.2 kHz and up (#1547). Both are in the measured figures. The octaver
-/// in PSOLA mode and the Smart Tune charge [kFxPsolaCostNs].
+/// fewer times over at 88.2 kHz and up (#1547). Both are in the measured
+/// figures. The octaver in PSOLA mode and the Smart Tune charge
+/// [kFxPsolaCostNs].
 const Map<TrackEffectType, List<int>> kFxKindCostNs = {
   TrackEffectType.none: [0, 0, 0, 0, 0, 0, 0, 0],
   TrackEffectType.drive: [34, 32, 31, 35, 30, 32, 24, 29],
