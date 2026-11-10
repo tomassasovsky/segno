@@ -700,11 +700,11 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     const int live = t < engine->track_count;
     for (int l = 0; l < LE_MAX_LANES; ++l) {
-      const le_lane* ln = &engine->tracks[t].lanes[l];
+      le_lane* ln = &engine->tracks[t].lanes[l];
       out->fx_draining_lane[t][l] =
           live ? le_fx_draining_of(&ln->fx, load_i32(&ln->a_fx_count)) : 0u;
     }
-    const le_fx_bus* bus = &engine->tracks[t].bus;
+    le_fx_bus* bus = &engine->tracks[t].bus;
     out->fx_draining_track[t] =
         live ? le_fx_draining_of(&bus->fx, load_i32(&bus->a_fx_count)) : 0u;
   }
@@ -713,10 +713,11 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   for (int b = 0; b < LE_MAX_OUTPUT_BUSES; ++b) {
     out->fx_draining_all_tracks |=
         le_fx_draining_of(&engine->all_tracks_fx[b], all_count);
-    const le_fx_bus* bus = &engine->outputs[b].fx;
+    le_fx_bus* bus = &engine->outputs[b].fx;
     out->fx_draining_output[b] =
         le_fx_draining_of(&bus->fx, load_i32(&bus->a_fx_count));
-  }  out->tail_reset_rev =
+  }
+  out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =
       atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire);

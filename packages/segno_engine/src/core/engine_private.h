@@ -758,7 +758,10 @@ typedef struct le_fx_state {
    * drains old wet tails"). enable_drain marks a bypassed slot that still
    * runs on a silent feed (0 = settled, skipped); enable_quiet counts
    * consecutive samples below the floor. A complete delay-memory horizon
-   * of quiet settles the drain. These fields are callback-owned. */
+   * of quiet settles the drain. These fields are callback-owned, but
+   * le_engine_get_snapshot reads enable_drain on the control thread
+   * (#1733): it is only ever 0 or 1, stored whole (LE_FX_DRAIN_STORE) and
+   * read with a relaxed load. */
   int32_t enable_drain[LE_FX_MAX];
   int32_t enable_quiet[LE_FX_MAX];
   /* A rack's crossfade, kept on its LAST entry and advanced at its head
