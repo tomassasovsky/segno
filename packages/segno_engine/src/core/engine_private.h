@@ -2311,6 +2311,9 @@ typedef struct le_heard {
   uint32_t attach_posted;
   _Atomic uint32_t a_attach_done;
   _Atomic int32_t a_attach_ok;
+  /* Control: the ordinal le_engine_import_layer staged last on this lane
+   * (-1: none), the only one le_engine_import_layer_heard accepts. */
+  int32_t import_ordinal;
 } le_heard;
 
 /* One record of a track's heard log, in the order the first frame loop made

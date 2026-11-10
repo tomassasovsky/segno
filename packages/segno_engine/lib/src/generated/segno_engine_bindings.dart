@@ -6402,6 +6402,98 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// The heard image (#1713) of the same image: up to `max_frames` frames as
+  /// INTERLEAVED STEREO (left, right) into `out` (2 * max_frames floats).
+  /// Returns the frames written, 0 when the image has no heard image (or is
+  /// empty), and the image's length without copying for `max_frames` 0.
+  /// Otherwise as le_engine_export_layer.
+  int le_engine_export_layer_heard(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int ordinal,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_export_layer_heard(
+      engine,
+      channel,
+      lane,
+      ordinal,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_export_layer_heardPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_export_layer_heard');
+  late final _le_engine_export_layer_heard = _le_engine_export_layer_heardPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
+  /// The live image's heard image (#1713) of track `channel`'s lane `lane`, as
+  /// le_engine_export_track_lane but interleaved stereo (2 * max_frames floats
+  /// at `out`). Returns the frames written, or 0 when the live take has no
+  /// heard image.
+  int le_engine_export_track_lane_heard(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_export_track_lane_heard(
+      engine,
+      channel,
+      lane,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_export_track_lane_heardPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_export_track_lane_heard');
+  late final _le_engine_export_track_lane_heard =
+      _le_engine_export_track_lane_heardPtr
+          .asFunction<
+            int Function(
+              ffi.Pointer<le_engine>,
+              int,
+              int,
+              ffi.Pointer<ffi.Float>,
+              int,
+            )
+          >();
+
   /// Loads `frames` mono frames into track `channel`'s lane `lane` at image
   /// `ordinal` (which becomes the pool slot index), staging a reconstruction into
   /// an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
@@ -6441,6 +6533,57 @@ class SegnoEngineBindings {
         >
       >('le_engine_import_layer');
   late final _le_engine_import_layer = _le_engine_import_layerPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
+  /// Gives the image le_engine_import_layer just staged at (`channel`, `lane`,
+  /// `ordinal`) its heard image (#1713): `frames` frames of INTERLEAVED STEREO
+  /// at `pcm`, exactly the clean image's length. Call right after that image's
+  /// le_engine_import_layer (before the lane's next one) and before
+  /// le_engine_finalize_history. Returns LE_OK, LE_ERR_NOT_READY while an
+  /// attach is in flight, or LE_ERR_INVALID when the lane's last staged clean
+  /// image is not this one at this length, or for any reason
+  /// le_engine_import_layer would refuse.
+  int le_engine_import_layer_heard(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int ordinal,
+    ffi.Pointer<ffi.Float> pcm,
+    int frames,
+  ) {
+    return _le_engine_import_layer_heard(
+      engine,
+      channel,
+      lane,
+      ordinal,
+      pcm,
+      frames,
+    );
+  }
+
+  late final _le_engine_import_layer_heardPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_import_layer_heard');
+  late final _le_engine_import_layer_heard = _le_engine_import_layer_heardPtr
       .asFunction<
         int Function(
           ffi.Pointer<le_engine>,

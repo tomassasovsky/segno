@@ -76,7 +76,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
-| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine part 1 (heard capture and playback, dormant) in review | build | auto | `claude/take-plays-heard-1713-p*` |
+| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant) and 2a (length edits, render recipe, track print, session layers) in review | build | auto | `claude/take-plays-heard-1713-p*` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
@@ -101,13 +101,20 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   image reads its planes through the same head as the clean take and does
   not run its chain; `le_engine_set_lane_source` switches to the clean take
   through the chain with a 10 ms crossfade (the chain re-enters through its
-  re-enable ramp). The wet cache does not print such a lane and its track
-  has no whole-track print. `le_engine_heard_attach` gives a dry take an
+  re-enable ramp). The wet cache does not print such a lane.
+  `le_engine_heard_attach` gives a dry take an
   image copied from its clean take, for an overdub through effects.
-- Not yet: length edits, Bounce, the render recipe, session export and
-  import, Transpose and the pitch bridge, performance stems and rendered
-  tails (later parts); an edited or imported image has no heard image and
-  plays clean. Nothing in the app records an image until the last part.
+- Part 2a: Double and the halves build the edited image's heard image with
+  the clean take's arithmetic (and their Undo shrinks both). The render
+  recipe (Bounce, Save selected) plays a heard lane as its image at level
+  with no chain, read backward on a reversed track. A whole-track print
+  assembles a heard part from its image (its key folds whether the part
+  plays its image). Sessions: `le_engine_export_layer_heard`,
+  `le_engine_import_layer_heard` and `le_engine_export_track_lane_heard`
+  carry each image's heard image as interleaved stereo.
+- Not yet: Transpose and the pitch bridge, performance stems and rendered
+  tails (later parts). Nothing in the app records an image until the last
+  part.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.

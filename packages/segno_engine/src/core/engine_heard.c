@@ -37,7 +37,8 @@ int le_heard_track_has(const le_engine* e, int32_t ch, int32_t slot) {
 
 int le_heard_lane_plays(const le_engine* e, int32_t ch, int32_t l) {
   const le_heard* h = &e->heard[ch][l];
-  if (atomic_load_explicit(&h->a_source, memory_order_relaxed) !=
+  if (!le_heard_any(e, ch, l) ||
+      atomic_load_explicit(&h->a_source, memory_order_relaxed) !=
       LE_HEARD_SOURCE_HEARD) {
     return 0;
   }
@@ -98,6 +99,16 @@ static int le_heard_alloc(int32_t frames, float** pl, float** pr) {
     return 0;
   }
   return 1;
+}
+
+int le_heard_alloc_planes(int32_t frames, float** pl, float** pr) {
+  return le_heard_alloc(frames, pl, pr);
+}
+
+void le_heard_adopt(le_engine* e, int32_t ch, int32_t l, int32_t slot,
+                    float* pl, float* pr, int32_t cap) {
+  le_heard_drop(e, ch, l, slot, LE_HEARD_FREE);
+  le_heard_set(e, ch, l, slot, pl, pr, cap);
 }
 
 int le_heard_match(le_engine* e, int32_t ch, int32_t l, int32_t slot, int want,
