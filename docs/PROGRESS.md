@@ -102,9 +102,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   external switch's On rows against its Off rows, Held against Released, a
   MIDI button's top against its bottom) charge their larger side
   (`FxReach.states`): the load is the largest over each side of each
-  alternation, plus the state the screen left them in. The external writer
-  lands a press's switch-offs before its switch-ons, so the side going on
-  never runs beside the side going off.
+  alternation, plus the state the screen left them in. An external or MIDI
+  press weighs all the chains it writes as landed together
+  (`LooperRepository.fxPress`), so the side it switches on is never admitted
+  on top of the side it switches off.
 - The screen weighs switching on an effect, a rack or a chain
   (`FxCubit.setEffectEnabled`, `setGroupEnabled`, `setChainEnabled`) and
   refuses it with the over-budget notice when it does not fit. A press never
@@ -114,7 +115,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   save throw `FxReachOverBudget` or return `MidiSaveResult.overBudget()`),
   and the screen says "Not enough processing left for what this switch can
   turn on". A session's bindings that come in over budget are admitted as a
-  restore is (R2): chains are held off until the rest fits.
+  restore is (R2): chains are held off until the rest fits, and a reach that
+  shrinks brings them back. R2 never holds a chain that charges nothing.
 - Known limit: a switched-off delay, echo or reverb keeps running until its
   tail drains (`le_fx_type_drains`), so for that window an A/B switch runs
   both sides, and room freed by switching an unreached effect off is

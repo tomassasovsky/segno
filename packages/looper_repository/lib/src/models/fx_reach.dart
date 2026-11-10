@@ -99,16 +99,23 @@ final class FxReach extends Equatable {
           ..addAll(control.whenOff);
       }
     }
-    return FxReach._(Set.unmodifiable(free), List.unmodifiable(alternations));
+    return FxReach._(
+      Set.unmodifiable(free),
+      List.unmodifiable(alternations),
+      Set.unmodifiable({
+        for (final pair in alternations) ...pair.whenOn,
+        for (final pair in alternations) ...pair.whenOff,
+      }),
+    );
   }
 
-  const FxReach._(this.free, this.alternations);
+  const FxReach._(this.free, this.alternations, this.alternated);
 
   /// No control reaches anything: only what is on is charged.
-  static const FxReach none = FxReach._({}, []);
+  static const FxReach none = FxReach._({}, [], {});
 
-  /// The most alternations worked out as such: each can double the states
-  /// [states] weighs.
+  /// The most alternations worked out as such: each can triple the states
+  /// [states] weighs (its two sides and the state the screen left it in).
   static const int maxAlternations = 6;
 
   /// The switches some control can turn on whenever it is pressed.
@@ -118,16 +125,16 @@ final class FxReach extends Equatable {
   /// with only those sides.
   final List<FxControlReach> alternations;
 
+  /// Every switch of the [alternations]: the state with each of them on.
+  final Set<FxSwitchKey> alternated;
+
   /// Whether [key] is one of the [alternations]' switches, whose state each
   /// of [states] sets.
-  bool alternates(FxSwitchKey key) => alternations.any(
-    (pair) => pair.whenOn.contains(key) || pair.whenOff.contains(key),
-  );
+  bool alternates(FxSwitchKey key) => alternated.contains(key);
 
   /// The chains the [alternations] have a switch in.
   Set<FxAddress> get alternatedChains => {
-    for (final pair in alternations)
-      for (final key in [...pair.whenOn, ...pair.whenOff]) key.address,
+    for (final key in alternated) key.address,
   };
 
   /// Every state the presses can leave the [alternations] in, each as the

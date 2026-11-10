@@ -283,6 +283,9 @@ void main() {
       ]);
       expect(repo.fxChainHeld(_input(3)), isTrue);
       expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      // The binding gone, the hold goes with it.
+      repo.setFxReach(const []);
+      expect(repo.state.fxHeld, isEmpty);
     });
 
     test('a chain the player has off that no control reaches is never held: '

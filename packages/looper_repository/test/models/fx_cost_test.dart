@@ -342,6 +342,61 @@ void main() {
       expect(repo.fxCostNs, a);
     });
 
+    test('an A/B press across two chains is weighed as one: the side it '
+        'switches on lands beside the side it switches off', () {
+      const other = FxAddress(stage: FxStage.track, index: 1);
+      List<TrackEffect> sideA({required bool on}) => [
+        pedal(
+          TrackEffectType.roomVerb,
+          'a1',
+          rack: rackA.copyWith(bypassed: !on),
+        ),
+      ];
+      List<TrackEffect> sideB({required bool on}) => [
+        pedal(
+          TrackEffectType.roomVerb,
+          'b1',
+          rack: rackB.copyWith(bypassed: !on),
+        ),
+      ];
+      repo
+        ..setTrackEffects(channel: 0, effects: sideA(on: true))
+        ..setTrackEffects(channel: 1, effects: sideB(on: false))
+        ..setFxReach([
+          FxControlReach(
+            whenOn: {const FxSwitchKey.rack(track, 'rack-a')},
+            whenOff: {const FxSwitchKey.rack(other, 'rack-b')},
+          ),
+        ]);
+      // Less than one more Room reverb fits.
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          for (var i = 0; i < repo.fxRoomNs ~/ a; i++)
+            BuiltInEffect(type: TrackEffectType.roomVerb),
+        ],
+      );
+      expect(repo.state.fxHeld, isEmpty);
+
+      repo.fxPress(
+        {
+          other: (entries: sideB(on: true), on: true),
+          track: (entries: sideA(on: false), on: true),
+        },
+        () => repo
+          ..setTrackEffects(channel: 1, effects: sideB(on: true))
+          ..setTrackEffects(channel: 0, effects: sideA(on: false)),
+      );
+
+      expect(repo.state.fxHeld, isEmpty);
+      expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      // Landed one chain at a time, the first write would not fit.
+      repo
+        ..setTrackEffects(channel: 0, effects: sideA(on: true))
+        ..setTrackEffects(channel: 1, effects: sideB(on: false));
+      expect(repo.state.fxHeld, isNotEmpty);
+    });
+
     test('both sides on from the screen charge both until the next press', () {
       repo
         ..setMonitorEffects(input: 0, effects: pair(bOn: true))
