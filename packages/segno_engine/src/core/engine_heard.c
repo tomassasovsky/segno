@@ -22,6 +22,7 @@
 #include "engine_core.h"
 #include "engine_fx.h" /* le_fx_enable_force_bypass, le_fx_rack_reset */
 #include "engine_instruments.h"
+#include "engine_internal.h" /* le_plog_push */
 #include "engine_prefault.h"
 #include "rt_alloc.h"
 
@@ -501,6 +502,12 @@ static int le_heard_may_write(le_track* t) {
          load_i32(&t->a_pending) || load_i32(&t->a_pending_launch);
 }
 
+void le_heard_perf_armed(le_engine* e) {
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    for (int l = 0; l < LE_MAX_LANES; ++l) e->heard[t][l].src_logged = -1;
+  }
+}
+
 /* The monitor chains a heard block runs beside the monitored ones (#1713):
  * every input a capturing heard lane records, monitored or not, since the
  * take records the chain's output. Notes in heard_jobs every chain that runs
@@ -534,7 +541,7 @@ static void le_heard_add_jobs(
 int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
                          le_fx_par* par, const float* in, int ch_in,
                          uint32_t excluded, const int* mon_has_fx,
-                         const int32_t* mon_fx_count) {
+                         const int32_t* mon_fx_count, uint64_t frame) {
   /* The chains that ran last block, and the ones queued so far for this one
    * (the monitored ones): le_heard_add_jobs adds the rest, and a chain it
    * adds that did not run last block comes back through its ramp. */
@@ -593,6 +600,35 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
     e->heard_lanes[t] = lanes;
     if (lanes == 0u) continue;
     e->heard_trk |= 1u << t;
+    /* Each lane's source for the block, logged for the performance render
+     * when it is not the one last logged. */
+    for (int l = 0; l < lane_n[t]; ++l) {
+      if (!(lanes & (1u << l))) continue;
+      le_heard* h = &e->heard[t][l];
+      h->src_blk = atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
+                   LE_HEARD_SOURCE_HEARD;
+      /* le_transpose_select has picked this block's renders. */
+      const le_wet_entry* se = tr->src_ent[l];
+      const le_wet_entry* oe = tr->turn_left > 0 ? tr->turn_ent[l] : NULL;
+      h->img_blk = !(se != NULL && se->planes <= 1) &&
+                   !(oe != NULL && oe->planes <= 1);
+      const int32_t v = !h->src_blk ? LE_PLOG_HEARD_CLEAN
+                        : h->img_blk ? LE_PLOG_HEARD_IMAGE
+                                     : LE_PLOG_HEARD_UNAVAILABLE;
+      if (e->perf.armed && v != h->src_logged) {
+        /* A full log ring drops the fact (and counts it): kept unlogged, so
+         * the next block tries again. */
+        const uint32_t drops = atomic_load_explicit(&e->a_perf_log_overruns,
+                                                    memory_order_relaxed);
+        le_plog_push(e, frame,
+                     (le_command){.code = LE_PLOG_HEARD_SOURCE,
+                                  .lanei = {t, l, v}});
+        if (atomic_load_explicit(&e->a_perf_log_overruns,
+                                 memory_order_relaxed) == drops) {
+          h->src_logged = v;
+        }
+      }
+    }
     /* The inputs as the block starts: the post-pass reads the same. */
     for (int l = 0; l < lane_n[t]; ++l) {
       e->heard_input[t][l] = load_i32(&tr->lanes[l].a_input_channel);

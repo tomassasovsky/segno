@@ -6274,6 +6274,7 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      le_heard_perf_armed(e); /* #1713: every lane's source is logged again */
       /* A performance arm ends a Library preview (#1178): the take starts
        * with the rig alone sounding. */
       le_audition_clear(e);
@@ -8743,12 +8744,13 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   const float* pr = le_heard_plane(h, 1, live);
   /* The source renders each head reads (#1713 part 2b). One made before the
    * image was (le_src_pick's fallback) cannot play it at the track's pitch,
-   * so the lane fades to its clean take there until a render with the image
-   * lands; the fade reads the clean render on that head's image side. */
+   * so the lane fades to its clean take there, for the block
+   * (le_heard_block_begin, so the performance log can name it), until a
+   * render with the image lands; the fade reads the clean render on that
+   * head's image side. */
   const le_wet_entry* se = tr->src_ent[l];
   const le_wet_entry* oe = turn_i >= 0.0 ? tr->turn_ent[l] : NULL;
-  const int pitched = !((se != NULL && se->planes <= 1) ||
-                        (oe != NULL && oe->planes <= 1));
+  const int pitched = h->img_blk;
   float m = h->mix;
   int target = 0;
   if (pl == NULL) {
@@ -8762,9 +8764,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     }
     m = 0.0f;
   } else {
-    target = pitched &&
-             atomic_load_explicit(&h->a_source, memory_order_relaxed) ==
-                 LE_HEARD_SOURCE_HEARD;
+    target = pitched && h->src_blk; /* as the block started */
     if (!target && m >= 1.0f) {
       for (int32_t s = 0; s < fx_n; ++s) {
         le_fx_enable_force_bypass(&ln->fx, s);
@@ -10882,7 +10882,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
    * no lane holds one picks the plain mixer and skips every step below. */
   const int heard_block = le_heard_block_begin(e, tc, lane_n, par, in, ch_in,
                                               excluded, mon_has_fx,
-                                              mon_fx_count);
+                                              mon_fx_count, perf_frame_base);
   par->in = in;
   par->ch_in = ch_in;
   par->sr = sr;

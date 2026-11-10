@@ -2319,6 +2319,15 @@ typedef struct le_heard {
   uint32_t attach_posted;
   _Atomic uint32_t a_attach_done;
   _Atomic int32_t a_attach_ok;
+  /* Callback, as the block started (le_heard_block_begin), so each change
+   * lands on a block edge the performance log can name: whether the lane's
+   * source is HEARD, and whether its source renders can play the image at
+   * the track's pitch (a render made before the image was cannot, and the
+   * lane plays its clean take there). src_logged: the LE_PLOG_HEARD_SOURCE
+   * value last logged, -1 for none since the arm. */
+  int32_t src_blk;
+  int32_t img_blk;
+  int32_t src_logged;
   /* Control: the ordinal le_engine_import_layer staged last on this lane
    * (-1: none), the only one le_engine_import_layer_heard accepts. */
   int32_t import_ordinal;

@@ -1132,24 +1132,41 @@ static int le_stage_retired_layer(le_engine* engine, int32_t channel,
       /* Shouldn't happen for an active lane whose track just retired a pass
        * on this slot (le_post_dub_shadows allocates every active lane's
        * buffer before posting it) — fail closed rather than copy garbage. */
-      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      le_staged_layer_free(&entry);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
       return 0;
     }
-    float* copy = (float*)malloc((size_t)frame_count * sizeof(float));
+    /* The lane's heard image of the same slot (#1713) follows its clean
+     * take as (L, R) pairs. A copy that cannot be made fails the layer: a
+     * stem must not replay the clean take where the player heard the
+     * image. */
+    float* pl;
+    float* pr;
+    const int heard = le_heard_planes(engine, channel, l, slot, &pl, &pr);
+    float* copy = heard && engine->heard[channel][l].cap[slot] < frame_count
+                      ? NULL
+                      : (float*)malloc((heard ? 3 : 1) * (size_t)frame_count *
+                                       sizeof(float));
     if (copy == NULL) {
-      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      le_staged_layer_free(&entry);
       atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                                 memory_order_relaxed);
       return 0;
     }
     memcpy(copy, src, (size_t)frame_count * sizeof(float));
     entry.lane_pcm[l] = copy;
+    if (!heard) continue;
+    float* pairs = copy + frame_count;
+    for (int32_t i = 0; i < frame_count; ++i) {
+      pairs[2 * i] = pl[i];
+      pairs[2 * i + 1] = pr[i];
+    }
+    entry.heard_mask |= 1u << l;
   }
 
   if (!le_layer_staging_ring_push(&engine->perf.layer_staging_ring, entry)) {
-    for (int32_t l = 0; l < lane_count; ++l) free(entry.lane_pcm[l]);
+    le_staged_layer_free(&entry);
     atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
                               memory_order_relaxed);
     return 0;

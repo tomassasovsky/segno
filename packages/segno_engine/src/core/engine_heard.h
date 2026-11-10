@@ -155,11 +155,16 @@ int le_lane_slot_buffers(const le_engine* e, int32_t ch, int32_t l,
  * to the block's jobs [par] after the monitored ones. Called once per
  * callback, after le_engine_process queues the monitor jobs and before the
  * frame loop. Returns whether any lane holds an image this block (a heard
- * block: le_engine_process mixes it with mix_tracks_frame_heard). */
+ * block: le_engine_process mixes it with mix_tracks_frame_heard). Each
+ * heard lane's source change is logged at [frame] (LE_PLOG_HEARD_SOURCE). */
 int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
                          le_fx_par* par, const float* in, int ch_in,
                          uint32_t excluded, const int* mon_has_fx,
-                         const int32_t* mon_fx_count);
+                         const int32_t* mon_fx_count, uint64_t frame);
+
+/* A performance arm (LE_CMD_PERF_ARM, callback): every lane's source is
+ * logged again at its next heard block. */
+void le_heard_perf_armed(le_engine* e);
 
 /* Logs frame [i]'s writes for track [t] (see le_heard_rec). */
 static inline void le_heard_log_write(le_engine* e, int t, int32_t live,
