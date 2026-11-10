@@ -6067,7 +6067,11 @@ static int fx_os_latency_vt(const le_fx_state* fx, int slot, int32_t type,
  *   (the second harmonic reaches -20 dBc at 0 dBFS);
  * - a tone filter after both: a +1.5 dB rise about 680 Hz and a roll-off
  *   from 1.6 kHz (fitted within 0.24 dB rms from 30 Hz to 18 kHz);
- * - the polarity is inverted.
+ * - the polarity is the input's: the onset of a +0.5 impulse comes out
+ *   positive, 2 samples late as the dry path is, then rings to its largest
+ *   swing, negative, 23 to 30 samples later, which Phase 0 read as an
+ *   inverted output; below the knee the pedal's phase sits 180 degrees from
+ *   an inverted one's (#1743, sessions s20pol and s19lofi).
  * The model, u = K x + LP(c tanh(G x_d / c)), then (tanh(a (u + b)) -
  * tanh(a b)) / a, then the tone filter, matches the fundamental within
  * 0.9 dB and the third harmonic within 3 dB at every level and drive
@@ -6280,8 +6284,7 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
     v = le_biquad_tick(o->sh, o->z_sh[ch][o->ph], v);
     v = le_biquad_tick(o->bl, o->z_bl[ch][o->ph], v);
     v = le_biquad_tick(o->lp2, o->z_lp2[ch][o->ph], v);
-    /* inverted, as captured */
-    io[ch] = (-(LE_OD_P / (float)LE_OD_TONE_1K) * v) * level;
+    io[ch] = ((LE_OD_P / (float)LE_OD_TONE_1K) * v) * level;
   }
   if (++o->ph >= o->nph) o->ph = 0;
   *l = io[0];

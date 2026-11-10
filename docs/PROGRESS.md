@@ -82,6 +82,25 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The Studio Dist and the Overdrive's polarity (#1743)
+
+- The Studio Rack's Dist is the Looper X's amp simulator without a cabinet
+  (#891 rig, s19std). Its variant now builds the Amp+Cab on the D.I.
+  cabinet, Bass and Modern 50 %, Treble 35 %, each Dist Drive read as the
+  Amp's drive with the same 1 kHz small-signal gain (a table: 10 % is 5 %,
+  50 % is 54 %, 66.5 % is 82 %, 80 % and up is 100 %). The 19 Studio presets
+  against the captures at their settings: response 63 Hz to 8 kHz within
+  1.9 to 2.6 dB (7.4 to 11.9 before), rms 0.8 to 2.4 dB, sample residual
+  -2.8 to -12.9 dB. At 5 to 10 % the Looper X clips inputs above -12 dBFS
+  harder than the Amp does (8.6 dB at 0 dBFS; Bass Di, Crunchy Tremolo,
+  Oct Up Atmos). The Distortion kind is no longer built by any factory rack;
+  chains saved with it keep it.
+- The Overdrive no longer inverts. s20pol (stim_full, each rack against its
+  own all-off pass) shows the OvDrive's onset positive and 2 samples late,
+  as the dry path's, ringing to a larger negative swing 23 to 30 samples
+  later, which Phase 0 read as an inverted output. The residual against the
+  captures went from +4 dB to -10 to -13 dB (Ed's, Guitar and Lo-Fi).
+
 ## November 2026 The Lo-Fi Rack's Distort is the overdrive (#1737)
 
 - The Looper X's Lo-Fi Distort is its overdrive: the Guitar Rack's OvDrive
