@@ -839,6 +839,9 @@ void main() {
       expect(load(8), greaterThan(budget));
     });
 
+    // Each case is one the console ran (#1729): 5 tracks and 4 inputs with 1
+    // track with no late period, 6 tracks and 4 inputs with 3 tracks with
+    // more than #1724's limit run.
     test("at 48 kHz / 32 with two workers, five of Ed's Racks fit on "
         'tracks and six do not; four on inputs leave room for one on a '
         'track, not three (#1729, the console runs)', () {

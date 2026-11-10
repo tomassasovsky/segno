@@ -251,8 +251,11 @@ const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 /// periods in 120 s, more than the 42 in 200 s of #1724's run at the
 /// limit. The per-job charge that admits 5 and refuses 6 at the 77 % share
 /// lies between 348 and 727 ns; this is near its middle. Four input racks
-/// beside three track racks, which this refuses too, ran 72 late periods and
-/// 2 xruns.
+/// beside one track rack, which this admits, ran with none; beside three,
+/// which it refuses, 72 late periods and 2 xruns. The engine records and
+/// sums every track of a block whose track chains are jobs, chained or not;
+/// those runs had all eight, so the figure carries that share. It is the
+/// console's setting's figure: a longer block spends less a frame on it.
 const int kFxTrackJobNs = 500;
 
 /// What the effects charge the audio thread's worst block, in nanoseconds
