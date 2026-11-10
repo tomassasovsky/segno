@@ -5560,15 +5560,31 @@ class LooperRepository {
                 'layer $ordinal: ${result.name}',
               );
             }
-            // The image's heard image (#1713) goes in right behind it.
+            // The image's heard image (#1713) goes in right behind it. A
+            // heard attach still in flight refuses it for a buffer or two,
+            // like the clear ack above.
             final heard = lane.heardAt(ordinal);
             if (heard.isEmpty) continue;
-            final staged = _engine.importLayerHeard(
+            var staged = _engine.importLayerHeard(
               track.channel,
               lane.lane,
               ordinal,
               heard,
             );
+            for (
+              var attempt = 0;
+              staged == EngineResult.notReady && attempt < importRetries;
+              attempt++
+            ) {
+              await Future<void>.delayed(interval);
+              requireCurrent();
+              staged = _engine.importLayerHeard(
+                track.channel,
+                lane.lane,
+                ordinal,
+                heard,
+              );
+            }
             if (!staged.isOk) {
               throw StateError(
                 'failed to import track ${track.channel} lane ${lane.lane} '

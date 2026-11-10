@@ -1256,12 +1256,12 @@ class SessionRepository {
         await File('$path/${live.file}').copy('$stem.wav');
         // What the player heard (#1713), beside the clean take a DAW can
         // re-amp.
-        // An earlier export's heard stem is not this take's.
         final heard = live.heard;
         final heardStem = File('${stem}_heard.wav');
         if (heard != null) {
           await File('$path/$heard').copy(heardStem.path);
         } else if (heardStem.existsSync()) {
+          // An earlier export's heard stem is not this take's.
           await heardStem.delete();
         }
       }

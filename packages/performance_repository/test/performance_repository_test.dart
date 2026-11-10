@@ -665,6 +665,28 @@ void main() {
     );
 
     test(
+      'a later export of a take without a heard image removes the earlier '
+      'one (#1713)',
+      () async {
+        engine.seedLane(
+          0,
+          0,
+          Float32List.fromList([1, 1]),
+          heard: Float32List.fromList([.5, -.5, .5, -.5]),
+        );
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+        expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isTrue);
+
+        // Re-recorded dry during the capture.
+        engine.seedLane(0, 0, Float32List.fromList([2, 2, 2]));
+        await repo.persistLiveLanes();
+
+        expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isFalse);
+      },
+    );
+
+    test(
       'marks a lane with a heard image that plays clean (#1713)',
       () async {
         engine.seedLane(

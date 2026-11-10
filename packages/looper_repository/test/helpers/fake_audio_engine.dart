@@ -1805,6 +1805,10 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   /// `(channel, lane, ordinal)`.
   final Map<(int, int, int), Float32List> importedHeard = {};
 
+  /// If `> 0`, [importLayerHeard] returns [EngineResult.notReady] this many
+  /// times (decrementing), as while a heard attach is in flight.
+  int importHeardNotReadyCountdown = 0;
+
   @override
   EngineResult importLayerHeard(
     int channel,
@@ -1813,6 +1817,10 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     Float32List pcm,
   ) {
     calls.add('importLayerHeard');
+    if (importHeardNotReadyCountdown > 0) {
+      importHeardNotReadyCountdown--;
+      return EngineResult.notReady;
+    }
     if (importResult.isOk) importedHeard[(channel, lane, ordinal)] = pcm;
     return importResult;
   }
