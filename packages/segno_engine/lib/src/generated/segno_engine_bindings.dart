@@ -10536,6 +10536,27 @@ final class le_snapshot extends ffi.Struct {
   /// always describe the same request.
   @ffi.Int32()
   external int song_queue_record;
+
+  /// Trailing (#1733): the chain slots still running a tail after their
+  /// switch went off (bit s: slot s, le_fx_type_drains), by chain: each
+  /// monitored input's, each lane's, each track's, the All tracks chain's
+  /// (any of its per-output instances) and each output's. A slot is clear
+  /// once its tail is quiet for its whole delay memory, when it is switched
+  /// back on, retyped, or leaves the chain.
+  @ffi.Array.multi([40])
+  external ffi.Array<ffi.Uint64> fx_draining_monitor;
+
+  @ffi.Array.multi([8, 8])
+  external ffi.Array<ffi.Array<ffi.Uint64>> fx_draining_lane;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Uint64> fx_draining_track;
+
+  @ffi.Uint64()
+  external int fx_draining_all_tracks;
+
+  @ffi.Array.multi([16])
+  external ffi.Array<ffi.Uint64> fx_draining_output;
 }
 
 /// The plugin format a descriptor was discovered in.

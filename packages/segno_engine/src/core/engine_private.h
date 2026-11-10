@@ -761,6 +761,10 @@ typedef struct le_fx_state {
    * of quiet settles the drain. These fields are callback-owned. */
   int32_t enable_drain[LE_FX_MAX];
   int32_t enable_quiet[LE_FX_MAX];
+  /* enable_drain published for the control thread (#1733): bit s while slot
+   * s drains. Written only where enable_drain changes (le_fx_drain_set), so
+   * a settled chain never touches it; read by le_engine_get_snapshot. */
+  _Atomic uint64_t a_draining;
   /* A rack's crossfade, kept on its LAST entry and advanced at its head
    * (fx_rack_head): rack_mix is how much of the rack's input and output
    * sides apply (1 while any of its entries is on, 0 with all of them off),
@@ -809,6 +813,9 @@ typedef struct le_fx_state {
    * Last in the struct so nothing before it moves. */
   struct le_fx_kinds *_Atomic kinds;
 } le_fx_state;
+#ifndef __cplusplus
+_Static_assert(LE_FX_MAX <= 64, "le_fx_state.a_draining is one bit per slot");
+#endif
 
 /* The unity-centre pan/balance law (accepted design, slice 3; documented on
  * le_engine_set_lane_pan): the near side stays at unity and the far side falls

@@ -82,6 +82,7 @@ export 'src/engine_snapshot.dart'
         kMaxMonitoredInputs,
         kMaxOutputBuses,
         kMaxTracks;
+export 'src/fx_draining.dart' show FxDraining;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/fx_recipe.dart'
     show FxOwner, FxRackEdge, FxRecipe, FxRecipeSlot, fxInstanceId;
