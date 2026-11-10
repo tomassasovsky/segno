@@ -82,6 +82,25 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A switched-off tail keeps its charge until it drains (#1733)
+
+- The engine publishes which chain slots still drain a tail: each
+  `le_fx_state` keeps `a_draining` (bit s for slot s), updated only where
+  `enable_drain` changes (`le_fx_drain_set` in `engine_fx.c`: the bypass
+  edge, the re-enable, the quiet settle, a retype, a forced bypass), so a
+  settled chain and the plain mixer path never touch it. `le_snapshot`
+  carries the masks by chain (`fx_draining_monitor`, `_lane`, `_track`,
+  `_all_tracks`, `_output`) and `EngineSnapshot.fxDraining` (`FxDraining`)
+  reads them; no new polling.
+- The repository keeps the last polled masks and charges an effect of a
+  draining kind while its slot drains, however it was switched off (the
+  screen, a chain switch, a rack), and also while it ran at one of the last
+  two polls, so a switch-off the engine has not yet seen still counts. Once
+  the engine reports the tail quiet, the room comes back on the next poll.
+- `test/looper/cubit/fx_drain_budget_test.dart`: a Room reverb switched off
+  at the limit refuses an Overdrive switched on until its tail drains, then
+  admits it; a kind without a tail frees its room at once.
+
 ## November 2026 The effects budget reserves room only for what a switch can turn on (#1723)
 
 - An effect is charged when it runs or a control can make it run: its own
@@ -130,9 +149,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   reads the engine's table). The side a press turns off is still charged for
   those, so an alternation charges the larger of each side plus the other
   side's draining effects (a console stress test switching an A/B pair every
-  second at the limit showed the xruns without this). Room freed by switching
-  an unreached effect off from the screen is still counted before its tail
-  ends.
+  second at the limit showed the xruns without this). One switched off from
+  the screen keeps its charge until the engine says its tail is quiet
+  (#1733, below).
+
 
 ## November 2026 A take plays back what was heard (#1713, in progress)
 

@@ -675,6 +675,31 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->song_queue_record = (int32_t)((song >> 7) & 1u);
   out->song_queue_progress = (float)(song >> 8) / 16777215.0f;
   out->song_last_section = load_i32(&engine->a_song_last);
+  /* #1733: the tails still draining, by chain. */
+  for (int k = 0; k < LE_MAX_MONITORED_INPUTS; ++k) {
+    out->fx_draining_monitor[k] = atomic_load_explicit(
+        &engine->monitors[k].fx.a_draining, memory_order_relaxed);
+  }
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    const int live = t < engine->track_count;
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      out->fx_draining_lane[t][l] =
+          live ? atomic_load_explicit(&engine->tracks[t].lanes[l].fx.a_draining,
+                                      memory_order_relaxed)
+               : 0u;
+    }
+    out->fx_draining_track[t] =
+        live ? atomic_load_explicit(&engine->tracks[t].bus.fx.a_draining,
+                                    memory_order_relaxed)
+             : 0u;
+  }
+  out->fx_draining_all_tracks = 0u;
+  for (int b = 0; b < LE_MAX_OUTPUT_BUSES; ++b) {
+    out->fx_draining_all_tracks |= atomic_load_explicit(
+        &engine->all_tracks_fx[b].a_draining, memory_order_relaxed);
+    out->fx_draining_output[b] = atomic_load_explicit(
+        &engine->outputs[b].fx.fx.a_draining, memory_order_relaxed);
+  }
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);
   const int perf_armed =

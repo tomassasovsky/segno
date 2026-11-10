@@ -1316,6 +1316,7 @@ class LooperRepository {
     // Reading it afterwards can mistake an in-flight join for a cancellation.
     final commandsSettled = _engine.commandsSettled;
     final snapshot = _engine.snapshot();
+    _fxDraining = snapshot.fxDraining;
     _noticeLengthHistoryRefusals(snapshot);
     for (final entry in _pendingImages.entries.toList()) {
       final ch = entry.key;
@@ -2432,6 +2433,15 @@ class LooperRepository {
     final receiptsSettled = _observeSettingsReceipts();
     _drainHistoryFx();
     final snapshot = _snapshotAndSettleImages();
+    // Running at either of the last two polls: a switch-off made since the
+    // earlier one has had a whole poll for the engine to start its drain and
+    // say so.
+    final running = _fxRunningDrainers();
+    _fxRanAtPoll = {
+      for (final at in {...running.keys, ..._fxRunningLast.keys})
+        at: {...?running[at], ...?_fxRunningLast[at]},
+    };
+    _fxRunningLast = running;
     _engineSnapshots.add(snapshot);
     _publishMeters(snapshot);
     _retryRefusedRecord(snapshot);
@@ -8859,6 +8869,7 @@ class LooperRepository {
     FxReach? reach,
   }) {
     final controls = reach ?? _fxReach;
+    final draining = _fxDrainingSlots(address);
     // A switch an alternation sets is on in the states that have it, but an
     // effect that drains its tail keeps running after its side goes off
     // (le_fx_type_drains): it is charged in every state, as a press can
@@ -8873,17 +8884,86 @@ class LooperRepository {
       [
         for (final fx in chain)
           if (_fxCharged(
-            fx,
-            address,
-            (key, {required now}) => runs(key, now: now, drains: fxDrains(fx)),
-            chainKey: chainKey,
-            chainOn: chainOn,
-          ))
+                fx,
+                address,
+                (key, {required now}) =>
+                    runs(key, now: now, drains: fxDrains(fx)),
+                chainKey: chainKey,
+                chainOn: chainOn,
+              ) ||
+              // Switched off, and its tail still running (#1733).
+              (fxDrains(fx) && draining.contains(fx.slotId)))
             fx,
       ],
       period: period,
       sampleRate: rate,
     );
+  }
+
+  /// The tails still draining, as the last poll read them from the engine
+  /// (#1733): a delay, echo, Mode delay or reverb switched off keeps running
+  /// until its tail is quiet, so it keeps its charge until then.
+  FxDraining _fxDraining = FxDraining.none;
+
+  /// The effects of a draining kind that were running at one of the last two
+  /// polls, by chain (#1733). One switched off since may not have reached
+  /// the engine yet, so it counts as draining until a poll reads the
+  /// engine's word.
+  Map<FxAddress, Set<String?>> _fxRanAtPoll = const {};
+
+  /// What [_fxRunningDrainers] found at the last poll.
+  Map<FxAddress, Set<String?>> _fxRunningLast = const {};
+
+  /// The effects of a draining kind running now, by chain: switched on with
+  /// their racks and their chain, the chain not held.
+  Map<FxAddress, Set<String?>> _fxRunningDrainers() {
+    final running = <FxAddress, Set<String?>>{};
+    void add(FxAddress at, List<TrackEffect> chain) {
+      if (_fxHeld.contains(at) || !_chainSwitchAt(at)) return;
+      final ids = {
+        for (final fx in chain)
+          if (fxDrains(fx) && fx.effectiveEnabled) fx.slotId,
+      };
+      if (ids.isNotEmpty) running[at] = ids;
+    }
+
+    for (final MapEntry(:key, :value) in _monitorEffects.entries) {
+      add(FxAddress(stage: FxStage.input, index: key), value);
+    }
+    for (final MapEntry(:key, :value) in _laneEffects.entries) {
+      add(FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2), value);
+    }
+    for (final MapEntry(:key, :value) in _trackEffects.entries) {
+      add(FxAddress(stage: FxStage.track, index: key), value);
+    }
+    add(const FxAddress(stage: FxStage.allTracks), _allTracksEffects);
+    for (final MapEntry(:key, :value) in _outputEffects.entries) {
+      add(FxAddress(stage: FxStage.output, index: key), value);
+    }
+    return running;
+  }
+
+  /// The ids of the effects whose tails still drain in the chain at
+  /// [address]: the engine's draining slots, which are the entries of the
+  /// chain the engine was given, and those that ran at the last poll.
+  Set<String?> _fxDrainingSlots(FxAddress address) {
+    final ran = _fxRanAtPoll[address] ?? const <String?>{};
+    if (_fxDraining.isEmpty) return ran;
+    final (owner, channel, lane) = switch (address.stage) {
+      FxStage.input => (FxOwner.monitor, address.index, 0),
+      FxStage.loop => (FxOwner.lane, address.index, address.lane ?? 0),
+      FxStage.track => (FxOwner.track, address.index, 0),
+      FxStage.allTracks => (FxOwner.allTracks, 0, 0),
+      FxStage.output => (FxOwner.output, address.index, 0),
+    };
+    final mask = _fxDraining.mask(owner, channel: channel, lane: lane);
+    if (mask == 0) return ran;
+    final chain = _chainAt(address);
+    return {
+      ...ran,
+      for (var s = 0; s < chain.length && s < 64; s++)
+        if (mask & (1 << s) != 0) chain[s].slotId,
+    };
   }
 
   /// Whether [fx] in the chain at [address] is charged: its chain's switch,
