@@ -77,7 +77,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
-| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant), 2a (length edits, render recipe, track print, session layers), 2b (Transpose and the bridge) and 2c (performance stems) in review | build | auto | `claude/take-plays-heard-1713-p*` |
+| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant), 2a (length edits, render recipe, track print, session layers), 2b (Transpose and the bridge) and 2c (performance stems) in review; part 3 (rendered tails) in build | build | auto | `claude/take-plays-heard-1713-p*` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
@@ -127,8 +127,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - CPU: a block where no lane holds an image runs the trunk's mixer
   (`mix_tracks_frame`, the heard copy is `mix_tracks_frame_heard`), checked
   under Valgrind against the trunk's instruction count.
-- Not yet: rendered tails (part 3) and the app (parts 4 and 5). Nothing in
-  the app records an image until the last part.
+- Part 3 (`engine_heard_tail.c`): when a capture pass on a lane holding an
+  image ends (a take closing into play, a punch-out), the cache worker
+  renders the input chain's tail from the last 12 s of that input (kept in a
+  16 s ring per input a heard lane records, mapped by the control poll) and
+  the callback adds it into the image after the pass's last written
+  position, one frame per frame of time since the end, wrapping at the loop:
+  always behind the read head, so the live ring-out on the first repeat is
+  not doubled and the tail plays from the second. A take running straight
+  into overdub renders none (the overdub records the ring-out). A new
+  capture, Stop, a slot or length change, Reverse or Speed drop what is not
+  added yet; Undo of the pass takes its tail with it.
+- Not yet: the app (parts 4 and 5). Nothing in the app records an image
+  until the last part.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.
