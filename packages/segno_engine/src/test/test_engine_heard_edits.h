@@ -164,6 +164,10 @@ static void test_heard_session_layers(void) {
           LE_ERR_INVALID);
     CHECK(le_engine_import_layer_heard(b, 0, 0, o, heard[o], N) == LE_OK);
   }
+  /* Only the ordinal staged last: an earlier one of the same length is
+   * refused. */
+  CHECK(le_engine_import_layer_heard(b, 0, 0, 0, heard[0], N) ==
+        LE_ERR_INVALID);
   int32_t lens[4] = {N, N, N, N};
   CHECK(le_engine_finalize_history(b, 0, kinds, skipped, starts, count, undo,
                                    lens, images) == LE_OK);
