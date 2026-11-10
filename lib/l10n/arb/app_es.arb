@@ -2713,7 +2713,7 @@
     "perfStoppedReserve": "Se alcanzó la reserva de almacenamiento. Se conserva la parte grabada de esta toma.",
     "perfStoppedSlowStorage": "La grabación se detuvo porque el almacenamiento no pudo seguir el ritmo. Se conserva la parte grabada de esta toma.",
     "perfTakesNotRecovered": "{count, plural, =1{No se pudo recuperar esta toma.} other{No se pudieron recuperar {count} tomas.}}",
-    "perfTakesNotRecoveredBody": "{count, plural, =1{Se conservan sus archivos.} other{Se conservan sus archivos.}}",
+    "perfTakesNotRecoveredBody": "Se conservan sus archivos.",
     "storageInternalTitle": "Interno",
     "storageInternalSubtitle": "Sesiones y audio",
     "storageOpenLibrary": "Abrir biblioteca",

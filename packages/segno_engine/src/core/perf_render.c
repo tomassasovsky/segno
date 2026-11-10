@@ -156,7 +156,7 @@ struct le_perf_render {
   le_pr_thread_t thread;
 
   _Atomic int running; /* cleared by le_perf_render_cancel to end the loop
-                        * early, between tracks */
+                        * early, at the next block (#1747) */
   _Atomic int done;
   _Atomic int progress_pct;
   _Atomic int track_count; /* number of valid entries in results[] so far */
@@ -2635,6 +2635,48 @@ void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
  * renders in the memory a capture of seconds does. */
 #define LE_PR_BLOCK_FRAMES 65536
 
+/* One stem file while it is written: under `<path>.part`, published over
+ * `path` once it seals, so a stem on disk is always a whole one, and a
+ * render that stops early (a cancel, a failure) leaves an earlier render's
+ * stem where it was. */
+typedef struct le_pr_stem_file {
+  le_wav_writer w;
+  int open;
+  char path[LE_PR_FULL_PATH_MAX];
+  char part[LE_PR_FULL_PATH_MAX + 8];
+} le_pr_stem_file;
+
+static int le_pr_stem_open(le_pr_stem_file* s, const char* path,
+                           int32_t sample_rate, int32_t channels) {
+  snprintf(s->path, sizeof(s->path), "%s", path);
+  snprintf(s->part, sizeof(s->part), "%s.part", path);
+  s->open = le_wav_open(&s->w, s->part, sample_rate, channels, NULL, NULL, 0);
+  if (!s->open) {
+    le_wav_abandon(&s->w);
+    remove(s->part);
+  }
+  return s->open;
+}
+
+/* Closes a stem that did not complete and removes what it wrote. */
+static void le_pr_stem_drop(le_pr_stem_file* s) {
+  if (!s->open) return;
+  le_wav_abandon(&s->w);
+  remove(s->part);
+  s->open = 0;
+}
+
+/* Seals the stem and publishes it at its path. Returns 1 when it is there. */
+static int le_pr_stem_seal(le_pr_stem_file* s) {
+  if (!s->open) return 0;
+  s->open = 0;
+  if (!le_wav_seal(&s->w, 0) || le_wav_publish(s->part, s->path) == 0) {
+    remove(s->part);
+    return 0;
+  }
+  return 1;
+}
+
 /* One channel's stems while the render runs: its reconstruction (dry, and
  * the heard image's sides when it has one), its wet pass, the two files it
  * writes and a block of each signal. */
@@ -2645,14 +2687,11 @@ typedef struct le_pr_channel_run {
   le_pr_track_build* heard_l; /* the heard image's sides (#1713), or NULL */
   le_pr_track_build* heard_r;
   le_pr_wet_run* wet;         /* NULL: no wet stem is written */
-  le_wav_writer dry_file;
-  le_wav_writer wet_file;
-  int dry_open;  /* the dry stem is being written */
-  int wet_open;  /* and the wet one */
+  le_pr_stem_file dry_file;
+  le_pr_stem_file wet_file;
   int ok;        /* both stems are on course */
-  int in_master; /* its routed contribution is in the master */
-  char dry_path[LE_PR_FULL_PATH_MAX];
-  char wet_path[LE_PR_FULL_PATH_MAX];
+  int in_master; /* its routed contribution is summed into the master */
+  int summed;    /* and some of it already is */
   float* dry_buf;
   float* heard_l_buf;
   float* heard_r_buf;
@@ -2661,15 +2700,6 @@ typedef struct le_pr_channel_run {
   uint8_t* heard_buf;
   void* block; /* the one allocation the buffers above point into */
 } le_pr_channel_run;
-
-/* Closes a stem file that did not complete and removes what it wrote: a
- * stem on disk is a whole one. */
-static void le_pr_drop_file(le_wav_writer* w, int* open, const char* path) {
-  if (!*open) return;
-  le_wav_abandon(w);
-  remove(path);
-  *open = 0;
-}
 
 /* Sets up channel `channel`'s stems at capture frame 0. A stem that cannot
  * start (its material does not read, a file does not open, a slot cannot be
@@ -2721,27 +2751,20 @@ static void le_pr_channel_open(le_pr_channel_run* c, const char* dir,
     c->heard_r_buf = p + 5 * b;
     c->heard_buf = (uint8_t*)(p + 6 * b);
   }
-  snprintf(c->dry_path, sizeof(c->dry_path), "%s/track%d.wav", dry_dir,
-           channel);
-  snprintf(c->wet_path, sizeof(c->wet_path), "%s/track%d.wav", wet_dir,
-           channel);
+  char path[LE_PR_FULL_PATH_MAX];
   int dry_ok = 0;
   if (atomic_load_explicit(&g_pr_force_dry_write_failure_channel,
                            memory_order_relaxed) != channel) {
-    dry_ok = le_wav_open(&c->dry_file, c->dry_path, m->sample_rate, 1, NULL,
-                         NULL, 0);
-    if (!dry_ok) le_wav_abandon(&c->dry_file);
+    snprintf(path, sizeof(path), "%s/track%d.wav", dry_dir, channel);
+    dry_ok = le_pr_stem_open(&c->dry_file, path, m->sample_rate, 1);
   }
   /* else test-only: a dry-write I/O failure on this one channel without
    * touching the filesystem (le_perf_render_force_dry_write_failure_for_test,
    * above). */
-  c->dry_open = dry_ok;
   if (!heard_failed) c->wet = le_pr_wet_open(m, log, log_count, channel);
   if (c->wet != NULL) {
-    c->wet_open = le_wav_open(&c->wet_file, c->wet_path, m->sample_rate, 1,
-                              NULL, NULL, 0);
-    if (!c->wet_open) {
-      le_wav_abandon(&c->wet_file);
+    snprintf(path, sizeof(path), "%s/track%d.wav", wet_dir, channel);
+    if (!le_pr_stem_open(&c->wet_file, path, m->sample_rate, 1)) {
       le_pr_wet_close(c->wet);
       c->wet = NULL;
     }
@@ -2759,10 +2782,10 @@ static void le_pr_channel_open(le_pr_channel_run* c, const char* dir,
   c->in_master = c->ok;
 }
 
-/* Frees what le_pr_channel_open set up; files still open are dropped. */
+/* Frees what le_pr_channel_open set up; stems still open are dropped. */
 static void le_pr_channel_close(le_pr_channel_run* c) {
-  le_pr_drop_file(&c->dry_file, &c->dry_open, c->dry_path);
-  le_pr_drop_file(&c->wet_file, &c->wet_open, c->wet_path);
+  le_pr_stem_drop(&c->dry_file);
+  le_pr_stem_drop(&c->wet_file);
   le_pr_wet_close(c->wet);
   le_pr_track_close(c->heard_r);
   le_pr_track_close(c->heard_l);
@@ -2778,10 +2801,11 @@ static void le_pr_channel_close(le_pr_channel_run* c) {
 static void le_pr_channel_render(le_pr_channel_run* c, const le_pr_manifest* m,
                                  const le_pr_log_entry* log, int log_count,
                                  uint64_t f0, int32_t n) {
-  if (!c->dry_open && c->wet == NULL) return; /* nothing left to write */
+  if (!c->dry_file.open && c->wet == NULL) return; /* nothing left to write */
   le_pr_track_render(c->dry, f0, n, c->dry_buf, c->runs, NULL);
-  if (c->dry_open && !le_wav_append(&c->dry_file, c->dry_buf, (uint64_t)n)) {
-    le_pr_drop_file(&c->dry_file, &c->dry_open, c->dry_path);
+  if (c->dry_file.open &&
+      !le_wav_append(&c->dry_file.w, c->dry_buf, (uint64_t)n)) {
+    le_pr_stem_drop(&c->dry_file);
     c->ok = 0;
   }
   if (c->wet == NULL) return;
@@ -2793,31 +2817,19 @@ static void le_pr_channel_render(le_pr_channel_run* c, const le_pr_manifest* m,
                    c->heard_l_buf, c->heard_r_buf, c->heard_buf, c->runs,
                    c->wet_buf, c->routed_buf);
   if (c->wet->prepare_failed ||
-      !le_wav_append(&c->wet_file, c->wet_buf, (uint64_t)n)) {
-    le_pr_drop_file(&c->wet_file, &c->wet_open, c->wet_path);
+      !le_wav_append(&c->wet_file.w, c->wet_buf, (uint64_t)n)) {
+    le_pr_stem_drop(&c->wet_file);
     le_pr_wet_close(c->wet);
     c->wet = NULL;
     c->ok = 0;
   }
 }
 
-/* Seals channel [c]'s stems; one that does not seal is dropped and fails
- * the channel. */
+/* Seals and publishes channel [c]'s stems; one that does not is dropped and
+ * fails the channel. */
 static void le_pr_channel_seal(le_pr_channel_run* c) {
-  if (c->dry_open) {
-    c->dry_open = 0;
-    if (!le_wav_seal(&c->dry_file, 0)) {
-      remove(c->dry_path);
-      c->ok = 0;
-    }
-  }
-  if (c->wet_open) {
-    c->wet_open = 0;
-    if (!le_wav_seal(&c->wet_file, 0)) {
-      remove(c->wet_path);
-      c->ok = 0;
-    }
-  }
+  if (c->dry_file.open && !le_pr_stem_seal(&c->dry_file)) c->ok = 0;
+  if (c->wet_file.open && !le_pr_stem_seal(&c->wet_file)) c->ok = 0;
 }
 
 static void le_pr_worker_main(void* arg) {
@@ -2870,28 +2882,27 @@ static void le_pr_worker_main(void* arg) {
                          log, log_count, channels[i]);
     }
 
-    char master_path[LE_PR_FULL_PATH_MAX];
-    snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
+    const uint64_t total = manifest.capture_frames;
     const uint32_t pair_mask =
         (manifest.capture_mask >> (2 * manifest.arm_capture_bus)) & 3u;
     const int master_channels = pair_mask == 3 ? 2 : 1;
     const int side = pair_mask == 2 ? 1 : 0;
-    le_pr_master_run* master = le_pr_master_open(&manifest, log, log_count);
-    le_wav_writer master_file;
-    int master_open = 0;
-    if (master != NULL) {
-      master_open = le_wav_open(&master_file, master_path,
-                                manifest.sample_rate, master_channels, NULL,
-                                NULL, 0);
-      if (!master_open) le_wav_abandon(&master_file);
+    /* A master past the 32-bit WAV sizes (a stereo master over 3 h 6 min at
+     * 48 kHz) cannot be sealed: it is not rendered, rather than rendered for
+     * hours and thrown away, and the stems stand as they are. */
+    const int master_fits =
+        total <= (UINT32_MAX - 36u) / (sizeof(float) * (uint64_t)master_channels);
+    le_pr_master_run* master =
+        le_pr_master_open(&manifest, log, log_count);
+    le_pr_stem_file master_file = {0};
+    if (master != NULL && master_fits) {
+      char master_path[LE_PR_FULL_PATH_MAX];
+      snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
+      le_pr_stem_open(&master_file, master_path, manifest.sample_rate,
+                      master_channels);
     }
-    /* A channel that fails after its audio is in the master (a write, or a
-     * slot a logged type change could not prepare) fails the master too: the
-     * master cannot be told apart from one that holds a failed channel. */
-    int master_ok = master_open;
 
     int cancelled = 0;
-    const uint64_t total = manifest.capture_frames;
     for (uint64_t f0 = 0; f0 < total;) {
       if (!atomic_load_explicit(&r->running, memory_order_acquire)) {
         cancelled = 1;
@@ -2905,23 +2916,29 @@ static void le_pr_worker_main(void* arg) {
         le_pr_channel_run* c = &runs[i];
         le_pr_channel_render(c, &manifest, log, log_count, f0, n);
         if (c->in_master && !c->ok) {
+          /* A channel that fails after some of its audio is in the master
+           * (a write, or a slot a logged type change could not prepare)
+           * leaves no master: it cannot be told apart from one that holds
+           * a failed channel. One that fails before any is summed is just
+           * left out, as when the stems were rendered whole. */
           c->in_master = 0;
-          master_ok = 0;
+          if (c->summed) le_pr_stem_drop(&master_file);
         }
         if (!c->in_master) continue;
+        c->summed = 1;
         for (int32_t j = 0; j < n; ++j) {
           master_buf[2*j] += c->routed_buf[2*j];
           master_buf[2*j+1] += c->routed_buf[2*j+1];
         }
       }
-      if (master_ok) {
+      if (master_file.open) {
         le_pr_master_render(master, &manifest, log, log_count, f0, n,
                             master_buf);
         if (master_channels == 1) {
           for (int32_t j = 0; j < n; ++j) master_buf[j] = master_buf[2*j+side];
         }
-        if (!le_wav_append(&master_file, master_buf, (uint64_t)n)) {
-          master_ok = 0;
+        if (!le_wav_append(&master_file.w, master_buf, (uint64_t)n)) {
+          le_pr_stem_drop(&master_file);
         }
       }
       f0 += (uint64_t)n;
@@ -2932,7 +2949,7 @@ static void le_pr_worker_main(void* arg) {
     if (!cancelled) {
       for (int i = 0; i < channel_count; ++i) {
         le_pr_channel_seal(&runs[i]);
-        if (runs[i].in_master && !runs[i].ok) master_ok = 0;
+        if (runs[i].summed && !runs[i].ok) le_pr_stem_drop(&master_file);
         const int index =
             atomic_load_explicit(&r->track_count, memory_order_relaxed);
         atomic_store_explicit(&r->results[index].channel, runs[i].channel,
@@ -2942,23 +2959,21 @@ static void le_pr_worker_main(void* arg) {
         atomic_store_explicit(&r->track_count, index + 1,
                               memory_order_release);
       }
-      master_ok = master_ok && master->ok;
-      if (master_ok) {
-        master_open = 0;
-        master_ok = le_wav_seal(&master_file, 0);
-        if (!master_ok) remove(master_path);
-      }
-      if (!master_ok) {
+      /* The output stages that could not be replayed (a chain that does not
+       * read, a slot that could not be prepared) fail the render, as they
+       * did: no master, and every track reported failed. A master that only
+       * could not be written is left out and the stems stand. */
+      const int master_rendered = master != NULL && master->ok;
+      if (master_rendered) {
+        le_pr_stem_seal(&master_file);
+      } else {
         for (int i = 0; i < channel_count; ++i)
           atomic_store_explicit(&r->results[i].succeeded, 0,
                                 memory_order_release);
       }
     }
     /* Cancelled, or the master failed: nothing partial stays on disk. */
-    if (master_open) {
-      le_wav_abandon(&master_file);
-      remove(master_path);
-    }
+    le_pr_stem_drop(&master_file);
     le_pr_master_close(master);
     for (int i = 0; i < channel_count; ++i) le_pr_channel_close(&runs[i]);
   }

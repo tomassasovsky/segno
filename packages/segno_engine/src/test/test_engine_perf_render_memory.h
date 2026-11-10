@@ -212,24 +212,46 @@ static void test_perf_render_memory_is_bounded(void) {
 }
 
 /* A cancel is seen at the next block, and the stems it had begun are
- * removed: a stem on disk is a whole one. Rendered whole, the track in
+ * removed: a stem on disk is a whole one. A stem is written beside its path
+ * and published once it seals, so re-rendering a bundle and cancelling
+ * (boot recovery re-renders a stranded bundle; a shutdown cancels it)
+ * leaves the stems an earlier render wrote. Rendered whole, the track in
  * flight finished first, however long. */
 static void test_perf_render_cancel_leaves_no_partial_stem(void) {
   printf("test_perf_render_cancel_leaves_no_partial_stem\n");
-  const char* dir = render_memory_fixture("memory-cancel", 8000000);
-  le_engine* e = le_engine_create();
-  CHECK(le_perf_render_begin(e, dir) == LE_OK);
-  render_memory_wait_started(e);
-  int32_t done = 0;
-  le_perf_render_poll(e, &done, NULL, NULL);
-  CHECK(done == 0); /* the cancel lands mid-render */
-  CHECK(le_perf_render_cancel(e) == LE_OK);
-  CHECK(!render_memory_exists(dir, "stems/dry/track0.wav"));
-  CHECK(!render_memory_exists(dir, "stems/dry/track1.wav"));
-  CHECK(!render_memory_exists(dir, "stems/wet/track0.wav"));
-  CHECK(!render_memory_exists(dir, "stems/wet/track1.wav"));
-  CHECK(!render_memory_exists(dir, "stems/wet/master.wav"));
-  le_engine_destroy(e);
+  enum { FRAMES = 8000000 };
+  const char* dir = render_memory_fixture("memory-cancel", FRAMES);
+  static const char* const parts[] = {"stems/dry/track0.wav.part",
+                                      "stems/dry/track1.wav.part",
+                                      "stems/wet/track0.wav.part",
+                                      "stems/wet/track1.wav.part",
+                                      "stems/wet/master.wav.part"};
+  for (int pass = 0; pass < 2; ++pass) {
+    le_engine* e = le_engine_create();
+    CHECK(le_perf_render_begin(e, dir) == LE_OK);
+    render_memory_wait_started(e);
+    int32_t done = 0;
+    le_perf_render_poll(e, &done, NULL, NULL);
+    CHECK(done == 0); /* the cancel lands mid-render */
+    CHECK(le_perf_render_cancel(e) == LE_OK);
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); ++i) {
+      CHECK(!render_memory_exists(dir, parts[i]));
+    }
+    if (pass == 0) {
+      /* Nothing was rendered before: no stem at all. */
+      CHECK(!render_memory_exists(dir, "stems/dry/track0.wav"));
+      CHECK(!render_memory_exists(dir, "stems/dry/track1.wav"));
+      CHECK(!render_memory_exists(dir, "stems/wet/track0.wav"));
+      CHECK(!render_memory_exists(dir, "stems/wet/track1.wav"));
+      CHECK(!render_memory_exists(dir, "stems/wet/master.wav"));
+      /* Then a whole render, which the next pass re-renders. */
+      CHECK(le_perf_render_begin(e, dir) == LE_OK);
+      test_wait_for_render(e, 600000);
+    } else {
+      render_memory_check_stems(dir, FRAMES); /* the earlier render's */
+    }
+    le_engine_destroy(e);
+  }
   render_memory_clean(dir);
 }
 

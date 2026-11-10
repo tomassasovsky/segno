@@ -1948,13 +1948,13 @@ void main() {
         final dir = Directory('${tempDir.path}/exports/perf-20261110-155051')
           ..createSync(recursive: true);
         writeManifest(dir.path, finalized: false);
-        // The app stopped while this boot salvaged it.
+        // The app stopped during two salvages of it in a row.
         File(
           '${dir.path}/${PerformanceRepository.recoveryMarkerName}',
         ).writeAsStringSync('');
         File(
           '${dir.path}/${PerformanceRepository.recoveryAttemptName}',
-        ).writeAsStringSync('${readBootId()}\n1\n');
+        ).writeAsStringSync('2\n');
 
         final cubit = build();
         addTearDown(cubit.close);

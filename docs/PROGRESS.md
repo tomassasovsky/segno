@@ -97,17 +97,24 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   the whole-buffer render (all 160 native fixtures, the real capture at
   full length on the Mac, and the console's own build-238 stems). A cancel
   is seen at the next block and removes the stems it began; a stem that
-  fails after its audio is in the master fails the master too.
+  fails after some of its audio is in the master leaves no master.
 - A device reconfigure (the audio warm-up, seconds after start) no longer
   cancels a running render: it used to join a worker that was rendering a
   whole stem, which held "Audio is starting" until the OOM, and dropped the
   recovery's stems.
 - A salvage the app does not survive is not run again by every start: the
-  bundle carries `.boot-recovery-attempt` (boot id, count) while its
-  salvage runs; found from the same boot, or a second time, the bundle is
-  marked `.boot-recovery-failed`, kept, and counted as not recovered. The
-  not-recovered notice (a passing warning, said at every start) has Try
-  again (`PerformanceRecorderCubit.retryRecovery`).
+  bundle carries `.boot-recovery-attempt` (a count) while its salvage runs,
+  a render that outlives the wait included. One interrupted salvage is run
+  again (a restart or a power cut also stops one); at the second the bundle
+  is marked `.boot-recovery-failed`, kept, and counted as not recovered.
+  The not-recovered notice (a passing warning, said at every start) has Try
+  again (`PerformanceRecorderCubit.retryRecovery`), which gives the take one
+  more salvage.
+- Stems are written as `<stem>.wav.part` and published on sealing, so a
+  cancelled re-render keeps an earlier render's stems. A master past the
+  32-bit WAV sizes (stereo over 3 h 6 min at 48 kHz) is not rendered and the
+  stems stand; a master that could not be written is left out without
+  failing the tracks, as before.
 
 ## November 2026 The Lo-Fi Rack's Distort is the overdrive (#1737)
 
