@@ -839,6 +839,27 @@ void main() {
       expect(load(8), greaterThan(budget));
     });
 
+    test("at 48 kHz / 32 with two workers, five of Ed's Racks fit on "
+        'tracks and six do not; four on inputs leave room for one on a '
+        'track, not three (#1729, the console runs)', () {
+      final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
+      final budget = fxBudgetNs(48000, period: 32);
+      int load(int inputs, int tracks) => fxLoadNs(
+        serial: 0,
+        jobs: List.filled(inputs + tracks, ns),
+        workers: 2,
+        period: 32,
+        trackJobs: tracks,
+      );
+      expect(load(0, 5), lessThanOrEqualTo(budget));
+      expect(load(0, 6), greaterThan(budget));
+      expect(load(4, 1), lessThanOrEqualTo(budget));
+      expect(load(4, 3), greaterThan(budget));
+      // On the callback alone, before #1729: three.
+      expect(3 * ns, lessThanOrEqualTo(budget));
+      expect(4 * ns, greaterThan(budget));
+    });
+
     test('with no workers the load is every chain summed', () {
       expect(fxLoadNs(serial: 500, jobs: [rackNs, rackNs]), 500 + 2 * rackNs);
       // One job is run on the callback, workers or not: no handoff.
@@ -930,8 +951,9 @@ void main() {
         final onOutput = repo.fxGrowthNs({
           const FxAddress(stage: FxStage.output): rack,
         });
-        expect(onTrack, onInput);
-        expect(onLane, onInput);
+        // The callback records and sums a track's job (kFxTrackJobNs).
+        expect(onTrack, onInput + kFxTrackJobNs);
+        expect(onLane, onInput + kFxTrackJobNs);
         expect(onOutput, rackNs);
         expect(onInput, lessThan(onOutput));
         // A track's lanes and its own chain are one job: a second rack on

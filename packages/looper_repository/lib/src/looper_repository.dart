@@ -9075,6 +9075,7 @@ class LooperRepository {
         jobs: [...inputJobs, ...trackJobs.values],
         workers: _fxWorkers,
         period: period,
+        trackJobs: trackJobs.length,
       );
       if (load > worst) worst = load;
     }

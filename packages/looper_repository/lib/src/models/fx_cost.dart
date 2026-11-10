@@ -239,6 +239,22 @@ int fxBaseNs(int sampleRate, {int period = kFxBenchPeriod}) {
 /// and 97 ns a frame at 64-frame blocks).
 const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 
+/// What each track's job adds to the callback's own share, in nanoseconds
+/// per frame, when the track chains run as jobs (#1729): the mixer records
+/// every lane's frame for its track's job, and after the join the callback
+/// sums every track onto the outputs, work the monitor jobs' handoff
+/// ([kFxHandoffUs]) does not have.
+///
+/// Set from the console (build 238, 48 kHz / 32, two workers,
+/// `bench_rt_faults --track-racks K`, #1729): Ed's Racks on 3 and 5 tracks
+/// ran with no late period and no xrun, on 6 and 7 with 66 and 87 late
+/// periods in 120 s, more than the 42 in 200 s of #1724's run at the
+/// limit. The per-job charge that admits 5 and refuses 6 at the 77 % share
+/// lies between 348 and 727 ns; this is near its middle. Four input racks
+/// beside three track racks, which this refuses too, ran 72 late periods and
+/// 2 xruns.
+const int kFxTrackJobNs = 500;
+
 /// What the effects charge the audio thread's worst block, in nanoseconds
 /// per frame, at [period]-frame blocks with [workers] effects workers
 /// beside the callback (#1515): the chains that stay on the callback
@@ -249,15 +265,17 @@ const Map<int, double> kFxHandoffUs = {1: 4.48, 2: 5.184, 3: 6.208};
 /// With C cores (the callback and the workers) any greedy claiming finishes
 /// the jobs within J/C + (1 - 1/C) p of their release (Graham's bound for
 /// list scheduling, in any order), J their sum and p the largest, plus the
-/// handoff ([kFxHandoffUs]). One job's work never splits across cores, which
-/// the second term pays for. With no workers, or fewer than two jobs (the
-/// engine then runs them on the callback), it is every chain summed: the
-/// rule before #1515.
+/// handoff ([kFxHandoffUs]) and, for each of the jobs that is a track's
+/// ([trackJobs] of them), [kFxTrackJobNs]. One job's work never splits
+/// across cores, which the second term pays for. With no workers, or fewer
+/// than two jobs (the engine then runs them on the callback), it is every
+/// chain summed: the rule before #1515.
 int fxLoadNs({
   required int serial,
   required Iterable<int> jobs,
   int workers = 0,
   int period = kFxBenchPeriod,
+  int trackJobs = 0,
 }) {
   // Every chain is a job, a free one too (a hosted plugin, a rack of
   // passthroughs): the engine releases a round for it all the same.
@@ -269,7 +287,7 @@ int fxLoadNs({
   final largest = costs.reduce((a, b) => a > b ? a : b);
   final handoff = (handoffUs * 1000 / _perBlock(period)).ceil();
   final path = (sum + (cores - 1) * largest + cores - 1) ~/ cores;
-  return serial + handoff + path;
+  return serial + handoff + trackJobs * kFxTrackJobNs + path;
 }
 
 /// The frames a per-block cost spreads over: the block below the bench's
