@@ -94,9 +94,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   the Dual Octaver's Octave 1 Vol is linear in amplitude as the kernel has it
   (-2.50, -6.02, -12.04 dB at 75, 50, 25 %); the Studio Rack's Dist follows
   the Distortion's drive law (1 kHz small-signal gain within 3.1 dB from 0
-  to 100 %). Dist Drive is 0 to 100 % linear on the Looper X in both racks.
-  The Distortion's tone, our own 2 kHz shelf, now reads in dB (-6 to +6);
-  the settings and the sound are unchanged.
+  to 100 %). Dist Drive and Dist Tone are 0 to 100 % linear on the Looper X
+  in both racks, and read as that percent here; the tone plays our own 2 kHz
+  shelf. The settings and the sound are unchanged.
 - Found: the Lo-Fi Rack's Distort is the Looper X's overdrive (the Guitar
   Rack's OvDrive at +4.08 dB, to -73 dB residual), not the amp simulator the
   Distortion kind models. Rebuilding it on the overdrive kind changes the

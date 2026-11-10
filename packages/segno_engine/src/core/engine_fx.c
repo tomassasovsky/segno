@@ -6889,21 +6889,22 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
  * within 3.1 dB of the kernel's at every setting (its voicing is flatter
  * than the 4x12" cabinet's). The Looper X registers Dist Drive as 0 to
  * 100 %, linear, in both racks, and shows the stored value as that percent.
- * The tone is ours: the gain of a 2 kHz high shelf, -6 to +6 dB, flat at
- * the middle (the Lo-Fi Rack's Dist Tone belongs to its overdrive-class
- * Dist, #1737). */
-#define LE_DIST_TONE_HZ 2000.0
-#define LE_DIST_TONE_DB 6.0 /* the shelf's gain at either end of the tone */
+ * Dist Tone is 0 to 100 %, linear, on the Looper X too, and reads as that
+ * percent. What it does here is ours, a 2 kHz high shelf of
+ * LE_DIST_TONE_DB x (2 tone - 1) dB: the only rack that shows it, the
+ * Lo-Fi, has an overdrive-class Dist whose tone this does not model
+ * (#1737). */
 static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
     {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
-    {"tone", LE_FX_UNIT_DB, 0, (float)-LE_DIST_TONE_DB, (float)LE_DIST_TONE_DB,
-     LE_FX_CURVE_LINEAR, 0.5f, 0},
+    {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 #define LE_DIST_ALPHA 3.4467f /* the early asymmetry */
 #define LE_DIST_UP 0.20428f   /* the positive ceiling */
 #define LE_DIST_DOWN 0.045506f
 #define LE_DIST_KNEE 3.5319f
 #define LE_DIST_SECTIONS 9
+#define LE_DIST_TONE_HZ 2000.0
+#define LE_DIST_TONE_DB 6.0
 
 /* The cabinet and voicing: band kind (le_eq_design's), Hz, dB, Q. */
 static const struct {

@@ -1014,10 +1014,10 @@ enum TrackEffectType {
         defaultValue: 0.5,
       ),
     ],
-    // The Studio Rack's Dist (#891): the drive is the Looper X's own 0 to
-    // 100 %, its law fit to the amp captures and checked against the Dist
-    // itself (#1731); the tone is the gain of a 2 kHz shelf. The Lo-Fi
-    // Rack's defaults.
+    // The Studio Rack's Dist (#891): drive and tone are the Looper X's own
+    // 0 to 100 %; the drive's law is fit to the amp captures and checked
+    // against the Dist itself (#1731), the tone is our 2 kHz shelf. The
+    // Lo-Fi Rack's defaults.
     TrackEffectType.distortion => const [
       FxParamInfo(
         key: 'drive',
@@ -1028,9 +1028,9 @@ enum TrackEffectType {
       ),
       FxParamInfo(
         key: 'tone',
-        unit: FxParamUnit.db,
-        atMin: -6,
-        atMax: 6,
+        unit: FxParamUnit.percent,
+        atMin: 0,
+        atMax: 100,
         defaultValue: 0.5,
       ),
     ],

@@ -216,7 +216,7 @@ class FxSourceScale {
 ///   Looper X shows;
 /// - the doubler: where a rack hides its separation, 50 % (the Studio and
 ///   Vocal racks' copies reach the 51 ms of the Dub Rack's 50 %, #1445);
-/// - the distortion: where a rack hides it, the tone flat (0 dB, chosen).
+/// - the distortion: where a rack hides it, the tone flat (50 %, chosen).
 ///
 /// The first variant of each module is its default, the one "Add an effect"
 /// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
@@ -582,7 +582,7 @@ const FxModuleBuild _loFiDistortion = FxModuleBuild(
 const FxModuleBuild _distortion = FxModuleBuild(
   type: TrackEffectType.distortion,
   params: ['Dist Drive'],
-  fixed: {1: 0},
+  fixed: {1: 50},
 );
 
 // Ed's and Guitar racks: drive and tone.
