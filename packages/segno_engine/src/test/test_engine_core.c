@@ -33502,6 +33502,19 @@ static void test_fx_bypass_drains_tail_then_settles(void) {
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.fx_draining_monitor[0] == 0u);
 
+  /* A slot that leaves the chain mid-drain drains no more: the snapshot
+   * reads only the chain's own slots. */
+  process_n(e, 1.0f, 64, cap);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 1u);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 0) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 64, cap);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 0u);
+
   le_engine_destroy(e);
 }
 

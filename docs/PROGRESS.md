@@ -107,13 +107,17 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - The snapshot reports which chain slots still drain a tail: `le_snapshot`
   carries the masks by chain (`fx_draining_monitor`, `_lane`, `_track`,
   `_all_tracks`, `_output`), and `EngineSnapshot.fxDraining` (`FxDraining`)
-  reads them; no new polling. `le_engine_get_snapshot` builds them on the
-  control thread from each chain's own `enable_drain` flags (one aligned
-  word per slot, read with a relaxed load), so the callback publishes
-  nothing: a first version kept an atomic mask in `le_fx_state`, which grew
-  the struct and the pinned `fx_apply_chain_with_gain` and moved the
-  64-lane mixer on CI's arm64 bench from 24.2 % to 24.95 % of its budget
-  (#1719 pins that code; keep the audio side of this byte-identical).
+  reads them; no new polling. The chain's thread stores each slot's
+  `enable_drain` flag whole with a relaxed builtin store (`LE_FX_DRAIN_STORE`,
+  a plain `str` on arm64 and x86), and `le_engine_get_snapshot` reads the
+  chain's own slots (up to `a_fx_count`) with relaxed loads. A first version
+  kept an atomic mask in `le_fx_state` and set it from the pinned
+  `fx_apply_chain_with_gain`: that grew the struct (changing the mixer's own
+  code) and the driver (moving every hot function after it), and CI's arm64
+  64-lane mixer went from 24.2 % to 24.95 % of its budget. This one leaves
+  the struct and every hot function but the driver byte-identical, at the
+  same addresses (the driver grows 32 bytes inside its last line), and CI
+  reads 24.20 % (#1745).
 - The repository reads the masks against its chains at each snapshot (a
   chain whose recipe the engine has not adopted keeps its last reading) and
   charges an effect of a draining kind while its slot drains, however it was
