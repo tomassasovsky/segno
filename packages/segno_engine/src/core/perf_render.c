@@ -163,6 +163,26 @@ struct le_perf_render {
  * only: a 44-byte header, format code 3 = IEEE float, fmt chunk size 16, no
  * extra chunks before `data` — see packages/wav_codec/lib/src/wav.dart. Not a
  * general WAV parser. ---- */
+/* The frame count of a WAV in the fixed format le_pr_read_wav_channel
+ * reads, from its header alone; -1 when it does not read. */
+static int32_t le_pr_wav_frames(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return -1;
+  unsigned char header[44];
+  const int ok = fread(header, 1, sizeof(header), f) == sizeof(header);
+  fclose(f);
+  if (!ok || memcmp(header, "RIFF", 4) != 0 ||
+      memcmp(header + 36, "data", 4) != 0) {
+    return -1;
+  }
+  const uint16_t channels = (uint16_t)(header[22] | (header[23] << 8));
+  const uint32_t data_bytes =
+      (uint32_t)header[40] | ((uint32_t)header[41] << 8) |
+      ((uint32_t)header[42] << 16) | ((uint32_t)header[43] << 24);
+  if (channels == 0) return -1;
+  return (int32_t)(data_bytes / sizeof(float) / channels);
+}
+
 static float* le_pr_read_wav_channel(const char* path, int32_t channel,
                                      int32_t* out_frames) {
   *out_frames = 0;
@@ -936,7 +956,26 @@ static float* le_pr_snapshot_image(const char* dir, const le_json_value* lane,
   if (!le_json_string(ref, name, sizeof(name))) return NULL;
   char path[LE_PR_FULL_PATH_MAX];
   snprintf(path, sizeof(path), "%s/%s", dir, name);
-  return le_pr_read_wav_channel(path, href != NULL ? plane - 1 : 0, frames);
+  float* image = le_pr_read_wav_channel(path, href != NULL ? plane - 1 : 0,
+                                        frames);
+  if (image == NULL || href == NULL) return image;
+  /* The heard image must stand frame for frame beside the clean take, or
+   * its segments would drift from the dry stem's: a mismatch fails the
+   * stem. */
+  const le_json_value* cref = le_json_get(lane, "pcmRef");
+  char cname[128];
+  int32_t clean_frames = -1;
+  if (cref != NULL && le_json_string(cref, cname, sizeof(cname))) {
+    char cpath[LE_PR_FULL_PATH_MAX];
+    snprintf(cpath, sizeof(cpath), "%s/%s", dir, cname);
+    clean_frames = le_pr_wav_frames(cpath);
+  }
+  if (clean_frames != *frames) {
+    free(image);
+    *frames = 0;
+    return NULL;
+  }
+  return image;
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
@@ -1686,9 +1725,13 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     /* Whether the lane's material is a heard image (#1713): the segment's
      * (sounding or stopped: the callback keeps playing the image while its
      * slot holds one), or, emptied, the tail still fading out. */
+    /* 2: a finalize's take with an image, which the callback already
+     * plays at full image (its lane crossfaded in while it recorded). */
     if (heard_out != NULL) {
-      heard_out[f] = (uint8_t)(seg_heard || (!has_image && tail_gain > 0.0f &&
-                                             tail_seg != NULL && tail_heard));
+      heard_out[f] = (uint8_t)(seg_heard
+                                   ? (seg->snap_in ? 2 : 1)
+                                   : (!has_image && tail_gain > 0.0f &&
+                                      tail_seg != NULL && tail_heard));
     }
   }
 
@@ -2092,6 +2135,7 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * idles; a source switch crossfades over 10 ms, the clean side through the
    * chain, and leaving the image settles the chain to bypass. */
   int heard_src = LE_PLOG_HEARD_IMAGE;
+  int was_image = 0;
   float heard_mix = 0.0f;
   const float heard_step =
       1.0f / (float)(m->sample_rate / 100 > 0 ? m->sample_rate / 100 : 1);
@@ -2282,11 +2326,13 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     /* UNAVAILABLE fades to the clean take as CLEAN does: the callback fades
      * a lane whose render cannot play its image yet. */
     const int to_image = heard_src == LE_PLOG_HEARD_IMAGE;
-    if (f == 0) {
+    if (f == 0 || (image && heard[f] == 2 && !was_image)) {
       /* At capture frame 0 the lane plays as the arm found it, settled (a
-       * crossfade still running at the arm is not in the log). */
+       * crossfade still running at the arm is not in the log); a fresh take
+       * starts on its image as the callback's does. */
       heard_mix = image && to_image ? 1.0f : 0.0f;
     }
+    was_image = image;
     if (!image) {
       if (heard_mix > 0.0f) le_pr_settle_chain(fx, chain.count);
       heard_mix = 0.0f;
@@ -2300,8 +2346,13 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
                      chain.type, chain.params, effective);
     }
     if (heard_mix > 0.0f) {
-      const float hl = fed ? heard_l[f] * cut_gain * volume : 0.0f;
-      const float hr = fed ? heard_r[f] * cut_gain * volume : 0.0f;
+      /* Fading out because the render cannot play the image: the
+       * callback's image side reads the clean render meanwhile. */
+      const int unpitched = heard_src == LE_PLOG_HEARD_UNAVAILABLE;
+      const float hl =
+          fed ? (unpitched ? dry[f] : heard_l[f]) * cut_gain * volume : 0.0f;
+      const float hr =
+          fed ? (unpitched ? dry[f] : heard_r[f]) * cut_gain * volume : 0.0f;
       l = heard_mix * hl + (1.0f - heard_mix) * l;
       r = heard_mix * hr + (1.0f - heard_mix) * r;
     }
