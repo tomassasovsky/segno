@@ -8795,6 +8795,12 @@ enum le_command_code {
   /// nothing was captured, nothing to redo),
   /// anchor = the take's lap (#854).
   LE_EVT_TAKE_CANCELLED(101),
+
+  /// a capture pass on a lane holding a heard image
+  /// ended (#1713 part 3): its tail is rendered.
+  /// evt arm: channel, slot (the live slot at the
+  /// end), generation (le_heard_pass.gen).
+  LE_EVT_HEARD_TAIL(102),
   LE_CMD_SET_FX_RECIPE(77),
 
   /// one complete timing vector and receipt
@@ -8983,6 +8989,7 @@ enum le_command_code {
     76 => LE_CMD_SET_ALL_TRACKS_FX_COUNT,
     100 => LE_EVT_LAYER_RETIRED,
     101 => LE_EVT_TAKE_CANCELLED,
+    102 => LE_EVT_HEARD_TAIL,
     77 => LE_CMD_SET_FX_RECIPE,
     78 => LE_CMD_SET_RECORD_TIMING,
     79 => LE_CMD_STOP_RECORD_CONTROL,

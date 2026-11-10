@@ -140,8 +140,67 @@ static void test_heard_tail_after_a_punch_out(void) {
   le_engine_destroy(e);
 }
 
+/* A loop shorter than its tail: the tail wraps, adding onto the image lap
+ * after lap until it is spent, and the clean take is untouched. */
+static void test_heard_tail_wraps_a_short_loop(void) {
+  printf("test_heard_tail_wraps_a_short_loop\n");
+  enum { N = 4800 };
+  le_engine* e = heard_engine(48000 * 4);
+  heard_monitor_reverb(e);
+  le_record_image image = heard_image(43, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  le_engine_drain_events(e);
+  heard_feed(e, 0, N, 64, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
+  heard_silence(e, 960, 64, NULL);
+  static float clean[N];
+  static float before_l[N];
+  static float before_r[N];
+  le_lane* ln = &e->tracks[0].lanes[0];
+  memcpy(clean, ln->pool[load_i32(&ln->a_live)], sizeof(clean));
+  tail_image(e, 0, N, before_l, before_r);
+  CHECK(tail_settle(e, 0, 40 * N) < 40 * N);
+  static float after_l[N];
+  static float after_r[N];
+  tail_image(e, 0, N, after_l, after_r);
+  int32_t changed = 0;
+  for (int32_t q = 0; q < N; ++q) changed += after_l[q] != before_l[q];
+  CHECK(changed > N / 2); /* a reverb tail longer than the loop covers it */
+  CHECK(memcmp(clean, ln->pool[load_i32(&ln->a_live)], sizeof(clean)) == 0);
+  le_engine_destroy(e);
+}
+
+/* Stop before the tail lands: what is not added yet is dropped (a Stop cuts
+ * printed effects), and the image keeps what it had. */
+static void test_heard_tail_stop_drops_it(void) {
+  printf("test_heard_tail_stop_drops_it\n");
+  enum { N = 48000 };
+  le_engine* e = heard_take_fixture(N, 44);
+  le_engine_drain_events(e);
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 0) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  heard_feed(e, 0, 9600, 64, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  heard_silence(e, 960, 64, NULL);       /* the pass ends */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  heard_silence(e, 64, 64, NULL);
+  static float before_l[N];
+  static float before_r[N];
+  tail_image(e, 0, N, before_l, before_r);
+  tail_settle(e, 0, 4 * N);
+  static float after_l[N];
+  static float after_r[N];
+  tail_image(e, 0, N, after_l, after_r);
+  CHECK(memcmp(before_l, after_l, sizeof(before_l)) == 0);
+  CHECK(memcmp(before_r, after_r, sizeof(before_r)) == 0);
+  le_engine_destroy(e);
+}
+
 static void run_heard_tail_tests(void) {
   test_heard_tail_after_a_take();
   test_heard_tail_not_while_capturing();
   test_heard_tail_after_a_punch_out();
+  test_heard_tail_wraps_a_short_loop();
+  test_heard_tail_stop_drops_it();
 }
