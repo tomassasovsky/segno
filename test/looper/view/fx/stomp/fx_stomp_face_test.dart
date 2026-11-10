@@ -72,10 +72,10 @@ void main() {
       module: 'Ambience',
     );
     expect(faceOf(entry).spec, kFxStompSpecs['Ambience']);
-    // A module name the catalogue no longer has falls back to the type's.
+    // A module name the catalogue does not have is no pedal at all.
     expect(
-      faceOf(entry.copyWith(module: 'Removed module')).spec,
-      kFxStompSpecs['Reverb'],
+      fxEntryArt(entry.copyWith(module: 'Removed module'), live: true),
+      isNull,
     );
   });
 

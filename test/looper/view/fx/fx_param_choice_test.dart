@@ -8,6 +8,7 @@ import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 
 import '../../../helpers/helpers.dart';
+import '../../../helpers/text_fit.dart';
 
 void main() {
   group('FxBuiltInParamControl', () {
@@ -15,6 +16,8 @@ void main() {
     late AppLocalizations l10n;
 
     setUpAll(() async {
+      // The faces the console draws in, so a name measures its real width.
+      await loadBundledFonts();
       l10n = await AppLocalizations.delegate.load(const Locale('en'));
     });
 

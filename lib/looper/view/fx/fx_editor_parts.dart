@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -49,14 +51,6 @@ typedef FxEdits = ({
   }
   return (valueText: l10n.fxParamValueText(param, setting), note: null);
 }
-
-/// The narrowest a choice parameter's button may be. A choice whose
-/// positions each get at least this much of the control's width shows them
-/// as a row of buttons, the way Loop settings shows its choices; one that
-/// does not opens a list, as the footer's input choice does, because a
-/// narrower button shrinks its name past reading. In a rack pedal's column
-/// that is two positions, on the single effect's page three or four.
-const double kFxChoiceButtonLeast = 112;
 
 /// Whether [param] is a choice: a few named positions ([FxParamUnit.choice],
 /// stepped), which its control offers by name rather than as a slider.
@@ -119,7 +113,10 @@ class FxBuiltInParamControl extends StatelessWidget {
               l10n.fxParamValueText(param, k / last),
           ],
           selected: param.positionOf(setting),
-          note: reading.note,
+          // A named position is exact: the "Scale unverified" note is about
+          // a module value read on a scale nobody measured, which a choice
+          // does not have.
+          note: param.taperUnverified ? reading.note : null,
           onSelected: (k) =>
               onChanged(fxEntryKindSetting(effect, index, k / last)),
         ),
@@ -230,9 +227,13 @@ class FxParamControl extends StatelessWidget {
   }
 }
 
-/// A choice parameter: its name over its named positions, a row of
-/// [LoopChoiceButton]s while each gets [kFxChoiceButtonLeast] of the width
-/// its parent gives it, and a [LoopSelect] otherwise.
+/// A choice parameter: its name over its named positions, across the width
+/// its parent gives it.
+///
+/// A row of [LoopChoiceButton]s, the way Loop settings shows its choices,
+/// while every name fits its button at full size; a [LoopSelect], as the
+/// footer's input choice is, when one would have to shrink to fit, as the
+/// Guitar Rack Mod's three modes would in a rack pedal's column.
 class _ChoiceParamControl extends StatelessWidget {
   const _ChoiceParamControl({
     required this.label,
@@ -261,12 +262,36 @@ class _ChoiceParamControl extends StatelessWidget {
   /// The line under the control, as [FxParamControl.note].
   final String? note;
 
+  /// The size the position names are set in.
+  static const double _choiceFontSize = 22;
+
+  /// The room a [LoopChoiceButton] keeps either side of its label.
+  static const double _choiceLabelPadding = 24;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final positions = [for (var k = 0; k < choices.length; k++) k];
     Key keyOf(int k) => Key('fx_choice_${paramKey}_$k');
     final gap = context.spacing.sm;
+    // Measured as the button sets it: its Material's body style.
+    final nameStyle =
+        (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(
+          const TextStyle(fontSize: _choiceFontSize, height: 1),
+        );
+    final scaler = MediaQuery.textScalerOf(context);
+    double nameWidth(String name) {
+      final painter = TextPainter(
+        text: TextSpan(text: name, style: nameStyle),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final widest = choices.map(nameWidth).reduce(math.max);
     return LayoutBuilder(
       builder: (context, constraints) => Semantics(
         container: true,
@@ -288,9 +313,11 @@ class _ChoiceParamControl extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
+            // LoopChoiceRow's equal buttons, less their label padding.
             if ((constraints.maxWidth - gap * (choices.length - 1)) /
-                    choices.length >=
-                kFxChoiceButtonLeast)
+                        choices.length -
+                    _choiceLabelPadding >=
+                widest)
               LoopChoiceRow<int>(
                 values: positions,
                 labelOf: (k) => choices[k],
@@ -300,7 +327,7 @@ class _ChoiceParamControl extends StatelessWidget {
                 width: constraints.maxWidth,
                 height: 64,
                 gap: gap,
-                fontSize: 22,
+                fontSize: _choiceFontSize,
               )
             else
               LoopSelect<int>(

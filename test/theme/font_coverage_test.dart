@@ -212,7 +212,10 @@ void main() {
     }
   });
 
-  test('every character of every app string draws in a bundled face', () {
+  // What the theme's text can draw: Inter and the fallback. Text a painter
+  // lays out with its own TextStyle (a pedal's printed name and knob
+  // labels) does not take the theme's fallback, and draws only fixed ASCII.
+  test("every character of every app string draws in the theme's faces", () {
     final strings = {
       ..._arbStrings(),
       ..._dartStrings([
