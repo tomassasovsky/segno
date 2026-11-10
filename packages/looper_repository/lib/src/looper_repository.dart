@@ -1318,7 +1318,13 @@ class LooperRepository {
     final commandsSettled = _engine.commandsSettled;
     final snapshot = _engine.snapshot();
     _noticeLengthHistoryRefusals(snapshot);
+    final heardBefore = _laneHeard;
     _laneHeard = _heardLanesOf(snapshot);
+    // A take that came back with its image (an Undo of a Clear, a recall)
+    // charges nothing again, so what its return held comes back (#1713).
+    if (_fxHeld.isNotEmpty && _laneHeard.difference(heardBefore).isNotEmpty) {
+      _admitRig(release: true);
+    }
     for (final entry in _pendingImages.entries.toList()) {
       final ch = entry.key;
       if (ch >= snapshot.tracks.length) continue;
@@ -1339,6 +1345,13 @@ class LooperRepository {
           }
         }
         _forgetLaneMutes(ch);
+        // A fresh take's lanes recorded dry hold no image: what an earlier
+        // take was printed with is not theirs.
+        if (pending.clearOnCommit) {
+          _lanePrinted.removeWhere(
+            (key, _) => key.$1 == ch && !pending.inherited.containsKey(key.$2),
+          );
+        }
         for (final inherited in pending.inherited.entries) {
           final lane = inherited.key;
           final effects = inherited.value;
@@ -1448,8 +1461,21 @@ class LooperRepository {
   void _syncLaneSources() {
     if (!_intendRunning) return;
     for (final key in _laneHeard) {
-      final source = _laneSourceOf(key);
+      var source = _laneSourceOf(key);
       if (_laneSourceSent[key] == source) continue;
+      // A re-amp the Effects page did not weigh (a parameter from the bloc,
+      // a control's press) that does not fit is held, as R2 holds a chain,
+      // and the take keeps playing what was heard.
+      if (source == LaneSource.clean &&
+          _fxLoadAt(_fxRate, _fxPeriod) >
+              fxBudgetNs(_fxRate, period: _fxPeriod)) {
+        final at = FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2);
+        _fxHeld.add(at);
+        _pushChainSwitch(at, on: false);
+        if (!_fxHoldNotice.contains(at)) _fxHoldNotice = [..._fxHoldNotice, at];
+        source = _laneSourceOf(key);
+        if (_laneSourceSent[key] == source) continue;
+      }
       final result = _engine.setLaneSource(
         channel: key.$1,
         lane: key.$2,
@@ -3942,6 +3968,10 @@ class LooperRepository {
     }
     if (_pendingImages.containsKey(channel)) return EngineResult.notReady;
     final recipes = <int, FxRecipe>{};
+    // The lanes recording through an input chain record it heard (#1713),
+    // even when no entry of it could be copied onto the lane (a plugin whose
+    // state did not capture): the image does not need the copy.
+    final heardLanes = <int>{};
     final inherited = <int, List<TrackEffect>>{};
     final inheritedInputs = <int, int>{};
     final inheritedHandles = <int, Map<String, PluginSlotHandle>>{};
@@ -3965,6 +3995,7 @@ class LooperRepository {
             }
             continue;
           }
+          heardLanes.add(lane);
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
@@ -4052,10 +4083,6 @@ class LooperRepository {
     // in switched off for the budget, since a lane playing its image runs no
     // chain. The lane keeps the chain by value, to re-amp the clean take
     // when it is edited.
-    final heardLanes = {
-      for (final MapEntry(:key, :value) in inherited.entries)
-        if (value.isNotEmpty) key,
-    };
     // An overdub over a take recorded dry, on a lane with no chain of its
     // own, records through the input's effects into an image made from the
     // take's clean signal. A take with a chain of its own keeps playing
@@ -4072,7 +4099,12 @@ class LooperRepository {
         // Without the image the overdub would play back dry: while the
         // engine cannot attach one yet the press is refused, as while a
         // recipe is in flight. A lane with no take has nothing to attach to.
-        if (attached == EngineResult.notReady) return attached;
+        if (attached == EngineResult.notReady) {
+          // Owed one retry, as a fresh capture's refusal is; a retry that
+          // is still refused says so on the track.
+          if (!_retryingRecord) _recordRetry = _RecordRetry(channel);
+          return attached;
+        }
         if (attached.isOk) _lanePrinted.remove(key);
       }
     }
@@ -7232,8 +7264,18 @@ class LooperRepository {
     if (handle == null) return false;
     final updated = _readBackParams(fx, handle);
     if (updated == null) return false;
-    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = updated;
+    final key = (channel, lane);
+    final next = List<TrackEffect>.of(effects)..[index] = updated;
+    // A take playing what was heard (#1713): the first read of values its
+    // copy did not name changes no sound, so it is not an edit.
+    if (_lanePrinted.containsKey(key) &&
+        _printMatches(key, effects) &&
+        updated.paramValues.entries.every(
+          (e) => (fx.paramValues[e.key] ?? e.value) == e.value,
+        )) {
+      _lanePrinted[key] = next;
+    }
+    _laneEffects[key] = next;
     _reproject();
     return true;
   }
@@ -9758,7 +9800,9 @@ class LooperRepository {
         ? snapshot.tracks[retry.channel]
         : null;
     if (track == null ||
-        track.state != TrackState.empty ||
+        (track.state != TrackState.empty &&
+            track.state != TrackState.playing &&
+            track.state != TrackState.stopped) ||
         track.pending ||
         track.pendingLaunch != null ||
         track.countInCancelGrace) {

@@ -173,6 +173,26 @@ void main() {
       expect(repo.lanePrintedWhenEdited(0, 0), isNull);
     });
 
+    test('a fresh take recorded dry forgets what an earlier take was '
+        'printed with', () {
+      repo
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..record()
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.eq)],
+        );
+      expect(repo.lanePrintedWhenEdited(0, 0), isNotNull);
+      engine.heardLanes.clear();
+      repo
+        ..setMonitorEffects(input: 0, effects: const [])
+        ..record();
+      expect(engine.lastRecordImage!.heardLanes, isEmpty);
+      expect(repo.lanePrintedWhenEdited(0, 0), isNull);
+      expect(repo.allLaneChains()[(0, 0)]?.meta?.printed, isNull);
+    });
+
     test("switching a take's chain off plays it clean and dry", () {
       repo
         ..setMonitorEffects(input: 0, effects: _rack())
