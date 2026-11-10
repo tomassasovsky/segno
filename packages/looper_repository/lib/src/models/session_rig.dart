@@ -33,6 +33,7 @@ class SessionRigLane {
     this.balance = 1,
     this.recordedInput = -1,
     this.history = TrackHistory.none,
+    this.heard = const [],
   });
 
   /// The lane's recorded image (slice 3): where its input sat when the take
@@ -54,6 +55,16 @@ class SessionRigLane {
   /// [history] entry except redo-side Peel markers, plus the live image
   /// ([TrackHistory.imageCount]).
   final List<Float32List> layers;
+
+  /// Each of [layers]' heard image (#1713), interleaved stereo and in the
+  /// same order, empty for an image without one; empty as a whole for a
+  /// lane with none. An image restored without one plays clean through the
+  /// lane's chain.
+  final List<Float32List> heard;
+
+  /// The heard image of the image at [ordinal], empty when it has none.
+  Float32List heardAt(int ordinal) =>
+      ordinal < heard.length ? heard[ordinal] : Float32List(0);
 
   /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;

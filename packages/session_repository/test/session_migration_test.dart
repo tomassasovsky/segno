@@ -494,8 +494,25 @@ void main() {
       );
     });
 
-    test('the current schema opens with no conversion', () async {
+    test('schema 18 opens with no heard images and nothing filled in '
+        '(#1713)', () async {
       final dir = copyFixture('v18_recorded_input');
+      final (:bundle, :conversion) = await repo().open(
+        dir,
+        liveSettings: () => _live,
+      );
+      expect(conversion!.fromVersion, 18);
+      expect(conversion.notes, isEmpty);
+      expect(bundle.heardStems, isEmpty);
+      for (final track in bundle.session.tracks) {
+        for (final lane in track.lanes) {
+          expect(lane.layers.map((l) => l.heard), everyElement(isNull));
+        }
+      }
+    });
+
+    test('the current schema opens with no conversion', () async {
+      final dir = copyFixture('v19_heard');
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
@@ -543,6 +560,14 @@ void main() {
       final lanes = bundle.session.tracks[1].lanes;
       expect(lanes[1].inputChannel, 1);
       expect(lanes[1].recordedInput, 3);
+      // Each layer's heard image, empty for the one without (#1713).
+      final heard = bundle.heardStems[(0, 0)]!;
+      expect(heard, hasLength(3));
+      expect(heard[0], hasLength(4800));
+      expect(heard[0].take(2), [0.0625, -0.0625]);
+      expect(heard[1], isEmpty);
+      expect(heard[2].take(2), [0.125, -0.125]);
+      expect(bundle.heardStems.keys, [(0, 0)]);
       expect(snapshotOf(dir), before);
     });
 
@@ -560,7 +585,7 @@ void main() {
         (m) => ((((m['tracks'] as List)[1] as Map)['lanes'] as List)[1] as Map)
             .remove('recordedInput'),
       ]) {
-        final manifest = manifestOf(copyFixture('v18_recorded_input'));
+        final manifest = manifestOf(copyFixture('v19_heard'));
         edit(manifest);
         expect(
           () => decodeSessionManifest(jsonEncode(manifest)),
@@ -661,7 +686,7 @@ void main() {
     }
 
     test('newer than this build', () async {
-      final dir = copyFixture('v18_recorded_input');
+      final dir = copyFixture('v19_heard');
       rewrite(dir, (m) => m['version'] = Session.formatVersion + 1);
       await expectRefused(dir, isA<SessionUnsupportedVersion>());
     });

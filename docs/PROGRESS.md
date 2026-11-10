@@ -77,7 +77,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track chains) next | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
-| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant), 2a (length edits, render recipe, track print, session layers), 2b (Transpose and the bridge) and 2c (performance stems) in review; part 3 (rendered tails) in build | build | auto | `claude/take-plays-heard-1713-p*` |
+| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant), 2a (length edits, render recipe, track print, session layers), 2b (Transpose and the bridge), 2c (performance stems), 3 (rendered tails) and 4 (the app saves, loads and exports heard images, dormant) in review | build | auto | `claude/take-plays-heard-1713-p*` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
@@ -190,8 +190,17 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   into overdub renders none (the overdub records the ring-out). A new
   capture, Stop, a slot or length change, Reverse or Speed drop what is not
   added yet; Undo of the pass takes its tail with it.
-- Not yet: the app (parts 4 and 5). Nothing in the app records an image
-  until the last part.
+- Part 4 (the app, dormant): `AudioEngine` reads and writes heard images
+  (`exportLayerHeard`, `exportTrackLaneHeard`, `importLayerHeard`), sets a
+  lane's source and attaches an image (`setLaneSource`, `heardAttach`), and
+  arms a take with `RecordImage.heardLanes`. Sessions are schema 19: each
+  layer names its heard image (`heard`, a stereo WAV beside the layer; the
+  18 to 19 step fills in nothing), a recall imports it right after its
+  layer, and the stem export writes it beside the clean stem. A performance
+  capture writes `heardPcmRef` for the arm and disarm snapshots, and the
+  Ableton export's session clip uses it.
+- Not yet: part 5, the switch-over. Nothing in the app records an image
+  until then, so parts 1 to 4 change nothing a player hears.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.

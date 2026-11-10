@@ -1226,6 +1226,26 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-(channel, lane) source passed to [setLaneSource].
+  final Map<(int, int), LaneSource> laneSources = {};
+
+  @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) {
+    laneSources[(channel, lane)] = source;
+    calls.add('setLaneSource');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) {
+    calls.add('heardAttach');
+    return EngineResult.ok;
+  }
+
   // ---- Track-stage + Master insert chains (FX v3 part 1b), recorded so
   // repository tests can assert the four-stage pushes. ----
 
@@ -1767,6 +1787,42 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   Float32List exportLayer(int channel, int lane, int ordinal) {
     calls.add('exportLayer');
     return Float32List(0);
+  }
+
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) {
+    calls.add('exportLayerHeard');
+    return Float32List(0);
+  }
+
+  @override
+  Float32List exportTrackLaneHeard(int channel, int lane) {
+    calls.add('exportTrackLaneHeard');
+    return Float32List(0);
+  }
+
+  /// Every heard image passed to [importLayerHeard], keyed by
+  /// `(channel, lane, ordinal)`.
+  final Map<(int, int, int), Float32List> importedHeard = {};
+
+  /// If `> 0`, [importLayerHeard] returns [EngineResult.notReady] this many
+  /// times (decrementing), as while a heard attach is in flight.
+  int importHeardNotReadyCountdown = 0;
+
+  @override
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) {
+    calls.add('importLayerHeard');
+    if (importHeardNotReadyCountdown > 0) {
+      importHeardNotReadyCountdown--;
+      return EngineResult.notReady;
+    }
+    if (importResult.isOk) importedHeard[(channel, lane, ordinal)] = pcm;
+    return importResult;
   }
 
   @override

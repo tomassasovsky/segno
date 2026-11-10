@@ -391,7 +391,11 @@ SessionRig rigForNewLoop(Session live, {NewLoopTemplate? template}) {
               if (!channels.contains(chain.channel)) chain,
           ],
         );
-  return rigFromBundle((session: session, laneStems: const {}));
+  return rigFromBundle((
+    session: session,
+    laneStems: const {},
+    heardStems: const {},
+  ));
 }
 
 /// Projects one manifest monitor + its decoded chain into the rig's Input-stage
@@ -442,6 +446,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           balance: lane.balance,
           recordedInput: lane.recordedInput,
           history: lane.history,
+          heard: bundle.heardStems[(track.channel, lane.lane)] ?? const [],
         ),
       );
     }

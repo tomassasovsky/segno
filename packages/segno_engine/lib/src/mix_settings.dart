@@ -172,11 +172,19 @@ class RecordImage {
     required this.revision,
     required Map<int, StereoMix> lanes,
     Map<int, FxRecipe> laneFx = const {},
+    Set<int> heardLanes = const {},
   }) : lanes = Map.unmodifiable(lanes),
-       laneFx = Map.unmodifiable(laneFx);
+       laneFx = Map.unmodifiable(laneFx),
+       heardLanes = Set.unmodifiable(heardLanes);
 
   /// Recipes frozen with this arm and published only when capture starts.
   final Map<int, FxRecipe> laneFx;
+
+  /// Lanes whose take records its heard image (#1713), the output of the
+  /// input chain the lane records, beside the clean take. Read only when the
+  /// arm starts a fresh take on an empty track; a lane outside the set
+  /// records clean only.
+  final Set<int> heardLanes;
 
   /// Durable per-track publication identity, including very short takes.
   final int revision;
@@ -189,6 +197,7 @@ class RecordImage {
       revision > 0 &&
       revision <= 0xffffffff &&
       laneFx.entries.every((e) => e.key >= 0 && e.key < 8 && e.value.isValid) &&
+      heardLanes.every((l) => l >= 0 && l < 8) &&
       lanes.entries.every(
         (e) =>
             e.key >= 0 && e.key < 8 && _validMix(e.value) && e.value.gain <= 1,
