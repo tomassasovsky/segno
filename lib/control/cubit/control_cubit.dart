@@ -3980,20 +3980,24 @@ class ControlCubit extends Cubit<ControlState> {
     return saved;
   }
 
-  /// The saves that can change what the controls reach (#1723): the console
-  /// bindings, the external switches' setup and the MIDI mappings, one at a
-  /// time, whichever page saves them.
-  Future<void> _reachWrites = Future<void>.value();
+  /// The last save that can change what the controls reach (#1723), still
+  /// running: the console bindings, the external switches' setup or the MIDI
+  /// mappings, whichever page saves them. Null when none is.
+  Future<void>? _reachTail;
 
-  /// Runs [step] after every earlier save in [_reachWrites], so its budget
-  /// check ([_admitReach]) and its commit are one step: two saves from
-  /// different pages cannot both pass against the same room.
+  /// Runs [step] after the save in [_reachTail], at once when there is none,
+  /// so its budget check ([_admitReach]) and its commit are one step: two
+  /// saves from different pages cannot both pass against the same room.
   Future<T> _serializeReach<T>(Future<T> Function() step) {
-    final next = _reachWrites.then((_) => step());
-    _reachWrites = next.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
+    final prior = _reachTail;
+    final next = prior == null ? step() : prior.then((_) => step());
+    late final Future<void> tail;
+    tail = next
+        .then<void>((_) {}, onError: (Object _, StackTrace _) {})
+        .whenComplete(() {
+          if (identical(_reachTail, tail)) _reachTail = null;
+        });
+    _reachTail = tail;
     return next;
   }
 
@@ -4006,7 +4010,9 @@ class ControlCubit extends Cubit<ControlState> {
   void _admitReach(ControlState next) {
     final before = fxReachOf(state);
     final after = fxReachOf(next);
-    if (fxReachShrinks(before, after)) return;
+    if (fxReachShrinks(before, after) || FxReach(before) == FxReach(after)) {
+      return;
+    }
     if (!_looper.fxReachFits(after)) throw const FxReachOverBudget();
   }
 
