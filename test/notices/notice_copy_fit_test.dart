@@ -290,7 +290,12 @@ final _messages = <_Copy>[
       (l) => l.perfArmRefused,
       body: (l) => l.operationBusy(kind.name),
     ),
-  _copy('not recovered', (l) => l.perfTakesNotRecovered(3)),
+  _copy(
+    'not recovered',
+    (l) => l.perfTakesNotRecovered(3),
+    body: (l) => l.perfTakesNotRecoveredBody(3),
+    action: (l) => l.consoleTryAgain,
+  ),
   _copy('discarded', (l) => l.perfDiscarded, tone: NoticeTone.neutral),
   for (final gate in [
     LooperModeGate.capturing,

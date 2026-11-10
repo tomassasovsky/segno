@@ -2848,6 +2848,7 @@ void main() {
           done: false,
           progressPercent: 10,
         );
+        var boot = 'boot-1';
         final timingRepo = PerformanceRepository(
           storageIo: fakeStorageIo,
           guards: GuardRegistry(),
@@ -2856,6 +2857,7 @@ void main() {
           now: () => clock,
           bootRecoveryPollInterval: const Duration(milliseconds: 2),
           bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
+          bootId: () => boot,
         );
         addTearDown(timingRepo.dispose);
         final dir = seedCrashed('perf-crashed');
@@ -2878,6 +2880,7 @@ void main() {
         // Next boot: the wedged render did not survive the reboot; the
         // stranded bundle is re-salvaged — stem render re-attempted, not
         // just moved stemless.
+        boot = 'boot-2';
         engine
           ..renderProgressAfterBegin = null
           ..renderProgress = PerformanceRenderProgress.empty;
@@ -3169,6 +3172,7 @@ void main() {
           now: () => clock,
           bootRecoveryPollInterval: const Duration(milliseconds: 2),
           bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
+          bootId: () => 'boot-1',
         );
         addTearDown(boot1.dispose);
         await boot1.runBootRecovery();
@@ -3280,6 +3284,185 @@ void main() {
         expect(marker.readAsStringSync(), 'prior recovery');
       },
     );
+
+    group('a salvage the app did not survive (#1747)', () {
+      late PerformanceRepository bootRepo;
+
+      setUp(() {
+        bootRepo = PerformanceRepository(
+          storageIo: fakeStorageIo,
+          guards: GuardRegistry(),
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          now: () => clock,
+          bootRecoveryPollInterval: const Duration(milliseconds: 5),
+          bootId: () => 'boot-b',
+        );
+      });
+
+      tearDown(() => bootRepo.dispose());
+
+      /// Leaves [dir] as a salvage that began in boot [bootId] and never
+      /// ended: the app stopped during it.
+      void interrupted(String dir, {required String bootId, int count = 1}) {
+        File(
+          '$dir/${PerformanceRepository.recoveryMarkerName}',
+        ).writeAsStringSync('');
+        File(
+          '$dir/${PerformanceRepository.recoveryAttemptName}',
+        ).writeAsStringSync('$bootId\n$count\n');
+      }
+
+      String recoveredPath(String slug) =>
+          '${tempDir.path}/exports/recovered/$slug';
+
+      bool has(String dir, String name) => File('$dir/$name').existsSync();
+
+      test(
+        'one the app did not survive in this same boot is marked failed, '
+        'not run again, and counted as not recovered at every start',
+        () async {
+          final dir = seedCrashed('perf-crashed');
+          interrupted(dir, bootId: 'boot-b');
+
+          expect(await bootRepo.hasBootRecoveryWork(), isFalse);
+          await bootRepo.runBootRecovery();
+
+          expect(engine.renderBeginCalls, 0);
+          expect(bootRepo.unrecoveredTakes, [dir]);
+          expect(has(dir, PerformanceRepository.recoveryFailedName), isTrue);
+          expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
+          expect(
+            File('$dir/master-001.wav').existsSync(),
+            isTrue,
+            reason: 'its files are kept',
+          );
+
+          await bootRepo.runBootRecovery();
+          expect(engine.renderBeginCalls, 0);
+          expect(bootRepo.unrecoveredTakes, [dir]);
+        },
+      );
+
+      test(
+        'one a reboot interrupted once (a power cut) is salvaged again',
+        () async {
+          final dir = seedCrashed('perf-crashed');
+          interrupted(dir, bootId: 'boot-a');
+
+          expect(await bootRepo.hasBootRecoveryWork(), isTrue);
+          await bootRepo.runBootRecovery();
+
+          final recovered = recoveredPath('perf-crashed');
+          expect(Directory(recovered).existsSync(), isTrue);
+          expect(
+            has(recovered, PerformanceRepository.recoveryAttemptName),
+            isFalse,
+          );
+          expect(bootRepo.unrecoveredTakes, isEmpty);
+        },
+      );
+
+      test('two interrupted salvages in a row mark it failed', () async {
+        final dir = seedCrashed('perf-crashed');
+        interrupted(dir, bootId: 'boot-a', count: 2);
+
+        await bootRepo.runBootRecovery();
+
+        expect(engine.renderBeginCalls, 0);
+        expect(bootRepo.unrecoveredTakes, [dir]);
+        expect(has(dir, PerformanceRepository.recoveryFailedName), isTrue);
+      });
+
+      test(
+        'a stranded bundle the app did not survive is failed too, and stays '
+        'out of the library',
+        () async {
+          final dir = '${tempDir.path}/exports/perf-stranded';
+          Directory(dir).createSync(recursive: true);
+          writeNativeSidecar(dir, finalized: true);
+          interrupted(dir, bootId: 'boot-b');
+
+          await bootRepo.runBootRecovery();
+
+          expect(engine.renderBeginCalls, 0);
+          expect(bootRepo.unrecoveredTakes, [dir]);
+          expect(
+            (await bootRepo.listCaptures()).map((c) => c.path),
+            isNot(contains(dir)),
+          );
+        },
+      );
+
+      test(
+        'the salvage is on record while it runs, with this boot and its '
+        'count, and its record goes once it ends',
+        () async {
+          final dir = seedCrashed('perf-crashed');
+          engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+            done: false,
+            progressPercent: 10,
+          );
+
+          final recovery = bootRepo.runBootRecovery();
+          while (engine.renderBeginCalls == 0) {
+            await Future<void>.delayed(const Duration(milliseconds: 1));
+          }
+          expect(
+            File(
+              '$dir/${PerformanceRepository.recoveryAttemptName}',
+            ).readAsLinesSync(),
+            ['boot-b', '1'],
+          );
+
+          engine.renderProgress = PerformanceRenderProgress.empty;
+          await recovery;
+          final recovered = recoveredPath('perf-crashed');
+          expect(Directory(recovered).existsSync(), isTrue);
+          expect(
+            has(recovered, PerformanceRepository.recoveryAttemptName),
+            isFalse,
+          );
+        },
+      );
+
+      test(
+        'a salvage the app survives but that recovers nothing ends its '
+        'record, so the next start tries it again',
+        () async {
+          final dir = '${tempDir.path}/exports/perf-corrupt';
+          Directory(dir).createSync(recursive: true);
+          File('$dir/performance.json').writeAsStringSync('{not json');
+
+          await bootRepo.runBootRecovery();
+
+          expect(bootRepo.unrecoveredTakes, [dir]);
+          expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
+          expect(has(dir, PerformanceRepository.recoveryFailedName), isFalse);
+        },
+      );
+
+      test(
+        'retryUnrecovered clears the mark and salvages the take again',
+        () async {
+          final dir = seedCrashed('perf-crashed');
+          interrupted(dir, bootId: 'boot-b');
+          await bootRepo.runBootRecovery();
+          expect(bootRepo.unrecoveredTakes, [dir]);
+
+          await bootRepo.retryUnrecovered();
+
+          final recovered = recoveredPath('perf-crashed');
+          expect(Directory(recovered).existsSync(), isTrue);
+          expect(
+            has(recovered, PerformanceRepository.recoveryFailedName),
+            isFalse,
+          );
+          expect(bootRepo.unrecoveredTakes, isEmpty);
+          expect(engine.lastRenderCaptureDir, dir);
+        },
+      );
+    });
   });
 
   group('captureProgress', () {

@@ -557,8 +557,15 @@ void onPerformanceRecorderState(
     NoticeText title, {
     NoticeTone tone = NoticeTone.warning,
     NoticeText? body,
+    NoticeAction? action,
   }) => context.read<NoticesCubit>().show(
-    Notice(id: AppNoticeId.performance, tone: tone, title: title, body: body),
+    Notice(
+      id: AppNoticeId.performance,
+      tone: tone,
+      title: title,
+      body: body,
+      action: action,
+    ),
   );
   // A refused arm has to say so. Silently doing nothing is indistinguishable
   // from a dead control, and the operator would simply press again (#640).
@@ -603,10 +610,20 @@ void onPerformanceRecorderState(
     return;
   }
   // A take the boot salvage could not recover must not just vanish from
-  // view: say so; its files are kept (#1198).
+  // view: say so; its files are kept (#1198). Said at every start while it
+  // stays so, with Try again: a salvage the app did not survive is not
+  // started again on its own (#1747).
   if (state is PerformanceRecorderIdle && state.notRecovered > 0) {
     final count = state.notRecovered;
-    say((l10n) => l10n.perfTakesNotRecovered(count));
+    final recorder = context.read<PerformanceRecorderCubit>();
+    say(
+      (l10n) => l10n.perfTakesNotRecovered(count),
+      body: (l10n) => l10n.perfTakesNotRecoveredBody(count),
+      action: NoticeAction(
+        label: (l10n) => l10n.consoleTryAgain,
+        onPressed: () => unawaited(recorder.retryRecovery()),
+      ),
+    );
     return;
   }
   // Entering Rendering opens the dialog on its rendering face; entering

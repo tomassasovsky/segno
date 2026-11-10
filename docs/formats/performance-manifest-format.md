@@ -36,9 +36,9 @@ A reader only ever needs to parse the file **once it is finalized**
 `finalized` absent or `false` is either still in progress or is exactly what
 `PerformanceRepository.findUnfinalized` flags for crash recovery (D-SALVAGE).
 
-## Salvage sibling files (`.boot-recovery`, `.recovered-at`)
+## Salvage sibling files (`.boot-recovery`, `.boot-recovery-attempt`, `.boot-recovery-failed`, `.recovered-at`)
 
-Boot-time crash salvage (D-SALVAGE, silent since #679) leaves two tiny
+Boot-time crash salvage (D-SALVAGE, silent since #679) leaves tiny
 sibling files beside `performance.json` at different points of a bundle's
 life. They exist because `finalized` alone cannot carry the whole salvage
 story: a finished take the user kept and a salvage output stranded mid-move
@@ -49,6 +49,8 @@ console boots near the epoch until its first NTP sync).
 | File | Format | Written by | Removed by |
 |---|---|---|---|
 | `.boot-recovery` | empty file (its presence is the datum) | `PerformanceRepository.runBootRecovery`, immediately before a bundle's salvage begins | the move into `recovered/` completing — its deletion is what declares the salvage done |
+| `.boot-recovery-attempt` | two lines of UTF-8 text: the kernel boot id of the boot that began the salvage, then how many salvages of the bundle have begun without ending (#1747) | the salvage, before its finalize and stem render begin | the salvage ending, however it went (moved, or kept for the next start); left behind when the app stops during it, and also while a timed-out render still runs |
+| `.boot-recovery-failed` | empty file | the next start, finding `.boot-recovery-attempt` from the same boot (the app was killed or crashed during the salvage) or with a count of 2 (two interrupted salvages in a row) | the player's Try again on the notice that says a take could not be recovered |
 | `.recovered-at` | epoch milliseconds, UTF-8 text, nothing else | the same move, stamped on the **source** bundle strictly before the rename, so the rename carries it atomically | never — it stays with the bundle as the record of when it arrived under `recovered/` |
 
 What a standalone tool should conclude from each combination:
@@ -57,6 +59,8 @@ What a standalone tool should conclude from each combination:
 |---|---|
 | `finalized` `false`/absent (exports root) | still armed, or crashed while armed — the salvage candidate `findUnfinalized` flags; `.boot-recovery` may also be present from an earlier attempt that could not finalize |
 | `finalized: true` + `.boot-recovery` (exports root) | **stranded salvage output**: finalize completed but the move to `recovered/` did not (a crash in that window, or a stem-render timeout); the next boot re-attempts the render and finishes the move |
+| `.boot-recovery-attempt` (exports root) | a salvage began and did not end: the app stopped during it. A start in the same boot marks the bundle failed; a start after a reboot salvages it once more |
+| `.boot-recovery-failed` (exports root) | a salvage the app did not survive: never started again by a start, the bundle and its files kept and reported as not recovered at every start, until the player asks to try again |
 | `finalized: true`, no `.boot-recovery` (exports root) | a normal finished take — never touched by salvage or pruning |
 | `.recovered-at` present (under `recovered/`) | landed there via salvage at the stamped instant. Never deleted automatically: recovered audio stays until the user removes it (#1198; the 30-day prune of #679 is gone) |
 | under `recovered/` without `.recovered-at` | not placed there by the salvage (e.g. dragged in by hand) |

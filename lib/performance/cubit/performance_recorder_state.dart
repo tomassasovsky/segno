@@ -154,8 +154,9 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   final int refusal;
 
   /// Takes the boot salvage could not recover this boot (a raw take too
-  /// large to convert yet, a damaged sidecar). Each stays where it is with
-  /// every file kept; the player is told once, as the salvage settles.
+  /// large to convert yet, a damaged sidecar, a salvage the app did not
+  /// survive, #1747). Each stays where it is with every file kept; the
+  /// player is told once, as the salvage settles, and can try again.
   final int notRecovered;
 
   /// The take that just stopped could not be saved or finished, or null.

@@ -3743,11 +3743,20 @@ void main() {
       await pump(tester);
       await tester.pump();
 
+      expect(said.titles, ['This take could not be recovered.']);
+      final en = lookupAppLocalizations(const Locale('en'));
+      expect(said.shown.single.body!(en), 'Its files are kept.');
+      // Try again salvages it again: a salvage the app did not survive is
+      // not started again on its own (#1747).
+      final action = said.shown.single.action!;
       expect(
-        said.titles,
-        ['This take could not be recovered. Its files are kept.'],
+        action.label(en),
+        'Try again',
       );
-      await tester.pump(const Duration(seconds: 6));
+      when(performanceRecorder.retryRecovery).thenAnswer((_) async {});
+      action.onPressed();
+      verify(performanceRecorder.retryRecovery).called(1);
+      await tester.pump(const Duration(seconds: 8));
     });
 
     testWidgets('A toggles arm', (tester) async {

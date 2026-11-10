@@ -264,6 +264,21 @@ class PerformanceRepository {
   /// to run.
   static const String recoveryMarkerName = '.boot-recovery';
 
+  /// The file a salvage writes in a bundle before its finalize and stem
+  /// render begin, and removes once they have ended (#1747): this boot's
+  /// id and how many salvages of the bundle have begun. Found at the next
+  /// start, it says the app stopped while that salvage ran (it ran the
+  /// console out of memory, crashed, or the power went).
+  static const String recoveryAttemptName = '.boot-recovery-attempt';
+
+  /// The mark that a bundle's salvage did not finish and is not started
+  /// again at boot (#1747): the app stopped during it in the same boot, or
+  /// during two salvages in a row. The bundle and its files are kept and
+  /// counted in [unrecoveredTakes]; [retryUnrecovered] clears the mark and
+  /// salvages it again. Without it, a salvage that kills the app is run by
+  /// every start, and the app never stays up.
+  static const String recoveryFailedName = '.boot-recovery-failed';
+
   /// Default for the ctor's `bootRecoveryRenderTimeout`: how long one
   /// salvage's stem render may run before [runBootRecovery] gives up
   /// waiting and keeps the bundle where it is (marker intact, for the next
@@ -325,8 +340,9 @@ class PerformanceRepository {
   /// finished and nothing new has started since).
   PerformanceRenderProgress get renderProgress => _engine.renderPoll();
 
-  /// Every track's render outcome discovered so far — grows progressively as
-  /// each stem completes. `succeeded` reflects both that track's dry AND wet
+  /// Every track's render outcome discovered so far: all of them once the
+  /// stems are written, which the tracks finish together (#1747). `succeeded`
+  /// reflects both that track's dry AND wet
   /// stem (either failing marks the track failed). A per-track failure does
   /// not mean the render as a whole failed (partial success); check
   /// [PerformanceRenderTrackStatus.succeeded] per entry.
@@ -965,6 +981,12 @@ class PerformanceRepository {
       // render, and the bundle would land in the recovered area stemless
       // with its marker gone. Stop; the remainder waits for the next boot.
       if (!renderProgress.done) return;
+      // A salvage the app did not survive is not run again by itself: the
+      // take is counted as not recovered until the player asks again.
+      if (_salvageFailed(dir)) {
+        _unrecovered.add(dir);
+        continue;
+      }
       await _recoverSilently(root, dir);
       // Still in place and still unfinalized: this boot could not recover
       // it. Its files stay; the player is told.
@@ -990,8 +1012,65 @@ class PerformanceRepository {
     } on Exception {
       return false;
     }
-    if (_strandedSalvage(root).isNotEmpty) return true;
-    return (await findUnfinalized()).isNotEmpty;
+    if (_strandedSalvage(root).any((dir) => !_salvageFailed(dir))) {
+      return true;
+    }
+    return (await findUnfinalized()).any(
+      (capture) => !_salvageFailed(capture.directory),
+    );
+  }
+
+  /// Clears the failed mark ([recoveryFailedName]) on every take
+  /// [unrecoveredTakes] names and salvages them again, as a start does
+  /// (#1747). For the player's Try again on the notice that says a take
+  /// could not be recovered. A salvage that stops the app again marks the
+  /// take failed again at the next start.
+  Future<void> retryUnrecovered() async {
+    for (final dir in _unrecovered) {
+      for (final name in [recoveryFailedName, recoveryAttemptName]) {
+        try {
+          final file = File('$dir/$name');
+          if (file.existsSync()) file.deleteSync();
+        } on FileSystemException {
+          continue; // the salvage below sees what is left
+        }
+      }
+    }
+    await runBootRecovery();
+  }
+
+  /// Whether [dir]'s salvage is marked failed, marking it now when the app
+  /// stopped during its last salvage ([recoveryAttemptName]) in this same
+  /// boot (the app was restarted: it was killed or crashed) or during two
+  /// in a row. A salvage interrupted once by a reboot (a power cut) is run
+  /// again.
+  bool _salvageFailed(String dir) {
+    if (File('$dir/$recoveryFailedName').existsSync()) return true;
+    final attempt = _readAttempt(dir);
+    if (attempt == null) return false;
+    if (attempt.bootId != _bootId() && attempt.count < 2) return false;
+    try {
+      File('$dir/$recoveryFailedName').writeAsStringSync('');
+      File('$dir/$recoveryAttemptName').deleteSync();
+    } on FileSystemException {
+      // Unwritable: still not run this boot; the next start decides again.
+    }
+    return true;
+  }
+
+  /// The salvage of [dir] that began and has not ended, or null.
+  ({String bootId, int count})? _readAttempt(String dir) {
+    final file = File('$dir/$recoveryAttemptName');
+    try {
+      if (!file.existsSync()) return null;
+      final lines = file.readAsLinesSync();
+      return (
+        bootId: lines.isEmpty ? '' : lines.first,
+        count: lines.length < 2 ? 1 : int.tryParse(lines[1]) ?? 1,
+      );
+    } on FileSystemException {
+      return (bootId: '', count: 1);
+    }
   }
 
   /// One capture's silent salvage: finalize + render in place, then — only
@@ -1014,6 +1093,13 @@ class PerformanceRepository {
       // the marker is what lets the next boot's [_strandedSalvage] finish
       // the move instead of the bundle falling outside retention forever.
       File('$dir/$recoveryMarkerName').writeAsStringSync('');
+      // Begun: if the app stops before it ends, the next start knows
+      // (#1747). Written before the finalize, which can be as heavy as the
+      // render for a take from before #1198.
+      final attempts = (_readAttempt(dir)?.count ?? 0) + 1;
+      File(
+        '$dir/$recoveryAttemptName',
+      ).writeAsStringSync('${_bootId()}\n$attempts\n');
       if (_sidecarFinalized(dir)) {
         // A stranded bundle: its finalize already completed on a previous
         // boot, and re-running it would do real damage, not just waste work
@@ -1036,11 +1122,15 @@ class PerformanceRepository {
           // where it is — marker intact — so the next boot re-salvages it,
           // stem render and all; the caller's loop then stops on the very
           // render this wait gave up on (see the render-slot check there).
+          // The attempt stays: the render still runs, and an app that stops
+          // during it has not survived this salvage.
           return;
         }
         await Future<void>.delayed(_bootRecoveryPollInterval);
         waited += _bootRecoveryPollInterval;
       }
+      // Ended, however it went: the app survived this salvage.
+      _endAttempt(dir);
       if (!_sidecarFinalized(dir)) return; // nothing recovered; retried later
       // Re-checked at the last synchronous moment before the rename: the
       // awaits above suspended this salvage, and the one directory that must
@@ -1050,8 +1140,20 @@ class PerformanceRepository {
     } on Exception {
       // One capture's failure neither aborts the loop for its siblings nor
       // escapes the unawaited boot call as an unhandled zone error. The
-      // bundle (and its marker) stay for the next boot.
+      // bundle (and its marker) stay for the next boot; a failure the app
+      // survived is no reason not to try again then.
+      if (renderProgress.done) _endAttempt(dir);
       return;
+    }
+  }
+
+  /// Removes [dir]'s [recoveryAttemptName]: its salvage has ended.
+  void _endAttempt(String dir) {
+    try {
+      final file = File('$dir/$recoveryAttemptName');
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException {
+      return; // read as an interrupted salvage at the next start
     }
   }
 

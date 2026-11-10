@@ -82,6 +82,33 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A long capture recovers in bounded memory (#1747)
+
+- Cause: the performance render (`perf_render.c`) held whole-length
+  buffers, 33 bytes a capture frame for a track with a heard image (dry,
+  wet, both heard sides, the heard marks, the routed pair) plus 8 for the
+  master. The 1 h 36 min capture (277M frames) needed 8.7 GB; the console
+  has 8 GB and no swap, so boot recovery was OOM-killed on every start.
+  The per-track segment table (#1717) is a fixed 0.6 MB and not a cause.
+- The render now runs every channel together a block of 65536 frames at a
+  time and writes its stems as it goes (`le_wav_open`/`append`/`seal`):
+  peak 7.5 MB above the process for 3 min, 1 h 36 min or 3 h on the console
+  (under a 256 MB address-space limit), byte-identical stems and master to
+  the whole-buffer render (all 160 native fixtures, the real capture at
+  full length on the Mac, and the console's own build-238 stems). A cancel
+  is seen at the next block and removes the stems it began; a stem that
+  fails after its audio is in the master fails the master too.
+- A device reconfigure (the audio warm-up, seconds after start) no longer
+  cancels a running render: it used to join a worker that was rendering a
+  whole stem, which held "Audio is starting" until the OOM, and dropped the
+  recovery's stems.
+- A salvage the app does not survive is not run again by every start: the
+  bundle carries `.boot-recovery-attempt` (boot id, count) while its
+  salvage runs; found from the same boot, or a second time, the bundle is
+  marked `.boot-recovery-failed`, kept, and counted as not recovered. The
+  not-recovered notice (a passing warning, said at every start) has Try
+  again (`PerformanceRecorderCubit.retryRecovery`).
+
 ## November 2026 The Lo-Fi Rack's Distort is the overdrive (#1737)
 
 - The Looper X's Lo-Fi Distort is its overdrive: the Guitar Rack's OvDrive

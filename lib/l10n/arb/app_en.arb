@@ -7818,9 +7818,18 @@
     "@perfStoppedSlowStorage": {
         "description": "Completion banner when a capture stopped because the storage fell behind and a capture buffer overflowed."
     },
-    "perfTakesNotRecovered": "{count, plural, =1{This take could not be recovered. Its files are kept.} other{{count} takes could not be recovered. Their files are kept.}}",
+    "perfTakesNotRecovered": "{count, plural, =1{This take could not be recovered.} other{{count} takes could not be recovered.}}",
     "@perfTakesNotRecovered": {
-        "description": "Shown once at startup when the boot salvage could not recover one or more crashed captures; their files stay where they are.",
+        "description": "Shown once at startup when the boot salvage could not recover one or more crashed captures; their files stay where they are (perfTakesNotRecoveredBody). Its action, Try again (consoleTryAgain), salvages them again.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "perfTakesNotRecoveredBody": "{count, plural, =1{Its files are kept.} other{Their files are kept.}}",
+    "@perfTakesNotRecoveredBody": {
+        "description": "The body under perfTakesNotRecovered: the takes' files stay where they are.",
         "placeholders": {
             "count": {
                 "type": "int"
