@@ -70,15 +70,18 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// only #1724's runs, at all eight.
 ///
 /// A kind on the hop (the octaver, the Whammy, the Dual Octaver) does a
-/// quarter of its hop in every block up to 64 frames, and two at 44.1 kHz /
-/// 64, so it costs more a frame at 32 frames than at 64. The Overdrive, the
+/// quarter of its hop in every block up to 64 frames, so it costs more a
+/// frame at 32 frames than at 64. At 44.1 kHz a 64-frame block can take two
+/// quarters, a 32-frame block's cost a frame, so there they charge the
+/// larger of their 64- and 32-frame figures (2,000 blocks do not always
+/// catch the two-quarter one). The Overdrive, the
 /// Distortion and the Vinyl run fewer times over at 88.2 kHz and up (#1547),
 /// so they cost less a frame there; the Amp's clipper does too, but its
 /// cabinet runs twice the taps at 96 kHz, so it does not.
 const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
-  TrackEffectType.octaver: [2172, 2016, 2048, 969, 1942, 1182, 1923, 1140],
-  TrackEffectType.whammy: [2049, 1503, 1846, 965, 1933, 1170, 1852, 1151],
-  TrackEffectType.dualOctaver: [2174, 1584, 1942, 1110, 2009, 1210, 1950, 1154],
+  TrackEffectType.octaver: [2172, 2172, 2048, 969, 1942, 1182, 1923, 1140],
+  TrackEffectType.whammy: [2049, 2049, 1846, 965, 1933, 1170, 1852, 1151],
+  TrackEffectType.dualOctaver: [2174, 2174, 1942, 1110, 2009, 1210, 1950, 1154],
   TrackEffectType.overdrive: [904, 861, 903, 860, 522, 513, 540, 533],
   TrackEffectType.distortion: [400, 393, 407, 392, 248, 247, 266, 272],
   TrackEffectType.vinyl: [381, 374, 375, 374, 201, 200, 192, 203],
@@ -129,17 +132,19 @@ const double kFxBudgetShare = 0.77;
 const int kFxBenchRate = 96000;
 
 /// Which of [kFxCostSettings] a device at [sampleRate] and [period]-frame
-/// blocks is charged at: the measured rate nearest to [sampleRate], at 32
-/// frames below 64 and at 64 from there ([_perBlock]: a longer block costs
-/// no more per frame). The Device page offers no block below 32
-/// (AudioSetupState.bufferSizes).
+/// blocks is charged at: the measured rate nearest to [sampleRate] on the
+/// same side of 88.2 kHz, where the oversampled kinds and the pitch kernel
+/// change how much they run (engine_fx.c, le_os_stages), at 32 frames below
+/// 64 and at 64 from there ([_perBlock]: a longer block costs no more per
+/// frame).
 int fxCostSetting(int sampleRate, int period) {
   final rate = sampleRate > 0 ? sampleRate : kFxBenchRate;
   final frames = _perBlock(period) < kFxBenchPeriod ? 32 : kFxBenchPeriod;
   int distance(int i) => (kFxCostSettings[i].rate - rate).abs();
   var best = -1;
   for (var i = 0; i < kFxCostSettings.length; i++) {
-    if (kFxCostSettings[i].period != frames) continue;
+    final s = kFxCostSettings[i];
+    if (s.period != frames || (s.rate < 88200) != (rate < 88200)) continue;
     if (best < 0 || distance(i) < distance(best)) best = i;
   }
   return best;

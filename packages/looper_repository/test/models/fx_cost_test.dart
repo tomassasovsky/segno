@@ -57,8 +57,11 @@ void main() {
       // A longer block costs no more a frame than 64 frames do.
       expect(at(48000, 128), 48000064);
       expect(at(96000, 512), 96000064);
-      // A rate between two measured ones takes the nearer.
+      // A rate between two measured ones takes the nearer on its side of
+      // 88.2 kHz, where the oversampled kinds change how much they run.
       expect(at(50000, 32), 48000032);
+      expect(at(72000, 32), 48000032);
+      expect(at(88200, 32), 88200032);
       expect(at(192000, 64), 96000064);
       // No rate reported: the bench's.
       expect(at(0, 0), 96000064);
@@ -99,6 +102,22 @@ void main() {
       );
     });
 
+    test('a kind on the hop at 44.1 kHz / 64 charges two quarters a block', () {
+      for (final type in [
+        TrackEffectType.octaver,
+        TrackEffectType.whammy,
+        TrackEffectType.dualOctaver,
+      ]) {
+        expect(
+          fxEntryCostNs(_fx(type), sampleRate: 44100),
+          greaterThanOrEqualTo(
+            fxEntryCostNs(_fx(type), period: 32, sampleRate: 44100),
+          ),
+          reason: type.name,
+        );
+      }
+    });
+
     test('a kind on the hop costs more a frame at 32 frames than at 64', () {
       // A quarter of its hop lands in every block up to 64 frames.
       for (final type in [
@@ -106,7 +125,8 @@ void main() {
         TrackEffectType.whammy,
         TrackEffectType.dualOctaver,
       ]) {
-        for (final rate in [44100, 48000, 88200, 96000]) {
+        // Not 44.1 kHz, where a 64-frame block can take two.
+        for (final rate in [48000, 88200, 96000]) {
           expect(
             fxEntryCostNs(_fx(type), period: 32, sampleRate: rate),
             greaterThan(fxEntryCostNs(_fx(type), sampleRate: rate)),

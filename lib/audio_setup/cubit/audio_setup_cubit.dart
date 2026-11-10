@@ -467,8 +467,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// The refusal for a change that would leave the effects no room (#887,
   /// owner's Q5 answer, D19), or `null`. Only a change that shrinks the room
-  /// is refused: a higher rate, or a buffer below the 64-frame block the
-  /// per-frame costs were measured at (32, #1529). A change that leaves the
+  /// is refused: a rate or a buffer whose charges ([fxCostSetting]) or budget
+  /// leave less room (a higher rate, a 32-frame buffer, #1529; a lower rate
+  /// can too, #1724). A change that leaves the
   /// room as it is or frees some is never refused, as an effects removal
   /// never is. The room now is the running device's, which can differ from
   /// the selection when the device negotiated an off-list period. When both
@@ -483,7 +484,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final room = _repository.fxRoomAt(next.sampleRate, next.bufferFrames);
     if (room >= 0) return null;
     if (room >= _repository.fxRoomAt(rate, buffer)) return null;
-    final rateAlone = next.sampleRate > rate
+    final rateAlone = next.sampleRate != rate
         ? _repository.fxRoomAt(next.sampleRate, buffer)
         : 0;
     return rateAlone < 0
