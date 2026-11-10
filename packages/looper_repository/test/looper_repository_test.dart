@@ -7660,11 +7660,20 @@ void main() {
         engine.nextSnapshot = clearedSnapshot();
         final repo = buildRepo()..startEngine(const EngineConfig());
         addTearDown(repo.dispose);
+        // At Pre: the image stands for a chain's Pre run (#1741).
         final printed = [
-          BuiltInEffect(type: TrackEffectType.reverb, slotId: 'p'),
+          BuiltInEffect(
+            type: TrackEffectType.reverb,
+            slotId: 'p',
+            placement: FxPlacement.pre,
+          ),
         ];
         final edited = [
-          BuiltInEffect(type: TrackEffectType.drive, slotId: 'e'),
+          BuiltInEffect(
+            type: TrackEffectType.drive,
+            slotId: 'e',
+            placement: FxPlacement.pre,
+          ),
         ];
 
         await repo.applySession(

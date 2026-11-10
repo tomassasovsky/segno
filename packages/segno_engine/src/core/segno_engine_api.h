@@ -1105,7 +1105,12 @@ typedef enum le_fx_rack_edge {
 } le_fx_rack_edge;
 
 /* Complete structural recipe, copied before admission. Hosted pointers must
- * belong to this chain or have been prepared by this engine. */
+ * belong to this chain or have been prepared by this engine. [pre_count]
+ * splits a lane's or a whole track's chain (le_engine_set_lane_fx_count),
+ * and an input's (#1741): the monitor plays the whole chain, and a take
+ * records its first [pre_count] entries as its heard image, the rest being
+ * the take's lane's to run live. An input chain no recipe split records
+ * whole. The All tracks and output chains take 0. */
 typedef struct le_fx_recipe {
   int32_t count, pre_count, enabled;
   int32_t type[LE_FX_MAX], slot_enabled[LE_FX_MAX];
@@ -2034,13 +2039,15 @@ LE_EXPORT int32_t le_engine_record_with_image(le_engine* engine, int32_t channel
  *
  * A take recorded through effects keeps two recordings: its clean input (the
  * lane's take, which every edit, export and session reads as before) and its
- * heard image, the stereo output of the input chain it recorded through,
- * captured sample-aligned with it (le_record_image.heard_mask). The image
- * follows the take through overdubs, Undo, Redo, Peel and Clear's restore:
- * each undo layer has its own. A lane plays its image instead of running
- * its own chain whenever its source is HEARD (the default) and its live
- * slot holds one; a lane without an image plays its clean take through its
- * chain, exactly as before. Switching crossfades over about 10 ms. */
+ * heard image, the stereo output of the input chain's Pre run it recorded
+ * through (#1741; le_fx_recipe.pre_count), captured sample-aligned with it
+ * (le_record_image.heard_mask). The image follows the take through
+ * overdubs, Undo, Redo, Peel and Clear's restore: each undo layer has its
+ * own. A lane plays its image instead of running its chain's Pre run
+ * whenever its source is HEARD (the default) and its live slot holds one,
+ * and its Post entries run live over the image, ringing out past a Stop; a
+ * lane without an image plays its clean take through its chain, exactly as
+ * before. Switching crossfades over about 10 ms. */
 #define LE_LANE_SOURCE_HEARD 0
 #define LE_LANE_SOURCE_CLEAN 1
 

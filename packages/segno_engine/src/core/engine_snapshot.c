@@ -334,12 +334,6 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
-    /* A part that plays its heard image (#1713) runs no chain: its image is
-     * its printed material. */
-    if (le_heard_any(engine, channel, l) &&
-        le_heard_lane_plays(engine, channel, l)) {
-      continue;
-    }
     int32_t count = load_i32(&ln->a_fx_count);
     if (count < 0) count = 0;
     if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -347,6 +341,13 @@ int le_track_pre_printable(le_engine* engine, int32_t channel) {
     if (pre < 0) pre = 0;
     if (pre > count) pre = count;
     if (count > pre) return 0; /* a Post entry on a part */
+    /* A part that plays its heard image (#1713) runs no Pre run: its image
+     * is its printed material. Its Post entries run over it (#1741), as
+     * any part's do. */
+    if (le_heard_any(engine, channel, l) &&
+        le_heard_lane_plays(engine, channel, l)) {
+      continue;
+    }
     for (int slot = 0; slot < count; ++slot)
       if (load_i32(&ln->a_fx_type[slot]) == LE_FX_PLUGIN) return 0;
   }
@@ -441,6 +442,23 @@ static int32_t le_tempo_follow_now(le_engine* e) {
   }
   if (!follower) return LE_TEMPO_FOLLOW_NO_FOLLOWER;
   return busy ? LE_TEMPO_FOLLOW_BUSY : LE_TEMPO_FOLLOW_RETIMES;
+}
+
+/* The slots of [fx]'s first [count] that still drain a tail (#1733), bit s
+ * for slot s. Read here, on the control thread, so the callback publishes
+ * nothing: each flag is one aligned 32-bit word the chain's thread writes
+ * on its own edges, read whole with a relaxed builtin load. A flag read a
+ * block early or late moves the charge by one poll. */
+_Static_assert(LE_FX_MAX <= 64, "fx_draining_* is one bit per slot");
+static uint64_t le_fx_draining_of(const le_fx_state* fx, int32_t count) {
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  uint64_t mask = 0u;
+  for (int s = 0; s < count; ++s) {
+    if (__atomic_load_n(&fx->enable_drain[s], __ATOMIC_RELAXED) > 0) {
+      mask |= 1ull << s;
+    }
+  }
+  return mask;
 }
 
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
@@ -677,28 +695,28 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->song_last_section = load_i32(&engine->a_song_last);
   /* #1733: the tails still draining, by chain. */
   for (int k = 0; k < LE_MAX_MONITORED_INPUTS; ++k) {
-    out->fx_draining_monitor[k] = atomic_load_explicit(
-        &engine->monitors[k].fx.a_draining, memory_order_relaxed);
+    out->fx_draining_monitor[k] = le_fx_draining_of(
+        &engine->monitors[k].fx, load_i32(&engine->monitors[k].a_fx_count));
   }
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     const int live = t < engine->track_count;
     for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_lane* ln = &engine->tracks[t].lanes[l];
       out->fx_draining_lane[t][l] =
-          live ? atomic_load_explicit(&engine->tracks[t].lanes[l].fx.a_draining,
-                                      memory_order_relaxed)
-               : 0u;
+          live ? le_fx_draining_of(&ln->fx, load_i32(&ln->a_fx_count)) : 0u;
     }
+    le_fx_bus* bus = &engine->tracks[t].bus;
     out->fx_draining_track[t] =
-        live ? atomic_load_explicit(&engine->tracks[t].bus.fx.a_draining,
-                                    memory_order_relaxed)
-             : 0u;
+        live ? le_fx_draining_of(&bus->fx, load_i32(&bus->a_fx_count)) : 0u;
   }
   out->fx_draining_all_tracks = 0u;
+  const int all_count = load_i32(&engine->all_tracks.a_fx_count);
   for (int b = 0; b < LE_MAX_OUTPUT_BUSES; ++b) {
-    out->fx_draining_all_tracks |= atomic_load_explicit(
-        &engine->all_tracks_fx[b].a_draining, memory_order_relaxed);
-    out->fx_draining_output[b] = atomic_load_explicit(
-        &engine->outputs[b].fx.fx.a_draining, memory_order_relaxed);
+    out->fx_draining_all_tracks |=
+        le_fx_draining_of(&engine->all_tracks_fx[b], all_count);
+    le_fx_bus* bus = &engine->outputs[b].fx;
+    out->fx_draining_output[b] =
+        le_fx_draining_of(&bus->fx, load_i32(&bus->a_fx_count));
   }
   out->tail_reset_rev =
       atomic_load_explicit(&engine->a_tail_reset_rev, memory_order_relaxed);

@@ -540,6 +540,18 @@ static void le_heard_add_jobs(
     }
   }
   e->heard_jobs = ran;
+  /* A take records an input chain's Pre run (#1741): where the chain has
+   * Post entries its job notes the signal after the run for the post-pass. */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    const uint64_t bit = UINT64_C(1) << c;
+    if (!(e->heard_post_inputs & ran & bit)) continue;
+    int32_t pre = atomic_load_explicit(&e->heard_mon_pre[c],
+                                       memory_order_relaxed);
+    if (pre < 0) pre = 0;
+    if (pre >= mon_fx_count[c]) continue;
+    e->heard_tap_at[c] = pre;
+    e->heard_tap_mask |= bit;
+  }
 }
 
 int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
@@ -554,6 +566,8 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
   for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
   e->heard_jobs = ran;
   e->heard_inputs = 0u;
+  e->heard_post_inputs = 0u;
+  e->heard_tap_mask = 0u;
   /* A pass's end and a published tail first: an image dropped since must
    * still end its pass and let go of its tail (part 3). */
   le_heard_tail_block(e, tc);
@@ -584,6 +598,10 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
         le_lane* ln = &tr->lanes[l];
         int32_t n = load_i32(&ln->a_fx_count);
         if (n > LE_FX_MAX) n = LE_FX_MAX;
+        /* Only the Pre run idled under the image: the Post entries kept
+         * playing over it (#1741), tails and all. */
+        const int32_t pre = load_i32(&ln->a_fx_pre_count);
+        if (pre >= 0 && pre < n) n = pre;
         for (int32_t s = 0; s < n; ++s) {
           le_fx_enable_force_bypass(&ln->fx, s);
           le_fx_rack_reset(&ln->fx, s);
@@ -648,6 +666,11 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
       const int32_t c = e->heard_input[t][l];
       if (c >= 0 && c < LE_MAX_MONITORED_INPUTS) {
         e->heard_inputs |= UINT64_C(1) << c;
+        /* A lane running Post entries live records the Pre run (#1741). */
+        const le_lane* ln = &tr->lanes[l];
+        if (load_i32(&ln->a_fx_count) > load_i32(&ln->a_fx_pre_count)) {
+          e->heard_post_inputs |= UINT64_C(1) << c;
+        }
       }
     }
   }
@@ -753,7 +776,7 @@ void le_heard_seam_fold(le_engine* e, le_track* t, int32_t len, int32_t F,
 static void le_heard_input(const le_engine* e, const le_fx_par* par,
                            uint32_t b0, uint32_t i, const float* in, int ch_in,
                            const float* in_trim, uint32_t excluded,
-                           int32_t c, float* wl, float* wr) {
+                           int32_t c, int post, float* wl, float* wr) {
   *wl = 0.0f;
   *wr = 0.0f;
   if (c < 0 || c >= LE_MAX_MONITORED_INPUTS) return;
@@ -764,8 +787,14 @@ static void le_heard_input(const le_engine* e, const le_fx_par* par,
   /* The capture trim scales what records (slice 3): the clean take, and so
    * its image. An instrument has none. */
   const float trim = instrument ? 1.0f : in_trim[c];
-  /* The chain's output where it ran as a job this block; its input where
-   * it has no chain. */
+  /* The chain's Pre run where it has Post entries the lane runs live
+   * ([post], #1741), its output where it ran as a job this block, its input
+   * where it has no chain. */
+  if (post && ((e->heard_tap_mask >> c) & 1u)) {
+    *wl = e->heard_tap_l[c][i] * trim;
+    *wr = e->heard_tap_r[c][i] * trim;
+    return;
+  }
   if ((e->heard_jobs >> c) & 1u) {
     *wl = par->mon_l[c][i] * trim;
     *wr = par->mon_r[c][i] * trim;
@@ -806,10 +835,16 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
         if (hl == NULL) continue;
         float* hr = le_heard_plane(h, 1, s);
         const int32_t cap = tr->lanes[l].pool_cap[s];
+        /* The image holds what the lane does not run live (#1741): the
+         * input chain's Pre run where the lane carries its Post entries (a
+         * take's copy of the chain), the whole chain where the lane has
+         * none (an overdub over a take recorded dry). */
+        const le_lane* ln = &tr->lanes[l];
+        const int post = load_i32(&ln->a_fx_count) > load_i32(&ln->a_fx_pre_count);
         float wl;
         float wr;
         le_heard_input(e, par, b0, (uint32_t)r->i - b0, in, ch_in, in_trim,
-                       excluded, input[l], &wl, &wr);
+                       excluded, input[l], post, &wl, &wr);
         if (r->a >= 0 && r->a < cap) {
           hl[r->a] = wl;
           hr[r->a] = wr;

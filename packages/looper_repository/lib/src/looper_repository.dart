@@ -1385,8 +1385,9 @@ class LooperRepository {
           }
           onLaneChainChanged?.call(ch, lane);
         }
-        // A take the engine could not give an image plays its chain live
-        // (#1713). When that does not fit, its own chains are switched off,
+        // What a take runs live: its chain where the engine could not give
+        // it an image (#1713), its Post entries over the image where it did
+        // (#1741). When that does not fit, its own chains are switched off,
         // as a chain the rig cannot run is (R2), never another track's.
         _holdUnheardTake(ch, pending);
         _pendingImages.remove(ch);
@@ -1407,7 +1408,12 @@ class LooperRepository {
     final budget = fxBudgetNs(rate, period: period);
     for (final MapEntry(key: lane, value: effects)
         in pending.inherited.entries) {
-      if (effects.isEmpty || _laneHeard.contains((channel, lane))) continue;
+      // A lane playing its image still runs its Post entries (#1741).
+      if (effects.isEmpty) continue;
+      if (_laneHeard.contains((channel, lane)) &&
+          fxPreCount(effects) == effects.length) {
+        continue;
+      }
       if (_fxLoadAt(rate, period) <= budget) return;
       final at = FxAddress(stage: FxStage.loop, index: channel, lane: lane);
       _fxHeld.add(at);
@@ -1448,13 +1454,16 @@ class LooperRepository {
   }) {
     final printed = _lanePrinted[key] ?? const <TrackEffect>[];
     if (!(chainOn ?? _laneChainEnabled[key] ?? true)) return false;
-    return identical(chain, printed) || _wireOf(chain) == _wireOf(printed);
+    return identical(chain, printed) ||
+        _preWireOf(chain) == _preWireOf(printed);
   }
 
-  /// [chain] as it persists, kept per chain instance: chains are replaced,
-  /// never changed in place, so each is encoded once.
-  String _wireOf(List<TrackEffect> chain) =>
-      _chainWire[chain] ??= encodeTrackEffects(chain);
+  /// [chain]'s Pre run as it persists, kept per chain instance: chains are
+  /// replaced, never changed in place, so each is encoded once. The image is
+  /// what the Pre run made (#1741): the Post entries run live over it, so
+  /// an edit of one is not a re-amp.
+  String _preWireOf(List<TrackEffect> chain) => _chainWire[chain] ??=
+      encodeTrackEffects(chain.sublist(0, fxPreCount(chain)));
   final Expando<String> _chainWire = Expando();
 
   /// Gives the engine every lane's source ([_laneSourceOf]) that changed
@@ -1466,11 +1475,15 @@ class LooperRepository {
       var source = _laneSourceOf(key);
       if (_laneSourceSent[key] == source) continue;
       // A re-amp the Effects page did not weigh (a parameter from the bloc,
-      // a control's press) that does not fit is held, as R2 holds a chain,
-      // and the take keeps playing what was heard.
+      // a control's press) that does not fit is held, as R2 holds a chain:
+      // the take plays its image, without its Post entries while the chain
+      // is off. The standing notice names it, as it names every chain R2
+      // holds: nothing is switched off unsaid. A chain the player switched
+      // off plays dry and charges what an off chain does, so it is never
+      // held here.
       if (source == LaneSource.clean &&
-          _fxLoadAt(_fxRate, _fxPeriod) >
-              fxBudgetNs(_fxRate, period: _fxPeriod)) {
+          (_laneChainEnabled[key] ?? true) &&
+          fxRoomNs < 0) {
         final at = FxAddress(stage: FxStage.loop, index: key.$1, lane: key.$2);
         _fxHeld.add(at);
         _pushChainSwitch(at, on: false);
@@ -3997,7 +4010,9 @@ class LooperRepository {
             }
             continue;
           }
-          heardLanes.add(lane);
+          // What a take records is the chain's Pre run (#1741): a chain
+          // with none is recorded clean, its Post entries live on the lane.
+          if (fxPreCount(chain) > 0) heardLanes.add(lane);
           final captured = <TrackEffect>[];
           for (var index = 0; index < chain.length; index++) {
             final fx = _capturePluginForLane(chain[index], input, index);
@@ -4092,6 +4107,8 @@ class LooperRepository {
     if (state != TrackState.empty) {
       for (var lane = 0; lane < laneCount(channel); lane++) {
         final key = (channel, lane);
+        // The lane has no chain, so the image holds the input's whole chain,
+        // Post entries included (#1741).
         if (_laneHeard.contains(key) ||
             (_laneEffects[key]?.isNotEmpty ?? false) ||
             _inheritableChain(channel, lane) == null) {
@@ -8439,7 +8456,7 @@ class LooperRepository {
         (_laneHeard.contains(key) ? const <TrackEffect>[] : null);
     if (printed == null) return null;
     final chain = _laneEffects[key] ?? const <TrackEffect>[];
-    return _wireOf(chain) == _wireOf(printed) ? null : printed;
+    return _preWireOf(chain) == _preWireOf(printed) ? null : printed;
   }
 
   /// Lane [lane] of track [channel]'s inheritance provenance: the inputs its
@@ -8630,9 +8647,10 @@ class LooperRepository {
         lane: lane,
         recipe: FxRecipe(
           slots: slots,
-          // The live monitor processes its whole chain before capture. Its
-          // Pre/Post split is metadata for the inherited recording recipe.
-          preCount: owner == FxOwner.monitor ? 0 : fxPreCount(effects),
+          // The live monitor processes its whole chain; a take records its
+          // Pre run, and its Post entries run live on the take's lane
+          // (#1741).
+          preCount: fxPreCount(effects),
           // A chain held off because it did not fit stays off on the engine
           // whatever its saved switch says (#1515).
           enabled: _engineOn(_fxAddressOf(owner, channel, lane), enabled),
@@ -8883,7 +8901,8 @@ class LooperRepository {
   /// destinations on the callback. A lane counts in full: its print stands
   /// in for its Pre entries only between edits, overdubs, evictions and
   /// renders, and the worst block is the one in between. A lane playing its
-  /// take's heard image (#1713) charges nothing: it runs no chain.
+  /// take's heard image (#1713) charges its Post entries only: the image
+  /// stands for its Pre run (#1741).
   ///
   /// An effect is charged when it runs or a control can make it run (#1723):
   /// its own switch, its rack's and its chain's are each on, or a control
@@ -9082,13 +9101,13 @@ class LooperRepository {
     return worst;
   }
 
-  /// What the chain [chain] at [address] charges ([fxChainCostNs]), its
+  /// What the chain [entries] at [address] charges ([fxChainCostNs]), its
   /// switch [chainOn]: each effect whose own switch, rack's and chain's are
   /// each on or reached by a control of [reach] (by default the rig's), the
   /// switches [reach] alternates on exactly when [state] has them.
   int _fxChainChargeNs(
     FxAddress address,
-    List<TrackEffect> chain, {
+    List<TrackEffect> entries, {
     required int rate,
     required int period,
     required bool chainOn,
@@ -9097,8 +9116,11 @@ class LooperRepository {
     bool held = false,
   }) {
     final controls = reach ?? _fxReach;
-    // A take playing its heard image runs no chain (#1713).
-    if (_playsImage(address, chain, chainOn: chainOn)) return 0;
+    // A take playing its heard image runs no Pre run (#1713): only its Post
+    // entries play, over the image (#1741).
+    final chain = _playsImage(address, entries, chainOn: chainOn)
+        ? entries.sublist(fxPreCount(entries))
+        : entries;
     if (held) {
       // Held, its effects stop: what still runs are the tails already
       // draining, not the effects it was running (#1733).
@@ -9216,12 +9238,14 @@ class LooperRepository {
   void _noteFxSwitchOffs(EngineSnapshot snapshot) {
     final running = <FxAddress, Set<String?>>{
       for (final MapEntry(key: at, value: chain) in _fxChains().entries)
-        // A take playing its heard image runs no chain (#1713).
-        if (!_fxHeld.contains(at) &&
-            _chainSwitchAt(at) &&
-            !_playsImage(at, chain))
+        if (!_fxHeld.contains(at) && _chainSwitchAt(at))
           at: {
-            for (final fx in chain)
+            // A take playing its heard image runs its Post entries alone
+            // (#1713, #1741).
+            for (final fx
+                in _playsImage(at, chain)
+                    ? chain.sublist(fxPreCount(chain))
+                    : chain)
               if (fxDrains(fx) && fx.effectiveEnabled) fx.slotId,
           },
     }..removeWhere((_, ids) => ids.isEmpty);
@@ -9269,8 +9293,8 @@ class LooperRepository {
 
   /// Whether the lane at [at] would play its heard image with [chain] as its
   /// chain (#1713): it holds one, and [chain] is the one it was recorded
-  /// through. Such a lane runs no chain, so it charges nothing; an edit that
-  /// re-amps it is weighed like any other.
+  /// through (its Pre run, #1741). Such a lane runs only its Post entries,
+  /// so it charges those; an edit that re-amps it is weighed like any other.
   bool _playsImage(
     FxAddress at,
     List<TrackEffect> chain, {
@@ -9305,7 +9329,8 @@ class LooperRepository {
 
   /// The chains switched off because they did not fit the effects budget:
   /// chains the rig could not run when it came up (R2). A take playing its
-  /// heard image is never held (#1713): it runs no chain. Runtime state
+  /// heard image runs its Post entries alone (#1713, #1741), and is held only
+  /// for those. Runtime state
   /// only, never saved: each chain keeps its entries and its saved switch,
   /// plays as off and charges nothing, and switching it on is refused until
   /// the rig has room for it.
@@ -9663,7 +9688,8 @@ class LooperRepository {
   /// What is left of the effects budget ([fxBudgetNs]) at the running rate
   /// and block length, in nanoseconds per frame; negative once the chains
   /// went over (a removal is never refused, and a take is never refused
-  /// either: it plays what it was heard as, which runs no chain).
+  /// either: it plays what it was heard as, over which only its Post entries
+  /// run).
   int get fxRoomNs {
     return fxBudgetNs(_fxRate, period: _fxPeriod) - fxCostNs;
   }

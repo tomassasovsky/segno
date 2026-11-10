@@ -33503,6 +33503,20 @@ static void test_fx_bypass_drains_tail_then_settles(void) {
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.fx_draining_monitor[0] == 0u);
 
+  /* A slot that leaves the chain mid-drain drains no more: the next
+   * buffer's settle sweep force-bypasses it, and the snapshot reads only
+   * the chain's own slots. */
+  process_n(e, 1.0f, 64, cap);
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0) == LE_OK);
+  process_n(e, 0.0f, 1024, cap);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 1u);
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 0) == LE_OK);
+  drain(e);
+  process_n(e, 0.0f, 64, cap);
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.fx_draining_monitor[0] == 0u);
+
   le_engine_destroy(e);
 }
 
@@ -39582,6 +39596,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_heard_perf.h"
 #include "test_engine_perf_render_memory.h"
 #include "test_engine_heard_tail.h"
+#include "test_engine_heard_post.h"
 #include "test_engine_trk_jobs.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
@@ -39620,6 +39635,7 @@ int main(void) {
     run_heard_edit_tests();
     run_heard_perf_tests();
     run_heard_tail_tests();
+    run_heard_post_tests();
     if (getenv("SEGNO_HEARD_TESTS_ONLY")) return g_failures ? 1 : 0;
   }
   test_platform_names_the_calling_thread();

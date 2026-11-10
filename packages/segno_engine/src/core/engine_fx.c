@@ -1858,19 +1858,11 @@ static int le_fx_ring_readable(const le_fx_state* fx, int slot, int c,
   return c < rings || ((fx->ring_known[slot] >> c) & 1u) != 0;
 }
 
-/* Sets slot [slot]'s drain flag to [on] and publishes it in a_draining
- * (#1733), only when it changes: the plain paths, which keep it as it is,
- * never touch the atomic. */
-static inline void le_fx_drain_set(le_fx_state* fx, int slot, int32_t on) {
-  if (fx->enable_drain[slot] == on) return;
-  fx->enable_drain[slot] = on;
-  const uint64_t bit = 1ull << slot;
-  if (on) {
-    atomic_fetch_or_explicit(&fx->a_draining, bit, memory_order_relaxed);
-  } else {
-    atomic_fetch_and_explicit(&fx->a_draining, ~bit, memory_order_relaxed);
-  }
-}
+/* Stores slot [slot]'s drain flag [v]. le_engine_get_snapshot reads the
+ * flag on the control thread (#1733), so it is stored whole with a relaxed
+ * builtin store: on every target that is the plain store it replaces. */
+#define LE_FX_DRAIN_STORE(fx, slot, v) \
+  __atomic_store_n(&(fx)->enable_drain[(slot)], (v), __ATOMIC_RELAXED)
 
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
  * phase, delay read head, one-pole memory, the octaver phase-vocoder runtime
@@ -1946,7 +1938,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
   if (kinds != NULL) kinds->slot[slot].cur = NULL;
   /* A retyped slot has no tail to drain: a stale budget would let the next
    * re-enable edge skip its clean reset and read the old type's ring. */
-  le_fx_drain_set(fx, slot, 0);
+  LE_FX_DRAIN_STORE(fx, slot, 0);
   fx->enable_quiet[slot] = 0;
 }
 
@@ -2005,7 +1997,7 @@ void le_fx_enable_seed_settled(le_fx_state* fx, int slot) {
   fx->enable_mix[slot] = 1.0f;
   fx->enable_target[slot] = 1;
   fx->enable_warmup[slot] = 0;
-  le_fx_drain_set(fx, slot, 0);
+  LE_FX_DRAIN_STORE(fx, slot, 0);
   fx->enable_quiet[slot] = 0;
   le_fx_rack_reset(fx, slot);
 }
@@ -2047,7 +2039,7 @@ void le_fx_enable_force_bypass(le_fx_state* fx, int slot) {
   fx->enable_mix[slot] = 0.0f;
   fx->enable_target[slot] = 0;
   fx->enable_warmup[slot] = 0;
-  le_fx_drain_set(fx, slot, 0); /* a slot nobody processes cannot drain */
+  LE_FX_DRAIN_STORE(fx, slot, 0); /* a slot nobody processes cannot drain */
   fx->enable_quiet[slot] = 0;
 }
 
@@ -10334,7 +10326,7 @@ LE_AUDIO_HOT_AT(4) void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int ca
        * command. Its obsolete tail state belongs to this callback, never
        * to the concurrent installer. Plugins use crossfade, not drain. */
       if (ty == LE_FX_PLUGIN) {
-        le_fx_drain_set(fx, s, 0);
+        LE_FX_DRAIN_STORE(fx, s, 0);
         fx->enable_quiet[s] = 0;
       }
       const int32_t want = enabled == NULL || enabled[s] != 0;
@@ -10373,10 +10365,10 @@ LE_AUDIO_HOT_AT(4) void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int ca
           /* Bypass edge: mark the tail draining once the feed has
            * ramped to silence; none for a latency-bearing slot, which
            * crossfades out instead (see above). */
-          le_fx_drain_set(fx, s, le_fx_type_drains(ty) ? 1 : 0);
+          LE_FX_DRAIN_STORE(fx, s, le_fx_type_drains(ty) ? 1 : 0);
           fx->enable_quiet[s] = 0;
         }
-        if (want) le_fx_drain_set(fx, s, 0); /* fed again: nothing to drain */
+        if (want) LE_FX_DRAIN_STORE(fx, s, 0); /* fed again: nothing to drain */
         fx->enable_target[s] = want;
       }
       if (want && fx->enable_warmup[s] > 0) {
@@ -10482,7 +10474,7 @@ LE_AUDIO_HOT_AT(4) void fx_apply_chain_with_gain(le_fx_state* fx, int sr, int ca
             quiet_n = le_mdly_frames(line);
           }
           if (fx->enable_quiet[s] >= quiet_n) {
-            le_fx_drain_set(fx, s, 0);
+            LE_FX_DRAIN_STORE(fx, s, 0);
           }
         }
       }
@@ -10518,6 +10510,39 @@ LE_AUDIO_HOT_AT(8) void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* 
                     const float params[LE_FX_MAX][LE_FX_PARAMS],
                     const int32_t* enabled) {
   fx_apply_chain_with_gain(fx, sr, cap, l, r, count, types, params, enabled, 0, 1);
+}
+
+void fx_apply_chain_from(le_fx_state* fx, int sr, int cap, float* l,
+                         float* r, int from, int count, const int32_t* types,
+                         const float params[LE_FX_MAX][LE_FX_PARAMS],
+                         const int32_t* enabled, int counted) {
+  const int32_t cooldown = fx->enable_clear_cooldown;
+  if (from <= 0) {
+    fx_apply_chain(fx, sr, cap, l, r, count, types, params, enabled);
+    if (counted && fx->enable_clear_cooldown == (cooldown > 0 ? cooldown - 1 : 0)) {
+      fx->enable_clear_cooldown = cooldown;
+    }
+    return;
+  }
+  if (from >= count) return;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  /* The entries before [from] pass the signal on as an empty slot does,
+   * their racks' edges out of the walk. The ring-clear cooldown counts a
+   * frame once: when a walk over [0, from) already counted this one
+   * ([counted]), this walk's count is taken back, unless a clear in it set
+   * the spacing anew. The shared walk stays the one the mixer runs. */
+  int32_t ty[LE_FX_MAX];
+  int32_t racks[LE_FX_MAX];
+  for (int s = 0; s < count; ++s) ty[s] = s < from ? LE_FX_NONE : types[s];
+  for (int s = 0; s < from; ++s) {
+    racks[s] = fx->chan[s].rack;
+    fx->chan[s].rack = 0;
+  }
+  fx_apply_chain_with_gain(fx, sr, cap, l, r, count, ty, params, enabled, 0, 1);
+  if (counted && fx->enable_clear_cooldown == (cooldown > 0 ? cooldown - 1 : 0)) {
+    fx->enable_clear_cooldown = cooldown;
+  }
+  for (int s = 0; s < from; ++s) fx->chan[s].rack = racks[s];
 }
 
 int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type, int sr) {

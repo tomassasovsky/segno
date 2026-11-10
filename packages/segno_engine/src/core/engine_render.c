@@ -419,9 +419,20 @@ static int64_t le_render_job_bytes(const le_render_job* j) {
     pitch += le_render_pitch_entries(&s->track);
     states += 2;
     for (int32_t l = 0; l < s->lanes; ++l) {
-      entries += le_render_ring_entries(&s->lane[l].chain);
-      duals += le_render_dual_octavers(&s->lane[l].chain);
-      pitch += le_render_pitch_entries(&s->lane[l].chain);
+      /* A heard lane runs its Post entries alone (#1741): the image stands
+       * for its Pre run. */
+      const le_fx_frozen_chain* c = &s->lane[l].chain;
+      le_fx_frozen_chain post;
+      if (s->lane[l].heard && c->pre > 0) {
+        post.count = c->count > c->pre ? c->count - c->pre : 0;
+        for (int32_t k = 0; k < post.count && c->pre + k < LE_FX_MAX; ++k) {
+          post.type[k] = c->type[c->pre + k];
+        }
+        c = &post;
+      }
+      entries += le_render_ring_entries(c);
+      duals += le_render_dual_octavers(c);
+      pitch += le_render_pitch_entries(c);
       states += 2;
     }
   }
@@ -516,16 +527,14 @@ int32_t le_engine_render_begin(le_engine* engine,
       le_lane* src = &tr->lanes[l];
       le_render_lane* ln = &s->lane[l];
       LE_FX_FROZEN_CAPTURE(&ln->chain, src);
-      /* A lane playing its heard image runs no chain live, so none here. */
+      /* A lane playing its heard image plays it for its Pre run, so that
+       * is not printed; its Post entries run over it (#1741). */
       ln->heard = le_heard_lane_plays(engine, t, l);
-      if (ln->heard) {
-        ln->chain.count = 0;
-        ln->chain.pre = 0;
-      }
       ln->vol = load_f32(&src->a_vol_bits);
       ln->gl = load_f32(&src->a_pan_gl_bits);
       ln->gr = load_f32(&src->a_pan_gr_bits);
-      ln->has_pre = le_fx_frozen_has(&ln->chain, 0, ln->chain.pre, LE_FX_NONE);
+      ln->has_pre = !ln->heard &&
+                    le_fx_frozen_has(&ln->chain, 0, ln->chain.pre, LE_FX_NONE);
       ln->has_post = le_fx_frozen_has(&ln->chain, ln->chain.pre,
                                       ln->chain.count, LE_FX_NONE);
       le_fx_frozen_bits(&ln->chain, ln->chain.pre, ln->chain.count,

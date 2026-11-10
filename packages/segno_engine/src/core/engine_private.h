@@ -821,13 +821,12 @@ typedef struct le_fx_state {
    * drains old wet tails"). enable_drain marks a bypassed slot that still
    * runs on a silent feed (0 = settled, skipped); enable_quiet counts
    * consecutive samples below the floor. A complete delay-memory horizon
-   * of quiet settles the drain. These fields are callback-owned. */
+   * of quiet settles the drain. These fields are callback-owned, but
+   * le_engine_get_snapshot reads enable_drain on the control thread
+   * (#1733): it is only ever 0 or 1, stored whole (LE_FX_DRAIN_STORE) and
+   * read with a relaxed load. */
   int32_t enable_drain[LE_FX_MAX];
   int32_t enable_quiet[LE_FX_MAX];
-  /* enable_drain published for the control thread (#1733): bit s while slot
-   * s drains. Written only where enable_drain changes (le_fx_drain_set), so
-   * a settled chain never touches it; read by le_engine_get_snapshot. */
-  _Atomic uint64_t a_draining;
   /* A rack's crossfade, kept on its LAST entry and advanced at its head
    * (fx_rack_head): rack_mix is how much of the rack's input and output
    * sides apply (1 while any of its entries is on, 0 with all of them off),
@@ -876,9 +875,6 @@ typedef struct le_fx_state {
    * Last in the struct so nothing before it moves. */
   struct le_fx_kinds *_Atomic kinds;
 } le_fx_state;
-#ifndef __cplusplus
-_Static_assert(LE_FX_MAX <= 64, "le_fx_state.a_draining is one bit per slot");
-#endif
 
 /* The unity-centre pan/balance law (accepted design, slice 3; documented on
  * le_engine_set_lane_pan): the near side stays at unity and the far side falls
@@ -3561,6 +3557,20 @@ struct le_engine {
    * and queued once that one is freed. */
   struct le_heard_tail* heard_tail_next[LE_MAX_TRACKS];
   struct le_heard_tail* _Atomic heard_tail_queue[LE_MAX_TRACKS];
+  /* #1741: what a take records of each input's chain is its Pre run; its
+   * Post entries are the lane's, running live (slice 3e's rule: the print
+   * is the Pre printer). heard_mon_pre: each input chain's Pre run, from its
+   * recipe (the monitor's own processing ignores it). heard_tap_mask: the
+   * inputs whose job notes the signal after that run this block, where a
+   * capturing heard lane records a chain with Post entries (callback);
+   * heard_tap_at the run's length for each, and heard_tap_l/r the signal,
+   * written by the job, read by the post-pass. */
+  _Atomic int32_t heard_mon_pre[LE_MAX_MONITORED_INPUTS];
+  uint64_t heard_post_inputs; /* inputs a capturing lane with Post entries records */
+  uint64_t heard_tap_mask;
+  int32_t heard_tap_at[LE_MAX_MONITORED_INPUTS];
+  float heard_tap_l[LE_MAX_MONITORED_INPUTS][LE_FX_BLOCK];
+  float heard_tap_r[LE_MAX_MONITORED_INPUTS][LE_FX_BLOCK];
   /* Track chains as jobs (#1729, le_trk_job), at the end so no field the
    * mixer reads moves. trk_jobs_live: the tracks the block records, 0
    * outside a block whose track chains run as jobs (callback). trk_job_rec:

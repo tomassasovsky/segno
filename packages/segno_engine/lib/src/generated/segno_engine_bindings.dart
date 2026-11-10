@@ -9271,7 +9271,12 @@ final class le_engine extends ffi.Opaque {}
 final class le_plugin_slot extends ffi.Opaque {}
 
 /// Complete structural recipe, copied before admission. Hosted pointers must
-/// belong to this chain or have been prepared by this engine.
+/// belong to this chain or have been prepared by this engine. [pre_count]
+/// splits a lane's or a whole track's chain (le_engine_set_lane_fx_count),
+/// and an input's (#1741): the monitor plays the whole chain, and a take
+/// records its first [pre_count] entries as its heard image, the rest being
+/// the take's lane's to run live. An input chain no recipe split records
+/// whole. The All tracks and output chains take 0.
 final class le_fx_recipe extends ffi.Struct {
   @ffi.Int32()
   external int count;
