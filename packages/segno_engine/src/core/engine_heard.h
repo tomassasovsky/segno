@@ -162,6 +162,35 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
                          uint32_t excluded, const int* mon_has_fx,
                          const int32_t* mon_fx_count, uint64_t frame);
 
+/* Whether track [t] may write its clean take in the coming block, as far as
+ * the block's start can tell (le_heard_block_begin). */
+int le_heard_track_may_write(le_engine* e, int t);
+
+/* ---- the rendered tails (#1713 part 3, engine_heard_tail.c) ---- */
+
+/* Callback: track [t]'s pass wrote loop position [pos] at FX clock [clock]
+ * (le_heard_post, per write record). */
+void le_heard_tail_note_write(le_engine* e, int t, uint32_t clock,
+                              int32_t pos);
+/* Callback, after each post-pass: the sub-block's input for every input a
+ * capturing heard lane records, into its ring. */
+void le_heard_tail_post(le_engine* e, const le_fx_par* par, const float* in,
+                        int ch_in);
+/* Callback, at a heard block's start: a pass that stopped writing ends
+ * (LE_EVT_HEARD_TAIL), and a published tail adds what is due. */
+void le_heard_tail_block(le_engine* e, int tc);
+/* Control: an LE_EVT_HEARD_TAIL from the event ring. */
+void le_heard_tail_event(le_engine* e, const le_command* evt);
+/* Control, from le_engine_drain_events: maps the inputs' rings, publishes
+ * rendered tails and frees spent ones. */
+void le_heard_tail_poll(le_engine* e);
+/* Cache worker: whether a tail waits to be rendered, and render one. */
+int le_heard_tail_worker_ready(le_engine* e);
+void le_heard_tail_worker_step(le_engine* e);
+/* Control, with no callback and the cache worker joined (configure,
+ * destroy): every tail and ring freed. */
+void le_heard_tail_free_all(le_engine* e);
+
 /* A performance arm (LE_CMD_PERF_ARM, callback): every lane's source is
  * logged again at its next heard block. */
 void le_heard_perf_armed(le_engine* e);

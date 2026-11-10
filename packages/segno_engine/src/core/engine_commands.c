@@ -1287,6 +1287,9 @@ static void le_handle_event(le_engine* engine, const le_command* evt,
     case LE_EVT_TAKE_CANCELLED:
       le_handle_take_cancelled(engine, evt);
       break;
+    case LE_EVT_HEARD_TAIL: /* #1713 part 3 */
+      le_heard_tail_event(engine, evt);
+      break;
     default:
       break;
   }
@@ -1363,6 +1366,7 @@ void le_engine_drain_events(le_engine* engine) {
   while (le_ring_pop(&engine->evt_ring, &evt)) {
     le_handle_event(engine, &evt, 1);
   }
+  le_heard_tail_poll(engine); /* #1713 part 3 */
   le_bounce_collect(engine);
   le_release_removed_lanes(engine);
   le_collect_retired(engine, 0);

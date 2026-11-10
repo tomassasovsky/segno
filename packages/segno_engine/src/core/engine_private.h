@@ -2379,6 +2379,55 @@ typedef struct le_heard_log {
   le_heard_rec rec[LE_HEARD_LOG_CAP];
 } le_heard_log;
 
+/* The heard image's rendered tails (#1713 part 3, engine_heard.c). When a
+ * capture pass on a lane holding an image ends (a take closing into play, a
+ * punch-out), the input chain keeps ringing: the player hears that ringout
+ * live on the first repeat, and from the second repeat on it belongs in the
+ * image, as a chain on the lane would have wrapped it. The cache worker
+ * renders the chain's tail from the last LE_HEARD_TAIL_WINDOW_S seconds of
+ * its input (a fresh state warmed by that input, then silence until the tail
+ * falls below -80 dBFS or LE_HEARD_TAIL_MAX_S passes), and the callback adds
+ * it into the image after the pass's last written position, one frame per
+ * frame of time since the end, wrapping at the loop: always behind the read
+ * head, so the live ringout is never heard twice. A new capture on the
+ * track, Stop, a length or slot change, Reverse or Speed drop what is not
+ * added yet. */
+#define LE_HEARD_TAIL_WINDOW_S 12
+#define LE_HEARD_TAIL_RING_S 16
+#define LE_HEARD_TAIL_MAX_S 20
+
+/* One input's recent chain input, raw (before the capture trim), indexed by
+ * FX clock: written by the callback for every input a capturing heard lane
+ * records (le_engine.heard_inputs), read by control when a pass ends. The
+ * buffer is mapped and freed by control; [a_end] is the clock after the last
+ * frame written, [a_begin] the clock of the first. */
+typedef struct le_heard_ring {
+  float* _Atomic buf;
+  int32_t cap;
+  _Atomic int32_t a_started;
+  _Atomic uint32_t a_begin;
+  _Atomic uint32_t a_end;
+} le_heard_ring;
+
+/* A track's capture pass as the callback sees it, for its tail: whether the
+ * pass is writing, the clock and the loop position of its last write, and,
+ * at its end, each lane's input and that input's tempo and trim. [gen]
+ * counts ends; control reads the rest after the LE_EVT_HEARD_TAIL that
+ * carries it. */
+typedef struct le_heard_pass {
+  int32_t capturing;
+  uint32_t last_clock;
+  int32_t last_pos;
+  uint32_t gen;
+  int32_t len;
+  uint32_t lanes;
+  int32_t input[LE_MAX_LANES];
+  float trim[LE_MAX_LANES];
+  le_fx_tempo tempo[LE_MAX_LANES];
+} le_heard_pass;
+
+struct le_heard_tail; /* engine_heard.c */
+
 
 /* Chain owners whose parameters live in le_engine.fx_param_store: every lane,
  * every track bus, every monitor, every output bus and the All tracks config. */
@@ -3398,6 +3447,21 @@ struct le_engine {
   /* Lanes holding an image in any slot (le_heard.a_slots > 0), so a block
    * where none does skips le_heard_block_begin's walk. */
   _Atomic int32_t a_heard_lanes;
+  /* The rendered tails (part 3, see le_heard_ring): each input's recent
+   * chain input; each track's pass (callback); the tail the callback adds
+   * into a track's image (published by control, cleared by the callback
+   * when it is done with it); control's tail in flight per track; and the
+   * hand-off to the cache worker (set by control, taken by the worker). */
+  le_heard_ring heard_ring[LE_MAX_MONITORED_INPUTS];
+  le_heard_pass heard_pass[LE_MAX_TRACKS];
+  struct le_heard_tail* _Atomic heard_tail[LE_MAX_TRACKS];
+  struct le_heard_tail* heard_tail_ctl[LE_MAX_TRACKS];
+  struct le_heard_tail* _Atomic heard_tail_queue[LE_MAX_TRACKS];
+  /* Control: a pass end that came while the track's last tail was still in
+   * flight (its generation, 0 for none, and its slot), built once that one
+   * is gone; the older tail is then not added. */
+  uint32_t heard_tail_pend_gen[LE_MAX_TRACKS];
+  int32_t heard_tail_pend_slot[LE_MAX_TRACKS];
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in

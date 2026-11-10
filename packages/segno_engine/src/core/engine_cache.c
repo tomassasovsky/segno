@@ -2020,6 +2020,13 @@ static void le_ca_worker_main(void* arg) {
    * it and a slice never holds an audible print back by more than one. */
   int yields = 0;
   while (!atomic_load_explicit(&c->a_shutdown, memory_order_acquire)) {
+    /* A heard image's tail (#1713 part 3) first: its callback adds it
+     * behind the read head, so every frame it waits plays a lap without. */
+    if (le_heard_tail_worker_ready(e)) {
+      idle_ms = 1;
+      le_heard_tail_worker_step(e);
+      continue;
+    }
     le_cache_job* fallback = NULL;
     le_cache_job* job = le_cache_pick(e, c, &fallback);
     if (le_render_worker_choice(job != NULL, le_render_worker_ready(e),

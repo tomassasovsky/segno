@@ -458,6 +458,7 @@ static void le_engine_quiesce_workers(le_engine* engine) {
   le_collect_retired(engine, 1); /* the device is closed: nothing reads them */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_heard_tail_free_all(engine); /* #1713 part 3: worker joined */
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
 
   /* Performance-recording capture: stop and join the drain thread — if
@@ -1528,6 +1529,7 @@ void le_engine_destroy(le_engine* engine) {
    * destroy-during-active-render test pins exactly this ordering). */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_heard_tail_free_all(engine); /* #1713 part 3: worker joined */
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   le_prefault_shutdown(engine); /* its jobs name the pool buffers below */
   le_collect_retired(engine, 1);
@@ -1852,6 +1854,7 @@ int32_t le_engine_stop(le_engine* engine) {
    * configure re-initializes it. */
   le_fx_recipe_collect(engine, 1);
   le_cache_shutdown(engine);
+  le_heard_tail_free_all(engine); /* #1713 part 3: worker joined */
   le_bounce_abandon_all(engine); /* #1202: no callback will apply them */
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
