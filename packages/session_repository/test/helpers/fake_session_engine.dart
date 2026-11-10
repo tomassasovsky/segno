@@ -17,6 +17,9 @@ class _FakeLane {
   /// Each layer's heard image (#1713), interleaved stereo, by ordinal; a
   /// missing or empty entry is a layer without one.
   List<Float32List> heard = const [];
+
+  /// What the lane plays (#1713).
+  LaneSource source = LaneSource.heard;
 }
 
 class _FakeTrack {
@@ -364,6 +367,10 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
                 lengthFrames: t.lengthFrames,
                 rms: 0,
                 peak: 0,
+                heard:
+                    t.liveIndex < lane.heard.length &&
+                    lane.heard[t.liveIndex].isNotEmpty,
+                source: lane.source,
               ),
           ],
         ),
@@ -936,7 +943,11 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     required int channel,
     required int lane,
     required LaneSource source,
-  }) => EngineResult.ok;
+  }) {
+    _tracks[channel].lanes[lane].source = source;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult heardAttach({required int channel, required int lane}) =>
       EngineResult.ok;

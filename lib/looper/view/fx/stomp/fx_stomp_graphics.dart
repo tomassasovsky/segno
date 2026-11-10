@@ -204,6 +204,8 @@ void paintFxStompGraphic(
       _double(canvas, x, y, w, h, const Color(0xFF8F2A66));
     case FxStompGraphic.chevrons:
       _chevrons(canvas, x, y, w);
+    case FxStompGraphic.tremolo:
+      _tremolo(canvas, x + 24, y + h * .2, w - 48, h * .7);
   }
 }
 
@@ -595,6 +597,29 @@ void _double(Canvas canvas, double x, double y, double w, double h, Color c) {
       fxStompStroke(c, 7, .45),
     );
   }
+}
+
+void _tremolo(Canvas canvas, double x, double y, double w, double h) {
+  // A fast wave inside a slow one: the level rising and falling.
+  final yc = y + h / 2;
+  final amp = h * .42;
+  double swell(double t) => .5 - .5 * math.cos(t * 3 * 2 * math.pi);
+  final envelope = Path()..moveTo(x, yc);
+  final wave = Path()..moveTo(x, yc);
+  const steps = 600;
+  for (var i = 1; i <= steps; i++) {
+    final t = i / steps;
+    final level = amp * swell(t);
+    envelope.lineTo(x + w * t, yc - level);
+    wave.lineTo(x + w * t, yc + level * math.sin(t * 27 * 2 * math.pi));
+  }
+  const colour = Color(0xFFF3E3C3);
+  canvas
+    ..drawPath(envelope, fxStompStroke(colour, 3, .35))
+    ..drawPath(
+      wave,
+      fxStompStroke(colour, 4, .6)..strokeJoin = StrokeJoin.round,
+    );
 }
 
 void _chevrons(Canvas canvas, double x, double y, double w) {

@@ -367,10 +367,16 @@ class _FxViewState extends State<FxView> {
                 id: fxGroupId(groups[i]),
                 name: fxGroupName(l10n, groups[i]),
                 // The chain's own cards, as the strip draws them: a rack's
-                // picture, and the mark for a lone effect.
-                art: switch (groups[i].rack?.art) {
-                  final slug? => FxRackPicture(slug),
-                  null => null,
+                // picture, and a lone effect's pedal.
+                art: switch (groups[i]) {
+                  FxChainGroup(rack: FxRack(art: final slug?)) => FxRackPicture(
+                    slug,
+                  ),
+                  final group when !group.isRack => fxEntryArt(
+                    group.entries.first,
+                    live: false,
+                  ),
+                  _ => null,
                 },
                 stageTag: !showStage
                     ? null

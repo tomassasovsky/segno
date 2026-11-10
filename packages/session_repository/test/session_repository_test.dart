@@ -1494,6 +1494,21 @@ void main() {
     }
   });
 
+  test('mixdown sums a lane playing its heard image as that, its sides '
+      'averaged, and one re-amped as its clean take (#1713)', () async {
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1]))
+      ..seedHeard(0, 0, [
+        Float32List.fromList([.5, .25, .5, .25]),
+      ]);
+    var wav = await savedMixdown(engine, 'heard');
+    expect(wav.samples, everyElement(closeTo(.375, 1e-6)));
+
+    engine.setLaneSource(channel: 0, lane: 0, source: LaneSource.clean);
+    wav = await savedMixdown(engine, 'reamped');
+    expect(wav.samples, everyElement(closeTo(1, 1e-6)));
+  });
+
   test('mixdown sums both lanes of a multi-lane track', () async {
     // Two lanes on ONE track must both contribute — summed, never merged.
     final engine = FakeSessionEngine()

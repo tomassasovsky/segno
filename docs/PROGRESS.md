@@ -78,10 +78,36 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
-| #1713 | A take plays back what was heard (the input chain's output captured with the clean take, never dry for budget): plan on the issue; engine parts 1 (heard capture and playback, dormant), 2a (length edits, render recipe, track print, session layers), 2b (Transpose and the bridge), 2c (performance stems), 3 (rendered tails) and 4 (the app saves, loads and exports heard images, dormant) in review | build | auto | `claude/take-plays-heard-1713-p*` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 
 ---
+
+## November 2026 A switched-off tail keeps its charge until it drains (#1733)
+
+- The engine publishes which chain slots still drain a tail: each
+  `le_fx_state` keeps `a_draining` (bit s for slot s), updated only where
+  `enable_drain` changes (`le_fx_drain_set` in `engine_fx.c`: the bypass
+  edge, the re-enable, the quiet settle, a retype, a forced bypass), so a
+  settled chain and the plain mixer path never touch it. `le_snapshot`
+  carries the masks by chain (`fx_draining_monitor`, `_lane`, `_track`,
+  `_all_tracks`, `_output`) and `EngineSnapshot.fxDraining` (`FxDraining`)
+  reads them; no new polling.
+- The repository reads the masks against its chains at each snapshot (a
+  chain whose recipe the engine has not adopted keeps its last reading) and
+  charges an effect of a draining kind while its slot drains, however it was
+  switched off: the screen, a chain switch, a rack, or a hold. A held chain
+  charges the tails it already drains, not the effects it was running, so
+  R2 can still hold a running chain of reverbs; a chain whose hold would
+  free nothing is not held, and a hold the engine has not taken yet charges
+  the chain in full. Every snapshot (each poll and each write's
+  re-projection) notes the draining-kind effects that stopped running, and
+  one counts as draining until the engine has run two blocks past that
+  snapshot (two snapshots if it processes nothing), so a switch-off the
+  engine has not yet seen still counts. Once the engine reports the tail
+  quiet, the room comes back with the next snapshot.
+- `test/looper/cubit/fx_drain_budget_test.dart`: a Room reverb switched off
+  at the limit refuses an Overdrive switched on until its tail drains, then
+  admits it; a kind without a tail frees its room at once.
 
 ## November 2026 The effects budget reserves room only for what a switch can turn on (#1723)
 
@@ -131,11 +157,11 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   reads the engine's table). The side a press turns off is still charged for
   those, so an alternation charges the larger of each side plus the other
   side's draining effects (a console stress test switching an A/B pair every
-  second at the limit showed the xruns without this). Room freed by switching
-  an unreached effect off from the screen is still counted before its tail
-  ends.
+  second at the limit showed the xruns without this). One switched off from
+  the screen keeps its charge until the engine says its tail is quiet
+  (#1733, above).
 
-## November 2026 A take plays back what was heard (#1713, in progress)
+## November 2026 A take plays back what was heard (#1713)
 
 - Plan and the owner's decisions: the comment on #1713. Engine part 1
   (`engine_heard.c`): a lane pool slot can hold a heard image, two more
@@ -200,8 +226,25 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   layer, and the stem export writes it beside the clean stem. A performance
   capture writes `heardPcmRef` for the arm and disarm snapshots, and the
   Ableton export's session clip uses it.
-- Not yet: part 5, the switch-over. Nothing in the app records an image
-  until then, so parts 1 to 4 change nothing a player hears.
+- Part 5 (the switch-over, looper_repository): a take records heard on
+  every lane whose input chain it inherits (`RecordImage.heardLanes`), keeps
+  that chain on the lane by value, and remembers it as what the take was
+  printed with (`_lanePrinted`). The lane plays its image while its chain is
+  that one (compared as the chains persist) and its clean take through the
+  chain once the chain is edited or switched off (a re-amp,
+  `setLaneSource`); editing back plays the image again. A lane playing its
+  image charges nothing in `_fxLoadAt`, so a re-amp is weighed like any
+  edit, and R2 never holds one (holding it frees nothing). When R2 holds an
+  edited chain, the lane plays its image. Takes are never switched off for
+  the budget: `_takeOverBudget`, `fxTakeHeld`, its toast and strings are
+  gone. A take
+  the engine could not give an image plays its chain live and is weighed by
+  R2. An overdub over a take recorded dry, on a lane with no chain of its
+  own, attaches an image first (`heardAttach`) and records through the
+  input's effects. The printed chain persists in the lane envelope's meta
+  (`FxChainMeta.printed`) only while it differs from the lane's chain;
+  absent, it is the lane's chain. The saved mixdown sums a lane playing its
+  image as that image, its sides averaged.
 - Local tool: `SEGNO_HEARD_FORCE=1` runs the whole native core suite with
   every take recording an image of an input with no chain, which must equal
   the clean take after every callback.
