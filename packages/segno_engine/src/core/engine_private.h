@@ -647,6 +647,9 @@ typedef struct le_trk_job_lane {
   float mg[LE_FX_BLOCK];   /* the lane's mute gain */
   uint32_t mask[LE_FX_BLOCK]; /* its outputs (out_mask & out_enabled) */
   uint8_t flags[LE_FX_BLOCK]; /* LE_TJ_* */
+  /* The block's frames whose chain the callback has run ahead of the job
+   * (le_trk_lane_flush), which then clears their LE_TJ_CHAIN. */
+  uint32_t chain_done;
 } le_trk_job_lane;
 
 typedef struct le_trk_job {
@@ -664,6 +667,7 @@ typedef struct le_trk_job {
   int32_t lane_n;  /* the block's active lanes */
   uint32_t done;   /* the block's frames the job has run */
   int32_t tev;     /* the next of the block's tempo anchors to replay */
+  le_fx_tempo tempo; /* the tempo at the job's frame (tev's) */
   /* The clock and tempo the track's chains read while the block runs as
    * jobs (le_fx_time): set per frame by the job. */
   le_fx_time time;

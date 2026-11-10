@@ -10,8 +10,8 @@
  * chain, and the All tracks stage with synced kinds. The script plays the
  * cases a track's job has to keep its order through: takes and their
  * finalize inside blocks, a Stop's tail clear and a Play, a mute and an
- * unmute, a solo, a pan, a stomp and a retype, frames the latency harness
- * owns, all in blocks of every size from one frame to more than two of the
+ * unmute, a solo, a pan, a stomp and a retype, the heard take crossfading
+ * to its clean take and back, frames the latency harness owns, all in blocks of every size from one frame to more than two of the
  * frame loop's LE_FX_BLOCK. Its output is compared, sample for sample,
  * across 0, 1, 2 and 3 workers. With none, every chain runs in the one frame
  * loop as before #1729. */
@@ -118,6 +118,12 @@ static void tj_session(int32_t workers, float* out,
       trk1.instance[3] = 2999u;
       CHECK(le_engine_set_fx_recipe(e, LE_FX_OWNER_TRACK, 1, 0, ++rev,
                                     &trk1) == LE_OK);
+    }
+    if (step == 1300) { /* track 2's heard take crossfades to its clean */
+      CHECK(le_engine_set_lane_source(e, 2, 0, LE_LANE_SOURCE_CLEAN) == LE_OK);
+    }
+    if (step == 1340) {
+      CHECK(le_engine_set_lane_source(e, 2, 0, LE_LANE_SOURCE_HEARD) == LE_OK);
     }
     if (step == 1360) CHECK(le_engine_stop_track(e, 2) == LE_OK);
     for (uint32_t f = 0; f < n; ++f) {
