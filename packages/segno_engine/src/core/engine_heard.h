@@ -175,7 +175,7 @@ void le_heard_tail_note_write(le_engine* e, int t, uint32_t clock,
 /* Callback, after each post-pass: the sub-block's input for every input a
  * capturing heard lane records, into its ring. */
 void le_heard_tail_post(le_engine* e, const le_fx_par* par, const float* in,
-                        int ch_in);
+                        int ch_in, uint32_t excluded);
 /* Callback, at a heard block's start: a pass that stopped writing ends
  * (LE_EVT_HEARD_TAIL), and a published tail adds what is due. */
 void le_heard_tail_block(le_engine* e, int tc);

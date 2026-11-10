@@ -554,6 +554,9 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
   for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
   e->heard_jobs = ran;
   e->heard_inputs = 0u;
+  /* A pass's end and a published tail first: an image dropped since must
+   * still end its pass and let go of its tail (part 3). */
+  le_heard_tail_block(e, tc);
   /* No lane anywhere holds an image, and none did last block: nothing to
    * enter, leave or log. */
   if (e->heard_trk == 0u &&
@@ -648,7 +651,6 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
       }
     }
   }
-  le_heard_tail_block(e, tc);
   if (e->heard_trk == 0u) return 0;
   le_heard_add_jobs(e, par, in, ch_in, excluded, mon_has_fx, mon_fx_count,
                     ran_prev);
@@ -837,7 +839,7 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
     }
     lg->n = 0;
   }
-  le_heard_tail_post(e, par, in, ch_in);
+  le_heard_tail_post(e, par, in, ch_in, excluded);
 }
 
 void le_heard_run_copy(le_engine* e, le_track* t, int32_t live, int32_t shadow,

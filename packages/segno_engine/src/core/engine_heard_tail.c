@@ -5,21 +5,23 @@
  *
  * - The callback records each input a capturing heard lane records into
  *   that input's ring (le_heard_tail_post), follows each track's pass, and
- *   at a pass's end posts LE_EVT_HEARD_TAIL with what the render needs
- *   (le_heard_tail_block). It then adds a published tail into the image, a
- *   frame of tail per frame of time since the end, and lets go of it.
+ *   at a pass's end leaves what the render needs in le_engine.heard_end and
+ *   posts LE_EVT_HEARD_TAIL (le_heard_tail_block). It then adds a published
+ *   tail into the image, a frame of tail per frame of time since the end,
+ *   and lets go of it.
  * - Control (le_engine_drain_events) maps the rings, copies the end's input
  *   window and freezes the input chain into a tail (le_heard_tail_event),
  *   publishes it once rendered and frees it once the callback is done
  *   (le_heard_tail_poll).
- * - The cache worker renders it (le_heard_tail_worker_step).
+ * - The cache worker renders it, a lane per step (le_heard_tail_worker_step).
  *
  * A tail's state says who holds it: the worker from taking it off
- * engine->heard_tail_queue[t] until it stores RENDERED or FAILED, then
- * control, then the callback while it is published (engine->heard_tail[t]
- * non-NULL), and control again once the callback clears that pointer and
- * marks it DONE. The worker reads no other pointer to it, so control frees a
- * tail only in a state the worker and the callback are done with.
+ * engine->heard_tail_queue[t] until it stores RENDERED or FAILED (between
+ * lanes it puts it back on the queue), then control, then the callback while
+ * it is published (engine->heard_tail[t] non-NULL), and control again once
+ * the callback clears that pointer and marks it DONE. The worker reads no
+ * other pointer to it, so control frees a tail only in a state the worker
+ * and the callback are done with.
  */
 #include "engine_heard.h"
 
@@ -77,8 +79,11 @@ typedef struct le_heard_tail {
   float* out[LE_MAX_LANES];
   int32_t frames[LE_MAX_LANES];
   int32_t most; /* the longest of frames[] */
-  /* Callback: frames added so far. */
+  /* Worker: the next lane to render. */
+  int32_t next_lane;
+  /* Callback: frames added so far, and the position the next one goes to. */
   int32_t done;
+  int32_t q;
 } le_heard_tail;
 
 static void le_heard_tail_free(le_heard_tail* j) {
@@ -101,25 +106,19 @@ void le_heard_tail_note_write(le_engine* e, int t, uint32_t clock,
 }
 
 void le_heard_tail_post(le_engine* e, const le_fx_par* par, const float* in,
-                        int ch_in) {
+                        int ch_in, uint32_t excluded) {
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!((e->heard_inputs >> c) & 1u)) continue;
     le_heard_ring* r = &e->heard_ring[c];
     float* buf = atomic_load_explicit(&r->buf, memory_order_acquire);
     if (buf == NULL || r->cap <= 0) continue;
+    const uint32_t mask = (uint32_t)r->cap - 1u;
     const int instrument = le_source_is_instrument(c);
-    for (uint32_t i = 0; i < par->n; ++i) {
-      const uint32_t f = par->f0 + i;
-      float x = 0.0f;
-      if (!par->owned[i]) {
-        if (instrument) {
-          x = le_instrument_source_sample(e, c, f);
-        } else if (in != NULL && c < ch_in) {
-          x = in[f * (uint32_t)ch_in + (uint32_t)c];
-        }
-      }
-      buf[(par->clock + i) % (uint32_t)r->cap] = x;
-    }
+    /* An excluded input records silence (le_heard_input), so it leaves no
+     * tail either. */
+    const int silent =
+        !instrument && (in == NULL || c >= ch_in ||
+                        (c < LE_MAX_CHANNELS && (excluded & (1u << c))));
     /* A gap since the last frame written (the input recorded by no heard
      * lane meanwhile) leaves older frames in the ring: its history starts
      * over here, so a window reaching back past the gap reads silence, not
@@ -128,6 +127,15 @@ void le_heard_tail_post(le_engine* e, const le_fx_par* par, const float* in,
         atomic_load_explicit(&r->a_end, memory_order_relaxed) != par->clock) {
       atomic_store_explicit(&r->a_begin, par->clock, memory_order_relaxed);
       atomic_store_explicit(&r->a_started, 1, memory_order_relaxed);
+    }
+    for (uint32_t i = 0; i < par->n; ++i) {
+      const uint32_t f = par->f0 + i;
+      float x = 0.0f;
+      if (!par->owned[i] && !silent) {
+        x = instrument ? le_instrument_source_sample(e, c, f)
+                       : in[f * (uint32_t)ch_in + (uint32_t)c];
+      }
+      buf[(par->clock + i) & mask] = x;
     }
     atomic_store_explicit(&r->a_end, par->clock + par->n,
                           memory_order_release);
@@ -140,21 +148,29 @@ static void le_heard_tail_end(le_engine* e, int t) {
   le_track* tr = &e->tracks[t];
   p->capturing = 0;
   ++p->gen;
-  p->len = load_i32(&tr->lanes[0].a_len);
-  p->lanes = e->heard_lanes[t];
+  if (p->gen == 0u) p->gen = 1u; /* 0 is the sequence lock's "writing" */
+  le_heard_end* d = &e->heard_end[t];
+  atomic_store_explicit(&d->a_gen, 0u, memory_order_relaxed);
+  atomic_thread_fence(memory_order_release);
+  d->slot = load_i32(&tr->lanes[0].a_live);
+  d->last_clock = p->last_clock;
+  d->last_pos = p->last_pos;
+  d->len = load_i32(&tr->lanes[0].a_len);
+  d->lanes = e->heard_lanes[t];
   for (int l = 0; l < LE_MAX_LANES; ++l) {
-    if (!((p->lanes >> l) & 1u)) continue;
+    d->input[l] = -1;
+    if (!((d->lanes >> l) & 1u)) continue;
     const int32_t c = e->heard_input[t][l];
-    p->input[l] = c;
+    d->input[l] = c;
     if (c < 0 || c >= LE_MAX_MONITORED_INPUTS) continue;
-    p->trim[l] = le_source_is_instrument(c) || c >= LE_MAX_CHANNELS
+    d->trim[l] = le_source_is_instrument(c) || c >= LE_MAX_CHANNELS
                      ? 1.0f
                      : load_f32(&e->a_in_trim_bits[c]);
-    p->tempo[l] = e->monitors[c].fx_time.tempo;
+    d->tempo[l] = e->monitors[c].fx_time.tempo;
   }
-  const le_command evt = {
-      .code = LE_EVT_HEARD_TAIL,
-      .evt = {t, load_i32(&tr->lanes[0].a_live), p->gen}};
+  atomic_store_explicit(&d->a_gen, p->gen, memory_order_release);
+  const le_command evt = {.code = LE_EVT_HEARD_TAIL,
+                          .evt = {t, d->slot, p->gen}};
   (void)le_ring_push(&e->evt_ring, evt); /* a full ring: no tail */
 }
 
@@ -162,7 +178,11 @@ static void le_heard_tail_end(le_engine* e, int t) {
 static void le_heard_tail_add(le_engine* e, int t, le_heard_tail* j) {
   le_track* tr = &e->tracks[t];
   const int32_t live = load_i32(&tr->lanes[0].a_live);
-  const int keep = !e->heard_pass[t].capturing &&
+  /* Still the last pass's tail, on the take it ended (no capture since, or
+   * starting in this block), playing at its own timing. */
+  const int keep = j->gen == e->heard_pass[t].gen &&
+                   !e->heard_pass[t].capturing &&
+                   !le_heard_track_may_write(e, t) &&
                    load_i32(&tr->a_state) == LE_TRACK_PLAYING &&
                    live == j->slot && load_i32(&tr->lanes[0].a_len) == j->len &&
                    le_head_is_identity(&tr->head);
@@ -179,14 +199,17 @@ static void le_heard_tail_add(le_engine* e, int t, le_heard_tail* j) {
       const int32_t cap = tr->lanes[l].pool_cap[j->slot];
       const int32_t stop = j->done + n < j->frames[l] ? j->done + n
                                                       : j->frames[l];
+      int32_t q = j->q;
       for (int32_t k = j->done; k < stop; ++k) {
-        const int32_t q = (int32_t)(((int64_t)j->q0 + k) % j->len);
-        if (q >= cap) continue;
-        pl[q] += j->out[l][2 * k];
-        pr[q] += j->out[l][2 * k + 1];
+        if (q < cap) {
+          pl[q] += j->out[l][2 * k];
+          pr[q] += j->out[l][2 * k + 1];
+        }
+        if (++q == j->len) q = 0;
       }
     }
     j->done += n;
+    j->q = (int32_t)(((int64_t)j->q + n) % j->len);
     if (j->done < j->most) return;
   } else if (keep) {
     return; /* nothing due yet */
@@ -211,6 +234,15 @@ void le_heard_tail_block(le_engine* e, int tc) {
 
 /* ---- control thread ---- */
 
+/* The ring's size for [sr]: the smallest power of two holding
+ * LE_HEARD_TAIL_RING_S seconds. */
+static int32_t le_heard_ring_cap(int32_t sr) {
+  const int64_t want = (int64_t)sr * LE_HEARD_TAIL_RING_S;
+  int64_t cap = 1;
+  while (cap < want) cap <<= 1;
+  return cap > INT32_MAX / 2 ? 0 : (int32_t)cap;
+}
+
 /* Maps a ring for every input a lane holding an image records, so its next
  * capture's end finds the input's history. */
 static void le_heard_tail_rings(le_engine* e) {
@@ -225,9 +257,10 @@ static void le_heard_tail_rings(le_engine* e) {
       if (atomic_load_explicit(&r->buf, memory_order_relaxed) != NULL) {
         continue;
       }
-      const int32_t cap = sr * LE_HEARD_TAIL_RING_S;
-      float* buf =
-          (float*)le_rt_alloc_prefaulted((size_t)cap * sizeof(float));
+      const int32_t cap = le_heard_ring_cap(sr);
+      float* buf = cap > 0 ? (float*)le_rt_alloc_prefaulted(
+                                 (size_t)cap * sizeof(float))
+                           : NULL;
       if (buf == NULL) continue; /* no tail for this input */
       r->cap = cap;
       atomic_store_explicit(&r->a_started, 0, memory_order_relaxed);
@@ -237,8 +270,9 @@ static void le_heard_tail_rings(le_engine* e) {
 }
 
 /* Copies [n] frames of ring [r] ending at clock [last] (inclusive) into
- * [out]; frames the ring never held read 0. Returns 0 when the callback
- * overwrote part of the window while it was read. */
+ * [out]; frames before the ring's current run read 0. Returns 0 when the
+ * ring has not reached [last], or the callback overwrote part of the window
+ * while it was read. */
 static int le_heard_tail_copy(le_heard_ring* r, uint32_t last, int32_t n,
                               float* out) {
   const float* buf = atomic_load_explicit(&r->buf, memory_order_acquire);
@@ -246,42 +280,53 @@ static int le_heard_tail_copy(le_heard_ring* r, uint32_t last, int32_t n,
                                            memory_order_relaxed)) {
     return 0;
   }
-  const uint32_t begin = atomic_load_explicit(&r->a_begin, memory_order_relaxed);
+  const uint32_t mask = (uint32_t)r->cap - 1u;
+  const uint32_t end0 = atomic_load_explicit(&r->a_end, memory_order_acquire);
+  if ((int32_t)(end0 - (last + 1u)) < 0) return 0; /* not written yet */
+  const uint32_t begin =
+      atomic_load_explicit(&r->a_begin, memory_order_relaxed);
   const uint32_t first = last - (uint32_t)(n - 1);
   for (int32_t i = 0; i < n; ++i) {
     const uint32_t clk = first + (uint32_t)i;
-    /* Before the ring started (modular: clk earlier than begin). */
-    out[i] = (int32_t)(clk - begin) < 0 ? 0.0f
-                                        : buf[clk % (uint32_t)r->cap];
+    /* Before the current run (modular: clk earlier than begin). */
+    out[i] = (int32_t)(clk - begin) < 0 ? 0.0f : buf[clk & mask];
   }
-  /* The oldest frame read must still be in the ring now. */
+  /* The oldest frame read must still be in the ring now, and the run not
+   * restarted past it. */
   const uint32_t end = atomic_load_explicit(&r->a_end, memory_order_acquire);
-  return (int64_t)(uint32_t)(end - first) <= (int64_t)r->cap;
+  return (int64_t)(uint32_t)(end - first) <= (int64_t)r->cap &&
+         atomic_load_explicit(&r->a_begin, memory_order_relaxed) == begin;
 }
 
 static _Atomic int32_t le_heard_tail_no_pre; /* monitors have no Pre split */
 
-/* Builds track [t]'s tail for the pass end of generation [gen] that left
- * [slot] live, if that is still the track's last end. */
-static void le_heard_tail_build(le_engine* e, int32_t t, int32_t slot,
-                                uint32_t gen) {
-  const le_heard_pass* p = &e->heard_pass[t];
-  if (p->gen != gen || p->len <= 0) return; /* a later end came */
+/* Builds track [t]'s tail for its pass end of generation [gen], if the
+ * callback's record of that end is still that one. */
+static void le_heard_tail_build(le_engine* e, int32_t t, uint32_t gen) {
+  le_heard_end* d = &e->heard_end[t];
+  if (atomic_load_explicit(&d->a_gen, memory_order_acquire) != gen) return;
+  le_heard_end end = *d; /* the sequence lock's copy */
+  atomic_thread_fence(memory_order_acquire);
+  if (atomic_load_explicit(&d->a_gen, memory_order_relaxed) != gen ||
+      end.len <= 0) {
+    return; /* a later end overwrote it while it was read */
+  }
   le_heard_tail* j = (le_heard_tail*)calloc(1, sizeof(le_heard_tail));
   if (j == NULL) return;
   j->channel = t;
-  j->gen = p->gen;
-  j->slot = slot;
-  j->len = p->len;
-  j->q0 = (int32_t)(((int64_t)p->last_pos + 1) % p->len);
-  if (j->q0 < 0) j->q0 += p->len;
-  j->start_clock = p->last_clock + 1u;
+  j->gen = gen;
+  j->slot = end.slot;
+  j->len = end.len;
+  j->q0 = (int32_t)(((int64_t)end.last_pos + 1) % end.len);
+  if (j->q0 < 0) j->q0 += end.len;
+  j->q = j->q0;
+  j->start_clock = end.last_clock + 1u;
   j->sample_rate = e->sample_rate;
   j->fx_cap = e->fx_delay_frames;
   j->window = e->sample_rate * LE_HEARD_TAIL_WINDOW_S;
   for (int l = 0; l < LE_MAX_LANES; ++l) {
-    if (!((p->lanes >> l) & 1u)) continue;
-    const int32_t c = p->input[l];
+    if (!((end.lanes >> l) & 1u)) continue;
+    const int32_t c = end.input[l];
     if (c < 0 || c >= LE_MAX_MONITORED_INPUTS) continue;
     le_monitor_input* m = &e->monitors[c];
     le_fx_frozen_capture(&j->chain[l], &m->a_fx_count, &le_heard_tail_no_pre,
@@ -295,15 +340,15 @@ static void le_heard_tail_build(le_engine* e, int32_t t, int32_t slot,
     }
     j->in[l] = (float*)malloc((size_t)j->window * sizeof(float));
     if (j->in[l] == NULL ||
-        !le_heard_tail_copy(&e->heard_ring[c], p->last_clock, j->window,
+        !le_heard_tail_copy(&e->heard_ring[c], end.last_clock, j->window,
                             j->in[l])) {
       free(j->in[l]);
       j->in[l] = NULL;
       continue;
     }
     j->chain[l].clock0 = j->start_clock - (uint32_t)j->window;
-    j->tempo[l] = p->tempo[l];
-    j->trim[l] = p->trim[l];
+    j->tempo[l] = end.tempo[l];
+    j->trim[l] = end.trim[l];
     j->lanes |= 1u << l;
   }
   if (j->lanes == 0u) {
@@ -323,10 +368,9 @@ void le_heard_tail_event(le_engine* e, const le_command* evt) {
     /* The last tail is still in flight: this end goes next, and that tail,
      * which a capture has since overtaken, is not added. */
     e->heard_tail_pend_gen[t] = evt->evt.generation;
-    e->heard_tail_pend_slot[t] = evt->evt.slot;
     return;
   }
-  le_heard_tail_build(e, t, evt->evt.slot, evt->evt.generation);
+  le_heard_tail_build(e, t, evt->evt.generation);
 }
 
 void le_heard_tail_poll(le_engine* e) {
@@ -360,7 +404,7 @@ void le_heard_tail_poll(le_engine* e) {
     }
     const uint32_t gen = e->heard_tail_pend_gen[t];
     e->heard_tail_pend_gen[t] = 0u;
-    le_heard_tail_build(e, t, e->heard_tail_pend_slot[t], gen);
+    le_heard_tail_build(e, t, gen);
   }
 }
 
@@ -432,14 +476,29 @@ void le_heard_tail_worker_step(le_engine* e) {
     if (j == NULL) continue;
     atomic_store_explicit(&j->a_state, LE_HEARD_TAIL_RENDERING,
                           memory_order_relaxed);
-    int ok = 1;
-    for (int l = 0; l < LE_MAX_LANES && ok; ++l) {
-      if ((j->lanes >> l) & 1u) ok = le_heard_tail_render_lane(e, j, l);
+    /* One lane per step, so the cache's own jobs get the worker between
+     * lanes. */
+    while (j->next_lane < LE_MAX_LANES && !((j->lanes >> j->next_lane) & 1u)) {
+      ++j->next_lane;
     }
-    atomic_store_explicit(&j->a_state,
-                          ok ? LE_HEARD_TAIL_RENDERED : LE_HEARD_TAIL_FAILED,
-                          memory_order_release);
-    return; /* one tail per step */
+    if (j->next_lane < LE_MAX_LANES) {
+      if (!le_heard_tail_render_lane(e, j, j->next_lane)) {
+        atomic_store_explicit(&j->a_state, LE_HEARD_TAIL_FAILED,
+                              memory_order_release);
+        return;
+      }
+      ++j->next_lane;
+    }
+    while (j->next_lane < LE_MAX_LANES && !((j->lanes >> j->next_lane) & 1u)) {
+      ++j->next_lane;
+    }
+    if (j->next_lane < LE_MAX_LANES) {
+      atomic_store_explicit(&e->heard_tail_queue[t], j, memory_order_release);
+    } else {
+      atomic_store_explicit(&j->a_state, LE_HEARD_TAIL_RENDERED,
+                            memory_order_release);
+    }
+    return;
   }
 }
 
@@ -450,9 +509,11 @@ void le_heard_tail_free_all(le_engine* e) {
     if (pub != NULL && pub != e->heard_tail_ctl[t]) le_heard_tail_free(pub);
     le_heard_tail_free(e->heard_tail_ctl[t]);
     e->heard_tail_ctl[t] = NULL;
-    atomic_store_explicit(&e->heard_tail_queue[t], NULL, memory_order_relaxed);
     atomic_store_explicit(&e->heard_tail[t], NULL, memory_order_relaxed);
+    atomic_store_explicit(&e->heard_tail_queue[t], NULL, memory_order_relaxed);
+    e->heard_tail_pend_gen[t] = 0u;
     memset(&e->heard_pass[t], 0, sizeof(e->heard_pass[t]));
+    atomic_store_explicit(&e->heard_end[t].a_gen, 0u, memory_order_relaxed);
   }
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_heard_ring* r = &e->heard_ring[c];
