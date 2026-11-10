@@ -375,7 +375,13 @@ Future<AutoStartResult> _tryAutoStartEngine({
       final chain = decodeFxChain(
         await settings.loadLaneEffects(track.channel, lane),
       );
-      if (chain.entries.isEmpty && chain.chainEnabled) continue;
+      // A lane whose take was re-amped down to no chain still has what it
+      // was recorded through to restore (#1713).
+      if (chain.entries.isEmpty &&
+          chain.chainEnabled &&
+          chain.meta?.printed == null) {
+        continue;
+      }
       if (!admitted(
         repository.setLaneEffects(
           channel: track.channel,

@@ -233,6 +233,20 @@ void main() {
       expect(repo.state.fxHeld, isEmpty);
     });
 
+    test('an overdub that could not attach an image yet is refused, not '
+        'recorded dry', () {
+      engine
+        ..nextSnapshot = _playing
+        ..heardAttachResult = EngineResult.notReady;
+      repo.setMonitorEffects(input: 0, effects: _rack());
+      engine.calls.clear();
+      expect(repo.record(), EngineResult.notReady);
+      expect(engine.calls, isNot(contains('record')));
+      engine.heardAttachResult = EngineResult.ok;
+      expect(repo.record(), EngineResult.ok);
+      expect(engine.heardLanes, {(0, 0)});
+    });
+
     test('an overdub over a dry take with no chain of its own records '
         "through the input's effects; one over a take with its own chain "
         'does not', () {

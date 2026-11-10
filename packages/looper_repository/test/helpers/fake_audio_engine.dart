@@ -1253,9 +1253,13 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// What [heardAttach] returns; anything but ok attaches nothing.
+  EngineResult heardAttachResult = EngineResult.ok;
+
   @override
   EngineResult heardAttach({required int channel, required int lane}) {
     calls.add('heardAttach');
+    if (!heardAttachResult.isOk) return heardAttachResult;
     heardLanes.add((channel, lane));
     return EngineResult.ok;
   }
