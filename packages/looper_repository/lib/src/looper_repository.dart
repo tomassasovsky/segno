@@ -9049,29 +9049,30 @@ class LooperRepository {
     var worst = 0;
     for (final state in controls.states(isOn)) {
       int cost(FxAddress at) => fixed[at] ?? costAt(at, state);
-      // A track's lanes' chains and its own chain are one job (#1729), as
-      // an input's chain is (#1515): every track with an effect in one.
+      // An input's chain is a job (#1515), and so are a track's lanes'
+      // chains and its own chain together (#1729): every one with an effect
+      // in it. A held chain is still part of a job (the engine releases one
+      // for any chain with an effect in it), one that runs nothing, and so
+      // is a chain whose effects are all off. All tracks and the outputs run
+      // on the callback.
+      var serial = 0;
+      final inputJobs = <int>[];
       final trackJobs = <int, int>{};
       for (final MapEntry(key: at, :value) in chains.entries) {
-        final track = at.stage == FxStage.loop || at.stage == FxStage.track;
-        if (track && value.isNotEmpty) {
-          trackJobs[at.index] = (trackJobs[at.index] ?? 0) + cost(at);
+        switch (at.stage) {
+          case FxStage.input:
+            if (value.isNotEmpty) inputJobs.add(cost(at));
+          case FxStage.loop || FxStage.track:
+            if (value.isNotEmpty) {
+              trackJobs[at.index] = (trackJobs[at.index] ?? 0) + cost(at);
+            }
+          case FxStage.allTracks || FxStage.output:
+            serial += cost(at);
         }
       }
       final load = fxLoadNs(
-        serial: [
-          for (final at in chains.keys)
-            if (at.stage == FxStage.allTracks || at.stage == FxStage.output)
-              cost(at),
-        ].fold(0, (a, b) => a + b),
-        // A held chain is still a job (the engine releases one for any chain
-        // with an effect in it), one that runs nothing, and so is a chain
-        // whose effects are all off.
-        jobs: [
-          for (final MapEntry(key: at, :value) in chains.entries)
-            if (at.stage == FxStage.input && value.isNotEmpty) cost(at),
-          ...trackJobs.values,
-        ],
+        serial: serial,
+        jobs: [...inputJobs, ...trackJobs.values],
         workers: _fxWorkers,
         period: period,
       );
