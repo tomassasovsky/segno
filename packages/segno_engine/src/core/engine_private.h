@@ -561,7 +561,10 @@ typedef struct le_fx_time {
 /* What one block's jobs read and write. The callback writes everything
  * above [mon_l] before it releases the jobs; the jobs write [mon_l] and
  * [mon_r] (each its own rows) and their monitors' chain states; the callback
- * reads them after the join. The release store of [a_claim] and each job's
+ * reads them after the join. Track jobs (#1729) read the same block facts,
+ * le_engine.trk_job_mon_n and trk_job_t, and their le_trk_job records, and
+ * write those records and their tracks' lane and bus chain states, under the
+ * same ordering. The release store of [a_claim] and each job's
  * release increment of [a_done], paired with acquire loads, order all of it.
  * Everything from [click_l] on is the callback's own record of the first
  * loop for the second. Lives in the engine (locked and fork-shielded,

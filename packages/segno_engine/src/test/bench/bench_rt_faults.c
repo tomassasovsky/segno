@@ -736,10 +736,13 @@ int main(int argc, char** argv) {
     for (int t = 0; t < n; ++t) {
       static le_fx_recipe trk;
       eds_rack(&trk, 2 * LE_MAX_CHANNELS + t);
-      le_engine_set_fx_recipe(g_e, LE_FX_OWNER_TRACK, t, 0, ++g_rack_rev,
-                              &trk);
+      if (le_engine_set_fx_recipe(g_e, LE_FX_OWNER_TRACK, t, 0, ++g_rack_rev,
+                                  &trk) != LE_OK) {
+        fprintf(stderr, "--track-racks: track %d refused its rack\n", t);
+        return 2;
+      }
     }
-    printf("Ed's Rack on the chains of tracks 1-%d\n", n);
+    printf("Ed's Rack on the chains of tracks 0-%d\n", n - 1);
   }
   if (o.click) {
     const int rc = le_engine_set_tempo(g_e, 120.0f) |
