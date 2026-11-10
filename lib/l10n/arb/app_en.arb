@@ -4684,10 +4684,6 @@
     "@fxRight": {
         "description": "The right end of the balance or pan control."
     },
-    "fxScaleUnverified": "Scale unverified",
-    "@fxScaleUnverified": {
-        "description": "Note under a control whose real-world units were never recovered."
-    },
     "fxValuePercent": "{percent}%",
     "@fxValuePercent": {
         "description": "A built-in effect parameter's value in whole percent.",

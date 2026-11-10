@@ -260,7 +260,6 @@ class FxParamInfo extends Equatable {
     required this.defaultValue,
     this.steps = 0,
     this.curve = FxParamCurve.linear,
-    this.taperUnverified = false,
     this.off = FxParamOff.none,
   }) : _source = null;
 
@@ -272,7 +271,6 @@ class FxParamInfo extends Equatable {
       defaultValue = p.defaultValue,
       steps = p.steps,
       curve = _curveFromEngine(p.curve),
-      taperUnverified = p.taperUnverified,
       off = switch (p.off) {
         engine.FxParamOff.none => FxParamOff.none,
         engine.FxParamOff.atMin => FxParamOff.atMin,
@@ -307,10 +305,6 @@ class FxParamInfo extends Equatable {
 
   /// The setting a freshly engaged effect starts at.
   final double defaultValue;
-
-  /// Whether the mapping was chosen rather than measured against the effect
-  /// it reproduces.
-  final bool taperUnverified;
 
   /// Where the parameter turns its effect off.
   final FxParamOff off;
@@ -364,7 +358,6 @@ class FxParamInfo extends Equatable {
       FxParamCurve.reciprocal => engine.FxParamCurve.reciprocal,
       FxParamCurve.reverbTime => engine.FxParamCurve.reverbTime,
     },
-    taperUnverified: taperUnverified,
     off: switch (off) {
       FxParamOff.none => engine.FxParamOff.none,
       FxParamOff.atMin => engine.FxParamOff.atMin,
@@ -381,7 +374,6 @@ class FxParamInfo extends Equatable {
     atMax,
     curve,
     defaultValue,
-    taperUnverified,
     off,
   ];
 }

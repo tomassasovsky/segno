@@ -48,7 +48,7 @@ void main() {
       expect(find.text('Mid'), findsOneWidget);
       expect(find.text('Mid freq'), findsOneWidget);
       expect(find.text('Lo mid'), findsNothing);
-      // The kind's own units, with no "Scale unverified" on a measured range.
+      // The kind's own units.
       expect(find.text('0.0 dB'), findsNWidgets(3));
     });
 
