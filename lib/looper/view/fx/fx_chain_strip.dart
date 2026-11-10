@@ -215,7 +215,14 @@ class _FxChainCard extends StatelessWidget {
                         : null,
                   ),
                   const SizedBox(height: 12),
-                  FxRackArt(slug: group.rack?.art, lit: lit),
+                  FxRackArt(
+                    slug: group.rack?.art,
+                    // Still: the strip shows which pedal, not its settings.
+                    pedal: group.isRack
+                        ? null
+                        : fxEntryArt(group.entries.first, live: false),
+                    lit: lit,
+                  ),
                   const SizedBox(height: 11),
                   SizedBox(
                     height: 60,
@@ -268,17 +275,26 @@ class _FxChainCard extends StatelessWidget {
   }
 }
 
-/// A rack's artwork frame at the pen's fixed height.
+/// A rack's artwork frame at the pen's fixed height, or a single effect's
+/// pedal in the same frame.
 ///
-/// Falls back to the app's own mark when the group is a single effect (which
-/// has no rack artwork), when the slug names a file this build did not ship,
-/// and in a widget test, which has no asset bundle at all.
+/// Falls back to the app's own mark for a single effect with no pedal, when
+/// the slug names a file this build did not ship, and in a widget test,
+/// which has no asset bundle at all.
 class FxRackArt extends StatelessWidget {
   /// Creates an [FxRackArt].
-  const FxRackArt({required this.slug, required this.lit, super.key});
+  const FxRackArt({
+    required this.slug,
+    required this.lit,
+    this.pedal,
+    super.key,
+  });
 
   /// The catalogue artwork slug, or `null` for a single effect.
   final String? slug;
+
+  /// A single effect's pedal, drawn when there is no [slug] (#1730).
+  final FxPedalPicture? pedal;
 
   /// Whether the group is audible, which the fallback mark follows.
   final bool lit;
@@ -294,12 +310,20 @@ class FxRackArt extends StatelessWidget {
           color: surface.cardHigh,
           borderRadius: BorderRadius.circular(6),
         ),
-        child: slug == null
-            ? _FallbackMark(lit: lit)
-            : FxArtView(
-                art: FxRackPicture(slug),
-                fallback: _FallbackMark(lit: lit),
-              ),
+        child: switch ((slug, pedal)) {
+          (final slug?, _) => FxArtView(
+            art: FxRackPicture(slug),
+            fallback: _FallbackMark(lit: lit),
+          ),
+          (null, final pedal?) => Padding(
+            padding: const EdgeInsets.all(8),
+            child: FxArtView(
+              art: pedal,
+              fallback: _FallbackMark(lit: lit),
+            ),
+          ),
+          (null, null) => _FallbackMark(lit: lit),
+        },
       ),
     );
   }

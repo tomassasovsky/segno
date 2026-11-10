@@ -203,7 +203,8 @@ void main() {
       expect(expressionTargetArt(looper, const FxChainTarget(address)), isNull);
     });
 
-    test('a fader, a module-less effect and a gone one draw nothing', () {
+    test('a fader and a gone effect draw nothing; a module-less built-in '
+        'draws its own pedal', () {
       trackChains = {
         0: [pedal('d-1', null)],
       };
@@ -213,7 +214,7 @@ void main() {
           looper,
           const FxSlotTarget(address: address, slotId: 'd-1'),
         ),
-        isNull,
+        fxEntryArt(trackChains[0]!.first, live: false),
       );
       expect(
         expressionTargetArt(

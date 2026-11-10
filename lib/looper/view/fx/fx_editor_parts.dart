@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -50,8 +52,19 @@ typedef FxEdits = ({
   return (valueText: l10n.fxParamValueText(param, setting), note: null);
 }
 
-/// Built-in parameter [index] of [effect] as an [FxParamControl]: its
-/// localized name, and the value text and note [fxParamReading] gives it.
+/// Whether [param] is a choice: a few named positions ([FxParamUnit.choice],
+/// stepped), which its control offers by name rather than as a slider.
+bool fxParamIsChoice(FxParamInfo param) =>
+    param.unit == FxParamUnit.choice && param.isStepped;
+
+/// Built-in parameter [index] of [effect] as a control: its localized name,
+/// and, for a continuous parameter, an [FxParamControl] with the value text
+/// and note [fxParamReading] gives it; for a choice ([fxParamIsChoice]), its
+/// named positions to pick from (#1730).
+///
+/// A choice writes the setting of the position picked, which is where the
+/// engine reads every setting of that position, so the parameter does what
+/// it did under the slider.
 class FxBuiltInParamControl extends StatelessWidget {
   /// Creates an [FxBuiltInParamControl].
   const FxBuiltInParamControl({
@@ -87,8 +100,30 @@ class FxBuiltInParamControl extends StatelessWidget {
     final param = fxEntryParam(effect, index);
     final setting = fxEntryShownSetting(effect, index);
     final reading = fxParamReading(l10n, effect, param, setting);
+    final label = l10n.fxParamKeyName(labelKey ?? param.key);
+    if (fxParamIsChoice(param)) {
+      final last = param.steps - 1;
+      return SizedBox(
+        width: width,
+        child: _ChoiceParamControl(
+          label: label,
+          paramKey: param.key,
+          choices: [
+            for (var k = 0; k <= last; k++)
+              l10n.fxParamValueText(param, k / last),
+          ],
+          selected: param.positionOf(setting),
+          // A named position is exact: the "Scale unverified" note is about
+          // a module value read on a scale nobody measured, which a choice
+          // does not have.
+          note: param.taperUnverified ? reading.note : null,
+          onSelected: (k) =>
+              onChanged(fxEntryKindSetting(effect, index, k / last)),
+        ),
+      );
+    }
     return FxParamControl(
-      label: l10n.fxParamKeyName(labelKey ?? param.key),
+      label: label,
       value: setting,
       valueText: reading.valueText,
       width: width,
@@ -187,6 +222,137 @@ class FxParamControl extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A choice parameter: its name over its named positions, across the width
+/// its parent gives it.
+///
+/// A row of [LoopChoiceButton]s, the way Loop settings shows its choices,
+/// while every name fits its button at full size; a [LoopSelect], as the
+/// footer's input choice is, when one would have to shrink to fit, as the
+/// Guitar Rack Mod's three modes would in a rack pedal's column.
+class _ChoiceParamControl extends StatelessWidget {
+  const _ChoiceParamControl({
+    required this.label,
+    required this.paramKey,
+    required this.choices,
+    required this.selected,
+    required this.onSelected,
+    this.note,
+  });
+
+  /// The parameter's own name.
+  final String label;
+
+  /// The parameter's stable key, which names each position's widget key.
+  final String paramKey;
+
+  /// Each position's name, in order.
+  final List<String> choices;
+
+  /// The current position.
+  final int selected;
+
+  /// Reports the position picked.
+  final ValueChanged<int> onSelected;
+
+  /// The line under the control, as [FxParamControl.note].
+  final String? note;
+
+  /// The size the position names are set in.
+  static const double _choiceFontSize = 22;
+
+  /// The room a [LoopChoiceButton] keeps either side of its label.
+  static const double _choiceLabelPadding = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final positions = [for (var k = 0; k < choices.length; k++) k];
+    Key keyOf(int k) => Key('fx_choice_${paramKey}_$k');
+    final gap = context.spacing.sm;
+    // Measured as the button sets it: its Material's body style.
+    final nameStyle =
+        (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).merge(
+          const TextStyle(fontSize: _choiceFontSize, height: 1),
+        );
+    final scaler = MediaQuery.textScalerOf(context);
+    double nameWidth(String name) {
+      final painter = TextPainter(
+        text: TextSpan(text: name, style: nameStyle),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+      )..layout();
+      final width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final widest = choices.map(nameWidth).reduce(math.max);
+    return LayoutBuilder(
+      builder: (context, constraints) => Semantics(
+        container: true,
+        label: label,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Named once, by the container: the title is its visible copy.
+            ExcludeSemantics(
+              child: AppText(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.textPrimary,
+                  fontSize: 22,
+                  height: 1,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            // LoopChoiceRow's equal buttons, less their label padding.
+            if ((constraints.maxWidth - gap * (choices.length - 1)) /
+                        choices.length -
+                    _choiceLabelPadding >=
+                widest)
+              LoopChoiceRow<int>(
+                values: positions,
+                labelOf: (k) => choices[k],
+                keyOf: keyOf,
+                selected: selected,
+                onSelected: onSelected,
+                width: constraints.maxWidth,
+                height: 64,
+                gap: gap,
+                fontSize: _choiceFontSize,
+              )
+            else
+              LoopSelect<int>(
+                key: Key('fx_choice_$paramKey'),
+                value: selected,
+                onSelected: onSelected,
+                width: constraints.maxWidth,
+                items: [
+                  for (final k in positions)
+                    LoopSelectItem(key: keyOf(k), value: k, label: choices[k]),
+                ],
+              ),
+            if (note case final note?) ...[
+              const SizedBox(height: 14),
+              AppText(
+                note,
+                style: TextStyle(
+                  color: surface.textTertiary,
+                  fontSize: 16,
+                  height: 1,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
