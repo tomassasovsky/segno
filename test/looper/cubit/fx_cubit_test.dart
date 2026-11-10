@@ -52,7 +52,13 @@ void main() {
     when(() => repository.fxRoomNs).thenAnswer((_) => room);
     when(() => repository.fxChainHeld(any())).thenReturn(false);
     when(() => repository.fxHeldChainFits(any())).thenReturn(true);
-    when(() => repository.fxGrowthNs(any())).thenAnswer(
+    registerFallbackValue(<FxAddress, bool>{});
+    when(
+      () => repository.fxGrowthNs(
+        any(),
+        chainSwitches: any(named: 'chainSwitches'),
+      ),
+    ).thenAnswer(
       (call) => fxChainCostNs(
         (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
             .values
@@ -833,6 +839,27 @@ void main() {
       );
 
       expect(result.status, FxEditStatus.refused);
+    });
+
+    test('switching on a chain off that no control reaches is weighed, and '
+        'refused when it does not fit (#1723)', () {
+      const input = FxAddress(stage: FxStage.input);
+      power[input] = false;
+      room = 10;
+      when(
+        () => repository.fxGrowthNs(const {}, chainSwitches: {input: true}),
+      ).thenReturn(11);
+
+      final result = cubit.setChainEnabled(input, enabled: true);
+
+      expect(result.status, FxEditStatus.overBudget);
+      expect(power[input], isFalse);
+      // A switch off is never weighed.
+      power[input] = true;
+      expect(
+        cubit.setChainEnabled(input, enabled: false).status,
+        FxEditStatus.applied,
+      );
     });
 
     group('a chain switched off because it did not fit (#1515)', () {

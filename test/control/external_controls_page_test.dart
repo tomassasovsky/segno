@@ -68,6 +68,8 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
+    registerFallbackValue(<FxControlReach>[]);
+    when(() => looper.fxReachFits(any())).thenReturn(true);
     confirmedTiming = RecordTiming.immediately;
     rememberedDivision = GridDivision.off;
     when(() => looper.sessionRevision).thenReturn(0);

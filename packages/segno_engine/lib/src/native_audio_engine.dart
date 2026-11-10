@@ -1050,6 +1050,9 @@ class NativeAudioEngine implements AudioEngine {
         }
         native.fx_lane_mask |= 1 << entry.key;
       }
+      for (final lane in image.heardLanes) {
+        native.heard_mask |= 1 << lane;
+      }
       for (final entry in image.lanes.entries) {
         native.lane_mask |= 1 << entry.key;
         native.gain[entry.key] = entry.value.gain;
@@ -1340,6 +1343,104 @@ class NativeAudioEngine implements AudioEngine {
       );
       if (n <= 0) return Float32List(0);
       return Float32List.fromList(buf.asTypedList(n));
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) {
+    _checkAlive();
+    final frames = _bindings.le_engine_export_layer_heard(
+      _engine,
+      channel,
+      lane,
+      ordinal,
+      nullptr,
+      0,
+    );
+    // Torn as exportLayer reads it: fail the save rather than drop the image.
+    if (frames < 0) {
+      throw StateError(
+        'heard layer $ordinal of track $channel lane $lane is torn: '
+        '${EngineResult.fromCode(frames).name}',
+      );
+    }
+    if (frames == 0) return Float32List(0);
+    final heard = _copyStereo(
+      frames,
+      (buf) => _bindings.le_engine_export_layer_heard(
+        _engine,
+        channel,
+        lane,
+        ordinal,
+        buf,
+        frames,
+      ),
+    );
+    if (heard.length != 2 * frames) {
+      throw StateError(
+        'heard layer $ordinal of track $channel lane $lane changed while '
+        'it was read',
+      );
+    }
+    return heard;
+  }
+
+  @override
+  Float32List exportTrackLaneHeard(int channel, int lane) {
+    _checkAlive();
+    _bindings.le_engine_get_lane(_engine, channel, lane, _lanePtr);
+    if (_lanePtr.ref.heard == 0) return Float32List(0);
+    final frames = _lanePtr.ref.length_frames;
+    if (frames <= 0) return Float32List(0);
+    return _copyStereo(
+      frames,
+      (buf) => _bindings.le_engine_export_track_lane_heard(
+        _engine,
+        channel,
+        lane,
+        buf,
+        frames,
+      ),
+    );
+  }
+
+  /// Copies up to [frames] interleaved stereo frames that [read] writes into
+  /// a native buffer, as many as it reports written.
+  Float32List _copyStereo(int frames, int Function(Pointer<Float> buf) read) {
+    final buf = calloc<Float>(2 * frames);
+    try {
+      final n = read(buf);
+      if (n <= 0) return Float32List(0);
+      return Float32List.fromList(buf.asTypedList(2 * n));
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) {
+    _checkAlive();
+    if (pcm.isEmpty || pcm.length.isOdd) return EngineResult.invalid;
+    final buf = calloc<Float>(pcm.length);
+    try {
+      buf.asTypedList(pcm.length).setAll(0, pcm);
+      return EngineResult.fromCode(
+        _bindings.le_engine_import_layer_heard(
+          _engine,
+          channel,
+          lane,
+          ordinal,
+          buf,
+          pcm.length ~/ 2,
+        ),
+      );
     } finally {
       calloc.free(buf);
     }
@@ -2344,6 +2445,26 @@ class NativeAudioEngine implements AudioEngine {
         lane,
         enabled ? 1 : 0,
       ),
+    );
+  }
+
+  @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_lane_source(_engine, channel, lane, source.code),
+    );
+  }
+
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_heard_attach(_engine, channel, lane),
     );
   }
 

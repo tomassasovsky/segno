@@ -86,6 +86,7 @@ export 'src/models/fx_cost.dart';
 export 'src/models/fx_module_build.dart';
 export 'src/models/fx_preset_additions.dart';
 export 'src/models/fx_rack_level.dart';
+export 'src/models/fx_reach.dart';
 export 'src/models/fx_slot_ids.dart'
     show SlotIds, withFreshSlotIds, withMintedSlotIds;
 export 'src/models/fx_user_preset.dart';

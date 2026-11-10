@@ -43,6 +43,16 @@ class MidiSaveResult {
   /// A refused mutation; the complete editor draft should remain open.
   const MidiSaveResult.refused(this.error) : saved = false, mappingId = null;
 
+  /// A mutation refused because the effects the mappings could switch on
+  /// would not fit the effects budget (#1723); nothing was saved.
+  const MidiSaveResult.overBudget()
+    : saved = false,
+      mappingId = null,
+      error = overBudgetError;
+
+  /// The [error] of [MidiSaveResult.overBudget].
+  static const overBudgetError = 'fxBudget';
+
   /// Whether storage confirmed the requested envelope.
   final bool saved;
 

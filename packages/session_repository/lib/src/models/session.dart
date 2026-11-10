@@ -14,27 +14,37 @@ import 'package:session_repository/src/session_exception.dart';
 @immutable
 class SessionLayer {
   /// Creates a [SessionLayer].
-  const SessionLayer({required this.file});
+  const SessionLayer({required this.file, this.heard});
 
   /// Projects a [SessionLayer] from a decoded JSON map.
-  factory SessionLayer.fromJson(Map<String, dynamic> json) =>
-      SessionLayer(file: json['file'] as String);
+  factory SessionLayer.fromJson(Map<String, dynamic> json) => SessionLayer(
+    file: json['file'] as String,
+    heard: json['heard'] as String?,
+  );
 
   /// Filename of this layer's WAV within the session bundle.
   final String file;
 
+  /// Filename of this layer's heard image (schema v19, #1713): the input
+  /// chain's output recorded with the take, a stereo 32-bit float WAV frame
+  /// for frame as long as [file]. `null` when the image has none (a take
+  /// recorded dry, or saved before v19), which then plays [file] through
+  /// its lane's chain.
+  final String? heard;
+
   /// Serializes this layer to a JSON map.
-  Map<String, dynamic> toJson() => {'file': file};
+  Map<String, dynamic> toJson() => {'file': file, 'heard': ?heard};
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SessionLayer &&
           runtimeType == other.runtimeType &&
-          file == other.file;
+          file == other.file &&
+          heard == other.heard;
 
   @override
-  int get hashCode => file.hashCode;
+  int get hashCode => Object.hash(file, heard);
 }
 
 /// One lane of a [SessionTrack] (schema v3): its mix/routing plus the ordered
@@ -1118,8 +1128,9 @@ class Session {
   /// backing setup and the click's pan, and since 16 (#1179 Part 4b) the
   /// recorded tempo, each take's span and the Audio & tempo settings, and
   /// since 17 (#854) the lap each take was played on, and since 18 (#1678)
-  /// the input each lane's take was captured from.
-  static const int formatVersion = 18;
+  /// the input each lane's take was captured from, and since 19 (#1713)
+  /// each layer's heard image.
+  static const int formatVersion = 19;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';

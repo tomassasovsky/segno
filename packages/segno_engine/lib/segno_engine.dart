@@ -61,6 +61,7 @@ export 'src/engine_snapshot.dart'
         FxWorkersTelemetry,
         GridDivision,
         LaneSnapshot,
+        LaneSource,
         LatencyState,
         LooperMode,
         LooperModeGate,

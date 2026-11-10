@@ -633,6 +633,7 @@ void main() {
 
       final rig = rigFromBundle((
         session: read,
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [
             Float32List.fromList([1, 1, 1, 1]),
@@ -939,6 +940,7 @@ void main() {
             ],
           ),
         ]),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -988,6 +990,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -1019,6 +1022,7 @@ void main() {
           overdubDecay: 40,
           loopBars: 7,
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: const {},
       ));
 
@@ -1067,6 +1071,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -1109,6 +1114,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (1, 0): [Float32List(16)],
         },
@@ -1127,6 +1133,7 @@ void main() {
           baseLengthFrames: 4,
           tracks: [],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: const {},
       ));
 
@@ -1158,6 +1165,7 @@ void main() {
             encoded: '',
           ),
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: const {},
       ));
 
@@ -1177,6 +1185,7 @@ void main() {
               encoded: '',
             ),
           ),
+          heardStems: const <(int, int), List<Float32List>>{},
           laneStems: const {},
         )),
         throwsFormatException,
@@ -1222,6 +1231,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -1274,6 +1284,7 @@ void main() {
               ),
             ],
           ),
+          heardStems: const <(int, int), List<Float32List>>{},
           laneStems: {
             (0, 0): [pcm],
           },
@@ -1312,6 +1323,7 @@ void main() {
             ],
           ),
         ]),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [l0],
           (0, 1): [l1],
@@ -1339,6 +1351,7 @@ void main() {
               lanes: [lane(0, 'track${channel}_lane0_L0.wav')],
             ),
         ]),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
           (1, 0): [pcm],
@@ -1380,6 +1393,11 @@ void main() {
         Float32List.fromList([5]),
         Float32List.fromList([6]),
       ];
+      final heard1 = [
+        Float32List(0),
+        Float32List.fromList([.5, -.5]),
+        Float32List(0),
+      ];
       final bundle = (
         session: sessionWith([
           SessionTrack(
@@ -1394,12 +1412,18 @@ void main() {
             ],
           ),
         ]),
+        // Lane 1's live image holds a heard image (#1713); lane 0 has none.
+        heardStems: {(0, 1): heard1},
         laneStems: {(0, 0): l0, (0, 1): l1},
       );
 
       final rig = rigFromBundle(bundle);
       final lanes = rig.tracks.single.lanes;
       expect(lanes, hasLength(2));
+      expect(lanes[0].heard, isEmpty);
+      expect(lanes[1].heard, heard1);
+      expect(lanes[1].heardAt(1), heard1[1]);
+      expect(lanes[1].heardAt(0), isEmpty);
       expect(lanes[0].layers, l0);
       expect(lanes[0].history, history);
       expect(lanes[0].undoCount, 1);
@@ -1448,6 +1472,7 @@ void main() {
             ),
           ],
         ),
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [pcm],
         },
@@ -1484,6 +1509,7 @@ void main() {
           ),
         ]),
         // Lane 1 has no decoded audio.
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [l0],
         },
@@ -1516,6 +1542,7 @@ void main() {
           ),
         ]),
         // Only track 0's audio decoded.
+        heardStems: const <(int, int), List<Float32List>>{},
         laneStems: {
           (0, 0): [
             Float32List.fromList([1, 1, 1, 1]),
@@ -1738,7 +1765,11 @@ void main() {
       expect(rig.loopBars, 0);
       expect(rig.primaryTrack, -1);
       // The rest is what an Open of the same session applies.
-      final opened = rigFromBundle((session: full, laneStems: const {}));
+      final opened = rigFromBundle((
+        session: full,
+        laneStems: const {},
+        heardStems: const {},
+      ));
       expect(rig.tempoBpm, 96);
       expect(rig.tempoSource, opened.tempoSource);
       expect((rig.tsNum, rig.tsDen), (7, 8));

@@ -17,21 +17,11 @@ extension ExternalControlWriter on LooperRepository {
       for (final target in parameters.keys)
         if (valueTargetResolves(target)) target.address,
     };
-    final accepted = <FxAddress>{};
+    final press = <FxAddress, ({List<TrackEffect> entries, bool on})>{};
     for (final address in owners) {
       final original = chainEntriesAt(address);
       final currentPower = bindingEnabled(FxChainTarget(address));
       if (original == null || currentPower == null) continue;
-      final power = activations[FxChainTarget(address)] ?? currentPower;
-      // A chain switched off because it did not fit comes back on only
-      // through its own switch, which weighs it (#1515); refused, the write
-      // is not accepted.
-      if (activations[FxChainTarget(address)] ?? false) {
-        if (fxChainHeld(address) &&
-            !setChainEnabledAt(address, enabled: true).isOk) {
-          continue;
-        }
-      }
       // Racks first, as whole switches over their modules' own (#1711); an
       // activation of one module then still has the last word on it.
       var racked = original;
@@ -43,39 +33,59 @@ extension ExternalControlWriter on LooperRepository {
           racked = fxWithRackEnabled(racked, rackId, enabled: on) ?? racked;
         }
       }
-      final entries = [
-        for (final effect in racked)
-          _edited(effect, address, activations, parameters),
-      ];
-      final result = switch (address.stage) {
-        FxStage.input => setMonitorEffects(
-          input: address.index,
-          effects: entries,
-          chainEnabled: power,
-        ),
-        FxStage.loop => setLaneEffects(
-          channel: address.index,
-          lane: address.lane!,
-          effects: entries,
-          chainEnabled: power,
-        ),
-        FxStage.track => setTrackEffects(
-          channel: address.index,
-          effects: entries,
-          chainEnabled: power,
-        ),
-        FxStage.allTracks => setAllTracksEffects(
-          effects: entries,
-          chainEnabled: power,
-        ),
-        FxStage.output => setOutputEffects(
-          bus: address.index,
-          effects: entries,
-          chainEnabled: power,
-        ),
-      };
-      if (result.isOk) accepted.add(address);
+      press[address] = (
+        entries: [
+          for (final effect in racked)
+            _edited(effect, address, activations, parameters),
+        ],
+        on: activations[FxChainTarget(address)] ?? currentPower,
+      );
     }
+    // Every chain of the press is weighed as landed (#1723): the side an
+    // A/B press switches on is admitted beside the side it switches off.
+    final accepted = <FxAddress>{};
+    fxPress(press, () {
+      for (final MapEntry(key: address, value: (:entries, on: power))
+          in press.entries) {
+        // A chain switched off because it did not fit comes back on only
+        // through its own switch, which weighs it (#1515); refused, the
+        // write is not accepted.
+        if (activations[FxChainTarget(address)] ?? false) {
+          if (fxChainHeld(address) &&
+              !setChainEnabledAt(address, enabled: true).isOk) {
+            continue;
+          }
+        }
+        final result = switch (address.stage) {
+          FxStage.input => setMonitorEffects(
+            input: address.index,
+            effects: entries,
+            chainEnabled: power,
+          ),
+          FxStage.loop => setLaneEffects(
+            channel: address.index,
+            lane: address.lane!,
+            effects: entries,
+            chainEnabled: power,
+          ),
+          FxStage.track => setTrackEffects(
+            channel: address.index,
+            effects: entries,
+            chainEnabled: power,
+          ),
+          FxStage.allTracks => setAllTracksEffects(
+            effects: entries,
+            chainEnabled: power,
+          ),
+          FxStage.output => setOutputEffects(
+            bus: address.index,
+            effects: entries,
+            chainEnabled: power,
+          ),
+        };
+        if (result.isOk) accepted.add(address);
+      }
+    });
     return accepted;
   }
 }

@@ -219,6 +219,7 @@ void main() {
             baseLengthFrames: 0,
             tracks: [],
           ),
+          heardStems: const <(int, int), List<Float32List>>{},
           laneStems: const <(int, int), List<Float32List>>{},
         ),
       ),
@@ -261,6 +262,7 @@ void main() {
       baseLengthFrames: 0,
       tracks: [],
     ),
+    heardStems: const <(int, int), List<Float32List>>{},
     laneStems: <(int, int), List<Float32List>>{},
   ));
 
@@ -325,6 +327,7 @@ void main() {
                 ],
                 defaultFadeDurationMs: 12000,
               ),
+              heardStems: const <(int, int), List<Float32List>>{},
               laneStems: {
                 (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
                 (1, 0): [Float32List(128)..fillRange(0, 128, .5)],
@@ -462,6 +465,7 @@ void main() {
                   ],
                   defaultFadeDurationMs: amount == null ? 501 : 4000,
                 ),
+                heardStems: const <(int, int), List<Float32List>>{},
                 laneStems: <(int, int), List<Float32List>>{},
               ),
             ),
@@ -537,6 +541,7 @@ void main() {
               ),
             ],
           ),
+          heardStems: const <(int, int), List<Float32List>>{},
           laneStems: {
             (0, 0): [Float32List(128)..fillRange(0, 128, .5)],
           },

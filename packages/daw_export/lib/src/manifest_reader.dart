@@ -77,10 +77,10 @@ abstract final class DawManifestReader {
     final armTracks = tracksOf(manifest['armSnapshot']);
     final disarmTracks = tracksOf(manifest['disarmSnapshot']);
 
-    // channel -> (lane -> pcmRef). Built from arm first, then disarm
-    // overwrites — disarm is the later, fresher pass (a track recorded
-    // fresh during the session has no arm-time entry at all, and a track
-    // that was already settled at arm keeps its arm-time entry unless
+    // channel -> (lane -> heardPcmRef or pcmRef). Built from arm first,
+    // then disarm overwrites — disarm is the later, fresher pass (a track
+    // recorded fresh during the session has no arm-time entry at all, and a
+    // track that was already settled at arm keeps its arm-time entry unless
     // disarm captured something newer for the same lane).
     final pcmRefsByChannel = <int, Map<int, String>>{};
     for (final t in [...armTracks, ...disarmTracks]) {
@@ -90,7 +90,16 @@ abstract final class DawManifestReader {
       for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
         final laneJson = lane as Map<String, dynamic>;
         final laneIndex = (laneJson['lane'] as num?)?.toInt();
-        final pcmRef = laneJson['pcmRef'] as String?;
+        // A take's heard image (#1713) is what it played as, so its clip
+        // carries that unless the lane played clean (its effects edited) or
+        // the image is missing; otherwise the clean loop.
+        final heardRef = laneJson['heardPcmRef'] as String?;
+        final pcmRef =
+            heardRef != null &&
+                laneJson['source'] != 'clean' &&
+                File('$captureDir/$heardRef').existsSync()
+            ? heardRef
+            : laneJson['pcmRef'] as String?;
         if (laneIndex == null || pcmRef == null) continue;
         laneMap[laneIndex] = pcmRef;
       }

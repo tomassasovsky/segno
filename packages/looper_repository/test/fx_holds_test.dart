@@ -201,7 +201,11 @@ void main() {
     });
 
     test('a chain the player had off is held without a notice', () {
+      // A control can switch it on, so it is charged though off (#1723).
       repo
+        ..setFxReach([
+          FxControlReach(whenOn: {FxSwitchKey.chain(_lane(2))}),
+        ])
         ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
         ..setLaneChainEnabled(channel: 2, lane: 0, enabled: false)
         ..setMonitorEffects(input: 0, effects: _rack())
@@ -252,12 +256,45 @@ void main() {
     test('a chain the player has off goes first: holding it changes no '
         'sound', () {
       repo
+        ..setFxReach([
+          FxControlReach(whenOn: {FxSwitchKey.chain(_input(3))}),
+        ])
         ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
         ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
         ..setMonitorEffects(input: 0, effects: _rack());
       expect(repo.fxChainHeld(_input(3)), isTrue);
       expect(repo.fxChainHeld(_lane(2)), isFalse);
       expect(repo.state.fxHoldNotice, isEmpty);
+    });
+
+    test('a chain the player has off that no control reaches charges '
+        'nothing, so nothing is held (#1723)', () {
+      repo
+        ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
+        ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
+        ..setMonitorEffects(input: 0, effects: _rack());
+      expect(repo.state.fxHeld, isEmpty);
+      // A binding that reaches it comes in over budget, as a session's
+      // bindings can: it is admitted as a restore is.
+      repo.setFxReach([
+        FxControlReach(whenOn: {FxSwitchKey.chain(_input(3))}),
+      ]);
+      expect(repo.fxChainHeld(_input(3)), isTrue);
+      expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      // The binding gone, the hold goes with it.
+      repo.setFxReach(const []);
+      expect(repo.state.fxHeld, isEmpty);
+    });
+
+    test('a chain the player has off that no control reaches is never held: '
+        'holding it frees nothing (#1723)', () {
+      repo
+        ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: _rack());
+      expect(repo.fxChainHeld(_input(3)), isFalse);
+      expect(repo.fxChainHeld(_input(2)), isTrue);
     });
 
     test('dismissing the notice keeps the chains off', () {

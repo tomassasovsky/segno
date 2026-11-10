@@ -412,6 +412,7 @@ class _NoticeSessionRepository extends SessionRepository {
         ),
       ],
     ),
+    heardStems: const <(int, int), List<Float32List>>{},
     laneStems: <(int, int), List<Float32List>>{},
   );
 }

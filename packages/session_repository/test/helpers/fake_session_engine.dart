@@ -13,6 +13,10 @@ class _FakeLane {
   /// owning track's image count; a single-layer lane holds just the live
   /// buffer.
   List<Float32List> layers = [Float32List(0)];
+
+  /// Each layer's heard image (#1713), interleaved stereo, by ordinal; a
+  /// missing or empty entry is a layer without one.
+  List<Float32List> heard = const [];
 }
 
 class _FakeTrack {
@@ -396,6 +400,35 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     if (ordinal < 0 || ordinal >= layers.length) return Float32List(0);
     return Float32List.fromList(layers[ordinal]);
   }
+
+  /// Gives lane [lane] of the seeded track [channel] [heard] images by
+  /// ordinal (#1713), interleaved stereo; an empty entry is a layer without
+  /// one.
+  void seedHeard(int channel, int lane, List<Float32List> heard) {
+    _tracks[channel].audioRev++;
+    _tracks[channel].lanes[lane].heard = List.of(heard);
+  }
+
+  @override
+  Float32List exportLayerHeard(int channel, int lane, int ordinal) {
+    final track = _tracks[channel];
+    if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
+    final heard = track.lanes[lane].heard;
+    if (ordinal < 0 || ordinal >= heard.length) return Float32List(0);
+    return Float32List.fromList(heard[ordinal]);
+  }
+
+  @override
+  Float32List exportTrackLaneHeard(int channel, int lane) =>
+      exportLayerHeard(channel, lane, _tracks[channel].liveIndex);
+
+  @override
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) => EngineResult.ok;
 
   @override
   EngineResult importTrack(int channel, Float32List pcm) =>
@@ -898,6 +931,15 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     required int lane,
     required bool enabled,
   }) => EngineResult.ok;
+  @override
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  }) => EngineResult.ok;
+  @override
+  EngineResult heardAttach({required int channel, required int lane}) =>
+      EngineResult.ok;
   @override
   EngineResult setMonitorInputFxEnabled({
     required int input,

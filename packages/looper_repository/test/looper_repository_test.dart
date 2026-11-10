@@ -7935,6 +7935,98 @@ void main() {
     );
 
     test(
+      'imports each heard image right behind its layer, and none for a layer '
+      'without one (#1713)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final undo0 = Float32List.fromList([1, 1]);
+        final live = Float32List.fromList([2, 2]);
+        final heard0 = Float32List.fromList([.5, -.5, .5, -.5]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 2,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [undo0, live],
+                    heard: [heard0, Float32List(0)],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    history: const TrackHistory([
+                      HistoryEntry(HistoryKind.layer),
+                    ], undoCount: 1),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.importedHeard, {(0, 0, 0): heard0});
+        final imports = engine.calls
+            .where((c) => c == 'importLayer' || c == 'importLayerHeard')
+            .toList();
+        expect(imports, ['importLayer', 'importLayerHeard', 'importLayer']);
+      },
+    );
+
+    test(
+      'retries a heard image the engine is not ready for (#1713)',
+      () async {
+        engine
+          ..nextSnapshot = clearedSnapshot()
+          ..importHeardNotReadyCountdown = 2;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final heard = Float32List.fromList([.5, -.5, .5, -.5]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 2,
+            tracks: [
+              SessionRigTrack(
+                fadeAmount: 1,
+                reversed: false,
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [
+                      Float32List.fromList([1, 1]),
+                    ],
+                    heard: [heard],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.importedHeard, {(0, 0, 0): heard});
+        expect(
+          engine.calls.where((c) => c == 'importLayerHeard'),
+          hasLength(3),
+        );
+      },
+    );
+
+    test(
       'finalizes length edits with every image at its own length (#1168)',
       () async {
         engine.nextSnapshot = clearedSnapshot();

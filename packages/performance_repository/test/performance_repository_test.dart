@@ -630,6 +630,89 @@ void main() {
     });
 
     test(
+      'writes a heard image as a stereo WAV beside the clean take (#1713)',
+      () async {
+        final heard = Float32List.fromList([.5, -.5, .5, -.5]);
+        engine
+          ..seedLane(0, 0, Float32List.fromList([1, 1]), heard: heard)
+          ..seedLane(1, 0, Float32List.fromList([1, 1]));
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+
+        final armJson =
+            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+                as Map<String, dynamic>;
+        final tracks = PerformanceArmSnapshot.fromJson(armJson).tracks;
+        final lane0 = tracks.firstWhere((t) => t.channel == 0).lanes.single;
+        expect(lane0.heardFile, 'loops/track0-lane0-heard.wav');
+        final wav = WavCodec.decodeFloat32(
+          File('$dir/${lane0.heardFile}').readAsBytesSync(),
+        );
+        expect(wav.channels, 2);
+        expect(wav.samples, heard);
+        expect(lane0.toJson()['heardPcmRef'], lane0.heardFile);
+
+        expect(lane0.playsClean, isFalse);
+        expect(lane0.toJson().containsKey('source'), isFalse);
+
+        // A take without one names none.
+        final lane1 = tracks.firstWhere((t) => t.channel == 1).lanes.single;
+        expect(lane1.heardFile, isNull);
+        expect(lane1.toJson().containsKey('heardPcmRef'), isFalse);
+        expect(File('$dir/loops/track1-lane0-heard.wav').existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'a later export of a take without a heard image removes the earlier '
+      'one (#1713)',
+      () async {
+        engine.seedLane(
+          0,
+          0,
+          Float32List.fromList([1, 1]),
+          heard: Float32List.fromList([.5, -.5, .5, -.5]),
+        );
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+        expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isTrue);
+
+        // Re-recorded dry during the capture.
+        engine.seedLane(0, 0, Float32List.fromList([2, 2, 2]));
+        await repo.persistLiveLanes();
+
+        expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'marks a lane with a heard image that plays clean (#1713)',
+      () async {
+        engine.seedLane(
+          0,
+          0,
+          Float32List.fromList([1, 1]),
+          heard: Float32List.fromList([.5, -.5, .5, -.5]),
+          source: LaneSource.clean,
+        );
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+
+        final armJson =
+            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+                as Map<String, dynamic>;
+        final lane = PerformanceArmSnapshot.fromJson(
+          armJson,
+        ).tracks.single.lanes.single;
+        expect(lane.heardFile, isNotNull);
+        expect(lane.playsClean, isTrue);
+        expect(lane.toJson()['source'], 'clean');
+      },
+    );
+
+    test(
       "captures each track's mute and solo flags in the arm manifest",
       () async {
         engine

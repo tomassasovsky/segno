@@ -1187,6 +1187,26 @@ abstract interface class EffectsControl {
     required bool enabled,
   });
 
+  /// What lane [lane] of track [channel] plays (#1713): [LaneSource.heard],
+  /// its heard image where the live take has one, or [LaneSource.clean], its
+  /// clean take through its chain (a take whose effects were edited). A
+  /// direct store that works while stopped; the switch crossfades over about
+  /// 10 ms.
+  EngineResult setLaneSource({
+    required int channel,
+    required int lane,
+    required LaneSource source,
+  });
+
+  /// Gives lane [lane] of track [channel]'s live take a heard image that is
+  /// its clean signal in both sides (what a take with no effects was heard
+  /// as), so an overdub through the input's effects can be captured into it
+  /// (#1713). [EngineResult.ok] when the take already has one;
+  /// [EngineResult.notReady] while the track captures, drains a punch-out,
+  /// edits its length or bounces, or while an earlier attach is in flight;
+  /// [EngineResult.invalid] for a lane with no take.
+  EngineResult heardAttach({required int channel, required int lane});
+
   /// An order-sensitive 64-bit fingerprint of lane [lane] of track [channel]'s
   /// PUBLISHED effect chain — its active entries' types plus (for built-ins)
   /// their parameter bits. For divergence detection only: the repository owns
@@ -1403,6 +1423,17 @@ abstract interface class SessionIo {
   /// (#1168). Read-only — call when not capturing.
   Float32List exportLayer(int channel, int lane, int ordinal);
 
+  /// The heard image (#1713) of the image [exportLayer] reads at the same
+  /// [ordinal], as INTERLEAVED STEREO (left, right; two samples per frame),
+  /// or an empty list when that image has none. Frame for frame as long as
+  /// the clean image. Read-only — call when not capturing.
+  Float32List exportLayerHeard(int channel, int lane, int ordinal);
+
+  /// The heard image (#1713) of lane [lane] of track [channel]'s live take,
+  /// as [exportTrackLane] reads it but INTERLEAVED STEREO, or an empty list
+  /// when the take has none. Read-only — call when not capturing.
+  Float32List exportTrackLaneHeard(int channel, int lane);
+
   /// Lists track [channel]'s history in image-ordinal order with its raw
   /// split ([TrackHistory.undoCount]): split the images by that count, never
   /// by the snapshot's `undoDepth`, which reads 0 while a Clear restore is in
@@ -1422,6 +1453,19 @@ abstract interface class SessionIo {
   /// [commitSession]. Returns [EngineResult.invalid] for a non-empty track or
   /// an out-of-range ordinal.
   EngineResult importLayer(int channel, int lane, int ordinal, Float32List pcm);
+
+  /// Gives the image [importLayer] just staged at ([channel], [lane],
+  /// [ordinal]) its heard image (#1713): INTERLEAVED STEREO [pcm] exactly the
+  /// clean image's length in frames. Call right after that image's
+  /// [importLayer], before the lane's next one, and before
+  /// [finalizeHistory]. Returns [EngineResult.invalid] when the lane's last
+  /// staged image is not this one at this length.
+  EngineResult importLayerHeard(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  );
 
   /// Publishes a track reconstructed via [importLayer] with its [history]
   /// ([exportHistory] order): rebuilds the undo/redo stacks with their kinds

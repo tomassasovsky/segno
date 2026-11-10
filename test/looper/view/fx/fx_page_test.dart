@@ -319,7 +319,13 @@ void main() {
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
     when(() => repository.fxChainHeld(any())).thenReturn(false);
     when(() => repository.fxHeldChainFits(any())).thenReturn(true);
-    when(() => repository.fxGrowthNs(any())).thenAnswer(
+    registerFallbackValue(<FxAddress, bool>{});
+    when(
+      () => repository.fxGrowthNs(
+        any(),
+        chainSwitches: any(named: 'chainSwitches'),
+      ),
+    ).thenAnswer(
       (call) => fxChainCostNs(
         (call.positionalArguments[0] as Map<FxAddress, List<TrackEffect>>)
             .values

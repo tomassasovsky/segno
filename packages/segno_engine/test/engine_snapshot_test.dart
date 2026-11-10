@@ -112,6 +112,19 @@ void main() {
     });
   });
 
+  group('LaneSource', () {
+    test('maps the native source codes (#1713)', () {
+      expect(LaneSource.fromCode(0), LaneSource.heard);
+      expect(LaneSource.fromCode(1), LaneSource.clean);
+      expect(LaneSource.heard.code, 0);
+      expect(LaneSource.clean.code, 1);
+    });
+
+    test('reads an unknown code as the default, heard', () {
+      expect(LaneSource.fromCode(7), LaneSource.heard);
+    });
+  });
+
   group('GridDivision', () {
     test('fromCode maps each known code', () {
       expect(GridDivision.fromCode(0), GridDivision.off);

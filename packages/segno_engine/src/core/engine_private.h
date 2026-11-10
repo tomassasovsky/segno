@@ -2438,6 +2438,71 @@ typedef struct le_heard_log {
   le_heard_rec rec[LE_HEARD_LOG_CAP];
 } le_heard_log;
 
+/* The heard image's rendered tails (#1713 part 3, engine_heard_tail.c).
+ * When a capture pass on a lane holding an image ends (a take closing into
+ * play, a punch-out), the input chain keeps ringing: the player hears that
+ * ring-out live on the first repeat, and from the second repeat on it belongs
+ * in the image, as a chain on the lane would have wrapped it. The cache
+ * worker renders the chain's tail from the last LE_HEARD_TAIL_WINDOW_S
+ * seconds of its input (a fresh state warmed by that input, then silence
+ * until the tail falls below -80 dBFS or LE_HEARD_TAIL_MAX_S passes), and
+ * the callback adds it into the image after the pass's last written
+ * position, one frame per frame of time since the end, wrapping at the
+ * loop: always behind the read head, so the live ring-out is never heard
+ * twice. A new capture on the track, Stop, a length or slot change, Reverse
+ * or Speed drop what is not added yet. */
+#define LE_HEARD_TAIL_WINDOW_S 12
+#define LE_HEARD_TAIL_RING_S 16
+#define LE_HEARD_TAIL_MAX_S 20
+
+/* One input's recent chain input, raw (before the capture trim), indexed by
+ * FX clock modulo [cap], a power of two (so the 32-bit clock's wrap keeps
+ * the index continuous): written by the callback for every input a
+ * capturing heard lane records (le_engine.heard_inputs), read by control
+ * when a pass ends. The buffer is mapped and freed by control; [a_end] is
+ * the clock after the last frame written, [a_begin] the clock where the
+ * current run of frames started (earlier clocks hold an older run). */
+typedef struct le_heard_ring {
+  float* _Atomic buf;
+  int32_t cap;
+  _Atomic int32_t a_started;
+  _Atomic uint32_t a_begin;
+  _Atomic uint32_t a_end;
+  /* The run before the current one, [a_prev_begin, a_prev_end): its frames
+   * stay readable until the current run writes over them, for a pass on
+   * another track that ended in it. */
+  _Atomic uint32_t a_prev_begin;
+  _Atomic uint32_t a_prev_end;
+} le_heard_ring;
+
+/* A track's capture pass as the callback sees it (callback only): whether
+ * it is writing, the clock and loop position of its last write, and how
+ * many passes have ended. */
+typedef struct le_heard_pass {
+  int32_t capturing;
+  uint32_t last_clock;
+  int32_t last_pos;
+  uint32_t gen;
+} le_heard_pass;
+
+/* What a pass's end leaves for its tail, written by the callback and read
+ * by control after the LE_EVT_HEARD_TAIL naming [a_gen]: a sequence lock,
+ * [a_gen] 0 while the callback writes, so a later end overwriting it while
+ * control reads is seen and that end's tail skipped. */
+typedef struct le_heard_end {
+  _Atomic uint32_t a_gen;
+  int32_t slot;
+  uint32_t last_clock;
+  int32_t last_pos;
+  int32_t len;
+  uint32_t lanes;
+  int32_t input[LE_MAX_LANES];
+  float trim[LE_MAX_LANES];
+  le_fx_tempo tempo[LE_MAX_LANES];
+} le_heard_end;
+
+struct le_heard_tail; /* engine_heard_tail.c */
+
 
 /* Chain owners whose parameters live in le_engine.fx_param_store: every lane,
  * every track bus, every monitor, every output bus and the All tracks config. */
@@ -3467,6 +3532,21 @@ struct le_engine {
   /* Lanes holding an image in any slot (le_heard.a_slots > 0), so a block
    * where none does skips le_heard_block_begin's walk. */
   _Atomic int32_t a_heard_lanes;
+  /* The rendered tails (part 3, see le_heard_ring): each input's recent
+   * chain input; each track's pass (callback); the tail the callback adds
+   * into a track's image (published by control, cleared by the callback
+   * when it is done with it); control's tail in flight per track; and the
+   * hand-off to the cache worker (set by control, taken by the worker). */
+  le_heard_ring heard_ring[LE_MAX_MONITORED_INPUTS];
+  le_heard_pass heard_pass[LE_MAX_TRACKS];
+  le_heard_end heard_end[LE_MAX_TRACKS];
+  struct le_heard_tail* _Atomic heard_tail[LE_MAX_TRACKS];
+  struct le_heard_tail* heard_tail_ctl[LE_MAX_TRACKS];
+  /* Control: a newer pass end's tail, built at once (its input window is
+   * copied before the ring moves on) while the older one is still in flight
+   * and queued once that one is freed. */
+  struct le_heard_tail* heard_tail_next[LE_MAX_TRACKS];
+  struct le_heard_tail* _Atomic heard_tail_queue[LE_MAX_TRACKS];
   /* Track chains as jobs (#1729, le_trk_job), at the end so no field the
    * mixer reads moves. trk_jobs_live: the tracks the block records, 0
    * outside a block whose track chains run as jobs (callback). trk_job_rec:

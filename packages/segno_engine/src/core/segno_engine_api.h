@@ -546,6 +546,10 @@ typedef enum le_command_code {
                                 * the emptied track holds for redo (0:
                                 * nothing was captured, nothing to redo),
                                 * anchor = the take's lap (#854). */
+  LE_EVT_HEARD_TAIL = 102, /* a capture pass on a lane holding a heard image
+                            * ended (#1713 part 3): its tail is rendered.
+                            * evt arm: channel, slot (the live slot at the
+                            * end), generation (le_heard_pass.gen). */
   LE_CMD_SET_FX_RECIPE = 77,
   LE_CMD_SET_RECORD_TIMING = 78, /* one complete timing vector and receipt */
   LE_CMD_STOP_RECORD_CONTROL = 79, /* cohort cancel or non-acquiring capture finish */

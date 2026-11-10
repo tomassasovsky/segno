@@ -969,6 +969,113 @@ void main() {
     },
   );
 
+  group('heard images (#1713)', () {
+    Float32List stereo(int frames, double left, double right) =>
+        Float32List.fromList([
+          for (var f = 0; f < frames; f++) ...[left, right],
+        ]);
+
+    test(
+      'save writes each heard image as a stereo WAV beside its layer and read '
+      'returns them in layer order',
+      () async {
+        final undo0 = Float32List.fromList([1, 1, 1, 1]);
+        final live = Float32List.fromList([2, 2, 2, 2]);
+        final redo0 = Float32List.fromList([3, 3, 3, 3]);
+        final heard0 = stereo(4, .5, -.5);
+        final heard1 = stereo(4, .25, -.25);
+        final source = FakeSessionEngine()
+          ..seedLayers(0, [undo0, live, redo0], undoDepth: 1, redoDepth: 1)
+          ..seedHeard(0, 0, [heard0, heard1, Float32List(0)]);
+        final dir = '${tempDir.path}/heard';
+        final saved = await repoFor(
+          source,
+        ).save(dir, settings: const SessionSettings());
+
+        expect(saved.tracks.single.lanes.single.layers, const [
+          SessionLayer(
+            file: 'track0_lane0_L0.wav',
+            heard: 'track0_lane0_L0_heard.wav',
+          ),
+          SessionLayer(
+            file: 'track0_lane0_L1.wav',
+            heard: 'track0_lane0_L1_heard.wav',
+          ),
+          SessionLayer(file: 'track0_lane0_L2.wav'),
+        ]);
+        final wav = WavCodec.decodeFloat32(
+          File('$dir/track0_lane0_L1_heard.wav').readAsBytesSync(),
+        );
+        expect(wav.channels, 2);
+        expect(wav.samples, heard1);
+        expect(File('$dir/track0_lane0_L2_heard.wav').existsSync(), isFalse);
+
+        final bundle = await repoFor(FakeSessionEngine()).read(dir);
+        expect(bundle.laneStems[(0, 0)], [undo0, live, redo0]);
+        expect(bundle.heardStems[(0, 0)], [heard0, heard1, Float32List(0)]);
+      },
+    );
+
+    test('a lane without heard images has no heardStems entry', () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/dry';
+      final saved = await repoFor(
+        source,
+      ).save(dir, settings: const SessionSettings());
+
+      expect(saved.tracks.single.lanes.single.layers.single.heard, isNull);
+      expect(
+        saved.toJson().toString(),
+        isNot(contains('heard')),
+        reason: 'a dry layer writes no heard key',
+      );
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.heardStems, isEmpty);
+    });
+
+    test('a re-save without the heard image prunes its file', () async {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, pcm)
+        ..seedHeard(0, 0, [stereo(4, .5, .5)]);
+      final dir = '${tempDir.path}/prune';
+      final repository = repoFor(engine);
+      await repository.save(dir, settings: const SessionSettings());
+      expect(File('$dir/track0_lane0_L0_heard.wav').existsSync(), isTrue);
+
+      engine.seedHeard(0, 0, const []);
+      await repository.save(dir, settings: const SessionSettings());
+      expect(File('$dir/track0_lane0_L0_heard.wav').existsSync(), isFalse);
+      expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
+    });
+
+    for (final (name, bad) in [
+      ('mono', Float32List.fromList([1, 1, 1, 1])),
+      ('shorter than its layer', stereo(3, 1, 1)),
+    ]) {
+      test('read refuses a heard image that is $name', () async {
+        final engine = FakeSessionEngine()
+          ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+          ..seedHeard(0, 0, [stereo(4, .5, .5)]);
+        final dir = '${tempDir.path}/corrupt';
+        await repoFor(engine).save(dir, settings: const SessionSettings());
+        File('$dir/track0_lane0_L0_heard.wav').writeAsBytesSync(
+          WavCodec.encodeFloat32(
+            samples: bad,
+            sampleRate: 48000,
+            channels: bad.length == 4 ? 1 : 2,
+          ),
+        );
+
+        await expectLater(
+          repoFor(FakeSessionEngine()).read(dir),
+          throwsA(isA<SessionCorruptLayers>()),
+        );
+      });
+    }
+  });
+
   test(
     'save then read round-trips a redo-side Peel marker with the kinds of '
     'every entry (#1164)',
@@ -1628,6 +1735,35 @@ void main() {
         ).samples,
         everyElement(5),
       );
+    },
+  );
+
+  test(
+    'exportStems writes a live heard image beside its stem (#1713)',
+    () async {
+      final heard = Float32List.fromList([.5, -.5, .5, -.5, .5, -.5, .5, -.5]);
+      final engine = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..seedHeard(0, 0, [heard]);
+      final repository = rooted(engine);
+      final dir = await repository.bundlePathOf('stems-heard');
+      await repository.save(dir, settings: const SessionSettings());
+      final out = '${tempDir.path}/stems';
+
+      await rooted(FakeSessionEngine()).exportStems('stems-heard', out);
+
+      final wav = WavCodec.decodeFloat32(
+        File('$out/track0_lane0_L0_heard.wav').readAsBytesSync(),
+      );
+      expect(wav.channels, 2);
+      expect(wav.samples, heard);
+      expect(File('$out/track0_lane0_L0.wav').existsSync(), isTrue);
+
+      // Re-recorded dry and exported again: the earlier heard stem goes.
+      engine.seedHeard(0, 0, const []);
+      await repository.save(dir, settings: const SessionSettings());
+      await rooted(FakeSessionEngine()).exportStems('stems-heard', out);
+      expect(File('$out/track0_lane0_L0_heard.wav').existsSync(), isFalse);
     },
   );
 

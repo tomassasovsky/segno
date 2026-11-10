@@ -502,6 +502,10 @@ static int le_heard_may_write(le_track* t) {
          load_i32(&t->a_pending) || load_i32(&t->a_pending_launch);
 }
 
+int le_heard_track_may_write(le_engine* e, int t) {
+  return le_heard_may_write(&e->tracks[t]);
+}
+
 void le_heard_perf_armed(le_engine* e) {
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) e->heard[t][l].src_logged = -1;
@@ -550,6 +554,9 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
   for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
   e->heard_jobs = ran;
   e->heard_inputs = 0u;
+  /* A pass's end and a published tail first: an image dropped since must
+   * still end its pass and let go of its tail (part 3). */
+  le_heard_tail_block(e, tc);
   /* No lane anywhere holds an image, and none did last block: nothing to
    * enter, leave or log. */
   if (e->heard_trk == 0u &&
@@ -789,6 +796,10 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
       }
       const int32_t s = r->slot;
       if (s < 0 || s >= LE_POOL_SLOTS) continue;
+      /* The pass's last written position, for its tail (part 3): the seam
+       * continuation, else the overdub's write, else the take's. */
+      le_heard_tail_note_write(e, t, par->clock + ((uint32_t)r->i - b0),
+                               r->c >= 0 ? r->c : r->b >= 0 ? r->b : r->a);
       for (int32_t l = 0; l < lanes; ++l) {
         le_heard* h = &e->heard[t][l];
         float* hl = le_heard_plane(h, 0, s);
@@ -828,6 +839,7 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
     }
     lg->n = 0;
   }
+  le_heard_tail_post(e, par, in, ch_in, excluded);
 }
 
 void le_heard_run_copy(le_engine* e, le_track* t, int32_t live, int32_t shadow,

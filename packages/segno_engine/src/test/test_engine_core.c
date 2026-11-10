@@ -39562,6 +39562,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_interface_inputs.h"
 #include "test_engine_heard_edits.h"
 #include "test_engine_heard_perf.h"
+#include "test_engine_heard_tail.h"
 #include "test_engine_trk_jobs.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
@@ -39599,6 +39600,7 @@ int main(void) {
     run_heard_tests();
     run_heard_edit_tests();
     run_heard_perf_tests();
+    run_heard_tail_tests();
     if (getenv("SEGNO_HEARD_TESTS_ONLY")) return g_failures ? 1 : 0;
   }
   test_platform_names_the_calling_thread();

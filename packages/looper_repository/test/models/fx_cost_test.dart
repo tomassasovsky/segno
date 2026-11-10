@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show MockAudioEngine;
@@ -240,6 +242,36 @@ void main() {
       // The mock reports no block length: the bench's stands in.
       final frames = engine.snapshot().bufferFrames;
       final period = frames > 0 ? frames : kFxBenchPeriod;
+      // The reverb is off and no control reaches it: it charges nothing
+      // (#1723).
+      final octaver = fxChainCostNs([
+        _fx(TrackEffectType.octaver),
+      ], period: period);
+      expect(repo.fxCostNs, octaver);
+      // A control that can switch it on reserves room for it.
+      repo.setFxReach([
+        FxControlReach(
+          whenOn: {const FxSwitchKey.chain(FxAddress(stage: FxStage.track))},
+        ),
+      ]);
+      expect(repo.fxCostNs, octaver);
+      final reverb = BuiltInEffect(
+        type: TrackEffectType.reverb,
+        enabled: false,
+        slotId: 'reverb',
+      );
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: [_fx(TrackEffectType.octaver), reverb],
+        )
+        ..setFxReach([
+          FxControlReach(
+            whenOn: {
+              const FxSwitchKey.slot(FxAddress(stage: FxStage.track), 'reverb'),
+            },
+          ),
+        ]);
       final cost = fxChainCostNs([
         _fx(TrackEffectType.octaver),
         _fx(TrackEffectType.reverb),
@@ -256,6 +288,366 @@ void main() {
       expect(
         repo.fxGrowthNs({const FxAddress(stage: FxStage.track): const []}),
         -cost,
+      );
+    });
+  });
+
+  test("the draining kinds are the engine's (le_fx_type_drains)", () {
+    // The effects table in engine_fx.c: each entry `[LE_FX_NAME] = {...}`,
+    // the draining ones flagged LE_FX_F_DRAINS.
+    final source = File(
+      '../segno_engine/src/core/engine_fx.c',
+    ).readAsStringSync();
+    final table = source.substring(
+      source.indexOf('static const le_fx_vtable LE_FX[] = {'),
+    );
+    final body = table.substring(0, table.indexOf('\n};'));
+    final draining = <String>{};
+    final entries = RegExp(r'\[LE_FX_([A-Z_]+)\]').allMatches(body).toList();
+    for (final (i, entry) in entries.indexed) {
+      final end = i + 1 < entries.length ? entries[i + 1].start : body.length;
+      if (!body.substring(entry.start, end).contains('LE_FX_F_DRAINS')) {
+        continue;
+      }
+      final words = entry.group(1)!.toLowerCase().split('_');
+      draining.add(
+        words.first +
+            words
+                .skip(1)
+                .map((w) => w[0].toUpperCase() + w.substring(1))
+                .join(),
+      );
+    }
+    expect(draining, isNotEmpty);
+    expect({for (final kind in kFxDrainingKinds) kind.name}, draining);
+  });
+
+  group('what a control can turn on (#1723)', () {
+    late MockAudioEngine engine;
+    late LooperRepository repo;
+
+    const track = FxAddress(stage: FxStage.track);
+    const input = FxAddress(stage: FxStage.input);
+    const rackA = FxRack(id: 'rack-a', name: 'A');
+    const rackB = FxRack(id: 'rack-b', name: 'B');
+
+    BuiltInEffect pedal(
+      TrackEffectType type,
+      String slotId, {
+      FxRack? rack,
+      bool enabled = true,
+    }) => BuiltInEffect(
+      type: type,
+      slotId: slotId,
+      rack: rack,
+      enabled: enabled,
+    );
+
+    /// Rack A (a Overdrive) on, rack B (a Chorus and a Filter) off: the A/B
+    /// pair of #1711 in one chain.
+    List<TrackEffect> pair({bool aOn = true, bool bOn = false}) => [
+      pedal(
+        TrackEffectType.overdrive,
+        'a1',
+        rack: rackA.copyWith(bypassed: !aOn),
+      ),
+      pedal(TrackEffectType.chorus, 'b1', rack: rackB.copyWith(bypassed: !bOn)),
+      pedal(TrackEffectType.filter, 'b2', rack: rackB.copyWith(bypassed: !bOn)),
+    ];
+
+    final a = _cost(TrackEffectType.overdrive);
+    final b = _cost(TrackEffectType.chorus) + _cost(TrackEffectType.filter);
+
+    setUp(() {
+      engine = MockAudioEngine();
+      repo = LooperRepository(engine: engine)
+        ..startEngine(const EngineConfig(sampleRate: 96000, inputChannels: 2));
+      addTearDown(repo.dispose);
+    });
+
+    test('an off effect no control reaches charges nothing', () {
+      repo.setTrackEffects(
+        channel: 0,
+        effects: [pedal(TrackEffectType.overdrive, 'r', enabled: false)],
+      );
+      expect(repo.fxCostNs, 0);
+      // Neither does an on effect in a rack, or a chain, that is off.
+      repo.setTrackEffects(channel: 0, effects: pair(aOn: false));
+      expect(repo.fxCostNs, 0);
+      repo
+        ..setTrackEffects(channel: 0, effects: pair(bOn: true))
+        ..setTrackChainEnabled(channel: 0, enabled: false);
+      expect(repo.fxCostNs, 0);
+    });
+
+    test('a control charges what it can make run, and nothing more', () {
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            pedal(TrackEffectType.overdrive, 'r', enabled: false),
+            pedal(
+              TrackEffectType.chorus,
+              'e',
+              rack: rackB.copyWith(bypassed: true),
+            ),
+            pedal(TrackEffectType.filter, 'd', rack: rackB, enabled: false),
+          ],
+        )
+        ..setFxReach([
+          FxControlReach(whenOn: {const FxSwitchKey.slot(track, 'r')}),
+          FxControlReach(whenOn: {const FxSwitchKey.rack(track, 'rack-b')}),
+        ]);
+      // The reverb's own switch and rack B are reached; the delay's own
+      // switch is off and nothing reaches it, so its rack's control cannot
+      // make it run.
+      expect(
+        repo.fxCostNs,
+        _cost(TrackEffectType.overdrive) + _cost(TrackEffectType.chorus),
+      );
+      // A chain switched off charges what a control reaching it can bring
+      // back.
+      repo
+        ..setTrackChainEnabled(channel: 0, enabled: false)
+        ..setFxReach([
+          FxControlReach(whenOn: {const FxSwitchKey.chain(track)}),
+        ]);
+      expect(repo.fxCostNs, 0);
+      repo.setTrackEffects(channel: 0, effects: pair());
+      expect(repo.fxCostNs, a);
+    });
+
+    test('the A/B pair one switch alternates charges its larger side, not '
+        'the sum', () {
+      repo.setMonitorEffects(input: 0, effects: pair());
+      final alternates = FxControlReach(
+        whenOn: {const FxSwitchKey.rack(input, 'rack-a')},
+        whenOff: {const FxSwitchKey.rack(input, 'rack-b')},
+      );
+      repo.setFxReach([alternates]);
+      expect(repo.fxCostNs, a > b ? a : b);
+      // Bound to two switches instead, both can be on: the sum.
+      repo.setFxReach([
+        FxControlReach(whenOn: {const FxSwitchKey.rack(input, 'rack-a')}),
+        FxControlReach(whenOn: {const FxSwitchKey.rack(input, 'rack-b')}),
+      ]);
+      expect(repo.fxCostNs, a + b);
+      // A rack another control also reaches is not alternated either.
+      repo.setFxReach([
+        alternates,
+        FxControlReach(whenOn: {const FxSwitchKey.rack(input, 'rack-b')}),
+      ]);
+      expect(repo.fxCostNs, a + b);
+    });
+
+    test('the A/B pair across two chains charges the larger side', () {
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: [pedal(TrackEffectType.overdrive, 'a1', rack: rackA)],
+        )
+        ..setTrackEffects(
+          channel: 1,
+          effects: [
+            pedal(
+              TrackEffectType.chorus,
+              'b1',
+              rack: rackB.copyWith(bypassed: true),
+            ),
+          ],
+        )
+        ..setFxReach([
+          FxControlReach(
+            whenOn: {const FxSwitchKey.rack(track, 'rack-a')},
+            whenOff: {
+              const FxSwitchKey.rack(
+                FxAddress(stage: FxStage.track, index: 1),
+                'rack-b',
+              ),
+            },
+          ),
+        ]);
+      expect(repo.fxCostNs, a);
+    });
+
+    test('an A/B press across two chains is weighed as one: the side it '
+        'switches on lands beside the side it switches off', () {
+      const other = FxAddress(stage: FxStage.track, index: 1);
+      List<TrackEffect> sideA({required bool on}) => [
+        pedal(
+          TrackEffectType.overdrive,
+          'a1',
+          rack: rackA.copyWith(bypassed: !on),
+        ),
+      ];
+      List<TrackEffect> sideB({required bool on}) => [
+        pedal(
+          TrackEffectType.overdrive,
+          'b1',
+          rack: rackB.copyWith(bypassed: !on),
+        ),
+      ];
+      repo
+        ..setTrackEffects(channel: 0, effects: sideA(on: true))
+        ..setTrackEffects(channel: 1, effects: sideB(on: false))
+        ..setFxReach([
+          FxControlReach(
+            whenOn: {const FxSwitchKey.rack(track, 'rack-a')},
+            whenOff: {const FxSwitchKey.rack(other, 'rack-b')},
+          ),
+        ]);
+      // Less than one more Overdrive fits.
+      repo.setTrackEffects(
+        channel: 2,
+        effects: [
+          for (var i = 0; i < repo.fxRoomNs ~/ a; i++)
+            BuiltInEffect(type: TrackEffectType.overdrive),
+        ],
+      );
+      expect(repo.state.fxHeld, isEmpty);
+
+      repo.fxPress(
+        {
+          other: (entries: sideB(on: true), on: true),
+          track: (entries: sideA(on: false), on: true),
+        },
+        () => repo
+          ..setTrackEffects(channel: 1, effects: sideB(on: true))
+          ..setTrackEffects(channel: 0, effects: sideA(on: false)),
+      );
+
+      expect(repo.state.fxHeld, isEmpty);
+      expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      // Landed one chain at a time, the first write would not fit.
+      repo
+        ..setTrackEffects(channel: 0, effects: sideA(on: true))
+        ..setTrackEffects(channel: 1, effects: sideB(on: false));
+      expect(repo.state.fxHeld, isNotEmpty);
+    });
+
+    test('the side a press turns off keeps charging what drains its tail: '
+        'the delay, the echo and the reverbs run on after the switch', () {
+      repo
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            pedal(TrackEffectType.overdrive, 'a1', rack: rackA),
+            pedal(
+              TrackEffectType.roomVerb,
+              'a2',
+              rack: rackA,
+            ),
+            pedal(
+              TrackEffectType.chorus,
+              'b1',
+              rack: rackB.copyWith(bypassed: true),
+            ),
+            pedal(
+              TrackEffectType.echo,
+              'b2',
+              rack: rackB.copyWith(bypassed: true),
+            ),
+          ],
+        )
+        ..setFxReach([
+          FxControlReach(
+            whenOn: {const FxSwitchKey.rack(input, 'rack-a')},
+            whenOff: {const FxSwitchKey.rack(input, 'rack-b')},
+          ),
+        ]);
+      final overdrive = _cost(TrackEffectType.overdrive);
+      final room = _cost(TrackEffectType.roomVerb);
+      final chorus = _cost(TrackEffectType.chorus);
+      final echo = _cost(TrackEffectType.echo);
+      // Rack A on with B's echo draining, or B on with A's reverb draining.
+      final aSide = overdrive + room + echo;
+      final bSide = chorus + echo + room;
+      expect(repo.fxCostNs, aSide > bSide ? aSide : bSide);
+      expect(repo.fxCostNs, lessThan(overdrive + room + chorus + echo));
+      // Draining is charged only where an alternation could leave it so: an
+      // effect off that no control reaches still charges nothing.
+      expect(
+        fxDrains(BuiltInEffect(type: TrackEffectType.roomVerb)),
+        isTrue,
+      );
+      expect(fxDrains(BuiltInEffect(type: TrackEffectType.overdrive)), isFalse);
+    });
+
+    test('both sides on from the screen charge both until the next press', () {
+      repo
+        ..setMonitorEffects(input: 0, effects: pair(bOn: true))
+        ..setFxReach([
+          FxControlReach(
+            whenOn: {const FxSwitchKey.rack(input, 'rack-a')},
+            whenOff: {const FxSwitchKey.rack(input, 'rack-b')},
+          ),
+        ]);
+      expect(repo.fxCostNs, a + b);
+    });
+
+    test('switching an unreached effect on is weighed by what it adds', () {
+      final off = pedal(TrackEffectType.overdrive, 'r', enabled: false);
+      repo.setTrackEffects(channel: 0, effects: [off]);
+      expect(
+        repo.fxGrowthNs({
+          track: [off.copyWith(enabled: true)],
+        }),
+        a,
+      );
+      repo
+        ..setTrackEffects(channel: 0, effects: [off.copyWith(enabled: true)])
+        ..setTrackChainEnabled(channel: 0, enabled: false);
+      expect(repo.fxGrowthNs(const {}, chainSwitches: {track: true}), a);
+    });
+
+    test('a binding that would not fit is refused; one that fits, or adds '
+        'nothing, is not', () {
+      // Overdrives on until one more fits and two do not. Two more, off,
+      // cost nothing until a control can turn them on.
+      final count = repo.fxRoomNs ~/ a - 1;
+      repo
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            for (var i = 0; i < count; i++)
+              pedal(TrackEffectType.overdrive, 'on$i'),
+          ],
+        )
+        ..setTrackEffects(
+          channel: 1,
+          effects: [
+            pedal(TrackEffectType.overdrive, 'x', enabled: false),
+            pedal(TrackEffectType.overdrive, 'y', enabled: false),
+          ],
+        );
+      const one = FxAddress(stage: FxStage.track, index: 1);
+      final x = FxControlReach(whenOn: {const FxSwitchKey.slot(one, 'x')});
+      final both = FxControlReach(
+        whenOn: {
+          const FxSwitchKey.slot(one, 'x'),
+          const FxSwitchKey.slot(one, 'y'),
+        },
+      );
+      expect(repo.fxRoomNs, lessThan(2 * a));
+      expect(repo.fxRoomNs, greaterThanOrEqualTo(a));
+      expect(repo.fxReachFits([x]), isTrue);
+      expect(repo.fxReachFits([both]), isFalse);
+      // Alternated, only one of them is ever on: it fits.
+      expect(
+        repo.fxReachFits([
+          FxControlReach(
+            whenOn: {const FxSwitchKey.slot(one, 'x')},
+            whenOff: {const FxSwitchKey.slot(one, 'y')},
+          ),
+        ]),
+        isTrue,
+      );
+      // A control that reaches what is on already adds nothing.
+      expect(
+        repo.fxReachFits([
+          FxControlReach(whenOn: {const FxSwitchKey.slot(track, 'on0')}),
+        ]),
+        isTrue,
       );
     });
   });
@@ -406,11 +798,31 @@ void main() {
         expect(onInput, lessThan(onTrack));
       });
 
-      test('a pedal switched on is never refused: on or off it is charged', () {
-        putRacks(6);
-        final off = [for (final fx in rack) fx.copyWith(enabled: false)];
+      test('a pedal a control reaches is never refused: on or off it is '
+          'charged', () {
+        putRacks(4);
+        // A control reaches every pedal of input 1's rack.
+        final ids = [for (final fx in repo.monitorEffects(0)) fx.slotId!];
+        repo.setFxReach([
+          FxControlReach(
+            whenOn: {
+              for (final id in ids)
+                FxSwitchKey.slot(const FxAddress(stage: FxStage.input), id),
+            },
+          ),
+        ]);
+        final on = repo.monitorEffects(0);
+        final off = [
+          for (final fx in on) (fx as BuiltInEffect).copyWith(enabled: false),
+        ];
         expect(
           repo.fxGrowthNs({const FxAddress(stage: FxStage.input): off}),
+          0,
+        );
+        // Switched off, switching it back on grows nothing either.
+        repo.setMonitorEffects(input: 0, effects: off);
+        expect(
+          repo.fxGrowthNs({const FxAddress(stage: FxStage.input): on}),
           0,
         );
       });
