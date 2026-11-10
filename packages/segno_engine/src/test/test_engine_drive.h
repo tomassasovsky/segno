@@ -185,6 +185,68 @@ static void test_distortion_cabinet(void) {
   free(h);
 }
 
+/* The drive's law is the Studio Rack's Dist's (#1731, session s19std, the
+ * Dist alone at Drive 0 to 100 % as the Looper X shows them): the 1 kHz
+ * fundamental at -48 dBFS in is within 3.5 dB of the capture at every
+ * setting, and rises with it as the capture does. */
+static void test_distortion_drive_is_the_studio_dist(void) {
+  printf("test_distortion_drive_is_the_studio_dist\n");
+  const float drives[8] = {0.0f,  0.056f, 0.10f, 0.233f,
+                           0.5f,  0.665f, 0.80f, 1.0f};
+  const double want[8] = {-56.35, -55.85, -55.08, -51.77,
+                          -46.06, -37.50, -27.93, -19.88};
+  double last = -1e9;
+  for (int d = 0; d < 8; ++d) {
+    float p[LE_FX_PARAMS] = {0};
+    p[0] = drives[d];
+    p[1] = 0.5f;
+    const double got = drive_h1(LE_FX_DISTORTION, p, -48.0, NULL);
+    if (fabs(got - want[d]) >= 3.5) {
+      printf("  drive %.3f: %.2f, capture %.2f\n", drives[d], got, want[d]);
+    }
+    CHECK(fabs(got - want[d]) < 3.5);
+    CHECK(got > last);
+    last = got;
+  }
+}
+
+/* The tone reads as the gain of its 2 kHz shelf: at 16 kHz, with the curve
+ * near linear, each setting moves the response from the flat middle by
+ * the descriptor's dB within 0.5 dB. */
+static void test_distortion_tone_reads_in_db(void) {
+  printf("test_distortion_tone_reads_in_db\n");
+  const int sr = 48000;
+  const int n = 1 << 15;
+  const float tones[5] = {0.0f, 0.25f, 0.5f, 0.9f, 1.0f};
+  const le_fx_param_desc tone = fxd_get(LE_FX_DISTORTION, 1);
+  CHECK(tone.unit == LE_FX_UNIT_DB);
+  float* in = (float*)calloc((size_t)n, sizeof(float));
+  float* h = (float*)calloc((size_t)n, sizeof(float));
+  in[0] = 1e-4f;
+  double flat = 0.0;
+  double got[5];
+  for (int t = 0; t < 5; ++t) {
+    float p[LE_FX_PARAMS] = {0};
+    p[1] = tones[t];
+    le_fx_state* fx = dyn_state(LE_FX_DISTORTION, sr);
+    uint32_t clock = 0;
+    dyn_run(fx, LE_FX_DISTORTION, p, sr, in, h, NULL, n, &clock);
+    dyn_free(fx);
+    got[t] = eq_measured_db(h, n, 16000.0, sr);
+    if (tones[t] == 0.5f) flat = got[t];
+  }
+  for (int t = 0; t < 5; ++t) {
+    const double want = fxd_value(&tone, tones[t]);
+    if (fabs(got[t] - flat - want) >= 0.5) {
+      printf("  tone %.2f: %.2f dB, descriptor %.2f\n", tones[t],
+             got[t] - flat, want);
+    }
+    CHECK(fabs(got[t] - flat - want) < 0.5);
+  }
+  free(in);
+  free(h);
+}
+
 /* ---- all ---- */
 
 static void test_drive_offline_equals_live(void) {
@@ -301,6 +363,8 @@ static void run_drive_tests(void) {
   test_overdrive_small_signal_matches_the_capture();
   test_distortion_matches_the_capture();
   test_distortion_cabinet();
+  test_distortion_drive_is_the_studio_dist();
+  test_distortion_tone_reads_in_db();
   test_drive_offline_equals_live();
   test_drive_on_a_lane();
 }

@@ -19,39 +19,8 @@ typedef FxEdits = ({
   void Function(String groupId, FxPlacement placement) setPlacement,
 });
 
-/// What a built-in parameter's row reads: the value text beside its name and
-/// the note under its slider.
-///
-/// An entry built from a factory rack module onto one of the seven built-ins
-/// (`effect.module != null`) keeps the raw two-decimal setting and the "Scale
-/// unverified" note: its preset values were written against the Looper X's
-/// own scales, which the built-in does not share, so printing them in its
-/// units would state numbers nobody verified. A Looper X kind
-/// ([TrackEffectType.isRackKind]) or a rack variant ([fxEntryBuild], the
-/// Pitch Shift on the octaver) carries the module's own scales, and like a
-/// plain built-in reads in its descriptor's units with no note, unless the
-/// descriptor itself is marked [FxParamInfo.taperUnverified], in which case
-/// it reads like a module's.
-({String valueText, String? note}) fxParamReading(
-  AppLocalizations l10n,
-  TrackEffect effect,
-  FxParamInfo param,
-  double setting,
-) {
-  final rackKind =
-      effect is BuiltInEffect &&
-      (effect.type.isRackKind || fxEntryBuild(effect) != null);
-  if ((effect.module != null && !rackKind) || param.taperUnverified) {
-    return (
-      valueText: setting.toStringAsFixed(2),
-      note: l10n.fxScaleUnverified,
-    );
-  }
-  return (valueText: l10n.fxParamValueText(param, setting), note: null);
-}
-
 /// Built-in parameter [index] of [effect] as an [FxParamControl]: its
-/// localized name, and the value text and note [fxParamReading] gives it.
+/// localized name and its value in its descriptor's units.
 class FxBuiltInParamControl extends StatelessWidget {
   /// Creates an [FxBuiltInParamControl].
   const FxBuiltInParamControl({
@@ -86,20 +55,17 @@ class FxBuiltInParamControl extends StatelessWidget {
     // control works in that range and reports the kind's setting.
     final param = fxEntryParam(effect, index);
     final setting = fxEntryShownSetting(effect, index);
-    final reading = fxParamReading(l10n, effect, param, setting);
     return FxParamControl(
       label: l10n.fxParamKeyName(labelKey ?? param.key),
       value: setting,
-      valueText: reading.valueText,
+      valueText: l10n.fxParamValueText(param, setting),
       width: width,
-      note: reading.note,
       onChanged: (v) => onChanged(fxEntryKindSetting(effect, index, v)),
     );
   }
 }
 
-/// One parameter: its name, its value text, the slider, and an optional note
-/// under it.
+/// One parameter: its name, its value text and the slider.
 class FxParamControl extends StatelessWidget {
   /// Creates an [FxParamControl].
   const FxParamControl({
@@ -108,7 +74,6 @@ class FxParamControl extends StatelessWidget {
     required this.valueText,
     required this.width,
     required this.onChanged,
-    this.note,
     super.key,
   });
 
@@ -126,14 +91,6 @@ class FxParamControl extends StatelessWidget {
 
   /// Reports a new value.
   final ValueChanged<double> onChanged;
-
-  /// The line under the slider, or `null` for a control that needs none.
-  ///
-  /// A preset parameter carries the accepted "Scale unverified" note when its
-  /// real-world mapping was never recovered (see [fxParamReading]). The rack's
-  /// own level is not one of those: it is a plain gain this build defines, so
-  /// a note saying its scale is unknown would be false.
-  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -175,17 +132,6 @@ class FxParamControl extends StatelessWidget {
             semanticLabel: label,
             onChanged: onChanged,
           ),
-          if (note case final note?) ...[
-            const SizedBox(height: 14),
-            AppText(
-              note,
-              style: TextStyle(
-                color: surface.textTertiary,
-                fontSize: 16,
-                height: 1,
-              ),
-            ),
-          ],
         ],
       ),
     );

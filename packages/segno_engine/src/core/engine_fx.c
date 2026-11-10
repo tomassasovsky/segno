@@ -3661,8 +3661,7 @@ oom:
  * does with the normalized setting: the mapping, the unit it reads in, and the
  * setting a freshly engaged effect starts at (le_fx_defaults reads `def` from
  * here, so the defaults have one home). test_fx_param_descriptors_match_kernels
- * measures the kernels against these rows. The seven built-ins are segno's own
- * effects, so none carries LE_FX_PARAM_TAPER_UNVERIFIED. */
+ * measures the kernels against these rows. */
 
 static const le_fx_param_desc LE_FX_DRIVE_PARAMS[] = {
     /* tanh pre-gain 1 + 29 v */
@@ -3707,7 +3706,7 @@ static const le_fx_param_desc LE_FX_DUAL_OCTAVER_PARAMS[] = {
     {"oct_high_mode", LE_FX_UNIT_CHOICE, 2, 0.0f, 1.0f, LE_FX_CURVE_LINEAR,
      0.0f, 0},
     {"octave_1_vol", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
-     1.0f, LE_FX_PARAM_TAPER_UNVERIFIED},
+     1.0f, 0},
     {"mix", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 1.0f, 0},
     {"octave_2_vol", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR,
      0.0f, 0},
@@ -6885,15 +6884,17 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
  *   the capture at 7.5 kHz and 6 dB at 11.4 kHz. They are
  *   refitted at 48 kHz to the 96 kHz fit's response, within 0.07 dB from
  *   45 Hz to 18 kHz (#1547), and the other rates follow 48 kHz.
- * The Lo-Fi Rack's Dist Tone has no capture: it tilts a 2 kHz shelf
- * +-6 dB, flat at 50 % (#891). */
-/* The drive's law is the Studio Rack's Dist's; the Lo-Fi Rack's Dist is
- * taken to be the same module, so the drive carries the flag too. */
+ * The Studio Rack's Dist itself, captured at Drive 0 to 100 % (#1731,
+ * session s19std), has this drive law: the 1 kHz small-signal gain is
+ * within 3.1 dB of the kernel's at every setting (its voicing is flatter
+ * than the 4x12" cabinet's). The Looper X registers Dist Drive as 0 to
+ * 100 %, linear, in both racks, and shows the stored value as that percent.
+ * The tone is ours: the gain of a 2 kHz high shelf, -6 to +6 dB, flat at
+ * the middle (the Lo-Fi Rack's Dist Tone belongs to its overdrive-class
+ * Dist, #1737). */
 static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
-    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
-    {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f,
-     LE_FX_PARAM_TAPER_UNVERIFIED},
+    {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
+    {"tone", LE_FX_UNIT_DB, 0, -6.0f, 6.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
 };
 #define LE_DIST_ALPHA 3.4467f /* the early asymmetry */
 #define LE_DIST_UP 0.20428f   /* the positive ceiling */

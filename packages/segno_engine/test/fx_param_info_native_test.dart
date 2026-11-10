@@ -12,9 +12,6 @@ import 'package:segno_engine/segno_engine.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
-/// The `LE_FX_PARAM_TAPER_UNVERIFIED` bit of `le_fx_param_desc.flags`.
-const int _taperUnverified = 1 << 0;
-
 /// The `LE_FX_PARAM_OFF_AT_MIN` and `LE_FX_PARAM_OFF_AT_MAX` bits.
 const int _offAtMin = 1 << 1;
 const int _offAtMax = 1 << 2;
@@ -63,11 +60,6 @@ void main() {
           expect(native.curve, p.curve.code, reason: reason);
           expect(native.def, _asFloat(p.defaultValue), reason: reason);
           expect(
-            native.flags & _taperUnverified != 0,
-            p.taperUnverified,
-            reason: reason,
-          );
-          expect(
             native.flags & (_offAtMin | _offAtMax),
             switch (p.off) {
               FxParamOff.none => 0,
@@ -77,7 +69,7 @@ void main() {
             reason: reason,
           );
           expect(
-            native.flags & ~(_taperUnverified | _offAtMin | _offAtMax),
+            native.flags & ~(_offAtMin | _offAtMax),
             0,
             reason: reason,
           );

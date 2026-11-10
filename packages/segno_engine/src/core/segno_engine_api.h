@@ -712,9 +712,10 @@ typedef enum le_fx_type {
    * part whose gain the drive sets, a softer second stage, then a tone
    * filter; fit to the Guitar Rack's OvDrive (#891). */
   LE_FX_OVERDRIVE = 16,
-  /* DISTORTION: p0 drive, p1 tone (0 to 100 %). The Looper X's amp
-   * simulator at its defaults (the Studio Rack's Dist): an asymmetric curve,
-   * then the 4x12" cabinet; fit to the Phase 0 amp captures (#891). */
+  /* DISTORTION: p0 drive (0 to 100 %), p1 tone (a 2 kHz shelf, -6 to
+   * +6 dB). The Looper X's amp simulator at its defaults (the Studio
+   * Rack's Dist): an asymmetric curve, then the 4x12" cabinet; fit to the
+   * Phase 0 amp captures (#891). */
   LE_FX_DISTORTION = 17,
   /* VINYL: p0 drive, p1 frequency (50 to 5000 Hz), p2 noise, p3 noise tone.
    * A high-pass at the frequency, a 7 kHz roll-off, soft saturation, then
@@ -864,9 +865,6 @@ typedef enum le_fx_param_curve {
 
 /* Bit flags for le_fx_param_desc.flags. */
 typedef enum le_fx_param_flags {
-  /* The mapping was chosen, not measured against the effect it reproduces
-   * (the Looper X kinds until reference audio confirms them, #891). */
-  LE_FX_PARAM_TAPER_UNVERIFIED = 1 << 0,
   /* The effect is off (the identity) at setting 0 (an EQ's low cut) or at
    * setting 1 (its high cut, the low-pass filter's cutoff); a surface reads
    * the setting there as Off. */
