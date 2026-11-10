@@ -9032,9 +9032,11 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
    * The scratch is per FRAME, not per block: the stage runs inside this
    * frame, so nothing needs to outlive it. */
   float rec[LE_MAX_CHANNELS];
+#ifndef LE_MIX_JOBS_TU /* the jobs copy routes after the join (#1729) */
   if (at_has_fx) {
     for (int c = 0; c < ch_out && c < LE_MAX_CHANNELS; ++c) rec[c] = 0.0f;
   }
+#endif
 
   /* Capture the callback-owned live selection for this frame. Record/arm
    * and transport transitions can occur within a block; Undo publishes its
@@ -10424,6 +10426,9 @@ uint32_t le_trk_jobs_begin(le_engine* e, int tc, const int32_t* lane_n,
   e->trk_job_rec = 0u;
   e->trk_job_tc = tc;
   e->trk_jobs_live = (uint32_t)((1u << tc) - 1u);
+#ifdef LE_NATIVE_TESTS
+  ++le_test_trk_jobs_blocks;
+#endif
   return chained;
 }
 

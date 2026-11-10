@@ -140,6 +140,7 @@ static float g_tj_out[TJ_FRAMES * FXW_OUT];
 static void test_trk_jobs_output_is_bit_identical(void) {
   printf("test_trk_jobs_output_is_bit_identical\n");
   le_fx_workers_telemetry tm;
+  le_test_trk_jobs_blocks = 0;
   tj_session(0, g_tj_ref, &tm);
   CHECK(tm.rounds == 0);
   float peak = 0.0f;
@@ -147,8 +148,12 @@ static void test_trk_jobs_output_is_bit_identical(void) {
     if (fabsf(g_tj_ref[i]) > peak) peak = fabsf(g_tj_ref[i]);
   }
   CHECK(peak > 0.05f);
+  /* None with no worker, unless the whole suite forces them. */
+  CHECK(le_test_trk_jobs_force || le_test_trk_jobs_blocks == 0);
   for (int32_t w = 1; w <= LE_FX_WORKERS_MAX; ++w) {
+    le_test_trk_jobs_blocks = 0;
     tj_session(w, g_tj_out, &tm);
+    CHECK(le_test_trk_jobs_blocks > 0); /* the tracks ran as jobs */
     int64_t d = -1;
     for (int64_t i = 0; i < (int64_t)TJ_FRAMES * FXW_OUT; ++i) {
       if (memcmp(&g_tj_ref[i], &g_tj_out[i], sizeof(float)) != 0) {
@@ -250,7 +255,9 @@ static void test_trk_jobs_prints_and_stops_are_bit_identical(void) {
   le_fx_workers_telemetry tm;
   tjp_session(0, g_tjp_ref, NULL);
   for (int32_t w = 1; w <= 2; ++w) {
+    le_test_trk_jobs_blocks = 0;
     tjp_session(w, g_tjp_out, &tm);
+    CHECK(le_test_trk_jobs_blocks > 0);
     int64_t d = -1;
     for (int64_t i = 0; i < (int64_t)TJP_FRAMES * 2; ++i) {
       if (memcmp(&g_tjp_ref[i], &g_tjp_out[i], sizeof(float)) != 0) {

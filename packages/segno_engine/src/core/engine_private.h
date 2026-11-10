@@ -561,7 +561,10 @@ typedef struct le_fx_time {
 /* What one block's jobs read and write. The callback writes everything
  * above [mon_l] before it releases the jobs; the jobs write [mon_l] and
  * [mon_r] (each its own rows) and their monitors' chain states; the callback
- * reads them after the join. The release store of [a_claim] and each job's
+ * reads them after the join. Track jobs (#1729) read the same block facts,
+ * le_engine.trk_job_mon_n and trk_job_t, and their le_trk_job records, and
+ * write those records and their tracks' lane and bus chain states, under the
+ * same ordering. The release store of [a_claim] and each job's
  * release increment of [a_done], paired with acquire loads, order all of it.
  * Everything from [click_l] on is the callback's own record of the first
  * loop for the second. Lives in the engine (locked and fork-shielded,
@@ -817,6 +820,10 @@ typedef struct le_fx_state {
    * of quiet settles the drain. These fields are callback-owned. */
   int32_t enable_drain[LE_FX_MAX];
   int32_t enable_quiet[LE_FX_MAX];
+  /* enable_drain published for the control thread (#1733): bit s while slot
+   * s drains. Written only where enable_drain changes (le_fx_drain_set), so
+   * a settled chain never touches it; read by le_engine_get_snapshot. */
+  _Atomic uint64_t a_draining;
   /* A rack's crossfade, kept on its LAST entry and advanced at its head
    * (fx_rack_head): rack_mix is how much of the rack's input and output
    * sides apply (1 while any of its entries is on, 0 with all of them off),
@@ -865,6 +872,9 @@ typedef struct le_fx_state {
    * Last in the struct so nothing before it moves. */
   struct le_fx_kinds *_Atomic kinds;
 } le_fx_state;
+#ifndef __cplusplus
+_Static_assert(LE_FX_MAX <= 64, "le_fx_state.a_draining is one bit per slot");
+#endif
 
 /* The unity-centre pan/balance law (accepted design, slice 3; documented on
  * le_engine_set_lane_pan): the near side stays at unity and the far side falls

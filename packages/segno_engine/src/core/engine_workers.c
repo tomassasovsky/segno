@@ -117,6 +117,7 @@ static void le_fx_monitor_job(le_engine* e, int32_t c) {
 
 #ifdef LE_NATIVE_TESTS
 int le_test_trk_jobs_force = 0;
+uint64_t le_test_trk_jobs_blocks = 0;
 #endif
 
 /* Job [k] of the block: a monitor input's chain, or a track's chains

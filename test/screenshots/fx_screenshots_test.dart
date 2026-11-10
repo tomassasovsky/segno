@@ -29,6 +29,7 @@ import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
+import '../looper/view/fx/stomp/factory_pedals.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
@@ -144,6 +145,25 @@ final _rig = LooperState(
       _fx('a2', TrackEffectType.filter, enabled: false),
     ],
   ),
+  status: const EngineStatus(
+    isConnected: true,
+    devicePresent: true,
+    deviceName: 'Scarlett 18i20',
+    inputChannels: 4,
+    outputChannels: 4,
+  ),
+  outputBusCount: 2,
+);
+
+/// One recording track whose chain is [effects], and nothing else.
+LooperState _chainRig(List<TrackEffect> effects) => LooperState(
+  tracks: [
+    Track(
+      state: TrackState.playing,
+      lanes: const [Lane(inputChannel: 0, lengthFrames: 48000)],
+      effects: effects,
+    ),
+  ],
   status: const EngineStatus(
     isConnected: true,
     devicePresent: true,
@@ -403,6 +423,76 @@ void main() {
       matchesGoldenFile('goldens/fx_effect_editor.png'),
     );
   }, skip: !rendersScreenshots);
+
+  // Every standalone effect's own page: the seven built-ins the singles
+  // library offers, each alone on the track (#1730).
+  for (final type in TrackEffectType.values) {
+    if (type == TrackEffectType.none || type.isRackKind) continue;
+    testWidgets('The ${type.name} effect page', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _chainRig([_fx('s1', type)]),
+      );
+      await tester.tap(find.byKey(const Key('fx_card_s1')));
+      await tester.pumpAndSettle();
+
+      await expectLater(
+        find.byType(FxEffectEditor),
+        matchesGoldenFile('goldens/fx_effect_${type.name}.png'),
+      );
+    }, skip: !rendersScreenshots);
+  }
+
+  // A factory rack's pedals that carry a choice parameter, one rack per
+  // family that has them, as its preset loads them (#1730).
+  for (final (family, name) in const [
+    ("Ed's Rack", 'Acoustic Rhythm 1'),
+    ('Rhythmic Rack', 'Funk Wah'),
+    ('Guitar Rack', 'Clean Rhythm'),
+    ('Studio Rack', 'AC Guitar Chorus'),
+    ('Vocal Tuner Rack', 'Auto Harm Hi Dry'),
+    ('Drum Rack', 'Ballad'),
+  ]) {
+    testWidgets('The rack editor, $family choices', (tester) async {
+      final preset = factoryPresets().firstWhere(
+        (p) => p.family == family && p.name == name,
+      );
+      final entries = [
+        for (final entry in fxFactoryRack(
+          preset,
+          placement: FxPlacement.post,
+          into: FxRack(
+            id: 'R1',
+            name: preset.name,
+            art: kFxFamilySlugs[family],
+          ),
+        ))
+          if (fxEntryControls(entry).params.any(
+            (i) => fxEntryParam(entry, i).unit == FxParamUnit.choice,
+          ))
+            entry,
+      ];
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _chainRig([
+          for (final (i, entry) in entries.indexed)
+            entry.copyWith(slotId: 'r$i'),
+        ]),
+      );
+      await tester.tap(find.byKey(const Key('fx_card_R1')));
+      await tester.pumpAndSettle();
+      await settleArtwork(tester);
+
+      await expectLater(
+        find.byType(FxRackEditor),
+        matchesGoldenFile(
+          'goldens/fx_rack_choices_${kFxFamilySlugs[family]}.png',
+        ),
+      );
+    }, skip: !rendersScreenshots);
+  }
 
   testWidgets('A chain of racks', (tester) async {
     await pump(

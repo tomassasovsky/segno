@@ -4534,14 +4534,6 @@
     "@fxBindOverBudget": {
         "description": "Shown when saving a pedal, MIDI or external switch assignment is refused: the effects it could switch on would not fit the audio processing, so nothing was saved."
     },
-    "fxTakeHeldToast": "This take's effects are off",
-    "@fxTakeHeldToast": {
-        "description": "On the track's card when a take came in with its inherited effects switched off (#1515, #1562)."
-    },
-    "fxTakeHeldBody": "They don't fit the rig. Remove an effect to turn them on.",
-    "@fxTakeHeldBody": {
-        "description": "Under fxTakeHeldToast (#1562)."
-    },
     "fxHeldBanner": "{chains} {count, plural, =1{is} other{are}} off",
     "@fxHeldBanner": {
         "description": "Standing stage notice: chains the rig could not run when it came up are switched off (#1515). chains is a list such as 'Guitar's input chain and Track 3'.",
@@ -6528,10 +6520,6 @@
     "noticeLengthUnchanged": "Length unchanged",
     "@noticeLengthUnchanged": {
         "description": "Short cause over a length Undo or Redo that did nothing, on the track's card (#1562)."
-    },
-    "noticeEffectsOff": "Effects off",
-    "@noticeEffectsOff": {
-        "description": "Short cause over a take that came in with its effects off, on the track's card (#1562)."
     },
     "monitorRestoreFailedTitle": "Input monitoring needs recovery",
     "mixSettingsRecoveryTitle": "Mix settings need recovery",

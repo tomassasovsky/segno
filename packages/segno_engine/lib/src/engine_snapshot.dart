@@ -5,6 +5,8 @@
 import 'dart:ffi';
 
 import 'package:meta/meta.dart';
+import 'package:segno_engine/src/fx_draining.dart';
+import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 import 'package:segno_engine/src/instruments.dart';
 
@@ -1735,6 +1737,7 @@ class EngineSnapshot {
     this.songQueueProgress = 0,
     this.songLastSection = -1,
     this.songQueueRecord = false,
+    this.fxDraining = FxDraining.none,
     this.followTempo = false,
     this.tempoFollow = TempoFollowState.free,
     this.pitchMode = PitchMode.unchanged,
@@ -1833,6 +1836,7 @@ class EngineSnapshot {
       songQueueProgress = 0,
       songLastSection = -1,
       songQueueRecord = false,
+      fxDraining = FxDraining.none,
       followTempo = false,
       tempoFollow = TempoFollowState.free,
       pitchMode = PitchMode.unchanged,
@@ -1946,6 +1950,7 @@ class EngineSnapshot {
       songQueueProgress: native.song_queue_progress,
       songLastSection: native.song_last_section,
       songQueueRecord: native.song_queue_record != 0,
+      fxDraining: _fxDrainingOf(native),
       followTempo: native.follow_tempo != 0,
       tempoFollow: TempoFollowState.fromCode(native.tempo_follow),
       pitchMode: PitchMode.fromCode(native.pitch_follows_speed),
@@ -2052,6 +2057,7 @@ class EngineSnapshot {
     double? songQueueProgress,
     int? songLastSection,
     bool? songQueueRecord,
+    FxDraining? fxDraining,
     bool? followTempo,
     TempoFollowState? tempoFollow,
     PitchMode? pitchMode,
@@ -2147,6 +2153,7 @@ class EngineSnapshot {
     songQueueProgress: songQueueProgress ?? this.songQueueProgress,
     songLastSection: songLastSection ?? this.songLastSection,
     songQueueRecord: songQueueRecord ?? this.songQueueRecord,
+    fxDraining: fxDraining ?? this.fxDraining,
     followTempo: followTempo ?? this.followTempo,
     tempoFollow: tempoFollow ?? this.tempoFollow,
     pitchMode: pitchMode ?? this.pitchMode,
@@ -2484,6 +2491,10 @@ class EngineSnapshot {
   /// phase with the primary in Band). `false` for a Play, or with none.
   final bool songQueueRecord;
 
+  /// The chain slots still running a tail after their switch went off
+  /// (#1733), which the effects budget keeps charging until they drain.
+  final FxDraining fxDraining;
+
   /// The Song section that sounded most recently (#1077), or `-1`. It
   /// survives a Stop and is forgotten when that track empties, on a mode
   /// switch and on configure; it is not saved with a session.
@@ -2695,6 +2706,7 @@ class EngineSnapshot {
           songQueueProgress == other.songQueueProgress &&
           songLastSection == other.songLastSection &&
           songQueueRecord == other.songQueueRecord &&
+          fxDraining == other.fxDraining &&
           followTempo == other.followTempo &&
           tempoFollow == other.tempoFollow &&
           pitchMode == other.pitchMode &&
@@ -2792,6 +2804,7 @@ class EngineSnapshot {
     songQueueProgress,
     songLastSection,
     songQueueRecord,
+    fxDraining,
     followTempo,
     tempoFollow,
     pitchMode,
@@ -2829,6 +2842,29 @@ class EngineSnapshot {
       'latencyRequest: $latencyRequest, '
       'master: $masterPositionFrames/$masterLengthFrames, '
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';
+}
+
+/// The native snapshot's draining masks (#1733).
+FxDraining _fxDrainingOf(le_snapshot native) {
+  final masks = <(FxOwner, int, int), int>{};
+  void add(FxOwner owner, int channel, int lane, int mask) {
+    if (mask != 0) masks[(owner, channel, lane)] = mask;
+  }
+
+  for (var k = 0; k < LE_MAX_MONITORED_INPUTS; k++) {
+    add(FxOwner.monitor, k, 0, native.fx_draining_monitor[k]);
+  }
+  for (var t = 0; t < LE_MAX_TRACKS; t++) {
+    for (var l = 0; l < LE_MAX_LANES; l++) {
+      add(FxOwner.lane, t, l, native.fx_draining_lane[t][l]);
+    }
+    add(FxOwner.track, t, 0, native.fx_draining_track[t]);
+  }
+  add(FxOwner.allTracks, 0, 0, native.fx_draining_all_tracks);
+  for (var b = 0; b < LE_MAX_OUTPUT_BUSES; b++) {
+    add(FxOwner.output, b, 0, native.fx_draining_output[b]);
+  }
+  return masks.isEmpty ? FxDraining.none : FxDraining(masks);
 }
 
 bool _listEquals<T>(List<T> a, List<T> b) {

@@ -54,6 +54,9 @@ uint32_t le_trk_jobs_begin(le_engine* e, int tc, const int32_t* lane_n,
  * whole suite exercises the records, the jobs and the join against its own
  * expectations (a local tool: run with SEGNO_TRK_JOBS_FORCE=1). */
 extern int le_test_trk_jobs_force;
+/* Native tests only: the blocks whose track chains ran as jobs, counted in
+ * every build (the workers' job counts are callback telemetry). */
+extern uint64_t le_test_trk_jobs_blocks;
 #endif
 void le_trk_job_run(le_engine* e, int t, uint32_t upto);
 void le_trk_jobs_flush(le_engine* e, uint32_t tracks);

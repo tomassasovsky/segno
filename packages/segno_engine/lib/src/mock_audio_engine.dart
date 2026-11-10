@@ -7,6 +7,7 @@ import 'package:segno_engine/src/audition.dart';
 import 'package:segno_engine/src/backing.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
+import 'package:segno_engine/src/fx_draining.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/fx_recipe.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
@@ -400,6 +401,9 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   @override
   bool get commandsSettled => true;
 
+  /// The tails the next snapshot reports still draining (#1733).
+  FxDraining fxDraining = FxDraining.none;
+
   @override
   EngineSnapshot snapshot() {
     if (_running) {
@@ -415,6 +419,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     final inputs = _running ? _negotiatedInputs : 0;
     final outputs = _running ? _negotiatedOutputs : 0;
     return EngineSnapshot(
+      fxDraining: fxDraining,
       transposeBypass: _transposeBypass,
       followTempo: _followTempo,
       pitchMode: _pitchMode,

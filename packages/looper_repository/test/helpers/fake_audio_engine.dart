@@ -480,8 +480,21 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     for (final e in image.laneFx.entries) {
       recipes[(FxOwner.lane, channel, e.key)] = e.value;
     }
+    if (!refuseHeardImages) {
+      for (final lane in image.heardLanes) {
+        heardLanes.add((channel, lane));
+      }
+    }
     imageRevisions[channel] = image.revision;
   }
+
+  /// A published take gets no heard image, as when the engine could not
+  /// allocate one (#1713).
+  bool refuseHeardImages = false;
+
+  /// Lanes whose live take holds a heard image (#1713): a published take's
+  /// [RecordImage.heardLanes], and [heardAttach]. The snapshot reports them.
+  final Set<(int, int)> heardLanes = {};
 
   @override
   EngineResult record({int channel = 0}) {
@@ -1240,9 +1253,14 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// What [heardAttach] returns; anything but ok attaches nothing.
+  EngineResult heardAttachResult = EngineResult.ok;
+
   @override
   EngineResult heardAttach({required int channel, required int lane}) {
     calls.add('heardAttach');
+    if (!heardAttachResult.isOk) return heardAttachResult;
+    heardLanes.add((channel, lane));
     return EngineResult.ok;
   }
 
@@ -2485,10 +2503,26 @@ class _LengthTrack extends TrackSnapshot {
             : engine.trackQuantizeDiv[channel],
         overdubFeedbackOverride: source.overdubFeedbackOverride,
         lanes: [
-          for (var lane = 0; lane < source.lanes.length; lane++)
-            _MixLane(source.lanes[lane], engine, (channel, lane)),
+          for (var lane = 0; lane < _laneCount(source, engine, channel); lane++)
+            _MixLane(
+              lane < source.lanes.length
+                  ? source.lanes[lane]
+                  : const LaneSnapshot.empty(),
+              engine,
+              (channel, lane),
+            ),
         ],
       );
+}
+
+/// The source's lanes, and as many more as reach a lane holding a heard
+/// image ([FakeAudioEngine.heardLanes]).
+int _laneCount(TrackSnapshot source, FakeAudioEngine engine, int channel) {
+  var count = source.lanes.length;
+  for (final (t, l) in engine.heardLanes) {
+    if (t == channel && l >= count) count = l + 1;
+  }
+  return count;
 }
 
 class _MixLane extends LaneSnapshot {
@@ -2503,5 +2537,7 @@ class _MixLane extends LaneSnapshot {
         rms: source.rms,
         peak: source.peak,
         recoverable: source.recoverable,
+        heard: source.heard || engine.heardLanes.contains(key),
+        source: engine.laneSources[key] ?? source.source,
       );
 }

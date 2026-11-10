@@ -7654,6 +7654,41 @@ void main() {
       expect(engine.recipes[(FxOwner.monitor, 0, 0)]?.enabled, isFalse);
     });
 
+    test(
+      "restores the chain a lane's take was recorded through (#1713)",
+      () async {
+        engine.nextSnapshot = clearedSnapshot();
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        final printed = [
+          BuiltInEffect(type: TrackEffectType.reverb, slotId: 'p'),
+        ];
+        final edited = [
+          BuiltInEffect(type: TrackEffectType.drive, slotId: 'e'),
+        ];
+
+        await repo.applySession(
+          SessionRig(
+            laneChains: {
+              (0, 0): FxChainEnvelope(
+                meta: FxChainMeta(printed: printed),
+                entries: edited,
+              ),
+              (0, 1): FxChainEnvelope(entries: printed),
+            },
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        // Edited after it was recorded: the save names what it was.
+        expect(repo.lanePrintedWhenEdited(0, 0), printed);
+        expect(repo.allLaneChains()[(0, 0)]!.meta!.printed, printed);
+        // Not named: it was recorded through the chain it has.
+        expect(repo.lanePrintedWhenEdited(0, 1), isNull);
+        expect(repo.allLaneChains()[(0, 1)]!.meta, isNull);
+      },
+    );
+
     test('fully resets a leftover monitor the rig does not define — routing '
         'and mix, not just its chain (F2)', () async {
       engine.nextSnapshot = clearedSnapshot();

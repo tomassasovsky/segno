@@ -35,10 +35,47 @@ void main() {
     );
   }
 
-  test('every catalogue module has a look, and only they do', () {
+  test('every catalogue module and every standalone built-in has a look, '
+      'and only they do', () {
     expect(
       kFxStompSpecs.keys.toSet(),
-      kFxModules.map((m) => m.name).toSet(),
+      {...kFxModules.map((m) => m.name), ...kFxBuiltInLooks.values},
+    );
+  });
+
+  test('every standalone built-in is drawn with its look and shows its own '
+      'controls (#1730)', () {
+    final singles = [
+      for (final type in TrackEffectType.values)
+        if (type != TrackEffectType.none && !type.isRackKind) type,
+    ];
+    expect(kFxBuiltInLooks.keys.toSet(), singles.toSet());
+    for (final type in singles) {
+      final entry = BuiltInEffect(type: type);
+      final face = faceOf(entry);
+      expect(face.spec, kFxStompSpecs[kFxBuiltInLooks[type]], reason: '$type');
+      expect(face.knobs.map((k) => k.label), [
+        for (final p in type.params) label(p.key),
+      ], reason: '$type');
+      expect(
+        face.knobs.map((k) => k.setting),
+        [for (var i = 0; i < type.params.length; i++) entry.params[i]],
+        reason: '$type',
+      );
+    }
+  });
+
+  test('an entry that names a catalogue module is drawn as the module, '
+      "not as its engine type's look", () {
+    final entry = BuiltInEffect(
+      type: TrackEffectType.reverb,
+      module: 'Ambience',
+    );
+    expect(faceOf(entry).spec, kFxStompSpecs['Ambience']);
+    // A module name the catalogue does not have is no pedal at all.
+    expect(
+      fxEntryArt(entry.copyWith(module: 'Removed module'), live: true),
+      isNull,
     );
   });
 

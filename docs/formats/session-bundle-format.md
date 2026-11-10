@@ -72,7 +72,9 @@ files.
 
 **Mixdown.** `mixdown.wav` is written when the saved mix has any audible
 content and deleted when it has none (every track empty or muted), so a
-re-save of an emptied rig never leaves audio the session no longer holds.
+re-save of an emptied rig never leaves audio the session no longer holds. A
+lane playing its heard image (#1713) is summed as that image, its two sides
+averaged; any other lane as its clean live layer.
 
 ## Layers, ordinals, and undo/redo
 
@@ -341,7 +343,10 @@ the layer's `file`, and its heard image, the output of the input chain it was
 recorded through, the layer's `heard`. The heard image is a stereo 32-bit float
 WAV exactly as long as the clean one in frames. Each undo and redo image has its
 own, or none: an image recorded dry has no `heard` key, and a recall plays it
-clean through its lane's chain, as every take played before v19. A recall
+clean through its lane's chain, as every take played before v19. A lane plays its heard image while its chain is the one the take was
+recorded through: the lane envelope's `meta.printed` names that chain when
+the lane's chain was edited since, and is omitted while the two are the same.
+A recall
 imports each image's heard image right after the image
 (`le_engine_import_layer_heard`); a heard image that is not stereo or not the
 clean image's length refuses the session (`SessionCorruptLayers`). The stem
