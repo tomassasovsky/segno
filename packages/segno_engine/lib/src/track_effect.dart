@@ -442,9 +442,10 @@ enum TrackEffectType {
   /// Rack's OvDrive.
   overdrive(16, 'Overdrive'),
 
-  /// The Looper X's amp simulator at its defaults, which the Studio Rack
-  /// labels Dist (#887 part 7): an asymmetric curve, then the 4x12"
-  /// cabinet; fit to the Phase 0 amp captures.
+  /// An amp simulator (#887 part 7): an asymmetric curve, then the 4x12"
+  /// cabinet; fit to the Phase 0 amp captures. No factory rack builds it
+  /// since #1737 and #1743 (the Lo-Fi Distort is the Overdrive, the Studio
+  /// Dist the Amp); chains saved with it keep it.
   distortion(17, 'Distortion'),
 
   /// The Looper X's vinyl (#887 part 7): a high-pass, a roll-off, soft
@@ -1023,10 +1024,9 @@ enum TrackEffectType {
         defaultValue: 0,
       ),
     ],
-    // The Studio Rack's Dist (#891): drive and tone are the Looper X's own
-    // 0 to 100 %; the drive's law is fit to the amp captures and checked
-    // against the Dist itself (#1731), the tone is our 2 kHz shelf. Drive
-    // 20 % by default.
+    // Drive and tone 0 to 100 %; the drive's law is fit to the amp captures
+    // and was checked against the Studio Rack's Dist (#1731), the tone is a
+    // 2 kHz shelf. Drive 20 % by default.
     TrackEffectType.distortion => const [
       FxParamInfo(
         key: 'drive',

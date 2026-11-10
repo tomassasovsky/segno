@@ -208,7 +208,8 @@ class FxSourceScale {
 /// The rack variants of the Looper X modules, by module and family: each an
 /// engine kind (a Looper X kind, or for the Pitch Shift the octaver; one per
 /// module, except the Distortion, whose Lo-Fi variant is the Overdrive,
-/// #1737), each variant exposing the controls its racks show
+/// #1737, and Studio variant the Amp, #1743), each variant exposing the
+/// controls its racks show
 /// (docs/plan/2026-10-20-looperx-derived-tables.md) and fixing the rest:
 /// - the EQ and the compressor: at the values measured on the Looper X
 ///   (#891, docs/plan/2026-10-23-looperx-eq-measured.md and
@@ -217,7 +218,8 @@ class FxSourceScale {
 ///   Looper X shows;
 /// - the doubler: where a rack hides its separation, 50 % (the Studio and
 ///   Vocal racks' copies reach the 51 ms of the Dub Rack's 50 %, #1445);
-/// - the distortion: where a rack hides it, the tone flat (50 %, chosen).
+/// - the Studio Rack's Dist: the Amp's tone and cabinet, fixed where the
+///   Looper X's Studio Dist measures (#1743).
 ///
 /// The first variant of each module is its default, the one "Add an effect"
 /// uses (#887: Ed's 4-band, the Dub Rack's Para, Ed's compressor, the Dub
@@ -585,12 +587,29 @@ const FxModuleBuild _loFiDistortion = FxModuleBuild(
 /// The Lo-Fi Distort's gain over the OvDrive, 1.6, in dB.
 const double _loFiDistortLevelDb = 4.082399653118496;
 
-// Studio Rack: the drive, the tone flat.
+// Studio Rack: the drive, on the Amp with the D.I. cabinet. The Looper X's
+// Studio Dist is its amp simulator without a cabinet (#1743, session
+// s19std: within 1 to 2.5 dB rms of response and level at Dist Drive 0 to
+// 80 %): Bass and Modern at 50 %, Treble at 35 %, and its drive on a steeper
+// law than the Guitar Amp's. Each Dist Drive reads as the Amp's drive with
+// the same small-signal gain at 1 kHz; from 80 % the Studio Dist runs past
+// the Amp's 100 %, which is as far as it goes here.
 const FxModuleBuild _distortion = FxModuleBuild(
-  type: TrackEffectType.distortion,
+  type: TrackEffectType.ampCab,
   params: ['Dist Drive'],
-  fixed: {1: 50},
+  scales: {0: _studioDistDrive},
+  fixed: {1: 50, 2: 35, 3: 50, 4: 0},
 );
+
+const FxSourceScale _studioDistDrive = FxSourceScale.table([
+  (0, 0),
+  (0.1, 5),
+  (0.233, 28),
+  (0.5, 54),
+  (0.665, 82),
+  (0.8, 100),
+  (1, 100),
+]);
 
 // Ed's and Guitar racks: drive and tone.
 const FxModuleBuild _overdrive = FxModuleBuild(

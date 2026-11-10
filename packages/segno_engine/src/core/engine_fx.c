@@ -6889,6 +6889,10 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
 
 /* ---- Distortion (LE_FX_DISTORTION, #887 part 7) ----
  *
+ * No factory rack builds this since #1737 (the Lo-Fi Distort is the
+ * Overdrive) and #1743 (the Studio Dist is the Amp+Cab on its D.I.
+ * cabinet); chains saved with it keep it, as it was.
+ *
  * The Looper X's amp simulator, which the Studio Rack labels Dist (the
  * chain scan, #891), at its other controls' defaults: Bass, Treble and
  * Modern 50 % and the 4x12" cabinet. Fit to the Phase 0 captures (#891):

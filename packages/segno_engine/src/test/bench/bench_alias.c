@@ -83,8 +83,10 @@ static const alias_case k_cases[] = {
      {0.535f, 0.901f, 0.3402f}},
     {"lofi-simple", "Overdrive, Lo-Fi Rack Simple Distort", LE_FX_OVERDRIVE,
      {0.0f, 1.0f, 0.3402f}},
-    {"dist-studio", "Distortion, Studio Rack AC Guitar (tone flat)",
-     LE_FX_DISTORTION, {0.5f, 0.5f}},
+    /* The Studio Dist is the Amp on the D.I. cabinet (#1743): Dist Drive
+     * 50 % is the Amp's 54 %. */
+    {"amp-studio", "Amp+Cab, Studio Rack AC Guitar Dist (D.I.)", LE_FX_AMP_CAB,
+     {0.54f, 0.5f, 0.35f, 0.5f, 0.0f}},
     {"dist-high", "Distortion at 100 %, tone 100 %", LE_FX_DISTORTION,
      {1.0f, 1.0f}},
     {"amp-bassdirty", "Amp+Cab, Ed's Bass Amp Dirty (BASS cab)", LE_FX_AMP_CAB,
