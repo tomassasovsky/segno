@@ -1,191 +1,207 @@
 import 'package:looper_repository/src/models/track_effect.dart';
 
+/// The settings the console's cost tables were measured at, in the order of
+/// each table's figures ([kFxSettingCostNs], [kFxPsolaCostNs], [kFxBaseUs]):
+/// 44.1, 48, 88.2 and 96 kHz, each at 32- and 64-frame periods. A device is
+/// charged at the one it runs at ([fxCostSetting]), not at the worst of the
+/// eight (#1724).
+const List<({int rate, int period})> kFxCostSettings = [
+  (rate: 44100, period: 32),
+  (rate: 44100, period: 64),
+  (rate: 48000, period: 32),
+  (rate: 48000, period: 64),
+  (rate: 88200, period: 32),
+  (rate: 88200, period: 64),
+  (rate: 96000, period: 32),
+  (rate: 96000, period: 64),
+];
+
 /// What one instance of each kind charges the audio thread's worst block, in
 /// nanoseconds per frame: each kind's share of the worst block with eight in
-/// one chain (`bench_fx_cpu --table`).
+/// one chain (`bench_fx_cpu --table`), the larger of one instance's p99
+/// increment over the empty chain and an eighth of eight's.
 ///
 /// Measured on the console (Pi 5, SCHED_FIFO 70, segno.service stopped,
-/// `bench_fx_cpu --paced --cpu 3 --table --blocks 2000`, #1508) at 44.1, 48,
-/// 88.2 and 96 kHz, each at 32- and 64-frame periods, and charged the
-/// largest of the eight, so admission is not under-charged at any of them.
-/// A figure stays the charge even when a rerun of the same run came back
-/// lower (the reverb's 234 and the wah's 51 at 44.1 kHz, the filter's 138
-/// at 44.1 kHz / 32, the Degrade's 103 at 96 kHz / 64): the console did run
-/// that block. Where a kind's heaviest use is not the table's still chain (the
-/// swept LPF, the Mode delay's Dub voicing, a moving Mod or Room reverb),
-/// the charge is the heavier scenario's, from `bench_fx_cpu
-/// --kind`, measured the same way.
+/// `bench_fx_cpu --paced --cpu 3 --table --blocks 2000 --rate R --period P`)
+/// at each of [kFxCostSettings] for #1508, and again at 48 kHz / 32 for
+/// #1724. Where a kind's heaviest use is not the table's still chain, the
+/// charge is the heavier scenario's (`bench_fx_cpu --kind`, its chain and
+/// moving runs, measured the same way): the LPF swept by its LFO (`lpflfo`),
+/// the Mode delay's Dub voicing gliding (`dubdelay`), the Mod and the Room
+/// reverb with their settings moving. The High-pass changed after #1508
+/// (#1644) and charges only #1724's runs.
 ///
-/// Per frame because both the cost and the budget scale with the block: at
-/// another rate the same work fits a different share of real time
-/// ([fxBudgetNs]). The kinds that run oversampled charge by the rate
-/// instead ([kFxOversampledCostNs]), and so do the PSOLA kinds
-/// ([kFxPsolaCostNs]); the phase-vocoder kinds charge per hop quarter
-/// ([kFxHopCostUs]).
+/// These kinds do the same work a frame at every setting, so a lower reading
+/// at one is the bench's noise (one instance's p99 at 32 frames moves by a
+/// few microseconds, a hundred nanoseconds a frame): each charges the largest
+/// it measured at a setting the Device page offers (44.1, 48 and 96 kHz,
+/// AudioSetupState.sampleRates), the console did run that block. The kinds
+/// whose work depends on the setting are in [kFxSettingCostNs].
 const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.none: 0,
   TrackEffectType.drive: 35,
-  TrackEffectType.filter: 138,
+  TrackEffectType.filter: 166,
   TrackEffectType.delay: 42,
   TrackEffectType.tremolo: 52,
-  // On the hop: charged per quarter ([kFxHopCostUs]), not per frame.
-  TrackEffectType.octaver: 0,
   TrackEffectType.echo: 144,
   TrackEffectType.reverb: 234,
   TrackEffectType.eq: 88,
   TrackEffectType.compressor: 76,
-  TrackEffectType.transient: 79,
-  TrackEffectType.hpGate: 45,
+  TrackEffectType.transient: 73,
+  TrackEffectType.hpGate: 122,
   TrackEffectType.doubler: 52,
   TrackEffectType.chorus: 78,
-  TrackEffectType.wah: 51,
-  // The overdrive, distortion and vinyl run oversampled, and their charge
-  // depends on the rate: kFxOversampledCostNs.
-  // At 96 kHz / 64, where a rerun measured 73 still and 88 with its hold
-  // moving; about 40 at 44.1 and 48 kHz.
+  TrackEffectType.wah: 60,
   TrackEffectType.degrade: 103,
-  // Swept by its LFO, which redesigns the ladder every sample (`--kind
-  // lpflfo` at 44.1 kHz); still, 128 at most.
-  TrackEffectType.lpf: 145,
-  TrackEffectType.spring: 108,
+  TrackEffectType.lpf: 200,
+  TrackEffectType.spring: 116,
   TrackEffectType.dubVerb: 221,
   TrackEffectType.ambVerb: 272,
-  // On the hop ([kFxHopCostUs]), or PSOLA ([kFxPsolaCostNs]).
-  TrackEffectType.whammy: 0,
-  TrackEffectType.dualOctaver: 0,
-  TrackEffectType.smartTune: 0,
   TrackEffectType.pumper: 63,
-  // AB<< at 1/4T, so its reads land far back in the ring.
   TrackEffectType.slicer: 103,
-  // The Dub voicing's heaviest case (`--kind dubdelay` at 44.1 kHz, moving):
-  // gliding Res-Freq at L/R Ratio 50 %, which redesigns its filters every 32
-  // frames (#1477). Still, RES LO L/R charges 118 at most and the Dub 115.
-  TrackEffectType.modeDelay: 169,
-  // The Amp+Cab's clipper runs oversampled: kFxOversampledCostNs.
-  // The phaser at full depth, its heaviest mode, still or with its settings
-  // moving (`--kind mod`). A mode change runs both modes for 1024 frames.
-  TrackEffectType.mod: 81,
-  // BOX, the most early taps, its Length gliding (`--kind roomverb`,
-  // moving). Still, the same eight charge 420 at most.
-  TrackEffectType.roomVerb: 685,
+  TrackEffectType.modeDelay: 179,
+  TrackEffectType.mod: 113,
+  TrackEffectType.roomVerb: 735,
 };
 
-/// What the waveshapers that run oversampled (#1547) charge, in nanoseconds
-/// per frame: `low` at 44.1 and 48 kHz, `high` at 88.2 kHz and up, where
-/// they run fewer times over (8x and 4x the Overdrive and the Amp+Cab's
-/// clipper, 4x and 2x the Vinyl, 2x and 1x the Distortion; engine_fx.c,
-/// le_os_stages).
+/// What the kinds whose work depends on the setting charge, in nanoseconds
+/// per frame at each of [kFxCostSettings], measured as [kFxKindCostNs] is.
+/// The Overdrive and the Amp changed after #1508 (#1663, #1664) and charge
+/// only #1724's runs, at all eight.
 ///
-/// Measured on the console as [kFxKindCostNs] is: `low` the largest of
-/// 44.1 and 48 kHz at 32- and 64-frame periods, `high` of 88.2 and 96 kHz.
-/// The Amp+Cab's cabinet runs twice the taps at 96 kHz.
-///
-/// The overdrive's figures are its console figures (812 and 481) scaled by
-/// what its small-signal refit (#1663: two one-poles around the clipped
-/// part at the curve's rate, and the tone's shelf and bell) added on an
-/// M4 Pro, the larger of two runs: 1.11 times at 44.1 and 48 kHz and 1.15
-/// times at 96 kHz, until the console measures them again.
-const Map<TrackEffectType, ({int low, int high})> kFxOversampledCostNs = {
-  TrackEffectType.overdrive: (low: 905, high: 555),
-  TrackEffectType.distortion: (low: 400, high: 272),
-  TrackEffectType.vinyl: (low: 381, high: 203),
-  TrackEffectType.ampCab: (low: 434, high: 441),
+/// A kind on the hop (the octaver, the Whammy, the Dual Octaver) does a
+/// quarter of its hop in every block up to 64 frames, so it costs more a
+/// frame at 32 frames than at 64. At 44.1 kHz a 64-frame block can take two
+/// quarters, a 32-frame block's cost a frame, so there they charge the
+/// larger of their 64- and 32-frame figures (2,000 blocks do not always
+/// catch the two-quarter one). The Overdrive, the
+/// Distortion and the Vinyl run fewer times over at 88.2 kHz and up (#1547),
+/// so they cost less a frame there; the Amp's clipper does too, but its
+/// cabinet runs twice the taps at 96 kHz, so it does not.
+const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
+  TrackEffectType.octaver: [2172, 2172, 2048, 969, 1942, 1182, 1923, 1140],
+  TrackEffectType.whammy: [2049, 2049, 1846, 965, 1933, 1170, 1852, 1151],
+  TrackEffectType.dualOctaver: [2174, 2174, 1942, 1110, 2009, 1210, 1950, 1154],
+  TrackEffectType.overdrive: [904, 861, 903, 860, 522, 513, 540, 533],
+  TrackEffectType.distortion: [400, 393, 407, 392, 248, 247, 266, 272],
+  TrackEffectType.vinyl: [381, 374, 375, 374, 201, 200, 192, 203],
+  TrackEffectType.ampCab: [632, 563, 579, 491, 663, 479, 700, 504],
 };
 
-/// What the PSOLA kinds charge, in nanoseconds per frame: the octaver in
-/// PSOLA mode (its mode setting at 1) and the Smart Tune, the octaver's
-/// PSOLA with its shift worked out once a detection lands. Their kernel runs
-/// at 48 kHz at every rate (#1547) and works on every kernel sample, so they
-/// cost per frame by the rate, not per hop: `low` at 44.1 and 48 kHz, `high`
-/// at 88.2 kHz and up, where a frame carries about half a kernel sample.
-/// Measured on the console as [kFxKindCostNs] is, but as a kind on the hop:
-/// the larger of one instance's increment and an eighth of eight's, per
-/// frame, the larger of the two kinds; `low` the largest of 44.1 and 48 kHz
-/// at 32 and 64 frames, `high` of 88.2 and 96 kHz.
-const ({int low, int high}) kFxPsolaCostNs = (low: 2380, high: 1387);
-
-/// What a phase-vocoder kind charges, in microseconds for each quarter of
-/// its hop that lands in a block. Its kernel runs at 48 kHz at every rate
-/// (#1547) and does a hop's frame work by quarters, one every
-/// [kFxHopQuarterFrames] kernel samples, so a block up to 64 frames takes one
-/// quarter at 48 kHz and up but can take two at 44.1 kHz, where a 64-frame
-/// block carries 69.7 kernel samples ([fxEntryCostNs]).
-///
-/// Measured on the console as [kFxKindCostNs] is: the larger of one
-/// instance's increment and an eighth of eight's, the largest of the runs
-/// where a block takes one quarter (all but 44.1 kHz / 64; 88.2 kHz / 64 is
-/// the heaviest). At 44.1 kHz / 64 the octaver, which takes two, measures
-/// 129 us.
-const Map<TrackEffectType, double> kFxHopCostUs = {
-  // The phase vocoder.
-  TrackEffectType.octaver: 76,
-  // The octaver's phase vocoder, its settings mapped.
-  TrackEffectType.whammy: 75,
-  // The octaver's phase vocoder with both voices, and its low band (#1467:
-  // a crossover, two taps and a sliced pitch detection on every sample),
-  // on a bass line in its heaviest setting (High Mode off, the band
-  // playing; on, the band only listens).
-  TrackEffectType.dualOctaver: 78,
-};
-
-/// The pitch kinds' kernel rate (engine_fx.c, fx_octaver_run).
-const int kFxPitchKernelRate = 48000;
-
-/// The kernel samples between two quarters of the phase vocoder's hop
-/// (LE_PV_HOP / 4).
-const int kFxHopQuarterFrames = 64;
+/// What the PSOLA kinds charge, in nanoseconds per frame at each of
+/// [kFxCostSettings]: the octaver in PSOLA mode (its mode setting at 1) and
+/// the Smart Tune, the larger of the two, measured as [kFxKindCostNs] is.
+/// Their kernel runs at 48 kHz at every rate (#1547), so a frame at 88.2 kHz
+/// and up carries about half a kernel sample.
+const List<int> kFxPsolaCostNs = [
+  2380,
+  2299,
+  1949,
+  1865,
+  1387,
+  1328,
+  1221,
+  1225,
+];
 
 /// The engine with eight tracks playing, one input monitored and no effects:
-/// the console's worst block, a fixed part and a part for each frame, in
-/// microseconds. Fitted to the largest of 44.1, 48, 88.2 and 96 kHz: 44 us
-/// at 32 frames (43.8 measured) and 76 us at 64 (75.9 measured).
-const double kFxBaseFixedUs = 12;
+/// the console's worst block (the table's base p99), in microseconds, at
+/// each of [kFxCostSettings], measured as [kFxKindCostNs] is. Between and
+/// below the two block lengths a rate was measured at, the base is the line
+/// through them: a fixed part and a part for each frame ([fxBaseNs]).
+const List<double> kFxBaseUs = [42.3, 74.8, 45.4, 73.5, 43.1, 74.4, 43.8, 75.9];
 
-/// The engine's worst block's part for each frame ([kFxBaseFixedUs]).
-const double kFxBaseFrameUs = 1;
+/// The kinds that keep running after they are switched off, until their tail
+/// has drained (engine_fx.c, `le_fx_type_drains`: the delay, the echo, the
+/// Mode delay and the reverbs). Switching one off frees nothing until then,
+/// so the budget charges one an alternation turns off as if it ran (#1723).
+const Set<TrackEffectType> kFxDrainingKinds = {
+  TrackEffectType.delay,
+  TrackEffectType.echo,
+  TrackEffectType.modeDelay,
+  TrackEffectType.reverb,
+  TrackEffectType.spring,
+  TrackEffectType.dubVerb,
+  TrackEffectType.ambVerb,
+  TrackEffectType.roomVerb,
+};
+
+/// Whether [fx] keeps running after it is switched off ([kFxDrainingKinds]).
+bool fxDrains(TrackEffect fx) =>
+    fx is BuiltInEffect && kFxDrainingKinds.contains(fx.type);
 
 /// The block a per-block cost is spread over at most ([_perBlock]), and the
 /// block the charges default to.
 const int kFxBenchPeriod = 64;
 
-/// The share of each block the worst block may fill (#887, Architecture 10):
-/// 80 %, leaving the rest to the callback's own jitter.
-const double kFxBudgetShare = 0.8;
+/// The share of each block the worst block may fill (#1724): 77 %.
+///
+/// Set from the console's measured p99.9 with a safety margin of a tenth of
+/// the block. In the app at 48 kHz / 32 (build 236, four of Ed's Racks on
+/// two inputs, four takes playing, the screens drawing), the audio thread's
+/// p99.9 service was 1.16 times what this file charges for the same rig,
+/// its own base included: the app's ALSA I/O, its playback and the screens'
+/// memory traffic cost the callback more than the bench's engine does. A
+/// share s puts the p99.9 at 1.16 s of the block at the limit; 0.9 / 1.16
+/// is 0.773, so 0.77. The engine counts the services past it
+/// (`over_share_periods`, LE_CB_OVER_SHARE_NUM / DEN).
+const double kFxBudgetShare = 0.77;
 
 /// The rate the charges default to.
 const int kFxBenchRate = 96000;
 
+/// Which of [kFxCostSettings] a device at [sampleRate] and [period]-frame
+/// blocks is charged at: the measured rate nearest to [sampleRate] on the
+/// same side of 88.2 kHz, where the oversampled kinds and the pitch kernel
+/// change how much they run (engine_fx.c, le_os_stages), at 32 frames below
+/// 64 and at 64 from there ([_perBlock]: a longer block costs no more per
+/// frame).
+int fxCostSetting(int sampleRate, int period) {
+  final rate = sampleRate > 0 ? sampleRate : kFxBenchRate;
+  final frames = _perBlock(period) < kFxBenchPeriod ? 32 : kFxBenchPeriod;
+  int distance(int i) => (kFxCostSettings[i].rate - rate).abs();
+  var best = -1;
+  for (var i = 0; i < kFxCostSettings.length; i++) {
+    final s = kFxCostSettings[i];
+    if (s.period != frames || (s.rate < 88200) != (rate < 88200)) continue;
+    if (best < 0 || distance(i) < distance(best)) best = i;
+  }
+  return best;
+}
+
 /// What [fx] charges, in nanoseconds per frame at [sampleRate] and
-/// [period]-frame blocks: its kind's ([kFxKindCostNs], [kFxOversampledCostNs]
-/// or [kFxPsolaCostNs] at the rate, or [kFxHopCostUs] for each hop quarter a
-/// block can take, spread over the block), whether or not it is on, so
-/// switching a pedal on is never refused. A hosted plugin charges nothing
-/// here; its cost is its own.
+/// [period]-frame blocks while it runs: its kind's figure ([kFxKindCostNs]),
+/// or at the setting ([fxCostSetting]) for a kind whose work depends on it
+/// ([kFxSettingCostNs], [kFxPsolaCostNs]). Outside what was measured the
+/// figure only grows: a block under 32 frames charges the 32-frame figure
+/// times 32 over its length (a hop quarter or a block's own work lands in
+/// every block), and a rate under 44.1 kHz charges a setting kind's 44.1 kHz
+/// figure times 44.1 kHz over the rate (its 48 kHz kernel runs more samples
+/// a frame). Which instances the rig is charged for, those on and those a
+/// control can turn on, is the repository's (`LooperRepository.fxCostNs`,
+/// #1723). A hosted plugin charges nothing here; its cost is its own.
 int fxEntryCostNs(
   TrackEffect fx, {
   int period = kFxBenchPeriod,
   int sampleRate = kFxBenchRate,
 }) {
   if (fx is! BuiltInEffect) return 0;
+  final frames = _perBlock(period);
+  final short = frames < 32 ? 32 / frames : 1.0;
   final rate = sampleRate > 0 ? sampleRate : kFxBenchRate;
-  final low = rate < 88200;
+  final slow = rate < 44100 ? 44100 / rate : 1.0;
+  final at = fxCostSetting(sampleRate, period);
   final psola =
       fx.type == TrackEffectType.smartTune ||
       (fx.type == TrackEffectType.octaver && fx.params[3] >= 0.5);
-  if (psola) return low ? kFxPsolaCostNs.low : kFxPsolaCostNs.high;
-  final hop = kFxHopCostUs[fx.type];
-  if (hop != null) {
-    final frames = _perBlock(period);
-    final kernel = frames * kFxPitchKernelRate / rate;
-    final quarters = (kernel / kFxHopQuarterFrames).ceil();
-    return (hop * 1000 * quarters / frames).ceil();
-  }
-  final oversampled = kFxOversampledCostNs[fx.type];
-  if (oversampled != null) return low ? oversampled.low : oversampled.high;
-  return kFxKindCostNs[fx.type] ?? 0;
+  if (psola) return (kFxPsolaCostNs[at] * short * slow).ceil();
+  final bySetting = kFxSettingCostNs[fx.type];
+  if (bySetting != null) return (bySetting[at] * short * slow).ceil();
+  return ((kFxKindCostNs[fx.type] ?? 0) * short).ceil();
 }
 
-/// What [chain] charges ([fxEntryCostNs]), in nanoseconds per frame.
+/// What [chain] charges with every entry in it running ([fxEntryCostNs]),
+/// in nanoseconds per frame.
 int fxChainCostNs(
   Iterable<TrackEffect> chain, {
   int period = kFxBenchPeriod,
@@ -199,13 +215,20 @@ int fxChainCostNs(
 /// [sampleRate] and [period]-frame blocks: the budget's share of a frame
 /// less the engine's own cost.
 int fxBudgetNs(int sampleRate, {int period = kFxBenchPeriod}) =>
-    (kFxBudgetShare * 1e9 / sampleRate).floor() - fxBaseNs(period);
+    (kFxBudgetShare * 1e9 / sampleRate).floor() -
+    fxBaseNs(sampleRate, period: period);
 
 /// What the engine itself charges the worst block, in nanoseconds per frame
-/// at [period]-frame blocks ([kFxBaseFixedUs], [kFxBaseFrameUs]).
-int fxBaseNs(int period) {
+/// at [sampleRate] and [period]-frame blocks: the line through the rate's
+/// two measured blocks ([kFxBaseUs]), a fixed part and a part for each
+/// frame, at the block up to 64 frames ([_perBlock]).
+int fxBaseNs(int sampleRate, {int period = kFxBenchPeriod}) {
+  final at32 = fxCostSetting(sampleRate, 32);
+  final at64 = fxCostSetting(sampleRate, kFxBenchPeriod);
+  final perFrame = (kFxBaseUs[at64] - kFxBaseUs[at32]) / 32;
+  final fixed = kFxBaseUs[at32] - 32 * perFrame;
   final frames = _perBlock(period);
-  return ((kFxBaseFixedUs + kFxBaseFrameUs * frames) * 1000 / frames).ceil();
+  return ((fixed + perFrame * frames) * 1000 / frames).ceil();
 }
 
 /// What handing the monitor chains to the effects workers costs the

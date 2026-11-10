@@ -7,10 +7,10 @@ import 'package:segno_engine/segno_engine.dart' show LaneSource;
 
 import 'helpers/fake_audio_engine.dart';
 
-/// Ed's Rack, the plan's unit: 3,362 ns a frame at 96 kHz / 64 frames on the
-/// console's own table (#1508, the overdrive's scaled for #1663; 2,665 in the
-/// plan). The budget there is
-/// 7,145, so two fit on the callback and a third does not.
+/// Ed's Rack, the plan's unit: 3,407 ns a frame at 96 kHz / 64 frames on the
+/// console's own table (#1508, #1724; 2,665 in the plan). The budget there is
+/// 6,834, so two fit on the callback and a third does not, and three fit the
+/// inputs with two workers and a fourth does not.
 List<TrackEffect> _rack() => [
   for (final type in [
     TrackEffectType.dualOctaver,
@@ -98,8 +98,8 @@ void main() {
   });
 
   test("Ed's Rack charges what the tests assume", () {
-    expect(fxChainCostNs(_rack()), 3362);
-    expect(fxBudgetNs(96000), 7145);
+    expect(fxChainCostNs(_rack()), 3407);
+    expect(fxBudgetNs(96000), 6834);
   });
 
   group('a take plays what was heard (#1713)', () {
@@ -285,7 +285,11 @@ void main() {
     });
 
     test('a chain the player had off is held without a notice', () {
+      // A control can switch it on, so it is charged though off (#1723).
       repo
+        ..setFxReach([
+          FxControlReach(whenOn: {FxSwitchKey.chain(_lane(2))}),
+        ])
         ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
         ..setLaneChainEnabled(channel: 2, lane: 0, enabled: false)
         ..setMonitorEffects(input: 0, effects: _rack())
@@ -322,12 +326,45 @@ void main() {
     test('a chain the player has off goes first: holding it changes no '
         'sound', () {
       repo
+        ..setFxReach([
+          FxControlReach(whenOn: {FxSwitchKey.chain(_input(3))}),
+        ])
         ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
         ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
         ..setMonitorEffects(input: 0, effects: _rack());
       expect(repo.fxChainHeld(_input(3)), isTrue);
       expect(repo.fxChainHeld(_lane(2)), isFalse);
       expect(repo.state.fxHoldNotice, isEmpty);
+    });
+
+    test('a chain the player has off that no control reaches charges '
+        'nothing, so nothing is held (#1723)', () {
+      repo
+        ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
+        ..setLaneEffects(channel: 2, lane: 0, effects: _rack())
+        ..setMonitorEffects(input: 0, effects: _rack());
+      expect(repo.state.fxHeld, isEmpty);
+      // A binding that reaches it comes in over budget, as a session's
+      // bindings can: it is admitted as a restore is.
+      repo.setFxReach([
+        FxControlReach(whenOn: {FxSwitchKey.chain(_input(3))}),
+      ]);
+      expect(repo.fxChainHeld(_input(3)), isTrue);
+      expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
+      // The binding gone, the hold goes with it.
+      repo.setFxReach(const []);
+      expect(repo.state.fxHeld, isEmpty);
+    });
+
+    test('a chain the player has off that no control reaches is never held: '
+        'holding it frees nothing (#1723)', () {
+      repo
+        ..setMonitorEffects(input: 3, effects: _rack(), chainEnabled: false)
+        ..setMonitorEffects(input: 0, effects: _rack())
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: _rack());
+      expect(repo.fxChainHeld(_input(3)), isFalse);
+      expect(repo.fxChainHeld(_input(2)), isTrue);
     });
 
     test('dismissing the notice keeps the chains off', () {
@@ -357,12 +394,12 @@ void main() {
 
     test('without its workers a rig is held; with them back, everything is '
         'on as saved', () {
-      // Four racks on the inputs fit two workers (the per-core rule).
+      // Three racks on the inputs fit two workers (the per-core rule).
       engine.fxWorkersRunning = 2;
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig(sampleRate: 96000));
-      for (var input = 0; input < 4; input++) {
+      for (var input = 0; input < 3; input++) {
         repo.setMonitorEffects(input: input, effects: _rack());
       }
       expect(repo.state.fxHeld, isEmpty);
@@ -371,9 +408,9 @@ void main() {
       repo
         ..stopEngine()
         ..startEngine(const EngineConfig(sampleRate: 96000));
-      expect(repo.state.fxHeld, {_input(2), _input(3)});
-      expect(repo.state.fxHoldNotice, [_input(3), _input(2)]);
-      expect(repo.monitorChainEnabled(3), isTrue);
+      expect(repo.state.fxHeld, {_input(2)});
+      expect(repo.state.fxHoldNotice, [_input(2)]);
+      expect(repo.monitorChainEnabled(2), isTrue);
       // They are back: nothing is held.
       engine.fxWorkersRunning = 2;
       repo

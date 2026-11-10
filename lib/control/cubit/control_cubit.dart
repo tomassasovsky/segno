@@ -72,6 +72,16 @@ typedef _ControlOrigins = ({
 bool _isSharedValue(ControlValueTarget target) =>
     target is MixValueTarget || target is OwnedValueTarget;
 
+/// A binding refused because the effects it could switch on would not fit
+/// the effects budget (#1723). Nothing was saved.
+final class FxReachOverBudget implements Exception {
+  /// Creates the refusal.
+  const FxReachOverBudget();
+
+  @override
+  String toString() => 'Not enough effects budget for what it can switch on';
+}
+
 /// The press/long-press state machine every gestural footswitch shares.
 ///
 /// [press] arms a hold timer and remembers the tap action; holding past the
@@ -280,6 +290,7 @@ class ControlCubit extends Cubit<ControlState> {
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
     _midiMessageSub = midiDevices?.messages.listen(_onMidiInput);
     _tunerSub = _tunerSettings.changes.listen(_onTunerPreferences);
+    _looper.setFxReach(fxReachOf(state));
     if (_tunerSettings.live != state.tunerPreferences) {
       emit(state.copyWith(tunerPreferences: _tunerSettings.live));
     }
@@ -1558,6 +1569,20 @@ class ControlCubit extends Cubit<ControlState> {
         !state.pedalSetupRuntimeUnsaved) {
       return;
     }
+    // A change to what the switches reach is admitted and committed as one
+    // step of the reach queue (#1723); a press's logical state is not one.
+    if (!setup.external.sameConfigurationAs(state.pedalSetup.external)) {
+      return _serializeReach(() async {
+        if (isClosed) return;
+        _admitReach(state.copyWith(pedalSetup: setup));
+        await _commitPedalSetup(setup);
+      });
+    }
+    await _commitPedalSetup(setup);
+  }
+
+  /// Saves [setup] and makes it live.
+  Future<void> _commitPedalSetup(PedalSetup setup) async {
     _storeFxStopNotice();
     try {
       await _settings.savePedalSetup(setup.encode());
@@ -3874,13 +3899,32 @@ class ControlCubit extends Cubit<ControlState> {
   /// not survive the edit, and a target left enabled with no binding to
   /// release it is exactly the wedge (B1) the release-all rule exists to
   /// prevent.
-  Future<void> setGlobalBindings(PedalBindingSet next) async {
-    if (next == state.globalBindings) return;
+  ///
+  /// With [promote], the session's remap is dropped first, so [next] is the
+  /// set in force: the FX page's editor rule.
+  ///
+  /// Throws [FxReachOverBudget], saving nothing, when the effects [next]
+  /// could switch on would not fit the effects budget (#1723).
+  Future<void> setGlobalBindings(
+    PedalBindingSet next, {
+    bool promote = false,
+  }) => _serializeReach(() async {
+    if (isClosed) return;
+    final session = promote ? PedalBindingSet.empty : state.sessionBindings;
+    if (next == state.globalBindings && session == state.sessionBindings) {
+      return;
+    }
+    _admitReach(state.copyWith(globalBindings: next, sessionBindings: session));
+    // One emit for both sets: the old globals never come in force between
+    // them, so the effects budget never weighs that in-between set.
+    final saves = next != state.globalBindings;
+    if (session != state.sessionBindings) _customLastActions.clear();
     _invalidateGestures();
-    emit(state.copyWith(globalBindings: next));
+    emit(state.copyWith(globalBindings: next, sessionBindings: session));
+    if (!saves) return;
     _storeFxStopNotice();
     await _settings.savePedalBindings(next.encode());
-  }
+  });
 
   /// Removes every MIDI and pedal assignment to the effects [slotIds] and the
   /// racks [rackIds] of the chain at [address] (the ones `fxAssignmentsTo`
@@ -3934,6 +3978,42 @@ class ControlCubit extends Cubit<ControlState> {
       if (!midi.saved) saved = false;
     });
     return saved;
+  }
+
+  /// The last save that can change what the controls reach (#1723), still
+  /// running: the console bindings, the external switches' setup or the MIDI
+  /// mappings, whichever page saves them. Null when none is.
+  Future<void>? _reachTail;
+
+  /// Runs [step] after the save in [_reachTail], at once when there is none,
+  /// so its budget check ([_admitReach]) and its commit are one step: two
+  /// saves from different pages cannot both pass against the same room.
+  Future<T> _serializeReach<T>(Future<T> Function() step) {
+    final prior = _reachTail;
+    final next = prior == null ? step() : prior.then((_) => step());
+    late final Future<void> tail;
+    tail = next
+        .then<void>((_) {}, onError: (Object _, StackTrace _) {})
+        .whenComplete(() {
+          if (identical(_reachTail, tail)) _reachTail = null;
+        });
+    _reachTail = tail;
+    return next;
+  }
+
+  /// Throws [FxReachOverBudget] when what [next]'s controls could switch on
+  /// would not fit the effects budget (#1723). A change that only takes reach
+  /// away is never refused ([fxReachShrinks]): if the charge still rises (an
+  /// alternation moving past the cap), the repository holds chains off until
+  /// it fits (R2). Controls that reach what they reached before never ask
+  /// the repository.
+  void _admitReach(ControlState next) {
+    final before = fxReachOf(state);
+    final after = fxReachOf(next);
+    if (fxReachShrinks(before, after) || FxReach(before) == FxReach(after)) {
+      return;
+    }
+    if (!_looper.fxReachFits(after)) throw const FxReachOverBudget();
   }
 
   /// Stores the FX notice decision once it is known to be shown, so a later
@@ -4197,22 +4277,8 @@ class ControlCubit extends Cubit<ControlState> {
     );
   }
 
-  FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) {
-    if (target == null || scope == BindingScope.fixed) return target;
-    final address = resolveBindingAddress(target.address, scope, state.cursor);
-    if (address == target.address) return target;
-    return switch (target) {
-      FxChainTarget() => FxChainTarget(address),
-      FxSlotTarget(:final slotId) => FxSlotTarget(
-        address: address,
-        slotId: slotId,
-      ),
-      FxRackTarget(:final rackId) => FxRackTarget(
-        address: address,
-        rackId: rackId,
-      ),
-    };
-  }
+  FxBindingTarget? _scoped(FxBindingTarget? target, BindingScope scope) =>
+      target == null ? null : resolveBindingTarget(target, scope, state.cursor);
 
   /// Restores the momentary [button] is holding, if any.
   ///
@@ -4571,7 +4637,18 @@ class ControlCubit extends Cubit<ControlState> {
 
   @override
   void emit(ControlState state) {
+    final external = state.pedalSetup.external;
+    final reachChanged =
+        !identical(state.globalBindings, this.state.globalBindings) ||
+        !identical(state.sessionBindings, this.state.sessionBindings) ||
+        !identical(state.midiMappings, this.state.midiMappings) ||
+        // A press's logical state is in the setup too, and reaches nothing.
+        !identical(external, this.state.pedalSetup.external) &&
+            !external.sameConfigurationAs(this.state.pedalSetup.external);
     super.emit(state);
+    // What the controls can turn on is what the effects budget reserves room
+    // for (#1723), so the repository hears every change to it.
+    if (reachChanged) _looper.setFxReach(fxReachOf(state));
     // Every stored-intent change re-projects the pedal frame (the diff in
     // [_pushProjected] keeps the wire quiet when the LEDs are unaffected).
     // After super.emit — onChange fires BEFORE the state field updates, and

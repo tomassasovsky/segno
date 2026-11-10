@@ -224,6 +224,11 @@ class FxCubit extends Cubit<FxState> {
     return grows > 0 && grows > _repository.fxRoomNs;
   }
 
+  static TrackEffect _withEnabled(TrackEffect fx) => switch (fx) {
+    BuiltInEffect() => fx.copyWith(enabled: true),
+    PluginEffect() => fx.copyWith(enabled: true),
+  };
+
   /// Appends one library choice to the selected destination as a new group.
   // ignore: prefer_void_public_cubit_methods
   Future<FxEditResult> appendChoice(
@@ -450,6 +455,16 @@ class FxCubit extends Cubit<FxState> {
     if (chain![index].enabled == enabled) {
       return const FxEditResult(FxEditStatus.unchanged);
     }
+    // An effect no control reaches charges nothing while it is off, so
+    // switching it on here is weighed (#1723); a pedal's press never is.
+    if (enabled &&
+        _overBudget(address, chain, [
+          ...chain.sublist(0, index),
+          _withEnabled(chain[index]),
+          ...chain.sublist(index + 1),
+        ])) {
+      return const FxEditResult(FxEditStatus.overBudget);
+    }
     final result = switch (address.stage) {
       FxStage.input => _repository.setMonitorEffectEnabled(
         input: address.index,
@@ -508,6 +523,14 @@ class FxCubit extends Cubit<FxState> {
       if (group.isOn == enabled) {
         return const FxEditResult(FxEditStatus.unchanged);
       }
+      if (enabled &&
+          _overBudget(
+            address,
+            chain,
+            fxWithRackEnabled(chain, rack.id, enabled: true)!,
+          )) {
+        return const FxEditResult(FxEditStatus.overBudget);
+      }
       if (!_repository
           .setRackEnabled(address: address, rackId: rack.id, enabled: enabled)
           .isOk) {
@@ -525,7 +548,10 @@ class FxCubit extends Cubit<FxState> {
       final id = entry.slotId;
       if (id == null) return const FxEditResult(FxEditStatus.refused);
       final outcome = setEffectEnabled(address, id, enabled: enabled);
-      if (outcome.status == FxEditStatus.refused) return outcome;
+      if (outcome.status == FxEditStatus.refused ||
+          outcome.status == FxEditStatus.overBudget) {
+        return outcome;
+      }
       changed |= outcome.status == FxEditStatus.applied;
     }
     return FxEditResult(
@@ -564,6 +590,16 @@ class FxCubit extends Cubit<FxState> {
     }
     if (held && enabled && !_repository.fxHeldChainFits(address)) {
       return const FxEditResult(FxEditStatus.overBudget);
+    }
+    // A chain no control reaches charges nothing while it is off (#1723).
+    if (!held && enabled) {
+      final grows = _repository.fxGrowthNs(
+        const {},
+        chainSwitches: {address: true},
+      );
+      if (grows > 0 && grows > _repository.fxRoomNs) {
+        return const FxEditResult(FxEditStatus.overBudget);
+      }
     }
     if (!_repository.setChainEnabledAt(address, enabled: enabled).isOk) {
       return const FxEditResult(FxEditStatus.refused);

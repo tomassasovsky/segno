@@ -12,6 +12,7 @@ import 'package:segno/control/binding/control_action_labels.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/midi_edit.dart';
 import 'package:segno/control/binding/midi_labels.dart';
 import 'package:segno/control/binding/midi_mapping_draft.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
@@ -513,7 +514,11 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     if (result.saved) {
       return;
     }
-    setState(() => _notice = context.l10n.midiSaveFailed);
+    setState(
+      () => _notice = result.error == MidiSaveResult.overBudgetError
+          ? context.l10n.fxBindOverBudget
+          : context.l10n.midiSaveFailed,
+    );
   }
 
   /// Add mapping: a new draft on the controller in use, listening at once.
@@ -836,7 +841,11 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
     if (result.saved) {
       _leaveEditor(control, notice: l10n.pedalSetupSaved);
     } else {
-      setState(() => _notice = l10n.midiSaveFailed);
+      setState(
+        () => _notice = result.error == MidiSaveResult.overBudgetError
+            ? l10n.fxBindOverBudget
+            : l10n.midiSaveFailed,
+      );
     }
   }
 

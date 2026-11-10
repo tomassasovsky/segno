@@ -4530,6 +4530,10 @@
     "@fxOverBudget": {
         "description": "Shown when adding an effect would overload the audio processing, so the add was refused."
     },
+    "fxBindOverBudget": "Not enough processing left for what this switch can turn on",
+    "@fxBindOverBudget": {
+        "description": "Shown when saving a pedal, MIDI or external switch assignment is refused: the effects it could switch on would not fit the audio processing, so nothing was saved."
+    },
     "fxHeldBanner": "{chains} {count, plural, =1{is} other{are}} off",
     "@fxHeldBanner": {
         "description": "Standing stage notice: chains the rig could not run when it came up are switched off (#1515). chains is a list such as 'Guitar's input chain and Track 3'.",

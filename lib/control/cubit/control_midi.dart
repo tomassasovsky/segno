@@ -115,14 +115,35 @@ extension MidiControlEditing on ControlCubit {
     return next;
   }
 
+  /// Admitted and committed as one step of the reach queue (#1723).
   Future<MidiSaveResult> _saveMidiConfiguration(
     MidiMappingSet authored,
     bool enabled, {
     String? mappingId,
     bool resume = false,
+  }) => _serializeReach(
+    () => _commitMidiConfiguration(
+      authored,
+      enabled,
+      mappingId: mappingId,
+      resume: resume,
+    ),
+  );
+
+  Future<MidiSaveResult> _commitMidiConfiguration(
+    MidiMappingSet authored,
+    bool enabled, {
+    String? mappingId,
+    bool resume = false,
   }) async {
+    if (_closing || isClosed) return const MidiSaveResult.refused('closed');
     // What is saved, played and shown is what a reload reads.
     final mappings = _decodeEndpoints(authored);
+    try {
+      _admitReach(state.copyWith(midiMappings: mappings));
+    } on FxReachOverBudget {
+      return const MidiSaveResult.overBudget();
+    }
     try {
       await _settings.saveMidiConfiguration(
         jsonEncode({
