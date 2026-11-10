@@ -1758,6 +1758,12 @@ void main() {
       expect(wav.channels, 2);
       expect(wav.samples, heard);
       expect(File('$out/track0_lane0_L0.wav').existsSync(), isTrue);
+
+      // Re-recorded dry and exported again: the earlier heard stem goes.
+      engine.seedHeard(0, 0, const []);
+      await repository.save(dir, settings: const SessionSettings());
+      await rooted(FakeSessionEngine()).exportStems('stems-heard', out);
+      expect(File('$out/track0_lane0_L0_heard.wav').existsSync(), isFalse);
     },
   );
 

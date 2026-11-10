@@ -269,6 +269,52 @@ void main() {
       },
     );
 
+    for (final (name, source, heardOnDisk) in [
+      ('a lane that played clean', 'clean', true),
+      ('a missing heard image', null, false),
+    ]) {
+      test('$name keeps its clean loop as its session clip (#1713)', () {
+        Directory('${dir.path}/loops').createSync(recursive: true);
+        File('${dir.path}/loops/track0-lane0.wav').writeAsBytesSync([0]);
+        if (heardOnDisk) {
+          File(
+            '${dir.path}/loops/track0-lane0-heard.wav',
+          ).writeAsBytesSync([0]);
+        }
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'loops/track0-lane0.wav',
+                      'heardPcmRef': 'loops/track0-lane0-heard.wav',
+                      'source': ?source,
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        expect(
+          DawManifestReader.read(
+            dir.path,
+          )!.tracks.single.sessionClips.single.fileRef,
+          'loops/track0-lane0.wav',
+        );
+      });
+    }
+
     test(
       'prefers a disarm-time pcmRef over an arm-time one for the same lane',
       () {

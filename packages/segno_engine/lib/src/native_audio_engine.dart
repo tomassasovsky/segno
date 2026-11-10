@@ -1367,7 +1367,7 @@ class NativeAudioEngine implements AudioEngine {
       );
     }
     if (frames == 0) return Float32List(0);
-    return _copyStereo(
+    final heard = _copyStereo(
       frames,
       (buf) => _bindings.le_engine_export_layer_heard(
         _engine,
@@ -1378,6 +1378,13 @@ class NativeAudioEngine implements AudioEngine {
         frames,
       ),
     );
+    if (heard.length != 2 * frames) {
+      throw StateError(
+        'heard layer $ordinal of track $channel lane $lane changed while '
+        'it was read',
+      );
+    }
+    return heard;
   }
 
   @override

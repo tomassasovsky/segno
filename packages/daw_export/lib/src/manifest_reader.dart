@@ -91,9 +91,15 @@ abstract final class DawManifestReader {
         final laneJson = lane as Map<String, dynamic>;
         final laneIndex = (laneJson['lane'] as num?)?.toInt();
         // A take's heard image (#1713) is what it played as, so its clip
-        // carries that; a take without one keeps its clean loop.
+        // carries that unless the lane played clean (its effects edited) or
+        // the image is missing; otherwise the clean loop.
+        final heardRef = laneJson['heardPcmRef'] as String?;
         final pcmRef =
-            laneJson['heardPcmRef'] as String? ?? laneJson['pcmRef'] as String?;
+            heardRef != null &&
+                laneJson['source'] != 'clean' &&
+                File('$captureDir/$heardRef').existsSync()
+            ? heardRef
+            : laneJson['pcmRef'] as String?;
         if (laneIndex == null || pcmRef == null) continue;
         laneMap[laneIndex] = pcmRef;
       }

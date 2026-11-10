@@ -11,6 +11,9 @@ class _FakeLane {
 
   /// The take's heard image (#1713), interleaved stereo; empty for none.
   Float32List heard = Float32List(0);
+
+  /// What the lane plays (#1713).
+  LaneSource source = LaneSource.heard;
 }
 
 class _FakeTrack {
@@ -118,6 +121,7 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
     double lanePan = 0,
     bool laneMuted = false,
     Float32List? heard,
+    LaneSource source = LaneSource.heard,
   }) {
     final track = _tracks[channel]
       ..state = trackState
@@ -135,6 +139,7 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
       ..muted = laneMuted
       ..pcm = pcm
       ..heard = heard ?? Float32List(0)
+      ..source = source
       ..lengthFrames = pcm.length;
   }
 
@@ -237,6 +242,8 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
                 lengthFrames: l.lengthFrames,
                 rms: 0,
                 peak: 0,
+                heard: l.heard.isNotEmpty,
+                source: l.source,
               ),
           ],
         ),

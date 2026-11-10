@@ -1660,6 +1660,7 @@ class PerformanceRepository {
             deferred: false,
             pcmFile: filename,
             heardFile: heardFile,
+            playsClean: heardFile != null && lane.source == LaneSource.clean,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
             volume: lane.volume,

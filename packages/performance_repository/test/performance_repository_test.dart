@@ -653,11 +653,40 @@ void main() {
         expect(wav.samples, heard);
         expect(lane0.toJson()['heardPcmRef'], lane0.heardFile);
 
+        expect(lane0.playsClean, isFalse);
+        expect(lane0.toJson().containsKey('source'), isFalse);
+
         // A take without one names none.
         final lane1 = tracks.firstWhere((t) => t.channel == 1).lanes.single;
         expect(lane1.heardFile, isNull);
         expect(lane1.toJson().containsKey('heardPcmRef'), isFalse);
         expect(File('$dir/loops/track1-lane0-heard.wav').existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'marks a lane with a heard image that plays clean (#1713)',
+      () async {
+        engine.seedLane(
+          0,
+          0,
+          Float32List.fromList([1, 1]),
+          heard: Float32List.fromList([.5, -.5, .5, -.5]),
+          source: LaneSource.clean,
+        );
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+
+        final armJson =
+            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+                as Map<String, dynamic>;
+        final lane = PerformanceArmSnapshot.fromJson(
+          armJson,
+        ).tracks.single.lanes.single;
+        expect(lane.heardFile, isNotNull);
+        expect(lane.playsClean, isTrue);
+        expect(lane.toJson()['source'], 'clean');
       },
     );
 
