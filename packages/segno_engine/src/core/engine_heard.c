@@ -508,9 +508,9 @@ static int le_heard_may_write(le_track* t) {
  * does. */
 static void le_heard_add_jobs(
     le_engine* e, le_fx_par* par, const float* in, int ch_in,
-    uint32_t excluded, const int* mon_has_fx, const int32_t* mon_fx_count) {
-  uint64_t ran = 0u;
-  for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
+    uint32_t excluded, const int* mon_has_fx, const int32_t* mon_fx_count,
+    uint64_t ran_prev) {
+  uint64_t ran = e->heard_jobs; /* the monitored ones (le_heard_block_begin) */
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     const uint64_t bit = UINT64_C(1) << c;
     if (!(e->heard_inputs & bit) || (ran & bit) || !mon_has_fx[c]) continue;
@@ -519,7 +519,7 @@ static void le_heard_add_jobs(
     if (c < LE_MAX_CHANNELS && (excluded & (1u << c))) continue;
     par->job_mon[par->jobs++] = c;
     ran |= bit;
-    if (!(e->heard_jobs_prev & bit)) {
+    if (!(ran_prev & bit)) {
       for (int32_t s = 0; s < mon_fx_count[c]; ++s) {
         le_fx_enable_force_bypass(&e->monitors[c].fx, s);
         le_fx_rack_reset(&e->monitors[c].fx, s);
@@ -533,10 +533,13 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
                          le_fx_par* par, const float* in, int ch_in,
                          uint32_t excluded, const int* mon_has_fx,
                          const int32_t* mon_fx_count) {
-  /* The chains the last block ran, if it was a heard block (le_heard_add_jobs
-   * notes them); after a plain one, none counts as running. */
-  e->heard_jobs_prev = e->heard_trk != 0u ? e->heard_jobs : 0u;
-  e->heard_jobs = 0u;
+  /* The chains that ran last block, and the ones queued so far for this one
+   * (the monitored ones): le_heard_add_jobs adds the rest, and a chain it
+   * adds that did not run last block comes back through its ramp. */
+  const uint64_t ran_prev = e->heard_jobs;
+  uint64_t ran = 0u;
+  for (int k = 0; k < par->jobs; ++k) ran |= UINT64_C(1) << par->job_mon[k];
+  e->heard_jobs = ran;
   e->heard_inputs = 0u;
   /* No lane anywhere holds an image, and none did last block: nothing to
    * enter, leave or log. */
@@ -595,7 +598,8 @@ int le_heard_block_begin(le_engine* e, int tc, const int32_t* lane_n,
     }
   }
   if (e->heard_trk == 0u) return 0;
-  le_heard_add_jobs(e, par, in, ch_in, excluded, mon_has_fx, mon_fx_count);
+  le_heard_add_jobs(e, par, in, ch_in, excluded, mon_has_fx, mon_fx_count,
+                    ran_prev);
   return 1;
 }
 
@@ -652,15 +656,19 @@ static void le_heard_apply(le_engine* e, int32_t ch, const le_heard_rec* r) {
 }
 
 void le_heard_op(le_engine* e, le_track* t, le_heard_rec op) {
+  if (atomic_load_explicit(&e->a_heard_lanes, memory_order_relaxed) == 0) {
+    return; /* no lane anywhere holds an image */
+  }
   const int32_t ch = (int32_t)(t - e->tracks);
-  /* In the frame loop only a track of the block's heard set logs: the
-   * post-pass replays no other. */
-  if (e->heard_i >= 0 && !(e->heard_trk & (1u << ch))) return;
   const int32_t n = le_lanes_active(t);
   int any = 0;
   for (int32_t l = 0; l < n && !any; ++l) any = le_heard_any(e, ch, l);
   if (!any) return;
-  if (e->heard_i < 0) {
+  /* Logged only inside the frame loop and for a track of the block's heard
+   * set, whose writes the post-pass replays; anywhere else, and for a track
+   * that gained an image after the block started (no writes of its own are
+   * logged), the images are current and take the operation at once. */
+  if (e->heard_i < 0 || !(e->heard_trk & (1u << ch))) {
     le_heard_apply(e, ch, &op);
     return;
   }
@@ -669,7 +677,7 @@ void le_heard_op(le_engine* e, le_track* t, le_heard_rec op) {
     lg->dropped++;
     return;
   }
-  op.i = (uint16_t)e->heard_i;
+  op.i = (uint32_t)e->heard_i;
   lg->rec[lg->n++] = op;
 }
 
@@ -691,8 +699,7 @@ void le_heard_seam_fold(le_engine* e, le_track* t, int32_t len, int32_t F,
 static void le_heard_input(const le_engine* e, const le_fx_par* par,
                            uint32_t b0, uint32_t i, const float* in, int ch_in,
                            const float* in_trim, uint32_t excluded,
-                           const int* mon_has_fx, int32_t c, float* wl,
-                           float* wr) {
+                           int32_t c, float* wl, float* wr) {
   *wl = 0.0f;
   *wr = 0.0f;
   if (c < 0 || c >= LE_MAX_MONITORED_INPUTS) return;
@@ -705,7 +712,6 @@ static void le_heard_input(const le_engine* e, const le_fx_par* par,
   const float trim = instrument ? 1.0f : in_trim[c];
   /* The chain's output where it ran as a job this block; its input where
    * it has no chain. */
-  (void)mon_has_fx;
   if ((e->heard_jobs >> c) & 1u) {
     *wl = par->mon_l[c][i] * trim;
     *wr = par->mon_r[c][i] * trim;
@@ -720,7 +726,7 @@ static void le_heard_input(const le_engine* e, const le_fx_par* par,
 
 void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
                    const float* in, int ch_in, const float* in_trim,
-                   uint32_t excluded, const int* mon_has_fx) {
+                   uint32_t excluded) {
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     if (!(e->heard_trk & (1u << t))) continue;
     le_heard_log* lg = &e->heard_log[t];
@@ -745,7 +751,7 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
         float wl;
         float wr;
         le_heard_input(e, par, b0, (uint32_t)r->i - b0, in, ch_in, in_trim,
-                       excluded, mon_has_fx, input[l], &wl, &wr);
+                       excluded, input[l], &wl, &wr);
         if (r->a >= 0 && r->a < cap) {
           hl[r->a] = wl;
           hr[r->a] = wr;
@@ -779,6 +785,9 @@ void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
 
 void le_heard_run_copy(le_engine* e, le_track* t, int32_t live, int32_t shadow,
                        int32_t w0, int32_t run, int shadow_to_live) {
+  if (atomic_load_explicit(&e->a_heard_lanes, memory_order_relaxed) == 0) {
+    return;
+  }
   const int32_t ch = (int32_t)(t - e->tracks);
   if (live < 0 || live >= LE_POOL_SLOTS || shadow < 0 ||
       shadow >= LE_POOL_SLOTS) {
@@ -803,6 +812,9 @@ void le_heard_run_copy(le_engine* e, le_track* t, int32_t live, int32_t shadow,
 
 void le_heard_truncate(le_engine* e, le_track* t, int64_t from, int64_t to,
                        int32_t offset, int32_t known_len) {
+  if (atomic_load_explicit(&e->a_heard_lanes, memory_order_relaxed) == 0) {
+    return;
+  }
   const int32_t ch = (int32_t)(t - e->tracks);
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {

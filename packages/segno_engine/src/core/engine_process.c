@@ -2252,6 +2252,8 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
      * never before: control may read the layer once it is. */
     if (le_heard_track_has(e, (int32_t)(t - e->tracks), t->dub_retire_slot)) {
       e->heard_retire_frame[t - e->tracks] = frame;
+      e->heard_retire_slot[t - e->tracks] = t->dub_retire_slot;
+      e->heard_retire_gen[t - e->tracks] = t->dub_gen_audio;
       e->heard_retire_mask |= 1u << (t - e->tracks);
     } else
 #endif
@@ -8724,7 +8726,7 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     float loopsample, const le_wet_entry* wce, int chain_live,
     int track_printed, int32_t fx_n, int32_t fx_pre,
     const int32_t* fx_type, const float (*fx_params)[LE_FX_PARAMS],
-    int32_t* fx_enabled, int sr, int fx_cap) {
+    int32_t* fx_enabled, int sr, int fx_cap, uint32_t f) {
   le_heard_pair out = {0.0f, 0.0f, 0};
   le_heard* h = &e->heard[t][l];
   le_lane* ln = &tr->lanes[l];
@@ -8811,7 +8813,14 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
     le_chain_run_step(&ln->run, tr, sounding, rp, 0);
     return out;
   }
-  /* A crossfade: the clean side, its engaged print or its live chain. */
+  /* A crossfade: the clean side, its engaged print or its live chain. The
+   * lane twin of the mixer's lap-top grid check (#1620) first: a print whose
+   * lap no longer matches is not read. */
+  if (rp == 0 && wce != NULL &&
+      !le_wet_entry_lap_matches(wce, e->fx_clock_base + f)) {
+    wce = NULL;
+    if (load_i32(&ln->a_cache_active)) store_i32(&ln->a_cache_active, 0);
+  }
   const int printed = wce != NULL && load_i32(&ln->a_cache_active);
   le_chain_run_step(&ln->run, tr, sounding, rp, !printed && !track_printed);
   float cl = 0.0f;
@@ -8841,6 +8850,35 @@ static LE_BRIDGE_NOINLINE le_heard_pair le_heard_lane_wet(
   return out;
 }
 #endif /* LE_MIX_HEARD_TU */
+
+/* The mixer's type, and its copy with the heard-image code compiled in
+ * (#1713, engine_mix_heard.c), which le_engine_process takes for a block
+ * where a lane holds a heard image. Declared in both units, so the heard
+ * copy's definition below is checked against it. */
+typedef void le_mix_fn(
+    le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
+    int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
+    uint32_t out_enabled, float overdub_fb, int free_or_song,
+    float od_step, int32_t od_fade_frames, int32_t pos, const int32_t* lane_n,
+    const int* lane_fx_any,
+    int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
+    int32_t fx_pre_count[][LE_MAX_LANES],
+    int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
+    float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
+    int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], const int* trk_has_fx,
+    const int32_t* trk_fx_count, int32_t trk_fx_type[][LE_FX_MAX],
+    float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
+    int32_t trk_fx_enabled[][LE_FX_MAX], const int32_t* trk_fx_pre_count,
+    const le_wet_entry* track_cache_ent[], int at_has_fx, int32_t at_fx_count,
+    const int32_t* at_fx_type,
+    const float at_fx_params[LE_FX_MAX][LE_FX_PARAMS],
+    const int32_t* at_fx_enabled,
+    const le_wet_entry* cache_ent[][LE_MAX_LANES],
+    float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
+    int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
+    float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
+    int any_solo, uint64_t perf_frame_base);
+le_mix_fn mix_tracks_frame_heard;
 
 /* Per-frame capture + additive playback mix: snapshots each track's per-lane
  * playback state, records / overdubs the live input into the lane buffers at the
@@ -9780,7 +9818,7 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
             has_fx[t][l] && !track_printed, track_printed, fx_count[t][l],
             fx_pre_count[t][l], fx_type[t][l],
             (const float (*)[LE_FX_PARAMS])fx_params[t][l], fx_enabled[t][l],
-            sr, fx_cap);
+            sr, fx_cap, f);
         if (hp.done) goto lane_heard;
       }
 #endif
@@ -10055,35 +10093,6 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
   }
 }
 
-#ifndef LE_MIX_HEARD_TU
-/* The mixer's type, and its copy with the heard-image code compiled in
- * (#1713, engine_mix_heard.c), which le_engine_process takes for a block
- * where a lane holds a heard image. */
-typedef void le_mix_fn(
-    le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
-    int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
-    uint32_t out_enabled, float overdub_fb, int free_or_song,
-    float od_step, int32_t od_fade_frames, int32_t pos, const int32_t* lane_n,
-    const int* lane_fx_any,
-    int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
-    int32_t fx_pre_count[][LE_MAX_LANES],
-    int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
-    float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
-    int32_t fx_enabled[][LE_MAX_LANES][LE_FX_MAX], const int* trk_has_fx,
-    const int32_t* trk_fx_count, int32_t trk_fx_type[][LE_FX_MAX],
-    float trk_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
-    int32_t trk_fx_enabled[][LE_FX_MAX], const int32_t* trk_fx_pre_count,
-    const le_wet_entry* track_cache_ent[], int at_has_fx, int32_t at_fx_count,
-    const int32_t* at_fx_type,
-    const float at_fx_params[LE_FX_MAX][LE_FX_PARAMS],
-    const int32_t* at_fx_enabled,
-    const le_wet_entry* cache_ent[][LE_MAX_LANES],
-    float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
-    int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
-    float* trk_lpeak, float* trk_rpeak, const float* in_trim, const int* solo,
-    int any_solo, uint64_t perf_frame_base);
-le_mix_fn mix_tracks_frame_heard;
-#endif
 
 
 /* Test seam: drive one output frame through master_bus_frame (master gain ->
@@ -10413,15 +10422,27 @@ static void le_midi_ports_drain(le_engine* e) {
  * boundary: the next block's start retries. */
 static LE_BRIDGE_NOINLINE void le_heard_block_end(
     le_engine* e, const le_fx_par* par, uint32_t b0, const float* in,
-    int ch_in, const float* in_trim, uint32_t excluded, const int* mon_has_fx,
-    int tc) {
+    int ch_in, const float* in_trim, uint32_t excluded, int tc) {
   e->heard_i = -1;
-  le_heard_post(e, par, b0, in, ch_in, in_trim, excluded, mon_has_fx);
+  le_heard_post(e, par, b0, in, ch_in, in_trim, excluded);
   const uint32_t retired = e->heard_retire_mask;
   e->heard_retire_mask = 0u;
   for (int t = 0; retired != 0u && t < tc; ++t) {
-    if (retired & (1u << t)) {
-      le_dub_try_retire(e, &e->tracks[t], e->heard_retire_frame[t]);
+    if (!(retired & (1u << t))) continue;
+    le_track* tr = &e->tracks[t];
+    if (tr->dub_retire_slot == e->heard_retire_slot[t]) {
+      le_dub_try_retire(e, tr, e->heard_retire_frame[t]);
+      continue;
+    }
+    /* Cleared from the track since (le_dub_drop_armed): announced as the
+     * plain path would already have, at the boundary. */
+    const le_command evt = {.code = LE_EVT_LAYER_RETIRED,
+                            .evt = {t, e->heard_retire_slot[t],
+                                    e->heard_retire_gen[t]}};
+    if (le_ring_push(&e->evt_ring, evt)) {
+      le_plog_push(e, e->heard_retire_frame[t],
+                   (le_command){.code = LE_PLOG_LAYER_RETIRED,
+                                .evt = evt.evt});
     }
   }
 }
@@ -10950,8 +10971,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
 
     /* The heard images (#1713), now that the chains' output exists. */
     if (heard_block) {
-      le_heard_block_end(e, par, b0, in, ch_in, in_trim, excluded, mon_has_fx,
-                         tc);
+      le_heard_block_end(e, par, b0, in, ch_in, in_trim, excluded, tc);
     }
 
     /* The output buses' chains run here, at the frame each one processes:
