@@ -2328,6 +2328,9 @@ typedef struct le_heard {
   int32_t src_blk;
   int32_t img_blk;
   int32_t src_logged;
+  /* Control: the ordinal le_engine_import_layer staged last on this lane
+   * (-1: none), the only one le_engine_import_layer_heard accepts. */
+  int32_t import_ordinal;
 } le_heard;
 
 /* One record of a track's heard log, in the order the first frame loop made
@@ -2350,7 +2353,7 @@ enum {
 };
 
 typedef struct le_heard_rec {
-  uint16_t i;   /* the callback frame (le_engine.heard_i) */
+  uint32_t i;   /* the callback frame (le_engine.heard_i) */
   uint8_t kind; /* LE_HEARD_REC_* */
   uint8_t pad;
   int16_t slot, slot2;
@@ -3422,6 +3425,11 @@ struct le_engine {
    * frame the heard mixer last mixed in a sub-block's first frame loop
    * (mix_tracks_frame_heard sets it), -1 outside that loop, which is how a
    * content operation knows to log itself rather than run (le_heard_op).
+   * Steps a frame runs before its mixer (the input, a sound-activated
+   * start) see the previous frame's value, or -1 on a sub-block's first
+   * frame: only content operations come from there, and their order in the
+   * log, not their frame, is what the post-pass replays; a write record
+   * must come from the mixer.
    * heard_trk: tracks with a lane that holds an image, by block (callback).
    * heard_inputs: the inputs a capturing heard lane records, by block, whose
    * chains run whether or not they are monitored. */
@@ -3432,15 +3440,20 @@ struct le_engine {
   uint32_t heard_lanes[LE_MAX_TRACKS];
   uint64_t heard_inputs;
   /* Callback: the frame a pass whose layer holds heard images retired at,
-   * its retire announced after the block's post-pass (le_dub_boundary). */
+   * its retire announced after the block's post-pass (le_dub_boundary), and
+   * the slot and generation it retired as, which a later step of the same
+   * block may clear from the track (a deferred fresh start). */
   uint64_t heard_retire_frame[LE_MAX_TRACKS];
+  int32_t heard_retire_slot[LE_MAX_TRACKS];
+  uint32_t heard_retire_gen[LE_MAX_TRACKS];
   uint32_t heard_retire_mask;
   /* Control: le_record_impl's verdict that the fresh take it prepares zeroes
    * its live slots, for le_post_record_image. */
   int heard_zero;
-  /* Callback: inputs whose chain ran as a job this block and the last one,
-   * and each lane's input as the block started (le_heard_block_begin). */
-  uint64_t heard_jobs, heard_jobs_prev;
+  /* Callback: inputs whose chain runs as a job this block, kept every
+   * block, heard or not, so the next one knows which ran (le_heard_block_begin),
+   * and each lane's input as the block started. */
+  uint64_t heard_jobs;
   int32_t heard_input[LE_MAX_TRACKS][LE_MAX_LANES];
   /* Dropped records over the engine's life (le_heard_log), for tests. */
   _Atomic uint32_t a_heard_dropped;

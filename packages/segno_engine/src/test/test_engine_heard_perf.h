@@ -146,7 +146,8 @@ static void test_heard_perf_wet_stem_plays_the_images(void) {
 
 /* A logged source switch crossfades the wet stem over 10 ms, as the rig
  * does: from the image to the clean take through its (empty) chain, and
- * back; an image its renders cannot play yet snaps to the clean take. */
+ * back; an image its renders cannot play yet fades to the clean take the
+ * same way. */
 static void test_heard_perf_source_switch(void) {
   printf("test_heard_perf_source_switch\n");
   enum {
@@ -178,7 +179,8 @@ static void test_heard_perf_source_switch(void) {
   for (int f = 0; f < CAP; ++f) {
     if (f < TO_CLEAN || (f >= TO_HEARD + XF && f < UNAVAILABLE)) {
       CHECK(fabsf(wet[f] - 0.2f) < 1e-5f);
-    } else if ((f >= TO_CLEAN + XF && f < TO_HEARD) || f >= UNAVAILABLE) {
+    } else if ((f >= TO_CLEAN + XF && f < TO_HEARD) ||
+               f >= UNAVAILABLE + XF) {
       CHECK(fabsf(wet[f] - 0.5f) < 1e-5f);
     } else {
       CHECK(wet[f] > 0.2f - 1e-5f && wet[f] < 0.5f + 1e-5f);
@@ -264,8 +266,68 @@ static void test_heard_perf_capture_stages_images(void) {
   le_engine_destroy(e);
 }
 
+/* A take finalized during the capture plays its image at level from its
+ * RECORD_END, as the callback's lane does (it crossfaded in while it
+ * recorded), with no fade from the clean take; and a heard WAV whose length
+ * differs from the clean take's fails the stem. */
+static void test_heard_perf_fresh_take(void) {
+  printf("test_heard_perf_fresh_take\n");
+  enum { CAP = 64, END = 8 };
+  for (int bad = 0; bad < 2; ++bad) {
+    const char* dir = heard_perf_dir(bad ? "heard-fresh-bad" : "heard-fresh");
+    char loops[700];
+    snprintf(loops, sizeof(loops), "%s/loops", dir);
+    test_render_mkdir(loops);
+    float clean[HP_LOOP];
+    float pairs[2 * (HP_LOOP + 1)];
+    for (int i = 0; i < HP_LOOP + 1; ++i) {
+      if (i < HP_LOOP) clean[i] = 0.5f;
+      pairs[2 * i] = 0.3f;
+      pairs[2 * i + 1] = 0.1f;
+    }
+    char path[760];
+    snprintf(path, sizeof(path), "%s/clean.wav", loops);
+    test_write_wav_mono(path, clean, HP_LOOP, HP_SR);
+    snprintf(path, sizeof(path), "%s/heard.wav", loops);
+    heard_write_wav_stereo(path, pairs, HP_LOOP + bad, HP_SR);
+    char manifest[2048];
+    snprintf(manifest, sizeof(manifest),
+             "{\"sample_rate\": %d, \"capture_frames\": %d, "
+             "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+             "\"tracks\": []}, "
+             "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+             "[{\"lane\": 0, \"deferred\": false, \"takeId\": 1, "
+             "\"pcmRef\": \"loops/clean.wav\", "
+             "\"heardPcmRef\": \"loops/heard.wav\"}]}]}, \"layers\": []}",
+             HP_SR, CAP);
+    test_write_manifest(dir, manifest);
+    snprintf(path, sizeof(path), "%s/events.log", dir);
+    FILE* lf = fopen(path, "wb");
+    CHECK(lf != NULL);
+    if (lf == NULL) return;
+    test_write_log_header(lf, HP_SR, LE_TEST_EVENTS_VERSION);
+    test_write_log_entry(lf, END,
+                         (le_command){.code = LE_PLOG_RECORD_END,
+                                      .take = {.channel = 0, .take_id = 1}});
+    fclose(lf);
+    le_engine* e = le_engine_create();
+    CHECK(le_perf_render_begin(e, dir) == LE_OK);
+    test_wait_for_render(e, 2000);
+    int32_t channel = -1, ok = 0;
+    CHECK(le_perf_render_track_status(e, 0, &channel, &ok) == LE_OK);
+    CHECK(ok == !bad);
+    if (!bad) {
+      float wet[CAP];
+      CHECK(test_read_wet_stem(dir, 0, wet, CAP) == CAP);
+      for (int f = END; f < CAP; ++f) CHECK(fabsf(wet[f] - 0.2f) < 1e-6f);
+    }
+    le_engine_destroy(e);
+  }
+}
+
 static void run_heard_perf_tests(void) {
   test_heard_perf_wet_stem_plays_the_images();
   test_heard_perf_source_switch();
+  test_heard_perf_fresh_take();
   test_heard_perf_capture_stages_images();
 }

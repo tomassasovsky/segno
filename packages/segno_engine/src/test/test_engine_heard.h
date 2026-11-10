@@ -355,6 +355,32 @@ static void test_heard_records_an_unmonitored_chain(void) {
   le_engine_destroy(e);
 }
 
+/* A callback longer than a 16-bit frame count: the post-pass reads each
+ * write's frame right (the records keep the callback frame), and with no
+ * chain the image is the clean take. */
+static void test_heard_long_callback(void) {
+  printf("test_heard_long_callback\n");
+  enum { N = 70000 };
+  le_engine* e = heard_engine(48000 * 4);
+  le_record_image image = heard_image(14, 1);
+  CHECK(le_engine_record_with_image(e, 0, &image) == LE_OK);
+  static float in[N];
+  static float out[2 * N];
+  for (int32_t i = 0; i < N; ++i) in[i] = heard_signal(i);
+  le_engine_process(e, out, in, N);
+  le_lane* ln = &e->tracks[0].lanes[0];
+  const int32_t live = load_i32(&ln->a_live);
+  float* pl;
+  float* pr;
+  CHECK(le_heard_planes(e, 0, 0, live, &pl, &pr));
+  int same = 1;
+  for (int32_t i = 0; i < N - 1024 && pl != NULL; ++i) {
+    if (pl[i] != ln->pool[live][i] || pr[i] != ln->pool[live][i]) same = 0;
+  }
+  CHECK(same);
+  le_engine_destroy(e);
+}
+
 /* The image does not depend on the callback's size: blocks of 1, 37, 64 and
  * 300 frames (past LE_FX_BLOCK, so the frame loop splits) capture the same
  * image bit for bit. */
@@ -630,6 +656,7 @@ static void run_heard_tests(void) {
   test_heard_source_switch();
   test_heard_records_an_unmonitored_chain();
   test_heard_capture_is_block_invariant();
+  test_heard_long_callback();
   test_heard_lockstep_through_history();
   test_heard_lockstep_through_seams();
   test_heard_attach_gives_a_dry_take_an_image();

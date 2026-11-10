@@ -3789,12 +3789,6 @@ static int32_t le_length_post(le_engine* e, int32_t ch, int32_t slot,
   return LE_OK;
 }
 
-/* Writes the edited image of [t]'s live slot into `slot` on every active lane
- * (its buffers already hold `len` frames). Double repeats the image; a half
- * copies its region in place and folds its new wrap with the material it
- * omits — the continuation of the last kept frame, which is the next region
- * for First half and the already folded head for Last half — under the seam's
- * threshold (len >= 2F). */
 /* One buffer's share of le_length_build. */
 static void le_length_build_buffer(float* dst, const float* src, int32_t edit,
                                    int32_t old_len, int32_t len, int32_t F) {
@@ -3812,6 +3806,12 @@ static void le_length_build_buffer(float* dst, const float* src, int32_t edit,
   }
 }
 
+/* Writes the edited image of [t]'s live slot into `slot` on every active lane
+ * (its buffers already hold `len` frames), and of its heard image (#1713).
+ * Double repeats the image; a half copies its region in place and folds its
+ * new wrap with the material it omits — the continuation of the last kept
+ * frame, which is the next region for First half and the already folded head
+ * for Last half — under the seam's threshold (len >= 2F). */
 static void le_length_build(le_engine* e, le_track* t, int32_t slot,
                             int32_t edit, int32_t old_len, int32_t len) {
   const int32_t live = load_i32(&t->lanes[0].a_live);

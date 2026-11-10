@@ -621,14 +621,15 @@ static void le_render_after_freeze(le_engine* e, le_render_job* j) {
         le_render_fail(j, LE_ERR_CAPACITY);
         return;
       }
-      if (!s->lane[l].heard) continue;
-      /* The frozen slot must hold the image the lane played at begin, and
-       * the lane still play it (a source switch since begin re-renders). */
-      if (!le_heard_has(e, s->channel, l, s->slot) ||
-          !le_heard_lane_plays(e, s->channel, l)) {
+      /* The lane must play what it played at begin, its image or its
+       * clean take (a source switch or an attach since begin re-renders),
+       * and the frozen slot hold that image. */
+      if (le_heard_lane_plays(e, s->channel, l) != s->lane[l].heard ||
+          (s->lane[l].heard && !le_heard_has(e, s->channel, l, s->slot))) {
         le_render_fail(j, LE_ERR_TRACKS_CHANGED);
         return;
       }
+      if (!s->lane[l].heard) continue;
       s->lane[l].pre = (float*)calloc((size_t)s->len * 2, sizeof(float));
       if (s->lane[l].pre == NULL) {
         le_render_fail(j, LE_ERR_CAPACITY);
@@ -700,7 +701,7 @@ static void le_render_stage(le_engine* e, le_render_job* j) {
       le_render_lane* rl = &s->lane[j->stage_lane];
       float* pl;
       float* pr;
-      if (rl->heard && !le_heard_lane_plays(e, s->channel, j->stage_lane)) {
+      if (le_heard_lane_plays(e, s->channel, j->stage_lane) != rl->heard) {
         le_render_fail(j, LE_ERR_TRACKS_CHANGED); /* its source switched */
         return;
       }

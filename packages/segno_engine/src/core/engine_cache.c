@@ -520,7 +520,7 @@ static void le_cache_free_all_entries(le_engine* e, struct le_fx_cache* c) {
  * evicting it would drop the track to its dry take, a silent pitch change,
  * now (PLAYING) or at its next Play (STOPPED, review L2). A job that needs
  * its room is refused instead. */
-static int le_ca_evictable(le_engine* e, int32_t kind, int t, int l,
+static int le_ca_evictable(le_engine* e, int32_t kind, int t,
                            const le_wet_entry* ent) {
   if (kind != LE_CACHE_KIND_SOURCE) return 1;
   le_track* tr = &e->tracks[t];
@@ -536,7 +536,6 @@ static int le_ca_evictable(le_engine* e, int32_t kind, int t, int l,
          !le_src_entry_fits(
              ent, atomic_load_explicit(&tr->a_src_key, memory_order_acquire),
              len, st, want_out, 0);
-  (void)l;
 }
 
 /* LRU eviction until [needed] more bytes fit under [cap]: Pre prints first
@@ -561,7 +560,7 @@ static int le_cache_ensure_budget(le_engine* e, struct le_fx_cache* c,
         const le_lane_cache* book = le_ca_book(c, kind, t, l);
         for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
           if (book->entries[i] != NULL &&
-              le_ca_evictable(e, kind, t, l, book->entries[i])) {
+              le_ca_evictable(e, kind, t, book->entries[i])) {
             evictable += le_ca_entry_bytes(book->entries[i]);
           }
         }
@@ -584,7 +583,7 @@ static int le_cache_ensure_budget(le_engine* e, struct le_fx_cache* c,
           const le_lane_cache* book = le_ca_book(c, kind, t, l);
           for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
             le_wet_entry* ent = book->entries[i];
-            if (ent == NULL || !le_ca_evictable(e, kind, t, l, ent)) continue;
+            if (ent == NULL || !le_ca_evictable(e, kind, t, ent)) continue;
             if (bk < 0 || ent->last_used < best) {
               best = ent->last_used;
               bk = kind;
@@ -785,7 +784,21 @@ static void le_cache_collect(le_engine* e, struct le_fx_cache* c,
                                   .semitones = job->semitones,
                                   .out_len = job->out_len,
                                   .planes = heard ? 3 : 0};
-        if (publish && job->src[l] != NULL) {
+        if (!publish || job->src[l] == NULL) continue;
+        /* A lane that already holds this very render (same key, same
+         * planes: a job re-rendered the track for another lane's image)
+         * keeps it, so its source stays the same pointer and starts no turn
+         * window (#1713). */
+        le_lane_cache* lb = le_ca_book(c, LE_CACHE_KIND_SOURCE, job->channel, l);
+        int have = 0;
+        for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE && !have; ++i) {
+          const le_wet_entry* ent = lb->entries[i];
+          have = ent != NULL && ent->planes == key.planes &&
+                 le_wet_entry_key_matches_kind(
+                     ent, key.audio_rev, 0, 0, key.len, key.kind,
+                     key.semitones, key.out_len);
+        }
+        if (!have) {
           le_cache_install_entry(e, c, LE_CACHE_KIND_SOURCE, job->channel, l,
                                  &key, &job->src[l]);
         }
