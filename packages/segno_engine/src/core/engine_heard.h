@@ -177,7 +177,7 @@ static inline void le_heard_log_write(le_engine* e, int t, int32_t live,
     return;
   }
   le_heard_rec* r = &lg->rec[lg->n++];
-  r->i = (uint16_t)e->heard_i;
+  r->i = (uint32_t)e->heard_i;
   r->kind = LE_HEARD_REC_WRITE;
   r->pad = 0;
   r->slot = (int16_t)live;
@@ -210,7 +210,7 @@ void le_heard_seam_fold(le_engine* e, le_track* t, int32_t len, int32_t F,
  * callback's buffers. Then each log is emptied. */
 void le_heard_post(le_engine* e, const le_fx_par* par, uint32_t b0,
                    const float* in, int ch_in, const float* in_trim,
-                   uint32_t excluded, const int* mon_has_fx);
+                   uint32_t excluded);
 
 /* The block-start half of the punch-out drain (le_dub_run_copy) on the
  * images: copies [run] frames at [w0] between live and the shadow on every

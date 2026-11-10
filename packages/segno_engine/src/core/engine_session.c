@@ -406,7 +406,8 @@ int32_t le_engine_import_layer_heard(le_engine* engine, int32_t channel,
   le_lane* ln = &t->lanes[lane];
   /* The clean image staged last on this lane is this one, at this length:
    * le_engine_import_layer marks it with a_len and a_recoverable. */
-  if (ln->pool[ordinal] == NULL || ln->pool_cap[ordinal] < frames ||
+  if (engine->heard[channel][lane].import_ordinal != ordinal ||
+      ln->pool[ordinal] == NULL || ln->pool_cap[ordinal] < frames ||
       load_i32(&ln->a_len) != frames || !load_i32(&ln->a_recoverable)) {
     return LE_ERR_INVALID;
   }
@@ -493,6 +494,7 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
    * not the loop length: le_engine_finalize_history publishes the live one. */
   store_i32(&ln->a_len, frames);
   store_i32(&ln->a_recoverable, 1); /* #595: see le_engine_import_track_lane */
+  engine->heard[channel][lane].import_ordinal = ordinal; /* #1713 */
   return LE_OK;
 }
 
