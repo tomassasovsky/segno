@@ -311,7 +311,7 @@ void main() {
         expect(engine.laneSources[(0, 0)], LaneSource.clean);
       });
 
-      test("a heard take whose Post entries do not fit has its own chain "
+      test('a heard take whose Post entries do not fit has its own chain '
           'switched off, said by the standing notice', () {
         final post = [
           for (final fx in _rack())
