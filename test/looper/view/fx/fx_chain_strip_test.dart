@@ -61,6 +61,19 @@ void main() {
       expect(rackCard.width, kFxCardWidth);
       expect(single.height, rackCard.height);
       expect(single.top, rackCard.top);
+      // The single card's header and assignment lines sit level with the
+      // rack card's placement and status lines.
+      Rect text(String card, String label) => tester.getRect(
+        find.descendant(
+          of: find.byKey(Key('fx_card_$card')),
+          matching: find.text(label),
+        ),
+      );
+      expect(text('s1', 'Pre').center.dy, text('R', 'Post').center.dy);
+      expect(
+        text('s1', 'Unassigned').center.dy,
+        text('R', '2 effects').center.dy,
+      );
     });
 
     testWidgets('after the Pre/Post break the Post run keeps the grid: two '

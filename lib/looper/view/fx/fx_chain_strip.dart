@@ -17,8 +17,10 @@ const double kFxCardHeight = 360;
 const double kFxCardGap = 24;
 
 /// A single effect's card: half a rack card's column, so two singles and the
-/// cable between them span one rack card and every card stays on the
-/// content grid the rack cards set (#1754).
+/// cable between them span one rack card, and within a run (Pre or Post)
+/// every card starts on the column grid the rack cards set (#1754). The
+/// Pre/Post break ([kFxStageBreak]) is wider than a gap, so the Post run's
+/// grid is shifted by it, as it was for rack cards.
 const double kFxSingleCardWidth = (kFxCardWidth - kFxCardGap) / 2;
 
 /// The break the pen draws between the Pre run and the Post run — wider than
@@ -344,9 +346,6 @@ class _SingleCardBody extends StatelessWidget {
   final bool lit;
   final Widget power;
 
-  /// The name's two lines at its size.
-  static const double _nameHeight = 2 * 24 * 1.1;
-
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -390,7 +389,8 @@ class _SingleCardBody extends StatelessWidget {
           ),
           SizedBox(height: spacing.md),
           SizedBox(
-            height: _nameHeight,
+            // Two lines of the name at its size, as the text scale draws them.
+            height: 2 * MediaQuery.textScalerOf(context).scale(24) * 1.1,
             child: Align(
               alignment: Alignment.bottomLeft,
               child: AppText(
