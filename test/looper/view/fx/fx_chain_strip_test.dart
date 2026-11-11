@@ -60,8 +60,51 @@ void main() {
       expect(single.width, kFxSingleCardWidth);
       expect(rackCard.width, kFxCardWidth);
       expect(single.height, rackCard.height);
-      // Two singles and the cable between them span one rack card.
-      expect(2 * kFxSingleCardWidth + kFxCardGap, kFxCardWidth);
+      expect(single.top, rackCard.top);
+    });
+
+    testWidgets('after the Pre/Post break the Post run keeps the grid: two '
+        'singles span a rack card', (tester) async {
+      await pump(tester, [
+        BuiltInEffect(
+          type: TrackEffectType.filter,
+          slotId: 'p',
+          placement: FxPlacement.pre,
+        ),
+        BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+        BuiltInEffect(type: TrackEffectType.echo, slotId: 'b'),
+        BuiltInEffect(type: TrackEffectType.reverb, slotId: 'c', rack: rack),
+      ]);
+      final p = tester.getRect(find.byKey(const Key('fx_card_p')));
+      final a = tester.getRect(find.byKey(const Key('fx_card_a')));
+      final b = tester.getRect(find.byKey(const Key('fx_card_b')));
+      final r = tester.getRect(find.byKey(const Key('fx_card_R')));
+      expect(a.left - p.right, kFxStageBreak);
+      expect(b.right - a.left, kFxCardWidth);
+      expect(r.left - b.right, kFxCardGap);
+    });
+
+    testWidgets('a long name does not shrink the pedal: pedals in one row '
+        'come out the same size', (tester) async {
+      await pump(tester, [
+        BuiltInEffect(type: TrackEffectType.echo, slotId: 'short', module: 'X'),
+        BuiltInEffect(
+          type: TrackEffectType.echo,
+          slotId: 'long',
+          module: 'A pedal with a name long enough to wrap',
+        ),
+      ]);
+      // The art's slot: the card's second Expanded, after the header's.
+      Rect art(String id) => tester.getRect(
+        find
+            .descendant(
+              of: find.byKey(Key('fx_card_$id')),
+              matching: find.byType(Expanded),
+            )
+            .at(1),
+      );
+      expect(art('long').size, art('short').size);
+      expect(art('long').top, art('short').top);
     });
 
     testWidgets('consecutive singles sit a gap apart, on the rack column '

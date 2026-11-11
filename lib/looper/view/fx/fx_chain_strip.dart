@@ -30,10 +30,9 @@ const double kFxStageBreak = 72;
 const double kFxCardArtHeight = 138;
 
 /// One destination's chain, drawn as the pen's horizontal strip: a card per
-/// RACK and a narrower card per standalone single effect, sized to its pedal
-/// (#1754), in processing order, plain lines
-/// between consecutive cards, and a break where the Pre run hands over to the
-/// Post run.
+/// RACK and a half-width card per standalone single effect (#1754), in
+/// processing order, plain lines between consecutive cards, and a break where
+/// the Pre run hands over to the Post run.
 ///
 /// A card is a group, not an entry. The accepted chain is built out of racks —
 /// named groups of pedals the player adds and moves as one thing — so a rack of
@@ -111,26 +110,15 @@ class FxChainStrip extends StatelessWidget {
                 index: i,
                 stageBreak: showPlacement && i == preGroups && preGroups > 0,
               ),
-            if (groups[i].isRack)
-              _FxChainCard(
-                key: Key('fx_card_${fxGroupId(groups[i])}'),
-                group: groups[i],
-                showPlacement: showPlacement,
-                dimmed: !chainEnabled,
-                onTogglePower: ({required enabled}) =>
-                    onTogglePower(i, enabled: enabled),
-                onOpen: () => onOpen(i),
-              )
-            else
-              _FxSingleCard(
-                key: Key('fx_card_${fxGroupId(groups[i])}'),
-                group: groups[i],
-                showPlacement: showPlacement,
-                dimmed: !chainEnabled,
-                onTogglePower: ({required enabled}) =>
-                    onTogglePower(i, enabled: enabled),
-                onOpen: () => onOpen(i),
-              ),
+            _FxChainCard(
+              key: Key('fx_card_${fxGroupId(groups[i])}'),
+              group: groups[i],
+              showPlacement: showPlacement,
+              dimmed: !chainEnabled,
+              onTogglePower: ({required enabled}) =>
+                  onTogglePower(i, enabled: enabled),
+              onOpen: () => onOpen(i),
+            ),
           ],
         ],
       ),
@@ -164,9 +152,12 @@ class _ChainGap extends StatelessWidget {
   );
 }
 
-/// One rack in the strip: its placement tag, its artwork frame, its name, and
-/// the status line carrying its pedal count and its power. A single effect
-/// has its own card ([_FxSingleCard]).
+/// One group in the strip: a rack's card ([_RackCardBody]) or a single
+/// effect's narrower card ([_SingleCardBody], #1754) in the same frame, with
+/// the same states: an engaged card takes the accent surface and border, a
+/// bypassed one the plain card and a muted edge, and a switched-off chain
+/// dims it. Bypassed is drawn, not hidden — a chain reads as a chain whether
+/// or not every link is passing signal.
 class _FxChainCard extends StatelessWidget {
   const _FxChainCard({
     required this.group,
@@ -186,13 +177,13 @@ class _FxChainCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final l10n = context.l10n;
-    final name = fxGroupName(l10n, group);
-    // The pen's two card states: an engaged card takes the accent surface and
-    // border, a bypassed one the plain card and a muted edge. Bypassed is
-    // drawn, not hidden — a chain reads as a chain whether or not every link
-    // is passing signal.
     final lit = group.audible && !dimmed;
+    final power = _PowerButton(
+      key: Key('fx_power_${fxGroupId(group)}'),
+      on: group.isOn,
+      name: fxGroupName(context.l10n, group),
+      onTap: () => onTogglePower(enabled: !group.isOn),
+    );
     return Opacity(
       opacity: dimmed ? surface.disabledOpacity : 1,
       child: Material(
@@ -207,76 +198,21 @@ class _FxChainCard extends StatelessWidget {
         child: InkWell(
           onTap: onOpen,
           child: SizedBox(
-            width: kFxCardWidth,
+            width: group.isRack ? kFxCardWidth : kFxSingleCardWidth,
             height: kFxCardHeight,
-            child: Padding(
-              padding: const EdgeInsets.all(17),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: 26,
-                    child: showPlacement
-                        ? Align(
-                            alignment: Alignment.centerLeft,
-                            child: AppText(
-                              group.placement == FxPlacement.pre
-                                  ? l10n.fxPlacementPre
-                                  : l10n.fxPlacementPost,
-                              style: TextStyle(
-                                color: surface.textSecondary,
-                                fontSize: 20,
-                                height: 1,
-                              ),
-                            ),
-                          )
-                        : null,
+            child: group.isRack
+                ? _RackCardBody(
+                    group: group,
+                    showPlacement: showPlacement,
+                    lit: lit,
+                    power: power,
+                  )
+                : _SingleCardBody(
+                    group: group,
+                    showPlacement: showPlacement,
+                    lit: lit,
+                    power: power,
                   ),
-                  const SizedBox(height: 12),
-                  FxRackArt(slug: group.rack?.art, lit: lit),
-                  const SizedBox(height: 11),
-                  SizedBox(
-                    height: 60,
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: AppText(
-                        name,
-                        maxLines: 2,
-                        style: TextStyle(
-                          color: surface.textPrimary,
-                          fontSize: 28,
-                          height: 1.1,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  SizedBox(
-                    height: 28,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: AppText(
-                            l10n.fxModuleCount(group.entries.length),
-                            style: TextStyle(
-                              color: surface.textTertiary,
-                              fontSize: 18,
-                              height: 1,
-                            ),
-                          ),
-                        ),
-                        _PowerButton(
-                          key: Key('fx_power_${fxGroupId(group)}'),
-                          on: group.isOn,
-                          name: name,
-                          onTap: () => onTogglePower(enabled: !group.isOn),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
         ),
       ),
@@ -284,134 +220,215 @@ class _FxChainCard extends StatelessWidget {
   }
 }
 
-/// A single effect's card (#1754): its pedal drawn as large as the card
-/// allows, with the placement and the power above it and the name and the
-/// assignment under it, in [kFxSingleCardWidth]. It shares the rack card's
-/// height, states and keys, so a mixed row lines up and reads as one strip.
-class _FxSingleCard extends StatelessWidget {
-  const _FxSingleCard({
+/// The inset of a card's placement line from its top and of its status line
+/// from its bottom: the rack card's, which the single card keeps so a mixed
+/// row's lines read across.
+const double _kCardInset = 17;
+
+/// The height of a rack card's placement line.
+const double _kPlacementHeight = 26;
+
+/// The height of a card's status line, which carries the power.
+const double _kStatusHeight = 28;
+
+/// The Pre/Post tag of a group, as both cards print it.
+class _PlacementTag extends StatelessWidget {
+  const _PlacementTag({required this.placement});
+
+  final FxPlacement placement;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AppText(
+      placement == FxPlacement.pre ? l10n.fxPlacementPre : l10n.fxPlacementPost,
+      style: TextStyle(
+        color: context.surface.textSecondary,
+        fontSize: 20,
+        height: 1,
+      ),
+    );
+  }
+}
+
+/// A rack card's inside: its placement tag, its artwork frame, its name, and
+/// the status line carrying its pedal count and its power.
+class _RackCardBody extends StatelessWidget {
+  const _RackCardBody({
     required this.group,
     required this.showPlacement,
-    required this.dimmed,
-    required this.onTogglePower,
-    required this.onOpen,
-    super.key,
+    required this.lit,
+    required this.power,
   });
 
   final FxChainGroup group;
   final bool showPlacement;
-  final bool dimmed;
-  final void Function({required bool enabled}) onTogglePower;
-  final VoidCallback onOpen;
+  final bool lit;
+  final Widget power;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    return Padding(
+      padding: const EdgeInsets.all(_kCardInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: _kPlacementHeight,
+            child: showPlacement
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: _PlacementTag(placement: group.placement),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 12),
+          FxRackArt(slug: group.rack?.art, lit: lit),
+          const SizedBox(height: 11),
+          SizedBox(
+            height: 60,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: AppText(
+                fxGroupName(l10n, group),
+                maxLines: 2,
+                style: TextStyle(
+                  color: surface.textPrimary,
+                  fontSize: 28,
+                  height: 1.1,
+                ),
+              ),
+            ),
+          ),
+          const Spacer(),
+          SizedBox(
+            height: _kStatusHeight,
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppText(
+                    l10n.fxModuleCount(group.entries.length),
+                    style: TextStyle(
+                      color: surface.textTertiary,
+                      fontSize: 18,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                power,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single effect's inside (#1754): the placement and the power on a line
+/// level with a rack card's placement line, the pedal drawn as large as the
+/// card allows, a two-line name slot (so pedals in one row come out the same
+/// size), and the assignment on a line level with a rack card's status line.
+class _SingleCardBody extends StatelessWidget {
+  const _SingleCardBody({
+    required this.group,
+    required this.showPlacement,
+    required this.lit,
+    required this.power,
+  });
+
+  final FxChainGroup group;
+  final bool showPlacement;
+  final bool lit;
+  final Widget power;
+
+  /// The name's two lines at its size.
+  static const double _nameHeight = 2 * 24 * 1.1;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final spacing = context.spacing;
     final l10n = context.l10n;
-    final name = fxGroupName(l10n, group);
-    final lit = group.audible && !dimmed;
     final pedal = fxEntryArt(group.entries.first, live: false);
-    return Opacity(
-      opacity: dimmed ? surface.disabledOpacity : 1,
-      child: Material(
-        color: lit ? surface.accentSurface : surface.card,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: lit ? surface.accent : surface.borderSubtle,
+    return Padding(
+      // The header line is a status line's height, centred where a rack
+      // card's placement line is centred.
+      padding: EdgeInsets.fromLTRB(
+        spacing.md,
+        _kCardInset - (_kStatusHeight - _kPlacementHeight) / 2,
+        spacing.md,
+        _kCardInset,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: _kStatusHeight,
+            child: Row(
+              children: [
+                Expanded(
+                  child: showPlacement
+                      ? _PlacementTag(placement: group.placement)
+                      : const SizedBox.shrink(),
+                ),
+                power,
+              ],
+            ),
           ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onOpen,
-          child: SizedBox(
-            width: kFxSingleCardWidth,
-            height: kFxCardHeight,
-            child: Padding(
-              padding: EdgeInsets.all(spacing.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // The header and the assignment line sit at the rack
-                  // card's placement and status lines, so a mixed row reads
-                  // across.
-                  SizedBox(
-                    height: 36,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: showPlacement
-                              ? AppText(
-                                  group.placement == FxPlacement.pre
-                                      ? l10n.fxPlacementPre
-                                      : l10n.fxPlacementPost,
-                                  style: TextStyle(
-                                    color: surface.textSecondary,
-                                    fontSize: 20,
-                                    height: 1,
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        _PowerButton(
-                          key: Key('fx_power_${fxGroupId(group)}'),
-                          on: group.isOn,
-                          name: name,
-                          onTap: () => onTogglePower(enabled: !group.isOn),
-                        ),
-                      ],
-                    ),
+          SizedBox(height: spacing.sm),
+          // Still: the strip shows which pedal, not its settings.
+          Expanded(
+            child: pedal == null
+                ? _FallbackMark(lit: lit)
+                : FxArtView(
+                    art: pedal,
+                    fallback: _FallbackMark(lit: lit),
                   ),
-                  SizedBox(height: spacing.sm),
-                  // Still: the strip shows which pedal, not its settings.
-                  Expanded(
-                    child: pedal == null
-                        ? _FallbackMark(lit: lit)
-                        : FxArtView(
-                            art: pedal,
-                            fallback: _FallbackMark(lit: lit),
-                          ),
-                  ),
-                  SizedBox(height: spacing.md),
-                  AppText(
-                    name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: surface.textPrimary,
-                      fontSize: 24,
-                      height: 1.1,
-                    ),
-                  ),
-                  SizedBox(
-                    height: 28,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppText(
-                        l10n.fxUnassigned,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: surface.textTertiary,
-                          fontSize: 18,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: spacing.xs),
-                ],
+          ),
+          SizedBox(height: spacing.md),
+          SizedBox(
+            height: _nameHeight,
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: AppText(
+                fxGroupName(l10n, group),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.textPrimary,
+                  fontSize: 24,
+                  height: 1.1,
+                ),
               ),
             ),
           ),
-        ),
+          SizedBox(
+            height: _kStatusHeight,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: AppText(
+                l10n.fxUnassigned,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.textTertiary,
+                  fontSize: 18,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// A rack's artwork frame at the pen's fixed height.
+/// A rack's artwork frame at the pen's fixed height, or a saved single
+/// effect's pedal in the same frame (the saved presets list).
 ///
 /// Falls back to the app's own mark for a single effect with no pedal, when
 /// the slug names a file this build did not ship, and in a widget test,
