@@ -718,5 +718,30 @@ void main() {
         'R': ['Track 2'],
       });
     });
+
+    test("a rack's card gathers what acts on its effects with what is bound "
+        'to the rack (#1760)', () {
+      const rack = FxRackTarget(address: _track, rackId: 'R');
+      const inRack = FxRack(id: 'R', name: 'Funk Wah');
+      final chain = [
+        BuiltInEffect(type: TrackEffectType.drive, slotId: 'a', rack: inRack),
+        BuiltInEffect(type: TrackEffectType.echo, slotId: 'b'),
+      ];
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          pedal(PedalButton.track1, slotA, bank: 0),
+          pedal(PedalButton.track2, rack, bank: 0, hold: slotA),
+          pedal(
+            PedalButton.track3,
+            const FxSlotTarget(address: _track, slotId: 'b'),
+            bank: 0,
+          ),
+        ]),
+      );
+      expect(fxAssignmentNames(en, state, _track, chain: chain), {
+        'R': ['Track 1', 'Track 2'],
+        'b': ['Track 3'],
+      });
+    });
   });
 }

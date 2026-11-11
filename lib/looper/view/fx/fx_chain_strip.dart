@@ -266,8 +266,8 @@ class _PlacementTag extends StatelessWidget {
 }
 
 /// A rack card's inside: its placement tag, its artwork frame, its name, the
-/// controls bound to the rack (#1760), and the status line carrying its pedal
-/// count and its power.
+/// controls acting on the rack or its effects (#1760), and the status line
+/// carrying its pedal count and its power.
 class _RackCardBody extends StatelessWidget {
   const _RackCardBody({
     required this.group,
@@ -280,7 +280,8 @@ class _RackCardBody extends StatelessWidget {
   final FxChainGroup group;
   final bool showPlacement;
 
-  /// What the controls bound to the rack itself are called, or none.
+  /// What the controls acting on the rack or its effects are called, or
+  /// none.
   final List<String> assignedTo;
   final bool lit;
   final Widget power;
