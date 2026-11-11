@@ -112,9 +112,9 @@ FxPedalPicture? fxEntryArt(
   required bool live,
   bool chainOn = true,
 }) {
-  final name = effect.module;
-  final look = name != null
-      ? fxModuleNamed(name)?.name
+  final module = effect.module;
+  final look = module != null
+      ? fxModuleNamed(module)?.name
       : effect is BuiltInEffect
       ? kFxBuiltInLooks[effect.type]
       : null;
@@ -128,6 +128,6 @@ FxPedalPicture? fxEntryArt(
     live: live,
     chainOn: chainOn,
     // A standalone built-in prints its own English name (#1754).
-    name: name == null && effect is BuiltInEffect ? effect.type.label : null,
+    name: module == null && effect is BuiltInEffect ? effect.type.label : null,
   );
 }

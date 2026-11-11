@@ -40,6 +40,13 @@ void main() {
     return toggles;
   }
 
+  // What a screen reader announces for the card itself (its InkWell's node).
+  String cardLabel(WidgetTester tester, Finder card) => tester
+      .getSemantics(
+        find.descendant(of: card, matching: find.byType(InkWell)).first,
+      )
+      .label;
+
   final mixed = [
     BuiltInEffect(
       type: TrackEffectType.filter,
@@ -97,6 +104,26 @@ void main() {
       expect(r.left - b.right, kFxCardGap);
     });
 
+    testWidgets('a single effect with no pedal prints its name under the '
+        "app's mark, once for a screen reader", (tester) async {
+      await pump(tester, [
+        BuiltInEffect(
+          type: TrackEffectType.echo,
+          slotId: 'x',
+          module: 'Mystery box',
+        ),
+      ]);
+      final card = find.byKey(const Key('fx_card_x'));
+      expect(
+        find.descendant(of: card, matching: find.text('Mystery box')),
+        findsOneWidget,
+      );
+      expect(
+        RegExp('Mystery box').allMatches(cardLabel(tester, card)),
+        hasLength(1),
+      );
+    });
+
     testWidgets('consecutive singles sit a gap apart, on the rack column '
         'grid', (tester) async {
       await pump(tester, [
@@ -127,10 +154,8 @@ void main() {
         findsNothing,
       );
       expect(
-        find.byWidgetPredicate(
-          (w) => w is Semantics && w.properties.label == 'Filter',
-        ),
-        findsOneWidget,
+        cardLabel(tester, card),
+        allOf(startsWith('Filter'), contains('Unassigned')),
       );
       expect(
         find.descendant(of: card, matching: find.text('Unassigned')),

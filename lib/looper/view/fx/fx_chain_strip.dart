@@ -333,7 +333,8 @@ class _RackCardBody extends StatelessWidget {
 /// level with a rack card's placement line, the pedal drawn as large as the
 /// card allows, and the assignment on a line level with a rack card's status
 /// line. No title: the pedal prints the effect's name (the owner's call), and
-/// the card carries it for a screen reader.
+/// the card carries it for a screen reader. An effect with no pedal (a plugin)
+/// prints its name under the app's mark instead.
 class _SingleCardBody extends StatelessWidget {
   const _SingleCardBody({
     required this.group,
@@ -353,8 +354,10 @@ class _SingleCardBody extends StatelessWidget {
     final l10n = context.l10n;
     final pedal = fxEntryArt(group.entries.first, live: false);
     final surface = context.surface;
+    final name = fxGroupName(l10n, group);
+    final fallback = _NamedFallbackMark(name: name, lit: lit);
     return Semantics(
-      label: fxGroupName(l10n, group),
+      label: name,
       child: Padding(
         // The header line is a status line's height, centred where a rack
         // card's placement line is centred.
@@ -384,11 +387,8 @@ class _SingleCardBody extends StatelessWidget {
             // Still: the strip shows which pedal, not its settings.
             Expanded(
               child: pedal == null
-                  ? _FallbackMark(lit: lit)
-                  : FxArtView(
-                      art: pedal,
-                      fallback: _FallbackMark(lit: lit),
-                    ),
+                  ? fallback
+                  : FxArtView(art: pedal, fallback: fallback),
             ),
             SizedBox(height: spacing.md),
             SizedBox(
@@ -488,6 +488,44 @@ class _FallbackMark extends StatelessWidget {
   }
 }
 
+/// The app's mark with the effect's name under it, for a single effect that
+/// has no pedal to print its name. The card's label already names it for a
+/// screen reader.
+class _NamedFallbackMark extends StatelessWidget {
+  const _NamedFallbackMark({required this.name, required this.lit});
+
+  /// The effect's name.
+  final String name;
+
+  /// Whether the group is audible.
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _FallbackMark(lit: lit),
+        SizedBox(height: context.spacing.sm),
+        ExcludeSemantics(
+          child: AppText(
+            name,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: surface.textPrimary,
+              fontSize: 20,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// What a group is called: the rack's own name, or the single effect's.
 String fxGroupName(AppLocalizations l10n, FxChainGroup group) =>
     group.rack?.name ?? fxBlockName(l10n, group.entries.first);
@@ -512,7 +550,10 @@ class _PowerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    // Its own node: without it the card's texts merge into the toggle and
+    // the card itself is announced with no name.
     return Semantics(
+      container: true,
       button: true,
       toggled: on,
       label: context.l10n.fxEffectPower(name),

@@ -543,7 +543,8 @@ typedef _EnclosureKey = ({
 });
 
 /// The enclosure: everything but the knobs and their labels, recorded once
-/// per look ([_EnclosureKey]) and replayed.
+/// per look and printed name ([_EnclosureKey]) and replayed. A look a
+/// built-in shares with a rack module records one picture for each name.
 class _EnclosurePainter extends CustomPainter {
   _EnclosurePainter({
     required this.spec,
@@ -578,7 +579,8 @@ class _EnclosurePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final tiles = FxStompTextures.instance.images.value;
-    // By the look itself: every look is a const of the look table.
+    // By the look itself (every look is a const of the look table) and the
+    // name it prints.
     final key = (
       spec: spec,
       name: name,
@@ -721,7 +723,7 @@ class _Enclosure {
       ..clipRRect(shape);
     _texture(r);
     if (art != null && !fxStompGraphicOnTreadle(spec.graphic)) {
-      paintFxStompGraphic(canvas, spec.graphic, art, spec);
+      paintFxStompGraphic(canvas, spec.graphic, art, spec, name);
     }
     canvas
       ..drawRect(
@@ -1007,6 +1009,7 @@ class _Enclosure {
         spec.graphic,
         const Rect.fromLTWH(32, 298, 386, 130),
         spec,
+        name,
       );
       canvas.restore();
     }
@@ -1085,7 +1088,7 @@ class _Enclosure {
       )
       ..save()
       ..clipRRect(panelShape);
-    paintFxStompGraphic(canvas, spec.graphic, panel, spec);
+    paintFxStompGraphic(canvas, spec.graphic, panel, spec, name);
     canvas
       ..restore()
       ..drawRRect(
