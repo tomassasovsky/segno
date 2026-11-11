@@ -477,6 +477,13 @@ void le_perf_checkpoint_fail_slot_writes_for_test(int count);
  * Not part of the FFI surface. */
 void le_perf_render_force_dry_write_failure_for_test(int32_t channel);
 
+/* Holds the offline render worker between blocks while `hold` is 1 (a cancel
+ * still ends it), so a test can act on a render known to be mid-way;
+ * le_perf_render_held_for_test reads 1 once a worker waits. Process-global;
+ * a test must release it (pass 0). Not part of the FFI surface. */
+void le_perf_render_hold_for_test(int hold);
+int le_perf_render_held_for_test(void);
+
 /* Structural FX recipe ownership; all except apply are control-thread only. */
 struct le_prepared_fx;
 int le_fx_edit_pending(le_engine* e, int owner, int channel, int lane);

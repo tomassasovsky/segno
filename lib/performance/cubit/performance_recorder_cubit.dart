@@ -226,6 +226,28 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     }
   }
 
+  /// Salvages again the takes the last recovery could not recover, the
+  /// player's Try again on the notice that says so (#1747). Recovery the app
+  /// did not survive is never started by a start on its own; this is how
+  /// such a take is tried again. Busy and settled as [load] is; a no-op
+  /// unless idle with takes left unrecovered.
+  Future<void> retryRecovery() async {
+    final current = state;
+    if (current is! PerformanceRecorderIdle ||
+        current.recovering ||
+        _performance.unrecoveredTakes.isEmpty) {
+      return;
+    }
+    _emit(const PerformanceRecorderIdle(recovering: true));
+    try {
+      await _performance.retryUnrecovered();
+    } finally {
+      _clearRecoveringWhenRenderSettles(
+        _performance.unrecoveredTakes.length,
+      );
+    }
+  }
+
   /// Clears the [PerformanceRecorderIdle.recovering] flag this cubit's
   /// [load] set — but only once [PerformanceRepository.renderProgress]
   /// actually reads done. A timed-out salvage render outlives

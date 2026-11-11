@@ -82,6 +82,43 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A long capture recovers in bounded memory (#1747)
+
+- Cause: the performance render (`perf_render.c`) held whole-length
+  buffers, 33 bytes a capture frame for a track with a heard image (dry,
+  wet, both heard sides, the heard marks, the routed pair) plus 8 for the
+  master. The 1 h 36 min capture (277M frames) needed 8.7 GB; the console
+  has 8 GB and no swap, so boot recovery was OOM-killed on every start.
+  The per-track segment table (#1717) is a fixed 0.6 MB and not a cause.
+- The render now runs every channel together a block of 65536 frames at a
+  time and writes its stems as it goes (`le_wav_open`/`append`/`seal`):
+  peak 7.5 MB above the process for 3 min, 1 h 36 min or 3 h on the console
+  (under a 256 MB address-space limit), byte-identical stems and master to
+  the whole-buffer render (all 160 native fixtures, the real capture at
+  full length on the Mac, and the console's own build-238 stems). A cancel
+  is seen at the next block and removes the stems it began; a stem that
+  fails after some of its audio is in the master leaves no master.
+- A device reconfigure (the audio warm-up, seconds after start) no longer
+  cancels a running render: it used to join a worker that was rendering a
+  whole stem, which held "Audio is starting" until the OOM, and dropped the
+  recovery's stems.
+- A salvage the app does not survive is not run again by every start: the
+  bundle carries `.boot-recovery-attempt` (a count) while its salvage runs,
+  a render that outlives the wait included. One interrupted salvage is run
+  again (a restart or a power cut also stops one); at the second the bundle
+  is marked `.boot-recovery-failed`, kept, and counted as not recovered.
+  The not-recovered notice (a passing warning, said at every start) has Try
+  again (`PerformanceRecorderCubit.retryRecovery`), which gives the take one
+  more salvage.
+- Stems are written as `<stem>.wav.part`, synced and published on sealing,
+  so a cancelled re-render keeps an earlier render's stems; a render that
+  runs to its end removes any stem it did not publish, so a bundle never
+  mixes two renders. The render handle is its own engine field
+  (`perf_render`), outside the capture state a reconfigure resets.
+- A master past the 32-bit WAV sizes (stereo over 3 h 6 min at 48 kHz) is
+  not rendered and the stems stand; a master that could not be written is
+  left out without failing the tracks, as before.
+
 ## November 2026 The Studio Dist and the Overdrive's polarity (#1743)
 
 - The Studio Rack's Dist is the Looper X's amp simulator without a cabinet

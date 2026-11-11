@@ -1940,6 +1940,64 @@ void main() {
         expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
       },
     );
+
+    test(
+      'a salvage the app did not survive is not run again at load but '
+      'reported, and retryRecovery salvages it (#1747)',
+      () async {
+        final dir = Directory('${tempDir.path}/exports/perf-20261110-155051')
+          ..createSync(recursive: true);
+        writeManifest(dir.path, finalized: false);
+        // The app stopped during two salvages of it in a row.
+        File(
+          '${dir.path}/${PerformanceRepository.recoveryMarkerName}',
+        ).writeAsStringSync('');
+        File(
+          '${dir.path}/${PerformanceRepository.recoveryAttemptName}',
+        ).writeAsStringSync('2\n');
+
+        final cubit = build();
+        addTearDown(cubit.close);
+        await cubit.load();
+        await pumpEventQueue();
+
+        expect(engine.lastRenderCaptureDir, isNull);
+        expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
+        expect(dir.existsSync(), isTrue);
+
+        final states = <PerformanceRecorderState>[];
+        final sub = cubit.stream.listen(states.add);
+        await cubit.retryRecovery();
+        await pumpEventQueue();
+        await sub.cancel();
+
+        expect(states, const [
+          PerformanceRecorderIdle(recovering: true),
+          PerformanceRecorderIdle(),
+        ]);
+        expect(engine.lastRenderCaptureDir, dir.path);
+        expect(
+          Directory(
+            '${tempDir.path}/exports/recovered/perf-20261110-155051',
+          ).existsSync(),
+          isTrue,
+        );
+      },
+    );
+
+    test('retryRecovery is a no-op with nothing left unrecovered', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.load();
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+
+      await cubit.retryRecovery();
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(states, isEmpty);
+    });
   });
 
   group('guard table (#1198)', () {

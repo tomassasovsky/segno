@@ -39594,6 +39594,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_interface_inputs.h"
 #include "test_engine_heard_edits.h"
 #include "test_engine_heard_perf.h"
+#include "test_engine_perf_render_memory.h"
 #include "test_engine_heard_tail.h"
 #include "test_engine_heard_post.h"
 #include "test_engine_trk_jobs.h"
@@ -40286,6 +40287,10 @@ int main(void) {
   test_perf_render_unlisted_retire_fails_stem();
   test_perf_render_disarm_anchors_by_take_identity();
   test_perf_render_progress_and_cancel();
+  test_perf_render_memory_is_bounded();
+  test_perf_render_cancel_leaves_no_partial_stem();
+  test_perf_render_runs_through_reconfigure();
+  test_perf_render_rerender_leaves_only_its_own_stems();
   test_perf_render_concurrent_with_live_engine();
   test_perf_render_partial_success();
   test_perf_render_missing_or_corrupt_manifest();

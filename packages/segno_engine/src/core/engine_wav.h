@@ -69,8 +69,4 @@ int le_wav_publish(const char* part_path, const char* final_path);
 /* le_wav_patch_sizes, the repair of a part that was never sealed, is
  * exported: see segno_engine_api.h. */
 
-/* One-shot helper: writes a whole interleaved buffer as a sealed file. */
-int le_wav_write_file(const char* path, const float* samples, uint64_t frames,
-                      int32_t sample_rate, int32_t channels);
-
 #endif /* SEGNO_ENGINE_WAV_H */
