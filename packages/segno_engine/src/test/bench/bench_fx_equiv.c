@@ -651,8 +651,13 @@ int main(int argc, char** argv) {
          g_nitems, g_ci ? "CI subset" : "every setting", jobs, LE_EQV_LIMIT_DB);
   fflush(stdout);
   pthread_t th[64];
-  for (int j = 0; j < jobs; ++j) pthread_create(&th[j], NULL, worker, NULL);
-  for (int j = 0; j < jobs; ++j) pthread_join(th[j], NULL);
+  int started = 0;
+  while (started < jobs &&
+         pthread_create(&th[started], NULL, worker, NULL) == 0) {
+    ++started;
+  }
+  if (started == 0) worker(NULL); /* no thread: this one does it all */
+  for (int j = 0; j < started; ++j) pthread_join(th[j], NULL);
 
   int failed = 0;
   char a[32], b[32];

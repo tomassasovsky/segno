@@ -5,9 +5,12 @@
  * GCC and clang vector extensions, so one source runs as NEON on the
  * console and as SSE on an x86 host. A kernel uses them where it runs the
  * same arithmetic on several independent lines, lanes or taps at once: each
- * lane does exactly what the scalar code did for its element, in the same
- * order, so the result is the same to the bit (the compilers contract a
- * vector expression into fused multiply-adds as they do the scalar one).
+ * lane does what the scalar code did for its element, in the same order.
+ * Where an expression has two products feeding one sum, the compilers
+ * need not fuse the same one in vector code as in the scalar (GCC fuses the
+ * other in b x - a y), so the product the scalar code rounds on its own is
+ * spelled out with LE_ROUNDED. bench_fx_equiv checks every kind is
+ * bit-identical.
  * Included by engine_fx.c only.
  */
 #ifndef SEGNO_ENGINE_FX_SIMD_H

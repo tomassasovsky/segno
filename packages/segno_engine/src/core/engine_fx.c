@@ -287,15 +287,28 @@ static float fx_delay(le_fx_state* fx, int slot, int chan, int cap, float x,
 /* Linearly interpolated read from a ring of [cap] samples, [d] samples behind
  * the head [head] (the index of the most recently written sample). [d] may be
  * fractional and is assumed in [0, cap). */
-static float fx_read_frac(const float* buf, int cap, int head, float d) {
+/* Where a ring of [cap] is read [d] samples behind [head]: the two samples
+ * between which, and the fraction. */
+typedef struct le_frac_at {
+  int i0, i1;
+  float frac;
+} le_frac_at;
+
+static le_frac_at le_frac_where(int cap, int head, float d) {
   float rp = (float)head - d;
   while (rp < 0.0f) rp += (float)cap;
   while (rp >= (float)cap) rp -= (float)cap;
-  const int i0 = (int)rp;
-  const float frac = rp - (float)i0;
-  int i1 = i0 + 1;
-  if (i1 >= cap) i1 = 0;
-  return buf[i0] + frac * (buf[i1] - buf[i0]);
+  le_frac_at w;
+  w.i0 = (int)rp;
+  w.frac = rp - (float)w.i0;
+  w.i1 = w.i0 + 1;
+  if (w.i1 >= cap) w.i1 = 0;
+  return w;
+}
+
+static float fx_read_frac(const float* buf, int cap, int head, float d) {
+  const le_frac_at w = le_frac_where(cap, head, d);
+  return buf[w.i0] + w.frac * (buf[w.i1] - buf[w.i0]);
 }
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER) ------------------------------------
@@ -8163,6 +8176,8 @@ static void fx_spring_kprocess(void* ks, float* l, float* r) {
  * was cleared, so nothing it did not write ever sounds. Dec glides, and the
  * lines are redesigned only while it moves. */
 #define LE_VB_LINES 8
+/* le_vb_network runs the lines as two groups of four, one a ring. */
+_Static_assert(LE_VB_LINES == 8, "the network's lines are two vectors of four");
 #define LE_VB_APS 6 /* the most diffusers a side runs (the Dub reverbs run 2) */
 #define LE_VB_TN 10
 #define LE_VB_WN 7
@@ -8804,19 +8819,24 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
     float* ly = q->lo_z[ph][1] + b;
     float* hx = q->hi_z[ph][0] + b;
     float* hy = q->hi_z[ph][1] + b;
+    /* The products the scalar code rounds on their own (le_vb_tick's b1 x1,
+     * the injection) are spelled out (LE_ROUNDED); the others fuse. */
     const le_f4 x = le_f4_load(o + b) - hv;
-    const le_f4 y = le_f4_load(q->lo[0] + b) * x +
-                    le_f4_load(q->lo[1] + b) * le_f4_load(lx) -
+    le_f4 lb = le_f4_load(q->lo[1] + b) * le_f4_load(lx);
+    LE_ROUNDED(lb);
+    const le_f4 y = le_f4_load(q->lo[0] + b) * x + lb -
                     le_f4_load(q->lo[2] + b) * le_f4_load(ly);
     le_f4_store(lx, x);
     le_f4_store(ly, y);
-    const le_f4 y2 = le_f4_load(q->hi[0] + b) * y +
-                     le_f4_load(q->hi[1] + b) * le_f4_load(hx) -
+    le_f4 hb = le_f4_load(q->hi[1] + b) * le_f4_load(hx);
+    LE_ROUNDED(hb);
+    const le_f4 y2 = le_f4_load(q->hi[0] + b) * y + hb -
                      le_f4_load(q->hi[2] + b) * le_f4_load(hy);
     le_f4_store(hx, y);
     le_f4_store(hy, y2);
-    const le_f4 v = le_f4_sanitize(le_f4_load(q->gm + b) * y2 +
-                                   le_f4_load(q->cin_g + b) * inj);
+    le_f4 in_v = le_f4_load(q->cin_g + b) * inj;
+    LE_ROUNDED(in_v);
+    const le_f4 v = le_f4_sanitize(le_f4_load(q->gm + b) * y2 + in_v);
     const le_u4 at = pos[g];
     rg[at[0]] = v[0];
     rg[at[1]] = v[1];
@@ -8899,6 +8919,7 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
 #define LE_RV_ROOMS 16
 #define LE_RV_ER 16
 #define LE_RV_FIR 64 /* the most taps a network's early part runs a side */
+_Static_assert(LE_RV_FIR % 4 == 0, "the taps' gains ramp four at a time");
 
 /* A network's early part, read off the captures as taps (delay, and gain
  * at each Density point 0, 25, 50, 75 and 100 %; a mode's at one), the
@@ -9227,7 +9248,7 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
    * sample sits one behind its write position. le_rv_taps is the reference
    * engine's, character for character: the compilers decide per loop shape
    * whether to fuse each tap's multiply-add, and a Drum room's low cut
-   * carries a changed rounding to about -60 dBFS (#1755). */
+   * carries a changed rounding to about -62 dBFS (#1755, #1761). */
   const float* hist = r0;
   const uint32_t now = v->hist_w == 0u ? v->hist_n - 1u : v->hist_w - 1u;
   for (int c = 0; c < 2; ++c) {
@@ -9480,30 +9501,10 @@ static void fx_echo_update(void* ks, le_fx_dyn_head* h, const float* p,
   q->mix = p[2];
 }
 
-/* Where the rings are read [d] samples behind the head: the two samples
- * between which, and the fraction (fx_read_frac's), the same for both
- * channels. */
-typedef struct le_echo_at {
-  int i0, i1;
-  float frac;
-} le_echo_at;
-
-static le_echo_at le_echo_where(const le_fx_echo* q, int cap, float d) {
-  float rp = (float)q->pos - d;
-  while (rp < 0.0f) rp += (float)cap;
-  while (rp >= (float)cap) rp -= (float)cap;
-  le_echo_at w;
-  w.i0 = (int)rp;
-  w.frac = rp - (float)w.i0;
-  w.i1 = w.i0 + 1;
-  if (w.i1 >= cap) w.i1 = 0;
-  return w;
-}
-
 /* The ring [buf] at [w]; a sample not yet written since the block was
  * cleared reads as silence. */
 static float le_echo_read(const le_fx_echo* q, const float* buf,
-                          le_echo_at w) {
+                          le_frac_at w) {
   const float a = q->full || w.i0 < q->pos ? buf[w.i0] : 0.0f;
   const float b = q->full || w.i1 < q->pos ? buf[w.i1] : 0.0f;
   return a + w.frac * (b - a);
@@ -9525,7 +9526,7 @@ static void fx_echo_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
   if (d > (float)(cap - 1)) d = (float)(cap - 1);
   float* ring[2] = {r0, r1};
   float* io[2] = {l, r};
-  const le_echo_at w = le_echo_where(q, cap, d);
+  const le_frac_at w = le_frac_where(cap, q->pos, d);
   for (int c = 0; c < 2; ++c) {
     const float x = *io[c];
     const float delayed = le_echo_read(q, ring[c], w);
@@ -9561,6 +9562,7 @@ static void fx_echo_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
 #define LE_REV_APS 4
 #define LE_REV_BANKS 2
 #define LE_REV_LINES ((LE_REV_COMBS + LE_REV_APS) * LE_REV_BANKS)
+_Static_assert(LE_REV_COMBS % 4 == 0, "a bank's combs run four at a time");
 _Static_assert(LE_RS_PH == 2, "the Freeverb's damping keeps two phases");
 
 /* Comb and allpass line lengths (samples at 44.1 kHz; scaled to the running
@@ -9713,9 +9715,11 @@ static void fx_reverb_rkprocess(void* ks, float* r0, float* r1, int cap,
         y = le_frac_tick4(q->fa + i, q->frac_z[0] + i, q->frac_z[1] + i, y);
       }
       le_f4_store(y8 + g, y);
-      /* damp the signal fed back */
-      const le_f4 lp = y * le_f4_set1(1.0f - damp) +
-                       le_f4_load(comb_lp + cbase + g) * le_f4_set1(damp);
+      /* damp the signal fed back (lp d rounded on its own, as in the
+       * scalar code: LE_ROUNDED) */
+      le_f4 kept = le_f4_load(comb_lp + cbase + g) * le_f4_set1(damp);
+      LE_ROUNDED(kept);
+      const le_f4 lp = y * le_f4_set1(1.0f - damp) + kept;
       le_f4_store(comb_lp + cbase + g, lp);
       const le_f4 v = in + lp * le_f4_set1(room);
       buf[at[0]] = v[0];
