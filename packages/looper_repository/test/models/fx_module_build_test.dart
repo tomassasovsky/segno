@@ -925,8 +925,8 @@ void main() {
       // Modulation (part 6): the doubler in 11 Dub, 19 Studio, 17 Vocal and
       // 25 Vocal Tuner; the chorus and the wah in 36 Ed's; the wah in 14
       // Guitar. Drives (part 7): the overdrive in 36 Ed's, 14 Guitar and 15
-      // Lo-Fi (its Distort, #1737); the distortion in 19 Studio. Lo-fi (part
-      // 7): the vinyl, the
+      // Lo-Fi (its Distort, #1737); the Studio Dist in 19 Studio (on the
+      // Amp, #1743). Lo-fi (part 7): the vinyl, the
       // degrade and the low-pass filter in 15 Lo-Fi, the filter in 10
       // Rhythmic. Reverbs (part 8): the spring in 14 Guitar. The Mod (part
       // 13) in 14 Guitar and 19 Studio.
@@ -1082,8 +1082,8 @@ void main() {
     });
 
     test("the Lo-Fi Rack's Distort is the Overdrive at +4.08 dB, showing "
-        'drive and tone; the Studio Rack the distortion, the drive with the '
-        'tone flat', () {
+        'drive and tone; the Studio Rack the Amp on its D.I. cabinet, the '
+        'drive on its own law', () {
       final lofi = fxModuleEntry(
         _module('Distortion'),
         preset('Lo-Fi Rack', const {
@@ -1112,9 +1112,23 @@ void main() {
         _module('Distortion'),
         preset('Studio Rack', const {'Dist Drive': 0.5}),
       );
-      expect(studio.type, TrackEffectType.distortion);
+      expect(studio.type, TrackEffectType.ampCab);
+      expect(studio.module, 'Distortion');
       expect(fxEntryBuild(studio)!.exposed, [0]);
-      expect(studio.params.take(2), [0.5, 0.5]);
+      // Dist Drive 50 % is the Amp's 54 % (#1743, s19std); Bass and Modern
+      // 50 %, Treble 35 %, the D.I. cabinet.
+      expect(studio.params[0], closeTo(0.54, 1e-6));
+      expect(studio.params.sublist(1, 5), [0.5, 0.35, 0.5, 0.0]);
+      final off = fxModuleEntry(
+        _module('Distortion'),
+        preset('Studio Rack', const {'Dist Drive': 0.0}),
+      );
+      expect(off.params[0], 0);
+      final top = fxModuleEntry(
+        _module('Distortion'),
+        preset('Studio Rack', const {'Dist Drive': 0.9}),
+      );
+      expect(top.params[0], 1);
     });
 
     test("the Guitar and Ed's racks' OvDrive keeps the level at 0 dB", () {

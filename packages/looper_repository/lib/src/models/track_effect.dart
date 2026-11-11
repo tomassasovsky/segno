@@ -433,7 +433,8 @@ enum TrackEffectType {
   /// The Looper X's overdrive (#887 part 7).
   overdrive(16),
 
-  /// The Looper X's amp simulator as the Studio Rack's Dist (#887 part 7).
+  /// An amp simulator with the 4x12" cabinet (#887 part 7). No factory rack
+  /// builds it since #1737 and #1743; chains saved with it keep it.
   distortion(17),
 
   /// The Looper X's vinyl (#887 part 7).

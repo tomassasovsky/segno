@@ -303,7 +303,41 @@ static void test_amp_cabinet_change_during_a_fade_lands(void) {
   CHECK(db < -80.0);
 }
 
+/* The D.I. starts as late as a cabinet does at every rate (#1743): at 44.1
+ * and 88.2 kHz the resampled cabinets start le_cab_pre frames late, and the
+ * D.I. waits as long, so an impulse's peak sits as far ahead of the 4x12"'s
+ * as at 48 and 96 kHz, and the latency the table reports holds for both. */
+static void test_amp_di_has_the_cabinets_latency(void) {
+  printf("test_amp_di_has_the_cabinets_latency\n");
+  const int rates[4] = {44100, 48000, 88200, 96000};
+  int gap[4];
+  for (int k = 0; k < 4; ++k) {
+    const int sr = rates[k];
+    const int n = sr / 4;
+    float* in = (float*)calloc((size_t)n, sizeof(float));
+    float* out = (float*)malloc(sizeof(float) * (size_t)n);
+    in[1000] = 0.01f;
+    int peak[2];
+    for (int c = 0; c < 2; ++c) {
+      float p[LE_FX_PARAMS] = {0.0f, 0.5f, 0.5f, 0.5f,
+                               c == 0 ? 0.0f : 7.0f / 11.0f};
+      amp_run(p, sr, in, out, NULL, n);
+      int at = 0;
+      for (int i = 1; i < n; ++i) {
+        if (fabsf(out[i]) > fabsf(out[at])) at = i;
+      }
+      peak[c] = at;
+    }
+    gap[k] = peak[1] - peak[0];
+    free(in);
+    free(out);
+  }
+  CHECK(gap[0] == gap[1]); /* 44.1 as 48 kHz */
+  CHECK(gap[2] == gap[3]); /* 88.2 as 96 kHz */
+}
+
 static void run_amp_cab_tests(void) {
+  test_amp_di_has_the_cabinets_latency();
   test_amp_cabinet_gain_is_rate_free();
   test_amp_cabinet_change_during_a_fade_lands();
   test_amp_first_4x10_is_the_2x12();
