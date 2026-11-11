@@ -114,9 +114,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   same day; each kind charges the larger of its largest new reading and
   its old charge scaled by the median after-to-before ratio of the
   scenario that set it, so a worst case an earlier run caught keeps its
-  margin. Room 735 -> 552, Amb 272 -> 225, Dub 221 -> 196, Reverb 234 ->
-  221, Mode delay 179 -> 171, Filter 166 -> 98, EQ 88 -> 71, Echo 144 ->
-  139, Mod 113 -> 110, Tremolo 52 -> 50. Ed's Rack 3407 -> 3199 at 96 kHz
+  margin. Room 735 -> 552, Amb 272 -> 225, Dub 221 -> 197, Reverb 234 ->
+  223, Mode delay 179 -> 171, Filter 166 -> 99, EQ 88 -> 71, Echo 144 ->
+  141, Mod 113 -> 110, Tremolo 52 -> 50. Ed's Rack 3407 -> 3199 at 96 kHz
   / 64 (2, 3, 4 and 5 racks with 0 to 3 workers, was 2, 2, 3 and 4) and
   4640 -> 4432 at 48 kHz / 32 (four inputs leave room for two track racks,
   was one).
