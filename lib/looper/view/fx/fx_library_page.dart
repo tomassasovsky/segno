@@ -407,10 +407,11 @@ class _SingleList extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, i) {
         final fits = fitsRoom([BuiltInEffect(type: types[i])]);
+        final name = l10n.effectTypeLabel(types[i]);
         return _PresetRow(
           key: Key('fx_single_${types[i].name}'),
-          name: types[i].label,
-          note: fits ? null : l10n.fxNoRoom(types[i].label),
+          name: name,
+          note: fits ? null : l10n.fxNoRoom(name),
           onTap: fits ? () => onChoose(FxSingleChoice(types[i])) : null,
           surface: surface,
         );

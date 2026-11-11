@@ -109,6 +109,56 @@ final _rackRig = LooperState(
   outputBusCount: 2,
 );
 
+/// A rack whose pedals the catalogue names in words Spanish translates: the
+/// Lo-Fi Rack's Distortion (on the Overdrive), its low-pass filter and vinyl,
+/// and the Studio Rack's Pitch shift (on the octaver) (#1752).
+final _loFiRig = LooperState(
+  tracks: [
+    Track(
+      state: TrackState.playing,
+      lanes: const [Lane(inputChannel: 0, lengthFrames: 48000)],
+      effects: [
+        _module(
+          'g1',
+          TrackEffectType.lpf,
+          rackId: 'G',
+          module: 'Low-pass filter',
+          rackName: 'Grubby',
+        ),
+        _module(
+          'g2',
+          TrackEffectType.vinyl,
+          rackId: 'G',
+          module: 'Vinyl',
+          rackName: 'Grubby',
+        ),
+        _module(
+          'g3',
+          TrackEffectType.overdrive,
+          rackId: 'G',
+          module: 'Distortion',
+          rackName: 'Grubby',
+        ),
+        _module(
+          'g4',
+          TrackEffectType.octaver,
+          rackId: 'G',
+          module: 'Pitch shift',
+          rackName: 'Grubby',
+        ),
+      ],
+    ),
+  ],
+  status: const EngineStatus(
+    isConnected: true,
+    devicePresent: true,
+    deviceName: 'Scarlett 18i20',
+    inputChannels: 4,
+    outputChannels: 4,
+  ),
+  outputBusCount: 2,
+);
+
 final _rig = LooperState(
   tracks: [
     Track(
@@ -296,6 +346,7 @@ void main() {
     required FxDestination destination,
     LooperState? state,
     FxCatalogue catalogue = FxCatalogue.empty,
+    Locale? locale,
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -339,6 +390,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
@@ -517,6 +569,44 @@ void main() {
     await expectLater(
       find.byType(FxRackEditor),
       matchesGoldenFile('goldens/fx_rack_editor.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  // Spanish: a rack's pedals by their translated module names, and the
+  // single effects by their translated kinds (#1752).
+  testWidgets('The rack editor, in Spanish', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _loFiRig,
+      locale: const Locale('es'),
+    );
+    await tester.tap(find.byKey(const Key('fx_card_G')));
+    await tester.pumpAndSettle();
+    await settleArtwork(tester);
+
+    await expectLater(
+      find.byType(FxRackEditor),
+      matchesGoldenFile('goldens/fx_rack_editor_es.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Single effects, in Spanish', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _loFiRig,
+      catalogue: _library,
+      locale: const Locale('es'),
+    );
+    await tester.tap(find.byKey(const Key('fx_add_effects')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('fx_library_single')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(FxLibraryPage),
+      matchesGoldenFile('goldens/fx_single_es.png'),
     );
   }, skip: !rendersScreenshots);
 

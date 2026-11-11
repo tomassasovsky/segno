@@ -940,6 +940,118 @@
     "@effectSmartTune": {
         "description": "The Vocal Tuner's pitch correction: it retunes a voice to the nearest note of a scale."
     },
+    "fxModuleAmbience": "Ambience",
+    "@fxModuleAmbience": {
+        "description": "The name of the factory racks' Ambience pedal (the catalogue module 'Ambience'), on every surface that names it."
+    },
+    "fxModuleAmp": "Amp",
+    "@fxModuleAmp": {
+        "description": "The name of the factory racks' Amp pedal (the catalogue module 'Amp'), on every surface that names it."
+    },
+    "fxModuleChorus": "Chorus",
+    "@fxModuleChorus": {
+        "description": "The name of the factory racks' Chorus pedal (the catalogue module 'Chorus'), on every surface that names it."
+    },
+    "fxModuleCompressor": "Compressor",
+    "@fxModuleCompressor": {
+        "description": "The name of the factory racks' Compressor pedal (the catalogue module 'Compressor'), on every surface that names it."
+    },
+    "fxModuleDegrade": "Degrade",
+    "@fxModuleDegrade": {
+        "description": "The name of the factory racks' Degrade pedal (the catalogue module 'Degrade'), on every surface that names it."
+    },
+    "fxModuleDelay": "Delay",
+    "@fxModuleDelay": {
+        "description": "The name of the factory racks' Delay pedal (the catalogue module 'Delay'), on every surface that names it."
+    },
+    "fxModuleDistortion": "Distortion",
+    "@fxModuleDistortion": {
+        "description": "The name of the factory racks' Distortion pedal (the catalogue module 'Distortion'), on every surface that names it."
+    },
+    "fxModuleDoubler": "Doubler",
+    "@fxModuleDoubler": {
+        "description": "The name of the factory racks' Doubler pedal (the catalogue module 'Doubler'), on every surface that names it."
+    },
+    "fxModuleDubDelay": "Dub delay",
+    "@fxModuleDubDelay": {
+        "description": "The name of the factory racks' Dub delay pedal (the catalogue module 'Dub delay'), on every surface that names it."
+    },
+    "fxModuleDubReverb": "Dub reverb",
+    "@fxModuleDubReverb": {
+        "description": "The name of the factory racks' Dub reverb pedal (the catalogue module 'Dub reverb'), on every surface that names it."
+    },
+    "fxModuleFourBandEq": "Four-band EQ",
+    "@fxModuleFourBandEq": {
+        "description": "The name of the factory racks' Four-band EQ pedal (the catalogue module 'Four-band EQ'), on every surface that names it."
+    },
+    "fxModuleHarmonizer": "Harmonizer",
+    "@fxModuleHarmonizer": {
+        "description": "The name of the factory racks' Harmonizer pedal (the catalogue module 'Harmonizer'), on every surface that names it."
+    },
+    "fxModuleHighPassGate": "High-pass gate",
+    "@fxModuleHighPassGate": {
+        "description": "The name of the factory racks' High-pass gate pedal (the catalogue module 'High-pass gate'), on every surface that names it."
+    },
+    "fxModuleLowPassFilter": "Low-pass filter",
+    "@fxModuleLowPassFilter": {
+        "description": "The name of the factory racks' Low-pass filter pedal (the catalogue module 'Low-pass filter'), on every surface that names it."
+    },
+    "fxModuleModulation": "Modulation",
+    "@fxModuleModulation": {
+        "description": "The name of the factory racks' Modulation pedal (the catalogue module 'Modulation'), on every surface that names it."
+    },
+    "fxModuleOctaver": "Octaver",
+    "@fxModuleOctaver": {
+        "description": "The name of the factory racks' Octaver pedal (the catalogue module 'Octaver'), on every surface that names it."
+    },
+    "fxModuleOverdrive": "Overdrive",
+    "@fxModuleOverdrive": {
+        "description": "The name of the factory racks' Overdrive pedal (the catalogue module 'Overdrive'), on every surface that names it."
+    },
+    "fxModuleParametricEq": "Parametric EQ",
+    "@fxModuleParametricEq": {
+        "description": "The name of the factory racks' Parametric EQ pedal (the catalogue module 'Parametric EQ'), on every surface that names it."
+    },
+    "fxModulePitchShift": "Pitch shift",
+    "@fxModulePitchShift": {
+        "description": "The name of the factory racks' Pitch shift pedal (the catalogue module 'Pitch shift'), on every surface that names it."
+    },
+    "fxModulePumper": "Pumper",
+    "@fxModulePumper": {
+        "description": "The name of the factory racks' Pumper pedal (the catalogue module 'Pumper'), on every surface that names it."
+    },
+    "fxModuleReverb": "Reverb",
+    "@fxModuleReverb": {
+        "description": "The name of the factory racks' Reverb pedal (the catalogue module 'Reverb'), on every surface that names it."
+    },
+    "fxModuleSlicer": "Slicer",
+    "@fxModuleSlicer": {
+        "description": "The name of the factory racks' Slicer pedal (the catalogue module 'Slicer'), on every surface that names it."
+    },
+    "fxModuleSmartTune": "Smart Tune",
+    "@fxModuleSmartTune": {
+        "description": "The name of the factory racks' Smart tune pedal (the catalogue module 'Smart tune'), on every surface that names it."
+    },
+    "fxModuleSpringReverb": "Spring reverb",
+    "@fxModuleSpringReverb": {
+        "description": "The name of the factory racks' Spring reverb pedal (the catalogue module 'Spring reverb'), on every surface that names it."
+    },
+    "fxModuleTransient": "Transient",
+    "@fxModuleTransient": {
+        "description": "The name of the factory racks' Transient pedal (the catalogue module 'Transient'), on every surface that names it."
+    },
+    "fxModuleVinyl": "Vinyl",
+    "@fxModuleVinyl": {
+        "description": "The name of the factory racks' Vinyl pedal (the catalogue module 'Vinyl'), on every surface that names it."
+    },
+    "fxModuleWah": "Wah",
+    "@fxModuleWah": {
+        "description": "The name of the factory racks' Wah pedal (the catalogue module 'Wah'), on every surface that names it."
+    },
+    "fxModuleWhammy": "Whammy",
+    "@fxModuleWhammy": {
+        "description": "The name of the factory racks' Whammy pedal (the catalogue module 'Whammy'), on every surface that names it."
+    },
     "paramSpeed": "Speed",
     "@paramSpeed": {
         "description": "How long Smart Tune takes to move a voice onto its note: short is the hard, stepped sound, long a gentle pull."
