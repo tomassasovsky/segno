@@ -122,7 +122,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   room's low cut, a float biquad at 8 to 65 Hz, carries a one-ulp change
   to about -62 dBFS: the trunk's own clang -O2 and -O3 builds differ by
   that. So any non-identical change ahead of it fails the -120 dBFS rule;
-  conditioning that filter is an owner's call (follow-up issue). The
+  conditioning that filter is an owner's call (#1761). The
   dynamics, the Spring, the LPF and the modulation kinds spend their time
   in serial filter chains and per-sample `tanhf`, `log2f`, `exp2f` and
   `sinf` that an identical result cannot avoid.
