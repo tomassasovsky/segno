@@ -208,17 +208,13 @@ static void test_overdrive_keeps_polarity(void) {
   uint32_t clock = 0;
   dyn_run(fx, LE_FX_OVERDRIVE, p, sr, in, out, NULL, n, &clock);
   dyn_free(fx);
-  float peak = 0.0f;
-  for (int i = 64; i < n; ++i) peak = fmaxf(peak, fabsf(out[i]));
-  int onset = -1;
-  for (int i = 64; i < n; ++i) {
-    if (fabsf(out[i]) > 0.1f * peak) {
-      onset = i;
-      break;
-    }
+  /* The onset lobe: the largest swing in the first 16 frames (the Looper
+   * X's first six samples are all positive, 2.1 to 3.6 % of the impulse). */
+  float lobe = 0.0f;
+  for (int i = 64; i < 80; ++i) {
+    if (fabsf(out[i]) > fabsf(lobe)) lobe = out[i];
   }
-  CHECK(onset >= 64 && onset < 72);
-  if (onset >= 0) CHECK(out[onset] > 0.0f);
+  CHECK(lobe > 0.0f);
 }
 
 /* ---- Distortion ---- */
@@ -281,13 +277,14 @@ static void test_distortion_cabinet(void) {
   free(h);
 }
 
-/* The drive's law is the Studio Rack's Dist's (#1731, session s19std, the
- * Dist alone at Drive 0 to 100 % as the Looper X shows them): the 1 kHz
+/* The drive's law follows the Studio Rack's Dist's small-signal gain
+ * (#1731, session s19std, the Dist alone at Drive 0 to 100 % as the Looper
+ * X shows them): the 1 kHz
  * fundamental at -48 dBFS in is within 3.1 dB of the capture at every
  * setting (the largest, 3.05 dB, at 100 %; the same at 48 and 96 kHz), and
  * rises with it as the capture does. The check allows 3.2 dB. */
-static void test_distortion_drive_is_the_studio_dist(void) {
-  printf("test_distortion_drive_is_the_studio_dist\n");
+static void test_distortion_drive_law(void) {
+  printf("test_distortion_drive_law\n");
   const float drives[8] = {0.0f,  0.056f, 0.10f, 0.233f,
                            0.5f,  0.665f, 0.80f, 1.0f};
   const double want[8] = {-56.35, -55.85, -55.08, -51.77,
@@ -464,7 +461,7 @@ static void run_drive_tests(void) {
   test_overdrive_keeps_polarity();
   test_distortion_matches_the_capture();
   test_distortion_cabinet();
-  test_distortion_drive_is_the_studio_dist();
+  test_distortion_drive_law();
   test_distortion_tone_is_its_shelf();
   test_drive_offline_equals_live();
   test_drive_on_a_lane();

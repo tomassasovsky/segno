@@ -6334,6 +6334,7 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
  * partitions after them. */
 typedef struct le_cab_bank {
   int32_t parts;
+  int32_t pre; /* le_cab_pre at the bank's rate: the D.I. waits as long */
   float head[LE_CAB_ROWS][LE_CAB_B];
   float re[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
   float im[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
@@ -6387,6 +6388,7 @@ static void* le_cab_bank_make(int32_t sr) {
     free(h);
     return NULL;
   }
+  b->pre = pre;
   b->parts = (m - LE_CAB_B + LE_CAB_B - 1) / LE_CAB_B;
   if (b->parts > LE_CAB_MAX_PARTS) b->parts = LE_CAB_MAX_PARTS;
   if (sr == 48000) {
@@ -6779,7 +6781,9 @@ static float le_amp_cab(le_fx_amp* a, float x) {
   const float* hx = a->hist + a->hp + LE_CAB_B; /* hx[-t]: t frames ago */
   float yn = 0.0f, yo = 0.0f;
   if (rn < 0) {
-    yn = x;
+    /* The D.I. waits the frames a resampled cabinet starts late, so every
+     * cabinet has the latency the table reports (none at 48 and 96 kHz). */
+    yn = hx[-bk->pre];
   } else {
     const float* h = bk->head[rn];
     for (int t = 0; t < LE_CAB_B; ++t) yn += h[t] * hx[-t];
@@ -6788,7 +6792,7 @@ static float le_amp_cab(le_fx_amp* a, float x) {
   const int fading = a->xf > 0;
   if (fading) {
     if (ro < 0) {
-      yo = x;
+      yo = hx[-bk->pre];
     } else {
       const float* h = bk->head[ro];
       for (int t = 0; t < LE_CAB_B; ++t) yo += h[t] * hx[-t];
@@ -6896,9 +6900,9 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
  * Overdrive) and #1743 (the Studio Dist is the Amp+Cab on its D.I.
  * cabinet); chains saved with it keep it, as it was.
  *
- * The Looper X's amp simulator, which the Studio Rack labels Dist (the
- * chain scan, #891), at its other controls' defaults: Bass, Treble and
- * Modern 50 % and the 4x12" cabinet. Fit to the Phase 0 captures (#891):
+ * Fit as the Looper X's amp simulator at its other controls' defaults:
+ * Bass, Treble and Modern 50 % and the 4x12" cabinet. Fit to the Phase 0
+ * captures (#891):
  * the amp at Drive 50 % with the D.I. cabinet (s4/17) for the curve, with
  * the 4x12" (s4/16) for the cabinet, and at Drive 10, 22.7 and 80 % with
  * the 4x12" (s3/3, s3/1, s3/2) for the drive's law.
@@ -6915,16 +6919,11 @@ static int32_t fx_amp_cab_prepare(le_fx_state* fx, int slot, int cap) {
  *   the capture at 7.5 kHz and 6 dB at 11.4 kHz. They are
  *   refitted at 48 kHz to the 96 kHz fit's response, within 0.07 dB from
  *   45 Hz to 18 kHz (#1547), and the other rates follow 48 kHz.
- * The Studio Rack's Dist itself, captured at Drive 0 to 100 % (#1731,
- * session s19std), has this drive law: the 1 kHz small-signal gain is
- * within 3.1 dB of the kernel's at every setting (its voicing is flatter
- * than the 4x12" cabinet's). The Looper X registers Dist Drive as 0 to
- * 100 %, linear, in both racks, and shows the stored value as that percent.
- * Dist Tone is 0 to 100 %, linear, on the Looper X too, and reads as that
- * percent. What it does here is ours, a 2 kHz high shelf of
- * LE_DIST_TONE_DB x (2 tone - 1) dB; the Studio Rack, the only one with
- * this Dist, holds it flat. (The Lo-Fi Rack's Distort is the Overdrive,
- * #1737.) */
+ * Against the Studio Rack's Dist (#1731, session s19std) this drive law's
+ * 1 kHz small-signal gain is within 3.1 dB at every setting, though the
+ * Dist's voicing is flatter, which is why the Studio Rack now builds the
+ * Amp+Cab (#1743). The tone is a 2 kHz high shelf of
+ * LE_DIST_TONE_DB x (2 tone - 1) dB. */
 static const le_fx_param_desc LE_FX_DISTORTION_PARAMS[] = {
     {"drive", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.2f, 0},
     {"tone", LE_FX_UNIT_PERCENT, 0, 0.0f, 100.0f, LE_FX_CURVE_LINEAR, 0.5f, 0},
