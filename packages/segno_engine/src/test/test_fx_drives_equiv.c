@@ -1120,7 +1120,11 @@ static void eq_compare(int32_t type, const char* what, const eq_stim* s,
     peak = fmax(peak, fabs((double)al[i]));
   }
   t->renders++;
-  if (worst == 0.0) t->identical++;
+  /* bit for bit, so a zero of the other sign counts as a difference */
+  if (memcmp(al, bl, sizeof(float) * (size_t)s->n) == 0 &&
+      memcmp(ar, br, sizeof(float) * (size_t)s->n) == 0) {
+    t->identical++;
+  }
   if (worst > t->worst) t->worst = worst;
   const int bad = !finite || worst >= EQ_LIMIT || peak < 1e-4;
   if (bad) t->failed++;

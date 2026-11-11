@@ -68,7 +68,7 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// per frame at each of [kFxCostSettings], measured as [kFxKindCostNs] is.
 /// The Overdrive, the Distortion and the Amp+Cab charge #1755's runs, at
 /// all eight: `bench_fx_cpu --kind`, its chain and moving scenarios. The
-/// 32-frame settings ran three to seven times, and each charges the
+/// 32-frame settings ran three to nine times, and each charges the
 /// largest reading (one instance's p99 there moved by up to 200 ns a frame
 /// between runs), but for one Amp+Cab reading at 96 kHz / 32 (629) that
 /// six later runs, the final code's among them, never came near (425 to
