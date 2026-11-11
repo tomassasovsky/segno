@@ -77,13 +77,13 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// of their 64- and 32-frame figures (2,000 blocks do not always catch the
 /// heaviest one). The Whammy with its pedal moving (`bench_fx_cpu --kind
 /// whammy`, its moving run against its chain run) cost 13 ns a frame more,
-/// inside its figure's noise. The Overdrive, the
+/// which its figures carry. The Overdrive, the
 /// Distortion and the Vinyl run fewer times over at 88.2 kHz and up (#1547),
 /// so they cost less a frame there; the Amp's clipper does too, but its
 /// cabinet runs twice the taps at 96 kHz, so it does not.
 const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
   TrackEffectType.octaver: [1118, 1118, 617, 641, 788, 685, 590, 533],
-  TrackEffectType.whammy: [955, 955, 673, 533, 697, 605, 640, 535],
+  TrackEffectType.whammy: [968, 968, 686, 546, 710, 618, 653, 548],
   TrackEffectType.dualOctaver: [1286, 1286, 702, 759, 872, 738, 681, 632],
   TrackEffectType.overdrive: [904, 861, 903, 860, 522, 513, 540, 533],
   TrackEffectType.distortion: [400, 393, 407, 392, 248, 247, 266, 272],

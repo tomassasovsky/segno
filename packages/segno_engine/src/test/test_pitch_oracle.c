@@ -22,7 +22,7 @@
  * through fx_apply_chain feeds the two channels different signals.
  *
  * Built -O2 by run_native_tests.sh (--ci: every case on a short stimulus,
- * 64-frame blocks at 48 kHz only);
+ * in 32-frame blocks at every rate and 64-frame ones at 48 kHz);
  * the full run (no argument) renders a longer one, and --input FILE adds a
  * mono 32-bit float file (a take) to the stimulus.
  */
@@ -469,9 +469,9 @@ int main(int argc, char** argv) {
     for (size_t k = 0; k < sizeof(k_cases) / sizeof(k_cases[0]); ++k) {
       const po_case* c = &k_cases[k];
       char what[128];
-      /* The CI subset runs 64-frame blocks at 48 kHz only: the kernels run
-       * per sample on the engine's clock, so the block moves only where
-       * the settings change. */
+      /* The CI subset runs 32-frame blocks at every rate and 64-frame
+       * ones at 48 kHz: the kernels run per sample on the engine's clock,
+       * so the block moves only where the settings change. */
       const size_t nb = ci && sr != 48000 ? 1 : sizeof(k_blocks) / sizeof(k_blocks[0]);
       for (size_t bi = 0; bi < nb; ++bi) {
         memset(a, 0, sizeof(float) * 2 * (size_t)n);
