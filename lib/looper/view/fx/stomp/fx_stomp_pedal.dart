@@ -36,6 +36,7 @@ class FxStompPedal extends StatelessWidget {
           isComplex: true,
           painter: _EnclosurePainter(
             spec: spec,
+            name: face.name,
             led: face.led,
             knobs: knobs.length,
           ),
@@ -535,6 +536,7 @@ final class _StompPictures {
 /// What an enclosure picture is recorded for.
 typedef _EnclosureKey = ({
   FxStompSpec spec,
+  String name,
   FxStompLed led,
   int knobs,
   bool textured,
@@ -545,6 +547,7 @@ typedef _EnclosureKey = ({
 class _EnclosurePainter extends CustomPainter {
   _EnclosurePainter({
     required this.spec,
+    required this.name,
     required this.led,
     required this.knobs,
   }) : super(repaint: _repaint);
@@ -558,6 +561,9 @@ class _EnclosurePainter extends CustomPainter {
   ]);
 
   final FxStompSpec spec;
+
+  /// The name printed on it ([FxStompFace.name]).
+  final String name;
   final FxStompLed led;
   final int knobs;
 
@@ -575,6 +581,7 @@ class _EnclosurePainter extends CustomPainter {
     // By the look itself: every look is a const of the look table.
     final key = (
       spec: spec,
+      name: name,
       led: led,
       knobs: _knobs,
       textured: tiles.isNotEmpty,
@@ -585,6 +592,7 @@ class _EnclosurePainter extends CustomPainter {
         _Enclosure(
           Canvas(recorder),
           spec,
+          name: name,
           led: led,
           knobs: _knobs,
           tiles: tiles,
@@ -597,6 +605,7 @@ class _EnclosurePainter extends CustomPainter {
   @override
   bool shouldRepaint(_EnclosurePainter oldDelegate) =>
       !identical(oldDelegate.spec, spec) ||
+      oldDelegate.name != name ||
       oldDelegate.led != led ||
       oldDelegate._knobs != _knobs;
 }
@@ -606,6 +615,7 @@ class _Enclosure {
   _Enclosure(
     this.canvas,
     this.spec, {
+    required this.name,
     required this.led,
     required this.knobs,
     required this.tiles,
@@ -613,6 +623,9 @@ class _Enclosure {
 
   final Canvas canvas;
   final FxStompSpec spec;
+
+  /// The name printed on it.
+  final String name;
   final FxStompLed led;
   final int knobs;
 
@@ -919,7 +932,7 @@ class _Enclosure {
     if (outline != null) {
       fxStompPaintText(
         canvas,
-        spec.name,
+        name,
         Offset(x, y),
         maxWidth: room,
         style.copyWith(
@@ -935,7 +948,7 @@ class _Enclosure {
     }
     fxStompPaintText(
       canvas,
-      spec.name,
+      name,
       Offset(x, y),
       maxWidth: room,
       style.copyWith(

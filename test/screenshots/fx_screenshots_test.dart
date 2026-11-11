@@ -445,6 +445,18 @@ void main() {
     await shoot(tester, 'recorded_track');
   }, skip: !rendersScreenshots);
 
+  // Spanish: a single effect's card has no title, and its pedal prints the
+  // effect's English name in every locale (#1754).
+  testWidgets('Recorded track, in Spanish', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+      locale: const Locale('es'),
+    );
+    await shoot(tester, 'recorded_track_es');
+  }, skip: !rendersScreenshots);
+
   testWidgets('Recorded track, the part picker', (tester) async {
     await pump(tester, destination: const FxDestination.recordedTrack(0));
     await tester.tap(find.byKey(const Key('fx_part_picker')));

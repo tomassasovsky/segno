@@ -97,29 +97,6 @@ void main() {
       expect(r.left - b.right, kFxCardGap);
     });
 
-    testWidgets('a long name does not shrink the pedal: pedals in one row '
-        'come out the same size', (tester) async {
-      await pump(tester, [
-        BuiltInEffect(type: TrackEffectType.echo, slotId: 'short', module: 'X'),
-        BuiltInEffect(
-          type: TrackEffectType.echo,
-          slotId: 'long',
-          module: 'A pedal with a name long enough to wrap',
-        ),
-      ]);
-      // The art's slot: the card's second Expanded, after the header's.
-      Rect art(String id) => tester.getRect(
-        find
-            .descendant(
-              of: find.byKey(Key('fx_card_$id')),
-              matching: find.byType(Expanded),
-            )
-            .at(1),
-      );
-      expect(art('long').size, art('short').size);
-      expect(art('long').top, art('short').top);
-    });
-
     testWidgets('consecutive singles sit a gap apart, on the rack column '
         'grid', (tester) async {
       await pump(tester, [
@@ -135,7 +112,7 @@ void main() {
       expect(r.left - a.left, kFxCardWidth + kFxCardGap);
     });
 
-    testWidgets('a single card shows its placement, name, assignment and a '
+    testWidgets('a single card shows its placement, assignment and a '
         'power that flips its group', (tester) async {
       final toggles = await pump(tester, mixed);
       final card = find.byKey(const Key('fx_card_s1'));
@@ -143,8 +120,16 @@ void main() {
         find.descendant(of: card, matching: find.text('Pre')),
         findsOneWidget,
       );
+      // No title: the pedal prints the name, and the card carries it for a
+      // screen reader.
       expect(
         find.descendant(of: card, matching: find.text('Filter')),
+        findsNothing,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == 'Filter',
+        ),
         findsOneWidget,
       );
       expect(

@@ -331,8 +331,9 @@ class _RackCardBody extends StatelessWidget {
 
 /// A single effect's inside (#1754): the placement and the power on a line
 /// level with a rack card's placement line, the pedal drawn as large as the
-/// card allows, a two-line name slot (so pedals in one row come out the same
-/// size), and the assignment on a line level with a rack card's status line.
+/// card allows, and the assignment on a line level with a rack card's status
+/// line. No title: the pedal prints the effect's name (the owner's call), and
+/// the card carries it for a screen reader.
 class _SingleCardBody extends StatelessWidget {
   const _SingleCardBody({
     required this.group,
@@ -348,80 +349,66 @@ class _SingleCardBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = context.surface;
     final spacing = context.spacing;
     final l10n = context.l10n;
     final pedal = fxEntryArt(group.entries.first, live: false);
-    return Padding(
-      // The header line is a status line's height, centred where a rack
-      // card's placement line is centred.
-      padding: EdgeInsets.fromLTRB(
-        spacing.md,
-        _kCardInset - (_kStatusHeight - _kPlacementHeight) / 2,
-        spacing.md,
-        _kCardInset,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: _kStatusHeight,
-            child: Row(
-              children: [
-                Expanded(
-                  child: showPlacement
-                      ? _PlacementTag(placement: group.placement)
-                      : const SizedBox.shrink(),
-                ),
-                power,
-              ],
-            ),
-          ),
-          SizedBox(height: spacing.sm),
-          // Still: the strip shows which pedal, not its settings.
-          Expanded(
-            child: pedal == null
-                ? _FallbackMark(lit: lit)
-                : FxArtView(
-                    art: pedal,
-                    fallback: _FallbackMark(lit: lit),
+    final surface = context.surface;
+    return Semantics(
+      label: fxGroupName(l10n, group),
+      child: Padding(
+        // The header line is a status line's height, centred where a rack
+        // card's placement line is centred.
+        padding: EdgeInsets.fromLTRB(
+          spacing.md,
+          _kCardInset - (_kStatusHeight - _kPlacementHeight) / 2,
+          spacing.md,
+          _kCardInset,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: _kStatusHeight,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: showPlacement
+                        ? _PlacementTag(placement: group.placement)
+                        : const SizedBox.shrink(),
                   ),
-          ),
-          SizedBox(height: spacing.md),
-          SizedBox(
-            // Two lines of the name at its size, as the text scale draws them.
-            height: 2 * MediaQuery.textScalerOf(context).scale(24) * 1.1,
-            child: Align(
-              alignment: Alignment.bottomLeft,
-              child: AppText(
-                fxGroupName(l10n, group),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: surface.textPrimary,
-                  fontSize: 24,
-                  height: 1.1,
+                  power,
+                ],
+              ),
+            ),
+            SizedBox(height: spacing.sm),
+            // Still: the strip shows which pedal, not its settings.
+            Expanded(
+              child: pedal == null
+                  ? _FallbackMark(lit: lit)
+                  : FxArtView(
+                      art: pedal,
+                      fallback: _FallbackMark(lit: lit),
+                    ),
+            ),
+            SizedBox(height: spacing.md),
+            SizedBox(
+              height: _kStatusHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: AppText(
+                  l10n.fxUnassigned,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: surface.textTertiary,
+                    fontSize: 18,
+                    height: 1,
+                  ),
                 ),
               ),
             ),
-          ),
-          SizedBox(
-            height: _kStatusHeight,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: AppText(
-                l10n.fxUnassigned,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: surface.textTertiary,
-                  fontSize: 18,
-                  height: 1,
-                ),
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
