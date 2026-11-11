@@ -3,6 +3,7 @@ import 'package:segno/control/binding/control_availability.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_names.dart';
 
 /// How a binding's target and its control are NAMED, in one place.
 ///
@@ -151,22 +152,20 @@ String _laneVolumeLabel(
 }
 
 /// The display name of the effect sitting in [target]'s slot, or `null` when
-/// the slot is gone: a rack pedal's catalogue module, a single built-in's
-/// type label, or a plugin's name.
+/// the slot is gone, named as every surface names it ([fxBlockName]).
 ///
 /// The effect's own name, not its slot id: a list of `slot-7f2a` rows names
 /// nothing a performer recognises. The id stays the binding's identity — it is
 /// what survives a reorder — and this is only what the row says.
-String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
+String? fxSlotName(
+  AppLocalizations l10n,
+  LooperRepository looper,
+  FxSlotTarget target,
+) {
   final entries = looper.chainEntriesAt(target.address);
   if (entries == null) return null;
   for (final fx in entries) {
-    if (fx.slotId != target.slotId) continue;
-    return switch (fx) {
-      BuiltInEffect(:final module?) => module,
-      BuiltInEffect(:final type) => type.label,
-      PluginEffect(:final name) => name,
-    };
+    if (fx.slotId == target.slotId) return fxBlockName(l10n, fx);
   }
   return null;
 }

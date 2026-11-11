@@ -273,19 +273,37 @@ void main() {
           module: 'Distortion',
           rack: const FxRack(id: 'r', name: 'Grubby', art: 'lo-fi'),
         ),
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+          slotId: 'plug-1',
+        ),
       ];
       const address = FxAddress(stage: FxStage.track, index: 3);
 
       expect(
         fxSlotName(
+          l10n,
           looper,
           const FxSlotTarget(address: address, slotId: 'lofi-1'),
         ),
         'Distortion',
       );
       expect(
-        fxSlotName(looper, const FxSlotTarget(address: address, slotId: 't-1')),
-        TrackEffectType.drive.label,
+        fxSlotName(
+          l10n,
+          looper,
+          const FxSlotTarget(address: address, slotId: 't-1'),
+        ),
+        l10n.effectTypeLabel(TrackEffectType.drive),
+      );
+      // A plugin with no name yet falls back as every surface does.
+      expect(
+        fxSlotName(
+          l10n,
+          looper,
+          const FxSlotTarget(address: address, slotId: 'plug-1'),
+        ),
+        'p',
       );
     });
   });

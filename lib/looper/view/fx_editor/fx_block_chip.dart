@@ -1,22 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/fx_names.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
-
-/// The display name for chain entry [effect]: a rack pedal's catalogue
-/// module (the Lo-Fi Rack's Distortion, whatever kind it is built on), a
-/// single built-in's type label, or a hosted plugin's resolved name (its id,
-/// then a generic label, as fallbacks).
-String fxBlockName(AppLocalizations l10n, TrackEffect effect) =>
-    switch (effect) {
-      BuiltInEffect(:final module?) => module,
-      BuiltInEffect(:final type) => l10n.effectTypeLabel(type),
-      PluginEffect(:final name, :final ref) =>
-        name.isNotEmpty
-            ? name
-            : (ref.id.isEmpty ? l10n.signalPluginUnknownName : ref.id),
-    };
 
 /// One block in the FX chain strip — a single chain entry rendered as a compact
 /// chip. Selection is the only lit state (`accent`), since a block is always

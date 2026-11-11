@@ -437,7 +437,7 @@ class _TargetRow extends StatelessWidget {
         // Named by its own effect rather than by repeating the chain above
         // it, which the row already says at its trailing edge.
         final FxSlotTarget slot =>
-          fxSlotName(looper, slot) ??
+          fxSlotName(l10n, looper, slot) ??
               bindingTargetLabel(l10n, trackNames, slot),
         // A rack is named by its own name, as on the Effects page.
         final FxRackTarget rack =>
