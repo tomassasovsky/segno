@@ -84,8 +84,9 @@ extern "C" {
 /* A frame's state between stages, per channel: the window (reused for the
  * inverse transform), the spectrum, magnitude, true frequency and envelope;
  * then a second voice's synthesis spectrum and its running phases (the Dual
- * Octaver's Octave 2, #1464), which persist from frame to frame. */
-#define LE_PV_SCRATCH (LE_PV_N + 8 * LE_PV_BINS)
+ * Octaver's Octave 2, #1464), which persist from frame to frame; then the
+ * shift's own, carried between its two steps (#1755). */
+#define LE_PV_SCRATCH (LE_PV_N + 11 * LE_PV_BINS)
 
 /* Analysis-hop stagger (#915). Every octaver instance used to start its hop
  * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the

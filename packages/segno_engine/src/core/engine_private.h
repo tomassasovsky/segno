@@ -495,9 +495,11 @@ typedef struct le_octaver_state {
   float ratio;
   float dip_xfade;
   float dip_g;
-  /* PSOLA: the grain half-width whose Hann window is in the scratch
-   * (LE_PS_GRAIN, engine_fx.c); 0: none. */
-  int32_t grain_th;
+  /* The phase vocoder's shift between its two steps (le_pv_shift_into):
+   * its peaks, the region it is at and the first bin of that region. */
+  int32_t shift_np;
+  int32_t shift_r;
+  int32_t shift_start;
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
