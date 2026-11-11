@@ -27,15 +27,22 @@ OPT=${FX_EQUIV_OPT:--O2}
 OUT_DIR=${FX_EQUIV_OUT:-build/bench/fx_equiv}
 mkdir -p "$OUT_DIR"
 
-if ! git cat-file -e "$REF^{commit}" 2>/dev/null; then
-  echo "== fetching the reference $REF ==" >&2
-  git fetch --quiet --depth 1 origin "$REF"
+# FX_EQUIV_REF_SRC: REF's packages/segno_engine/src already extracted (a
+# container without git); otherwise git archive extracts it.
+if [ -n "${FX_EQUIV_REF_SRC:-}" ]; then
+  REF_SRC=$FX_EQUIV_REF_SRC
+else
+  if ! git cat-file -e "$REF^{commit}" 2>/dev/null; then
+    echo "== fetching the reference $REF ==" >&2
+    git fetch --quiet --depth 1 origin "$REF"
+  fi
+  rm -rf "$OUT_DIR/ref"
+  mkdir -p "$OUT_DIR/ref"
+  # The island and the headers it includes.
+  git archive "$REF" -- src/core src/midi src/host/plugin_slot.h \
+    src/miniaudio/miniaudio.h | tar -x -C "$OUT_DIR/ref"
+  REF_SRC=$OUT_DIR/ref/src
 fi
-rm -rf "$OUT_DIR/ref"
-mkdir -p "$OUT_DIR/ref"
-# The island and the headers it includes.
-git archive "$REF" -- src/core src/midi src/host/plugin_slot.h \
-  src/miniaudio/miniaudio.h | tar -x -C "$OUT_DIR/ref"
 
 case "$(uname -s)" in
   Darwin) LIB_FLAGS="-shared"; HARNESS_LIBS="-lpthread -lm" ;;
@@ -54,7 +61,7 @@ build_lib() { # build_lib SRC_DIR OUT
 }
 
 echo "== building the reference effects ($REF) ==" >&2
-build_lib "$OUT_DIR/ref/src" "$OUT_DIR/libfx_ref.so"
+build_lib "$REF_SRC" "$OUT_DIR/libfx_ref.so"
 echo "== building the working tree's effects ==" >&2
 build_lib src "$OUT_DIR/libfx_new.so"
 echo "== building bench_fx_equiv ==" >&2
