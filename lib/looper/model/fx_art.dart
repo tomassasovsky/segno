@@ -33,7 +33,15 @@ final class FxPedalPicture extends FxArt {
     this.controls, {
     required this.live,
     this.chainOn = true,
+    this.name,
   });
+
+  /// The name the face prints instead of its look's own, or `null` for the
+  /// look's: a standalone built-in's English name (Drive, Filter, Octaver),
+  /// which the owner keeps English in every locale, on a look it may share
+  /// with a catalogue pedal (the Overdrive, LPF and Octaver faces) whose
+  /// rack modules keep the look's own name (#1754).
+  final String? name;
 
   /// The chain entry the pedal stands for.
   final TrackEffect effect;
@@ -60,11 +68,12 @@ final class FxPedalPicture extends FxArt {
   /// picture.
   @override
   List<Object?> get props => live
-      ? [effect, look, live, chainOn]
+      ? [effect, look, live, chainOn, name]
       : [
           effect.slotId,
           effect.rack?.art,
           look,
+          name,
           effect.typeCode,
           ...controls.keys,
           live,
@@ -103,9 +112,9 @@ FxPedalPicture? fxEntryArt(
   required bool live,
   bool chainOn = true,
 }) {
-  final name = effect.module;
-  final look = name != null
-      ? fxModuleNamed(name)?.name
+  final module = effect.module;
+  final look = module != null
+      ? fxModuleNamed(module)?.name
       : effect is BuiltInEffect
       ? kFxBuiltInLooks[effect.type]
       : null;
@@ -118,5 +127,7 @@ FxPedalPicture? fxEntryArt(
         : (params: const <int>[], keys: const <String>[]),
     live: live,
     chainOn: chainOn,
+    // A standalone built-in prints its own English name (#1754).
+    name: module == null && effect is BuiltInEffect ? effect.type.label : null,
   );
 }

@@ -14,6 +14,7 @@ import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
 import 'package:segno/control/view/control_availability_view.dart';
 import 'package:segno/control/view/pedal_setup/expression_calibration_panel.dart';
@@ -995,10 +996,7 @@ class _JackToolbar extends StatelessWidget {
             if (index > 0) SizedBox(width: context.spacing.sm),
             LoopChoiceButton(
               key: Key('external_jack_${value.name}'),
-              label: switch (value) {
-                PedalCtrlJack.ctrl1 => l10n.externalJackCtrl1,
-                PedalCtrlJack.ctrl2 => l10n.externalJackCtrl2,
-              },
+              label: externalJackName(l10n, value),
               selected: value == jack,
               onTap: () => onJack(value),
               width: 144,

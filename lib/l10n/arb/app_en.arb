@@ -4978,6 +4978,30 @@
     "@fxUnassigned": {
         "description": "An effect with no pedal assignment, on its card's status line."
     },
+    "fxAssignedControlPart": "{control} · {part}",
+    "@fxAssignedControlPart": {
+        "description": "A control assigned to an effect and the part of it that acts, on the effect card's status line: Track 3 · Hold, CTRL 1 · Button 2.",
+        "placeholders": {
+            "control": {
+                "type": "String"
+            },
+            "part": {
+                "type": "String"
+            }
+        }
+    },
+    "fxAssignedMore": "{name} +{count}",
+    "@fxAssignedMore": {
+        "description": "The first control assigned to an effect and how many more, on its card's status line: Track 3 +2.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
     "fxModuleCount": "{count, plural, =1{1 effect} other{{count} effects}}",
     "@fxModuleCount": {
         "description": "How many pedals a rack holds, on its card's status line.",

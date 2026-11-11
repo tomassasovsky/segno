@@ -29,7 +29,15 @@ const List<({int rate, int period})> kFxCostSettings = [
 /// moving runs, measured the same way): the LPF swept by its LFO (`lpflfo`),
 /// the Mode delay's Dub voicing gliding (`dubdelay`), the Mod and the Room
 /// reverb with their settings moving. The High-pass changed after #1508
-/// (#1644) and charges only #1724's runs.
+/// (#1644) and charges only #1724's runs. The kinds #1755 made cheaper (the
+/// Room, Dub, Amb and Freeverb reverbs, the Mode delay, the EQ, the Filter,
+/// the Echo, the Tremolo and the Mod, each bit-identical to before) were
+/// measured before and after on the same day (the table at 44.1, 48 and
+/// 96 kHz, 32 and 64 frames, and the moving runs at 48 kHz / 32): each
+/// charges the larger of its largest new reading and its old charge scaled
+/// by the median of the after-to-before ratios of the scenario that set it
+/// (the Room reverb's moving run, the table for the rest), so a worst case
+/// an earlier run caught keeps its margin.
 ///
 /// These kinds do the same work a frame at every setting, so a lower reading
 /// at one is the bench's noise (one instance's p99 at 32 frames moves by a
@@ -40,12 +48,12 @@ const List<({int rate, int period})> kFxCostSettings = [
 const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.none: 0,
   TrackEffectType.drive: 35,
-  TrackEffectType.filter: 166,
+  TrackEffectType.filter: 99,
   TrackEffectType.delay: 42,
-  TrackEffectType.tremolo: 52,
-  TrackEffectType.echo: 144,
-  TrackEffectType.reverb: 234,
-  TrackEffectType.eq: 88,
+  TrackEffectType.tremolo: 50,
+  TrackEffectType.echo: 141,
+  TrackEffectType.reverb: 223,
+  TrackEffectType.eq: 71,
   TrackEffectType.compressor: 76,
   TrackEffectType.transient: 73,
   TrackEffectType.hpGate: 122,
@@ -55,13 +63,13 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.degrade: 103,
   TrackEffectType.lpf: 200,
   TrackEffectType.spring: 116,
-  TrackEffectType.dubVerb: 221,
-  TrackEffectType.ambVerb: 272,
+  TrackEffectType.dubVerb: 197,
+  TrackEffectType.ambVerb: 225,
   TrackEffectType.pumper: 63,
   TrackEffectType.slicer: 103,
-  TrackEffectType.modeDelay: 179,
-  TrackEffectType.mod: 113,
-  TrackEffectType.roomVerb: 735,
+  TrackEffectType.modeDelay: 171,
+  TrackEffectType.mod: 110,
+  TrackEffectType.roomVerb: 552,
 };
 
 /// What the kinds whose work depends on the setting charge, in nanoseconds

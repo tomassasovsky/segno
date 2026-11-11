@@ -99,3 +99,11 @@ const List<PedalButton> kTrackSwitches = [
   PedalButton.track3,
   PedalButton.track4,
 ];
+
+/// What the console calls the CTRL [jack]: `CTRL 1`, on the External pedals
+/// page and wherever an assignment names it.
+String externalJackName(AppLocalizations l10n, PedalCtrlJack jack) =>
+    switch (jack) {
+      PedalCtrlJack.ctrl1 => l10n.externalJackCtrl1,
+      PedalCtrlJack.ctrl2 => l10n.externalJackCtrl2,
+    };

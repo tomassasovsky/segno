@@ -38,6 +38,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
+| #1754, #1740 | Compact single-effect card on the Effects page (app built, draft PR #1756); the Penpot frames and the #1740 clean-up wait for a connected Penpot MCP tab | in-review | auto | `claude/single-fx-card-1754` |
+| #1757 | A single-effect card's assignment line names the console switch, CTRL jack or MIDI control assigned to it (stacked on #1756) | in-review | auto | `claude/card-assignment-1757` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
@@ -80,8 +82,58 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
+| #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 
 ---
+
+## November 2026 Cheaper effects, the same sound: reverbs, delays, filters (#1755)
+
+<!-- cspell:words Freeverb ulp tanhf exp2f log2f NEON equiv diffusers -->
+- The owner's rule: no loss of quality. Every change here is bit-identical
+  to the trunk it started from (65f85a3b4), on every factory setting, at
+  44.1, 48, 88.2 and 96 kHz, in 32- and 64-frame blocks, tails included:
+  `bench_fx_equiv` (How to build / test) proves it, with macOS clang -O2,
+  GCC 13 and 14 and clang 18 -O3 (the appliance's) on arm64; CI runs its
+  subset on x86 and arm64.
+- The reverbs' network (Dub, Amb and Room): its eight lines run as two
+  four-lane vectors (`engine_fx_simd.h`, GCC and clang vector extensions,
+  NEON on the console), the two sides' diffusers in step, and a redesign
+  while Length or Dec glides computes the lines four at a time. The sums
+  that mix the lines still run in line order.
+- Mode delay: the Drum and Dub voicings design each section once for both
+  sides and only what a gliding setting moves; the time in frames is kept
+  until the tempo or note value changes. EQ: both channels as one double
+  vector. Freeverb: each bank's combs four at a time. Filter, Echo,
+  Tremolo: one design, read position or gain a sample for both channels.
+  Mod: the phaser's stage spreads once a rate.
+- One instance on the console (Pi 5, GCC build, offline, core 3, ns a
+  frame at 48 kHz): Room reverb 377 -> 309 still and 644 -> 426 with
+  Length moving; Dub and Amb 198 -> 142 still, 351 -> 224 moving; Filter
+  132 -> 82; Freeverb 128 -> 116; EQ 77 -> 63; Mode delay 80 -> 71 (the
+  Dub voicing gliding 120 -> 104); Echo 117 -> 110; Mod 98 -> 92. The
+  others are unchanged.
+- The charges (`kFxKindCostNs`): the table at 44.1, 48 and 96 kHz, 32 and
+  64 frames, and the moving runs at 48 kHz / 32, before and after on the
+  same day; each kind charges the larger of its largest new reading and
+  its old charge scaled by the median after-to-before ratio of the
+  scenario that set it, so a worst case an earlier run caught keeps its
+  margin. Room 735 -> 552, Amb 272 -> 225, Dub 221 -> 197, Reverb 234 ->
+  223, Mode delay 179 -> 171, Filter 166 -> 99, EQ 88 -> 71, Echo 144 ->
+  141, Mod 113 -> 110, Tremolo 52 -> 50. Ed's Rack 3407 -> 3199 at 96 kHz
+  / 64 (2, 3, 4 and 5 racks with 0 to 3 workers, was 2, 2, 3 and 4) and
+  4640 -> 4432 at 48 kHz / 32 (four inputs leave room for two track racks,
+  was one).
+- What was left: the Room reverb's early taps (up to 64 a side, about
+  140 ns a frame) keep the trunk's loop character for character. The
+  compilers decide per loop shape whether to fuse each tap's multiply-add
+  (clang -O3 interleaves the trunk's loop and splits them), and a Drum
+  room's low cut, a float biquad at 8 to 65 Hz, carries a one-ulp change
+  to about -62 dBFS: the trunk's own clang -O2 and -O3 builds differ by
+  that. So any non-identical change ahead of it fails the -120 dBFS rule;
+  conditioning that filter is an owner's call (#1761). The
+  dynamics, the Spring, the LPF and the modulation kinds spend their time
+  in serial filter chains and per-sample `tanhf`, `log2f`, `exp2f` and
+  `sinf` that an identical result cannot avoid.
 
 ## November 2026 A long capture recovers in bounded memory (#1747)
 
@@ -2218,6 +2270,21 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   `/Users/Tomas/development/flutter/bin/flutter test
   tool/generate_fx_factory_settings.dart` in `packages/looper_repository`
   (its test fails until then).
+- **Effects against the reference engine (#1755):**
+  `bash packages/segno_engine/src/test/bench/bench_fx_equiv.sh` builds the
+  effects island twice, from the commit pinned in the script (`REF`) and
+  from the working tree, and runs every kind through both at every factory
+  setting, 44.1 to 96 kHz, 32 and 64 frames, tails included: bit-identical
+  but for the kinds in `k_reordered` (`bench_fx_equiv.c`), which must stay
+  under -120 dBFS. About 4 minutes on an M4 Pro; `--kind NAME`, `--detail`
+  (the first frame that differs), `--ci` (one setting a kind, which
+  `run_native_tests.sh` runs). `FX_EQUIV_OPT=-O3 CC=clang` checks the
+  appliance library's build. A change meant to alter a kind's sound moves
+  `REF` to the commit that makes it, in the same PR. Bit-identity depends on
+  each compiler forming the same fused multiply-adds: a loop of taps
+  rewritten in another shape can make clang split them (#1755), and GCC
+  fuses the other product of `b x - a y` in vector code (`LE_ROUNDED`,
+  `engine_fx_simd.h`).
 - **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine

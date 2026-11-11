@@ -14,13 +14,19 @@ class FxStompFace extends Equatable {
     required this.knobs,
     this.led = FxStompLed.on,
     this.live = true,
-  }) : assert(
+    String? name,
+  }) : name = name ?? spec.name,
+       assert(
          knobs.length <= spec.face.maxKnobs,
          'a face draws at most its maxKnobs knobs',
        );
 
   /// How the pedal looks.
   final FxStompSpec spec;
+
+  /// The name printed on it: the look's own ([FxStompSpec.name]) unless the
+  /// pedal names itself ([FxPedalPicture.name]).
+  final String name;
 
   /// The knobs, in reading order: at most the face's
   /// [FxStompFaceKind.maxKnobs].
@@ -34,7 +40,7 @@ class FxStompFace extends Equatable {
   final bool live;
 
   @override
-  List<Object?> get props => [spec, knobs, led, live];
+  List<Object?> get props => [spec, name, knobs, led, live];
 }
 
 /// What a pedal's LED shows.
@@ -143,8 +149,15 @@ FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
     controls,
     room: spec.face.maxKnobs,
   );
+  final name = pedal.name;
   return FxStompFace(
     spec: spec,
+    // In the look's own case: an upper-case face prints its name in capitals.
+    name: name == null
+        ? null
+        : spec.name == spec.name.toUpperCase()
+        ? name.toUpperCase()
+        : name,
     live: live,
     led: !live
         ? FxStompLed.still

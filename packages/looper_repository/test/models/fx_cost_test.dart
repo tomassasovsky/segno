@@ -782,7 +782,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 2,885 ns a frame at 96 kHz / 64
+    // Ed's Rack, the plan's unit (section 7): 2,677 ns a frame at 96 kHz / 64
     // on the console's own table (#1508, #1724, #1755), 2,665 in the plan.
     final rack = [
       for (final type in [
@@ -816,16 +816,16 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 2885);
+      expect(rackNs, 2677);
       expect(fxBudgetNs(96000), 6834);
     });
 
     test("at the owner's 48 kHz / 32, four of Ed's Racks fit the callback "
-        'alone and ten fit the inputs with two workers (#1755: three and '
-        'seven with the pitch kinds before it)', () {
+        'alone and eleven fit the inputs with two workers (#1755: three and '
+        'seven before it)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      expect(ns, 3400);
+      expect(ns, 3192);
       expect(budget, 14622);
       expect(4 * ns, lessThanOrEqualTo(budget));
       expect(5 * ns, greaterThan(budget));
@@ -835,18 +835,18 @@ void main() {
         workers: 2,
         period: 32,
       );
-      expect(load(10), lessThanOrEqualTo(budget));
-      expect(load(11), greaterThan(budget));
+      expect(load(11), lessThanOrEqualTo(budget));
+      expect(load(12), greaterThan(budget));
     });
 
-    // With the pitch kinds before #1755 the console ran 5 tracks and 4
-    // inputs with 1 track with no late period, 6 tracks and 4 inputs with 3
-    // tracks with more than #1724's limit run (#1729). With #1755's it ran 7
-    // and 8 tracks with none (120 s each, the callback's worst service 441
-    // and 432 us of 666), so the rule admitting 7 stays on the safe side.
+    // Before #1755 the console ran 5 tracks and 4 inputs with 1 track with
+    // no late period, 6 tracks and 4 inputs with 3 tracks with more than
+    // #1724's limit run (#1729). With #1755's pitch kernels it ran 7 and 8
+    // tracks with none (120 s each, the callback's worst service 441 and
+    // 432 us of 666), so the rule admitting 7 stays on the safe side.
     test("at 48 kHz / 32 with two workers, seven of Ed's Racks fit on "
-        'tracks and eight do not; four on inputs leave room for four on '
-        'tracks, not five (#1729, #1755)', () {
+        'tracks and eight do not; four on inputs leave room for five on '
+        'tracks, not six (#1729, #1755)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
       int load(int inputs, int tracks) => fxLoadNs(
@@ -858,8 +858,8 @@ void main() {
       );
       expect(load(0, 7), lessThanOrEqualTo(budget));
       expect(load(0, 8), greaterThan(budget));
-      expect(load(4, 4), lessThanOrEqualTo(budget));
-      expect(load(4, 5), greaterThan(budget));
+      expect(load(4, 5), lessThanOrEqualTo(budget));
+      expect(load(4, 6), greaterThan(budget));
       // On the callback alone, before #1729: four.
       expect(4 * ns, lessThanOrEqualTo(budget));
       expect(5 * ns, greaterThan(budget));
@@ -895,11 +895,11 @@ void main() {
 
     // The plan's table admitted 2, 4, 6 and 7 at its 2,665 ns; the worst of
     // eight at 80 % admitted 2, 3, 4 and 5; #1724's table 2, 2, 3 and 4.
-    test('admits 2, 3, 5 and 6 racks with 0 to 3 workers at 96 kHz', () {
+    test('admits 2, 4, 5 and 7 racks with 0 to 3 workers at 96 kHz', () {
       expect(racksAdmitted(0), 2);
-      expect(racksAdmitted(1), 3);
+      expect(racksAdmitted(1), 4);
       expect(racksAdmitted(2), 5);
-      expect(racksAdmitted(3), 6);
+      expect(racksAdmitted(3), 7);
     });
 
     group('LooperRepository', () {

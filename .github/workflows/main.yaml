@@ -414,6 +414,17 @@ jobs:
         if: always()
         shell: bash
         run: bash packages/segno_engine/src/test/bench/bench_fx_matrix.sh --ci
+      # The kinds against the reference engine's render (#1755) where the
+      # vector code runs as NEON: with GCC, and with clang at -O3, the
+      # appliance library's compiler and level.
+      - name: Run the effects equivalence subset (gcc, clang -O3)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash packages/segno_engine/src/test/bench/bench_fx_equiv.sh --ci
+          CC=clang FX_EQUIV_OPT=-O3 \
+            bash packages/segno_engine/src/test/bench/bench_fx_equiv.sh --ci
       - name: Upload the effects bench and its report for the appliance
         if: always()
         uses: actions/upload-artifact@v7
