@@ -45,8 +45,28 @@ void main() {
       }
     });
 
-    test('a rack pedal reads in the locale, and as the add-an-effect row '
-        'that adds it (#1752)', () {
+    test('each add-an-effect row reads as the pedal it adds, in each '
+        'locale (#1752)', () {
+      for (final locale in AppLocalizations.supportedLocales) {
+        final l = lookupAppLocalizations(locale);
+        for (final row in kFxAddableEffects) {
+          // The row has no label of its own: it is named by its module, as
+          // the pedal it adds is.
+          final pedal = BuiltInEffect(
+            type: TrackEffectType.none,
+            module: row.module,
+          );
+          expect(l.fxModuleLabel(row.module), isNotNull, reason: row.module);
+          expect(
+            fxBlockName(l, pedal),
+            l.fxModuleLabel(row.module),
+            reason: '$locale ${row.module}',
+          );
+        }
+      }
+    });
+
+    test('a rack pedal reads in the locale (#1752)', () {
       final es = lookupAppLocalizations(const Locale('es'));
       final distort = BuiltInEffect(
         type: TrackEffectType.overdrive,

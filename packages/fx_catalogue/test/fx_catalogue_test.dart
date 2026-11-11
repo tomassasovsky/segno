@@ -666,7 +666,8 @@ void main() {
       return byFamily;
     }
 
-    test("are the pen's 26 rows, in the pen's order", () {
+    test("are the pen's 26 rows, in the pen's order, each named by the "
+        'module it adds', () {
       expect(kFxAddableEffects.map((e) => e.module), [
         'Amp',
         'Chorus',

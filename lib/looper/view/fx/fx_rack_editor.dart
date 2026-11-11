@@ -367,7 +367,9 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
           const SizedBox(height: 10),
           _PedalTitle(
             // Keyed by identity, never by the localized name.
-            key: Key('fx_pedal_power_${effect.slotId ?? effect.module}'),
+            key: Key(
+              'fx_pedal_power_${effect.slotId ?? effect.module ?? name}',
+            ),
             name: name,
             enabled: effect.enabled,
             onTap: widget.onTogglePower,
