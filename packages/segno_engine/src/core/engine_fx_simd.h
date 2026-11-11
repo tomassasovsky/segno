@@ -18,6 +18,7 @@
 
 typedef float le_f4 __attribute__((vector_size(16)));
 typedef uint32_t le_u4 __attribute__((vector_size(16)));
+typedef double le_d2 __attribute__((vector_size(16)));
 typedef double le_d4 __attribute__((vector_size(32))); /* two registers */
 /* The same, at any float's alignment: what the loads and stores go
  * through. A vector of floats aliases floats only, so a store through one
@@ -38,6 +39,8 @@ static inline void le_u4_store(uint32_t* p, le_u4 v) { *(le_u4_at*)p = v; }
 static inline le_f4 le_f4_set1(float x) { return (le_f4){x, x, x, x}; }
 
 static inline le_u4 le_u4_set1(uint32_t x) { return (le_u4){x, x, x, x}; }
+
+static inline le_d2 le_d2_set1(double x) { return (le_d2){x, x}; }
 
 static inline le_d4 le_d4_set1(double x) { return (le_d4){x, x, x, x}; }
 
