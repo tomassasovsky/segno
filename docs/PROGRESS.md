@@ -73,6 +73,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: bench and blind A/B built, the owner's listening decides on oversampling | in-review | auto | `claude/alias-ab-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
+| #1755 | Every effect cheaper without changing its sound: the pitch family (phase vocoder in thirteen slots, NEON FFT and YIN, PSOLA's grain windows from a table), bit-identical to a frozen copy of its kernels (test_pitch_oracle) | in-review | auto | `claude/fx-opt-pitch-1755` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1729 | Track and lane chains on the effects workers (#1515 part 2): engine part 1 and the admission (part 2, kFxTrackJobNs from the console stress) in review | in-review | auto | `claude/fx-track-workers-1729*` |
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |

@@ -67,21 +67,24 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// What the kinds whose work depends on the setting charge, in nanoseconds
 /// per frame at each of [kFxCostSettings], measured as [kFxKindCostNs] is.
 /// The Overdrive and the Amp changed after #1508 (#1663, #1664) and charge
-/// only #1724's runs, at all eight.
+/// only #1724's runs, at all eight. The kinds on the hop changed in #1755
+/// and charge its runs at all eight (the larger of two where it ran twice).
 ///
-/// A kind on the hop (the octaver, the Whammy, the Dual Octaver) does a
-/// quarter of its hop in every block up to 64 frames, so it costs more a
-/// frame at 32 frames than at 64. At 44.1 kHz a 64-frame block can take two
-/// quarters, a 32-frame block's cost a frame, so there they charge the
-/// larger of their 64- and 32-frame figures (2,000 blocks do not always
-/// catch the two-quarter one). The Overdrive, the
+/// A kind on the hop (the octaver, the Whammy, the Dual Octaver) spreads a
+/// frame over thirteen slots of its 48 kHz hop (#1755), so a 32-frame block
+/// carries two slots at 48 kHz, one at 96 kHz, and up to three at 44.1 kHz,
+/// where its cost a frame is the highest. At 44.1 kHz they charge the larger
+/// of their 64- and 32-frame figures (2,000 blocks do not always catch the
+/// heaviest one). The Whammy with its pedal moving (`bench_fx_cpu --kind
+/// whammy`, its moving run against its chain run) cost 13 ns a frame more,
+/// inside its figure's noise. The Overdrive, the
 /// Distortion and the Vinyl run fewer times over at 88.2 kHz and up (#1547),
 /// so they cost less a frame there; the Amp's clipper does too, but its
 /// cabinet runs twice the taps at 96 kHz, so it does not.
 const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
-  TrackEffectType.octaver: [2172, 2172, 2048, 969, 1942, 1182, 1923, 1140],
-  TrackEffectType.whammy: [2049, 2049, 1846, 965, 1933, 1170, 1852, 1151],
-  TrackEffectType.dualOctaver: [2174, 2174, 1942, 1110, 2009, 1210, 1950, 1154],
+  TrackEffectType.octaver: [1118, 1118, 617, 641, 788, 685, 590, 533],
+  TrackEffectType.whammy: [955, 955, 673, 533, 697, 605, 640, 535],
+  TrackEffectType.dualOctaver: [1286, 1286, 702, 759, 872, 738, 681, 632],
   TrackEffectType.overdrive: [904, 861, 903, 860, 522, 513, 540, 533],
   TrackEffectType.distortion: [400, 393, 407, 392, 248, 247, 266, 272],
   TrackEffectType.vinyl: [381, 374, 375, 374, 201, 200, 192, 203],
@@ -92,16 +95,17 @@ const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
 /// [kFxCostSettings]: the octaver in PSOLA mode (its mode setting at 1) and
 /// the Smart Tune, the larger of the two, measured as [kFxKindCostNs] is.
 /// Their kernel runs at 48 kHz at every rate (#1547), so a frame at 88.2 kHz
-/// and up carries about half a kernel sample.
+/// and up carries about half a kernel sample. Measured again for #1755 (the
+/// larger of two runs where it ran twice).
 const List<int> kFxPsolaCostNs = [
-  2380,
-  2299,
-  1949,
-  1865,
-  1387,
-  1328,
-  1221,
-  1225,
+  1811,
+  1517,
+  1324,
+  1106,
+  1321,
+  1034,
+  1228,
+  850,
 ];
 
 /// The engine with eight tracks playing, one input monitored and no effects:
