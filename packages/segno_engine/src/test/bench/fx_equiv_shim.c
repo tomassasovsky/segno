@@ -76,6 +76,15 @@ void eqv_block(void* hv, const float* p, const float* in_l, const float* in_r,
   }
 }
 
+/* A new tempo of [bpm] from the next frame, the beat carrying on. */
+void eqv_tempo(void* hv, double bpm) {
+  eqv* h = (eqv*)hv;
+  h->tempo.anchor_beat += (double)(h->clock - h->tempo.anchor_clock) *
+                          (double)h->tempo.qpf;
+  h->tempo.anchor_clock = h->clock;
+  h->tempo.qpf = (float)(bpm / 60.0 / (double)h->sr);
+}
+
 void eqv_free(void* hv) {
   eqv* h = (eqv*)hv;
   if (h == NULL) return;

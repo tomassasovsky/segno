@@ -23,7 +23,8 @@
  *     a bass line, a sung vowel with vibrato, a drum pattern, a noise
  *     burst), the right channel a quieter, later copy of the left; then
  *     silence until both renders have stayed under LE_EQV_QUIET for
- *     LE_EQV_QUIET_S (the whole tail), or the cap;
+ *     LE_EQV_QUIET_S (the whole tail), or the cap, the tempo moving from
+ *     LE_EQV_BPM to LE_EQV_TAIL_BPM as it starts (the synced kinds' times);
  *   - the parameter sweeps: the guitar and drums looping while each setting
  *     in turn glides from its value to 0, to 1 and back, block by block,
  *     then alternates between 0.2 and 0.8 every block (what bench_fx_cpu's
@@ -31,10 +32,14 @@
  *     tail.
  *
  * The verdict, per kind: every render's largest difference on either
- * channel below LE_EQV_LIMIT_DB, no NaN or infinity in either, and, for a
- * kind not in k_reordered, every render bit-identical. A kind goes in
- * k_reordered only when its optimisation reorders arithmetic (a sum split
- * across lanes, a fused multiply-add the compiler did not form before).
+ * channel below LE_EQV_LIMIT_DB, no NaN or infinity in either, both
+ * libraries preparing it, and, for a kind not in k_reordered, every render
+ * bit-identical. A kind goes in k_reordered only when its optimisation
+ * reorders arithmetic (a sum split across lanes, a fused multiply-add the
+ * compiler did not form before). A kind in k_moved is rendered and
+ * reported but not judged: its sound was changed on purpose after the
+ * reference (the PR that changes it lists it; the one that moves REF in
+ * bench_fx_equiv.sh past that change takes it off).
  *
  *   ./bench_fx_equiv.sh                 # every setting, full stimulus
  *   ./bench_fx_equiv.sh --kind roomverb # one kind
@@ -58,6 +63,7 @@
 #define LE_EQV_QUIET 1e-7f /* -140 dBFS */
 #define LE_EQV_QUIET_S 0.5
 #define LE_EQV_BPM 97.0 /* a tempo no kind's table lands on exactly */
+#define LE_EQV_TAIL_BPM 123.0 /* the tempo the tail moves to */
 #define EQV_PI 3.14159265358979323846
 
 /* ---------------- the two libraries ---------------- */
@@ -67,6 +73,7 @@ typedef struct {
   void (*block)(void* h, const float* p, const float* in_l, const float* in_r,
                 float* out_l, float* out_r, int32_t n);
   void (*drop)(void* h);
+  void (*tempo)(void* h, double bpm);
   int32_t (*width)(int32_t type);
   int32_t (*params)(void);
   void (*defaults)(int32_t type, float* out);
@@ -91,6 +98,7 @@ static eqv_lib load(const char* path) {
   *(void**)&l.make = need(dl, path, "eqv_new");
   *(void**)&l.block = need(dl, path, "eqv_block");
   *(void**)&l.drop = need(dl, path, "eqv_free");
+  *(void**)&l.tempo = need(dl, path, "eqv_tempo");
   *(void**)&l.width = need(dl, path, "eqv_width");
   *(void**)&l.params = need(dl, path, "eqv_params");
   *(void**)&l.defaults = need(dl, path, "eqv_defaults");
@@ -133,6 +141,11 @@ static const char* const k_reordered[] = {
     NULL,
 };
 
+/* The kinds whose sound a commit after the reference changed on purpose. */
+static const char* const k_moved[] = {
+    NULL,
+};
+
 static int kind_index(int32_t type) {
   for (int k = 0; k < EQV_NKINDS; ++k) {
     if (k_kinds[k].type == type) return k;
@@ -140,8 +153,8 @@ static int kind_index(int32_t type) {
   return -1;
 }
 
-static int kind_reordered(int k) {
-  for (const char* const* r = k_reordered; *r != NULL; ++r) {
+static int kind_listed(const char* const* list, int k) {
+  for (const char* const* r = list; *r != NULL; ++r) {
     if (!strcmp(*r, k_kinds[k].name)) return 1;
   }
   return 0;
@@ -398,6 +411,10 @@ static eqv_cmp eqv_pair(int32_t type, int sr, int period, const float* p,
       if (m > peak) peak = m;
     }
     at += len;
+    if (at >= n && at - len < n) { /* the tail begins */
+      g_ref.tempo(a, LE_EQV_TAIL_BPM);
+      g_new.tempo(b, LE_EQV_TAIL_BPM);
+    }
     if (at > n) {
       quiet = peak < LE_EQV_QUIET ? quiet + len : 0;
       if (quiet >= quiet_need) break;
@@ -601,12 +618,16 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
-  for (const char* const* r = k_reordered; *r != NULL; ++r) {
-    int found = 0;
-    for (int k = 0; k < EQV_NKINDS; ++k) found |= !strcmp(*r, k_kinds[k].name);
-    if (!found) {
-      fprintf(stderr, "k_reordered names no kind %s\n", *r);
-      return 2;
+  const char* const* lists[2] = {k_reordered, k_moved};
+  for (int li = 0; li < 2; ++li) {
+    for (const char* const* r = lists[li]; *r != NULL; ++r) {
+      int found = 0;
+      for (int k = 0; k < EQV_NKINDS; ++k) found |= !strcmp(*r, k_kinds[k].name);
+      if (!found) {
+        fprintf(stderr, "%s names no kind %s\n",
+                li == 0 ? "k_reordered" : "k_moved", *r);
+        return 2;
+      }
     }
   }
   g_tail_cap_s = g_ci ? 6.0 : 120.0;
@@ -649,12 +670,14 @@ int main(int argc, char** argv) {
       static const char* const names[2] = {"stimulus", "sweeps"};
       for (int w = 0; w < 2; ++w) {
         const eqv_cmp* c = cs[w];
-        if (c->refused == 1) continue;
         total++;
-        if (c->refused == 2 || c->nonfinite) {
+        if (c->refused || c->nonfinite) {
           bad = 1;
           printf("  %s %s %d Hz / %d: %s\n", it->name, names[w], it->rate,
-                 it->period, c->refused ? "one library refused" : "NaN or Inf");
+                 it->period,
+                 c->refused == 1   ? "both libraries refused it"
+                 : c->refused == 2 ? "one library refused it"
+                                   : "NaN or Inf");
           continue;
         }
         if (c->identical) same++;
@@ -673,8 +696,9 @@ int main(int argc, char** argv) {
       }
     }
     if (total == 0) continue;
-    const int over = worst >= LE_EQV_LIMIT_DB;
-    const int inexact = same != total && !kind_reordered(k);
+    const int moved = kind_listed(k_moved, k);
+    const int over = !moved && worst >= LE_EQV_LIMIT_DB;
+    const int inexact = !moved && same != total && !kind_listed(k_reordered, k);
     char where[220] = "";
     if (at != NULL && worst > -INFINITY) {
       snprintf(where, sizeof(where), "%s, %s, %d Hz / %d", at->name, what,
@@ -684,6 +708,7 @@ int main(int argc, char** argv) {
            same, db_text(worst, b, sizeof b), where,
            bad || over ? " FAIL"
            : inexact   ? " FAIL: not bit-identical, and not in k_reordered"
+           : moved     ? " (changed on purpose: k_moved, not judged)"
                        : "");
     failed |= bad || over || inexact;
   }

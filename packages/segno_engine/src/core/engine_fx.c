@@ -203,6 +203,16 @@ static inline float le_frac_tick(float a, float z[2], float x) {
   return y;
 }
 
+/* le_frac_tick on four lines: their all-pass coefficients [a], last inputs
+ * [x1] and last outputs [y1]. */
+static inline le_f4 le_frac_tick4(const float* a, float* x1, float* y1,
+                                  le_f4 x) {
+  const le_f4 y = le_f4_load(a) * (x - le_f4_load(y1)) + le_f4_load(x1);
+  le_f4_store(x1, x);
+  le_f4_store(y1, y);
+  return y;
+}
+
 /* The bilinear prewarp of a corner [hz] at [sr]: tan(pi hz / sr), the
  * corner held under 0.45 of the rate. The Looper X kinds' TPT filters
  * design from it (the built-in resonant filter keeps its own float form). */
@@ -8752,12 +8762,8 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
     pos[g] = at;
     le_f4 x = {rg[at[0]], rg[at[1]], rg[at[2]], rg[at[3]]};
     if (!q->lines_full) x = le_f4_keep(x, le_u4_load(q->line_full + b));
-    if (q->frac_on) { /* le_frac_tick, four lines */
-      const le_f4 y = le_f4_load(q->frac_a + b) * (x - le_f4_load(q->frac_z[1] + b)) +
-                      le_f4_load(q->frac_z[0] + b);
-      le_f4_store(q->frac_z[0] + b, x);
-      le_f4_store(q->frac_z[1] + b, y);
-      x = y;
+    if (q->frac_on) {
+      x = le_frac_tick4(q->frac_a + b, q->frac_z[0] + b, q->frac_z[1] + b, x);
     }
     le_f4_store(o + b, x);
   }
@@ -9658,11 +9664,11 @@ static inline float le_rev_take(le_fx_rev* q, const float* buf, int i,
                                 uint32_t* at) {
   const uint32_t pos = q->pos[i];
   float y = q->full[i] ? buf[q->off[i] + pos] : 0.0f;
-  if (q->frac) { /* le_frac_tick */
-    const float f = q->fa[i] * (y - q->frac_z[1][i]) + q->frac_z[0][i];
-    q->frac_z[0][i] = y;
-    q->frac_z[1][i] = f;
-    y = f;
+  if (q->frac) {
+    float z[2] = {q->frac_z[0][i], q->frac_z[1][i]};
+    y = le_frac_tick(q->fa[i], z, y);
+    q->frac_z[0][i] = z[0];
+    q->frac_z[1][i] = z[1];
   }
   *at = q->off[i] + pos;
   if (pos + 1u >= q->len[i]) {
@@ -9703,12 +9709,8 @@ static void fx_reverb_rkprocess(void* ks, float* r0, float* r1, int cap,
       const le_u4 at = le_u4_load(q->off + i) + pos;
       le_f4 y = {buf[at[0]], buf[at[1]], buf[at[2]], buf[at[3]]};
       y = le_f4_keep(y, le_u4_load(q->full + i));
-      if (q->frac) { /* le_frac_tick, four lines */
-        const le_f4 f = le_f4_load(q->fa + i) * (y - le_f4_load(q->frac_z[1] + i)) +
-                        le_f4_load(q->frac_z[0] + i);
-        le_f4_store(q->frac_z[0] + i, y);
-        le_f4_store(q->frac_z[1] + i, f);
-        y = f;
+      if (q->frac) {
+        y = le_frac_tick4(q->fa + i, q->frac_z[0] + i, q->frac_z[1] + i, y);
       }
       le_f4_store(y8 + g, y);
       /* damp the signal fed back */

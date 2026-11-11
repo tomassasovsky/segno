@@ -54,11 +54,6 @@ static inline le_f4 le_f4_keep(le_f4 v, le_u4 m) {
   return (le_f4)((le_u4)v & m);
 }
 
-/* [a] where [m] is all ones, [b] where it is 0. */
-static inline le_f4 le_f4_select(le_u4 m, le_f4 a, le_f4 b) {
-  return (le_f4)(((le_u4)a & m) | ((le_u4)b & ~m));
-}
-
 /* fx_sanitize on each lane: NaN and infinity to 0, and anything under
  * 1e-30 in magnitude (denormals included) to 0. */
 static inline le_f4 le_f4_sanitize(le_f4 x) {

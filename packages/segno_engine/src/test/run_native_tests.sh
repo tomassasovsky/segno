@@ -201,7 +201,8 @@ case "$(uname -s)" in
     # are made cheaper without changing their sound. The full run is the
     # bench, src/test/bench/bench_fx_equiv.sh.
     echo "== the effects against the reference engine (CI subset) =="
-    FX_EQUIV_OUT="$OUT/segno_fx_equiv" bash src/test/bench/bench_fx_equiv.sh --ci
+    CC="$CC" FX_EQUIV_OUT="$OUT/segno_fx_equiv" \
+      bash src/test/bench/bench_fx_equiv.sh --ci
     ;;
 esac
 
