@@ -463,10 +463,11 @@ int le_fx_entry_lfo_drifts(int32_t type, const float* p, int32_t len, int sr) {
 
 /* Tremolo: sine LFO amplitude modulation, on the engine clock. p0 = rate
  * (0.1..12 Hz), p1 = depth. */
-static float fx_tremolo(float x, double ph, const float* p) {
+/* The tremolo's gain at LFO phase [ph] (cycles), both channels'. */
+static float fx_tremolo_gain(double ph, const float* p) {
   const float depth = p[1];
   const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * (float)ph)); /* 0..1 */
-  return x * (1.0f - depth * (1.0f - lfo));
+  return 1.0f - depth * (1.0f - lfo);
 }
 
 /* The two modes run one counter in opposite directions: PV counts up and runs
@@ -2135,8 +2136,9 @@ static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)cap;
   const double ph = le_clock_lfo(fx, slot, le_tremolo_rate(p), sr);
-  *l = fx_tremolo(*l, ph, p);
-  *r = fx_tremolo(*r, ph, p);
+  const float g = fx_tremolo_gain(ph, p);
+  *l *= g;
+  *r *= g;
 }
 /* ---- The pitch kinds at rates other than 48 kHz (#1547) ----
  *
@@ -9472,21 +9474,33 @@ static void fx_echo_update(void* ks, le_fx_dyn_head* h, const float* p,
   q->mix = p[2];
 }
 
-/* The ring [buf] [d] samples behind [head], read fractionally; a sample
- * not yet written since the block was cleared reads as silence. */
-static float le_echo_read(const le_fx_echo* q, const float* buf, int cap,
-                          float d) {
-  if (q->full) return fx_read_frac(buf, cap, q->pos, d);
+/* Where the rings are read [d] samples behind the head: the two samples
+ * between which, and the fraction (fx_read_frac's), the same for both
+ * channels. */
+typedef struct le_echo_at {
+  int i0, i1;
+  float frac;
+} le_echo_at;
+
+static le_echo_at le_echo_where(const le_fx_echo* q, int cap, float d) {
   float rp = (float)q->pos - d;
   while (rp < 0.0f) rp += (float)cap;
   while (rp >= (float)cap) rp -= (float)cap;
-  const int i0 = (int)rp;
-  const float frac = rp - (float)i0;
-  int i1 = i0 + 1;
-  if (i1 >= cap) i1 = 0;
-  const float a = i0 < q->pos ? buf[i0] : 0.0f;
-  const float b = i1 < q->pos ? buf[i1] : 0.0f;
-  return a + frac * (b - a);
+  le_echo_at w;
+  w.i0 = (int)rp;
+  w.frac = rp - (float)w.i0;
+  w.i1 = w.i0 + 1;
+  if (w.i1 >= cap) w.i1 = 0;
+  return w;
+}
+
+/* The ring [buf] at [w]; a sample not yet written since the block was
+ * cleared reads as silence. */
+static float le_echo_read(const le_fx_echo* q, const float* buf,
+                          le_echo_at w) {
+  const float a = q->full || w.i0 < q->pos ? buf[w.i0] : 0.0f;
+  const float b = q->full || w.i1 < q->pos ? buf[w.i1] : 0.0f;
+  return a + w.frac * (b - a);
 }
 
 static void fx_echo_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
@@ -9505,9 +9519,10 @@ static void fx_echo_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
   if (d > (float)(cap - 1)) d = (float)(cap - 1);
   float* ring[2] = {r0, r1};
   float* io[2] = {l, r};
+  const le_echo_at w = le_echo_where(q, cap, d);
   for (int c = 0; c < 2; ++c) {
     const float x = *io[c];
-    const float delayed = le_echo_read(q, ring[c], cap, d);
+    const float delayed = le_echo_read(q, ring[c], w);
     /* Darken the loop (~1.4 kHz one-pole) then soft-saturate the repeats. */
     q->lp[c] += q->step * (delayed - q->lp[c]);
     const float wet = tanhf(q->lp[c]);
