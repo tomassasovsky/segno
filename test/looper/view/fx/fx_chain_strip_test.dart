@@ -104,13 +104,13 @@ void main() {
       expect(r.left - b.right, kFxCardGap);
     });
 
-    testWidgets('a single effect with no pedal prints its name under the '
+    testWidgets('a plugin, which has no pedal, prints its name under the '
         "app's mark, once for a screen reader", (tester) async {
       await pump(tester, [
-        BuiltInEffect(
-          type: TrackEffectType.echo,
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'mystery'),
+          name: 'Mystery box',
           slotId: 'x',
-          module: 'Mystery box',
         ),
       ]);
       final card = find.byKey(const Key('fx_card_x'));
@@ -156,6 +156,12 @@ void main() {
       expect(
         cardLabel(tester, card),
         allOf(startsWith('Filter'), contains('Unassigned')),
+      );
+      // The power is its own node, so neither card's label carries it.
+      expect(cardLabel(tester, card), isNot(contains('power')));
+      expect(
+        tester.getSemantics(find.text('Funk Wah')).label,
+        allOf(contains('Funk Wah'), isNot(contains('power'))),
       );
       expect(
         find.descendant(of: card, matching: find.text('Unassigned')),
