@@ -21,14 +21,22 @@ bool fxTargetNamesEffect(
   FxAddress address,
   Set<String> slotIds, {
   Set<String> rackIds = const {},
-}) => switch (target) {
-  FxSlotTarget(address: final a, :final slotId) =>
-    a == address && slotIds.contains(slotId),
-  FxParamTarget(address: final a, :final slotId) =>
-    a == address && slotIds.contains(slotId),
-  FxRackTarget(address: final a, :final rackId) =>
-    a == address && rackIds.contains(rackId),
-  _ => false,
+}) =>
+    slotIds.contains(_slotNamed(target, address)) ||
+    rackIds.contains(_rackNamed(target, address));
+
+/// The slot id of the effect [target] names in the chain at [address], by
+/// itself or by one of its parameters, or `null`.
+String? _slotNamed(Object? target, FxAddress address) => switch (target) {
+  FxSlotTarget(address: final a, :final slotId) when a == address => slotId,
+  FxParamTarget(address: final a, :final slotId) when a == address => slotId,
+  _ => null,
+};
+
+/// The id of the rack [target] names in the chain at [address], or `null`.
+String? _rackNamed(Object? target, FxAddress address) => switch (target) {
+  FxRackTarget(address: final a, :final rackId) when a == address => rackId,
+  _ => null,
 };
 
 /// The target a MIDI control [key] stands for, or `null`.
@@ -103,14 +111,17 @@ int fxAssignmentsTo(
   return count;
 }
 
-/// What the controls acting on each effect in the chain at [address] are
-/// called, by the effect's slot id, named as the assignment screens name them
-/// (#1757): the console switches first (`Track 3`, `Track 3 · Hold`), then the
-/// CTRL jacks (`CTRL 1`, `CTRL 2 · Button 2`), then the MIDI controls
-/// (`CC 20 · Ch 1`). Each control once per effect, however many of its
-/// switches and parameters it drives; a console switch's hold is a control of
-/// its own, as a dual pedal's second button is. An effect nothing acts on is
-/// absent.
+/// What the controls acting on each card of the chain at [address] are
+/// called, by the card's `fxGroupId` (a single effect's slot id, or a rack's
+/// id), named as the assignment screens name them (#1757, #1760): the console
+/// switches first (`Track 3`, or `Track 3 · Hold` when only its hold acts),
+/// then the CTRL jacks (`CTRL 1`, `CTRL 2 · Button 2`), then the MIDI controls
+/// (`CC 20 · Ch 1`). Each control once per card, however many of its
+/// switches, parameters and gestures act there; a dual pedal's two buttons
+/// are two controls. A rack's card gathers what is bound to the rack itself
+/// and to the effects in it, which [chain] (the chain's entries) places in
+/// their racks; an effect absent from it counts as a card of its own. A card
+/// that nothing acts on is absent.
 ///
 /// Only what acts: the console bindings in force (a loaded session's remap
 /// replaces the globals), each resolved against the selected track when its
@@ -121,20 +132,23 @@ int fxAssignmentsTo(
 Map<String, List<String>> fxAssignmentNames(
   AppLocalizations l10n,
   ControlState control,
-  FxAddress address,
-) {
-  // Per effect, each control by its identity: two MIDI mappings can share a
-  // name (one CC on two devices) and are still two controls.
+  FxAddress address, {
+  List<TrackEffect> chain = const [],
+}) {
+  final rackOf = {
+    for (final effect in chain)
+      if ((effect.slotId, effect.rack) case (final slot?, final rack?))
+        slot: rack.id,
+  };
+  // Per card, each control by its identity: two MIDI mappings can
+  // share a name (one CC on two devices) and are still two controls, and a
+  // console switch's press and hold are one.
   final named = <String, Map<Object, String>>{};
   void add(Object? target, Object control, String name) {
-    final slotId = switch (target) {
-      FxSlotTarget(address: final a, :final slotId) when a == address => slotId,
-      FxParamTarget(address: final a, :final slotId) when a == address =>
-        slotId,
-      _ => null,
-    };
-    if (slotId != null) {
-      (named[slotId] ??= {}).putIfAbsent(control, () => name);
+    final slot = _slotNamed(target, address);
+    final id = _rackNamed(target, address) ?? rackOf[slot] ?? slot;
+    if (id != null) {
+      (named[id] ??= {}).putIfAbsent(control, () => name);
     }
   }
 
@@ -144,14 +158,16 @@ Map<String, List<String>> fxAssignmentNames(
     if (binding.decodeTarget() case final press?) {
       add(
         resolveBindingTarget(press, binding.scope, control.cursor),
-        (key, false),
+        key,
         name,
       );
     }
     if (binding.decodeHoldTarget() case final hold?) {
+      // Named for its hold only when the press does not act on the same
+      // card: the press, added first, keeps the switch's plain name.
       add(
         resolveBindingTarget(hold, binding.holdScope, control.cursor),
-        (key, true),
+        key,
         l10n.fxAssignedControlPart(name, l10n.pedalSetupHold),
       );
     }

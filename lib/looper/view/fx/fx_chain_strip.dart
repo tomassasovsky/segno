@@ -83,9 +83,10 @@ class FxChainStrip extends StatelessWidget {
   /// place across a context switch.
   final ScrollController? controller;
 
-  /// What the controls assigned to each effect are called
-  /// (`fxAssignmentNames`), by slot id. A single effect's card prints them on
-  /// its assignment line; an effect missing here is unassigned.
+  /// What the controls assigned to each effect and each rack are called
+  /// (`fxAssignmentNames`), by [fxGroupId]: a single effect's slot id or a
+  /// rack's id. Each card prints its own on its assignment line; one missing
+  /// here is unassigned.
   final Map<String, List<String>> assignments;
 
   @override
@@ -122,9 +123,7 @@ class FxChainStrip extends StatelessWidget {
               key: Key('fx_card_${fxGroupId(groups[i])}'),
               group: groups[i],
               showPlacement: showPlacement,
-              assignedTo: groups[i].isRack
-                  ? const []
-                  : assignments[groups[i].entries.first.slotId] ?? const [],
+              assignedTo: assignments[fxGroupId(groups[i])] ?? const [],
               dimmed: !chainEnabled,
               onTogglePower: ({required enabled}) =>
                   onTogglePower(i, enabled: enabled),
@@ -217,6 +216,7 @@ class _FxChainCard extends StatelessWidget {
                 ? _RackCardBody(
                     group: group,
                     showPlacement: showPlacement,
+                    assignedTo: assignedTo,
                     lit: lit,
                     power: power,
                   )
@@ -265,18 +265,24 @@ class _PlacementTag extends StatelessWidget {
   }
 }
 
-/// A rack card's inside: its placement tag, its artwork frame, its name, and
-/// the status line carrying its pedal count and its power.
+/// A rack card's inside: its placement tag, its artwork frame, its name, the
+/// controls acting on the rack or its effects (#1760), and the status line
+/// carrying its pedal count and its power.
 class _RackCardBody extends StatelessWidget {
   const _RackCardBody({
     required this.group,
     required this.showPlacement,
+    required this.assignedTo,
     required this.lit,
     required this.power,
   });
 
   final FxChainGroup group;
   final bool showPlacement;
+
+  /// What the controls acting on the rack or its effects are called, or
+  /// none.
+  final List<String> assignedTo;
   final bool lit;
   final Widget power;
 
@@ -317,6 +323,10 @@ class _RackCardBody extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          SizedBox(
+            height: _kStatusHeight,
+            child: _AssignmentLine(assignedTo: assignedTo),
+          ),
           SizedBox(
             height: _kStatusHeight,
             child: Row(
@@ -369,7 +379,6 @@ class _SingleCardBody extends StatelessWidget {
     final spacing = context.spacing;
     final l10n = context.l10n;
     final pedal = fxEntryArt(group.entries.first, live: false);
-    final surface = context.surface;
     final name = fxGroupName(l10n, group);
     final fallback = _NamedFallbackMark(name: name, lit: lit);
     return Semantics(
@@ -409,24 +418,7 @@ class _SingleCardBody extends StatelessWidget {
             SizedBox(height: spacing.md),
             SizedBox(
               height: _kStatusHeight,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: AppText(
-                  fxAssignmentLine(l10n, assignedTo),
-                  // The line shows the first and a count; a screen reader
-                  // hears every one.
-                  semanticsLabel: assignedTo.isEmpty
-                      ? null
-                      : assignedTo.join(', '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: surface.textTertiary,
-                    fontSize: 18,
-                    height: 1,
-                  ),
-                ),
-              ),
+              child: _AssignmentLine(assignedTo: assignedTo),
             ),
           ],
         ),
@@ -547,8 +539,37 @@ class _NamedFallbackMark extends StatelessWidget {
   }
 }
 
-/// A single card's assignment line (#1757): the one control assigned to the
-/// effect, the first and how many more, or Unassigned.
+/// A card's assignment line (#1757, #1760): what the controls acting on the
+/// effect or the rack are called, on one line, aligned to the start.
+class _AssignmentLine extends StatelessWidget {
+  const _AssignmentLine({required this.assignedTo});
+
+  /// What the controls are called, or none.
+  final List<String> assignedTo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: AppText(
+        fxAssignmentLine(context.l10n, assignedTo),
+        // The line shows the first and a count; a screen reader hears every
+        // one.
+        semanticsLabel: assignedTo.isEmpty ? null : assignedTo.join(', '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: context.surface.textTertiary,
+          fontSize: 18,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+/// The text of a card's assignment line (#1757): the one control assigned,
+/// the first and how many more, or Unassigned.
 String fxAssignmentLine(AppLocalizations l10n, List<String> names) =>
     switch (names) {
       [] => l10n.fxUnassigned,

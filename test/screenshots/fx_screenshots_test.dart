@@ -274,6 +274,30 @@ final _assigned = ControlState(
   ),
 );
 
+/// CTRL 1 switching the Funk Wah rack: its card names it (#1760).
+final _rackAssigned = ControlState(
+  pedalSetup: PedalSetup(
+    external: ExternalPedalSetup(
+      jacks: {
+        PedalCtrlJack.ctrl1: ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            controls: ExternalControls(
+              activations: const [
+                ExternalActivation(
+                  target: FxRackTarget(
+                    address: FxAddress(stage: FxStage.track),
+                    rackId: 'R1',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      },
+    ),
+  ),
+);
+
 void main() {
   setUpAll(() async {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
@@ -612,6 +636,7 @@ void main() {
       tester,
       destination: const FxDestination.recordedTrack(0),
       state: _rackRig,
+      control: _rackAssigned,
     );
 
     await shoot(tester, 'racks');

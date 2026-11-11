@@ -662,5 +662,86 @@ void main() {
         },
       );
     });
+
+    test('names what is bound to a rack itself by the rack id (#1760)', () {
+      const rack = FxRackTarget(address: _track, rackId: 'R');
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          pedal(PedalButton.track2, rack, bank: 0),
+          pedal(PedalButton.track3, slotA, bank: 0),
+        ]),
+        pedalSetup: PedalSetup(
+          external: ExternalPedalSetup(
+            jacks: {
+              PedalCtrlJack.ctrl2: ExternalJackSetup(single: onSwitch(rack)),
+            },
+          ),
+        ),
+      );
+      expect(fxAssignmentNames(en, state, _track), {
+        'R': ['Track 2', 'CTRL 2'],
+        'a': ['Track 3'],
+      });
+      expect(fxAssignmentNames(en, state, _other), isEmpty);
+    });
+
+    test("a switch's press and hold on the same effect are one control, "
+        'named for its press (#1760)', () {
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          pedal(PedalButton.track1, slotA, bank: 0, hold: slotA),
+        ]),
+      );
+      expect(fxAssignmentNames(en, state, _track), {
+        'a': ['Track 1'],
+      });
+    });
+
+    test("a switch's press on a rack and its hold on an effect in it are "
+        'named on each, the rack for the press (#1760)', () {
+      const rack = FxRackTarget(address: _track, rackId: 'R');
+      ControlState bound(FxBindingTarget press, FxBindingTarget hold) =>
+          ControlState(
+            globalBindings: PedalBindingSet([
+              pedal(PedalButton.track2, press, bank: 0, hold: hold),
+            ]),
+          );
+      expect(fxAssignmentNames(en, bound(rack, slotA), _track), {
+        'R': ['Track 2'],
+        'a': ['Track 2 · Hold'],
+      });
+      expect(fxAssignmentNames(en, bound(slotA, rack), _track), {
+        'a': ['Track 2'],
+        'R': ['Track 2 · Hold'],
+      });
+      expect(fxAssignmentNames(en, bound(rack, rack), _track), {
+        'R': ['Track 2'],
+      });
+    });
+
+    test("a rack's card gathers what acts on its effects with what is bound "
+        'to the rack (#1760)', () {
+      const rack = FxRackTarget(address: _track, rackId: 'R');
+      const inRack = FxRack(id: 'R', name: 'Funk Wah');
+      final chain = [
+        BuiltInEffect(type: TrackEffectType.drive, slotId: 'a', rack: inRack),
+        BuiltInEffect(type: TrackEffectType.echo, slotId: 'b'),
+      ];
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          pedal(PedalButton.track1, slotA, bank: 0),
+          pedal(PedalButton.track2, rack, bank: 0, hold: slotA),
+          pedal(
+            PedalButton.track3,
+            const FxSlotTarget(address: _track, slotId: 'b'),
+            bank: 0,
+          ),
+        ]),
+      );
+      expect(fxAssignmentNames(en, state, _track, chain: chain), {
+        'R': ['Track 1', 'Track 2'],
+        'b': ['Track 3'],
+      });
+    });
   });
 }
