@@ -619,5 +619,48 @@ void main() {
         'a': ['CC 20 · Omni', 'CC 20 · Omni'],
       });
     });
+
+    test('names no latching switch for its Held and Released rows, which '
+        'never act', () {
+      ControlState onSwitch(ExternalSwitchHardware hardware) => ControlState(
+        pedalSetup: PedalSetup(
+          external: ExternalPedalSetup(
+            jacks: {
+              PedalCtrlJack.ctrl1: ExternalJackSetup(
+                single: ExternalSwitchSetup(
+                  hardware: hardware,
+                  controls: ExternalControls(
+                    activations: const [
+                      ExternalActivation(
+                        target: slotA,
+                        condition: ExternalCondition.held,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            },
+          ),
+        ),
+      );
+      expect(
+        fxAssignmentNames(
+          en,
+          onSwitch(ExternalSwitchHardware.latching),
+          _track,
+        ),
+        isEmpty,
+      );
+      expect(
+        fxAssignmentNames(
+          en,
+          onSwitch(ExternalSwitchHardware.momentary),
+          _track,
+        ),
+        {
+          'a': ['CTRL 1'],
+        },
+      );
+    });
   });
 }

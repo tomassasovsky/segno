@@ -108,7 +108,9 @@ int fxAssignmentsTo(
 /// (#1757): the console switches first (`Track 3`, `Track 3 · Hold`), then the
 /// CTRL jacks (`CTRL 1`, `CTRL 2 · Button 2`), then the MIDI controls
 /// (`CC 20 · Ch 1`). Each control once per effect, however many of its
-/// switches and parameters it drives; an effect nothing acts on is absent.
+/// switches and parameters it drives; a console switch's hold is a control of
+/// its own, as a dual pedal's second button is. An effect nothing acts on is
+/// absent.
 ///
 /// Only what acts: the console bindings in force (a loaded session's remap
 /// replaces the globals), each resolved against the selected track when its
@@ -168,9 +170,18 @@ Map<String, List<String>> fxAssignmentNames(
       final label = switches == 1
           ? name
           : l10n.fxAssignedControlPart(name, l10n.externalButton(index + 1));
+      // A latching switch reports no contact, so its Held and Released rows
+      // never act (as in [fxReachOf]).
+      final latching = button.hardware == ExternalSwitchHardware.latching;
       for (final target in [
-        for (final row in button.controls.activations) row.target,
-        for (final row in button.controls.parameters) row.target,
+        for (final row in button.controls.activations)
+          if (!latching ||
+              row.condition == ExternalCondition.on ||
+              row.condition == ExternalCondition.off)
+            row.target,
+        for (final row in button.controls.parameters)
+          if (!latching || row.condition == ExternalValueCondition.onOff)
+            row.target,
       ]) {
         add(target, (jack, index), label);
       }
