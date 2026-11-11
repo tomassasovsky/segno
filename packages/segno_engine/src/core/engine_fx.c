@@ -26,6 +26,9 @@
 #include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
 #include "engine_internal.h" /* le_psola_detect_band prototype (below) */
 #include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
+#if defined(__aarch64__)
+#include <arm_neon.h> /* the pitch kernels' lanes (#1755) */
+#endif
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
@@ -559,6 +562,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   o->tune_at[0] = -1.0f;
   o->tune_at[1] = -1.0f;
   o->tune_held = 0;
+  o->grain_th = 0; /* the scratch holds no grain window */
   if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
   if (o->scratch != NULL) {
@@ -879,6 +883,7 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
   if (o->out == NULL || o->scratch == NULL) return 0.0f;
   switch (o->hop_count) {
     case 0:
+      o->grain_th = 0; /* the frame overwrites PSOLA's grain window */
       le_pv_stage_analyse(o, fifo, head, cap);
       o->frame_ratio = ratio;
       o->frame_formants_move = formants_move;
@@ -936,12 +941,72 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
  * arithmetic is byte-identical either way, which is the whole point of the
  * split — there is no second copy of the detector to keep in step. */
 
+/* The difference function at the [g] lags from [tau] (g at most
+ * LE_YIN_GROUP) over [integ] samples of [x], into [s]: for each lag the
+ * same float differences squared and summed in double in the same order as
+ * one lag at a time, so each sum is bit-identical to that (#1755). The
+ * square of a float is exact in double, so a fused multiply-add and a
+ * multiply then an add give the same sum. Worked out together, the lags'
+ * sums are independent chains of adds the core runs side by side; one lag
+ * alone is a single chain, a multiply-add's latency an iteration. */
+static void le_lag_sums(const float* x, int integ, int tau, int g, double* s) {
+#if defined(__aarch64__)
+  /* Each lane is one lag's sum (a compiler left to it vectorises along the
+   * samples instead, which keeps each lag's adds in order one at a time). */
+  _Static_assert(LE_YIN_GROUP == 8, "four pairs of lanes");
+  if (g == LE_YIN_GROUP) {
+    float64x2_t a0 = vdupq_n_f64(0.0), a1 = a0, a2 = a0, a3 = a0;
+    for (int i = 0; i < integ; ++i) {
+      const float32x4_t xi = vdupq_n_f32(x[i]);
+      const float32x4_t d0 = vsubq_f32(xi, vld1q_f32(x + i + tau));
+      const float32x4_t d1 = vsubq_f32(xi, vld1q_f32(x + i + tau + 4));
+      const float64x2_t e0 = vcvt_f64_f32(vget_low_f32(d0));
+      const float64x2_t e1 = vcvt_high_f64_f32(d0);
+      const float64x2_t e2 = vcvt_f64_f32(vget_low_f32(d1));
+      const float64x2_t e3 = vcvt_high_f64_f32(d1);
+      a0 = vfmaq_f64(a0, e0, e0);
+      a1 = vfmaq_f64(a1, e1, e1);
+      a2 = vfmaq_f64(a2, e2, e2);
+      a3 = vfmaq_f64(a3, e3, e3);
+    }
+    vst1q_f64(s, a0);
+    vst1q_f64(s + 2, a1);
+    vst1q_f64(s + 4, a2);
+    vst1q_f64(s + 6, a3);
+    return;
+  }
+#endif
+  if (g == LE_YIN_GROUP) {
+    double a[LE_YIN_GROUP] = {0.0};
+    for (int i = 0; i < integ; ++i) {
+      const float xi = x[i];
+      const float* y = x + i + tau;
+      for (int j = 0; j < LE_YIN_GROUP; ++j) {
+        const float d = xi - y[j];
+        a[j] += (double)d * (double)d;
+      }
+    }
+    for (int j = 0; j < LE_YIN_GROUP; ++j) s[j] = a[j];
+    return;
+  }
+  for (int j = 0; j < g; ++j) {
+    double sum = 0.0;
+    for (int i = 0; i < integ; ++i) {
+      const float d = x[i] - x[i + tau + j];
+      sum += (double)d * (double)d;
+    }
+    s[j] = sum;
+  }
+}
+
 int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
                  int max_hz, float* dp, int dp_cap) {
   p->x = x;
   p->dp = dp;
   p->tau = 1;
   p->cum = 0.0;
+  p->group_lo = 0;
+  p->group_n = 0; /* a new window: nothing worked out ahead */
   p->minlag = 0;
   p->maxlag = 0;
   p->integ = 0;
@@ -974,12 +1039,18 @@ int le_yin_step(le_yin_pass* p, long budget) {
    * is under one integration length must still make progress, or the pass
    * stalls forever. One lag is bounded by n/2 inner iterations. */
   while (p->tau <= p->maxlag) {
-    double sum = 0.0;
     const int tau = p->tau;
-    for (int i = 0; i < p->integ; ++i) {
-      const float diff = p->x[i] - p->x[i + tau];
-      sum += (double)diff * (double)diff;
+    if (tau < p->group_lo || tau >= p->group_lo + p->group_n) {
+      /* The next lags, worked out together (le_lag_sums); the pass still
+       * takes them one at a time below, so its budget and its results are
+       * the one-lag pass's. */
+      int g = p->maxlag - tau + 1;
+      if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
+      le_lag_sums(p->x, p->integ, tau, g, p->group);
+      p->group_lo = tau;
+      p->group_n = g;
     }
+    const double sum = p->group[tau - p->group_lo];
     p->cum += sum;
     p->dp[tau] = p->cum > 0.0 ? (float)(sum * (double)tau / p->cum) : 1.0f;
     ++p->tau;
@@ -1060,19 +1131,23 @@ int le_refine_begin(le_lag_refine* r, float coarse, int span, int n) {
   r->integ = n - hi;
   r->tau = lo;
   r->best = 0;
+  r->ready = 0;
   return 1;
 }
 
 int le_refine_step(le_lag_refine* r, const float* x, long budget) {
   while (r->tau <= r->hi) {
     const int tau = r->tau;
-    double sum = 0.0;
-    for (int i = 0; i < r->integ; ++i) {
-      const float df = x[i] - x[i + tau];
-      sum += (double)df * (double)df;
-    }
     const int k = tau - r->lo;
-    r->d[k] = (float)sum;
+    if (k >= r->ready) {
+      /* The next lags' sums together (le_lag_sums), each as one lag's. */
+      double s[LE_YIN_GROUP];
+      int g = r->hi - tau + 1;
+      if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
+      le_lag_sums(x, r->integ, tau, g, s);
+      for (int j = 0; j < g; ++j) r->d[k + j] = (float)s[j];
+      r->ready = k + g;
+    }
     if (tau == r->lo || r->d[k] < r->d[r->best]) r->best = k;
     ++r->tau;
     budget -= r->integ;
@@ -1130,6 +1205,11 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
 #define LE_PS_WIN(o) ((o)->scratch)
 #define LE_PS_DP(o) ((o)->scratch + LE_PSOLA_DWIN)
 #define LE_PS_RAW(o) ((o)->scratch + LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1)
+/* The grain window (le_psola_grain_window), after the detection's. */
+#define LE_PS_GRAIN(o) (LE_PS_RAW(o) + LE_PSOLA_RAW)
+_Static_assert(LE_PSOLA_DWIN + LE_PSOLA_DWIN / 2 + 1 + LE_PSOLA_RAW +
+                       2 * LE_PSOLA_THMAX + 1 <= LE_PV_SCRATCH,
+               "PSOLA's grain window fits the octaver scratch");
 _Static_assert(LE_PSOLA_DECIM <= LE_REFINE_SPAN_MAX,
                "PSOLA's refinement span fits le_lag_refine");
 _Static_assert(LE_PSOLA_DECIM * LE_PSOLA_DWIN <= LE_PSOLA_RAW,
@@ -1269,6 +1349,20 @@ static int le_octaver_latency(const le_octaver_state* o) {
  * that a pulse-less, near-pure tone (e.g. a flute/whistle/sine) can self-cancel on
  * a large up-shift, where same-period grains land antiphase; harmonic-rich voice
  * (the documented sweet spot) has localized epochs and reinforces. */
+/* The Hann window of a grain [th] samples a side, 2 th + 1 long, in the
+ * scratch: worked out when the half-width changes, the same float
+ * expression a sample as at each grain, so the values are those (#1755). */
+static const float* le_psola_grain_window(le_octaver_state* o, int th) {
+  float* w = LE_PS_GRAIN(o);
+  if (o->grain_th != th) {
+    for (int k = 0; k <= 2 * th; ++k) {
+      w[k] = 0.5f - 0.5f * cosf(LE_PI * (float)k / (float)th);
+    }
+    o->grain_th = th;
+  }
+  return w;
+}
+
 static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
                            int cap, float ratio) {
   if (o->out == NULL) return 0.0f;
@@ -1335,17 +1429,39 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
      * unity across the shift; clamp so a clamped grain cannot blow up. */
     float gain = ps / (float)th;
     if (gain > 2.0f) gain = 2.0f;
-    for (int j = -th; j <= th; ++j) {
-      const float wf =
-          0.5f - 0.5f * cosf(LE_PI * (float)(j + th) / (float)th); /* Hann */
-      int src = head + base + j;
-      src %= cap;
-      if (src < 0) src += cap;
-      const int next = src + 1 >= cap ? 0 : src + 1;
-      int dst = rp + c + j;
-      dst %= N;
-      if (dst < 0) dst += N;
-      o->out[dst] += gain * wf * (fifo[src] + fr * (fifo[next] - fifo[src]));
+    /* The grain, sample j - th of it from source index src and into
+     * accumulator index dst, both walked on from its start and wrapped at
+     * their ends, in runs that need neither wrap (#1755: the per-sample
+     * remainders cost more than the grain's arithmetic). */
+    const float* wf = le_psola_grain_window(o, th);
+    const int len = 2 * th + 1;
+    int src = (head + base - th) % cap;
+    if (src < 0) src += cap;
+    int dst = (rp + c - th) % N;
+    if (dst < 0) dst += N;
+    float* out = o->out;
+    for (int j = 0; j < len;) {
+      if (src == cap) src = 0;
+      if (dst == N) dst = 0;
+      if (src == cap - 1) { /* its next sample is the ring's first */
+        out[dst] += gain * wf[j] * (fifo[src] + fr * (fifo[0] - fifo[src]));
+        ++j;
+        ++src;
+        ++dst;
+        continue;
+      }
+      int run = len - j;
+      if (run > N - dst) run = N - dst;
+      if (run > cap - 1 - src) run = cap - 1 - src;
+      const float* in = fifo + src;
+      float* acc = out + dst;
+      const float* w = wf + j;
+      for (int k = 0; k < run; ++k) {
+        acc[k] += gain * w[k] * (in[k] + fr * (in[k + 1] - in[k]));
+      }
+      j += run;
+      src += run;
+      dst += run;
     }
   }
 
@@ -1781,7 +1897,19 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     if (o->xfade > 1.0f) o->xfade = 1.0f;
   }
 
-  const float ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+  /* The ratio and the dip's gain, worked out again only when the shift or
+   * the dip moves (#1755): the same calls on the same values give the same
+   * results, and held, each was two library calls a sample. */
+  if (!o->cached || o->ratio_shift != o->sm_shift) {
+    o->ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+    o->ratio_shift = o->sm_shift;
+  }
+  if (!o->cached || o->dip_xfade != o->xfade) {
+    o->dip_g = sinf(o->xfade * 0.5f * LE_PI);
+    o->dip_xfade = o->xfade;
+  }
+  o->cached = 1;
+  const float ratio = o->ratio;
   /* The Dual Octaver's Octave 2 (p7, its level; #1464) is Octave 1 squared,
    * two octaves where Octave 1 is one, so it switches with Octave 1's
    * latched shift in the dip, its trim with it. */
@@ -1831,7 +1959,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   const float dry = buf[dry_idx];
 
   /* Equal-power gain-dip envelope on the wet leg (g == 1 when steady). */
-  const float g = sinf(o->xfade * 0.5f * LE_PI);
+  const float g = o->dip_g;
   const float mix = o->sm_mix;
   /* The phase vocoder applies the voices' levels in its synthesis (two
    * voices share one accumulator); PSOLA's one voice takes it here. */
