@@ -481,17 +481,15 @@ bool _names(FxPreset preset, FxModule module) {
 /// "Add an effect to a rack" screen (frame `Rv04K`).
 ///
 /// A row adds one pedal of the module table in its default variant: the
-/// [module] as the [family] rack exposes it.
+/// [module] as the [family] rack exposes it. The row reads as the pedal
+/// does, by its module's name (the app localizes it), so a pedal is called
+/// the same in the list and in the rack (#1752).
 class FxAddableEffect {
   /// Creates an [FxAddableEffect].
   const FxAddableEffect({
-    required this.label,
     required this.module,
     required this.family,
   });
-
-  /// The row's label, as the pen writes it.
-  final String label;
 
   /// The [FxModule.name] of the pedal the row adds.
   final String module;
@@ -515,78 +513,66 @@ class FxAddableEffect {
 /// Lo-Fi Rack, the doubler from the Dub Rack, the low-pass filter from the
 /// Rhythmic Rack and the modulation from the Guitar Rack.
 const List<FxAddableEffect> kFxAddableEffects = [
-  FxAddableEffect(label: 'Amp', module: 'Amp', family: "Ed's Rack"),
-  FxAddableEffect(label: 'Chorus', module: 'Chorus', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Amp', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Chorus', family: "Ed's Rack"),
   FxAddableEffect(
-    label: 'Compressor',
     module: 'Compressor',
     family: "Ed's Rack",
   ),
-  FxAddableEffect(label: 'Degrade', module: 'Degrade', family: 'Lo-Fi Rack'),
-  FxAddableEffect(label: 'Delay', module: 'Delay', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Degrade', family: 'Lo-Fi Rack'),
+  FxAddableEffect(module: 'Delay', family: "Ed's Rack"),
   FxAddableEffect(
-    label: 'Distortion',
     module: 'Distortion',
     family: 'Lo-Fi Rack',
   ),
-  FxAddableEffect(label: 'Doubler', module: 'Doubler', family: 'Dub Rack'),
-  FxAddableEffect(label: 'Dub Delay', module: 'Dub delay', family: 'Dub Rack'),
+  FxAddableEffect(module: 'Doubler', family: 'Dub Rack'),
+  FxAddableEffect(module: 'Dub delay', family: 'Dub Rack'),
   FxAddableEffect(
-    label: 'Four-band EQ',
     module: 'Four-band EQ',
     family: "Ed's Rack",
   ),
   FxAddableEffect(
-    label: 'Harmonize',
     module: 'Harmonizer',
     family: 'Vocal Tuner Rack',
   ),
   FxAddableEffect(
-    label: 'HP / Gate',
     module: 'High-pass gate',
     family: 'Vocal Rack',
   ),
   FxAddableEffect(
-    label: 'Low-pass Filter',
     module: 'Low-pass filter',
     family: 'Rhythmic Rack',
   ),
   FxAddableEffect(
-    label: 'Modulation',
     module: 'Modulation',
     family: 'Guitar Rack',
   ),
-  FxAddableEffect(label: 'Octaver', module: 'Octaver', family: "Ed's Rack"),
-  FxAddableEffect(label: 'Overdrive', module: 'Overdrive', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Octaver', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Overdrive', family: "Ed's Rack"),
   FxAddableEffect(
-    label: 'Parametric EQ',
     module: 'Parametric EQ',
     family: 'Dub Rack',
   ),
   FxAddableEffect(
-    label: 'Pitch Shift',
     module: 'Pitch shift',
     family: 'Studio Rack',
   ),
-  FxAddableEffect(label: 'Pumper', module: 'Pumper', family: 'Rhythmic Rack'),
-  FxAddableEffect(label: 'Reverb', module: 'Reverb', family: "Ed's Rack"),
-  FxAddableEffect(label: 'Slicer', module: 'Slicer', family: 'Rhythmic Rack'),
+  FxAddableEffect(module: 'Pumper', family: 'Rhythmic Rack'),
+  FxAddableEffect(module: 'Reverb', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Slicer', family: 'Rhythmic Rack'),
   FxAddableEffect(
-    label: 'Smart Tune',
     module: 'Smart tune',
     family: 'Vocal Tuner Rack',
   ),
   FxAddableEffect(
-    label: 'Spring Reverb',
     module: 'Spring reverb',
     family: 'Guitar Rack',
   ),
   FxAddableEffect(
-    label: 'Transient',
     module: 'Transient',
     family: 'Drum Rack',
   ),
-  FxAddableEffect(label: 'Vinyl', module: 'Vinyl', family: 'Lo-Fi Rack'),
-  FxAddableEffect(label: 'Wah', module: 'Wah', family: "Ed's Rack"),
-  FxAddableEffect(label: 'Whammy', module: 'Whammy', family: 'Guitar Rack'),
+  FxAddableEffect(module: 'Vinyl', family: 'Lo-Fi Rack'),
+  FxAddableEffect(module: 'Wah', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Whammy', family: 'Guitar Rack'),
 ];

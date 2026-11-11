@@ -118,7 +118,7 @@ void main() {
         final playable = [
           for (final row in kFxAddableEffects)
             if (fxModuleBuild(fxModuleNamed(row.module)!).type != null)
-              row.label,
+              row.module,
         ];
 
         expect(playable, [
@@ -129,20 +129,20 @@ void main() {
           'Delay',
           'Distortion',
           'Doubler',
-          'Dub Delay',
+          'Dub delay',
           'Four-band EQ',
-          'HP / Gate',
-          'Low-pass Filter',
+          'High-pass gate',
+          'Low-pass filter',
           'Modulation',
           'Octaver',
           'Overdrive',
           'Parametric EQ',
-          'Pitch Shift',
+          'Pitch shift',
           'Pumper',
           'Reverb',
           'Slicer',
-          'Smart Tune',
-          'Spring Reverb',
+          'Smart tune',
+          'Spring reverb',
           'Transient',
           'Vinyl',
           'Wah',

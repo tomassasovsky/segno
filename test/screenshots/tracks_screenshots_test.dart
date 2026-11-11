@@ -823,7 +823,7 @@ void main() {
   // `pedal`: switch 1 drives one pedal of a factory rack by its slot, the
   // Lo-Fi Rack's Distortion built on the Overdrive, so the face names the
   // pedal (#1750).
-  for (final scene in ['default', 'held', 'spanish', 'pedal']) {
+  for (final scene in ['default', 'held', 'spanish', 'pedal', 'pedal-es']) {
     testWidgets('Foot FX $scene accepted scene', (tester) async {
       // The pen's racks: pedal 1's chain spans two racks, so it reads as
       // its slot (`FX A1`); the others are one rack each.
@@ -839,7 +839,7 @@ void main() {
           ),
       ];
       final effects = [
-        if (scene == 'pedal')
+        if (scene.startsWith('pedal'))
           [
             BuiltInEffect(
               type: TrackEffectType.overdrive,
@@ -905,7 +905,7 @@ void main() {
       }) => PedalBinding(
         key: PedalBindingKey(button: button, bank: 0),
         target:
-            (scene == 'pedal' && input == 0
+            (scene.startsWith('pedal') && input == 0
                     ? FxSlotTarget(
                         address: FxAddress(stage: FxStage.input, index: input),
                         slotId: 'lofi-distort',
@@ -929,7 +929,9 @@ void main() {
       control.setMode(InteractionMode.fx);
       await pump(
         tester,
-        locale: scene == 'spanish' ? const Locale('es') : null,
+        locale: scene == 'spanish' || scene == 'pedal-es'
+            ? const Locale('es')
+            : null,
       );
       final contact = Object();
       if (scene == 'held') {

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_names.dart';
@@ -30,6 +31,80 @@ void main() {
           BuiltInEffect(type: TrackEffectType.octaver, module: 'Pitch shift'),
         ),
         'Pitch shift',
+      );
+    });
+
+    test('every catalogue module has a name in each locale (#1752)', () {
+      for (final locale in AppLocalizations.supportedLocales) {
+        final l = lookupAppLocalizations(locale);
+        for (final module in kFxModules) {
+          final label = l.fxModuleLabel(module.name);
+          expect(label, isNotNull, reason: '$locale ${module.name}');
+          expect(label, isNotEmpty, reason: '$locale ${module.name}');
+        }
+      }
+    });
+
+    test('each add-an-effect row reads as the pedal it adds, in each '
+        'locale (#1752)', () {
+      for (final locale in AppLocalizations.supportedLocales) {
+        final l = lookupAppLocalizations(locale);
+        for (final row in kFxAddableEffects) {
+          // The row has no label of its own: it is named by its module, as
+          // the pedal it adds is.
+          final pedal = BuiltInEffect(
+            type: TrackEffectType.none,
+            module: row.module,
+          );
+          expect(l.fxModuleLabel(row.module), isNotNull, reason: row.module);
+          expect(
+            fxBlockName(l, pedal),
+            l.fxModuleLabel(row.module),
+            reason: '$locale ${row.module}',
+          );
+        }
+      }
+    });
+
+    test('a rack pedal reads in the locale (#1752)', () {
+      final es = lookupAppLocalizations(const Locale('es'));
+      final distort = BuiltInEffect(
+        type: TrackEffectType.overdrive,
+        module: 'Distortion',
+      );
+      expect(fxBlockName(es, distort), 'Distorsión');
+      expect(
+        fxBlockName(
+          es,
+          BuiltInEffect(type: TrackEffectType.octaver, module: 'Pitch shift'),
+        ),
+        'Cambio de tono',
+      );
+      expect(
+        fxBlockName(
+          l10n,
+          BuiltInEffect(type: TrackEffectType.lpf, module: 'Low-pass filter'),
+        ),
+        'Low-pass filter',
+      );
+    });
+
+    test('a module the catalogue no longer has keeps its stored name, so '
+        "it never takes another pedal's", () {
+      final es = lookupAppLocalizations(const Locale('es'));
+      expect(
+        fxBlockName(
+          es,
+          BuiltInEffect(type: TrackEffectType.overdrive, module: 'Distort 2'),
+        ),
+        'Distort 2',
+      );
+      expect(
+        fxBlockName(
+          es,
+          BuiltInEffect(type: TrackEffectType.none, module: 'Harmoniser'),
+        ),
+        'Harmoniser',
       );
     });
 

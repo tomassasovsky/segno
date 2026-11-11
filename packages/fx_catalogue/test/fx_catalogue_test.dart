@@ -666,8 +666,9 @@ void main() {
       return byFamily;
     }
 
-    test("are the pen's 26 rows, in the pen's order", () {
-      expect(kFxAddableEffects.map((e) => e.label), [
+    test("are the pen's 26 rows, in the pen's order, each named by the "
+        'module it adds', () {
+      expect(kFxAddableEffects.map((e) => e.module), [
         'Amp',
         'Chorus',
         'Compressor',
@@ -675,21 +676,21 @@ void main() {
         'Delay',
         'Distortion',
         'Doubler',
-        'Dub Delay',
+        'Dub delay',
         'Four-band EQ',
-        'Harmonize',
-        'HP / Gate',
-        'Low-pass Filter',
+        'Harmonizer',
+        'High-pass gate',
+        'Low-pass filter',
         'Modulation',
         'Octaver',
         'Overdrive',
         'Parametric EQ',
-        'Pitch Shift',
+        'Pitch shift',
         'Pumper',
         'Reverb',
         'Slicer',
-        'Smart Tune',
-        'Spring Reverb',
+        'Smart tune',
+        'Spring reverb',
         'Transient',
         'Vinyl',
         'Wah',
@@ -700,8 +701,8 @@ void main() {
     test('each names a module of the table and a rack that holds it', () {
       for (final row in kFxAddableEffects) {
         final module = fxModuleNamed(row.module);
-        expect(module, isNotNull, reason: row.label);
-        expect(variants(module!), contains(row.family), reason: row.label);
+        expect(module, isNotNull, reason: row.module);
+        expect(variants(module!), contains(row.family), reason: row.module);
       }
     });
 
@@ -714,7 +715,7 @@ void main() {
                   (keys.toList()..sort()).join('|'),
               }.length >
               1)
-            row.label,
+            row.module,
       ];
       expect(several, [
         'Compressor',
@@ -722,7 +723,7 @@ void main() {
         'Distortion',
         'Doubler',
         'Four-band EQ',
-        'Low-pass Filter',
+        'Low-pass filter',
         'Modulation',
         'Parametric EQ',
         'Reverb',
@@ -735,10 +736,10 @@ void main() {
         'Compressor',
         'Distortion',
         'Doubler',
-        'Low-pass Filter',
+        'Low-pass filter',
         'Modulation',
       ]) {
-        final row = kFxAddableEffects.firstWhere((r) => r.label == label);
+        final row = kFxAddableEffects.firstWhere((r) => r.module == label);
         final all = variants(fxModuleNamed(row.module)!);
         final chosen = all[row.family]!.length;
         for (final entry in all.entries) {
