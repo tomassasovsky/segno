@@ -36,6 +36,7 @@ class FxStompPedal extends StatelessWidget {
           isComplex: true,
           painter: _EnclosurePainter(
             spec: spec,
+            name: face.name,
             led: face.led,
             knobs: knobs.length,
           ),
@@ -535,16 +536,19 @@ final class _StompPictures {
 /// What an enclosure picture is recorded for.
 typedef _EnclosureKey = ({
   FxStompSpec spec,
+  String name,
   FxStompLed led,
   int knobs,
   bool textured,
 });
 
 /// The enclosure: everything but the knobs and their labels, recorded once
-/// per look ([_EnclosureKey]) and replayed.
+/// per look and printed name ([_EnclosureKey]) and replayed. A look a
+/// built-in shares with a rack module records one picture for each name.
 class _EnclosurePainter extends CustomPainter {
   _EnclosurePainter({
     required this.spec,
+    required this.name,
     required this.led,
     required this.knobs,
   }) : super(repaint: _repaint);
@@ -558,6 +562,9 @@ class _EnclosurePainter extends CustomPainter {
   ]);
 
   final FxStompSpec spec;
+
+  /// The name printed on it ([FxStompFace.name]).
+  final String name;
   final FxStompLed led;
   final int knobs;
 
@@ -572,9 +579,11 @@ class _EnclosurePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final tiles = FxStompTextures.instance.images.value;
-    // By the look itself: every look is a const of the look table.
+    // By the look itself (every look is a const of the look table) and the
+    // name it prints.
     final key = (
       spec: spec,
+      name: name,
       led: led,
       knobs: _knobs,
       textured: tiles.isNotEmpty,
@@ -585,6 +594,7 @@ class _EnclosurePainter extends CustomPainter {
         _Enclosure(
           Canvas(recorder),
           spec,
+          name: name,
           led: led,
           knobs: _knobs,
           tiles: tiles,
@@ -597,6 +607,7 @@ class _EnclosurePainter extends CustomPainter {
   @override
   bool shouldRepaint(_EnclosurePainter oldDelegate) =>
       !identical(oldDelegate.spec, spec) ||
+      oldDelegate.name != name ||
       oldDelegate.led != led ||
       oldDelegate._knobs != _knobs;
 }
@@ -606,6 +617,7 @@ class _Enclosure {
   _Enclosure(
     this.canvas,
     this.spec, {
+    required this.name,
     required this.led,
     required this.knobs,
     required this.tiles,
@@ -613,6 +625,9 @@ class _Enclosure {
 
   final Canvas canvas;
   final FxStompSpec spec;
+
+  /// The name printed on it.
+  final String name;
   final FxStompLed led;
   final int knobs;
 
@@ -708,7 +723,7 @@ class _Enclosure {
       ..clipRRect(shape);
     _texture(r);
     if (art != null && !fxStompGraphicOnTreadle(spec.graphic)) {
-      paintFxStompGraphic(canvas, spec.graphic, art, spec);
+      paintFxStompGraphic(canvas, spec.graphic, art, spec, name);
     }
     canvas
       ..drawRect(
@@ -919,7 +934,7 @@ class _Enclosure {
     if (outline != null) {
       fxStompPaintText(
         canvas,
-        spec.name,
+        name,
         Offset(x, y),
         maxWidth: room,
         style.copyWith(
@@ -935,7 +950,7 @@ class _Enclosure {
     }
     fxStompPaintText(
       canvas,
-      spec.name,
+      name,
       Offset(x, y),
       maxWidth: room,
       style.copyWith(
@@ -994,6 +1009,7 @@ class _Enclosure {
         spec.graphic,
         const Rect.fromLTWH(32, 298, 386, 130),
         spec,
+        name,
       );
       canvas.restore();
     }
@@ -1072,7 +1088,7 @@ class _Enclosure {
       )
       ..save()
       ..clipRRect(panelShape);
-    paintFxStompGraphic(canvas, spec.graphic, panel, spec);
+    paintFxStompGraphic(canvas, spec.graphic, panel, spec, name);
     canvas
       ..restore()
       ..drawRRect(

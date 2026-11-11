@@ -65,6 +65,38 @@ void main() {
     }
   });
 
+  test("every standalone built-in's face prints its own English name, in "
+      "its look's case (#1754)", () {
+    final want = {
+      TrackEffectType.drive: 'Drive',
+      TrackEffectType.filter: 'FILTER',
+      TrackEffectType.delay: 'DELAY',
+      TrackEffectType.tremolo: 'Tremolo',
+      TrackEffectType.octaver: 'OCTAVER',
+      TrackEffectType.echo: 'ECHO',
+      TrackEffectType.reverb: 'REVERB',
+    };
+    expect(want.keys.toSet(), kFxBuiltInLooks.keys.toSet());
+    for (final MapEntry(key: type, value: name) in want.entries) {
+      expect(faceOf(BuiltInEffect(type: type)).name, name, reason: '$type');
+    }
+  });
+
+  test("a rack's pedal keeps its look's own name, also where a built-in "
+      'shares the look', () {
+    for (final module in ['Overdrive', 'Low-pass filter', 'Octaver']) {
+      final entry = BuiltInEffect(
+        type: TrackEffectType.overdrive,
+        module: module,
+      );
+      expect(
+        faceOf(entry).name,
+        kFxStompSpecs[module]!.name,
+        reason: module,
+      );
+    }
+  });
+
   test('an entry that names a catalogue module is drawn as the module, '
       "not as its engine type's look", () {
     final entry = BuiltInEffect(

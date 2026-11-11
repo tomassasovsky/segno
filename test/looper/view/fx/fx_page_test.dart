@@ -833,8 +833,15 @@ void main() {
       expect(find.byKey(const Key('fx_part_picker')), findsNothing);
       expect(find.text(l10nOf(tester).fxPlacementPre), findsNothing);
       expect(find.text(l10nOf(tester).fxPlacementPost), findsNothing);
-      // And it is the All tracks chain that is showing, not a track's.
-      expect(find.text(l10nOf(tester).effectEcho), findsOneWidget);
+      // And it is the All tracks chain that is showing, not a track's: its
+      // single card carries the effect's name for a screen reader (#1754).
+      final name = l10nOf(tester).effectEcho;
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == name,
+        ),
+        findsOneWidget,
+      );
     });
 
     group('the part picker lists the inputs the track records', () {
@@ -1129,7 +1136,13 @@ void main() {
       await pump(tester, destination: const FxDestination.liveInput(0));
 
       // Read: the two entries the monitor cubit carries, not the projection's.
-      expect(find.text(l10nOf(tester).effectDelay), findsOneWidget);
+      final name = l10nOf(tester).effectDelay;
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == name,
+        ),
+        findsOneWidget,
+      );
 
       await tapKey(tester, 'fx_power_m1');
 
