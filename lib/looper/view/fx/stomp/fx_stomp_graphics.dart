@@ -144,14 +144,15 @@ double _rad(double degrees) => degrees * math.pi / 180;
 Offset _polar(Offset c, double r, double degrees) =>
     c + Offset(math.cos(_rad(degrees)), math.sin(_rad(degrees))) * r;
 
-/// Paints [graphic] for a pedal drawn by [spec], in the face region [r] the
-/// design gives it (the body, the treadle, a window's panel or a rocker's
-/// side band).
+/// Paints [graphic] for a pedal drawn by [spec] that prints [name], in the
+/// face region [r] the design gives it (the body, the treadle, a window's
+/// panel or a rocker's side band).
 void paintFxStompGraphic(
   Canvas canvas,
   FxStompGraphic graphic,
   Rect r,
   FxStompSpec spec,
+  String name,
 ) {
   final (x, y, w, h) = (r.left, r.top, r.width, r.height);
   switch (graphic) {
@@ -176,7 +177,7 @@ void paintFxStompGraphic(
     case FxStompGraphic.slices:
       _slices(canvas, x, y + 450, w, 190);
     case FxStompGraphic.echo:
-      _echo(canvas, spec);
+      _echo(canvas, spec, name);
     case FxStompGraphic.reels:
       _reels(
         canvas,
@@ -409,13 +410,13 @@ void _slices(Canvas canvas, double x, double y, double w, double h) {
   }
 }
 
-void _echo(Canvas canvas, FxStompSpec spec) {
+void _echo(Canvas canvas, FxStompSpec spec, String name) {
   // The name again, fading up and to the right behind itself.
   final y = spec.titleY ?? kFxStompTreadleTitleY;
   for (final i in const [3, 2, 1]) {
     fxStompPaintText(
       canvas,
-      spec.name,
+      name,
       Offset(225.0 + i * 16, y - i * 13),
       maxWidth: kFxStompTreadleTitleRoom,
       TextStyle(

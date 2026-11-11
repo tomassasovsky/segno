@@ -826,6 +826,41 @@ void main() {
       expect(find.byKey(const Key('fx_track_strip')), findsOneWidget);
     });
 
+    testWidgets("a single effect's card names the switch assigned to it "
+        '(#1757)', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        controlState: ControlState(
+          globalBindings: PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+              target: const FxSlotTarget(
+                address: FxAddress(stage: FxStage.track),
+                slotId: 't3',
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      );
+
+      final card = find.byKey(const Key('fx_card_t3'));
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(l10nOf(tester).controlTrackSwitchName(2)),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(l10nOf(tester).fxUnassigned),
+        ),
+        findsNothing,
+      );
+    });
+
     testWidgets('All tracks has no part picker and no placement tag — its '
         'stage is fixed after the recorded mix', (tester) async {
       await pump(tester, destination: const FxDestination.allTracks());
@@ -833,8 +868,15 @@ void main() {
       expect(find.byKey(const Key('fx_part_picker')), findsNothing);
       expect(find.text(l10nOf(tester).fxPlacementPre), findsNothing);
       expect(find.text(l10nOf(tester).fxPlacementPost), findsNothing);
-      // And it is the All tracks chain that is showing, not a track's.
-      expect(find.text(l10nOf(tester).effectEcho), findsOneWidget);
+      // And it is the All tracks chain that is showing, not a track's: its
+      // single card carries the effect's name for a screen reader (#1754).
+      final name = l10nOf(tester).effectEcho;
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == name,
+        ),
+        findsOneWidget,
+      );
     });
 
     group('the part picker lists the inputs the track records', () {
@@ -1129,7 +1171,13 @@ void main() {
       await pump(tester, destination: const FxDestination.liveInput(0));
 
       // Read: the two entries the monitor cubit carries, not the projection's.
-      expect(find.text(l10nOf(tester).effectDelay), findsOneWidget);
+      final name = l10nOf(tester).effectDelay;
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Semantics && w.properties.label == name,
+        ),
+        findsOneWidget,
+      );
 
       await tapKey(tester, 'fx_power_m1');
 

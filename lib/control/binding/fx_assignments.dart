@@ -1,11 +1,15 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/midi_labels.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
 
 /// Whether [target] names one of the effects [slotIds] in the chain at
 /// [address], one of their parameters, or one of the racks [rackIds] there
@@ -97,6 +101,105 @@ int fxAssignmentsTo(
     }
   }
   return count;
+}
+
+/// What the controls acting on each effect in the chain at [address] are
+/// called, by the effect's slot id, named as the assignment screens name them
+/// (#1757): the console switches first (`Track 3`, `Track 3 · Hold`), then the
+/// CTRL jacks (`CTRL 1`, `CTRL 2 · Button 2`), then the MIDI controls
+/// (`CC 20 · Ch 1`). Each control once per effect, however many of its
+/// switches and parameters it drives; a console switch's hold is a control of
+/// its own, as a dual pedal's second button is. An effect nothing acts on is
+/// absent.
+///
+/// Only what acts: the console bindings in force (a loaded session's remap
+/// replaces the globals), each resolved against the selected track when its
+/// scope follows it; each jack's switches or expression under the type
+/// plugged in; and the MIDI mappings that are switched on, while MIDI control
+/// is. [fxAssignmentsTo] counts more, every stored assignment, because it
+/// counts what removing the effects takes away.
+Map<String, List<String>> fxAssignmentNames(
+  AppLocalizations l10n,
+  ControlState control,
+  FxAddress address,
+) {
+  // Per effect, each control by its identity: two MIDI mappings can share a
+  // name (one CC on two devices) and are still two controls.
+  final named = <String, Map<Object, String>>{};
+  void add(Object? target, Object control, String name) {
+    final slotId = switch (target) {
+      FxSlotTarget(address: final a, :final slotId) when a == address => slotId,
+      FxParamTarget(address: final a, :final slotId) when a == address =>
+        slotId,
+      _ => null,
+    };
+    if (slotId != null) {
+      (named[slotId] ??= {}).putIfAbsent(control, () => name);
+    }
+  }
+
+  for (final binding in control.bindings.bindings) {
+    final key = binding.key;
+    final name = pedalSwitchLabel(l10n, key.button, key.bank ?? 0);
+    if (binding.decodeTarget() case final press?) {
+      add(
+        resolveBindingTarget(press, binding.scope, control.cursor),
+        (key, false),
+        name,
+      );
+    }
+    if (binding.decodeHoldTarget() case final hold?) {
+      add(
+        resolveBindingTarget(hold, binding.holdScope, control.cursor),
+        (key, true),
+        l10n.fxAssignedControlPart(name, l10n.pedalSetupHold),
+      );
+    }
+  }
+  for (final jack in PedalCtrlJack.values) {
+    final setup = control.pedalSetup.external.forJack(jack);
+    final name = externalJackName(l10n, jack);
+    if (setup.type == ExternalJackType.expression) {
+      for (final mapping in setup.expression.mappings) {
+        add(mapping.target, jack, name);
+      }
+    }
+    final switches = setup.type.switchCount;
+    for (var index = 0; index < switches; index++) {
+      final button = setup.switchAt(index)!;
+      final label = switches == 1
+          ? name
+          : l10n.fxAssignedControlPart(name, l10n.externalButton(index + 1));
+      // A latching switch reports no contact, so its Held and Released rows
+      // never act (as in [fxReachOf]).
+      final latching = button.hardware == ExternalSwitchHardware.latching;
+      for (final target in [
+        for (final row in button.controls.activations)
+          if (!latching ||
+              row.condition == ExternalCondition.on ||
+              row.condition == ExternalCondition.off)
+            row.target,
+        for (final row in button.controls.parameters)
+          if (!latching || row.condition == ExternalValueCondition.onOff)
+            row.target,
+      ]) {
+        add(target, (jack, index), label);
+      }
+    }
+  }
+  if (control.midiControlEnabled) {
+    for (final mapping in control.midiMappings.mappings) {
+      if (!mapping.enabled) continue;
+      final name = midiSourceName(l10n, mapping.source);
+      for (final midi in mapping.controls) {
+        add(_midiTarget(midi.key), mapping.id, name);
+      }
+    }
+  }
+  return {
+    for (final MapEntry(:key, :value) in named.entries)
+      key: value.values.toList(),
+  };
 }
 
 /// What every control in [control] can turn on (#1723): the reach the

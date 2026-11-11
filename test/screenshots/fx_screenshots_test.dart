@@ -10,11 +10,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
+import 'package:segno/control/binding/external_controls.dart';
+import 'package:segno/control/binding/external_pedal.dart';
+import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/fx_presets_cubit.dart';
@@ -233,6 +237,43 @@ const _library = FxCatalogue(
   ],
 );
 
+class _MockControlCubit extends MockCubit<ControlState>
+    implements ControlCubit {}
+
+/// The console's second track switch on the reverb, and CTRL 1 on it too:
+/// the Recorded track card names both (#1757).
+final _assigned = ControlState(
+  globalBindings: PedalBindingSet([
+    PedalBinding(
+      key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+      target: const FxSlotTarget(
+        address: FxAddress(stage: FxStage.track),
+        slotId: 't3',
+      ).canonicalString(),
+    ),
+  ]),
+  pedalSetup: PedalSetup(
+    external: ExternalPedalSetup(
+      jacks: {
+        PedalCtrlJack.ctrl1: ExternalJackSetup(
+          single: ExternalSwitchSetup(
+            controls: ExternalControls(
+              activations: const [
+                ExternalActivation(
+                  target: FxSlotTarget(
+                    address: FxAddress(stage: FxStage.track),
+                    slotId: 't3',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      },
+    ),
+  ),
+);
+
 void main() {
   setUpAll(() async {
     registerFallbackValue(const LooperInputPanChanged(0, pan: 0));
@@ -347,6 +388,7 @@ void main() {
     LooperState? state,
     FxCatalogue catalogue = FxCatalogue.empty,
     Locale? locale,
+    ControlState control = const ControlState(),
   }) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
@@ -387,6 +429,8 @@ void main() {
     await outputs.rename(0, 'Main output');
     await outputs.rename(1, 'Monitor output');
     await tracks.rename(0, 'drums');
+    final controlCubit = _MockControlCubit();
+    when(() => controlCubit.state).thenReturn(control);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -418,6 +462,7 @@ void main() {
               BlocProvider.value(value: monitors),
               BlocProvider.value(value: tracks),
               BlocProvider.value(value: presets),
+              BlocProvider<ControlCubit>.value(value: controlCubit),
             ],
             child: FxPage(initial: destination, catalogue: catalogue),
           ),
@@ -441,8 +486,24 @@ void main() {
   }, skip: !rendersScreenshots);
 
   testWidgets('Recorded track, whole track', (tester) async {
-    await pump(tester, destination: const FxDestination.recordedTrack(0));
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      control: _assigned,
+    );
     await shoot(tester, 'recorded_track');
+  }, skip: !rendersScreenshots);
+
+  // Spanish: a single effect's card has no title, and its pedal prints the
+  // effect's English name in every locale (#1754).
+  testWidgets('Recorded track, in Spanish', (tester) async {
+    await pump(
+      tester,
+      destination: const FxDestination.recordedTrack(0),
+      state: _rackRig,
+      locale: const Locale('es'),
+    );
+    await shoot(tester, 'recorded_track_es');
   }, skip: !rendersScreenshots);
 
   testWidgets('Recorded track, the part picker', (tester) async {
