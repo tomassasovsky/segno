@@ -782,7 +782,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,086 ns a frame at 96 kHz / 64
+    // Ed's Rack, the plan's unit (section 7): 3,199 ns a frame at 96 kHz / 64
     // on the console's own table (#1508, #1724, #1755), 2,665 in the plan.
     final rack = [
       for (final type in [
@@ -816,16 +816,16 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 3086);
+      expect(rackNs, 3199);
       expect(fxBudgetNs(96000), 6834);
     });
 
     test("at the owner's 48 kHz / 32, three of Ed's Racks fit the callback "
-        'alone and eight fit the inputs with two workers (#1724 admitted '
-        'seven; #1755 made its Room reverb, Mode delay and EQ cheaper)', () {
+        'alone and seven fit the inputs with two workers (#1724: as many as '
+        'the worst of eight at 80 % admitted)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      expect(ns, 4319);
+      expect(ns, 4432);
       expect(budget, 14622);
       expect(3 * ns, lessThanOrEqualTo(budget));
       expect(4 * ns, greaterThan(budget));
@@ -835,17 +835,17 @@ void main() {
         workers: 2,
         period: 32,
       );
-      expect(load(8), lessThanOrEqualTo(budget));
-      expect(load(9), greaterThan(budget));
+      expect(load(7), lessThanOrEqualTo(budget));
+      expect(load(8), greaterThan(budget));
     });
 
     // The console ran (#1729) 5 tracks, and 4 inputs with 1 track, with no
     // late period, and 6 tracks, and 4 inputs with 3 tracks, with more than
-    // #1724's limit. With #1755's cheaper kernels 4 inputs and 3 tracks
-    // charge just under the limit.
+    // #1724's limit. With #1755's cheaper kernels 4 inputs and 2 tracks
+    // charge under it.
     test("at 48 kHz / 32 with two workers, five of Ed's Racks fit on "
-        'tracks and six do not; four on inputs leave room for three on '
-        'tracks, not four (#1729, #1755)', () {
+        'tracks and six do not; four on inputs leave room for two on '
+        'tracks, not three (#1729, #1755)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
       int load(int inputs, int tracks) => fxLoadNs(
@@ -857,8 +857,8 @@ void main() {
       );
       expect(load(0, 5), lessThanOrEqualTo(budget));
       expect(load(0, 6), greaterThan(budget));
-      expect(load(4, 3), lessThanOrEqualTo(budget));
-      expect(load(4, 4), greaterThan(budget));
+      expect(load(4, 2), lessThanOrEqualTo(budget));
+      expect(load(4, 3), greaterThan(budget));
       // On the callback alone, before #1729: three.
       expect(3 * ns, lessThanOrEqualTo(budget));
       expect(4 * ns, greaterThan(budget));

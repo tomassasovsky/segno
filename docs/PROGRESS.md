@@ -109,12 +109,17 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   132 -> 82; Freeverb 128 -> 116; EQ 77 -> 63; Mode delay 80 -> 71 (the
   Dub voicing gliding 120 -> 104); Echo 117 -> 110; Mod 98 -> 92. The
   others are unchanged.
-- The charges (`kFxKindCostNs`, the table at 44.1, 48 and 96 kHz, 32 and
-  64 frames, and the moving runs at 48 kHz / 32): Room 735 -> 478, Amb
-  272 -> 225, Dub 221 -> 196, Reverb 234 -> 161, Mode delay 179 -> 132,
-  Filter 166 -> 75, EQ 88 -> 71, Echo 144 -> 133, Mod 113 -> 110, Tremolo
-  52 -> 45. Ed's Rack 3407 -> 3086 at 96 kHz / 64 and 4640 -> 4319 at
-  48 kHz / 32: eight on the inputs with two workers (was seven).
+- The charges (`kFxKindCostNs`): the table at 44.1, 48 and 96 kHz, 32 and
+  64 frames, and the moving runs at 48 kHz / 32, before and after on the
+  same day; each kind charges the larger of its largest new reading and
+  its old charge scaled by the median after-to-before ratio of the
+  scenario that set it, so a worst case an earlier run caught keeps its
+  margin. Room 735 -> 552, Amb 272 -> 225, Dub 221 -> 196, Reverb 234 ->
+  221, Mode delay 179 -> 171, Filter 166 -> 98, EQ 88 -> 71, Echo 144 ->
+  139, Mod 113 -> 110, Tremolo 52 -> 50. Ed's Rack 3407 -> 3199 at 96 kHz
+  / 64 (2, 3, 4 and 5 racks with 0 to 3 workers, was 2, 2, 3 and 4) and
+  4640 -> 4432 at 48 kHz / 32 (four inputs leave room for two track racks,
+  was one).
 - What was left: the Room reverb's early taps (up to 64 a side, about
   140 ns a frame) keep the trunk's loop character for character. The
   compilers decide per loop shape whether to fuse each tap's multiply-add
