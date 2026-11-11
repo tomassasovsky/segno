@@ -103,71 +103,92 @@ int fxAssignmentsTo(
   return count;
 }
 
-/// What the controls that act on the effects [slotIds] in the chain at
-/// [address] are called, named as the assignment screens name them (#1757):
-/// the console switches first (`Track 3`, `Track 3 · Hold`), then the CTRL
-/// jacks (`CTRL 1`, `CTRL 2 · Button 2`), then the MIDI controls
-/// (`CC 20 · Ch 1`). Each control once, however many of the effects or their
-/// parameters it drives.
+/// What the controls acting on each effect in the chain at [address] are
+/// called, by the effect's slot id, named as the assignment screens name them
+/// (#1757): the console switches first (`Track 3`, `Track 3 · Hold`), then the
+/// CTRL jacks (`CTRL 1`, `CTRL 2 · Button 2`), then the MIDI controls
+/// (`CC 20 · Ch 1`). Each control once per effect, however many of its
+/// switches and parameters it drives; an effect nothing acts on is absent.
 ///
 /// Only what acts: the console bindings in force (a loaded session's remap
-/// replaces the globals), each jack's switches or expression under the type
-/// plugged in, and the MIDI mappings that are switched on. [fxAssignmentsTo]
-/// counts more, every stored assignment, because it counts what removing the
-/// effects takes away.
-List<String> fxAssignmentNames(
+/// replaces the globals), each resolved against the selected track when its
+/// scope follows it; each jack's switches or expression under the type
+/// plugged in; and the MIDI mappings that are switched on, while MIDI control
+/// is. [fxAssignmentsTo] counts more, every stored assignment, because it
+/// counts what removing the effects takes away.
+Map<String, List<String>> fxAssignmentNames(
   AppLocalizations l10n,
   ControlState control,
   FxAddress address,
-  Set<String> slotIds,
 ) {
-  bool names(Object? target) => fxTargetNamesEffect(target, address, slotIds);
-  final found = <String>{};
+  // Per effect, each control by its identity: two MIDI mappings can share a
+  // name (one CC on two devices) and are still two controls.
+  final named = <String, Map<Object, String>>{};
+  void add(Object? target, Object control, String name) {
+    final slotId = switch (target) {
+      FxSlotTarget(address: final a, :final slotId) when a == address => slotId,
+      FxParamTarget(address: final a, :final slotId) when a == address =>
+        slotId,
+      _ => null,
+    };
+    if (slotId != null) {
+      (named[slotId] ??= {}).putIfAbsent(control, () => name);
+    }
+  }
+
   for (final binding in control.bindings.bindings) {
     final key = binding.key;
     final name = pedalSwitchLabel(l10n, key.button, key.bank ?? 0);
-    if (names(binding.decodeTarget())) found.add(name);
-    if (names(binding.decodeHoldTarget())) {
-      found.add(l10n.fxAssignedControlPart(name, l10n.pedalSetupHold));
+    if (binding.decodeTarget() case final press?) {
+      add(
+        resolveBindingTarget(press, binding.scope, control.cursor),
+        (key, false),
+        name,
+      );
+    }
+    if (binding.decodeHoldTarget() case final hold?) {
+      add(
+        resolveBindingTarget(hold, binding.holdScope, control.cursor),
+        (key, true),
+        l10n.fxAssignedControlPart(name, l10n.pedalSetupHold),
+      );
     }
   }
-  bool switchNames(ExternalSwitchSetup setup) => [
-    for (final row in setup.controls.activations) row.target,
-    for (final row in setup.controls.parameters) row.target,
-  ].any(names);
   for (final jack in PedalCtrlJack.values) {
     final setup = control.pedalSetup.external.forJack(jack);
-    final name = switch (jack) {
-      PedalCtrlJack.ctrl1 => l10n.externalJackCtrl1,
-      PedalCtrlJack.ctrl2 => l10n.externalJackCtrl2,
-    };
-    switch (setup.type) {
-      case ExternalJackType.expression:
-        if (setup.expression.mappings.map((m) => m.target).any(names)) {
-          found.add(name);
-        }
-      case ExternalJackType.singleSwitch:
-        if (switchNames(setup.single)) found.add(name);
-      case ExternalJackType.dualSwitch:
-        for (final (index, button) in [
-          setup.dualFirst,
-          setup.dualSecond,
-        ].indexed) {
-          if (switchNames(button)) {
-            found.add(
-              l10n.fxAssignedControlPart(name, l10n.externalButton(index + 1)),
-            );
-          }
-        }
+    final name = externalJackName(l10n, jack);
+    if (setup.type == ExternalJackType.expression) {
+      for (final mapping in setup.expression.mappings) {
+        add(mapping.target, jack, name);
+      }
+    }
+    final switches = setup.type.switchCount;
+    for (var index = 0; index < switches; index++) {
+      final button = setup.switchAt(index)!;
+      final label = switches == 1
+          ? name
+          : l10n.fxAssignedControlPart(name, l10n.externalButton(index + 1));
+      for (final target in [
+        for (final row in button.controls.activations) row.target,
+        for (final row in button.controls.parameters) row.target,
+      ]) {
+        add(target, (jack, index), label);
+      }
     }
   }
-  for (final mapping in control.midiMappings.mappings) {
-    if (mapping.enabled &&
-        mapping.controls.any((midi) => names(_midiTarget(midi.key)))) {
-      found.add(midiSourceName(l10n, mapping.source));
+  if (control.midiControlEnabled) {
+    for (final mapping in control.midiMappings.mappings) {
+      if (!mapping.enabled) continue;
+      final name = midiSourceName(l10n, mapping.source);
+      for (final midi in mapping.controls) {
+        add(_midiTarget(midi.key), mapping.id, name);
+      }
     }
   }
-  return found.toList();
+  return {
+    for (final MapEntry(:key, :value) in named.entries)
+      key: value.values.toList(),
+  };
 }
 
 /// What every control in [control] can turn on (#1723): the reach the

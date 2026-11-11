@@ -83,9 +83,9 @@ class FxChainStrip extends StatelessWidget {
   /// place across a context switch.
   final ScrollController? controller;
 
-  /// What the controls assigned to each single effect are called
-  /// (`fxAssignmentNames`), by [fxGroupId]. A single card prints them on its
-  /// assignment line; an effect missing here is unassigned.
+  /// What the controls assigned to each effect are called
+  /// (`fxAssignmentNames`), by slot id. A single effect's card prints them on
+  /// its assignment line; an effect missing here is unassigned.
   final Map<String, List<String>> assignments;
 
   @override
@@ -122,7 +122,9 @@ class FxChainStrip extends StatelessWidget {
               key: Key('fx_card_${fxGroupId(groups[i])}'),
               group: groups[i],
               showPlacement: showPlacement,
-              assignedTo: assignments[fxGroupId(groups[i])] ?? const [],
+              assignedTo: groups[i].isRack
+                  ? const []
+                  : assignments[groups[i].entries.first.slotId] ?? const [],
               dimmed: !chainEnabled,
               onTogglePower: ({required enabled}) =>
                   onTogglePower(i, enabled: enabled),

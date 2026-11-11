@@ -461,7 +461,7 @@ void main() {
 
     test('is empty when nothing acts on the effect', () {
       expect(
-        fxAssignmentNames(en, const ControlState(), _track, {'a'}),
+        fxAssignmentNames(en, const ControlState(), _track),
         isEmpty,
       );
     });
@@ -492,21 +492,23 @@ void main() {
           ),
         ),
       );
-      expect(fxAssignmentNames(en, state, _track, {'a'}), [
+      expect(fxAssignmentNames(en, state, _track)['a'], [
         'Track 1 · Hold',
         'Track 7',
         'CTRL 1 · Button 2',
         'CTRL 2',
         'CC 20 · Ch 1',
       ]);
-      expect(fxAssignmentNames(es, state, _track, {'a'}), [
+      expect(fxAssignmentNames(es, state, _track)['a'], [
         '${es.controlTrackSwitchName(1)} · ${es.pedalSetupHold}',
         es.controlTrackSwitchName(7),
         'CTRL 1 · ${es.externalButton(2)}',
         'CTRL 2',
         es.midiSourceOnChannel(es.midiSourceCc(20), 1),
       ]);
-      expect(fxAssignmentNames(en, state, _other, {'a'}), ['Track 1']);
+      expect(fxAssignmentNames(en, state, _other), {
+        'a': ['Track 1'],
+      });
     });
 
     test('names only what acts: the bindings in force, the jack type '
@@ -532,7 +534,7 @@ void main() {
           ),
         ),
       );
-      expect(fxAssignmentNames(en, state, _track, {'a'}), isEmpty);
+      expect(fxAssignmentNames(en, state, _track), isEmpty);
       // Each of them is still an assignment the effect's removal takes out.
       expect(fxAssignmentsTo(state, _track, {'a'}), 3);
     });
@@ -560,7 +562,62 @@ void main() {
           ),
         ),
       );
-      expect(fxAssignmentNames(en, state, _track, {'a'}), ['CTRL 1']);
+      expect(fxAssignmentNames(en, state, _track)['a'], ['CTRL 1']);
+    });
+
+    test('names no MIDI control while MIDI control is off', () {
+      final state = ControlState(
+        midiMappings: MidiMappingSet(mappings: [midi(20, slotA)]),
+        midiControlEnabled: false,
+      );
+      expect(fxAssignmentNames(en, state, _track), isEmpty);
+    });
+
+    test('a binding that follows the selected track names the effect on '
+        'the selected track', () {
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          PedalBinding(
+            key: const PedalBindingKey(button: PedalButton.stop),
+            target: slotA.canonicalString(),
+            scope: BindingScope.selected,
+          ),
+        ]),
+        cursor: 1,
+      );
+      expect(fxAssignmentNames(en, state, _track), isEmpty);
+      expect(fxAssignmentNames(en, state, _other), {
+        'a': ['STOP'],
+      });
+    });
+
+    test('two controls with one name are two controls', () {
+      final state = ControlState(
+        midiMappings: MidiMappingSet(
+          mappings: [
+            midi(20, slotA),
+            MidiMapping(
+              id: 'other device',
+              source: MidiSource(
+                device: 'pads',
+                kind: ControllerSourceKind.midiCc,
+                number: 20,
+              ),
+              behavior: MidiBehavior.toggle,
+              controls: [
+                MidiParameterControl(
+                  key: slotA.canonicalString(),
+                  low: 0,
+                  high: 1,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      expect(fxAssignmentNames(en, state, _track), {
+        'a': ['CC 20 · Omni', 'CC 20 · Omni'],
+      });
     });
   });
 }
