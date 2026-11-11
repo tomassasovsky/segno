@@ -2103,6 +2103,8 @@
     "fxPartNamedOrdinal": "{input} · parte {number}",
     "fxPartOrdinal": "Parte {number}",
     "fxUnassigned": "Sin asignar",
+    "fxAssignedControlPart": "{control} · {part}",
+    "fxAssignedMore": "{name} +{count}",
     "fxModuleCount": "{count, plural, =1{1 efecto} other{{count} efectos}}",
     "fxRackOptions": "Opciones del rack",
     "fxRackRename": "Renombrar",

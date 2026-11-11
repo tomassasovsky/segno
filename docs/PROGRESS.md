@@ -39,6 +39,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
 | #1754, #1740 | Compact single-effect card on the Effects page (app built, draft PR #1756); the Penpot frames and the #1740 clean-up wait for a connected Penpot MCP tab | in-review | auto | `claude/single-fx-card-1754` |
+| #1757 | A single-effect card's assignment line names the console switch, CTRL jack or MIDI control assigned to it (stacked on #1756) | in-review | auto | `claude/card-assignment-1757` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
