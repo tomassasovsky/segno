@@ -141,16 +141,13 @@ void main() {
     });
 
     test('an oversampled kind costs less a frame at 88.2 kHz and up', () {
-      // It runs fewer times over there (#1547). Not the Distortion at 32
-      // frames: there its charge is the block whose update redesigns its
-      // shelf, which costs no less at 96 kHz (#1755).
+      // It runs fewer times over there (#1547).
       for (final type in [
         TrackEffectType.overdrive,
         TrackEffectType.distortion,
         TrackEffectType.vinyl,
       ]) {
         for (final period in [32, 64]) {
-          if (type == TrackEffectType.distortion && period == 32) continue;
           expect(
             fxEntryCostNs(_fx(type), period: period),
             lessThan(
@@ -828,7 +825,7 @@ void main() {
         'before its cheaper drives and amp)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      expect(ns, 4105);
+      expect(ns, 4072);
       expect(budget, 14622);
       expect(3 * ns, lessThanOrEqualTo(budget));
       expect(4 * ns, greaterThan(budget));
