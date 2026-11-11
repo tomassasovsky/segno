@@ -662,5 +662,39 @@ void main() {
         },
       );
     });
+
+    test('names what is bound to a rack itself by the rack id (#1760)', () {
+      const rack = FxRackTarget(address: _track, rackId: 'R');
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          pedal(PedalButton.track2, rack, bank: 0),
+          pedal(PedalButton.track3, slotA, bank: 0),
+        ]),
+        pedalSetup: PedalSetup(
+          external: ExternalPedalSetup(
+            jacks: {
+              PedalCtrlJack.ctrl2: ExternalJackSetup(single: onSwitch(rack)),
+            },
+          ),
+        ),
+      );
+      expect(fxAssignmentNames(en, state, _track), {
+        'R': ['Track 2', 'CTRL 2'],
+        'a': ['Track 3'],
+      });
+      expect(fxAssignmentNames(en, state, _other), isEmpty);
+    });
+
+    test("a switch's press and hold on the same effect are one control, "
+        'named for its press (#1760)', () {
+      final state = ControlState(
+        globalBindings: PedalBindingSet([
+          pedal(PedalButton.track1, slotA, bank: 0, hold: slotA),
+        ]),
+      );
+      expect(fxAssignmentNames(en, state, _track), {
+        'a': ['Track 1'],
+      });
+    });
   });
 }

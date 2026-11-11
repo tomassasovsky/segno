@@ -154,6 +154,50 @@ void main() {
       );
     });
 
+    testWidgets('a rack card names what is bound to the rack and keeps its '
+        'effect count (#1760)', (tester) async {
+      await pump(
+        tester,
+        mixed,
+        assignments: {
+          'R': ['Track 2', 'CTRL 1'],
+        },
+      );
+      final card = find.byKey(const Key('fx_card_R'));
+      Rect text(String label) => tester.getRect(
+        find.descendant(of: card, matching: find.text(label)),
+      );
+      // The names above the count, the count still level with a single
+      // card's assignment line.
+      expect(
+        text('Track 2 +1').bottom,
+        lessThanOrEqualTo(text('2 effects').top),
+      );
+      expect(
+        text('2 effects').center.dy,
+        tester
+            .getRect(
+              find.descendant(
+                of: find.byKey(const Key('fx_card_s1')),
+                matching: find.text('Unassigned'),
+              ),
+            )
+            .center
+            .dy,
+      );
+    });
+
+    testWidgets('an unassigned rack card says so', (tester) async {
+      await pump(tester, mixed);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('fx_card_R')),
+          matching: find.text('Unassigned'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('consecutive singles sit a gap apart, on the rack column '
         'grid', (tester) async {
       await pump(tester, [

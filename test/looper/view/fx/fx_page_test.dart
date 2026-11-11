@@ -861,6 +861,39 @@ void main() {
       );
     });
 
+    testWidgets('a rack card names the switch bound to the rack (#1760)', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        state: _rackRig,
+        controlState: ControlState(
+          globalBindings: PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track4, bank: 0),
+              target: const FxRackTarget(
+                address: FxAddress(stage: FxStage.track),
+                rackId: 'R1',
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      );
+
+      final l10n = l10nOf(tester);
+      final card = find.byKey(const Key('fx_card_R1'));
+      for (final text in [
+        l10n.controlTrackSwitchName(4),
+        l10n.fxModuleCount(3),
+      ]) {
+        expect(
+          find.descendant(of: card, matching: find.text(text)),
+          findsOneWidget,
+        );
+      }
+    });
+
     testWidgets('All tracks has no part picker and no placement tag — its '
         'stage is fixed after the recorded mix', (tester) async {
       await pump(tester, destination: const FxDestination.allTracks());
