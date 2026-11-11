@@ -41,15 +41,15 @@ void main() {
       );
     });
 
-    test('a plugin is named by its module, its name, its id, then a generic '
-        'label', () {
+    test('a plugin is named as itself, even in a rack: its name, its id, '
+        'then a generic label', () {
       const ref = PluginRef(format: PluginFormat.vst3, id: 'abc');
       expect(
         fxBlockName(
           l10n,
           const PluginEffect(ref: ref, name: 'Comp', module: 'Delay'),
         ),
-        'Delay',
+        'Comp',
       );
       expect(
         fxBlockName(l10n, const PluginEffect(ref: ref, name: 'Comp')),
