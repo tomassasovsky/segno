@@ -52,7 +52,7 @@
 #include "segno_engine_api.h"
 #include "miniaudio.h"
 #include "perf_drain.h" /* le_perf_drain_stop (reconfigure/destroy teardown) */
-#include "perf_render.h" /* le_perf_render_cancel (reconfigure/destroy teardown) */
+#include "perf_render.h" /* le_perf_render_cancel (destroy teardown) */
 #include "rt_alloc.h" /* le_rt_*: every buffer the audio thread writes */
 #include "tempo_grid.h" /* LE_GRID_DIV_OFF (grid-off quantize default) */
 
@@ -479,11 +479,11 @@ static void le_engine_quiesce_workers(le_engine* engine) {
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DEVICE_CHANGED);
     engine->perf.drain = NULL;
   }
-  /* An active render is independent of the arm/drain lifecycle above, but
-   * still owned by this engine's perf struct (about to be zeroed below) —
-   * cancel+join it first so a reconfigure never orphans its worker thread
-   * (uncancellable, unpollable, and leaked once the handle is lost). */
-  le_perf_render_cancel(engine);
+  /* An offline render (engine->perf_render, outside `perf`) goes on
+   * through a reconfigure (#1747): it reads only its capture directory,
+   * never the device or the engine's state. Cancelling it here joined a
+   * worker that was rendering a whole stem, holding the audio start for as
+   * long, and then dropped the boot recovery's stems. */
   le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
@@ -1612,8 +1612,8 @@ void le_engine_destroy(le_engine* engine) {
   /* Layers staged after the drain thread died (self-stop on write failure)
    * have no consumer left — free them now that the thread is joined. */
   le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
-  /* Same reasoning as the reconfigure teardown above: cancel+join any active
-   * render before this engine (and its perf.render handle) is freed. */
+  /* Cancel+join any active render before this engine (and its perf_render
+   * handle) is freed: its worker must not outlive the handle. */
   le_perf_render_cancel(engine);
   le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {

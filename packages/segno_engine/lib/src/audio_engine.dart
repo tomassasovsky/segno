@@ -1702,18 +1702,18 @@ abstract interface class EnginePerformanceCapture {
   /// empty] when none is.
   PerformanceRenderProgress renderPoll();
 
-  /// Reads every track's render outcome discovered so far (growing
-  /// progressively as each stem completes, not only once
-  /// [PerformanceRenderProgress.done]). A per-track failure
+  /// Reads every track's render outcome discovered so far (every track's
+  /// once the stems are written, which the tracks finish together, just
+  /// before [PerformanceRenderProgress.done]). A per-track failure
   /// ([PerformanceRenderTrackStatus.succeeded] `false`) does not abort the
   /// render — the umbrella's partial-success posture.
   List<PerformanceRenderTrackStatus> renderTrackStatuses();
 
   /// Cancels an in-progress render and joins the worker thread; a no-op when
-  /// no render is active. Cancellation is checked once per per-track work
-  /// chunk (never mid-stem), so this only returns once the worker has
-  /// actually stopped, leaving no partial stem file for whichever track was
-  /// in flight.
+  /// no render is active. Cancellation is checked once per block of the
+  /// render (#1747), so this returns once the worker has stopped, a block
+  /// later at most, and removes the stems it had begun: no partial stem file
+  /// stays.
   EngineResult renderCancel();
 }
 
