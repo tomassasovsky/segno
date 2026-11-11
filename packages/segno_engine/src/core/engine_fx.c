@@ -6207,9 +6207,9 @@ static inline le_f4 le_f4_sqrt(le_f4 x) {
  * the special cases differ in form: glibc's shortcuts below 2^-12 give what
  * the rational does, and from 9.0109... (0x41102cb3), where tanh rounds to
  * 1, this returns +-1 as glibc does. It returns +-1 for a NaN, which the
- * curve never sees. Its error is below
- * half an ulp everywhere, where platforms' own tanhf (macOS, glibc before
- * 2.41) are up to 0.8 and 2.2 ulps off. */
+ * curve never sees. Its error is below half an ulp everywhere, where
+ * platforms' own tanhf (macOS, glibc before 2.41) are up to 0.8 and 2.2
+ * ulps off. */
 typedef double le_d2 __attribute__((vector_size(16)));
 typedef float le_f2 __attribute__((vector_size(8)));
 
@@ -7476,11 +7476,11 @@ static inline le_d2 le_powf_d2(const uint32_t* ix, double y, int* far) {
 static inline le_f4 le_powf4(le_f4 x, float y) {
   uint32_t ix[4];
   memcpy(ix, &x, sizeof(ix));
-  int odd[4]; /* the lanes powf takes */
+  int special[4]; /* the lanes powf takes */
   uint32_t jx[4];
   for (int k = 0; k < 4; ++k) {
-    odd[k] = ix[k] - 0x00800000u >= 0x7f800000u - 0x00800000u;
-    jx[k] = odd[k] ? 0x3f800000u : ix[k];
+    special[k] = ix[k] - 0x00800000u >= 0x7f800000u - 0x00800000u;
+    jx[k] = special[k] ? 0x3f800000u : ix[k];
   }
   int far[4];
   const le_d2 lo = le_powf_d2(jx, (double)y, far);
@@ -7491,7 +7491,7 @@ static inline le_f4 le_powf4(le_f4 x, float y) {
   for (int k = 0; k < 4; ++k) {
     if (ix[k] == 0) {
       out[k] = 0.0f;
-    } else if (odd[k] || far[k]) {
+    } else if (special[k] || far[k]) {
       out[k] = powf(x[k], y);
     }
   }
@@ -7523,9 +7523,10 @@ static void fx_distortion_kprocess(void* ks, float* l, float* r) {
   const float level = le_fx_glide_next(&q->level);
   float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
   if (q->os.stages == 0) {
+    /* No oversampling: le_os_down still sanitized the curve's output. */
     const le_f4 v = le_dist_curve4((le_f4){io[0], io[1], 0.0f, 0.0f}, g);
-    io[0] = v[0];
-    io[1] = v[1];
+    io[0] = fx_sanitize(v[0]);
+    io[1] = fx_sanitize(v[1]);
   } else {
     le_f4 p[1 << (LE_OS_MAX_STAGES - 1)];
     const int m = le_os4_up(&q->os, io[0], io[1], p) / 2;
