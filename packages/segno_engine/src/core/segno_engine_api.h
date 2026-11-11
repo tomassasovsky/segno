@@ -797,9 +797,10 @@ typedef enum le_fx_type {
    * BASS, 4x10", RADIO). The Looper X's Amp, fit to the #891 captures: an
    * input voicing, a square-law stage, Modern's voicing, a clipper whose
    * sides limit at different levels, Bass and Treble shelves after it, and
-   * the cabinet's measured response (zero-latency convolution; the first
-   * 4x10" plays the 2x12", as on the Looper X). Mono: the pair's average in,
-   * both sides out. */
+   * the cabinet's measured response (uniformly partitioned convolution; the
+   * first 4x10" plays the 2x12", as on the Looper X; the D.I. waits as long
+   * as a resampled cabinet starts late). Mono: the pair's average in, both
+   * sides out. The Studio Rack's Dist is this on the D.I. (#1743). */
   LE_FX_AMP_CAB = 29,
   /* MOD: p0 rate, p1 depth, p2 mix, p3 mode (a choice of 4: CHORUS, PHASER,
    * FLANGER, Tremolo). The Looper X's Mod pedal, fit to the #891 captures:

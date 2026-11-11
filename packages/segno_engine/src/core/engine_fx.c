@@ -6293,7 +6293,8 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
 
 /* ---- Amp+Cab (LE_FX_AMP_CAB, #887 part 12) ----
  *
- * The Looper X's Amp pedal (Ed's and Guitar racks), fit to the #891 rig
+ * The Looper X's Amp pedal (Ed's and Guitar racks; the Studio Rack's Dist on
+ * the D.I., #1743), fit to the #891 rig
  * captures (s3/1-3, s4/16-20, and s6: drive, tone and every cabinet). Mono:
  * the Looper X's amp is (its outputs are identical), so the pair's average
  * goes in and the result goes to both sides.

@@ -260,7 +260,7 @@ const Map<String, Map<String, FxModuleBuild>> kFxModuleVariants = {
   'Chorus': {"Ed's Rack": _chorus},
   'Wah': {"Ed's Rack": _wah, 'Guitar Rack': _wah},
   'Overdrive': {"Ed's Rack": _overdrive, 'Guitar Rack': _overdrive},
-  'Distortion': {'Lo-Fi Rack': _loFiDistortion, 'Studio Rack': _distortion},
+  'Distortion': {'Lo-Fi Rack': _loFiDistortion, 'Studio Rack': _studioDist},
   'Vinyl': {'Lo-Fi Rack': _vinyl},
   'Degrade': {'Lo-Fi Rack': _degrade},
   'Low-pass filter': {'Rhythmic Rack': _rhythmicLpf, 'Lo-Fi Rack': _lpf},
@@ -594,10 +594,11 @@ const double _loFiDistortLevelDb = 4.082399653118496;
 // law than the Guitar Amp's. Each Dist Drive reads as the Amp's drive with
 // the same small-signal gain at 1 kHz; from 80 % the Studio Dist runs past
 // the Amp's 100 %, which is as far as it goes here.
-const FxModuleBuild _distortion = FxModuleBuild(
+const FxModuleBuild _studioDist = FxModuleBuild(
   type: TrackEffectType.ampCab,
   params: ['Dist Drive'],
   scales: {0: _studioDistDrive},
+  // Bass 50 %, Treble 35 %, Modern 50 %, the cabinet's first choice: D.I.
   fixed: {1: 50, 2: 35, 3: 50, 4: 0},
 );
 
