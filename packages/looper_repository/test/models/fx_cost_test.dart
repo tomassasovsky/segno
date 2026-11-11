@@ -141,13 +141,16 @@ void main() {
     });
 
     test('an oversampled kind costs less a frame at 88.2 kHz and up', () {
-      // It runs fewer times over there (#1547).
+      // It runs fewer times over there (#1547). Not the Distortion at 32
+      // frames: there its charge is the block whose update redesigns its
+      // shelf, which costs no less at 96 kHz (#1755).
       for (final type in [
         TrackEffectType.overdrive,
         TrackEffectType.distortion,
         TrackEffectType.vinyl,
       ]) {
         for (final period in [32, 64]) {
+          if (type == TrackEffectType.distortion && period == 32) continue;
           expect(
             fxEntryCostNs(_fx(type), period: period),
             lessThan(
@@ -782,7 +785,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 3,053 ns a frame at 96 kHz / 64
+    // Ed's Rack, the plan's unit (section 7): 3,061 ns a frame at 96 kHz / 64
     // on the console's own table (#1508, #1724, #1755), 2,665 in the plan.
     final rack = [
       for (final type in [
@@ -816,7 +819,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 3053);
+      expect(rackNs, 3061);
       expect(fxBudgetNs(96000), 6834);
     });
 
@@ -825,7 +828,7 @@ void main() {
         'before its cheaper drives and amp)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      expect(ns, 4102);
+      expect(ns, 4105);
       expect(budget, 14622);
       expect(3 * ns, lessThanOrEqualTo(budget));
       expect(4 * ns, greaterThan(budget));

@@ -67,11 +67,16 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 /// What the kinds whose work depends on the setting charge, in nanoseconds
 /// per frame at each of [kFxCostSettings], measured as [kFxKindCostNs] is.
 /// The Overdrive, the Distortion and the Amp+Cab charge #1755's runs, at
-/// all eight: `bench_fx_cpu --kind`, its chain and moving scenarios, with
-/// the 32-frame settings run three times and charged the median (one
-/// instance's p99 there moves by up to 200 ns a frame between runs). The
-/// Amp+Cab's heaviest use at 48 kHz / 32 is a setting that moves every
-/// block (its update redesigns its filters), not its kernel.
+/// all eight: `bench_fx_cpu --kind`, its chain and moving scenarios. The
+/// 32-frame settings ran three to seven times, and each charges the
+/// largest reading (one instance's p99 there moved by up to 200 ns a frame
+/// between runs), but for one Amp+Cab reading at 96 kHz / 32 (629) that
+/// six later runs, the final code's among them, never came near (425 to
+/// 454). The kinds do the same work a frame at 44.1 and 48 kHz (8x, 2x for
+/// the Distortion), so 44.1 kHz charges the larger of the two at each
+/// period. The Amp+Cab's heaviest use at 48 kHz / 32, and the Distortion's
+/// at 96 kHz / 32, is a setting that moves every block (the update
+/// redesigns filters), not the kernel.
 ///
 /// A kind on the hop (the octaver, the Whammy, the Dual Octaver) does a
 /// quarter of its hop in every block up to 64 frames, so it costs more a
@@ -86,10 +91,10 @@ const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
   TrackEffectType.octaver: [2172, 2172, 2048, 969, 1942, 1182, 1923, 1140],
   TrackEffectType.whammy: [2049, 2049, 1846, 965, 1933, 1170, 1852, 1151],
   TrackEffectType.dualOctaver: [2174, 2174, 1942, 1110, 2009, 1210, 1950, 1154],
-  TrackEffectType.overdrive: [469, 449, 447, 443, 297, 291, 315, 336],
-  TrackEffectType.distortion: [272, 257, 266, 249, 225, 197, 232, 206],
+  TrackEffectType.overdrive: [476, 449, 450, 443, 313, 291, 382, 336],
+  TrackEffectType.distortion: [297, 257, 297, 249, 235, 197, 307, 206],
   TrackEffectType.vinyl: [381, 374, 375, 374, 201, 200, 192, 203],
-  TrackEffectType.ampCab: [410, 361, 497, 361, 407, 322, 435, 347],
+  TrackEffectType.ampCab: [497, 361, 497, 361, 435, 322, 454, 355],
 };
 
 /// What the PSOLA kinds charge, in nanoseconds per frame at each of
