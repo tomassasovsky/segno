@@ -454,6 +454,18 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
  * the Whammy, the Dual Octaver and Smart Tune): the kinds an offline render
  * (the render recipe, the stems) seeds on the live owner's hop. */
 int le_fx_type_hops(int32_t type);
+#ifdef LE_NATIVE_TESTS
+/* Native tests only: when set, the chain hands each pitch-kind entry
+ * (le_fx_type_hops) to this instead of its kernel, and the kernel runs only
+ * when it returns 0 (test_pitch_oracle.c runs the kernels frozen before
+ * #1755 through it, test/pitch_ref/pitch_ref.c). */
+typedef int (*le_fx_test_process_fn)(le_fx_state* fx, int slot, int32_t type,
+                                     int sr, int cap, float* l, float* r,
+                                     const float* p);
+extern le_fx_test_process_fn le_fx_test_process_hook;
+/* Smart Tune's per-tick settings (engine_fx.c), for that copy. */
+void le_fx_test_st_tick(le_fx_state* fx, int slot, const float* p, float* q);
+#endif
 /* Puts a Pumper slot's depth glide at [params]'s, and its duck at the one
  * the beat of the frame [fx] is at gives, as a slot that has been running
  * is: what an offline render seeds a Pumper with, once its tempo and clock

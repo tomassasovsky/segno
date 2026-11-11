@@ -9250,6 +9250,14 @@ static void le_st_tick(le_fx_state* fx, int slot, const float* p, float* q) {
   o[1].sm_shift = q[0];
 }
 
+#ifdef LE_NATIVE_TESTS
+le_fx_test_process_fn le_fx_test_process_hook;
+
+void le_fx_test_st_tick(le_fx_state* fx, int slot, const float* p, float* q) {
+  le_st_tick(fx, slot, p, q);
+}
+#endif
+
 static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
                                   float* l, float* r, const float* p) {
   float q[9] = {0.0f};
@@ -9917,6 +9925,12 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
     LE_FX[ty].kprocess(st, l, r);
     return;
   }
+#ifdef LE_NATIVE_TESTS
+  if (le_fx_test_process_hook != NULL && le_fx_type_hops(ty) &&
+      le_fx_test_process_hook(fx, s, ty, sr, cap, l, r, p)) {
+    return;
+  }
+#endif
   LE_FX[ty].process(fx, s, sr, cap, l, r, p);
 }
 
