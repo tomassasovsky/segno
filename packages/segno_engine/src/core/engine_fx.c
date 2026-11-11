@@ -2303,6 +2303,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
     o->cur_mode = 0;  /* phase vocoder, until the settings say otherwise */
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
+    o->cached = 0;    /* the ratio and the dip's gain: none worked out yet */
     if (!hops) continue;
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
     /* A retyped slot's band starts with nothing heard: it heard nothing
