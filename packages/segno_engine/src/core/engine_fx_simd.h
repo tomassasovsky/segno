@@ -68,4 +68,16 @@ static inline le_f4 le_f4_sanitize(le_f4 x) {
   return le_f4_keep(x, keep);
 }
 
+/* Makes vector [v] opaque to the optimiser, so the multiply that made it is
+ * rounded on its own and never fused into a later add. In b x - a y, GCC
+ * fuses b x in the scalar code but a y in the vector code; the scalar's
+ * choice is spelled out with this on a y (clang fuses b x in both). */
+#if defined(__aarch64__)
+#define LE_ROUNDED(v) __asm__("" : "+w"(v))
+#elif defined(__x86_64__)
+#define LE_ROUNDED(v) __asm__("" : "+x"(v))
+#else
+#define LE_ROUNDED(v) ((void)0)
+#endif
+
 #endif /* SEGNO_ENGINE_FX_SIMD_H */

@@ -4483,8 +4483,12 @@ static void fx_eq_kprocess(void* ks, float* l, float* r) {
     le_d2* z = f->z[ph];
     const le_d2 in = x;
     const le_d2 y = le_d2_set1(f->b0) * in + z[0];
-    z[0] = le_d2_set1(f->b1) * in - le_d2_set1(f->a1) * y + z[1];
-    z[1] = le_d2_set1(f->b2) * in - le_d2_set1(f->a2) * y;
+    le_d2 ay1 = le_d2_set1(f->a1) * y;
+    le_d2 ay2 = le_d2_set1(f->a2) * y;
+    LE_ROUNDED(ay1);
+    LE_ROUNDED(ay2);
+    z[0] = le_d2_set1(f->b1) * in - ay1 + z[1];
+    z[1] = le_d2_set1(f->b2) * in - ay2;
     x = f->mix >= 1.0f ? y : in + le_d2_set1(f->mix) * (y - in);
   }
   if (++q->ph >= q->nph) q->ph = 0;

@@ -197,6 +197,11 @@ case "$(uname -s)" in
     $CC $STD $EXTRA_CFLAGS -O2 src/test/bench/bench_fx_matrix.c $ENGINE_SRC \
       "$STRETCH_OBJ" $ENGINE_LIBS -o "$OUT/segno_fx_matrix.exe"
     "$OUT/segno_fx_matrix.exe" --ci
+    # Every kind against the reference engine's render (#1755): the kernels
+    # are made cheaper without changing their sound. The full run is the
+    # bench, src/test/bench/bench_fx_equiv.sh.
+    echo "== the effects against the reference engine (CI subset) =="
+    FX_EQUIV_OUT="$OUT/segno_fx_equiv" bash src/test/bench/bench_fx_equiv.sh --ci
     ;;
 esac
 

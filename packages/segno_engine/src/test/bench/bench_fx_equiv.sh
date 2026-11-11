@@ -15,13 +15,15 @@
 # Usage: ./bench_fx_equiv.sh [--ci] [--kind NAME] [--jobs N] [--detail]
 # The binaries land in packages/segno_engine/build/bench/fx_equiv/ (or
 # FX_EQUIV_OUT), which is not tracked. CC and EXTRA_CFLAGS apply to all
-# three builds; -O2 comes last, as the shipped library is optimised.
+# three builds, then FX_EQUIV_OPT (-O2; CI's arm64 job also runs clang at
+# -O3, the appliance library's build).
 set -euo pipefail
 cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine
 
 REF=${FX_EQUIV_REF:-65f85a3b44969875da537a1a5182ca878b5e7f5b}
 CC=${CC:-cc}
 EXTRA_CFLAGS=${EXTRA_CFLAGS:-}
+OPT=${FX_EQUIV_OPT:--O2}
 OUT_DIR=${FX_EQUIV_OUT:-build/bench/fx_equiv}
 mkdir -p "$OUT_DIR"
 
@@ -46,7 +48,7 @@ build_lib() { # build_lib SRC_DIR OUT
   local dir=$1 out=$2 files=""
   for f in $ISLAND; do files="$files $dir/$f"; done
   # shellcheck disable=SC2086
-  $CC $STD $EXTRA_CFLAGS -O2 -I "$dir/core" -I "$dir/midi" -I "$dir/miniaudio" \
+  $CC $STD $EXTRA_CFLAGS $OPT -I "$dir/core" -I "$dir/midi" -I "$dir/miniaudio" \
     $LIB_FLAGS \
     src/test/bench/fx_equiv_shim.c $files -lpthread -lm -o "$out"
 }

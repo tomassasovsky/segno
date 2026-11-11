@@ -79,6 +79,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
+| #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 
 ---
 
@@ -2217,6 +2218,21 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   `/Users/Tomas/development/flutter/bin/flutter test
   tool/generate_fx_factory_settings.dart` in `packages/looper_repository`
   (its test fails until then).
+- **Effects against the reference engine (#1755):**
+  `bash packages/segno_engine/src/test/bench/bench_fx_equiv.sh` builds the
+  effects island twice, from the commit pinned in the script (`REF`) and
+  from the working tree, and runs every kind through both at every factory
+  setting, 44.1 to 96 kHz, 32 and 64 frames, tails included: bit-identical
+  but for the kinds in `k_reordered` (`bench_fx_equiv.c`), which must stay
+  under -120 dBFS. About 4 minutes on an M4 Pro; `--kind NAME`, `--detail`
+  (the first frame that differs), `--ci` (one setting a kind, which
+  `run_native_tests.sh` runs). `FX_EQUIV_OPT=-O3 CC=clang` checks the
+  appliance library's build. A change meant to alter a kind's sound moves
+  `REF` to the commit that makes it, in the same PR. Bit-identity depends on
+  each compiler forming the same fused multiply-adds: a loop of taps
+  rewritten in another shape can make clang split them (#1755), and GCC
+  fuses the other product of `b x - a y` in vector code (`LE_ROUNDED`,
+  `engine_fx_simd.h`).
 - **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine
