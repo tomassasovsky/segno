@@ -16,6 +16,11 @@ const double kFxCardHeight = 360;
 /// The pen's gap between two cards, which the cable crosses.
 const double kFxCardGap = 24;
 
+/// A single effect's card: half a rack card's column, so two singles and the
+/// cable between them span one rack card and every card stays on the
+/// content grid the rack cards set (#1754).
+const double kFxSingleCardWidth = (kFxCardWidth - kFxCardGap) / 2;
+
 /// The break the pen draws between the Pre run and the Post run — wider than
 /// [kFxCardGap] and with no cable across it, because the loop player sits
 /// between the two stages.
@@ -25,7 +30,8 @@ const double kFxStageBreak = 72;
 const double kFxCardArtHeight = 138;
 
 /// One destination's chain, drawn as the pen's horizontal strip: a card per
-/// RACK (or per standalone single effect) in processing order, plain lines
+/// RACK and a narrower card per standalone single effect, sized to its pedal
+/// (#1754), in processing order, plain lines
 /// between consecutive cards, and a break where the Pre run hands over to the
 /// Post run.
 ///
@@ -105,15 +111,26 @@ class FxChainStrip extends StatelessWidget {
                 index: i,
                 stageBreak: showPlacement && i == preGroups && preGroups > 0,
               ),
-            _FxChainCard(
-              key: Key('fx_card_${fxGroupId(groups[i])}'),
-              group: groups[i],
-              showPlacement: showPlacement,
-              dimmed: !chainEnabled,
-              onTogglePower: ({required enabled}) =>
-                  onTogglePower(i, enabled: enabled),
-              onOpen: () => onOpen(i),
-            ),
+            if (groups[i].isRack)
+              _FxChainCard(
+                key: Key('fx_card_${fxGroupId(groups[i])}'),
+                group: groups[i],
+                showPlacement: showPlacement,
+                dimmed: !chainEnabled,
+                onTogglePower: ({required enabled}) =>
+                    onTogglePower(i, enabled: enabled),
+                onOpen: () => onOpen(i),
+              )
+            else
+              _FxSingleCard(
+                key: Key('fx_card_${fxGroupId(groups[i])}'),
+                group: groups[i],
+                showPlacement: showPlacement,
+                dimmed: !chainEnabled,
+                onTogglePower: ({required enabled}) =>
+                    onTogglePower(i, enabled: enabled),
+                onOpen: () => onOpen(i),
+              ),
           ],
         ],
       ),
@@ -147,8 +164,9 @@ class _ChainGap extends StatelessWidget {
   );
 }
 
-/// One group in the strip: its placement tag, its artwork frame, its name, and
-/// the status line carrying its pedal assignment and its power.
+/// One rack in the strip: its placement tag, its artwork frame, its name, and
+/// the status line carrying its pedal count and its power. A single effect
+/// has its own card ([_FxSingleCard]).
 class _FxChainCard extends StatelessWidget {
   const _FxChainCard({
     required this.group,
@@ -215,14 +233,7 @@ class _FxChainCard extends StatelessWidget {
                         : null,
                   ),
                   const SizedBox(height: 12),
-                  FxRackArt(
-                    slug: group.rack?.art,
-                    // Still: the strip shows which pedal, not its settings.
-                    pedal: group.isRack
-                        ? null
-                        : fxEntryArt(group.entries.first, live: false),
-                    lit: lit,
-                  ),
+                  FxRackArt(slug: group.rack?.art, lit: lit),
                   const SizedBox(height: 11),
                   SizedBox(
                     height: 60,
@@ -246,9 +257,7 @@ class _FxChainCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: AppText(
-                            group.isRack
-                                ? l10n.fxModuleCount(group.entries.length)
-                                : l10n.fxUnassigned,
+                            l10n.fxModuleCount(group.entries.length),
                             style: TextStyle(
                               color: surface.textTertiary,
                               fontSize: 18,
@@ -275,8 +284,134 @@ class _FxChainCard extends StatelessWidget {
   }
 }
 
-/// A rack's artwork frame at the pen's fixed height, or a single effect's
-/// pedal in the same frame.
+/// A single effect's card (#1754): its pedal drawn as large as the card
+/// allows, with the placement and the power above it and the name and the
+/// assignment under it, in [kFxSingleCardWidth]. It shares the rack card's
+/// height, states and keys, so a mixed row lines up and reads as one strip.
+class _FxSingleCard extends StatelessWidget {
+  const _FxSingleCard({
+    required this.group,
+    required this.showPlacement,
+    required this.dimmed,
+    required this.onTogglePower,
+    required this.onOpen,
+    super.key,
+  });
+
+  final FxChainGroup group;
+  final bool showPlacement;
+  final bool dimmed;
+  final void Function({required bool enabled}) onTogglePower;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final spacing = context.spacing;
+    final l10n = context.l10n;
+    final name = fxGroupName(l10n, group);
+    final lit = group.audible && !dimmed;
+    final pedal = fxEntryArt(group.entries.first, live: false);
+    return Opacity(
+      opacity: dimmed ? surface.disabledOpacity : 1,
+      child: Material(
+        color: lit ? surface.accentSurface : surface.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(
+            color: lit ? surface.accent : surface.borderSubtle,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onOpen,
+          child: SizedBox(
+            width: kFxSingleCardWidth,
+            height: kFxCardHeight,
+            child: Padding(
+              padding: EdgeInsets.all(spacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The header and the assignment line sit at the rack
+                  // card's placement and status lines, so a mixed row reads
+                  // across.
+                  SizedBox(
+                    height: 36,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: showPlacement
+                              ? AppText(
+                                  group.placement == FxPlacement.pre
+                                      ? l10n.fxPlacementPre
+                                      : l10n.fxPlacementPost,
+                                  style: TextStyle(
+                                    color: surface.textSecondary,
+                                    fontSize: 20,
+                                    height: 1,
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        _PowerButton(
+                          key: Key('fx_power_${fxGroupId(group)}'),
+                          on: group.isOn,
+                          name: name,
+                          onTap: () => onTogglePower(enabled: !group.isOn),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: spacing.sm),
+                  // Still: the strip shows which pedal, not its settings.
+                  Expanded(
+                    child: pedal == null
+                        ? _FallbackMark(lit: lit)
+                        : FxArtView(
+                            art: pedal,
+                            fallback: _FallbackMark(lit: lit),
+                          ),
+                  ),
+                  SizedBox(height: spacing.md),
+                  AppText(
+                    name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: surface.textPrimary,
+                      fontSize: 24,
+                      height: 1.1,
+                    ),
+                  ),
+                  SizedBox(
+                    height: 28,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppText(
+                        l10n.fxUnassigned,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: surface.textTertiary,
+                          fontSize: 18,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: spacing.xs),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A rack's artwork frame at the pen's fixed height.
 ///
 /// Falls back to the app's own mark for a single effect with no pedal, when
 /// the slug names a file this build did not ship, and in a widget test,
