@@ -65,12 +65,12 @@ extern "C" {
                                   * LE_PV_HOP - 1 */
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
-/* The hop split (#887 part 9): a frame's work runs in four stages, one per
- * quarter of its hop (analysis, envelope, shift, synthesis), so on a device
- * period no longer than a quarter hop (64 frames, the console's) no callback
- * carries a whole frame, whatever the hop phase. A longer period runs
- * several stages in one callback and gains nothing, but pays the same
- * latency: the engine keeps one schedule for every host. The synthesis runs
+/* The hop split (#887 part 9): a frame's work runs in steps over the
+ * thirteen slots 16 ticks apart from its analysis to its synthesis (#1755;
+ * four stages a quarter apart before it), so a 32-frame callback at the
+ * kernel's 48 kHz carries two slots, whatever the hop phase. A longer
+ * period runs more of them in one callback and gains nothing, but pays the
+ * same latency: the engine keeps one schedule for every host. The synthesis runs
  * LE_PV_SYNTH_TICK ticks after the analysis and its first sample is emitted
  * on that tick, so the output runs that much later than an unsplit frame's:
  * the octaver's latency is LE_PV_LATENCY in both modes (PSOLA reads its
@@ -101,7 +101,7 @@ extern "C" {
  *
  * and its analysis ticks (the PV frame's first stage, or PSOLA's YIN pass)
  * fall on the engine frames c with (c + phase) mod LE_PV_HOP equal to 0
- * (#941); the PV frame's later stages follow a quarter apart. The hop is
+ * (#941); the PV frame's later steps follow in its slots (above). The hop is
  * anchored to the engine's own frame count, not to the instant the instance
  * was reset, so the spread holds for instances added at any time: one added
  * to a second track long after the first keeps its quarter, and so does a
@@ -118,9 +118,9 @@ extern "C" {
  * With four callbacks per hop, a fifth instance always shares one, and two
  * axes cannot both be kept apart: slot s on track t + 1 shares a quarter
  * with slot s + 1 on track t. Spreading the work does not reduce it. Since
- * the hop split (above), every quarter carries one PV stage whatever the
- * phase, so the phase only decides which stage lands in which callback;
- * PSOLA's YIN pass still runs on one tick a hop. */
+ * the hop split (above), every quarter carries some of a PV frame's steps
+ * whatever the phase, so the phase only decides which steps land in which
+ * callback; PSOLA's YIN pass starts on one tick a hop. */
 #define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
 /* Engine frame [top]'s place on the grid of [len]-frame laps (#1620): where a
@@ -195,8 +195,10 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
  * a voiced one to a kernel sample, as the tuner does. A pass starts every
  * hop, about every 5 ms, and averages LE_PSOLA_WORK_PER_TICK iterations a
  * tick (a credit, carried tick to tick), so it spreads over its hop instead
- * of landing in one callback. A 64-frame callback carries at most
- * 64 x 896 = 57k of it, plus one lag of overshoot. */
+ * of landing in one callback. A 64-frame callback is charged at most
+ * 64 x 896 = 57k of it, plus one lag of overshoot; it works out up to
+ * LE_YIN_GROUP - 1 lags more ahead of their charge (le_lag_sums), each a
+ * fraction of a lag alone's cost (#1755). */
 #define LE_PSOLA_DECIM 2
 #define LE_PSOLA_DWIN 800
 #define LE_PSOLA_MIN_HZ 60

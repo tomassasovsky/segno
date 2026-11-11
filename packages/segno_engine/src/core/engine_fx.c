@@ -65,29 +65,27 @@ static pthread_once_t le_pv_tables_once = PTHREAD_ONCE_INIT;
 
 /* PSOLA's grain windows (#1755): the Hann window of a grain th samples a
  * side, 2 th + 1 long, for every half-width a grain takes (2 to
- * LE_PSOLA_THMAX), the one at le_psola_win_at[th]: about 1 MB, made once,
- * where each grain worked its own out, a cosf a sample. Each value is that
- * same float expression. NULL when it could not be allocated. */
-static float* le_psola_wins;
-static int32_t le_psola_win_at[LE_PSOLA_THMAX + 1];
+ * LE_PSOLA_THMAX), the one for th starting at th * th - 4 (the lengths of
+ * those before it): about 1 MB, made once for the process with the other
+ * tables, where each grain worked its own out, a cosf a sample. Each value
+ * is that same float expression. Static like the other tables, so it
+ * cannot fail to be made, and written whole by the build, so its pages are
+ * in before any slot reads it; one for the process, not a slot's, so the
+ * per-slot sizes (le_fx_octaver_bytes) leave it out. */
+#define LE_PSOLA_WINS                                                \
+  (LE_PSOLA_THMAX * LE_PSOLA_THMAX + 2 * LE_PSOLA_THMAX - 3)
+static float le_psola_wins[LE_PSOLA_WINS];
 
 static void le_pv_tables_build(void) {
   int ready = 0;
   le_hann_init(le_hann, LE_PV_N, &ready);
   (void)le_rfft_plan_init(&le_pv_fft, LE_PV_N);
-  size_t total = 0;
-  for (int th = 2; th <= LE_PSOLA_THMAX; ++th) total += (size_t)(2 * th + 1);
-  float* w = (float*)le_rt_alloc_prefaulted(total * sizeof(float));
-  if (w == NULL) return;
-  int32_t at = 0;
   for (int th = 2; th <= LE_PSOLA_THMAX; ++th) {
-    le_psola_win_at[th] = at;
+    float* w = le_psola_wins + th * th - 4;
     for (int k = 0; k <= 2 * th; ++k) {
-      w[at + k] = 0.5f - 0.5f * cosf(LE_PI * (float)k / (float)th);
+      w[k] = 0.5f - 0.5f * cosf(LE_PI * (float)k / (float)th);
     }
-    at += 2 * th + 1;
   }
-  le_psola_wins = w;
 }
 
 /* Builds the shared octaver Hann window and FFT tables, exactly once in the
@@ -97,9 +95,8 @@ static void le_pv_tables_build(void) {
  * build before every caller's return, and the audio thread reads the tables
  * only through a slot a preparing thread published to it afterwards, so the
  * audio path takes no lock. Reached only through fx_octaver_prepare. */
-static int le_fx_ensure_pv_tables(void) {
+static void le_fx_ensure_pv_tables(void) {
   (void)pthread_once(&le_pv_tables_once, le_pv_tables_build);
-  return le_psola_wins != NULL;
 }
 
 /* ---- Tables made once per sample rate ----
@@ -1185,7 +1182,12 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
  * split — there is no second copy of the detector to keep in step. */
 
 /* The difference function at the [g] lags from [tau] (g at most
- * LE_YIN_GROUP) over [integ] samples of [x], into [s]: for each lag the
+ * LE_YIN_GROUP) over [integ] samples of [x], into [s]. A pass works a
+ * group out when it reaches the group's first lag and takes its sums one
+ * lag at a time as its budget allows, so a call can do up to
+ * LE_YIN_GROUP - 1 lags of work ahead of what it is charged; the work over
+ * a pass is the same, and each lag costs a fraction of what it did alone.
+ * For each lag the
  * same float differences squared and summed in double in the same order as
  * one lag at a time, so each sum is bit-identical to that (#1755). The
  * square of a float is exact in double, so a fused multiply-add and a
@@ -1685,7 +1687,7 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
      * their ends, in runs that need neither wrap, its window from the
      * table (#1755: the per-sample remainders and cosf cost more than the
      * grain's arithmetic). */
-    const float* wf = le_psola_wins + le_psola_win_at[th];
+    const float* wf = le_psola_wins + th * th - 4;
     const int len = 2 * th + 1;
     int src = (head + base - th) % cap;
     if (src < 0) src += cap;
@@ -3947,8 +3949,7 @@ static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
       owned[n++] = &fx->delay[slot][chan];
     }
   }
-  /* before the slot can be processed */
-  if (!le_fx_ensure_pv_tables()) goto oom;
+  le_fx_ensure_pv_tables(); /* before the slot can be processed */
   for (int chan = 0; chan < 2; ++chan) {
     le_octaver_state* o = &fx->oct[slot][chan];
     if (o->out == NULL) {

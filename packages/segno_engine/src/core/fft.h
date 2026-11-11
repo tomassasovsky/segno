@@ -36,8 +36,10 @@
  * the forward's load; the first two stages done together on groups of four
  * points; and the later stages two at a time on groups of four quarter
  * blocks, so each point is loaded once a pair of stages. The scalar code is
- * the other compilers' path and the reference the native tests compare the
- * NEON one to (test_fft_neon_matches_scalar).
+ * the other compilers' path. The NEON one is held to the transforms before
+ * #1755 by test_fft (test_pitch_oracle.c), which CI's arm64 job builds with
+ * Clang at its default contraction: a build with -ffp-contract=off or =fast
+ * fuses the scalar code differently and needs the NEON path off.
  *
  * Pure C11; compiles under MSVC (/std:c11), Clang, and GCC.
  */
@@ -306,7 +308,8 @@ static void le_fft_half(const le_rfft_plan* p, float* re, float* im,
 }
 
 /* Real input x[n] -> half spectrum re/im[0..n/2] (n/2+1 bins), n = p->n.
- * re/im sized >= n/2+1; they double as the transform's scratch. */
+ * re/im sized >= n/2+1; they double as the transform's scratch, and must
+ * not overlap x (the NEON path scatters x into them). */
 static void le_rfft_fwd(const le_rfft_plan* p, const float* x, float* re,
                         float* im) {
   const int m = p->n / 2;

@@ -392,13 +392,12 @@ static void test_fft(void) {
   static float y[LE_FFT_MAX_N], y2[LE_FFT_MAX_N];
   int bad = 0;
   for (int n = 4; n <= 4096; n *= 2) {
+    plan.n = 0; /* each length builds afresh */
     if (!le_rfft_plan_init(&plan, n)) {
       printf("  fft %d: no plan\n", n);
       g_fail = 1;
       continue;
     }
-    plan.n = 0; /* the next length builds afresh */
-    le_rfft_plan_init(&plan, n);
     for (int t = 0; t < 120; ++t) {
       fft_input(x, n, t);
       le_rfft_fwd(&plan, x, re, im);
@@ -413,7 +412,6 @@ static void test_fft(void) {
       le_pitch_ref_rfft_inv(n, re, im, y2);
       if (memcmp(y, y2, sizeof(float) * (size_t)n) != 0) ++bad;
     }
-    plan.n = 0;
   }
   if (bad) {
     printf("  fft: %d transforms differ from the ones before #1755\n", bad);
@@ -468,8 +466,8 @@ int main(int argc, char** argv) {
     float* a = (float*)malloc(sizeof(float) * 2 * (size_t)n);
     float* b = (float*)malloc(sizeof(float) * 2 * (size_t)n);
     if (a == NULL || b == NULL) return 1;
-    for (size_t ci = 0; ci < sizeof(k_cases) / sizeof(k_cases[0]); ++ci) {
-      const po_case* c = &k_cases[ci];
+    for (size_t k = 0; k < sizeof(k_cases) / sizeof(k_cases[0]); ++k) {
+      const po_case* c = &k_cases[k];
       char what[128];
       /* The CI subset runs 64-frame blocks at 48 kHz only: the kernels run
        * per sample on the engine's clock, so the block moves only where
