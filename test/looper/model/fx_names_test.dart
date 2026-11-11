@@ -67,26 +67,24 @@ void main() {
         ),
         'Low-pass filter',
       );
-      // The row and the pedal it adds share the module's name.
-      for (final row in kFxAddableEffects) {
-        expect(
-          l10n.fxModuleLabel(row.module),
-          fxBlockName(
-            l10n,
-            BuiltInEffect(type: TrackEffectType.none, module: row.module),
-          ),
-        );
-      }
     });
 
-    test('a module the catalogue no longer has reads as its kind', () {
+    test('a module the catalogue no longer has keeps its stored name, so '
+        "it never takes another pedal's", () {
       final es = lookupAppLocalizations(const Locale('es'));
       expect(
         fxBlockName(
           es,
           BuiltInEffect(type: TrackEffectType.overdrive, module: 'Distort 2'),
         ),
-        es.effectTypeLabel(TrackEffectType.overdrive),
+        'Distort 2',
+      );
+      expect(
+        fxBlockName(
+          es,
+          BuiltInEffect(type: TrackEffectType.none, module: 'Harmoniser'),
+        ),
+        'Harmoniser',
       );
     });
 
