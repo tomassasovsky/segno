@@ -57,12 +57,19 @@ esac
 STD="-std=gnu11 -DNDEBUG -fPIC"
 ISLAND="core/engine_fx.c core/rt_alloc.c core/plugin_disabled.c"
 
+# Both libraries render with the console's tanhf and powf
+# (fx_console_libm.h), so the reference is what the console renders on any
+# platform. FX_EQUIV_LIBM=1 uses the platform's own libm: on the console,
+# the literal check against today's render.
+CONSOLE_LIBM="-include src/test/bench/fx_console_libm.h"
+[ "${FX_EQUIV_LIBM:-0}" = 1 ] && CONSOLE_LIBM=""
+
 build_lib() { # build_lib SRC_DIR OUT
   local dir=$1 out=$2 files=""
   for f in $ISLAND; do files="$files $dir/$f"; done
   # shellcheck disable=SC2086
-  $CC $STD $EXTRA_CFLAGS $OPT -I "$dir/core" -I "$dir/midi" -I "$dir/miniaudio" \
-    $LIB_FLAGS \
+  $CC $STD $EXTRA_CFLAGS $OPT $CONSOLE_LIBM -I "$dir/core" -I "$dir/midi" \
+    -I "$dir/miniaudio" $LIB_FLAGS \
     src/test/bench/fx_equiv_shim.c $files -lpthread -lm -o "$out"
 }
 

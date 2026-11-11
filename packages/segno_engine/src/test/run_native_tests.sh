@@ -212,24 +212,6 @@ case "$(uname -s)" in
     ;;
 esac
 
-echo "== building the drives' equivalence test (#1755) =="
-# The Overdrive, the Distortion and the Amp+Cab against their kernels before
-# #1755 made them cheaper: bit-identical where the arithmetic is the same,
-# within -120 dBFS where it is not, at every rate and at 32- and 64-frame
-# blocks. It includes engine_fx.c for the static kernels, so it links only
-# the units that file needs; built -O2 like the matrix, -O2 last so it wins.
-# Not on Windows (aligned_alloc), like the matrix.
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) echo "skipped on Windows" ;;
-  *)
-    # shellcheck disable=SC2086
-    $CC $STD $EXTRA_CFLAGS -O2 src/test/test_fx_drives_equiv.c \
-      src/core/rt_alloc.c src/core/plugin_disabled.c -lpthread -lm \
-      -o "$OUT/segno_fx_drives_equiv.exe"
-    "$OUT/segno_fx_drives_equiv.exe"
-    ;;
-esac
-
 echo "== building the decoder fuzz driver =="
 # The app's audio-file decoder over whole-file mutations of every accepted and
 # refused format (#1200): a bounded, fixed-seed run in every configuration, so

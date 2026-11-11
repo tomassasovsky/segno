@@ -16,7 +16,6 @@
 /* #1718: this unit's chain driver goes to the hot section (engine_hot.h). */
 #define LE_AUDIO_TU 1
 
-#include <float.h> /* FLT_MAX */
 #if defined(__aarch64__)
 #include <arm_neon.h> /* vsqrtq_f32 */
 #endif
@@ -6076,9 +6075,8 @@ static int le_hb_latency(int sr) {
  * to the scalar paths'. When a stage's count is odd, A0 has one section
  * more than A1: on that section A1's lanes keep their input
  * (le_lanes.keep). The Amp+Cab is mono: its two paths are one chain of
- * dependent sections however they are laid out, so it keeps le_os. GCC and
- * clang vector extensions: SSE on x86, NEON on the console. */
-typedef float le_f4 __attribute__((vector_size(16)));
+ * dependent sections however they are laid out, so it keeps le_os. The
+ * vectors are engine_fx_simd.h's. */
 typedef int32_t le_i4 __attribute__((vector_size(16)));
 #define LE_LANES_MAX ((LE_OS_MAX_COEFS + 1) / 2)
 
@@ -6175,13 +6173,6 @@ static void le_os4_design(le_os4* o, int sr, int stages) {
     float c[LE_OS_MAX_COEFS];
     le_lanes_design(&o->d[s], c, le_os_coefs(sr, s, c));
   }
-}
-
-/* Each lane as fx_sanitize: 0 for what is not finite or within 1e-30 of
- * 0, the rest as it is. */
-static inline le_f4 le_f4_sanitize(le_f4 x) {
-  const le_f4 a = (le_f4)((le_i4)x & 0x7fffffff);
-  return (le_f4)((le_i4)x & ((a >= 1e-30f) & (a <= FLT_MAX)));
 }
 
 /* The oversampled pair is kept as vectors of two samples a channel:
@@ -6287,7 +6278,6 @@ static inline le_f4 le_f4_sqrt(le_f4 x) {
  * 1, this returns +-1 as glibc does, and a NaN as a NaN. Its error is
  * below half an ulp everywhere, where platforms' own tanhf (macOS, glibc
  * before 2.41) are up to 0.8 and 2.2 ulps off. */
-typedef double le_d2 __attribute__((vector_size(16)));
 typedef float le_f2 __attribute__((vector_size(8)));
 
 static inline le_d2 le_tanh_rational(le_d2 z) {
@@ -6310,7 +6300,6 @@ static inline le_d2 le_tanh_rational(le_d2 z) {
 }
 
 static inline le_f4 le_tanh4(le_f4 x) {
-  typedef uint32_t le_u4 __attribute__((vector_size(16)));
   const le_u4 ux = (le_u4)x;
   /* past 0x41102cb3 and not NaN (x != x), which goes through as tanhf's */
   const le_i4 one = (le_i4)((ux << 1) > (0x41102cb3u << 1)) & (x == x);
@@ -7166,13 +7155,11 @@ static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
  * ulps of the output. */
 static inline float le_cab_head(const float* h, const float* hx) {
   const float* x = hx - (LE_CAB_B - 1);
-  le_f4 s[4] = {{0}};
+  le_f4 s[4] = {le_f4_set1(0.0f), le_f4_set1(0.0f), le_f4_set1(0.0f),
+                le_f4_set1(0.0f)};
   for (int t = 0; t < LE_CAB_B; t += 16) {
     for (int k = 0; k < 4; ++k) {
-      le_f4 hv, xv;
-      memcpy(&hv, h + t + 4 * k, sizeof(hv));
-      memcpy(&xv, x + t + 4 * k, sizeof(xv));
-      s[k] += hv * xv;
+      s[k] += le_f4_load(h + t + 4 * k) * le_f4_load(x + t + 4 * k);
     }
   }
   const le_f4 v = (s[0] + s[1]) + (s[2] + s[3]);
