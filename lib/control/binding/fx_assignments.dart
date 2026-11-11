@@ -1,11 +1,15 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/binding/binding_scope.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/external_controls.dart';
 import 'package:segno/control/binding/external_pedal.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/midi_labels.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
 import 'package:segno/control/cubit/control_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
 
 /// Whether [target] names one of the effects [slotIds] in the chain at
 /// [address], one of their parameters, or one of the racks [rackIds] there
@@ -97,6 +101,73 @@ int fxAssignmentsTo(
     }
   }
   return count;
+}
+
+/// What the controls that act on the effects [slotIds] in the chain at
+/// [address] are called, named as the assignment screens name them (#1757):
+/// the console switches first (`Track 3`, `Track 3 · Hold`), then the CTRL
+/// jacks (`CTRL 1`, `CTRL 2 · Button 2`), then the MIDI controls
+/// (`CC 20 · Ch 1`). Each control once, however many of the effects or their
+/// parameters it drives.
+///
+/// Only what acts: the console bindings in force (a loaded session's remap
+/// replaces the globals), each jack's switches or expression under the type
+/// plugged in, and the MIDI mappings that are switched on. [fxAssignmentsTo]
+/// counts more, every stored assignment, because it counts what removing the
+/// effects takes away.
+List<String> fxAssignmentNames(
+  AppLocalizations l10n,
+  ControlState control,
+  FxAddress address,
+  Set<String> slotIds,
+) {
+  bool names(Object? target) => fxTargetNamesEffect(target, address, slotIds);
+  final found = <String>{};
+  for (final binding in control.bindings.bindings) {
+    final key = binding.key;
+    final name = pedalSwitchLabel(l10n, key.button, key.bank ?? 0);
+    if (names(binding.decodeTarget())) found.add(name);
+    if (names(binding.decodeHoldTarget())) {
+      found.add(l10n.fxAssignedControlPart(name, l10n.pedalSetupHold));
+    }
+  }
+  bool switchNames(ExternalSwitchSetup setup) => [
+    for (final row in setup.controls.activations) row.target,
+    for (final row in setup.controls.parameters) row.target,
+  ].any(names);
+  for (final jack in PedalCtrlJack.values) {
+    final setup = control.pedalSetup.external.forJack(jack);
+    final name = switch (jack) {
+      PedalCtrlJack.ctrl1 => l10n.externalJackCtrl1,
+      PedalCtrlJack.ctrl2 => l10n.externalJackCtrl2,
+    };
+    switch (setup.type) {
+      case ExternalJackType.expression:
+        if (setup.expression.mappings.map((m) => m.target).any(names)) {
+          found.add(name);
+        }
+      case ExternalJackType.singleSwitch:
+        if (switchNames(setup.single)) found.add(name);
+      case ExternalJackType.dualSwitch:
+        for (final (index, button) in [
+          setup.dualFirst,
+          setup.dualSecond,
+        ].indexed) {
+          if (switchNames(button)) {
+            found.add(
+              l10n.fxAssignedControlPart(name, l10n.externalButton(index + 1)),
+            );
+          }
+        }
+    }
+  }
+  for (final mapping in control.midiMappings.mappings) {
+    if (mapping.enabled &&
+        mapping.controls.any((midi) => names(_midiTarget(midi.key)))) {
+      found.add(midiSourceName(l10n, mapping.source));
+    }
+  }
+  return found.toList();
 }
 
 /// What every control in [control] can turn on (#1723): the reach the

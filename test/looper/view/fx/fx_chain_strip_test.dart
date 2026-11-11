@@ -12,6 +12,7 @@ void main() {
     WidgetTester tester,
     List<TrackEffect> entries, {
     bool showPlacement = true,
+    Map<String, List<String>> assignments = const {},
   }) async {
     final toggles = <(int, bool)>[];
     tester.view
@@ -29,6 +30,7 @@ void main() {
             child: FxChainStrip(
               entries: entries,
               showPlacement: showPlacement,
+              assignments: assignments,
               onTogglePower: (group, {required enabled}) =>
                   toggles.add((group, enabled)),
               onOpen: (_) {},
@@ -121,6 +123,34 @@ void main() {
       expect(
         RegExp('Mystery box').allMatches(cardLabel(tester, card)),
         hasLength(1),
+      );
+    });
+
+    testWidgets('the assignment line names what the effect is assigned to: '
+        'one control, or the first and how many more (#1757)', (tester) async {
+      await pump(
+        tester,
+        [
+          BuiltInEffect(type: TrackEffectType.filter, slotId: 'one'),
+          BuiltInEffect(type: TrackEffectType.drive, slotId: 'many'),
+          BuiltInEffect(type: TrackEffectType.echo, slotId: 'none'),
+        ],
+        assignments: {
+          'one': ['Track 3'],
+          'many': ['Track 1 · Hold', 'CTRL 2', 'CC 20 · Ch 1'],
+        },
+      );
+      Finder line(String card, String text) => find.descendant(
+        of: find.byKey(Key('fx_card_$card')),
+        matching: find.text(text),
+      );
+      expect(line('one', 'Track 3'), findsOneWidget);
+      expect(line('many', 'Track 1 · Hold +2'), findsOneWidget);
+      expect(line('none', 'Unassigned'), findsOneWidget);
+      // A screen reader hears every one.
+      expect(
+        cardLabel(tester, find.byKey(const Key('fx_card_many'))),
+        contains('Track 1 · Hold, CTRL 2, CC 20 · Ch 1'),
       );
     });
 

@@ -826,6 +826,41 @@ void main() {
       expect(find.byKey(const Key('fx_track_strip')), findsOneWidget);
     });
 
+    testWidgets("a single effect's card names the switch assigned to it "
+        '(#1757)', (tester) async {
+      await pump(
+        tester,
+        destination: const FxDestination.recordedTrack(0),
+        controlState: ControlState(
+          globalBindings: PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track2, bank: 0),
+              target: const FxSlotTarget(
+                address: FxAddress(stage: FxStage.track),
+                slotId: 't3',
+              ).canonicalString(),
+            ),
+          ]),
+        ),
+      );
+
+      final card = find.byKey(const Key('fx_card_t3'));
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(l10nOf(tester).controlTrackSwitchName(2)),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.text(l10nOf(tester).fxUnassigned),
+        ),
+        findsNothing,
+      );
+    });
+
     testWidgets('All tracks has no part picker and no placement tag — its '
         'stage is fixed after the recorded mix', (tester) async {
       await pump(tester, destination: const FxDestination.allTracks());

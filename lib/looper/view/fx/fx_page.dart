@@ -1414,12 +1414,29 @@ class _DestinationChain extends StatelessWidget {
             (b) => _entriesAt(b.state, address),
           );
     final chainEnabled = watchFxChainEnabled(context, address);
+    // Rebuilt when an assignment changes, not on every control frame.
+    context.select<ControlCubit, Object>(
+      (c) => (
+        c.state.bindings,
+        c.state.pedalSetup.external,
+        c.state.midiMappings,
+      ),
+    );
+    final control = context.read<ControlCubit>().state;
+    final l10n = context.l10n;
     final strip = FxChainStrip(
       key: Key('fx_chain_${address.canonicalString()}'),
       entries: entries,
       chainEnabled: chainEnabled,
       controller: controller,
       showPlacement: destination.placementIsEditable,
+      assignments: {
+        for (final group in fxChainGroups(entries))
+          if (!group.isRack)
+            fxGroupId(group): fxAssignmentNames(l10n, control, address, {
+              ?group.entries.first.slotId,
+            }),
+      },
       onTogglePower: (group, {required enabled}) {
         final groups = fxChainGroups(entries);
         if (group < 0 || group >= groups.length) return;

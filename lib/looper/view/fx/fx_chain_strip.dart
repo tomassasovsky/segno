@@ -55,6 +55,7 @@ class FxChainStrip extends StatelessWidget {
     required this.onOpen,
     this.controller,
     this.chainEnabled = true,
+    this.assignments = const {},
     super.key,
   });
 
@@ -81,6 +82,11 @@ class FxChainStrip extends StatelessWidget {
   /// The strip's scroll position, so the page can keep each destination's
   /// place across a context switch.
   final ScrollController? controller;
+
+  /// What the controls assigned to each single effect are called
+  /// (`fxAssignmentNames`), by [fxGroupId]. A single card prints them on its
+  /// assignment line; an effect missing here is unassigned.
+  final Map<String, List<String>> assignments;
 
   @override
   Widget build(BuildContext context) {
@@ -116,6 +122,7 @@ class FxChainStrip extends StatelessWidget {
               key: Key('fx_card_${fxGroupId(groups[i])}'),
               group: groups[i],
               showPlacement: showPlacement,
+              assignedTo: assignments[fxGroupId(groups[i])] ?? const [],
               dimmed: !chainEnabled,
               onTogglePower: ({required enabled}) =>
                   onTogglePower(i, enabled: enabled),
@@ -164,6 +171,7 @@ class _FxChainCard extends StatelessWidget {
   const _FxChainCard({
     required this.group,
     required this.showPlacement,
+    required this.assignedTo,
     required this.dimmed,
     required this.onTogglePower,
     required this.onOpen,
@@ -172,6 +180,7 @@ class _FxChainCard extends StatelessWidget {
 
   final FxChainGroup group;
   final bool showPlacement;
+  final List<String> assignedTo;
   final bool dimmed;
   final void Function({required bool enabled}) onTogglePower;
   final VoidCallback onOpen;
@@ -212,6 +221,7 @@ class _FxChainCard extends StatelessWidget {
                 : _SingleCardBody(
                     group: group,
                     showPlacement: showPlacement,
+                    assignedTo: assignedTo,
                     lit: lit,
                     power: power,
                   ),
@@ -339,12 +349,16 @@ class _SingleCardBody extends StatelessWidget {
   const _SingleCardBody({
     required this.group,
     required this.showPlacement,
+    required this.assignedTo,
     required this.lit,
     required this.power,
   });
 
   final FxChainGroup group;
   final bool showPlacement;
+
+  /// What the controls assigned to the effect are called, or none.
+  final List<String> assignedTo;
   final bool lit;
   final Widget power;
 
@@ -396,7 +410,12 @@ class _SingleCardBody extends StatelessWidget {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: AppText(
-                  l10n.fxUnassigned,
+                  fxAssignmentLine(l10n, assignedTo),
+                  // The line shows the first and a count; a screen reader
+                  // hears every one.
+                  semanticsLabel: assignedTo.isEmpty
+                      ? null
+                      : assignedTo.join(', '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -525,6 +544,15 @@ class _NamedFallbackMark extends StatelessWidget {
     );
   }
 }
+
+/// A single card's assignment line (#1757): the one control assigned to the
+/// effect, the first and how many more, or Unassigned.
+String fxAssignmentLine(AppLocalizations l10n, List<String> names) =>
+    switch (names) {
+      [] => l10n.fxUnassigned,
+      [final only] => only,
+      [final first, ...final rest] => l10n.fxAssignedMore(first, rest.length),
+    };
 
 /// What a group is called: the rack's own name, or the single effect's.
 String fxGroupName(AppLocalizations l10n, FxChainGroup group) =>
