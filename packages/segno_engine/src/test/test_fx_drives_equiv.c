@@ -19,7 +19,17 @@
  * kernel. The settings change at block boundaries, as the engine hands a
  * block's settings to the chain, so the moving programs run at 32- and
  * 64-frame blocks; a still setting renders the same at any block (the
- * kernels run a frame at a time), so it runs once.
+ * kernels run a frame at a time), so it runs once. Denormals are flushed,
+ * as the engine runs.
+ *
+ * The reference is the console's render, on every platform: the console's
+ * tanhf and powf (glibc 2.41's) are copied in as ref_tanhf and ref_powf,
+ * since a platform's own differ from them by an ulp here and there, and
+ * the Overdrive's and the Distortion's float filters turn any such
+ * difference into a residual near -90 dBFS at their hardest settings
+ * (their rounding noise, which a reordered addition in a tone filter shows
+ * as well). On the console, -DEQ_LIBM uses its libm instead: what it renders
+ * today, literally.
  *
  * The stimuli, at 44.1, 48, 88.2 and 96 kHz, different on the two channels:
  *   sweeps    exponential sines from 20 Hz to 20 kHz (0.45 of the rate at
@@ -46,9 +56,11 @@
 
 /* ======================================================================
  * The reference: the kernels before #1755, verbatim but for the ref_
- * names and the Amp+Cab's entry points (an instance pointer instead of the
- * effect state's slot). Their helpers that #1755 does not touch (the
- * designs, the biquads, the glides, the tables) are engine_fx.c's own.
+ * names, the Amp+Cab's entry points (an instance pointer instead of the
+ * effect state's slot), ref_tanhf and ref_powf for libm's, and the
+ * cabinet bank's direct taps, which engine_fx.c now stores last tap first.
+ * Their helpers that #1755 does not touch (the designs, the biquads, the
+ * glides, the tables) are engine_fx.c's own.
  * ====================================================================== */
 
 /* The console's tanhf: glibc 2.41's, which is CORE-MATH's correctly rounded
@@ -58,7 +70,7 @@
  * renders, where a platform's own tanhf (macOS's, glibc's before 2.41) is
  * up to 2.2 ulps off. */
 static float ref_tanhf(float x) {
-#ifdef EQ_LIBM_TANHF
+#ifdef EQ_LIBM
   /* On the console, its own libm: today's render there, literally. */
   return tanhf(x);
 #endif
@@ -109,6 +121,63 @@ static float ref_tanhf(float x) {
   d0 += z8 * d4;
   double r = z * n0 / d0;
   return r;
+}
+
+/* The console's powf, for the Distortion: glibc 2.41's as it builds for
+ * aarch64 (sysdeps/ieee754/flt-32/e_powf.c, LGPL-2.1-or-later;
+ * TOINT_INTRINSICS: POWF_SCALE 32, round and lround), for the curve's
+ * positive x and y. glibc's powf is not correctly rounded, so platforms
+ * differ by an ulp here and there; with this the reference renders here
+ * what the console renders. Its tables are engine_fx.c's (LE_POWF_*,
+ * LE_EXP2F_*), copied from glibc. The cases glibc treats apart (x not a
+ * positive normal float, |y log2 x| past 126) go to the platform's powf,
+ * which the audio never reaches. */
+static float ref_powf(float x, float y) {
+#ifdef EQ_LIBM
+  return powf(x, y);
+#endif
+  uint32_t ix;
+  memcpy(&ix, &x, sizeof(ix));
+  if (ix == 0) return 0.0f;
+  if (ix - 0x00800000u >= 0x7f800000u - 0x00800000u) return powf(x, y);
+  /* log2_inline */
+  const uint32_t tmp = ix - 0x3f330000u;
+  const int i = (int)((tmp >> (23 - 4)) % 16);
+  const uint32_t top = tmp & 0xff800000u;
+  const uint32_t iz = ix - top;
+  const int k = (int32_t)top >> (23 - 5);
+  const double invc = LE_POWF_INVC[i];
+  const double logc = LE_POWF_LOGC[i];
+  float zf;
+  memcpy(&zf, &iz, sizeof(zf));
+  const double z = (double)zf;
+  const double r = z * invc - 1;
+  const double y0 = logc + (double)k;
+  const double r2 = r * r;
+  double v = LE_POWF_A[0] * r + LE_POWF_A[1];
+  const double p = LE_POWF_A[2] * r + LE_POWF_A[3];
+  const double r4 = r2 * r2;
+  double q = LE_POWF_A[4] * r + y0;
+  q = p * r2 + q;
+  v = v * r4 + q;
+  const double ylogx = (double)y * v;
+  uint64_t u;
+  memcpy(&u, &ylogx, sizeof(u));
+  if ((u >> 47 & 0xffff) >= (0x40af800000000000ull >> 47)) return powf(x, y);
+  /* exp2_inline */
+  const double kd = round(ylogx);
+  const uint64_t ki = (uint64_t)lround(ylogx);
+  const double rr = ylogx - kd;
+  uint64_t t = LE_EXP2F_TAB[ki % 32];
+  t += ki << (52 - 5);
+  double sc;
+  memcpy(&sc, &t, sizeof(sc));
+  const double c = LE_EXP2F_C[0] * rr + LE_EXP2F_C[1];
+  const double rr2 = rr * rr;
+  double e = LE_EXP2F_C[2] * rr + 1;
+  e = c * rr2 + e;
+  e = e * sc;
+  return (float)e;
 }
 
 /* [x] through path [p]'s sections (every other coefficient of [c], from
@@ -715,7 +784,7 @@ static void ref_fx_distortion_kprocess(void* ks, float* l, float* r) {
       const float au = LE_DIST_ALPHA * u;
       const float w = u + LE_DIST_ALPHA * u * u / (1.0f + au * au);
       const float c = w > 0.0f ? LE_DIST_UP : LE_DIST_DOWN;
-      os[i] = w / powf(1.0f + powf(fabsf(w / c), LE_DIST_KNEE),
+      os[i] = w / ref_powf(1.0f + ref_powf(fabsf(w / c), LE_DIST_KNEE),
                        1.0f / LE_DIST_KNEE);
     }
     float v = ref_hb_tick(&q->hb, ch, q->ph, ref_os_down(&q->os, ch, os));
