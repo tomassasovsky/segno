@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "engine_fx.h"
+#include "engine_fx_simd.h" /* le_f4, le_u4 (#1755) */
 #include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
 #include "engine_internal.h" /* le_psola_detect_band prototype (below) */
 #include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
@@ -8242,24 +8243,33 @@ typedef struct le_fx_verb {
   uint32_t ap_w[2][LE_VB_APS];
   uint32_t line_w[LE_VB_LINES];
   /* Whether each structure has wrapped since the block was cleared: before
-   * that, a read returns silence, not what the ring held. */
+   * that, a read returns silence, not what the ring held. A line's flag is
+   * all ones once it has (a lane mask); lines_full once every line has. */
   uint8_t hist_full;
   uint8_t ap_full[2][LE_VB_APS];
-  uint8_t line_full[LE_VB_LINES];
+  uint32_t line_full[LE_VB_LINES];
+  uint32_t lines_full;
   float dec;        /* Dec, gliding toward the setting */
   float dec_design; /* the Dec the lines were last designed for (-1: none) */
   /* Per rate: the line shelves' prewarped corners (lo, hi) and the anchors'
    * cos and sin (125 Hz, 1 kHz, 8 kHz), so a redesign calls no trig. */
   double warp[2];
   double anchor[3][2];
+  /* The lines' gains and first-order shelves (b0, b1, a1), each
+   * coefficient of the eight lines together, so four lines run as one
+   * vector (engine_fx_simd.h). */
   float gm[LE_VB_LINES];
-  float lo[LE_VB_LINES][3]; /* first-order: b0, b1, a1 */
-  float hi[LE_VB_LINES][3];
+  float lo[3][LE_VB_LINES];
+  float hi[3][LE_VB_LINES];
   /* The filters' states per phase: at 96 kHz the network is the 48 kHz one
    * on alternate samples (le_rs_phases), every length twice its 48 kHz
    * one. */
-  float lo_z[LE_VB_LINES][LE_RS_PH][2]; /* x1, y1 */
-  float hi_z[LE_VB_LINES][LE_RS_PH][2];
+  float lo_z[LE_RS_PH][2][LE_VB_LINES]; /* x1, y1 */
+  float hi_z[LE_RS_PH][2][LE_VB_LINES];
+  /* The def's injection signs times its late gain, and its output signs. */
+  float cin_g[LE_VB_LINES];
+  float cl[LE_VB_LINES];
+  float cr[LE_VB_LINES];
   float shelf[3];
   float shelf_z[2][LE_RS_PH][2];
   float peak[5];
@@ -8273,7 +8283,7 @@ typedef struct le_fx_verb {
    * delay. */
   int32_t frac_on;
   float frac_a[LE_VB_LINES];
-  float frac_z[LE_VB_LINES][2];
+  float frac_z[2][LE_VB_LINES]; /* x1, y1 */
   float ap_fa[2][LE_VB_APS]; /* the diffusers' likewise */
   float ap_fz[2][LE_VB_APS][2];
   double line_d[LE_VB_LINES];
@@ -8287,8 +8297,8 @@ typedef struct le_fx_verb {
    * recirculating signal never steps. */
   int32_t line_ramp;
   float gm_to[LE_VB_LINES], gm_d[LE_VB_LINES];
-  float lo_to[LE_VB_LINES][3], lo_d[LE_VB_LINES][3];
-  float hi_to[LE_VB_LINES][3], hi_d[LE_VB_LINES][3];
+  float lo_to[3][LE_VB_LINES], lo_d[3][LE_VB_LINES];
+  float hi_to[3][LE_VB_LINES], hi_d[3][LE_VB_LINES];
 } le_fx_verb;
 
 /* A corner [hz] prewarped for the bilinear transform at [sr]. */
@@ -8307,14 +8317,6 @@ static void le_vb_shelf(double t, double k, int high, float c[3]) {
     c[1] = (float)((k * t - 1.0) / (1.0 + t));
   }
   c[2] = (float)((t - 1.0) / (1.0 + t));
-}
-
-/* A first-order section's gain at the frequency whose cos and sin are
- * [cs]. */
-static double le_vb_mag(const float c[3], const double cs[2]) {
-  const double nr = c[0] + c[1] * cs[0], ni = -c[1] * cs[1];
-  const double dr = 1.0 + c[2] * cs[0], di = -c[2] * cs[1];
-  return sqrt((nr * nr + ni * ni) / (dr * dr + di * di));
 }
 
 /* One sample through a first-order section [c] (b0, b1, a1) with state [z]
@@ -8387,29 +8389,73 @@ static double le_vb_t_at(const le_verb_def* d, const double* y, double v) {
   return y[d->tn - 1];
 }
 
-/* Line [i]'s shelves and gain for the decay times [t] (s). The shelves'
- * gains are corrected four times for their leakage at the other anchors. */
-static void le_vb_design_line(le_fx_verb* q, int i, const double t[3],
-                              int sr) {
-  const double len = q->line_d[i];
-  const double(*a)[2] = q->anchor; /* 125 Hz, 1 kHz, 8 kHz */
-  const double glo = pow(10.0, -3.0 * len / (t[0] * sr));
-  const double gmid = pow(10.0, -3.0 * len / (t[1] * sr));
-  const double ghi = pow(10.0, -3.0 * len / (t[2] * sr));
-  double klo = glo / gmid;
-  double khi = ghi / gmid;
-  for (int it = 0; it < 4; ++it) {
-    le_vb_shelf(q->warp[0], klo, 0, q->lo[i]);
-    le_vb_shelf(q->warp[1], khi, 1, q->hi[i]);
-    const double gm =
-        gmid / (le_vb_mag(q->lo[i], a[1]) * le_vb_mag(q->hi[i], a[1]));
-    klo *= glo / (gm * le_vb_mag(q->lo[i], a[0]) * le_vb_mag(q->hi[i], a[0]));
-    khi *= ghi / (gm * le_vb_mag(q->lo[i], a[2]) * le_vb_mag(q->hi[i], a[2]));
+/* le_vb_shelf for four lines at once, their gains [k]: each line's b0 and
+ * b1 into [b0], [b1]. Its a1 is le_vb_shelf's, the same for every line. */
+static void le_vb_shelf4(double t, le_d4 k, int high, le_f4* b0, le_f4* b1) {
+  const le_d4 tt = le_d4_set1(t);
+  const le_d4 one = le_d4_set1(1.0);
+  const le_d4 den = one + tt;
+  if (high) {
+    *b0 = le_f4_of((k + tt) / den);
+    *b1 = le_f4_of((tt - k) / den);
+  } else {
+    *b0 = le_f4_of((one + k * tt) / den);
+    *b1 = le_f4_of((k * tt - one) / den);
   }
-  le_vb_shelf(q->warp[0], klo, 0, q->lo[i]);
-  le_vb_shelf(q->warp[1], khi, 1, q->hi[i]);
-  q->gm[i] = (float)(gmid / (le_vb_mag(q->lo[i], a[1]) *
-                             le_vb_mag(q->hi[i], a[1])));
+}
+
+/* le_vb_mag for four first-order sections (b0, b1 and the shared a1) at the
+ * frequency whose cos and sin are [cs]. */
+static le_d4 le_vb_mag4(le_f4 b0, le_f4 b1, float a1, const double cs[2]) {
+  const le_d4 nr = le_d4_of(b0) + le_d4_of(b1) * le_d4_set1(cs[0]);
+  const le_d4 ni = le_d4_of(-b1) * le_d4_set1(cs[1]);
+  const double dr = 1.0 + a1 * cs[0], di = -a1 * cs[1];
+  const le_d4 r = (nr * nr + ni * ni) / le_d4_set1(dr * dr + di * di);
+  return (le_d4){sqrt(r[0]), sqrt(r[1]), sqrt(r[2]), sqrt(r[3])};
+}
+
+/* Every line's shelves and gain for the decay times [t] (s), four lines at
+ * a time, each as on its own. The shelves' gains are corrected four times
+ * for their leakage at the other anchors. */
+static void le_vb_design_lines(le_fx_verb* q, const double t[3], int sr) {
+  const double(*a)[2] = q->anchor; /* 125 Hz, 1 kHz, 8 kHz */
+  float c[3];
+  le_vb_shelf(q->warp[0], 1.0, 0, c);
+  const float alo = c[2];
+  le_vb_shelf(q->warp[1], 1.0, 1, c);
+  const float ahi = c[2];
+  for (int b = 0; b < LE_VB_LINES; b += 4) {
+    le_d4 glo, gmid, ghi;
+    for (int j = 0; j < 4; ++j) {
+      const double len = q->line_d[b + j];
+      glo[j] = pow(10.0, -3.0 * len / (t[0] * sr));
+      gmid[j] = pow(10.0, -3.0 * len / (t[1] * sr));
+      ghi[j] = pow(10.0, -3.0 * len / (t[2] * sr));
+    }
+    le_d4 klo = glo / gmid;
+    le_d4 khi = ghi / gmid;
+    le_f4 l0, l1, h0, h1;
+    for (int it = 0; it < 4; ++it) {
+      le_vb_shelf4(q->warp[0], klo, 0, &l0, &l1);
+      le_vb_shelf4(q->warp[1], khi, 1, &h0, &h1);
+      const le_d4 gm =
+          gmid / (le_vb_mag4(l0, l1, alo, a[1]) * le_vb_mag4(h0, h1, ahi, a[1]));
+      klo *= glo / (gm * le_vb_mag4(l0, l1, alo, a[0]) *
+                    le_vb_mag4(h0, h1, ahi, a[0]));
+      khi *= ghi / (gm * le_vb_mag4(l0, l1, alo, a[2]) *
+                    le_vb_mag4(h0, h1, ahi, a[2]));
+    }
+    le_vb_shelf4(q->warp[0], klo, 0, &l0, &l1);
+    le_vb_shelf4(q->warp[1], khi, 1, &h0, &h1);
+    le_f4_store(q->gm + b, le_f4_of(gmid / (le_vb_mag4(l0, l1, alo, a[1]) *
+                                             le_vb_mag4(h0, h1, ahi, a[1]))));
+    le_f4_store(q->lo[0] + b, l0);
+    le_f4_store(q->lo[1] + b, l1);
+    le_f4_store(q->lo[2] + b, le_f4_set1(alo));
+    le_f4_store(q->hi[0] + b, h0);
+    le_f4_store(q->hi[1] + b, h1);
+    le_f4_store(q->hi[2] + b, le_f4_set1(ahi));
+  }
 }
 
 /* [ms] in samples at [sr]: at 96 kHz twice its 48 kHz samples, so each
@@ -8497,7 +8543,13 @@ static void le_vb_lay(le_fx_verb* q, const le_verb_def* def, int rate) {
   memset(q->line_w, 0, sizeof(q->line_w));
   memset(q->ap_full, 0, sizeof(q->ap_full));
   memset(q->line_full, 0, sizeof(q->line_full));
+  q->lines_full = 0;
   q->hist_full = 0;
+  for (int i = 0; i < LE_VB_LINES; ++i) {
+    q->cin_g[i] = (float)def->cin[i] * def->late_g;
+    q->cl[i] = (float)def->cl[i];
+    q->cr[i] = (float)def->cr[i];
+  }
   q->hist_w = 0;
   q->dec_design = -1.0f;
   le_vb_geometry(q, rate);
@@ -8534,13 +8586,13 @@ static void le_vb_glide_dec(le_fx_verb* q, float dec_tgt, float k, int rate) {
   if (q->dec == q->dec_design) return;
   double t[3];
   le_vb_t(def, (double)q->dec, t);
-  float gm[LE_VB_LINES], lo[LE_VB_LINES][3], hi[LE_VB_LINES][3];
+  float gm[LE_VB_LINES], lo[3][LE_VB_LINES], hi[3][LE_VB_LINES];
   if (!first) {
     memcpy(gm, q->gm, sizeof gm);
     memcpy(lo, q->lo, sizeof lo);
     memcpy(hi, q->hi, sizeof hi);
   }
-  for (int i = 0; i < LE_VB_LINES; ++i) le_vb_design_line(q, i, t, rate);
+  le_vb_design_lines(q, t, rate);
   q->dec_design = q->dec;
   q->line_ramp = 0;
   if (!first) {
@@ -8551,12 +8603,12 @@ static void le_vb_glide_dec(le_fx_verb* q, float dec_tgt, float k, int rate) {
       q->gm_d[i] = (q->gm[i] - gm[i]) * per;
       q->gm[i] = gm[i];
       for (int j = 0; j < 3; ++j) {
-        q->lo_to[i][j] = q->lo[i][j];
-        q->lo_d[i][j] = (q->lo[i][j] - lo[i][j]) * per;
-        q->lo[i][j] = lo[i][j];
-        q->hi_to[i][j] = q->hi[i][j];
-        q->hi_d[i][j] = (q->hi[i][j] - hi[i][j]) * per;
-        q->hi[i][j] = hi[i][j];
+        q->lo_to[j][i] = q->lo[j][i];
+        q->lo_d[j][i] = (q->lo[j][i] - lo[j][i]) * per;
+        q->lo[j][i] = lo[j][i];
+        q->hi_to[j][i] = q->hi[j][i];
+        q->hi_d[j][i] = (q->hi[j][i] - hi[j][i]) * per;
+        q->hi[j][i] = hi[j][i];
       }
     }
     q->line_ramp = LE_FX_UPDATE_FRAMES;
@@ -8593,7 +8645,10 @@ static void fx_amb_verb_update(void* ks, le_fx_dyn_head* h, const float* p,
 }
 
 /* One sample of [q]'s network: the mono input [m] into its history, and
- * the wet left and right into [w], before any dry. */
+ * the wet left and right into [w], before any dry. The two sides'
+ * diffusers run in step, and the lines four at a time (lines 0-3 share
+ * ring 0, 4-7 ring 1), each exactly as on its own: the sides and the lines
+ * are independent until the sums that mix them, which run in line order. */
 static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
                                  float w[2]) {
   const le_verb_def* d = q->def;
@@ -8612,71 +8667,120 @@ static inline void le_vb_network(le_fx_verb* q, float* r0, float* r1, float m,
      * hold this block's input. */
     uint32_t at = q->hist_w + q->hist_n - q->pd[c];
     if (at >= q->hist_n) at -= q->hist_n;
-    float u = q->hist_full || at <= q->hist_w ? hist[at] : 0.0f;
+    e[c] = q->hist_full || at <= q->hist_w ? hist[at] : 0.0f;
     if (q->tap[c] != 0u) {
       uint32_t ta = q->hist_w + q->hist_n - q->tap[c];
       if (ta >= q->hist_n) ta -= q->hist_n;
       tap[c] = q->hist_full || ta <= q->hist_w ? d->tap_g[c] * hist[ta] : 0.0f;
     }
-    for (int k = 0; k < q->aps; ++k) {
+  }
+  const float apg = q->ap_g;
+  for (int k = 0; k < q->aps; ++k) {
+    for (int c = 0; c < 2; ++c) {
       float* b = ring[c] + q->ap_off[c][k];
-      const uint32_t w = q->ap_w[c][k];
-      float dl = q->ap_full[c][k] ? b[w] : 0.0f;
+      const uint32_t aw = q->ap_w[c][k];
+      float dl = q->ap_full[c][k] ? b[aw] : 0.0f;
       if (q->frac_on) dl = le_frac_tick(q->ap_fa[c][k], q->ap_fz[c][k], dl);
-      const float v = u + q->ap_g * dl;
-      u = dl - q->ap_g * v;
-      b[w] = fx_sanitize(v);
-      if (w + 1u >= q->ap_n[c][k]) {
+      const float v = e[c] + apg * dl;
+      e[c] = dl - apg * v;
+      b[aw] = fx_sanitize(v);
+      if (aw + 1u >= q->ap_n[c][k]) {
         q->ap_w[c][k] = 0u;
         q->ap_full[c][k] = 1u;
       } else {
-        q->ap_w[c][k] = w + 1u;
+        q->ap_w[c][k] = aw + 1u;
       }
     }
-    e[c] = u;
   }
   if (++q->hist_w >= q->hist_n) {
     q->hist_w = 0;
     q->hist_full = 1u;
   }
-  /* The network: each line's output was written line_n samples ago. */
+  /* The network: each line's output was written line_n samples ago, at the
+   * position its input goes to now. */
   float o[LE_VB_LINES];
+  le_u4 pos[2];
+  for (int g = 0; g < 2; ++g) {
+    const int b = 4 * g;
+    const float* rg = ring[g];
+    const le_u4 at = le_u4_load(q->line_off + b) + le_u4_load(q->line_w + b);
+    pos[g] = at;
+    le_f4 x = {rg[at[0]], rg[at[1]], rg[at[2]], rg[at[3]]};
+    if (!q->lines_full) x = le_f4_keep(x, le_u4_load(q->line_full + b));
+    if (q->frac_on) { /* le_frac_tick, four lines */
+      const le_f4 y = le_f4_load(q->frac_a + b) * (x - le_f4_load(q->frac_z[1] + b)) +
+                      le_f4_load(q->frac_z[0] + b);
+      le_f4_store(q->frac_z[0] + b, x);
+      le_f4_store(q->frac_z[1] + b, y);
+      x = y;
+    }
+    le_f4_store(o + b, x);
+  }
   float sum = 0.0f;
   float ol = 0.0f;
   float orr = 0.0f;
   for (int i = 0; i < LE_VB_LINES; ++i) {
-    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
-    o[i] = q->line_full[i] ? ring[c][q->line_off[i] + q->line_w[i]] : 0.0f;
-    if (q->frac_on) o[i] = le_frac_tick(q->frac_a[i], q->frac_z[i], o[i]);
     sum += o[i];
-    ol += (float)d->cl[i] * o[i];
-    orr += (float)d->cr[i] * o[i];
+    ol += q->cl[i] * o[i];
+    orr += q->cr[i] * o[i];
   }
   const float house = 2.0f / (float)LE_VB_LINES * sum;
   if (q->line_ramp > 0) {
-    const int last = --q->line_ramp == 0;
-    for (int i = 0; i < LE_VB_LINES; ++i) {
-      q->gm[i] = last ? q->gm_to[i] : q->gm[i] + q->gm_d[i];
-      for (int j = 0; j < 3; ++j) {
-        q->lo[i][j] = last ? q->lo_to[i][j] : q->lo[i][j] + q->lo_d[i][j];
-        q->hi[i][j] = last ? q->hi_to[i][j] : q->hi[i][j] + q->hi_d[i][j];
+    if (--q->line_ramp == 0) {
+      memcpy(q->gm, q->gm_to, sizeof(q->gm));
+      memcpy(q->lo, q->lo_to, sizeof(q->lo));
+      memcpy(q->hi, q->hi_to, sizeof(q->hi));
+    } else {
+      for (int b = 0; b < LE_VB_LINES; b += 4) {
+        le_f4_store(q->gm + b, le_f4_load(q->gm + b) + le_f4_load(q->gm_d + b));
+        for (int j = 0; j < 3; ++j) {
+          le_f4_store(q->lo[j] + b,
+                      le_f4_load(q->lo[j] + b) + le_f4_load(q->lo_d[j] + b));
+          le_f4_store(q->hi[j] + b,
+                      le_f4_load(q->hi[j] + b) + le_f4_load(q->hi_d[j] + b));
+        }
       }
     }
   }
-  for (int i = 0; i < LE_VB_LINES; ++i) {
-    const int c = i < LE_VB_LINES / 2 ? 0 : 1;
-    const float y = le_vb_tick(q->lo[i], q->lo_z[i][ph], o[i] - house);
-    const float y2 = le_vb_tick(q->hi[i], q->hi_z[i][ph], y);
-    const float inj = (i & 1) == 0 ? e[0] : e[1];
-    ring[c][q->line_off[i] + q->line_w[i]] =
-        fx_sanitize(q->gm[i] * y2 + (float)d->cin[i] * d->late_g * inj);
-    if (q->line_w[i] + 1u >= q->line_n[i]) {
-      q->line_w[i] = 0u;
-      q->line_full[i] = 1u;
-    } else {
-      q->line_w[i] += 1u;
+  const le_f4 hv = le_f4_set1(house);
+  const le_f4 inj = {e[0], e[1], e[0], e[1]}; /* even lines take left */
+  uint32_t all = ~0u;
+  for (int g = 0; g < 2; ++g) {
+    const int b = 4 * g;
+    float* rg = ring[g];
+    /* le_vb_tick through the low shelf, then the high, four lines */
+    float* lx = q->lo_z[ph][0] + b;
+    float* ly = q->lo_z[ph][1] + b;
+    float* hx = q->hi_z[ph][0] + b;
+    float* hy = q->hi_z[ph][1] + b;
+    const le_f4 x = le_f4_load(o + b) - hv;
+    const le_f4 y = le_f4_load(q->lo[0] + b) * x +
+                    le_f4_load(q->lo[1] + b) * le_f4_load(lx) -
+                    le_f4_load(q->lo[2] + b) * le_f4_load(ly);
+    le_f4_store(lx, x);
+    le_f4_store(ly, y);
+    const le_f4 y2 = le_f4_load(q->hi[0] + b) * y +
+                     le_f4_load(q->hi[1] + b) * le_f4_load(hx) -
+                     le_f4_load(q->hi[2] + b) * le_f4_load(hy);
+    le_f4_store(hx, y);
+    le_f4_store(hy, y2);
+    const le_f4 v = le_f4_sanitize(le_f4_load(q->gm + b) * y2 +
+                                   le_f4_load(q->cin_g + b) * inj);
+    const le_u4 at = pos[g];
+    rg[at[0]] = v[0];
+    rg[at[1]] = v[1];
+    rg[at[2]] = v[2];
+    rg[at[3]] = v[3];
+    const le_u4 next = le_u4_load(q->line_w + b) + le_u4_set1(1u);
+    const le_u4 wrap = (le_u4)(next >= le_u4_load(q->line_n + b));
+    le_u4_store(q->line_w + b, next & ~wrap);
+    if (!q->lines_full) {
+      const le_u4 full = le_u4_load(q->line_full + b) | wrap;
+      le_u4_store(q->line_full + b, full);
+      all &= full[0] & full[1] & full[2] & full[3];
     }
   }
+  if (!q->lines_full) q->lines_full = all != 0u;
   const float inv = 0.35355339f * q->late_k; /* 1 / sqrt(8) */
   w[0] = inv * ol + q->early_g * e[0] + tap[0];
   w[1] = inv * orr + q->early_g * e[1] + tap[1];
@@ -9042,20 +9146,26 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
   const float tk = le_fx_glide_next(&q->tail_k);
   const float in_g = le_fx_glide_next(&q->in_g);
   if (q->ramp > 0) {
-    const int last = --q->ramp == 0;
-    for (int c = 0; c < 2; ++c) {
-      for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
-        q->fir_g[c][i] = last ? q->fir_to[c][i] : q->fir_g[c][i] + q->fir_d_g[c][i];
+    if (--q->ramp == 0) {
+      memcpy(q->fir_g, q->fir_to, sizeof(q->fir_g));
+      memcpy(q->tone, q->tone_to, sizeof(q->tone));
+      if (q->cut) memcpy(q->lc, q->lc_to, sizeof(q->lc));
+      v->ap_g = q->apg_to;
+      v->late_k = q->latek_to;
+    } else {
+      for (int c = 0; c < 2; ++c) { /* to the next whole four taps */
+        float* g = q->fir_g[c];
+        const float* dg = q->fir_d_g[c];
+        const size_t n = q->fir_n[c];
+        for (size_t i = 0; i < n; i += 4) {
+          le_f4_store(g + i, le_f4_load(g + i) + le_f4_load(dg + i));
+        }
       }
+      for (int i = 0; i < 3; ++i) q->tone[i] += q->tone_d[i];
+      for (int i = 0; q->cut && i < 5; ++i) q->lc[i] += q->lc_d[i];
+      v->ap_g += q->apg_d;
+      v->late_k += q->latek_d;
     }
-    for (int i = 0; i < 3; ++i) {
-      q->tone[i] = last ? q->tone_to[i] : q->tone[i] + q->tone_d[i];
-    }
-    for (int i = 0; q->cut && i < 5; ++i) {
-      q->lc[i] = last ? q->lc_to[i] : q->lc[i] + q->lc_d[i];
-    }
-    v->ap_g = last ? q->apg_to : v->ap_g + q->apg_d;
-    v->late_k = last ? q->latek_to : v->late_k + q->latek_d;
   }
   const float x0 = fx_sanitize(*l);
   const float x1 = fx_sanitize(*r);
@@ -9063,7 +9173,10 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
   const int ph = v->ph; /* the phase le_vb_network runs */
   le_vb_network(v, r0, r1, 0.5f * (x0 + x1) * in_g, w);
   /* The early taps read the history the network just wrote: the newest
-   * sample sits one behind its write position. */
+   * sample sits one behind its write position. le_rv_taps is the reference
+   * engine's, character for character: the compilers decide per loop shape
+   * whether to fuse each tap's multiply-add, and a Drum room's low cut
+   * carries a changed rounding to about -60 dBFS (#1755). */
   const float* hist = r0;
   const uint32_t now = v->hist_w == 0u ? v->hist_n - 1u : v->hist_w - 1u;
   for (int c = 0; c < 2; ++c) {
