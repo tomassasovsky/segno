@@ -1,0 +1,57 @@
+{
+  "cover": {
+    "triangles": 2326,
+    "size_mm": [
+      38.002,
+      75.7,
+      25.386
+    ],
+    "bed_contact_mm2": 1876.98
+  },
+  "base": {
+    "triangles": 1224,
+    "size_mm": [
+      20.3,
+      72.0,
+      8.33
+    ],
+    "bed_contact_mm2": 1303.29
+  },
+  "fit_sample_cover": {
+    "triangles": 510,
+    "size_mm": [
+      38.002,
+      16.0,
+      25.386
+    ],
+    "bed_contact_mm2": 513.45
+  },
+  "fit_sample_base": {
+    "triangles": 156,
+    "size_mm": [
+      20.3,
+      16.0,
+      8.33
+    ],
+    "bed_contact_mm2": 307.06
+  },
+  "white_flange_bearing_mm2": 92.83,
+  "rear_wall_mm": 2.4,
+  "entry_gap_mm": 2.7,
+  "straight_channel_gap_mm": 2.55,
+  "spring_throat_mm": 1.95,
+  "floor_thickness_mm": 2.4,
+  "housing_rib_interference_per_side_mm": 0.3,
+  "platform_grip_depth_mm": 18,
+  "outer_jaw_thickness_mm": 2.4,
+  "inner_leaf_thickness_mm": 1.2,
+  "face_centre_above_rear_rim_mm": 10.2,
+  "face_slope_degrees": 12.498241812070852,
+  "minimum_base_clearance_above_cable_mm": 0.759,
+  "prewired_loading": "strip and both lead paths clear normal to the tilted face; grip jaws remain vertical",
+  "lead_envelope_mm": [
+    7.6,
+    2.6
+  ],
+  "physical_limit": "PLA insertion/removal force, friction retention, rocking, creep and pedal travel require a print trial"
+}
