@@ -696,5 +696,27 @@ void main() {
         'a': ['Track 1'],
       });
     });
+
+    test("a switch's press on a rack and its hold on an effect in it are "
+        'named on each, the rack for the press (#1760)', () {
+      const rack = FxRackTarget(address: _track, rackId: 'R');
+      ControlState bound(FxBindingTarget press, FxBindingTarget hold) =>
+          ControlState(
+            globalBindings: PedalBindingSet([
+              pedal(PedalButton.track2, press, bank: 0, hold: hold),
+            ]),
+          );
+      expect(fxAssignmentNames(en, bound(rack, slotA), _track), {
+        'R': ['Track 2'],
+        'a': ['Track 2 · Hold'],
+      });
+      expect(fxAssignmentNames(en, bound(slotA, rack), _track), {
+        'a': ['Track 2'],
+        'R': ['Track 2 · Hold'],
+      });
+      expect(fxAssignmentNames(en, bound(rack, rack), _track), {
+        'R': ['Track 2'],
+      });
+    });
   });
 }
