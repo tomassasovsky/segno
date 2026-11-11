@@ -348,7 +348,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
     final surface = context.surface;
     final effect = widget.effect;
     final built = effect is BuiltInEffect ? effect : null;
-    final name = fxPedalName(l10n, effect);
+    final name = fxBlockName(l10n, effect);
     final art = fxEntryArt(effect, live: true, chainOn: widget.chainOn);
     final params = built?.type.params ?? const <FxParamInfo>[];
     // A rack variant shows the controls its rack shows, under its names; any
@@ -460,11 +460,6 @@ class _PedalMark extends StatelessWidget {
     );
   }
 }
-
-/// What a pedal is called: the catalogue's own name for the module, falling
-/// back to the effect this engine built for it.
-String fxPedalName(AppLocalizations l10n, TrackEffect effect) =>
-    effect.module ?? fxBlockName(l10n, effect);
 
 /// The pedal's title and power in one control, as the accepted design puts it:
 /// power belongs to the title button and nowhere else.

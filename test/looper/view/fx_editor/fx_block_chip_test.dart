@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 
 import '../../../helpers/helpers.dart';
@@ -33,6 +34,29 @@ void main() {
     expect(find.text('Reverb'), findsOneWidget);
     await tester.tap(find.byKey(const Key('chip')));
     expect(tapped, isTrue);
+  });
+
+  test('a rack pedal is named by its catalogue module, not the kind it is '
+      'built on (#1750)', () {
+    final l10n = lookupAppLocalizations(const Locale('en'));
+    expect(
+      fxBlockName(
+        l10n,
+        BuiltInEffect(type: TrackEffectType.overdrive, module: 'Distortion'),
+      ),
+      'Distortion',
+    );
+    expect(
+      fxBlockName(
+        l10n,
+        BuiltInEffect(type: TrackEffectType.octaver, module: 'Pitch shift'),
+      ),
+      'Pitch shift',
+    );
+    expect(
+      fxBlockName(l10n, BuiltInEffect(type: TrackEffectType.octaver)),
+      l10n.effectTypeLabel(TrackEffectType.octaver),
+    );
   });
 
   testWidgets('an unavailable plugin shows a warning glyph', (tester) async {

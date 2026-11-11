@@ -151,7 +151,8 @@ String _laneVolumeLabel(
 }
 
 /// The display name of the effect sitting in [target]'s slot, or `null` when
-/// the slot is gone.
+/// the slot is gone: a rack pedal's catalogue module, a single built-in's
+/// type label, or a plugin's name.
 ///
 /// The effect's own name, not its slot id: a list of `slot-7f2a` rows names
 /// nothing a performer recognises. The id stays the binding's identity — it is
@@ -162,6 +163,7 @@ String? fxSlotName(LooperRepository looper, FxSlotTarget target) {
   for (final fx in entries) {
     if (fx.slotId != target.slotId) continue;
     return switch (fx) {
+      BuiltInEffect(:final module?) => module,
       BuiltInEffect(:final type) => type.label,
       PluginEffect(:final name) => name,
     };

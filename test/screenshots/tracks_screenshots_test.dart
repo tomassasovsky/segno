@@ -820,7 +820,10 @@ void main() {
   // The accepted FX face (segno-ui.pen 10/03 `noDGu`) and the approved FX
   // held-contact proposal (`ri60q`): four bound track switches, two Toggle
   // and two Hold, the held one lit while its contact is down (#1229).
-  for (final scene in ['default', 'held', 'spanish']) {
+  // `pedal`: switch 1 drives one pedal of a factory rack by its slot, the
+  // Lo-Fi Rack's Distortion built on the Overdrive, so the face names the
+  // pedal (#1750).
+  for (final scene in ['default', 'held', 'spanish', 'pedal']) {
     testWidgets('Foot FX $scene accepted scene', (tester) async {
       // The pen's racks: pedal 1's chain spans two racks, so it reads as
       // its slot (`FX A1`); the others are one rack each.
@@ -836,10 +839,21 @@ void main() {
           ),
       ];
       final effects = [
-        [
-          ...rack('r0', 'Clean Boost', [TrackEffectType.drive]),
-          ...rack('r1', 'Room', [TrackEffectType.reverb]),
-        ],
+        if (scene == 'pedal')
+          [
+            BuiltInEffect(
+              type: TrackEffectType.overdrive,
+              slotId: 'lofi-distort',
+              module: 'Distortion',
+              rack: const FxRack(id: 'r0', name: 'Grubby', art: 'lo-fi'),
+            ),
+            ...rack('r1', 'Room', [TrackEffectType.reverb]),
+          ]
+        else
+          [
+            ...rack('r0', 'Clean Boost', [TrackEffectType.drive]),
+            ...rack('r1', 'Room', [TrackEffectType.reverb]),
+          ],
         rack('r2', 'Light FX 1', [TrackEffectType.delay]),
         rack('r3', 'Funk Wah', [TrackEffectType.filter, TrackEffectType.drive]),
         rack('r4', 'Ballad', [TrackEffectType.reverb, TrackEffectType.delay]),
@@ -848,6 +862,12 @@ void main() {
         for (var input = 0; input < 4; input++)
           input: InputMonitor(input: input, effects: effects[input]),
       });
+      // A slot target's light also asks whether a hold has the chain.
+      when(
+        () => repository.fxChainHeld(
+          const FxAddress(stage: FxStage.input),
+        ),
+      ).thenReturn(false);
       for (var input = 0; input < 4; input++) {
         when(
           () => repository.monitorEffects(input),
@@ -884,9 +904,16 @@ void main() {
         BindingBehavior behavior = BindingBehavior.toggle,
       }) => PedalBinding(
         key: PedalBindingKey(button: button, bank: 0),
-        target: FxChainTarget(
-          FxAddress(stage: FxStage.input, index: input),
-        ).canonicalString(),
+        target:
+            (scene == 'pedal' && input == 0
+                    ? FxSlotTarget(
+                        address: FxAddress(stage: FxStage.input, index: input),
+                        slotId: 'lofi-distort',
+                      )
+                    : FxChainTarget(
+                        FxAddress(stage: FxStage.input, index: input),
+                      ))
+                .canonicalString(),
         behavior: behavior,
       );
       await tester.runAsync(

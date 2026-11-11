@@ -261,4 +261,32 @@ void main() {
       },
     );
   });
+
+  group('fxSlotName', () {
+    test('a rack pedal is named by its catalogue module, a single effect by '
+        'its type (#1750)', () {
+      trackChains[3] = [
+        _drive('t-1'),
+        BuiltInEffect(
+          type: TrackEffectType.overdrive,
+          slotId: 'lofi-1',
+          module: 'Distortion',
+          rack: const FxRack(id: 'r', name: 'Grubby', art: 'lo-fi'),
+        ),
+      ];
+      const address = FxAddress(stage: FxStage.track, index: 3);
+
+      expect(
+        fxSlotName(
+          looper,
+          const FxSlotTarget(address: address, slotId: 'lofi-1'),
+        ),
+        'Distortion',
+      );
+      expect(
+        fxSlotName(looper, const FxSlotTarget(address: address, slotId: 't-1')),
+        TrackEffectType.drive.label,
+      );
+    });
+  });
 }
