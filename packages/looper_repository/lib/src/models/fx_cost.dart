@@ -66,8 +66,12 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
 
 /// What the kinds whose work depends on the setting charge, in nanoseconds
 /// per frame at each of [kFxCostSettings], measured as [kFxKindCostNs] is.
-/// The Overdrive and the Amp changed after #1508 (#1663, #1664) and charge
-/// only #1724's runs, at all eight.
+/// The Overdrive, the Distortion and the Amp+Cab charge #1755's runs, at
+/// all eight: `bench_fx_cpu --kind`, its chain and moving scenarios, with
+/// the 32-frame settings run three times and charged the median (one
+/// instance's p99 there moves by up to 200 ns a frame between runs). The
+/// Amp+Cab's heaviest use at 48 kHz / 32 is a setting that moves every
+/// block (its update redesigns its filters), not its kernel.
 ///
 /// A kind on the hop (the octaver, the Whammy, the Dual Octaver) does a
 /// quarter of its hop in every block up to 64 frames, so it costs more a
@@ -82,10 +86,10 @@ const Map<TrackEffectType, List<int>> kFxSettingCostNs = {
   TrackEffectType.octaver: [2172, 2172, 2048, 969, 1942, 1182, 1923, 1140],
   TrackEffectType.whammy: [2049, 2049, 1846, 965, 1933, 1170, 1852, 1151],
   TrackEffectType.dualOctaver: [2174, 2174, 1942, 1110, 2009, 1210, 1950, 1154],
-  TrackEffectType.overdrive: [904, 861, 903, 860, 522, 513, 540, 533],
-  TrackEffectType.distortion: [400, 393, 407, 392, 248, 247, 266, 272],
+  TrackEffectType.overdrive: [469, 449, 447, 443, 297, 291, 315, 336],
+  TrackEffectType.distortion: [272, 257, 266, 249, 225, 197, 232, 206],
   TrackEffectType.vinyl: [381, 374, 375, 374, 201, 200, 192, 203],
-  TrackEffectType.ampCab: [632, 563, 579, 491, 663, 479, 700, 504],
+  TrackEffectType.ampCab: [410, 361, 497, 361, 407, 322, 435, 347],
 };
 
 /// What the PSOLA kinds charge, in nanoseconds per frame at each of

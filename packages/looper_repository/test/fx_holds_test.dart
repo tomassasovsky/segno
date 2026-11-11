@@ -7,10 +7,10 @@ import 'package:segno_engine/segno_engine.dart' show LaneSource;
 
 import 'helpers/fake_audio_engine.dart';
 
-/// Ed's Rack, the plan's unit: 3,407 ns a frame at 96 kHz / 64 frames on the
-/// console's own table (#1508, #1724; 2,665 in the plan). The budget there is
-/// 6,834, so two fit on the callback and a third does not, and three fit the
-/// inputs with two workers and a fourth does not.
+/// Ed's Rack, the plan's unit: 3,053 ns a frame at 96 kHz / 64 frames on the
+/// console's own table (#1508, #1724, #1755; 2,665 in the plan). The budget
+/// there is 6,834, so two fit on the callback and a third does not, and four
+/// fit the inputs with two workers and a fifth does not.
 List<TrackEffect> _rack() => [
   for (final type in [
     TrackEffectType.dualOctaver,
@@ -99,7 +99,7 @@ void main() {
   });
 
   test("Ed's Rack charges what the tests assume", () {
-    expect(fxChainCostNs(_rack()), 3407);
+    expect(fxChainCostNs(_rack()), 3053);
     expect(fxBudgetNs(96000), 6834);
   });
 
