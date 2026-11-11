@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -1414,12 +1415,33 @@ class _DestinationChain extends StatelessWidget {
             (b) => _entriesAt(b.state, address),
           );
     final chainEnabled = watchFxChainEnabled(context, address);
+    // Rebuilt when what acts on the effects changes, not on every control
+    // frame: a jack's setup without its live switch states, and the selected
+    // track only for the bindings that follow it.
+    context.select<ControlCubit, Object>((c) {
+      final state = c.state;
+      final external = state.pedalSetup.external;
+      return (
+        state.bindings,
+        external.forJack(PedalCtrlJack.ctrl1),
+        external.forJack(PedalCtrlJack.ctrl2),
+        state.midiMappings,
+        state.midiControlEnabled,
+        state.cursor,
+      );
+    });
+    final assignments = fxAssignmentNames(
+      context.l10n,
+      context.read<ControlCubit>().state,
+      address,
+    );
     final strip = FxChainStrip(
       key: Key('fx_chain_${address.canonicalString()}'),
       entries: entries,
       chainEnabled: chainEnabled,
       controller: controller,
       showPlacement: destination.placementIsEditable,
+      assignments: assignments,
       onTogglePower: (group, {required enabled}) {
         final groups = fxChainGroups(entries);
         if (group < 0 || group >= groups.length) return;
