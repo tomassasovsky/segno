@@ -717,9 +717,10 @@ typedef enum le_fx_type {
    * second stage, then a tone filter; fit to the Guitar Rack's OvDrive
    * (#891). The Lo-Fi Rack's Distort is this at +4.08 dB (#1737). */
   LE_FX_OVERDRIVE = 16,
-  /* DISTORTION: p0 drive, p1 tone (0 to 100 %). The Looper X's amp
-   * simulator at its defaults (the Studio Rack's Dist): an asymmetric curve,
-   * then the 4x12" cabinet; fit to the Phase 0 amp captures (#891). */
+  /* DISTORTION: p0 drive, p1 tone (0 to 100 %). An amp simulator: an
+   * asymmetric curve, then the 4x12" cabinet; fit to the Phase 0 amp
+   * captures (#891). No factory rack builds it since #1737 and #1743;
+   * chains saved with it keep it. */
   LE_FX_DISTORTION = 17,
   /* VINYL: p0 drive, p1 frequency (50 to 5000 Hz), p2 noise, p3 noise tone.
    * A high-pass at the frequency, a 7 kHz roll-off, soft saturation, then
@@ -796,9 +797,10 @@ typedef enum le_fx_type {
    * BASS, 4x10", RADIO). The Looper X's Amp, fit to the #891 captures: an
    * input voicing, a square-law stage, Modern's voicing, a clipper whose
    * sides limit at different levels, Bass and Treble shelves after it, and
-   * the cabinet's measured response (zero-latency convolution; the first
-   * 4x10" plays the 2x12", as on the Looper X). Mono: the pair's average in,
-   * both sides out. */
+   * the cabinet's measured response (uniformly partitioned convolution; the
+   * first 4x10" plays the 2x12", as on the Looper X; the D.I. waits as long
+   * as a resampled cabinet starts late). Mono: the pair's average in, both
+   * sides out. The Studio Rack's Dist is this on the D.I. (#1743). */
   LE_FX_AMP_CAB = 29,
   /* MOD: p0 rate, p1 depth, p2 mix, p3 mode (a choice of 4: CHORUS, PHASER,
    * FLANGER, Tremolo). The Looper X's Mod pedal, fit to the #891 captures:
