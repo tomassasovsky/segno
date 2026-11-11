@@ -1850,4 +1850,28 @@ int le_pitch_ref_process(le_fx_state* fx, int slot, int32_t type, int sr,
   }
 }
 
+/* The transforms as they were, for the FFT's own comparison. */
+static ref_le_rfft_plan ref_plans[13];
+
+static const ref_le_rfft_plan* ref_plan(int n) {
+  int b = 0;
+  while ((1 << b) < n) ++b;
+  if (b >= 13 || !ref_le_rfft_plan_init(&ref_plans[b], n)) return NULL;
+  return &ref_plans[b];
+}
+
+int le_pitch_ref_rfft_fwd(int n, const float* x, float* re, float* im) {
+  const ref_le_rfft_plan* p = ref_plan(n);
+  if (p == NULL) return 0;
+  ref_le_rfft_fwd(p, x, re, im);
+  return 1;
+}
+
+int le_pitch_ref_rfft_inv(int n, const float* re, const float* im, float* y) {
+  const ref_le_rfft_plan* p = ref_plan(n);
+  if (p == NULL) return 0;
+  ref_le_rfft_inv(p, re, im, y);
+  return 1;
+}
+
 #endif /* LE_NATIVE_TESTS */

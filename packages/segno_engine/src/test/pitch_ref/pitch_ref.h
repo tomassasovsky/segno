@@ -16,4 +16,9 @@
 int le_pitch_ref_process(le_fx_state* fx, int slot, int32_t type, int sr,
                          int cap, float* l, float* r, const float* p);
 
+/* The real FFT as it was (fft.h), forward and inverse, for a length [n]
+ * that is a power of two from 4 to 4096; 0 for another. */
+int le_pitch_ref_rfft_fwd(int n, const float* x, float* re, float* im);
+int le_pitch_ref_rfft_inv(int n, const float* re, const float* im, float* y);
+
 #endif /* SEGNO_PITCH_REF_H */

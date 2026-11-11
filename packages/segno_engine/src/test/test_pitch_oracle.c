@@ -34,6 +34,7 @@
 
 #include "engine_fx.h"
 #include "engine_private.h"
+#include "fft.h"
 #include "pitch_ref/pitch_ref.h"
 #include "segno_engine_api.h"
 
@@ -363,6 +364,65 @@ static void compare(const char* what, const float* a, const float* b,
   g_fail = 1;
 }
 
+/* ---- The FFT alone ---- */
+
+/* One input of [n] floats of kind [kind]: noise at several scales, tones,
+ * sparse values with zeros of both signs, denormals, and huge values. */
+static void fft_input(float* x, int n, int kind) {
+  for (int i = 0; i < n; ++i) {
+    const double u = po_noise();
+    switch (kind % 6) {
+      case 0: x[i] = (float)u; break;
+      case 1: x[i] = (float)(1e-3 * u + sin(0.37 * i) + 0.5 * cos(2.9 * i)); break;
+      case 2: x[i] = u > 0.6 ? (float)u : (u < -0.6 ? -0.0f : 0.0f); break;
+      case 3: x[i] = (float)(u * 1e-39); break;
+      case 4: x[i] = (float)(u * 1e30); break;
+      default: x[i] = (float)(u * pow(10.0, 8.0 * po_noise())); break;
+    }
+  }
+}
+
+/* The live transforms (fft.h, NEON on arm64 under Clang) against the ones
+ * before #1755 (pitch_ref.c), bit for bit, both ways, at every length a
+ * plan holds. */
+static void test_fft(void) {
+  static le_rfft_plan plan;
+  static float x[LE_FFT_MAX_N], re[LE_FFT_MAX_N / 2 + 1], im[LE_FFT_MAX_N / 2 + 1];
+  static float re2[LE_FFT_MAX_N / 2 + 1], im2[LE_FFT_MAX_N / 2 + 1];
+  static float y[LE_FFT_MAX_N], y2[LE_FFT_MAX_N];
+  int bad = 0;
+  for (int n = 4; n <= 4096; n *= 2) {
+    if (!le_rfft_plan_init(&plan, n)) {
+      printf("  fft %d: no plan\n", n);
+      g_fail = 1;
+      continue;
+    }
+    plan.n = 0; /* the next length builds afresh */
+    le_rfft_plan_init(&plan, n);
+    for (int t = 0; t < 120; ++t) {
+      fft_input(x, n, t);
+      le_rfft_fwd(&plan, x, re, im);
+      le_pitch_ref_rfft_fwd(n, x, re2, im2);
+      if (memcmp(re, re2, sizeof(float) * (size_t)(n / 2 + 1)) != 0 ||
+          memcmp(im, im2, sizeof(float) * (size_t)(n / 2 + 1)) != 0) {
+        ++bad;
+      }
+      fft_input(re, n / 2 + 1, t + 1);
+      fft_input(im, n / 2 + 1, t + 2);
+      le_rfft_inv(&plan, re, im, y);
+      le_pitch_ref_rfft_inv(n, re, im, y2);
+      if (memcmp(y, y2, sizeof(float) * (size_t)n) != 0) ++bad;
+    }
+    plan.n = 0;
+  }
+  if (bad) {
+    printf("  fft: %d transforms differ from the ones before #1755\n", bad);
+    g_fail = 1;
+  } else {
+    printf("  fft, 4 to 4096 points, both ways          bit-identical\n");
+  }
+}
+
 static float* read_take(const char* path, int64_t* n) {
   FILE* f = fopen(path, "rb");
   if (f == NULL) {
@@ -400,6 +460,7 @@ int main(int argc, char** argv) {
   }
   printf("test_pitch_oracle: the pitch kinds against their kernels before "
          "#1755%s\n", scale < 1.0 ? " (CI subset)" : "");
+  test_fft();
   for (size_t ri = 0; ri < sizeof(k_rates) / sizeof(k_rates[0]); ++ri) {
     const int sr = k_rates[ri];
     int64_t n = 0;
