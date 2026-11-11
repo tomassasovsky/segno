@@ -7,9 +7,9 @@ import 'package:segno/control/model/foot_fx.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/fx_names.dart';
 import 'package:segno/looper/view/foot_pedal_rows.dart';
 import 'package:segno/looper/view/foot_top_bar.dart';
-import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/performance_pedal.dart';
 import 'package:segno/theme/theme.dart';
 

@@ -3,8 +3,8 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
+import 'package:segno/looper/model/fx_names.dart';
 import 'package:segno/looper/view/fx/fx_art_view.dart';
-import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The pen's rack card geometry (`01 Effects · destinations`, sound-grid).

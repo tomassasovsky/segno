@@ -286,7 +286,11 @@ class ExpressionDestination extends Equatable {
   FxParamTarget(:final address, :final slotId, :final param) => (
     destination: fxStageLabel(l10n, trackNames, address),
     group:
-        fxSlotName(looper, FxSlotTarget(address: address, slotId: slotId)) ??
+        fxSlotName(
+          l10n,
+          looper,
+          FxSlotTarget(address: address, slotId: slotId),
+        ) ??
         slotId,
     control: fxParamName(l10n, looper, target) ?? '#$param',
   ),
@@ -466,7 +470,7 @@ String expressionActivationName(
   FxChainTarget() => l10n.externalActivationChain,
   final FxRackTarget rack =>
     fxRackName(looper, rack) ?? l10n.externalActivationRack,
-  final FxSlotTarget slot => fxSlotName(looper, slot) ?? slot.slotId,
+  final FxSlotTarget slot => fxSlotName(l10n, looper, slot) ?? slot.slotId,
 };
 
 /// The destination's label for [address], the way [expressionTargetName] names

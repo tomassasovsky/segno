@@ -380,6 +380,33 @@ void main() {
     );
   });
 
+  testWidgets('a slot target on a rack pedal reads as its module, not the '
+      'kind it is built on (#1750)', (tester) async {
+    const grubby = FxRack(id: 'r1', name: 'Grubby');
+    const slot = FxSlotTarget(
+      address: FxAddress(stage: FxStage.input, index: 1),
+      slotId: 'distort',
+    );
+    when(() => repository.monitorEffects(1)).thenReturn([
+      BuiltInEffect(
+        type: TrackEffectType.overdrive,
+        rack: grubby,
+        slotId: 'distort',
+        module: 'Distortion',
+      ),
+      BuiltInEffect(type: TrackEffectType.lpf, rack: grubby, module: 'LPF'),
+    ]);
+    given(
+      ControlState(
+        mode: InteractionMode.fx,
+        globalBindings: PedalBindingSet([bind(PedalButton.track2, slot)]),
+      ),
+    );
+    await pump(tester);
+    expect(within(PedalButton.track2, 'Distortion'), findsOneWidget);
+    expect(within(PedalButton.track2, 'Overdrive'), findsNothing);
+  });
+
   test('the projection reads the published switch values', () {
     final pedals = projectFootFx(
       ControlState(

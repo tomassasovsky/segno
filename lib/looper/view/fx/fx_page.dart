@@ -24,6 +24,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
+import 'package:segno/looper/model/fx_names.dart';
 import 'package:segno/looper/view/audio_routing/audio_routing_widgets.dart';
 import 'package:segno/looper/view/fx/fx_chain_power.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
@@ -276,7 +277,7 @@ class _FxViewState extends State<FxView> {
                 for (final fx in group.entries)
                   FxReorderCard(
                     id: fx.slotId ?? '',
-                    name: fxPedalName(l10n, fx),
+                    name: fxBlockName(l10n, fx),
                     // Still: the reorder page is not rebuilt when a setting
                     // changes.
                     art: fxEntryArt(fx, live: false),
@@ -296,7 +297,7 @@ class _FxViewState extends State<FxView> {
             for (final fx in group.entries)
               FxOption(
                 id: fx.slotId ?? '',
-                label: fxPedalName(l10n, fx),
+                label: fxBlockName(l10n, fx),
               ),
           ],
         );
@@ -525,7 +526,7 @@ class _FxViewState extends State<FxView> {
     FxChainGroup group,
   ) async {
     final l10n = context.l10n;
-    final name = fxPedalName(l10n, group.entries.first);
+    final name = fxBlockName(l10n, group.entries.first);
     final choice = await showFxOptionsSheet(
       context,
       title: l10n.fxEffectOptions,
