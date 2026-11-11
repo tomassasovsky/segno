@@ -114,10 +114,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   so a cancelled re-render keeps an earlier render's stems; a render that
   runs to its end removes any stem it did not publish, so a bundle never
   mixes two renders. The render handle is its own engine field
-  (`perf_render`), outside the capture state a reconfigure resets. A master past the
-  32-bit WAV sizes (stereo over 3 h 6 min at 48 kHz) is not rendered and the
-  stems stand; a master that could not be written is left out without
-  failing the tracks, as before.
+  (`perf_render`), outside the capture state a reconfigure resets.
+- A master past the 32-bit WAV sizes (stereo over 3 h 6 min at 48 kHz) is
+  not rendered and the stems stand; a master that could not be written is
+  left out without failing the tracks, as before.
 
 ## November 2026 The Studio Dist and the Overdrive's polarity (#1743)
 
