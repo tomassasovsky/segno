@@ -951,6 +951,7 @@ class PerformanceRepository {
   /// [runBootRecovery], salvaging the bundles in [retry] even though they
   /// are marked failed ([retryUnrecovered]).
   Future<void> _sweep(Set<String> retry) async {
+    final previous = _unrecovered.toSet();
     _unrecovered.clear();
     final String root;
     try {
@@ -988,11 +989,17 @@ class PerformanceRepository {
       // render, and the bundle would land in the recovered area stemless
       // with its marker gone. Stop; the remainder waits for the next boot.
       if (_armedDir != null || _armInFlight || !renderProgress.done) {
-        // Those marked failed are still not recovered, and still marked.
+        // What this sweep does not reach and was not recovered (counted
+        // before, or marked failed) still is not.
         _unrecovered.addAll(
           pending
               .skip(i)
-              .where((d) => File('$d/$recoveryFailedName').existsSync()),
+              .where(
+                (d) =>
+                    previous.contains(d) ||
+                    File('$d/$recoveryFailedName').existsSync() ||
+                    _attemptsBegun(d) >= 2,
+              ),
         );
         return;
       }

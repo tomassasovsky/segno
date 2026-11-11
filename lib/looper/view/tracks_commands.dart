@@ -616,12 +616,15 @@ void onPerformanceRecorderState(
   if (state is PerformanceRecorderIdle && state.notRecovered > 0) {
     final count = state.notRecovered;
     final recorder = context.read<PerformanceRecorderCubit>();
+    final notices = context.read<NoticesCubit>();
     say(
       (l10n) => l10n.perfTakesNotRecovered(count),
       body: (l10n) => l10n.perfTakesNotRecoveredBody(count),
       action: NoticeAction(
         label: (l10n) => l10n.consoleTryAgain,
-        onPressed: () => unawaited(recorder.retryRecovery()),
+        onPressed: () => unawaited(
+          retryRecoveryWithNotices(recorder, notices, count),
+        ),
       ),
     );
     return;
@@ -640,6 +643,36 @@ void onPerformanceRecorderState(
     } else {
       unawaited(showPerformanceCompletionSheet(context));
     }
+  }
+}
+
+/// Try again on the notice that says [count] takes could not be recovered
+/// (#1747): says the salvage has started, in the failure's place, and that
+/// the takes were recovered when none is left. A take still not recovered
+/// is said again by the recorder's settled state.
+Future<void> retryRecoveryWithNotices(
+  PerformanceRecorderCubit recorder,
+  NoticesCubit notices,
+  int count,
+) async {
+  notices.show(
+    Notice(
+      id: AppNoticeId.performance,
+      title: (l10n) => l10n.perfTakesRecovering(count),
+    ),
+  );
+  await recorder.retryRecovery();
+  final settled = recorder.state;
+  if (settled is PerformanceRecorderIdle &&
+      !settled.recovering &&
+      settled.notRecovered == 0) {
+    notices.show(
+      Notice(
+        id: AppNoticeId.performance,
+        tone: NoticeTone.success,
+        title: (l10n) => l10n.perfTakesRecovered(count),
+      ),
+    );
   }
 }
 

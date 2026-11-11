@@ -40,7 +40,7 @@ extern "C" {
 typedef struct le_engine le_engine; /* opaque; full definition in engine_private.h */
 
 /* Opaque render-session handle, one per active render. Owned by
- * `engine->perf.render` (engine_private.h), the same per-engine ownership
+ * `engine->perf_render` (engine_private.h), the same per-engine ownership
  * model as `engine->perf.drain`. */
 typedef struct le_perf_render le_perf_render;
 

@@ -7,12 +7,12 @@
  * perf_render.c — see perf_render.h.
  *
  * CONTROL-THREAD OWNERSHIP for le_perf_render_begin/poll/track_status/cancel
- * (the only callers touching `engine->perf.render`). Everything between
+ * (the only callers touching `engine->perf_render`). Everything between
  * begin and done/cancel runs on the dedicated render worker thread this file
  * spawns; the worker never touches the audio callback, the command ring, or
  * any live engine state — it reads exclusively from the capture directory on
  * disk (see perf_render.h), so a render has no live-engine dependency at all
- * beyond the `engine*` handle used to reach `engine->perf.render` from the
+ * beyond the `engine*` handle used to reach `engine->perf_render` from the
  * control-thread API calls.
  *
  * Dry pass (part 7): a per-track stem is reconstructed as unity-gain loop
@@ -55,6 +55,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h> /* nanosleep (le_perf_render_hold_for_test) */
 
 #include "engine_wav.h"      /* le_wav_open/append/seal: the one WAV writer,
                               * whose output is byte-identical to
@@ -2630,6 +2631,30 @@ void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
                         memory_order_relaxed);
 }
 
+/* Test-only: while set, the render worker waits after each block (a cancel
+ * still ends it), so a test acts on a render known to be mid-way.
+ * g_pr_held_for_test reads 1 once a worker is waiting. */
+static _Atomic int g_pr_hold_for_test = 0;
+static _Atomic int g_pr_held_for_test = 0;
+
+void le_perf_render_hold_for_test(int hold) {
+  if (hold) atomic_store_explicit(&g_pr_held_for_test, 0, memory_order_release);
+  atomic_store_explicit(&g_pr_hold_for_test, hold, memory_order_release);
+}
+
+int le_perf_render_held_for_test(void) {
+  return atomic_load_explicit(&g_pr_held_for_test, memory_order_acquire);
+}
+
+static void le_pr_sleep_ms(int ms) {
+#if defined(_WIN32)
+  Sleep((DWORD)ms);
+#else
+  struct timespec ts = {ms / 1000, (long)(ms % 1000) * 1000000L};
+  nanosleep(&ts, NULL);
+#endif
+}
+
 /* The frames a render works on at once (#1747): every buffer the render
  * holds is this long, whatever the capture's length, so a capture of hours
  * renders in the memory a capture of seconds does. */
@@ -2642,6 +2667,7 @@ void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
 typedef struct le_pr_stem_file {
   le_wav_writer w;
   int open;
+  int published; /* this render's stem is at `path` */
   char path[LE_PR_FULL_PATH_MAX];
   char part[LE_PR_FULL_PATH_MAX + 8];
 } le_pr_stem_file;
@@ -2666,15 +2692,25 @@ static void le_pr_stem_drop(le_pr_stem_file* s) {
   s->open = 0;
 }
 
-/* Seals the stem and publishes it at its path. Returns 1 when it is there. */
+/* Seals the stem (its data synced first, so a power cut after the rename
+ * cannot leave a stem shorter than its header says) and publishes it at its
+ * path. Returns 1 when it is there. */
 static int le_pr_stem_seal(le_pr_stem_file* s) {
   if (!s->open) return 0;
   s->open = 0;
-  if (!le_wav_seal(&s->w, 0) || le_wav_publish(s->part, s->path) == 0) {
+  if (!le_wav_seal(&s->w, 1) || le_wav_publish(s->part, s->path) == 0) {
     remove(s->part);
     return 0;
   }
+  s->published = 1;
   return 1;
+}
+
+/* After a render that ran to its end: a stem it did not publish is removed,
+ * so what is on disk is this render's alone, never an earlier render's stem
+ * beside this one's. */
+static void le_pr_stem_settle(const le_pr_stem_file* s, const char* path) {
+  if (!s->published) remove(path);
 }
 
 /* One channel's stems while the render runs: its reconstruction (dry, and
@@ -2689,6 +2725,8 @@ typedef struct le_pr_channel_run {
   le_pr_wet_run* wet;         /* NULL: no wet stem is written */
   le_pr_stem_file dry_file;
   le_pr_stem_file wet_file;
+  char dry_path[LE_PR_FULL_PATH_MAX]; /* where its stems go, opened or not */
+  char wet_path[LE_PR_FULL_PATH_MAX];
   int ok;        /* both stems are on course */
   int in_master; /* its routed contribution is summed into the master */
   int summed;    /* and some of it already is */
@@ -2712,6 +2750,10 @@ static void le_pr_channel_open(le_pr_channel_run* c, const char* dir,
                                int32_t channel) {
   memset(c, 0, sizeof(*c));
   c->channel = channel;
+  snprintf(c->dry_path, sizeof(c->dry_path), "%s/track%d.wav", dry_dir,
+           channel);
+  snprintf(c->wet_path, sizeof(c->wet_path), "%s/track%d.wav", wet_dir,
+           channel);
   c->runs = (le_pr_gate_runs*)calloc(1, sizeof(le_pr_gate_runs));
   c->dry = c->runs == NULL
                ? NULL
@@ -2751,20 +2793,17 @@ static void le_pr_channel_open(le_pr_channel_run* c, const char* dir,
     c->heard_r_buf = p + 5 * b;
     c->heard_buf = (uint8_t*)(p + 6 * b);
   }
-  char path[LE_PR_FULL_PATH_MAX];
   int dry_ok = 0;
   if (atomic_load_explicit(&g_pr_force_dry_write_failure_channel,
                            memory_order_relaxed) != channel) {
-    snprintf(path, sizeof(path), "%s/track%d.wav", dry_dir, channel);
-    dry_ok = le_pr_stem_open(&c->dry_file, path, m->sample_rate, 1);
+    dry_ok = le_pr_stem_open(&c->dry_file, c->dry_path, m->sample_rate, 1);
   }
   /* else test-only: a dry-write I/O failure on this one channel without
    * touching the filesystem (le_perf_render_force_dry_write_failure_for_test,
    * above). */
   if (!heard_failed) c->wet = le_pr_wet_open(m, log, log_count, channel);
   if (c->wet != NULL) {
-    snprintf(path, sizeof(path), "%s/track%d.wav", wet_dir, channel);
-    if (!le_pr_stem_open(&c->wet_file, path, m->sample_rate, 1)) {
+    if (!le_pr_stem_open(&c->wet_file, c->wet_path, m->sample_rate, 1)) {
       le_pr_wet_close(c->wet);
       c->wet = NULL;
     }
@@ -2830,6 +2869,8 @@ static void le_pr_channel_render(le_pr_channel_run* c, const le_pr_manifest* m,
 static void le_pr_channel_seal(le_pr_channel_run* c) {
   if (c->dry_file.open && !le_pr_stem_seal(&c->dry_file)) c->ok = 0;
   if (c->wet_file.open && !le_pr_stem_seal(&c->wet_file)) c->ok = 0;
+  le_pr_stem_settle(&c->dry_file, c->dry_path);
+  le_pr_stem_settle(&c->wet_file, c->wet_path);
 }
 
 static void le_pr_worker_main(void* arg) {
@@ -2841,7 +2882,7 @@ static void le_pr_worker_main(void* arg) {
   le_json_value* root = NULL;
   le_json_arena arena = {0};
   le_pr_manifest manifest = {0};
-  const int32_t status =
+  int32_t status =
       le_pr_load_manifest(r->capture_dir, &text, &arena, &root, &manifest);
   const int loaded = status == LE_OK;
 
@@ -2869,6 +2910,11 @@ static void le_pr_worker_main(void* arg) {
           ? (float*)malloc((size_t)LE_PR_BLOCK_FRAMES * 2 * sizeof(float))
           : NULL;
 
+  /* A render that cannot allocate its state is a failed render, not an
+   * empty one: no track would say so. */
+  if (channel_count > 0 && (runs == NULL || master_buf == NULL)) {
+    status = LE_ERR_DEVICE;
+  }
   if (runs != NULL && master_buf != NULL) {
     char dry_dir[LE_PR_FULL_PATH_MAX];
     snprintf(dry_dir, sizeof(dry_dir), "%s/stems/dry", r->capture_dir);
@@ -2895,9 +2941,11 @@ static void le_pr_worker_main(void* arg) {
     le_pr_master_run* master =
         le_pr_master_open(&manifest, log, log_count);
     le_pr_stem_file master_file = {0};
-    if (master != NULL && master_fits) {
-      char master_path[LE_PR_FULL_PATH_MAX];
-      snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
+    char master_path[LE_PR_FULL_PATH_MAX];
+    snprintf(master_path, sizeof(master_path), "%s/master.wav", wet_dir);
+    /* An output chain that could not be set up fails the master from the
+     * start: it is not rendered only to be thrown away. */
+    if (master != NULL && master->ok && master_fits) {
       le_pr_stem_open(&master_file, master_path, manifest.sample_rate,
                       master_channels);
     }
@@ -2934,6 +2982,9 @@ static void le_pr_worker_main(void* arg) {
       if (master_file.open) {
         le_pr_master_render(master, &manifest, log, log_count, f0, n,
                             master_buf);
+        if (!master->ok) le_pr_stem_drop(&master_file); /* see the seal */
+      }
+      if (master_file.open) {
         if (master_channels == 1) {
           for (int32_t j = 0; j < n; ++j) master_buf[j] = master_buf[2*j+side];
         }
@@ -2944,6 +2995,12 @@ static void le_pr_worker_main(void* arg) {
       f0 += (uint64_t)n;
       atomic_store_explicit(&r->progress_pct, (int)(f0 * 100 / total),
                             memory_order_relaxed);
+      /* Test-only: stop between blocks while a test holds the render. */
+      while (atomic_load_explicit(&g_pr_hold_for_test, memory_order_acquire) &&
+             atomic_load_explicit(&r->running, memory_order_acquire)) {
+        atomic_store_explicit(&g_pr_held_for_test, 1, memory_order_release);
+        le_pr_sleep_ms(1);
+      }
     }
 
     if (!cancelled) {
@@ -2964,9 +3021,9 @@ static void le_pr_worker_main(void* arg) {
        * did: no master, and every track reported failed. A master that only
        * could not be written is left out and the stems stand. */
       const int master_rendered = master != NULL && master->ok;
-      if (master_rendered) {
-        le_pr_stem_seal(&master_file);
-      } else {
+      if (master_file.open) le_pr_stem_seal(&master_file);
+      le_pr_stem_settle(&master_file, master_path);
+      if (!master_rendered) {
         for (int i = 0; i < channel_count; ++i)
           atomic_store_explicit(&r->results[i].succeeded, 0,
                                 memory_order_release);
@@ -2998,16 +3055,16 @@ int32_t le_perf_render_begin(le_engine* engine, const char* capture_dir) {
   if (engine == NULL || capture_dir == NULL || capture_dir[0] == '\0') {
     return LE_ERR_INVALID;
   }
-  if (engine->perf.render != NULL &&
-      !atomic_load_explicit(&engine->perf.render->done, memory_order_acquire)) {
+  if (engine->perf_render != NULL &&
+      !atomic_load_explicit(&engine->perf_render->done, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
   }
-  if (engine->perf.render != NULL) {
+  if (engine->perf_render != NULL) {
     /* A finished-but-unreaped session from a prior render: join and free it
      * before starting a new one (mirrors le_perf_drain's reaping). */
-    le_pr_thread_join(engine->perf.render->thread);
-    free(engine->perf.render);
-    engine->perf.render = NULL;
+    le_pr_thread_join(engine->perf_render->thread);
+    free(engine->perf_render);
+    engine->perf_render = NULL;
   }
 
   le_perf_render* r = (le_perf_render*)calloc(1, sizeof(le_perf_render));
@@ -3024,14 +3081,14 @@ int32_t le_perf_render_begin(le_engine* engine, const char* capture_dir) {
     return LE_ERR_DEVICE;
   }
 
-  engine->perf.render = r;
+  engine->perf_render = r;
   return LE_OK;
 }
 
 int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
                             int32_t* progress_pct, int32_t* track_count) {
   if (engine == NULL) return LE_ERR_INVALID;
-  le_perf_render* r = engine->perf.render;
+  le_perf_render* r = engine->perf_render;
   if (r == NULL) {
     if (done != NULL) *done = 1;
     if (progress_pct != NULL) *progress_pct = 100;
@@ -3053,7 +3110,7 @@ int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
 int32_t le_perf_render_track_status(le_engine* engine, int32_t index,
                                     int32_t* channel, int32_t* succeeded) {
   if (engine == NULL || index < 0) return LE_ERR_INVALID;
-  le_perf_render* r = engine->perf.render;
+  le_perf_render* r = engine->perf_render;
   if (r == NULL || index >= atomic_load_explicit(&r->track_count,
                                                  memory_order_acquire)) {
     return LE_ERR_INVALID;
@@ -3071,11 +3128,11 @@ int32_t le_perf_render_track_status(le_engine* engine, int32_t index,
 
 int32_t le_perf_render_cancel(le_engine* engine) {
   if (engine == NULL) return LE_ERR_INVALID;
-  le_perf_render* r = engine->perf.render;
+  le_perf_render* r = engine->perf_render;
   if (r == NULL) return LE_OK;
   atomic_store_explicit(&r->running, 0, memory_order_release);
   le_pr_thread_join(r->thread);
   free(r);
-  engine->perf.render = NULL;
+  engine->perf_render = NULL;
   return LE_OK;
 }

@@ -40290,6 +40290,7 @@ int main(void) {
   test_perf_render_memory_is_bounded();
   test_perf_render_cancel_leaves_no_partial_stem();
   test_perf_render_runs_through_reconfigure();
+  test_perf_render_rerender_leaves_only_its_own_stems();
   test_perf_render_concurrent_with_live_engine();
   test_perf_render_partial_success();
   test_perf_render_missing_or_corrupt_manifest();

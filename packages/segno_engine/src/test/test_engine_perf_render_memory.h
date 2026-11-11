@@ -156,27 +156,23 @@ static void render_memory_check_stems(const char* dir, uint64_t frames) {
   CHECK(fabsf(v - 0.45f) < 1e-6f);
 }
 
-/* Polls [e]'s render until it has passed its first blocks, so a call made
- * next lands while it runs. */
-static void render_memory_wait_started(le_engine* e) {
-  for (int i = 0; i < 20000; ++i) {
-    int32_t done = 0, progress = 0;
-    le_perf_render_poll(e, &done, &progress, NULL);
-    if (done || progress >= 1) return;
+/* Begins a render of [dir] on [e] held after its first block
+ * (le_perf_render_hold_for_test), so what the test does next lands while it
+ * runs whatever the machine's speed. The caller releases the hold. */
+static void render_memory_begin_held(le_engine* e, const char* dir) {
+  le_perf_render_hold_for_test(1);
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  for (int i = 0; i < 60000 && !le_perf_render_held_for_test(); ++i) {
     test_sleep_ms(1);
   }
+  CHECK(le_perf_render_held_for_test());
 }
 
-/* 8M frames (2 min 47 s at 48 kHz) over two tracks, one with a heard image:
- * the render's memory does not grow with the capture. Rendered whole, each
- * track held 33 bytes a frame (its dry and wet stems, both heard sides, the
- * heard marks, the routed pair) beside an 8-byte master: over 264 MB here,
- * 8.7 GB for the 1 h 36 min capture that ran the console out of memory. A
- * block at a time it holds a few megabytes whatever the length. */
-static void test_perf_render_memory_is_bounded(void) {
-  printf("test_perf_render_memory_is_bounded\n");
-  enum { FRAMES = 8000000 };
-  const char* dir = render_memory_fixture("memory-bounded", FRAMES);
+/* Renders [frames] frames of the two-track fixture on a fresh engine and
+ * returns how far the process's memory rose above where it stood when the
+ * render began (-1 where it cannot be read), the stems checked whole. */
+static int64_t render_memory_growth(const char* name, uint64_t frames) {
+  const char* dir = render_memory_fixture(name, frames);
   le_engine* e = le_engine_create();
   const int64_t before = render_memory_now();
   int64_t peak = before;
@@ -197,18 +193,38 @@ static void test_perf_render_memory_is_bounded(void) {
     CHECK(le_perf_render_track_status(e, i, &channel, &succeeded) == LE_OK);
     CHECK(succeeded == 1);
   }
-  render_memory_check_stems(dir, FRAMES);
-  if (before >= 0) {
-    const int64_t grew = peak - before;
-    printf("  render grew the process by %.1f MB over %d frames\n",
-           (double)grew / 1048576.0, FRAMES);
-    /* Less than ONE mono stem of the capture (32 MB). */
-    CHECK(grew < (int64_t)16 * 1024 * 1024);
-  } else {
-    printf("  (memory not measurable on this platform)\n");
-  }
+  render_memory_check_stems(dir, frames);
   le_engine_destroy(e);
   render_memory_clean(dir);
+  return before >= 0 ? peak - before : -1;
+}
+
+/* 8M frames (2 min 47 s at 48 kHz) over two tracks, one with a heard image:
+ * the render's memory does not grow with the capture. Rendered whole, each
+ * track held 33 bytes a frame (its dry and wet stems, both heard sides, the
+ * heard marks, the routed pair) beside an 8-byte master: 264 MB here and
+ * 33 MB for the 1M-frame capture it is measured against, 8.7 GB for the
+ * 1 h 36 min capture that ran the console out of memory. A block at a time
+ * the two hold the same. Measured against a short capture in the same
+ * build, not as an absolute, so a sanitizer's shadow memory and quarantine
+ * (which scale with what the render allocates, not with the capture) count
+ * in both. */
+static void test_perf_render_memory_is_bounded(void) {
+  printf("test_perf_render_memory_is_bounded\n");
+  enum { SHORT = 1000000, LONG = 8000000 };
+  const int64_t short_grew = render_memory_growth("memory-short", SHORT);
+  const int64_t long_grew = render_memory_growth("memory-long", LONG);
+  if (short_grew < 0 || long_grew < 0) {
+    printf("  (memory not measurable on this platform)\n");
+    return;
+  }
+  printf("  render grew the process by %.1f MB over %d frames, %.1f MB over "
+         "%d\n",
+         (double)short_grew / 1048576.0, SHORT, (double)long_grew / 1048576.0,
+         LONG);
+  /* Rendered whole, the long one held 231 MB more; a block at a time, the
+   * difference is below half a mono stem of it (32 MB). */
+  CHECK(long_grew - short_grew < (int64_t)16 * 1024 * 1024);
 }
 
 /* A cancel is seen at the next block, and the stems it had begun are
@@ -228,12 +244,12 @@ static void test_perf_render_cancel_leaves_no_partial_stem(void) {
                                       "stems/wet/master.wav.part"};
   for (int pass = 0; pass < 2; ++pass) {
     le_engine* e = le_engine_create();
-    CHECK(le_perf_render_begin(e, dir) == LE_OK);
-    render_memory_wait_started(e);
+    render_memory_begin_held(e, dir);
     int32_t done = 0;
     le_perf_render_poll(e, &done, NULL, NULL);
     CHECK(done == 0); /* the cancel lands mid-render */
     CHECK(le_perf_render_cancel(e) == LE_OK);
+    le_perf_render_hold_for_test(0);
     for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); ++i) {
       CHECK(!render_memory_exists(dir, parts[i]));
     }
@@ -265,14 +281,14 @@ static void test_perf_render_runs_through_reconfigure(void) {
   enum { FRAMES = 8000000 };
   const char* dir = render_memory_fixture("memory-reconfigure", FRAMES);
   le_engine* e = make_configured_engine();
-  CHECK(le_perf_render_begin(e, dir) == LE_OK);
-  render_memory_wait_started(e);
+  render_memory_begin_held(e, dir);
   int32_t done = 0;
   le_perf_render_poll(e, &done, NULL, NULL);
   CHECK(done == 0); /* the reconfigure lands mid-render */
   CHECK(le_engine_configure(e, 48000, 1, 1, 1000) == LE_OK);
   le_perf_render_poll(e, &done, NULL, NULL);
   CHECK(done == 0); /* still rendering: not joined, not cancelled */
+  le_perf_render_hold_for_test(0);
   test_wait_for_render(e, 600000);
   int32_t track_count = 0;
   CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
@@ -284,6 +300,36 @@ static void test_perf_render_runs_through_reconfigure(void) {
     CHECK(succeeded == 1);
   }
   render_memory_check_stems(dir, FRAMES);
+  le_engine_destroy(e);
+  render_memory_clean(dir);
+}
+
+/* A re-render leaves only its own stems: one it could not write takes the
+ * earlier render's away, so a bundle never mixes two renders' stems. */
+static void test_perf_render_rerender_leaves_only_its_own_stems(void) {
+  printf("test_perf_render_rerender_leaves_only_its_own_stems\n");
+  enum { FRAMES = 200000 };
+  const char* dir = render_memory_fixture("memory-rerender", FRAMES);
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 60000);
+  render_memory_check_stems(dir, FRAMES);
+
+  le_perf_render_force_dry_write_failure_for_test(0);
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 60000);
+  le_perf_render_force_dry_write_failure_for_test(-1);
+
+  CHECK(!render_memory_exists(dir, "stems/dry/track0.wav")); /* the old one */
+  float v = 0.0f;
+  CHECK(render_memory_stem(dir, "stems/wet/track0.wav", FRAMES - 1, 1, &v) ==
+        (int64_t)FRAMES);
+  CHECK(render_memory_stem(dir, "stems/dry/track1.wav", FRAMES - 1, 1, &v) ==
+        (int64_t)FRAMES);
+  /* The master is this render's: track 1 alone, track 0 failed. */
+  CHECK(render_memory_stem(dir, "stems/wet/master.wav", FRAMES - 1, 1, &v) ==
+        (int64_t)FRAMES);
+  CHECK(fabsf(v - 0.25f) < 1e-6f);
   le_engine_destroy(e);
   render_memory_clean(dir);
 }

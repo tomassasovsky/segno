@@ -479,14 +479,11 @@ static void le_engine_quiesce_workers(le_engine* engine) {
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DEVICE_CHANGED);
     engine->perf.drain = NULL;
   }
-  /* An offline render goes on through a reconfigure (#1747): it reads only
-   * its capture directory, never the device or the engine's state, so the
-   * handle is carried across the struct zero below (losing it would orphan
-   * its worker, uncancellable and unpollable). Cancelling it here joined a
+  /* An offline render (engine->perf_render, outside `perf`) goes on
+   * through a reconfigure (#1747): it reads only its capture directory,
+   * never the device or the engine's state. Cancelling it here joined a
    * worker that was rendering a whole stem, holding the audio start for as
-   * long, and then dropped the boot recovery's stems. le_engine_destroy
-   * still cancels it. */
-  le_perf_render* const render = engine->perf.render;
+   * long, and then dropped the boot recovery's stems. */
   le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
@@ -496,7 +493,6 @@ static void le_engine_quiesce_workers(le_engine* engine) {
    * ring — free them before the struct zero below loses the pointers. */
   le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
   engine->perf = (le_perf_capture){0};
-  engine->perf.render = render;
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
@@ -1616,7 +1612,7 @@ void le_engine_destroy(le_engine* engine) {
   /* Layers staged after the drain thread died (self-stop on write failure)
    * have no consumer left — free them now that the thread is joined. */
   le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
-  /* Cancel+join any active render before this engine (and its perf.render
+  /* Cancel+join any active render before this engine (and its perf_render
    * handle) is freed: its worker must not outlive the handle. */
   le_perf_render_cancel(engine);
   le_audio_ring_release(&engine->perf.master_ring);

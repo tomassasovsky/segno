@@ -5992,9 +5992,10 @@ class SegnoEngineBindings {
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
   /// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
-  /// track, then `stems/wet/master.wav` once every channel has been processed,
-  /// with poll-based progress. Returns LE_OK once the worker thread is
-  /// launched (this call never blocks on the render itself), LE_ERR_INVALID
+  /// track, and `stems/wet/master.wav`, all a block at a time together (#1747),
+  /// each published at its path once it seals, with poll-based progress.
+  /// Returns LE_OK once the worker thread is launched (this call never blocks
+  /// on the render itself), LE_ERR_INVALID
   /// for a null engine/capture_dir or an empty capture_dir, or
   /// LE_ERR_ALREADY_RUNNING if a render is already active on this engine.
   int le_perf_render_begin(

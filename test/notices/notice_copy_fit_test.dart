@@ -296,6 +296,12 @@ final _messages = <_Copy>[
     body: (l) => l.perfTakesNotRecoveredBody(3),
     action: (l) => l.consoleTryAgain,
   ),
+  _copy(
+    'recovering',
+    (l) => l.perfTakesRecovering(3),
+    tone: NoticeTone.neutral,
+  ),
+  _copy('recovered', (l) => l.perfTakesRecovered(3), tone: NoticeTone.success),
   _copy('discarded', (l) => l.perfDiscarded, tone: NoticeTone.neutral),
   for (final gate in [
     LooperModeGate.capturing,

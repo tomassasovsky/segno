@@ -2119,13 +2119,6 @@ typedef struct le_perf_capture {
    * definition) — control-thread lifecycle only; engine_process.c never
    * touches it. NULL when not armed. */
   struct le_perf_drain* drain;
-
-  /* The offline render worker (perf_render.h, part 7) — independent of the
-   * arm/disarm/drain lifecycle above: a render reads only a finalized
-   * capture directory from disk, never live engine state, so it can run
-   * whether or not this engine is currently armed. Opaque here (perf_render.c
-   * owns the definition). NULL when no render is active. */
-  struct le_perf_render* render;
 } le_perf_capture;
 
 /* ---- Tuner analysis geometry (independent of the octaver's constants) ----
@@ -3075,6 +3068,13 @@ struct le_engine {
    * armed: the master holds backing audio no stem reproduces. Reset at arm. */
   _Atomic uint32_t a_perf_backing_blocks;
   le_perf_capture perf;
+  /* The offline render worker (perf_render.h, part 7) — independent of the
+   * capture above: a render reads only a finalized capture directory from
+   * disk, never live engine state or the device, so it runs whether or not
+   * this engine is armed and goes on through a reconfigure, which resets
+   * `perf` (#1747). Opaque here (perf_render.c owns the definition). NULL
+   * when no render is active; le_engine_destroy cancels it. */
+  struct le_perf_render* perf_render;
 
   /* Tracks. */
   le_track tracks[LE_MAX_TRACKS];
@@ -3082,7 +3082,7 @@ struct le_engine {
 
   /* Loop-stage wet cache (FX v3 part 2): opaque control/worker state owned by
    * engine_cache.c (scheduler bookkeeping, job queue, the single render
-   * worker [B6]) — the same opaque-pointer shape as perf.drain/perf.render.
+   * worker [B6]) — the same opaque-pointer shape as perf.drain/perf_render.
    * NULL until le_cache_init (end of configure); torn down (worker JOINED
    * before any pool or wet-buffer free [R2]) by le_cache_shutdown from
    * le_engine_stop, the top of le_engine_configure, and le_engine_destroy.

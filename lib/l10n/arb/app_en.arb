@@ -7836,6 +7836,24 @@
             }
         }
     },
+    "perfTakesRecovering": "{count, plural, =1{Recovering the take.} other{Recovering {count} takes.}}",
+    "@perfTakesRecovering": {
+        "description": "Said when Try again on perfTakesNotRecovered starts salvaging the takes again.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "perfTakesRecovered": "{count, plural, =1{The take was recovered.} other{The takes were recovered.}}",
+    "@perfTakesRecovered": {
+        "description": "Said when Try again on perfTakesNotRecovered recovered every take.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
     "storageInternalTitle": "Internal",
     "storageInternalSubtitle": "Sessions and audio",
     "storageOpenLibrary": "Open library",

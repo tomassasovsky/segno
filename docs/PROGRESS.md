@@ -110,8 +110,11 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   The not-recovered notice (a passing warning, said at every start) has Try
   again (`PerformanceRecorderCubit.retryRecovery`), which gives the take one
   more salvage.
-- Stems are written as `<stem>.wav.part` and published on sealing, so a
-  cancelled re-render keeps an earlier render's stems. A master past the
+- Stems are written as `<stem>.wav.part`, synced and published on sealing,
+  so a cancelled re-render keeps an earlier render's stems; a render that
+  runs to its end removes any stem it did not publish, so a bundle never
+  mixes two renders. The render handle is its own engine field
+  (`perf_render`), outside the capture state a reconfigure resets. A master past the
   32-bit WAV sizes (stereo over 3 h 6 min at 48 kHz) is not rendered and the
   stems stand; a master that could not be written is left out without
   failing the tracks, as before.

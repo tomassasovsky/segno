@@ -3504,6 +3504,28 @@ void main() {
           expect(bootRepo.unrecoveredTakes, [dir]);
         },
       );
+
+      test(
+        'a take counted for another reason (a damaged sidecar) stays counted '
+        'when a retry cannot run',
+        () async {
+          final failed = seedCrashed('perf-crashed');
+          interrupted(failed, count: 2);
+          final corrupt = '${tempDir.path}/exports/perf-corrupt';
+          Directory(corrupt).createSync(recursive: true);
+          File('$corrupt/performance.json').writeAsStringSync('{not json');
+          await bootRepo.runBootRecovery();
+          expect(bootRepo.unrecoveredTakes.toSet(), {failed, corrupt});
+          engine.renderProgress = const PerformanceRenderProgress(
+            done: false,
+            progressPercent: 10,
+          );
+
+          await bootRepo.retryUnrecovered();
+
+          expect(bootRepo.unrecoveredTakes.toSet(), {failed, corrupt});
+        },
+      );
     });
   });
 

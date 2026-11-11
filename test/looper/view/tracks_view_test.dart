@@ -3755,7 +3755,43 @@ void main() {
       );
       when(performanceRecorder.retryRecovery).thenAnswer((_) async {});
       action.onPressed();
+      await tester.pump();
       verify(performanceRecorder.retryRecovery).called(1);
+      // Said in the failure's place; the take still not recovered (the
+      // recorder's state) says nothing more.
+      expect(said.titles, [
+        'This take could not be recovered.',
+        'Recovering the take.',
+      ]);
+      await tester.pump(const Duration(seconds: 8));
+    });
+
+    testWidgets('Try again that recovers every take says so (#1747)', (
+      tester,
+    ) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderIdle(recovering: true),
+          PerformanceRecorderIdle(notRecovered: 1),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      final action = said.shown.single.action!;
+      when(performanceRecorder.retryRecovery).thenAnswer((_) async {
+        when(
+          () => performanceRecorder.state,
+        ).thenReturn(const PerformanceRecorderIdle());
+      });
+
+      action.onPressed();
+      await tester.pump();
+
+      expect(said.titles.last, 'The take was recovered.');
+      expect(said.shown.last.tone, NoticeTone.success);
       await tester.pump(const Duration(seconds: 8));
     });
 
