@@ -651,7 +651,8 @@ int le_yin_step(le_yin_pass* p, long budget);
  * NULL takes the lags one at a time, which is le_yin_step. The PSOLA
  * octaver's and the Dual Octaver's passes run it with sums in their heap
  * state; the tuner keeps le_yin_step, so the callback's le_engine_process,
- * which inlines its slice, is the code it was. */
+ * which inlines its slice and calls these in this unit, is the code it
+ * was. */
 int le_yin_step_lanes(le_yin_pass* p, long budget, double* sums);
 
 /* Peak-picks a COMPLETED pass: writes the parabolic-interpolated period in
