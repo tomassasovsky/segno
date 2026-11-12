@@ -113,3 +113,4 @@ above still ends on a human merge — those labels *mean* "a human owns this
 call" (taste, blast radius, direction).
 
 To pause auto-merge on a specific PR, relabel it `autonomy:merge-gate`.
+
