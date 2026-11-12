@@ -5,8 +5,9 @@
  * WHY: the kernels are made cheaper without changing how they sound. Where
  * the arithmetic is unchanged the output must be bit-identical; where
  * vectorising or reordering it changes the rounding, the difference from
- * the reference must stay below LE_EQV_LIMIT_DB (-120 dBFS) everywhere,
- * tails included. Nothing else in the suite compares a kind with what it
+ * the reference must stay below LE_EQV_LIMIT_DB (-120 dBFS), tails
+ * included, but where the owner approved a larger one (eqv_limit_db: the
+ * Room reverb's Drum rooms, #1761). Nothing else in the suite compares a kind with what it
  * rendered before.
  *
  * bench_fx_equiv.sh builds two libraries from fx_equiv_shim.c and the
@@ -150,15 +151,18 @@ static const char* const k_reordered[] = {
  * by up to -48.9 (#1761). */
 #define LE_EQV_DRUM_ROOM_DB (-45.0)
 
-static int kind_named(int32_t type, const char* name);
+/* The working tree's le_rv_room_is_drum_for_test: whether a Room reverb's
+ * room setting picks a Drum room, as the engine picks it. */
+static int (*g_room_is_drum)(float v);
 
 /* The ceiling of a render's residual: LE_EQV_LIMIT_DB, but for a Room
  * reverb render that runs a Drum room (its room is one, or the sweeps,
- * which move the room through every one) LE_EQV_DRUM_ROOM_DB. */
+ * which move the room through every one) LE_EQV_DRUM_ROOM_DB. The taps
+ * themselves are checked to a float sum's rounding by the native tests
+ * (test_room_verb_taps_are_the_rooms). */
 static double eqv_limit_db(int32_t type, const float* p, int sweeps) {
-  if (kind_named(type, "roomverb")) {
-    const int room = (int)(p[2] * 15.0f + 0.5f); /* of 16: 4 to 15 Drum */
-    if (sweeps || room >= 4) return LE_EQV_DRUM_ROOM_DB;
+  if (type == LE_FX_ROOM_VERB && (sweeps || g_room_is_drum(p[2]))) {
+    return LE_EQV_DRUM_ROOM_DB;
   }
   return LE_EQV_LIMIT_DB;
 }
@@ -167,13 +171,6 @@ static double eqv_limit_db(int32_t type, const float* p, int sweeps) {
 static const char* const k_moved[] = {
     NULL,
 };
-
-static int kind_named(int32_t type, const char* name) {
-  for (int k = 0; k < EQV_NKINDS; ++k) {
-    if (k_kinds[k].type == type) return !strcmp(k_kinds[k].name, name);
-  }
-  return 0;
-}
 
 static int kind_index(int32_t type) {
   for (int k = 0; k < EQV_NKINDS; ++k) {
@@ -607,6 +604,10 @@ int main(int argc, char** argv) {
   }
   g_ref = load(argv[1]);
   g_new = load(argv[2]);
+  {
+    void* dl = dlopen(argv[2], RTLD_NOW | RTLD_LOCAL);
+    *(void**)&g_room_is_drum = need(dl, argv[2], "le_rv_room_is_drum_for_test");
+  }
   int32_t only = -1;
   int jobs = 0, detail = 0;
   for (int i = 3; i < argc; ++i) {
@@ -676,8 +677,10 @@ int main(int argc, char** argv) {
     jobs = n > 0 ? (int)n : 1;
   }
   if (jobs > 64) jobs = 64;
-  printf("bench_fx_equiv: %d renders pairs (%s), %d jobs, limit %.0f dBFS\n",
-         g_nitems, g_ci ? "CI subset" : "every setting", jobs, LE_EQV_LIMIT_DB);
+  printf("bench_fx_equiv: %d renders pairs (%s), %d jobs, limit %.0f dBFS "
+         "(%.0f for a Room reverb render that runs a Drum room)\n",
+         g_nitems, g_ci ? "CI subset" : "every setting", jobs, LE_EQV_LIMIT_DB,
+         LE_EQV_DRUM_ROOM_DB);
   fflush(stdout);
   pthread_t th[64];
   int started = 0;
@@ -715,7 +718,8 @@ int main(int argc, char** argv) {
           continue;
         }
         if (c->identical) same++;
-        if (c->worst_db >= eqv_limit_db(it->s.type, it->s.p, w)) {
+        if (!kind_listed(k_moved, k) &&
+            c->worst_db >= eqv_limit_db(it->s.type, it->s.p, w)) {
           over = 1;
           printf("  %s %s %d Hz / %d: %.1f dBFS, over its %.0f\n", it->name,
                  names[w], it->rate, it->period, c->worst_db,
@@ -737,7 +741,6 @@ int main(int argc, char** argv) {
     }
     if (total == 0) continue;
     const int moved = kind_listed(k_moved, k);
-    if (moved) over = 0;
     const int inexact = !moved && same != total && !kind_listed(k_reordered, k);
     char where[220] = "";
     if (at != NULL && worst > -INFINITY) {

@@ -449,7 +449,34 @@ static void test_room_verb_stable_and_clean(void) {
   }
 }
 
+double le_rv_taps_error_for_test(int room, int sr, float density, int trials);
+
+/* The early taps, summed in four lanes a side (#1761), are each side's own
+ * taps at their own delays and gains: in every room, at every rate and
+ * Density, against the sum in tap order, to the rounding of a float sum of
+ * 64 (a wrong index, a swapped side or a padding tap that sounds would be
+ * off by the signal itself). bench_fx_equiv holds the Drum rooms only to
+ * -45 dBFS, since their low cut carries any rounding that far. */
+static void test_room_verb_taps_are_the_rooms(void) {
+  printf("test_room_verb_taps_are_the_rooms\n");
+  static const int rates[4] = {44100, 48000, 88200, 96000};
+  static const float dens[3] = {0.0f, 0.4f, 1.0f};
+  double worst = 0.0;
+  for (int room = 0; room < 16; ++room) {
+    for (int ri = 0; ri < 4; ++ri) {
+      for (int di = 0; di < 3; ++di) {
+        const double e = le_rv_taps_error_for_test(room, rates[ri], dens[di], 8);
+        CHECK(e >= 0.0);
+        CHECK(e < 1e-5);
+        if (e > worst) worst = e;
+      }
+    }
+  }
+  printf("  worst %.2g of the taps' magnitude\n", worst);
+}
+
 static void run_room_verb_tests(void) {
+  test_room_verb_taps_are_the_rooms();
   test_room_verb_modes_match_the_captures();
   test_room_verb_drum_matches_the_captures();
   test_room_verb_mix_and_tail_er_laws();

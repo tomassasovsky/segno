@@ -8939,7 +8939,7 @@ static void le_vb_geometry(le_fx_verb* q, int sr) {
   if (q->tap[1] > reach) reach = q->tap[1];
   q->hist_n = reach + 2u;
   /* The history is written twice, hist_n apart, so a tap reads it without
-   * wrapping (le_rv_taps). */
+   * wrapping (le_rv_taps4). */
   uint32_t at[2] = {2u * q->hist_n, 0u};
   for (int c = 0; c < 2; ++c) {
     for (int k = 0; k < q->aps; ++k) {
@@ -9403,11 +9403,12 @@ static double le_rv_tone_hz(double v, int drum) {
                                 x - (double)i);
 }
 
-/* The room's network and taps laid out at [rate]. */
+/* The larger of [a] and [b], up to a whole four. */
 static uint32_t le_rv_fours(uint32_t a, uint32_t b) {
   return ((a > b ? a : b) + 3u) & ~3u;
 }
 
+/* The room's network and taps laid out at [rate]. */
 static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
   const le_rv_room* rm = &LE_RV_ROOM_TABLE[room];
   uint32_t reach = 0;
@@ -9609,10 +9610,11 @@ static float le_rv_taps_filling(const float* hist, uint32_t now,
 /* Both sides' taps off the wrapped history, [h] its newest sample in the
  * second copy, [np] taps a side (whole fours; le_rv_lay pads them), into
  * [s]: each side's sum in four lanes, added pairwise at the end. The
- * order changes the rounding (#1761, the owner's approval): about
- * -140 dBFS on the modes, about -62 behind a Drum room's low cut, which
- * carries a rounding that far (the trunk's own -O2 and -O3 builds differ
- * by as much). */
+ * order changes the rounding (#1761, the owner's approval): under
+ * -127 dBFS on the modes' renders, up to -49 behind a Drum room's low cut,
+ * which carries a rounding change that far (the trunk's own clang -O2 and
+ * -O3 builds differ by -48.8 there). le_rv_taps_error_for_test checks the
+ * taps themselves against a sum in tap order. */
 static inline void le_rv_taps4(const float* h, const int32_t* o0,
                                const float* g0, const int32_t* o1,
                                const float* g1, uint32_t np, float s[2]) {
@@ -9697,6 +9699,86 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
   }
   *l = dry * x0 + wet * w[0];
   *r = dry * x1 + wet * w[1];
+}
+
+/* Exposed for the native tests (#1761). Room [room] laid out at [sr], its
+ * early-part gains at Density [density]: the taps le_rv_taps4 reads off a
+ * wrapped history of [trials] pseudo-random fills, against each side's
+ * taps summed in their order in double from the layout's own delays and
+ * gains. Returns the largest difference over the sum of the taps'
+ * magnitudes (the rounding a reordered float sum can reach), or -1 when the
+ * room cannot be laid out. */
+double le_rv_taps_error_for_test(int room, int sr, float density, int trials);
+double le_rv_taps_error_for_test(int room, int sr, float density, int trials) {
+  if (room < 0 || room >= LE_RV_ROOMS || sr <= 0) return -1.0;
+  le_fx_rverb* q = (le_fx_rverb*)calloc(1, sizeof(le_fx_rverb));
+  if (q == NULL) return -1.0;
+  le_rv_lay(q, room, sr);
+  const le_rv_fir* fir = LE_RV_ROOM_TABLE[room].fir;
+  const float d = density < 0.0f ? 0.0f : density > 1.0f ? 1.0f : density;
+  int i0 = 0;
+  float t = 0.0f;
+  if (fir->nd > 1) {
+    const float x = d * (float)(fir->nd - 1);
+    i0 = (int)x < fir->nd - 1 ? (int)x : fir->nd - 2;
+    t = x - (float)i0;
+  }
+  for (int c = 0; c < 2; ++c) {
+    for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
+      const float a = fir->g[i0][c][i];
+      q->fir_g[c][i] = fir->nd > 1 ? a + t * (fir->g[i0 + 1][c][i] - a) : a;
+    }
+  }
+  const uint32_t hn = q->v.hist_n;
+  float* hist = (float*)malloc(sizeof(float) * 2u * hn);
+  if (hist == NULL) {
+    free(q);
+    return -1.0;
+  }
+  uint32_t seed = 12345u + (uint32_t)room * 977u + (uint32_t)sr;
+  double worst = 0.0;
+  for (int k = 0; k < trials; ++k) {
+    for (uint32_t i = 0; i < hn; ++i) {
+      seed = seed * 1664525u + 1013904223u;
+      hist[i] = hist[i + hn] = (float)((double)(seed >> 8) / 8388608.0 - 1.0);
+    }
+    seed = seed * 1664525u + 1013904223u;
+    const uint32_t now = seed % hn;
+    float e[2], f[2];
+    const float* h = hist + now + hn;
+    le_rv_taps4(h, q->er_back[0], q->er_g[0], q->er_back[1], q->er_g[1],
+                q->er_np, e);
+    le_rv_taps4(h, q->fir_back[0], q->fir_g[0], q->fir_back[1], q->fir_g[1],
+                q->fir_np, f);
+    for (int c = 0; c < 2; ++c) {
+      const uint32_t* at[2] = {q->er_at[c], q->fir_at[c]};
+      const float* g[2] = {q->er_g[c], q->fir_g[c]};
+      const uint32_t n[2] = {q->er_n[c], q->fir_n[c]};
+      const float got[2] = {e[c], f[c]};
+      for (int s = 0; s < 2; ++s) {
+        double sum = 0.0, mag = 0.0;
+        for (uint32_t i = 0; i < n[s]; ++i) {
+          const double v = (double)g[s][i] * (double)hist[(now + hn - at[s][i]) % hn];
+          sum += v;
+          mag += fabs(v);
+        }
+        const double err = fabs((double)got[s] - sum) / (mag > 0.0 ? mag : 1.0);
+        if (err > worst) worst = err;
+      }
+    }
+  }
+  free(hist);
+  free(q);
+  return worst;
+}
+
+/* Exposed for bench_fx_equiv (#1761): whether a Room reverb at room setting
+ * [v] runs a Drum room, as fx_room_verb_update picks the room. */
+int le_rv_room_is_drum_for_test(float v);
+int le_rv_room_is_drum_for_test(float v) {
+  int room = (int)(v * (float)(LE_RV_ROOMS - 1) + 0.5f);
+  room = room < 0 ? 0 : room >= LE_RV_ROOMS ? LE_RV_ROOMS - 1 : room;
+  return LE_RV_ROOM_TABLE[room].drum;
 }
 
 /* A type's rows are the parameters an entry holds, so none may outgrow it. */
