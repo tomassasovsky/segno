@@ -54,7 +54,10 @@ case "$(uname -s)" in
   Darwin) LIB_FLAGS="-shared"; HARNESS_LIBS="-lpthread -lm" ;;
   *) LIB_FLAGS="-shared -Wl,-Bsymbolic"; HARNESS_LIBS="-ldl -lpthread -lm" ;;
 esac
-STD="-std=gnu11 -DNDEBUG -fPIC"
+# -fmath-errno, Linux's default, also on macOS, where without it Clang may
+# fuse a sinf and a cosf into Apple's sincos in one library and not the
+# other (the pitch kinds' rebuild under ASan, #1764).
+STD="-std=gnu11 -DNDEBUG -fPIC -fmath-errno"
 ISLAND="core/engine_fx.c core/rt_alloc.c core/plugin_disabled.c"
 
 build_lib() { # build_lib SRC_DIR OUT

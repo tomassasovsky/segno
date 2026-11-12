@@ -286,8 +286,13 @@ typedef struct le_fx_snapshot {
  * in the same order and cannot drift apart. `x` and `dp` are borrowed, not
  * owned: the caller keeps both alive and unchanged for the life of the pass
  * (the one-shot form uses stack buffers; the tuner uses a frozen snapshot in
- * le_tuner_pass, the PSOLA octaver one in its scratch). No array member, so this type carries none of the octaver's
- * tuning constants and can live beside the rest of the DSP state here. */
+ * le_tuner_pass, the PSOLA octaver one in its scratch). Its one array is
+ * the lags worked out ahead (LE_YIN_GROUP), so this type carries none of
+ * the octaver's tuning constants and can live beside the rest of the DSP
+ * state here. */
+/* The lags the difference function works out together (le_lag_sums,
+ * engine_fx.c, #1755). */
+#define LE_YIN_GROUP 8
 typedef struct le_yin_pass {
   const float* x; /* analysis window; maxlag + integ contiguous samples */
   float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
@@ -296,6 +301,11 @@ typedef struct le_yin_pass {
   int32_t integ; /* difference-function integration length (n - maxlag) */
   int32_t tau;   /* next lag to accumulate; > maxlag once the pass is done */
   double cum;    /* running sum of d(1..tau-1) — YIN's normalizer */
+  /* d(tau) for the lags group_lo .. group_lo + group_n - 1, worked out
+   * ahead of the lag the pass is at (le_yin_step); group_n 0: none. */
+  int32_t group_lo;
+  int32_t group_n;
+  double group[LE_YIN_GROUP];
 } le_yin_pass;
 
 /* A coarse period refined at the device rate (le_refine_*, engine_fx.c): the
@@ -309,6 +319,9 @@ typedef struct le_lag_refine {
   int32_t integ;
   int32_t tau;  /* next lag to accumulate */
   int32_t best; /* index into d[] of the smallest lag seen so far */
+  /* The lags from lo whose d[] is worked out (le_refine_step works them
+   * out ahead, LE_YIN_GROUP at a time). */
+  int32_t ready;
   float d[2 * LE_REFINE_SPAN_MAX + 2];
 } le_lag_refine;
 
@@ -474,6 +487,19 @@ typedef struct le_octaver_state {
    * heap, made in fx_octaver_prepare). */
   float* rs_in;
   float* rs_out;
+  /* What fx_octaver works out from a setting only when it moves (#1755):
+   * the shift's ratio for the smoothed shift ratio_shift, and the gain dip's
+   * gain for the dip's position dip_xfade (cached: 0 until the first). */
+  int32_t cached;
+  float ratio_shift;
+  float ratio;
+  float dip_xfade;
+  float dip_g;
+  /* The phase vocoder's shift between its two steps (le_pv_shift_into):
+   * its peaks, the region it is at and the first bin of that region. */
+  int32_t shift_np;
+  int32_t shift_r;
+  int32_t shift_start;
 } le_octaver_state;
 
 /* Per-kind DSP state for the kinds that keep it on the heap (#887 part 4).
