@@ -329,9 +329,7 @@ void main() {
       expect(sent, hasLength(2));
     });
 
-    testWidgets('a signature off the short list shows in More', (
-      tester,
-    ) async {
+    testWidgets('a signature off the short list shows in More', (tester) async {
       await pump(tester, readoutOf(tsNum: 7, tsDen: 8));
       await open(tester);
       expect(
@@ -366,9 +364,7 @@ void main() {
       expect(sent.skip(2), const [LengthSet(5), LengthSet(0)]);
     });
 
-    testWidgets('a refused length goes back to the pushed one', (
-      tester,
-    ) async {
+    testWidgets('a refused length goes back to the pushed one', (tester) async {
       await pump(tester, readoutOf());
       await open(tester);
       await tapKey(tester, 'readout_panel_length_more');

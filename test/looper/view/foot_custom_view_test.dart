@@ -14,12 +14,12 @@ import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 class _Recorder extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 const _fade = TrackOperationAction(
   operation: TrackOperation.fade,
@@ -145,15 +145,9 @@ void main() {
     // Hold only: the hardware name, with the Hold under it.
     expect(within(PedalButton.undo, 'Undo'), findsOneWidget);
     expect(within(PedalButton.undo, 'Hold · Redo'), findsOneWidget);
-    expect(
-      within(PedalButton.clear, 'Unavailable'),
-      findsOneWidget,
-    );
+    expect(within(PedalButton.clear, 'Unavailable'), findsOneWidget);
     // The hint never shows a saved key either.
-    expect(
-      within(PedalButton.clear, 'Hold · Unavailable'),
-      findsOneWidget,
-    );
+    expect(within(PedalButton.clear, 'Hold · Unavailable'), findsOneWidget);
     expect(within(PedalButton.stop, 'Capture'), findsOneWidget);
     expect(within(PedalButton.recPlay, 'Record / Play'), findsOneWidget);
     expect(within(PedalButton.track2, 'Track 2'), findsOneWidget);
@@ -218,15 +212,10 @@ void main() {
     final surface = tester.element(pedal(PedalButton.clear)).surface;
     Color? colorOf(PedalButton button, String text) =>
         tester.widget<Text>(within(button, text)).style?.color;
-    expect(
-      colorOf(PedalButton.clear, 'Unavailable'),
-      surface.textMuted,
-    );
+    expect(colorOf(PedalButton.clear, 'Unavailable'), surface.textMuted);
     expect(
       colorOf(PedalButton.track1, 'Select Drums'),
-      isNot(
-        surface.textMuted,
-      ),
+      isNot(surface.textMuted),
     );
     expect(
       pedalSemantics(tester, PedalButton.clear).properties.enabled,
@@ -270,9 +259,7 @@ void main() {
     }
   });
 
-  testWidgets('the selection bars are the published LED value', (
-    tester,
-  ) async {
+  testWidgets('the selection bars are the published LED value', (tester) async {
     given(
       custom(lit: const {PedalButton.track1: true, PedalButton.stop: false}),
     );
@@ -326,9 +313,8 @@ void main() {
       tester.getCenter(pedal(PedalButton.track1)),
     );
     await tester.pump();
-    verify(
-      () => control.footCustomPressed(PedalButton.track1, any()),
-    ).called(1);
+    verify(() => control.footCustomPressed(PedalButton.track1, any()))
+        .called(1);
     await gesture.up();
     await tester.pump();
     verify(

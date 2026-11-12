@@ -21,7 +21,7 @@ typedef DecodeRunner = Future<R> Function<R>(R Function() work);
 class NativeAudioDecoder implements AudioDecoder {
   /// Creates a [NativeAudioDecoder]. [runner] is where the work runs (a test
   /// seam: it defaults to [Isolate.run]).
-  NativeAudioDecoder({DecodeRunner? runner}) : _runner = runner ?? _isolateRun;
+  new({DecodeRunner? runner}) : _runner = runner ?? _isolateRun;
 
   final DecodeRunner _runner;
   static Future<R> _isolateRun<R>(R Function() work) => Isolate.run(work);
@@ -152,7 +152,7 @@ _Probed _probeHere(String path, int buckets) {
 @internal
 class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
   /// Wraps [buffer].
-  NativeDecodedAudioPayload(this.buffer) {
+  new(this.buffer) {
     if (buffer != nullptr) {
       _finalizer.attach(this, buffer.cast(), detach: this);
       _attached = true;

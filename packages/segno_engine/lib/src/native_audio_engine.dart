@@ -38,7 +38,7 @@ import 'package:segno_engine/src/volume_space.dart';
 class NativeAudioEngine implements AudioEngine {
   /// Creates a [NativeAudioEngine], allocating the underlying engine. The
   /// library is the package's code asset (hook/build.dart).
-  NativeAudioEngine() {
+  new() {
     _engine = le_engine_create();
     if (_engine == nullptr) {
       throw const EngineException(
@@ -143,13 +143,7 @@ class NativeAudioEngine implements AudioEngine {
       droppedPtr.value = 0;
       ratePtr.value = 0;
       final result = EngineResult.fromCode(
-        le_engine_reopen(
-          _engine,
-          cfgPtr,
-          outcomePtr,
-          droppedPtr,
-          ratePtr,
-        ),
+        le_engine_reopen(_engine, cfgPtr, outcomePtr, droppedPtr, ratePtr),
       );
       return (
         result: result,
@@ -264,10 +258,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   List<AudioDevice> enumerateDevices() {
     _checkAlive();
-    return [
-      ..._enumerate(isInput: false),
-      ..._enumerate(isInput: true),
-    ];
+    return [..._enumerate(isInput: false), ..._enumerate(isInput: true)];
   }
 
   /// Reads one direction's devices via the matching native enumeration call.
@@ -277,16 +268,8 @@ class NativeAudioEngine implements AudioEngine {
     final countPtr = calloc<Int32>();
     try {
       final code = isInput
-          ? le_enumerate_capture_devices(
-              outPtr,
-              _maxDevices,
-              countPtr,
-            )
-          : le_enumerate_playback_devices(
-              outPtr,
-              _maxDevices,
-              countPtr,
-            );
+          ? le_enumerate_capture_devices(outPtr, _maxDevices, countPtr)
+          : le_enumerate_playback_devices(outPtr, _maxDevices, countPtr);
       if (code != 0) return const [];
       final count = countPtr.value;
       return [
@@ -310,9 +293,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult scanBegin({bool rescan = false}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_plugin_scan_begin(_engine, rescan ? 1 : 0),
-    );
+    return EngineResult.fromCode(le_plugin_scan_begin(_engine, rescan ? 1 : 0));
   }
 
   @override
@@ -323,13 +304,7 @@ class NativeAudioEngine implements AudioEngine {
     final scannedPtr = calloc<Int32>();
     final totalPtr = calloc<Int32>();
     try {
-      le_plugin_scan_poll(
-        _engine,
-        donePtr,
-        foundPtr,
-        scannedPtr,
-        totalPtr,
-      );
+      le_plugin_scan_poll(_engine, donePtr, foundPtr, scannedPtr, totalPtr);
       return PluginScanProgress(
         done: donePtr.value != 0,
         found: foundPtr.value,
@@ -405,12 +380,7 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
     return EngineResult.fromCode(
-      le_engine_prepare_plugin_param(
-        _engine,
-        slot.pointer,
-        paramId,
-        value,
-      ),
+      le_engine_prepare_plugin_param(_engine, slot.pointer, paramId, value),
     );
   }
 
@@ -479,12 +449,7 @@ class NativeAudioEngine implements AudioEngine {
     int lane = 0,
   }) {
     _checkAlive();
-    return le_engine_fx_recipe_revision(
-      _engine,
-      owner.index,
-      channel,
-      lane,
-    );
+    return le_engine_fx_recipe_revision(_engine, owner.index, channel, lane);
   }
 
   @override
@@ -512,13 +477,8 @@ class NativeAudioEngine implements AudioEngine {
     required String pluginId,
   }) => _loadPlugin(
     pluginId,
-    (idPtr, outSlot) => le_engine_set_monitor_plugin(
-      _engine,
-      input,
-      index,
-      idPtr,
-      outSlot,
-    ),
+    (idPtr, outSlot) =>
+        le_engine_set_monitor_plugin(_engine, input, index, idPtr, outSlot),
   );
 
   /// Shared marshalling for the two plugin-load calls: passes [pluginId] as a C
@@ -662,9 +622,7 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult pluginEditorClose(PluginSlotHandle slot) {
     _checkAlive();
     if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
-    return EngineResult.fromCode(
-      le_plugin_editor_close(slot.pointer),
-    );
+    return EngineResult.fromCode(le_plugin_editor_close(slot.pointer));
   }
 
   @override
@@ -758,9 +716,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult cancelLatency({required int request}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_cancel_latency(_engine, request),
-    );
+    return EngineResult.fromCode(le_engine_cancel_latency(_engine, request));
   }
 
   @override
@@ -843,12 +799,7 @@ class NativeAudioEngine implements AudioEngine {
     final request = calloc<Uint64>();
     try {
       final result = EngineResult.fromCode(
-        le_engine_install_reverse(
-          _engine,
-          channel,
-          reversed ? 1 : 0,
-          request,
-        ),
+        le_engine_install_reverse(_engine, channel, reversed ? 1 : 0, request),
       );
       return (result: result, request: request.value);
     } finally {
@@ -862,12 +813,7 @@ class NativeAudioEngine implements AudioEngine {
     final request = calloc<Uint64>();
     try {
       final result = EngineResult.fromCode(
-        le_engine_set_speed(
-          _engine,
-          factor.numer,
-          factor.denom,
-          request,
-        ),
+        le_engine_set_speed(_engine, factor.numer, factor.denom, request),
       );
       return (result: result, request: request.value);
     } finally {
@@ -890,12 +836,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   RequestAdmission transposeStep({required int channel, required int delta}) =>
       _admit(
-        (request) => le_engine_transpose_step(
-          _engine,
-          channel,
-          delta,
-          request,
-        ),
+        (request) => le_engine_transpose_step(_engine, channel, delta, request),
       );
 
   @override
@@ -903,12 +844,8 @@ class NativeAudioEngine implements AudioEngine {
     required int channel,
     required int semitones,
   }) => _admit(
-    (request) => le_engine_install_transpose(
-      _engine,
-      channel,
-      semitones,
-      request,
-    ),
+    (request) =>
+        le_engine_install_transpose(_engine, channel, semitones, request),
   );
 
   @override
@@ -943,11 +880,8 @@ class NativeAudioEngine implements AudioEngine {
 
   @override
   RequestAdmission setTransposeBypass({required bool bypassed}) => _admit(
-    (request) => le_engine_set_transpose_bypass(
-      _engine,
-      bypassed ? 1 : 0,
-      request,
-    ),
+    (request) =>
+        le_engine_set_transpose_bypass(_engine, bypassed ? 1 : 0, request),
   );
 
   @override
@@ -1069,17 +1003,13 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult record({int channel = 0}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_record(_engine, channel),
-    );
+    return EngineResult.fromCode(le_engine_record(_engine, channel));
   }
 
   @override
   EngineResult stopTrack({int channel = 0}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_stop_track(_engine, channel),
-    );
+    return EngineResult.fromCode(le_engine_stop_track(_engine, channel));
   }
 
   @override
@@ -1105,9 +1035,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult clearUndoable({int channel = 0}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_clear_undoable(_engine, channel),
-    );
+    return EngineResult.fromCode(le_engine_clear_undoable(_engine, channel));
   }
 
   @override
@@ -1239,9 +1167,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult setRecordOffset(int frames) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_record_offset(_engine, frames),
-    );
+    return EngineResult.fromCode(le_engine_set_record_offset(_engine, frames));
   }
 
   @override
@@ -1298,13 +1224,7 @@ class NativeAudioEngine implements AudioEngine {
     try {
       buf.asTypedList(pcm.length).setAll(0, pcm);
       return EngineResult.fromCode(
-        le_engine_import_track_lane(
-          _engine,
-          channel,
-          lane,
-          buf,
-          frames,
-        ),
+        le_engine_import_track_lane(_engine, channel, lane, buf, frames),
       );
     } finally {
       calloc.free(buf);
@@ -1467,14 +1387,7 @@ class NativeAudioEngine implements AudioEngine {
     try {
       buf.asTypedList(pcm.length).setAll(0, pcm);
       return EngineResult.fromCode(
-        le_engine_import_layer(
-          _engine,
-          channel,
-          lane,
-          ordinal,
-          buf,
-          frames,
-        ),
+        le_engine_import_layer(_engine, channel, lane, ordinal, buf, frames),
       );
     } finally {
       calloc.free(buf);
@@ -1515,17 +1428,14 @@ class NativeAudioEngine implements AudioEngine {
         if (n != count) {
           throw StateError('history of track $channel changed while read');
         }
-        return TrackHistory(
-          [
-            for (var i = 0; i < count; i++)
-              HistoryEntry(
-                HistoryKind.fromCode(kinds[i]) ?? HistoryKind.bounce,
-                skipped: skipped[i],
-                start: starts[i],
-              ),
-          ],
-          undoCount: undoCount.value,
-        );
+        return TrackHistory([
+          for (var i = 0; i < count; i++)
+            HistoryEntry(
+              HistoryKind.fromCode(kinds[i]) ?? HistoryKind.bounce,
+              skipped: skipped[i],
+              start: starts[i],
+            ),
+        ], undoCount: undoCount.value);
       } finally {
         calloc
           ..free(kinds)
@@ -1640,9 +1550,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult cancelArm({required int channel}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_cancel_arm(_engine, channel),
-    );
+    return EngineResult.fromCode(le_engine_cancel_arm(_engine, channel));
   }
 
   @override
@@ -1662,9 +1570,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult finalizeTake({required int channel}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_finalize_take(_engine, channel),
-    );
+    return EngineResult.fromCode(le_engine_finalize_take(_engine, channel));
   }
 
   @override
@@ -1694,9 +1600,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult setMasterGain(double gain) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_master_gain(_engine, gain),
-    );
+    return EngineResult.fromCode(le_engine_set_master_gain(_engine, gain));
   }
 
   @override
@@ -1711,11 +1615,7 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult setOutputEnabled({required int output, required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_output_enabled(
-        _engine,
-        output,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_output_enabled(_engine, output, enabled ? 1 : 0),
     );
   }
 
@@ -1726,11 +1626,7 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     final ptr = calloc<le_output_fx_snapshot>();
     try {
-      final result = le_engine_get_output_fx_snapshot(
-        _engine,
-        bus,
-        ptr,
-      );
+      final result = le_engine_get_output_fx_snapshot(_engine, bus, ptr);
       if (result != 0) throw StateError('Output chain unavailable: $result');
       final value = ptr.ref;
       return OutputFxSnapshot(
@@ -1780,13 +1676,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_output_fx_param(
-        _engine,
-        bus,
-        index,
-        param,
-        value,
-      ),
+      le_engine_set_output_fx_param(_engine, bus, index, param, value),
     );
   }
 
@@ -1798,12 +1688,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_output_fx_enabled(
-        _engine,
-        bus,
-        index,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_output_fx_enabled(_engine, bus, index, enabled ? 1 : 0),
     );
   }
 
@@ -1814,11 +1699,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_output_fx_chain_enabled(
-        _engine,
-        bus,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_output_fx_chain_enabled(_engine, bus, enabled ? 1 : 0),
     );
   }
 
@@ -1860,11 +1741,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_all_tracks_fx_enabled(
-        _engine,
-        index,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_all_tracks_fx_enabled(_engine, index, enabled ? 1 : 0),
     );
   }
 
@@ -1872,10 +1749,7 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult setAllTracksFxChainEnabled({required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_all_tracks_fx_chain_enabled(
-        _engine,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_all_tracks_fx_chain_enabled(_engine, enabled ? 1 : 0),
     );
   }
 
@@ -2034,11 +1908,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_track_overdub_feedback(
-        _engine,
-        channel,
-        feedback ?? -1.0,
-      ),
+      le_engine_set_track_overdub_feedback(_engine, channel, feedback ?? -1.0),
     );
   }
 
@@ -2084,33 +1954,25 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult setSyncTempo({required bool on}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_sync_tempo(_engine, on ? 1 : 0),
-    );
+    return EngineResult.fromCode(le_engine_set_sync_tempo(_engine, on ? 1 : 0));
   }
 
   @override
   EngineResult setClickMode(ClickMode mode) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_click_mode(_engine, mode.code),
-    );
+    return EngineResult.fromCode(le_engine_set_click_mode(_engine, mode.code));
   }
 
   @override
   EngineResult setClickOutput(int mask) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_click_output(_engine, mask),
-    );
+    return EngineResult.fromCode(le_engine_set_click_output(_engine, mask));
   }
 
   @override
   EngineResult setClickVolume(double volume) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_click_volume(_engine, volume),
-    );
+    return EngineResult.fromCode(le_engine_set_click_volume(_engine, volume));
   }
 
   // ---- backing player (#1200) ----
@@ -2173,9 +2035,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult backingSeek(int frame) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_backing_seek(_engine, frame),
-    );
+    return EngineResult.fromCode(le_engine_backing_seek(_engine, frame));
   }
 
   @override
@@ -2189,33 +2049,25 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult setBackingOutput(int mask) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_backing_set_output(_engine, mask),
-    );
+    return EngineResult.fromCode(le_engine_backing_set_output(_engine, mask));
   }
 
   @override
   EngineResult setBackingLevel(double gain) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_backing_set_level(_engine, gain),
-    );
+    return EngineResult.fromCode(le_engine_backing_set_level(_engine, gain));
   }
 
   @override
   EngineResult setBackingPan(double pan) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_backing_set_pan(_engine, pan),
-    );
+    return EngineResult.fromCode(le_engine_backing_set_pan(_engine, pan));
   }
 
   @override
   EngineResult setClickPan(double pan) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_click_pan(_engine, pan),
-    );
+    return EngineResult.fromCode(le_engine_set_click_pan(_engine, pan));
   }
 
   @override
@@ -2223,9 +2075,7 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     final out = calloc<le_backing_state>();
     try {
-      if (!EngineResult.fromCode(
-        le_engine_backing_state(_engine, out),
-      ).isOk) {
+      if (!EngineResult.fromCode(le_engine_backing_state(_engine, out)).isOk) {
         return const BackingState();
       }
       final s = out.ref;
@@ -2288,11 +2138,7 @@ class NativeAudioEngine implements AudioEngine {
     try {
       values.asTypedList(bars.length).setAll(0, bars);
       return EngineResult.fromCode(
-        le_engine_set_track_length_presets(
-          _engine,
-          values,
-          bars.length,
-        ),
+        le_engine_set_track_length_presets(_engine, values, bars.length),
       );
     } finally {
       calloc.free(values);
@@ -2313,9 +2159,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult setLooperMode(LooperMode mode) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_looper_mode(_engine, mode.code),
-    );
+    return EngineResult.fromCode(le_engine_set_looper_mode(_engine, mode.code));
   }
 
   @override
@@ -2345,9 +2189,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult crownPrimary({required int channel}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_crown_primary(_engine, channel),
-    );
+    return EngineResult.fromCode(le_engine_crown_primary(_engine, channel));
   }
 
   @override
@@ -2388,13 +2230,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_lane_fx_count(
-        _engine,
-        channel,
-        lane,
-        count,
-        preCount,
-      ),
+      le_engine_set_lane_fx_count(_engine, channel, lane, count, preCount),
     );
   }
 
@@ -2408,14 +2244,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_lane_fx_param(
-        _engine,
-        channel,
-        lane,
-        index,
-        param,
-        value,
-      ),
+      le_engine_set_lane_fx_param(_engine, channel, lane, index, param, value),
     );
   }
 
@@ -2523,12 +2352,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_track_fx_count(
-        _engine,
-        channel,
-        count,
-        preCount,
-      ),
+      le_engine_set_track_fx_count(_engine, channel, count, preCount),
     );
   }
 
@@ -2541,13 +2365,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_track_fx_param(
-        _engine,
-        channel,
-        index,
-        param,
-        value,
-      ),
+      le_engine_set_track_fx_param(_engine, channel, index, param, value),
     );
   }
 
@@ -2559,12 +2377,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_track_fx_enabled(
-        _engine,
-        channel,
-        index,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_track_fx_enabled(_engine, channel, index, enabled ? 1 : 0),
     );
   }
 
@@ -2575,28 +2388,20 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_track_fx_chain_enabled(
-        _engine,
-        channel,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_track_fx_chain_enabled(_engine, channel, enabled ? 1 : 0),
     );
   }
 
   @override
   EngineResult setTunerInput({required int input}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_tuner_input(_engine, input),
-    );
+    return EngineResult.fromCode(le_engine_set_tuner_input(_engine, input));
   }
 
   @override
   EngineResult setTunerMute({required int inputMask}) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_tuner_mute(_engine, inputMask),
-    );
+    return EngineResult.fromCode(le_engine_set_tuner_mute(_engine, inputMask));
   }
 
   @override
@@ -2606,11 +2411,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_monitor_input(
-        _engine,
-        input,
-        enabled ? 1 : 0,
-      ),
+      le_engine_set_monitor_input(_engine, input, enabled ? 1 : 0),
     );
   }
 
@@ -2637,11 +2438,7 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult setMonitorInputMute({required int input, required bool muted}) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_monitor_input_mute(
-        _engine,
-        input,
-        muted ? 1 : 0,
-      ),
+      le_engine_set_monitor_input_mute(_engine, input, muted ? 1 : 0),
     );
   }
 
@@ -2661,12 +2458,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_monitor_input_fx(
-        _engine,
-        input,
-        index,
-        type.code,
-      ),
+      le_engine_set_monitor_input_fx(_engine, input, index, type.code),
     );
   }
 
@@ -2690,13 +2482,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_set_monitor_input_fx_param(
-        _engine,
-        input,
-        index,
-        param,
-        value,
-      ),
+      le_engine_set_monitor_input_fx_param(_engine, input, index, param, value),
     );
   }
 
@@ -2881,12 +2667,7 @@ class NativeAudioEngine implements AudioEngine {
       if (count <= 0) return const [];
       final result = <PerformanceRenderTrackStatus>[];
       for (var i = 0; i < count; i++) {
-        if (le_perf_render_track_status(
-              _engine,
-              i,
-              channelPtr,
-              succeededPtr,
-            ) !=
+        if (le_perf_render_track_status(_engine, i, channelPtr, succeededPtr) !=
             0) {
           continue;
         }
@@ -2977,9 +2758,7 @@ class NativeAudioEngine implements AudioEngine {
       }
       result = _disposed
           ? EngineResult.invalid
-          : EngineResult.fromCode(
-              le_engine_audition_start(_engine, buffer),
-            );
+          : EngineResult.fromCode(le_engine_audition_start(_engine, buffer));
     }
     if (result != EngineResult.ok) {
       // Refused: the buffer is still ours.
@@ -3104,13 +2883,7 @@ class NativeAudioEngine implements AudioEngine {
     final permille = calloc<Int32>();
     final result = calloc<Int32>();
     try {
-      final rc = le_engine_render_poll(
-        _engine,
-        job,
-        state,
-        permille,
-        result,
-      );
+      final rc = le_engine_render_poll(_engine, job, state, permille, result);
       if (rc != 0) return null;
       return RenderJobStatus(
         state: RenderJobState.fromCode(state.value),
@@ -3131,12 +2904,7 @@ class NativeAudioEngine implements AudioEngine {
     if (maxFrames <= 0) return null;
     final out = calloc<Float>(maxFrames * 2);
     try {
-      final frames = le_engine_render_copy(
-        _engine,
-        job,
-        out,
-        maxFrames,
-      );
+      final frames = le_engine_render_copy(_engine, job, out, maxFrames);
       if (frames < 0) return null;
       return Float32List.fromList(out.asTypedList(frames * 2));
     } finally {
@@ -3147,9 +2915,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult cancelRender(int job) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_render_cancel(_engine, job),
-    );
+    return EngineResult.fromCode(le_engine_render_cancel(_engine, job));
   }
 
   // ---- InstrumentHost (#1197) ----
@@ -3180,12 +2946,7 @@ class NativeAudioEngine implements AudioEngine {
         }
       }
       return EngineResult.fromCode(
-        le_engine_set_instrument(
-          _engine,
-          slot,
-          patch ?? -1,
-          paramsPtr,
-        ),
+        le_engine_set_instrument(_engine, slot, patch ?? -1, paramsPtr),
       );
     } finally {
       if (paramsPtr != nullptr) calloc.free(paramsPtr);
@@ -3207,17 +2968,13 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult setVoiceLimit(int limit) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_set_voice_limit(_engine, limit),
-    );
+    return EngineResult.fromCode(le_engine_set_voice_limit(_engine, limit));
   }
 
   @override
   EngineResult resetInstrument(int slot) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_reset_instrument(_engine, slot),
-    );
+    return EngineResult.fromCode(le_engine_reset_instrument(_engine, slot));
   }
 
   @override
@@ -3229,13 +2986,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      le_engine_instrument_note_on(
-        _engine,
-        slot,
-        origin,
-        note,
-        velocity,
-      ),
+      le_engine_instrument_note_on(_engine, slot, origin, note, velocity),
     );
   }
 
@@ -3318,9 +3069,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult detachMidiInput(int port) {
     _checkAlive();
-    return EngineResult.fromCode(
-      le_engine_detach_midi_input(_engine, port),
-    );
+    return EngineResult.fromCode(le_engine_detach_midi_input(_engine, port));
   }
 
   @override
@@ -3352,7 +3101,7 @@ class NativeAudioEngine implements AudioEngine {
 class PumpedNativeEngine extends NativeAudioEngine {
   /// Creates a [PumpedNativeEngine]. The library is the package's code
   /// asset, which every `flutter test` run builds (hook/build.dart).
-  PumpedNativeEngine();
+  new();
 
   /// Runs once, during the next [snapshot], between its header read and its
   /// first track read, then clears itself: how a test interleaves a native
@@ -3529,7 +3278,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
 /// disposed); this is only a token, never freed here.
 @immutable
 class _NativePluginSlotHandle implements PluginSlotHandle {
-  const _NativePluginSlotHandle(this.pointer);
+  const new(this.pointer);
 
   /// The opaque native slot pointer.
   final Pointer<le_plugin_slot> pointer;

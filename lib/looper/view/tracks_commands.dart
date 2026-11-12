@@ -30,7 +30,7 @@ import 'package:session_repository/session_repository.dart'
 /// so `M` here and the pedal's MODE footswitch move the same system state.
 class TracksCommands {
   /// Creates commands bound to [context].
-  const TracksCommands(this.context);
+  const new(this.context);
 
   /// The host view's build context (blocs, l10n, and semantics are read here).
   final BuildContext context;
@@ -622,9 +622,8 @@ void onPerformanceRecorderState(
       body: (l10n) => l10n.perfTakesNotRecoveredBody(count),
       action: NoticeAction(
         label: (l10n) => l10n.consoleTryAgain,
-        onPressed: () => unawaited(
-          retryRecoveryWithNotices(recorder, notices, count),
-        ),
+        onPressed: () =>
+            unawaited(retryRecoveryWithNotices(recorder, notices, count)),
       ),
     );
     return;

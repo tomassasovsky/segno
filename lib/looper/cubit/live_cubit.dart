@@ -16,7 +16,7 @@ import 'package:bloc/bloc.dart';
 class LiveCubit<S, T extends Object> extends Cubit<T> {
   /// Creates a [LiveCubit] following [_values] through [select], starting
   /// from [latest].
-  LiveCubit({
+  new({
     required this._values,
     required S Function() latest,
     required T Function(S value) select,

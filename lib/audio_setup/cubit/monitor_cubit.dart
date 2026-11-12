@@ -16,7 +16,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// when you record into the input, so what you monitor is what the take stores.
 class MonitorState extends Equatable {
   /// Creates a [MonitorState] from a map of input index to its [InputMonitor].
-  const MonitorState({this.inputs = const {}, this.restoreFailed = false});
+  const new({this.inputs = const {}, this.restoreFailed = false});
 
   /// Saved monitoring has not been fully restored; an explicit retry is needed.
   final bool restoreFailed;
@@ -49,7 +49,7 @@ class MonitorState extends Equatable {
 class MonitorCubit extends Cubit<MonitorState> {
   /// Creates a [MonitorCubit] driving [_repository], persisted through
   /// [_settings].
-  MonitorCubit({
+  new({
     required this._repository,
     required this._settings,
     required this._mixSettings,
@@ -210,12 +210,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final settledFx = await _repository.settleFxRecipes();
     if (!stillOwned()) return;
     if (!settledFx.isOk) throw StateError('saved monitor FX was refused');
-    emit(
-      MonitorState(
-        inputs: restored,
-        restoreFailed: state.restoreFailed,
-      ),
-    );
+    emit(MonitorState(inputs: restored, restoreFailed: state.restoreFailed));
     // Read the APPLIED chains back into state. What was decoded from settings
     // says nothing about whether a plugin actually loaded: `unavailable`,
     // `loading` and the enumerated params are the repository's answer, made
@@ -505,9 +500,8 @@ class MonitorCubit extends Cubit<MonitorState> {
         mixSettings: _mixSettings,
         input: input,
         muted: muted,
-        onAccepted: () => emit(
-          state.withInput(state.forInput(input).copyWith(muted: muted)),
-        ),
+        onAccepted: () =>
+            emit(state.withInput(state.forInput(input).copyWith(muted: muted))),
       );
     } on Object catch (error, stack) {
       if (!isClosed) addError(error, stack);
@@ -815,9 +809,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   void _emitInputEffects(int input) {
     final next = state
         .forInput(input)
-        .copyWith(
-          effects: _repository.monitorEffects(input),
-        );
+        .copyWith(effects: _repository.monitorEffects(input));
     emit(state.withInput(next));
   }
 

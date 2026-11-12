@@ -20,7 +20,7 @@ import 'package:segno/looper/cubit/live_cubit.dart';
 /// cubit.
 class LiveValue<S, T extends Object> extends StatelessWidget {
   /// Creates a [LiveValue].
-  const LiveValue({
+  const new({
     required this.values,
     required this.latest,
     required this.select,
@@ -56,7 +56,7 @@ class LiveValue<S, T extends Object> extends StatelessWidget {
 
 /// Tells the [LiveCubit] above whether its route is drawn.
 class _FollowWhileVisible<S, T extends Object> extends StatefulWidget {
-  const _FollowWhileVisible({required this.child, super.key});
+  const new({required this.child, super.key});
 
   final Widget child;
 

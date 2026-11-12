@@ -277,10 +277,7 @@ void main() {
         '1',
       ]) {
         expect(
-          () => PerformanceArmSnapshot.fromJson({
-            ...valid,
-            'captureBus': bus,
-          }),
+          () => PerformanceArmSnapshot.fromJson({...valid, 'captureBus': bus}),
           throwsFormatException,
           reason: 'bus $bus',
         );
@@ -296,10 +293,8 @@ void main() {
         0x4,
       ]) {
         expect(
-          () => PerformanceArmSnapshot.fromJson({
-            ...valid,
-            'captureMask': mask,
-          }),
+          () =>
+              PerformanceArmSnapshot.fromJson({...valid, 'captureMask': mask}),
           throwsFormatException,
           reason: 'mask $mask',
         );
@@ -313,10 +308,8 @@ void main() {
         throwsFormatException,
       );
       expect(
-        PerformanceArmSnapshot.fromJson({
-          ...valid,
-          'captureMask': 1,
-        }).captureMask,
+        PerformanceArmSnapshot.fromJson({...valid, 'captureMask': 1})
+            .captureMask,
         1,
       );
     });
@@ -341,207 +334,189 @@ void main() {
       }
       for (final level in <Object?>[null, -0.1, 1.1, double.nan, '0.5']) {
         expect(
-          () => PerformanceArmSnapshot.fromJson({
-            ...valid,
-            'outputLevel': level,
-          }),
+          () =>
+              PerformanceArmSnapshot.fromJson({...valid, 'outputLevel': level}),
           throwsFormatException,
           reason: 'output level $level',
         );
       }
       for (final mute in <Object?>[null, 1, 'false']) {
         expect(
-          () => PerformanceArmSnapshot.fromJson({
-            ...valid,
-            'outputMuted': mute,
-          }),
+          () =>
+              PerformanceArmSnapshot.fromJson({...valid, 'outputMuted': mute}),
           throwsFormatException,
         );
       }
       expect(
-        PerformanceArmSnapshot.fromJson({
-          ...valid,
-          'outputEnabledMask': 0,
-        }).outputEnabledMask,
+        PerformanceArmSnapshot.fromJson({...valid, 'outputEnabledMask': 0})
+            .outputEnabledMask,
         0,
       );
     });
 
-    test(
-      'round-trips the BUS stages with disabled entries and disabled chain '
-      'flags (R20/R3)',
-      () {
-        final snapshot = PerformanceArmSnapshot(
-          masterGain: 1,
-          limiterEnabled: false,
-          limiterCeiling: 0.99,
-          latencyOffsetFrames: 0,
-          tracks: [
-            PerformanceTrackSnapshot(
-              channel: 0,
-              state: TrackState.playing,
-              volume: 1,
-              muted: false,
-              multiple: 1,
-              lanes: [
-                PerformanceLaneSnapshot(
-                  lane: 0,
-                  lengthFrames: 480,
-                  deferred: false,
-                  // A chain-disabled lane with an individually-disabled entry:
-                  // both bits must survive so a replay seeds bypass state.
-                  chainEnabled: false,
-                  effects: [
-                    BuiltInEffect(
-                      type: TrackEffectType.delay,
-                      enabled: false,
-                      slotId: 'ab-1',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-          trackChains: [
-            PerformanceTrackChain(
-              channel: 0,
-              chainEnabled: false,
-              effects: [
-                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'ab-2'),
-              ],
-            ),
-            const PerformanceTrackChain(channel: 1),
-          ],
-          outputEffects: [
-            BuiltInEffect(type: TrackEffectType.filter, enabled: false),
-          ],
-          outputChainEnabled: false,
-        );
+    test('round-trips the BUS stages with disabled entries and disabled chain '
+        'flags (R20/R3)', () {
+      final snapshot = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 0.99,
+        latencyOffsetFrames: 0,
+        tracks: [
+          PerformanceTrackSnapshot(
+            channel: 0,
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            multiple: 1,
+            lanes: [
+              PerformanceLaneSnapshot(
+                lane: 0,
+                lengthFrames: 480,
+                deferred: false,
+                // A chain-disabled lane with an individually-disabled entry:
+                // both bits must survive so a replay seeds bypass state.
+                chainEnabled: false,
+                effects: [
+                  BuiltInEffect(
+                    type: TrackEffectType.delay,
+                    enabled: false,
+                    slotId: 'ab-1',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+        trackChains: [
+          PerformanceTrackChain(
+            channel: 0,
+            chainEnabled: false,
+            effects: [
+              BuiltInEffect(type: TrackEffectType.reverb, slotId: 'ab-2'),
+            ],
+          ),
+          const PerformanceTrackChain(channel: 1),
+        ],
+        outputEffects: [
+          BuiltInEffect(type: TrackEffectType.filter, enabled: false),
+        ],
+        outputChainEnabled: false,
+      );
 
-        final decoded = PerformanceArmSnapshot.fromJson(snapshot.toJson());
+      final decoded = PerformanceArmSnapshot.fromJson(snapshot.toJson());
 
-        final lane = decoded.tracks.single.lanes.single;
-        expect(lane.chainEnabled, isFalse);
-        final laneFx = lane.effects.single as BuiltInEffect;
-        expect(laneFx.enabled, isFalse);
-        // Slot ids ride the entries, so a replay can address the same slot.
-        expect(laneFx.slotId, 'ab-1');
-        expect(decoded.trackChains, hasLength(2));
-        expect(decoded.trackChains[0].channel, 0);
-        expect(decoded.trackChains[0].chainEnabled, isFalse);
-        final busFx = decoded.trackChains[0].effects.single as BuiltInEffect;
-        expect(busFx.typeCode, TrackEffectType.reverb.code);
-        expect(busFx.slotId, 'ab-2');
-        // A track that is only in the list because it exists reads as dry +
-        // engaged.
-        expect(decoded.trackChains[1].effects, isEmpty);
-        expect(decoded.trackChains[1].chainEnabled, isTrue);
-        expect(
-          (decoded.outputEffects.single as BuiltInEffect).enabled,
-          isFalse,
-        );
-        expect(decoded.outputChainEnabled, isFalse);
-      },
-    );
+      final lane = decoded.tracks.single.lanes.single;
+      expect(lane.chainEnabled, isFalse);
+      final laneFx = lane.effects.single as BuiltInEffect;
+      expect(laneFx.enabled, isFalse);
+      // Slot ids ride the entries, so a replay can address the same slot.
+      expect(laneFx.slotId, 'ab-1');
+      expect(decoded.trackChains, hasLength(2));
+      expect(decoded.trackChains[0].channel, 0);
+      expect(decoded.trackChains[0].chainEnabled, isFalse);
+      final busFx = decoded.trackChains[0].effects.single as BuiltInEffect;
+      expect(busFx.typeCode, TrackEffectType.reverb.code);
+      expect(busFx.slotId, 'ab-2');
+      // A track that is only in the list because it exists reads as dry +
+      // engaged.
+      expect(decoded.trackChains[1].effects, isEmpty);
+      expect(decoded.trackChains[1].chainEnabled, isTrue);
+      expect((decoded.outputEffects.single as BuiltInEffect).enabled, isFalse);
+      expect(decoded.outputChainEnabled, isFalse);
+    });
 
-    test(
-      'a LEGACY arm snapshot (no fxStagesVersion marker) still parses, with '
-      'the bus stages empty and every chain enabled (R20)',
-      () {
-        final legacy = <String, dynamic>{
-          'clockFrame': 10,
-          'masterLenFrames': 480,
-          'masterGain': 1.0,
-          'limiterOn': false,
-          'limiterCeiling': 0.99,
-          'latencyOffsetFrames': 0,
-          'followOutput': false,
-          'captureMask': 3,
-          'tracks': [
-            {
-              'channel': 0,
-              'state': 'playing',
-              'volume': 1.0,
-              'muted': false,
-              'multiple': 1,
-              'lanes': [
-                {
-                  'lane': 0,
-                  'lenFrames': 480,
-                  'deferred': false,
-                  'pcmRef': 'loops/track0-lane0.wav',
-                  'effects': [
-                    {'type': TrackEffectType.reverb.code},
-                  ],
-                },
-              ],
-            },
-          ],
-          'monitors': [
-            {
-              'input': 0,
-              'enabled': true,
-              'outputMask': 3,
-              'volume': 1.0,
-              'muted': false,
-              'effects': <Map<String, dynamic>>[],
-            },
-          ],
-        };
+    test('a LEGACY arm snapshot (no fxStagesVersion marker) still parses, with '
+        'the bus stages empty and every chain enabled (R20)', () {
+      final legacy = <String, dynamic>{
+        'clockFrame': 10,
+        'masterLenFrames': 480,
+        'masterGain': 1.0,
+        'limiterOn': false,
+        'limiterCeiling': 0.99,
+        'latencyOffsetFrames': 0,
+        'followOutput': false,
+        'captureMask': 3,
+        'tracks': [
+          {
+            'channel': 0,
+            'state': 'playing',
+            'volume': 1.0,
+            'muted': false,
+            'multiple': 1,
+            'lanes': [
+              {
+                'lane': 0,
+                'lenFrames': 480,
+                'deferred': false,
+                'pcmRef': 'loops/track0-lane0.wav',
+                'effects': [
+                  {'type': TrackEffectType.reverb.code},
+                ],
+              },
+            ],
+          },
+        ],
+        'monitors': [
+          {
+            'input': 0,
+            'enabled': true,
+            'outputMask': 3,
+            'volume': 1.0,
+            'muted': false,
+            'effects': <Map<String, dynamic>>[],
+          },
+        ],
+      };
 
-        final decoded = PerformanceArmSnapshot.fromJson(legacy);
+      final decoded = PerformanceArmSnapshot.fromJson(legacy);
 
-        expect(
-          decoded.fxStagesVersion,
-          PerformanceArmSnapshot.legacyFxStagesVersion,
-        );
-        expect(decoded.trackChains, isEmpty);
-        expect(decoded.outputEffects, isEmpty);
-        expect(decoded.outputChainEnabled, isTrue);
-        // No tempo field either (#281): a pre-field capture reads back the
-        // 0-as-unset sentinel — the exporter's cue that there is no tempo
-        // evidence here, same as a capture that never set one.
-        expect(decoded.tempoBpm, 0);
-        // Everything the legacy schema DID describe is intact, defaulted to
-        // audible — the pre-FX-v3 world had no other possibility.
-        final lane = decoded.tracks.single.lanes.single;
-        expect(lane.chainEnabled, isTrue);
-        final laneFx = lane.effects.single as BuiltInEffect;
-        expect(laneFx.enabled, isTrue);
-        expect(laneFx.slotId, isNull);
-      },
-    );
+      expect(
+        decoded.fxStagesVersion,
+        PerformanceArmSnapshot.legacyFxStagesVersion,
+      );
+      expect(decoded.trackChains, isEmpty);
+      expect(decoded.outputEffects, isEmpty);
+      expect(decoded.outputChainEnabled, isTrue);
+      // No tempo field either (#281): a pre-field capture reads back the
+      // 0-as-unset sentinel — the exporter's cue that there is no tempo
+      // evidence here, same as a capture that never set one.
+      expect(decoded.tempoBpm, 0);
+      // Everything the legacy schema DID describe is intact, defaulted to
+      // audible — the pre-FX-v3 world had no other possibility.
+      final lane = decoded.tracks.single.lanes.single;
+      expect(lane.chainEnabled, isTrue);
+      final laneFx = lane.effects.single as BuiltInEffect;
+      expect(laneFx.enabled, isTrue);
+      expect(laneFx.slotId, isNull);
+    });
 
-    test(
-      'stores the arm-time tempo verbatim — 0 = unset, session-manifest '
-      'parity — and reads an absent key back as 0 (#281)',
-      () {
-        const withTempo = PerformanceArmSnapshot(
-          masterGain: 1,
-          limiterEnabled: false,
-          limiterCeiling: 0.99,
-          latencyOffsetFrames: 0,
-          tempoBpm: 87.5,
-        );
-        expect(withTempo.toJson()['tempoBpm'], 87.5);
-        expect(
-          PerformanceArmSnapshot.fromJson(withTempo.toJson()).tempoBpm,
-          87.5,
-        );
+    test('stores the arm-time tempo verbatim — 0 = unset, session-manifest '
+        'parity — and reads an absent key back as 0 (#281)', () {
+      const withTempo = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 0.99,
+        latencyOffsetFrames: 0,
+        tempoBpm: 87.5,
+      );
+      expect(withTempo.toJson()['tempoBpm'], 87.5);
+      expect(
+        PerformanceArmSnapshot.fromJson(withTempo.toJson()).tempoBpm,
+        87.5,
+      );
 
-        // Unset is a literal 0, written verbatim like Session.tempoBpm —
-        // readers guard with `> 0`, so 0 and a pre-field absent key resolve
-        // identically (no tempo evidence).
-        const noTempo = PerformanceArmSnapshot(
-          masterGain: 1,
-          limiterEnabled: false,
-          limiterCeiling: 0.99,
-          latencyOffsetFrames: 0,
-        );
-        expect(noTempo.toJson()['tempoBpm'], 0);
-        expect(PerformanceArmSnapshot.fromJson(noTempo.toJson()).tempoBpm, 0);
-      },
-    );
+      // Unset is a literal 0, written verbatim like Session.tempoBpm —
+      // readers guard with `> 0`, so 0 and a pre-field absent key resolve
+      // identically (no tempo evidence).
+      const noTempo = PerformanceArmSnapshot(
+        masterGain: 1,
+        limiterEnabled: false,
+        limiterCeiling: 0.99,
+        latencyOffsetFrames: 0,
+      );
+      expect(noTempo.toJson()['tempoBpm'], 0);
+      expect(PerformanceArmSnapshot.fromJson(noTempo.toJson()).tempoBpm, 0);
+    });
 
     test(
       'omits the bus fields and every engaged flag when at their defaults',
@@ -606,15 +581,12 @@ void main() {
       expect(decoded.tempoBpm, 132);
     });
 
-    test(
-      'reads a pre-#281 snapshot (no tempoBpm key) back as 0-as-unset',
-      () {
-        final decoded = PerformanceDisarmSnapshot.fromJson(const {
-          'tracks': <dynamic>[],
-        });
-        expect(decoded.tempoBpm, 0);
-      },
-    );
+    test('reads a pre-#281 snapshot (no tempoBpm key) back as 0-as-unset', () {
+      final decoded = PerformanceDisarmSnapshot.fromJson(const {
+        'tracks': <dynamic>[],
+      });
+      expect(decoded.tempoBpm, 0);
+    });
   });
 
   group('PerformanceLayerEntry', () {

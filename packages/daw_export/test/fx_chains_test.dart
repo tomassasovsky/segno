@@ -103,52 +103,47 @@ void main() {
       expect(text, contains('(no effects)'));
     });
 
-    test(
-      'renders a plugin entry with its format/id/version and the '
-      'offline dry-passthrough note',
-      () {
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'effects': [
-                        {
-                          'type': 8,
-                          'plugin': {
-                            'format': 0,
-                            'id': 'abc123',
-                            // 1<<16 | 2<<8 | 3 -> v1.2.3
-                            'version': (1 << 16) | (2 << 8) | 3,
-                          },
+    test('renders a plugin entry with its format/id/version and the '
+        'offline dry-passthrough note', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'effects': [
+                      {
+                        'type': 8,
+                        'plugin': {
+                          'format': 0,
+                          'id': 'abc123',
+                          // 1<<16 | 2<<8 | 3 -> v1.2.3
+                          'version': (1 << 16) | (2 << 8) | 3,
                         },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        final text = FxChainsWriter.render(dir.path);
-        expect(
-          text,
-          contains(
-            '1. Plugin: VST3 abc123 v1.2.3 [rendered as dry passthrough]',
-          ),
-        );
-      },
-    );
+      final text = FxChainsWriter.render(dir.path);
+      expect(
+        text,
+        contains('1. Plugin: VST3 abc123 v1.2.3 [rendered as dry passthrough]'),
+      );
+    });
 
     test('renders an unversioned plugin as vunknown', () {
       File('${dir.path}/performance.json').writeAsStringSync(
@@ -192,63 +187,60 @@ void main() {
       );
     });
 
-    test(
-      'reads effects only from armSnapshot — a disarmSnapshot entry never '
-      'carries effects (docs/formats/performance-manifest-format.md), and '
-      'even a defensively-malformed one carrying it anyway is ignored',
-      () {
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'effects': [
-                        {
-                          'type': 1,
-                          'params': [0.1, 0.1, 0.0, 0.0],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            // Real writers never emit `effects` here — this is exactly
-            // the malformed-input shape being defended against.
-            'disarmSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'effects': [
-                        {
-                          'type': 2,
-                          'params': [0.9, 0.9, 0.0, 0.0],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            'layers': <dynamic>[],
-          }),
-        );
+    test('reads effects only from armSnapshot — a disarmSnapshot entry never '
+        'carries effects (docs/formats/performance-manifest-format.md), and '
+        'even a defensively-malformed one carrying it anyway is ignored', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'effects': [
+                      {
+                        'type': 1,
+                        'params': [0.1, 0.1, 0.0, 0.0],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          // Real writers never emit `effects` here — this is exactly
+          // the malformed-input shape being defended against.
+          'disarmSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'effects': [
+                      {
+                        'type': 2,
+                        'params': [0.9, 0.9, 0.0, 0.0],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          'layers': <dynamic>[],
+        }),
+      );
 
-        final text = FxChainsWriter.render(dir.path);
-        expect(text, contains('Drive'));
-        expect(text, isNot(contains('Filter')));
-      },
-    );
+      final text = FxChainsWriter.render(dir.path);
+      expect(text, contains('Drive'));
+      expect(text, isNot(contains('Filter')));
+    });
   });
 }

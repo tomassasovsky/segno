@@ -11,10 +11,8 @@ import 'package:segno/appliance/display_role.dart';
 /// connected" is a fact the console read, never a guess.
 class DisplayPresenceCubit extends Cubit<Set<DisplayRole>> {
   /// Creates a [DisplayPresenceCubit] that re-reads every [_interval].
-  DisplayPresenceCubit({
-    required this._outputs,
-    this._interval = const Duration(seconds: 2),
-  }) : super(const {});
+  new({required this._outputs, this._interval = const Duration(seconds: 2)})
+    : super(const {});
 
   final DisplayOutputs _outputs;
 

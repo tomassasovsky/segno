@@ -30,7 +30,7 @@ import 'package:session_repository/session_repository.dart';
 /// [LibraryAudioCubit] is created the first time that section shows.
 class LibraryPage extends StatelessWidget {
   /// Creates the Library page.
-  const LibraryPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => MultiBlocProvider(
@@ -78,7 +78,7 @@ class LibraryPage extends StatelessWidget {
 /// selected; a failed save stays until a later action, as it stays true.
 class LibraryView extends StatefulWidget {
   /// Creates the Library view.
-  const LibraryView({super.key});
+  const new({super.key});
 
   @override
   State<LibraryView> createState() => _LibraryViewState();
@@ -93,10 +93,7 @@ class _LibraryViewState extends State<LibraryView> {
 
   void _reselect(BuildContext context, SessionState session) {
     final library = context.read<LibraryCubit>();
-    if (library.state.folderFilter
-        case FolderSessions(
-          :final folder,
-        )
+    if (library.state.folderFilter case FolderSessions(:final folder)
         when !session.folders.contains(folder)) {
       // The chip's folder was renamed or deleted.
       library.filterFolder(const AllSessions());
@@ -175,9 +172,8 @@ class _LibraryViewState extends State<LibraryView> {
               previous.backup != current.backup &&
               (current.backup is LibraryBackupConflict ||
                   current.backup is LibraryBackupInterrupted),
-          listener: (context, state) => unawaited(
-            showLibraryBackupQuestion(context, state.backup!),
-          ),
+          listener: (context, state) =>
+              unawaited(showLibraryBackupQuestion(context, state.backup!)),
         ),
         // A restore added a session: the catalog shows it.
         BlocListener<LibraryCubit, LibraryState>(
@@ -285,7 +281,7 @@ bool trackStartedCapturing(LooperState previous, LooperState current) {
 /// The Library's crumb tabs: `Sessions` and `Audio`, 180 x 64 each.
 class LibrarySectionTabs extends StatelessWidget {
   /// Creates the tabs; [onShow] switches the section.
-  const LibrarySectionTabs({required this.onShow, super.key});
+  const new({required this.onShow, super.key});
 
   /// Shows a section.
   final ValueChanged<LibrarySection> onShow;
@@ -388,11 +384,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
   /// Creates the line for [failure].
-  const LibraryFailureLine({
-    required this.failure,
-    this.refusedBy,
-    super.key,
-  });
+  const new({required this.failure, this.refusedBy, super.key});
 
   /// What failed.
   final LibraryFailure failure;
@@ -422,11 +414,7 @@ class LibraryFailureLine extends StatelessWidget {
         child: AppText(
           message,
           key: const Key('library_failure'),
-          style: TextStyle(
-            color: context.surface.rec,
-            fontSize: 23,
-            height: 1,
-          ),
+          style: TextStyle(color: context.surface.rec, fontSize: 23, height: 1),
         ),
       ),
     );
@@ -438,7 +426,7 @@ class LibraryFailureLine extends StatelessWidget {
 /// action runs.
 class LibraryActions extends StatelessWidget {
   /// Creates the Library's title-row actions.
-  const LibraryActions({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

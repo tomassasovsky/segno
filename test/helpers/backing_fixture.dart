@@ -80,7 +80,7 @@ class ContentAudioDecoder implements AudioDecoder {
 /// and the player.
 class BackingFixture {
   /// Builds the stack; call [start] before use and [dispose] after.
-  BackingFixture() {
+  new() {
     temp = Directory.systemTemp.createTempSync('segno_backing');
     final root = '${temp.path}/exports';
     engine = MockAudioEngine()

@@ -17,7 +17,7 @@ class RenderJob {
   /// callback to freeze its sources after [_freezeTimeout] (the device is
   /// present but not calling back) is cancelled and ends with
   /// [EngineResult.device].
-  RenderJob({
+  new({
     required this._engine,
     required this.id,
     required this._target,

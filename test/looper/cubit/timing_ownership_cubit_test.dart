@@ -20,7 +20,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _DelayedSettingsRepository extends SettingsRepository {
-  _DelayedSettingsRepository({required super.store});
+  new({required super.store});
 
   final ready = Completer<void>();
 
@@ -97,10 +97,7 @@ void main() {
         repository: repository,
         settings: delayed,
       );
-      final record = RecordSettings(
-        repository: repository,
-        settings: delayed,
-      );
+      final record = RecordSettings(repository: repository, settings: delayed);
       final tempo = TempoSettings(repository: repository, settings: delayed);
       addTearDown(playback.close);
       addTearDown(quantize.close);
@@ -137,10 +134,7 @@ void main() {
         ),
       );
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
-      expect(
-        record.state,
-        const RecordOptions(recordLengthReady: true),
-      );
+      expect(record.state, const RecordOptions(recordLengthReady: true));
       expect(
         tempo.state,
         const TempoState(
@@ -166,10 +160,7 @@ void main() {
         ),
       );
       expect(quantize.state.defaultTiming, RecordTiming.immediately);
-      expect(
-        record.state,
-        const RecordOptions(recordLengthReady: true),
-      );
+      expect(record.state, const RecordOptions(recordLengthReady: true));
       expect(
         tempo.state,
         const TempoState(
@@ -200,10 +191,7 @@ void main() {
         repository: repository,
         settings: delayed,
       );
-      final record = RecordSettings(
-        repository: repository,
-        settings: delayed,
-      );
+      final record = RecordSettings(repository: repository, settings: delayed);
       final tempo = TempoSettings(repository: repository, settings: delayed);
       addTearDown(playback.close);
       addTearDown(quantize.close);
@@ -308,10 +296,7 @@ void main() {
     'a Sound start edit preserves independent delayed Tempo preferences',
     () async {
       final delayed = await delayedSettings();
-      final record = RecordSettings(
-        repository: repository,
-        settings: delayed,
-      );
+      final record = RecordSettings(repository: repository, settings: delayed);
       final tempo = TempoSettings(repository: repository, settings: delayed);
       addTearDown(record.close);
       addTearDown(tempo.close);
@@ -334,10 +319,7 @@ void main() {
 
   test('only Tempo restores the coupled startup start methods', () async {
     await settings.saveRecordStartSettings(countInBars: 2, soundStart: false);
-    final record = RecordSettings(
-      repository: repository,
-      settings: settings,
-    );
+    final record = RecordSettings(repository: repository, settings: settings);
     final tempo = TempoSettings(repository: repository, settings: settings);
     addTearDown(record.close);
     addTearDown(tempo.close);
@@ -357,10 +339,7 @@ void main() {
         ..values['tempo.count_in_bars'] = 2
         ..values['looper.auto_record'] = true;
       final invalid = SettingsRepository(store: store);
-      final record = RecordSettings(
-        repository: repository,
-        settings: invalid,
-      );
+      final record = RecordSettings(repository: repository, settings: invalid);
       final tempo = TempoSettings(repository: repository, settings: invalid);
       addTearDown(record.close);
       addTearDown(tempo.close);
@@ -376,10 +355,8 @@ void main() {
   test(
     'offline playback defaults survive polling, recall and explicit reset',
     () async {
-      final owner = (() => PlaybackSettings(
-        repository: repository,
-        settings: settings,
-      ))();
+      final owner = (() =>
+          PlaybackSettings(repository: repository, settings: settings))();
       addTearDown(owner.close);
       await ((PlaybackSettings cubit) async {
         await cubit.load();

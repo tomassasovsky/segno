@@ -149,41 +149,38 @@ void main() {
     },
   );
 
-  test(
-    'it DOES keep the parameters, the channel settings, the pedal name, '
-    'its rack variant and the factory source',
-    () async {
-      await cubit.save(
-        name: 'Verse',
-        entries: [
-          BuiltInEffect(
-            type: TrackEffectType.delay,
-            params: const [0.42, 0.35, 0.25, 0],
-            enabled: false,
-            module: 'Delay',
-            presetId: 'factory-id',
-            variant: 'Dub Rack',
-            source: const {'Delay': 1, 'Del Mode': 0.545},
-            channels: const FxChannels(
-              input: FxChannelInput.monoSum,
-              output: FxChannelOutput.mono,
-              placement: -0.5,
-              level: 0.8,
-            ),
+  test('it DOES keep the parameters, the channel settings, the pedal name, '
+      'its rack variant and the factory source', () async {
+    await cubit.save(
+      name: 'Verse',
+      entries: [
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          params: const [0.42, 0.35, 0.25, 0],
+          enabled: false,
+          module: 'Delay',
+          presetId: 'factory-id',
+          variant: 'Dub Rack',
+          source: const {'Delay': 1, 'Del Mode': 0.545},
+          channels: const FxChannels(
+            input: FxChannelInput.monoSum,
+            output: FxChannelOutput.mono,
+            placement: -0.5,
+            level: 0.8,
           ),
-        ],
-      );
+        ),
+      ],
+    );
 
-      final fx = cubit.state.single.entries.single as BuiltInEffect;
-      expect(fx.params[0], closeTo(0.42, 1e-9));
-      expect(fx.channels.level, 0.8);
-      expect(fx.enabled, isFalse);
-      expect(fx.module, 'Delay');
-      expect(fx.presetId, 'factory-id');
-      expect(fx.variant, 'Dub Rack');
-      expect(fx.source, {'Delay': 1, 'Del Mode': 0.545});
-    },
-  );
+    final fx = cubit.state.single.entries.single as BuiltInEffect;
+    expect(fx.params[0], closeTo(0.42, 1e-9));
+    expect(fx.channels.level, 0.8);
+    expect(fx.enabled, isFalse);
+    expect(fx.module, 'Delay');
+    expect(fx.presetId, 'factory-id');
+    expect(fx.variant, 'Dub Rack');
+    expect(fx.source, {'Delay': 1, 'Del Mode': 0.545});
+  });
 
   test('byName is case-insensitive, because two rows a player cannot tell '
       'apart are one name', () async {

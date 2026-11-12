@@ -19,7 +19,7 @@ class StageDbScale extends StatelessWidget {
   /// meter this scale was drawn for. The Mixer's strip puts its meter
   /// somewhere else in the same height, so it passes its own — the scale has
   /// to line up with the meter beside it, whichever view is showing.
-  const StageDbScale({
+  const new({
     required this.trailing,
     this.topInset = TrackColumn.meterTopInset,
     this.bottomInset = TrackColumn.meterBottomInset,

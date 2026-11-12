@@ -23,9 +23,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The host's own list: a Scarlett reported in both directions with its real
 /// channel counts, the built-in pair, and a playback-only device.
@@ -60,12 +60,7 @@ const _devices = <AudioDevice>[
   ),
   // No capture half at all, and no count either — the two ways a device can
   // fail to answer, in one row.
-  AudioDevice(
-    id: 'hdmi-out',
-    name: 'HDMI',
-    isDefault: false,
-    isInput: false,
-  ),
+  AudioDevice(id: 'hdmi-out', name: 'HDMI', isDefault: false, isInput: false),
 ];
 
 const _open = EngineStatus(
@@ -125,39 +120,27 @@ void main() {
     rememberedDivision = GridDivision.off;
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(() => repository.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
-    when(() => repository.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.recordStartSettingsSettled).thenReturn(true);
-    when(() => repository.recordStartRecoveryRequired).thenAnswer(
-      (_) => startRecovering,
-    );
-    when(() => repository.recordStartCaptureLocked).thenAnswer(
-      (_) => startCaptureLocked,
-    );
+    when(() => repository.recordStartRecoveryRequired)
+        .thenAnswer((_) => startRecovering);
+    when(() => repository.recordStartCaptureLocked)
+        .thenAnswer((_) => startCaptureLocked);
     when(() => repository.recordStartSettings).thenAnswer(
-      (_) => (
-        countInBars: confirmedCountIn,
-        soundStart: confirmedSoundStart,
-      ),
+      (_) => (countInBars: confirmedCountIn, soundStart: confirmedSoundStart),
     );
     when(() => repository.recordStartRestartIntent).thenAnswer(
-      (_) => (
-        countInBars: confirmedCountIn,
-        soundStart: confirmedSoundStart,
-      ),
+      (_) => (countInBars: confirmedCountIn, soundStart: confirmedSoundStart),
     );
-    when(() => repository.settleRecordStartSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => repository.settleRecordStartSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecordStartSettings(
         countInBars: any(named: 'countInBars'),
@@ -173,9 +156,8 @@ void main() {
     engine = StreamController<LooperState>.broadcast();
     addTearDown(engine.close);
     when(() => repository.looperState).thenAnswer((_) => engine.stream);
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.state).thenReturn(const LooperState(status: _open));
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
@@ -203,15 +185,13 @@ void main() {
     when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(repository.devices).thenReturn(_devices);
-    when(() => repository.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.recordTimingSettingsSettled).thenReturn(true);
     when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
     when(() => repository.recordTimingCaptureLocked).thenReturn(false);
-    when(
-      () => repository.defaultRecordTiming,
-    ).thenAnswer((_) => confirmedTiming);
+    when(() => repository.defaultRecordTiming)
+        .thenAnswer((_) => confirmedTiming);
     when(() => repository.trackRecordTimingOverrides).thenReturn(const {});
     when(() => repository.recordTimingRestartIntent).thenAnswer(
       (_) => (
@@ -220,9 +200,8 @@ void main() {
         trackOverrides: const <int, RecordTiming>{},
       ),
     );
-    when(() => repository.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => repository.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -249,12 +228,10 @@ void main() {
       }
       return EngineResult.ok;
     });
-    when(
-      () => repository.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
     when(() => repository.setClickOutput(any())).thenReturn(EngineResult.ok);
     when(() => repository.setClickVolume(any())).thenReturn(EngineResult.ok);
   });
@@ -279,11 +256,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     when(() => bloc.state).thenReturn(looper);
-    whenListen(
-      bloc,
-      const Stream<LooperState>.empty(),
-      initialState: looper,
-    );
+    whenListen(bloc, const Stream<LooperState>.empty(), initialState: looper);
 
     settings = SettingsRepository(store: FakeKeyValueStore());
     audio = AudioSetupCubit(
@@ -304,10 +277,7 @@ void main() {
     quantize = RecordTimingCubit(settings: quantizeOwner);
     await quantizeOwner.load();
     options = RecordSettings(repository: repository, settings: settings);
-    tempoOwner = TempoSettings(
-      repository: repository,
-      settings: settings,
-    );
+    tempoOwner = TempoSettings(repository: repository, settings: settings);
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
@@ -417,19 +387,13 @@ void main() {
       await pump(tester);
       await tester.tap(find.byKey(const Key('device_change_interface')));
       await tester.pumpAndSettle();
-      expect(
-        find.text(l10nOf(tester).audioDeviceUnplugged),
-        findsOneWidget,
-      );
+      expect(find.text(l10nOf(tester).audioDeviceUnplugged), findsOneWidget);
     });
 
     testWidgets('every output off gets a banner, not silence', (tester) async {
       await pump(
         tester,
-        looper: const LooperState(
-          status: _open,
-          outputEnabledMask: 0,
-        ),
+        looper: const LooperState(status: _open, outputEnabledMask: 0),
       );
       expect(find.byKey(const Key('audio_no_outputs_banner')), findsOneWidget);
     });
@@ -456,10 +420,7 @@ void main() {
         expect(rects[i].left - rects[i - 1].right, moreOrLessEquals(13));
       }
       // The pen's 831 of content, no more.
-      expect(
-        rects.last.right - rects.first.left,
-        moreOrLessEquals(831),
-      );
+      expect(rects.last.right - rects.first.left, moreOrLessEquals(831));
       expect(tester.takeException(), isNull);
     });
 
@@ -473,9 +434,8 @@ void main() {
         bufferFrames: 32,
         devicePresent: true,
       );
-      when(
-        () => repository.state,
-      ).thenReturn(const LooperState(status: running));
+      when(() => repository.state)
+          .thenReturn(const LooperState(status: running));
       when(() => repository.lastEngineConfig).thenReturn(
         const EngineConfig(
           sampleRate: 48000,
@@ -526,9 +486,9 @@ void main() {
       await tester.tap(find.byKey(const Key('device_apply')));
       await tester.pumpAndSettle();
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(asked.sampleRate, 96000);
       expect(asked.bufferFrames, 256);
@@ -546,9 +506,9 @@ void main() {
       await tester.tap(find.byKey(const Key('device_apply')));
       await tester.pumpAndSettle();
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(asked.maxLoopFrames, 5 * 60 * 48000);
     });
@@ -575,9 +535,8 @@ void main() {
     );
 
     setUp(() {
-      when(
-        () => repository.stopTrack(channel: any(named: 'channel')),
-      ).thenReturn(EngineResult.ok);
+      when(() => repository.stopTrack(channel: any(named: 'channel')))
+          .thenReturn(EngineResult.ok);
     });
 
     bool focused(Key key) {
@@ -791,9 +750,8 @@ void main() {
         );
         return EngineResult.ok;
       });
-      when(
-        () => repository.measureLoopbackLatency(),
-      ).thenAnswer((_) => measured.future);
+      when(() => repository.measureLoopbackLatency())
+          .thenAnswer((_) => measured.future);
       when(repository.cancelLatency).thenReturn(null);
       await pump(tester, looper: owed);
       await tester.pump();
@@ -823,9 +781,8 @@ void main() {
           // Made inside the test's zone, where its pumps deliver it.
         ).thenAnswer((_) => (result = Completer<LatencyResult>()).future);
         when(repository.cancelLatency).thenReturn(null);
-        when(
-          () => repository.stopTrack(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.stopTrack(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.ok);
       });
 
       Future<void> open(WidgetTester tester) async {

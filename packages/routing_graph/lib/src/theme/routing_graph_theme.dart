@@ -15,7 +15,7 @@ import 'package:material_ui/material_ui.dart';
 @immutable
 class RoutingGraphTheme extends ThemeExtension<RoutingGraphTheme> {
   /// Creates a [RoutingGraphTheme].
-  const RoutingGraphTheme({
+  const new({
     required this.background,
     required this.surface,
     required this.card,

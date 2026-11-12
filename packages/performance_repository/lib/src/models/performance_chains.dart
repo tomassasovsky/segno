@@ -16,7 +16,7 @@ import 'package:segno_engine/segno_engine.dart';
 @immutable
 class PerformanceChains {
   /// Creates a [PerformanceChains].
-  const PerformanceChains({
+  const new({
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
@@ -60,7 +60,7 @@ class PerformanceChains {
 @immutable
 class PerformanceTrackChain {
   /// Creates a [PerformanceTrackChain].
-  const PerformanceTrackChain({
+  const new({
     required this.channel,
     this.effects = const [],
     this.chainEnabled = true,
@@ -69,15 +69,14 @@ class PerformanceTrackChain {
   /// Rebuilds a [PerformanceTrackChain] from a decoded JSON map. An absent
   /// `chainEnabled` reads as engaged, matching the writer's omit-when-default
   /// rule (and R15's "migration defaults every level to enabled").
-  factory PerformanceTrackChain.fromJson(Map<String, dynamic> json) =>
-      PerformanceTrackChain(
-        channel: (json['channel'] as num).toInt(),
-        chainEnabled: json['chainEnabled'] as bool? ?? true,
-        effects: [
-          for (final e in (json['effects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceTrackChain(
+    channel: (json['channel'] as num).toInt(),
+    chainEnabled: json['chainEnabled'] as bool? ?? true,
+    effects: [
+      for (final e in (json['effects'] as List<dynamic>? ?? const []))
+        TrackEffect.fromJson(e as Map<String, dynamic>),
+    ],
+  );
 
   /// Track channel whose stereo bus this chain sits on.
   final int channel;
@@ -102,7 +101,7 @@ class PerformanceTrackChain {
 @immutable
 class PerformanceOutputChain {
   /// Creates a [PerformanceOutputChain].
-  const PerformanceOutputChain({
+  const new({
     required this.bus,
     this.effects = const [],
     this.chainEnabled = true,
@@ -110,15 +109,14 @@ class PerformanceOutputChain {
 
   /// Rebuilds a [PerformanceOutputChain] from a decoded JSON map, on the same
   /// omit-when-default rule as [PerformanceTrackChain.fromJson].
-  factory PerformanceOutputChain.fromJson(Map<String, dynamic> json) =>
-      PerformanceOutputChain(
-        bus: (json['bus'] as num).toInt(),
-        chainEnabled: json['chainEnabled'] as bool? ?? true,
-        effects: [
-          for (final e in (json['effects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceOutputChain(
+    bus: (json['bus'] as num).toInt(),
+    chainEnabled: json['chainEnabled'] as bool? ?? true,
+    effects: [
+      for (final e in (json['effects'] as List<dynamic>? ?? const []))
+        TrackEffect.fromJson(e as Map<String, dynamic>),
+    ],
+  );
 
   /// The output destination this chain sits after.
   final int bus;
@@ -147,7 +145,7 @@ class PerformanceOutputChain {
 @immutable
 class PerformanceLaneChain {
   /// Creates a [PerformanceLaneChain].
-  const PerformanceLaneChain({
+  const new({
     required this.channel,
     required this.lane,
     required this.effects,
@@ -172,7 +170,7 @@ class PerformanceLaneChain {
 @immutable
 class PerformanceMonitorState {
   /// Creates a [PerformanceMonitorState].
-  const PerformanceMonitorState({
+  const new({
     required this.input,
     required this.enabled,
     required this.outputMask,

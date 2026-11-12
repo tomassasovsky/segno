@@ -21,7 +21,7 @@ const double kLoopTabContentTop = 124;
 /// sees the same page smaller instead of overflowing.
 class LoopPenCanvas extends StatelessWidget {
   /// Creates a [LoopPenCanvas].
-  const LoopPenCanvas({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The page, laid out in pen pixels.
   final Widget child;
@@ -61,7 +61,7 @@ double fillingCardWidth({
 /// starts its content at `left: 0` and fills it with `right: 0`.
 class LoopSettingsFrame extends StatelessWidget {
   /// Creates a [LoopSettingsFrame].
-  const LoopSettingsFrame({
+  const new({
     required this.title,
     required this.onBack,
     required this.onStage,

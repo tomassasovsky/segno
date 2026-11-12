@@ -4,13 +4,13 @@ import 'package:looper_repository/looper_repository.dart';
 
 /// The picture a surface draws for a rack or one of its pedals.
 sealed class FxArt extends Equatable {
-  const FxArt();
+  const new();
 }
 
 /// A rack's footswitch picture, from the catalogue package.
 final class FxRackPicture extends FxArt {
   /// Creates an [FxRackPicture] for the catalogue artwork [slug].
-  const FxRackPicture(this.slug);
+  const new(this.slug);
 
   /// The catalogue artwork slug ([FxRack.art]).
   final String slug;
@@ -27,7 +27,7 @@ final class FxRackPicture extends FxArt {
 ///
 /// Made by [fxEntryArt], which resolves the [look] and the [controls].
 final class FxPedalPicture extends FxArt {
-  const FxPedalPicture._(
+  const new _(
     this.effect,
     this.look,
     this.controls, {

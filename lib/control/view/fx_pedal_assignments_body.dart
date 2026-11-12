@@ -40,7 +40,7 @@ const double _gap = 14;
 /// card that exists only to refuse is worse than no card.
 class FxPedalAssignmentsBody extends StatefulWidget {
   /// Creates a [FxPedalAssignmentsBody].
-  const FxPedalAssignmentsBody({super.key});
+  const new({super.key});
 
   @override
   State<FxPedalAssignmentsBody> createState() => _FxPedalAssignmentsBodyState();
@@ -196,7 +196,7 @@ class _FxPedalAssignmentsBodyState extends State<FxPedalAssignmentsBody> {
 
 /// One track switch in the list: its name for [bank] and what it is bound to.
 class _TrackRow extends StatelessWidget {
-  const _TrackRow({
+  const new({
     required this.button,
     required this.bank,
     required this.binding,
@@ -257,7 +257,7 @@ class _TrackRow extends StatelessWidget {
 
 /// The caption and the target list for the selected switch.
 class _AssignSection extends StatelessWidget {
-  const _AssignSection({
+  const new({
     required this.state,
     required this.button,
     required this.bank,
@@ -335,10 +335,7 @@ class _AssignSection extends StatelessWidget {
         const SizedBox(height: _gap),
         ConsoleGroupLabel(
           PedalBindingKey.isBankKeyed(button)
-              ? l10n.controlAssignGroup(
-                  legend,
-                  String.fromCharCode(65 + bank),
-                )
+              ? l10n.controlAssignGroup(legend, String.fromCharCode(65 + bank))
               : l10n.controlAssignGroupPlain(legend),
         ),
         const SizedBox(height: _gap),
@@ -405,7 +402,7 @@ String _boundLabel(
 
 /// One target in the assign list, checked when the switch holds it.
 class _TargetRow extends StatelessWidget {
-  const _TargetRow({
+  const new({
     required this.target,
     required this.chosen,
     required this.onTap,
@@ -466,7 +463,7 @@ class _TargetRow extends StatelessWidget {
 
 /// One transport switch: its cap legend over what it is bound to.
 class _SwitchCard extends StatelessWidget {
-  const _SwitchCard({
+  const new({
     required this.button,
     required this.binding,
     required this.selected,
@@ -558,11 +555,7 @@ class _SwitchCard extends StatelessWidget {
 
 /// The assign list's footer: one tap deeper, to the individual effect slots.
 class _EffectsToggle extends StatelessWidget {
-  const _EffectsToggle({
-    required this.showing,
-    required this.onTap,
-    super.key,
-  });
+  const new({required this.showing, required this.onTap, super.key});
 
   final bool showing;
   final VoidCallback onTap;

@@ -27,10 +27,7 @@ enum UseAsBackingOutcome {
 class BackingPlayer {
   /// Creates the owner over [_repository] (and its store) and the backing
   /// mix owner in [_settings], whose End decides the staging.
-  BackingPlayer({
-    required this._repository,
-    required this._settings,
-  });
+  new({required this._repository, required this._settings});
 
   final BackingRepository _repository;
   final BackingSettings _settings;
@@ -297,10 +294,7 @@ class BackingPlayer {
       return;
     }
     _emit(
-      _state.copyWith(
-        failure: failure,
-        failureCount: _state.failureCount + 1,
-      ),
+      _state.copyWith(failure: failure, failureCount: _state.failureCount + 1),
     );
   }
 

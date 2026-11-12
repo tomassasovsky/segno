@@ -18,7 +18,7 @@ enum ConflictPolicy {
 /// Nothing was written.
 class NameConflict implements Exception {
   /// Creates a [NameConflict].
-  const NameConflict(this.existingPath);
+  const new(this.existingPath);
 
   /// The file that is already at the destination.
   final String existingPath;

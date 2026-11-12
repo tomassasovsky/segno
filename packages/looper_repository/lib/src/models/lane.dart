@@ -11,7 +11,7 @@ import 'package:segno_engine/segno_engine.dart' show LaneCacheState;
 /// two assigned inputs keeps both as separate lanes that play back together.
 class Lane extends Equatable {
   /// Creates a [Lane].
-  const Lane({
+  const new({
     this.inputChannel = -1,
     this.outputMask = 0x3,
     this.volume = 1,

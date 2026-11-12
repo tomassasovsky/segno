@@ -30,61 +30,45 @@ void main() {
       ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
       : null;
 
-  test(
-    'every built-in parameter matches le_fx_param_info field by field',
-    () {
-      final desc = calloc<le_fx_param_desc>();
-      addTearDown(() => calloc.free(desc));
-      for (final type in TrackEffectType.values) {
-        final params = type.params;
+  test('every built-in parameter matches le_fx_param_info field by field', () {
+    final desc = calloc<le_fx_param_desc>();
+    addTearDown(() => calloc.free(desc));
+    for (final type in TrackEffectType.values) {
+      final params = type.params;
+      expect(le_fx_param_count(type.code), params.length, reason: type.name);
+      for (var i = 0; i < params.length; i++) {
+        final p = params[i];
+        final reason = '${type.name}[$i]';
+        expect(le_fx_param_info(type.code, i, desc), 0);
+        final native = desc.ref;
         expect(
-          le_fx_param_count(type.code),
-          params.length,
-          reason: type.name,
+          readNativeString(native.key, capacity: LE_FX_PARAM_KEY_CHARS),
+          p.key,
+          reason: reason,
         );
-        for (var i = 0; i < params.length; i++) {
-          final p = params[i];
-          final reason = '${type.name}[$i]';
-          expect(le_fx_param_info(type.code, i, desc), 0);
-          final native = desc.ref;
-          expect(
-            readNativeString(native.key, capacity: LE_FX_PARAM_KEY_CHARS),
-            p.key,
-            reason: reason,
-          );
-          expect(native.unit, p.unit.code, reason: reason);
-          expect(native.steps, p.steps, reason: reason);
-          expect(native.at_min, _asFloat(p.atMin), reason: reason);
-          expect(native.at_max, _asFloat(p.atMax), reason: reason);
-          expect(native.curve, p.curve.code, reason: reason);
-          expect(native.def, _asFloat(p.defaultValue), reason: reason);
-          expect(
-            native.flags & (_offAtMin | _offAtMax),
-            switch (p.off) {
-              FxParamOff.none => 0,
-              FxParamOff.atMin => _offAtMin,
-              FxParamOff.atMax => _offAtMax,
-            },
-            reason: reason,
-          );
-          expect(
-            native.flags & ~(_offAtMin | _offAtMax),
-            0,
-            reason: reason,
-          );
-        }
-        // One past the last parameter is refused.
-        expect(
-          le_fx_param_info(type.code, params.length, desc),
-          isNot(0),
-          reason: type.name,
-        );
+        expect(native.unit, p.unit.code, reason: reason);
+        expect(native.steps, p.steps, reason: reason);
+        expect(native.at_min, _asFloat(p.atMin), reason: reason);
+        expect(native.at_max, _asFloat(p.atMax), reason: reason);
+        expect(native.curve, p.curve.code, reason: reason);
+        expect(native.def, _asFloat(p.defaultValue), reason: reason);
+        expect(native.flags & (_offAtMin | _offAtMax), switch (p.off) {
+          FxParamOff.none => 0,
+          FxParamOff.atMin => _offAtMin,
+          FxParamOff.atMax => _offAtMax,
+        }, reason: reason);
+        expect(native.flags & ~(_offAtMin | _offAtMax), 0, reason: reason);
       }
-      // A hosted plugin has no fixed parameters; an unknown type is refused.
-      expect(le_fx_param_count(kPluginFxCode), 0);
-      final last = TrackEffectType.values.map((t) => t.code).reduce(math.max);
-      expect(le_fx_param_count(last + 1), lessThan(0));
-    },
-    skip: skip,
-  );
+      // One past the last parameter is refused.
+      expect(
+        le_fx_param_info(type.code, params.length, desc),
+        isNot(0),
+        reason: type.name,
+      );
+    }
+    // A hosted plugin has no fixed parameters; an unknown type is refused.
+    expect(le_fx_param_count(kPluginFxCode), 0);
+    final last = TrackEffectType.values.map((t) => t.code).reduce(math.max);
+    expect(le_fx_param_count(last + 1), lessThan(0));
+  }, skip: skip);
 }

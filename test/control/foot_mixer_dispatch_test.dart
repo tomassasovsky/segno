@@ -56,7 +56,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Rig {
-  _Rig({Set<int> recorded = const {0, 1, 4}, int excluded = 0}) {
+  new({Set<int> recorded = const {0, 1, 4}, int excluded = 0}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(
       inputChannels: 18,
       excludedInputMask: excluded,
@@ -310,9 +310,8 @@ void main() {
       await r.control.stepFootMixerGain(-1);
       await r.control.toggleFootMixerMute();
       expect(
-        (await r.settings.loadMixSettings(
-          r.looper.state.status.deviceName,
-        )).monitorLevels[0],
+        (await r.settings.loadMixSettings(r.looper.state.status.deviceName))
+            .monitorLevels[0],
         closeTo(.95, 1e-9),
       );
       expect(await r.settings.loadMonitorMute(0), isTrue);
@@ -352,9 +351,8 @@ void main() {
       await r.control.resetFootMixerGain();
       expect(r.looper.monitorMuted(0), isTrue);
       expect(
-        (await r.settings.loadMixSettings(
-          r.looper.state.status.deviceName,
-        )).monitorLevels[0],
+        (await r.settings.loadMixSettings(r.looper.state.status.deviceName))
+            .monitorLevels[0],
         1,
       );
     } finally {
@@ -469,22 +467,21 @@ void main() {
     }
   });
 
-  check(
-    'domain entry searches later pages without changing normal selection',
-    (tester) async {
-      final r = await setup(tester, recorded: {4}, excluded: 15);
-      try {
-        expect(r.control.state.footMixer.channel, 4);
-        r.control.selectFootMixerDomain(FootMixerDomain.inputs);
-        expect(r.control.state.footMixer.channel, 4);
-        r.control.selectFootMixerDomain(FootMixerDomain.tracks);
-        expect(r.control.state.footMixer.channel, 4);
-        expect(r.control.state.cursor, 0);
-      } finally {
-        await r.close();
-      }
-    },
-  );
+  check('domain entry searches later pages without changing normal selection', (
+    tester,
+  ) async {
+    final r = await setup(tester, recorded: {4}, excluded: 15);
+    try {
+      expect(r.control.state.footMixer.channel, 4);
+      r.control.selectFootMixerDomain(FootMixerDomain.inputs);
+      expect(r.control.state.footMixer.channel, 4);
+      r.control.selectFootMixerDomain(FootMixerDomain.tracks);
+      expect(r.control.state.footMixer.channel, 4);
+      expect(r.control.state.cursor, 0);
+    } finally {
+      await r.close();
+    }
+  });
 
   check('empty Tracks still reaches Inputs', (tester) async {
     final r = await setup(tester, recorded: {});
@@ -542,24 +539,23 @@ void main() {
     }
   });
 
-  check(
-    'domain change cancels old hold and release without muting input',
-    (tester) async {
-      final r = await setup(tester);
-      try {
-        r.press(PedalButton.track1);
-        await tester.pump(const Duration(milliseconds: 100));
-        r.control.selectFootMixerDomain(FootMixerDomain.inputs);
-        await tester.pump(const Duration(milliseconds: 900));
-        r.release(PedalButton.track1);
-        await tester.pump();
-        expect(r.looper.monitorMuted(0), isFalse);
-        expect(r.looper.trackMuted(0), isFalse);
-      } finally {
-        await r.close();
-      }
-    },
-  );
+  check('domain change cancels old hold and release without muting input', (
+    tester,
+  ) async {
+    final r = await setup(tester);
+    try {
+      r.press(PedalButton.track1);
+      await tester.pump(const Duration(milliseconds: 100));
+      r.control.selectFootMixerDomain(FootMixerDomain.inputs);
+      await tester.pump(const Duration(milliseconds: 900));
+      r.release(PedalButton.track1);
+      await tester.pump();
+      expect(r.looper.monitorMuted(0), isFalse);
+      expect(r.looper.trackMuted(0), isFalse);
+    } finally {
+      await r.close();
+    }
+  });
 
   check('cancelled touch and Exit never commit delayed gain tap', (
     tester,
@@ -583,9 +579,7 @@ void main() {
     }
   });
 
-  check('encoder steps selected input and retains master gain', (
-    tester,
-  ) async {
+  check('encoder steps selected input and retains master gain', (tester) async {
     final r = await setup(tester);
     try {
       r.control.selectFootMixerDomain(FootMixerDomain.inputs);
@@ -634,25 +628,24 @@ void main() {
     tearDown: () => rig.close(),
   );
 
-  check(
-    'monitor native refusal reports failure; successful retry persists',
-    (tester) async {
-      final r = await setup(tester);
-      try {
-        r.control.selectFootMixerDomain(FootMixerDomain.inputs);
-        r.engine.refuseMute = true;
-        await r.control.toggleFootMixerMute();
-        expect(r.control.state.footMixerFailure, 1);
-        expect(r.looper.monitorMuted(0), isFalse);
-        r.engine.refuseMute = false;
-        await r.control.toggleFootMixerMute();
-        expect(r.looper.monitorMuted(0), isTrue);
-        expect(await r.settings.loadMonitorMute(0), isTrue);
-      } finally {
-        await r.close();
-      }
-    },
-  );
+  check('monitor native refusal reports failure; successful retry persists', (
+    tester,
+  ) async {
+    final r = await setup(tester);
+    try {
+      r.control.selectFootMixerDomain(FootMixerDomain.inputs);
+      r.engine.refuseMute = true;
+      await r.control.toggleFootMixerMute();
+      expect(r.control.state.footMixerFailure, 1);
+      expect(r.looper.monitorMuted(0), isFalse);
+      r.engine.refuseMute = false;
+      await r.control.toggleFootMixerMute();
+      expect(r.looper.monitorMuted(0), isTrue);
+      expect(await r.settings.loadMonitorMute(0), isTrue);
+    } finally {
+      await r.close();
+    }
+  });
 
   check('retired flow ignores late storage failure after reentry', (
     tester,

@@ -30,7 +30,7 @@ class NoticesCubit extends Cubit<NoticesState> {
   /// [stopwatch] times each message's age. The default runs on the zone's
   /// clock, which a test fakes; the app passes [Stopwatch.new], the
   /// monotonic one the console's clock steps cannot bend.
-  NoticesCubit({Stopwatch Function()? stopwatch})
+  new({Stopwatch Function()? stopwatch})
     : _stopwatch = stopwatch ?? (() => clock.stopwatch()),
       super(const NoticesState());
 

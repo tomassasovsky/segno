@@ -61,7 +61,7 @@ enum SynthParamUnit {
 @immutable
 class SynthPatch {
   /// Creates a [SynthPatch].
-  const SynthPatch({
+  const new({
     required this.index,
     required this.id,
     required this.family,
@@ -101,7 +101,7 @@ class SynthPatch {
 @immutable
 class SynthParamInfo {
   /// Creates a [SynthParamInfo].
-  const SynthParamInfo({
+  const new({
     required this.key,
     required this.unit,
     required this.atMin,
@@ -159,7 +159,7 @@ class SynthParamInfo {
 @immutable
 class SynthCatalogue {
   /// Creates a [SynthCatalogue].
-  const SynthCatalogue({required this.patches, required this.params});
+  const new({required this.patches, required this.params});
 
   /// A catalogue with nothing in it.
   static const SynthCatalogue empty = SynthCatalogue(patches: [], params: {});

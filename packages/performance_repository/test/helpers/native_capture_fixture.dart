@@ -35,9 +35,8 @@ void writeNativeSidecar(
     'take_id': ?takeId,
     'finalized': finalized,
   };
-  File(
-    '$dir/performance.json',
-  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(json));
+  File('$dir/performance.json')
+      .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(json));
 }
 
 /// The take id [writeOpenPart] stamps by default: sixteen zero bytes.
@@ -175,9 +174,8 @@ void writeCheckpointSlot(
     ..write('  "written_at_ms": 1791244800000,\n  ');
   final covered = utf8.encode(body.toString());
   final checksum = digest(Uint8List.fromList(covered));
-  File(
-    '$dir/checkpoint-${slot == 0 ? 'a' : 'b'}.json',
-  ).writeAsStringSync('$body"checksum": "$checksum"\n}\n');
+  File('$dir/checkpoint-${slot == 0 ? 'a' : 'b'}.json')
+      .writeAsStringSync('$body"checksum": "$checksum"\n}\n');
 }
 
 List<int> _u32(int value) =>

@@ -37,10 +37,7 @@ void main() {
         isNull,
       );
       expect(
-        ReadoutCommand.fromMap(const {
-          'kind': 'tempo.set',
-          'bpm': double.nan,
-        }),
+        ReadoutCommand.fromMap(const {'kind': 'tempo.set', 'bpm': double.nan}),
         isNull,
       );
       expect(

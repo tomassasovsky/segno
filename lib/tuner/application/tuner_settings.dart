@@ -7,7 +7,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// listens to. Not Session state: loading a Session keeps them (#1229).
 class TunerPreferences extends Equatable {
   /// Creates a set of tuner preferences.
-  const TunerPreferences({
+  const new({
     this.referenceHz = SettingsRepository.tunerReferenceDefaultHz,
     this.input = -1,
   });
@@ -40,7 +40,7 @@ class TunerPreferences extends Equatable {
 /// restoring the previous value.
 class TunerSettings {
   /// Creates the owner over [_settings].
-  TunerSettings({required this._settings});
+  new({required this._settings});
 
   final SettingsRepository _settings;
   final _changes = StreamController<TunerPreferences>.broadcast(sync: true);

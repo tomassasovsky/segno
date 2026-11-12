@@ -4,10 +4,10 @@ import 'package:looper_repository/looper_repository.dart';
 /// The shared default or one fixed track's overdub decay.
 final class DecayAddress extends Equatable {
   /// The default inherited by tracks without an override.
-  const DecayAddress.defaults() : channel = null;
+  const new defaults() : channel = null;
 
   /// One fixed, zero-based track, independent of selection and its label.
-  const DecayAddress.track(int this.channel);
+  const new track(int this.channel);
 
   /// Null denotes the default; track coordinates are 0 through 7.
   final int? channel;
@@ -23,10 +23,8 @@ final class DecayAddress extends Equatable {
 /// inherit.
 final class DecaySnapshot extends Equatable {
   /// Takes an immutable copy of the explicit track overrides.
-  DecaySnapshot({
-    required this.defaultPercent,
-    required Map<int, int> trackOverrides,
-  }) : trackOverrides = Map.unmodifiable(trackOverrides);
+  new({required this.defaultPercent, required Map<int, int> trackOverrides})
+    : trackOverrides = Map.unmodifiable(trackOverrides);
 
   /// Default decay as an integer percent, 0 through 100.
   final int defaultPercent;
@@ -81,7 +79,7 @@ enum DecayStatus { applied, rejected, superseded, recoveryRequired }
 /// A verified persistence and atomic native publication outcome.
 final class DecayOutcome {
   /// Creates the result of one decay transaction.
-  const DecayOutcome(
+  const new(
     this.status, {
     this.deferred = false,
     this.engineResult,

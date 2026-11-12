@@ -214,10 +214,7 @@ void main() {
       () async {
         final [a] = await prepare(['a.wav']);
         final b = await f.asset('b.wav');
-        expect(
-          await player.useAsBacking(a),
-          UseAsBackingOutcome.loaded,
-        );
+        expect(await player.useAsBacking(a), UseAsBackingOutcome.loaded);
         expect(f.repository.state.loaded, a.digest);
         expect(f.repository.state.playing, isFalse);
         await player.play();

@@ -56,7 +56,7 @@ abstract interface class PortDirectory {
 /// per Dart VM and therefore shared by every engine in the process.
 class IsolateNameServerDirectory implements PortDirectory {
   /// Creates an [IsolateNameServerDirectory].
-  const IsolateNameServerDirectory();
+  const new();
 
   @override
   SendPort? lookup(String name) => IsolateNameServer.lookupPortByName(name);

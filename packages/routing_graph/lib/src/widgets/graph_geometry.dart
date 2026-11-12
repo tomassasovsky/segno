@@ -26,7 +26,7 @@ const double kRoutingAddSlot = 30;
 @immutable
 class GraphSend {
   /// Creates a send description.
-  const GraphSend({
+  const new({
     required this.originX,
     required this.originY,
     required this.mask,

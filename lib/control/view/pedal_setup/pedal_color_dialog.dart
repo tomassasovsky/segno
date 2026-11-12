@@ -28,7 +28,7 @@ Future<PedalColor?> showPedalColorDialog(
 }
 
 class _PedalColorDialog extends StatefulWidget {
-  const _PedalColorDialog({required this.initial});
+  const new({required this.initial});
 
   /// The colour the editor opens on.
   final PedalColor initial;
@@ -133,7 +133,7 @@ class _PedalColorDialogState extends State<_PedalColorDialog> {
 /// The number is shown because it is the only part of a colour a performer
 /// can write down or say out loud.
 class _ColorPreview extends StatelessWidget {
-  const _ColorPreview({required this.color});
+  const new({required this.color});
 
   /// The colour the sliders currently name.
   final PedalColor color;
@@ -175,7 +175,7 @@ class _ColorPreview extends StatelessWidget {
 
 /// Hue, Saturation and Brightness, one control each.
 class _ColorFields extends StatelessWidget {
-  const _ColorFields({required this.value, required this.onChanged});
+  const new({required this.value, required this.onChanged});
 
   /// The colour being mixed.
   final HSVColor value;
@@ -222,7 +222,7 @@ class _ColorFields extends StatelessWidget {
 
 /// One of the three: its name and readout over its rail.
 class _ColorControl extends StatelessWidget {
-  const _ColorControl({
+  const new({
     required this.id,
     required this.label,
     required this.readout,
@@ -301,7 +301,7 @@ class _ColorControl extends StatelessWidget {
 
 /// Cancel and Done.
 class _ColorActions extends StatelessWidget {
-  const _ColorActions({required this.chosen});
+  const new({required this.chosen});
 
   /// The colour Done returns.
   final PedalColor chosen;

@@ -12,7 +12,7 @@ import 'package:spawn_process/src/worker.dart';
 /// A program started by [startProcess]: the subset of `dart:io`'s [Process]
 /// that the app uses.
 final class SpawnedProcess {
-  SpawnedProcess._(this.pid, this._executable, this._arguments) {
+  new _(this.pid, this._executable, this._arguments) {
     // An exit code nobody awaits must not surface as an uncaught error.
     _exitCode.future.ignore();
   }

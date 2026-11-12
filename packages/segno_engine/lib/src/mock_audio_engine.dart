@@ -34,7 +34,7 @@ import 'package:segno_engine/src/volume_space.dart';
 /// voices reported, no audio is made.
 class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   /// Creates a [MockAudioEngine].
-  MockAudioEngine({
+  new({
     int inputChannels = defaultInputChannels,
     int outputChannels = defaultOutputChannels,
     String? deviceLabel,
@@ -1108,11 +1108,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }
 
   @override
-  EngineResult setLaneVolume(
-    double volume, {
-    int channel = 0,
-    int lane = 0,
-  }) {
+  EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0}) {
     final result = _requireRunning();
     if (!result.isOk) return result;
     _tracks[channel].laneAt(lane).volume = volume.clamp(0.0, LE_MAX_GAIN);
@@ -1365,10 +1361,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   );
 
   @override
-  EngineResult setOutputEnabled({
-    required int output,
-    required bool enabled,
-  }) => _requireRunning();
+  EngineResult setOutputEnabled({required int output, required bool enabled}) =>
+      _requireRunning();
 
   @override
   EngineResult setOverdubFeedback(double feedback) => _requireRunning();
@@ -1499,10 +1493,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackLengthPreset({
-    required int channel,
-    required int bars,
-  }) {
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
     final result = _requireRunning();
     if (!result.isOk) return result;
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
@@ -1615,9 +1606,12 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    laneFxEnabledCalls.add(
-      (channel: channel, lane: lane, index: index, enabled: enabled),
-    );
+    laneFxEnabledCalls.add((
+      channel: channel,
+      lane: lane,
+      index: index,
+      enabled: enabled,
+    ));
     return EngineResult.ok;
   }
 
@@ -1629,9 +1623,11 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) {
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (lane < 0 || lane >= LE_MAX_LANES) return EngineResult.invalid;
-    laneFxChainEnabledCalls.add(
-      (channel: channel, lane: lane, enabled: enabled),
-    );
+    laneFxChainEnabledCalls.add((
+      channel: channel,
+      lane: lane,
+      enabled: enabled,
+    ));
     return EngineResult.ok;
   }
 
@@ -1691,9 +1687,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) {
     if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    trackFxEnabledCalls.add(
-      (channel: channel, index: index, enabled: enabled),
-    );
+    trackFxEnabledCalls.add((channel: channel, index: index, enabled: enabled));
     return EngineResult.ok;
   }
 
@@ -1869,10 +1863,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorInputOutput({
-    required int input,
-    required int mask,
-  }) => _requireRunning();
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      _requireRunning();
 
   @override
   EngineResult setMonitorInputVolume({
@@ -1881,10 +1873,8 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorInputMute({
-    required int input,
-    required bool muted,
-  }) => _requireRunning();
+  EngineResult setMonitorInputMute({required int input, required bool muted}) =>
+      _requireRunning();
 
   @override
   EngineResult setMonitorInputPan({required int input, required double pan}) {
@@ -1937,9 +1927,11 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
       return EngineResult.invalid;
     }
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
-    monitorInputFxEnabledCalls.add(
-      (input: input, index: index, enabled: enabled),
-    );
+    monitorInputFxEnabledCalls.add((
+      input: input,
+      index: index,
+      enabled: enabled,
+    ));
     return EngineResult.ok;
   }
 
@@ -2400,7 +2392,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
 class MockPluginSlotHandle implements PluginSlotHandle {
   /// Creates a [MockPluginSlotHandle] for [pluginId], seeded with the default
   /// value of each [mockParams] entry.
-  MockPluginSlotHandle(this.pluginId)
+  new(this.pluginId)
     : _values = {for (final p in mockParams) p.id: p.def},
       stateBlob = Uint8List.fromList('mock-state:$pluginId'.codeUnits);
 

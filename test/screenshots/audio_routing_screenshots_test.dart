@@ -26,9 +26,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// A four-in, four-out rig with two tracks recording, as the pen's examples
 /// draw: track 0 takes inputs 1 and 2, track 1 takes input 3.
@@ -122,25 +122,19 @@ void main() {
         outputPeaks: [0.35, 0.28, 0, 0],
       ),
     );
-    when(
-      () => repository.meterLevels,
-    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.meterLevels)
+        .thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(() => repository.sessionRevision).thenReturn(0);
-    when(() => repository.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenAnswer((call) {
       final channel = call.positionalArguments.first as int;
@@ -159,25 +153,20 @@ void main() {
     );
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => monitorChanges.stream);
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => monitorParams.stream);
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => monitorChanges.stream);
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => monitorParams.stream);
     when(() => repository.allMonitors()).thenReturn(const {});
     interfaceInputs = _fourI4;
-    when(
-      () => repository.readInterfaceInputs(),
-    ).thenAnswer((_) async => interfaceInputs);
+    when(() => repository.readInterfaceInputs())
+        .thenAnswer((_) async => interfaceInputs);
   });
 
   Future<void> pump(
@@ -191,11 +180,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     when(() => bloc.state).thenReturn(state);
-    whenListen(
-      bloc,
-      const Stream<LooperState>.empty(),
-      initialState: state,
-    );
+    whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
     final monitors = MonitorCubit(
@@ -204,10 +189,7 @@ void main() {
       repository: repository,
       settings: settings,
     );
-    tempoOwner = TempoSettings(
-      repository: repository,
-      settings: settings,
-    );
+    tempoOwner = TempoSettings(repository: repository, settings: settings);
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     final tempo = TempoCubit(settings: tempoOwner);

@@ -7,7 +7,7 @@ import 'package:update_repository/update_repository.dart';
 /// An update package found on a USB drive (#1270 Part 8).
 class UsbUpdatePackage extends Equatable {
   /// Creates a [UsbUpdatePackage].
-  const UsbUpdatePackage({
+  const new({
     required this.generation,
     required this.path,
     required this.sizeBytes,

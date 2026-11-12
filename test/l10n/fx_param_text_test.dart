@@ -295,10 +295,7 @@ void main() {
       expect(en.fxParamValueText(attack, 0.3), '0.22 ms');
       expect(es.fxParamValueText(attack, 0.3), '0,22 ms');
       // 0.999 ms rounds to 1.00, so it reads with one decimal.
-      expect(
-        en.fxParamValueText(attack, attack.settingFor(0.999)),
-        '1.0 ms',
-      );
+      expect(en.fxParamValueText(attack, attack.settingFor(0.999)), '1.0 ms');
     });
 
     test('reads a ratio with one decimal against 1', () {

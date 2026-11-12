@@ -50,12 +50,7 @@ bool fxMidiKeyNamesEffect(
   FxAddress address,
   Set<String> slotIds, {
   Set<String> rackIds = const {},
-}) => fxTargetNamesEffect(
-  _midiTarget(key),
-  address,
-  slotIds,
-  rackIds: rackIds,
-);
+}) => fxTargetNamesEffect(_midiTarget(key), address, slotIds, rackIds: rackIds);
 
 /// How many MIDI and pedal assignments removing the assignments to the
 /// effects [slotIds] and the racks [rackIds] in the chain at [address] takes

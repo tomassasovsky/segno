@@ -31,7 +31,7 @@ enum RoutingNames {
 /// says.
 class RoutingNamesList extends StatelessWidget {
   /// Creates a [RoutingNamesList].
-  const RoutingNamesList({required this.side, super.key});
+  const new({required this.side, super.key});
 
   /// Which side is being named.
   final RoutingNames side;
@@ -168,7 +168,7 @@ class RoutingNamesList extends StatelessWidget {
 
 /// The pen's `route:rename:*` row: a port, what it is called, and Rename.
 class _NameRow extends StatelessWidget {
-  const _NameRow({
+  const new({
     required this.port,
     required this.name,
     required this.named,

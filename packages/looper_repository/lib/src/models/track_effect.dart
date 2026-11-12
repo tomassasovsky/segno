@@ -37,7 +37,7 @@ enum FxChannelOutput {
 /// [defaults] is bit-identical to no channel handling at all.
 class FxChannels extends Equatable {
   /// Creates an [FxChannels].
-  const FxChannels({
+  const new({
     this.input = FxChannelInput.stereo,
     this.output = FxChannelOutput.stereo,
     this.placement = 0,
@@ -92,7 +92,7 @@ class FxChannels extends Equatable {
 /// the surfaces draw.
 class FxRack extends Equatable {
   /// Creates an [FxRack].
-  const FxRack({
+  const new({
     required this.id,
     required this.name,
     this.art,
@@ -252,7 +252,7 @@ enum FxParamCurve {
 /// engaged effect starts ([defaultValue]).
 class FxParamInfo extends Equatable {
   /// Creates an [FxParamInfo].
-  const FxParamInfo({
+  const new({
     required this.key,
     required this.unit,
     required this.atMin,
@@ -263,7 +263,7 @@ class FxParamInfo extends Equatable {
     this.off = FxParamOff.none,
   }) : _source = null;
 
-  FxParamInfo._fromEngine(engine.FxParamInfo p)
+  new _fromEngine(engine.FxParamInfo p)
     : key = p.key,
       unit = _unitFromEngine(p.unit),
       atMin = p.atMin,
@@ -483,7 +483,7 @@ enum TrackEffectType {
   /// The Looper X's Smart Tune (#1480).
   smartTune(32);
 
-  TrackEffectType(this.code);
+  new(this.code);
 
   /// Whether this is one of the Looper X kinds (#887): a type built to
   /// reproduce a factory module, whose descriptors carry that module's own
@@ -523,7 +523,7 @@ enum TrackEffectType {
 /// engine's `PluginRef`: format + stable id + packed version.
 class PluginRef extends Equatable {
   /// Creates a [PluginRef].
-  const PluginRef({required this.format, required this.id, this.version = 0});
+  const new({required this.format, required this.id, this.version = 0});
 
   /// The plugin format.
   final PluginFormat format;
@@ -552,7 +552,7 @@ class PluginRef extends Equatable {
 /// every [FxPlacement.post] one.
 sealed class TrackEffect extends Equatable {
   /// Const base constructor for the sealed subtypes.
-  const TrackEffect();
+  const new();
 
   /// The native `le_fx_type` code for this entry.
   int get typeCode;
@@ -602,7 +602,7 @@ sealed class TrackEffect extends Equatable {
 class BuiltInEffect extends TrackEffect {
   /// Creates a [BuiltInEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  BuiltInEffect({
+  new({
     required this.type,
     List<double>? params,
     this.enabled = true,
@@ -618,7 +618,7 @@ class BuiltInEffect extends TrackEffect {
        source = Map<String, double>.unmodifiable(source);
 
   /// [copyWith] keeping [type]: [params] is already canonical for it.
-  const BuiltInEffect._sameType({
+  const new _sameType({
     required this.type,
     required this.params,
     required this.enabled,
@@ -749,7 +749,7 @@ class BuiltInEffect extends TrackEffect {
 class PluginEffect extends TrackEffect {
   /// Creates a [PluginEffect] for [ref], optionally seeded with persisted
   /// [paramValues] and live [params] metadata.
-  const PluginEffect({
+  const new({
     required this.ref,
     this.paramValues = const {},
     this.params = const [],

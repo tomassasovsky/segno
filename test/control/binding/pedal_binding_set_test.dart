@@ -122,10 +122,7 @@ void main() {
     test('fromJson refuses a missing or empty target', () {
       final json = _binding(PedalButton.stop).toJson()..remove('target');
       expect(PedalBinding.fromJson(json), isNull);
-      expect(
-        PedalBinding.fromJson({...json, 'target': ''}),
-        isNull,
-      );
+      expect(PedalBinding.fromJson({...json, 'target': ''}), isNull);
     });
   });
 
@@ -227,9 +224,8 @@ void main() {
 
     group('withBinding / without', () {
       test('withBinding replaces the binding on the same control', () {
-        final set = PedalBindingSet([_binding(PedalButton.stop)]).withBinding(
-          _binding(PedalButton.stop, target: _slotTarget),
-        );
+        final set = PedalBindingSet([_binding(PedalButton.stop)])
+            .withBinding(_binding(PedalButton.stop, target: _slotTarget));
         expect(set.length, 1);
         expect(set.lookup(PedalButton.stop, bank: 0)?.target, _slotTarget);
       });

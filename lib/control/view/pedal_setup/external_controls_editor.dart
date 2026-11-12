@@ -16,7 +16,7 @@ import 'package:segno/theme/theme.dart';
 /// How one of a button's controls reads in its list.
 class ExternalControlRow {
   /// A row for an effect the button turns on and off.
-  const ExternalControlRow.activation({
+  const new activation({
     required ExternalActivation this.activation,
     required this.destination,
     required this.name,
@@ -26,7 +26,7 @@ class ExternalControlRow {
   }) : parameter = null;
 
   /// A row for a parameter the button sets.
-  const ExternalControlRow.parameter({
+  const new parameter({
     required ExternalParameter this.parameter,
     required this.destination,
     required this.name,
@@ -68,7 +68,7 @@ class ExternalControlRow {
 /// being edited.
 class ExternalControlsEditor extends StatelessWidget {
   /// Creates an [ExternalControlsEditor].
-  const ExternalControlsEditor({
+  const new({
     required this.rows,
     required this.selected,
     required this.latching,
@@ -205,7 +205,7 @@ class ExternalControlsEditor extends StatelessWidget {
 
 /// Everything the button drives, or a note that it drives nothing yet.
 class _ControlsList extends StatelessWidget {
-  const _ControlsList({
+  const new({
     required this.rows,
     required this.selected,
     required this.onSelect,
@@ -270,7 +270,7 @@ class _ControlsList extends StatelessWidget {
 /// The open rule's title, with Change (when the target needs repairing) and
 /// Remove beside it.
 class _RuleTitle extends StatelessWidget {
-  const _RuleTitle({
+  const new({
     required this.title,
     required this.repair,
     required this.onChange,
@@ -336,7 +336,7 @@ class _RuleTitle extends StatelessWidget {
 /// When an open activation is on: one of the four conditions, and a note on
 /// what it means.
 class _ActivationRule extends StatelessWidget {
-  const _ActivationRule({
+  const new({
     required this.activation,
     required this.repair,
     required this.latching,
@@ -421,7 +421,7 @@ class _ActivationRule extends StatelessWidget {
 
 /// What an open parameter is set to: its behavior, and its two values.
 class _ParameterRule extends StatelessWidget {
-  const _ParameterRule({
+  const new({
     required this.row,
     required this.latching,
     required this.onValueCondition,
@@ -508,7 +508,7 @@ class _ParameterRule extends StatelessWidget {
 /// One of an open parameter's two values: its name, its readout, and the
 /// control that moves it.
 class _ParameterValue extends StatelessWidget {
-  const _ParameterValue({
+  const new({
     required this.row,
     required this.active,
     required this.name,
@@ -552,11 +552,7 @@ class _ParameterValue extends StatelessWidget {
                   ),
                 ),
                 AppText(
-                  controlValueReadout(
-                    context.l10n,
-                    parameter.target,
-                    value,
-                  ),
+                  controlValueReadout(context.l10n, parameter.target, value),
                   key: Key('external_value_${id}_label'),
                   style: TextStyle(
                     color: surface.textSecondary,
@@ -658,7 +654,7 @@ String conditionLabel(AppLocalizations l10n, ExternalCondition condition) =>
 /// its parameters, in one list.
 class ExternalControlTargetList extends StatelessWidget {
   /// Creates an [ExternalControlTargetList].
-  const ExternalControlTargetList({
+  const new({
     required this.destination,
     required this.taken,
     required this.onActivation,

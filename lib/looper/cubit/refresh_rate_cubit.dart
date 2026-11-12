@@ -11,10 +11,7 @@ class RefreshRateCubit extends Cubit<int> {
   /// Creates a [RefreshRateCubit] driving [_repository]'s poll cadence, with
   /// the rate persisted through [_settings]. Starts at 60 Hz until [load]
   /// restores the saved value.
-  RefreshRateCubit({
-    required this._repository,
-    required this._settings,
-  }) : super(60);
+  new({required this._repository, required this._settings}) : super(60);
 
   final LooperRepository _repository;
   final SettingsRepository _settings;

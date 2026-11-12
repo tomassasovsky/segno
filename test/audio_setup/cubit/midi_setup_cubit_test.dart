@@ -6,7 +6,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 
-class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository {}
+class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository;
 
 void main() {
   const dev1 = MidiDevice(id: 'id-1', name: 'FCB1010');

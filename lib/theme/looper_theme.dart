@@ -46,7 +46,7 @@ enum LooperMeterState {
 
   /// The meter appearance for a track in [state] that may be [muted]. Muted
   /// wins over the underlying state.
-  factory LooperMeterState.of(TrackState state, {required bool muted}) {
+  factory of(TrackState state, {required bool muted}) {
     if (muted) return LooperMeterState.muted;
     return switch (state) {
       TrackState.empty => LooperMeterState.empty,
@@ -65,7 +65,7 @@ enum LooperMeterState {
 @immutable
 class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Creates a [LooperTheme].
-  const LooperTheme({
+  const new({
     required this.tileBackground,
     required this.tileBorder,
     required this.waveformColors,
@@ -189,11 +189,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
         other.recordMeterColors,
         t,
       ),
-      muteMeterColors: _lerpColorMap(
-        muteMeterColors,
-        other.muteMeterColors,
-        t,
-      ),
+      muteMeterColors: _lerpColorMap(muteMeterColors, other.muteMeterColors, t),
       toolbarIconColor:
           Color.lerp(toolbarIconColor, other.toolbarIconColor, t) ??
           toolbarIconColor,

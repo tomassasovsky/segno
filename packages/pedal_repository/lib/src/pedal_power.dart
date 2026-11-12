@@ -22,7 +22,7 @@ enum PedalPowerProfile {
 /// it once a second (`PdStatusMessage`).
 class PedalPowerSupply extends Equatable {
   /// Creates a [PedalPowerSupply].
-  const PedalPowerSupply({
+  const new({
     required this.profile,
     this.millivolts = 0,
     this.milliamps = 0,

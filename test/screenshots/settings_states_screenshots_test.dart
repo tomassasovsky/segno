@@ -53,14 +53,14 @@ import '../helpers/helpers.dart';
 import '../settings/touch_calibration/fake_touch_calibration_client.dart';
 import 'screenshot_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 /// What the appliance reports about its own build. A real [UpdateCubit] over
 /// the unsupported backend knows neither its version nor its channel, and the
@@ -154,7 +154,7 @@ ThemeData _theme() => ThemeData(
 /// The pen 29 study's radio: The Studio up, a saved network out of range, and
 /// four others. Each switch reaches one of the eight accepted screens.
 class _PreviewWifiClient implements WifiClient {
-  _PreviewWifiClient({
+  new({
     this.enabled = true,
     this.connected = true,
     this.internet = true,
@@ -284,21 +284,16 @@ void main() {
     when(() => looper.fxReachFits(any())).thenReturn(true);
     when(() => looper.sessionRevision).thenReturn(0);
     stubScreenshotSettings(looper);
-    when(() => looper.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
     when(() => looper.laneCount(any())).thenAnswer((call) {
       final channel = call.positionalArguments.first as int;
@@ -314,16 +309,13 @@ void main() {
     );
     final looperStates = StreamController<LooperState>.broadcast();
     addTearDown(looperStates.close);
-    when(() => looper.monitorChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
-    when(() => looper.monitorParamChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
+    when(() => looper.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => looper.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.mixGeneration).thenReturn(0);
     var looperNow = LooperState(
       tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -353,9 +345,8 @@ void main() {
       );
       return EngineResult.ok;
     });
-    when(looper.measureLoopbackLatency).thenAnswer(
-      (_) async => const LatencyResult(LatencyOutcome.timedOut),
-    );
+    when(looper.measureLoopbackLatency)
+        .thenAnswer((_) async => const LatencyResult(LatencyOutcome.timedOut));
     when(looper.allMonitors).thenReturn(const {});
     when(
       () => looper.setMonitorInputMode(
@@ -546,9 +537,7 @@ void main() {
       client: client ?? FakeConsoleFactsClient(latency: Duration.zero),
       settings: settings,
     );
-    final pedal = PedalCubit(
-      pedal: PedalRepository(NoopPedalLink()),
-    );
+    final pedal = PedalCubit(pedal: PedalRepository(NoopPedalLink()));
     // The pen's own numbers (31 `Storage overview`): Internal 128 GB with
     // 64.0 GB free, SEGNO USB 32 GB with 24.2 GB free, at 48 kHz.
     final usb = FakeUsbStorageClient(
@@ -817,9 +806,7 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('Network page, 29/08 connected without internet', (
-    tester,
-  ) async {
+  testWidgets('Network page, 29/08 connected without internet', (tester) async {
     await pumpNetwork(tester, _PreviewWifiClient(internet: false));
     await expectLater(
       find.byType(Scaffold),
@@ -840,9 +827,7 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('FX pedal assignments with a switch selected', (
-    tester,
-  ) async {
+  testWidgets('FX pedal assignments with a switch selected', (tester) async {
     await size(tester);
     final rig = controlProviders(tester);
     await rig.control.setGlobalBindings(
@@ -853,11 +838,7 @@ void main() {
         ),
       ]),
     );
-    await pumpPage(
-      tester,
-      page: const FxPedalAssignmentsPage(),
-      control: rig,
-    );
+    await pumpPage(tester, page: const FxPedalAssignmentsPage(), control: rig);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.byKey(const Key('pedal_switch_track1')));
@@ -899,11 +880,7 @@ void main() {
       looperState: LooperState(tracks: const [Track()], status: status),
       status: status,
     );
-    await pumpPage(
-      tester,
-      page: const DevicePage(),
-      control: providers,
-    );
+    await pumpPage(tester, page: const DevicePage(), control: providers);
     await tester.pumpAndSettle();
     return providers;
   }
@@ -1113,9 +1090,7 @@ void main() {
     );
   }, skip: !rendersScreenshots);
 
-  testWidgets('Updates page, staged and waiting for a restart', (
-    tester,
-  ) async {
+  testWidgets('Updates page, staged and waiting for a restart', (tester) async {
     await pumpSystem(
       tester,
       const UpdatesSettingsPage(),

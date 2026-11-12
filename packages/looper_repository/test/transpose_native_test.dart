@@ -80,67 +80,63 @@ void main() {
     return false;
   }
 
-  test(
-    'transposeTrack confirms the receipt, projects the pending dry pitch '
-    'until the render lands, bypasses with the pitch kept, reports the limit '
-    'and refuses punch-ins while transposed',
-    () async {
-      final subscription = repository.looperState.listen((_) {});
-      addTearDown(subscription.cancel);
-      await Future<void>.delayed(Duration.zero);
-      engine.pump(frames: 64);
-      final step = repository.transposeTrack(channel: 0, delta: 1);
-      var completed = false;
-      unawaited(step.then((_) => completed = true));
-      await Future<void>.delayed(Duration.zero);
-      expect(completed, isFalse); // queue acceptance is not the outcome
-      expect(await settle(step), EngineResult.ok);
-      // Stored at once; dry until the worker's render lands (100 ms settle).
-      expect(repository.state.tracks[0].transpose, (stored: 1, effective: 0));
-      expect(repository.record(), EngineResult.transformed);
-      expect(engine.snapshot().tracks[0].state, TrackState.playing);
-      expect(await soundsAt(1), isTrue);
-      expect(repository.state.tracks[0].transpose, (stored: 1, effective: 1));
-      // An empty track has nothing to transpose.
-      expect(
-        await settle(repository.transposeTrack(channel: 1, delta: 1)),
-        EngineResult.invalid,
-      );
+  test('transposeTrack confirms the receipt, projects the pending dry pitch '
+      'until the render lands, bypasses with the pitch kept, reports the limit '
+      'and refuses punch-ins while transposed', () async {
+    final subscription = repository.looperState.listen((_) {});
+    addTearDown(subscription.cancel);
+    await Future<void>.delayed(Duration.zero);
+    engine.pump(frames: 64);
+    final step = repository.transposeTrack(channel: 0, delta: 1);
+    var completed = false;
+    unawaited(step.then((_) => completed = true));
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, isFalse); // queue acceptance is not the outcome
+    expect(await settle(step), EngineResult.ok);
+    // Stored at once; dry until the worker's render lands (100 ms settle).
+    expect(repository.state.tracks[0].transpose, (stored: 1, effective: 0));
+    expect(repository.record(), EngineResult.transformed);
+    expect(engine.snapshot().tracks[0].state, TrackState.playing);
+    expect(await soundsAt(1), isTrue);
+    expect(repository.state.tracks[0].transpose, (stored: 1, effective: 1));
+    // An empty track has nothing to transpose.
+    expect(
+      await settle(repository.transposeTrack(channel: 1, delta: 1)),
+      EngineResult.invalid,
+    );
 
-      // Bypass plays dry with the pitch kept, and lifts the capture guard
-      // only while it holds.
-      expect(
-        await settle(repository.setTransposeBypass(bypassed: true)),
-        EngineResult.ok,
-      );
-      expect(repository.state.transposeBypass, isTrue);
-      expect(repository.state.tracks[0].transpose, (stored: 1, effective: 0));
-      expect(
-        await settle(repository.setTransposeBypass(bypassed: false)),
-        EngineResult.ok,
-      );
-      expect(repository.state.transposeBypass, isFalse);
-      expect(await soundsAt(1), isTrue); // the render is still cached
+    // Bypass plays dry with the pitch kept, and lifts the capture guard
+    // only while it holds.
+    expect(
+      await settle(repository.setTransposeBypass(bypassed: true)),
+      EngineResult.ok,
+    );
+    expect(repository.state.transposeBypass, isTrue);
+    expect(repository.state.tracks[0].transpose, (stored: 1, effective: 0));
+    expect(
+      await settle(repository.setTransposeBypass(bypassed: false)),
+      EngineResult.ok,
+    );
+    expect(repository.state.transposeBypass, isFalse);
+    expect(await soundsAt(1), isTrue); // the render is still cached
 
-      // The limit is a receipt, and nothing changes.
-      expect(
-        await settle(repository.installTranspose(channel: 0, semitones: 12)),
-        EngineResult.ok,
-      );
-      expect(
-        await settle(repository.transposeTrack(channel: 0, delta: 1)),
-        EngineResult.capacity,
-      );
-      expect(repository.state.tracks[0].transpose.stored, 12);
+    // The limit is a receipt, and nothing changes.
+    expect(
+      await settle(repository.installTranspose(channel: 0, semitones: 12)),
+      EngineResult.ok,
+    );
+    expect(
+      await settle(repository.transposeTrack(channel: 0, delta: 1)),
+      EngineResult.capacity,
+    );
+    expect(repository.state.tracks[0].transpose.stored, 12);
 
-      expect(
-        await settle(repository.setTransposeBypass(bypassed: true)),
-        EngineResult.ok,
-      );
-      expect(repository.record(), EngineResult.ok);
-      engine.pump(frames: 1);
-      expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
-    },
-    skip: skip,
-  );
+    expect(
+      await settle(repository.setTransposeBypass(bypassed: true)),
+      EngineResult.ok,
+    );
+    expect(repository.record(), EngineResult.ok);
+    engine.pump(frames: 1);
+    expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
+  }, skip: skip);
 }

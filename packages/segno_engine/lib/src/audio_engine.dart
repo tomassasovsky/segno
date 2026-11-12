@@ -202,7 +202,7 @@ typedef ReopenResult = ({
 /// Thrown when an [AudioEngine] operation fails.
 class EngineException implements Exception {
   /// Creates an [EngineException] from a failing [result].
-  const EngineException(this.result, [this.message]);
+  const new(this.result, [this.message]);
 
   /// The failing result code.
   final EngineResult result;
@@ -641,11 +641,7 @@ abstract interface class EngineRouting {
 
   /// Sets lane [lane] of track [channel]'s playback gain, clamped to
   /// `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
-  EngineResult setLaneVolume(
-    double volume, {
-    int channel = 0,
-    int lane = 0,
-  });
+  EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0});
 
   /// Mutes or unmutes lane [lane] of track [channel].
   EngineResult setLaneMute({
@@ -664,11 +660,7 @@ abstract interface class EngineRouting {
   /// panned, and hard left is the left output alone. On a single masked
   /// output the pan is a plain attenuation of the mid. Reset to centre by a
   /// (re)start, like volume; the caller remembers and re-applies it.
-  EngineResult setLanePan({
-    required double pan,
-    int channel = 0,
-    int lane = 0,
-  });
+  EngineResult setLanePan({required double pan, int channel = 0, int lane = 0});
 
   /// Solos or un-solos track [channel]. While any track is soloed, only
   /// soloed tracks route to the outputs; every other track keeps playing (its
@@ -2012,4 +2004,4 @@ abstract interface class AudioEngine
         EngineSelectedRender,
         SessionIo,
         BackingControl,
-        InterfaceInputControl {}
+        InterfaceInputControl;

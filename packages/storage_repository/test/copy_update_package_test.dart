@@ -196,9 +196,8 @@ void main() {
     repo = h.build(initial: [h.record(1)]);
     await pumpEventQueue();
     Directory(staging()).createSync(recursive: true);
-    File(
-      '${staging()}/.segno-0.6.0.raucb.0123456789abcdef.part',
-    ).writeAsStringSync('half');
+    File('${staging()}/.segno-0.6.0.raucb.0123456789abcdef.part')
+        .writeAsStringSync('half');
     final source = package(1);
 
     await repo.copyUpdatePackage(

@@ -86,19 +86,15 @@ void main() {
           params: {'Mod': 1},
         ),
       );
-      final index = fxEntryControls(entry).params.firstWhere(
-        (i) => fxEntryParam(entry, i).unit == FxParamUnit.choice,
-      );
+      final index = fxEntryControls(entry).params
+          .firstWhere((i) => fxEntryParam(entry, i).unit == FxParamUnit.choice);
       await pump(tester, entry, index);
 
       expect(find.byType(LoopChoiceButton), findsNWidgets(2));
       await tester.tap(find.text('Tremolo'));
       await tester.pump();
       expect(written, [fxEntryKindSetting(entry, index, 1)]);
-      expect(
-        TrackEffectType.mod.params[index].positionOf(written.single),
-        3,
-      );
+      expect(TrackEffectType.mod.params[index].positionOf(written.single), 3);
     });
 
     testWidgets("a three-way choice is a list in a rack pedal's narrow "
@@ -115,9 +111,8 @@ void main() {
           params: {'Mod': 1},
         ),
       );
-      final index = fxEntryControls(entry).params.firstWhere(
-        (i) => fxEntryParam(entry, i).unit == FxParamUnit.choice,
-      );
+      final index = fxEntryControls(entry).params
+          .firstWhere((i) => fxEntryParam(entry, i).unit == FxParamUnit.choice);
       expect(fxEntryParam(entry, index).steps, 3);
 
       await pump(tester, entry, index, width: 250);

@@ -18,7 +18,7 @@ import 'package:segno/theme/theme.dart';
 /// pen's own dialog (accepted design, Loop mode transitions).
 class LoopModePage extends StatelessWidget {
   /// Creates a [LoopModePage].
-  const LoopModePage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -114,7 +114,7 @@ class LoopModePage extends StatelessWidget {
 /// One mode card: 330 x 420, the name and a check when selected, the
 /// three-track diagram, and the description or reason.
 class _ModeCard extends StatelessWidget {
-  const _ModeCard({
+  const new({
     required this.mode,
     required this.selected,
     required this.reason,
@@ -214,7 +214,7 @@ class _ModeCard extends StatelessWidget {
 /// The pen's three-track diagram for a mode: each track is a 272 x 32 row of
 /// loop blocks, drawn from the pen's own block positions.
 class _ModeDiagram extends StatelessWidget {
-  const _ModeDiagram({required this.mode, required this.selected});
+  const new({required this.mode, required this.selected});
 
   final LooperMode mode;
   final bool selected;

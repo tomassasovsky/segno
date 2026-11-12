@@ -58,10 +58,7 @@ void main() {
         ),
         home: Scaffold(
           backgroundColor: SurfaceTheme.dark.background,
-          body: Padding(
-            padding: inset,
-            child: child,
-          ),
+          body: Padding(padding: inset, child: child),
         ),
       ),
     );

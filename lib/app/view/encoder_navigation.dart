@@ -18,7 +18,7 @@ import 'package:segno/control/control.dart';
 /// slider or stepper enters and commits its draft.
 class EncoderNavigation extends StatefulWidget {
   /// Creates an [EncoderNavigation] around [child].
-  const EncoderNavigation({
+  const new({
     required this.child,
     this.onStagePress = openSegnoSettings,
     super.key,

@@ -23,7 +23,7 @@ class MidiOutClient {
   ///
   /// Throws a [MidiException] when the platform has no MIDI backend or the
   /// handle cannot be allocated.
-  MidiOutClient({this._bindings = const MidiBindings()}) {
+  new({this._bindings = const MidiBindings()}) {
     _handle = _bindings.le_midi_out_create();
     if (_handle == nullptr) {
       throw const MidiException('failed to allocate native MIDI output handle');

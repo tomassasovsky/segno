@@ -22,7 +22,7 @@ part 'interface_inputs_state.dart';
 class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
   /// Creates an [InterfaceInputsCubit] that follows [_repository]'s open
   /// device.
-  InterfaceInputsCubit({
+  new({
     required this._repository,
     this._watchInterval = const Duration(milliseconds: 500),
   }) : super(const InterfaceInputsState()) {
@@ -144,10 +144,7 @@ class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
   /// Queues [write], counts a refusal, then reads what the interface holds,
   /// refused or not. A write that finds the engine stopped is not the
   /// interface refusing.
-  void _change(
-    InterfaceSwitch which,
-    Future<EngineResult> Function() write,
-  ) {
+  void _change(InterfaceSwitch which, Future<EngineResult> Function() write) {
     final device = _device;
     if (device == null) return;
     _enqueue(() async {

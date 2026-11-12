@@ -39,7 +39,7 @@ typedef DawProjectWriter = Future<Object?> Function(String dir);
 /// cubit stops its own on a new selection, a folder change and its close.
 class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   /// Creates a [LibraryAudioCubit].
-  LibraryAudioCubit({
+  new({
     required this._performance,
     required this._sessions,
     required RemovableVolumes volumes,
@@ -514,9 +514,7 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
           ],
           // Replace takes away every file of an earlier export of this
           // name, so no part of another take stays beside the new ones.
-          earlier: RegExp(
-            '^${RegExp.escape(name)}( · Part \\d{3})?\\.wav\$',
-          ),
+          earlier: RegExp('^${RegExp.escape(name)}( · Part \\d{3})?\\.wav\$'),
         );
       case LibraryMixdown(:final session):
         final name = driveSafeName(session.name);

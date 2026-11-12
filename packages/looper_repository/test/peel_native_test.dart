@@ -63,55 +63,51 @@ void main() {
     await ticks.close();
   });
 
-  test(
-    'peel removes the newest layer synchronously; the projection and Undo '
-    'follow',
-    () async {
-      final subscription = repository.looperState.listen((_) {});
-      addTearDown(subscription.cancel);
-      await Future<void>.delayed(Duration.zero);
-      ticks.add(null);
-      var track = repository.state.tracks[0];
-      expect(track.undoDepth, 1);
-      expect(track.peelDepth, 1);
-      expect(track.canPeel, isTrue);
-      expect(track.layers, 2);
-      expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
+  test('peel removes the newest layer synchronously; the projection and Undo '
+      'follow', () async {
+    final subscription = repository.looperState.listen((_) {});
+    addTearDown(subscription.cancel);
+    await Future<void>.delayed(Duration.zero);
+    ticks.add(null);
+    var track = repository.state.tracks[0];
+    expect(track.undoDepth, 1);
+    expect(track.peelDepth, 1);
+    expect(track.canPeel, isTrue);
+    expect(track.layers, 2);
+    expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
 
-      expect(repository.peel(), EngineResult.ok);
-      // The swap is complete when the call returns: no callback needed.
-      expect(engine.exportTrack(0), everyElement(closeTo(.5, 1e-6)));
-      ticks.add(null);
-      track = repository.state.tracks[0];
-      expect(track.undoDepth, 1); // the PEEL entry keeps the undo depth
-      expect(track.peelDepth, 0);
-      expect(track.canPeel, isFalse);
-      expect(track.layers, 1);
-      expect(track.redoDepth, 0);
-      expect(track.state, TrackState.playing);
+    expect(repository.peel(), EngineResult.ok);
+    // The swap is complete when the call returns: no callback needed.
+    expect(engine.exportTrack(0), everyElement(closeTo(.5, 1e-6)));
+    ticks.add(null);
+    track = repository.state.tracks[0];
+    expect(track.undoDepth, 1); // the PEEL entry keeps the undo depth
+    expect(track.peelDepth, 0);
+    expect(track.canPeel, isFalse);
+    expect(track.layers, 1);
+    expect(track.redoDepth, 0);
+    expect(track.state, TrackState.playing);
 
-      // The original is protected: nothing remains to peel.
-      expect(repository.peel(), EngineResult.invalid);
-      expect(engine.exportTrack(0), everyElement(closeTo(.5, 1e-6)));
+    // The original is protected: nothing remains to peel.
+    expect(repository.peel(), EngineResult.invalid);
+    expect(engine.exportTrack(0), everyElement(closeTo(.5, 1e-6)));
 
-      // Undo restores the layer; the badge follows.
-      expect(repository.undo(), EngineResult.ok);
-      expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
-      ticks.add(null);
-      track = repository.state.tracks[0];
-      expect(track.peelDepth, 1);
-      expect(track.canPeel, isTrue);
-      expect(track.layers, 2);
-      expect(track.redoDepth, 1);
+    // Undo restores the layer; the badge follows.
+    expect(repository.undo(), EngineResult.ok);
+    expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
+    ticks.add(null);
+    track = repository.state.tracks[0];
+    expect(track.peelDepth, 1);
+    expect(track.canPeel, isTrue);
+    expect(track.layers, 2);
+    expect(track.redoDepth, 1);
 
-      // Redo re-peels.
-      expect(repository.redo(), EngineResult.ok);
-      expect(engine.exportTrack(0), everyElement(closeTo(.5, 1e-6)));
-      ticks.add(null);
-      expect(repository.state.tracks[0].layers, 1);
-    },
-    skip: skip,
-  );
+    // Redo re-peels.
+    expect(repository.redo(), EngineResult.ok);
+    expect(engine.exportTrack(0), everyElement(closeTo(.5, 1e-6)));
+    ticks.add(null);
+    expect(repository.state.tracks[0].layers, 1);
+  }, skip: skip);
 
   test(
     'an undone peel survives save and stopped recall: Redo re-peels and Undo '

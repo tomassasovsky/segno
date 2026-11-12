@@ -94,40 +94,36 @@ void main() {
     expect(state.pairs, isEmpty);
   }, skip: skip);
 
-  test(
-    'plays on every enabled output pair, a disabled one stays silent '
-    '(#1305)',
-    () async {
-      // Six outputs, pairs 1 and 3 on, pair 2 switched off.
-      engine = PumpedNativeEngine()
-        ..start(
-          const EngineConfig(
-            sampleRate: 8000,
-            inputChannels: 1,
-            outputChannels: 6,
-            maxLoopFrames: 8000,
-          ),
-        )
-        ..setOutputEnabled(output: 2, enabled: false)
-        ..setOutputEnabled(output: 3, enabled: false)
-        ..pump(frames: 0);
+  test('plays on every enabled output pair, a disabled one stays silent '
+      '(#1305)', () async {
+    // Six outputs, pairs 1 and 3 on, pair 2 switched off.
+    engine = PumpedNativeEngine()
+      ..start(
+        const EngineConfig(
+          sampleRate: 8000,
+          inputChannels: 1,
+          outputChannels: 6,
+          maxLoopFrames: 8000,
+        ),
+      )
+      ..setOutputEnabled(output: 2, enabled: false)
+      ..setOutputEnabled(output: 3, enabled: false)
+      ..pump(frames: 0);
 
-      final started = await engine.auditionStartFile(wav('a.wav', 4000));
-      expect(started.result, EngineResult.ok);
-      engine.pump(frames: 64);
+    final started = await engine.auditionStartFile(wav('a.wav', 4000));
+    expect(started.result, EngineResult.ok);
+    engine.pump(frames: 64);
 
-      expect(engine.auditionState().outputs, 0x33);
-      expect(engine.auditionState().pairs, [0, 2]);
-      final peaks = engine.snapshot().outputPeaks;
-      expect(peaks[0], greaterThan(0.1));
-      expect(peaks[1], peaks[0]);
-      expect(peaks[2], 0);
-      expect(peaks[3], 0);
-      expect(peaks[4], peaks[0]);
-      expect(peaks[5], peaks[0]);
-    },
-    skip: skip,
-  );
+    expect(engine.auditionState().outputs, 0x33);
+    expect(engine.auditionState().pairs, [0, 2]);
+    final peaks = engine.snapshot().outputPeaks;
+    expect(peaks[0], greaterThan(0.1));
+    expect(peaks[1], peaks[0]);
+    expect(peaks[2], 0);
+    expect(peaks[3], 0);
+    expect(peaks[4], peaks[0]);
+    expect(peaks[5], peaks[0]);
+  }, skip: skip);
 
   test('refuses before decoding when no output is enabled', () async {
     start();
@@ -238,20 +234,14 @@ void main() {
 
   test('reads a file as peaks at its own rate, or nothing', () async {
     start();
-    final peaks = await engine.filePeaks(
-      wav('p.wav', 4000),
-      buckets: 8,
-    );
+    final peaks = await engine.filePeaks(wav('p.wav', 4000), buckets: 8);
     expect(peaks, hasLength(8));
     // The ramp tops out at 99 * 100 / 32768 in every bucket.
     for (final peak in peaks!) {
       expect(peak, closeTo(9900 / 32768, 1e-6));
     }
     expect(
-      await engine.filePeaks(
-        '${dir.path}/absent.wav',
-        buckets: 8,
-      ),
+      await engine.filePeaks('${dir.path}/absent.wav', buckets: 8),
       isNull,
     );
   }, skip: skip);

@@ -10,11 +10,7 @@ import 'package:segno/theme/theme.dart';
 /// One offered choice.
 class PedalChoice<T> {
   /// Creates a [PedalChoice].
-  const PedalChoice({
-    required this.value,
-    required this.label,
-    required this.id,
-  });
+  const new({required this.value, required this.label, required this.id});
 
   /// What choosing this resolves to.
   final T value;
@@ -30,11 +26,7 @@ class PedalChoice<T> {
 /// A heading and the choices under it.
 class PedalChoiceGroup<T> {
   /// Creates a [PedalChoiceGroup].
-  const PedalChoiceGroup({
-    required this.label,
-    required this.id,
-    required this.choices,
-  });
+  const new({required this.label, required this.id, required this.choices});
 
   /// The heading. A picker with one group never draws it.
   final String label;
@@ -55,7 +47,7 @@ class PedalChoiceGroup<T> {
 /// assignment every time someone changed their mind.
 class PedalChoiceResult<T> {
   /// Creates a [PedalChoiceResult].
-  const PedalChoiceResult(this.value);
+  const new(this.value);
 
   /// The chosen value.
   final T value;
@@ -77,20 +69,13 @@ Future<PedalChoiceResult<T>?> showPedalChoicePicker<T>(
   return showDialog<PedalChoiceResult<T>>(
     context: context,
     barrierColor: surface.scrim.withValues(alpha: 0.86),
-    builder: (context) => _PedalChoicePicker<T>(
-      title: title,
-      groups: groups,
-      current: current,
-    ),
+    builder: (context) =>
+        _PedalChoicePicker<T>(title: title, groups: groups, current: current),
   );
 }
 
 class _PedalChoicePicker<T> extends StatefulWidget {
-  const _PedalChoicePicker({
-    required this.title,
-    required this.groups,
-    required this.current,
-  });
+  const new({required this.title, required this.groups, required this.current});
 
   final String title;
   final List<PedalChoiceGroup<T>> groups;
@@ -223,9 +208,8 @@ class _PedalChoicePickerState<T> extends State<_PedalChoicePicker<T>> {
                               key: Key('pedal_choice_${choices[i].id}'),
                               label: choices[i].label,
                               selected: choices[i].value == widget.current,
-                              onTap: () => Navigator.of(context).pop(
-                                PedalChoiceResult<T>(choices[i].value),
-                              ),
+                              onTap: () => Navigator.of(context)
+                                  .pop(PedalChoiceResult<T>(choices[i].value)),
                               width: cellWidth,
                               fontSize: 22,
                             ),

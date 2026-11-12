@@ -33,7 +33,7 @@ typedef CopyBytes = Future<void> Function(
 /// once, without waiting to see whether a drive went away.
 class SourceReadFailure implements Exception {
   /// Creates a [SourceReadFailure] for [cause].
-  const SourceReadFailure(this.cause);
+  const new(this.cause);
 
   /// What the read met.
   final FileSystemException cause;
@@ -71,7 +71,7 @@ class StorageRepository implements ActiveOperationSource {
   /// [guards] is the app's one guard table; the repository registers itself
   /// with it as a source, so the table sees its leases and eject however the
   /// table was made.
-  StorageRepository({
+  new({
     required this._client,
     required this._exportsRoot,
     required this._volumeSpace,
@@ -993,7 +993,7 @@ class StorageRepository implements ActiveOperationSource {
 
 /// One eject in flight.
 class _Eject {
-  _Eject(this.generation, this.request);
+  new(this.generation, this.request);
 
   final int generation;
 

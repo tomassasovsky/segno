@@ -38,7 +38,7 @@ const List<(int num, int den)> kValidTimeSignatures = [
 /// as session recall. Explicit edits are also persisted as startup defaults.
 class TempoState extends Equatable {
   /// Creates a [TempoState].
-  const TempoState({
+  const new({
     this.bpm = 0,
     this.tsNum = 4,
     this.tsDen = 4,

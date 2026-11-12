@@ -12,7 +12,7 @@ import 'package:usb_storage_client/src/usb_storage_client.dart';
 /// `req-1`, `req-2`, … so a test can name the outcome it settles.
 class FakeUsbStorageClient implements UsbStorageClient {
   /// Creates a [FakeUsbStorageClient], optionally with [initial] volumes.
-  FakeUsbStorageClient({
+  new({
     List<RemovableVolumeRecord> initial = const [],
     this.isSupported = true,
   }) {

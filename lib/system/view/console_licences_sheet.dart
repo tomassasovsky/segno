@@ -61,7 +61,7 @@ Future<List<ConsoleLicencePackage>> readConsoleLicencePackages() async {
 @immutable
 class ConsoleLicencePackage {
   /// Creates a [ConsoleLicencePackage].
-  const ConsoleLicencePackage(this.name, this.paragraphs);
+  const new(this.name, this.paragraphs);
 
   /// The package's name, as the registry reports it.
   final String name;
@@ -71,7 +71,7 @@ class ConsoleLicencePackage {
 }
 
 class _ConsoleLicencesSheet extends StatefulWidget {
-  const _ConsoleLicencesSheet({required this.packages});
+  const new({required this.packages});
 
   /// The one walk of the registry, already in flight or already done.
   final Future<List<ConsoleLicencePackage>> packages;
@@ -232,7 +232,7 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
 /// One package of the licence list: its row, and the drawer of its licences
 /// that opens under it.
 class _LicenceRow extends StatelessWidget {
-  const _LicenceRow({
+  const new({
     required this.package,
     required this.last,
     required this.open,

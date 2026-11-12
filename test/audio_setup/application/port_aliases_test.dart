@@ -9,7 +9,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Repository extends Mock implements LooperRepository {}
+class _Repository extends Mock implements LooperRepository;
 
 class _Store extends FakeKeyValueStore {
   String? blockedKey;
@@ -63,9 +63,8 @@ void main() {
         key = '${kind == PortAliasKind.input ? 'input' : 'output'}_name.Rig.0';
         repository = _Repository();
         when(() => repository.mixGeneration).thenReturn(0);
-        when(() => repository.looperState).thenAnswer(
-          (_) => const Stream.empty(),
-        );
+        when(() => repository.looperState)
+            .thenAnswer((_) => const Stream.empty());
         when(() => repository.state).thenReturn(
           const LooperState(
             status: EngineStatus(

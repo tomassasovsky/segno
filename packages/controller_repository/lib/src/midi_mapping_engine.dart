@@ -6,7 +6,7 @@ import 'package:controller_repository/src/midi_protocol.dart';
 /// [MidiMappingEngine.settle].
 sealed class MidiOperation {
   /// Creates an operation for one ordered control row.
-  const MidiOperation(this.controlIndex, this.key);
+  const new(this.controlIndex, this.key);
 
   /// Position in the mapping's ordered controls.
   final int controlIndex;
@@ -18,7 +18,7 @@ sealed class MidiOperation {
 /// Write a parameter; [held] distinguishes a momentary hold or release.
 final class MidiParameterWrite extends MidiOperation {
   /// Creates a parameter write.
-  const MidiParameterWrite(
+  const new(
     super.controlIndex,
     super.key,
     this.value, {
@@ -39,13 +39,13 @@ final class MidiParameterWrite extends MidiOperation {
 /// Remove an accepted continuous or toggle contribution without changing sound.
 final class MidiParameterEnd extends MidiOperation {
   /// Creates a parameter contribution retirement.
-  const MidiParameterEnd(super.controlIndex, super.key);
+  const new(super.controlIndex, super.key);
 }
 
 /// Run an action. The runtime owns the accepted action identity until End.
 final class MidiActionRun extends MidiOperation {
   /// Creates an action run.
-  const MidiActionRun(super.controlIndex, super.key, {this.expectsEnd = false});
+  const new(super.controlIndex, super.key, {this.expectsEnd = false});
 
   /// A press action stays held until the matching accepted End.
   final bool expectsEnd;
@@ -54,17 +54,12 @@ final class MidiActionRun extends MidiOperation {
 /// End an accepted action run by its captured identity.
 final class MidiActionEnd extends MidiOperation {
   /// Creates an action end.
-  const MidiActionEnd(super.controlIndex, super.key);
+  const new(super.controlIndex, super.key);
 }
 
 /// One immutable admission request for one mapping generation.
 final class MidiProposal {
-  MidiProposal._(
-    this.mappingId,
-    this.generation,
-    this.operations,
-    this._effects,
-  );
+  new _(this.mappingId, this.generation, this.operations, this._effects);
 
   /// Stable saved mapping identity.
   final String mappingId;
@@ -85,10 +80,7 @@ final class MidiProposal {
 /// row via [settle]. Call prepare/settle serially, including retirement.
 class MidiMappingEngine {
   /// Creates an engine with application-owned current-value and step reads.
-  MidiMappingEngine({
-    required this._read,
-    required this._step,
-  });
+  new({required this._read, required this._step});
 
   final double? Function(String key) _read;
   final double Function(String key) _step;
@@ -165,9 +157,7 @@ class MidiMappingEngine {
             };
           } else if (edge == trigger) {
             final expectsEnd = edge == MidiEdge.press && !program;
-            operations.add(
-              MidiActionRun(index, key, expectsEnd: expectsEnd),
-            );
+            operations.add(MidiActionRun(index, key, expectsEnd: expectsEnd));
             effects[index] = () {
               row
                 ..actionHeld = expectsEnd
@@ -212,9 +202,7 @@ class MidiMappingEngine {
           } else if (mapping.behavior == MidiBehavior.toggle &&
               edge == MidiEdge.press) {
             final nextOn = !row.latched;
-            operations.add(
-              MidiParameterWrite(index, key, nextOn ? high : low),
-            );
+            operations.add(MidiParameterWrite(index, key, nextOn ? high : low));
             effects[index] = () {
               row
                 ..latched = nextOn
@@ -233,13 +221,7 @@ class MidiMappingEngine {
               edge == MidiEdge.release &&
               row.held) {
             operations.add(
-              MidiParameterWrite(
-                index,
-                key,
-                low,
-                held: false,
-                cleanup: true,
-              ),
+              MidiParameterWrite(index, key, low, held: false, cleanup: true),
             );
             effects[index] = () {
               row
@@ -359,13 +341,7 @@ class MidiMappingEngine {
           if (!row.contributing) continue;
           if (row.held) {
             operations.add(
-              MidiParameterWrite(
-                index,
-                key,
-                low,
-                held: false,
-                cleanup: true,
-              ),
+              MidiParameterWrite(index, key, low, held: false, cleanup: true),
             );
           } else {
             operations.add(MidiParameterEnd(index, key));
@@ -431,7 +407,7 @@ class MidiMappingEngine {
 }
 
 class _MappingState {
-  _MappingState(this.mapping, this.generation);
+  new(this.mapping, this.generation);
 
   final MidiMapping mapping;
   final int generation;
@@ -439,9 +415,8 @@ class _MappingState {
   final Map<int, _RowState> rows = {};
   double? previous;
 
-  bool get hasClaims => rows.values.any(
-    (row) => row.actionHeld || row.contributing,
-  );
+  bool get hasClaims =>
+      rows.values.any((row) => row.actionHeld || row.contributing);
 }
 
 class _RowState {

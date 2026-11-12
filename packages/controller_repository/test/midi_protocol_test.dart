@@ -42,10 +42,7 @@ void main() {
           ?.value,
       0,
     );
-    expect(
-      decoder.feed('dev', _program(8), MidiProtocol.standard)?.value,
-      127,
-    );
+    expect(decoder.feed('dev', _program(8), MidiProtocol.standard)?.value, 127);
     expect(
       decoder.feed(
         'dev',

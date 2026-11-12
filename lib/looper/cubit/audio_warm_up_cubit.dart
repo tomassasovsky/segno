@@ -37,7 +37,7 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   /// first rasterized frame). [_ticker] drives the checks (a periodic timer of
   /// [interval] when omitted). The console has settled after [quiet] with no
   /// new fault, and the switch happens anyway [cap] after watching began.
-  AudioWarmUpCubit({
+  new({
     required this._looper,
     required this._guards,
     this._ready,
@@ -103,9 +103,7 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
     if (looper.status.warmingUp) {
       _emit(AudioWarmUpStatus.settling);
       _tickSubscription ??= (_ticker ?? Stream<void>.periodic(_interval))
-          .listen(
-            (_) => _tick(),
-          );
+          .listen((_) => _tick());
       return;
     }
     unawaited(_tickSubscription?.cancel());

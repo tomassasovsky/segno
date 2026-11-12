@@ -8,7 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:segno/logging/app_log.dart';
 
 class AppBlocObserver extends BlocObserver {
-  const AppBlocObserver();
+  const new();
 
   @override
   void onChange(BlocBase<dynamic> bloc, Change<dynamic> change) {
@@ -19,11 +19,7 @@ class AppBlocObserver extends BlocObserver {
   @override
   void onError(BlocBase<dynamic> bloc, Object error, StackTrace stackTrace) {
     log('onError(${bloc.runtimeType}, $error, $stackTrace)');
-    AppLog.error(
-      'bloc ${bloc.runtimeType}',
-      error: error,
-      stack: stackTrace,
-    );
+    AppLog.error('bloc ${bloc.runtimeType}', error: error, stack: stackTrace);
     super.onError(bloc, error, stackTrace);
   }
 }

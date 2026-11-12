@@ -32,7 +32,7 @@ enum AudioRoutingTab {
 /// `21 Audio routing` section, four tasks behind one frame.
 class AudioRoutingPage extends StatefulWidget {
   /// Creates an [AudioRoutingPage] opened on [initial].
-  const AudioRoutingPage({this.initial = AudioRoutingTab.setup, super.key});
+  const new({this.initial = AudioRoutingTab.setup, super.key});
 
   /// The task the page opens on.
   final AudioRoutingTab initial;

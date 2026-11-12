@@ -126,10 +126,7 @@ void main() {
       unawaited(openNetworkSettings());
       await tester.pumpAndSettle();
       expect(harness.wifi.statusReads, 1);
-      expect(
-        find.byKey(const Key('network_connection_card')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('network_connection_card')), findsOneWidget);
       final cubit = BlocProvider.of<WifiCubit>(
         tester.element(find.byKey(const Key('network_connection_card'))),
       );

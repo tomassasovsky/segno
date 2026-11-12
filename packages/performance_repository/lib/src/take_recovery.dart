@@ -27,7 +27,7 @@ String readBootId() {
 @immutable
 class ReconciledTake {
   /// Creates a [ReconciledTake].
-  const ReconciledTake({
+  const new({
     required this.takeId,
     required this.sampleRate,
     required this.streams,
@@ -376,7 +376,7 @@ String _hex(Uint8List bytes) =>
     bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
 class _DiskPart {
-  _DiskPart(this.index, this.file, this.length, this.frames, this.header);
+  new(this.index, this.file, this.length, this.frames, this.header);
 
   final int index;
   final File file;

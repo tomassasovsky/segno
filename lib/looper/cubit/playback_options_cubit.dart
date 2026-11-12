@@ -11,7 +11,7 @@ import 'package:segno/looper/model/playback_options.dart';
 /// Presents application-owned playback preferences and forwards UI choices.
 class PlaybackOptionsCubit extends Cubit<PlaybackOptions> {
   /// Borrows [settings]; closing this adapter leaves its owner available.
-  PlaybackOptionsCubit({required PlaybackSettings settings})
+  new({required PlaybackSettings settings})
     : _settings = settings,
       super(settings.state) {
     _subscription = settings.stream.listen(emit);

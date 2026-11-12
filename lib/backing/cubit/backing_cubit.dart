@@ -14,7 +14,7 @@ part 'backing_cubit_state.dart';
 /// for; the player is the one owner.
 class BackingCubit extends Cubit<BackingCubitState> {
   /// Follows [player].
-  BackingCubit({required BackingPlayer player})
+  new({required BackingPlayer player})
     : _player = player,
       super(BackingCubitState(backing: player.state)) {
     _subscription = player.states.listen(

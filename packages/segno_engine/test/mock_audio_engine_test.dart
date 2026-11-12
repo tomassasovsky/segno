@@ -41,10 +41,7 @@ void main() {
       }
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
       final before = engine.snapshot();
-      expect(
-        engine.historyModeGate(channels: 3, redo: true),
-        EngineResult.ok,
-      );
+      expect(engine.historyModeGate(channels: 3, redo: true), EngineResult.ok);
       expect(engine.snapshot().tracks, before.tracks);
     });
 
@@ -70,82 +67,76 @@ void main() {
       },
     );
 
-    test(
-      'transpose needs material the mock lacks; its bypass is a global '
-      'request with a receipt',
-      () {
-        expect(
-          engine.transposeStep(channel: 0, delta: 1).result,
-          EngineResult.notRunning,
-        );
-        expect(
-          engine.setTransposeBypass(bypassed: true).result,
-          EngineResult.notRunning,
-        );
-        expect(engine.start(engine.defaultConfig), EngineResult.ok);
-        expect(
-          engine.transposeStep(channel: 0, delta: 1).result,
-          EngineResult.invalid,
-        );
-        expect(
-          engine.installTranspose(channel: 0, semitones: 3).result,
-          EngineResult.invalid,
-        );
-        final bypass = engine.setTransposeBypass(bypassed: true);
-        expect(bypass.result, EngineResult.ok);
-        expect(bypass.request, isNonZero);
-        expect(engine.readRequestResult(bypass.request), EngineResult.ok);
-        expect(engine.readRequestResult(bypass.request), EngineResult.invalid);
-        expect(engine.snapshot().transposeBypass, isTrue);
-        expect(engine.record(), EngineResult.ok); // nothing is transposed
-        engine.setTransposeBypass(bypassed: false);
-        expect(engine.snapshot().transposeBypass, isFalse);
-        engine.setTransposeBypass(bypassed: true);
-        expect(engine.stop(), EngineResult.ok);
-        expect(engine.start(engine.defaultConfig), EngineResult.ok);
-        // Configure resets it with the material.
-        expect(engine.snapshot().transposeBypass, isFalse);
-      },
-    );
+    test('transpose needs material the mock lacks; its bypass is a global '
+        'request with a receipt', () {
+      expect(
+        engine.transposeStep(channel: 0, delta: 1).result,
+        EngineResult.notRunning,
+      );
+      expect(
+        engine.setTransposeBypass(bypassed: true).result,
+        EngineResult.notRunning,
+      );
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(
+        engine.transposeStep(channel: 0, delta: 1).result,
+        EngineResult.invalid,
+      );
+      expect(
+        engine.installTranspose(channel: 0, semitones: 3).result,
+        EngineResult.invalid,
+      );
+      final bypass = engine.setTransposeBypass(bypassed: true);
+      expect(bypass.result, EngineResult.ok);
+      expect(bypass.request, isNonZero);
+      expect(engine.readRequestResult(bypass.request), EngineResult.ok);
+      expect(engine.readRequestResult(bypass.request), EngineResult.invalid);
+      expect(engine.snapshot().transposeBypass, isTrue);
+      expect(engine.record(), EngineResult.ok); // nothing is transposed
+      engine.setTransposeBypass(bypassed: false);
+      expect(engine.snapshot().transposeBypass, isFalse);
+      engine.setTransposeBypass(bypassed: true);
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      // Configure resets it with the material.
+      expect(engine.snapshot().transposeBypass, isFalse);
+    });
 
-    test(
-      'follow tempo and pitch are settings with receipts that configure '
-      'resets',
-      () {
-        expect(
-          engine.setFollowTempo(follow: true).result,
-          EngineResult.notRunning,
-        );
-        expect(engine.start(engine.defaultConfig), EngineResult.ok);
-        expect(engine.setFollowTempo().result, EngineResult.invalid);
-        expect(engine.setPitchMode().result, EngineResult.invalid);
-        expect(
-          engine.setFollowTempo(channel: 99, follow: true).result,
-          EngineResult.invalid,
-        );
-        final follow = engine.setFollowTempo(follow: true);
-        expect(engine.readRequestResult(follow.request), EngineResult.ok);
-        engine
-          ..setFollowTempo(channel: 2, follow: false)
-          ..setPitchMode(mode: PitchMode.followsSpeed)
-          ..setPitchMode(channel: 1, mode: PitchMode.unchanged);
-        final s = engine.snapshot();
-        expect(s.followTempo, isTrue);
-        expect(s.pitchMode, PitchMode.followsSpeed);
-        expect(s.tracks[2].followTempoOverride, isFalse);
-        expect(s.tracks[1].pitchModeOverride, PitchMode.unchanged);
-        expect(s.tracks[0].followTempoOverride, isNull);
-        expect(s.tempoFollow, TempoFollowState.free); // no material
-        engine.setFollowTempo(channel: 2);
-        expect(engine.snapshot().tracks[2].followTempoOverride, isNull);
-        expect(engine.stop(), EngineResult.ok);
-        expect(engine.start(engine.defaultConfig), EngineResult.ok);
-        final fresh = engine.snapshot();
-        expect(fresh.followTempo, isFalse);
-        expect(fresh.pitchMode, PitchMode.unchanged);
-        expect(fresh.tracks[1].pitchModeOverride, isNull);
-      },
-    );
+    test('follow tempo and pitch are settings with receipts that configure '
+        'resets', () {
+      expect(
+        engine.setFollowTempo(follow: true).result,
+        EngineResult.notRunning,
+      );
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(engine.setFollowTempo().result, EngineResult.invalid);
+      expect(engine.setPitchMode().result, EngineResult.invalid);
+      expect(
+        engine.setFollowTempo(channel: 99, follow: true).result,
+        EngineResult.invalid,
+      );
+      final follow = engine.setFollowTempo(follow: true);
+      expect(engine.readRequestResult(follow.request), EngineResult.ok);
+      engine
+        ..setFollowTempo(channel: 2, follow: false)
+        ..setPitchMode(mode: PitchMode.followsSpeed)
+        ..setPitchMode(channel: 1, mode: PitchMode.unchanged);
+      final s = engine.snapshot();
+      expect(s.followTempo, isTrue);
+      expect(s.pitchMode, PitchMode.followsSpeed);
+      expect(s.tracks[2].followTempoOverride, isFalse);
+      expect(s.tracks[1].pitchModeOverride, PitchMode.unchanged);
+      expect(s.tracks[0].followTempoOverride, isNull);
+      expect(s.tempoFollow, TempoFollowState.free); // no material
+      engine.setFollowTempo(channel: 2);
+      expect(engine.snapshot().tracks[2].followTempoOverride, isNull);
+      expect(engine.stop(), EngineResult.ok);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      final fresh = engine.snapshot();
+      expect(fresh.followTempo, isFalse);
+      expect(fresh.pitchMode, PitchMode.unchanged);
+      expect(fresh.tracks[1].pitchModeOverride, isNull);
+    });
 
     test('peel is unavailable because the mock keeps no overdub layers', () {
       expect(engine.peel(), EngineResult.notRunning);
@@ -157,16 +148,16 @@ void main() {
     });
 
     test('a length edit is refused: the mock keeps no material', () {
-      expect(
-        engine.editLength(channel: 0, edit: LengthEdit.doubled),
-        (result: EngineResult.notRunning, request: 0),
-      );
+      expect(engine.editLength(channel: 0, edit: LengthEdit.doubled), (
+        result: EngineResult.notRunning,
+        request: 0,
+      ));
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
       for (final edit in LengthEdit.values) {
-        expect(
-          engine.editLength(channel: 0, edit: edit),
-          (result: EngineResult.invalid, request: 0),
-        );
+        expect(engine.editLength(channel: 0, edit: edit), (
+          result: EngineResult.invalid,
+          request: 0,
+        ));
       }
     });
 
@@ -361,34 +352,28 @@ void main() {
       expect(engine.snapshot().masterGain, 1);
     });
 
-    test(
-      'setLaneVolume clamps to LE_MAX_GAIN (2.0), not 0..1, mirroring the '
-      'native engine',
-      () {
-        engine.start(engine.defaultConfig);
+    test('setLaneVolume clamps to LE_MAX_GAIN (2.0), not 0..1, mirroring the '
+        'native engine', () {
+      engine.start(engine.defaultConfig);
 
-        // A boost above unity is not clamped down to 1.0 — the native engine
-        // allows up to LE_MAX_GAIN (+6 dB headroom), and the mock must match.
-        expect(engine.setLaneVolume(1.5), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(1.5, 1e-6));
+      // A boost above unity is not clamped down to 1.0 — the native engine
+      // allows up to LE_MAX_GAIN (+6 dB headroom), and the mock must match.
+      expect(engine.setLaneVolume(1.5), EngineResult.ok);
+      expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(1.5, 1e-6));
 
-        // Out-of-range values clamp to 0..LE_MAX_GAIN, not 0..1.
-        expect(engine.setLaneVolume(2.5), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(2, 1e-6));
-        expect(engine.setLaneVolume(-1), EngineResult.ok);
-        expect(engine.snapshot().tracks[0].lanes[0].volume, 0);
-        // Part gain does not change the independent whole-track fader.
-        expect(engine.snapshot().tracks[0].volume, 1);
+      // Out-of-range values clamp to 0..LE_MAX_GAIN, not 0..1.
+      expect(engine.setLaneVolume(2.5), EngineResult.ok);
+      expect(engine.snapshot().tracks[0].lanes[0].volume, closeTo(2, 1e-6));
+      expect(engine.setLaneVolume(-1), EngineResult.ok);
+      expect(engine.snapshot().tracks[0].lanes[0].volume, 0);
+      // Part gain does not change the independent whole-track fader.
+      expect(engine.snapshot().tracks[0].volume, 1);
 
-        // The explicit (channel, lane) addressing path behaves identically.
-        expect(engine.setLaneVolume(1.5, channel: 2), EngineResult.ok);
-        expect(
-          engine.snapshot().tracks[2].lanes[0].volume,
-          closeTo(1.5, 1e-6),
-        );
-        expect(engine.snapshot().tracks[2].volume, 1);
-      },
-    );
+      // The explicit (channel, lane) addressing path behaves identically.
+      expect(engine.setLaneVolume(1.5, channel: 2), EngineResult.ok);
+      expect(engine.snapshot().tracks[2].lanes[0].volume, closeTo(1.5, 1e-6));
+      expect(engine.snapshot().tracks[2].volume, 1);
+    });
 
     group('FX enable flags', () {
       test('records lane slot and chain enable calls while running', () {
@@ -651,9 +636,7 @@ void main() {
         expect(engine.trackFxEnabledCalls, [
           (channel: 1, index: 2, enabled: false),
         ]);
-        expect(engine.trackFxChainEnabledCalls, [
-          (channel: 1, enabled: false),
-        ]);
+        expect(engine.trackFxChainEnabledCalls, [(channel: 1, enabled: false)]);
         expect(engine.outputFxEnabledCalls, [
           (bus: 0, index: 3, enabled: false),
         ]);
@@ -870,10 +853,7 @@ void main() {
       });
 
       test('setInputTrim rejects an out-of-range input', () {
-        expect(
-          engine.setInputTrim(input: -1, gain: 1),
-          EngineResult.invalid,
-        );
+        expect(engine.setInputTrim(input: -1, gain: 1), EngineResult.invalid);
         expect(
           engine.setInputTrim(input: kMaxChannels, gain: 1),
           EngineResult.invalid,
@@ -952,10 +932,7 @@ void main() {
       });
 
       test('the output bus setters reject a bus the engine cannot address', () {
-        expect(
-          engine.setOutputLevel(bus: -1, level: 1),
-          EngineResult.invalid,
-        );
+        expect(engine.setOutputLevel(bus: -1, level: 1), EngineResult.invalid);
         expect(
           engine.setOutputMute(bus: kMaxOutputBuses, muted: true),
           EngineResult.invalid,
@@ -1054,10 +1031,7 @@ void main() {
           ),
           EngineResult.notRunning,
         );
-        expect(
-          engine.setClickMode(ClickMode.rec),
-          EngineResult.notRunning,
-        );
+        expect(engine.setClickMode(ClickMode.rec), EngineResult.notRunning);
         expect(engine.setClickOutput(0x3), EngineResult.notRunning);
         expect(engine.setClickVolume(0.5), EngineResult.notRunning);
         expect(
@@ -1105,29 +1079,26 @@ void main() {
         expect(s.tempoBpm, 300);
       });
 
-      test(
-        'setTimeSignature accepts a valid signature and rejects an '
-        'invalid one',
-        () {
-          engine.start(engine.defaultConfig);
-          expect(engine.setTimeSignature(7, 4), EngineResult.ok);
-          var s = engine.snapshot();
-          expect(s.tsNum, 7);
-          expect(s.tsDen, 4);
+      test('setTimeSignature accepts a valid signature and rejects an '
+          'invalid one', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setTimeSignature(7, 4), EngineResult.ok);
+        var s = engine.snapshot();
+        expect(s.tsNum, 7);
+        expect(s.tsDen, 4);
 
-          expect(engine.setTimeSignature(15, 8), EngineResult.ok);
-          s = engine.snapshot();
-          expect(s.tsNum, 15);
-          expect(s.tsDen, 8);
+        expect(engine.setTimeSignature(15, 8), EngineResult.ok);
+        s = engine.snapshot();
+        expect(s.tsNum, 15);
+        expect(s.tsDen, 8);
 
-          // 2/8 and 8/4 are not among the 17 Sheeran-verified signatures.
-          expect(engine.setTimeSignature(2, 8), EngineResult.invalid);
-          expect(engine.setTimeSignature(8, 4), EngineResult.invalid);
-          // A rejected signature does not change the published state.
-          expect(engine.snapshot().tsNum, 15);
-          expect(engine.snapshot().tsDen, 8);
-        },
-      );
+        // 2/8 and 8/4 are not among the 17 Sheeran-verified signatures.
+        expect(engine.setTimeSignature(2, 8), EngineResult.invalid);
+        expect(engine.setTimeSignature(8, 4), EngineResult.invalid);
+        // A rejected signature does not change the published state.
+        expect(engine.snapshot().tsNum, 15);
+        expect(engine.snapshot().tsDen, 8);
+      });
 
       test('tapTempo ignores a lone first tap', () {
         engine.start(engine.defaultConfig);
@@ -1185,10 +1156,7 @@ void main() {
 
       test('setClickMode surfaces in the snapshot', () {
         engine.start(engine.defaultConfig);
-        expect(
-          engine.setClickMode(ClickMode.playRec),
-          EngineResult.ok,
-        );
+        expect(engine.setClickMode(ClickMode.playRec), EngineResult.ok);
         expect(engine.snapshot().clickMode, ClickMode.playRec);
       });
 
@@ -1198,20 +1166,17 @@ void main() {
         expect(engine.snapshot().clickMask, 0x6);
       });
 
-      test(
-        'setClickVolume clamps to LE_MAX_GAIN (2.0), not 0..1, mirroring '
-        'the native engine',
-        () {
-          engine.start(engine.defaultConfig);
-          expect(engine.setClickVolume(1.5), EngineResult.ok);
-          expect(engine.snapshot().clickVolume, closeTo(1.5, 1e-6));
+      test('setClickVolume clamps to LE_MAX_GAIN (2.0), not 0..1, mirroring '
+          'the native engine', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setClickVolume(1.5), EngineResult.ok);
+        expect(engine.snapshot().clickVolume, closeTo(1.5, 1e-6));
 
-          engine.setClickVolume(2.5);
-          expect(engine.snapshot().clickVolume, closeTo(2, 1e-6));
-          engine.setClickVolume(-1);
-          expect(engine.snapshot().clickVolume, 0);
-        },
-      );
+        engine.setClickVolume(2.5);
+        expect(engine.snapshot().clickVolume, closeTo(2, 1e-6));
+        engine.setClickVolume(-1);
+        expect(engine.snapshot().clickVolume, 0);
+      });
 
       test(
         'record-start pair accepts supported bars and rejects other values',
@@ -1258,35 +1223,32 @@ void main() {
         },
       );
 
-      test(
-        'setTrackLengthPreset accepts 0..LE_LENGTH_PRESET_MAX_BARS and '
-        'rejects beyond',
-        () {
-          engine.start(engine.defaultConfig);
-          expect(
-            engine.setTrackLengthPreset(channel: 0, bars: 4),
-            EngineResult.ok,
-          );
-          expect(engine.snapshot().tracks[0].lengthPresetBars, 4);
+      test('setTrackLengthPreset accepts 0..LE_LENGTH_PRESET_MAX_BARS and '
+          'rejects beyond', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: 4),
+          EngineResult.ok,
+        );
+        expect(engine.snapshot().tracks[0].lengthPresetBars, 4);
 
-          expect(
-            engine.setTrackLengthPreset(channel: 0, bars: 0),
-            EngineResult.ok,
-          );
-          expect(engine.snapshot().tracks[0].lengthPresetBars, 0);
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: 0),
+          EngineResult.ok,
+        );
+        expect(engine.snapshot().tracks[0].lengthPresetBars, 0);
 
-          expect(
-            engine.setTrackLengthPreset(channel: 0, bars: -1),
-            EngineResult.invalid,
-          );
-          expect(
-            engine.setTrackLengthPreset(channel: 0, bars: 65),
-            EngineResult.invalid,
-          );
-          // A rejected value does not change the published state.
-          expect(engine.snapshot().tracks[0].lengthPresetBars, 0);
-        },
-      );
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: -1),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: 65),
+          EngineResult.invalid,
+        );
+        // A rejected value does not change the published state.
+        expect(engine.snapshot().tracks[0].lengthPresetBars, 0);
+      });
 
       test('setTrackLengthPreset rejects an out-of-range channel', () {
         engine.start(engine.defaultConfig);
@@ -1375,10 +1337,7 @@ void main() {
 
     group('LooperModeControl', () {
       test('setLooperMode requires the engine to be running', () {
-        expect(
-          engine.setLooperMode(LooperMode.sync),
-          EngineResult.notRunning,
-        );
+        expect(engine.setLooperMode(LooperMode.sync), EngineResult.notRunning);
       });
 
       test('snapshot defaults to multi', () {
@@ -1404,10 +1363,7 @@ void main() {
       });
 
       test('crownPrimary requires the engine to be running', () {
-        expect(
-          engine.crownPrimary(channel: 0),
-          EngineResult.notRunning,
-        );
+        expect(engine.crownPrimary(channel: 0), EngineResult.notRunning);
       });
 
       test('snapshot defaults to no primary track (-1)', () {
@@ -1424,10 +1380,7 @@ void main() {
       test('crownPrimary rejects an out-of-range channel', () {
         engine.start(engine.defaultConfig);
         final outOfRange = engine.snapshot().tracks.length;
-        expect(
-          engine.crownPrimary(channel: outOfRange),
-          EngineResult.invalid,
-        );
+        expect(engine.crownPrimary(channel: outOfRange), EngineResult.invalid);
         expect(engine.crownPrimary(channel: -1), EngineResult.invalid);
       });
 
@@ -1507,10 +1460,7 @@ void main() {
           pluginId: 'com.acme.reverb',
         );
         expect(handle, isA<MockPluginSlotHandle>());
-        expect(
-          (handle! as MockPluginSlotHandle).pluginId,
-          'com.acme.reverb',
-        );
+        expect((handle! as MockPluginSlotHandle).pluginId, 'com.acme.reverb');
       });
 
       test('setMonitorPlugin returns a handle', () {
@@ -1528,10 +1478,7 @@ void main() {
           engine.clearLanePlugin(channel: 0, lane: 0, index: 0),
           EngineResult.ok,
         );
-        expect(
-          engine.clearMonitorPlugin(input: 0, index: 0),
-          EngineResult.ok,
-        );
+        expect(engine.clearMonitorPlugin(input: 0, index: 0), EngineResult.ok);
       });
 
       test('enumerates three deterministic automatable params', () {
@@ -1624,14 +1571,8 @@ void main() {
         expect(engine.auditionState().outputs, (1 << 20) - 1);
         expect(engine.auditionStop(), EngineResult.ok);
         expect(engine.auditionState().playing, isFalse);
-        expect(
-          await engine.filePeaks(file.path, buckets: 4),
-          [0, 0, 0, 0],
-        );
-        expect(
-          await engine.filePeaks('/absent.wav', buckets: 4),
-          isNull,
-        );
+        expect(await engine.filePeaks(file.path, buckets: 4), [0, 0, 0, 0]);
+        expect(await engine.filePeaks('/absent.wav', buckets: 4), isNull);
       },
     );
 
@@ -1663,9 +1604,7 @@ void main() {
       // A performance arm ends it, and refuses a start while armed.
       await play();
       expect(
-        engine.perfArm(
-          PerfTarget(captureDir: dir.path, takeId: Uint8List(16)),
-        ),
+        engine.perfArm(PerfTarget(captureDir: dir.path, takeId: Uint8List(16))),
         EngineResult.ok,
       );
       expect(engine.auditionState().playing, isFalse);

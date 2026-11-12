@@ -295,10 +295,7 @@ void main() {
       () async {
         drive.spaceAnswer = const VolumeSpace(totalBytes: 100, freeBytes: 11);
 
-        await expectLater(
-          run(parts(3)),
-          throwsA(isA<StorageFull>()),
-        );
+        await expectLater(run(parts(3)), throwsA(isA<StorageFull>()));
         expect(drive.copies, isEmpty);
       },
     );
@@ -343,14 +340,11 @@ void main() {
       expect(drive.files, contains('$perf/Evening loop/old.wav'));
 
       await run(package(), policy: ConflictPolicy.replace);
-      expect(
-        drive.files.where((f) => f.startsWith('$perf/Evening loop/')),
-        [
-          '$perf/Evening loop/master-001.wav',
-          '$perf/Evening loop/project.als',
-          '$perf/Evening loop/stems/wet/track0.wav',
-        ],
-      );
+      expect(drive.files.where((f) => f.startsWith('$perf/Evening loop/')), [
+        '$perf/Evening loop/master-001.wav',
+        '$perf/Evening loop/project.als',
+        '$perf/Evening loop/stems/wet/track0.wav',
+      ]);
       expect(
         drive.files.where((f) => f.contains(AudioExporter.stagingPrefix)),
         isEmpty,
@@ -415,10 +409,7 @@ void main() {
     /// the old package aside with its target list, the new one staged, no
     /// package under its name.
     void cutMidSwap() {
-      onDrive(
-        '$aside/Evening loop/old.wav',
-        fill: 7,
-      );
+      onDrive('$aside/Evening loop/old.wav', fill: 7);
       File(
         '${drive.mount}/$perf/${AudioExporter.stagingPrefix}Evening loop.old/'
         '${AudioExporter.targetsName}',
@@ -453,10 +444,7 @@ void main() {
       onDrive('$perf/Done/new.wav', fill: 3);
       // Half done: Part 001 placed, Part 002 still staged, both old aside.
       for (var i = 1; i <= 2; i++) {
-        onDrive(
-          '$aside/Evening loop · Part 00$i.wav',
-          fill: i,
-        );
+        onDrive('$aside/Evening loop · Part 00$i.wav', fill: i);
       }
       File(
         '${drive.mount}/$perf/${AudioExporter.stagingPrefix}Evening loop.old/'
@@ -516,5 +504,5 @@ extension on AudioExportPlan {
 /// Stands for the process stopping: no handler of the exporter's catches it
 /// as a filesystem failure.
 class _Cut implements Exception {
-  const _Cut();
+  const new();
 }

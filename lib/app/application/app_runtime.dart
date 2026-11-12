@@ -42,7 +42,7 @@ import 'package:storage_repository/storage_repository.dart';
 /// failure listeners before independent settings loads begin.
 class AppRuntime {
   /// Builds one set of owners over the application's injected repositories.
-  AppRuntime({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
     required this.mix,
@@ -292,9 +292,7 @@ class AppRuntime {
         }
       }
     }
-    final controllers = control.flushMidiConfiguration(
-      retireControls: true,
-    );
+    final controllers = control.flushMidiConfiguration(retireControls: true);
     try {
       await controllers;
     } on ControlCleanupPending {
@@ -308,9 +306,7 @@ class AppRuntime {
       // own, because storage holds it and the next start replays it.
       await mix.recover();
       await owners.recover();
-      await control.flushMidiConfiguration(
-        retireControls: true,
-      );
+      await control.flushMidiConfiguration(retireControls: true);
     }
     await fxPersistence.flush();
     final mixResult = await mix.flush();

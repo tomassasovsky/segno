@@ -9,7 +9,7 @@ import 'package:update_repository/src/update_recovery.dart';
 /// the action members throw if ever called, since they must not be reachable.
 class UnsupportedPlatformBackend implements PlatformUpdateBackend {
   /// Creates an [UnsupportedPlatformBackend].
-  const UnsupportedPlatformBackend();
+  const new();
 
   @override
   bool get isSupported => false;

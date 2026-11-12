@@ -13,7 +13,7 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 /// import actually copied, and a hand-written fixture would only ever prove
 /// the parser reads the shape the test author imagined.
 class _DiskBundle extends CachingAssetBundle {
-  _DiskBundle(this.root, this.keys);
+  new(this.root, this.keys);
 
   final Directory root;
   final List<String> keys;
@@ -43,7 +43,7 @@ class _NoManifestBundle extends CachingAssetBundle {
 /// The disk bundle with the IMPORT manifest replaced, to exercise a bundle
 /// that holds the file but not a readable one.
 class _TextBundle extends _DiskBundle {
-  _TextBundle(super.root, super.keys, this.manifest);
+  new(super.root, super.keys, this.manifest);
 
   final String manifest;
 
@@ -51,9 +51,7 @@ class _TextBundle extends _DiskBundle {
   Future<ByteData> load(String key) async {
     if (key == 'packages/fx_catalogue/assets/manifest.json') {
       final bytes = utf8.encode(manifest);
-      return ByteData.view(
-        Uint8List.fromList(bytes).buffer,
-      );
+      return ByteData.view(Uint8List.fromList(bytes).buffer);
     }
     return await super.load(key);
   }
@@ -77,9 +75,8 @@ void main() {
   late FxCatalogue catalogue;
 
   setUpAll(() async {
-    catalogue = await FxCatalogueLoader(
-      bundle: _DiskBundle(root, onDisk),
-    ).load();
+    catalogue = await FxCatalogueLoader(bundle: _DiskBundle(root, onDisk))
+        .load();
   });
 
   group('the bundled catalogue', () {
@@ -99,10 +96,7 @@ void main() {
       // the folder names and the image names do not follow one rule, so a
       // slug derived rather than mapped would draw the wrong rack.
       for (final family in catalogue.families) {
-        for (final asset in [
-          family.selectorAsset,
-          family.footswitchAsset,
-        ]) {
+        for (final asset in [family.selectorAsset, family.footswitchAsset]) {
           expect(
             File('${root.path}/$asset').existsSync(),
             isTrue,
@@ -210,9 +204,8 @@ void main() {
     });
 
     test('a bundle with no asset manifest at all loads empty', () async {
-      final loaded = await FxCatalogueLoader(
-        bundle: _NoManifestBundle(),
-      ).load();
+      final loaded = await FxCatalogueLoader(bundle: _NoManifestBundle())
+          .load();
 
       expect(loaded.isEmpty, isTrue);
     });
@@ -362,10 +355,7 @@ void main() {
       expect(delay.groups, ['Del']);
 
       expect(fxModuleFor('Delay', "Ed's Rack")!.name, 'Delay');
-      expect(
-        fxModuleOwning('Del Feedback', "Ed's Rack")?.name,
-        'Delay',
-      );
+      expect(fxModuleOwning('Del Feedback', "Ed's Rack")?.name, 'Delay');
       // And the power key is not a parameter of its own module.
       expect(fxModuleOwning('Delay', "Ed's Rack"), isNull);
     });
@@ -382,30 +372,18 @@ void main() {
 
     test("the Dub Rack's delay is the dub delay, powered by `Dub Delay`", () {
       expect(fxModuleFor('Dub Delay', 'Dub Rack')!.name, 'Dub delay');
-      expect(
-        fxModuleOwning('Del Feedback', 'Dub Rack')?.name,
-        'Dub delay',
-      );
+      expect(fxModuleOwning('Del Feedback', 'Dub Rack')?.name, 'Dub delay');
       // The dub reverb no longer takes the delay's power key as a parameter.
       expect(fxModuleOwning('Dub Delay', 'Dub Rack'), isNull);
-      expect(
-        fxModuleOwning('Dub-Verb Dec', 'Dub Rack')?.name,
-        'Dub reverb',
-      );
+      expect(fxModuleOwning('Dub-Verb Dec', 'Dub Rack')?.name, 'Dub reverb');
     });
 
     test('`Para EQ` powers the parametric EQ of the Dub and Lo-Fi racks', () {
       for (final family in ['Dub Rack', 'Lo-Fi Rack']) {
         expect(fxModuleFor('Para EQ', family)!.name, 'Parametric EQ');
-        expect(
-          fxModuleOwning('EQ Mid Q', family)?.name,
-          'Parametric EQ',
-        );
+        expect(fxModuleOwning('EQ Mid Q', family)?.name, 'Parametric EQ');
       }
-      expect(
-        fxModuleOwning('EQ Mid Freq', 'Drum Rack')?.name,
-        'Four-band EQ',
-      );
+      expect(fxModuleOwning('EQ Mid Freq', 'Drum Rack')?.name, 'Four-band EQ');
     });
 
     test("the Rhythmic Rack's EQ is the parametric EQ, though `EQ` powers "
@@ -431,11 +409,7 @@ void main() {
         for (final family in kFxFamilySlugs.keys) {
           if (family == 'Vocal Tuner Rack') continue;
           expect(fxModuleOwning('Mode', family), isNull, reason: family);
-          expect(
-            fxModuleOwning('Voice 1 Vol', family),
-            isNull,
-            reason: family,
-          );
+          expect(fxModuleOwning('Voice 1 Vol', family), isNull, reason: family);
           expect(fxModuleFor('Smart Tune', family), isNull, reason: family);
         }
       },

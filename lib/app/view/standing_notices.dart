@@ -39,7 +39,7 @@ import 'package:segno/notices/notices.dart';
 /// message is in every screen's top bar, so this cannot wait for the stage.
 class StandingNotices extends StatefulWidget {
   /// Creates a [StandingNotices] over [child].
-  const StandingNotices({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The app.
   final Widget child;
@@ -294,19 +294,15 @@ class _StandingNoticesState extends State<StandingNotices> {
         listenWhen: (previous, current) => previous.names != current.names,
         listener: (_, _) => _sync(),
       ),
-      BlocListener<InputsCubit, InputsState>(
-        listener: (_, _) => _sync(),
-      ),
-      BlocListener<OutputsCubit, OutputsState>(
-        listener: (_, _) => _sync(),
-      ),
+      BlocListener<InputsCubit, InputsState>(listener: (_, _) => _sync()),
+      BlocListener<OutputsCubit, OutputsState>(listener: (_, _) => _sync()),
     ],
     child: widget.child,
   );
 }
 
 class _Reopen extends Equatable {
-  const _Reopen(this.reopen);
+  const new(this.reopen);
 
   final EngineReopened? reopen;
 
@@ -315,7 +311,7 @@ class _Reopen extends Equatable {
 }
 
 class _OutputFxWaiting extends Equatable {
-  const _OutputFxWaiting(this.buses, this.names);
+  const new(this.buses, this.names);
 
   final List<int> buses;
   final Object names;
@@ -325,7 +321,7 @@ class _OutputFxWaiting extends Equatable {
 }
 
 class _FxHeld extends Equatable {
-  const _FxHeld(this.held, this.names);
+  const new(this.held, this.names);
 
   final List<FxAddress> held;
   final Object names;

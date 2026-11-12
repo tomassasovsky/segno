@@ -154,11 +154,7 @@ void main() {
       final printed = repo.laneEffects(0, 0);
       final before = repo.fxCostNs;
       expect(
-        repo.setLaneEffects(
-          channel: 0,
-          lane: 0,
-          effects: printed.sublist(1),
-        ),
+        repo.setLaneEffects(channel: 0, lane: 0, effects: printed.sublist(1)),
         EngineResult.ok,
       );
       expect(engine.laneSources[(0, 0)], LaneSource.clean);

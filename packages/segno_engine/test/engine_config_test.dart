@@ -118,10 +118,7 @@ void main() {
     });
 
     test('toString surfaces key fields', () {
-      const config = EngineConfig(
-        sampleRate: 48000,
-        keepMaterial: true,
-      );
+      const config = EngineConfig(sampleRate: 48000, keepMaterial: true);
       expect(config.toString(), contains('sampleRate: 48000'));
       expect(config.toString(), contains('keepMaterial: true'));
     });

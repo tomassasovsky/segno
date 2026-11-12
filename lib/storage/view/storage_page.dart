@@ -22,7 +22,7 @@ import 'package:storage_repository/storage_repository.dart';
 /// the wrong files as the drive's.
 class StoragePage extends StatefulWidget {
   /// Creates a [StoragePage]. [onOpenLibrary] opens the Library at Internal.
-  const StoragePage({required this.onOpenLibrary, super.key});
+  const new({required this.onOpenLibrary, super.key});
 
   /// Open library on the Internal card.
   final VoidCallback onOpenLibrary;
@@ -69,13 +69,10 @@ class _StoragePageState extends State<StoragePage> {
             ejectTaken: state.ejectTaken,
           ),
           if (state.ejectFailed == volume.generation)
-            StorageNotice(
-              switch (state.ejectBlockedBy) {
-                final kind? => context.l10n.operationBusy(kind.name),
-                null => context.l10n.storageEjectFailed,
-              },
-              key: const Key('storage_eject_failed'),
-            ),
+            StorageNotice(switch (state.ejectBlockedBy) {
+              final kind? => context.l10n.operationBusy(kind.name),
+              null => context.l10n.storageEjectFailed,
+            }, key: const Key('storage_eject_failed')),
           if (state.ejectStuck == volume.generation)
             StorageNotice(
               context.l10n.storageEjectStuck,
@@ -104,7 +101,7 @@ class _StoragePageState extends State<StoragePage> {
 
 /// A measured volume's capacity, or the sentence that says it was not.
 class _Capacity extends StatelessWidget {
-  const _Capacity({required this.space, this.low = false});
+  const new({required this.space, this.low = false});
 
   final VolumeSpace? space;
   final bool low;
@@ -131,7 +128,7 @@ class _Capacity extends StatelessWidget {
 }
 
 class _InternalCard extends StatelessWidget {
-  const _InternalCard({required this.state, required this.onOpenLibrary});
+  const new({required this.state, required this.onOpenLibrary});
 
   final StorageState state;
   final VoidCallback onOpenLibrary;
@@ -143,10 +140,7 @@ class _InternalCard extends StatelessWidget {
       key: const Key('storage_internal_card'),
       title: l10n.storageInternalTitle,
       subtitle: l10n.storageInternalSubtitle,
-      body: _Capacity(
-        space: state.internalSpace,
-        low: state.lowInternalSpace,
-      ),
+      body: _Capacity(space: state.internalSpace, low: state.lowInternalSpace),
       actions: [
         StorageCardButton(
           key: const Key('storage_open_library'),
@@ -159,7 +153,7 @@ class _InternalCard extends StatelessWidget {
 }
 
 class _RecordingTime extends StatelessWidget {
-  const _RecordingTime({required this.state});
+  const new({required this.state});
 
   final StorageState state;
 
@@ -172,10 +166,7 @@ class _RecordingTime extends StatelessWidget {
       headline: switch (time) {
         null => l10n.storageRecordingTimeUnavailable,
         Duration(inMinutes: 0) => l10n.storageNoRecordingSpace,
-        _ => l10n.storageRecordingRemaining(
-          time.inHours,
-          time.inMinutes % 60,
-        ),
+        _ => l10n.storageRecordingRemaining(time.inHours, time.inMinutes % 60),
       },
       format: state.sampleRate > 0
           ? l10n.storageRecordingFormat(state.sampleRate / 1000)
@@ -188,7 +179,7 @@ class _RecordingTime extends StatelessWidget {
 }
 
 class _NoUsbCard extends StatelessWidget {
-  const _NoUsbCard();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +197,7 @@ class _NoUsbCard extends StatelessWidget {
 }
 
 class _UsbCard extends StatelessWidget {
-  const _UsbCard({
+  const new({
     required this.volume,
     required this.space,
     required this.holders,

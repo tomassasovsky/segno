@@ -19,14 +19,13 @@ import 'package:segno/tuner/view/foot_tuner_view.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
-class _Tuner extends MockCubit<TunerState> implements TunerCubit {}
+class _Tuner extends MockCubit<TunerState> implements TunerCubit;
 
-class _Inputs extends MockCubit<InputsState> implements InputsCubit {}
+class _Inputs extends MockCubit<InputsState> implements InputsCubit;
 
 /// The foot Tuner face (pen 23/x, #1229).
 void main() {
@@ -67,9 +66,7 @@ void main() {
     whenListen(
       looper,
       const Stream<LooperState>.empty(),
-      initialState: LooperState(
-        status: EngineStatus(inputChannels: channels),
-      ),
+      initialState: LooperState(status: EngineStatus(inputChannels: channels)),
     );
     whenListen(
       control,
@@ -80,11 +77,7 @@ void main() {
         tunerPreferences: preferences,
       ),
     );
-    whenListen(
-      tuner,
-      const Stream<TunerState>.empty(),
-      initialState: reading,
-    );
+    whenListen(tuner, const Stream<TunerState>.empty(), initialState: reading);
   }
 
   Future<void> pump(WidgetTester tester, {Locale? locale}) async {
@@ -132,12 +125,7 @@ void main() {
 
   testWidgets('tune an input (23/1): the map, the reference and a flat '
       'reading', (tester) async {
-    given(
-      reading: TunerState(
-        hz: 81,
-        pitch: pitchFromHz(81),
-      ),
-    );
+    given(reading: TunerState(hz: 81, pitch: pitchFromHz(81)));
     await pump(tester);
     expect(find.byType(PedalHardwareFace), findsNWidgets(10));
     expect(find.text('Tuner'), findsOneWidget);
@@ -233,9 +221,7 @@ void main() {
   });
 
   testWidgets('a stale reading dims the note', (tester) async {
-    given(
-      reading: TunerState(hz: 81, pitch: pitchFromHz(81), isStale: true),
-    );
+    given(reading: TunerState(hz: 81, pitch: pitchFromHz(81), isStale: true));
     await pump(tester);
     final note = tester.widget<Text>(
       find.descendant(
@@ -273,9 +259,7 @@ void main() {
       tester.getCenter(pedal(PedalButton.track2)),
     );
     await tester.pump();
-    verify(
-      () => control.footTunerPressed(PedalButton.track2, any()),
-    ).called(1);
+    verify(() => control.footTunerPressed(PedalButton.track2, any())).called(1);
     await gesture.up();
     await tester.pump();
     verify(
@@ -285,9 +269,8 @@ void main() {
       ),
     ).called(1);
     pedalSemantics(tester, PedalButton.clear).properties.onLongPress!();
-    verify(
-      () => control.activateFootTunerPedal(PedalButton.clear, hold: true),
-    ).called(1);
+    verify(() => control.activateFootTunerPedal(PedalButton.clear, hold: true))
+        .called(1);
     expect(
       pedalSemantics(tester, PedalButton.track1).properties.onLongPress,
       isNull,

@@ -52,13 +52,13 @@ enum PerformanceTakeFailure {
 /// The outcome of a finished capture, carried by
 /// [PerformanceRecorderCompleted].
 sealed class PerformanceRecordResult extends Equatable {
-  const PerformanceRecordResult();
+  const new();
 }
 
 /// The bundle finalized and every stem rendered successfully.
 class PerformanceRecordDone extends PerformanceRecordResult {
   /// Creates a [PerformanceRecordDone] pointing at the finished bundle.
-  const PerformanceRecordDone(this.path);
+  const new(this.path);
 
   /// The capture bundle's directory.
   final String path;
@@ -72,7 +72,7 @@ class PerformanceRecordDone extends PerformanceRecordResult {
 /// (partial success, matching `PerformanceRenderTrackStatus`'s own posture).
 class PerformanceRecordPartial extends PerformanceRecordResult {
   /// Creates a [PerformanceRecordPartial] pointing at the still-usable bundle.
-  const PerformanceRecordPartial(this.path);
+  const new(this.path);
 
   /// The capture bundle's directory.
   final String path;
@@ -87,7 +87,7 @@ class PerformanceRecordPartial extends PerformanceRecordResult {
 class PerformanceRecordStoppedEarly extends PerformanceRecordResult {
   /// Creates a [PerformanceRecordStoppedEarly] pointing at the delivered
   /// bundle, for [reason].
-  const PerformanceRecordStoppedEarly(this.path, this.reason);
+  const new(this.path, this.reason);
 
   /// The capture bundle's directory.
   final String path;
@@ -105,7 +105,7 @@ class PerformanceRecordStoppedEarly extends PerformanceRecordResult {
 /// site (UI `switch` expressions, `BlocListener.listenWhen`) rather than by
 /// convention.
 sealed class PerformanceRecorderState extends Equatable {
-  const PerformanceRecorderState();
+  const new();
 }
 
 /// Not armed. Boot-time crash salvage asks no questions here — it runs
@@ -113,7 +113,7 @@ sealed class PerformanceRecorderState extends Equatable {
 /// #679); [recovering] is the one honest fact idle carries about it.
 class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderIdle].
-  const PerformanceRecorderIdle({
+  const new({
     this.lowDiskBlocked = false,
     this.recovering = false,
     this.refusedBy,
@@ -193,7 +193,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
 /// path.
 class PerformanceRecorderArmed extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderArmed].
-  const PerformanceRecorderArmed({
+  const new({
     required this.elapsed,
     required this.overrun,
     this.lowDiskWarning = false,
@@ -225,7 +225,7 @@ class PerformanceRecorderArmed extends PerformanceRecorderState {
 /// there is nothing for the UI to show progress for.
 class PerformanceRecorderFinalizing extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderFinalizing].
-  const PerformanceRecorderFinalizing({this.refusal = 0, this.refusedWith});
+  const new({this.refusal = 0, this.refusedWith});
 
   /// Arms refused so far (see [PerformanceRecorderIdle.refusal]): a Capture
   /// press while the take is saved bumps it, and the UI says why (#1633).
@@ -245,7 +245,7 @@ class PerformanceRecorderFinalizing extends PerformanceRecorderState {
 /// while in this state (umbrella — no render queue).
 class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderRendering].
-  const PerformanceRecorderRendering({
+  const new({
     required this.percent,
     this.name,
     this.refusal = 0,
@@ -293,7 +293,7 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
 /// of its own.
 class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderCompleted] with a delivered [result].
-  const PerformanceRecorderCompleted(
+  const new(
     this.result, {
     this.tracks = const [],
     this.duration,
@@ -302,7 +302,7 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
 
   /// Creates a [PerformanceRecorderCompleted] for a capture too short to
   /// deliver (< 2 s, nothing logged) — auto-discarded rather than finalized.
-  const PerformanceRecorderCompleted.discardedShort()
+  const new discardedShort()
     : result = null,
       discarded = true,
       tracks = const [],
@@ -335,11 +335,5 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   final bool hadGlitch;
 
   @override
-  List<Object?> get props => [
-    result,
-    discarded,
-    tracks,
-    duration,
-    hadGlitch,
-  ];
+  List<Object?> get props => [result, discarded, tracks, duration, hadGlitch];
 }

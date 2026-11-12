@@ -27,7 +27,7 @@ import 'package:segno/theme/theme.dart';
 /// in flight.
 class DevicePage extends StatefulWidget {
   /// Creates a [DevicePage].
-  const DevicePage({super.key});
+  const new({super.key});
 
   /// The workspace's inset in the frame's content box: its full width,
   /// under the title (pen 28/01 drew the content 52 in from the title;
@@ -132,7 +132,7 @@ class _DevicePageState extends State<DevicePage> {
 
 /// Everything above the Apply row.
 class _Workspace extends StatelessWidget {
-  const _Workspace();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -193,7 +193,7 @@ class _Workspace extends StatelessWidget {
 /// What the last request turned out to be, with the gap below it, or
 /// nothing when the page simply shows what runs.
 class _OutcomeBanner extends StatelessWidget {
-  const _OutcomeBanner({required this.state});
+  const new({required this.state});
 
   final AudioSetupState state;
 
@@ -271,7 +271,7 @@ class _OutcomeBanner extends StatelessWidget {
 /// The interface: its name and channel counts, whether it is there, and
 /// Change interface.
 class _Header extends StatelessWidget {
-  const _Header();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -385,7 +385,7 @@ class _Header extends StatelessWidget {
 }
 
 class _InterfaceDialog extends StatelessWidget {
-  const _InterfaceDialog();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -434,7 +434,7 @@ class _InterfaceDialog extends StatelessWidget {
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.present});
+  const new({required this.present});
 
   final bool present;
 
@@ -468,7 +468,7 @@ class _StatusPill extends StatelessWidget {
 
 /// Sample rate, buffer and the period they make.
 class _EngineColumn extends StatelessWidget {
-  const _EngineColumn();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -596,7 +596,7 @@ class _EngineColumn extends StatelessWidget {
 /// automatic loopback measurement (#1541) reads as measuring while it runs,
 /// and a failed one says so under the figure.
 class _LatencyColumn extends StatelessWidget {
-  const _LatencyColumn();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -713,7 +713,7 @@ class _LatencyColumn extends StatelessWidget {
 }
 
 class _HealthRow extends StatelessWidget {
-  const _HealthRow({required this.label, required this.value, super.key});
+  const new({required this.label, required this.value, super.key});
 
   final String label;
   final String value;
@@ -739,7 +739,7 @@ class _HealthRow extends StatelessWidget {
 
 /// Shown only while a draft differs from what runs (pen 28/01).
 class _ApplyRow extends StatelessWidget {
-  const _ApplyRow();
+  const new();
 
   @override
   Widget build(BuildContext context) {

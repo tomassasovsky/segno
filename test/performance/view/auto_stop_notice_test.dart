@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 void main() {
   group('PerformanceAutoStopNotice (#1767)', () {
@@ -63,10 +63,7 @@ void main() {
         );
 
     for (final (reason, title) in const [
-      (
-        PerformanceStopReason.idle,
-        'Capture stopped after 20 idle minutes.',
-      ),
+      (PerformanceStopReason.idle, 'Capture stopped after 20 idle minutes.'),
       (
         PerformanceStopReason.lengthLimit,
         'Capture reached its longest length.',

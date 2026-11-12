@@ -69,11 +69,7 @@ String fxChainOffConsequence(AppLocalizations l10n, FxStage stage) =>
 /// says the state in a word rather than by tint alone.
 class FxChainPower extends StatelessWidget {
   /// Creates an [FxChainPower] for the chain at [address].
-  const FxChainPower({
-    required this.address,
-    required this.onChanged,
-    super.key,
-  });
+  const new({required this.address, required this.onChanged, super.key});
 
   /// The chain this switches.
   final FxAddress address;
@@ -123,11 +119,7 @@ class FxChainPower extends StatelessWidget {
 /// The only notice for this cause: no toast goes with it.
 class FxChainOffNotice extends StatelessWidget {
   /// Creates an [FxChainOffNotice].
-  const FxChainOffNotice({
-    required this.message,
-    required this.onTurnOn,
-    super.key,
-  });
+  const new({required this.message, required this.onTurnOn, super.key});
 
   /// The band's height, which the pages lay their content out around.
   static const double height = 68;

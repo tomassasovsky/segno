@@ -21,7 +21,7 @@ class SettingsHomePage extends StatelessWidget {
   /// [powerAvailable] decides whether the title bar carries Power; it
   /// defaults to whether this is the console, the one place a power-off can
   /// actually halt anything.
-  const SettingsHomePage({this.powerAvailable, super.key});
+  const new({this.powerAvailable, super.key});
 
   /// Whether Power is shown; null asks the platform.
   final bool? powerAvailable;
@@ -79,11 +79,7 @@ class SettingsHomePage extends StatelessWidget {
 /// ground.
 class SettingsTile extends StatelessWidget {
   /// Creates a [SettingsTile] for [destination].
-  const SettingsTile({
-    required this.destination,
-    this.autofocus = false,
-    super.key,
-  });
+  const new({required this.destination, this.autofocus = false, super.key});
 
   /// Where the tile leads.
   final SettingsDestination destination;

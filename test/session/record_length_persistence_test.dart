@@ -230,49 +230,46 @@ void main() {
         },
       );
 
-      test(
-        'an owed length is saved as requested, and recall re-applies it '
-        'with a receipt',
-        () async {
-          // A Session load cannot re-import this rig's free-mode take; the
-          // case is about settings, so it runs on an empty rig.
-          expect(looper.clear(), EngineResult.ok);
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-          // Withhold the receipt: an unpumped engine consumes no command.
-          pump.cancel();
-          final edit = await record.setTrackRecordLength(channel: 2, bars: 4);
-          expect(edit.status, RecordLengthStatus.recoveryRequired);
-          expect(looper.lengthRecoveryRequired, isTrue);
-          expect(record.durableRecordLengthSnapshot.trackOverrides, {2: 4});
-          pump = Timer.periodic(
-            const Duration(milliseconds: 1),
-            (_) => engine.pump(frames: 0),
-          );
-          await session.saveAs('Owed length');
-          // Opening the current session does nothing (plan Part 4), so
-          // recall goes through another current session.
-          await session.saveAs('Elsewhere');
-          expect(session.state.status, SessionStatus.success);
-          final bundle = await sessions.read(
-            await sessions.bundlePathOf(await idOf('Owed length')),
-          );
-          expect(bundle.session.trackLengthPresetOverrides, {2: 4});
+      test('an owed length is saved as requested, and recall re-applies it '
+          'with a receipt', () async {
+        // A Session load cannot re-import this rig's free-mode take; the
+        // case is about settings, so it runs on an empty rig.
+        expect(looper.clear(), EngineResult.ok);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        // Withhold the receipt: an unpumped engine consumes no command.
+        pump.cancel();
+        final edit = await record.setTrackRecordLength(channel: 2, bars: 4);
+        expect(edit.status, RecordLengthStatus.recoveryRequired);
+        expect(looper.lengthRecoveryRequired, isTrue);
+        expect(record.durableRecordLengthSnapshot.trackOverrides, {2: 4});
+        pump = Timer.periodic(
+          const Duration(milliseconds: 1),
+          (_) => engine.pump(frames: 0),
+        );
+        await session.saveAs('Owed length');
+        // Opening the current session does nothing (plan Part 4), so
+        // recall goes through another current session.
+        await session.saveAs('Elsewhere');
+        expect(session.state.status, SessionStatus.success);
+        final bundle = await sessions.read(
+          await sessions.bundlePathOf(await idOf('Owed length')),
+        );
+        expect(bundle.session.trackLengthPresetOverrides, {2: 4});
 
-          // Settle the obligation, then move away from the saved value.
-          expect((await record.owner.recover()).isOk, isTrue);
-          expect(
-            (await record.setTrackRecordLength(channel: 2, bars: 8)).isOk,
-            isTrue,
-          );
-          expect(engine.snapshot().tracks[2].lengthPresetBars, 8);
-          await session.open(await idOf('Owed length'));
-          expect(session.state.status, SessionStatus.success);
-          expect(looper.lengthRecoveryRequired, isFalse);
-          expect(looper.lengthSettingsSettled, isTrue);
-          expect(engine.snapshot().tracks[2].lengthPresetBars, 4);
-          expect(record.state.trackLengthPresetOverrides, {2: 4});
-        },
-      );
+        // Settle the obligation, then move away from the saved value.
+        expect((await record.owner.recover()).isOk, isTrue);
+        expect(
+          (await record.setTrackRecordLength(channel: 2, bars: 8)).isOk,
+          isTrue,
+        );
+        expect(engine.snapshot().tracks[2].lengthPresetBars, 8);
+        await session.open(await idOf('Owed length'));
+        expect(session.state.status, SessionStatus.success);
+        expect(looper.lengthRecoveryRequired, isFalse);
+        expect(looper.lengthSettingsSettled, isTrue);
+        expect(engine.snapshot().tracks[2].lengthPresetBars, 4);
+        expect(record.state.trackLengthPresetOverrides, {2: 4});
+      });
     },
   );
 }

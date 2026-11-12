@@ -44,7 +44,7 @@ const _frameworkUri = 'package:flutter/src/widgets/framework.dart';
 
 /// One declaration that returns a widget.
 class WidgetMethod {
-  const WidgetMethod({
+  const new({
     required this.path,
     required this.line,
     required this.scope,
@@ -171,7 +171,7 @@ Future<InterfaceType> _widgetType(AnalysisContext context) async {
 }
 
 class _Visitor extends RecursiveAstVisitor<void> {
-  _Visitor({
+  new({
     required this.root,
     required this.checked,
     required this.result,
@@ -211,10 +211,7 @@ class _Visitor extends RecursiveAstVisitor<void> {
   /// The return type of [element], or for a declaration that returns
   /// `dynamic`, `Object` or `Object?` (which is what Dart types one written
   /// without a return type), the first widget type its body returns.
-  DartType _returnType(
-    ExecutableElement element,
-    FunctionBody body,
-  ) {
+  DartType _returnType(ExecutableElement element, FunctionBody body) {
     final type = element.returnType;
     if (type is! DynamicType && !type.isDartCoreObject) return type;
     final returned = _Returned();
@@ -252,9 +249,7 @@ class _Visitor extends RecursiveAstVisitor<void> {
           type.isDartAsyncStream) {
         return _returnsWidget(type.typeArguments.single);
       }
-      final iterable = type.asInstanceOf(
-        result.typeProvider.iterableElement,
-      );
+      final iterable = type.asInstanceOf(result.typeProvider.iterableElement);
       if (iterable != null) {
         return _returnsWidget(iterable.typeArguments.single);
       }
@@ -271,9 +266,7 @@ class _Visitor extends RecursiveAstVisitor<void> {
     if (enclosing is! InterfaceElement) return false;
     final name = element.name;
     if (name == null) return false;
-    final overridden = enclosing.getOverridden(
-      Name(element.library.uri, name),
-    );
+    final overridden = enclosing.getOverridden(Name(element.library.uri, name));
     if (overridden == null) return false;
     for (final member in overridden) {
       final path = member.library.firstFragment.source.fullName;

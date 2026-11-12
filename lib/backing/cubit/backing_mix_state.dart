@@ -5,7 +5,7 @@ part of 'backing_mix_cubit.dart';
 /// take an edit.
 class BackingMixState extends Equatable {
   /// Creates a [BackingMixState].
-  const BackingMixState({
+  const new({
     this.mix = BackingMix.defaults,
     this.mixReady = false,
     this.clickPan = 0,

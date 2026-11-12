@@ -102,7 +102,7 @@ int shownBuses(int deviceBuses, int mask) => deviceBuses == 0
 /// never opens monitoring.
 class OutputRoutingTab extends StatefulWidget {
   /// Creates an [OutputRoutingTab].
-  const OutputRoutingTab({super.key});
+  const new({super.key});
 
   @override
   State<OutputRoutingTab> createState() => _OutputRoutingTabState();
@@ -237,10 +237,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
           Positioned(
             left: 0,
             top: 545,
-            child: _HearLive(
-              input: values.input,
-              busy: values.sourceBusy,
-            ),
+            child: _HearLive(input: values.input, busy: values.sourceBusy),
           ),
         Positioned(
           left: 0,
@@ -336,7 +333,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
 
 /// The sources of the chosen kind.
 class _Sources extends StatelessWidget {
-  const _Sources({
+  const new({
     required this.kind,
     required this.values,
     required this.player,
@@ -429,7 +426,7 @@ class _Sources extends StatelessWidget {
 
 /// The pen's `Audio sources` row: which kind of thing is being routed.
 class _SourceKinds extends StatelessWidget {
-  const _SourceKinds({required this.selected, required this.onSelected});
+  const new({required this.selected, required this.onSelected});
 
   final RoutingSourceKind selected;
   final ValueChanged<RoutingSourceKind> onSelected;
@@ -475,7 +472,7 @@ class _SourceKinds extends StatelessWidget {
 /// The pen's `Hear live` row: whether a jack is heard now, never, or whenever
 /// a track that records it is armed.
 class _HearLive extends StatelessWidget {
-  const _HearLive({required this.input, required this.busy});
+  const new({required this.input, required this.busy});
 
   final int input;
   final bool busy;

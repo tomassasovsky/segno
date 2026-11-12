@@ -17,7 +17,7 @@ typedef RecordTimingCheckpoint = ({
 /// A pedal setup Save that did not complete durably.
 final class PedalSetupSaveException implements Exception {
   /// Keeps the original storage failure and any checkpoint-restore failure.
-  const PedalSetupSaveException({
+  const new({
     required this.cause,
     required this.checkpointRestored,
     this.restoreFailure,
@@ -42,7 +42,7 @@ final class PedalSetupSaveException implements Exception {
 /// A MIDI configuration Save that was not confirmed durable.
 final class MidiSettingsSaveException implements Exception {
   /// Preserves the original refusal and exact-checkpoint recovery result.
-  const MidiSettingsSaveException({
+  const new({
     required this.cause,
     required this.checkpointRestored,
     this.restoreFailure,
@@ -68,7 +68,7 @@ final class MidiSettingsSaveException implements Exception {
 @immutable
 class StoredAudioConfig {
   /// Creates a [StoredAudioConfig].
-  const StoredAudioConfig({
+  const new({
     required this.sampleRate,
     required this.bufferFrames,
     this.inputChannels = 0,
@@ -175,7 +175,7 @@ class SettingsRepository {
   /// or `null` where that knob is not engaged (any non-Linux platform, or
   /// Linux without `SEGNO_ALSA_PERIODS` set). Derive it with
   /// [alsaPeriodsFromEnvironment]; the composition root passes it in.
-  SettingsRepository({required this._store, this._alsaPeriods});
+  new({required this._store, this._alsaPeriods});
 
   final KeyValueStore _store;
   Future<void> _serializedWrite = Future<void>.value();
@@ -458,10 +458,7 @@ class SettingsRepository {
     await _store.setInt(_audioInputChannelsKey, config.inputChannels);
     await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
     await _store.setInt(_audioMaxLoopMinutesKey, config.maxLoopMinutes);
-    await _store.setString(
-      _audioPlaybackDeviceIdKey,
-      config.playbackDeviceId,
-    );
+    await _store.setString(_audioPlaybackDeviceIdKey, config.playbackDeviceId);
     await _store.setString(_audioCaptureDeviceIdKey, config.captureDeviceId);
   }
 
@@ -519,10 +516,7 @@ class SettingsRepository {
       checkpoint = await _store.getString(_midiConfigurationKey);
     } on Object catch (error, trace) {
       Error.throwWithStackTrace(
-        MidiSettingsSaveException(
-          cause: error,
-          checkpointRestored: false,
-        ),
+        MidiSettingsSaveException(cause: error, checkpointRestored: false),
         trace,
       );
     }
@@ -552,10 +546,7 @@ class SettingsRepository {
         );
       }
       Error.throwWithStackTrace(
-        MidiSettingsSaveException(
-          cause: error,
-          checkpointRestored: true,
-        ),
+        MidiSettingsSaveException(cause: error, checkpointRestored: true),
         trace,
       );
     }
@@ -641,10 +632,7 @@ class SettingsRepository {
       checkpoint = await _store.getString(_pedalSetupKey);
     } on Object catch (readError, readStackTrace) {
       Error.throwWithStackTrace(
-        PedalSetupSaveException(
-          cause: readError,
-          checkpointRestored: false,
-        ),
+        PedalSetupSaveException(cause: readError, checkpointRestored: false),
         readStackTrace,
       );
     }
@@ -1892,10 +1880,8 @@ class SettingsRepository {
   String _inputNameKey(String device, int input) => 'input_name.$device.$input';
 
   /// Loads the given name for [input] on [device], or `null` if it has none.
-  Future<String?> loadInputName({
-    required String device,
-    required int input,
-  }) => _store.getString(_inputNameKey(device, input));
+  Future<String?> loadInputName({required String device, required int input}) =>
+      _store.getString(_inputNameKey(device, input));
 
   /// Saves the given [name] for [input] on [device].
   Future<void> saveInputName({
@@ -1910,18 +1896,13 @@ class SettingsRepository {
   /// Removed rather than stored as an empty string: an input's fallback is not
   /// a name it was given, and a stored `''` would be a name the next reader has
   /// to know to ignore. A track has no equivalent — its fallback IS a name.
-  Future<void> clearInputName({
-    required String device,
-    required int input,
-  }) => _store.remove(_inputNameKey(device, input));
+  Future<void> clearInputName({required String device, required int input}) =>
+      _store.remove(_inputNameKey(device, input));
 
   // Every control shares the single durable mix value. _serialize keeps rapid
   // read/modify/write gestures from overwriting one another.
-  StoredInputSetup _emptyInputSetup() => (
-    trimDb: <int, double>{},
-    pan: <int, double>{},
-    pairs: <int, double>{},
-  );
+  StoredInputSetup _emptyInputSetup() =>
+      (trimDb: <int, double>{}, pan: <int, double>{}, pairs: <int, double>{});
 
   /// Keyed per DEVICE and DESTINATION, the pair-shaped twin of
   /// [_inputNameKey].
@@ -1935,10 +1916,8 @@ class SettingsRepository {
 
   /// Loads the given name for destination [bus] on [device], or `null` if it
   /// has none.
-  Future<String?> loadOutputName({
-    required String device,
-    required int bus,
-  }) => _store.getString(_outputNameKey(device, bus));
+  Future<String?> loadOutputName({required String device, required int bus}) =>
+      _store.getString(_outputNameKey(device, bus));
 
   /// Saves the given [name] for destination [bus] on [device].
   Future<void> saveOutputName({
@@ -1949,10 +1928,8 @@ class SettingsRepository {
 
   /// Forgets [bus]'s given name on [device], handing the destination back its
   /// jack numbers.
-  Future<void> clearOutputName({
-    required String device,
-    required int bus,
-  }) => _store.remove(_outputNameKey(device, bus));
+  Future<void> clearOutputName({required String device, required int bus}) =>
+      _store.remove(_outputNameKey(device, bus));
 
   StoredOutputSetup _emptyOutputSetup() => (
     level: <int, double>{},
@@ -2388,11 +2365,8 @@ class SettingsRepository {
 
   /// Saves the set of dismissed update semantic versions (sorted,
   /// comma-separated).
-  Future<void> saveDismissedUpdateVersions(Set<Version> versions) =>
-      _store.setString(
-        _updateDismissedKey,
-        (versions.toList()..sort()).join(','),
-      );
+  Future<void> saveDismissedUpdateVersions(Set<Version> versions) => _store
+      .setString(_updateDismissedKey, (versions.toList()..sort()).join(','));
 
   /// Loads the update that rolled back and has not been dismissed: the
   /// version that did not start and the one the console went back to, or
@@ -2428,7 +2402,7 @@ class SettingsRepository {
 }
 
 class _SavedMixSettings {
-  _SavedMixSettings({
+  new({
     Map<int, double>? trackLevels,
     Map<int, double>? pans,
     Map<(int, int), double>? levels,

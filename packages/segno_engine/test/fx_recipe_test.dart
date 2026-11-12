@@ -4,9 +4,7 @@ import 'package:segno_engine/segno_engine.dart';
 void main() {
   test('an armed recipe owns its parameter and slot collections', () {
     final params = [0.0, 0.5];
-    final slots = [
-      FxRecipeSlot(type: TrackEffectType.drive, params: params),
-    ];
+    final slots = [FxRecipeSlot(type: TrackEffectType.drive, params: params)];
     final recipe = FxRecipe(slots: slots, preCount: 1);
     final recipes = {0: recipe};
     final image = RecordImage(revision: 7, lanes: const {}, laneFx: recipes);

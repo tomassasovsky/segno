@@ -42,7 +42,7 @@ enum MidiProtocol {
 /// every message of one is a message of the other.
 class MidiSource extends Equatable {
   /// Creates a [MidiSource].
-  MidiSource({
+  new({
     required this.device,
     required this.kind,
     required this.number,
@@ -179,9 +179,8 @@ class MidiSource extends Equatable {
     MidiProtocol.nrpn => const {'cc:6', 'cc:38', 'cc:98', 'cc:99'},
     MidiProtocol.cc14 => {'cc:$number', 'cc:${number + 32}'},
     MidiProtocol.bankProgram => {'cc:0', 'cc:32', 'program:$number'},
-    MidiProtocol.standard || MidiProtocol.relative => {
-      '${_kindToken(kind)}:$number',
-    },
+    MidiProtocol.standard ||
+    MidiProtocol.relative => {'${_kindToken(kind)}:$number'},
   };
 
   bool _channelsMeet(MidiSource other) =>
@@ -227,7 +226,7 @@ class MidiSource extends Equatable {
 /// One complete control reading: which source, and its value.
 class MidiControlEvent extends Equatable {
   /// Creates a [MidiControlEvent].
-  const MidiControlEvent({
+  const new({
     required this.source,
     required this.value,
     required this.maximum,
@@ -274,7 +273,7 @@ class MidiControlEvent extends Equatable {
 ///   completes.
 class MidiDecoder {
   /// Creates a [MidiDecoder] reading time from [_clock].
-  MidiDecoder({required this._clock, this.freshness = _fresh});
+  new({required this._clock, this.freshness = _fresh});
 
   static const Duration _fresh = Duration(milliseconds: 100);
 
@@ -339,10 +338,11 @@ class MidiDecoder {
         break;
     }
 
-    final state = _states.putIfAbsent(
-      (device, channel, protocol),
-      _PartialState.new,
-    );
+    final state = _states.putIfAbsent((
+      device,
+      channel,
+      protocol,
+    ), _PartialState.new);
     final now = _clock();
 
     switch (protocol) {
@@ -500,7 +500,7 @@ class _PartialState {
 }
 
 class _Pair {
-  _Pair(this.at);
+  new(this.at);
 
   final Duration at;
   int? high;

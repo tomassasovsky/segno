@@ -16,12 +16,11 @@ import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 void main() {
   late _Control control;
@@ -314,9 +313,8 @@ void main() {
       tester.getCenter(pedal(PedalButton.track2)),
     );
     await tester.pump();
-    verify(
-      () => control.footReversePressed(PedalButton.track2, any()),
-    ).called(1);
+    verify(() => control.footReversePressed(PedalButton.track2, any()))
+        .called(1);
     await gesture.up();
     await tester.pump();
     verify(

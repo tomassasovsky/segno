@@ -11,7 +11,7 @@ import 'package:segno/looper/view/live_value.dart';
 /// (the channel it shows) gives this widget a key built from it.
 class LiveMeter<T extends Object> extends StatelessWidget {
   /// Creates a [LiveMeter].
-  const LiveMeter({required this.select, required this.builder, super.key});
+  const new({required this.select, required this.builder, super.key});
 
   /// Picks this meter's value out of the levels, quantised to what it shows.
   final T Function(MeterLevels levels) select;

@@ -21,9 +21,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 const _rig = LooperState(
   tracks: [Track(), Track(channel: 1)],
@@ -82,27 +82,20 @@ void main() {
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.meters).thenReturn(const MeterLevels());
-    when(
-      () => repository.meterLevels,
-    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
-    when(
-      () => repository.readInterfaceInputs(),
-    ).thenAnswer((_) async => onInterface);
-    when(
-      () => repository.setInterfaceInputLevel(any(), any()),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setInterfaceInputAir(any(), any()),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setInterfacePhantomPower(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.turnOffInterfaceSetupMode(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.meterLevels)
+        .thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.readInterfaceInputs())
+        .thenAnswer((_) async => onInterface);
+    when(() => repository.setInterfaceInputLevel(any(), any()))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfaceInputPad(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfaceInputAir(any(), any()))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfacePhantomPower(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.turnOffInterfaceSetupMode())
+        .thenAnswer((_) async => EngineResult.ok);
   });
 
   Future<void> pump(WidgetTester tester, {LooperState state = _rig}) async {
@@ -338,10 +331,7 @@ void main() {
     testWidgets('one input names just that input', (tester) async {
       onInterface = const InterfaceInputs(
         status: InterfaceInputsStatus.controls,
-        inputs: [
-          InterfaceInput.none,
-          InterfaceInput(phantomSwitch: 0),
-        ],
+        inputs: [InterfaceInput.none, InterfaceInput(phantomSwitch: 0)],
         phantomSwitches: [
           PhantomSwitch(firstInput: 1, lastInput: 1, on: false),
         ],
@@ -516,9 +506,8 @@ void main() {
   });
 
   testWidgets('a change the interface refuses is said', (tester) async {
-    when(
-      () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.device);
+    when(() => repository.setInterfaceInputPad(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.device);
     await pump(tester);
     final log = NoticeLog(notices);
     addTearDown(() => unawaited(log.close()));

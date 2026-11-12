@@ -13,7 +13,7 @@ enum AudioWarmUpStatus {
 /// State of [AudioWarmUpCubit].
 class AudioWarmUpState extends Equatable {
   /// Creates an [AudioWarmUpState].
-  const AudioWarmUpState({this.status = AudioWarmUpStatus.idle});
+  const new({this.status = AudioWarmUpStatus.idle});
 
   /// The current warm-up status.
   final AudioWarmUpStatus status;

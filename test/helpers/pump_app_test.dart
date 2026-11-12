@@ -8,7 +8,7 @@ import 'helpers.dart';
 int _mounts = 0;
 
 class _Probe extends StatefulWidget {
-  const _Probe();
+  const new();
 
   @override
   State<_Probe> createState() => _ProbeState();

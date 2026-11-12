@@ -23,7 +23,7 @@ import 'package:segno/system/cubit/console_facts_cubit.dart';
 /// updates.
 class ControllerFirmwarePage extends StatelessWidget {
   /// Creates a [ControllerFirmwarePage].
-  const ControllerFirmwarePage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

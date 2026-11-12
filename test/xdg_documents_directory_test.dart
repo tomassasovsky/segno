@@ -14,10 +14,10 @@ void main() {
           'XDG_DOCUMENTS_DIR="\$HOME/Documents"\n'
           'XDG_DOWNLOAD_DIR="\$HOME/Downloads"\n';
       expect(
-        xdgDocumentsDirectory(
-          const {'HOME': '/data', 'XDG_CONFIG_HOME': '/data/.config'},
-          files({'/data/.config/user-dirs.dirs': seed}),
-        ),
+        xdgDocumentsDirectory(const {
+          'HOME': '/data',
+          'XDG_CONFIG_HOME': '/data/.config',
+        }, files({'/data/.config/user-dirs.dirs': seed})),
         '/data/Documents',
       );
     });
@@ -40,10 +40,9 @@ void main() {
           'XDG_DOCUMENTS_DIR="\$HOME/first"\n'
           '  XDG_DOCUMENTS_DIR="\$HOME/second"  \n';
       expect(
-        xdgDocumentsDirectory(
-          const {'HOME': '/home/me'},
-          files({'/home/me/.config/user-dirs.dirs': dirs}),
-        ),
+        xdgDocumentsDirectory(const {
+          'HOME': '/home/me',
+        }, files({'/home/me/.config/user-dirs.dirs': dirs})),
         '/home/me/second',
       );
     });

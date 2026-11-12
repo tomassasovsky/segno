@@ -11,7 +11,7 @@ import 'package:segno/visualizer/waveform_window_service.dart';
 /// Presentation facts supplied by the main screen, independent of its Cubits.
 class WaveformDisplayContext extends Equatable {
   /// Creates a readout context for the selected track.
-  const WaveformDisplayContext({
+  const new({
     required this.cursor,
     required this.name,
     required this.defaultName,
@@ -93,7 +93,7 @@ enum WaveformDisplayFailure {
 class WaveformDisplayController {
   /// Connects the live repository to its exclusively owned window channel.
   /// Await [close] before handing the injected service to another controller.
-  WaveformDisplayController({
+  new({
     required this._repository,
     required this._window,
     required this._context,

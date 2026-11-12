@@ -61,42 +61,22 @@ void main() {
             case 'a':
               expect(
                 [sameVolume, otherVolume, sameItem, otherItem],
-                [
-                  false,
-                  false,
-                  false,
-                  false,
-                ],
+                [false, false, false, false],
               );
             case 'r':
               expect(
                 [sameVolume, otherVolume, sameItem, otherItem],
-                [
-                  true,
-                  true,
-                  true,
-                  true,
-                ],
+                [true, true, true, true],
               );
             case 'v':
               expect(
                 [sameVolume, otherVolume, sameItem, otherItem],
-                [
-                  true,
-                  false,
-                  true,
-                  true,
-                ],
+                [true, false, true, true],
               );
             case 'i':
               expect(
                 [sameVolume, otherVolume, sameItem, otherItem],
-                [
-                  true,
-                  false,
-                  true,
-                  false,
-                ],
+                [true, false, true, false],
               );
             default:
               fail('unknown rule $letter');
@@ -239,14 +219,12 @@ void main() {
       expect(internal.hashCode, const GuardScope.internal().hashCode);
       expect(usb1 == usb2, isFalse);
       expect(internal.sameVolume(usb1), isFalse);
+      expect(const GuardScope.removable(1, item: 'a').sameItem(usb1), isTrue);
       expect(
-        const GuardScope.removable(1, item: 'a').sameItem(usb1),
-        isTrue,
-      );
-      expect(
-        const GuardScope.removable(1, item: 'a').sameItem(
-          const GuardScope.removable(2, item: 'a'),
-        ),
+        const GuardScope.removable(
+          1,
+          item: 'a',
+        ).sameItem(const GuardScope.removable(2, item: 'a')),
         isFalse,
       );
       expect(internal.toString(), contains('internal'));

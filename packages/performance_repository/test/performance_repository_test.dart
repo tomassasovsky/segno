@@ -20,7 +20,7 @@ import 'helpers/native_capture_fixture.dart';
 /// the members the finalize path touches on the manifest file are
 /// implemented; anything else is a test bug and throws.
 class _GatedReadFile implements File {
-  _GatedReadFile(this._inner, this._gate);
+  new(this._inner, this._gate);
 
   final File _inner;
   final Future<void> _gate;
@@ -53,7 +53,7 @@ class _GatedReadFile implements File {
 /// Fails the selected asynchronous write while leaving the earlier contents
 /// untouched, as a full disk or revoked export volume can do after native arm.
 class _FailWriteFile implements File {
-  _FailWriteFile(this._inner);
+  new(this._inner);
 
   final File _inner;
 
@@ -76,9 +76,8 @@ class _FailWriteFile implements File {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
-    'not reached by arm snapshot write: $invocation',
-  );
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('not reached by arm snapshot write: $invocation');
 }
 
 class _ThrowAfterArmEngine extends FakePerformanceEngine {
@@ -112,7 +111,7 @@ class _ThrowAfterArmEngine extends FakePerformanceEngine {
 /// The finalized `performance.json` on its way in, refusing to be written —
 /// the finalize of a take whose disk filled at the end.
 class _ManifestWriteFails implements File {
-  _ManifestWriteFails(this._inner);
+  new(this._inner);
 
   final File _inner;
 
@@ -297,9 +296,7 @@ void main() {
 
       expect(await arming, EngineResult.ok);
       final json = jsonDecode(
-        File(
-          '${repo.armedDirectory}/arm-snapshot.json',
-        ).readAsStringSync(),
+        File('${repo.armedDirectory}/arm-snapshot.json').readAsStringSync(),
       ) as Map<String, dynamic>;
       expect(json['captureBus'], 1);
       expect(json['captureMask'], 0xC);
@@ -482,9 +479,7 @@ void main() {
           ..perfFollowOutputAtArm = true;
         expect(await repo.arm(), EngineResult.ok);
         final manifest = jsonDecode(
-          File(
-            '${repo.armedDirectory}/arm-snapshot.json',
-          ).readAsStringSync(),
+          File('${repo.armedDirectory}/arm-snapshot.json').readAsStringSync(),
         ) as Map<String, dynamic>;
         expect(manifest['followOutput'], isTrue);
         engine.perfFollowOutput = false;
@@ -519,9 +514,7 @@ void main() {
         );
         expect(await repo.arm(), EngineResult.ok);
         final manifest = jsonDecode(
-          File(
-            '${repo.armedDirectory}/arm-snapshot.json',
-          ).readAsStringSync(),
+          File('${repo.armedDirectory}/arm-snapshot.json').readAsStringSync(),
         ) as Map<String, dynamic>;
         expect(manifest['captureBus'], 1);
         expect(manifest['captureMask'], 0xC);
@@ -667,53 +660,49 @@ void main() {
       },
     );
 
-    test(
-      'a later export of a take without a heard image removes the earlier '
-      'one (#1713)',
-      () async {
-        engine.seedLane(
-          0,
-          0,
-          Float32List.fromList([1, 1]),
-          heard: Float32List.fromList([.5, -.5, .5, -.5]),
-        );
-        await repo.arm();
-        final dir = repo.armedDirectory!;
-        expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isTrue);
+    test('a later export of a take without a heard image removes the earlier '
+        'one (#1713)', () async {
+      engine.seedLane(
+        0,
+        0,
+        Float32List.fromList([1, 1]),
+        heard: Float32List.fromList([.5, -.5, .5, -.5]),
+      );
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isTrue);
 
-        // Re-recorded dry during the capture.
-        engine.seedLane(0, 0, Float32List.fromList([2, 2, 2]));
-        await repo.persistLiveLanes();
+      // Re-recorded dry during the capture.
+      engine.seedLane(0, 0, Float32List.fromList([2, 2, 2]));
+      await repo.persistLiveLanes();
 
-        expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isFalse);
-      },
-    );
+      expect(File('$dir/loops/track0-lane0-heard.wav').existsSync(), isFalse);
+    });
 
-    test(
-      'marks a lane with a heard image that plays clean (#1713)',
-      () async {
-        engine.seedLane(
-          0,
-          0,
-          Float32List.fromList([1, 1]),
-          heard: Float32List.fromList([.5, -.5, .5, -.5]),
-          source: LaneSource.clean,
-        );
+    test('marks a lane with a heard image that plays clean (#1713)', () async {
+      engine.seedLane(
+        0,
+        0,
+        Float32List.fromList([1, 1]),
+        heard: Float32List.fromList([.5, -.5, .5, -.5]),
+        source: LaneSource.clean,
+      );
 
-        await repo.arm();
-        final dir = repo.armedDirectory!;
+      await repo.arm();
+      final dir = repo.armedDirectory!;
 
-        final armJson = jsonDecode(
-          File('$dir/arm-snapshot.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        final lane = PerformanceArmSnapshot.fromJson(
-          armJson,
-        ).tracks.single.lanes.single;
-        expect(lane.heardFile, isNotNull);
-        expect(lane.playsClean, isTrue);
-        expect(lane.toJson()['source'], 'clean');
-      },
-    );
+      final armJson = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final lane = PerformanceArmSnapshot.fromJson(armJson)
+          .tracks
+          .single
+          .lanes
+          .single;
+      expect(lane.heardFile, isNotNull);
+      expect(lane.playsClean, isTrue);
+      expect(lane.toJson()['source'], 'clean');
+    });
 
     test(
       "captures each track's mute and solo flags in the arm manifest",
@@ -738,58 +727,50 @@ void main() {
       },
     );
 
-    test(
-      'the arm-time manifest never carries takeId, even for a lane whose '
-      'settled take id is > 0 (#819) — only the disarm pass stamps it, and '
-      'the renderer reads it only from the disarm snapshot',
-      () async {
-        // A pre-recorded loop settled BEFORE arm still has a settled take id
-        // in the snapshot; the arm pass must not persist it.
-        engine.seedLane(
-          0,
-          0,
-          Float32List.fromList([1, 1, 1, 1]),
-          settledTakeId: 5,
-        );
+    test('the arm-time manifest never carries takeId, even for a lane whose '
+        'settled take id is > 0 (#819) — only the disarm pass stamps it, and '
+        'the renderer reads it only from the disarm snapshot', () async {
+      // A pre-recorded loop settled BEFORE arm still has a settled take id
+      // in the snapshot; the arm pass must not persist it.
+      engine.seedLane(
+        0,
+        0,
+        Float32List.fromList([1, 1, 1, 1]),
+        settledTakeId: 5,
+      );
 
-        await repo.arm();
-        final dir = repo.armedDirectory!;
+      await repo.arm();
+      final dir = repo.armedDirectory!;
 
-        final raw = jsonDecode(
-          File('$dir/arm-snapshot.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        final rawTracks = raw['tracks'] as List<dynamic>;
-        final rawT0 = rawTracks.firstWhere(
-          (t) => (t as Map<String, dynamic>)['channel'] == 0,
-        ) as Map<String, dynamic>;
-        final rawLane0 =
-            (rawT0['lanes'] as List<dynamic>).first as Map<String, dynamic>;
-        expect(rawLane0.containsKey('takeId'), isFalse);
-        expect(
-          PerformanceArmSnapshot.fromJson(
-            raw,
-          ).tracks.single.lanes.single.takeId,
-          0,
-        );
-      },
-    );
+      final raw = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final rawTracks = raw['tracks'] as List<dynamic>;
+      final rawT0 = rawTracks.firstWhere(
+        (t) => (t as Map<String, dynamic>)['channel'] == 0,
+      ) as Map<String, dynamic>;
+      final rawLane0 =
+          (rawT0['lanes'] as List<dynamic>).first as Map<String, dynamic>;
+      expect(rawLane0.containsKey('takeId'), isFalse);
+      expect(
+        PerformanceArmSnapshot.fromJson(raw).tracks.single.lanes.single.takeId,
+        0,
+      );
+    });
 
-    test(
-      "persists the engine snapshot's tempo verbatim in the arm-time "
-      'crash-survival snapshot (#281)',
-      () async {
-        engine.tempoBpm = 87.5;
+    test("persists the engine snapshot's tempo verbatim in the arm-time "
+        'crash-survival snapshot (#281)', () async {
+      engine.tempoBpm = 87.5;
 
-        await repo.arm();
-        final dir = repo.armedDirectory!;
+      await repo.arm();
+      final dir = repo.armedDirectory!;
 
-        final armJson = jsonDecode(
-          File('$dir/arm-snapshot.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        expect(armJson['tempoBpm'], 87.5);
-        expect(PerformanceArmSnapshot.fromJson(armJson).tempoBpm, 87.5);
-      },
-    );
+      final armJson = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(armJson['tempoBpm'], 87.5);
+      expect(PerformanceArmSnapshot.fromJson(armJson).tempoBpm, 87.5);
+    });
 
     test(
       "marks a mid-overdub track's lanes as deferred, no PCM export",
@@ -810,24 +791,21 @@ void main() {
       },
     );
 
-    test(
-      'also defers a track mid-first-pass (TrackState.recording), not just '
-      'mid-overdub',
-      () async {
-        engine.markCapturing(0, state: TrackState.recording);
+    test('also defers a track mid-first-pass (TrackState.recording), not just '
+        'mid-overdub', () async {
+      engine.markCapturing(0, state: TrackState.recording);
 
-        await repo.arm();
-        final dir = repo.armedDirectory!;
-        final armSnapshot = PerformanceArmSnapshot.fromJson(
-          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-              as Map<String, dynamic>,
-        );
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      final armSnapshot = PerformanceArmSnapshot.fromJson(
+        jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
 
-        final track0 = armSnapshot.tracks.firstWhere((t) => t.channel == 0);
-        expect(track0.lanes.single.deferred, isTrue);
-        expect(Directory('$dir/loops').existsSync(), isFalse);
-      },
-    );
+      final track0 = armSnapshot.tracks.firstWhere((t) => t.channel == 0);
+      expect(track0.lanes.single.deferred, isTrue);
+      expect(Directory('$dir/loops').existsSync(), isFalse);
+    });
 
     test(
       'embeds the lane + monitor effect chains supplied via PerformanceChains',
@@ -877,120 +855,114 @@ void main() {
       },
     );
 
-    test(
-      'writes the BUS stages and every chain-enabled flag into the '
-      'arm-snapshot (R20/R3)',
-      () async {
-        engine
-          ..seedLane(0, 0, Float32List.fromList([1, 1]))
-          ..outputChain = OutputFxSnapshot(
-            effects: [
-              OutputEffectSnapshot(
-                type: TrackEffectType.filter.code,
-                params: TrackEffectType.filter.defaultParams,
-              ),
-            ],
-            chainEnabled: false,
-          );
-
-        await repo.arm(
-          chains: PerformanceChains(
-            laneChains: [
-              PerformanceLaneChain(
-                channel: 0,
-                lane: 0,
-                chainEnabled: false,
-                effects: [BuiltInEffect(type: TrackEffectType.delay)],
-              ),
-            ],
-            monitors: [
-              PerformanceMonitorState(
-                input: 0,
-                enabled: true,
-                outputMask: 0x3,
-                volume: 1,
-                muted: false,
-                chainEnabled: false,
-                effects: [BuiltInEffect(type: TrackEffectType.reverb)],
-              ),
-            ],
-            trackChains: [
-              PerformanceTrackChain(
-                channel: 0,
-                chainEnabled: false,
-                effects: [BuiltInEffect(type: TrackEffectType.drive)],
-              ),
-            ],
-          ),
+    test('writes the BUS stages and every chain-enabled flag into the '
+        'arm-snapshot (R20/R3)', () async {
+      engine
+        ..seedLane(0, 0, Float32List.fromList([1, 1]))
+        ..outputChain = OutputFxSnapshot(
+          effects: [
+            OutputEffectSnapshot(
+              type: TrackEffectType.filter.code,
+              params: TrackEffectType.filter.defaultParams,
+            ),
+          ],
+          chainEnabled: false,
         );
 
-        final dir = repo.armedDirectory!;
-        final armSnapshot = PerformanceArmSnapshot.fromJson(
-          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-              as Map<String, dynamic>,
-        );
+      await repo.arm(
+        chains: PerformanceChains(
+          laneChains: [
+            PerformanceLaneChain(
+              channel: 0,
+              lane: 0,
+              chainEnabled: false,
+              effects: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+          ],
+          monitors: [
+            PerformanceMonitorState(
+              input: 0,
+              enabled: true,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              chainEnabled: false,
+              effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+            ),
+          ],
+          trackChains: [
+            PerformanceTrackChain(
+              channel: 0,
+              chainEnabled: false,
+              effects: [BuiltInEffect(type: TrackEffectType.drive)],
+            ),
+          ],
+        ),
+      );
 
-        // The marker, so a reader can tell these omissions from a legacy
-        // snapshot's silence.
-        expect(
-          armSnapshot.fxStagesVersion,
-          PerformanceArmSnapshot.currentFxStagesVersion,
-        );
-        // Loop stage: the lane's chain flag reached the file, keyed to the
-        // right (channel, lane).
-        expect(armSnapshot.tracks.single.lanes.single.chainEnabled, isFalse);
-        // Input stage.
-        expect(armSnapshot.monitors.single['chainEnabled'], isFalse);
-        // Track stage.
-        expect(armSnapshot.trackChains.single.channel, 0);
-        expect(armSnapshot.trackChains.single.chainEnabled, isFalse);
-        expect(
-          armSnapshot.trackChains.single.effects.single.typeCode,
-          TrackEffectType.drive.code,
-        );
-        // The actual captured output destination.
-        expect(
-          armSnapshot.outputEffects.single.typeCode,
-          TrackEffectType.filter.code,
-        );
-        expect(armSnapshot.outputChainEnabled, isFalse);
-      },
-    );
+      final dir = repo.armedDirectory!;
+      final armSnapshot = PerformanceArmSnapshot.fromJson(
+        jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
 
-    test(
-      'a lane the rig defines NO chain for is written dry and engaged, not '
-      "given a sibling lane's chain",
-      () async {
-        engine
-          ..seedLane(0, 0, Float32List.fromList([1, 1]))
-          ..seedLane(1, 0, Float32List.fromList([1, 1]));
+      // The marker, so a reader can tell these omissions from a legacy
+      // snapshot's silence.
+      expect(
+        armSnapshot.fxStagesVersion,
+        PerformanceArmSnapshot.currentFxStagesVersion,
+      );
+      // Loop stage: the lane's chain flag reached the file, keyed to the
+      // right (channel, lane).
+      expect(armSnapshot.tracks.single.lanes.single.chainEnabled, isFalse);
+      // Input stage.
+      expect(armSnapshot.monitors.single['chainEnabled'], isFalse);
+      // Track stage.
+      expect(armSnapshot.trackChains.single.channel, 0);
+      expect(armSnapshot.trackChains.single.chainEnabled, isFalse);
+      expect(
+        armSnapshot.trackChains.single.effects.single.typeCode,
+        TrackEffectType.drive.code,
+      );
+      // The actual captured output destination.
+      expect(
+        armSnapshot.outputEffects.single.typeCode,
+        TrackEffectType.filter.code,
+      );
+      expect(armSnapshot.outputChainEnabled, isFalse);
+    });
 
-        await repo.arm(
-          chains: PerformanceChains(
-            laneChains: [
-              PerformanceLaneChain(
-                channel: 1,
-                lane: 0,
-                chainEnabled: false,
-                effects: [BuiltInEffect(type: TrackEffectType.delay)],
-              ),
-            ],
-          ),
-        );
+    test('a lane the rig defines NO chain for is written dry and engaged, not '
+        "given a sibling lane's chain", () async {
+      engine
+        ..seedLane(0, 0, Float32List.fromList([1, 1]))
+        ..seedLane(1, 0, Float32List.fromList([1, 1]));
 
-        final dir = repo.armedDirectory!;
-        final armSnapshot = PerformanceArmSnapshot.fromJson(
-          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-              as Map<String, dynamic>,
-        );
+      await repo.arm(
+        chains: PerformanceChains(
+          laneChains: [
+            PerformanceLaneChain(
+              channel: 1,
+              lane: 0,
+              chainEnabled: false,
+              effects: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+          ],
+        ),
+      );
 
-        final track0 = armSnapshot.tracks.firstWhere((t) => t.channel == 0);
-        expect(track0.lanes.single.effects, isEmpty);
-        expect(track0.lanes.single.chainEnabled, isTrue);
-        final track1 = armSnapshot.tracks.firstWhere((t) => t.channel == 1);
-        expect(track1.lanes.single.chainEnabled, isFalse);
-      },
-    );
+      final dir = repo.armedDirectory!;
+      final armSnapshot = PerformanceArmSnapshot.fromJson(
+        jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+
+      final track0 = armSnapshot.tracks.firstWhere((t) => t.channel == 0);
+      expect(track0.lanes.single.effects, isEmpty);
+      expect(track0.lanes.single.chainEnabled, isTrue);
+      final track1 = armSnapshot.tracks.firstWhere((t) => t.channel == 1);
+      expect(track1.lanes.single.chainEnabled, isFalse);
+    });
 
     test(
       'is idempotent while already armed: no new directory, no re-arm',
@@ -1014,39 +986,34 @@ void main() {
         expect(result, EngineResult.device);
         expect(repo.armedDirectory, isNull);
         expect(
-          Directory(
-            '${tempDir.path}/exports/perf-20260706-143015',
-          ).existsSync(),
+          Directory('${tempDir.path}/exports/perf-20260706-143015')
+              .existsSync(),
           isFalse,
         );
       },
     );
 
-    test(
-      'disambiguates the slug when the directory already exists, without '
-      'touching the pre-existing bundle',
-      () async {
-        final existing = Directory(
-          '${tempDir.path}/exports/perf-20260706-143015',
-        )..createSync(recursive: true);
-        final marker = File('${existing.path}/master.wav')
-          ..writeAsStringSync('pre-existing bundle content');
+    test('disambiguates the slug when the directory already exists, without '
+        'touching the pre-existing bundle', () async {
+      final existing = Directory('${tempDir.path}/exports/perf-20260706-143015')
+        ..createSync(recursive: true);
+      final marker = File('${existing.path}/master.wav')
+        ..writeAsStringSync('pre-existing bundle content');
 
-        await repo.arm();
+      await repo.arm();
 
-        expect(
-          repo.armedDirectory,
-          '${tempDir.path}/exports/perf-20260706-143015-1',
-        );
-        expect(
-          marker.readAsStringSync(),
-          'pre-existing bundle content',
-          reason:
-              'the collision-avoidance path must never overwrite '
-              'an existing bundle',
-        );
-      },
-    );
+      expect(
+        repo.armedDirectory,
+        '${tempDir.path}/exports/perf-20260706-143015-1',
+      );
+      expect(
+        marker.readAsStringSync(),
+        'pre-existing bundle content',
+        reason:
+            'the collision-avoidance path must never overwrite '
+            'an existing bundle',
+      );
+    });
 
     test(
       'propagates when the exports root cannot be created (system boundary)',
@@ -1081,10 +1048,9 @@ void main() {
       expect(repo.armBusy, PerformanceArmBusy.finalizing);
       expect(await repo.arm(), EngineResult.notReady);
       await Future<void>.delayed(Duration.zero);
-      expect(
-        refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
-        [PerformanceArmBusy.finalizing],
-      );
+      expect(refusals.map((r) => (r as PerformanceArmBusyRefusal).busy), [
+        PerformanceArmBusy.finalizing,
+      ]);
 
       first
         ..release()
@@ -1107,168 +1073,154 @@ void main() {
       expect(repo.armBusy, PerformanceArmBusy.rendering);
     });
 
-    test(
-      'is refused while an offline render is in flight, says why, and works '
-      'again once it completes (#671, #1633)',
-      () async {
-        engine.renderProgress = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 40,
-        );
-        final refusals = <PerformanceArmRefusal>[];
-        final sub = repo.armRefusals.listen(refusals.add);
-        addTearDown(sub.cancel);
+    test('is refused while an offline render is in flight, says why, and works '
+        'again once it completes (#671, #1633)', () async {
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 40,
+      );
+      final refusals = <PerformanceArmRefusal>[];
+      final sub = repo.armRefusals.listen(refusals.add);
+      addTearDown(sub.cancel);
 
-        expect(repo.armBusy, PerformanceArmBusy.rendering);
-        final result = await repo.arm();
+      expect(repo.armBusy, PerformanceArmBusy.rendering);
+      final result = await repo.arm();
 
-        expect(result, EngineResult.notReady);
-        await Future<void>.delayed(Duration.zero);
-        expect(
-          refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
-          [PerformanceArmBusy.rendering],
-        );
-        expect(repo.armedDirectory, isNull);
-        expect(engine.perfArmCalls, 0);
-        expect(Directory('${tempDir.path}/exports').existsSync(), isFalse);
+      expect(result, EngineResult.notReady);
+      await Future<void>.delayed(Duration.zero);
+      expect(refusals.map((r) => (r as PerformanceArmBusyRefusal).busy), [
+        PerformanceArmBusy.rendering,
+      ]);
+      expect(repo.armedDirectory, isNull);
+      expect(engine.perfArmCalls, 0);
+      expect(Directory('${tempDir.path}/exports').existsSync(), isFalse);
 
-        engine.renderProgress = PerformanceRenderProgress.empty;
-        expect(repo.armBusy, isNull);
-        expect(await repo.arm(), EngineResult.ok);
-        expect(repo.armedDirectory, isNotNull);
-        expect(engine.perfArmed, isTrue);
-        expect(refusals, hasLength(1), reason: 'an arm that works is quiet');
-      },
-    );
+      engine.renderProgress = PerformanceRenderProgress.empty;
+      expect(repo.armBusy, isNull);
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, isNotNull);
+      expect(engine.perfArmed, isTrue);
+      expect(refusals, hasLength(1), reason: 'an arm that works is quiet');
+    });
 
-    test(
-      'is refused while a boot-salvage finalize (recoverCapture) is in '
-      'flight — the window where no armed directory exists to no-op on — '
-      'and says a take is finalizing (#671, #1633)',
-      () async {
-        final dir = '${tempDir.path}/exports/perf-crashed';
-        Directory(dir).createSync(recursive: true);
-        writeNativeSidecar(dir);
-        writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
-        final refusals = <PerformanceArmRefusal>[];
-        final sub = repo.armRefusals.listen(refusals.add);
-        addTearDown(sub.cancel);
+    test('is refused while a boot-salvage finalize (recoverCapture) is in '
+        'flight — the window where no armed directory exists to no-op on — '
+        'and says a take is finalizing (#671, #1633)', () async {
+      final dir = '${tempDir.path}/exports/perf-crashed';
+      Directory(dir).createSync(recursive: true);
+      writeNativeSidecar(dir);
+      writeOpenPart('$dir/master-001.wav', Float32List.fromList([0.1, 0.2]));
+      final refusals = <PerformanceArmRefusal>[];
+      final sub = repo.armRefusals.listen(refusals.add);
+      addTearDown(sub.cancel);
 
-        final recovery = repo.recoverCapture(dir);
-        expect(repo.armBusy, PerformanceArmBusy.finalizing);
-        final result = await repo.arm();
+      final recovery = repo.recoverCapture(dir);
+      expect(repo.armBusy, PerformanceArmBusy.finalizing);
+      final result = await repo.arm();
 
-        expect(result, EngineResult.notReady);
-        await Future<void>.delayed(Duration.zero);
-        expect(
-          refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
-          [PerformanceArmBusy.finalizing],
-        );
-        expect(repo.armedDirectory, isNull);
-        expect(engine.perfArmCalls, 0);
+      expect(result, EngineResult.notReady);
+      await Future<void>.delayed(Duration.zero);
+      expect(refusals.map((r) => (r as PerformanceArmBusyRefusal).busy), [
+        PerformanceArmBusy.finalizing,
+      ]);
+      expect(repo.armedDirectory, isNull);
+      expect(engine.perfArmCalls, 0);
 
-        await recovery;
-        expect(await repo.arm(), EngineResult.ok);
-        expect(repo.armedDirectory, isNotNull);
-      },
-    );
+      await recovery;
+      expect(await repo.arm(), EngineResult.ok);
+      expect(repo.armedDirectory, isNotNull);
+    });
 
-    test(
-      'is still refused when the salvage starts only after arm has already '
-      'passed its entry gate — the gate is re-checked after arm suspends '
-      'across its awaits (#671)',
-      () async {
-        final crashed = '${tempDir.path}/exports/perf-crashed';
-        Directory(crashed).createSync(recursive: true);
-        writeNativeSidecar(crashed);
-        writeOpenPart(
-          '$crashed/master-001.wav',
-          Float32List.fromList([0.1, 0.2]),
-        );
+    test('is still refused when the salvage starts only after arm has already '
+        'passed its entry gate — the gate is re-checked after arm suspends '
+        'across its awaits (#671)', () async {
+      final crashed = '${tempDir.path}/exports/perf-crashed';
+      Directory(crashed).createSync(recursive: true);
+      writeNativeSidecar(crashed);
+      writeOpenPart(
+        '$crashed/master-001.wav',
+        Float32List.fromList([0.1, 0.2]),
+      );
 
-        // The salvage's finalize hands straight over to its render (exactly
-        // the production handover), so the refusal window stays covered at
-        // arm's re-check no matter which async chain the event loop finishes
-        // first.
-        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 10,
-        );
+      // The salvage's finalize hands straight over to its render (exactly
+      // the production handover), so the refusal window stays covered at
+      // arm's re-check no matter which async chain the event loop finishes
+      // first.
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
 
-        // Park arm on its very first await (the exports-root lookup) so the
-        // salvage provably enters the window AFTER arm's entry gate passed.
-        final rootGate = Completer<String>();
-        final gatedRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () => rootGate.future,
-          now: () => clock,
-        );
-        addTearDown(gatedRepo.dispose);
+      // Park arm on its very first await (the exports-root lookup) so the
+      // salvage provably enters the window AFTER arm's entry gate passed.
+      final rootGate = Completer<String>();
+      final gatedRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () => rootGate.future,
+        now: () => clock,
+      );
+      addTearDown(gatedRepo.dispose);
 
-        final statuses = <PerformanceCaptureStatus>[];
-        final sub = gatedRepo.captureStatus.listen(statuses.add);
+      final statuses = <PerformanceCaptureStatus>[];
+      final sub = gatedRepo.captureStatus.listen(statuses.add);
 
-        final arming = gatedRepo.arm(); // entry gate passes, parks on root
-        final recovery = gatedRepo.recoverCapture(crashed); // enters window
-        rootGate.complete('${tempDir.path}/exports');
+      final arming = gatedRepo.arm(); // entry gate passes, parks on root
+      final recovery = gatedRepo.recoverCapture(crashed); // enters window
+      rootGate.complete('${tempDir.path}/exports');
 
-        final result = await arming;
-        expect(result, EngineResult.notReady, reason: 'the re-check refuses');
-        expect(gatedRepo.armedDirectory, isNull);
-        expect(engine.perfArmCalls, 0);
+      final result = await arming;
+      expect(result, EngineResult.notReady, reason: 'the re-check refuses');
+      expect(gatedRepo.armedDirectory, isNull);
+      expect(engine.perfArmCalls, 0);
 
-        await recovery;
-        await pumpEventQueue();
-        unawaited(sub.cancel());
-        expect(
-          statuses,
-          everyElement(isNot(PerformanceCaptureStatus.armed)),
-          reason: 'the resumed arm must not clobber the in-flight salvage',
-        );
-      },
-    );
+      await recovery;
+      await pumpEventQueue();
+      unawaited(sub.cancel());
+      expect(
+        statuses,
+        everyElement(isNot(PerformanceCaptureStatus.armed)),
+        reason: 'the resumed arm must not clobber the in-flight salvage',
+      );
+    });
 
-    test(
-      'a second arm overlapping one still in flight is refused, and never '
-      "deletes the winning arm's live capture directory (#671)",
-      () async {
-        // Park arm1 on its first await (the exports-root lookup) so arm2
-        // provably overlaps it: without the in-flight gate both would pass
-        // the entry gate, resolve the SAME slug (the collision loop is
-        // synchronous, the create is not), and the loser's re-check cleanup
-        // would delete the winner's just-armed directory out from under the
-        // engine's drain thread.
-        final rootGate = Completer<String>();
-        final gatedRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () => rootGate.future,
-          now: () => clock,
-        );
-        addTearDown(gatedRepo.dispose);
+    test('a second arm overlapping one still in flight is refused, and never '
+        "deletes the winning arm's live capture directory (#671)", () async {
+      // Park arm1 on its first await (the exports-root lookup) so arm2
+      // provably overlaps it: without the in-flight gate both would pass
+      // the entry gate, resolve the SAME slug (the collision loop is
+      // synchronous, the create is not), and the loser's re-check cleanup
+      // would delete the winner's just-armed directory out from under the
+      // engine's drain thread.
+      final rootGate = Completer<String>();
+      final gatedRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () => rootGate.future,
+        now: () => clock,
+      );
+      addTearDown(gatedRepo.dispose);
 
-        final arm1 = gatedRepo.arm(); // entry gate passes, parks on root
-        final arm2 = gatedRepo.arm(); // overlaps arm1's suspended window
-        rootGate.complete('${tempDir.path}/exports');
+      final arm1 = gatedRepo.arm(); // entry gate passes, parks on root
+      final arm2 = gatedRepo.arm(); // overlaps arm1's suspended window
+      rootGate.complete('${tempDir.path}/exports');
 
-        expect(await arm1, EngineResult.ok);
-        expect(await arm2, EngineResult.ok, reason: 'the same press twice');
+      expect(await arm1, EngineResult.ok);
+      expect(await arm2, EngineResult.ok, reason: 'the same press twice');
 
-        expect(gatedRepo.armedDirectory, isNotNull);
-        expect(
-          Directory(gatedRepo.armedDirectory!).existsSync(),
-          isTrue,
-          reason:
-              "the overlapping arm must not delete the winner's live "
-              'capture directory',
-        );
-        expect(engine.perfArmCalls, 1);
-        expect(engine.perfArmed, isTrue);
-      },
-    );
+      expect(gatedRepo.armedDirectory, isNotNull);
+      expect(
+        Directory(gatedRepo.armedDirectory!).existsSync(),
+        isTrue,
+        reason:
+            "the overlapping arm must not delete the winner's live "
+            'capture directory',
+      );
+      expect(engine.perfArmCalls, 1);
+      expect(engine.perfArmed, isTrue);
+    });
 
     test(
       'stays refused while a parked salvage finalize outlives a second '
@@ -1336,10 +1288,7 @@ void main() {
       // callers arm then disarm within the same test body, which a fixed
       // fake clock would otherwise always land inside.
       clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
-      writeNativeSidecar(
-        r.armedDirectory!,
-        capturedInputs: const [0],
-      );
+      writeNativeSidecar(r.armedDirectory!, capturedInputs: const [0]);
       writeOpenPart(
         '${r.armedDirectory!}/master-001.wav',
         Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
@@ -1414,10 +1363,9 @@ void main() {
 
       expect(await repo.arm(), EngineResult.notReady);
       await Future<void>.delayed(Duration.zero);
-      expect(
-        refusals.map((r) => (r as PerformanceArmBusyRefusal).busy),
-        [PerformanceArmBusy.finalizing],
-      );
+      expect(refusals.map((r) => (r as PerformanceArmBusyRefusal).busy), [
+        PerformanceArmBusy.finalizing,
+      ]);
 
       readGate.complete();
       expect(await finalizing, EngineResult.ok);
@@ -1462,10 +1410,9 @@ void main() {
         File('$dir/master-001.wav').readAsBytesSync(),
         84,
       );
-      expect(
-        [for (var i = 0; i < 4; i++) payload.getFloat32(i * 4, Endian.little)],
-        Float32List.fromList([0.1, 0.2, 0.3, 0.4]),
-      );
+      expect([
+        for (var i = 0; i < 4; i++) payload.getFloat32(i * 4, Endian.little),
+      ], Float32List.fromList([0.1, 0.2, 0.3, 0.4]));
       expect(File('$dir/master.wav').existsSync(), isFalse);
       expect(File('$dir/live-input-0.wav').existsSync(), isFalse);
     });
@@ -1572,30 +1519,27 @@ void main() {
       },
     );
 
-    test(
-      'the disarm snapshot RE-READS the engine tempo — arm over an empty '
-      'grid at 96, dial in 120 before the first loop, and the finalized '
-      'manifest carries 120 as its authoritative tempo, keeping the stale '
-      'arm-time 96 only as the crash-salvage fallback (D6, #281)',
-      () async {
-        engine.tempoBpm = 96;
-        await armAndSeedNative(engine, repo);
-        final dir = repo.armedDirectory!;
-        // D6's tempo lock only engages once grid content exists, so a tempo
-        // set (or re-derived by the first loop) after an arm-over-empty-grid
-        // was never visible to the arm-time read.
-        engine.tempoBpm = 120;
+    test('the disarm snapshot RE-READS the engine tempo — arm over an empty '
+        'grid at 96, dial in 120 before the first loop, and the finalized '
+        'manifest carries 120 as its authoritative tempo, keeping the stale '
+        'arm-time 96 only as the crash-salvage fallback (D6, #281)', () async {
+      engine.tempoBpm = 96;
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory!;
+      // D6's tempo lock only engages once grid content exists, so a tempo
+      // set (or re-derived by the first loop) after an arm-over-empty-grid
+      // was never visible to the arm-time read.
+      engine.tempoBpm = 120;
 
-        await repo.disarm();
+      await repo.disarm();
 
-        final manifest = PerformanceManifest.fromJson(
-          jsonDecode(File('$dir/performance.json').readAsStringSync())
-              as Map<String, dynamic>,
-        );
-        expect(manifest.disarmSnapshot!.tempoBpm, 120);
-        expect(manifest.armSnapshot!.tempoBpm, 96);
-      },
-    );
+      final manifest = PerformanceManifest.fromJson(
+        jsonDecode(File('$dir/performance.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+      expect(manifest.disarmSnapshot!.tempoBpm, 120);
+      expect(manifest.armSnapshot!.tempoBpm, 96);
+    });
 
     test(
       'a track recorded fresh while armed has its PCM in the disarm snapshot',
@@ -1711,24 +1655,21 @@ void main() {
       expect(await repo.disarm(), EngineResult.ok);
     });
 
-    test(
-      'a disarm within disarmGuardWindow of arm is ignored (D-GUARD), '
-      'capture stays armed',
-      () async {
-        await repo.arm();
-        final dir = repo.armedDirectory;
+    test('a disarm within disarmGuardWindow of arm is ignored (D-GUARD), '
+        'capture stays armed', () async {
+      await repo.arm();
+      final dir = repo.armedDirectory;
 
-        final result = await repo.disarm();
+      final result = await repo.disarm();
 
-        expect(result, EngineResult.ok);
-        expect(
-          repo.armedDirectory,
-          dir,
-          reason: 'the guard must leave capture armed, not finalize it',
-        );
-        expect(engine.perfDisarmCalls, 0);
-      },
-    );
+      expect(result, EngineResult.ok);
+      expect(
+        repo.armedDirectory,
+        dir,
+        reason: 'the guard must leave capture armed, not finalize it',
+      );
+      expect(engine.perfDisarmCalls, 0);
+    });
 
     test('a disarm past disarmGuardWindow of arm proceeds normally', () async {
       await armAndSeedNative(engine, repo);
@@ -1745,24 +1686,21 @@ void main() {
       );
     });
 
-    test(
-      'leaves capture armed and skips finalize when the engine refuses to '
-      'disarm',
-      () async {
-        await armAndSeedNative(engine, repo);
-        final dir = repo.armedDirectory!;
-        engine.perfDisarmResult = EngineResult.device;
+    test('leaves capture armed and skips finalize when the engine refuses to '
+        'disarm', () async {
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory!;
+      engine.perfDisarmResult = EngineResult.device;
 
-        final result = await repo.disarm();
-        expect(result, EngineResult.device);
-        expect(repo.armedDirectory, dir);
+      final result = await repo.disarm();
+      expect(result, EngineResult.device);
+      expect(repo.armedDirectory, dir);
 
-        final native = jsonDecode(
-          File('$dir/performance.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        expect(native['finalized'], isFalse);
-      },
-    );
+      final native = jsonDecode(
+        File('$dir/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(native['finalized'], isFalse);
+    });
 
     test('disarmAndFinalize is equivalent to disarm', () async {
       await armAndSeedNative(engine, repo);
@@ -1774,52 +1712,46 @@ void main() {
       expect(manifest['finalized'], isTrue);
     });
 
-    test(
-      'starts the offline dry-stem render (part 7) once finalized, exposed '
-      'via renderProgress/renderTrackStatuses',
-      () async {
-        await armAndSeedNative(engine, repo);
-        final dir = repo.armedDirectory!;
-        engine.mockRenderTrackStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
+    test('starts the offline dry-stem render (part 7) once finalized, exposed '
+        'via renderProgress/renderTrackStatuses', () async {
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory!;
+      engine.mockRenderTrackStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
 
-        expect(repo.renderProgress, PerformanceRenderProgress.empty);
-        expect(repo.renderTrackStatuses, isEmpty);
+      expect(repo.renderProgress, PerformanceRenderProgress.empty);
+      expect(repo.renderTrackStatuses, isEmpty);
 
-        await repo.disarm();
+      await repo.disarm();
 
-        expect(engine.renderBeginCalls, 1);
-        expect(engine.lastRenderCaptureDir, dir);
-        expect(repo.renderProgress.done, isTrue);
-        expect(repo.renderTrackStatuses, hasLength(1));
-        expect(repo.renderTrackStatuses.single.succeeded, isTrue);
-      },
-    );
+      expect(engine.renderBeginCalls, 1);
+      expect(engine.lastRenderCaptureDir, dir);
+      expect(repo.renderProgress.done, isTrue);
+      expect(repo.renderTrackStatuses, hasLength(1));
+      expect(repo.renderTrackStatuses.single.succeeded, isTrue);
+    });
 
-    test(
-      'still finalizes the bundle when renderBegin fails to even start '
-      '(e.g. a render already in flight)',
-      () async {
-        await armAndSeedNative(engine, repo);
-        final dir = repo.armedDirectory!;
-        engine.renderBeginResult = EngineResult.alreadyRunning;
+    test('still finalizes the bundle when renderBegin fails to even start '
+        '(e.g. a render already in flight)', () async {
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory!;
+      engine.renderBeginResult = EngineResult.alreadyRunning;
 
-        await repo.disarm();
+      await repo.disarm();
 
-        expect(engine.renderBeginCalls, 1);
-        final manifest = jsonDecode(
-          File('$dir/performance.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        expect(
-          manifest['finalized'],
-          isTrue,
-          reason:
-              'the bundle is already complete and valid without its '
-              'stems — a render that never started must not block that',
-        );
-      },
-    );
+      expect(engine.renderBeginCalls, 1);
+      final manifest = jsonDecode(
+        File('$dir/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(
+        manifest['finalized'],
+        isTrue,
+        reason:
+            'the bundle is already complete and valid without its '
+            'stems — a render that never started must not block that',
+      );
+    });
   });
 
   group('persistLiveLanes', () {
@@ -1872,10 +1804,9 @@ void main() {
       writeNativeSidecar(finished.path, finalized: true);
 
       final found = await repo.findUnfinalized();
-      expect(
-        found,
-        [UnfinalizedCapture(directory: crashed.path, slug: 'perf-crashed')],
-      );
+      expect(found, [
+        UnfinalizedCapture(directory: crashed.path, slug: 'perf-crashed'),
+      ]);
     });
 
     test('never treats the backing store as a capture (#1200)', () async {
@@ -1896,15 +1827,13 @@ void main() {
       final root = Directory('${tempDir.path}/exports');
       final corrupt = Directory('${root.path}/perf-corrupt')
         ..createSync(recursive: true);
-      File(
-        '${corrupt.path}/performance.json',
-      ).writeAsStringSync('{not valid json');
+      File('${corrupt.path}/performance.json')
+          .writeAsStringSync('{not valid json');
 
       final found = await repo.findUnfinalized();
-      expect(
-        found,
-        [UnfinalizedCapture(directory: corrupt.path, slug: 'perf-corrupt')],
-      );
+      expect(found, [
+        UnfinalizedCapture(directory: corrupt.path, slug: 'perf-corrupt'),
+      ]);
     });
 
     test(
@@ -2005,38 +1934,35 @@ void main() {
       },
     );
 
-    test(
-      "does not leak a prior finalize's armSnapshot/disarmSnapshot into a "
-      'later re-finalize that has none of its own',
-      () async {
-        engine.seedLane(0, 0, Float32List.fromList([1, 1]));
-        await repo.arm();
-        final dir = repo.armedDirectory!;
-        writeNativeSidecar(dir);
+    test("does not leak a prior finalize's armSnapshot/disarmSnapshot into a "
+        'later re-finalize that has none of its own', () async {
+      engine.seedLane(0, 0, Float32List.fromList([1, 1]));
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      writeNativeSidecar(dir);
 
-        await repo.recoverCapture(dir); // first finalize: has an armSnapshot
-        var manifest = PerformanceManifest.fromJson(
-          jsonDecode(File('$dir/performance.json').readAsStringSync())
-              as Map<String, dynamic>,
-        );
-        expect(manifest.armSnapshot, isNotNull);
+      await repo.recoverCapture(dir); // first finalize: has an armSnapshot
+      var manifest = PerformanceManifest.fromJson(
+        jsonDecode(File('$dir/performance.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+      expect(manifest.armSnapshot, isNotNull);
 
-        // arm-snapshot.json was deleted by the first finalize; a second
-        // recovery pass has nothing of its own to contribute.
-        await repo.recoverCapture(dir);
-        manifest = PerformanceManifest.fromJson(
-          jsonDecode(File('$dir/performance.json').readAsStringSync())
-              as Map<String, dynamic>,
-        );
-        expect(
-          manifest.armSnapshot,
-          isNull,
-          reason:
-              "the first finalize's armSnapshot must not leak through "
-              'a second finalize pass that supplies none',
-        );
-      },
-    );
+      // arm-snapshot.json was deleted by the first finalize; a second
+      // recovery pass has nothing of its own to contribute.
+      await repo.recoverCapture(dir);
+      manifest = PerformanceManifest.fromJson(
+        jsonDecode(File('$dir/performance.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+      expect(
+        manifest.armSnapshot,
+        isNull,
+        reason:
+            "the first finalize's armSnapshot must not leak through "
+            'a second finalize pass that supplies none',
+      );
+    });
 
     test('discardUnfinalized deletes the capture directory outright', () async {
       final root = Directory('${tempDir.path}/exports');
@@ -2069,9 +1995,7 @@ void main() {
     Float32List payload(String path) {
       final bytes = File(path).readAsBytesSync();
       return Float32List.fromList(
-        Float32List.view(
-          Uint8List.fromList(bytes.sublist(84)).buffer,
-        ),
+        Float32List.view(Uint8List.fromList(bytes.sublist(84)).buffer),
       );
     }
 
@@ -2230,10 +2154,10 @@ void main() {
       expect(largest, legacyChunkBytes);
       expect(reads, greaterThan(3));
       expect(parts.map((p) => p.frames), [1 << 18, (1 << 17) + 3]);
-      expect(
-        [...payload('$dir/master-001.wav'), ...payload('$dir/master-002.wav')],
-        samples,
-      );
+      expect([
+        ...payload('$dir/master-001.wav'),
+        ...payload('$dir/master-002.wav'),
+      ], samples);
     });
 
     test('a failed part write deletes the parts it made and leaves the raw '
@@ -2289,9 +2213,8 @@ void main() {
       await local.runBootRecovery();
       expect(local.unrecoveredTakes, isEmpty);
       expect(
-        File(
-          '${tempDir.path}/exports/recovered/perf-tight/master-001.wav',
-        ).existsSync(),
+        File('${tempDir.path}/exports/recovered/perf-tight/master-001.wav')
+            .existsSync(),
         isTrue,
       );
     });
@@ -2355,10 +2278,10 @@ void main() {
       expect(File('$recovered/master-001.wav').readAsBytesSync(), masterBytes);
       expect(payload('$recovered/input-0-001.wav'), ramp(4));
       final parts = readSidecar(recovered)['parts'] as List<dynamic>;
-      expect(
-        parts.map((p) => (p as Map)['file']),
-        ['master-001.wav', 'input-0-001.wav'],
-      );
+      expect(parts.map((p) => (p as Map)['file']), [
+        'master-001.wav',
+        'input-0-001.wav',
+      ]);
       // The input's parts name the take the master's do.
       expect(
         RecordedPartHeader.decode(
@@ -2546,39 +2469,34 @@ void main() {
       return dir;
     }
 
-    test(
-      'finalizes + renders an unfinalized capture into recovered/ under its '
-      'own slug, and the original bundle is gone',
-      () async {
-        final crashed = seedCrashed('perf-crashed');
+    test('finalizes + renders an unfinalized capture into recovered/ under its '
+        'own slug, and the original bundle is gone', () async {
+      final crashed = seedCrashed('perf-crashed');
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        final recovered = '${tempDir.path}/exports/recovered/perf-crashed';
-        expect(Directory(crashed).existsSync(), isFalse);
-        expect(
-          partSizes('$recovered/master-001.wav'),
-          (84 - 8 + 8, 8),
-          reason: 'the salvage seals the open part so the take plays',
-        );
-        final manifest = jsonDecode(
-          File('$recovered/performance.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        expect(manifest['finalized'], isTrue);
-        expect(
-          engine.lastRenderCaptureDir,
-          crashed,
-          reason: 'the stem render ran against the bundle before the move',
-        );
-        expect(
-          File(
-            '$recovered/${PerformanceRepository.recoveryMarkerName}',
-          ).existsSync(),
-          isFalse,
-          reason: 'a completed salvage removes its own marker',
-        );
-      },
-    );
+      final recovered = '${tempDir.path}/exports/recovered/perf-crashed';
+      expect(Directory(crashed).existsSync(), isFalse);
+      expect(partSizes('$recovered/master-001.wav'), (
+        84 - 8 + 8,
+        8,
+      ), reason: 'the salvage seals the open part so the take plays');
+      final manifest = jsonDecode(
+        File('$recovered/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(manifest['finalized'], isTrue);
+      expect(
+        engine.lastRenderCaptureDir,
+        crashed,
+        reason: 'the stem render ran against the bundle before the move',
+      );
+      expect(
+        File('$recovered/${PerformanceRepository.recoveryMarkerName}')
+            .existsSync(),
+        isFalse,
+        reason: 'a completed salvage removes its own marker',
+      );
+    });
 
     test('recovers silently: no captureStatus emission at any point', () async {
       seedCrashed('perf-crashed');
@@ -2601,72 +2519,61 @@ void main() {
       );
     });
 
-    test(
-      'never deletes a recovered take, however long ago it landed — '
-      'recovered audio is kept until the user removes it',
-      () async {
-        final recoveredRoot = '${tempDir.path}/exports/recovered';
-        final old = '$recoveredRoot/perf-old';
-        Directory(old).createSync(recursive: true);
-        writeNativeSidecar(old, finalized: true);
-        File(
-          '$old/${PerformanceRepository.recoveredAtStampName}',
-        ).writeAsStringSync(
-          clock
-              .subtract(const Duration(days: 3650))
-              .millisecondsSinceEpoch
-              .toString(),
-        );
+    test('never deletes a recovered take, however long ago it landed — '
+        'recovered audio is kept until the user removes it', () async {
+      final recoveredRoot = '${tempDir.path}/exports/recovered';
+      final old = '$recoveredRoot/perf-old';
+      Directory(old).createSync(recursive: true);
+      writeNativeSidecar(old, finalized: true);
+      File('$old/${PerformanceRepository.recoveredAtStampName}')
+          .writeAsStringSync(
+            clock
+                .subtract(const Duration(days: 3650))
+                .millisecondsSinceEpoch
+                .toString(),
+          );
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        expect(Directory(old).existsSync(), isTrue);
-      },
-    );
+      expect(Directory(old).existsSync(), isTrue);
+    });
 
-    test(
-      'a salvage that cannot finalize (corrupt sidecar) keeps the raw '
-      'bundle in place for the next boot, without crashing',
-      () async {
-        final dir = '${tempDir.path}/exports/perf-corrupt';
-        Directory(dir).createSync(recursive: true);
-        File('$dir/performance.json').writeAsStringSync('{not json');
+    test('a salvage that cannot finalize (corrupt sidecar) keeps the raw '
+        'bundle in place for the next boot, without crashing', () async {
+      final dir = '${tempDir.path}/exports/perf-corrupt';
+      Directory(dir).createSync(recursive: true);
+      File('$dir/performance.json').writeAsStringSync('{not json');
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        expect(
-          Directory(dir).existsSync(),
-          isTrue,
-          reason: 'never delete what could not be rendered',
-        );
-        expect(
-          Directory(
-            '${tempDir.path}/exports/recovered/perf-corrupt',
-          ).existsSync(),
-          isFalse,
-        );
-        expect(engine.renderBeginCalls, 0);
-      },
-    );
+      expect(
+        Directory(dir).existsSync(),
+        isTrue,
+        reason: 'never delete what could not be rendered',
+      );
+      expect(
+        Directory('${tempDir.path}/exports/recovered/perf-corrupt')
+            .existsSync(),
+        isFalse,
+      );
+      expect(engine.renderBeginCalls, 0);
+    });
 
-    test(
-      'a salvage whose finalize THROWS keeps the raw bundle in place for '
-      'the next boot, without crashing',
-      () async {
-        final dir = seedCrashed('perf-crashed');
-        // A directory where the finalized sidecar is written: publishing
-        // it fails.
-        Directory('$dir/performance.json.publishing').createSync();
+    test('a salvage whose finalize THROWS keeps the raw bundle in place for '
+        'the next boot, without crashing', () async {
+      final dir = seedCrashed('perf-crashed');
+      // A directory where the finalized sidecar is written: publishing
+      // it fails.
+      Directory('$dir/performance.json.publishing').createSync();
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        expect(Directory(dir).existsSync(), isTrue);
-        expect(
-          Directory('${tempDir.path}/exports/recovered').existsSync(),
-          isFalse,
-        );
-      },
-    );
+      expect(Directory(dir).existsSync(), isTrue);
+      expect(
+        Directory('${tempDir.path}/exports/recovered').existsSync(),
+        isFalse,
+      );
+    });
 
     test(
       'arm is refused for the whole background salvage (#671 gates), and '
@@ -2707,9 +2614,8 @@ void main() {
         engine.renderProgress = PerformanceRenderProgress.empty;
         await recovery;
         expect(
-          Directory(
-            '${tempDir.path}/exports/recovered/perf-crashed',
-          ).existsSync(),
+          Directory('${tempDir.path}/exports/recovered/perf-crashed')
+              .existsSync(),
           isTrue,
         );
         await pollingRepo.arm();
@@ -2717,264 +2623,234 @@ void main() {
       },
     );
 
-    test(
-      'defers salvage entirely while a capture is armed — the armed session '
-      'owns the drain thread and the single render slot (#679 r2)',
-      () async {
-        await repo.arm();
-        final armedDir = repo.armedDirectory!;
-        // The drain thread keeps the live capture's sidecar at
-        // finalized: false the whole session — exactly what makes it look
-        // salvageable to a scan that does not exclude it.
-        writeNativeSidecar(armedDir);
-        final crashed = seedCrashed('perf-crashed');
+    test('defers salvage entirely while a capture is armed — the armed session '
+        'owns the drain thread and the single render slot (#679 r2)', () async {
+      await repo.arm();
+      final armedDir = repo.armedDirectory!;
+      // The drain thread keeps the live capture's sidecar at
+      // finalized: false the whole session — exactly what makes it look
+      // salvageable to a scan that does not exclude it.
+      writeNativeSidecar(armedDir);
+      final crashed = seedCrashed('perf-crashed');
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        expect(repo.armedDirectory, armedDir);
-        expect(Directory(armedDir).existsSync(), isTrue);
-        expect(
-          File(
-            '$armedDir/${PerformanceRepository.recoveryMarkerName}',
-          ).existsSync(),
-          isFalse,
-          reason: 'the live capture was never even marked for salvage',
-        );
-        expect(
-          Directory(crashed).existsSync(),
-          isTrue,
-          reason:
-              'the sibling defers to the next boot too — its salvage render '
-              "would steal the armed take's one global render slot",
-        );
-        expect(engine.renderBeginCalls, 0);
-        expect(
-          Directory('${tempDir.path}/exports/recovered').existsSync(),
-          isFalse,
-        );
-      },
-    );
+      expect(repo.armedDirectory, armedDir);
+      expect(Directory(armedDir).existsSync(), isTrue);
+      expect(
+        File('$armedDir/${PerformanceRepository.recoveryMarkerName}')
+            .existsSync(),
+        isFalse,
+        reason: 'the live capture was never even marked for salvage',
+      );
+      expect(
+        Directory(crashed).existsSync(),
+        isTrue,
+        reason:
+            'the sibling defers to the next boot too — its salvage render '
+            "would steal the armed take's one global render slot",
+      );
+      expect(engine.renderBeginCalls, 0);
+      expect(
+        Directory('${tempDir.path}/exports/recovered').existsSync(),
+        isFalse,
+      );
+    });
 
-    test(
-      "an arm landing in the boot scan's await gap wins: the resumed "
-      'recovery finds the armed session and defers everything, leaving the '
-      'live directory untouched (#679 r2)',
-      () async {
-        final crashed = seedCrashed('perf-crashed');
-        // Park runBootRecovery on its very first await (the exports-root
-        // lookup) so the arm provably lands AFTER recovery started but
-        // BEFORE any salvage took its finalize guard.
-        final rootGate = Completer<String>();
-        var rootCalls = 0;
-        final gatedRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () {
-            rootCalls++;
-            return rootCalls == 1
-                ? rootGate.future
-                : Future.value('${tempDir.path}/exports');
-          },
-          now: () => clock,
-        );
-        addTearDown(gatedRepo.dispose);
+    test("an arm landing in the boot scan's await gap wins: the resumed "
+        'recovery finds the armed session and defers everything, leaving the '
+        'live directory untouched (#679 r2)', () async {
+      final crashed = seedCrashed('perf-crashed');
+      // Park runBootRecovery on its very first await (the exports-root
+      // lookup) so the arm provably lands AFTER recovery started but
+      // BEFORE any salvage took its finalize guard.
+      final rootGate = Completer<String>();
+      var rootCalls = 0;
+      final gatedRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () {
+          rootCalls++;
+          return rootCalls == 1
+              ? rootGate.future
+              : Future.value('${tempDir.path}/exports');
+        },
+        now: () => clock,
+      );
+      addTearDown(gatedRepo.dispose);
 
-        final recovery = gatedRepo.runBootRecovery(); // parks on the root
-        await gatedRepo.arm(); // lands in the gap, owns the engine
-        final armedDir = gatedRepo.armedDirectory!;
-        writeNativeSidecar(armedDir); // the drain's finalized: false sidecar
-        rootGate.complete('${tempDir.path}/exports');
-        await recovery;
+      final recovery = gatedRepo.runBootRecovery(); // parks on the root
+      await gatedRepo.arm(); // lands in the gap, owns the engine
+      final armedDir = gatedRepo.armedDirectory!;
+      writeNativeSidecar(armedDir); // the drain's finalized: false sidecar
+      rootGate.complete('${tempDir.path}/exports');
+      await recovery;
 
-        expect(gatedRepo.armedDirectory, armedDir);
-        expect(
-          Directory(armedDir).existsSync(),
-          isTrue,
-          reason:
-              'the salvage must never finalize/rename the live capture '
-              'out from under the drain thread',
-        );
-        expect(
-          File(
-            '$armedDir/${PerformanceRepository.recoveryMarkerName}',
-          ).existsSync(),
-          isFalse,
-        );
-        expect(Directory(crashed).existsSync(), isTrue);
-        expect(
-          engine.renderBeginCalls,
-          0,
-          reason: "no salvage render may squat on the armed take's slot",
-        );
-      },
-    );
+      expect(gatedRepo.armedDirectory, armedDir);
+      expect(
+        Directory(armedDir).existsSync(),
+        isTrue,
+        reason:
+            'the salvage must never finalize/rename the live capture '
+            'out from under the drain thread',
+      );
+      expect(
+        File('$armedDir/${PerformanceRepository.recoveryMarkerName}')
+            .existsSync(),
+        isFalse,
+      );
+      expect(Directory(crashed).existsSync(), isTrue);
+      expect(
+        engine.renderBeginCalls,
+        0,
+        reason: "no salvage render may squat on the armed take's slot",
+      );
+    });
 
-    test(
-      "one capture's failing salvage neither aborts its siblings nor "
-      'escapes as an unhandled error (#679 r2)',
-      () async {
-        final bad = seedCrashed('perf-a-bad');
-        // A directory where the finalized sidecar is written: this
-        // capture's salvage throws mid-finalize.
-        Directory('$bad/performance.json.publishing').createSync();
-        seedCrashed('perf-b-good');
+    test("one capture's failing salvage neither aborts its siblings nor "
+        'escapes as an unhandled error (#679 r2)', () async {
+      final bad = seedCrashed('perf-a-bad');
+      // A directory where the finalized sidecar is written: this
+      // capture's salvage throws mid-finalize.
+      Directory('$bad/performance.json.publishing').createSync();
+      seedCrashed('perf-b-good');
 
-        // Deterministic regardless of listSync order: an unguarded loop
-        // would either propagate the throw out of this await (bad first)
-        // or strand the sibling unrecovered (good first) — both outcomes
-        // below can only hold together under the per-capture guard.
-        await repo.runBootRecovery();
+      // Deterministic regardless of listSync order: an unguarded loop
+      // would either propagate the throw out of this await (bad first)
+      // or strand the sibling unrecovered (good first) — both outcomes
+      // below can only hold together under the per-capture guard.
+      await repo.runBootRecovery();
 
-        expect(Directory(bad).existsSync(), isTrue);
-        expect(
-          Directory(
-            '${tempDir.path}/exports/recovered/perf-b-good',
-          ).existsSync(),
-          isTrue,
-        );
-      },
-    );
+      expect(Directory(bad).existsSync(), isTrue);
+      expect(
+        Directory('${tempDir.path}/exports/recovered/perf-b-good').existsSync(),
+        isTrue,
+      );
+    });
 
-    test(
-      'a wedged stem render times out instead of parking recovery forever; '
-      "the finalized bundle keeps its marker and the next boot's sweep "
-      'finishes the move (#679 r2)',
-      () async {
-        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 10,
-        );
-        final timingRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () async => '${tempDir.path}/exports',
-          now: () => clock,
-          bootRecoveryPollInterval: const Duration(milliseconds: 2),
-          bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
-        );
-        addTearDown(timingRepo.dispose);
-        final dir = seedCrashed('perf-crashed');
+    test('a wedged stem render times out instead of parking recovery forever; '
+        "the finalized bundle keeps its marker and the next boot's sweep "
+        'finishes the move (#679 r2)', () async {
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      final timingRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        bootRecoveryPollInterval: const Duration(milliseconds: 2),
+        bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
+      );
+      addTearDown(timingRepo.dispose);
+      final dir = seedCrashed('perf-crashed');
 
-        await timingRepo.runBootRecovery(); // returns: the wait is bounded
+      await timingRepo.runBootRecovery(); // returns: the wait is bounded
 
-        expect(Directory(dir).existsSync(), isTrue);
-        expect(
-          File(
-            '$dir/${PerformanceRepository.recoveryMarkerName}',
-          ).existsSync(),
-          isTrue,
-          reason: 'the marker stays until the move actually lands',
-        );
-        expect(
-          Directory('${tempDir.path}/exports/recovered').existsSync(),
-          isFalse,
-        );
+      expect(Directory(dir).existsSync(), isTrue);
+      expect(
+        File('$dir/${PerformanceRepository.recoveryMarkerName}').existsSync(),
+        isTrue,
+        reason: 'the marker stays until the move actually lands',
+      );
+      expect(
+        Directory('${tempDir.path}/exports/recovered').existsSync(),
+        isFalse,
+      );
 
-        // Next boot: the wedged render did not survive the reboot; the
-        // stranded bundle is re-salvaged — stem render re-attempted, not
-        // just moved stemless.
-        engine
-          ..renderProgressAfterBegin = null
-          ..renderProgress = PerformanceRenderProgress.empty;
-        await timingRepo.runBootRecovery();
-        final moved = '${tempDir.path}/exports/recovered/perf-crashed';
-        expect(Directory(moved).existsSync(), isTrue);
-        expect(
-          File(
-            '$moved/${PerformanceRepository.recoveryMarkerName}',
-          ).existsSync(),
-          isFalse,
-        );
-        expect(Directory(dir).existsSync(), isFalse);
-        expect(
-          engine.renderBeginCalls,
-          2,
-          reason:
-              'the sweep re-attempts the stems the first boot never got — '
-              'a stranded bundle must not land in recovered/ stemless',
-        );
-      },
-    );
+      // Next boot: the wedged render did not survive the reboot; the
+      // stranded bundle is re-salvaged — stem render re-attempted, not
+      // just moved stemless.
+      engine
+        ..renderProgressAfterBegin = null
+        ..renderProgress = PerformanceRenderProgress.empty;
+      await timingRepo.runBootRecovery();
+      final moved = '${tempDir.path}/exports/recovered/perf-crashed';
+      expect(Directory(moved).existsSync(), isTrue);
+      expect(
+        File('$moved/${PerformanceRepository.recoveryMarkerName}').existsSync(),
+        isFalse,
+      );
+      expect(Directory(dir).existsSync(), isFalse);
+      expect(
+        engine.renderBeginCalls,
+        2,
+        reason:
+            'the sweep re-attempts the stems the first boot never got — '
+            'a stranded bundle must not land in recovered/ stemless',
+      );
+    });
 
-    test(
-      'stops the salvage loop while a prior salvage render still squats the '
-      "engine's one render slot — the sibling is neither finalized nor "
-      'moved stemless (#679 r3)',
-      () async {
-        // Every renderBegin leaves an in-flight render behind, and nothing
-        // ever completes it — capture A times out on its own render.
-        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 10,
-        );
-        final timingRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () async => '${tempDir.path}/exports',
-          now: () => clock,
-          bootRecoveryPollInterval: const Duration(milliseconds: 2),
-          bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
-        );
-        addTearDown(timingRepo.dispose);
-        final a = seedCrashed('perf-a');
-        final b = seedCrashed('perf-b');
+    test('stops the salvage loop while a prior salvage render still squats the '
+        "engine's one render slot — the sibling is neither finalized nor "
+        'moved stemless (#679 r3)', () async {
+      // Every renderBegin leaves an in-flight render behind, and nothing
+      // ever completes it — capture A times out on its own render.
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      final timingRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        bootRecoveryPollInterval: const Duration(milliseconds: 2),
+        bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
+      );
+      addTearDown(timingRepo.dispose);
+      final a = seedCrashed('perf-a');
+      final b = seedCrashed('perf-b');
 
-        await timingRepo.runBootRecovery();
+      await timingRepo.runBootRecovery();
 
-        // listSync order is not guaranteed, so assert order-agnostically:
-        // exactly ONE capture was salvaged (timed out, marked, finalized);
-        // the other was never touched — not marked, not finalized, and
-        // above all not moved stemless with its marker gone.
-        expect(
-          engine.renderBeginCalls,
-          1,
-          reason:
-              'the loop must stop at the squatted slot, not push B '
-              'through a renderBegin the engine would refuse',
-        );
-        expect(
-          Directory('${tempDir.path}/exports/recovered').existsSync(),
-          isFalse,
-        );
-        final markers = [
-          for (final dir in [a, b])
-            File(
-              '$dir/${PerformanceRepository.recoveryMarkerName}',
-            ).existsSync(),
-        ];
-        expect(markers.where((m) => m).length, 1);
-        expect(Directory(a).existsSync(), isTrue);
-        expect(Directory(b).existsSync(), isTrue);
-      },
-    );
+      // listSync order is not guaranteed, so assert order-agnostically:
+      // exactly ONE capture was salvaged (timed out, marked, finalized);
+      // the other was never touched — not marked, not finalized, and
+      // above all not moved stemless with its marker gone.
+      expect(
+        engine.renderBeginCalls,
+        1,
+        reason:
+            'the loop must stop at the squatted slot, not push B '
+            'through a renderBegin the engine would refuse',
+      );
+      expect(
+        Directory('${tempDir.path}/exports/recovered').existsSync(),
+        isFalse,
+      );
+      final markers = [
+        for (final dir in [a, b])
+          File('$dir/${PerformanceRepository.recoveryMarkerName}').existsSync(),
+      ];
+      expect(markers.where((m) => m).length, 1);
+      expect(Directory(a).existsSync(), isTrue);
+      expect(Directory(b).existsSync(), isTrue);
+    });
 
-    test(
-      'a well-formed but wrong-shaped sidecar (JSON of the wrong type) is '
-      'kept for the next boot and does not take its sibling — or the boot '
-      'call — down with it (#679 r3)',
-      () async {
-        final bad = '${tempDir.path}/exports/perf-a-badshape';
-        Directory(bad).createSync(recursive: true);
-        // Well-formed JSON, wrong shape: the decode CAST throws a TypeError
-        // (an Error, not an Exception) — the case a blanket `on Exception`
-        // guard silently misses.
-        File('$bad/performance.json').writeAsStringSync('[1, 2, 3]');
-        seedCrashed('perf-b-good');
+    test('a well-formed but wrong-shaped sidecar (JSON of the wrong type) is '
+        'kept for the next boot and does not take its sibling — or the boot '
+        'call — down with it (#679 r3)', () async {
+      final bad = '${tempDir.path}/exports/perf-a-badshape';
+      Directory(bad).createSync(recursive: true);
+      // Well-formed JSON, wrong shape: the decode CAST throws a TypeError
+      // (an Error, not an Exception) — the case a blanket `on Exception`
+      // guard silently misses.
+      File('$bad/performance.json').writeAsStringSync('[1, 2, 3]');
+      seedCrashed('perf-b-good');
 
-        await repo.runBootRecovery(); // must complete, not throw
+      await repo.runBootRecovery(); // must complete, not throw
 
-        expect(Directory(bad).existsSync(), isTrue);
-        expect(
-          Directory(
-            '${tempDir.path}/exports/recovered/perf-b-good',
-          ).existsSync(),
-          isTrue,
-        );
-      },
-    );
+      expect(Directory(bad).existsSync(), isTrue);
+      expect(
+        Directory('${tempDir.path}/exports/recovered/perf-b-good').existsSync(),
+        isTrue,
+      );
+    });
 
     test(
       'sweeps a finalized bundle stranded with its recovery marker into '
@@ -2985,9 +2861,8 @@ void main() {
         final stranded = '${tempDir.path}/exports/perf-stranded';
         Directory(stranded).createSync(recursive: true);
         writeNativeSidecar(stranded, finalized: true);
-        File(
-          '$stranded/${PerformanceRepository.recoveryMarkerName}',
-        ).writeAsStringSync('');
+        File('$stranded/${PerformanceRepository.recoveryMarkerName}')
+            .writeAsStringSync('');
         // A normal finished take: finalized, no marker — the user's data.
         final take = '${tempDir.path}/exports/perf-finished-take';
         Directory(take).createSync(recursive: true);
@@ -2998,9 +2873,8 @@ void main() {
         final moved = '${tempDir.path}/exports/recovered/perf-stranded';
         expect(Directory(moved).existsSync(), isTrue);
         expect(
-          File(
-            '$moved/${PerformanceRepository.recoveryMarkerName}',
-          ).existsSync(),
+          File('$moved/${PerformanceRepository.recoveryMarkerName}')
+              .existsSync(),
           isFalse,
         );
         expect(Directory(stranded).existsSync(), isFalse);
@@ -3031,62 +2905,54 @@ void main() {
       },
     );
 
-    test(
-      'survives the boot scan itself failing after the sweep already ran '
-      '(the root resolves once, then the volume goes away)',
-      () async {
-        var rootCalls = 0;
-        final flakyRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () async {
-            rootCalls++;
-            if (rootCalls > 1) throw const FileSystemException('vanished');
-            return '${tempDir.path}/exports';
-          },
-          now: () => clock,
-        );
-        addTearDown(flakyRepo.dispose);
-        seedCrashed('perf-crashed');
+    test('survives the boot scan itself failing after the sweep already ran '
+        '(the root resolves once, then the volume goes away)', () async {
+      var rootCalls = 0;
+      final flakyRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async {
+          rootCalls++;
+          if (rootCalls > 1) throw const FileSystemException('vanished');
+          return '${tempDir.path}/exports';
+        },
+        now: () => clock,
+      );
+      addTearDown(flakyRepo.dispose);
+      seedCrashed('perf-crashed');
 
-        await flakyRepo.runBootRecovery(); // must complete, not throw
+      await flakyRepo.runBootRecovery(); // must complete, not throw
 
-        expect(
-          rootCalls,
-          2,
-          reason:
-              'the sweep consumed the first resolution; the scan '
-              're-resolved, failed, and was contained',
-        );
-      },
-    );
+      expect(
+        rootCalls,
+        2,
+        reason:
+            'the sweep consumed the first resolution; the scan '
+            're-resolved, failed, and was contained',
+      );
+    });
 
-    test(
-      'a sweep move the filesystem refuses skips that entry — the stranded '
-      "bundle stays, marker intact, for the next boot's retry",
-      () async {
-        final stranded = '${tempDir.path}/exports/perf-stranded';
-        Directory(stranded).createSync(recursive: true);
-        writeNativeSidecar(stranded, finalized: true);
-        File(
-          '$stranded/${PerformanceRepository.recoveryMarkerName}',
-        ).writeAsStringSync('');
-        // A plain FILE squatting where the recovered/ area must go: the
-        // move's createSync throws FileSystemException.
-        File('${tempDir.path}/exports/recovered').createSync();
+    test('a sweep move the filesystem refuses skips that entry — the stranded '
+        "bundle stays, marker intact, for the next boot's retry", () async {
+      final stranded = '${tempDir.path}/exports/perf-stranded';
+      Directory(stranded).createSync(recursive: true);
+      writeNativeSidecar(stranded, finalized: true);
+      File('$stranded/${PerformanceRepository.recoveryMarkerName}')
+          .writeAsStringSync('');
+      // A plain FILE squatting where the recovered/ area must go: the
+      // move's createSync throws FileSystemException.
+      File('${tempDir.path}/exports/recovered').createSync();
 
-        await repo.runBootRecovery(); // must complete, not throw
+      await repo.runBootRecovery(); // must complete, not throw
 
-        expect(Directory(stranded).existsSync(), isTrue);
-        expect(
-          File(
-            '$stranded/${PerformanceRepository.recoveryMarkerName}',
-          ).existsSync(),
-          isTrue,
-        );
-      },
-    );
+      expect(Directory(stranded).existsSync(), isTrue);
+      expect(
+        File('$stranded/${PerformanceRepository.recoveryMarkerName}')
+            .existsSync(),
+        isTrue,
+      );
+    });
 
     test(
       'hasBootRecoveryWork counts a stranded finalized bundle as work, not '
@@ -3100,9 +2966,8 @@ void main() {
         final stranded = '${tempDir.path}/exports/perf-stranded';
         Directory(stranded).createSync(recursive: true);
         writeNativeSidecar(stranded, finalized: true);
-        File(
-          '$stranded/${PerformanceRepository.recoveryMarkerName}',
-        ).writeAsStringSync('');
+        File('$stranded/${PerformanceRepository.recoveryMarkerName}')
+            .writeAsStringSync('');
         expect(await repo.hasBootRecoveryWork(), isTrue);
 
         // Crashed only.
@@ -3129,154 +2994,141 @@ void main() {
       },
     );
 
-    test(
-      "boot-2 re-salvage of a stranded bundle preserves the manifest's "
-      'armSnapshot byte-for-byte — no second finalize runs to strip it '
-      '(#679 r4)',
-      () async {
-        // A real crashed capture WITH an arm snapshot: armed by a first
-        // repository "session" (which writes arm-snapshot.json), then the
-        // process dies — a fresh repository per boot stands in for the
-        // restarts, since arm() latches _armedDir for the process lifetime.
-        engine.seedLane(0, 0, Float32List.fromList([1, 1]));
-        final sessionRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () async => '${tempDir.path}/exports',
-          now: () => clock,
-        );
-        await sessionRepo.arm();
-        final dir = sessionRepo.armedDirectory!;
-        writeNativeSidecar(dir); // the drain's finalized: false sidecar
-        sessionRepo.dispose(); // crash: no disarm ever runs
+    test("boot-2 re-salvage of a stranded bundle preserves the manifest's "
+        'armSnapshot byte-for-byte — no second finalize runs to strip it '
+        '(#679 r4)', () async {
+      // A real crashed capture WITH an arm snapshot: armed by a first
+      // repository "session" (which writes arm-snapshot.json), then the
+      // process dies — a fresh repository per boot stands in for the
+      // restarts, since arm() latches _armedDir for the process lifetime.
+      engine.seedLane(0, 0, Float32List.fromList([1, 1]));
+      final sessionRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+      );
+      await sessionRepo.arm();
+      final dir = sessionRepo.armedDirectory!;
+      writeNativeSidecar(dir); // the drain's finalized: false sidecar
+      sessionRepo.dispose(); // crash: no disarm ever runs
 
-        // Boot 1: the salvage finalizes — folding arm-snapshot.json into
-        // the manifest and deleting that file — but its render times out,
-        // stranding the bundle.
-        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 10,
-        );
-        final boot1 = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () async => '${tempDir.path}/exports',
-          now: () => clock,
-          bootRecoveryPollInterval: const Duration(milliseconds: 2),
-          bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
-        );
-        addTearDown(boot1.dispose);
-        await boot1.runBootRecovery();
-        final manifestAfterBoot1 = File(
-          '$dir/performance.json',
-        ).readAsStringSync();
-        expect(
-          manifestAfterBoot1,
-          contains('armSnapshot'),
-          reason: 'the first finalize folded the crash-survival file in',
-        );
-        expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+      // Boot 1: the salvage finalizes — folding arm-snapshot.json into
+      // the manifest and deleting that file — but its render times out,
+      // stranding the bundle.
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      final boot1 = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async => '${tempDir.path}/exports',
+        now: () => clock,
+        bootRecoveryPollInterval: const Duration(milliseconds: 2),
+        bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
+      );
+      addTearDown(boot1.dispose);
+      await boot1.runBootRecovery();
+      final manifestAfterBoot1 = File('$dir/performance.json')
+          .readAsStringSync();
+      expect(
+        manifestAfterBoot1,
+        contains('armSnapshot'),
+        reason: 'the first finalize folded the crash-survival file in',
+      );
+      expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
 
-        // Boot 2: the render can run; the stranded path must go straight
-        // to render + move — a second finalize would resolve the arm
-        // snapshot only from the now-deleted crash-survival file and
-        // rewrite the manifest without it.
-        engine
-          ..renderProgressAfterBegin = null
-          ..renderProgress = PerformanceRenderProgress.empty;
-        await repo.runBootRecovery();
+      // Boot 2: the render can run; the stranded path must go straight
+      // to render + move — a second finalize would resolve the arm
+      // snapshot only from the now-deleted crash-survival file and
+      // rewrite the manifest without it.
+      engine
+        ..renderProgressAfterBegin = null
+        ..renderProgress = PerformanceRenderProgress.empty;
+      await repo.runBootRecovery();
 
-        final moved =
-            '${tempDir.path}/exports/recovered/${dir.split('/').last}';
-        expect(
-          File('$moved/performance.json').readAsStringSync(),
-          manifestAfterBoot1,
-          reason:
-              'the manifest — armSnapshot, chains, routing — must survive '
-              'the re-salvage byte-for-byte',
-        );
-      },
-    );
+      final moved = '${tempDir.path}/exports/recovered/${dir.split('/').last}';
+      expect(
+        File('$moved/performance.json').readAsStringSync(),
+        manifestAfterBoot1,
+        reason:
+            'the manifest — armSnapshot, chains, routing — must survive '
+            'the re-salvage byte-for-byte',
+      );
+    });
 
-    test(
-      'the recovered-at stamp is written on the SOURCE before the rename — '
-      'a move that dies mid-way leaves the stamp with the bundle, and the '
-      'retry re-stamps at ITS landing, so the stamp records the arrival, '
-      'never a month-old first attempt (#679 r6)',
-      () async {
-        // Boot 1: the move fails after the stamp (a file squatting where
-        // recovered/ must go) — the crash-window simulation.
-        final stranded = '${tempDir.path}/exports/perf-stranded';
-        Directory(stranded).createSync(recursive: true);
-        writeNativeSidecar(stranded, finalized: true);
-        File(
-          '$stranded/${PerformanceRepository.recoveryMarkerName}',
-        ).writeAsStringSync('');
-        File('${tempDir.path}/exports/recovered').createSync();
-        final boot1Clock = clock;
+    test('the recovered-at stamp is written on the SOURCE before the rename — '
+        'a move that dies mid-way leaves the stamp with the bundle, and the '
+        'retry re-stamps at ITS landing, so the stamp records the arrival, '
+        'never a month-old first attempt (#679 r6)', () async {
+      // Boot 1: the move fails after the stamp (a file squatting where
+      // recovered/ must go) — the crash-window simulation.
+      final stranded = '${tempDir.path}/exports/perf-stranded';
+      Directory(stranded).createSync(recursive: true);
+      writeNativeSidecar(stranded, finalized: true);
+      File('$stranded/${PerformanceRepository.recoveryMarkerName}')
+          .writeAsStringSync('');
+      File('${tempDir.path}/exports/recovered').createSync();
+      final boot1Clock = clock;
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        final sourceStamp = File(
-          '$stranded/${PerformanceRepository.recoveredAtStampName}',
-        );
-        expect(
-          sourceStamp.readAsStringSync(),
-          boot1Clock.millisecondsSinceEpoch.toString(),
-          reason:
-              'stamped strictly before the rename: the failed move left '
-              'the stamp with the bundle, not in limbo',
-        );
+      final sourceStamp = File(
+        '$stranded/${PerformanceRepository.recoveredAtStampName}',
+      );
+      expect(
+        sourceStamp.readAsStringSync(),
+        boot1Clock.millisecondsSinceEpoch.toString(),
+        reason:
+            'stamped strictly before the rename: the failed move left '
+            'the stamp with the bundle, not in limbo',
+      );
 
-        // A month passes unpowered; boot 2 clears the squatter and the
-        // sweep finishes the move.
-        clock = clock.add(const Duration(days: 40));
-        final boot2Clock = clock;
-        File('${tempDir.path}/exports/recovered').deleteSync();
+      // A month passes unpowered; boot 2 clears the squatter and the
+      // sweep finishes the move.
+      clock = clock.add(const Duration(days: 40));
+      final boot2Clock = clock;
+      File('${tempDir.path}/exports/recovered').deleteSync();
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        final moved = '${tempDir.path}/exports/recovered/perf-stranded';
-        expect(Directory(moved).existsSync(), isTrue);
-        expect(
-          File(
-            '$moved/${PerformanceRepository.recoveredAtStampName}',
-          ).readAsStringSync(),
-          boot2Clock.millisecondsSinceEpoch.toString(),
-          reason: 'the landing re-stamps: the stamp records the arrival',
-        );
+      final moved = '${tempDir.path}/exports/recovered/perf-stranded';
+      expect(Directory(moved).existsSync(), isTrue);
+      expect(
+        File('$moved/${PerformanceRepository.recoveredAtStampName}')
+            .readAsStringSync(),
+        boot2Clock.millisecondsSinceEpoch.toString(),
+        reason: 'the landing re-stamps: the stamp records the arrival',
+      );
 
-        // Later boots keep it: recovered audio is never deleted.
-        clock = clock.add(const Duration(days: 400));
-        await repo.runBootRecovery();
-        expect(Directory(moved).existsSync(), isTrue);
-      },
-    );
+      // Later boots keep it: recovered audio is never deleted.
+      clock = clock.add(const Duration(days: 400));
+      await repo.runBootRecovery();
+      expect(Directory(moved).existsSync(), isTrue);
+    });
 
-    test(
-      'a recovered-slug collision lands the second salvage under a suffixed '
-      'name instead of overwriting the first',
-      () async {
-        final crashed = seedCrashed('perf-crashed');
-        final prior = '${tempDir.path}/exports/recovered/perf-crashed';
-        Directory(prior).createSync(recursive: true);
-        writeNativeSidecar(prior, finalized: true);
-        final marker = File('$prior/master.wav')
-          ..writeAsStringSync('prior recovery');
+    test('a recovered-slug collision lands the second salvage under a suffixed '
+        'name instead of overwriting the first', () async {
+      final crashed = seedCrashed('perf-crashed');
+      final prior = '${tempDir.path}/exports/recovered/perf-crashed';
+      Directory(prior).createSync(recursive: true);
+      writeNativeSidecar(prior, finalized: true);
+      final marker = File('$prior/master.wav')
+        ..writeAsStringSync('prior recovery');
 
-        await repo.runBootRecovery();
+      await repo.runBootRecovery();
 
-        expect(Directory(crashed).existsSync(), isFalse);
-        expect(
-          Directory('$prior-1').existsSync(),
-          isTrue,
-          reason: 'the new salvage takes the suffixed slot',
-        );
-        expect(marker.readAsStringSync(), 'prior recovery');
-      },
-    );
+      expect(Directory(crashed).existsSync(), isFalse);
+      expect(
+        Directory('$prior-1').existsSync(),
+        isTrue,
+        reason: 'the new salvage takes the suffixed slot',
+      );
+      expect(marker.readAsStringSync(), 'prior recovery');
+    });
 
     group('a salvage the app did not survive (#1747)', () {
       late PerformanceRepository bootRepo;
@@ -3298,12 +3150,10 @@ void main() {
       /// Leaves [dir] as [count] salvages that began and never ended: the
       /// app stopped during them.
       void interrupted(String dir, {required int count}) {
-        File(
-          '$dir/${PerformanceRepository.recoveryMarkerName}',
-        ).writeAsStringSync('');
-        File(
-          '$dir/${PerformanceRepository.recoveryAttemptName}',
-        ).writeAsStringSync('$count\n');
+        File('$dir/${PerformanceRepository.recoveryMarkerName}')
+            .writeAsStringSync('');
+        File('$dir/${PerformanceRepository.recoveryAttemptName}')
+            .writeAsStringSync('$count\n');
       }
 
       String recoveredPath(String slug) =>
@@ -3311,9 +3161,9 @@ void main() {
 
       bool has(String dir, String name) => File('$dir/$name').existsSync();
 
-      List<String> attempt(String dir) => File(
-        '$dir/${PerformanceRepository.recoveryAttemptName}',
-      ).readAsLinesSync();
+      List<String> attempt(String dir) =>
+          File('$dir/${PerformanceRepository.recoveryAttemptName}')
+              .readAsLinesSync();
 
       /// Runs [sweep] until its render begins, so the test can look at the
       /// bundle while the salvage runs; the render then completes.
@@ -3337,168 +3187,144 @@ void main() {
         await running;
       }
 
-      test(
-        'one interrupted salvage (a kill, a restart, a power cut) is run '
-        'again, recorded as the second',
-        () async {
-          final dir = seedCrashed('perf-crashed');
-          interrupted(dir, count: 1);
+      test('one interrupted salvage (a kill, a restart, a power cut) is run '
+          'again, recorded as the second', () async {
+        final dir = seedCrashed('perf-crashed');
+        interrupted(dir, count: 1);
 
-          expect(await bootRepo.hasBootRecoveryWork(), isTrue);
-          await whileRendering(
-            bootRepo.runBootRecovery,
-            () => expect(attempt(dir), ['2']),
-          );
+        expect(await bootRepo.hasBootRecoveryWork(), isTrue);
+        await whileRendering(
+          bootRepo.runBootRecovery,
+          () => expect(attempt(dir), ['2']),
+        );
 
-          final recovered = recoveredPath('perf-crashed');
-          expect(Directory(recovered).existsSync(), isTrue);
-          expect(
-            has(recovered, PerformanceRepository.recoveryAttemptName),
-            isFalse,
-          );
-          expect(bootRepo.unrecoveredTakes, isEmpty);
-        },
-      );
+        final recovered = recoveredPath('perf-crashed');
+        expect(Directory(recovered).existsSync(), isTrue);
+        expect(
+          has(recovered, PerformanceRepository.recoveryAttemptName),
+          isFalse,
+        );
+        expect(bootRepo.unrecoveredTakes, isEmpty);
+      });
 
-      test(
-        'two interrupted in a row mark it failed: not run again, its files '
-        'kept, counted as not recovered at every start',
-        () async {
-          final dir = seedCrashed('perf-crashed');
-          interrupted(dir, count: 2);
+      test('two interrupted in a row mark it failed: not run again, its files '
+          'kept, counted as not recovered at every start', () async {
+        final dir = seedCrashed('perf-crashed');
+        interrupted(dir, count: 2);
 
-          expect(await bootRepo.hasBootRecoveryWork(), isFalse);
-          await bootRepo.runBootRecovery();
+        expect(await bootRepo.hasBootRecoveryWork(), isFalse);
+        await bootRepo.runBootRecovery();
 
-          expect(engine.renderBeginCalls, 0);
-          expect(bootRepo.unrecoveredTakes, [dir]);
-          expect(has(dir, PerformanceRepository.recoveryFailedName), isTrue);
-          expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
-          expect(
-            File('$dir/master-001.wav').existsSync(),
-            isTrue,
-            reason: 'its files are kept',
-          );
+        expect(engine.renderBeginCalls, 0);
+        expect(bootRepo.unrecoveredTakes, [dir]);
+        expect(has(dir, PerformanceRepository.recoveryFailedName), isTrue);
+        expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
+        expect(
+          File('$dir/master-001.wav').existsSync(),
+          isTrue,
+          reason: 'its files are kept',
+        );
 
-          await bootRepo.runBootRecovery();
-          expect(engine.renderBeginCalls, 0);
-          expect(bootRepo.unrecoveredTakes, [dir]);
-        },
-      );
+        await bootRepo.runBootRecovery();
+        expect(engine.renderBeginCalls, 0);
+        expect(bootRepo.unrecoveredTakes, [dir]);
+      });
 
-      test(
-        'a stranded bundle the app did not survive is failed too, and stays '
-        'out of the library',
-        () async {
-          final dir = '${tempDir.path}/exports/perf-stranded';
-          Directory(dir).createSync(recursive: true);
-          writeNativeSidecar(dir, finalized: true);
-          interrupted(dir, count: 2);
+      test('a stranded bundle the app did not survive is failed too, and stays '
+          'out of the library', () async {
+        final dir = '${tempDir.path}/exports/perf-stranded';
+        Directory(dir).createSync(recursive: true);
+        writeNativeSidecar(dir, finalized: true);
+        interrupted(dir, count: 2);
 
-          await bootRepo.runBootRecovery();
+        await bootRepo.runBootRecovery();
 
-          expect(engine.renderBeginCalls, 0);
-          expect(bootRepo.unrecoveredTakes, [dir]);
-          expect(
-            (await bootRepo.listCaptures()).map((c) => c.path),
-            isNot(contains(dir)),
-          );
-        },
-      );
+        expect(engine.renderBeginCalls, 0);
+        expect(bootRepo.unrecoveredTakes, [dir]);
+        expect(
+          (await bootRepo.listCaptures()).map((c) => c.path),
+          isNot(contains(dir)),
+        );
+      });
 
-      test(
-        'the salvage is on record while it runs, and its record goes once '
-        'it ends',
-        () async {
-          final dir = seedCrashed('perf-crashed');
+      test('the salvage is on record while it runs, and its record goes once '
+          'it ends', () async {
+        final dir = seedCrashed('perf-crashed');
 
-          await whileRendering(
-            bootRepo.runBootRecovery,
-            () => expect(attempt(dir), ['1']),
-          );
+        await whileRendering(
+          bootRepo.runBootRecovery,
+          () => expect(attempt(dir), ['1']),
+        );
 
-          final recovered = recoveredPath('perf-crashed');
-          expect(Directory(recovered).existsSync(), isTrue);
-          expect(
-            has(recovered, PerformanceRepository.recoveryAttemptName),
-            isFalse,
-          );
-        },
-      );
+        final recovered = recoveredPath('perf-crashed');
+        expect(Directory(recovered).existsSync(), isTrue);
+        expect(
+          has(recovered, PerformanceRepository.recoveryAttemptName),
+          isFalse,
+        );
+      });
 
-      test(
-        'a render that outlives the wait keeps the record until it is done, '
-        'then ends it: the app survived that salvage',
-        () async {
-          final dir = seedCrashed('perf-crashed');
-          engine.renderProgressAfterBegin = const PerformanceRenderProgress(
-            done: false,
-            progressPercent: 10,
-          );
+      test('a render that outlives the wait keeps the record until it is done, '
+          'then ends it: the app survived that salvage', () async {
+        final dir = seedCrashed('perf-crashed');
+        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
 
-          await bootRepo.runBootRecovery(); // the wait times out
-          expect(attempt(dir), ['1']);
+        await bootRepo.runBootRecovery(); // the wait times out
+        expect(attempt(dir), ['1']);
 
-          engine.renderProgress = PerformanceRenderProgress.empty;
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-          expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
-        },
-      );
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
+      });
 
-      test(
-        'a salvage the app survives but that recovers nothing ends its '
-        'record, so the next start tries it again',
-        () async {
-          final dir = '${tempDir.path}/exports/perf-corrupt';
-          Directory(dir).createSync(recursive: true);
-          File('$dir/performance.json').writeAsStringSync('{not json');
+      test('a salvage the app survives but that recovers nothing ends its '
+          'record, so the next start tries it again', () async {
+        final dir = '${tempDir.path}/exports/perf-corrupt';
+        Directory(dir).createSync(recursive: true);
+        File('$dir/performance.json').writeAsStringSync('{not json');
 
-          await bootRepo.runBootRecovery();
+        await bootRepo.runBootRecovery();
 
-          expect(bootRepo.unrecoveredTakes, [dir]);
-          expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
+        expect(bootRepo.unrecoveredTakes, [dir]);
+        expect(has(dir, PerformanceRepository.recoveryAttemptName), isFalse);
+        expect(has(dir, PerformanceRepository.recoveryFailedName), isFalse);
+      });
+
+      test('retryUnrecovered gives a failed take one more salvage: recorded as '
+          'the second, so one more interruption fails it again', () async {
+        final dir = seedCrashed('perf-crashed');
+        interrupted(dir, count: 2);
+        await bootRepo.runBootRecovery();
+        expect(bootRepo.unrecoveredTakes, [dir]);
+
+        await whileRendering(bootRepo.retryUnrecovered, () {
+          expect(attempt(dir), ['2']);
           expect(has(dir, PerformanceRepository.recoveryFailedName), isFalse);
-        },
-      );
+        });
 
-      test(
-        'retryUnrecovered gives a failed take one more salvage: recorded as '
-        'the second, so one more interruption fails it again',
-        () async {
-          final dir = seedCrashed('perf-crashed');
-          interrupted(dir, count: 2);
-          await bootRepo.runBootRecovery();
-          expect(bootRepo.unrecoveredTakes, [dir]);
+        final recovered = recoveredPath('perf-crashed');
+        expect(Directory(recovered).existsSync(), isTrue);
+        expect(bootRepo.unrecoveredTakes, isEmpty);
+        expect(engine.lastRenderCaptureDir, dir);
+      });
 
-          await whileRendering(bootRepo.retryUnrecovered, () {
-            expect(attempt(dir), ['2']);
-            expect(has(dir, PerformanceRepository.recoveryFailedName), isFalse);
-          });
+      test('a bundle whose marks cannot be written or read neither throws nor '
+          'is lost: still counted, its files kept', () async {
+        final dir = seedCrashed('perf-crashed');
+        interrupted(dir, count: 2);
+        Process.runSync('chmod', ['555', dir]);
+        addTearDown(() => Process.runSync('chmod', ['755', dir]));
 
-          final recovered = recoveredPath('perf-crashed');
-          expect(Directory(recovered).existsSync(), isTrue);
-          expect(bootRepo.unrecoveredTakes, isEmpty);
-          expect(engine.lastRenderCaptureDir, dir);
-        },
-      );
+        await bootRepo.runBootRecovery();
+        expect(bootRepo.unrecoveredTakes, [dir]);
 
-      test(
-        'a bundle whose marks cannot be written or read neither throws nor '
-        'is lost: still counted, its files kept',
-        () async {
-          final dir = seedCrashed('perf-crashed');
-          interrupted(dir, count: 2);
-          Process.runSync('chmod', ['555', dir]);
-          addTearDown(() => Process.runSync('chmod', ['755', dir]));
-
-          await bootRepo.runBootRecovery();
-          expect(bootRepo.unrecoveredTakes, [dir]);
-
-          await bootRepo.retryUnrecovered();
-          expect(Directory(dir).existsSync(), isTrue);
-          expect(File('$dir/master-001.wav').existsSync(), isTrue);
-        },
-      );
+        await bootRepo.retryUnrecovered();
+        expect(Directory(dir).existsSync(), isTrue);
+        expect(File('$dir/master-001.wav').existsSync(), isTrue);
+      });
 
       test('an attempt record that does not read counts as one', () async {
         final dir = seedCrashed('perf-crashed');
@@ -3510,25 +3336,22 @@ void main() {
         expect(await bootRepo.hasBootRecoveryWork(), isTrue);
       });
 
-      test(
-        'retryUnrecovered while a render still runs salvages nothing, and '
-        'the takes stay marked and counted',
-        () async {
-          final dir = seedCrashed('perf-crashed');
-          interrupted(dir, count: 2);
-          await bootRepo.runBootRecovery();
-          engine.renderProgress = const PerformanceRenderProgress(
-            done: false,
-            progressPercent: 10,
-          );
+      test('retryUnrecovered while a render still runs salvages nothing, and '
+          'the takes stay marked and counted', () async {
+        final dir = seedCrashed('perf-crashed');
+        interrupted(dir, count: 2);
+        await bootRepo.runBootRecovery();
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
 
-          await bootRepo.retryUnrecovered();
+        await bootRepo.retryUnrecovered();
 
-          expect(engine.renderBeginCalls, 0);
-          expect(has(dir, PerformanceRepository.recoveryFailedName), isTrue);
-          expect(bootRepo.unrecoveredTakes, [dir]);
-        },
-      );
+        expect(engine.renderBeginCalls, 0);
+        expect(has(dir, PerformanceRepository.recoveryFailedName), isTrue);
+        expect(bootRepo.unrecoveredTakes, [dir]);
+      });
 
       test(
         'a take counted for another reason (a damaged sidecar) stays counted '
@@ -3641,38 +3464,34 @@ void main() {
       },
     );
 
-    test(
-      'refuses the reserved name "recovered" — case-insensitively, since a '
-      'case-insensitive exports volume would make the renamed take BE the '
-      'salvage area, adopted by future salvages '
-      '(#679 r5)',
-      () async {
-        final dir = Directory('${root.path}/perf-a')
-          ..createSync(recursive: true);
-        final marker = File('${dir.path}/master.wav')
-          ..writeAsStringSync('the take');
+    test('refuses the reserved name "recovered" — case-insensitively, since a '
+        'case-insensitive exports volume would make the renamed take BE the '
+        'salvage area, adopted by future salvages '
+        '(#679 r5)', () async {
+      final dir = Directory('${root.path}/perf-a')..createSync(recursive: true);
+      final marker = File('${dir.path}/master.wav')
+        ..writeAsStringSync('the take');
 
-        // The same refusal path as an unusable name — the UI pre-validates
-        // with performanceCaptureSlug, so both surfaces show the inline
-        // invalid-name error instead of a dead Save.
-        await expectLater(
-          repo.renameCapture(dir.path, 'recovered'),
-          throwsArgumentError,
-        );
-        await expectLater(
-          repo.renameCapture(dir.path, 'Recovered'),
-          throwsArgumentError,
-        );
-        await expectLater(
-          repo.renameCapture(dir.path, '  recovered  '),
-          throwsArgumentError,
-        );
+      // The same refusal path as an unusable name — the UI pre-validates
+      // with performanceCaptureSlug, so both surfaces show the inline
+      // invalid-name error instead of a dead Save.
+      await expectLater(
+        repo.renameCapture(dir.path, 'recovered'),
+        throwsArgumentError,
+      );
+      await expectLater(
+        repo.renameCapture(dir.path, 'Recovered'),
+        throwsArgumentError,
+      );
+      await expectLater(
+        repo.renameCapture(dir.path, '  recovered  '),
+        throwsArgumentError,
+      );
 
-        expect(dir.existsSync(), isTrue);
-        expect(marker.readAsStringSync(), 'the take');
-        expect(Directory('${root.path}/recovered').existsSync(), isFalse);
-      },
-    );
+      expect(dir.existsSync(), isTrue);
+      expect(marker.readAsStringSync(), 'the take');
+      expect(Directory('${root.path}/recovered').existsSync(), isFalse);
+    });
 
     test(
       'throws PerformanceNameCollision when the target slug already exists, '
@@ -3730,16 +3549,13 @@ void main() {
       );
       expect(guarded.armedDirectory, isNotNull);
 
-      expect(
-        guards.blockers(GuardKind.eject, const GuardScope.removable(3)),
-        [
-          const ActiveOperation(
-            kind: GuardKind.capture,
-            scope: GuardScope.removable(3),
-            purpose: PerformanceRepository.capturePurpose,
-          ),
-        ],
-      );
+      expect(guards.blockers(GuardKind.eject, const GuardScope.removable(3)), [
+        const ActiveOperation(
+          kind: GuardKind.capture,
+          scope: GuardScope.removable(3),
+          purpose: PerformanceRepository.capturePurpose,
+        ),
+      ]);
       expect(
         guards.blockers(GuardKind.eject, const GuardScope.removable(4)),
         isEmpty,
@@ -3875,7 +3691,7 @@ class _InputsUnreadable extends FakeStorageIo {
 /// An engine whose volume frees the room of every unlisted part a cut
 /// conversion left in [dir] once it is deleted.
 class _StrayAwareEngine extends FakePerformanceEngine {
-  _StrayAwareEngine(this.dir, {required this.free});
+  new(this.dir, {required this.free});
 
   final String dir;
   final int free;

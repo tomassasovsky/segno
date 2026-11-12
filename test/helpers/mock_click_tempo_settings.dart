@@ -16,33 +16,27 @@ class MockClickTempoSettings extends Mock
         ClickVolumeControl,
         ClickModeControl,
         RecordStartControl {
-  MockClickTempoSettings({double? clickVolume = 1}) {
+  new({double? clickVolume = 1}) {
     when(() => recordStartSnapshot).thenReturn(null);
     when(() => confirmedRecordStart).thenReturn(null);
-    when(
-      () => recordStartLifetime,
-    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => recordStartLifetime)
+        .thenReturn((sessionRevision: 0, mixGeneration: 0));
     when(() => recordStartRevision).thenReturn(0);
-    when(
-      () => ordinaryRecordStartChanges,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => ordinaryRecordStartChanges)
+        .thenAnswer((_) => const Stream.empty());
     when(() => clickModeSnapshot).thenReturn(null);
     when(() => durableClickMode).thenReturn(ClickMode.off);
-    when(
-      () => clickModeLifetime,
-    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => clickModeLifetime)
+        .thenReturn((sessionRevision: 0, mixGeneration: 0));
     when(() => clickModeRevision).thenReturn(0);
-    when(
-      () => ordinaryClickModeChanges,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => ordinaryClickModeChanges)
+        .thenAnswer((_) => const Stream.empty());
     when(() => this.clickVolume).thenReturn(clickVolume);
     when(() => durableClickVolume).thenReturn(clickVolume ?? 1);
-    when(
-      () => clickVolumeLifetime,
-    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
-    when(
-      () => ordinaryClickVolumeChanges,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => clickVolumeLifetime)
+        .thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => ordinaryClickVolumeChanges)
+        .thenAnswer((_) => const Stream.empty());
     when(() => state).thenAnswer(
       (_) => TempoState(
         clickVolume: this.clickVolume ?? 1,

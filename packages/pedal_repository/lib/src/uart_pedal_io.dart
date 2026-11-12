@@ -42,7 +42,7 @@ abstract interface class UartPedalReader {
 class NativeUartPedalIo implements UartPedalIo {
   /// Uses [_allocator] for native buffers, allowing ownership to be checked
   /// with a counting allocator without opening a device.
-  const NativeUartPedalIo({this._allocator = malloc});
+  const new({this._allocator = malloc});
 
   final Allocator _allocator;
 
@@ -105,7 +105,7 @@ class NativeUartPedalIo implements UartPedalIo {
 /// The parent isolate owns the allocation, ports and reader handle. A killed
 /// isolate never unwinds a finally block, so it must not own a native buffer.
 class _NativeReader implements UartPedalReader {
-  _NativeReader(this._buffer, this._allocator) {
+  new(this._buffer, this._allocator) {
     _messagesSub = _messages.listen((dynamic message) {
       if (_chunks.isClosed) return;
       if (message is Uint8List) {
@@ -178,7 +178,7 @@ class _NativeReader implements UartPedalReader {
 const _readCapacity = 64;
 
 final class _ReaderArgs {
-  const _ReaderArgs(this.sendPort, this.fd, this.bufferAddress);
+  const new(this.sendPort, this.fd, this.bufferAddress);
   final SendPort sendPort;
   final int fd;
   final int bufferAddress;

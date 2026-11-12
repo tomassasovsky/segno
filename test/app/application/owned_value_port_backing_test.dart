@@ -69,10 +69,7 @@ void main() {
       );
       expect(f.settings.mixOwner.live.level, closeTo(mixerGainAt(0.5), 1e-9));
       expect(f.settings.mix.level, closeTo(1, 1e-9));
-      expect(
-        f.engine.backingState().level,
-        closeTo(mixerGainAt(0.5), 1e-6),
-      );
+      expect(f.engine.backingState().level, closeTo(mixerGainAt(0.5), 1e-6));
 
       final pan = port.origin(const BackingPanTarget());
       expect(

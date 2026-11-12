@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// restores its exact opening value, including an older noncanonical value.
 class NamedValueEndpointChoice extends StatefulWidget {
   /// Creates a compact four-choice endpoint.
-  const NamedValueEndpointChoice({
+  const new({
     required this.target,
     required this.value,
     required this.width,

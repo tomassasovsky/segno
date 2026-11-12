@@ -8,7 +8,7 @@ import 'package:fx_catalogue/src/fx_preset.dart';
 /// lists them.
 class FxCatalogue {
   /// Creates an [FxCatalogue].
-  const FxCatalogue({required this.families});
+  const new({required this.families});
 
   /// An empty catalogue — what a build with no bundled assets loads.
   static const FxCatalogue empty = FxCatalogue(families: []);
@@ -46,7 +46,7 @@ class FxCatalogue {
 /// `FlutterError` for a missing key, and an Error is not a thing to catch.
 class FxCatalogueLoader {
   /// Creates an [FxCatalogueLoader] reading through [bundle].
-  const FxCatalogueLoader({required AssetBundle bundle}) : _assets = bundle;
+  const new({required AssetBundle bundle}) : _assets = bundle;
 
   final AssetBundle _assets;
 

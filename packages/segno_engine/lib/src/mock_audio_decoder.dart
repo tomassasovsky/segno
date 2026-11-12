@@ -7,14 +7,14 @@ import 'package:segno_engine/src/backing.dart';
 /// decode of it would return.
 class MockAudioFile {
   /// A playable file.
-  const MockAudioFile({
+  const new({
     required this.sourceRate,
     required this.sourceFrames,
     this.channels = 2,
   }) : failure = null;
 
   /// A file every decode and probe refuses with [failure].
-  const MockAudioFile.refused(EngineResult this.failure)
+  const new refused(EngineResult this.failure)
     : sourceRate = 0,
       sourceFrames = 0,
       channels = 0;
@@ -42,7 +42,7 @@ class MockAudioFile {
 /// every one freed, so a test can prove nothing leaks.
 class MockAudioDecoder implements AudioDecoder {
   /// Creates a [MockAudioDecoder] over [files].
-  MockAudioDecoder({Map<String, MockAudioFile>? files})
+  new({Map<String, MockAudioFile>? files})
     : files = files ?? <String, MockAudioFile>{};
 
   /// The known files, by path.
@@ -137,7 +137,7 @@ class MockAudioDecoder implements AudioDecoder {
 }
 
 class _MockPayload implements DecodedAudioPayload {
-  _MockPayload(this._decoder, this._frames);
+  new(this._decoder, this._frames);
 
   final MockAudioDecoder _decoder;
   final int _frames;

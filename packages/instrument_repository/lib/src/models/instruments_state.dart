@@ -6,7 +6,7 @@ import 'package:instrument_repository/src/route_compiler.dart';
 /// definitions plus everything runtime about them.
 class InstrumentsState extends Equatable {
   /// Creates an [InstrumentsState].
-  const InstrumentsState({
+  const new({
     this.workingCopy = const InstrumentsWorkingCopy(),
     this.unavailable = const {},
     this.voices = const {},

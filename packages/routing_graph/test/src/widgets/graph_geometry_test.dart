@@ -55,12 +55,7 @@ void main() {
     test('fans each set output bit from the rail', () {
       final edges = fanEdges(
         sends: const [
-          GraphSend(
-            originX: 100,
-            originY: 50,
-            mask: 0x3,
-            color: _wet,
-          ),
+          GraphSend(originX: 100, originY: 50, mask: 0x3, color: _wet),
         ],
         railX: 200,
         outX: 300,
@@ -93,12 +88,7 @@ void main() {
     test('omits the rail hop when the origin already sits past the rail', () {
       final edges = fanEdges(
         sends: const [
-          GraphSend(
-            originX: 205,
-            originY: 50,
-            mask: 0x1,
-            color: _wet,
-          ),
+          GraphSend(originX: 205, originY: 50, mask: 0x1, color: _wet),
         ],
         railX: 200,
         outX: 300,
@@ -120,12 +110,7 @@ void main() {
       const dryY = 79.0; // node bottom + offset, clears the cards
       final edges = fanEdges(
         sends: const [
-          GraphSend(
-            originX: 150,
-            originY: wetY,
-            mask: 0x1,
-            color: _wet,
-          ),
+          GraphSend(originX: 150, originY: wetY, mask: 0x1, color: _wet),
           GraphSend(
             originX: 100,
             originY: dryY,

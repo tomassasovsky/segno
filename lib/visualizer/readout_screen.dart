@@ -47,9 +47,7 @@ typedef ReadoutCalibration = ({({double x, double y}) target, String label});
 /// the way back for a touch on the readout.
 class ReadoutScreenLink {
   /// Creates a [ReadoutScreenLink]; nothing is published until [start].
-  ReadoutScreenLink({
-    this._directory = const IsolateNameServerDirectory(),
-  });
+  new({this._directory = const IsolateNameServerDirectory()});
 
   final PortDirectory _directory;
   ReceivePort? _inbox;
@@ -68,9 +66,7 @@ class ReadoutScreenLink {
   ));
 
   /// The latest performance readout.
-  final readout = ValueNotifier<PerformanceReadout>(
-    const PerformanceReadout(),
-  );
+  final readout = ValueNotifier<PerformanceReadout>(const PerformanceReadout());
 
   /// The calibration step on screen, or `null` when the readout is not being
   /// calibrated.
@@ -201,7 +197,7 @@ class ReadoutScreenLink {
 /// screen wants it drawn, or the readout's own background with nothing on it.
 class ReadoutScreen extends StatelessWidget {
   /// Creates a [ReadoutScreen] drawing [link]'s state.
-  const ReadoutScreen({required this.link, super.key});
+  const new({required this.link, super.key});
 
   /// The readout's end of the screen link.
   final ReadoutScreenLink link;
@@ -240,11 +236,7 @@ class ReadoutScreen extends StatelessWidget {
 /// that is the space the touch calibration matrix maps onto.
 class ReadoutCalibrationFace extends StatelessWidget {
   /// Creates a [ReadoutCalibrationFace].
-  const ReadoutCalibrationFace({
-    required this.calibration,
-    required this.onTap,
-    super.key,
-  });
+  const new({required this.calibration, required this.onTap, super.key});
 
   /// The step on screen.
   final ReadoutCalibration calibration;

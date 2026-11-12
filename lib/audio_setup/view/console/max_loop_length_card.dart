@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// A row that opens in place onto a chip grid of the offered caps.
 class MaxLoopLengthCard extends StatefulWidget {
   /// Creates a [MaxLoopLengthCard].
-  const MaxLoopLengthCard({super.key});
+  const new({super.key});
 
   @override
   State<MaxLoopLengthCard> createState() => _MaxLoopLengthCardState();

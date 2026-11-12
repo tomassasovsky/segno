@@ -40,9 +40,7 @@ void main() {
         LooperMeterState.playing: Color(0xFF00FF00),
         LooperMeterState.muted: Color(0xFFFFFFFF),
       },
-      muteMeterColors: {
-        LooperMeterState.playing: Color(0xFF0000FF),
-      },
+      muteMeterColors: {LooperMeterState.playing: Color(0xFF0000FF)},
       toolbarIconColor: Color(0xFFB0B3BC),
     );
 
@@ -90,10 +88,7 @@ void main() {
       );
       // A state the table omits resolves to transparent, matching the
       // meter/indicator tables rather than silently substituting an accent.
-      expect(
-        theme.waveformColor(LooperMeterState.muted),
-        Colors.transparent,
-      );
+      expect(theme.waveformColor(LooperMeterState.muted), Colors.transparent);
     });
 
     test('copyWith overrides only the given fields', () {

@@ -7,7 +7,7 @@ import 'package:segno_engine/segno_engine.dart' show kMaxChannels, kMaxLanes;
 /// Detached live controls. Recorded source images are deliberately separate.
 class MixSettingsSnapshot extends Equatable {
   /// Copies the maps so an awaited transaction cannot observe caller edits.
-  MixSettingsSnapshot({
+  new({
     Map<int, double> trackLevels = const {},
     Map<int, double> trackPans = const {},
     Map<(int, int), double> laneLevels = const {},
@@ -32,7 +32,7 @@ class MixSettingsSnapshot extends Equatable {
   /// The live controls a session will restore, excluding recorded images and
   /// temporary Solo. Used before session replacement touches the active rig.
   /// Throws if an explicit active count excludes a saved lane.
-  factory MixSettingsSnapshot.fromRig(SessionRig rig) {
+  factory fromRig(SessionRig rig) {
     for (final track in rig.tracks) {
       final count = rig.laneCounts[track.channel];
       if (count != null && track.lanes.any((lane) => lane.lane >= count)) {

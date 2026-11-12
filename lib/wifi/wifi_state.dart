@@ -3,7 +3,7 @@ part of 'wifi_cubit.dart';
 /// State for [WifiCubit].
 class WifiState extends Equatable {
   /// Creates a [WifiState].
-  const WifiState({
+  const new({
     this.supported = false,
     this.status = WifiStatus.unsupported,
     this.networks = const [],

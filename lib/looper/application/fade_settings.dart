@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// image, keeps the controller's authored Released value.
 class FadeSettings {
   /// Builds the owner over [repository]'s lifetime and [settings]' record.
-  FadeSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
     required this._blocked,
@@ -82,17 +82,14 @@ class FadeSettings {
   /// [deltaMs] within 0.5–30 s. Applied to the live value when the edit runs,
   /// so rapid steps queued behind a write each count. Stepping an inherited
   /// track time creates its override; an edge step is a no-op.
-  Future<void> step({required int deltaMs, int? channel}) => _edit(
-    channel,
-    relative: true,
-    (live) {
-      final current = channel == null
-          ? live.defaultMs
-          : live.effectiveMs(channel);
-      final next = (current + deltaMs).clamp(500, 30000);
-      return next == current ? null : (milliseconds: next);
-    },
-  );
+  Future<void> step({required int deltaMs, int? channel}) =>
+      _edit(channel, relative: true, (live) {
+        final current = channel == null
+            ? live.defaultMs
+            : live.effectiveMs(channel);
+        final next = (current + deltaMs).clamp(500, 30000);
+        return next == current ? null : (milliseconds: next);
+      });
 
   /// Accepts one controller value for Default ([channel] null) or a track,
   /// with an optional authored durable Released value. Completes false,

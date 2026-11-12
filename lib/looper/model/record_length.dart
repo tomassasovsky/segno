@@ -3,8 +3,8 @@ import 'package:looper_repository/looper_repository.dart';
 
 /// A future-recording preset for the default or one fixed track.
 final class RecordLengthAddress extends Equatable {
-  const RecordLengthAddress.defaults() : channel = null;
-  const RecordLengthAddress.track(int this.channel);
+  const new defaults() : channel = null;
+  const new track(int this.channel);
 
   final int? channel;
   bool get isValid => channel == null || (channel! >= 0 && channel! < 8);
@@ -15,7 +15,7 @@ final class RecordLengthAddress extends Equatable {
 
 /// The looper mode, stored beside the length presets it couples with.
 final class LooperModeAddress extends Equatable {
-  const LooperModeAddress();
+  const new();
 
   @override
   List<Object?> get props => const [];
@@ -25,7 +25,7 @@ final class LooperModeAddress extends Equatable {
 /// the Record length owner holds.
 final class RecordLengthVector extends Equatable {
   /// Copies overrides so a caller cannot change an accepted vector.
-  RecordLengthVector({
+  new({
     required this.defaultBars,
     required Map<int, int> trackOverrides,
     required this.mode,
@@ -79,7 +79,7 @@ final class RecordLengthVector extends Equatable {
 
 /// Confirmed presets and their current edit eligibility.
 final class RecordLengthSnapshot extends Equatable {
-  RecordLengthSnapshot({
+  new({
     required this.defaultBars,
     required Map<int, int> trackOverrides,
     required this.mode,
@@ -109,7 +109,7 @@ typedef RecordLengthLifetime = ({int sessionRevision, int mixGeneration});
 enum RecordLengthStatus { applied, rejected, superseded, recoveryRequired }
 
 final class RecordLengthOutcome {
-  const RecordLengthOutcome(
+  const new(
     this.status, {
     this.deferred = false,
     this.engineResult,

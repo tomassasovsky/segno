@@ -103,7 +103,7 @@ enum PedalLooperMode {
 /// logical state for all eight tracks and physical state for all ten pills.
 class PedalStateFrame extends Equatable {
   /// Creates a [PedalStateFrame].
-  PedalStateFrame({
+  new({
     required this.globalColor,
     required List<PedalTrackLed> trackLeds,
     required this.activeBank,
@@ -175,7 +175,7 @@ class PedalStateFrame extends Equatable {
   ///
   /// With [goodbye] set this is the shutdown frame segno sends on close; the
   /// firmware darkens its LEDs on receipt.
-  factory PedalStateFrame.blank({bool goodbye = false}) => PedalStateFrame(
+  factory blank({bool goodbye = false}) => PedalStateFrame(
     globalColor: GlobalColor.off,
     trackLeds: List<PedalTrackLed>.filled(trackCount, PedalTrackLed.off),
     activeBank: 0,

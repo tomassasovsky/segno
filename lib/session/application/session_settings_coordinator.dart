@@ -17,7 +17,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// It borrows those owners; it does not retain a second durable settings cache.
 class SessionSettingsCoordinator {
   /// Uses the same concrete application owners as UI and controller commands.
-  const SessionSettingsCoordinator({
+  const new({
     required this._looper,
     required this._mix,
     required this._fx,

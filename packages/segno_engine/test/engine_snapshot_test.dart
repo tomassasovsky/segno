@@ -422,10 +422,10 @@ void main() {
       expect(landed.hashCode, isNot(pending.hashCode));
       track.ref.transpose_st = -12;
       track.ref.transpose_effective_st = -12;
-      expect(
-        TrackSnapshot.fromNative(track.ref).transpose,
-        (stored: -12, effective: -12),
-      );
+      expect(TrackSnapshot.fromNative(track.ref).transpose, (
+        stored: -12,
+        effective: -12,
+      ));
     });
 
     test('sync divisor is projected from the native field and compared', () {
@@ -522,10 +522,7 @@ void main() {
         base.copyWith(pitchMode: PitchMode.followsSpeed).pitchMode,
         PitchMode.followsSpeed,
       );
-      expect(
-        base.copyWith(recordedLengthFrames: 8000),
-        isNot(base),
-      );
+      expect(base.copyWith(recordedLengthFrames: 8000), isNot(base));
       for (final (code, state) in [
         (0, TempoFollowState.free),
         (2, TempoFollowState.noGrid),
@@ -1345,9 +1342,8 @@ void main() {
         'lib/src/engine_snapshot.dart',
         'EngineSnapshot',
       );
-      final source = _packageFile(
-        'lib/src/engine_snapshot.dart',
-      ).readAsStringSync();
+      final source = _packageFile('lib/src/engine_snapshot.dart')
+          .readAsStringSync();
       final start = source.indexOf('  EngineSnapshot copyWith({');
       expect(start, isNot(-1), reason: 'copyWith not found');
       final end = source.indexOf('  }) => EngineSnapshot(', start);

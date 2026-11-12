@@ -35,7 +35,7 @@ import 'package:touch_calibration_client/touch_calibration_client.dart';
 /// the player says so here.
 class DisplaysSettingsPage extends StatefulWidget {
   /// Creates a [DisplaysSettingsPage].
-  const DisplaysSettingsPage({super.key});
+  const new({super.key});
 
   /// The cards' top in the frame's main area, under the title row.
   static const double top = 120;
@@ -121,7 +121,7 @@ class _DisplaysSettingsPageState extends State<DisplaysSettingsPage> {
 }
 
 class _DisplayCards extends StatefulWidget {
-  const _DisplayCards();
+  const new();
 
   @override
   State<_DisplayCards> createState() => _DisplayCardsState();
@@ -180,7 +180,7 @@ class _DisplayCardsState extends State<_DisplayCards> {
 /// its brightness and, when touch calibration is offered, Calibrate touch.
 class DisplayCard extends StatelessWidget {
   /// Creates a [DisplayCard].
-  const DisplayCard({
+  const new({
     required this.role,
     required this.title,
     required this.roleLabel,
@@ -289,7 +289,7 @@ class DisplayCard extends StatelessWidget {
 /// A small drawing of the panel: its outline with its size inside, dimmed
 /// out while it is unplugged.
 class _DisplayPreview extends StatelessWidget {
-  const _DisplayPreview({required this.label, required this.connected});
+  const new({required this.label, required this.connected});
 
   final String label;
   final bool connected;
@@ -333,11 +333,7 @@ class _DisplayPreview extends StatelessWidget {
 /// brightness. A double tap returns to [kDefaultDisplayBrightness].
 class DisplayBrightnessSlider extends StatelessWidget {
   /// Creates a [DisplayBrightnessSlider] for [role]'s panel.
-  const DisplayBrightnessSlider({
-    required this.role,
-    required this.width,
-    super.key,
-  });
+  const new({required this.role, required this.width, super.key});
 
   /// The panel.
   final DisplayRole role;
@@ -420,7 +416,7 @@ class DisplayBrightnessSlider extends StatelessWidget {
 }
 
 class _DimWhileIdle extends StatelessWidget {
-  const _DimWhileIdle();
+  const new();
 
   void _choose(BuildContext context, int seconds) {
     final cubit = context.read<IdleDimCubit>();
@@ -476,7 +472,7 @@ class _DimWhileIdle extends StatelessWidget {
 /// The screen settings the console had before the accepted Displays page,
 /// kept in one row under Dim while idle (open question Q4's default).
 class _DisplayOptions extends StatelessWidget {
-  const _DisplayOptions();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -530,9 +526,7 @@ class _DisplayOptions extends StatelessWidget {
                     semanticLabel: l10n.displaysTrackWindow,
                     value: waveform.enabled,
                     onChanged: (on) => unawaited(
-                      context.read<WaveformWindowCubit>().setEnabled(
-                        value: on,
-                      ),
+                      context.read<WaveformWindowCubit>().setEnabled(value: on),
                     ),
                   ),
                   second: LoopSwitch(
@@ -600,7 +594,7 @@ class _DisplayOptions extends StatelessWidget {
 /// One row of the Display options panel: two controls, each in half the
 /// width, left-aligned.
 class _OptionsRow extends StatelessWidget {
-  const _OptionsRow({required this.first, required this.second});
+  const new({required this.first, required this.second});
 
   final Widget first;
   final Widget second;

@@ -161,10 +161,7 @@ void main() {
       expect(catalog.cache.appVersion, '1.0.0');
       expect(catalog.cache.keys, hasLength(2));
       // The cache is valid against the same file keys it was built from.
-      expect(
-        catalog.cache.isValidFor('1.0.0', catalog.cache.keys),
-        isTrue,
-      );
+      expect(catalog.cache.isValidFor('1.0.0', catalog.cache.keys), isTrue);
       catalog.dispose();
     });
   });

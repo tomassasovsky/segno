@@ -13,7 +13,7 @@ import 'package:segno_engine/segno_engine_ffi.dart';
 /// [MidiClient] and [MidiOutClient] use. Records call order in [calls] so
 /// dispose-ordering is testable.
 class FakeSegnoEngineBindings implements MidiBindings {
-  FakeSegnoEngineBindings({
+  new({
     List<MidiDevice> devices = const [],
     this.createReturnsNull = false,
     this.openResult = 0,

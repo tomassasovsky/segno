@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// here too.
 class FootTopBar extends StatelessWidget {
   /// Creates a [FootTopBar].
-  const FootTopBar({
+  const new({
     required this.exitKey,
     required this.onExit,
     this.status,
@@ -47,9 +47,7 @@ class FootTopBar extends StatelessWidget {
       height: height,
       child: NoticeBar(
         child: Padding(
-          padding: const EdgeInsetsDirectional.symmetric(
-            horizontal: sideInset,
-          ),
+          padding: const EdgeInsetsDirectional.symmetric(horizontal: sideInset),
           child: TopBarLayout(
             leading: IconButton.outlined(
               key: exitKey,

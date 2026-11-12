@@ -22,17 +22,16 @@ import 'package:session_repository/session_repository.dart';
 import '../../helpers/helpers.dart';
 import '../helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 void main() {
   late AppLocalizations l10n;
@@ -109,21 +108,17 @@ void main() {
           const SessionMixdown(frames: 48000 * 61, sampleRate: 48000, bytes: 4),
     );
     when(() => sessions.mixdownOf('s-empty')).thenAnswer((_) async => null);
-    when(
-      () => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => null);
+    when(() => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => null);
     when(() => sessions.stopAudition()).thenReturn(EngineResult.ok);
-    when(
-      () => sessions.auditionState(),
-    ).thenReturn(const AuditionState(frames: 480000, position: 96000));
+    when(() => sessions.auditionState())
+        .thenReturn(const AuditionState(frames: 480000, position: 96000));
     performance = _MockPerformance();
     when(() => performance.rendering).thenReturn(false);
-    when(
-      () => performance.listCaptures(),
-    ).thenAnswer((_) async => [single, recovered]);
-    when(
-      () => performance.readPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => Float32List.fromList([0.2, 0.9, 0.4]));
+    when(() => performance.listCaptures())
+        .thenAnswer((_) async => [single, recovered]);
+    when(() => performance.readPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => Float32List.fromList([0.2, 0.9, 0.4]));
     pedalEvents = StreamController<PedalEvent>.broadcast();
     pedal = _MockPedalRepository();
     when(() => pedal.events).thenAnswer((_) => pedalEvents.stream);
@@ -420,10 +415,7 @@ void main() {
     await tester.tap(find.byKey(const Key('library_export_keep_both')));
     await tester.pumpAndSettle();
 
-    expect(
-      drive.files,
-      contains('Segno/Performances/Evening loop (2).wav'),
-    );
+    expect(drive.files, contains('Segno/Performances/Evening loop (2).wav'));
     expect(find.text('Evening loop (2).wav'), findsOneWidget);
   });
 
@@ -486,9 +478,7 @@ void main() {
   testWidgets("Sessions lists each session's mixdown with its exports", (
     tester,
   ) async {
-    when(() => sessions.exportMixdown('s-gig', any())).thenAnswer((
-      call,
-    ) async {
+    when(() => sessions.exportMixdown('s-gig', any())).thenAnswer((call) async {
       File(call.positionalArguments[1] as String).writeAsBytesSync([5]);
     });
     await openAudio(tester);
@@ -534,9 +524,7 @@ void main() {
     expect(find.text(l10n.libraryListenStop), findsOneWidget);
 
     looperStates.add(
-      const LooperState(
-        tracks: [Track(state: TrackState.recording)],
-      ),
+      const LooperState(tracks: [Track(state: TrackState.recording)]),
     );
     await tester.pump();
     await tester.pump();

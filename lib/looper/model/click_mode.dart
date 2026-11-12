@@ -4,7 +4,7 @@ import 'package:looper_repository/looper_repository.dart';
 /// Confirmed Hear click choice and current capture eligibility.
 final class ClickModeSnapshot extends Equatable {
   /// Creates an immutable accepted mode snapshot.
-  const ClickModeSnapshot({required this.mode, required this.captureLocked});
+  const new({required this.mode, required this.captureLocked});
 
   /// The accepted audible policy, independent of output routing and volume.
   final ClickMode mode;
@@ -28,7 +28,7 @@ enum ClickModeStatus { applied, rejected, superseded, recoveryRequired }
 /// Persistence and callback receipt, without treating enqueue as acceptance.
 final class ClickModeOutcome {
   /// Creates an outcome for one attempted transaction.
-  const ClickModeOutcome(
+  const new(
     this.status, {
     this.deferred = false,
     this.engineResult,

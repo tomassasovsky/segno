@@ -44,7 +44,7 @@ import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The accepted expression half of External pedals: what the pedal is doing,
 /// what it was taught, and what it sweeps.
@@ -81,12 +81,10 @@ void main() {
 
   setUp(() {
     looper = _MockLooperRepository();
-    when(() => looper.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.clickModeCaptureLocked).thenReturn(false);
     when(() => looper.clickModeSettled).thenReturn(true);
     looperStates = StreamController<LooperState>.broadcast();
@@ -106,9 +104,8 @@ void main() {
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.mixSettingsSnapshot).thenAnswer((_) => currentMix);
     when(() => looper.laneCount(any())).thenReturn(1);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
@@ -132,16 +129,13 @@ void main() {
     when(() => looper.allTrackChains()).thenReturn(const {});
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => looper.recordTimingCaptureLocked).thenAnswer(
-      (_) => timingCapturing,
-    );
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => looper.recordTimingCaptureLocked)
+        .thenAnswer((_) => timingCapturing);
     when(() => looper.recordTimingSettingsSettled).thenReturn(true);
     when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
     when(() => looper.defaultRecordTiming).thenAnswer((_) => confirmedTiming);
@@ -153,9 +147,8 @@ void main() {
         trackOverrides: const <int, RecordTiming>{},
       ),
     );
-    when(() => looper.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -179,9 +172,8 @@ void main() {
         quantizeDiv: rememberedDivision,
       ),
     );
-    when(() => looper.settleLengthSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
@@ -190,15 +182,12 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setVolume(any(), channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => looper.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setVolume(any(), channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
   });
 
   setUpAll(() {
@@ -431,9 +420,7 @@ void main() {
 
     expressionTestWidgets(
       'a pedal that has moved but not been taught says so',
-      (
-        tester,
-      ) async {
+      (tester) async {
         await pump(tester);
         await sweep(tester, 64);
         expect(textOf('expression_status'), 'Calibration needed');
@@ -534,17 +521,13 @@ void main() {
       // The sweep that opened the view was an ordinary one and did write.
       clearInteractions(looper);
       await sweep(tester, 127);
-      verifyNever(
-        () => looper.applyMixSettings(any()),
-      );
+      verifyNever(() => looper.applyMixSettings(any()));
 
       // And dispatch comes back when the view closes.
       await tap(tester, 'expression_calibrate_cancel');
       await sweep(tester, 100);
       await sweep(tester, 101);
-      verify(
-        () => looper.applyMixSettings(any()),
-      ).called(1);
+      verify(() => looper.applyMixSettings(any())).called(1);
     });
 
     expressionTestWidgets('cancelling leaves the taught travel alone', (
@@ -891,35 +874,34 @@ void main() {
       },
     );
 
-    expressionTestWidgets(
-      'Multi offers independent track timing',
-      (tester) async {
-        const target = TrackRecordTimingTarget(0);
-        await pump(tester);
-        await tap(tester, 'expression_add');
-        await tap(tester, 'expression_kind_recordedTrack');
-        await tap(tester, 'expression_destination_track:0');
-        await tap(tester, targetKey(target));
-        expect(
-          tester
-              .widget<LoopSlider>(
-                find.byKey(const Key('expression_endpoint_heel')),
-              )
-              .enabled,
-          isTrue,
-        );
-        await tap(tester, 'external_save');
-        expect(
-          control.state.pedalSetup.external
-              .forJack(PedalCtrlJack.ctrl1)
-              .expression
-              .mappings
-              .single
-              .target,
-          target,
-        );
-      },
-    );
+    expressionTestWidgets('Multi offers independent track timing', (
+      tester,
+    ) async {
+      const target = TrackRecordTimingTarget(0);
+      await pump(tester);
+      await tap(tester, 'expression_add');
+      await tap(tester, 'expression_kind_recordedTrack');
+      await tap(tester, 'expression_destination_track:0');
+      await tap(tester, targetKey(target));
+      expect(
+        tester
+            .widget<LoopSlider>(
+              find.byKey(const Key('expression_endpoint_heel')),
+            )
+            .enabled,
+        isTrue,
+      );
+      await tap(tester, 'external_save');
+      expect(
+        control.state.pedalSetup.external
+            .forJack(PedalCtrlJack.ctrl1)
+            .expression
+            .mappings
+            .single
+            .target,
+        target,
+      );
+    });
 
     expressionTestWidgets(
       'capture keeps a saved timing row visible but disables its edit',
@@ -1011,9 +993,7 @@ void main() {
       await sweep(tester, 0);
       await sweep(tester, 1);
       final written =
-          (verify(
-                    () => looper.applyMixSettings(captureAny()),
-                  ).captured.last
+          (verify(() => looper.applyMixSettings(captureAny())).captured.last
                   as MixSettingsSnapshot)
               .trackLevels[0]!;
       expect(written, closeTo(mixerGainAt(0.5), 0.002));
@@ -1078,9 +1058,7 @@ void main() {
 
     expressionTestWidgets(
       'Escape cancels a heel edit and Enter keeps the next',
-      (
-        tester,
-      ) async {
+      (tester) async {
         await pump(tester, jack: taught);
         final slider = find.byKey(const Key('expression_endpoint_heel'));
         Focus.of(
@@ -1152,9 +1130,7 @@ void main() {
 
     expressionTestWidgets(
       'a performer scrolling the list is not snapped back',
-      (
-        tester,
-      ) async {
+      (tester) async {
         // Four sweeps: more than the list shows, with the first one open.
         await pump(
           tester,
@@ -1205,9 +1181,7 @@ void main() {
 
     expressionTestWidgets(
       'a control the rig has lost keeps its row and says so',
-      (
-        tester,
-      ) async {
+      (tester) async {
         await pump(
           tester,
           jack: ExternalJackSetup(
@@ -1251,9 +1225,7 @@ void main() {
 
     expressionTestWidgets(
       'changing a control to the one it has moves nothing',
-      (
-        tester,
-      ) async {
+      (tester) async {
         await pump(
           tester,
           jack: ExternalJackSetup(

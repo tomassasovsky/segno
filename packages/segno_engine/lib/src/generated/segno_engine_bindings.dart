@@ -11,15 +11,11 @@ library;
 import 'dart:ffi' as ffi;
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_backing_buffer>)>()
-external int le_backing_buffer_frames(
-  ffi.Pointer<le_backing_buffer> buffer,
-);
+external int le_backing_buffer_frames(ffi.Pointer<le_backing_buffer> buffer);
 
 /// Frees a buffer the caller still owns. NULL is a no-op.
 @ffi.Native<ffi.Void Function(ffi.Pointer<le_backing_buffer>)>()
-external void le_backing_buffer_free(
-  ffi.Pointer<le_backing_buffer> buffer,
-);
+external void le_backing_buffer_free(ffi.Pointer<le_backing_buffer> buffer);
 
 /// Copies [frames] interleaved frames of [channels] (1 or 2) at [sample_rate]
 /// into a new stereo buffer (mono is duplicated into both sides). Any thread.
@@ -67,9 +63,7 @@ external int le_backing_buffer_peaks(
 );
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_backing_buffer>)>()
-external int le_backing_buffer_rate(
-  ffi.Pointer<le_backing_buffer> buffer,
-);
+external int le_backing_buffer_rate(ffi.Pointer<le_backing_buffer> buffer);
 
 /// Decodes [path] into a new stereo buffer at [sample_rate] (mono plays as
 /// dual mono), converting the rate with the band-limited offline converter
@@ -136,15 +130,10 @@ external int le_backing_probe_file(
 /// *out and returns LE_OK, or LE_ERR_INVALID for a null argument / enumeration
 /// failure.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_loopback_info>)>()
-external int le_detect_loopback(
-  ffi.Pointer<le_loopback_info> out,
-);
+external int le_detect_loopback(ffi.Pointer<le_loopback_info> out);
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Uint64)>()
-external int le_digest_begin(
-  ffi.Pointer<ffi.Void> state,
-  int state_bytes,
-);
+external int le_digest_begin(ffi.Pointer<ffi.Void> state, int state_bytes);
 
 /// SHA-256 of `length` bytes at `data` (`data` may be NULL only when `length`
 /// is 0). Returns LE_OK, or LE_ERR_INVALID for a NULL `out`, a NULL `data`
@@ -243,15 +232,11 @@ external int le_engine_audition_state(
 /// Silences the preview at the next block (no fade). A no-op when none
 /// plays.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_audition_stop(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_audition_stop(ffi.Pointer<le_engine> engine);
 
 /// Unloads the loaded and staged buffers (fading out a sounding one).
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_backing_clear(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_backing_clear(ffi.Pointer<le_engine> engine);
 
 /// Replaces the loaded buffer at the next block: the old one fades out if it
 /// was sounding; the new one starts at frame 0, playing when [play] is 1,
@@ -279,17 +264,11 @@ external int le_engine_backing_load(
 /// Moves the loaded buffer's position to [frame], clamped to its length;
 /// playing or paused is kept. A no-op with nothing loaded.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_backing_seek(
-  ffi.Pointer<le_engine> engine,
-  int frame,
-);
+external int le_engine_backing_seek(ffi.Pointer<le_engine> engine, int frame);
 
 /// le_backing_end; LE_ERR_INVALID outside the enum. Direct store.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_backing_set_end(
-  ffi.Pointer<le_engine> engine,
-  int mode,
-);
+external int le_engine_backing_set_end(ffi.Pointer<le_engine> engine, int mode);
 
 /// Gain, clamped to 0..LE_MAX_GAIN (default 1); NaN refused. Direct store.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)>()
@@ -342,10 +321,7 @@ external int le_engine_backing_state(
 
 /// le_backing_transport_op; a no-op with nothing loaded.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_backing_transport(
-  ffi.Pointer<le_engine> engine,
-  int op,
-);
+external int le_engine_backing_transport(ffi.Pointer<le_engine> engine, int op);
 
 /// Admits a bounce. Returns LE_OK with *request (read the callback outcome
 /// with le_engine_read_request_result), LE_ERR_NOT_READY (the render is not a
@@ -388,15 +364,10 @@ external int le_engine_bounce_recover(
 );
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_cancel_arm(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_cancel_arm(ffi.Pointer<le_engine> engine, int channel);
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_cancel_count_in(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_cancel_count_in(ffi.Pointer<le_engine> engine);
 
 /// Cancels the measurement `request` started: it publishes CANCELLED and the
 /// output falls silent. A cancel for another request is ignored. Returns LE_OK
@@ -408,10 +379,7 @@ external int le_engine_cancel_latency(
 );
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_clear(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_clear(ffi.Pointer<le_engine> engine, int channel);
 
 /// Clears a plugin slot: the audio thread is signalled to stop forwarding to it,
 /// and the host is destroyed on the control thread only AFTER a published-
@@ -457,9 +425,7 @@ external int le_engine_clear_restore_pending(
 /// applying. Not perf-logged: the effect chains' musical time picks up the
 /// change through their own anchor (LE_PLOG_FX_TEMPO).
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_clear_tempo(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_clear_tempo(ffi.Pointer<le_engine> engine);
 
 /// Clear that leaves a restore point: identical to le_engine_clear, except the
 /// track's history survives with a LE_HIST_CLEAR entry pushed on top, so the next
@@ -489,9 +455,7 @@ external int le_engine_clear_undoable(
 /// Does not wait or drain. Direct atomic setters need no command settlement;
 /// active capture and pending overdub layers still require their own checks.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_commands_settled(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_commands_settled(ffi.Pointer<le_engine> engine);
 
 /// Establishes the master loop at `base_frames` and parks every imported track
 /// (EMPTY with a loaded length) STOPPED at its whole-loop multiple
@@ -557,15 +521,11 @@ external int le_engine_crown_primary(
 /// paid once on a deliberate press. A hosted plugin has no reset seam, so
 /// its own tail is not cut.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_cut_sound(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_cut_sound(ffi.Pointer<le_engine> engine);
 
 /// Stops (if running) and frees the engine. Safe to call with NULL.
 @ffi.Native<ffi.Void Function(ffi.Pointer<le_engine>)>()
-external void le_engine_destroy(
-  ffi.Pointer<le_engine> engine,
-);
+external void le_engine_destroy(ffi.Pointer<le_engine> engine);
 
 /// Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
 /// was attached) or LE_ERR_INVALID for a null engine or a port out of range.
@@ -869,9 +829,7 @@ external int le_engine_finalize_take(
 /// Current wet-cache memory accounting in bytes (entries + in-flight copies).
 /// Log/test-only telemetry.
 @ffi.Native<ffi.Int64 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_fx_cache_used_bytes(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_fx_cache_used_bytes(ffi.Pointer<le_engine> engine);
 
 @ffi.Native<
   ffi.Uint32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32, ffi.Int32)
@@ -1366,9 +1324,7 @@ external int le_engine_looper_mode_gate(
 /// driving the device-free pump can rehearse its reconnect path (a stop,
 /// then le_engine_reopen_configured) without a device to unplug.
 @ffi.Native<ffi.Void Function(ffi.Pointer<le_engine>)>()
-external void le_engine_mark_device_lost(
-  ffi.Pointer<le_engine> engine,
-);
+external void le_engine_mark_device_lost(ffi.Pointer<le_engine> engine);
 
 /// Measures the round trip of one chosen path (#1270 Part 2): a 10 ms, 1 kHz
 /// burst at `amplitude` on hardware output `output` only (every other output
@@ -1429,10 +1385,7 @@ external int le_engine_monitor_fx_fingerprint(
 /// while the track captures, drains a layer, or has a pending state command,
 /// cancel, Clear report or Count-in launch — never queued, nothing mutated.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_peel(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_peel(ffi.Pointer<le_engine> engine, int channel);
 
 /// In Song (#1077, #1323) Play is a section request: with nothing sounding
 /// it starts the stopped section alone from its beginning; while another
@@ -1454,10 +1407,7 @@ external int le_engine_peel(
 /// a Record on a section waiting to play turns that request into a Record.
 /// Overdub and finish on the sounding section stay immediate.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_play(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_play(ffi.Pointer<le_engine> engine, int channel);
 
 /// Posts a command into the engine's SPSC ring (drained by the audio thread).
 /// Returns LE_OK, LE_ERR_NOT_RUNNING, or LE_ERR_INVALID (ring full / bad args).
@@ -1571,10 +1521,7 @@ external int le_engine_read_visual(
 /// at that moment), so the audio callback only performs an O(1) buffer swap to
 /// undo — never a copy.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_record(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_record(ffi.Pointer<le_engine> engine, int channel);
 
 @ffi.Native<
   ffi.Int32 Function(
@@ -1590,10 +1537,7 @@ external int le_engine_record_with_image(
 );
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_redo(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_redo(ffi.Pointer<le_engine> engine, int channel);
 
 /// Whether the NEXT le_engine_redo on `channel` re-applies a clear that an
 /// undo took back (1) rather than re-stacking an overdub layer or
@@ -1626,10 +1570,7 @@ external int le_engine_render_begin(
 /// Cancels and releases job `job` (any state). A file target leaves no
 /// partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Uint32)>()
-external int le_engine_render_cancel(
-  ffi.Pointer<le_engine> engine,
-  int job,
-);
+external int le_engine_render_cancel(ffi.Pointer<le_engine> engine, int job);
 
 /// Copies a DONE memory result (interleaved stereo) into `out`. Returns the
 /// frames copied (at most max_frames), or LE_ERR_INVALID / LE_ERR_NOT_READY.
@@ -1886,10 +1827,7 @@ external int le_engine_set_all_tracks_fx_param(
 /// Values outside the
 /// enum return LE_ERR_INVALID. Default off.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_set_click_mode(
-  ffi.Pointer<le_engine> engine,
-  int mode,
-);
+external int le_engine_set_click_mode(ffi.Pointer<le_engine> engine, int mode);
 
 /// Routes the click to the output channels set in [mask] (bit c => hardware
 /// output channel c; bits beyond the negotiated range are ignored). Default 0:
@@ -1907,10 +1845,7 @@ external int le_engine_set_click_output(
 /// bit-identical to an unpanned click. A direct store: works while stopped,
 /// persists across configure like the other click settings. NaN is refused.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)>()
-external int le_engine_set_click_pan(
-  ffi.Pointer<le_engine> engine,
-  double pan,
-);
+external int le_engine_set_click_pan(ffi.Pointer<le_engine> engine, double pan);
 
 /// Sets the click volume, clamped to 0..LE_MAX_GAIN (default 1.0). This is the
 /// click's only gain stage — master gain and the limiter never touch it.
@@ -2429,10 +2364,7 @@ external int le_engine_set_limiter(
 /// is re-derived from its unchanged length. Content, layers, history, mutes
 /// and lane settings are untouched.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_set_looper_mode(
-  ffi.Pointer<le_engine> engine,
-  int mode,
-);
+external int le_engine_set_looper_mode(ffi.Pointer<le_engine> engine, int mode);
 
 /// Atomically switches mode and replaces every track's future length preset.
 /// bars/count obey le_engine_set_track_length_presets. One queued command
@@ -2840,10 +2772,7 @@ external int le_engine_set_pitch_mode(
 /// press) always continues into overdub, so layering stays live rather than
 /// auto-stopping to playback the moment the loop completes.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_set_rec_dub(
-  ffi.Pointer<le_engine> engine,
-  int enabled,
-);
+external int le_engine_set_rec_dub(ffi.Pointer<le_engine> engine, int enabled);
 
 /// Sets the record-offset latency compensation in frames (clamped >= 0).
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
@@ -2925,18 +2854,12 @@ external int le_engine_set_speed(
 /// The loop's AUDIO length is never altered either way. When off, the loop
 /// stays free-form (loop_bars 0, tempo untouched) — the tempo-free behavior.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_set_sync_tempo(
-  ffi.Pointer<le_engine> engine,
-  int on,
-);
+external int le_engine_set_sync_tempo(ffi.Pointer<le_engine> engine, int on);
 
 /// Sets the tempo in denominator-note beats per minute, clamped to 30..300.
 /// Sets tempo_source = manual; ignored while the tempo is locked.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)>()
-external int le_engine_set_tempo(
-  ffi.Pointer<le_engine> engine,
-  double bpm,
-);
+external int le_engine_set_tempo(ffi.Pointer<le_engine> engine, double bpm);
 
 /// Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
 /// num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID
@@ -3242,9 +3165,7 @@ external int le_engine_start(
 
 /// Stops and closes the device. Returns LE_OK or an le_result error.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_stop(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_stop(ffi.Pointer<le_engine> engine);
 
 /// Cancels track [channel]'s pending record arm, whatever armed it — the
 /// quantized loop-top arm, the signal-triggered (auto-record) arm, or a Band
@@ -3276,19 +3197,14 @@ external int le_engine_stop_record_control(
 );
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_stop_track(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_stop_track(ffi.Pointer<le_engine> engine, int channel);
 
 /// Registers a tap; two taps set the tempo from their interval (intervals
 /// outside the 30..300 BPM window are ignored, so a stale first tap never
 /// yields an absurd tempo). Sets tempo_source = tapped on success; taps are
 /// ignored entirely while the tempo is locked.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_engine_tap_tempo(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_engine_tap_tempo(ffi.Pointer<le_engine> engine);
 
 /// Fade admission returns a nonzero request id only on LE_OK. Toggle resolves
 /// the opposite target on the callback, with a 0.5..30 second full traversal.
@@ -3407,10 +3323,7 @@ external int le_engine_transpose_step(
 /// audio, mutes, or transport; retry after an explicit compatible mode choice
 /// or after pending work settles.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_engine_undo(
-  ffi.Pointer<le_engine> engine,
-  int channel,
-);
+external int le_engine_undo(ffi.Pointer<le_engine> engine, int channel);
 
 /// Whether the NEXT le_engine_undo on `channel` would restore a cleared take
 /// (1) rather than peel an overdub layer or empty the track (0). Also 0 for an
@@ -3493,9 +3406,7 @@ external int le_fs_rename_noreplace(
 /// empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
 /// fails.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<ffi.Char>)>()
-external int le_fs_sync_dir(
-  ffi.Pointer<ffi.Char> path,
-);
+external int le_fs_sync_dir(ffi.Pointer<ffi.Char> path);
 
 /// le_fs_sync_dir, also reporting why it failed: on LE_ERR_DEVICE,
 /// *out_errno (when not NULL) is the OS error (ENOENT for a missing path,
@@ -3512,9 +3423,7 @@ external int le_fs_sync_dir_errno(
 /// LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
 /// LE_ERR_INVALID for an unknown type.
 @ffi.Native<ffi.Int32 Function(ffi.Int32)>()
-external int le_fx_param_count(
-  int type,
-);
+external int le_fx_param_count(int type);
 
 /// Fills *out with parameter [param] (0..count-1) of built-in [type]. Returns
 /// LE_OK, or LE_ERR_INVALID for a NULL `out`, an unknown type or a parameter
@@ -3564,9 +3473,7 @@ external int le_interface_inputs_read(
 /// le_midi_open closes the current port before opening another, re-opening also
 /// detaches; attach again after opening.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_midi>)>()
-external int le_midi_close(
-  ffi.Pointer<le_midi> m,
-);
+external int le_midi_close(ffi.Pointer<le_midi> m);
 
 /// Allocates a MIDI capture handle bound to the compiled-in per-OS backend.
 /// Returns NULL on allocation failure or when no backend is available for the
@@ -3576,9 +3483,7 @@ external ffi.Pointer<le_midi> le_midi_create();
 
 /// Closes any open port and frees the handle. Safe to call with NULL.
 @ffi.Native<ffi.Void Function(ffi.Pointer<le_midi>)>()
-external void le_midi_destroy(
-  ffi.Pointer<le_midi> m,
-);
+external void le_midi_destroy(ffi.Pointer<le_midi> m);
 
 /// Enumerates the host's MIDI input ports into `out` (room for `max` entries),
 /// writing the number filled into *count (clamped to `max`). Returns LE_OK, or
@@ -3619,9 +3524,7 @@ external int le_midi_open(
 /// Closes the open output port. Idempotent (a no-op when nothing is open).
 /// Returns LE_OK or LE_ERR_INVALID (null handle).
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_midi_out>)>()
-external int le_midi_out_close(
-  ffi.Pointer<le_midi_out> m,
-);
+external int le_midi_out_close(ffi.Pointer<le_midi_out> m);
 
 /// Allocates a MIDI output handle bound to the compiled-in per-OS backend.
 /// Returns NULL on allocation failure or when no backend is available for the
@@ -3631,9 +3534,7 @@ external ffi.Pointer<le_midi_out> le_midi_out_create();
 
 /// Closes any open port and frees the handle. Safe to call with NULL.
 @ffi.Native<ffi.Void Function(ffi.Pointer<le_midi_out>)>()
-external void le_midi_out_destroy(
-  ffi.Pointer<le_midi_out> m,
-);
+external void le_midi_out_destroy(ffi.Pointer<le_midi_out> m);
 
 /// Enumerates the host's MIDI output ports into `out` (room for `max` entries),
 /// writing the number filled into *count (clamped to `max`). Returns LE_OK, or
@@ -3690,9 +3591,7 @@ external int le_midi_out_send(
 /// 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
 /// open, or a backend whose OS owns the thread, as CoreMIDI does).
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_midi>)>()
-external int le_midi_priority_state(
-  ffi.Pointer<le_midi> m,
-);
+external int le_midi_priority_state(ffi.Pointer<le_midi> m);
 
 /// Arms performance-recording capture: allocates the master + per-monitor
 /// rings, freezes the captured input set from whichever inputs are currently
@@ -3727,9 +3626,7 @@ external int le_perf_arm(
 /// retracted-but-running and are reclaimed by a later retry or at
 /// le_engine_destroy).
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_perf_disarm(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_perf_disarm(ffi.Pointer<le_engine> engine);
 
 /// Starts an offline render of the finalized capture at `capture_dir`: spawns
 /// a worker thread that writes `stems/dry/track<channel>.wav` +
@@ -3752,9 +3649,7 @@ external int le_perf_render_begin(
 /// most, and removes the stems it had begun: no partial stem file stays.
 /// Returns LE_OK, or LE_ERR_INVALID for a null engine.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_perf_render_cancel(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_perf_render_cancel(ffi.Pointer<le_engine> engine);
 
 /// Reads the current render's progress: `*done` (0 while rendering, 1 once
 /// finished), `*progress_pct` (0..100, monotonic), `*track_count` (how many
@@ -3826,9 +3721,7 @@ external int le_perf_set_follow_output(
 /// Idempotent: closing an already-closed editor is a no-op success. Returns
 /// LE_OK, or LE_ERR_INVALID for a null slot.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_plugin_slot>)>()
-external int le_plugin_editor_close(
-  ffi.Pointer<le_plugin_slot> slot,
-);
+external int le_plugin_editor_close(ffi.Pointer<le_plugin_slot> slot);
 
 /// Writes 1 into *open if the editor window is currently open, else 0. Returns
 /// LE_OK, or LE_ERR_INVALID for a null argument.
@@ -3846,9 +3739,7 @@ external int le_plugin_editor_is_open(
 /// for a null slot, or LE_ERR_UNSUPPORTED when the plugin has no editor / the
 /// platform view type is unsupported (or on a non-macOS build).
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_plugin_slot>)>()
-external int le_plugin_editor_open(
-  ffi.Pointer<le_plugin_slot> slot,
-);
+external int le_plugin_editor_open(ffi.Pointer<le_plugin_slot> slot);
 
 /// The number of parameters the plugin in `slot` exposes. Returns LE_OK, or
 /// LE_ERR_INVALID for a null argument.
@@ -3930,18 +3821,13 @@ external int le_plugin_param_value_text(
 /// LE_ERR_INVALID for a null engine, LE_ERR_ALREADY_RUNNING if a scan is already
 /// in progress.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
-external int le_plugin_scan_begin(
-  ffi.Pointer<le_engine> engine,
-  int rescan,
-);
+external int le_plugin_scan_begin(ffi.Pointer<le_engine> engine, int rescan);
 
 /// Requests cancellation and joins the scan thread (blocks briefly until the
 /// in-flight candidate finishes). Idempotent; safe when no scan is running.
 /// Returns LE_OK, or LE_ERR_INVALID for a null engine.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>)>()
-external int le_plugin_scan_cancel(
-  ffi.Pointer<le_engine> engine,
-);
+external int le_plugin_scan_cancel(ffi.Pointer<le_engine> engine);
 
 /// Copies the descriptor at `index` (0-based, < the last polled *found) into
 /// *out. Returns LE_OK, or LE_ERR_INVALID for a null argument / out-of-range

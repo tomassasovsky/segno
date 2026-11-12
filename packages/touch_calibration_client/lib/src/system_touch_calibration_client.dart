@@ -9,7 +9,7 @@ import 'package:touch_calibration_client/src/touch_matrix.dart';
 /// `/usr/bin/segno-touch-ctl`.
 class SystemTouchCalibrationClient implements TouchCalibrationClient {
   /// Creates a [SystemTouchCalibrationClient].
-  const SystemTouchCalibrationClient({
+  const new({
     this.helperPath = '/usr/bin/segno-touch-ctl',
     this.readTimeout = const Duration(seconds: 20),
     this.changeTimeout = const Duration(seconds: 60),

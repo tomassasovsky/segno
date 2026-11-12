@@ -359,10 +359,7 @@ void main() {
         }),
         throwsFormatException,
       );
-      expect(
-        SessionTrack.fromJson({...good, 'anchorLap': 3}).anchorLap,
-        3,
-      );
+      expect(SessionTrack.fromJson({...good, 'anchorLap': 3}).anchorLap, 3);
     });
   });
 
@@ -382,10 +379,8 @@ void main() {
       }
       for (final good in [0, 1, 2, 4]) {
         expect(
-          Session.fromJson({
-            ...session.toJson(),
-            'countInBars': good,
-          }).countInBars,
+          Session.fromJson({...session.toJson(), 'countInBars': good})
+              .countInBars,
           good,
         );
       }
@@ -852,17 +847,11 @@ void main() {
     test('serializes the bus stages (Track + outputs)', () {
       final json = session.toJson();
       expect(json['trackChains'], [
-        {
-          'channel': 0,
-          'encoded': '{"chainEnabled":false,"entries":[{"t":3}]}',
-        },
+        {'channel': 0, 'encoded': '{"chainEnabled":false,"entries":[{"t":3}]}'},
         {'channel': 1, 'encoded': '{"chainEnabled":true,"entries":[]}'},
       ]);
       expect(json['outputChains'], [
-        {
-          'bus': 0,
-          'encoded': '{"chainEnabled":true,"entries":[{"t":9}]}',
-        },
+        {'bus': 0, 'encoded': '{"chainEnabled":true,"entries":[{"t":9}]}'},
       ]);
     });
 
@@ -889,18 +878,15 @@ void main() {
       expect(loaded, session);
     });
 
-    test(
-      'save -> load -> save is byte-idempotent (the manifest a load '
-      're-serializes is the manifest it read; slot ids ride the opaque chain '
-      'strings, so nothing is re-minted here)',
-      () {
-        final written = jsonEncode(session.toJson());
-        final reloaded = Session.fromJson(
-          jsonDecode(written) as Map<String, dynamic>,
-        );
-        expect(jsonEncode(reloaded.toJson()), written);
-      },
-    );
+    test('save -> load -> save is byte-idempotent (the manifest a load '
+        're-serializes is the manifest it read; slot ids ride the opaque chain '
+        'strings, so nothing is re-minted here)', () {
+      final written = jsonEncode(session.toJson());
+      final reloaded = Session.fromJson(
+        jsonDecode(written) as Map<String, dynamic>,
+      );
+      expect(jsonEncode(reloaded.toJson()), written);
+    });
 
     test('rejects a prior schema even when its fields parse', () {
       final json = session.toJson()..['version'] = 7;
@@ -1126,28 +1112,25 @@ void main() {
       );
     });
 
-    test(
-      'rejects a newer manifest (an extra unknown field does not '
-      'change the outcome) via the existing version-gate check',
-      () {
-        final json = session.toJson()
-          ..['version'] = Session.formatVersion + 1
-          // A field a hypothetical future schema might add — proves the
-          // rejection is purely the version-number gate, not incidentally
-          // triggered by an unparseable shape.
-          ..['bandGroups'] = [
-            {'name': 'chorus'},
-          ];
-        expect(
-          () => Session.fromJson(json),
-          throwsA(
-            isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', Session.formatVersion + 1)
-                .having((e) => e.supported, 'supported', Session.formatVersion),
-          ),
-        );
-      },
-    );
+    test('rejects a newer manifest (an extra unknown field does not '
+        'change the outcome) via the existing version-gate check', () {
+      final json = session.toJson()
+        ..['version'] = Session.formatVersion + 1
+        // A field a hypothetical future schema might add — proves the
+        // rejection is purely the version-number gate, not incidentally
+        // triggered by an unparseable shape.
+        ..['bandGroups'] = [
+          {'name': 'chorus'},
+        ];
+      expect(
+        () => Session.fromJson(json),
+        throwsA(
+          isA<SessionUnsupportedVersion>()
+              .having((e) => e.version, 'version', Session.formatVersion + 1)
+              .having((e) => e.supported, 'supported', Session.formatVersion),
+        ),
+      );
+    });
 
     /// Track 0's lane maps in [json]: both lanes share one history, so a
     /// history edit applies to each.
@@ -1516,9 +1499,7 @@ void main() {
         ];
         expect(
           () => Session.fromJson(json),
-          throwsA(
-            isA<SessionCorruptLayers>().having((e) => e.lane, 'lane', 1),
-          ),
+          throwsA(isA<SessionCorruptLayers>().having((e) => e.lane, 'lane', 1)),
         );
       });
     });

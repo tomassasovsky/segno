@@ -11,7 +11,7 @@ part of 'control_cubit.dart';
 /// explicit intent methods. Nothing else may store control state.
 class ControlState extends Equatable {
   /// Creates a [ControlState].
-  const ControlState({
+  const new({
     this.mode = InteractionMode.record,
     this.retiredBootMode,
     this.pedalSetup = const PedalSetup(),

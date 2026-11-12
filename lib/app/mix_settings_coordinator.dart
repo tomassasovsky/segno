@@ -38,7 +38,7 @@ enum MixSettingsStatus {
 /// Carries failures to callers and the shared UI error stream.
 class MixSettingsOutcome {
   /// Creates an outcome.
-  const MixSettingsOutcome(this.status, {this.engineResult, this.error});
+  const new(this.status, {this.engineResult, this.error});
 
   /// Transaction outcome, including persistence failures.
   final MixSettingsStatus status;
@@ -56,7 +56,7 @@ class MixSettingsOutcome {
 /// Session work cannot proceed until the failed durable rollback is retried.
 class MixSettingsRecoveryException implements Exception {
   /// Creates the typed error consumed by session/app error handling.
-  const MixSettingsRecoveryException(this.outcome);
+  const new(this.outcome);
 
   /// The original failure that requires [MixSettingsCoordinator.recover].
   final MixSettingsOutcome outcome;
@@ -92,7 +92,7 @@ typedef _Edit = MixSettingsSnapshot? Function(MixSettingsSnapshot);
 
 /// Constant-size composition of saturated physical gain steps.
 class _GainEdit {
-  _GainEdit(this.target, {this.absolute, int direction = 0})
+  new(this.target, {this.absolute, int direction = 0})
     : high = target.$1 == _Control.trackLevel ? 40 : 20 {
     if (direction != 0) step(direction);
   }
@@ -140,10 +140,7 @@ class _GainEdit {
     final integer = grid ? scaled.round() : scaled.floor();
     final fraction = grid ? 0.0 : scaled - integer;
     final gain =
-        ((integer + net).clamp(
-              grid ? low : offLow,
-              grid ? high : offHigh,
-            ) +
+        ((integer + net).clamp(grid ? low : offLow, grid ? high : offHigh) +
             fraction) /
         20;
     return target.$1 == _Control.trackLevel
@@ -168,7 +165,7 @@ bool _sameMap<K, V>(Map<K, V> a, Map<K, V> b) =>
 /// use [runExclusive] to share this same publication boundary.
 class MixSettingsCoordinator {
   /// Connects the shared repository, atomic storage and device identity.
-  MixSettingsCoordinator({
+  new({
     required LooperRepository repository,
     required this._persistence,
     required this._device,
@@ -465,11 +462,7 @@ class MixSettingsCoordinator {
     if (_recovery case final recovery?) return Future.value(recovery);
     if (!acceptingEdits) {
       return Future.value(
-        _report(
-          const MixSettingsOutcome(
-            MixSettingsStatus.superseded,
-          ),
-        ),
+        _report(const MixSettingsOutcome(MixSettingsStatus.superseded)),
       );
     }
     final generation = _repository.mixGeneration;
@@ -493,9 +486,7 @@ class MixSettingsCoordinator {
     var queuedTarget = target;
     var queuedEdit = edit;
     if (target.$1 == _Control.clearSolo) {
-      _pending.removeWhere(
-        (key, _) => _soloControl(key.$1),
-      );
+      _pending.removeWhere((key, _) => _soloControl(key.$1));
     } else if (_soloControl(target.$1)) {
       final previous = _pending.keys
           .where((key) => key.$2 == target.$2 && _soloControl(key.$1))
@@ -583,12 +574,8 @@ class MixSettingsCoordinator {
                 candidate,
                 generation,
                 device,
-                releasedProjection:
-                    {
-                      ..._releasedValues,
-                    }..removeWhere(
-                      (target, _) => ordinary.contains(target),
-                    ),
+                releasedProjection: {..._releasedValues}
+                  ..removeWhere((target, _) => ordinary.contains(target)),
               );
       }
       if (result.isOk) {
@@ -685,19 +672,18 @@ class MixSettingsCoordinator {
     }
     final durableCurrent = priorDurable ?? durableSnapshot;
     final nextReleased =
-        Map<MixValueTarget, double>.of(
-          releasedProjection ?? _releasedValues,
-        )..removeWhere(
-          (target, _) => switch (target) {
-            PairBalanceTarget(:final input) =>
-              !candidate.inputSetup.pairs.containsKey(input),
-            InputPanTarget(:final input) =>
-              candidate.inputSetup.pairOf(input) != null,
-            LaneVolumeTarget(:final channel, :final lane) =>
-              lane >= (candidate.laneCounts[channel] ?? 1),
-            _ => false,
-          },
-        );
+        Map<MixValueTarget, double>.of(releasedProjection ?? _releasedValues)
+          ..removeWhere(
+            (target, _) => switch (target) {
+              PairBalanceTarget(:final input) =>
+                !candidate.inputSetup.pairs.containsKey(input),
+              InputPanTarget(:final input) =>
+                candidate.inputSetup.pairOf(input) != null,
+              LaneVolumeTarget(:final channel, :final lane) =>
+                lane >= (candidate.laneCounts[channel] ?? 1),
+              _ => false,
+            },
+          );
     final durableCandidate = _projectReleased(candidate, nextReleased);
     final current = _repository.mixSettingsSnapshot;
     if (device.isEmpty &&
@@ -913,10 +899,11 @@ class MixSettingsCoordinator {
   /// Sets a track's gain without changing its independent lane levels.
   Future<MixSettingsOutcome> setTrackVolume(double volume, {int channel = 0}) {
     if (!_track(channel) || !volume.isFinite) return _reject();
-    final gain = _GainEdit(
-      (_Control.trackLevel, channel, 0),
-      absolute: volume.clamp(0.0, 2.0),
-    );
+    final gain = _GainEdit((
+      _Control.trackLevel,
+      channel,
+      0,
+    ), absolute: volume.clamp(0.0, 2.0));
     return _submit(gain.target, gain.call, gain: gain);
   }
 
@@ -1020,11 +1007,8 @@ class MixSettingsCoordinator {
     }
     return _submit(
       (_Control.pair, input, 0),
-      (value) => _repository.prepareInputPair(
-        value,
-        input: input,
-        paired: paired,
-      ),
+      (value) =>
+          _repository.prepareInputPair(value, input: input, paired: paired),
     );
   }
 
@@ -1054,11 +1038,8 @@ class MixSettingsCoordinator {
     if (!_track(channel) || mask < 0 || mask > 0xffffffff) return _reject();
     return _submit(
       (_Control.trackOutput, channel, 0),
-      (value) => _repository.prepareTrackOutput(
-        value,
-        channel: channel,
-        mask: mask,
-      ),
+      (value) =>
+          _repository.prepareTrackOutput(value, channel: channel, mask: mask),
     );
   }
 
@@ -1174,19 +1155,21 @@ class MixSettingsCoordinator {
     required bool solo,
   }) {
     if (!_track(channel)) return _reject();
-    return _submit(
-      (solo ? _Control.soloOn : _Control.soloOff, channel, 0),
-      _soloEdit(solo ? _Control.soloOn : _Control.soloOff, channel),
-    );
+    return _submit((
+      solo ? _Control.soloOn : _Control.soloOff,
+      channel,
+      0,
+    ), _soloEdit(solo ? _Control.soloOn : _Control.soloOff, channel));
   }
 
   /// Toggles against ordered shared intent, including unsubmitted presses.
   Future<MixSettingsOutcome> toggleTrackSolo({required int channel}) {
     if (!_track(channel)) return _reject();
-    return _submit(
-      (_Control.soloToggle, channel, 0),
-      _soloEdit(_Control.soloToggle, channel),
-    );
+    return _submit((
+      _Control.soloToggle,
+      channel,
+      0,
+    ), _soloEdit(_Control.soloToggle, channel));
   }
 
   /// Toggles a set of Solo flags in one ordered mix admission.

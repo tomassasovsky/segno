@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// rollback read as one family.
 class InlineNotice extends StatelessWidget {
   /// Creates an [InlineNotice].
-  const InlineNotice({
+  const new({
     required this.message,
     this.tone = NoticeTone.warning,
     this.action,

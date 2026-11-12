@@ -13,10 +13,7 @@ import 'package:settings_repository/settings_repository.dart';
 final class InstrumentsFamily
     implements SettingsFamily<InstrumentsWorkingCopy, String?> {
   /// Binds the family to [_instruments] and [_settings]' record.
-  InstrumentsFamily({
-    required this._instruments,
-    required this._settings,
-  });
+  new({required this._instruments, required this._settings});
 
   final InstrumentRepository _instruments;
   final SettingsRepository _settings;

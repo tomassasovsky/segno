@@ -58,7 +58,7 @@ Future<void> startNewLoop(BuildContext context) async {
 class NewLoopSheet extends StatelessWidget {
   /// Creates the sheet for the current session [currentName], whose tracks
   /// [channels] hold audio and whose tracks are named [trackNames].
-  const NewLoopSheet({
+  const new({
     required this.currentName,
     required this.channels,
     required this.trackNames,
@@ -175,12 +175,10 @@ class NewLoopSheet extends StatelessWidget {
                       tone: LoopButtonTone.accent,
                       label: l10n.libraryNewLoopStart,
                       onTap: state.canStart
-                          ? () =>
-                                Navigator.of(
-                                  context,
-                                ).pop<NewLoopConfirmation>(
-                                  (template: state.chosenTemplate),
-                                )
+                          ? () => Navigator.of(context)
+                                .pop<NewLoopConfirmation>((
+                                  template: state.chosenTemplate,
+                                ))
                           : null,
                     ),
                   ),
@@ -198,11 +196,7 @@ class NewLoopSheet extends StatelessWidget {
 /// pick-one (19/07), [selected] chosen.
 class NewLoopStartPick extends StatelessWidget {
   /// Creates the row with [selected] chosen, its label in [style].
-  const NewLoopStartPick({
-    required this.selected,
-    required this.style,
-    super.key,
-  });
+  const new({required this.selected, required this.style, super.key});
 
   /// The chosen start.
   final NewLoopStart selected;
@@ -244,7 +238,7 @@ class NewLoopStartPick extends StatelessWidget {
 /// one is missing, or they would go over the effects budget (#1513 D3).
 class NewLoopEdsLine extends StatelessWidget {
   /// Creates the line for Ed's setup's [status] in [style].
-  const NewLoopEdsLine({required this.status, required this.style, super.key});
+  const new({required this.status, required this.style, super.key});
 
   /// Where Ed's setup's sounds are.
   final EdsSetupStatus status;
@@ -282,11 +276,7 @@ class NewLoopEdsLine extends StatelessWidget {
 /// on tracks 1 to 4 that Ed's setup replaces.
 class NewLoopNamesLine extends StatelessWidget {
   /// Creates the line for the current [trackNames] in [style].
-  const NewLoopNamesLine({
-    required this.trackNames,
-    required this.style,
-    super.key,
-  });
+  const new({required this.trackNames, required this.style, super.key});
 
   /// The track names, by channel.
   final List<String> trackNames;
@@ -323,7 +313,7 @@ class NewLoopNamesLine extends StatelessWidget {
 /// no name yet.
 class NewLoopKeptLine extends StatelessWidget {
   /// Creates the line for the current session [name] in [style].
-  const NewLoopKeptLine({required this.name, required this.style, super.key});
+  const new({required this.name, required this.style, super.key});
 
   /// The current session's name, or null while it has none.
   final String? name;

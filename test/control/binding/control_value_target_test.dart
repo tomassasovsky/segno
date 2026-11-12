@@ -182,10 +182,7 @@ void main() {
       const defaults = DefaultRecordTimingTarget();
       const track = TrackRecordTimingTarget(7);
       expect(defaults.canonicalString(), '{"ctl":"defaultRecordTiming"}');
-      expect(
-        track.canonicalString(),
-        '{"ctl":"trackRecordTiming","index":7}',
-      );
+      expect(track.canonicalString(), '{"ctl":"trackRecordTiming","index":7}');
       expect(ControlValueTarget.tryParse(defaults.canonicalString()), defaults);
       expect(ControlValueTarget.tryParse(track.canonicalString()), track);
       expect(track.isStructurallyValid, isTrue);

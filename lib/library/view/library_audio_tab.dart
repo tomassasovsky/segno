@@ -24,7 +24,7 @@ import 'package:segno/theme/theme.dart';
 /// backing`, `Use in loop`, `Show on USB`) are not drawn (plan deviation 3).
 class LibraryAudioTab extends StatelessWidget {
   /// Creates the Audio tab.
-  const LibraryAudioTab({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -36,9 +36,8 @@ class LibraryAudioTab extends StatelessWidget {
           previous.export != current.export &&
           (current.export is LibraryExportConflict ||
               current.export is LibraryExportNeedsDrive),
-      listener: (context, state) => unawaited(
-        showLibraryExportQuestion(context, state.export!),
-      ),
+      listener: (context, state) =>
+          unawaited(showLibraryExportQuestion(context, state.export!)),
       child: switch (export) {
         final LibraryExportRunning running => LibraryExportProgress(
           export: running,
@@ -60,7 +59,7 @@ class LibraryAudioTab extends StatelessWidget {
 /// The `Internal` / `USB drive` segment and `Search audio`.
 class LibraryAudioTools extends StatelessWidget {
   /// Creates the tools row.
-  const LibraryAudioTools({super.key});
+  const new({super.key});
 
   Future<void> _search(BuildContext context, String query) async {
     final cubit = context.read<LibraryAudioCubit>();
@@ -124,7 +123,7 @@ class LibraryAudioTools extends StatelessWidget {
 /// The 1060-wide file list beside the 684-wide preview card.
 class LibraryAudioBrowser extends StatelessWidget {
   /// Creates the browser.
-  const LibraryAudioBrowser({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +163,7 @@ class LibraryAudioBrowser extends StatelessWidget {
 /// inside one its files.
 class LibraryAudioFiles extends StatelessWidget {
   /// Creates the file list.
-  const LibraryAudioFiles({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -257,7 +256,7 @@ class LibraryAudioFiles extends StatelessWidget {
 /// The open folder's files, or one line when it has none to show.
 class LibraryAudioItems extends StatelessWidget {
   /// Creates the open folder's rows.
-  const LibraryAudioItems({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -316,7 +315,7 @@ String audioClock(Duration d) {
 /// (a recovered take), and a trailing fact (a length or a file count).
 class LibraryAudioRow extends StatelessWidget {
   /// Creates a row.
-  const LibraryAudioRow({
+  const new({
     required this.icon,
     required this.name,
     required this.trailing,
@@ -420,7 +419,7 @@ class LibraryAudioRow extends StatelessWidget {
 /// the line that reports a failed action, and the item's actions.
 class LibraryAudioCard extends StatelessWidget {
   /// Creates the card.
-  const LibraryAudioCard({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -451,7 +450,7 @@ class LibraryAudioCard extends StatelessWidget {
 /// The selected item's side of the card.
 class LibraryAudioPreviewBody extends StatelessWidget {
   /// Creates the body for [item].
-  const LibraryAudioPreviewBody({required this.item, super.key});
+  const new({required this.item, super.key});
 
   /// The selected file.
   final LibraryAudioItem item;
@@ -537,7 +536,7 @@ class LibraryAudioPreviewBody extends StatelessWidget {
 /// `Preview` (198 x 64), `Stop` while it plays, with how far it has played.
 class LibraryAudioPreviewControl extends StatelessWidget {
   /// Creates the control for [item].
-  const LibraryAudioPreviewControl({required this.item, super.key});
+  const new({required this.item, super.key});
 
   /// The selected file.
   final LibraryAudioItem item;
@@ -588,7 +587,7 @@ class LibraryAudioPreviewControl extends StatelessWidget {
 /// `Preview`, the truncation note, or that the DAW project was written.
 class LibraryAudioLine extends StatelessWidget {
   /// Creates the line.
-  const LibraryAudioLine({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -645,7 +644,7 @@ class LibraryAudioLine extends StatelessWidget {
 /// mixdown) and `Export stems`.
 class LibraryAudioActions extends StatelessWidget {
   /// Creates the actions for [item].
-  const LibraryAudioActions({required this.item, super.key});
+  const new({required this.item, super.key});
 
   /// The selected file.
   final LibraryAudioItem item;
@@ -740,7 +739,7 @@ class LibraryAudioActions extends StatelessWidget {
 
 /// One of [LibraryAudioActions]' buttons, dimmed while it has no action.
 class _ActionButton extends StatelessWidget {
-  const _ActionButton({
+  const new({
     required this.buttonKey,
     required this.label,
     required this.onTap,
@@ -771,7 +770,7 @@ class _ActionButton extends StatelessWidget {
 /// `Cancel`.
 class LibraryExportProgress extends StatelessWidget {
   /// Creates the progress view of [export].
-  const LibraryExportProgress({required this.export, super.key});
+  const new({required this.export, super.key});
 
   /// The running export.
   final LibraryExportRunning export;
@@ -820,7 +819,7 @@ class LibraryExportProgress extends StatelessWidget {
 /// kept, and `Done`.
 class LibraryExportResult extends StatelessWidget {
   /// Creates the result view of [export].
-  const LibraryExportResult({required this.export, super.key});
+  const new({required this.export, super.key});
 
   /// The finished export.
   final LibraryExportDone export;
@@ -874,7 +873,7 @@ class LibraryExportResult extends StatelessWidget {
 /// The 44-point name over an export's progress or result.
 class LibraryExportHeading extends StatelessWidget {
   /// Creates the heading for [name].
-  const LibraryExportHeading({required this.name, super.key});
+  const new({required this.name, super.key});
 
   /// What is exported.
   final String name;

@@ -13,7 +13,7 @@ import 'package:segno_engine/segno_engine_ffi.dart'
 /// The default forwards to the engine's `@Native` bindings.
 class MidiBindings {
   /// Creates the [MidiBindings] that call the engine library.
-  const MidiBindings();
+  const new();
 
   /// `le_midi_create`.
   Pointer<le_midi> le_midi_create() => native.le_midi_create();
