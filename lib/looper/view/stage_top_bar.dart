@@ -558,22 +558,20 @@ class _CpuLoadBar extends StatelessWidget {
     }
     final surface = context.surface;
     final share = load.clamp(0, 100);
+    final edge = Border.all(color: surface.textMuted);
     return SizedBox.fromSize(
       key: const Key('stage_cpu_bar'),
       size: size,
-      // The groove's edge in the muted text colour, as the console's meters
-      // draw a still meter's edge: about 3.8:1 against the top bar's
-      // near-black in the dark theme (#6B6B73 on #060607), where the
-      // borders the cards use (#3A3A40) reach only 1.8:1 and the empty part
-      // of the bar would not show.
+      // The groove's edge in the muted text colour, the colour the console's
+      // meters give a still meter's leading edge: about 3.7:1 on the dark
+      // page (#6B6B73 on #0B0B0C), where the borders the cards use
+      // (#3A3A40) reach only 1.8:1 and the empty part of the bar would not
+      // show.
       child: DecoratedBox(
         key: const Key('stage_cpu_bar_groove'),
-        decoration: BoxDecoration(
-          color: surface.meterTrack,
-          border: Border.all(color: surface.textMuted),
-        ),
+        decoration: BoxDecoration(color: surface.meterTrack, border: edge),
         child: Padding(
-          padding: const EdgeInsets.all(1),
+          padding: edge.dimensions,
           child: Align(
             alignment: Alignment.centerLeft,
             child: FractionallySizedBox(

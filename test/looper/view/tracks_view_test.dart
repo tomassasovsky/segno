@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:cpu_load_repository/cpu_load_repository.dart';
@@ -3609,28 +3608,19 @@ void main() {
       expect(bar.left, figure.left);
       expect(bar.width, figure.width);
       expect(bar.top, greaterThan(figure.bottom));
-      // Inside the groove's 1 px edge.
+      // The groove's edge in the muted text colour, which stands out from
+      // the stage (the theme suite holds it at 3:1), and the fill inside it.
+      final groove =
+          tester
+                  .widget<DecoratedBox>(
+                    find.byKey(const Key('stage_cpu_bar_groove')),
+                  )
+                  .decoration
+              as BoxDecoration;
+      expect((groove.border! as Border).top.color, SurfaceTheme.dark.textMuted);
       expect(fill.left, bar.left + 1);
       expect(fill.width, closeTo((bar.width - 2) * 0.23, 0.01));
       expect(fill.height, bar.height - 2);
-    });
-
-    test("the groove's edge stands out from the stage at 3:1 or more, so "
-        'the empty part of the bar shows (#1774)', () {
-      double contrast(Color a, Color b) {
-        final (la, lb) = (a.computeLuminance(), b.computeLuminance());
-        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05);
-      }
-
-      for (final surface in const [
-        SurfaceTheme.dark,
-        SurfaceTheme.highContrast,
-      ]) {
-        // Against both the page and the top bar's chrome.
-        for (final ground in [surface.background, surface.chromeBar]) {
-          expect(contrast(surface.textMuted, ground), greaterThanOrEqualTo(3));
-        }
-      }
     });
 
     testWidgets('the bar turns amber at half the machine and red at three '
@@ -3690,6 +3680,7 @@ void main() {
       // No bar yet, which an empty groove would misread as 0% (#1774); its
       // place is kept, so the first reading moves nothing.
       expect(find.byKey(const Key('stage_cpu_bar_fill')), findsNothing);
+      expect(find.byKey(const Key('stage_cpu_bar_groove')), findsNothing);
       expect(
         tester.getSize(find.byKey(const Key('stage_cpu_bar'))).height,
         greaterThan(0),
