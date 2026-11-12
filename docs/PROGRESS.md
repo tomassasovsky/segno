@@ -144,8 +144,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   clang -O2 and -O3 builds differ by -48.8; `bench_fx_equiv` holds them
   under -120 and -45 (`eqv_limit_db`). One instance on the console: BOX
   307 -> 270 ns a frame still, 425 -> 389 with Length moving; the charge
-  552 -> 541 (the moving run's ratio, as above); Ed's Rack 2677 -> 2666 at
-  96 kHz / 64.
+  552 -> 541 (the moving run's ratio, as above); Ed's Rack 2331 -> 2320 at
+  96 kHz / 64 (with the drives' and pitch's own, #1759, #1764).
 
 ## November 2026 A long capture recovers in bounded memory (#1747)
 
