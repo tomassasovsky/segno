@@ -3,8 +3,8 @@
 # the pitch kinds against their kernels before #1755, bit for bit.
 # run_native_tests.sh runs it with the rest; CI's arm64 job runs it through
 # this script with CC=clang, the console's compiler, the one the NEON paths
-# build under. The source list and link flags mirror run_native_tests.sh;
-# keep them in sync.
+# build under. The source list is ENGINE_SRC (engine_build.sh); the link
+# flags mirror run_native_tests.sh; keep them in sync.
 #
 # Usage: [CC=clang CXX=clang++] ./run_pitch_oracle.sh [--ci] [--input F]
 set -euo pipefail
@@ -20,16 +20,12 @@ case "$(uname -s)" in
   Darwin) LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lc++ -lm" ;;
   *) LIBS="-lpthread -lstdc++ -lm -ldl" ;;
 esac
-ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
-  src/core/tempo_grid.c \
-  src/core/halfband.c \
-  src/core/synth_voice.c src/core/synth_patch.c \
-  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c \
-  src/midi/le_clock_follow.c"
+. src/test/engine_build.sh   # ENGINE_SRC, engine_objects, queue_compile
 
-$CXX -std=c++17 -O2 -c src/stretch/le_stretch.cpp -o "$OUT/segno_oracle_stretch.o"
+queue_compile "$OUT/segno_oracle_stretch.o" $CXX -std=c++17 -O2 src/stretch/le_stretch.cpp
+engine_objects ENGINE_OBJS "$OUT/obj/run_pitch_oracle" $CC $STD
+run_queue
 # shellcheck disable=SC2086
 $CC $STD src/test/test_pitch_oracle.c src/test/pitch_ref/pitch_ref.c \
-  $ENGINE_SRC "$OUT/segno_oracle_stretch.o" $LIBS -o "$OUT/segno_pitch_oracle.exe"
+  $ENGINE_OBJS "$OUT/segno_oracle_stretch.o" $LIBS -o "$OUT/segno_pitch_oracle.exe"
 "$OUT/segno_pitch_oracle.exe" "$@"

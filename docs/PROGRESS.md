@@ -76,6 +76,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1755 | Every effect cheaper without changing its sound: the pitch family merged (#1764); its state out of the mixer's structs so the arm64 mixer gate is back where it was | in-review | auto | `claude/pitch-gate-1755` |
+| #1771 | PR checks in a fraction of the time and job-minutes: native suites built once and run in parallel, ccache, cached packages, path filters, one job for the package suites, ASan in three parts, trunk-saved caches | in-review | auto | `claude/ci-speed-1771` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1729 | Track and lane chains on the effects workers (#1515 part 2): engine part 1 and the admission (part 2, kFxTrackJobNs from the console stress) in review | in-review | auto | `claude/fx-track-workers-1729*` |
@@ -95,20 +96,25 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   and at 3 hours (`LE_PERF_STOP_LENGTH_LIMIT`, `"length_limit"`), never past
   what a 32-bit WAV of the rendered master holds (a stereo master at
   96 kHz: 93 minutes). The times come from the repository
-  (`PerformanceRepository.defaultIdleStopAfter`, `defaultLongestTake`) on
+  (`PerformanceRepository.idleStopAfter`, `longestTake`) on
   `le_perf_target.idle_stop_seconds` and `max_seconds`.
 - Something happening is a logged event a player's action leaves (a
   press, a transport change, an edit; not the facts the engine logs on its
   own, such as a loop top's tempo anchor or an overdub pass retiring) or a
   captured input sample over the engine's activity level (-40 dBFS)
   through the sound trigger's 100 Hz high-pass, measured in the drain, not
-  the callback, or the device's own input meter over that level once a
-  drain cycle (before any fader: a player on the interface's direct
-  monitoring with the console's monitor muted is playing). Entries the
-  engine logs past the idle end wait for the cycle's decision, so the log
-  ends where the take does (#1549). The paused #1747 capture's idle 18 minutes peaked at
-  -46 dBFS. An input whose noise stays over the level keeps the take going
-  until the 3-hour stop.
+  the callback. Entries the engine logs past the idle end wait for the
+  cycle's decision, so the log ends where the take does (#1549). The paused
+  #1747 capture's idle 18 minutes peaked at -46 dBFS. An input whose noise
+  stays over the level keeps the take going until the 3-hour stop.
+- Only high-passed input counts (#1772 caught it): the drain also read the
+  device's raw input meter once a cycle, at the same -40 dBFS, so mains hum
+  over that level counted as playing whenever a cycle happened to read it,
+  and on a console with hum a take would never idle-stop. The meter read is
+  gone. Playing the captured streams do not carry (a monitor turned down or
+  muted, the player on the interface's direct monitoring, an input not
+  monitored at arm) does not keep a take going; high-passing the meter
+  would need work in the callback.
 - Nobody is there, so the capture dialog does not open for such a take
   (`PerformanceRecorderRendering.stoppedOnItsOwn`); `PerformanceAutoStopNotice`
   says it as a passing warning at the player's next touch, key, encoder,
@@ -2260,6 +2266,22 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   scan/slot native tests against the vendored VST3/CLAP SDKs. Each suite
   prints "ALL PASSED"; the script exits non-zero on any compile or test
   failure.
+
+  Since #1771 it compiles each engine TU once per flag set, in parallel and
+  through `ccache` when installed, then runs the test binaries side by side,
+  each in a `TMPDIR` of its own, and prints each one's output when all are
+  done (the failed ones last). `BUILD_JOBS` sets how many run at once (one
+  per CPU). The core suite runs as `SEGNO_CORE_SHARDS` processes (16, on
+  every machine, so every run splits it the same way): each takes every
+  n-th entry of `test_engine_core.c`'s
+  `main` (`SEGNO_TEST_TOTAL_SHARDS`, `SEGNO_TEST_SHARD_INDEX`), so every
+  entry there goes through `SHARD(...)` (the script refuses a bare call)
+  and every test must pass without the ones before it. The engine source
+  list for this script, the benches, the pitch oracle and the test library
+  is `ENGINE_SRC` in `src/test/engine_build.sh`. `NATIVE_TESTS_ONLY` takes
+  a comma-separated list of `races`, `core` and `rest`, and
+  `SEGNO_CORE_PART=k/n` a share of the core shards; CI's ASan job runs as
+  three such parts.
 
   CI runs the same script in **two more configurations**, both of which must
   stay green and both of which are worth running locally after touching the

@@ -29,7 +29,7 @@ static int failures;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); ++failures; } } while (0)
 typedef struct {
   le_engine* e;
-  _Atomic int primed, resume, done;
+  _Atomic int primed, resume, installed, done;
   int parked;
 } fixture;
 static void* callback(void* opaque) {
@@ -44,11 +44,17 @@ static void* callback(void* opaque) {
   fx->enable_quiet[0] = 17;
   atomic_store_explicit(&f->primed, 1, memory_order_release);
   if (f->parked) while (!atomic_load_explicit(&f->resume, memory_order_acquire)) {}
-  for (int n = 0; n < 100000; ++n) {
+  /* Blocks race the install until it has returned, then 100000 more run
+   * on what it published, however the two threads are scheduled: a fixed
+   * count could end before the install on a busy machine (#1771). */
+  for (int after = 0; after < 100000;) {
+    const int installed =
+        atomic_load_explicit(&f->installed, memory_order_acquire);
     types[0] = atomic_load_explicit(&m->a_fx_type[0], memory_order_acquire);
     enabled[0] = atomic_load_explicit(&m->a_fx_enabled[0], memory_order_relaxed);
     float l = .1f, r = .1f;
     fx_apply_chain(fx, 1000, 1000, &l, &r, 1, types, params, enabled);
+    if (installed) ++after;
   }
   atomic_store_explicit(&f->done, 1, memory_order_release);
   return NULL;
@@ -68,6 +74,7 @@ int main(void) {
     while (!atomic_load_explicit(&f.primed, memory_order_acquire)) {}
     le_plugin_slot* slot = NULL;
     CHECK(le_engine_set_monitor_plugin(e, 0, 0, "test", &slot) == LE_OK);
+    atomic_store_explicit(&f.installed, 1, memory_order_release);
     if (parked) {
       CHECK(m->fx.enable_drain[0] == 1);
       CHECK(m->fx.enable_quiet[0] == 17);

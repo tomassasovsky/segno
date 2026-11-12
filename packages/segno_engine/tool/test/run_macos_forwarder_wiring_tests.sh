@@ -83,18 +83,26 @@ else
 fi
 
 # The pure C TUs outside the engine*.c glob are listed explicitly: the
-# instrument voices (#1197) and the decoder's half-band decimator. Every
-# build that compiles the engine must list them, and the macOS SPM and
+# instrument voices (#1197) and the decoder's half-band decimator. CMake and
+# ENGINE_SRC (src/test/engine_build.sh, the one list every script that builds
+# the engine outside CMake links) must list them, and the macOS SPM and
 # CocoaPods targets each need a forwarder that resolves.
 echo "== macOS explicit TU wiring =="
-readonly BUILD_TEST_LIB="$PLUGIN/tool/build_test_lib.sh"
-# The two CPU benches link the real engine sources too: a TU missing from one
-# breaks that bench's CI step as soon as an engine*.c file calls into it.
-readonly BENCH_PITCH_TIME="$PLUGIN/src/test/bench/bench_pitch_time.sh"
-readonly BENCH_INSTRUMENTS="$PLUGIN/src/test/bench/bench_instruments.sh"
+readonly ENGINE_BUILD="$PLUGIN/src/test/engine_build.sh"
+# The scripts CI runs that link the real engine sources take them from
+# ENGINE_SRC: a TU missing there breaks them as soon as an engine*.c file
+# calls into it.
+for script in "$NATIVE_TESTS" "$PLUGIN/tool/build_test_lib.sh" \
+              "$PLUGIN/src/test/bench/bench_pitch_time.sh" \
+              "$PLUGIN/src/test/bench/bench_instruments.sh"; do
+  if grep -q '^\. src/test/engine_build\.sh' "$script"; then
+    pass "$(basename "$script") takes the engine sources from engine_build.sh"
+  else
+    fail "$(basename "$script") does not source src/test/engine_build.sh"
+  fi
+done
 for tu in synth_voice.c synth_patch.c halfband.c; do
-  for list in "$CMAKE" "$NATIVE_TESTS" "$BUILD_TEST_LIB" "$BENCH_PITCH_TIME" \
-              "$BENCH_INSTRUMENTS"; do
+  for list in "$CMAKE" "$ENGINE_BUILD"; do
     if grep -q "core/$tu" "$list"; then
       pass "$(basename "$list") lists core/$tu"
     else
