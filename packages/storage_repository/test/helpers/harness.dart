@@ -24,6 +24,9 @@ class Harness {
 
   /// Every directory the repository synced, in order.
   List<String> get synced => io.synced;
+
+  /// Every volume the repository synced, by the root it named, in order.
+  List<String> get volumeSyncs => io.volumeSyncs;
   late FakeUsbStorageClient client;
 
   String get exports => '${root.path}/exports';
@@ -95,13 +98,21 @@ class Harness {
 
 /// [engine.StorageIo] over the real filesystem: the rename without
 /// replacement is check-then-rename (enough for one isolate), and it can
-/// play a filesystem that cannot refuse a replacement, and a directory whose
-/// sync fails.
+/// play a filesystem that cannot refuse a replacement, and a directory or a
+/// volume whose sync fails.
 class FakeStorageIo implements engine.StorageIo {
   /// Every directory synced, in order.
   final synced = <String>[];
 
-  /// Directories whose sync fails, as the engine reports it (EIO).
+  /// Every volume synced, by the path it was asked for, in order.
+  final volumeSyncs = <String>[];
+
+  /// Runs as a volume sync succeeds, before it is recorded: a test sees the
+  /// disk as the sync found it.
+  void Function(String path)? onVolumeSync;
+
+  /// Paths whose directory or volume sync fails, as the engine reports it
+  /// (EIO).
   final failingSyncs = <String>{};
 
   /// Runs as a sync fails, before it throws: a drive going with it.
@@ -125,6 +136,20 @@ class FakeStorageIo implements engine.StorageIo {
       );
     }
     synced.add(path);
+  }
+
+  @override
+  void syncVolume(String path) {
+    if (failingSyncs.contains(path)) {
+      onSyncFailure?.call();
+      throw FileSystemException(
+        'could not sync the volume',
+        path,
+        const OSError('Input/output error', 5),
+      );
+    }
+    onVolumeSync?.call(path);
+    volumeSyncs.add(path);
   }
 
   @override

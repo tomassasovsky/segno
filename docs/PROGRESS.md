@@ -40,6 +40,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 |-------|--------|-------|----------|--------|
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
+| #1797 | A finished export to a FAT stick is on the device: copies and the export end with a volume sync | in-review | blocked-verify | `claude/usb-export-durable-1797` |
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
@@ -136,9 +137,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   both write `Segno/Sessions`); exports into one folder now run one after
   the other, across the Library's exporters. And
   the swap's renames were never synced, so "Exported to USB" could show
-  before a pulled stick would keep the export; the exporter now syncs the
-  folder (and a package's own directory) through the new
-  `StorageRepository.syncDirectory` before it reports.
+  before a pulled stick would keep the export.
+- A directory sync was not enough either (#1797). On vfat a rename writes
+  the new entry with size 0 and cluster 0 (`vfat_rename`, then
+  `vfat_build_slots`), and only the file's inode, written back about 30 s
+  later, fills it in. A stick pulled after "Exported to USB" showed the
+  late files at 0 bytes. `StorageRepository.copyFile` now syncs the whole
+  volume after its rename (`StorageIo.syncVolume`: the engine's
+  `le_fs_sync_volume_errno`, which runs `syncfs(2)` and then an fsync of
+  the root to flush the device cache, since FAT has no `sync_fs`). The
+  exporter runs `StorageRepository.syncVolume` once more after the swap
+  and its clean-up, before it reports. `StorageRepository.syncDirectory`
+  is gone. Once "Exported to USB" shows, the stick can be pulled without
+  Eject.
 - Tests fake the repository (`FakeDrive`, `NoDrive` in
   `test/library/helpers/fake_drive.dart`). One cubit test exports through a
   real `StorageRepository` over the console's own records (an `iso9660`

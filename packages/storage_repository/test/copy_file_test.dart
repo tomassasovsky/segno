@@ -33,62 +33,69 @@ void main() {
   }
 
   group('a copy that completes', () {
-    test('writes a hidden part of its own first, renames it into place only '
-        'once it is complete, under a copy lease, then syncs the directory '
-        'and every parent the copy created, bottom up', () async {
-      final source = h.source('take.wav', 300000);
-      final seen = <String>[];
-      final target = File('${h.exports}/Segno/Performances/take.wav');
-      repo = h.build(
-        copyBytes: (from, part, shouldAbort) async {
-          seen
-            ..add('part ${part.path.substring(h.exports.length + 1)}')
-            ..add('target exists: ${target.existsSync()}')
-            ..add('synced: ${h.synced.length}')
-            ..add('lease: ${repo.leases.map((l) => l.purpose.name).join()}');
-          await part.writeAsBytes(await from.readAsBytes(), flush: true);
-        },
-      );
+    test(
+      'writes a hidden part of its own first, renames it into place only '
+      'once it is complete, under a copy lease, then syncs the volume',
+      () async {
+        final source = h.source('take.wav', 300000);
+        final seen = <String>[];
+        final target = File('${h.exports}/Segno/Performances/take.wav');
+        repo = h.build(
+          copyBytes: (from, part, shouldAbort) async {
+            seen
+              ..add('part ${part.path.substring(h.exports.length + 1)}')
+              ..add('target exists: ${target.existsSync()}')
+              ..add('volume synced: ${h.volumeSyncs.length}')
+              ..add('lease: ${repo.leases.map((l) => l.purpose.name).join()}');
+            await part.writeAsBytes(await from.readAsBytes(), flush: true);
+          },
+        );
+
+        final written = await repo.copyFile(
+          source.path,
+          internal,
+          'Segno/Performances/take.wav',
+          onConflict: ConflictPolicy.ask,
+        );
+
+        expect(written, '${h.exports}/Segno/Performances/take.wav');
+        expect(seen, [
+          matches(
+            RegExp(
+              r'^part Segno/Performances/\.take\.wav\.[0-9a-f]{16}\.part$',
+            ),
+          ),
+          'target exists: false',
+          'volume synced: 0',
+          'lease: copy',
+        ]);
+        expect(h.volumeSyncs, [h.exports], reason: 'after');
+        expect(File(written).readAsBytesSync(), source.readAsBytesSync());
+        expect(h.filesUnder(h.exports), ['Segno/Performances/take.wav']);
+        expect(repo.leases, isEmpty);
+      },
+    );
+
+    test('the volume is synced after the rename, not only the directory: on '
+        'vfat the new entry reads size 0 until the inode is written back '
+        '(#1797)', () async {
+      final source = h.source('take.wav', 4096);
+      repo = h.build(initial: [h.record(1)]);
+      await pumpEventQueue();
+      final atSync = <String>[];
+      h.io.onVolumeSync = (_) => atSync.addAll(h.filesUnder(h.mountPoint(1)));
 
       final written = await repo.copyFile(
         source.path,
-        internal,
+        usb1,
         'Segno/Performances/take.wav',
-        onConflict: ConflictPolicy.ask,
+        onConflict: ConflictPolicy.replace,
       );
 
-      expect(written, '${h.exports}/Segno/Performances/take.wav');
-      expect(seen, [
-        matches(
-          RegExp(r'^part Segno/Performances/\.take\.wav\.[0-9a-f]{16}\.part$'),
-        ),
-        'target exists: false',
-        'synced: 0',
-        'lease: copy',
-      ]);
-      expect(h.synced, [
-        '${h.exports}/Segno/Performances',
-        '${h.exports}/Segno',
-        h.exports,
-      ], reason: 'after');
-      expect(File(written).readAsBytesSync(), source.readAsBytesSync());
-      expect(h.filesUnder(h.exports), ['Segno/Performances/take.wav']);
-      expect(repo.leases, isEmpty);
-    });
-
-    test('a directory that was already there is the only one synced', () async {
-      final source = h.source('take.wav', 100);
-      repo = h.build();
-      Directory('${h.exports}/Segno').createSync();
-
-      await repo.copyFile(
-        source.path,
-        internal,
-        'Segno/take.wav',
-        onConflict: ConflictPolicy.ask,
-      );
-
-      expect(h.synced, ['${h.exports}/Segno']);
+      expect(h.volumeSyncs, [h.mountPoint(1)]);
+      expect(atSync, ['Segno/Performances/take.wav']);
+      expect(h.synced, isEmpty, reason: 'the volume sync covers them');
+      expect(File(written).lengthSync(), 4096);
     });
 
     test('publishes with the rename that never replaces: no empty file ever '
@@ -113,12 +120,12 @@ void main() {
       expect(File(written).readAsBytesSync(), source.readAsBytesSync());
     });
 
-    test('a directory sync the device refuses fails the copy as io: '
+    test('a volume sync the device refuses fails the copy as io: '
         '"copied" is never claimed for a rename that is not durable, and the '
         'failure says where the complete file is', () async {
       final source = h.source('take.wav', 100);
       repo = h.build();
-      h.io.failingSyncs.add('${h.exports}/Segno');
+      h.io.failingSyncs.add(h.exports);
 
       await expectLater(
         repo.copyFile(
@@ -160,23 +167,6 @@ void main() {
         ),
         throwsA(const StorageFailure.volumeLost(1)),
       );
-    });
-
-    test('the sync of a parent the copy created is honoured too', () async {
-      final source = h.source('take.wav', 100);
-      repo = h.build();
-      h.io.failingSyncs.add(h.exports);
-
-      await expectLater(
-        repo.copyFile(
-          source.path,
-          internal,
-          'Segno/take.wav',
-          onConflict: ConflictPolicy.ask,
-        ),
-        throwsA(isA<StorageIo>()),
-      );
-      expect(h.synced, ['${h.exports}/Segno']);
     });
 
     test('the real copy lands byte for byte on a mounted volume', () async {
@@ -871,47 +861,48 @@ void main() {
       expect(part.readAsBytesSync(), source.readAsBytesSync());
     });
   });
-  group('syncDirectory', () {
-    test("syncs the directory under the volume's mount point", () async {
+  group('syncVolume', () {
+    test('syncs the volume at its mount point, under a copy lease', () async {
       repo = h.build(initial: [h.record(1)]);
       await pumpEventQueue();
-      Directory('${h.mountPoint(1)}/Segno/Sessions')
-          .createSync(recursive: true);
+      final leases = <String>[];
+      h.io.onVolumeSync = (_) =>
+          leases.addAll(repo.leases.map((l) => l.purpose.name));
 
-      await repo.syncDirectory(usb1, 'Segno/Sessions');
+      await repo.syncVolume(usb1);
 
-      expect(h.synced, ['${h.mountPoint(1)}/Segno/Sessions']);
-    });
-
-    test('a sync the device refuses is io, an unmounted volume is lost, and '
-        'a path that leaves the root is refused', () async {
-      repo = h.build(initial: [h.record(1)]);
-      await pumpEventQueue();
-      h.io.failingSyncs.add('${h.mountPoint(1)}/Segno');
-
-      await expectLater(
-        repo.syncDirectory(usb1, 'Segno'),
-        throwsA(isA<StorageIo>()),
-      );
-      await expectLater(
-        repo.syncDirectory(const StorageDestination.removable(2), 'Segno'),
-        throwsA(const StorageFailure.volumeLost(2)),
-      );
-      expect(() => repo.syncDirectory(usb1, '../Segno'), throwsArgumentError);
-      expect(h.synced, isEmpty);
+      expect(h.volumeSyncs, [h.mountPoint(1)]);
+      expect(leases, ['copy']);
       expect(repo.leases, isEmpty);
     });
+
+    test(
+      'a sync the device refuses is io and an unmounted volume is lost',
+      () async {
+        repo = h.build(initial: [h.record(1)]);
+        await pumpEventQueue();
+        h.io.failingSyncs.add(h.mountPoint(1));
+
+        await expectLater(repo.syncVolume(usb1), throwsA(isA<StorageIo>()));
+        await expectLater(
+          repo.syncVolume(const StorageDestination.removable(2)),
+          throwsA(const StorageFailure.volumeLost(2)),
+        );
+        expect(h.volumeSyncs, isEmpty);
+        expect(repo.leases, isEmpty);
+      },
+    );
 
     test(
       'a sync that fails because the drive was pulled is a lost volume',
       () async {
         repo = h.build(initial: [h.record(1)]);
         await pumpEventQueue();
-        h.io.failingSyncs.add('${h.mountPoint(1)}/Segno');
+        h.io.failingSyncs.add(h.mountPoint(1));
         h.io.onSyncFailure = () => h.client.detach(1);
 
         await expectLater(
-          repo.syncDirectory(usb1, 'Segno'),
+          repo.syncVolume(usb1),
           throwsA(const StorageFailure.volumeLost(1)),
         );
       },

@@ -73,8 +73,11 @@ class AudioExportCancelled implements Exception {
 
 /// Runs the Library's exports and backups to a removable drive through the
 /// [StorageRepository] (#1178 Part 7, #1177): every byte goes through its
-/// `copyFile` (`.part`, fsync, rename), under a write lease that names what
-/// the write is for, after a space check against the export's total.
+/// `copyFile` (`.part`, fsync, rename, volume sync), under a write lease
+/// that names what the write is for, after a space check against the
+/// export's total. The volume is synced once more after the swap, so a
+/// finished export is on the device and the drive may be pulled without
+/// Eject (#1797).
 ///
 /// An export is all or nothing on the drive, whatever stops it:
 /// - Every file is first copied into a hidden staging directory named after
@@ -217,13 +220,12 @@ class AudioExporter {
         entries: entries,
         earlier: policy == ConflictPolicy.replace ? plan.earlier : null,
       );
-      // The swap's renames are plain renames: sync them before the export
-      // is reported, as the copy syncs its own (a moved package directory
-      // keeps its `..` entry in its own clusters, so it is synced too).
-      await _storage.syncDirectory(destination, plan.folder);
-      if (plan.package) {
-        await _storage.syncDirectory(destination, '${plan.folder}/$name');
-      }
+      // The swap's renames and its clean-up are plain filesystem calls:
+      // the volume is synced before the export is reported, as each copy
+      // syncs it after its own rename. A directory sync would not do: on
+      // vfat a renamed file's new entry reads size 0 until its inode is
+      // written back, and a stick pulled before that keeps the 0 (#1797).
+      await _storage.syncVolume(destination);
     } on FileSystemException catch (e) {
       _bestEffort(() => stagingDir.deleteSync(recursive: true));
       throw StorageFailure.io(e.osError?.message ?? e.message);

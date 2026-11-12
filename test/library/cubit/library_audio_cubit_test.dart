@@ -19,6 +19,17 @@ class _MockPerformance extends Mock implements PerformanceRepository;
 
 class _MockSessions extends Mock implements SessionRepository;
 
+/// A [FakeStorageIo] that reports every volume sync, so a test sees what
+/// the stick and the export held at that moment.
+class _RecordingStorageIo extends FakeStorageIo {
+  new(this._onVolumeSync);
+
+  final void Function(String path) _onVolumeSync;
+
+  @override
+  void syncVolume(String path) => _onVolumeSync(path);
+}
+
 const _mixdown = SessionMixdown(frames: 48000, sampleRate: 48000, bytes: 4);
 
 void main() {
@@ -407,6 +418,104 @@ void main() {
         [1, 1],
       );
       expect(storage.leases, isEmpty);
+    });
+
+    test('Exported to USB comes only after every file was fsynced and the '
+        'volume holding the placed package was synced (#1797)', () async {
+      final mount = '${temp.path}/3-SANDISK';
+      Directory(mount).createSync();
+      final client = FakeUsbStorageClient(
+        initial: [
+          RemovableVolumeRecord(
+            generation: 3,
+            kname: 'sda1',
+            fingerprint: 'SanDisk_Cruzer_Glide-sda1',
+            label: 'SANDISK',
+            fsType: 'vfat',
+            mountPoint: mount,
+            sizeBytes: 15669919744,
+            status: RemovableVolumeRecordStatus.mounted,
+            readOnly: false,
+          ),
+        ],
+      );
+      late LibraryAudioCubit cubit;
+      final events = <String>[];
+      List<String> onStick() => [
+        for (final e in Directory(mount).listSync(recursive: true))
+          if (e is File) e.path.substring(mount.length + 1),
+      ]..sort();
+      final io = _RecordingStorageIo(
+        (path) => events.add(
+          'volume sync $path: ${cubit.state.export.runtimeType}, '
+          '${onStick().join(', ')}',
+        ),
+      );
+      final storage = StorageRepository(
+        client: client,
+        exportsRoot: () async => exports,
+        volumeSpace: (_) => null,
+        guards: guards,
+        storageIo: io,
+        copyBytes: (source, part, abort) => StorageRepository.copyChunks(
+          source,
+          part,
+          abort,
+          sync: (file) async {
+            events.add('fsync ${await file.length()} bytes');
+            await file.flush();
+          },
+        ),
+      );
+      addTearDown(() async {
+        await storage.dispose();
+        await client.dispose();
+      });
+      await storage.volumes.firstWhere((v) => v.isNotEmpty);
+      final capture = take('perf');
+      for (final f in ['stems/wet/master.wav', 'project.als']) {
+        File('${capture.path}/$f')
+          ..createSync(recursive: true)
+          ..writeAsBytesSync([1, 2, 3]);
+      }
+      when(() => performance.dawPackageFiles(any())).thenAnswer(
+        (_) => ['master-001.wav', 'stems/wet/master.wav', 'project.als'],
+      );
+      when(() => performance.listCaptures()).thenAnswer((_) async => [capture]);
+      cubit = LibraryAudioCubit(
+        performance: performance,
+        sessions: sessions,
+        storage: storage,
+        guards: guards,
+        dawProject: (_) async => null,
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+      cubit.openFolder(LibraryAudioFolder.performances);
+      await cubit.select(cubit.state.items.single);
+
+      await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+      const package = 'Segno/Performances/perf';
+      expect(events.length, 7);
+      // Each file: its bytes fsynced, then the volume synced after the
+      // rename that names it.
+      for (var i = 0; i < 3; i++) {
+        expect(events[2 * i], startsWith('fsync '));
+        expect(
+          events[2 * i + 1],
+          startsWith('volume sync $mount: LibraryExportRunning'),
+        );
+      }
+      // Then once more after the swap: the package in place, no staging
+      // left, and the export still running.
+      expect(
+        events.last,
+        'volume sync $mount: LibraryExportRunning, '
+        '$package/master-001.wav, $package/project.als, '
+        '$package/stems/wet/master.wav',
+      );
+      expect(cubit.state.export, isA<LibraryExportDone>());
     });
 
     test('a one-part recording lands as one WAV, through one copy under a '
