@@ -29,21 +29,15 @@ OUT_DIR="build/test_lib"
 OUT="$OUT_DIR/segno_engine_test.$EXT"
 mkdir -p "$OUT_DIR"
 
-# Engine TU set mirrors run_native_tests.sh / src/CMakeLists.txt (no MIDI TUs:
-# the pump surface doesn't need them and they drag in platform MIDI deps) --
-# EXCEPT src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
-# (engine_process.c calls le_midi_clock_advance every block) despite living
-# in midi/ per the plan's file placement; keep in sync with the other two.
-$CXX -std=c++17 -O2 -fPIC -c src/stretch/le_stretch.cpp -o "$OUT_DIR/le_stretch.o" 1>&2
+# The engine TUs are ENGINE_SRC (src/test/engine_build.sh), compiled in
+# parallel and through ccache when it is installed. Nothing but the path
+# below may reach stdout, so the build's output goes to stderr.
+. src/test/engine_build.sh
+queue_compile "$OUT_DIR/le_stretch.o" $CXX -std=c++17 -O2 -fPIC src/stretch/le_stretch.cpp
+engine_objects ENGINE_OBJS "$OUT_DIR/obj" $CC $STD
+run_queue 1>&2
 # shellcheck disable=SC2086
-$CC $STD -shared "$OUT_DIR/le_stretch.o" \
-  src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
-  src/core/tempo_grid.c \
-  src/core/halfband.c \
-  src/core/synth_voice.c src/core/synth_patch.c \
-  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c \
-  $LIBS -o "$OUT" 1>&2
+$CC $STD -shared "$OUT_DIR/le_stretch.o" $ENGINE_OBJS $LIBS -o "$OUT" 1>&2
 
 # The one machine-readable line: the built library's absolute path.
 case "$(uname -s)" in

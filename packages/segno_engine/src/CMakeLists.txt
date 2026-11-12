@@ -40,12 +40,12 @@ add_library(segno_engine SHARED
   core/engine_instruments.c  # instrument slots, note rings, synth in the callback (#1197)
   core/engine_prefault.c    # background prefaulter ahead of the write head (#900)
   # The decoder's 2:1 half-band resampler (#697 S8) — a pure TU, no engine
-  # state. NOT matched by run_native_tests.sh's engine*.c glob — it is listed
-  # explicitly there; keep the two lists in sync.
+  # state. NOT matched by ENGINE_SRC's engine*.c glob (src/test/
+  # engine_build.sh) — it is listed explicitly there; keep the two in sync.
   core/halfband.c            # 2:1 half-band decimator (engine_decode.c)
   # Instrument synthesis (#1197) — pure TUs like the resampler: the voice
   # pool and the patch table (whose catalogue reads are exported). Listed
-  # explicitly in run_native_tests.sh and tool/build_test_lib.sh too.
+  # explicitly in ENGINE_SRC (src/test/engine_build.sh) too.
   core/synth_voice.c         # instrument voice pool (synth_voice.h)
   core/synth_patch.c         # the 19 patches + le_synth_patch_info & co.
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally

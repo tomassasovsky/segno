@@ -5,9 +5,9 @@
 # Part 1 and docs/plan/2026-10-06-pitch-time-spike-findings.md.
 #
 # Links the real engine sources (so `baseline` measures le_engine_process as
-# shipped) plus the Signalsmith Stretch C shim. The source list and the per-OS
-# link flags mirror run_native_tests.sh — keep them in sync with it and with
-# src/CMakeLists.txt.
+# shipped) plus the Signalsmith Stretch C shim. The source list is ENGINE_SRC
+# (src/test/engine_build.sh); the per-OS link flags mirror
+# run_native_tests.sh — keep them in sync.
 #
 # Usage: ./bench_pitch_time.sh [--smoke] [--seconds N] [--loop-seconds N]
 #          [--rate HZ] [--period FRAMES] [--budget-us N] [--assert] [--proxy]
@@ -31,22 +31,17 @@ case "$(uname -s)" in
   *) LIBS="-lpthread -lstdc++ -lm -ldl" ;;   # Linux: miniaudio dlopen()s its backends
 esac
 
-ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
-  src/core/tempo_grid.c \
-  src/core/halfband.c \
-  src/core/synth_voice.c src/core/synth_patch.c \
-  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c \
-  src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c \
-  src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c src/midi/le_clock_follow.c"
+. src/test/engine_build.sh   # ENGINE_SRC, engine_objects, queue_compile
 
 echo "== building the stretch shim ==" >&2
-$CXX -std=c++17 -O2 -DNDEBUG -c src/stretch/le_stretch.cpp -o "$OUT_DIR/le_stretch.o"
+queue_compile "$OUT_DIR/le_stretch.o" $CXX -std=c++17 -O2 -DNDEBUG src/stretch/le_stretch.cpp
 # The counting global operator new the memory scenario reads (bench only).
-$CXX -std=c++17 -O2 -DNDEBUG -c src/test/bench/bench_alloc.cpp -o "$OUT_DIR/bench_alloc.o"
+queue_compile "$OUT_DIR/bench_alloc.o" $CXX -std=c++17 -O2 -DNDEBUG src/test/bench/bench_alloc.cpp
 echo "== building bench_pitch_time ==" >&2
+engine_objects ENGINE_OBJS "$OUT_DIR/obj/bench_pitch_time" $CC $STD
+run_queue
 # shellcheck disable=SC2086
-$CC $STD src/test/bench/bench_pitch_time.c $ENGINE_SRC "$OUT_DIR/le_stretch.o" \
+$CC $STD src/test/bench/bench_pitch_time.c $ENGINE_OBJS "$OUT_DIR/le_stretch.o" \
   "$OUT_DIR/bench_alloc.o" $LIBS -o "$OUT_DIR/bench_pitch_time"
 echo "binary: $(pwd)/$OUT_DIR/bench_pitch_time" >&2
 

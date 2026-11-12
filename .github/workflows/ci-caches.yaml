@@ -1,0 +1,96 @@
+name: ci-caches
+
+# Saves, on the trunk, the Actions caches the PR checks restore (#1771).
+#
+# A pull request restores caches saved on its own ref or on its base branch,
+# but main.yaml runs only on pull requests and on pushes to master. So every
+# PR missed the Flutter SDK cache, downloaded the SDK, and saved its own
+# 1.6 GB copy (and the console firmware job its 0.8 GB Arduino core) under its
+# own ref, where no other PR can read it. A handful of those filled the
+# repository's 10 GB, and from then on no job could save a cache at all
+# ("Unable to reserve cache"): not ccache, not the apt packages. Saved here,
+# under claude/segno-integration, the caches are found by every PR into the
+# trunk, and a job that finds its cache saves nothing.
+#
+# The keys must be the ones the PR jobs compute: subosito/flutter-action's
+# defaults (the packages, design and fuzz jobs), the Very Good workflows' key
+# (flutter_package.yml adds the hash of every pubspec.lock), and the console
+# firmware job's Arduino key, and the native jobs' apt packages.
+
+# A PR that changes this file runs it too, to prove the jobs still work.
+on:
+  push:
+    branches:
+      - claude/segno-integration
+  pull_request:
+    paths:
+      - .github/workflows/ci-caches.yaml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Flutter, with the packages and design jobs' cache keys
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.x"
+          channel: stable
+          cache: true
+      - name: Flutter, with the Very Good workflows' cache key
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.x"
+          channel: stable
+          cache: true
+          cache-key: flutter-:os:-:channel:-:version:-:arch:-:hash:-${{ hashFiles('**/pubspec.lock') }}
+      - name: Fill the pub cache
+        run: |
+          dart pub global activate very_good_cli 1.5.0
+          very_good packages get --recursive
+
+  arduino:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # The key and paths are console-firmware's in main.yaml.
+      - name: Look up the Arduino core cache
+        id: arduino-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-rp2040-6.0.0-neopixel-1.15.5-bus-2.8.4
+          # Present already: nothing to download or save.
+          lookup-only: true
+      - name: Install arduino-cli
+        if: steps.arduino-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.1.1
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Install the RP2040/RP2350 core and LED drivers
+        if: steps.arduino-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core install rp2040:rp2040@6.0.0 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
+
+  apt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The packages and version are the native jobs' in main.yaml.
+      - name: The ALSA headers and libpulse0
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev libpulse0
+          version: "1"

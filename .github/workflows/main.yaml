@@ -11,6 +11,57 @@ on:
   pull_request:
 
 jobs:
+  # Which parts of the tree the change touches (#1771), so the jobs that only
+  # test native code, the firmware or the appliance scripts skip on a PR that
+  # changes none of it. A skipped job still reports its check (as skipped,
+  # which counts as passing), so a filtered job never leaves a check missing
+  # or pending. A skipped matrix job reports one check, under its unexpanded
+  # name ("native-tests-asan (${{ matrix.part }})"). On a push every job
+  # runs. The workflow file is in every filter, so a CI change runs
+  # everything.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      native: ${{ github.event_name != 'pull_request' || steps.filter.outputs.native == 'true' }}
+      pedal_link: ${{ github.event_name != 'pull_request' || steps.filter.outputs.pedal_link == 'true' }}
+      firmware: ${{ github.event_name != 'pull_request' || steps.filter.outputs.firmware == 'true' }}
+      deploy: ${{ github.event_name != 'pull_request' || steps.filter.outputs.deploy == 'true' }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            native:
+              - '.github/workflows/main.yaml'
+              - 'packages/segno_engine/src/**'
+              - 'packages/segno_engine/third_party/**'
+              - 'packages/segno_engine/tool/**'
+              - 'packages/segno_engine/macos/**'
+            # The console link contract test in native-tests
+            # (firmware/test/run_tests.sh): the firmware, the Dart codec's
+            # golden frames, and the ring updater it builds.
+            pedal_link:
+              - '.github/workflows/main.yaml'
+              - 'firmware/**'
+              - 'packages/pedal_repository/**'
+              - 'deploy/yocto/meta-segno/recipes-segno/segno-console-board/files/**'
+            firmware:
+              - '.github/workflows/main.yaml'
+              - 'firmware/**'
+            # The appliance shell suites also build the console and ring
+            # firmware's link code, read the engine's real-time priorities,
+            # and compare exit codes with the app's appliance_env.dart.
+            deploy:
+              - '.github/workflows/main.yaml'
+              - 'deploy/**'
+              - 'firmware/**'
+              - 'packages/segno_engine/src/**'
+              - 'lib/update/appliance/**'
+
   semantic-pull-request:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v2
 
@@ -35,171 +86,39 @@ jobs:
       min_coverage: 90
       coverage_excludes: "**/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart **/system_appliance_env.dart"
 
-  # daw_export is a pure Dart package (no Flutter dependency, plain `test`
-  # instead of `flutter_test`) so it can't ride the root flutter_package.yml
-  # job above — that job only runs the root app's own test/ dir. It gets its
-  # own dart_package.yml job instead. No bloc usage here, so bloc lint is off.
-  daw-export:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
-    with:
-      working_directory: packages/daw_export
-      run_bloc_lint: false
-      min_coverage: 100
-
-  # usb_storage_client (#1177) is pure Dart too: it reads the appliance's USB
-  # volume records and files eject requests, with no Flutter dependency.
-  usb-storage-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
-    with:
-      working_directory: packages/usb_storage_client
-      run_bloc_lint: false
-      min_coverage: 100
-
-  # touch_calibration_client (#1330) is pure Dart: the calibration matrix fit
-  # and the appliance's segno-touch-ctl helper. The one line it cannot cover
-  # here is the factory's return of the real helper, which only the appliance
-  # has installed.
-  touch-calibration-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
-    with:
-      working_directory: packages/touch_calibration_client
-      run_bloc_lint: false
-      min_coverage: 98
-
-  # Per-package test + coverage gates for the five domain packages (FX v3
-  # part 3a [VGV-critical]): the root `build` job only runs the root app's own
-  # test/ dir, so until these jobs existed the packages' suites never ran in
-  # CI at all. One job per package (same flutter_version as `build` so the
-  # matrix can't drift; no bloc usage in the repository layer, so bloc lint is
-  # off). Coverage floors are pinned AT the value measured when the job was
-  # added — deliberately not rounded up (a blind 100 blocks every later part)
-  # and never silently lowered (raise-only from here). Native-lib-dependent
-  # tests (the fingerprint agreement suite) are fuzz-tagged and self-skip
-  # here; the `fuzz` job below runs them against the real engine.
-  # The factory effects catalogue (slice 3f): data and its loader, no bloc.
-  # Its own job for the same reason as the packages below — the root `build`
-  # job runs only the root app's test/ dir.
-  fx-catalogue:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/fx_catalogue
-      run_bloc_lint: false
-      min_coverage: 100
-  looper-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/looper_repository
-      run_bloc_lint: false
-      min_coverage: 95
-  session-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/session_repository
-      run_bloc_lint: false
-      min_coverage: 89
-  # storage_repository (#1177): destinations, leases, eject, capacity and the
-  # part-then-rename copy. It takes VolumeSpace from segno_engine, a Flutter
-  # plugin, so it runs on flutter_package.yml.
-  storage-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/storage_repository
-      run_bloc_lint: false
-      min_coverage: 100
-  # backing_repository (#1200): the managed Backing tracks store and the
-  # player over the engine's backing voice. It depends on segno_engine, a
-  # Flutter plugin, so it runs on flutter_package.yml; its native-library test
-  # self-skips here (the fuzz job builds the library).
-  backing-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/backing_repository
-      run_bloc_lint: false
-      min_coverage: 95
-  performance-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/performance_repository
-      run_bloc_lint: false
-      min_coverage: 99
-  # The app's one guard table (#1198): which operations may commit while
-  # others are in flight. Pure Dart, a const table and a registry; every
-  # rule pair is pinned by a literal transcription of the plan's table.
-  operation-guards:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/operation_guards
-      run_bloc_lint: false
-      min_coverage: 100
-  # The console's CPU load (#1307): /proc/stat sampling. Pure Dart.
-  cpu-load-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/cpu_load_repository
-      run_bloc_lint: false
-      min_coverage: 100
-  # The console's per-panel brightness and which output each screen is on,
-  # read from ivi-homescreen's homescreen.toml (#1330). Pure Dart. What it
-  # cannot cover here are the two factories, which only pick the real client
-  # on the appliance.
-  brightness-client:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
-    with:
-      working_directory: packages/brightness_client
-      run_bloc_lint: false
-      min_coverage: 80
-  # spawn_process (#1367) starts the appliance helpers with posix_spawn
-  # through dart:ffi, so the app never forks. Pure Dart. Its tests start real
-  # programs on this Linux runner. What it cannot cover here are its macOS
-  # branches and the libc failures a test cannot provoke. The tests force the
-  # EPIPE and ECHILD paths rather than racing for them (#1457), so the figure
-  # is 89.3% on every run; the floor leaves room for a few lines of change.
-  spawn-process:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v2
-    with:
-      working_directory: packages/spawn_process
-      run_bloc_lint: false
-      min_coverage: 88
-  # No app code, and no package the app runs, may start a program through
-  # dart:io (#1367): Process.run and Process.start fork the app, which stalls
-  # the audio thread, and a dart:io child running beside spawn_process takes
-  # the exit status of its children. The dependency scan reads the resolved
-  # package config, so it needs flutter pub get.
-  no-dart-process:
+  # The packages' own suites (#1771): the root `build` job tests only the
+  # root app, so each package's tests and coverage floor run here, one job
+  # for all of them where they were a Very Good workflow job each. The root
+  # job already formats and analyzes every package. The floors, and which
+  # packages run, are in tool/run_package_tests.sh. The two whole-app scans
+  # also run in this job, since they need the same resolved dependencies:
+  #   - no app code, and no package the app runs, may start a program through
+  #     dart:io (#1367): Process.run and Process.start fork the app, which
+  #     stalls the audio thread, and a dart:io child running beside
+  #     spawn_process takes the exit status of its children;
+  #   - no method, function or getter in lib/ or packages/*/lib may return a
+  #     widget (#1697): UI is built from widget classes.
+  packages:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.50.x"
           channel: stable
-      - name: Resolve the app's dependencies
-        run: flutter pub get
+          cache: true
+      - name: Resolve the app's and every package's dependencies
+        run: |
+          dart pub global activate very_good_cli 1.5.0
+          very_good packages get --recursive
+      - name: Run the package suites against their coverage floors
+        run: bash tool/run_package_tests.sh
       - name: Check the app and its runtime dependencies for dart:io process starts
+        if: ${{ !cancelled() }}
         run: bash tool/check_no_dart_process.sh
-  # No method, function or getter in lib/ or packages/*/lib may return a
-  # widget (#1697): UI is built from widget classes. The check resolves the
-  # code with package:analyzer, so it needs flutter pub get. Its own job
-  # because dart analyze and bloc lint run inside the reusable workflow above.
-  no-widget-methods:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.50.x"
-          channel: stable
-      - name: Resolve the app's dependencies
-        run: flutter pub get
       - name: No widget-returning methods
+        if: ${{ !cancelled() }}
         run: dart run tool/check_no_widget_methods.dart
   # The design side of a UI change. The design is the Penpot file segno-ui
   # (#1503); its snapshots, the frozen segno-ui.pen and the design studies
@@ -251,29 +170,6 @@ jobs:
       - name: Check the app against the design studies
         if: always() && steps.design-clone.outcome == 'success' && steps.pub-get.outcome == 'success'
         run: flutter test test/control/external_pedal_art_test.dart
-  pedal-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/pedal_repository
-      run_bloc_lint: false
-      min_coverage: 96
-  controller-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/controller_repository
-      run_bloc_lint: false
-      min_coverage: 82
-  # instrument_repository (#1197): instrument definitions, slots, the route
-  # compiler and the engine replay. Its native cases are fuzz-tagged.
-  instrument-repository:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v2
-    with:
-      flutter_version: "3.50.x"
-      working_directory: packages/instrument_repository
-      run_bloc_lint: false
-      min_coverage: 100
 
   # The appliance bundle: the exact build the release ships, in the same
   # container (deploy/rpi/build) on a native arm64 runner, with the Flutter
@@ -312,13 +208,34 @@ jobs:
   # it with `--budget-us 667 --assert` there. upload-artifact does not keep
   # file modes: `chmod +x` the binary on the appliance before running it.
   native-bench-arm64:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install C/C++ build dependencies
+      # The runner image has GCC and Clang 18; only the `clang` name may be
+      # missing (it comes with Ubuntu's `clang` metapackage), so the Clang
+      # steps below take the versioned binary's path from here rather than
+      # installing anything (#1771).
+      - name: Find Clang
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential clang
+          set -eu
+          clang=$(command -v clang || ls /usr/bin/clang-[0-9]* | sort -V | tail -n 1)
+          "$clang" --version
+          echo "CLANG=$clang" >> "$GITHUB_ENV"
+      # Compiler output from earlier runs (#1771): a TU that has not changed
+      # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          key: ${{ github.job }}
+          install: binary
+          append-timestamp: false
+          max-size: 100M
       - name: Build + run the pitch/time bench (arm64 proxy thresholds)
         # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
         # has no pipefail, so the pipeline would exit with tee's status and a
@@ -403,10 +320,9 @@ jobs:
       - name: Run the pitch kinds' oracle with Clang
         if: always()
         shell: bash
-        env:
-          CC: clang
-          CXX: clang++
-        run: bash packages/segno_engine/src/test/run_pitch_oracle.sh --ci
+        run: |
+          CC="$CLANG" CXX="${CLANG/clang/clang++}" \
+            bash packages/segno_engine/src/test/run_pitch_oracle.sh --ci
       # The effects matrix (#1547): its CI subset runs in native-tests; this
       # builds the full run's binary for the console, where the owner runs
       # it, and runs the subset on arm64 too.
@@ -423,7 +339,7 @@ jobs:
         run: |
           set -euo pipefail
           bash packages/segno_engine/src/test/bench/bench_fx_equiv.sh --ci
-          CC=clang FX_EQUIV_OPT=-O3 \
+          CC="$CLANG" FX_EQUIV_OPT=-O3 \
             bash packages/segno_engine/src/test/bench/bench_fx_equiv.sh --ci
       - name: Upload the effects bench and its report for the appliance
         if: always()
@@ -474,20 +390,40 @@ jobs:
   # the local verify loop): the console board firmware's pedal_link.c
   # decodes and re-encodes the golden frames packages/pedal_repository
   # generates from the Dart codec, so drift between the two fails the job.
-  # This is the strongest correctness gate in the repo — keep it on every PR.
+  # This is the strongest correctness gate in the repo — keep it on every PR
+  # that touches native code (the `changes` job above says which do).
   native-tests:
+    needs: changes
+    if: needs.changes.outputs.native == 'true' || needs.changes.outputs.pedal_link == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install C build dependencies
-        run: |
-          sudo apt-get update
-          # libpulse0 (no PulseAudio server running) is not a build dep — it is
-          # the CONDITION test_probing_leaks_no_fds needs: miniaudio dlopen()s
-          # the Pulse backend, the connect fails with no server, and that is the
-          # failure path that leaked a memfd per probe (#721). Without libpulse
-          # present the backend is skipped and the test cannot fail.
-          sudo apt-get install -y build-essential libasound2-dev libpulse0
+      # The ALSA headers, and libpulse0 (no PulseAudio server running): not
+      # a build dep but the CONDITION test_probing_leaks_no_fds needs —
+      # miniaudio dlopen()s the Pulse backend, the connect fails with no
+      # server, and that is the failure path that leaked a memfd per probe
+      # (#721). Without libpulse present the backend is skipped and the test
+      # cannot fail. The packages come from the Actions cache when it has
+      # them, so the job does not need Ubuntu's mirrors (#1771); the
+      # compilers are the runner image's own.
+      - name: Install the ALSA headers and libpulse0
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev libpulse0
+          version: "1"
+      # Compiler output from earlier runs (#1771): a TU that has not changed
+      # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          key: ${{ github.job }}
+          install: binary
+          append-timestamp: false
+          max-size: 100M
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
       # The #1179 pitch/time bench (src/test/bench/bench_pitch_time.{c,sh}) is
@@ -522,6 +458,8 @@ jobs:
   # The arduino-pico core is what the local build uses
   # (firmware/console_board/README.md).
   console-firmware:
+    needs: changes
+    if: needs.changes.outputs.firmware == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -532,6 +470,8 @@ jobs:
           echo "$PWD/bin" >> "$GITHUB_PATH"
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
+      # ci-caches.yaml saves it on the trunk under the same key, so a PR finds
+      # it there (#1771): change the two together.
       - name: Cache the Arduino core and libraries
         id: arduino-cache
         uses: actions/cache@v6
@@ -575,25 +515,66 @@ jobs:
   # coverage. Separate from native-tests so a sanitizer-only failure is
   # instantly distinguishable from a logic failure. The firmware protocol test
   # is not repeated here — it is pure fixed-size parsing already covered above.
+  #
+  # It runs as three jobs (#1771). Four sanitized processes on one runner's
+  # four vCPUs (two cores, two threads each) run at about half speed each,
+  # so on one runner the suite took 14 minutes however it was spread. Each
+  # part builds only what it runs; two take half the core suite's 16 shards
+  # each, the third the rest, and the second also runs the race binaries.
   native-tests-asan:
+    name: native-tests-asan (${{ matrix.part }})
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: core 1 of 2
+            only: core
+            core_part: 0/2
+          - part: core 2 of 2, races
+            only: core,races
+            core_part: 1/2
+          - part: the rest
+            only: rest
+            core_part: 0/1
     steps:
       - uses: actions/checkout@v7
-      - name: Install C build dependencies
-        run: |
-          sudo apt-get update
-          # libpulse0 (no PulseAudio server running) is not a build dep — it is
-          # the CONDITION test_probing_leaks_no_fds needs: miniaudio dlopen()s
-          # the Pulse backend, the connect fails with no server, and that is the
-          # failure path that leaked a memfd per probe (#721). Without libpulse
-          # present the backend is skipped and the test cannot fail.
-          sudo apt-get install -y build-essential libasound2-dev libpulse0
+      # The ALSA headers, and libpulse0 (no PulseAudio server running): not
+      # a build dep but the CONDITION test_probing_leaks_no_fds needs —
+      # miniaudio dlopen()s the Pulse backend, the connect fails with no
+      # server, and that is the failure path that leaked a memfd per probe
+      # (#721). Without libpulse present the backend is skipped and the test
+      # cannot fail. The packages come from the Actions cache when it has
+      # them, so the job does not need Ubuntu's mirrors (#1771); the
+      # compilers are the runner image's own.
+      - name: Install the ALSA headers and libpulse0
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev libpulse0
+          version: "1"
+      # Compiler output from earlier runs (#1771): a TU that has not changed
+      # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          key: ${{ github.job }}-${{ strategy.job-index }}
+          install: binary
+          append-timestamp: false
+          max-size: 100M
       - name: Build + run native tests under AddressSanitizer
         # The decoder fuzz driver also runs under UBSan, for longer (#1200).
         run: >
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
           FUZZ_CFLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined"
           SEGNO_FUZZ_ITERATIONS=20000
+          NATIVE_TESTS_ONLY="${{ matrix.only }}"
+          SEGNO_CORE_PART="${{ matrix.core_part }}"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
   # The same suites with the callback telemetry GATED OFF (#722). That gate is
@@ -611,18 +592,33 @@ jobs:
   # still do — accumulate nothing, and keep the ungated per-kind dropout tally
   # (which is what leaves xrun_count explainable in every build).
   native-tests-telemetry-off:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install C build dependencies
-        run: |
-          set -eu
-          sudo apt-get update
-          # libpulse0 for the same reason as the two jobs above: without it
-          # miniaudio never loads the PulseAudio backend and the #721 fd-leak
-          # tests skip rather than run. This job is not about them, but a job
-          # that silently skips tests is worse than one that does not have them.
-          sudo apt-get install -y build-essential libasound2-dev libpulse0
+      # libpulse0 for the same reason as the two jobs above: without it
+      # miniaudio never loads the PulseAudio backend and the #721 fd-leak
+      # tests skip rather than run. This job is not about them, but a job
+      # that silently skips tests is worse than one that does not have them.
+      - name: Install the ALSA headers and libpulse0
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev libpulse0
+          version: "1"
+      # Compiler output from earlier runs (#1771): a TU that has not changed
+      # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          key: ${{ github.job }}
+          install: binary
+          append-timestamp: false
+          max-size: 100M
       - name: Build + run native tests with LE_CALLBACK_TELEMETRY=0
         run: >
           EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0"
@@ -642,16 +638,27 @@ jobs:
   # expresses; this job adds the machine check that every cross-thread access
   # really is the relaxed atomic the ownership note claims.
   native-tests-tsan:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install C build dependencies
-        run: |
-          sudo apt-get update
-          # No libasound2-dev / libpulse0 here: the races binary builds from
-          # the header-only telemetry plus pthreads, and NATIVE_TESTS_ONLY
-          # skips the suites that link the audio backends.
-          sudo apt-get install -y build-essential
+      # No packages to install: the race binaries build from the runner
+      # image's compilers, the header-only telemetry and pthreads, and
+      # NATIVE_TESTS_ONLY skips the suites that link the audio backends.
+      # Compiler output from earlier runs (#1771): a TU that has not changed
+      # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          key: ${{ github.job }}
+          install: binary
+          append-timestamp: false
+          max-size: 100M
       - name: Build + run the telemetry race tests under ThreadSanitizer
         run: >
           NATIVE_TESTS_ONLY=races
@@ -668,16 +675,26 @@ jobs:
   # replayable repro to paste into the corpus.
   fuzz:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - name: Install C build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+      # Compiler output from earlier runs (#1771): a TU that has not changed
+      # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
+      - name: Restore the compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.25
+        with:
+          key: ${{ github.job }}
+          install: binary
+          append-timestamp: false
+          max-size: 100M
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.50.x"
           channel: stable
+          cache: true
       - name: Build the engine test library
         run: |
           set -eu
@@ -732,6 +749,8 @@ jobs:
   # cmdline, reconcile-staged, the update attempt marker), which share one
   # shape: inject every path, stub the privileged call — no hardware.
   appliance-shell-tests:
+    needs: changes
+    if: needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
