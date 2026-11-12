@@ -9,9 +9,12 @@
 # only the tests.
 #
 # Run it from anywhere after `very_good packages get --recursive` at the
-# root. PACKAGE_TEST_JOBS sets how many packages test at once (each suite
-# runs in one isolate under optimization, so one per CPU by default). Every
-# package's output prints when all are done, the failed ones last.
+# root. PACKAGE_TEST_JOBS sets how many packages test at once: half the CPUs
+# by default, so a suite gets about the CPU it had in a job of its own (with
+# four at once on four CPUs, session_repository's 8-track Free-mode
+# round-trip, 16 s on an idle runner, ran past its 30 s timeout). The list runs
+# longest first. Every package's output prints when all are done, the failed
+# ones last.
 #
 # A floor is pinned AT the value measured when the package's job was added:
 # never rounded up (a blind 100 blocks every later part) and never silently
@@ -30,25 +33,26 @@ cd "$(dirname "$0")/.."
 
 # package  runner  floor
 PACKAGES="
-looper_repository     flutter 95
 session_repository    flutter 89
-controller_repository flutter 82
+looper_repository     flutter 95
 performance_repository flutter 99
-pedal_repository      flutter 96
-backing_repository    flutter 95
-fx_catalogue          flutter 100
-storage_repository    flutter 100
-instrument_repository flutter 100
-operation_guards      flutter 100
-cpu_load_repository   flutter 100
+controller_repository flutter 82
 spawn_process         dart    88
 daw_export            dart    100
 usb_storage_client    dart    100
 touch_calibration_client dart 98
+backing_repository    flutter 95
+storage_repository    flutter 100
+instrument_repository flutter 100
+pedal_repository      flutter 96
+fx_catalogue          flutter 100
 brightness_client     dart    80
+operation_guards      flutter 100
+cpu_load_repository   flutter 100
 "
 
-JOBS="${PACKAGE_TEST_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+JOBS="${PACKAGE_TEST_JOBS:-$(( CPUS > 1 ? CPUS / 2 : 1 ))}"
 LOGS="$(mktemp -d "${TMPDIR:-/tmp}/segno_package_tests.XXXXXX")"
 export LOGS
 

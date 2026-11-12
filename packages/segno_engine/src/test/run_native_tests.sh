@@ -239,14 +239,19 @@ add_test fx-tables-races "$OUT/segno_fx_tables_race_tests.exe"
 [ "$RACES_ONLY" = 0 ] && add_test midi "$OUT/segno_midi_tests.exe"
 
 run_test() {   # run_test NAME COMMAND — one test, its output to NAME.log
-  local name=$1 cmd=$2 start=$SECONDS status=passed
+  local name=$1 cmd=$2 status=passed rc=0 times
   mkdir -p "$RUN_DIR/$name"
   echo "== $name started =="
-  if ! TMPDIR="$RUN_DIR/$name" bash -c "$cmd" >"$RUN_DIR/$name.log" 2>&1; then
+  # Wall and CPU seconds: CPU well under wall times the CPUs running means
+  # the test waited, on a lock, a sleep or a busy machine.
+  local TIMEFORMAT='%0R s, CPU %0U s user + %0S s system'
+  { time TMPDIR="$RUN_DIR/$name" bash -c "$cmd" >"$RUN_DIR/$name.log" 2>&1 || rc=$?; } 2>"$RUN_DIR/$name.time"
+  times=$(cat "$RUN_DIR/$name.time")
+  if [ "$rc" != 0 ]; then
     status=FAILED
     : >"$RUN_DIR/$name.failed"
   fi
-  echo "== $name $status in $((SECONDS - start)) s =="
+  echo "== $name $status in $times =="
 }
 export -f run_test
 export RUN_DIR

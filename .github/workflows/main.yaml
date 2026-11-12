@@ -212,7 +212,7 @@ jobs:
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
       - name: Restore the compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
@@ -396,7 +396,7 @@ jobs:
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
       - name: Restore the compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
@@ -513,7 +513,7 @@ jobs:
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
       - name: Restore the compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
@@ -559,7 +559,7 @@ jobs:
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
       - name: Restore the compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
@@ -595,7 +595,7 @@ jobs:
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
       - name: Restore the compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
@@ -622,7 +622,7 @@ jobs:
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
       - name: Restore the compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
