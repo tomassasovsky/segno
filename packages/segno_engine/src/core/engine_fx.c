@@ -1207,7 +1207,8 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
  *
  * The three steps below ARE le_psola_detect_band, split at the two points a
  * caller can pause at: before the difference function and after it. The
- * tuner and the PSOLA octaver run le_yin_step a slice at a time across
+ * tuner (le_yin_step) and the PSOLA octaver and the Dual Octaver's band
+ * (le_yin_step_lanes, the same loop) run it a slice at a time across
  * callbacks. The
  * arithmetic is byte-identical either way, which is the whole point of the
  * split — there is no second copy of the detector to keep in step. */
@@ -1335,26 +1336,7 @@ int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
 }
 
 int le_yin_step(le_yin_pass* p, long budget) {
-  /* Difference function d(tau), then its cumulative-mean normalization d'(tau).
-   * One whole lag always runs, however small the budget: a caller whose budget
-   * is under one integration length must still make progress, or the pass
-   * stalls forever. One lag is bounded by n/2 inner iterations. */
-  while (p->tau <= p->maxlag) {
-    double sum = 0.0;
-    const int tau = p->tau;
-    for (int i = 0; i < p->integ; ++i) {
-      const float diff = p->x[i] - p->x[i + tau];
-      sum += (double)diff * (double)diff;
-    }
-    p->cum += sum;
-    p->dp[tau] = p->cum > 0.0 ? (float)(sum * (double)tau / p->cum) : 1.0f;
-    ++p->tau;
-    if (budget >= 0) {
-      budget -= p->integ;
-      if (budget <= 0) break;
-    }
-  }
-  return p->tau > p->maxlag;
+  return le_yin_step_lanes(p, budget, NULL);
 }
 
 int le_yin_step_lanes(le_yin_pass* p, long budget, double* sums) {
@@ -1364,17 +1346,25 @@ int le_yin_step_lanes(le_yin_pass* p, long budget, double* sums) {
    * stalls forever. One lag is bounded by n/2 inner iterations. */
   while (p->tau <= p->maxlag) {
     const int tau = p->tau;
-    /* The lags in groups from 1 (every pass starts there and takes them
-     * in order), each group worked out together (le_lag_sums) when the
-     * pass reaches its first lag; the pass still takes them one at a time
-     * below, so its budget and its results are the one-lag pass's. */
-    const int at = (tau - 1) % LE_YIN_GROUP;
-    if (at == 0) {
-      int g = p->maxlag - tau + 1;
-      if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
-      le_lag_sums(p->x, p->integ, tau, g, sums);
+    double one;
+    double* group = &one;
+    int at = 0;
+    if (sums == NULL) {
+      le_lag_sums(p->x, p->integ, tau, 1, &one);
+    } else {
+      /* The lags in groups from 1 (every pass starts there and takes them
+       * in order), each group worked out together (le_lag_sums) when the
+       * pass reaches its first lag; the pass still takes them one at a
+       * time below, so its budget and its results are the one-lag pass's. */
+      at = (tau - 1) % LE_YIN_GROUP;
+      if (at == 0) {
+        int g = p->maxlag - tau + 1;
+        if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
+        le_lag_sums(p->x, p->integ, tau, g, sums);
+      }
+      group = sums;
     }
-    const double sum = sums[at];
+    const double sum = group[at];
     p->cum += sum;
     p->dp[tau] = p->cum > 0.0 ? (float)(sum * (double)tau / p->cum) : 1.0f;
     ++p->tau;
@@ -1462,16 +1452,15 @@ int le_refine_step(le_lag_refine* r, const float* x, long budget) {
   while (r->tau <= r->hi) {
     const int tau = r->tau;
     const int k = tau - r->lo;
-    if (k == 0) {
-      /* Every lag's sum on the first (le_lag_sums, LE_YIN_GROUP at a
-       * time), each as one lag's; the steps below take them in order. */
-      for (int at = r->lo; at <= r->hi; at += LE_YIN_GROUP) {
-        double s[LE_YIN_GROUP];
-        int g = r->hi - at + 1;
-        if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
-        le_lag_sums(x, r->integ, at, g, s);
-        for (int j = 0; j < g; ++j) r->d[at - r->lo + j] = (float)s[j];
-      }
+    if (k % LE_YIN_GROUP == 0) {
+      /* The lags in groups from lo, each worked out together (le_lag_sums)
+       * when the pass reaches its first lag, each sum as one lag's, kept
+       * in d[] until its step below takes it. */
+      double s[LE_YIN_GROUP];
+      int g = r->hi - tau + 1;
+      if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
+      le_lag_sums(x, r->integ, tau, g, s);
+      for (int j = 0; j < g; ++j) r->d[k + j] = (float)s[j];
     }
     if (tau == r->lo || r->d[k] < r->d[r->best]) r->best = k;
     ++r->tau;

@@ -225,7 +225,7 @@ typedef struct le_oct_aux {
   int32_t shift_start;
 } le_oct_aux;
 #define LE_OCT_AUX_OFF \
-  ((LE_PS_STATE_OFF + (int)((sizeof(le_psola_pass) + 3) / 4) + 1) & ~1)
+  (LE_PS_STATE_OFF + (int)((sizeof(le_psola_pass) + 3) / 4))
 #define LE_PV_SCRATCH_ALLOC \
   (LE_OCT_AUX_OFF + (int)((sizeof(le_oct_aux) + 3) / 4))
 static inline le_psola_pass* le_ps(le_octaver_state* o) {
@@ -644,11 +644,14 @@ int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
 int le_yin_step(le_yin_pass* p, long budget);
 
 /* le_yin_step, its lags worked out LE_YIN_GROUP at a time ahead of their
- * charge (le_lag_sums, engine_fx.c) into the caller's [sums], kept with the
- * pass for its life: the same budget and the same results, for a fraction
- * of a lag alone's cost each (#1755). The PSOLA octaver's and the Dual
- * Octaver's passes run it; the tuner keeps le_yin_step, so the callback's
- * le_engine_process, which inlines its slice, is the code it was. */
+ * charge (le_lag_sums, engine_fx.c) into the caller's [sums]: the same
+ * budget and the same results, for a fraction of a lag alone's cost each
+ * (#1755). [sums] must be the same LE_YIN_GROUP doubles, untouched between
+ * calls, for the whole pass (a group is worked out only at its first lag);
+ * NULL takes the lags one at a time, which is le_yin_step. The PSOLA
+ * octaver's and the Dual Octaver's passes run it with sums in their heap
+ * state; the tuner keeps le_yin_step, so the callback's le_engine_process,
+ * which inlines its slice, is the code it was. */
 int le_yin_step_lanes(le_yin_pass* p, long budget, double* sums);
 
 /* Peak-picks a COMPLETED pass: writes the parabolic-interpolated period in
@@ -682,7 +685,9 @@ void le_eq_design(int kind, double hz, double db, double q, int sr,
                   double c[5]);
 
 /* Accumulates lags over window [x] until at least [budget] inner iterations
- * are spent (one whole lag always runs). Returns 1 once every lag is in. */
+ * are charged (one whole lag always runs; the lags are worked out
+ * LE_YIN_GROUP at a time, so up to LE_YIN_GROUP - 1 of them ahead of their
+ * charge, #1755). Returns 1 once every lag is in. */
 int le_refine_step(le_lag_refine* r, const float* x, long budget);
 
 /* The completed refinement's minimum, interpolated, or [coarse] when the
