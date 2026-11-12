@@ -12,14 +12,8 @@ import 'package:segno_engine/src/native_audio_decoder.dart'
 
 /// The backing seam through the real native library (#1200 Part 3): the
 /// decoder in a background isolate, and the voice through the device-free
-/// pump. Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
+/// pump.
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   late Directory dir;
   setUp(() => dir = Directory.systemTemp.createTempSync('native_backing'));
   tearDown(() => dir.deleteSync(recursive: true));
@@ -95,7 +89,6 @@ void main() {
         audio.dispose();
         expect(audio.ownership, DecodedAudioOwnership.disposed);
       },
-      skip: skip,
     );
 
     test(
@@ -112,7 +105,6 @@ void main() {
         expect(audio.copySamples()[0], left(100));
         audio.dispose();
       },
-      skip: skip,
     );
 
     test('converts another rate by the native length rule', () async {
@@ -123,7 +115,7 @@ void main() {
       expect(audio.frames, 48000);
       expect(audio.info.sourceRate, 44100);
       audio.dispose();
-    }, skip: skip);
+    });
 
     test('probes without keeping samples', () async {
       final probe = await NativeAudioDecoder().probe(
@@ -132,7 +124,7 @@ void main() {
       );
       expect(probe.info.sourceFrames, 1000);
       expect(probe.peaks, [left(499), left(999)]);
-    }, skip: skip);
+    });
 
     test('refusals throw their reason', () async {
       // Not a format the decoder accepts: refused before any decoder runs.
@@ -164,7 +156,7 @@ void main() {
         NativeAudioDecoder().probe('${dir.path}/absent.wav'),
         throwsA(isA<EngineException>()),
       );
-    }, skip: skip);
+    });
   });
 
   group('PumpedNativeEngine backing', () {
@@ -201,7 +193,7 @@ void main() {
       expect(s.transport, BackingTransport.stopped);
       expect(s.lastEnd, BackingEndEvent.stopped);
       expect(s.endCount, 1);
-    }, skip: skip);
+    });
 
     test('End = Next continues into the staged file', () async {
       final decoder = NativeAudioDecoder();
@@ -219,7 +211,7 @@ void main() {
       expect(s.position, 50);
       expect(s.lastEnd, BackingEndEvent.advanced);
       expect(s.owned, 1); // the finished file came back and was freed
-    }, skip: skip);
+    });
 
     test('the finalizer guards a decode until the engine takes it or it is '
         'disposed (review of P3, L2)', () async {
@@ -240,7 +232,7 @@ void main() {
       expect(guarded(kept), isFalse);
       dropped.dispose();
       expect(guarded(dropped), isFalse);
-    }, skip: skip);
+    });
 
     test('a bounded read past the last output frame is empty and the voice '
         'refuses it', () async {
@@ -256,7 +248,7 @@ void main() {
         EngineResult.invalid,
       );
       empty.dispose();
-    }, skip: skip);
+    });
 
     test("refusals leave the audio the caller's", () async {
       final at44 = await NativeAudioDecoder().decode(
@@ -277,7 +269,7 @@ void main() {
         EngineResult.invalid,
       );
       mock.dispose();
-    }, skip: skip);
+    });
 
     test('settings and the transport round-trip through the state', () async {
       engine
@@ -308,6 +300,6 @@ void main() {
       engine.pump();
       expect(engine.backingState().loaded, isFalse);
       expect(engine.backingState().owned, 0);
-    }, skip: skip);
+    });
   });
 }

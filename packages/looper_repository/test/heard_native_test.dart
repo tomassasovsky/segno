@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -13,10 +12,6 @@ import 'package:segno_engine/segno_engine.dart'
 /// native engine (#1713): the repository arms it heard, the engine captures
 /// the image, and an edit of the take's chain re-amps the clean take.
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -93,5 +88,5 @@ void main() {
     engine.pump(frames: 0);
     ticks.add(null);
     expect(engine.snapshot().tracks[0].lanes[0].source, LaneSource.clean);
-  }, skip: skip);
+  });
 }

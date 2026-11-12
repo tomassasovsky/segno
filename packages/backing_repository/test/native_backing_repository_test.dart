@@ -11,14 +11,8 @@ import 'package:segno_engine/segno_engine.dart';
 /// The repository over the real library: the native SHA-256 (#1198's
 /// `le_digest_file`), the native decoder in a background isolate, and the
 /// engine through the device-free pump, where a load applies at the next
-/// block rather than at once. Self-skips when `SEGNO_ENGINE_LIB` is unset:
-///   export SEGNO_ENGINE_LIB="$(bash ../segno_engine/tool/build_test_lib.sh)"
+/// block rather than at once.
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   late Directory temp;
   setUp(() => temp = Directory.systemTemp.createTempSync('native_backing'));
   tearDown(() => temp.deleteSync(recursive: true));
@@ -105,6 +99,5 @@ void main() {
         expect(out[2 * k], left(k));
       }
     },
-    skip: skip,
   );
 }

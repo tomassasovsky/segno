@@ -162,13 +162,9 @@ sync when adding a file. CI also runs it with
 flutter test
 ```
 
-`flutter test` builds the library through the hook. Tests tagged `fuzz`
-drive the real engine through `PumpedNativeEngine`; they still skip unless
-`SEGNO_ENGINE_LIB` is set (to any value):
-
-```sh
-SEGNO_ENGINE_LIB=hook flutter test --tags fuzz
-```
+`flutter test` builds the library through the hook, so the suites that
+drive the real engine through `PumpedNativeEngine` (tagged `fuzz`) run with
+the rest.
 
 ## Usage
 

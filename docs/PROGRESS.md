@@ -38,7 +38,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1783 | Build hooks and `@Native` for segno_engine: prototype on a branch off #1777, findings on the issue; the owner decides | brainstorm | plan-gate | `claude/native-hooks-1783` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
@@ -2314,14 +2313,27 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   blobless), at the commit in `.github/segno-design.sha`. Compare the PNGs
   against the Penpot file.
 - **Scaffolding:** prefer the Very Good CLI templates for normal packages.
-  The Very Good MCP `create` tool only makes federated method-channel plugins. The
-  FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
-  podspec). Native engine lives **inside** the plugin at
-  `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
-  out-of-package native paths dangle).
-- **macOS FFI loading:** the podspec sets `MACH_O_TYPE => mh_dylib` and uses
-  `Classes/` forwarder TUs that `#include` `../src`; `DynamicLibrary.process()`
-  on Apple (SPM static-links into the Runner). Don't revert these.
+  The Very Good MCP `create` tool only makes federated method-channel plugins.
+- **The engine is a code asset (#1783).** `segno_engine` is a plain package
+  with a build hook, not a Flutter FFI plugin. `packages/segno_engine/hook/build.dart`
+  runs CMake on `src/CMakeLists.txt` (the one description of the shipped
+  library) whenever Dart code that uses the package is built: `flutter run`,
+  `flutter build`, `flutter test` in the app or any package that depends on
+  it, and the appliance's `flutter assemble`. The bindings are `@Native`
+  externals (`tool/ffigen.dart`), so nothing opens the library, in any
+  isolate. Building needs CMake, clang (or Xcode's compiler) and, on Linux,
+  `libasound2-dev`. The hook sees only the environment variables
+  `hooks_runner` passes (PATH, HOME, TMPDIR, `CCACHE_*` and a few others):
+  `CC`, `CXX`, `CFLAGS` and `SEGNO_ENABLE_PLUGINS` do not reach CMake, so the
+  hook names the compiler and the plugin option itself. The build tree is
+  under `.dart_tool/hooks_runner/shared/segno_engine/build/`.
+  - **macOS:** plugin hosting on; Flutter bundles the library as
+    `segno_engine.framework`.
+  - **Appliance:** plugin hosting off, clang, `Release`; the manifest
+    (`flutter_assets/NativeAssetsManifest.json`) names the library
+    `libsegno_engine.so`, which the Flutter engine `dlopen`s through the
+    loader's path, so `segno-kiosk-launch` puts `/opt/segno/lib` on
+    `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):
   ```sh
@@ -2417,8 +2429,8 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   is deprecated since ffigen 23). ffigen formats the file with the package's
   own formatter settings, so a regen needs no `dart format` pass and its diff
   is only what the header changed. Declarations come out sorted by name.
-- **FFI symbol parity — the skew a clean build will not catch.** Dart reaches
-  the engine only through `dlsym`, which resolves at *first call*. A bundle
+- **FFI symbol parity — the skew a clean build will not catch.** The `@Native`
+  bindings resolve through `dlsym` at *first call*. A bundle
   whose bindings name an entry point its `libsegno_engine.so` does not export
   therefore compiles, packages, installs and launches — then throws
   `Failed to lookup symbol '...'` on the device, on whatever path reaches it

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,10 +9,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -85,7 +80,7 @@ void main() {
     expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
     // A change during capture is refused at admission.
     expect(await repository.setSpeed(SpeedFactor.twice), EngineResult.notReady);
-  }, skip: skip);
+  });
 
   test(
     'setSpeed on an empty rig is refused, so the first take records',
@@ -128,6 +123,5 @@ void main() {
       empty.pump(frames: 1);
       expect(empty.snapshot().tracks[0].state, TrackState.recording);
     },
-    skip: skip,
   );
 }

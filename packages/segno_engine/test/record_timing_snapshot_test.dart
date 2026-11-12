@@ -1,13 +1,10 @@
 @Tags(['fuzz'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 void main() {
-  final path = Platform.environment['SEGNO_ENGINE_LIB'];
   test(
     'one timing snapshot stays coherent across a later native publication',
     () {
@@ -72,7 +69,6 @@ void main() {
       expect(second.quantizeDiv, GridDivision.half);
       expect(_timings(second), [4, -1, 0, 5, -1, -1, -1, -1]);
     },
-    skip: path == null || path.isEmpty ? 'SEGNO_ENGINE_LIB not set' : null,
   );
 }
 

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -13,10 +12,6 @@ import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 /// imported 128-frame tracks (Multi, so neither re-clocks the rig), the
 /// second positional so the kept image is identifiable.
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -109,7 +104,7 @@ void main() {
     expect(track.multiple, 2);
     expect(track.redoDepth, 1);
     expect(engine.exportTrack(1), doubled);
-  }, skip: skip);
+  });
 
   test('length edits survive save and recall: Redo and Undo put back each '
       'image at its own length (#1168 Part 2)', () async {
@@ -207,7 +202,7 @@ void main() {
     expect(recalled.undoDepth, 0);
     expect(recalled.redoDepth, 2);
     expect(recalled.multiple, 1);
-  }, skip: skip);
+  });
 
   test('Undo taps queued behind an overdub stop at the length edit, and that '
       'is reported (#1168 Part 3)', () async {
@@ -246,7 +241,7 @@ void main() {
     }
     expect(repository.state.tracks[1].lengthFrames, 128);
     expect(reported, [1]);
-  }, skip: skip);
+  });
 
   test('a length edit is refused while a Session is being applied', () async {
     final rig = SessionRig(
@@ -281,5 +276,5 @@ void main() {
       EngineResult.ok,
     );
     expect(engine.snapshot().masterLengthFrames, 256);
-  }, skip: skip);
+  });
 }

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:ffi';
-import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,15 +10,8 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
     show le_midi;
 
 /// The instrument seam against the REAL native engine, driven through the
-/// device-free pump. Self-skips when `SEGNO_ENGINE_LIB` is unset; build it
-/// first:
-///   export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
+/// device-free pump.
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   PumpedNativeEngine configured() {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);
@@ -59,7 +51,7 @@ void main() {
     expect(cutoff.exponential, isTrue);
     expect(cutoff.valueAt(100), closeTo(12600, 1));
     expect(identical(engine.synthCatalogue(), catalogue), isTrue);
-  }, skip: skip);
+  });
 
   test('a chord from one origin sounds whole and ends together', () {
     final engine = configured();
@@ -90,7 +82,7 @@ void main() {
       engine.pump();
     }
     expect(engine.snapshot().instruments.voices[0], 0);
-  }, skip: skip);
+  });
 
   test('a note sounds one voice and its release ends it', () {
     final engine = configured();
@@ -124,7 +116,7 @@ void main() {
     instruments = engine.snapshot().instruments;
     expect(instruments.voices[0], 0);
     expect(instruments.synthEpoch, greaterThan(0));
-  }, skip: skip);
+  });
 
   test('sustain holds a released note on until the contributor lets go', () {
     final engine = configured();
@@ -144,7 +136,7 @@ void main() {
       engine.pump();
     }
     expect(engine.snapshot().instruments.voices[0], 0);
-  }, skip: skip);
+  });
 
   test('publishes routes and attaches and detaches a capture handle', () {
     final engine = configured();
@@ -185,5 +177,5 @@ void main() {
     engine.pump(frames: 0);
     expect(engine.snapshot().midiInput.attachedMask, 0);
     expect(engine.snapshot().midiInput.rebinds, greaterThan(0));
-  }, skip: skip);
+  });
 }

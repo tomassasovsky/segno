@@ -17,14 +17,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
 /// device), record a loop by pumping blocks, and read the snapshot back —
 /// the foundation the app-level sequence fuzzer builds on.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   test(
     'atomic FX recipe crosses FFI with power channels and application identity',
     () {
@@ -72,7 +65,6 @@ void main() {
       engine.pump(frames: 64, input: .2);
       expect(engine.snapshot().outputPeaks[0], closeTo(.0986876601, 1e-6));
     },
-    skip: skip,
   );
 
   test('a rack edge crosses FFI: the rack level lands after a passthrough last '
@@ -129,7 +121,7 @@ void main() {
       ..pump(frames: 2048, input: .2)
       ..pump(frames: 64, input: .2);
     expect(engine.snapshot().outputPeaks[0], closeTo(.2, 1e-7));
-  }, skip: skip);
+  });
 
   test('record recipe and independent track gain cross FFI '
       'without changing originals', () {
@@ -183,7 +175,7 @@ void main() {
     expect(engine.snapshot().tracks[0].volume, .75);
     expect(engine.snapshot().tracks[0].lanes[0].volume, .25);
     expect(engine.exportTrack(0), everyElement(closeTo(.2, 1e-6)));
-  }, skip: skip);
+  });
 
   test('bounded preset vectors cross FFI and publish only accepted values', () {
     final engine = PumpedNativeEngine();
@@ -233,7 +225,7 @@ void main() {
       engine.snapshot().tracks.every((track) => track.lengthPresetBars == 0),
       isTrue,
     );
-  }, skip: skip);
+  });
 
   test(
     'atomic routing preserves high physical bits and activates after ack',
@@ -276,7 +268,6 @@ void main() {
       expect(engine.snapshot().tracks[7].laneCount, 2);
       expect(engine.snapshot().mixRevision, 91);
     },
-    skip: skip,
   );
 
   test('queued tempo and Once publish only after the callback settles', () {
@@ -311,7 +302,7 @@ void main() {
       engine.setOneShotMask(channels: 256, oneShot: false),
       EngineResult.invalid,
     );
-  }, skip: skip);
+  });
 
   test('mix acknowledgment and signal meters survive pumped snapshots', () {
     final engine = PumpedNativeEngine();
@@ -349,7 +340,7 @@ void main() {
     expect(snapshot.inputPeaks.first, closeTo(0.5, 1e-6));
     expect(snapshot.monitorPeaks.first, closeTo(0.25, 1e-6));
     expect(snapshot.outputPeaks.first, closeTo(0.25, 1e-6));
-  }, skip: skip);
+  });
 
   test('pumped snapshot preserves the native recording defaults', () {
     final engine = PumpedNativeEngine();
@@ -380,7 +371,7 @@ void main() {
     expect(snapshot.quantize, isTrue);
     expect(snapshot.autoRecord, isTrue);
     expect(snapshot.overdubFeedback, 0.75);
-  }, skip: skip);
+  });
 
   test('session tempo restores exact source and an unset grid through FFI', () {
     final engine = PumpedNativeEngine();
@@ -410,7 +401,7 @@ void main() {
     engine.pump(frames: 0);
     expect(engine.snapshot().tempoBpm, 0);
     expect(engine.snapshot().tempoSource, TempoSource.none);
-  }, skip: skip);
+  });
 
   test('session tempo rejects invalid and pending capture without changes', () {
     final engine = PumpedNativeEngine();
@@ -444,7 +435,7 @@ void main() {
       EngineResult.notReady,
     );
     expect(engine.snapshot().tracks.first.state, TrackState.recording);
-  }, skip: skip);
+  });
 
   test('clear tempo unsets an empty rig and is refused under a take', () {
     final engine = PumpedNativeEngine();
@@ -473,7 +464,7 @@ void main() {
     engine.pump(frames: 0);
     expect(engine.snapshot().tempoBpm, 120);
     expect(engine.snapshot().tempoSource, TempoSource.manual);
-  }, skip: skip);
+  });
 
   test('session tempo checks a disposed handle', () {
     final engine = PumpedNativeEngine()..dispose();
@@ -481,7 +472,7 @@ void main() {
       () => engine.restoreTempo(bpm: 0, source: TempoSource.none),
       throwsA(isA<EngineException>()),
     );
-  }, skip: skip);
+  });
 
   test('records, plays, undoes, and redoes a loop with no audio device', () {
     final engine = PumpedNativeEngine();
@@ -528,7 +519,7 @@ void main() {
     expect(engine.redo(), EngineResult.ok);
     s = engine.snapshot();
     expect(s.tracks.first.redoDepth, 0);
-  }, skip: skip);
+  });
 
   test('exportTrackLane reads lane 0 through the real FFI', () {
     final engine = PumpedNativeEngine();
@@ -568,7 +559,7 @@ void main() {
     // covered directly by test_export_track_lane_multi_lane in
     // test_engine_core.c.
     expect(engine.exportTrackLane(0, 7), isEmpty);
-  }, skip: skip);
+  });
 
   test('importTrackLane restores multiple lanes through the real FFI', () {
     final engine = PumpedNativeEngine();
@@ -602,7 +593,7 @@ void main() {
 
     // Importing into the now-committed (non-empty) track is rejected.
     expect(engine.importTrackLane(0, 0, lane0), EngineResult.invalid);
-  }, skip: skip);
+  });
 
   test(
     'pump processes real frames on a 2-channel engine without corruption',
@@ -640,7 +631,6 @@ void main() {
       expect(lane0.length, 256);
       expect(lane0, everyElement(closeTo(0.5, 1e-6)));
     },
-    skip: skip,
   );
 
   test('overdub layers round-trip through the real FFI', () {
@@ -740,7 +730,7 @@ void main() {
     engine.pump(frames: 0);
     final live = engine.snapshot().tracks.first.undoDepth; // live ordinal
     expect(engine.exportLayer(0, 0, live), everyElement(closeTo(1.0, 1e-6)));
-  }, skip: skip);
+  });
 
   test('heard images round-trip through the real FFI (#1713)', () {
     final engine = PumpedNativeEngine();
@@ -812,7 +802,7 @@ void main() {
     expect(lane.heard, isTrue);
     expect(engine.exportLayerHeard(0, 0, 0), heard);
     expect(engine.exportTrackLaneHeard(0, 0), heard);
-  }, skip: skip);
+  });
 
   test(
     'performance-recording capture arms via the real FFI and advances frames',
@@ -912,7 +902,6 @@ void main() {
       expect(header[62], 3); // part index
       expect(File('${captureDir.path}/master-004.wav').existsSync(), isFalse);
     },
-    skip: skip,
   );
 
   test('a reserve larger than the volume stops the take at once, as '
@@ -953,7 +942,7 @@ void main() {
       contains('"stopped_early": "reserve_reached"'),
     );
     expect(File('${captureDir.path}/master-001.wav').lengthSync(), 84);
-  }, skip: skip);
+  });
 
   group('TempoControl (real FFI)', () {
     late PumpedNativeEngine engine;
@@ -1205,7 +1194,7 @@ void main() {
         expect(engine.snapshot().tracks.first.lengthPresetBars, 0);
       },
     );
-  }, skip: skip);
+  });
 
   group('LooperModeControl (real FFI, B2a)', () {
     late PumpedNativeEngine engine;
@@ -1263,7 +1252,7 @@ void main() {
       expect(engine.snapshot().looperMode, LooperMode.multi);
       expect(engine.snapshot().tracks.first.state, TrackState.recording);
     });
-  }, skip: skip);
+  });
 
   group('history mode gate (real FFI)', () {
     late PumpedNativeEngine engine;
@@ -1442,7 +1431,7 @@ void main() {
         ),
       );
     });
-  }, skip: skip);
+  });
 
   group('fx chain fingerprint (native-side properties)', () {
     late PumpedNativeEngine engine;
@@ -1626,7 +1615,7 @@ void main() {
         EngineResult.invalid,
       );
     });
-  }, skip: skip);
+  });
 
   group('lane wet-cache telemetry (real FFI)', () {
     late PumpedNativeEngine engine;
@@ -1669,7 +1658,7 @@ void main() {
         expect(engine.laneCacheStates(), isNotEmpty);
       }
     });
-  }, skip: skip);
+  });
 
   group('reopen through the real FFI', () {
     const config = EngineConfig(
@@ -1762,5 +1751,5 @@ void main() {
       expect(s.tracks[1].state, TrackState.empty);
       expect(s.tracks[1].lengthFrames, 0);
     });
-  }, skip: skip);
+  });
 }

@@ -24,14 +24,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// the transforms, keeps the tempo and mode, and leaves the outgoing session
 /// reloadable byte for byte.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   late PumpedNativeEngine engine;
   late LooperRepository looper;
   late SessionRepository session;
@@ -200,5 +193,5 @@ void main() {
         expect(after[c][o], before[c][o], reason: 'track $c layer $o');
       }
     }
-  }, skip: skip);
+  });
 }

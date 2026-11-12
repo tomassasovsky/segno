@@ -401,8 +401,7 @@ jobs:
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
   # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
   # both suites; a failed CHECK returns non-zero and fails the job. A second
-  # step below runs the macOS forwarder wiring stand-in (CI never `flutter
-  # build macos`). A third step runs the pedal-link contract test via
+  # step runs the pedal-link contract test via
   # firmware/test/run_tests.sh — the single definition of that gate (also
   # the local verify loop): the console board firmware's pedal_link.c
   # decodes and re-encodes the golden frames packages/pedal_repository
@@ -680,31 +679,17 @@ jobs:
           EXTRA_CFLAGS="-fsanitize=thread -g"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
-  # The control-sequence fuzzer: the REAL native engine (device-free pump) +
-  # the real repository/bloc/cubits, driven by seeded random event sequences
-  # and checked against the control-surface invariant spec
-  # (lib/control/invariants.dart) after every settled step. Runs as its own
-  # job because the reusable flutter_package test job can't build the engine
-  # library first; the fuzz tests self-skip without SEGNO_ENGINE_LIB, keeping
-  # plain `flutter test` green everywhere. Failures print a seed + a shrunk
-  # replayable repro to paste into the corpus.
-  fuzz:
+  # segno_engine's own Dart suite. The root `build` job tests only the app,
+  # and tool/run_package_tests.sh does not list this package, so it runs
+  # here. Since #1783 every native-backed suite runs wherever its package is
+  # tested: the build hook compiles the engine for each `flutter test` run,
+  # so the control-sequence fuzzer (test/fuzz/) runs in `build`, and the
+  # repositories' native suites in `packages`.
+  segno-engine-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      # Compiler output from earlier runs (#1771): a TU that has not changed
-      # is not compiled again. ccache is downloaded from its GitHub release.
-      # One entry per job and PR, saved by the PR's first run and restored
-      # by its later ones: without the timestamp each run would add another
-      # entry, and the repository's 10 GB of cache is shared by every job.
-      - name: Restore the compiler cache
-        uses: hendrikmuhs/ccache-action@v1.2.25
-        with:
-          key: ${{ github.job }}
-          install: binary
-          append-timestamp: false
-          max-size: 100M
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.50.x"
@@ -717,49 +702,11 @@ jobs:
         with:
           packages: libasound2-dev
           version: "1"
-      # The library is the code asset each flutter test run builds; the
-      # variable only opts the native-backed suites in (#1783).
-      - name: Opt in to the native-backed suites
-        run: echo "SEGNO_ENGINE_LIB=hook" >> "$GITHUB_ENV"
-      - name: Run the control-sequence fuzzer
-        run: |
-          flutter pub get
-          flutter test --tags fuzz
-      # These Session save checks need the real callback receipts and a real
-      # session file. The ordinary app job skips them without the native library.
-      - name: Run the native-backed shared control session tests
-        run: |
-          flutter test test/session/record_timing_persistence_test.dart test/session/click_persistence_test.dart test/session/record_start_persistence_test.dart
-      # Root tests do not traverse package test directories. Exercise the Dart
-      # engine bridge here against the same native library built above.
       - name: Run the segno_engine package tests
         working-directory: packages/segno_engine
         run: |
           flutter pub get
           flutter test
-      # The looper_repository fingerprint agreement suite (R16) is fuzz-tagged
-      # and self-skips without SEGNO_ENGINE_LIB — the per-package job above
-      # skips it by design, so run it HERE against the engine library this job
-      # already built, or the mixed-enabled agreement guarantee would be
-      # silently skipped everywhere.
-      - name: Run the looper_repository native agreement tests
-        working-directory: packages/looper_repository
-        run: |
-          flutter pub get
-          flutter test --tags fuzz
-      # The backing repository over the real digest, decoder and engine
-      # (#1200): fuzz-tagged and self-skipping in its own package job.
-      - name: Run the backing_repository native tests
-        working-directory: packages/backing_repository
-        run: |
-          flutter pub get
-          flutter test --tags fuzz
-      # instrument_repository's native case (#1197) is fuzz-tagged too.
-      - name: Run the instrument_repository native tests
-        working-directory: packages/instrument_repository
-        run: |
-          flutter pub get
-          flutter test --tags fuzz
 
   # The appliance shell suites (wifi, mark-good, journal persist, the kernel
   # cmdline, reconcile-staged, the update attempt marker), which share one

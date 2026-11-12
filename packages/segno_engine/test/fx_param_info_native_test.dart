@@ -2,7 +2,6 @@
 library;
 
 import 'dart:ffi';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -21,15 +20,8 @@ const int _offAtMax = 1 << 2;
 double _asFloat(double value) => Float32List.fromList([value])[0];
 
 /// The Dart copy of the built-in parameter table ([TrackEffectType.params])
-/// against the engine's own `le_fx_param_info`. Self-skips when
-/// `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
+/// against the engine's own `le_fx_param_info`.
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   test('every built-in parameter matches le_fx_param_info field by field', () {
     final desc = calloc<le_fx_param_desc>();
     addTearDown(() => calloc.free(desc));
@@ -70,5 +62,5 @@ void main() {
     expect(le_fx_param_count(kPluginFxCode), 0);
     final last = TrackEffectType.values.map((t) => t.code).reduce(math.max);
     expect(le_fx_param_count(last + 1), lessThan(0));
-  }, skip: skip);
+  });
 }

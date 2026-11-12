@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,10 +9,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -109,7 +104,6 @@ void main() {
       expect(engine.snapshot().outputPeaks[0], closeTo(.125, 1e-6));
       expect(engine.exportTrack(0), everyElement(.5));
     },
-    skip: skip,
   );
 
   test(
@@ -134,7 +128,6 @@ void main() {
       expect(repository.laneMuted(0, 0), isTrue);
       expect(engine.snapshot().outputPeaks[0], 0);
     },
-    skip: skip,
   );
 
   test(
@@ -174,7 +167,6 @@ void main() {
       expect(repository.state.tracks[0].volume, 1);
       expect(engine.exportTrack(0), everyElement(.5));
     },
-    skip: skip,
   );
 
   test(
@@ -193,7 +185,6 @@ void main() {
       expect(await next, EngineResult.ok);
       expect(engine.snapshot().tracks[0].fade.target, 1);
     },
-    skip: skip,
   );
 
   test(
@@ -244,7 +235,6 @@ void main() {
         callback.cancel();
       }
     },
-    skip: skip,
   );
 
   test(
@@ -260,6 +250,5 @@ void main() {
       engine.pump(frames: 0);
       expect(engine.snapshot().tracks[0].fade.amount, 1);
     },
-    skip: skip,
   );
 }

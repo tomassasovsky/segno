@@ -12,7 +12,7 @@ import 'package:segno_engine/segno_engine_ffi.dart';
 /// A hardware-free stand-in for [MidiBindings], the `le_midi_*` surface that
 /// [MidiClient] and [MidiOutClient] use. Records call order in [calls] so
 /// dispose-ordering is testable.
-class FakeSegnoEngineBindings implements MidiBindings {
+class FakeMidiBindings implements MidiBindings {
   new({
     List<MidiDevice> devices = const [],
     this.createReturnsNull = false,

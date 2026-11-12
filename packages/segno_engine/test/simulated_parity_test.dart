@@ -1,8 +1,6 @@
 @Tags(['fuzz'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:segno_engine/src/simulated_instruments.dart'
@@ -10,15 +8,8 @@ import 'package:segno_engine/src/simulated_instruments.dart'
 
 /// The simulated instrument model against the REAL engine: one script, voice
 /// counts per slot compared after every step, and the model's reference
-/// catalogue pinned to the engine's table. Self-skips when `SEGNO_ENGINE_LIB`
-/// is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
+/// catalogue pinned to the engine's table.
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   test('the reference catalogue matches the engine field by field', () {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);
@@ -46,7 +37,7 @@ void main() {
         expect(n[p].atMax, closeTo(r[p].atMax, 1e-2));
       }
     }
-  }, skip: skip);
+  });
 
   test('the simulated model counts voices as the engine does', () {
     final native = PumpedNativeEngine();
@@ -132,5 +123,5 @@ void main() {
     // a patch change ends the slot
     both((e) => e.setInstrument(slot: 0, patch: keys));
     both((e) => e.instrumentRelease(7));
-  }, skip: skip);
+  });
 }

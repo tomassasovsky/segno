@@ -51,7 +51,6 @@ class _RecordStartSaveStore extends FakeKeyValueStore {
 }
 
 void main() {
-  final nativeAvailable = Platform.environment.containsKey('SEGNO_ENGINE_LIB');
   group('confirmed recording-start session capture', () {
     late PumpedNativeEngine engine;
     late LooperRepository looper;
@@ -376,5 +375,5 @@ void main() {
         expect(after.lengthFrames, before.lengthFrames);
       });
     }
-  }, skip: !nativeAvailable);
+  });
 }

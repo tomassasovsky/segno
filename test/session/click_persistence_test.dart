@@ -47,8 +47,7 @@ class _ClickStore extends FakeKeyValueStore {
 }
 
 void main() {
-  final nativeAvailable = Platform.environment.containsKey('SEGNO_ENGINE_LIB');
-  group('durable Click session capture', skip: !nativeAvailable, () {
+  group('durable Click session capture', () {
     late PumpedNativeEngine engine;
     late LooperRepository looper;
     late TempoSettings tempo;

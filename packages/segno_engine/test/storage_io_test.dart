@@ -20,11 +20,6 @@ const _millionA =
     'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0';
 
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   late Directory dir;
   setUp(() => dir = Directory.systemTemp.createTempSync('storage_io_test'));
   tearDown(() => dir.deleteSync(recursive: true));
@@ -46,7 +41,7 @@ void main() {
         io.digestBytes(Uint8List(1000000)..fillRange(0, 1000000, 0x61)),
         _millionA,
       );
-    }, skip: skip);
+    });
 
     test('digestFile reads exactly the requested range', () {
       const io = NativeStorageIo();
@@ -68,7 +63,7 @@ void main() {
         io.digestFile(file.path, offset: 9, length: 0),
         const FileDigested(_empty),
       );
-    }, skip: skip);
+    });
 
     test('digestFile tells missing from damaged from unreadable', () {
       const io = NativeStorageIo();
@@ -88,7 +83,7 @@ void main() {
       expect(() => io.digestFile(''), throwsArgumentError);
       expect(() => io.digestFile(file.path, offset: -1), throwsArgumentError);
       expect(() => io.digestFile(file.path, length: -1), throwsArgumentError);
-    }, skip: skip);
+    });
 
     test('digestBytes crosses its native window without changing the '
         'digest', () {
@@ -113,7 +108,7 @@ void main() {
         FileDigested(io.digestBytes(exact)),
         io.digestFile('${dir.path}/exact.bin'),
       );
-    }, skip: skip);
+    });
 
     test('digestFile runs in a background isolate', () async {
       final path = '${dir.path}/big.bin';
@@ -123,7 +118,7 @@ void main() {
         () => const NativeStorageIo().digestFile(path),
       );
       expect(digest, const FileDigested(_millionA));
-    }, skip: skip);
+    });
 
     test('syncDirectory syncs an existing directory and throws otherwise', () {
       final io = const NativeStorageIo()..syncDirectory(dir.path);
@@ -138,7 +133,7 @@ void main() {
         ),
       );
       expect(() => io.syncDirectory(''), throwsA(isA<FileSystemException>()));
-    }, skip: skip);
+    });
 
     test('renameWithoutReplacing moves to a free name and refuses a taken '
         'one, leaving both files', () {
@@ -172,6 +167,6 @@ void main() {
         () => io.renameWithoutReplacing('', to),
         throwsA(isA<FileSystemException>()),
       );
-    }, skip: skip);
+    });
   });
 }

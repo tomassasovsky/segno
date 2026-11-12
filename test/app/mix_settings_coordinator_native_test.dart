@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -45,11 +44,6 @@ Future<MixSettingsOutcome> _drive(
 }
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
-
   test(
     'settings coordinator pan reaches live monitor and track output',
     () async {
@@ -122,6 +116,5 @@ void main() {
       expect(engine.snapshot().outputPeaks[0], 0);
       expect(engine.snapshot().outputPeaks[1], greaterThan(.2));
     },
-    skip: skip,
   );
 }

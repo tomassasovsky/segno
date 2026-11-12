@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -14,10 +13,6 @@ import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 /// repository against the actual native engine (#1168 Part 3). One sole
 /// 128-frame take (0.5) with two passes (+0.25 each), no bar grid.
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -122,5 +117,5 @@ void main() {
     // The Divide was retired from Redo by the Peel: Redo has no length to
     // put back, and the track keeps its full length.
     expect(track.lengthFrames, 128);
-  }, skip: skip);
+  });
 }
