@@ -32,11 +32,6 @@ on:
       - .github/workflows/ci-caches.yaml
   workflow_dispatch:
 
-# Save only on the trunk (#1787). A PR run, or a dispatch from another
-# branch, would save its copy under its own ref, where no PR into the trunk
-# can read it; there it restores and saves nothing.
-cache-mode: ${{ github.ref == 'refs/heads/claude/segno-integration' && 'write' || 'read' }}
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -44,6 +39,7 @@ concurrency:
 jobs:
   flutter:
     runs-on: ubuntu-latest
+    cache-mode: ${{ github.ref == 'refs/heads/claude/segno-integration' && 'write' || 'read' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
