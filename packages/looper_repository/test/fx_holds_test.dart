@@ -99,7 +99,7 @@ void main() {
   });
 
   test("Ed's Rack charges what the tests assume", () {
-    expect(fxChainCostNs(_rack()), 2677);
+    expect(fxChainCostNs(_rack()), 2666);
     expect(fxBudgetNs(96000), 6834);
   });
 

@@ -37,7 +37,9 @@ const List<({int rate, int period})> kFxCostSettings = [
 /// charges the larger of its largest new reading and its old charge scaled
 /// by the median of the after-to-before ratios of the scenario that set it
 /// (the Room reverb's moving run, the table for the rest), so a worst case
-/// an earlier run caught keeps its margin.
+/// an earlier run caught keeps its margin. The Room reverb's early taps
+/// changed again (#1761, by rounding only) and its charge was scaled the
+/// same way from that day's moving runs.
 ///
 /// These kinds do the same work a frame at every setting, so a lower reading
 /// at one is the bench's noise (one instance's p99 at 32 frames moves by a
@@ -69,7 +71,7 @@ const Map<TrackEffectType, int> kFxKindCostNs = {
   TrackEffectType.slicer: 103,
   TrackEffectType.modeDelay: 171,
   TrackEffectType.mod: 110,
-  TrackEffectType.roomVerb: 552,
+  TrackEffectType.roomVerb: 541,
 };
 
 /// What the kinds whose work depends on the setting charge, in nanoseconds

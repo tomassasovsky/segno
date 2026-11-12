@@ -782,8 +782,9 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 2,677 ns a frame at 96 kHz / 64
-    // on the console's own table (#1508, #1724, #1755), 2,665 in the plan.
+    // Ed's Rack, the plan's unit (section 7): 2,666 ns a frame at 96 kHz / 64
+    // on the console's own table (#1508, #1724, #1755, #1761), 2,665 in the
+    // plan.
     final rack = [
       for (final type in [
         TrackEffectType.dualOctaver,
@@ -816,7 +817,7 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 2677);
+      expect(rackNs, 2666);
       expect(fxBudgetNs(96000), 6834);
     });
 
@@ -825,7 +826,7 @@ void main() {
         'seven before it)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      expect(ns, 3192);
+      expect(ns, 3181);
       expect(budget, 14622);
       expect(4 * ns, lessThanOrEqualTo(budget));
       expect(5 * ns, greaterThan(budget));

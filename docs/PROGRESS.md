@@ -82,7 +82,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
-| #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
+| #1761 | The Room reverb's early taps in four lanes (owner-approved rounding change, about -49 dBFS at worst on the Drum rooms, as the trunk's own -O2/-O3) | in-review | auto | `claude/room-taps-1761` |
 
 ---
 
@@ -134,6 +134,16 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   dynamics, the Spring, the LPF and the modulation kinds spend their time
   in serial filter chains and per-sample `tanhf`, `log2f`, `exp2f` and
   `sinf` that an identical result cannot avoid.
+- The early taps afterwards (#1761, the owner's approval): both sides in
+  one loop, each in four lanes added pairwise, the sides padded to whole
+  fours with silent taps. The Room reverb's renders now round differently
+  from the trunk: under -127 dBFS on the modes' own renders, and on the
+  Drum rooms as far as -49.1 dBFS (Wet+Tight), where the trunk's own
+  clang -O2 and -O3 builds differ by -48.8; `bench_fx_equiv` holds them
+  under -120 and -45 (`eqv_limit_db`). One instance on the console: BOX
+  307 -> 270 ns a frame still, 425 -> 389 with Length moving; the charge
+  552 -> 541 (the moving run's ratio, as above); Ed's Rack 2677 -> 2666 at
+  96 kHz / 64.
 
 ## November 2026 A long capture recovers in bounded memory (#1747)
 
