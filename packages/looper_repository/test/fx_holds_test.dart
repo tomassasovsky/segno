@@ -7,10 +7,10 @@ import 'package:segno_engine/segno_engine.dart' show LaneSource;
 
 import 'helpers/fake_audio_engine.dart';
 
-/// Ed's Rack, the plan's unit: 2,853 ns a frame at 96 kHz / 64 frames on the
+/// Ed's Rack, the plan's unit: 2,331 ns a frame at 96 kHz / 64 frames on the
 /// console's own table (#1508, #1724, #1755; 2,665 in the plan). The budget
-/// there is 6,834, so two fit on the callback and a third does not, and five
-/// fit the inputs with two workers and a sixth does not.
+/// there is 6,834, so two fit on the callback and a third does not, and six
+/// fit the inputs with two workers and a seventh does not.
 List<TrackEffect> _rack() => [
   for (final type in [
     TrackEffectType.dualOctaver,
@@ -99,7 +99,7 @@ void main() {
   });
 
   test("Ed's Rack charges what the tests assume", () {
-    expect(fxChainCostNs(_rack()), 2853);
+    expect(fxChainCostNs(_rack()), 2331);
     expect(fxBudgetNs(96000), 6834);
   });
 
@@ -369,8 +369,12 @@ void main() {
         effects: repo.laneEffects(0, 0).sublist(1),
       );
       expect(engine.laneSources[(0, 0)], LaneSource.clean);
-      // A second input rack: the re-amped lane, the newest stage, is held.
-      repo.setMonitorEffects(input: 1, effects: _rack());
+      // Two more input racks put the rig over: the re-amped lane, the newest
+      // stage, is held (with one more, the lane's rack without its Dual
+      // Octaver still fits beside them, #1755).
+      repo
+        ..setMonitorEffects(input: 1, effects: _rack())
+        ..setMonitorEffects(input: 2, effects: _rack());
       expect(repo.fxChainHeld(_lane(0)), isTrue);
       expect(engine.laneSources[(0, 0)], LaneSource.heard);
     });

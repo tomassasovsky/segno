@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -222,15 +223,29 @@ void main() {
     expect(store.writes, 0);
   });
 
-  test('scheduled failure is retained and flush retries it', () async {
-    final store = _ControlledStore()..refuse = true;
-    projection.scheduleSave(address, SettingsRepository(store: store));
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    expect(store.writes, 1);
-    await expectLater(projection.flush(), throwsStateError);
-    store.refuse = false;
-    await projection.flush();
-    expect(store.writes, 3);
+  // On a fake clock: waiting 300 ms of real time for the 250 ms debounce
+  // left a loaded CI runner before the timer had fired.
+  test('scheduled failure is retained and flush retries it', () {
+    fakeAsync((async) {
+      final store = _ControlledStore()..refuse = true;
+      projection.scheduleSave(address, SettingsRepository(store: store));
+      async
+        ..elapse(const Duration(milliseconds: 300))
+        ..flushMicrotasks();
+      expect(store.writes, 1);
+
+      Object? refused;
+      unawaited(projection.flush().catchError((Object e) => refused = e));
+      async.flushMicrotasks();
+      expect(refused, isStateError);
+
+      store.refuse = false;
+      var retried = false;
+      unawaited(projection.flush().then((_) => retried = true));
+      async.flushMicrotasks();
+      expect(retried, isTrue);
+      expect(store.writes, 3);
+    });
   });
 
   test(

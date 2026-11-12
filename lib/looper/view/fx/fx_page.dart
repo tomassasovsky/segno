@@ -1434,6 +1434,7 @@ class _DestinationChain extends StatelessWidget {
       context.l10n,
       context.read<ControlCubit>().state,
       address,
+      chain: entries,
     );
     final strip = FxChainStrip(
       key: Key('fx_chain_${address.canonicalString()}'),

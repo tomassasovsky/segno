@@ -38,8 +38,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1754, #1740 | Compact single-effect card on the Effects page (app built, draft PR #1756); the Penpot frames and the #1740 clean-up wait for a connected Penpot MCP tab | in-review | auto | `claude/single-fx-card-1754` |
-| #1757 | A single-effect card's assignment line names the console switch, CTRL jack or MIDI control assigned to it (stacked on #1756) | in-review | auto | `claude/card-assignment-1757` |
+| #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
+| #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
@@ -75,6 +75,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1540 | Drive pedals' aliasing at 48 kHz: bench and blind A/B built, the owner's listening decides on oversampling | in-review | auto | `claude/alias-ab-1540` |
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
+| #1755 | Every effect cheaper without changing its sound: the pitch family (phase vocoder in thirteen slots, NEON FFT and YIN, PSOLA's grain windows from a table), bit-identical to a frozen copy of its kernels (test_pitch_oracle) | in-review | auto | `claude/fx-opt-pitch-1755` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1729 | Track and lane chains on the effects workers (#1515 part 2): engine part 1 and the admission (part 2, kFxTrackJobNs from the console stress) in review | in-review | auto | `claude/fx-track-workers-1729*` |

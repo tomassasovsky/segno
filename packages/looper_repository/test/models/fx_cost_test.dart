@@ -122,18 +122,18 @@ void main() {
       }
     });
 
-    test('a kind on the hop costs more a frame at 32 frames than at 64', () {
-      // A quarter of its hop lands in every block up to 64 frames.
+    test('a kind on the hop costs most a frame at 44.1 kHz', () {
+      // Its frame's slots (#1755) fall two to a 32-frame block at 48 kHz,
+      // one at 96 kHz, and up to three at 44.1 kHz.
       for (final type in [
         TrackEffectType.octaver,
         TrackEffectType.whammy,
         TrackEffectType.dualOctaver,
       ]) {
-        // Not 44.1 kHz, where a 64-frame block can take two.
         for (final rate in [48000, 88200, 96000]) {
           expect(
-            fxEntryCostNs(_fx(type), period: 32, sampleRate: rate),
-            greaterThan(fxEntryCostNs(_fx(type), sampleRate: rate)),
+            fxEntryCostNs(_fx(type), period: 32, sampleRate: 44100),
+            greaterThan(fxEntryCostNs(_fx(type), period: 32, sampleRate: rate)),
             reason: '${type.name} $rate',
           );
         }
@@ -782,7 +782,7 @@ void main() {
   });
 
   group('effects on more than one core (#1515)', () {
-    // Ed's Rack, the plan's unit (section 7): 2,853 ns a frame at 96 kHz / 64
+    // Ed's Rack, the plan's unit (section 7): 2,331 ns a frame at 96 kHz / 64
     // on the console's own table (#1508, #1724, #1755), 2,665 in the plan.
     final rack = [
       for (final type in [
@@ -816,36 +816,38 @@ void main() {
     }
 
     test("Ed's Rack charges what the console's table makes it", () {
-      expect(rackNs, 2853);
+      expect(rackNs, 2331);
       expect(fxBudgetNs(96000), 6834);
     });
 
-    test("at the owner's 48 kHz / 32, three of Ed's Racks fit the callback "
-        'alone and nine fit the inputs with two workers (#1755: seven '
-        'before its cheaper kinds)', () {
+    test("at the owner's 48 kHz / 32, five of Ed's Racks fit the callback "
+        'alone and fourteen fit the inputs with two workers (#1755: three '
+        'and seven before it)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
-      expect(ns, 3864);
+      expect(ns, 2624);
       expect(budget, 14622);
-      expect(3 * ns, lessThanOrEqualTo(budget));
-      expect(4 * ns, greaterThan(budget));
+      expect(5 * ns, lessThanOrEqualTo(budget));
+      expect(6 * ns, greaterThan(budget));
       int load(int racks) => fxLoadNs(
         serial: 0,
         jobs: List.filled(racks, ns),
         workers: 2,
         period: 32,
       );
-      expect(load(9), lessThanOrEqualTo(budget));
-      expect(load(10), greaterThan(budget));
+      expect(load(14), lessThanOrEqualTo(budget));
+      expect(load(15), greaterThan(budget));
     });
 
-    // #1729's console runs, before #1755 made the kinds cheaper, found 5
-    // tracks and 4 inputs with 1 track with no late period, 6 tracks and 4
-    // inputs with 3 tracks past #1724's limit; at #1755's charges one more
-    // track fits, and two more beside 4 inputs.
-    test("at 48 kHz / 32 with two workers, six of Ed's Racks fit on "
-        'tracks and seven do not; four on inputs leave room for three on '
-        'tracks, not four (#1729, #1755)', () {
+    // Before #1755 the console ran 5 tracks and 4 inputs with 1 track with
+    // no late period, 6 tracks and 4 inputs with 3 tracks with more than
+    // #1724's limit run (#1729). With #1755's pitch kernels it ran 7 and 8
+    // tracks with none (120 s each, the callback's worst service 441 and
+    // 432 us of 666). With the drives and the amp cheaper too (#1755),
+    // the rule admits 9.
+    test("at 48 kHz / 32 with two workers, nine of Ed's Racks fit on "
+        'tracks and ten do not; four on inputs leave room for six on '
+        'tracks, not seven (#1729, #1755)', () {
       final ns = fxChainCostNs(rack, period: 32, sampleRate: 48000);
       final budget = fxBudgetNs(48000, period: 32);
       int load(int inputs, int tracks) => fxLoadNs(
@@ -855,13 +857,13 @@ void main() {
         period: 32,
         trackJobs: tracks,
       );
-      expect(load(0, 6), lessThanOrEqualTo(budget));
-      expect(load(0, 7), greaterThan(budget));
-      expect(load(4, 3), lessThanOrEqualTo(budget));
-      expect(load(4, 4), greaterThan(budget));
-      // On the callback alone, before #1729: three.
-      expect(3 * ns, lessThanOrEqualTo(budget));
-      expect(4 * ns, greaterThan(budget));
+      expect(load(0, 9), lessThanOrEqualTo(budget));
+      expect(load(0, 10), greaterThan(budget));
+      expect(load(4, 6), lessThanOrEqualTo(budget));
+      expect(load(4, 7), greaterThan(budget));
+      // On the callback alone, before #1729: five.
+      expect(5 * ns, lessThanOrEqualTo(budget));
+      expect(6 * ns, greaterThan(budget));
     });
 
     test('with no workers the load is every chain summed', () {
@@ -893,12 +895,12 @@ void main() {
     });
 
     // The plan's table admitted 2, 4, 6 and 7 at its 2,665 ns; the worst of
-    // eight at 80 % admitted 2, 3, 4 and 5; before #1755, 2, 2, 3 and 4.
-    test('admits 2, 3, 5 and 6 racks with 0 to 3 workers at 96 kHz', () {
+    // eight at 80 % admitted 2, 3, 4 and 5; #1724's table 2, 2, 3 and 4.
+    test('admits 2, 4, 6 and 8 racks with 0 to 3 workers at 96 kHz', () {
       expect(racksAdmitted(0), 2);
-      expect(racksAdmitted(1), 3);
-      expect(racksAdmitted(2), 5);
-      expect(racksAdmitted(3), 6);
+      expect(racksAdmitted(1), 4);
+      expect(racksAdmitted(2), 6);
+      expect(racksAdmitted(3), 8);
     });
 
     group('LooperRepository', () {
@@ -922,19 +924,19 @@ void main() {
         addTearDown(repo.dispose);
       });
 
-      test('five racks on the inputs fit two workers, six do not', () {
-        putRacks(5);
+      test('six racks on the inputs fit two workers, seven do not', () {
+        putRacks(6);
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));
         expect(repo.state.fxHeld, isEmpty);
-        // A sixth is weighed by what it adds to the critical path.
-        final sixth = repo.fxGrowthNs({
-          const FxAddress(stage: FxStage.input, index: 5): rack,
+        // A seventh is weighed by what it adds to the critical path.
+        final seventh = repo.fxGrowthNs({
+          const FxAddress(stage: FxStage.input, index: 6): rack,
         });
-        expect(sixth, greaterThan(repo.fxRoomNs));
+        expect(seventh, greaterThan(repo.fxRoomNs));
         // Restored anyway, it comes up switched off (the owner's R2).
-        putRacks(6);
+        putRacks(7);
         expect(
-          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 5)),
+          repo.fxChainHeld(const FxAddress(stage: FxStage.input, index: 6)),
           isTrue,
         );
         expect(repo.fxRoomNs, greaterThanOrEqualTo(0));

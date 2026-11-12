@@ -30,6 +30,9 @@
 #include "engine_hot.h"      /* LE_AUDIO_HOT_AT (#1718) */
 #include "engine_internal.h" /* le_psola_detect_band prototype (below) */
 #include "fft.h" /* le_rfft_plan, le_rfft_fwd / le_rfft_inv, le_hann_init */
+#if defined(__aarch64__)
+#include <arm_neon.h> /* the pitch kernels' lanes (#1755) */
+#endif
 #include "rt_alloc.h" /* le_rt_alloc_prefaulted / le_rt_free: the audio thread writes these */
 #include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
@@ -64,10 +67,29 @@ static float le_hann[LE_PV_N];
 static le_rfft_plan le_pv_fft;
 static pthread_once_t le_pv_tables_once = PTHREAD_ONCE_INIT;
 
+/* PSOLA's grain windows (#1755): the Hann window of a grain th samples a
+ * side, 2 th + 1 long, for every half-width a grain takes (2 to
+ * LE_PSOLA_THMAX), the one for th starting at th * th - 4 (the lengths of
+ * those before it): about 1 MB, made once for the process with the other
+ * tables, where each grain worked its own out, a cosf a sample. Each value
+ * is that same float expression. Static like the other tables, so it
+ * cannot fail to be made, and written whole by the build, so its pages are
+ * in before any slot reads it; one for the process, not a slot's, so the
+ * per-slot sizes (le_fx_octaver_bytes) leave it out. */
+#define LE_PSOLA_WINS                                                \
+  (LE_PSOLA_THMAX * LE_PSOLA_THMAX + 2 * LE_PSOLA_THMAX - 3)
+static float le_psola_wins[LE_PSOLA_WINS];
+
 static void le_pv_tables_build(void) {
   int ready = 0;
   le_hann_init(le_hann, LE_PV_N, &ready);
   (void)le_rfft_plan_init(&le_pv_fft, LE_PV_N);
+  for (int th = 2; th <= LE_PSOLA_THMAX; ++th) {
+    float* w = le_psola_wins + th * th - 4;
+    for (int k = 0; k <= 2 * th; ++k) {
+      w[k] = 0.5f - 0.5f * cosf(LE_PI * (float)k / (float)th);
+    }
+  }
 }
 
 /* Builds the shared octaver Hann window and FFT tables, exactly once in the
@@ -536,6 +558,11 @@ static int le_oct_seeded_ticks(const le_fx_state* fx, int slot) {
 #define LE_PV_S_RE2(o) ((o)->scratch + LE_PV_N + 5 * LE_PV_BINS)
 #define LE_PV_S_IM2(o) ((o)->scratch + LE_PV_N + 6 * LE_PV_BINS)
 #define LE_PV_S_PHASE2(o) ((o)->scratch + LE_PV_N + 7 * LE_PV_BINS)
+/* The shift's between its steps (le_pv_shift_into): each bin's loudest
+ * source so far and that source's share kept, and the peaks' bins. */
+#define LE_PV_S_BEST(o) ((o)->scratch + LE_PV_N + 8 * LE_PV_BINS)
+#define LE_PV_S_KEEP(o) ((o)->scratch + LE_PV_N + 9 * LE_PV_BINS)
+#define LE_PV_S_PEAKS(o) ((o)->scratch + LE_PV_N + 10 * LE_PV_BINS)
 
 static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
                                 int ticks);
@@ -598,40 +625,65 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
   }
 }
 
-/* The formant envelope (engine_fx.h). */
-void le_octaver_envelope(const float* mag, float* env) {
-  float cl[LE_PV_N];    /* the full log-magnitude, then the liftered cepstrum */
-  float cr[LE_PV_BINS]; /* their transforms (real; ci is the zero imaginary) */
-  float ci[LE_PV_BINS];
-  /* The full symmetric log-magnitude is real and even, so its transform is
-   * real and even too, and the same in either direction: two real FFTs give
-   * N * the smoothed log-magnitude, and the 1/N is divided back out. */
+/* The formant envelope (le_octaver_envelope) in four steps, on the
+ * caller's [cl] (LE_PV_N floats: the full log-magnitude, then the liftered
+ * cepstrum) and [cr], [ci] (LE_PV_BINS each: their transforms, real; ci is
+ * the zero imaginary), so the phase vocoder can run them on different
+ * ticks with its own scratch (#1755). The full symmetric log-magnitude is
+ * real and even, so its transform is real and even too, and the same in
+ * either direction: two real FFTs give N * the smoothed log-magnitude, and
+ * the 1/N is divided back out. */
+static void le_env_log(const float* mag, float* cl) {
   for (int k = 0; k < LE_PV_BINS; ++k) {
     cl[k] = logf(mag[k] + 1e-9f);
   }
   for (int k = 1; k < LE_PV_N / 2; ++k) {
     cl[LE_PV_N - k] = cl[k];
   }
+}
+
+static void le_env_cepstrum(float* cl, float* cr, float* ci) {
   le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> cepstrum, quefrency 0 .. N/2 */
   for (int q = 0; q < LE_PV_LIFTER; ++q) cl[q] = cr[q];
   for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) cl[q] = 0.0f;
   for (int q = 1; q < LE_PV_LIFTER; ++q) cl[LE_PV_N - q] = cr[q];
+}
+
+static void le_env_smooth(const float* cl, float* cr, float* ci) {
   le_rfft_fwd(&le_pv_fft, cl, cr, ci); /* -> N * smoothed log-magnitude */
+}
+
+static void le_env_exp(const float* cr, float* env) {
   for (int k = 0; k < LE_PV_BINS; ++k) {
     env[k] = expf(cr[k] / (float)LE_PV_N);
   }
 }
 
-/* One STFT analysis/synthesis frame, in four stages (the hop split, #887
- * part 9): le_pv_tick runs stage k on the tick a quarter-hop k into the hop,
- * so a frame's work spreads over the callbacks of its hop. The stages pass
- * their results through o->scratch:
+/* The formant envelope (engine_fx.h). */
+void le_octaver_envelope(const float* mag, float* env) {
+  float cl[LE_PV_N];
+  float cr[LE_PV_BINS];
+  float ci[LE_PV_BINS];
+  le_env_log(mag, cl);
+  le_env_cepstrum(cl, cr, ci);
+  le_env_smooth(cl, cr, ci);
+  le_env_exp(cr, env);
+}
+
+/* One STFT analysis/synthesis frame, in steps spread over its hop (the
+ * hop split, #887 part 9; thirteen slots, #1755): le_pv_tick runs a
+ * frame's steps on the ticks 0, 16, ... LE_PV_SYNTH_TICK after its
+ * analysis (le_pv_frame_slot), so its work spreads over the callbacks
+ * between the input it needs and the output it owes. The steps pass their results
+ * through o->scratch:
  *
- *   win  [LE_PV_N]    the windowed input, then the inverse transform
- *   re   [LE_PV_BINS] the spectrum, then the synthesis spectrum
- *   im   [LE_PV_BINS]
+ *   win  [LE_PV_N]    the windowed input, then the envelope's log-magnitude
+ *                     and cepstrum, then the inverse transform
+ *   re   [LE_PV_BINS] the spectrum, then the envelope's transforms, then
+ *                     the synthesis magnitudes and spectrum
+ *   im   [LE_PV_BINS] the same, the synthesis phases
  *   mag  [LE_PV_BINS] magnitude
- *   freq [LE_PV_BINS] true frequency, in bins
+ *   freq [LE_PV_BINS] each bin's phase, then its true frequency, in bins
  *   env  [LE_PV_BINS] the formant envelope
  *   re2, im2, phase2   a second voice's (LE_PV_S_RE2 ...)
  *
@@ -641,17 +693,15 @@ void le_octaver_envelope(const float* mag, float* env) {
  * element its synthesis tick emits (LE_PV_SYNTH_TICK, so the octaver's
  * latency is LE_PV_LATENCY).
  *
- * Cost per hop per channel: four length-N real FFTs, one per stage but the
- * shift (analysis, the two cepstrum transforms, synthesis; two with the
- * formants moved, which skips the envelope stage). A second voice (the Dual
- * Octaver's Octave 2) adds a second shift in the envelope's quarter and
- * sums into the one synthesis transform. All on the shared plan
- * le_pv_fft (fft.h). On the console a stereo frame cost ~170 us in one
- * callback (#1410). The stages are not equal: measured on the dev machine
- * the analysis, envelope, shift and synthesis take about 30, 31, 26 and 13 %
- * of a frame, so the heaviest callback carries about a third of it. The
- * frame's arrays live in the heap scratch, so the stack holds only each
- * stage's own temporaries. */
+ * Cost per hop per channel: four length-N real FFTs (analysis, the two
+ * cepstrum transforms, synthesis; two with the formants moved, which skips
+ * the envelope), 513 atan2f, logf and expf (the last two for the envelope)
+ * and up to 513 cosf and sinf. A second voice (the Dual Octaver's Octave
+ * 2) adds a second shift in the envelope's slots and sums into the one
+ * synthesis transform. All on the shared plan le_pv_fft (fft.h). On the
+ * console a stereo frame was ~170 us in one callback (#1410), ~100 us in
+ * four quarters before #1755. The frame's arrays live in the heap scratch,
+ * so the stack holds only each step's own temporaries. */
 #define LE_PV_S_WIN(o) ((o)->scratch)
 #define LE_PV_S_RE(o) ((o)->scratch + LE_PV_N)
 #define LE_PV_S_IM(o) ((o)->scratch + LE_PV_N + LE_PV_BINS)
@@ -659,32 +709,64 @@ void le_octaver_envelope(const float* mag, float* env) {
 #define LE_PV_S_FREQ(o) ((o)->scratch + LE_PV_N + 3 * LE_PV_BINS)
 #define LE_PV_S_ENV(o) ((o)->scratch + LE_PV_N + 4 * LE_PV_BINS)
 
-/* Stage 0: Hann-window the newest N samples (win[N-1] is the freshest),
- * transform, and read each bin's magnitude and true frequency from its phase
- * advance. */
-static void le_pv_stage_analyse(le_octaver_state* o, const float* fifo,
-                                int head, int cap) {
+/* Hann-window the newest N samples (win[N-1] is the freshest) and
+ * transform. The window is the ring's run up to its end and then its run
+ * from the start, so the multiply vectorises. */
+static void le_pv_step_transform(le_octaver_state* o, const float* fifo,
+                                 int head, int cap) {
   float* win = LE_PV_S_WIN(o);
-  float* re = LE_PV_S_RE(o);
-  float* im = LE_PV_S_IM(o);
-  float* mag = LE_PV_S_MAG(o);
-  float* freq = LE_PV_S_FREQ(o);
-  const float expct = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
-  const float osamp = (float)LE_PV_N / (float)LE_PV_HOP;
   int idx = (head - LE_PV_N + 1) % cap;
   if (idx < 0) idx += cap;
-  for (int i = 0; i < LE_PV_N; ++i) {
-    win[i] = fifo[idx] * le_hann[i];
-    if (++idx == cap) idx = 0;
+  int first = cap - idx;
+  if (first > LE_PV_N) first = LE_PV_N;
+  for (int i = 0; i < first; ++i) win[i] = fifo[idx + i] * le_hann[i];
+  for (int i = first; i < LE_PV_N; ++i) win[i] = fifo[i - first] * le_hann[i];
+  le_rfft_fwd(&le_pv_fft, win, LE_PV_S_RE(o), LE_PV_S_IM(o));
+}
+
+/* The analysis' bins in three parts (le_pv_step_polar), so its atan2f calls
+ * spread over three slots. */
+#define LE_PV_POLAR_PART ((LE_PV_BINS + 2) / 3)
+
+/* Part [part] (0 to 2) of reading each bin's magnitude and true frequency
+ * from its phase advance: part 0 every bin's magnitude first, each part a
+ * third of the bins' phases (into freq), and part 2 then every bin's
+ * frequency. Each bin's arithmetic is the one-loop analysis', the same
+ * expressions in the same order. */
+static void le_pv_step_polar(le_octaver_state* o, int part) {
+  const float* re = LE_PV_S_RE(o);
+  const float* im = LE_PV_S_IM(o);
+  float* mag = LE_PV_S_MAG(o);
+  float* freq = LE_PV_S_FREQ(o);
+  if (part == 0) {
+    int k = 0;
+#if LE_FFT_NEON
+    /* r * r + im * im with the first product fused, as Clang compiles the
+     * scalar line; sqrt is correctly rounded either way. */
+    for (; k + 4 <= LE_PV_BINS; k += 4) {
+      const float32x4_t r = vld1q_f32(re + k);
+      const float32x4_t i = vld1q_f32(im + k);
+      vst1q_f32(mag + k, vsqrtq_f32(vfmaq_f32(vmulq_f32(i, i), r, r)));
+    }
+#endif
+    for (; k < LE_PV_BINS; ++k) {
+      const float r = re[k];
+      const float im_k = im[k];
+      mag[k] = sqrtf(r * r + im_k * im_k);
+    }
   }
-  le_rfft_fwd(&le_pv_fft, win, re, im);
+  const int from = part * LE_PV_POLAR_PART;
+  int to = from + LE_PV_POLAR_PART;
+  if (to > LE_PV_BINS) to = LE_PV_BINS;
+  for (int k = from; k < to; ++k) freq[k] = atan2f(im[k], re[k]);
+  if (part != 2) return;
+  const float expct = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
+  const float osamp = (float)LE_PV_N / (float)LE_PV_HOP;
+  float* last = o->last_phase;
   for (int k = 0; k < LE_PV_BINS; ++k) {
-    const float r = re[k];
-    const float im_k = im[k];
-    mag[k] = sqrtf(r * r + im_k * im_k);
-    const float phase = atan2f(im_k, r);
-    float d = phase - o->last_phase[k];
-    o->last_phase[k] = phase;
+    const float phase = freq[k];
+    float d = phase - last[k];
+    last[k] = phase;
     d -= (float)k * expct;
     d = le_wrap_pi(d);
     freq[k] = (float)k + osamp * d / (2.0f * LE_PI);
@@ -699,12 +781,6 @@ static void le_pv_stage_analyse(le_octaver_state* o, const float* fifo,
  * (#1547). */
 #define LE_PV_FORMANT_MAX 8.0f
 
-/* Stage 1: the formant envelope (le_octaver_envelope); skipped for a frame
- * whose formants move with the pitch, which needs none. */
-static void le_pv_stage_envelope(le_octaver_state* o) {
-  le_octaver_envelope(LE_PV_S_MAG(o), LE_PV_S_ENV(o));
-}
-
 /* Stage 2: move each peak region by the ratio read at analysis, advance each
  * moved peak's synthesis phase (2*pi*freq*HOP/N a hop), lock the bins around
  * it to it, and rebuild the half spectrum. Holding the formants, each bin is
@@ -716,7 +792,8 @@ static void le_pv_stage_envelope(le_octaver_state* o) {
  * its share of each bin by the partial that owns it (the first voice), not
  * of each region's bins wherever they land (the second; see below). */
 static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
-                             float* re, float* im, int drop_dc, int by_owner) {
+                             float* re, float* im, int drop_dc, int by_owner,
+                             int part) {
   /* The Dual Octaver's low band (#1467) plays this share of each partial
    * below the crossover: the band's weight times what it passes at the
    * partial's peak, its boost over the crossover's low-pass there
@@ -738,54 +815,97 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
   const float* env = LE_PV_S_ENV(o);
   const float* in_phase = o->last_phase; /* this frame's, from the analysis */
   const float advance = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
-  float syn_mag[LE_PV_BINS];
-  float syn_phase[LE_PV_BINS];
-  float syn_best[LE_PV_BINS];
-  float syn_keep[LE_PV_BINS]; /* by_owner: the share the bin's owner keeps */
-  for (int k = 0; k < LE_PV_BINS; ++k) {
-    syn_mag[k] = 0.0f;
-    syn_phase[k] = sum_phase[k];
-    syn_best[k] = -1.0f;
-    syn_keep[k] = 1.0f;
-  }
-  /* Peak-region shifting with identity phase locking (Laroche and Dolson,
-   * 1999): each spectral peak moves to its shifted frequency carrying the
-   * bins around it, and those bins keep their phases relative to the peak.
-   * A partial keeps its main lobe's shape, and with it its level, at any
-   * ratio; scaling each bin's index instead spread an up-shifted lobe over
-   * every other bin and lost up to 13 dB at a fifth. A region runs from
-   * halfway after the previous peak to halfway before the next; where two
-   * regions land on one bin, the louder source sets its phase.
-   *
-   * With [by_owner], the first voice is shifted whole, as the plain
-   * octaver's is, and the low band then takes its share of each bin in the
-   * proportion it takes of the partial that set the bin's phase, its owner
-   * (#1580). Taking the share of each region before the contest left a
-   * handed-over partial's remainder close in level to a neighbour's lobe,
-   * so the slightest change in the input decided which set the bin's
-   * phase; the bin then summed with the band's voice at a phase that moved
-   * with it, and the Dual Octaver's level at 44.1 and 96 kHz strayed up to
-   * 3.9 dB from 48 kHz's. Judging the contest on the whole partials but
-   * still taking the share region by region was steady, but left a
-   * neighbour's lobe turning at the handed-over partial's phase: 1.3 dB
-   * too much down voice on a 110 Hz bass. The second voice keeps the share
-   * by region: whether by owner suits it too is #1616's to measure (its
-   * residue at 96 kHz is its own: it strays further with the band off). */
-  int peaks[LE_PV_BINS];
-  int np = 0;
-  for (int q = 0; q < LE_PV_BINS; ++q) {
-    const float m = mag[q];
-    if ((q < 1 || m > mag[q - 1]) && (q < 2 || m > mag[q - 2]) &&
-        (q + 1 >= LE_PV_BINS || m >= mag[q + 1]) &&
-        (q + 2 >= LE_PV_BINS || m >= mag[q + 2])) {
-      peaks[np++] = q;
+  /* Each bin's synthesis magnitude and phase are built in re and im
+   * (le_pv_step_rebuild then turns them into the spectrum, #1755). */
+  float* syn_mag = re;
+  float* syn_phase = im;
+  float* syn_best = LE_PV_S_BEST(o);
+  float* syn_keep = LE_PV_S_KEEP(o); /* by_owner: the share the bin's owner keeps */
+  /* The peaks' bins, held as floats (exact) in the scratch. */
+  float* peaks = LE_PV_S_PEAKS(o);
+  /* In two parts (#1755): part 0 finds the peaks and moves the regions
+   * starting below [split], part 1 the rest, in the same order, so every
+   * sum and every contest runs as in one pass. Only the regions whose peak
+   * stays in the band cost anything, the bins below LE_PV_BINS / ratio for
+   * a shift up, so part 0 takes the first 40 % of those (the peak search
+   * is its own). */
+  const float reach = ratio > 1.0f ? (float)LE_PV_BINS / ratio : (float)LE_PV_BINS;
+  const int split = (int)(0.4f * reach);
+  int np = o->shift_np;
+  int start = o->shift_start;
+  int r = o->shift_r;
+  if (part == 0) {
+    for (int k = 0; k < LE_PV_BINS; ++k) {
+      syn_mag[k] = 0.0f;
+      syn_phase[k] = sum_phase[k];
+      syn_best[k] = -1.0f;
+      syn_keep[k] = 1.0f;
     }
+    /* Peak-region shifting with identity phase locking (Laroche and Dolson,
+     * 1999): each spectral peak moves to its shifted frequency carrying the
+     * bins around it, and those bins keep their phases relative to the peak.
+     * A partial keeps its main lobe's shape, and with it its level, at any
+     * ratio; scaling each bin's index instead spread an up-shifted lobe over
+     * every other bin and lost up to 13 dB at a fifth. A region runs from
+     * halfway after the previous peak to halfway before the next; where two
+     * regions land on one bin, the louder source sets its phase.
+     *
+     * With [by_owner], the first voice is shifted whole, as the plain
+     * octaver's is, and the low band then takes its share of each bin in the
+     * proportion it takes of the partial that set the bin's phase, its owner
+     * (#1580). Taking the share of each region before the contest left a
+     * handed-over partial's remainder close in level to a neighbour's lobe,
+     * so the slightest change in the input decided which set the bin's
+     * phase; the bin then summed with the band's voice at a phase that moved
+     * with it, and the Dual Octaver's level at 44.1 and 96 kHz strayed up to
+     * 3.9 dB from 48 kHz's. Judging the contest on the whole partials but
+     * still taking the share region by region was steady, but left a
+     * neighbour's lobe turning at the handed-over partial's phase: 1.3 dB
+     * too much down voice on a 110 Hz bass. The second voice keeps the share
+     * by region: whether by owner suits it too is #1616's to measure (its
+     * residue at 96 kHz is its own: it strays further with the band off). */
+    np = 0;
+    int q = 0;
+#if LE_FFT_NEON
+    /* Bins 2 .. LE_PV_BINS - 3 four at a time: the same four comparisons
+     * (each false on a NaN, as the scalar ones), the peaks taken in order. */
+    for (; q < 2; ++q) {
+      const float m = mag[q];
+      if ((q < 1 || m > mag[q - 1]) && m >= mag[q + 1] && m >= mag[q + 2]) {
+        peaks[np++] = (float)q;
+      }
+    }
+    for (; q + 4 <= LE_PV_BINS - 2; q += 4) {
+      const float32x4_t m = vld1q_f32(mag + q);
+      const uint32x4_t is = vandq_u32(
+          vandq_u32(vcgtq_f32(m, vld1q_f32(mag + q - 1)),
+                    vcgtq_f32(m, vld1q_f32(mag + q - 2))),
+          vandq_u32(vcgeq_f32(m, vld1q_f32(mag + q + 1)),
+                    vcgeq_f32(m, vld1q_f32(mag + q + 2))));
+      if (vmaxvq_u32(is) == 0) continue;
+      if (vgetq_lane_u32(is, 0)) peaks[np++] = (float)q;
+      if (vgetq_lane_u32(is, 1)) peaks[np++] = (float)(q + 1);
+      if (vgetq_lane_u32(is, 2)) peaks[np++] = (float)(q + 2);
+      if (vgetq_lane_u32(is, 3)) peaks[np++] = (float)(q + 3);
+    }
+#endif
+    for (; q < LE_PV_BINS; ++q) {
+      const float m = mag[q];
+      if ((q < 1 || m > mag[q - 1]) && (q < 2 || m > mag[q - 2]) &&
+          (q + 1 >= LE_PV_BINS || m >= mag[q + 1]) &&
+          (q + 2 >= LE_PV_BINS || m >= mag[q + 2])) {
+        peaks[np++] = (float)q;
+      }
+    }
+    if (np == 0) peaks[np++] = 0.0f; /* NaN magnitudes only: one region */
+    start = 0;
+    r = 0;
   }
-  if (np == 0) peaks[np++] = 0; /* NaN magnitudes only: one region */
-  int start = 0;
-  for (int r = 0; r < np; ++r) {
-    const int peak = peaks[r];
-    const int end = r + 1 < np ? (peak + peaks[r + 1] + 1) / 2 : LE_PV_BINS;
+  for (; r < np; ++r) {
+    if (part == 0 && start >= split) break; /* part 1's */
+    const int peak = (int)peaks[r];
+    const int end =
+        r + 1 < np ? (peak + (int)peaks[r + 1] + 1) / 2 : LE_PV_BINS;
     const int to = (int)((float)peak * ratio + 0.5f);
     if (to >= LE_PV_BINS || (drop_dc && to < 1)) {
       /* the peak leaves the band (above it, or down onto DC): drop its
@@ -827,27 +947,40 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     }
     start = end;
   }
+  o->shift_np = np;
+  o->shift_r = r;
+  o->shift_start = start;
+  if (part == 0) return;
   for (int b = 0; b < LE_PV_BINS; ++b) {
     if (by_owner) syn_mag[b] *= syn_keep[b];
     sum_phase[b] = syn_phase[b];
-    re[b] = syn_mag[b] * cosf(syn_phase[b]);
-    im[b] = syn_mag[b] * sinf(syn_phase[b]);
   }
 }
 
-static void le_pv_stage_shift(le_octaver_state* o) {
-  le_pv_shift_into(o, o->frame_ratio, o->sum_phase, LE_PV_S_RE(o),
-                   LE_PV_S_IM(o), 0, 1);
+/* Bins [from, to) of the half spectrum from le_pv_shift_into's magnitudes
+ * and phases in [re] and [im]: each bin m cos(phase), m sin(phase). A bin with nothing in
+ * it (m is +0: only a NaN or a positive adds to it) is a zero whose sign is
+ * the cosine's and the sine's, which a phase inside the range where those
+ * signs are plain gives without the calls (#1755; an octave shift leaves
+ * about half the bins empty): the cosine is positive up to the float below
+ * pi / 2 and negative from the one above, the sine has the phase's own sign
+ * below the float under pi. Anywhere else the calls decide. */
+static void le_pv_step_rebuild(float* re, float* im, int from, int to) {
+  for (int b = from; b < to; ++b) {
+    const float m = re[b];
+    const float ph = im[b];
+    const float a = fabsf(ph);
+    if (m == 0.0f && a < 3.14159250f) {
+      re[b] = a <= 1.57079625f ? 0.0f : -0.0f;
+      im[b] = copysignf(0.0f, ph);
+      continue;
+    }
+    re[b] = m * cosf(ph);
+    im[b] = m * sinf(ph);
+  }
 }
 
-/* The second voice's shift (#1464): the same analysis at its own ratio,
- * into its own spectrum and phases. */
-static void le_pv_stage_shift2(le_octaver_state* o) {
-  le_pv_shift_into(o, o->frame_ratio2, LE_PV_S_PHASE2(o), LE_PV_S_RE2(o),
-                   LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f, 0);
-}
-
-/* Stage 3: inverse transform, synthesis-window, and overlap-add from the
+/* The inverse transform, synthesis-window, and overlap-add from the
  * accumulator element this tick emits (the Hann x Hann windows at 4x overlap
  * sum to 1.5: divide for unity). */
 static void le_pv_stage_synth(le_octaver_state* o) {
@@ -876,10 +1009,133 @@ static void le_pv_stage_synth(le_octaver_state* o) {
   }
 }
 
+/* A frame's steps, in the order they run (le_pv_frame_slot). */
+enum {
+  LE_PV_STEP_NONE,
+  LE_PV_STEP_TRANSFORM, /* the window and its transform */
+  LE_PV_STEP_POLAR0,    /* magnitudes and a third of the phases */
+  LE_PV_STEP_POLAR1,    /* another third */
+  LE_PV_STEP_POLAR2,    /* the last third and the frequencies */
+  LE_PV_STEP_LOG,       /* the envelope's log-magnitude */
+  LE_PV_STEP_CEPSTRUM,  /* its cepstrum, liftered */
+  LE_PV_STEP_SMOOTH,    /* back to a smoothed log-magnitude */
+  LE_PV_STEP_EXP,       /* the envelope */
+  LE_PV_STEP_SHIFT2A,   /* the second voice's regions moved: the lower */
+  LE_PV_STEP_SHIFT2B,   /* the rest */
+  LE_PV_STEP_REBUILD2A, /* its spectrum's lower half */
+  LE_PV_STEP_REBUILD2B, /* and upper */
+  LE_PV_STEP_SHIFTA,    /* the first voice's regions moved: the lower */
+  LE_PV_STEP_SHIFTB,    /* the rest */
+  LE_PV_STEP_REBUILDA,  /* its spectrum's lower half */
+  LE_PV_STEP_REBUILDB,  /* and upper */
+  LE_PV_STEP_SYNTH,     /* the inverse transform and the overlap-add */
+};
+
+/* A frame's slots: the ticks 0, LE_PV_SLOT, ... LE_PV_SYNTH_TICK after its
+ * analysis. Only the input of tick 0 and the output of LE_PV_SYNTH_TICK
+ * bound its work, so the slots between are free to take it. */
+#define LE_PV_SLOT 16
+#define LE_PV_SLOTS (LE_PV_SYNTH_TICK / LE_PV_SLOT + 1)
+_Static_assert(LE_PV_SLOT * (LE_PV_SLOTS - 1) == LE_PV_SYNTH_TICK,
+               "the last slot is the synthesis tick");
+
+/* Which step runs in each slot, for a frame holding its formants (the
+ * envelope), one moving them, and one moving them with a second voice.
+ * The order is the four quarters' of before #1755. A step is about a
+ * twelfth of a frame holding its formants (an FFT, a third of the
+ * analysis' atan2f, the envelope's logf or expf, half the shift, half the
+ * rebuild's cosf and sinf), and the steps sit one to a slot (the plan
+ * moving the formants keeps its analysis to every other one), so a
+ * 32-frame block at 48 kHz carries two slots, one at 96 kHz, and at most
+ * three at 44.1 kHz. */
+static const unsigned char LE_PV_PLAN[3][LE_PV_SLOTS] = {
+    {LE_PV_STEP_TRANSFORM, LE_PV_STEP_POLAR0, LE_PV_STEP_POLAR1,
+     LE_PV_STEP_POLAR2, LE_PV_STEP_LOG, LE_PV_STEP_CEPSTRUM,
+     LE_PV_STEP_SMOOTH, LE_PV_STEP_EXP, LE_PV_STEP_SHIFTA, LE_PV_STEP_SHIFTB,
+     LE_PV_STEP_REBUILDA, LE_PV_STEP_REBUILDB, LE_PV_STEP_SYNTH},
+    {LE_PV_STEP_TRANSFORM, LE_PV_STEP_NONE, LE_PV_STEP_POLAR0,
+     LE_PV_STEP_NONE, LE_PV_STEP_POLAR1, LE_PV_STEP_NONE, LE_PV_STEP_POLAR2,
+     LE_PV_STEP_NONE, LE_PV_STEP_SHIFTA, LE_PV_STEP_SHIFTB,
+     LE_PV_STEP_REBUILDA, LE_PV_STEP_REBUILDB, LE_PV_STEP_SYNTH},
+    {LE_PV_STEP_TRANSFORM, LE_PV_STEP_POLAR0, LE_PV_STEP_POLAR1,
+     LE_PV_STEP_POLAR2, LE_PV_STEP_SHIFT2A, LE_PV_STEP_SHIFT2B,
+     LE_PV_STEP_REBUILD2A, LE_PV_STEP_REBUILD2B, LE_PV_STEP_SHIFTA,
+     LE_PV_STEP_SHIFTB, LE_PV_STEP_REBUILDA, LE_PV_STEP_REBUILDB,
+     LE_PV_STEP_SYNTH},
+};
+
+/* Where the rebuild splits the bins. */
+#define LE_PV_HALF_BINS (LE_PV_BINS / 2)
+
+static void le_pv_run_step(le_octaver_state* o, int step, const float* fifo,
+                           int head, int cap) {
+  switch (step) {
+    case LE_PV_STEP_TRANSFORM:
+      le_pv_step_transform(o, fifo, head, cap);
+      break;
+    case LE_PV_STEP_POLAR0:
+    case LE_PV_STEP_POLAR1:
+    case LE_PV_STEP_POLAR2:
+      le_pv_step_polar(o, step - LE_PV_STEP_POLAR0);
+      break;
+    case LE_PV_STEP_LOG: /* the scratch's win, re and im are free here */
+      le_env_log(LE_PV_S_MAG(o), LE_PV_S_WIN(o));
+      break;
+    case LE_PV_STEP_CEPSTRUM:
+      le_env_cepstrum(LE_PV_S_WIN(o), LE_PV_S_RE(o), LE_PV_S_IM(o));
+      break;
+    case LE_PV_STEP_SMOOTH:
+      le_env_smooth(LE_PV_S_WIN(o), LE_PV_S_RE(o), LE_PV_S_IM(o));
+      break;
+    case LE_PV_STEP_EXP:
+      le_env_exp(LE_PV_S_RE(o), LE_PV_S_ENV(o));
+      break;
+    case LE_PV_STEP_SHIFT2A: /* the second voice's (#1464): its own ratio,
+                              * spectrum and phases */
+    case LE_PV_STEP_SHIFT2B:
+      le_pv_shift_into(o, o->frame_ratio2, LE_PV_S_PHASE2(o), LE_PV_S_RE2(o),
+                       LE_PV_S_IM2(o), o->frame_ratio2 < 1.0f, 0,
+                       step - LE_PV_STEP_SHIFT2A);
+      break;
+    case LE_PV_STEP_REBUILD2A:
+      le_pv_step_rebuild(LE_PV_S_RE2(o), LE_PV_S_IM2(o), 0, LE_PV_HALF_BINS);
+      break;
+    case LE_PV_STEP_REBUILD2B:
+      le_pv_step_rebuild(LE_PV_S_RE2(o), LE_PV_S_IM2(o), LE_PV_HALF_BINS,
+                         LE_PV_BINS);
+      break;
+    case LE_PV_STEP_SHIFTA:
+    case LE_PV_STEP_SHIFTB:
+      le_pv_shift_into(o, o->frame_ratio, o->sum_phase, LE_PV_S_RE(o),
+                       LE_PV_S_IM(o), 0, 1, step - LE_PV_STEP_SHIFTA);
+      break;
+    case LE_PV_STEP_REBUILDA:
+      le_pv_step_rebuild(LE_PV_S_RE(o), LE_PV_S_IM(o), 0, LE_PV_HALF_BINS);
+      break;
+    case LE_PV_STEP_REBUILDB:
+      le_pv_step_rebuild(LE_PV_S_RE(o), LE_PV_S_IM(o), LE_PV_HALF_BINS,
+                         LE_PV_BINS);
+      break;
+    case LE_PV_STEP_SYNTH:
+      le_pv_stage_synth(o);
+      break;
+    default:
+      break;
+  }
+}
+
+/* Runs slot [slot] of the frame analysed last (the frame's own tick 0 set
+ * its settings). */
+static void le_pv_frame_slot(le_octaver_state* o, int slot, const float* fifo,
+                             int head, int cap) {
+  const int plan = !o->frame_formants_move ? 0 : o->frame_level2 > 0.0f ? 2 : 1;
+  le_pv_run_step(o, LE_PV_PLAN[plan][slot], fifo, head, cap);
+}
+
 /* Emits one phase-vocoder output sample (latency LE_PV_LATENCY), running a
- * frame's stage at each quarter of the hop and streaming the synthesis
- * accumulator out by one sample per call, shifting it down by a hop once a
- * hop is fully emitted.
+ * frame's steps in its slots (le_pv_frame_slot) and streaming the
+ * synthesis accumulator out by one sample per call, shifting it down by a
+ * hop once a hop is fully emitted.
  *
  * HOP PHASE AND THE THREE THINGS IT MUST NOT MOVE. hop_count starts at any
  * value p in [0, LE_PV_HOP) (le_oct_seeded_ticks: whatever puts the
@@ -902,47 +1158,36 @@ static void le_pv_stage_synth(le_octaver_state* o) {
  *     test_octaver_hop_stagger_alignment sweeps all LE_PV_HOP phases and
  *     fails with a warmup one sample shorter.
  *
- * A stage whose tick comes before the first analysis after a reset is
+ * A slot whose tick comes before the first analysis after a reset is
  * skipped (o->analysed), so a reset never synthesises a stale frame. */
 static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
                         float ratio, int formants_move, float ratio2,
                         float level1, float level2, float low_w,
                         float low_g, float low_kc) {
   if (o->out == NULL || o->scratch == NULL) return 0.0f;
-  switch (o->hop_count) {
-    case 0:
-      le_pv_stage_analyse(o, fifo, head, cap);
-      o->frame_ratio = ratio;
-      o->frame_formants_move = formants_move;
-      o->frame_ratio2 = ratio2;
-      o->frame_level1 = level1;
-      o->frame_low_w = low_w;
-      o->frame_low_g = low_g;
-      o->frame_low_kc = low_kc;
-      {
-        /* A second voice (the Dual Octaver's Octave 2, #1464) takes the
-         * envelope's quarter, so only with the formants moving; coming
-         * back from silence it starts its phases afresh. */
-        const float l2 = formants_move ? level2 : 0.0f;
-        if (l2 > 0.0f && o->frame_level2 <= 0.0f) {
-          memset(LE_PV_S_PHASE2(o), 0, sizeof(float) * LE_PV_BINS);
-        }
-        o->frame_level2 = l2;
+  const int t = o->hop_count;
+  if (t == 0) {
+    o->frame_ratio = ratio;
+    o->frame_formants_move = formants_move;
+    o->frame_ratio2 = ratio2;
+    o->frame_level1 = level1;
+    o->frame_low_w = low_w;
+    o->frame_low_g = low_g;
+    o->frame_low_kc = low_kc;
+    {
+      /* A second voice (the Dual Octaver's Octave 2, #1464) takes the
+       * envelope's slots, so only with the formants moving; coming back
+       * from silence it starts its phases afresh. */
+      const float l2 = formants_move ? level2 : 0.0f;
+      if (l2 > 0.0f && o->frame_level2 <= 0.0f) {
+        memset(LE_PV_S_PHASE2(o), 0, sizeof(float) * LE_PV_BINS);
       }
-      o->analysed = 1;
-      break;
-    case LE_PV_HOP / 4:
-      if (o->analysed && !o->frame_formants_move) le_pv_stage_envelope(o);
-      if (o->analysed && o->frame_level2 > 0.0f) le_pv_stage_shift2(o);
-      break;
-    case LE_PV_HOP / 2:
-      if (o->analysed) le_pv_stage_shift(o);
-      break;
-    case LE_PV_SYNTH_TICK:
-      if (o->analysed) le_pv_stage_synth(o);
-      break;
-    default:
-      break;
+      o->frame_level2 = l2;
+    }
+    o->analysed = 1;
+  }
+  if (o->analysed && t <= LE_PV_SYNTH_TICK && t % LE_PV_SLOT == 0) {
+    le_pv_frame_slot(o, t / LE_PV_SLOT, fifo, head, cap);
   }
   const float y = o->out[o->hop_count];
   if (++o->hop_count >= LE_PV_HOP) {
@@ -968,12 +1213,104 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
  * arithmetic is byte-identical either way, which is the whole point of the
  * split — there is no second copy of the detector to keep in step. */
 
+/* The difference function at the [g] lags from [tau] (g at most
+ * LE_YIN_GROUP) over [integ] samples of [x], into [s]. A pass works a
+ * group out when it reaches the group's first lag and takes its sums one
+ * lag at a time as its budget allows, so a call can do up to
+ * LE_YIN_GROUP - 1 lags of work ahead of what it is charged; the work over
+ * a pass is the same, and each lag costs a fraction of what it did alone.
+ * For each lag the
+ * same float differences squared and summed in double in the same order as
+ * one lag at a time, so each sum is bit-identical to that (#1755). The
+ * square of a float is exact in double, so a fused multiply-add and a
+ * multiply then an add give the same sum. Worked out together, the lags'
+ * sums are independent chains of adds the core runs side by side; one lag
+ * alone is a single chain, a multiply-add's latency an iteration. */
+static void le_lag_sums(const float* x, int integ, int tau, int g, double* s) {
+#if defined(__aarch64__)
+  /* Each lane is one lag's sum (a compiler left to it vectorises along the
+   * samples instead, which keeps each lag's adds in order one at a time). */
+  _Static_assert(LE_YIN_GROUP == 8, "four pairs of lanes");
+  if (g == LE_YIN_GROUP) {
+    float64x2_t a0 = vdupq_n_f64(0.0), a1 = a0, a2 = a0, a3 = a0;
+    for (int i = 0; i < integ; ++i) {
+      const float32x4_t xi = vdupq_n_f32(x[i]);
+      const float32x4_t d0 = vsubq_f32(xi, vld1q_f32(x + i + tau));
+      const float32x4_t d1 = vsubq_f32(xi, vld1q_f32(x + i + tau + 4));
+      const float64x2_t e0 = vcvt_f64_f32(vget_low_f32(d0));
+      const float64x2_t e1 = vcvt_high_f64_f32(d0);
+      const float64x2_t e2 = vcvt_f64_f32(vget_low_f32(d1));
+      const float64x2_t e3 = vcvt_high_f64_f32(d1);
+      a0 = vfmaq_f64(a0, e0, e0);
+      a1 = vfmaq_f64(a1, e1, e1);
+      a2 = vfmaq_f64(a2, e2, e2);
+      a3 = vfmaq_f64(a3, e3, e3);
+    }
+    vst1q_f64(s, a0);
+    vst1q_f64(s + 2, a1);
+    vst1q_f64(s + 4, a2);
+    vst1q_f64(s + 6, a3);
+    return;
+  }
+  /* Fewer lags (a pass's last, a refinement's span): two to a pair of
+   * lanes, an odd one alone below. */
+  const int pairs = g / 2;
+  if (pairs > 0) {
+    float64x2_t a[LE_YIN_GROUP / 2];
+    for (int p = 0; p < pairs; ++p) a[p] = vdupq_n_f64(0.0);
+    for (int i = 0; i < integ; ++i) {
+      const float32x2_t xi = vdup_n_f32(x[i]);
+      const float* y = x + i + tau;
+      for (int p = 0; p < pairs; ++p) {
+        const float64x2_t e = vcvt_f64_f32(vsub_f32(xi, vld1_f32(y + 2 * p)));
+        a[p] = vfmaq_f64(a[p], e, e);
+      }
+    }
+    for (int p = 0; p < pairs; ++p) vst1q_f64(s + 2 * p, a[p]);
+  }
+  if ((g & 1) == 0) return;
+  {
+    const int j = g - 1;
+    double sum = 0.0;
+    for (int i = 0; i < integ; ++i) {
+      const float d = x[i] - x[i + tau + j];
+      sum += (double)d * (double)d;
+    }
+    s[j] = sum;
+  }
+  return;
+#endif
+  if (g == LE_YIN_GROUP) {
+    double a[LE_YIN_GROUP] = {0.0};
+    for (int i = 0; i < integ; ++i) {
+      const float xi = x[i];
+      const float* y = x + i + tau;
+      for (int j = 0; j < LE_YIN_GROUP; ++j) {
+        const float d = xi - y[j];
+        a[j] += (double)d * (double)d;
+      }
+    }
+    for (int j = 0; j < LE_YIN_GROUP; ++j) s[j] = a[j];
+    return;
+  }
+  for (int j = 0; j < g; ++j) {
+    double sum = 0.0;
+    for (int i = 0; i < integ; ++i) {
+      const float d = x[i] - x[i + tau + j];
+      sum += (double)d * (double)d;
+    }
+    s[j] = sum;
+  }
+}
+
 int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
                  int max_hz, float* dp, int dp_cap) {
   p->x = x;
   p->dp = dp;
   p->tau = 1;
   p->cum = 0.0;
+  p->group_lo = 0;
+  p->group_n = 0; /* a new window: nothing worked out ahead */
   p->minlag = 0;
   p->maxlag = 0;
   p->integ = 0;
@@ -1006,12 +1343,18 @@ int le_yin_step(le_yin_pass* p, long budget) {
    * is under one integration length must still make progress, or the pass
    * stalls forever. One lag is bounded by n/2 inner iterations. */
   while (p->tau <= p->maxlag) {
-    double sum = 0.0;
     const int tau = p->tau;
-    for (int i = 0; i < p->integ; ++i) {
-      const float diff = p->x[i] - p->x[i + tau];
-      sum += (double)diff * (double)diff;
+    if (tau < p->group_lo || tau >= p->group_lo + p->group_n) {
+      /* The next lags, worked out together (le_lag_sums); the pass still
+       * takes them one at a time below, so its budget and its results are
+       * the one-lag pass's. */
+      int g = p->maxlag - tau + 1;
+      if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
+      le_lag_sums(p->x, p->integ, tau, g, p->group);
+      p->group_lo = tau;
+      p->group_n = g;
     }
+    const double sum = p->group[tau - p->group_lo];
     p->cum += sum;
     p->dp[tau] = p->cum > 0.0 ? (float)(sum * (double)tau / p->cum) : 1.0f;
     ++p->tau;
@@ -1092,19 +1435,23 @@ int le_refine_begin(le_lag_refine* r, float coarse, int span, int n) {
   r->integ = n - hi;
   r->tau = lo;
   r->best = 0;
+  r->ready = 0;
   return 1;
 }
 
 int le_refine_step(le_lag_refine* r, const float* x, long budget) {
   while (r->tau <= r->hi) {
     const int tau = r->tau;
-    double sum = 0.0;
-    for (int i = 0; i < r->integ; ++i) {
-      const float df = x[i] - x[i + tau];
-      sum += (double)df * (double)df;
-    }
     const int k = tau - r->lo;
-    r->d[k] = (float)sum;
+    if (k >= r->ready) {
+      /* The next lags' sums together (le_lag_sums), each as one lag's. */
+      double s[LE_YIN_GROUP];
+      int g = r->hi - tau + 1;
+      if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
+      le_lag_sums(x, r->integ, tau, g, s);
+      for (int j = 0; j < g; ++j) r->d[k + j] = (float)s[j];
+      r->ready = k + g;
+    }
     if (tau == r->lo || r->d[k] < r->d[r->best]) r->best = k;
     ++r->tau;
     budget -= r->integ;
@@ -1367,17 +1714,40 @@ static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
      * unity across the shift; clamp so a clamped grain cannot blow up. */
     float gain = ps / (float)th;
     if (gain > 2.0f) gain = 2.0f;
-    for (int j = -th; j <= th; ++j) {
-      const float wf =
-          0.5f - 0.5f * cosf(LE_PI * (float)(j + th) / (float)th); /* Hann */
-      int src = head + base + j;
-      src %= cap;
-      if (src < 0) src += cap;
-      const int next = src + 1 >= cap ? 0 : src + 1;
-      int dst = rp + c + j;
-      dst %= N;
-      if (dst < 0) dst += N;
-      o->out[dst] += gain * wf * (fifo[src] + fr * (fifo[next] - fifo[src]));
+    /* The grain, sample j - th of it from source index src and into
+     * accumulator index dst, both walked on from its start and wrapped at
+     * their ends, in runs that need neither wrap, its window from the
+     * table (#1755: the per-sample remainders and cosf cost more than the
+     * grain's arithmetic). */
+    const float* wf = le_psola_wins + th * th - 4;
+    const int len = 2 * th + 1;
+    int src = (head + base - th) % cap;
+    if (src < 0) src += cap;
+    int dst = (rp + c - th) % N;
+    if (dst < 0) dst += N;
+    float* out = o->out;
+    for (int j = 0; j < len;) {
+      if (src == cap) src = 0;
+      if (dst == N) dst = 0;
+      if (src == cap - 1) { /* its next sample is the ring's first */
+        out[dst] += gain * wf[j] * (fifo[src] + fr * (fifo[0] - fifo[src]));
+        ++j;
+        ++src;
+        ++dst;
+        continue;
+      }
+      int run = len - j;
+      if (run > N - dst) run = N - dst;
+      if (run > cap - 1 - src) run = cap - 1 - src;
+      const float* in = fifo + src;
+      float* acc = out + dst;
+      const float* w = wf + j;
+      for (int k = 0; k < run; ++k) {
+        acc[k] += gain * w[k] * (in[k] + fr * (in[k + 1] - in[k]));
+      }
+      j += run;
+      src += run;
+      dst += run;
     }
   }
 
@@ -1813,7 +2183,19 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
     if (o->xfade > 1.0f) o->xfade = 1.0f;
   }
 
-  const float ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+  /* The ratio and the dip's gain, worked out again only when the shift or
+   * the dip moves (#1755): the same calls on the same values give the same
+   * results, and held, each was two library calls a sample. */
+  if (!o->cached || o->ratio_shift != o->sm_shift) {
+    o->ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+    o->ratio_shift = o->sm_shift;
+  }
+  if (!o->cached || o->dip_xfade != o->xfade) {
+    o->dip_g = sinf(o->xfade * 0.5f * LE_PI);
+    o->dip_xfade = o->xfade;
+  }
+  o->cached = 1;
+  const float ratio = o->ratio;
   /* The Dual Octaver's Octave 2 (p7, its level; #1464) is Octave 1 squared,
    * two octaves where Octave 1 is one, so it switches with Octave 1's
    * latched shift in the dip, its trim with it. */
@@ -1863,7 +2245,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   const float dry = buf[dry_idx];
 
   /* Equal-power gain-dip envelope on the wet leg (g == 1 when steady). */
-  const float g = sinf(o->xfade * 0.5f * LE_PI);
+  const float g = o->dip_g;
   const float mix = o->sm_mix;
   /* The phase vocoder applies the voices' levels in its synthesis (two
    * voices share one accumulator); PSOLA's one voice takes it here. */
@@ -1955,6 +2337,7 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
     o->cur_mode = 0;  /* phase vocoder, until the settings say otherwise */
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
+    o->cached = 0;    /* the ratio and the dip's gain: none worked out yet */
     if (!hops) continue;
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
     /* A retyped slot's band starts with nothing heard: it heard nothing
@@ -9903,6 +10286,14 @@ static void le_st_tick(le_fx_state* fx, int slot, const float* p, float* q) {
   o[1].sm_shift = q[0];
 }
 
+#ifdef LE_NATIVE_TESTS
+le_fx_test_process_fn le_fx_test_process_hook;
+
+void le_fx_test_st_tick(le_fx_state* fx, int slot, const float* p, float* q) {
+  le_st_tick(fx, slot, p, q);
+}
+#endif
+
 static void fx_smart_tune_process(le_fx_state* fx, int slot, int sr, int cap,
                                   float* l, float* r, const float* p) {
   float q[9] = {0.0f};
@@ -10589,6 +10980,12 @@ static inline void fx_run(le_fx_state* fx, int s, int32_t ty, int sr, int cap,
     LE_FX[ty].kprocess(st, l, r);
     return;
   }
+#ifdef LE_NATIVE_TESTS
+  if (le_fx_test_process_hook != NULL && le_fx_type_hops(ty) &&
+      le_fx_test_process_hook(fx, s, ty, sr, cap, l, r, p)) {
+    return;
+  }
+#endif
   LE_FX[ty].process(fx, s, sr, cap, l, r, p);
 }
 

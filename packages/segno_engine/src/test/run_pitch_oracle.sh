@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Build + run the pitch kinds' oracle alone (test_pitch_oracle.c, #1755):
+# the pitch kinds against their kernels before #1755, bit for bit.
+# run_native_tests.sh runs it with the rest; CI's arm64 job runs it through
+# this script with CC=clang, the console's compiler, the one the NEON paths
+# build under. The source list and link flags mirror run_native_tests.sh;
+# keep them in sync.
+#
+# Usage: [CC=clang CXX=clang++] ./run_pitch_oracle.sh [--ci] [--input F]
+set -euo pipefail
+cd "$(dirname "$0")/../.."   # src/test -> packages/segno_engine
+
+CC=${CC:-cc}
+CXX=${CXX:-c++}
+OUT="${TMPDIR:-/tmp}"
+# -fmath-errno: Linux's default, and on macOS it keeps Clang from fusing a
+# sinf and a cosf into Apple's sincos in one copy and not the other.
+STD="-std=gnu11 -O2 -fmath-errno -DLE_NATIVE_TESTS -I src/core -I src/midi -I src/miniaudio"
+case "$(uname -s)" in
+  Darwin) LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lc++ -lm" ;;
+  *) LIBS="-lpthread -lstdc++ -lm -ldl" ;;
+esac
+ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
+  src/core/tempo_grid.c \
+  src/core/halfband.c \
+  src/core/synth_voice.c src/core/synth_patch.c \
+  src/core/audio_ring.c src/core/rt_alloc.c src/core/perf_drain.c src/core/perf_checkpoint.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
+  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c \
+  src/midi/le_clock_follow.c"
+
+$CXX -std=c++17 -O2 -c src/stretch/le_stretch.cpp -o "$OUT/segno_oracle_stretch.o"
+# shellcheck disable=SC2086
+$CC $STD src/test/test_pitch_oracle.c src/test/pitch_ref/pitch_ref.c \
+  $ENGINE_SRC "$OUT/segno_oracle_stretch.o" $LIBS -o "$OUT/segno_pitch_oracle.exe"
+"$OUT/segno_pitch_oracle.exe" "$@"

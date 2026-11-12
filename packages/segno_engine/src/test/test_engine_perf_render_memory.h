@@ -7,6 +7,8 @@
 
 #if defined(__APPLE__)
 #include <mach/mach.h> /* task_info: the process's physical footprint */
+#elif defined(__linux__)
+#include <fcntl.h> /* open: /proc/self/statm */
 #endif
 
 enum { RM_SR = 48000, RM_LOOP = 4800 };
@@ -24,12 +26,18 @@ static int64_t render_memory_now(void) {
   }
   return (int64_t)vm.phys_footprint;
 #elif defined(__linux__)
-  FILE* f = fopen("/proc/self/statm", "r");
-  if (f == NULL) return -1;
+  /* read() into the stack, not stdio: a FILE and its buffer are allocated
+   * at every poll, and under ASan the quarantine holds each one freed, so
+   * the reading itself grew the process with the render's length. */
+  const int fd = open("/proc/self/statm", O_RDONLY);
+  if (fd < 0) return -1;
+  char text[128];
+  const ssize_t got = read(fd, text, sizeof(text) - 1);
+  close(fd);
+  if (got <= 0) return -1;
+  text[got] = '\0';
   long size = 0, resident = 0;
-  const int got = fscanf(f, "%ld %ld", &size, &resident);
-  fclose(f);
-  if (got != 2) return -1;
+  if (sscanf(text, "%ld %ld", &size, &resident) != 2) return -1;
   return (int64_t)resident * (int64_t)sysconf(_SC_PAGESIZE);
 #else
   return -1;
