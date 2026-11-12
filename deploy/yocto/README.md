@@ -1,4 +1,3 @@
-<!-- cspell:words APST -->
 # Segno appliance — Yocto image
 
 The image the floor console boots: a lean Yocto build running the **prebuilt**

@@ -1,7 +1,7 @@
 <!-- cspell:words heatsinks Omron lofi -->
 # Segno — Progress & Roadmap
 
-<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore APST -->
+<!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
 
 Living status doc for Segno, the live looping appliance (a Raspberry Pi 5
 console). It began as a Flutter desktop loopstation; the original plan is
