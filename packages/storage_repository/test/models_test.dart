@@ -100,8 +100,13 @@ void main() {
   test('failures and conflicts say what happened, in the words the Library '
       'prints', () {
     expect('${const StorageFailure.full()}', 'the destination is full');
+    const tooLarge = StorageFailure.fileTooLarge(
+      fsType: 'vfat',
+      maxFileBytes: 4294967295,
+      fileBytes: 4294967296,
+    );
     expect(
-      '${const StorageFailure.fileTooLarge(fsType: 'vfat', maxFileBytes: 4294967295, fileBytes: 4294967296)}',
+      '$tooLarge',
       'a file of 4294967296 bytes is larger than vfat holds '
           '(4294967295 bytes)',
     );
