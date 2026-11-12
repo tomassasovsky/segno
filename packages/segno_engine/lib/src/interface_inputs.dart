@@ -146,7 +146,7 @@ class InterfaceInputsInfo {
         PhantomSwitchInfo(
           first: ref.phantom[g].first - 1,
           last: ref.phantom[g].last - 1,
-          on: ref.phantom[g].on$ != 0,
+          on: ref.phantom[g].on != 0,
         ),
     ];
     return InterfaceInputsInfo(

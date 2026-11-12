@@ -128,12 +128,11 @@ Linux. C11 is required for `<stdatomic.h>`.
 From this directory:
 
 ```sh
-dart run ffigen --config ffigen.yaml
-dart format lib/src/generated/segno_engine_bindings.dart
+dart run tool/ffigen.dart
 ```
 
-ffigen needs `libclang` (it ships with Xcode and LLVM). The `dart format` step
-is required: without it the whole generated file changes on every run.
+`tool/ffigen.dart` is the configuration. ffigen needs `libclang` (it ships
+with Xcode and LLVM) and formats its output itself.
 `tool/check_ffi_symbols.sh` checks that every symbol the bindings look up is
 exported by a built `libsegno_engine.so`.
 

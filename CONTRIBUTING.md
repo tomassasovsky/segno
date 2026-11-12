@@ -38,8 +38,7 @@ Every change comes with tests:
 
 After changing the engine's public header
 (`packages/segno_engine/src/segno_engine_api.h`), regenerate the Dart
-bindings with `dart run ffigen --config ffigen.yaml` from
-`packages/segno_engine`, then run `dart format` on the generated file.
+bindings with `dart run tool/ffigen.dart` from `packages/segno_engine`.
 
 ## Checks
 

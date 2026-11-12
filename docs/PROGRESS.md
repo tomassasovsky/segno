@@ -2318,13 +2318,12 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
 - **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine
-  dart run ffigen --config ffigen.yaml
-  dart format lib/src/generated/segno_engine_bindings.dart
+  dart run tool/ffigen.dart
   ```
-  The `dart format` step is required: ffigen emits legacy short-style code,
-  but the committed bindings are canonical `dart format` (tall) style. Without
-  it, every regen rewrites the whole file and buries the real diff. With it,
-  regens are field-scoped regardless of your local SDK's formatter version.
+  The configuration is `tool/ffigen.dart` (ffigen's Dart API; its YAML format
+  is deprecated since ffigen 23). ffigen formats the file with the package's
+  own formatter settings, so a regen needs no `dart format` pass and its diff
+  is only what the header changed. Declarations come out sorted by name.
 - **FFI symbol parity — the skew a clean build will not catch.** Dart reaches
   the engine only through `dlsym`, which resolves at *first call*. A bundle
   whose bindings name an entry point its `libsegno_engine.so` does not export

@@ -65,7 +65,7 @@ void main() {
         ref.phantom[0]
           ..first = 1
           ..last = 2
-          ..on$ = 1;
+          ..on = 1;
         const name = 'scarlett2';
         for (var i = 0; i < name.length; i++) {
           ref.adapter[i] = name.codeUnitAt(i);
