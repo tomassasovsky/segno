@@ -17,12 +17,8 @@ void main() {
 
   test('single/dual switch dispatch follows physical tip/ring identity', () {
     const jack = ExternalJackSetup(
-      single: ExternalSwitchSetup(
-        gestures: ControlGesturePair(press: track5),
-      ),
-      dualFirst: ExternalSwitchSetup(
-        gestures: ControlGesturePair(press: mute),
-      ),
+      single: ExternalSwitchSetup(gestures: ControlGesturePair(press: track5)),
+      dualFirst: ExternalSwitchSetup(gestures: ControlGesturePair(press: mute)),
       dualSecond: ExternalSwitchSetup(
         gestures: ControlGesturePair(press: select5),
       ),

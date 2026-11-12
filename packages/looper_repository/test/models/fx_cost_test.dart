@@ -16,14 +16,11 @@ void main() {
       final n = kFxCostSettings.length;
       expect(n, 8);
       // Every kind has one figure, or one per setting, or PSOLA's.
-      expect(
-        {
-          ...kFxKindCostNs.keys,
-          ...kFxSettingCostNs.keys,
-          TrackEffectType.smartTune,
-        },
-        unorderedEquals(TrackEffectType.values),
-      );
+      expect({
+        ...kFxKindCostNs.keys,
+        ...kFxSettingCostNs.keys,
+        TrackEffectType.smartTune,
+      }, unorderedEquals(TrackEffectType.values));
       expect(
         kFxKindCostNs.keys.toSet().intersection(kFxSettingCostNs.keys.toSet()),
         isEmpty,
@@ -297,9 +294,8 @@ void main() {
   test("the draining kinds are the engine's (le_fx_type_drains)", () {
     // The effects table in engine_fx.c: each entry `[LE_FX_NAME] = {...}`,
     // the draining ones flagged LE_FX_F_DRAINS.
-    final source = File(
-      '../segno_engine/src/core/engine_fx.c',
-    ).readAsStringSync();
+    final source = File('../segno_engine/src/core/engine_fx.c')
+        .readAsStringSync();
     final table = source.substring(
       source.indexOf('static const le_fx_vtable LE_FX[] = {'),
     );
@@ -365,9 +361,7 @@ void main() {
       final full = repo.fxCostNs;
       repo.setTrackEffects(
         channel: 2,
-        effects: [
-          BuiltInEffect(type: TrackEffectType.roomVerb, slotId: 'r'),
-        ],
+        effects: [BuiltInEffect(type: TrackEffectType.roomVerb, slotId: 'r')],
       );
       expect(repo.fxChainHeld(two), isTrue);
       // Held, its reverb drains on: it is charged until it is quiet.
@@ -418,9 +412,7 @@ void main() {
         )
         ..setTrackEffects(
           channel: 1,
-          effects: [
-            BuiltInEffect(type: TrackEffectType.roomVerb, slotId: 'r'),
-          ],
+          effects: [BuiltInEffect(type: TrackEffectType.roomVerb, slotId: 'r')],
         )
         ..setTrackEffectEnabled(channel: 1, index: 0, enabled: false);
       expect(repo.fxCostNs, full + room);
@@ -465,12 +457,8 @@ void main() {
       String slotId, {
       FxRack? rack,
       bool enabled = true,
-    }) => BuiltInEffect(
-      type: type,
-      slotId: slotId,
-      rack: rack,
-      enabled: enabled,
-    );
+    }) =>
+        BuiltInEffect(type: type, slotId: slotId, rack: rack, enabled: enabled);
 
     /// Rack A (a Overdrive) on, rack B (a Chorus and a Filter) off: the A/B
     /// pair of #1711 in one chain.
@@ -661,11 +649,7 @@ void main() {
           input: 0,
           effects: [
             pedal(TrackEffectType.overdrive, 'a1', rack: rackA),
-            pedal(
-              TrackEffectType.roomVerb,
-              'a2',
-              rack: rackA,
-            ),
+            pedal(TrackEffectType.roomVerb, 'a2', rack: rackA),
             pedal(
               TrackEffectType.chorus,
               'b1',
@@ -695,10 +679,7 @@ void main() {
       expect(repo.fxCostNs, lessThan(overdrive + room + chorus + echo));
       // Draining is charged only where an alternation could leave it so: an
       // effect off that no control reaches still charges nothing.
-      expect(
-        fxDrains(BuiltInEffect(type: TrackEffectType.roomVerb)),
-        isTrue,
-      );
+      expect(fxDrains(BuiltInEffect(type: TrackEffectType.roomVerb)), isTrue);
       expect(fxDrains(BuiltInEffect(type: TrackEffectType.overdrive)), isFalse);
     });
 
@@ -1015,10 +996,7 @@ void main() {
         );
         // Switched off, switching it back on grows nothing either.
         repo.setMonitorEffects(input: 0, effects: off);
-        expect(
-          repo.fxGrowthNs({const FxAddress(stage: FxStage.input): on}),
-          0,
-        );
+        expect(repo.fxGrowthNs({const FxAddress(stage: FxStage.input): on}), 0);
       });
 
       test('without its workers the same rig comes up with what does not fit '
@@ -1032,9 +1010,7 @@ void main() {
         // Nothing is dropped: the chains stay, the ones the callback alone
         // cannot run are switched off, and the rest fit.
         expect(
-          [
-            for (final fx in repo.monitorEffects(5)) (fx as BuiltInEffect).type,
-          ],
+          [for (final fx in repo.monitorEffects(5)) (fx as BuiltInEffect).type],
           [for (final fx in rack) fx.type],
         );
         expect(repo.state.fxHeld, hasLength(4));

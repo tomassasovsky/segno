@@ -136,9 +136,7 @@ class MidiDeviceRepository {
       return;
     }
     if (_scanner == null) return;
-    _emit(
-      _connection.copyWith(selectedId: saved.id, selectedName: saved.name),
-    );
+    _emit(_connection.copyWith(selectedId: saved.id, selectedName: saved.name));
   }
 
   /// Shows the device [id] on the MIDI page and persists the choice. Capture

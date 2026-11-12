@@ -83,10 +83,7 @@ class _CentredLayout extends MultiChildLayoutDelegate {
       // has to be scaled down to fit.
       loose.copyWith(maxWidth: math.max(0, size.width - leading.width - gap)),
     );
-    positionChild(
-      _Slot.leading,
-      Offset(0, (size.height - leading.height) / 2),
-    );
+    positionChild(_Slot.leading, Offset(0, (size.height - leading.height) / 2));
     positionChild(
       _Slot.trailing,
       Offset(size.width - trailing.width, (size.height - trailing.height) / 2),

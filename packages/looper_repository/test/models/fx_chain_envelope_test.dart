@@ -129,9 +129,7 @@ void main() {
     });
 
     test('an empty non-inherited meta is not persisted', () {
-      final encoded = encodeFxChain(
-        const FxChainEnvelope(meta: FxChainMeta()),
-      );
+      final encoded = encodeFxChain(const FxChainEnvelope(meta: FxChainMeta()));
       expect(encoded, isNot(contains('meta')));
       expect(decodeFxChain(encoded).meta, isNull);
     });

@@ -40,10 +40,7 @@ enum ExternalCondition {
 class ExternalActivation extends Equatable {
   /// Creates an [ExternalActivation]. A new one is active while the button is
   /// on, which is what the accepted screen adds it with.
-  const new({
-    required this.target,
-    this.condition = ExternalCondition.on,
-  });
+  const new({required this.target, this.condition = ExternalCondition.on});
 
   /// Rebuilds an activation from its [toJson] map. Malformed explicit targets
   /// reject the setup; a valid target missing from the rig remains in its row.
@@ -63,10 +60,7 @@ class ExternalActivation extends Equatable {
     if (condition == null) {
       throw const FormatException('Invalid external activation condition');
     }
-    return ExternalActivation(
-      target: target,
-      condition: condition,
-    );
+    return ExternalActivation(target: target, condition: condition);
   }
 
   /// The chain or the effect.

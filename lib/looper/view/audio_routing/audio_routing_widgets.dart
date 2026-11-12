@@ -204,11 +204,7 @@ class RoutingTag extends StatelessWidget {
       ),
       child: AppText(
         text,
-        style: TextStyle(
-          color: surface.textSecondary,
-          fontSize: 18,
-          height: 1,
-        ),
+        style: TextStyle(color: surface.textSecondary, fontSize: 18, height: 1),
       ),
     );
   }
@@ -469,11 +465,7 @@ class RoutingInputMeter extends StatelessWidget {
 /// The pen's `input-meter-scale`: the dBFS ticks under a meter.
 class RoutingMeterScale extends StatelessWidget {
   /// Creates a [RoutingMeterScale].
-  const new({
-    required this.labels,
-    required this.width,
-    super.key,
-  });
+  const new({required this.labels, required this.width, super.key});
 
   /// The tick labels, left to right.
   final List<String> labels;

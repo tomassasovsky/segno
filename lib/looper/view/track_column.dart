@@ -486,10 +486,7 @@ class _TrackInfo extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isPrimary) ...[
-                    PrimaryCrown(
-                      key: Key('tracks_crown_$channel'),
-                      size: 28,
-                    ),
+                    PrimaryCrown(key: Key('tracks_crown_$channel'), size: 28),
                     const SizedBox(width: 12),
                   ],
                   Flexible(

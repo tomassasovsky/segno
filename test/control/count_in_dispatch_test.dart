@@ -179,10 +179,8 @@ class _Rig {
     owner.recordStartOwner.durable.countInBars,
     owner.recordStartOwner.durable.soundStart,
   );
-  (Object?, Object?) get stored => (
-    store.values['tempo.count_in_bars'],
-    store.values['looper.auto_record'],
-  );
+  (Object?, Object?) get stored =>
+      (store.values['tempo.count_in_bars'], store.values['looper.auto_record']);
   void pump() {
     for (var i = 0; i < 20; i++) {
       clock
@@ -441,28 +439,25 @@ void main() {
     // A refused Held voids its whole gesture: the Released exists to undo the
     // press, and a press that never applied has nothing to undo (#1153).
     for (final edited in [false, true]) {
-      check(
-        '$name capture refuses Held, so its Released does nothing'
-        '${edited ? ' after an ordinary edit' : ''}',
-        (r) {
-          if (edited) r.ordinary(4);
-          r
-            ..bind()
-            ..capture(TrackState.recording);
-          final before = r.live;
-          expect(before, (edited ? 4 : 1, false));
-          press(r, high: true);
-          expect(r.live, before);
-          r.capture(TrackState.empty);
-          // No retry of the refused Held occurs on eligibility change.
-          expect(r.live, before);
-          press(r, high: false);
-          expect(r.live, before);
-          expect(r.durable, before);
-          r.retire();
-          expect(r.live, before);
-        },
-      );
+      check('$name capture refuses Held, so its Released does nothing'
+          '${edited ? ' after an ordinary edit' : ''}', (r) {
+        if (edited) r.ordinary(4);
+        r
+          ..bind()
+          ..capture(TrackState.recording);
+        final before = r.live;
+        expect(before, (edited ? 4 : 1, false));
+        press(r, high: true);
+        expect(r.live, before);
+        r.capture(TrackState.empty);
+        // No retry of the refused Held occurs on eligibility change.
+        expect(r.live, before);
+        press(r, high: false);
+        expect(r.live, before);
+        expect(r.durable, before);
+        r.retire();
+        expect(r.live, before);
+      });
     }
 
     check('$name release during capture remains owed until eligible', (r) {
@@ -474,11 +469,11 @@ void main() {
       expect(r.fakeEngine.stopCalls, 0);
       Object? failure;
       unawaited(
-        r.cubit.flushMidiConfiguration(retireControls: true).catchError(
-          (Object error) {
-            failure = error;
-          },
-        ),
+        r.cubit.flushMidiConfiguration(retireControls: true).catchError((
+          Object error,
+        ) {
+          failure = error;
+        }),
       );
       r.pump();
       expect(failure, isA<ControlCleanupPending>());
@@ -505,11 +500,11 @@ void main() {
       expect(r.live, (2, false));
       Object? failure;
       unawaited(
-        r.cubit.flushMidiConfiguration(retireControls: true).catchError(
-          (Object error) {
-            failure = error;
-          },
-        ),
+        r.cubit.flushMidiConfiguration(retireControls: true).catchError((
+          Object error,
+        ) {
+          failure = error;
+        }),
       );
       r.pump();
       expect(failure, isA<ControlCleanupPending>());
@@ -573,9 +568,7 @@ void main() {
     expect(r.live, (1, false));
   });
 
-  check('disconnect after a refused External Held writes no Released', (
-    r,
-  ) {
+  check('disconnect after a refused External Held writes no Released', (r) {
     r.fakeEngine.refuse = true;
     r.external(high: true);
     expect(r.live, (1, false));

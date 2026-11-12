@@ -27,9 +27,8 @@ class FootMixerView extends StatelessWidget {
     final repository = context.read<LooperRepository>();
     return StreamBuilder<int>(
       stream: repository.monitorChanges,
-      builder: (context, _) => _FootMixerContent(
-        monitors: repository.allMonitors(),
-      ),
+      builder: (context, _) =>
+          _FootMixerContent(monitors: repository.allMonitors()),
     );
   }
 }

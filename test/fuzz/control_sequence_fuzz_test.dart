@@ -491,9 +491,7 @@ void main() {
         // empty: the fresh dry take must NOT resurrect A's chain.
         h
           ..run(const [_Tap(PedalButton.clear)], fa)
-          ..run(const [
-            _SetMonitorChain(0, []),
-          ], fa) // dry monitor
+          ..run(const [_SetMonitorChain(0, [])], fa) // dry monitor
           ..settle(fa)
           ..run(const [_Tap(PedalButton.recPlay)], fa)
           ..pumpLoop(fa)
@@ -1030,9 +1028,7 @@ class _Harness {
         fade: ownedFade,
       ),
     );
-    cubit = PedalCubit(
-      pedal: pedalRepo,
-    ); // LED frames round-trip the codec
+    cubit = PedalCubit(pedal: pedalRepo); // LED frames round-trip the codec
     settle(fa);
   }
 

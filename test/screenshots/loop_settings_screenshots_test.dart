@@ -88,9 +88,8 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     confirmedLength = 0;
     confirmedTrackLengths = {1: 8};
     confirmedMode = LooperMode.song;
@@ -117,9 +116,8 @@ void main() {
     when(() => repository.lengthRecoveryRequired).thenReturn(false);
     when(() => repository.lengthSettingsSettled).thenReturn(true);
     when(() => repository.recordLengthCaptureLocked).thenReturn(false);
-    when(() => repository.trackLengthPresetOverrides).thenAnswer(
-      (_) => Map.unmodifiable(confirmedTrackLengths),
-    );
+    when(() => repository.trackLengthPresetOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackLengths));
     when(() => repository.lengthRestartIntent).thenAnswer(
       (_) => (
         defaultBars: confirmedLength,
@@ -146,15 +144,12 @@ void main() {
     when(() => repository.recordTimingSettingsSettled).thenReturn(true);
     when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
     when(() => repository.recordTimingCaptureLocked).thenReturn(false);
-    when(
-      () => repository.defaultRecordTiming,
-    ).thenAnswer((_) => confirmedTiming);
-    when(() => repository.trackRecordTimingOverrides).thenAnswer(
-      (_) => Map.unmodifiable(confirmedTrackTiming),
-    );
-    when(
-      () => repository.settleRecordTimingSettings(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.defaultRecordTiming)
+        .thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackTiming));
+    when(() => repository.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -183,41 +178,28 @@ void main() {
         autoRecord: confirmedSoundStart,
       ),
     );
-    when(() => repository.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.clickModeSettled).thenReturn(true);
-    when(() => repository.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.recordStartSettingsSettled).thenReturn(true);
-    when(
-      () => repository.recordStartRecoveryRequired,
-    ).thenAnswer((_) => recordStartRecoveryRequired);
-    when(
-      () => repository.recordStartCaptureLocked,
-    ).thenAnswer((_) => recordStartCaptureLocked);
+    when(() => repository.recordStartRecoveryRequired)
+        .thenAnswer((_) => recordStartRecoveryRequired);
+    when(() => repository.recordStartCaptureLocked)
+        .thenAnswer((_) => recordStartCaptureLocked);
     when(() => repository.recordStartSettings).thenAnswer(
-      (_) => (
-        countInBars: confirmedCountIn,
-        soundStart: confirmedSoundStart,
-      ),
+      (_) => (countInBars: confirmedCountIn, soundStart: confirmedSoundStart),
     );
     when(() => repository.recordStartRestartIntent).thenAnswer(
-      (_) => (
-        countInBars: confirmedCountIn,
-        soundStart: confirmedSoundStart,
-      ),
+      (_) => (countInBars: confirmedCountIn, soundStart: confirmedSoundStart),
     );
-    when(() => repository.settleRecordStartSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => repository.settleRecordStartSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecordStartSettings(
         countInBars: any(named: 'countInBars'),
@@ -232,64 +214,58 @@ void main() {
     });
     when(() => repository.clickModeRecoveryRequired).thenReturn(false);
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
-    when(() => repository.clickModeRestartIntent).thenAnswer(
-      (_) => confirmedClickMode,
-    );
+    when(() => repository.clickModeRestartIntent)
+        .thenAnswer((_) => confirmedClickMode);
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
-    when(() => repository.settleClickMode()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => repository.settleClickMode())
+        .thenAnswer((_) async => EngineResult.ok);
     when(() => repository.setClickMode(any())).thenAnswer((call) {
       confirmedClickMode = call.positionalArguments.single as ClickMode;
       return EngineResult.ok;
     });
-    when(
-      () => repository.settleLengthSettings(),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.looperModeGate(any()),
-    ).thenReturn(LooperModeGate.open);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.rigReplaced,
-    ).thenAnswer((_) => const Stream<void>.empty());
+    when(() => repository.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.looperModeGate(any()))
+        .thenReturn(LooperModeGate.open);
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.rigReplaced)
+        .thenAnswer((_) => const Stream<void>.empty());
     when(() => repository.state).thenReturn(_rig);
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
       () => when(repository.tapTempo).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setTimeSignature(any(), any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setSyncTempo(on: any(named: 'on')),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickOutput(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickVolume(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setRecDub(enabled: any(named: 'enabled')),
-      ).thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setTimeSignature(any(), any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setSyncTempo(on: any(named: 'on')))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setClickOutput(any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setClickVolume(any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setRecDub(enabled: any(named: 'enabled')))
+              .thenReturn(EngineResult.ok),
       () => when(
         () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
       ).thenReturn(EngineResult.ok),
-      () => when(() => repository.setDefaultLengthPreset(any())).thenAnswer((
-        call,
-      ) {
-        confirmedLength = call.positionalArguments.single as int;
-        return EngineResult.ok;
-      }),
-      () => when(
-        () => repository.setRecordTiming(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setOverdubDecay(any()),
-      ).thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setDefaultLengthPreset(any()))
+              .thenAnswer((call) {
+                confirmedLength = call.positionalArguments.single as int;
+                return EngineResult.ok;
+              }),
+      () =>
+          when(() => repository.setRecordTiming(any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setOverdubDecay(any()))
+              .thenReturn(EngineResult.ok),
       () => when(
         () => repository.setOneShotSnapshot(
           defaultOneShot: any(named: 'defaultOneShot'),
@@ -329,15 +305,9 @@ void main() {
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     final tempo = TempoCubit(settings: tempoOwner);
-    final options = RecordSettings(
-      repository: repository,
-      settings: settings,
-    );
+    final options = RecordSettings(repository: repository, settings: settings);
     final playback = MockDecayPlaybackSettings(
-      snapshot: DecaySnapshot(
-        defaultPercent: 0,
-        trackOverrides: const {1: 25},
-      ),
+      snapshot: DecaySnapshot(defaultPercent: 0, trackOverrides: const {1: 25}),
       oneShot: OneShotSnapshot(
         defaultOneShot: false,
         trackOverrides: const {1: true},
@@ -362,11 +332,7 @@ void main() {
     final tracks = TracksCubit(settings: settings);
     final closeRecordOwner = options.close;
     addTearDown(() => unawaited(closeRecordOwner()));
-    for (final cubit in <BlocBase<Object?>>[
-      tempo,
-      timing,
-      tracks,
-    ]) {
+    for (final cubit in <BlocBase<Object?>>[tempo, timing, tracks]) {
       addTearDown(() => unawaited(cubit.close()));
     }
     await tempo.setTempo(84);
@@ -420,12 +386,10 @@ void main() {
   testWidgets('Loop mode with a refused card and the stop dialog', (
     tester,
   ) async {
-    when(
-      () => repository.looperModeGate(LooperMode.multi),
-    ).thenReturn(LooperModeGate.spans);
-    when(
-      () => repository.looperModeGate(LooperMode.free),
-    ).thenReturn(LooperModeGate.playing);
+    when(() => repository.looperModeGate(LooperMode.multi))
+        .thenReturn(LooperModeGate.spans);
+    when(() => repository.looperModeGate(LooperMode.free))
+        .thenReturn(LooperModeGate.playing);
     await pump(tester, page: LoopSettingsTab.mode);
     await expectLater(
       find.byType(LoopSettingsPage),
@@ -580,17 +544,13 @@ void main() {
     );
     await tester.pump();
     await type('5');
-    await tester.tap(
-      find.descendant(of: sheet, matching: find.text('Set')),
-    );
+    await tester.tap(find.descendant(of: sheet, matching: find.text('Set')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('tempo_entry_error')), findsNothing);
     await tester.tap(find.byKey(const Key('loop_tempo_entry')));
     await tester.pumpAndSettle();
     await type('350');
-    await tester.tap(
-      find.descendant(of: sheet, matching: find.text('Set')),
-    );
+    await tester.tap(find.descendant(of: sheet, matching: find.text('Set')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byType(Navigator),

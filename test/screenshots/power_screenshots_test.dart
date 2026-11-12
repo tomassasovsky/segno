@@ -131,10 +131,7 @@ void main() {
     ),
   ]) {
     testWidgets(name, (tester) async {
-      await pumpFace(
-        tester,
-        PowerGoodbye(state: state, stagedUpdate: '1.1.0'),
-      );
+      await pumpFace(tester, PowerGoodbye(state: state, stagedUpdate: '1.1.0'));
       await expectLater(
         find.byType(PowerGoodbye),
         matchesGoldenFile('goldens/$name.png'),

@@ -163,10 +163,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
               child: Scaffold(
                 body: LoopSettingsFrame(
                   key: const Key('pedal_setup_page'),
-                  tabs: _ContextTabs(
-                    selected: _context,
-                    onOpen: _openContext,
-                  ),
+                  tabs: _ContextTabs(selected: _context, onOpen: _openContext),
                   title: l10n.pedalSetupTitle,
                   onBack: () => Navigator.of(context).maybePop(),
                   onStage: _stage,
@@ -419,9 +416,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     // assign take a colour.
     PedalSetupContext.leds => {
       for (final button in PedalButton.values)
-        if (PedalLedMap.schema(
-          _ledMode,
-        ).containsKey(PedalLedMap.groupOf(button)))
+        if (PedalLedMap.schema(_ledMode)
+            .containsKey(PedalLedMap.groupOf(button)))
           button,
     },
     PedalSetupContext.custom => {

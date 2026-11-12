@@ -36,9 +36,8 @@ class LibraryAudioTab extends StatelessWidget {
           previous.export != current.export &&
           (current.export is LibraryExportConflict ||
               current.export is LibraryExportNeedsDrive),
-      listener: (context, state) => unawaited(
-        showLibraryExportQuestion(context, state.export!),
-      ),
+      listener: (context, state) =>
+          unawaited(showLibraryExportQuestion(context, state.export!)),
       child: switch (export) {
         final LibraryExportRunning running => LibraryExportProgress(
           export: running,

@@ -80,25 +80,24 @@ class PerformanceLaneSnapshot {
   /// Rebuilds a [PerformanceLaneSnapshot] from a decoded JSON map. An absent
   /// `chainEnabled` reads as engaged — see [chainEnabled]. An absent `takeId`
   /// reads as `0` (unknown / not a settled lane-0 entry) — see [takeId].
-  factory fromJson(Map<String, dynamic> json) =>
-      PerformanceLaneSnapshot(
-        lane: (json['lane'] as num).toInt(),
-        lengthFrames: (json['lenFrames'] as num).toInt(),
-        deferred: json['deferred'] as bool,
-        pcmFile: json['pcmRef'] as String?,
-        heardFile: json['heardPcmRef'] as String?,
-        playsClean: json['source'] == 'clean',
-        chainEnabled: json['chainEnabled'] as bool? ?? true,
-        takeId: (json['takeId'] as num?)?.toInt() ?? 0,
-        volume: (json['volume'] as num?)?.toDouble() ?? 1,
-        pan: (json['pan'] as num?)?.toDouble() ?? 0,
-        muted: json['muted'] as bool? ?? false,
-        outputMask: (json['outputMask'] as num?)?.toInt() ?? 3,
-        effects: [
-          for (final e in (json['effects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceLaneSnapshot(
+    lane: (json['lane'] as num).toInt(),
+    lengthFrames: (json['lenFrames'] as num).toInt(),
+    deferred: json['deferred'] as bool,
+    pcmFile: json['pcmRef'] as String?,
+    heardFile: json['heardPcmRef'] as String?,
+    playsClean: json['source'] == 'clean',
+    chainEnabled: json['chainEnabled'] as bool? ?? true,
+    takeId: (json['takeId'] as num?)?.toInt() ?? 0,
+    volume: (json['volume'] as num?)?.toDouble() ?? 1,
+    pan: (json['pan'] as num?)?.toDouble() ?? 0,
+    muted: json['muted'] as bool? ?? false,
+    outputMask: (json['outputMask'] as num?)?.toInt() ?? 3,
+    effects: [
+      for (final e in (json['effects'] as List<dynamic>? ?? const []))
+        TrackEffect.fromJson(e as Map<String, dynamic>),
+    ],
+  );
 
   /// Lane index within the track.
   final int lane;
@@ -203,22 +202,21 @@ class PerformanceTrackSnapshot {
   });
 
   /// Rebuilds a [PerformanceTrackSnapshot] from a decoded JSON map.
-  factory fromJson(Map<String, dynamic> json) =>
-      PerformanceTrackSnapshot(
-        channel: (json['channel'] as num).toInt(),
-        state: TrackState.values.byName(json['state'] as String),
-        volume: (json['volume'] as num).toDouble(),
-        muted: json['muted'] as bool,
-        multiple: (json['multiple'] as num).toInt(),
-        // Absent in manifests written before per-track solo existed.
-        solo: json['solo'] as bool? ?? false,
-        // Absent when 0, and in manifests written before #854.
-        anchorLap: (json['anchorLap'] as num?)?.toInt() ?? 0,
-        lanes: [
-          for (final l in (json['lanes'] as List<dynamic>? ?? const []))
-            PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceTrackSnapshot(
+    channel: (json['channel'] as num).toInt(),
+    state: TrackState.values.byName(json['state'] as String),
+    volume: (json['volume'] as num).toDouble(),
+    muted: json['muted'] as bool,
+    multiple: (json['multiple'] as num).toInt(),
+    // Absent in manifests written before per-track solo existed.
+    solo: json['solo'] as bool? ?? false,
+    // Absent when 0, and in manifests written before #854.
+    anchorLap: (json['anchorLap'] as num?)?.toInt() ?? 0,
+    lanes: [
+      for (final l in (json['lanes'] as List<dynamic>? ?? const []))
+        PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
+    ],
+  );
 
   /// Track channel index.
   final int channel;
@@ -528,14 +526,13 @@ class PerformanceDisarmSnapshot {
   const new({this.tempoBpm = 0, this.tracks = const []});
 
   /// Rebuilds a [PerformanceDisarmSnapshot] from a decoded JSON map.
-  factory fromJson(Map<String, dynamic> json) =>
-      PerformanceDisarmSnapshot(
-        tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
-        tracks: [
-          for (final t in (json['tracks'] as List<dynamic>? ?? const []))
-            PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceDisarmSnapshot(
+    tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
+    tracks: [
+      for (final t in (json['tracks'] as List<dynamic>? ?? const []))
+        PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
+    ],
+  );
 
   /// Denominator-note beats per minute the engine read at disarm; `0` =
   /// unset, stored verbatim (session-manifest parity), and what a pre-#281
@@ -573,16 +570,15 @@ class PerformanceLayerEntry {
   });
 
   /// Rebuilds a [PerformanceLayerEntry] from a decoded JSON map.
-  factory fromJson(Map<String, dynamic> json) =>
-      PerformanceLayerEntry(
-        channel: (json['channel'] as num).toInt(),
-        slot: (json['slot'] as num).toInt(),
-        generation: (json['generation'] as num).toInt(),
-        frame: (json['frame'] as num).toInt(),
-        frameCount: (json['frame_count'] as num).toInt(),
-        laneCount: (json['lane_count'] as num).toInt(),
-        filename: json['filename'] as String,
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceLayerEntry(
+    channel: (json['channel'] as num).toInt(),
+    slot: (json['slot'] as num).toInt(),
+    generation: (json['generation'] as num).toInt(),
+    frame: (json['frame'] as num).toInt(),
+    frameCount: (json['frame_count'] as num).toInt(),
+    laneCount: (json['lane_count'] as num).toInt(),
+    filename: json['filename'] as String,
+  );
 
   /// Track channel the layer belongs to.
   final int channel;

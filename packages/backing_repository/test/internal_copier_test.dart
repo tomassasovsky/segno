@@ -32,10 +32,7 @@ void main() {
     });
 
     test('refuses a path that leaves the root', () async {
-      await expectLater(
-        copy('${temp.path}/x', '../x'),
-        throwsArgumentError,
-      );
+      await expectLater(copy('${temp.path}/x', '../x'), throwsArgumentError);
     });
   });
 }

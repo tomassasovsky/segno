@@ -202,9 +202,7 @@ class _FxChainCard extends StatelessWidget {
         color: lit ? surface.accentSurface : surface.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: lit ? surface.accent : surface.borderSubtle,
-          ),
+          side: BorderSide(color: lit ? surface.accent : surface.borderSubtle),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -435,12 +433,7 @@ class _SingleCardBody extends StatelessWidget {
 /// which has no asset bundle at all.
 class FxRackArt extends StatelessWidget {
   /// Creates an [FxRackArt].
-  const new({
-    required this.slug,
-    required this.lit,
-    this.pedal,
-    super.key,
-  });
+  const new({required this.slug, required this.lit, this.pedal, super.key});
 
   /// The catalogue artwork slug, or `null` for a single effect.
   final String? slug;

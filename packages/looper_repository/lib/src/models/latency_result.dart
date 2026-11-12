@@ -31,11 +31,9 @@ class LatencyResult extends Equatable {
       engineResult = EngineResult.ok;
 
   /// A measurement that returned [offsetFrames], [latencyMs] round trip.
-  const new done({
-    required this.offsetFrames,
-    required this.latencyMs,
-  }) : outcome = LatencyOutcome.done,
-       engineResult = EngineResult.ok;
+  const new done({required this.offsetFrames, required this.latencyMs})
+    : outcome = LatencyOutcome.done,
+      engineResult = EngineResult.ok;
 
   /// A request the engine refused with [engineResult].
   const new refused(this.engineResult)

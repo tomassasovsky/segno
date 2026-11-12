@@ -283,11 +283,7 @@ extension MidiControlEditing on ControlCubit {
       _retireMidi();
     }
     return _serializeMidi(
-      () => _saveMidiConfiguration(
-        state.midiMappings,
-        enabled,
-        resume: true,
-      ),
+      () => _saveMidiConfiguration(state.midiMappings, enabled, resume: true),
     );
   }
 
@@ -332,11 +328,7 @@ extension MidiControlEditing on ControlCubit {
     _publishMidi(
       state.copyWith(
         midiEdit: edit.withLearn(
-          MidiLearn(
-            protocol: protocol,
-            token: token,
-            channel: channel,
-          ),
+          MidiLearn(protocol: protocol, token: token, channel: channel),
         ),
       ),
     );

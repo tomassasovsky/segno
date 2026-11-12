@@ -163,11 +163,7 @@ sealed class ControlValueTarget extends Equatable {
     final param = raw['param'];
     if (slot is! String || slot.isEmpty) return null;
     if (param is! int || param < 0) return null;
-    return FxParamTarget(
-      address: address,
-      slotId: slot,
-      param: param,
-    );
+    return FxParamTarget(address: address, slotId: slot, param: param);
   }
 
   /// The byte-stable canonical serialization (see the class doc).
@@ -185,11 +181,7 @@ sealed class ControlValueTarget extends Equatable {
 /// appear in the picker).
 final class FxParamTarget extends ControlValueTarget {
   /// Creates an FX-parameter target.
-  const new({
-    required this.address,
-    required this.slotId,
-    required this.param,
-  });
+  const new({required this.address, required this.slotId, required this.param});
 
   /// The chain the effect lives on.
   final FxAddress address;

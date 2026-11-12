@@ -291,10 +291,7 @@ void main() {
       await hold(rig, PedalButton.track1);
       await tap(rig, PedalButton.clear);
       await _pump();
-      expect(
-        await rig.stored(),
-        FadeDurations(overrides: const {0: 4500}),
-      );
+      expect(await rig.stored(), FadeDurations(overrides: const {0: 4500}));
       await hold(rig, PedalButton.undo);
       await _pump();
       expect(await rig.stored(), FadeDurations());
@@ -478,10 +475,7 @@ void main() {
       await _pump(const Duration(milliseconds: 50));
       rig.link.press(PedalButton.clear, down: false);
       await _pump();
-      expect(
-        rig.engine.toggles.map((toggle) => toggle.$1).toSet(),
-        {0, 1, 4},
-      );
+      expect(rig.engine.toggles.map((toggle) => toggle.$1).toSet(), {0, 1, 4});
       // The assignment reports active once every RECORDED track is faded;
       // empty tracks 2, 3, 5, 6 and 7 cannot fade and must not block it.
       _publish(rig.engine, recorded: {0, 1, 4}, faded: {0, 1, 4});

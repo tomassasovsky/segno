@@ -38,9 +38,8 @@ Offset appTextOpticalOffsetFor(String text) {
 
 /// Even leading distribution on every role of a [TextTheme].
 TextTheme withAppTextMetrics(TextTheme theme) {
-  TextStyle? tighten(TextStyle? style) => style?.copyWith(
-    leadingDistribution: TextLeadingDistribution.even,
-  );
+  TextStyle? tighten(TextStyle? style) =>
+      style?.copyWith(leadingDistribution: TextLeadingDistribution.even);
   return TextTheme(
     displayLarge: tighten(theme.displayLarge),
     displayMedium: tighten(theme.displayMedium),
@@ -66,11 +65,7 @@ TextTheme withAppTextMetrics(TextTheme theme) {
 /// Without this, AppText picks the nudge from the string itself.
 class AppTextOptics extends InheritedWidget {
   /// Creates [AppTextOptics].
-  const new({
-    required this.opticalOffset,
-    required super.child,
-    super.key,
-  });
+  const new({required this.opticalOffset, required super.child, super.key});
 
   /// Forced optical offset for descendant AppText widgets.
   final Offset opticalOffset;
@@ -105,9 +100,7 @@ class AppTextDefaults extends StatelessWidget {
     // inherited widget and survives that.
     textHeightBehavior: kAppTextHeightBehavior,
     child: DefaultTextStyle.merge(
-      style: const TextStyle(
-        leadingDistribution: TextLeadingDistribution.even,
-      ),
+      style: const TextStyle(leadingDistribution: TextLeadingDistribution.even),
       child: child,
     ),
   );

@@ -2458,12 +2458,8 @@ class _LengthSnapshot extends EngineSnapshot {
 }
 
 class _LengthTrack extends TrackSnapshot {
-  new(
-    TrackSnapshot source,
-    int? bars,
-    FakeAudioEngine engine,
-    int channel,
-  ) : super(
+  new(TrackSnapshot source, int? bars, FakeAudioEngine engine, int channel)
+    : super(
         imageRevision: engine.imageRevisions[channel] ?? source.imageRevision,
         solo: engine.trackSolo[channel] ?? source.solo,
         peakL: source.peakL,

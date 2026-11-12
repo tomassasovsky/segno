@@ -147,9 +147,7 @@ class UpdateCubit extends Cubit<UpdateState> {
       final manifest = await _updates.checkForUpdate();
       if (isClosed) return;
       if (manifest != null) {
-        emit(
-          state.copyWith(phase: UpdatePhase.available, available: manifest),
-        );
+        emit(state.copyWith(phase: UpdatePhase.available, available: manifest));
         return;
       }
       // Nothing newer to download — but a prior stage may still be waiting for
@@ -307,9 +305,7 @@ class UpdateCubit extends Cubit<UpdateState> {
     if (state.phase != UpdatePhase.interrupted) return;
     // Leaves interrupted before the first await, so a second press is a
     // no-op rather than a second check racing the download.
-    emit(
-      state.copyWith(phase: UpdatePhase.checking, clearInterrupted: true),
-    );
+    emit(state.copyWith(phase: UpdatePhase.checking, clearInterrupted: true));
     await _updates.clearInterrupted();
     if (isClosed) return;
     await check();

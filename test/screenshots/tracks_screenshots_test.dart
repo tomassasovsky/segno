@@ -41,8 +41,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
@@ -136,16 +135,13 @@ void main() {
     // Live levels reach the meters apart from the state (#1301); a test sets
     // them with [levels].
     when(() => repository.meters).thenReturn(const MeterLevels());
-    when(
-      () => repository.meterLevels,
-    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.meterLevels)
+        .thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(() => repository.playhead).thenReturn(const Playhead());
-    when(
-      () => repository.playheads,
-    ).thenAnswer((_) => const Stream<Playhead>.empty());
-    when(
-      () => repository.cancelArm(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.playheads)
+        .thenAnswer((_) => const Stream<Playhead>.empty());
+    when(() => repository.cancelArm(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenAnswer((call) {
@@ -163,12 +159,10 @@ void main() {
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixGeneration).thenReturn(0);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     fade = FadeSettings(
       repository: repository,
       settings: settings,
@@ -177,20 +171,16 @@ void main() {
     );
     // The tray's Signal face reads these through `MonitorCubit`. A bare mock
     // returns null for each and the cubit dies in its constructor.
-    when(() => repository.monitorChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
-    when(() => repository.monitorParamChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
     when(() => repository.allMonitors()).thenReturn(const {});
     when(() => repository.monitorEffects(any())).thenReturn(const []);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
     performance = _ScenePerformance();
@@ -222,9 +212,8 @@ void main() {
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
     performanceRecorder = _MockPerformanceRecorderCubit();
-    when(
-      () => performanceRecorder.state,
-    ).thenReturn(const PerformanceRecorderIdle());
+    when(() => performanceRecorder.state)
+        .thenReturn(const PerformanceRecorderIdle());
     // The status bar's clock reads elapsed transport time (#678); the pen's
     // own 0:00:11 figure, so the decal matches the design literally.
     outputLevel = _MockOutputLevelCubit();
@@ -749,9 +738,8 @@ void main() {
     'sharp',
   ]) {
     testWidgets('Foot Tuner $scene scene', (tester) async {
-      when(
-        () => repository.setTunerInput(input: any(named: 'input')),
-      ).thenReturn(EngineResult.ok);
+      when(() => repository.setTunerInput(input: any(named: 'input')))
+          .thenReturn(EngineResult.ok);
       when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
       final wide = scene == '18_inputs';
       seed(
@@ -863,19 +851,13 @@ void main() {
           input: InputMonitor(input: input, effects: effects[input]),
       });
       // A slot target's light also asks whether a hold has the chain.
-      when(
-        () => repository.fxChainHeld(
-          const FxAddress(stage: FxStage.input),
-        ),
-      ).thenReturn(false);
+      when(() => repository.fxChainHeld(const FxAddress(stage: FxStage.input)))
+          .thenReturn(false);
       for (var input = 0; input < 4; input++) {
-        when(
-          () => repository.monitorEffects(input),
-        ).thenReturn(effects[input]);
+        when(() => repository.monitorEffects(input)).thenReturn(effects[input]);
         // Input 1 and 4 are on; the momentary ones rest off.
-        when(
-          () => repository.monitorChainEnabled(input),
-        ).thenReturn(input == 0 || input == 3);
+        when(() => repository.monitorChainEnabled(input))
+            .thenReturn(input == 0 || input == 3);
       }
       when(
         () => repository.setMonitorChainEnabled(
@@ -1027,62 +1009,51 @@ void main() {
     }, skip: !rendersScreenshots);
   }
 
-  testWidgets(
-    'console main window (16" panel decal)',
-    (tester) async {
-      // The real per-track names shown on the console.
-      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
-      for (var i = 0; i < names.length; i++) {
-        await tracks.rename(i, names[i]);
-      }
-      levels(
-        const MeterLevels(
-          tracks: [
-            TrackLevels(peak: 0.9),
-            TrackLevels(peak: 0.68),
-            TrackLevels(peak: 0.55),
-          ],
+  testWidgets('console main window (16" panel decal)', (tester) async {
+    // The real per-track names shown on the console.
+    const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+    for (var i = 0; i < names.length; i++) {
+      await tracks.rename(i, names[i]);
+    }
+    levels(
+      const MeterLevels(
+        tracks: [
+          TrackLevels(peak: 0.9),
+          TrackLevels(peak: 0.68),
+          TrackLevels(peak: 0.55),
+        ],
+      ),
+    );
+    seed(
+      const LooperState(
+        status: EngineStatus(
+          isConnected: true,
+          devicePresent: true,
+          deviceName: 'Segno',
+          sampleRate: 48000,
+          inputChannels: 2,
+          outputChannels: 2,
         ),
-      );
-      seed(
-        const LooperState(
-          status: EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            deviceName: 'Segno',
-            sampleRate: 48000,
-            inputChannels: 2,
-            outputChannels: 2,
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 96000),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+          // RC20: loaded (has content) but muted.
+          Track(
+            channel: 2,
+            state: TrackState.playing,
+            muted: true,
+            lengthFrames: 96000,
           ),
-          tracks: [
-            Track(
-              state: TrackState.playing,
-              lengthFrames: 96000,
-            ),
-            Track(
-              channel: 1,
-              state: TrackState.playing,
-              lengthFrames: 96000,
-            ),
-            // RC20: loaded (has content) but muted.
-            Track(
-              channel: 2,
-              state: TrackState.playing,
-              muted: true,
-              lengthFrames: 96000,
-            ),
-            Track(channel: 3),
-          ],
-        ),
-      );
-      await pump(tester);
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_main_window.png'),
-      );
-    },
-    skip: !rendersScreenshots,
-  );
+          Track(channel: 3),
+        ],
+      ),
+    );
+    await pump(tester);
+    await expectLater(
+      find.byType(TracksView),
+      matchesGoldenFile('goldens/tracks_main_window.png'),
+    );
+  }, skip: !rendersScreenshots);
 
   testWidgets(
     'console main window with a reversed track: REV in the meta row gap',
@@ -1186,158 +1157,146 @@ void main() {
   // #1524: the longest counts the stage prints, in Spanish, on every view,
   // and the view menu open over them. Every count and unit shows in full.
   for (final view in StageView.values) {
-    testWidgets(
-      'long counts in Spanish, ${view.name} view',
-      (tester) async {
-        Track track(int channel) => Track(
-          channel: channel,
-          state: TrackState.playing,
-          lengthFrames: 1000 * (channel == 3 ? 7 : 128),
-          peelDepth: 11,
-          reversed: channel == 1,
-          muted: channel == 2,
-        );
-        seed(
-          LooperState(
-            status: const EngineStatus(
-              isConnected: true,
-              devicePresent: true,
-              deviceName: 'Segno',
-              sampleRate: 48000,
-              inputChannels: 2,
-              outputChannels: 2,
-            ),
-            transport: const TransportState(
-              masterLengthFrames: 1000,
-              loopBars: 1,
-            ),
-            tracks: [
-              for (var channel = 0; channel < 4; channel++) track(channel),
-            ],
+    testWidgets('long counts in Spanish, ${view.name} view', (tester) async {
+      Track track(int channel) => Track(
+        channel: channel,
+        state: TrackState.playing,
+        lengthFrames: 1000 * (channel == 3 ? 7 : 128),
+        peelDepth: 11,
+        reversed: channel == 1,
+        muted: channel == 2,
+      );
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
           ),
-        );
-        tracks.showView(view);
-        await pump(tester, locale: const Locale('es'));
-        await tester.tap(find.byKey(const Key('stage_view_menu')));
-        await tester.pumpAndSettle();
-        await expectLater(
-          find.byType(MaterialApp),
-          matchesGoldenFile('goldens/tracks_long_counts_es_${view.name}.png'),
-        );
-      },
-      skip: !rendersScreenshots,
-    );
+          transport: const TransportState(
+            masterLengthFrames: 1000,
+            loopBars: 1,
+          ),
+          tracks: [
+            for (var channel = 0; channel < 4; channel++) track(channel),
+          ],
+        ),
+      );
+      tracks.showView(view);
+      await pump(tester, locale: const Locale('es'));
+      await tester.tap(find.byKey(const Key('stage_view_menu')));
+      await tester.pumpAndSettle();
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/tracks_long_counts_es_${view.name}.png'),
+      );
+    }, skip: !rendersScreenshots);
   }
 
   // The keyboard shortcuts sheet, opened from inside LooperScreenTheme as the
   // `?` key opens it: its title, group headings and key chips are bold Arimo
   // (#1526). The context comes from the view button, since TracksView sits
   // above the theme.
-  testWidgets(
-    'keyboard shortcuts sheet',
-    (tester) async {
-      seed(
-        const LooperState(
-          status: EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            deviceName: 'Segno',
-            sampleRate: 48000,
-            inputChannels: 2,
-            outputChannels: 2,
-          ),
+  testWidgets('keyboard shortcuts sheet', (tester) async {
+    seed(
+      const LooperState(
+        status: EngineStatus(
+          isConnected: true,
+          devicePresent: true,
+          deviceName: 'Segno',
+          sampleRate: 48000,
+          inputChannels: 2,
+          outputChannels: 2,
         ),
-      );
-      await pump(tester);
-      unawaited(
-        showShortcutsHelp(
-          tester.element(find.byKey(const Key('stage_view_menu'))),
-        ),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      await expectLater(
-        find.byType(MaterialApp),
-        matchesGoldenFile('goldens/tracks_shortcuts_sheet.png'),
-      );
-    },
-    skip: !rendersScreenshots,
-  );
+      ),
+    );
+    await pump(tester);
+    unawaited(
+      showShortcutsHelp(
+        tester.element(find.byKey(const Key('stage_view_menu'))),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await expectLater(
+      find.byType(MaterialApp),
+      matchesGoldenFile('goldens/tracks_shortcuts_sheet.png'),
+    );
+  }, skip: !rendersScreenshots);
 
-  testWidgets(
-    'the Mixer view (MAIN VIEWS / Mixer)',
-    (tester) async {
-      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
-      for (var i = 0; i < names.length; i++) {
-        await tracks.rename(i, names[i]);
-      }
-      levels(
-        const MeterLevels(
-          tracks: [
-            TrackLevels(peakL: 0.9, peakR: 0.55),
-            TrackLevels(peakL: 0.62, peakR: 0.68),
-          ],
+  testWidgets('the Mixer view (MAIN VIEWS / Mixer)', (tester) async {
+    const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+    for (var i = 0; i < names.length; i++) {
+      await tracks.rename(i, names[i]);
+    }
+    levels(
+      const MeterLevels(
+        tracks: [
+          TrackLevels(peakL: 0.9, peakR: 0.55),
+          TrackLevels(peakL: 0.62, peakR: 0.68),
+        ],
+      ),
+    );
+    seed(
+      const LooperState(
+        status: EngineStatus(
+          isConnected: true,
+          devicePresent: true,
+          deviceName: 'Segno',
+          sampleRate: 48000,
+          inputChannels: 2,
+          outputChannels: 2,
         ),
-      );
-      seed(
-        const LooperState(
-          status: EngineStatus(
-            isConnected: true,
-            devicePresent: true,
-            deviceName: 'Segno',
-            sampleRate: 48000,
-            inputChannels: 2,
-            outputChannels: 2,
+        tracks: [
+          // Panned left, a touch under unity, both sides metering.
+          Track(
+            state: TrackState.playing,
+            lengthFrames: 96000,
+            volume: 0.8,
+            pan: -0.4,
+            solo: true,
           ),
-          tracks: [
-            // Panned left, a touch under unity, both sides metering.
-            Track(
-              state: TrackState.playing,
-              lengthFrames: 96000,
-              volume: 0.8,
-              pan: -0.4,
-              solo: true,
-            ),
-            // Soloed, above unity.
-            Track(
-              channel: 1,
-              state: TrackState.playing,
-              lengthFrames: 96000,
-              volume: 1.4,
-              solo: true,
-            ),
-            // Muted playback keeps its fader level but meters no signal.
-            Track(
-              channel: 2,
-              state: TrackState.playing,
-              lengthFrames: 96000,
-              muted: true,
-            ),
-            Track(channel: 3),
-          ],
-        ),
-      );
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('stage_view_menu')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('stage_view_mixer')));
-      await tester.pumpAndSettle();
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_mixer_window.png'),
-      );
-      // The same scene must keep the shared meter scale aligned when the
-      // desktop window is smaller than the appliance panel.
-      tester.view.physicalSize = const Size(800, 600);
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      await expectLater(
-        find.byType(TracksView),
-        matchesGoldenFile('goldens/tracks_mixer_compact_window.png'),
-      );
-    },
-    skip: !rendersScreenshots,
-  );
+          // Soloed, above unity.
+          Track(
+            channel: 1,
+            state: TrackState.playing,
+            lengthFrames: 96000,
+            volume: 1.4,
+            solo: true,
+          ),
+          // Muted playback keeps its fader level but meters no signal.
+          Track(
+            channel: 2,
+            state: TrackState.playing,
+            lengthFrames: 96000,
+            muted: true,
+          ),
+          Track(channel: 3),
+        ],
+      ),
+    );
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('stage_view_menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('stage_view_mixer')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(TracksView),
+      matchesGoldenFile('goldens/tracks_mixer_window.png'),
+    );
+    // The same scene must keep the shared meter scale aligned when the
+    // desktop window is smaller than the appliance panel.
+    tester.view.physicalSize = const Size(800, 600);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await expectLater(
+      find.byType(TracksView),
+      matchesGoldenFile('goldens/tracks_mixer_compact_window.png'),
+    );
+  }, skip: !rendersScreenshots);
 
   // #692: the FX-mode stage transform — the whole stage takes the FX purple,
   // meters recede to 40%, and each tile re-dresses with a power pill and its

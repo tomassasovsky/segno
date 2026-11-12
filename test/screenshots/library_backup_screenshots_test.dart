@@ -21,8 +21,7 @@ import 'package:session_repository/session_repository.dart';
 import '../helpers/helpers.dart';
 import '../library/helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockSessionRepository extends Mock implements SessionRepository;
 
@@ -92,9 +91,8 @@ void main() {
       ),
     );
     when(() => sessions.bundlePathOf(_id)).thenAnswer((_) async => bundle);
-    when(
-      () => sessions.bundleFiles(_id),
-    ).thenAnswer((_) async => ['track0_lane0_L0.wav', 'session.json']);
+    when(() => sessions.bundleFiles(_id))
+        .thenAnswer((_) async => ['track0_lane0_L0.wav', 'session.json']);
     when(() => sessions.listBackups(any())).thenReturn([
       _current,
       const SessionSummary(id: 's-other', name: 'Acoustic set'),

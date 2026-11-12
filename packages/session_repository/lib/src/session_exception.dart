@@ -15,10 +15,7 @@ sealed class SessionException implements Exception {
 /// (there is no resampling), so [SessionRepository.read] refuses.
 class SessionSampleRateMismatch extends SessionException {
   /// Creates a [SessionSampleRateMismatch].
-  const new({
-    required this.sessionRate,
-    required this.deviceRate,
-  });
+  const new({required this.sessionRate, required this.deviceRate});
 
   /// The sample rate the session was recorded at, in Hz.
   final int sessionRate;
@@ -37,10 +34,7 @@ class SessionSampleRateMismatch extends SessionException {
 /// also refuses an older schema this way; opening a bundle converts those.
 class SessionUnsupportedVersion extends SessionException {
   /// Creates a [SessionUnsupportedVersion].
-  const new({
-    required this.version,
-    required this.supported,
-  });
+  const new({required this.version, required this.supported});
 
   /// The manifest's declared schema version.
   final int version;
@@ -78,11 +72,7 @@ class SessionUnconvertible extends SessionException {
 /// bundle fails loudly on load rather than mid-apply.
 class SessionCorruptLayers extends SessionException {
   /// Creates a [SessionCorruptLayers].
-  const new({
-    required this.channel,
-    required this.lane,
-    required this.reason,
-  });
+  const new({required this.channel, required this.lane, required this.reason});
 
   /// Track channel of the offending lane.
   final int channel;

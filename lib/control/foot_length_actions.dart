@@ -15,11 +15,8 @@ class FootLengthActions {
     required int bank,
     required int cursor,
     LooperState? looper,
-  }) => projectFootLength(
-    looper ?? repository.state,
-    bank: bank,
-    cursor: cursor,
-  );
+  }) =>
+      projectFootLength(looper ?? repository.state, bank: bank, cursor: cursor);
 
   /// Doubles or halves [channel]. Completes with null when the edit landed,
   /// or why it did not: an empty or busy track is refused without reaching

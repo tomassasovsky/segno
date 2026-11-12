@@ -25,10 +25,7 @@ class InputSetup extends Equatable {
        pairs = Map.unmodifiable(pairs);
 
   /// An untouched setup with immutable empty maps.
-  const new empty()
-    : trimDb = const {},
-      pan = const {},
-      pairs = const {};
+  const new empty() : trimDb = const {}, pan = const {}, pairs = const {};
 
   /// Complete structural validation before application or session replacement.
   bool get isValid =>

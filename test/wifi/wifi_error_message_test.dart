@@ -33,10 +33,7 @@ void main() {
 
   test('maps generic helper process failures', () {
     expect(
-      wifiErrorMessage(
-        l10n,
-        'ProcessException: segno-wifi-ctl failed',
-      ),
+      wifiErrorMessage(l10n, 'ProcessException: segno-wifi-ctl failed'),
       l10n.wifiConnectFailedGeneric,
     );
   });

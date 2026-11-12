@@ -237,10 +237,7 @@ FootTunerProjection projectFootTuner(
           role: FootTunerRole.referenceDown,
         );
       case PedalButton.clear:
-        return FootTunerPedal(
-          button: button,
-          role: FootTunerRole.referenceUp,
-        );
+        return FootTunerPedal(button: button, role: FootTunerRole.referenceUp);
       case PedalButton.bank:
         return FootTunerPedal(
           button: button,

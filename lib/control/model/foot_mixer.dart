@@ -47,12 +47,7 @@ enum FootMixerAction {
 /// One physical pedal's semantics; Control alone supplies gesture timing.
 class FootMixerPedal {
   /// Creates one static role in the accepted ten-pedal layout.
-  const new(
-    this.press, {
-    this.hold,
-    this.slot,
-    this.immediate = false,
-  });
+  const new(this.press, {this.hold, this.slot, this.immediate = false});
 
   /// Short action, either at contact or matching release.
   final FootMixerAction press;
@@ -154,14 +149,8 @@ class FootMixerProjection extends Equatable {
       FootMixerAction.recordPlay,
       immediate: true,
     ),
-    PedalButton.stop: FootMixerPedal(
-      FootMixerAction.stop,
-      immediate: true,
-    ),
-    PedalButton.mode: FootMixerPedal(
-      FootMixerAction.exit,
-      immediate: true,
-    ),
+    PedalButton.stop: FootMixerPedal(FootMixerAction.stop, immediate: true),
+    PedalButton.mode: FootMixerPedal(FootMixerAction.exit, immediate: true),
     PedalButton.undo: FootMixerPedal(
       FootMixerAction.decrease,
       hold: FootMixerAction.reset,

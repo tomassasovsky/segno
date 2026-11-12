@@ -61,9 +61,8 @@ void writeManifest(
     'stopped_early': ?stoppedEarly,
     'finalized': finalized,
   };
-  File(
-    '$dir/performance.json',
-  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(json));
+  File('$dir/performance.json')
+      .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(json));
 }
 
 /// Waits for [cubit] to reach [PerformanceRecorderCompleted] — the render
@@ -176,11 +175,7 @@ void main() {
       bytes.add(_eventLogEntry(frame: i * 100));
     }
     File('$dir/events.log').writeAsBytesSync(bytes.toBytes());
-    writeManifest(
-      dir,
-      finalized: false,
-      zeroFilledFrames: zeroFilledFrames,
-    );
+    writeManifest(dir, finalized: false, zeroFilledFrames: zeroFilledFrames);
     return dir;
   }
 
@@ -244,170 +239,157 @@ void main() {
       expect: () => <PerformanceRecorderState>[],
     );
 
-    test(
-      'keeps the recovering flag up past load() while a timed-out salvage '
-      "render still holds arm's gate, and clears it once the render "
-      'settles (#679 r3)',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-crashed')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
-        // A render the engine still reports in flight when runBootRecovery
-        // returns (the repository's own timeout/slot handling is pinned in
-        // its package tests) — exactly the window where arm is refused with
-        // no Finalizing/Rendering state on screen to explain it.
-        engine.renderProgress = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 10,
-        );
-        final cubit = build();
-        addTearDown(cubit.close);
+    test('keeps the recovering flag up past load() while a timed-out salvage '
+        "render still holds arm's gate, and clears it once the render "
+        'settles (#679 r3)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-crashed')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
+      // A render the engine still reports in flight when runBootRecovery
+      // returns (the repository's own timeout/slot handling is pinned in
+      // its package tests) — exactly the window where arm is refused with
+      // no Finalizing/Rendering state on screen to explain it.
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      final cubit = build();
+      addTearDown(cubit.close);
 
-        await cubit.load();
+      await cubit.load();
 
-        expect(
-          cubit.state,
-          const PerformanceRecorderIdle(recovering: true),
-          reason:
-              "the live render still holds arm's render gate — clearing "
-              'now would re-enable a button whose every press is refused',
-        );
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(recovering: true),
+        reason:
+            "the live render still holds arm's render gate — clearing "
+            'now would re-enable a button whose every press is refused',
+      );
 
-        engine.renderProgress = PerformanceRenderProgress.empty;
-        await cubit.stream
-            .firstWhere((s) => s == const PerformanceRecorderIdle())
-            .timeout(const Duration(seconds: 5));
-      },
-    );
+      engine.renderProgress = PerformanceRenderProgress.empty;
+      await cubit.stream
+          .firstWhere((s) => s == const PerformanceRecorderIdle())
+          .timeout(const Duration(seconds: 5));
+    });
 
-    test(
-      'a pedal or MIDI arm while the salvage still renders says why, keeps '
-      'the recovering flag, which still clears when the render settles, and '
-      'arms once it has (#1633)',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-crashed')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
-        engine.renderProgress = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 10,
-        );
-        final cubit = build();
-        addTearDown(cubit.close);
-        await cubit.load();
+    test('a pedal or MIDI arm while the salvage still renders says why, keeps '
+        'the recovering flag, which still clears when the render settles, and '
+        'arms once it has (#1633)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-crashed')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.load();
 
-        // The pedal and MIDI controls reach the repository directly.
-        expect(await performance.arm(), EngineResult.notReady);
-        await pumpEventQueue();
-        expect(
-          cubit.state,
-          const PerformanceRecorderIdle(
-            recovering: true,
-            busyWith: PerformanceArmBusy.rendering,
-            refusal: 1,
-          ),
-        );
-        // A second press is a new state, so it gets its own answer.
-        expect(await performance.arm(), EngineResult.notReady);
-        await pumpEventQueue();
-        expect(
-          cubit.state,
-          const PerformanceRecorderIdle(
-            recovering: true,
-            busyWith: PerformanceArmBusy.rendering,
-            refusal: 2,
-          ),
-        );
+      // The pedal and MIDI controls reach the repository directly.
+      expect(await performance.arm(), EngineResult.notReady);
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(
+          recovering: true,
+          busyWith: PerformanceArmBusy.rendering,
+          refusal: 1,
+        ),
+      );
+      // A second press is a new state, so it gets its own answer.
+      expect(await performance.arm(), EngineResult.notReady);
+      await pumpEventQueue();
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(
+          recovering: true,
+          busyWith: PerformanceArmBusy.rendering,
+          refusal: 2,
+        ),
+      );
 
-        engine.renderProgress = PerformanceRenderProgress.empty;
-        await cubit.stream
-            .firstWhere((s) => s == const PerformanceRecorderIdle())
-            .timeout(const Duration(seconds: 5));
-        expect(await performance.arm(), EngineResult.ok);
-        await pumpEventQueue();
-        expect(cubit.state, isA<PerformanceRecorderArmed>());
-      },
-    );
+      engine.renderProgress = PerformanceRenderProgress.empty;
+      await cubit.stream
+          .firstWhere((s) => s == const PerformanceRecorderIdle())
+          .timeout(const Duration(seconds: 5));
+      expect(await performance.arm(), EngineResult.ok);
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+    });
 
-    test(
-      'a stranded-only boot (finalized bundle awaiting its move, nothing '
-      'unfinalized) still shows the recovering flag until its re-attempted '
-      'render settles (#679 r4)',
-      () async {
-        // The case findUnfinalized alone cannot see: finalized + marker.
-        final stranded = Directory('${tempDir.path}/exports/perf-stranded')
-          ..createSync(recursive: true);
-        writeManifest(stranded.path);
-        File(
-          '${stranded.path}/${PerformanceRepository.recoveryMarkerName}',
-        ).writeAsStringSync('');
-        // The re-attempted stem render holds arm's gate past load().
-        engine.renderProgress = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 10,
-        );
-        final cubit = build();
-        addTearDown(cubit.close);
+    test('a stranded-only boot (finalized bundle awaiting its move, nothing '
+        'unfinalized) still shows the recovering flag until its re-attempted '
+        'render settles (#679 r4)', () async {
+      // The case findUnfinalized alone cannot see: finalized + marker.
+      final stranded = Directory('${tempDir.path}/exports/perf-stranded')
+        ..createSync(recursive: true);
+      writeManifest(stranded.path);
+      File('${stranded.path}/${PerformanceRepository.recoveryMarkerName}')
+          .writeAsStringSync('');
+      // The re-attempted stem render holds arm's gate past load().
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      final cubit = build();
+      addTearDown(cubit.close);
 
-        await cubit.load();
+      await cubit.load();
 
-        expect(
-          cubit.state,
-          const PerformanceRecorderIdle(recovering: true),
-          reason:
-              'a probe blind to stranded bundles would leave the record '
-              'button enabled-looking while every press is refused',
-        );
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(recovering: true),
+        reason:
+            'a probe blind to stranded bundles would leave the record '
+            'button enabled-looking while every press is refused',
+      );
 
-        engine.renderProgress = PerformanceRenderProgress.empty;
-        await cubit.stream
-            .firstWhere((s) => s == const PerformanceRecorderIdle())
-            .timeout(const Duration(seconds: 5));
-      },
-    );
+      engine.renderProgress = PerformanceRenderProgress.empty;
+      await cubit.stream
+          .firstWhere((s) => s == const PerformanceRecorderIdle())
+          .timeout(const Duration(seconds: 5));
+    });
 
-    test(
-      'a recovery that blows up cannot wedge the recovering flag — the '
-      'clearing emission runs in a finally (#679 r3)',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-crashed')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
-        var rootCalls = 0;
-        final blowingRepo = PerformanceRepository(
-          storageIo: fakeStorageIo,
-          guards: GuardRegistry(),
-          engine: engine,
-          exportsRoot: () async {
-            rootCalls++;
-            // The probe's scan resolves; recovery's own resolution throws
-            // an Error — the kind no runtime guard is meant to catch.
-            if (rootCalls > 1) throw StateError('bug');
-            return '${tempDir.path}/exports';
-          },
-          now: () => clock,
-        );
-        addTearDown(blowingRepo.dispose);
-        final cubit = PerformanceRecorderCubit(
-          performance: blowingRepo,
-          armedTickInterval: const Duration(milliseconds: 10),
-          renderPollInterval: const Duration(milliseconds: 10),
-          now: () => clock,
-          freeSpaceBytes: (_) async => null,
-        );
-        addTearDown(cubit.close);
+    test('a recovery that blows up cannot wedge the recovering flag — the '
+        'clearing emission runs in a finally (#679 r3)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-crashed')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
+      var rootCalls = 0;
+      final blowingRepo = PerformanceRepository(
+        storageIo: fakeStorageIo,
+        guards: GuardRegistry(),
+        engine: engine,
+        exportsRoot: () async {
+          rootCalls++;
+          // The probe's scan resolves; recovery's own resolution throws
+          // an Error — the kind no runtime guard is meant to catch.
+          if (rootCalls > 1) throw StateError('bug');
+          return '${tempDir.path}/exports';
+        },
+        now: () => clock,
+      );
+      addTearDown(blowingRepo.dispose);
+      final cubit = PerformanceRecorderCubit(
+        performance: blowingRepo,
+        armedTickInterval: const Duration(milliseconds: 10),
+        renderPollInterval: const Duration(milliseconds: 10),
+        now: () => clock,
+        freeSpaceBytes: (_) async => null,
+      );
+      addTearDown(cubit.close);
 
-        await expectLater(cubit.load(), throwsStateError);
+      await expectLater(cubit.load(), throwsStateError);
 
-        expect(
-          cubit.state,
-          const PerformanceRecorderIdle(),
-          reason:
-              'the bug is the bug — a record button dead until restart '
-              'must not be its second casualty',
-        );
-      },
-    );
+      expect(
+        cubit.state,
+        const PerformanceRecorderIdle(),
+        reason:
+            'the bug is the bug — a record button dead until restart '
+            'must not be its second casualty',
+      );
+    });
 
     test('is latched: a second call does not re-run recovery', () async {
       final cubit = build();
@@ -473,9 +455,8 @@ void main() {
       await pumpEventQueue();
 
       final snapshot = jsonDecode(
-        File(
-          '${performance.armedDirectory}/arm-snapshot.json',
-        ).readAsStringSync(),
+        File('${performance.armedDirectory}/arm-snapshot.json')
+            .readAsStringSync(),
       ) as Map<String, dynamic>;
       expect(snapshot['limiterOn'], isTrue);
       expect(snapshot['limiterCeiling'], 0.8);
@@ -598,51 +579,48 @@ void main() {
       await waitForCompleted(cubit);
     });
 
-    test(
-      'a pedal-path repository arm mid-render is refused too, and the '
-      'Rendering state is not yanked (#671)',
-      () async {
-        final cubit = build();
-        addTearDown(cubit.close);
-        await armWithLog(performance);
-        await pumpEventQueue();
-        // Never-finishing render, installed after the arm above so the gate
-        // under test doesn't refuse the setup itself.
-        engine.renderProgress = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 30,
-        );
-        clock = clock.add(const Duration(seconds: 5));
-        unawaited(performance.disarmAndFinalize());
-        await cubit.stream
-            .firstWhere((s) => s is PerformanceRecorderRendering)
-            .timeout(const Duration(seconds: 5));
+    test('a pedal-path repository arm mid-render is refused too, and the '
+        'Rendering state is not yanked (#671)', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      // Never-finishing render, installed after the arm above so the gate
+      // under test doesn't refuse the setup itself.
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 30,
+      );
+      clock = clock.add(const Duration(seconds: 5));
+      unawaited(performance.disarmAndFinalize());
+      await cubit.stream
+          .firstWhere((s) => s is PerformanceRecorderRendering)
+          .timeout(const Duration(seconds: 5));
 
-        // The pedal's MODE long-press calls the repository directly,
-        // bypassing toggleArm — the repository's own gate must refuse it, or
-        // the armed status would clobber the render flow out from under the
-        // cubit (and its result dialog).
-        expect(await performance.arm(), EngineResult.notReady);
-        await pumpEventQueue();
+      // The pedal's MODE long-press calls the repository directly,
+      // bypassing toggleArm — the repository's own gate must refuse it, or
+      // the armed status would clobber the render flow out from under the
+      // cubit (and its result dialog).
+      expect(await performance.arm(), EngineResult.notReady);
+      await pumpEventQueue();
 
-        expect(performance.armedDirectory, isNull);
-        expect(engine.perfArmCalls, 1, reason: 'only the initial arm');
-        expect(
-          cubit.state,
-          isA<PerformanceRecorderRendering>()
-              .having((s) => s.percent, 'percent', 30)
-              .having((s) => s.refusal, 'refusal', 1),
-          reason: 'the render keeps its face and counts the refused press',
-        );
+      expect(performance.armedDirectory, isNull);
+      expect(engine.perfArmCalls, 1, reason: 'only the initial arm');
+      expect(
+        cubit.state,
+        isA<PerformanceRecorderRendering>()
+            .having((s) => s.percent, 'percent', 30)
+            .having((s) => s.refusal, 'refusal', 1),
+        reason: 'the render keeps its face and counts the refused press',
+      );
 
-        // Once the render completes the gate lifts and the pedal can arm a
-        // fresh capture again.
-        engine.renderProgress = PerformanceRenderProgress.empty;
-        await waitForCompleted(cubit);
-        await performance.arm();
-        expect(performance.armedDirectory, isNotNull);
-      },
-    );
+      // Once the render completes the gate lifts and the pedal can arm a
+      // fresh capture again.
+      engine.renderProgress = PerformanceRenderProgress.empty;
+      await waitForCompleted(cubit);
+      await performance.arm();
+      expect(performance.armedDirectory, isNotNull);
+    });
 
     test('a finalize that throws lands on idle saying the take was not '
         'saved, and Capture arms again (#1639)', () async {
@@ -799,41 +777,38 @@ void main() {
       expect(cubit.state, isA<PerformanceRecorderArmed>());
     });
 
-    test(
-      'a pedal arm after the stem render, while the DAW project is still '
-      'being written, is refused as a take being saved, and arms once the '
-      'take is delivered (#1638)',
-      () async {
-        final cubit = build();
-        addTearDown(cubit.close);
-        await armWithLog(performance);
-        await pumpEventQueue();
-        engine.renderProgress = const PerformanceRenderProgress(
-          done: false,
-          progressPercent: 90,
-        );
-        clock = clock.add(const Duration(seconds: 5));
-        unawaited(performance.disarmAndFinalize());
-        await cubit.stream
-            .firstWhere((s) => s is PerformanceRecorderRendering)
-            .timeout(const Duration(seconds: 5));
+    test('a pedal arm after the stem render, while the DAW project is still '
+        'being written, is refused as a take being saved, and arms once the '
+        'take is delivered (#1638)', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 90,
+      );
+      clock = clock.add(const Duration(seconds: 5));
+      unawaited(performance.disarmAndFinalize());
+      await cubit.stream
+          .firstWhere((s) => s is PerformanceRecorderRendering)
+          .timeout(const Duration(seconds: 5));
 
-        // The engine's render ends; this cubit has not delivered the take
-        // yet. In the same synchronous turn, a pedal press arrives.
-        engine.renderProgress = PerformanceRenderProgress.empty;
-        expect(performance.armBusy, PerformanceArmBusy.finalizing);
-        final refused = performance.arm();
-        final completed = waitForCompleted(cubit);
-        expect(await refused, EngineResult.notReady);
-        expect(engine.perfArmCalls, 1, reason: 'only the first take');
+      // The engine's render ends; this cubit has not delivered the take
+      // yet. In the same synchronous turn, a pedal press arrives.
+      engine.renderProgress = PerformanceRenderProgress.empty;
+      expect(performance.armBusy, PerformanceArmBusy.finalizing);
+      final refused = performance.arm();
+      final completed = waitForCompleted(cubit);
+      expect(await refused, EngineResult.notReady);
+      expect(engine.perfArmCalls, 1, reason: 'only the first take');
 
-        await completed;
-        expect(performance.armBusy, isNull);
-        await cubit.toggleArm();
-        await pumpEventQueue();
-        expect(cubit.state, isA<PerformanceRecorderArmed>());
-      },
-    );
+      await completed;
+      expect(performance.armBusy, isNull);
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+    });
 
     test('a finalize that throws releases the delivery hold, so Capture is '
         'available again (#1638)', () async {
@@ -889,25 +864,22 @@ void main() {
       },
     );
 
-    test(
-      'arms normally once boot recovery has completed — no leftover prompt '
-      'state ever blocks the toolbar (#679)',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-crashed')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
-        final cubit = build();
-        addTearDown(cubit.close);
-        await cubit.load();
-        expect(cubit.state, const PerformanceRecorderIdle());
+    test('arms normally once boot recovery has completed — no leftover prompt '
+        'state ever blocks the toolbar (#679)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-crashed')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.load();
+      expect(cubit.state, const PerformanceRecorderIdle());
 
-        await cubit.toggleArm();
-        await pumpEventQueue();
+      await cubit.toggleArm();
+      await pumpEventQueue();
 
-        expect(cubit.state, isA<PerformanceRecorderArmed>());
-        expect(engine.perfArmCalls, 1);
-      },
-    );
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+      expect(engine.perfArmCalls, 1);
+    });
 
     blocTest<PerformanceRecorderCubit, PerformanceRecorderState>(
       'is refused while the boot salvage is still running, before the '
@@ -926,24 +898,21 @@ void main() {
       verify: (_) => expect(engine.perfArmCalls, 0),
     );
 
-    test(
-      'arms again from a settled Completed state, not stuck forever '
-      '(D-REARM)',
-      () async {
-        final cubit = await completedCubit();
-        expect(cubit.state, isA<PerformanceRecorderCompleted>());
+    test('arms again from a settled Completed state, not stuck forever '
+        '(D-REARM)', () async {
+      final cubit = await completedCubit();
+      expect(cubit.state, isA<PerformanceRecorderCompleted>());
 
-        await cubit.toggleArm();
-        await pumpEventQueue();
+      await cubit.toggleArm();
+      await pumpEventQueue();
 
-        expect(cubit.state, isA<PerformanceRecorderArmed>());
-        expect(
-          engine.perfArmCalls,
-          2,
-          reason: 'one arm from completedCubit(), one from the re-arm',
-        );
-      },
-    );
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+      expect(
+        engine.perfArmCalls,
+        2,
+        reason: 'one arm from completedCubit(), one from the re-arm',
+      );
+    });
 
     test(
       'arms again from a discarded-short Completed state too (D-REARM)',
@@ -970,107 +939,92 @@ void main() {
   });
 
   group('reactive status-stream driving', () {
-    test(
-      'disarmAndFinalize called directly on the repository still drives the '
-      "cubit through Finalizing -> Rendering -> Completed (SessionCubit's "
-      'auto-disarm path)',
-      () async {
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build();
-        addTearDown(cubit.close);
-        await armWithLog(performance);
-        await pumpEventQueue();
-        // Advance the clock past the 2s short-capture window so this counts
-        // as a real (long enough) capture.
-        clock = clock.add(const Duration(seconds: 5));
+    test('disarmAndFinalize called directly on the repository still drives the '
+        "cubit through Finalizing -> Rendering -> Completed (SessionCubit's "
+        'auto-disarm path)', () async {
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      // Advance the clock past the 2s short-capture window so this counts
+      // as a real (long enough) capture.
+      clock = clock.add(const Duration(seconds: 5));
 
-        final states = <PerformanceRecorderState>[];
-        final sub = cubit.stream.listen(states.add);
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
 
-        await performance.disarmAndFinalize(); // bypasses cubit.toggleArm
-        await waitForCompleted(cubit);
-        await sub.cancel();
+      await performance.disarmAndFinalize(); // bypasses cubit.toggleArm
+      await waitForCompleted(cubit);
+      await sub.cancel();
 
-        expect(
-          states.any((s) => s is PerformanceRecorderFinalizing),
-          isTrue,
-        );
-        expect(
-          states.any((s) => s is PerformanceRecorderRendering),
-          isTrue,
-        );
-        expect(states.last, isA<PerformanceRecorderCompleted>());
-      },
-    );
+      expect(states.any((s) => s is PerformanceRecorderFinalizing), isTrue);
+      expect(states.any((s) => s is PerformanceRecorderRendering), isTrue);
+      expect(states.last, isA<PerformanceRecorderCompleted>());
+    });
   });
 
   group('glitch flag (#710)', () {
-    test(
-      'a capture whose only silence-fill lands after the last armed tick '
-      'still finalizes with hadGlitch set',
-      () async {
-        // The drain thread's FINAL cycle — the one disarm joins — flushes
-        // whatever was still buffered, so it can silence-fill after the
-        // armed ticker is already cancelled. A tick interval far longer than
-        // this test's runtime guarantees the ONLY reading that can see the
-        // counter is the one taken at the Finalizing transition.
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build(armedTickInterval: const Duration(minutes: 1));
-        addTearDown(cubit.close);
-        await armWithLog(performance);
-        await pumpEventQueue();
-        clock = clock.add(const Duration(seconds: 5));
+    test('a capture whose only silence-fill lands after the last armed tick '
+        'still finalizes with hadGlitch set', () async {
+      // The drain thread's FINAL cycle — the one disarm joins — flushes
+      // whatever was still buffered, so it can silence-fill after the
+      // armed ticker is already cancelled. A tick interval far longer than
+      // this test's runtime guarantees the ONLY reading that can see the
+      // counter is the one taken at the Finalizing transition.
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build(armedTickInterval: const Duration(minutes: 1));
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
 
-        // No ring overrun: exactly #710's signature — the take carries
-        // silence while the overrun counter reads clean.
-        engine.nextSnapshot = const EngineSnapshot(
-          isRunning: true,
-          sampleRate: 48000,
-          bufferFrames: 256,
-          framesProcessed: 0,
-          xrunCount: 0,
-          inputRms: 0,
-          inputPeak: 0,
-          outputRms: 0,
-          latencyState: LatencyState.idle,
-          measuredLatencyMs: 0,
-          perfZeroFilledFrames: 128,
-        );
+      // No ring overrun: exactly #710's signature — the take carries
+      // silence while the overrun counter reads clean.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 256,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: 0,
+        perfZeroFilledFrames: 128,
+      );
 
-        await cubit.toggleArm();
-        final completed = await waitForCompleted(cubit);
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
 
-        expect(completed.hadGlitch, isTrue);
-      },
-    );
+      expect(completed.hadGlitch, isTrue);
+    });
 
-    test(
-      'the manifest carries the glitch when the engine counters are already '
-      'gone',
-      () async {
-        // Belt-and-braces path: the sidecar is the durable record of what the
-        // drain wrote, so a reconfigure between the final cycle and finalize
-        // (a device change, say) cannot launder a glitched take into a clean
-        // one. The engine snapshot here reads perfectly clean.
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build(armedTickInterval: const Duration(minutes: 1));
-        addTearDown(cubit.close);
-        await armWithLog(performance, zeroFilledFrames: 192);
-        await pumpEventQueue();
-        clock = clock.add(const Duration(seconds: 5));
+    test('the manifest carries the glitch when the engine counters are already '
+        'gone', () async {
+      // Belt-and-braces path: the sidecar is the durable record of what the
+      // drain wrote, so a reconfigure between the final cycle and finalize
+      // (a device change, say) cannot launder a glitched take into a clean
+      // one. The engine snapshot here reads perfectly clean.
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build(armedTickInterval: const Duration(minutes: 1));
+      addTearDown(cubit.close);
+      await armWithLog(performance, zeroFilledFrames: 192);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
 
-        await cubit.toggleArm();
-        final completed = await waitForCompleted(cubit);
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
 
-        expect(completed.hadGlitch, isTrue);
-      },
-    );
+      expect(completed.hadGlitch, isTrue);
+    });
 
     test('a clean capture still finalizes with hadGlitch clear', () async {
       final cubit = await completedCubit();
@@ -1144,31 +1098,28 @@ void main() {
       expect(completed.result, isA<PerformanceRecordPartial>());
     });
 
-    test(
-      'PerformanceRecordStoppedEarly when performance.json carries '
-      'stopped_early',
-      () async {
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build();
-        addTearDown(cubit.close);
-        final dir = await armWithLog(performance);
-        await pumpEventQueue();
-        // perf_drain.c writes stopped_early into the STILL-armed sidecar
-        // (finalized: false) the moment its own self-stop fires — finalize
-        // then preserves that native field verbatim, so the fixture mirrors
-        // that ordering rather than editing the manifest after the fact.
-        writeManifest(dir, stoppedEarly: 'disk_full', finalized: false);
-        clock = clock.add(const Duration(seconds: 5));
+    test('PerformanceRecordStoppedEarly when performance.json carries '
+        'stopped_early', () async {
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      final dir = await armWithLog(performance);
+      await pumpEventQueue();
+      // perf_drain.c writes stopped_early into the STILL-armed sidecar
+      // (finalized: false) the moment its own self-stop fires — finalize
+      // then preserves that native field verbatim, so the fixture mirrors
+      // that ordering rather than editing the manifest after the fact.
+      writeManifest(dir, stoppedEarly: 'disk_full', finalized: false);
+      clock = clock.add(const Duration(seconds: 5));
 
-        await cubit.toggleArm();
-        final completed = await waitForCompleted(cubit);
-        expect(completed.result, isA<PerformanceRecordStoppedEarly>());
-        final result = completed.result! as PerformanceRecordStoppedEarly;
-        expect(result.reason, PerformanceStopReason.diskFull);
-      },
-    );
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(completed.result, isA<PerformanceRecordStoppedEarly>());
+      final result = completed.result! as PerformanceRecordStoppedEarly;
+      expect(result.reason, PerformanceStopReason.diskFull);
+    });
 
     for (final (field, reason) in const [
       ('reserve_reached', PerformanceStopReason.reserveReached),
@@ -1195,52 +1146,46 @@ void main() {
       });
     }
 
-    test(
-      'PerformanceRecordStoppedEarly reports deviceChanged for that field '
-      'value',
-      () async {
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build();
-        addTearDown(cubit.close);
-        final dir = await armWithLog(performance);
-        await pumpEventQueue();
-        writeManifest(dir, stoppedEarly: 'device_changed', finalized: false);
-        clock = clock.add(const Duration(seconds: 5));
+    test('PerformanceRecordStoppedEarly reports deviceChanged for that field '
+        'value', () async {
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      final dir = await armWithLog(performance);
+      await pumpEventQueue();
+      writeManifest(dir, stoppedEarly: 'device_changed', finalized: false);
+      clock = clock.add(const Duration(seconds: 5));
 
-        await cubit.toggleArm();
-        final completed = await waitForCompleted(cubit);
-        final result = completed.result! as PerformanceRecordStoppedEarly;
-        expect(result.reason, PerformanceStopReason.deviceChanged);
-      },
-    );
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      final result = completed.result! as PerformanceRecordStoppedEarly;
+      expect(result.reason, PerformanceStopReason.deviceChanged);
+    });
   });
 
   group('export summary (tracks)', () {
-    test(
-      'a fresh completion populates tracks from a real settled lane, '
-      "proving _finishRender's own read-and-assign wiring",
-      () async {
-        engine
-          ..nextSnapshot = _settledLaneSnapshot
-          ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3])
-          ..renderStatuses = const [
-            PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-          ];
-        final cubit = build();
-        addTearDown(cubit.close);
-        await armWithLog(performance);
-        await pumpEventQueue();
-        clock = clock.add(const Duration(seconds: 5));
+    test('a fresh completion populates tracks from a real settled lane, '
+        "proving _finishRender's own read-and-assign wiring", () async {
+      engine
+        ..nextSnapshot = _settledLaneSnapshot
+        ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3])
+        ..renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
 
-        await cubit.toggleArm();
-        final completed = await waitForCompleted(cubit);
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
 
-        expect(completed.tracks, hasLength(1));
-        expect(completed.tracks.single.name, 'Track 0');
-      },
-    );
+      expect(completed.tracks, hasLength(1));
+      expect(completed.tracks.single.name, 'Track 0');
+    });
   });
 
   group('.als capture-tempo threading (#281)', () {
@@ -1270,37 +1215,34 @@ void main() {
       tempoBpm: bpm,
     );
 
-    test(
-      "the capture's own persisted tempo reaches the exported .als "
-      '(end-to-end: engine snapshot -> repository manifest -> '
-      'writeDawProject -> DawManifestReader.read -> DawProject -> '
-      'buildAls), and a later DAW project write re-reads the same manifest — '
-      "an old take's tempo can never drift after the fact",
-      () async {
-        engine
-          ..renderStatuses = const [
-            PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-          ]
-          ..nextSnapshot = snapshotWithTempo(96);
-        final cubit = build();
-        addTearDown(cubit.close);
-        final dir = await armWithLog(performance);
-        await pumpEventQueue();
-        clock = clock.add(const Duration(seconds: 5));
+    test("the capture's own persisted tempo reaches the exported .als "
+        '(end-to-end: engine snapshot -> repository manifest -> '
+        'writeDawProject -> DawManifestReader.read -> DawProject -> '
+        'buildAls), and a later DAW project write re-reads the same manifest — '
+        "an old take's tempo can never drift after the fact", () async {
+      engine
+        ..renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ]
+        ..nextSnapshot = snapshotWithTempo(96);
+      final cubit = build();
+      addTearDown(cubit.close);
+      final dir = await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
 
-        await cubit.toggleArm();
-        await waitForCompleted(cubit);
-        expect(readAls(dir), contains('<Manual Value="96.0"/>'));
+      await cubit.toggleArm();
+      await waitForCompleted(cubit);
+      expect(readAls(dir), contains('<Manual Value="96.0"/>'));
 
-        // Written again long after (Library > Audio's DAW project):
-        // whatever the live transport reads now is irrelevant — the
-        // manifest is the only tempo source (#281).
-        engine.nextSnapshot = snapshotWithTempo(150);
-        await writeDawProject(dir);
+      // Written again long after (Library > Audio's DAW project):
+      // whatever the live transport reads now is irrelevant — the
+      // manifest is the only tempo source (#281).
+      engine.nextSnapshot = snapshotWithTempo(150);
+      await writeDawProject(dir);
 
-        expect(readAls(dir), contains('<Manual Value="96.0"/>'));
-      },
-    );
+      expect(readAls(dir), contains('<Manual Value="96.0"/>'));
+    });
 
     test(
       'the DISARM-time tempo wins over the arm-time read: arm over an empty '
@@ -1329,98 +1271,86 @@ void main() {
       },
     );
 
-    test(
-      'a capture with no tempo set (the default snapshot, 0-as-unset) still '
-      "exports — at daw_export's own fixed 120 BPM fallback, the same "
-      'outcome a legacy pre-#281 bundle resolves to',
-      () async {
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build(); // EngineSnapshot.initial(): tempoBpm 0
-        addTearDown(cubit.close);
-        final dir = await armWithLog(performance);
-        await pumpEventQueue();
-        clock = clock.add(const Duration(seconds: 5));
+    test('a capture with no tempo set (the default snapshot, 0-as-unset) still '
+        "exports — at daw_export's own fixed 120 BPM fallback, the same "
+        'outcome a legacy pre-#281 bundle resolves to', () async {
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build(); // EngineSnapshot.initial(): tempoBpm 0
+      addTearDown(cubit.close);
+      final dir = await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
 
-        await cubit.toggleArm();
-        await waitForCompleted(cubit);
+      await cubit.toggleArm();
+      await waitForCompleted(cubit);
 
-        expect(readAls(dir), contains('<Manual Value="120.0"/>'));
-      },
-    );
+      expect(readAls(dir), contains('<Manual Value="120.0"/>'));
+    });
   });
 
   group('short-capture auto-discard', () {
-    test(
-      'an armed period under 2s with no events.log auto-discards without '
-      'rendering, deleting the capture directory',
-      () async {
-        final cubit = build();
-        addTearDown(cubit.close);
+    test('an armed period under 2s with no events.log auto-discards without '
+        'rendering, deleting the capture directory', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
 
-        await cubit.toggleArm();
-        await pumpEventQueue();
-        final dir = performance.armedDirectory!;
-        // Past the 1s double-press guard, but still under the 2s
-        // short-capture threshold.
-        clock = clock.add(const Duration(milliseconds: 1500));
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      final dir = performance.armedDirectory!;
+      // Past the 1s double-press guard, but still under the 2s
+      // short-capture threshold.
+      clock = clock.add(const Duration(milliseconds: 1500));
 
-        await cubit.toggleArm(); // disarm
-        final completed = await waitForCompleted(cubit);
+      await cubit.toggleArm(); // disarm
+      final completed = await waitForCompleted(cubit);
 
-        expect(completed.discarded, isTrue);
-        expect(completed.result, isNull);
-        expect(Directory(dir).existsSync(), isFalse);
-        expect(
-          engine.lastRenderCaptureDir,
-          isNull,
-          reason: 'a short empty capture skips the render pipeline entirely',
-        );
-      },
-    );
+      expect(completed.discarded, isTrue);
+      expect(completed.result, isNull);
+      expect(Directory(dir).existsSync(), isFalse);
+      expect(
+        engine.lastRenderCaptureDir,
+        isNull,
+        reason: 'a short empty capture skips the render pipeline entirely',
+      );
+    });
 
-    test(
-      'an armed period under 2s with only the 12-byte PLEV header (zero '
-      'entries) also auto-discards',
-      () async {
-        final cubit = build();
-        addTearDown(cubit.close);
+    test('an armed period under 2s with only the 12-byte PLEV header (zero '
+        'entries) also auto-discards', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
 
-        await cubit.toggleArm();
-        await pumpEventQueue();
-        final dir = performance.armedDirectory!;
-        File('$dir/events.log').writeAsBytesSync(_eventLogHeader());
-        // Past the 1s double-press guard, but still under the 2s
-        // short-capture threshold.
-        clock = clock.add(const Duration(milliseconds: 1500));
+      await cubit.toggleArm();
+      await pumpEventQueue();
+      final dir = performance.armedDirectory!;
+      File('$dir/events.log').writeAsBytesSync(_eventLogHeader());
+      // Past the 1s double-press guard, but still under the 2s
+      // short-capture threshold.
+      clock = clock.add(const Duration(milliseconds: 1500));
 
-        await cubit.toggleArm();
-        final completed = await waitForCompleted(cubit);
-        expect(completed.discarded, isTrue);
-        expect(Directory(dir).existsSync(), isFalse);
-      },
-    );
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(completed.discarded, isTrue);
+      expect(Directory(dir).existsSync(), isFalse);
+    });
 
-    test(
-      'a long-enough capture (>= 2s) with events runs the render pipeline '
-      'instead of discarding',
-      () async {
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build();
-        addTearDown(cubit.close);
-        await armWithLog(performance);
-        await pumpEventQueue();
-        clock = clock.add(const Duration(seconds: 5));
+    test('a long-enough capture (>= 2s) with events runs the render pipeline '
+        'instead of discarding', () async {
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      clock = clock.add(const Duration(seconds: 5));
 
-        await cubit.toggleArm();
-        final completed = await waitForCompleted(cubit);
-        expect(completed.discarded, isFalse);
-        expect(completed.result, isNotNull);
-      },
-    );
+      await cubit.toggleArm();
+      final completed = await waitForCompleted(cubit);
+      expect(completed.discarded, isFalse);
+      expect(completed.result, isNotNull);
+    });
   });
 
   group('renameCompletedCapture', () {
@@ -1442,9 +1372,7 @@ void main() {
       'a PerformanceNameCollision from the repository propagates (rethrows)',
       () async {
         final cubit = await completedCubit();
-        Directory(
-          '${tempDir.path}/exports/Taken',
-        ).createSync(recursive: true);
+        Directory('${tempDir.path}/exports/Taken').createSync(recursive: true);
 
         await expectLater(
           cubit.renameCompletedCapture('Taken'),
@@ -1641,10 +1569,7 @@ void main() {
       await pumpEventQueue();
 
       expect(cubit.state, isA<PerformanceRecorderArmed>());
-      expect(
-        (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
-        isFalse,
-      );
+      expect((cubit.state as PerformanceRecorderArmed).lowDiskWarning, isFalse);
     });
 
     test(
@@ -1927,113 +1852,101 @@ void main() {
       expect(File('${dir.path}/master.pcm').existsSync(), isTrue);
     });
 
-    test(
-      'a capture dir left unfinalized on disk (performance.json without '
-      'finalized: true) is recovered end-to-end at load: finalized, '
-      'stem-rendered, and moved under recovered/ — with no prompt state '
-      'and no dialog trigger ever emitted',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
+    test('a capture dir left unfinalized on disk (performance.json without '
+        'finalized: true) is recovered end-to-end at load: finalized, '
+        'stem-rendered, and moved under recovered/ — with no prompt state '
+        'and no dialog trigger ever emitted', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
 
-        final cubit = build();
-        addTearDown(cubit.close);
-        final states = <PerformanceRecorderState>[];
-        final sub = cubit.stream.listen(states.add);
+      final cubit = build();
+      addTearDown(cubit.close);
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
 
-        await cubit.load();
-        await pumpEventQueue();
-        await sub.cancel();
+      await cubit.load();
+      await pumpEventQueue();
+      await sub.cancel();
 
-        expect(
-          states,
-          const [
-            PerformanceRecorderIdle(recovering: true),
-            PerformanceRecorderIdle(),
-          ],
-          reason:
-              'silent recovery surfaces only the honest busy flag — never '
-              'a Rendering/Completed state, which would open the completion '
-              'dialog at boot',
-        );
-        expect(dir.existsSync(), isFalse);
-        final recovered =
-            '${tempDir.path}/exports/recovered/perf-20260706-140000';
-        final manifest = jsonDecode(
-          File('$recovered/performance.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        expect(manifest['finalized'], isTrue);
-        expect(
-          engine.lastRenderCaptureDir,
-          dir.path,
-          reason: 'the stem render ran as part of the salvage',
-        );
-      },
-    );
-
-    test(
-      'a crashed capture that cannot finalize (corrupt sidecar) is left in '
-      'place — never deleted, no crash — and reported as not recovered '
-      '(#1198)',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
-          ..createSync(recursive: true);
-        File('${dir.path}/performance.json').writeAsStringSync('{not json');
-
-        final cubit = build();
-        addTearDown(cubit.close);
-        await cubit.load();
-
-        expect(dir.existsSync(), isTrue);
-        expect(engine.lastRenderCaptureDir, isNull);
-        expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
-      },
-    );
-
-    test(
-      'a salvage the app did not survive is not run again at load but '
-      'reported, and retryRecovery salvages it (#1747)',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-20261110-155051')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
-        // The app stopped during two salvages of it in a row.
-        File(
-          '${dir.path}/${PerformanceRepository.recoveryMarkerName}',
-        ).writeAsStringSync('');
-        File(
-          '${dir.path}/${PerformanceRepository.recoveryAttemptName}',
-        ).writeAsStringSync('2\n');
-
-        final cubit = build();
-        addTearDown(cubit.close);
-        await cubit.load();
-        await pumpEventQueue();
-
-        expect(engine.lastRenderCaptureDir, isNull);
-        expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
-        expect(dir.existsSync(), isTrue);
-
-        final states = <PerformanceRecorderState>[];
-        final sub = cubit.stream.listen(states.add);
-        await cubit.retryRecovery();
-        await pumpEventQueue();
-        await sub.cancel();
-
-        expect(states, const [
+      expect(
+        states,
+        const [
           PerformanceRecorderIdle(recovering: true),
           PerformanceRecorderIdle(),
-        ]);
-        expect(engine.lastRenderCaptureDir, dir.path);
-        expect(
-          Directory(
-            '${tempDir.path}/exports/recovered/perf-20261110-155051',
-          ).existsSync(),
-          isTrue,
-        );
-      },
-    );
+        ],
+        reason:
+            'silent recovery surfaces only the honest busy flag — never '
+            'a Rendering/Completed state, which would open the completion '
+            'dialog at boot',
+      );
+      expect(dir.existsSync(), isFalse);
+      final recovered =
+          '${tempDir.path}/exports/recovered/perf-20260706-140000';
+      final manifest = jsonDecode(
+        File('$recovered/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(manifest['finalized'], isTrue);
+      expect(
+        engine.lastRenderCaptureDir,
+        dir.path,
+        reason: 'the stem render ran as part of the salvage',
+      );
+    });
+
+    test('a crashed capture that cannot finalize (corrupt sidecar) is left in '
+        'place — never deleted, no crash — and reported as not recovered '
+        '(#1198)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
+        ..createSync(recursive: true);
+      File('${dir.path}/performance.json').writeAsStringSync('{not json');
+
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      expect(dir.existsSync(), isTrue);
+      expect(engine.lastRenderCaptureDir, isNull);
+      expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
+    });
+
+    test('a salvage the app did not survive is not run again at load but '
+        'reported, and retryRecovery salvages it (#1747)', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-20261110-155051')
+        ..createSync(recursive: true);
+      writeManifest(dir.path, finalized: false);
+      // The app stopped during two salvages of it in a row.
+      File('${dir.path}/${PerformanceRepository.recoveryMarkerName}')
+          .writeAsStringSync('');
+      File('${dir.path}/${PerformanceRepository.recoveryAttemptName}')
+          .writeAsStringSync('2\n');
+
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.load();
+      await pumpEventQueue();
+
+      expect(engine.lastRenderCaptureDir, isNull);
+      expect(cubit.state, const PerformanceRecorderIdle(notRecovered: 1));
+      expect(dir.existsSync(), isTrue);
+
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      await cubit.retryRecovery();
+      await pumpEventQueue();
+      await sub.cancel();
+
+      expect(states, const [
+        PerformanceRecorderIdle(recovering: true),
+        PerformanceRecorderIdle(),
+      ]);
+      expect(engine.lastRenderCaptureDir, dir.path);
+      expect(
+        Directory('${tempDir.path}/exports/recovered/perf-20261110-155051')
+            .existsSync(),
+        isTrue,
+      );
+    });
 
     test('retryRecovery is a no-op with nothing left unrecovered', () async {
       final cubit = build();
@@ -2092,10 +2005,7 @@ void main() {
       await cubit.toggleArm();
       await pumpEventQueue();
       expect(states, const [
-        PerformanceRecorderIdle(
-          refusedBy: GuardKind.sessionApply,
-          refusal: 1,
-        ),
+        PerformanceRecorderIdle(refusedBy: GuardKind.sessionApply, refusal: 1),
       ]);
       expect(engine.perfArmCalls, 0);
 

@@ -104,9 +104,7 @@ class NoticeSentence extends StatelessWidget {
             // the message itself keeps the room.
             if (source != null) ...[
               ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: constraints.maxWidth / 3,
-                ),
+                constraints: BoxConstraints(maxWidth: constraints.maxWidth / 3),
                 child: AppText(
                   source,
                   key: const Key('notice_sentence_source'),

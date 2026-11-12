@@ -48,10 +48,8 @@ class MidiControlCard {
 }) {
   if (program) return (low: null, high: l10n.midiRangeValue);
   return switch (behavior) {
-    MidiBehavior.continuous || MidiBehavior.trigger => (
-      low: l10n.midiRangeFrom,
-      high: l10n.midiRangeTo,
-    ),
+    MidiBehavior.continuous ||
+    MidiBehavior.trigger => (low: l10n.midiRangeFrom, high: l10n.midiRangeTo),
     MidiBehavior.toggle => (
       low: l10n.externalConditionOff,
       high: l10n.externalConditionOn,
@@ -576,10 +574,7 @@ class _ActivationRange extends StatelessWidget {
       children: [
         AppText(
           caption,
-          style: TextStyle(
-            color: context.surface.textSecondary,
-            fontSize: 21,
-          ),
+          style: TextStyle(color: context.surface.textSecondary, fontSize: 21),
         ),
         const SizedBox(height: 8),
         Row(

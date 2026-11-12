@@ -333,11 +333,7 @@ class _DisplayPreview extends StatelessWidget {
 /// brightness. A double tap returns to [kDefaultDisplayBrightness].
 class DisplayBrightnessSlider extends StatelessWidget {
   /// Creates a [DisplayBrightnessSlider] for [role]'s panel.
-  const new({
-    required this.role,
-    required this.width,
-    super.key,
-  });
+  const new({required this.role, required this.width, super.key});
 
   /// The panel.
   final DisplayRole role;
@@ -530,9 +526,7 @@ class _DisplayOptions extends StatelessWidget {
                     semanticLabel: l10n.displaysTrackWindow,
                     value: waveform.enabled,
                     onChanged: (on) => unawaited(
-                      context.read<WaveformWindowCubit>().setEnabled(
-                        value: on,
-                      ),
+                      context.read<WaveformWindowCubit>().setEnabled(value: on),
                     ),
                   ),
                   second: LoopSwitch(

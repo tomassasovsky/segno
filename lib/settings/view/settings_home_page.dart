@@ -79,11 +79,7 @@ class SettingsHomePage extends StatelessWidget {
 /// ground.
 class SettingsTile extends StatelessWidget {
   /// Creates a [SettingsTile] for [destination].
-  const new({
-    required this.destination,
-    this.autofocus = false,
-    super.key,
-  });
+  const new({required this.destination, this.autofocus = false, super.key});
 
   /// Where the tile leads.
   final SettingsDestination destination;

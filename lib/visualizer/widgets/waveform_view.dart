@@ -113,11 +113,7 @@ class WaveformView extends StatelessWidget {
 /// The wave of [WaveformView]; public so it can be unit-tested.
 class WaveformPainter extends CustomPainter {
   /// Creates a [WaveformPainter].
-  new({
-    required this.samples,
-    required this.color,
-    this.bars = 0,
-  });
+  new({required this.samples, required this.color, this.bars = 0});
 
   /// Loop waveform peaks, index 0 = loop start, each in `0..1`.
   final Float32List samples;
@@ -177,11 +173,7 @@ class WaveformPainter extends CustomPainter {
 /// (`0..1`); hidden when `<= 0`.
 class PlayheadPainter extends CustomPainter {
   /// Creates a [PlayheadPainter].
-  new({
-    required this.progress,
-    required this.background,
-    this.bars = 0,
-  });
+  new({required this.progress, required this.background, this.bars = 0});
 
   /// Playhead position in `0..1`.
   final double progress;

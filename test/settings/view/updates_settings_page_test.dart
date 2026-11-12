@@ -30,8 +30,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 class _MockRecorder extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 /// What the console knows about itself once `UpdateCubit.load` has run.
 final _running = UpdateState(
@@ -63,12 +62,10 @@ void main() {
     when(update.retryInterrupted).thenAnswer((_) async {});
     when(update.discardInterrupted).thenAnswer((_) async {});
     when(update.dismissRollback).thenAnswer((_) async {});
-    when(
-      () => update.setAutoCheck(value: any(named: 'value')),
-    ).thenAnswer((_) async {});
-    when(
-      () => update.setExperimentalChannel(value: any(named: 'value')),
-    ).thenAnswer((_) async {});
+    when(() => update.setAutoCheck(value: any(named: 'value')))
+        .thenAnswer((_) async {});
+    when(() => update.setExperimentalChannel(value: any(named: 'value')))
+        .thenAnswer((_) async {});
     whenListen(
       power,
       const Stream<PowerState>.empty(),

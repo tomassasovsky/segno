@@ -294,12 +294,8 @@ class _StandingNoticesState extends State<StandingNotices> {
         listenWhen: (previous, current) => previous.names != current.names,
         listener: (_, _) => _sync(),
       ),
-      BlocListener<InputsCubit, InputsState>(
-        listener: (_, _) => _sync(),
-      ),
-      BlocListener<OutputsCubit, OutputsState>(
-        listener: (_, _) => _sync(),
-      ),
+      BlocListener<InputsCubit, InputsState>(listener: (_, _) => _sync()),
+      BlocListener<OutputsCubit, OutputsState>(listener: (_, _) => _sync()),
     ],
     child: widget.child,
   );

@@ -1120,9 +1120,8 @@ class PerformanceRepository {
       // Begun: if the app stops before it ends, the next start knows
       // (#1747). Written before the finalize, which can be as heavy as the
       // render for a take from before #1198.
-      File(
-        '$dir/$recoveryAttemptName',
-      ).writeAsStringSync('${_attemptsBegun(dir) + 1}\n');
+      File('$dir/$recoveryAttemptName')
+          .writeAsStringSync('${_attemptsBegun(dir) + 1}\n');
       if (_sidecarFinalized(dir)) {
         // A stranded bundle: its finalize already completed on a previous
         // boot, and re-running it would do real damage, not just waste work
@@ -1203,9 +1202,8 @@ class PerformanceRepository {
   /// which the next boot's retry overwrites with its own fresh landing
   /// time.
   void _moveToRecovered(String root, String dir) {
-    File(
-      '$dir/$recoveredAtStampName',
-    ).writeAsStringSync(_now().millisecondsSinceEpoch.toString());
+    File('$dir/$recoveredAtStampName')
+        .writeAsStringSync(_now().millisecondsSinceEpoch.toString());
     final recoveredRoot = '$root/$recoveredDirName';
     Directory(recoveredRoot).createSync(recursive: true);
     final slug = _basename(dir);
@@ -1932,9 +1930,10 @@ class PerformanceRepository {
   static final _rawPcmFile = RegExp(r'^(master|input-\d+)\.pcm$');
 
   /// Whether [dir] still holds a raw stream of a capture from before #1198.
-  bool _holdsRawPcm(String dir) => Directory(dir).listSync().any(
-    (e) => e is File && _rawPcmFile.hasMatch(_basename(e.path)),
-  );
+  bool _holdsRawPcm(String dir) =>
+      Directory(dir)
+          .listSync()
+          .any((e) => e is File && _rawPcmFile.hasMatch(_basename(e.path)));
 
   /// Converts a capture from before #1198 into float parts (#1078): each
   /// raw stream in turn is copied into parts on a background isolate, a
@@ -2002,9 +2001,8 @@ class PerformanceRepository {
     ];
     var largest = 0;
     for (var i = 0; i < pending.length; i++) {
-      final length = File(
-        '$dir/${legacyPcmName(pending[i].stream)}',
-      ).lengthSync();
+      final length = File('$dir/${legacyPcmName(pending[i].stream)}')
+          .lengthSync();
       final frames = length ~/ format[i].frameBytes;
       final need =
           format[i].bytesToAppend(frames) +

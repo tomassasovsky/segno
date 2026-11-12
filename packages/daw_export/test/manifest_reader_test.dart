@@ -125,96 +125,89 @@ void main() {
       );
     });
 
-    test(
-      'includes one session clip per lane that has a loop export, and no '
-      'arrangement clip when no channel-level stem exists',
-      () {
-        Directory('${dir.path}/loops').createSync(recursive: true);
-        File('${dir.path}/loops/track0-lane0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/loops/track0-lane1.wav').writeAsBytesSync([0]);
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'loops/track0-lane0.wav',
-                    },
-                    {
-                      'lane': 1,
-                      'deferred': false,
-                      'pcmRef': 'loops/track0-lane1.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    test('includes one session clip per lane that has a loop export, and no '
+        'arrangement clip when no channel-level stem exists', () {
+      Directory('${dir.path}/loops').createSync(recursive: true);
+      File('${dir.path}/loops/track0-lane0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/loops/track0-lane1.wav').writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'loops/track0-lane0.wav',
+                  },
+                  {
+                    'lane': 1,
+                    'deferred': false,
+                    'pcmRef': 'loops/track0-lane1.wav',
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        final project = DawManifestReader.read(dir.path);
-        final track = project!.tracks.single;
-        expect(track.sessionClips, hasLength(2));
-        // The only behavior unique to this fixture (no stems/wet or
-        // stems/dry file for channel 0 at all) is that the track has no
-        // arrangement clip — asserted explicitly rather than left to
-        // whatever `sessionClips` happens to check.
-        expect(track.arrangementClip, isNull);
-        // Pins the documented placeholder: a session clip's length is the
-        // full capture length until part 11 threads the lane's own settled
-        // length through (see the comment at the call site in
-        // manifest_reader.dart) — a future change to this value should be a
-        // deliberate, reviewed edit to this test, not a silent side effect.
-        expect(track.sessionClips.first.lengthSeconds, 1.0);
-      },
-    );
+      final project = DawManifestReader.read(dir.path);
+      final track = project!.tracks.single;
+      expect(track.sessionClips, hasLength(2));
+      // The only behavior unique to this fixture (no stems/wet or
+      // stems/dry file for channel 0 at all) is that the track has no
+      // arrangement clip — asserted explicitly rather than left to
+      // whatever `sessionClips` happens to check.
+      expect(track.arrangementClip, isNull);
+      // Pins the documented placeholder: a session clip's length is the
+      // full capture length until part 11 threads the lane's own settled
+      // length through (see the comment at the call site in
+      // manifest_reader.dart) — a future change to this value should be a
+      // deliberate, reviewed edit to this test, not a silent side effect.
+      expect(track.sessionClips.first.lengthSeconds, 1.0);
+    });
 
-    test(
-      'reads a lane pcmRef verbatim rather than reconstructing a '
-      'conventional filename',
-      () {
-        Directory('${dir.path}/captured').createSync(recursive: true);
-        File('${dir.path}/captured/unconventional-name.wav').writeAsBytesSync([
-          0,
-        ]);
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'captured/unconventional-name.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    test('reads a lane pcmRef verbatim rather than reconstructing a '
+        'conventional filename', () {
+      Directory('${dir.path}/captured').createSync(recursive: true);
+      File('${dir.path}/captured/unconventional-name.wav')
+          .writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'captured/unconventional-name.wav',
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        final project = DawManifestReader.read(dir.path);
-        expect(
-          project!.tracks.single.sessionClips.single.fileRef,
-          'captured/unconventional-name.wav',
-        );
-      },
-    );
+      final project = DawManifestReader.read(dir.path);
+      expect(
+        project!.tracks.single.sessionClips.single.fileRef,
+        'captured/unconventional-name.wav',
+      );
+    });
 
     test(
       "a take's session clip is its heard image where it has one (#1713)",
@@ -277,9 +270,8 @@ void main() {
         Directory('${dir.path}/loops').createSync(recursive: true);
         File('${dir.path}/loops/track0-lane0.wav').writeAsBytesSync([0]);
         if (heardOnDisk) {
-          File(
-            '${dir.path}/loops/track0-lane0-heard.wav',
-          ).writeAsBytesSync([0]);
+          File('${dir.path}/loops/track0-lane0-heard.wav')
+              .writeAsBytesSync([0]);
         }
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
@@ -307,9 +299,12 @@ void main() {
         );
 
         expect(
-          DawManifestReader.read(
-            dir.path,
-          )!.tracks.single.sessionClips.single.fileRef,
+          DawManifestReader.read(dir.path)!
+              .tracks
+              .single
+              .sessionClips
+              .single
+              .fileRef,
           'loops/track0-lane0.wav',
         );
       });
@@ -381,397 +376,345 @@ void main() {
       expect(project!.tracks, isEmpty);
     });
 
-    test(
-      'builds a volume automation lane from events.log for a track that '
-      'also has an arrangement clip',
-      () {
-        Directory('${dir.path}/stems/dry').createSync(recursive: true);
-        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'stems/dry/track0.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
-        const codeSetVolume = 7;
-        _writeLog('${dir.path}/events.log', 48000, [
-          (0, codeSetVolume, _generic(0, 0.5)),
-          (48000, codeSetVolume, _generic(0, 0.9)),
-        ]);
+    test('builds a volume automation lane from events.log for a track that '
+        'also has an arrangement clip', () {
+      Directory('${dir.path}/stems/dry').createSync(recursive: true);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'stems/dry/track0.wav',
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+      const codeSetVolume = 7;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetVolume, _generic(0, 0.5)),
+        (48000, codeSetVolume, _generic(0, 0.9)),
+      ]);
 
-        final project = DawManifestReader.read(dir.path);
-        final lanes = project!.tracks.single.automationLanes;
-        expect(lanes, hasLength(1));
-        expect(lanes.single.target, AutomationTarget.volume);
-        expect(lanes.single.breakpoints, hasLength(2));
-        expect(lanes.single.breakpoints.first.beat, 0.0);
-        expect(lanes.single.breakpoints.last.beat, 2.0); // 1s at 120bpm
-      },
-    );
+      final project = DawManifestReader.read(dir.path);
+      final lanes = project!.tracks.single.automationLanes;
+      expect(lanes, hasLength(1));
+      expect(lanes.single.target, AutomationTarget.volume);
+      expect(lanes.single.breakpoints, hasLength(2));
+      expect(lanes.single.breakpoints.first.beat, 0.0);
+      expect(lanes.single.breakpoints.last.beat, 2.0); // 1s at 120bpm
+    });
 
-    test(
-      'builds an activator (mute) automation lane from events.log, '
-      'independent of whether a volume lane exists',
-      () {
-        Directory('${dir.path}/stems/dry').createSync(recursive: true);
-        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'stems/dry/track0.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
-        const codeSetMute = 8;
-        _writeLog('${dir.path}/events.log', 48000, [
-          (0, codeSetMute, _generic(0, 1)), // muted
-          (48000, codeSetMute, _generic(0, 0)), // unmuted
-        ]);
+    test('builds an activator (mute) automation lane from events.log, '
+        'independent of whether a volume lane exists', () {
+      Directory('${dir.path}/stems/dry').createSync(recursive: true);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'stems/dry/track0.wav',
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+      const codeSetMute = 8;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetMute, _generic(0, 1)), // muted
+        (48000, codeSetMute, _generic(0, 0)), // unmuted
+      ]);
 
-        final project = DawManifestReader.read(dir.path);
-        final lanes = project!.tracks.single.automationLanes;
-        expect(lanes, hasLength(1));
-        expect(lanes.single.target, AutomationTarget.activator);
-        expect(lanes.single.breakpoints, hasLength(2));
-        expect(lanes.single.breakpoints.first.value, 0.0); // muted -> off
-        expect(lanes.single.breakpoints.last.value, 1.0); // unmuted -> on
-      },
-    );
+      final project = DawManifestReader.read(dir.path);
+      final lanes = project!.tracks.single.automationLanes;
+      expect(lanes, hasLength(1));
+      expect(lanes.single.target, AutomationTarget.activator);
+      expect(lanes.single.breakpoints, hasLength(2));
+      expect(lanes.single.breakpoints.first.value, 0.0); // muted -> off
+      expect(lanes.single.breakpoints.last.value, 1.0); // unmuted -> on
+    });
 
-    test(
-      "seeds the activator lane from the arm snapshot's muted/solo flags: "
-      "a track muted at arm stays off through another track's solo, and a "
-      'track soloed at arm silences the rest until that solo clears',
-      () {
-        Directory('${dir.path}/stems/dry').createSync(recursive: true);
-        for (final channel in [0, 1, 2]) {
-          File('${dir.path}/stems/dry/track$channel.wav').writeAsBytesSync([0]);
-        }
-        Map<String, dynamic> track(
-          int channel, {
-          bool muted = false,
-          bool solo = false,
-        }) => {
-          'channel': channel,
-          'muted': muted,
-          'solo': solo,
-          'lanes': [
-            {
-              'lane': 0,
-              'deferred': false,
-              'pcmRef': 'stems/dry/track$channel.wav',
-            },
-          ],
-        };
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 96000,
-            'armSnapshot': {
-              'tracks': [
-                track(0),
-                track(1, muted: true),
-                track(2, solo: true),
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
-        const codeSetTrackSolo = 63;
-        _writeLog('${dir.path}/events.log', 48000, [
-          (48000, codeSetTrackSolo, _generic(2, 0)), // solo cleared at 1s
-        ]);
+    test("seeds the activator lane from the arm snapshot's muted/solo flags: "
+        "a track muted at arm stays off through another track's solo, and a "
+        'track soloed at arm silences the rest until that solo clears', () {
+      Directory('${dir.path}/stems/dry').createSync(recursive: true);
+      for (final channel in [0, 1, 2]) {
+        File('${dir.path}/stems/dry/track$channel.wav').writeAsBytesSync([0]);
+      }
+      Map<String, dynamic> track(
+        int channel, {
+        bool muted = false,
+        bool solo = false,
+      }) => {
+        'channel': channel,
+        'muted': muted,
+        'solo': solo,
+        'lanes': [
+          {
+            'lane': 0,
+            'deferred': false,
+            'pcmRef': 'stems/dry/track$channel.wav',
+          },
+        ],
+      };
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 96000,
+          'armSnapshot': {
+            'tracks': [track(0), track(1, muted: true), track(2, solo: true)],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+      const codeSetTrackSolo = 63;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (48000, codeSetTrackSolo, _generic(2, 0)), // solo cleared at 1s
+      ]);
 
-        final project = DawManifestReader.read(dir.path);
-        final tracks = project!.tracks;
-        expect(tracks, hasLength(3));
+      final project = DawManifestReader.read(dir.path);
+      final tracks = project!.tracks;
+      expect(tracks, hasLength(3));
 
-        // Track 0: silenced by track 2's solo from arm (off at the start),
-        // audible once it clears.
-        final lane0 = tracks[0].automationLanes.single;
-        expect(lane0.target, AutomationTarget.activator);
-        expect(lane0.breakpoints, hasLength(2));
-        expect(lane0.breakpoints.first.beat, 0);
-        expect(lane0.breakpoints.first.value, 0);
-        expect(lane0.breakpoints.last.beat, 2.0);
-        expect(lane0.breakpoints.last.value, 1.0);
-        // Track 1: muted at arm, off from the start; the solo clear changes
-        // nothing.
-        final lane1 = tracks[1].automationLanes.single;
-        expect(lane1.breakpoints.single.beat, 0);
-        expect(lane1.breakpoints.single.value, 0);
-        // Track 2: the soloed track itself was audible throughout.
-        expect(tracks[2].automationLanes, isEmpty);
-      },
-    );
+      // Track 0: silenced by track 2's solo from arm (off at the start),
+      // audible once it clears.
+      final lane0 = tracks[0].automationLanes.single;
+      expect(lane0.target, AutomationTarget.activator);
+      expect(lane0.breakpoints, hasLength(2));
+      expect(lane0.breakpoints.first.beat, 0);
+      expect(lane0.breakpoints.first.value, 0);
+      expect(lane0.breakpoints.last.beat, 2.0);
+      expect(lane0.breakpoints.last.value, 1.0);
+      // Track 1: muted at arm, off from the start; the solo clear changes
+      // nothing.
+      final lane1 = tracks[1].automationLanes.single;
+      expect(lane1.breakpoints.single.beat, 0);
+      expect(lane1.breakpoints.single.value, 0);
+      // Track 2: the soloed track itself was audible throughout.
+      expect(tracks[2].automationLanes, isEmpty);
+    });
 
-    test(
-      'a wet arrangement clip gets no volume or activator automation: the '
-      'wet render already applies those gestures',
-      () {
-        Directory('${dir.path}/stems/wet').createSync(recursive: true);
-        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
-        const codeSetVolume = 7;
-        _writeLog('${dir.path}/events.log', 48000, [
-          (0, codeSetVolume, _generic(0, 0.5)),
-          (48000, codeSetVolume, _generic(0, 0.9)),
-        ]);
+    test('a wet arrangement clip gets no volume or activator automation: the '
+        'wet render already applies those gestures', () {
+      Directory('${dir.path}/stems/wet').createSync(recursive: true);
+      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'stems/wet/track0.wav',
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+      const codeSetVolume = 7;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetVolume, _generic(0, 0.5)),
+        (48000, codeSetVolume, _generic(0, 0.9)),
+      ]);
 
-        final track = DawManifestReader.read(dir.path)!.tracks.single;
-        expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
-        expect(track.automationLanes, isEmpty);
-      },
-    );
+      final track = DawManifestReader.read(dir.path)!.tracks.single;
+      expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+      expect(track.automationLanes, isEmpty);
+    });
 
-    test(
-      'a channel with an effects chain still exports the wet stem: the '
-      'effects reach Live only as audio',
-      () {
-        Directory('${dir.path}/stems/wet').createSync(recursive: true);
-        Directory('${dir.path}/stems/dry').createSync(recursive: true);
-        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
-                      'effects': [
-                        {
-                          'type': 3,
-                          'params': [0.35, 0.35, 0.35, 0.0],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    test('a channel with an effects chain still exports the wet stem: the '
+        'effects reach Live only as audio', () {
+      Directory('${dir.path}/stems/wet').createSync(recursive: true);
+      Directory('${dir.path}/stems/dry').createSync(recursive: true);
+      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'stems/wet/track0.wav',
+                    'effects': [
+                      {
+                        'type': 3,
+                        'params': [0.35, 0.35, 0.35, 0.0],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        final project = DawManifestReader.read(dir.path);
-        final track = project!.tracks.single;
-        expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
-      },
-    );
+      final project = DawManifestReader.read(dir.path);
+      final track = project!.tracks.single;
+      expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+    });
 
-    test(
-      'threads a real, explicit tempoBpm through to the returned DawProject '
-      '(and into beat-unit automation conversion)',
-      () {
-        Directory('${dir.path}/stems/dry').createSync(recursive: true);
-        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {
-              'tracks': [
-                {
-                  'channel': 0,
-                  'lanes': [
-                    {
-                      'lane': 0,
-                      'deferred': false,
-                      'pcmRef': 'stems/dry/track0.wav',
-                    },
-                  ],
-                },
-              ],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
-        const codeSetVolume = 7;
-        _writeLog('${dir.path}/events.log', 48000, [
-          (0, codeSetVolume, _generic(0, 0.5)),
-          (48000, codeSetVolume, _generic(0, 0.9)),
-        ]);
+    test('threads a real, explicit tempoBpm through to the returned DawProject '
+        '(and into beat-unit automation conversion)', () {
+      Directory('${dir.path}/stems/dry').createSync(recursive: true);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'stems/dry/track0.wav',
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+      const codeSetVolume = 7;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetVolume, _generic(0, 0.5)),
+        (48000, codeSetVolume, _generic(0, 0.9)),
+      ]);
 
-        final project = DawManifestReader.read(dir.path, tempoBpm: 140);
-        expect(project!.tempoBpm, 140.0);
-        // At 140 BPM, 1s == 140/60 beats — distinct from the 120-BPM 2.0
-        // beats the earlier test at the same frame offset asserts, proving
-        // this reader's own internal beat-time conversion (not just the
-        // returned DawProject.tempoBpm) uses the real tempo too.
-        final lanes = project.tracks.single.automationLanes;
-        expect(lanes.single.breakpoints.last.beat, closeTo(140 / 60, 1e-9));
-      },
-    );
+      final project = DawManifestReader.read(dir.path, tempoBpm: 140);
+      expect(project!.tempoBpm, 140.0);
+      // At 140 BPM, 1s == 140/60 beats — distinct from the 120-BPM 2.0
+      // beats the earlier test at the same frame offset asserts, proving
+      // this reader's own internal beat-time conversion (not just the
+      // returned DawProject.tempoBpm) uses the real tempo too.
+      final lanes = project.tracks.single.automationLanes;
+      expect(lanes.single.breakpoints.last.beat, closeTo(140 / 60, 1e-9));
+    });
 
-    test(
-      'a non-positive tempoBpm (a legacy v3 session, or v4 grid-off content '
-      "reporting Session.tempoBpm's 0 = unset) falls back to 120 BPM, same "
-      'as omitting the argument entirely',
-      () {
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {'tracks': <dynamic>[]},
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    test('a non-positive tempoBpm (a legacy v3 session, or v4 grid-off content '
+        "reporting Session.tempoBpm's 0 = unset) falls back to 120 BPM, same "
+        'as omitting the argument entirely', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {'tracks': <dynamic>[]},
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        expect(DawManifestReader.read(dir.path)!.tempoBpm, 120.0);
-        expect(
-          DawManifestReader.read(dir.path, tempoBpm: 0)!.tempoBpm,
-          120.0,
-        );
-        expect(
-          DawManifestReader.read(dir.path, tempoBpm: -1)!.tempoBpm,
-          120.0,
-        );
-      },
-    );
+      expect(DawManifestReader.read(dir.path)!.tempoBpm, 120.0);
+      expect(DawManifestReader.read(dir.path, tempoBpm: 0)!.tempoBpm, 120.0);
+      expect(DawManifestReader.read(dir.path, tempoBpm: -1)!.tempoBpm, 120.0);
+    });
 
-    test(
-      "the manifest's own persisted tempo beats the caller's (#281): "
-      'disarmSnapshot.tempoBpm is authoritative, armSnapshot.tempoBpm is '
-      'the crash-salvage fallback',
-      () {
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            // Arm-over-empty-grid at 96, tempo dialed in to 132 before the
-            // first loop: only the disarm-time read saw D6's lock engage.
-            'armSnapshot': {'tempoBpm': 96.0, 'tracks': <dynamic>[]},
-            'disarmSnapshot': {'tempoBpm': 132.0, 'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    test("the manifest's own persisted tempo beats the caller's (#281): "
+        'disarmSnapshot.tempoBpm is authoritative, armSnapshot.tempoBpm is '
+        'the crash-salvage fallback', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          // Arm-over-empty-grid at 96, tempo dialed in to 132 before the
+          // first loop: only the disarm-time read saw D6's lock engage.
+          'armSnapshot': {'tempoBpm': 96.0, 'tracks': <dynamic>[]},
+          'disarmSnapshot': {'tempoBpm': 132.0, 'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        // The caller's live tempo (140) never reaches the export — by
-        // re-export time it may have long moved on from this take's.
-        expect(
-          DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm,
-          132.0,
-        );
-        expect(DawManifestReader.read(dir.path)!.tempoBpm, 132.0);
-      },
-    );
+      // The caller's live tempo (140) never reaches the export — by
+      // re-export time it may have long moved on from this take's.
+      expect(DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm, 132.0);
+      expect(DawManifestReader.read(dir.path)!.tempoBpm, 132.0);
+    });
 
-    test(
-      'a crash-salvaged manifest (no disarmSnapshot) falls back to the '
-      'arm-time tempo (#281)',
-      () {
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            'armSnapshot': {'tempoBpm': 96.0, 'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    test('a crash-salvaged manifest (no disarmSnapshot) falls back to the '
+        'arm-time tempo (#281)', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {'tempoBpm': 96.0, 'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        expect(
-          DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm,
-          96.0,
-        );
-      },
-    );
+      expect(DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm, 96.0);
+    });
 
-    test(
-      'a manifest with no tempo evidence — snapshots absent, pre-#281 '
-      'bundles without the key, or the 0-as-unset sentinel — falls through '
-      'to the caller tempo, then 120 (#281)',
-      () {
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': 48000,
-            // 0 = unset, stored verbatim by performance_repository: no
-            // tempo was ever locked, so it must NOT shadow the fallbacks.
-            'armSnapshot': {'tempoBpm': 0.0, 'tracks': <dynamic>[]},
-            'disarmSnapshot': {'tempoBpm': 0.0, 'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    test('a manifest with no tempo evidence — snapshots absent, pre-#281 '
+        'bundles without the key, or the 0-as-unset sentinel — falls through '
+        'to the caller tempo, then 120 (#281)', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          // 0 = unset, stored verbatim by performance_repository: no
+          // tempo was ever locked, so it must NOT shadow the fallbacks.
+          'armSnapshot': {'tempoBpm': 0.0, 'tracks': <dynamic>[]},
+          'disarmSnapshot': {'tempoBpm': 0.0, 'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
 
-        expect(
-          DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm,
-          140.0,
-        );
-        expect(DawManifestReader.read(dir.path)!.tempoBpm, 120.0);
-      },
-    );
+      expect(DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm, 140.0);
+      expect(DawManifestReader.read(dir.path)!.tempoBpm, 120.0);
+    });
 
-    test(
-      'returns null when performance.json is well-formed JSON but not an '
-      'object — never a TypeError escaping to callers guarding only I/O',
-      () {
-        File('${dir.path}/performance.json').writeAsStringSync('[1, 2, 3]');
-        expect(DawManifestReader.read(dir.path), isNull);
-      },
-    );
+    test('returns null when performance.json is well-formed JSON but not an '
+        'object — never a TypeError escaping to callers guarding only I/O', () {
+      File('${dir.path}/performance.json').writeAsStringSync('[1, 2, 3]');
+      expect(DawManifestReader.read(dir.path), isNull);
+    });
 
     test('a track with no logged gestures gets no automation lanes', () {
       Directory('${dir.path}/stems/wet').createSync(recursive: true);

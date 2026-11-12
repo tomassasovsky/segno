@@ -38,9 +38,7 @@ void main() {
       verify: (_) {
         // 30 Hz -> 1_000_000 / 30 ≈ 33333 µs.
         verify(
-          () => repository.setPollInterval(
-            const Duration(microseconds: 33333),
-          ),
+          () => repository.setPollInterval(const Duration(microseconds: 33333)),
         ).called(1);
       },
     );

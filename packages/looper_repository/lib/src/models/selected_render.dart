@@ -237,11 +237,7 @@ class RenderProgress {
 @immutable
 class RenderOutcome {
   /// Creates a [RenderOutcome].
-  const new({
-    required this.result,
-    this.path,
-    this.cancelled = false,
-  });
+  const new({required this.result, this.path, this.cancelled = false});
 
   /// [EngineResult.ok] when the render finished; otherwise why it failed
   /// ([EngineResult.tracksChanged], [EngineResult.capacity],

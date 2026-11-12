@@ -234,12 +234,7 @@ class PenIconPainter extends CustomPainter {
     const kx = 12.375 / 13.5;
     const ky = 11.9167 / 13;
     // (top, bottom) of each bar in the source span, left to right.
-    const bars = <(double, double)>[
-      (4.5, 8.5),
-      (0, 13),
-      (2.5, 10.5),
-      (5, 8),
-    ];
+    const bars = <(double, double)>[(4.5, 8.5), (0, 13), (2.5, 10.5), (5, 8)];
     for (var i = 0; i < bars.length; i++) {
       final x = 3.6667 + i * 4.5 * kx;
       canvas.drawLine(

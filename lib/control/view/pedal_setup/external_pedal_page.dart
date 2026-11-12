@@ -551,10 +551,7 @@ class _ExternalPedalPageState extends State<ExternalPedalPage> {
     _endCalibration();
     final token = Object();
     _calibrationToken = token;
-    context.read<ControlCubit>().beginExternalCalibration(
-      _jack,
-      owner: token,
-    );
+    context.read<ControlCubit>().beginExternalCalibration(_jack, owner: token);
     setState(() {
       _view = _ExternalView.calibrate;
       _captureHeel = null;

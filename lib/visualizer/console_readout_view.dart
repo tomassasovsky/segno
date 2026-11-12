@@ -388,10 +388,7 @@ class _Footer extends StatelessWidget {
           ),
         ),
         SizedBox(width: 10 * s),
-        AppText(
-          l10n.stageBpmUnit,
-          style: secondary.copyWith(fontSize: 22 * s),
-        ),
+        AppText(l10n.stageBpmUnit, style: secondary.copyWith(fontSize: 22 * s)),
         SizedBox(width: 30 * s),
         AppText(
           '${readout.tsNum}/${readout.tsDen}',

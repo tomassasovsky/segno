@@ -69,15 +69,14 @@ class PerformanceTrackChain {
   /// Rebuilds a [PerformanceTrackChain] from a decoded JSON map. An absent
   /// `chainEnabled` reads as engaged, matching the writer's omit-when-default
   /// rule (and R15's "migration defaults every level to enabled").
-  factory fromJson(Map<String, dynamic> json) =>
-      PerformanceTrackChain(
-        channel: (json['channel'] as num).toInt(),
-        chainEnabled: json['chainEnabled'] as bool? ?? true,
-        effects: [
-          for (final e in (json['effects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceTrackChain(
+    channel: (json['channel'] as num).toInt(),
+    chainEnabled: json['chainEnabled'] as bool? ?? true,
+    effects: [
+      for (final e in (json['effects'] as List<dynamic>? ?? const []))
+        TrackEffect.fromJson(e as Map<String, dynamic>),
+    ],
+  );
 
   /// Track channel whose stereo bus this chain sits on.
   final int channel;
@@ -110,15 +109,14 @@ class PerformanceOutputChain {
 
   /// Rebuilds a [PerformanceOutputChain] from a decoded JSON map, on the same
   /// omit-when-default rule as [PerformanceTrackChain.fromJson].
-  factory fromJson(Map<String, dynamic> json) =>
-      PerformanceOutputChain(
-        bus: (json['bus'] as num).toInt(),
-        chainEnabled: json['chainEnabled'] as bool? ?? true,
-        effects: [
-          for (final e in (json['effects'] as List<dynamic>? ?? const []))
-            TrackEffect.fromJson(e as Map<String, dynamic>),
-        ],
-      );
+  factory fromJson(Map<String, dynamic> json) => PerformanceOutputChain(
+    bus: (json['bus'] as num).toInt(),
+    chainEnabled: json['chainEnabled'] as bool? ?? true,
+    effects: [
+      for (final e in (json['effects'] as List<dynamic>? ?? const []))
+        TrackEffect.fromJson(e as Map<String, dynamic>),
+    ],
+  );
 
   /// The output destination this chain sits after.
   final int bus;

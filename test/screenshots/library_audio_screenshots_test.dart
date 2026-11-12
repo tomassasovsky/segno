@@ -24,8 +24,7 @@ import 'package:session_repository/session_repository.dart';
 import '../helpers/helpers.dart';
 import '../library/helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockSessionRepository extends Mock implements SessionRepository;
 

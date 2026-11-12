@@ -101,9 +101,8 @@ void main() {
     when(() => repository.looperState).thenAnswer((_) => states.stream);
     when(() => repository.playheads).thenAnswer((_) => playheads.stream);
     when(() => repository.playhead).thenReturn(const Playhead());
-    when(() => repository.lastState).thenReturn(
-      const LooperState(tracks: [Track(), Track(channel: 1)]),
-    );
+    when(() => repository.lastState)
+        .thenReturn(const LooperState(tracks: [Track(), Track(channel: 1)]));
   });
   tearDown(() async {
     await states.close();
@@ -326,9 +325,8 @@ void main() {
       // Three polls inside one interval: the first waits for the gate, and
       // only the latest position goes out when it opens.
       for (final position in [0.1, 0.2, 0.3]) {
-        when(
-          () => repository.playhead,
-        ).thenReturn(Playhead(tracks: [position, 0]));
+        when(() => repository.playhead)
+            .thenReturn(Playhead(tracks: [position, 0]));
         playheads.add(Playhead(tracks: [position, 0]));
         clock.flushMicrotasks();
       }

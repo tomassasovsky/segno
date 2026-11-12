@@ -103,11 +103,7 @@ class _NetworkViewState extends State<_NetworkView> {
 
   /// Joins [ssid], showing the Connecting dialog while it runs. A key the
   /// network refused goes back to the sheet that typed it (pen 29/04).
-  Future<void> _connect(
-    String ssid, {
-    String? psk,
-    bool change = false,
-  }) async {
+  Future<void> _connect(String ssid, {String? psk, bool change = false}) async {
     final cubit = _cubit;
     final status = cubit.state.status;
     final previous = status.connected ? status.ssid : null;
@@ -405,11 +401,7 @@ class _ConnectionCard extends StatelessWidget {
                     Semantics(
                       liveRegion: true,
                       child: AppText(
-                        wifiErrorMessage(
-                          l10n,
-                          error,
-                          kind: state.errorKind,
-                        ),
+                        wifiErrorMessage(l10n, error, kind: state.errorKind),
                         key: const Key('network_card_error'),
                         style: TextStyle(
                           color: surface.warning,
@@ -423,10 +415,7 @@ class _ConnectionCard extends StatelessWidget {
               ),
             ),
           ),
-          if (action != null) ...[
-            const SizedBox(width: 26),
-            action,
-          ],
+          if (action != null) ...[const SizedBox(width: 26), action],
         ],
       ),
     );

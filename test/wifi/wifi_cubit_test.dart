@@ -14,11 +14,7 @@ class _FakeWifiClient implements WifiClient {
     List<WifiNetwork>? networks,
   }) : statusValue =
            status ??
-           const WifiStatus(
-             supported: true,
-             enabled: true,
-             connected: false,
-           ),
+           const WifiStatus(supported: true, enabled: true, connected: false),
        networks = List.of(networks ?? const []);
 
   bool supported;
@@ -134,10 +130,7 @@ class _FakeWifiClient implements WifiClient {
   @override
   Future<void> setAutoConnect(String ssid, {required bool enabled}) async {
     autoConnectCalls.add((ssid, enabled));
-    statusValue = _withAutoConnect({
-      ...statusValue.autoConnect,
-      ssid: enabled,
-    });
+    statusValue = _withAutoConnect({...statusValue.autoConnect, ssid: enabled});
   }
 
   @override
@@ -191,17 +184,11 @@ void main() {
       'load marks unsupported when helper missing',
       build: () => WifiCubit(
         repository: _repo(
-          _FakeWifiClient(
-            supported: false,
-            status: WifiStatus.unsupported,
-          ),
+          _FakeWifiClient(supported: false, status: WifiStatus.unsupported),
         ),
       ),
       act: (cubit) => cubit.load(),
-      expect: () => [
-        const WifiState(busy: true),
-        const WifiState(),
-      ],
+      expect: () => [const WifiState(busy: true), const WifiState()],
     );
 
     blocTest<WifiCubit, WifiState>(
@@ -300,9 +287,8 @@ void main() {
     blocTest<WifiCubit, WifiState>(
       'a refused join records the SSID alongside the message, so a stale '
       'name can never outlive the banner that used it',
-      build: () => WifiCubit(
-        repository: _repo(_FakeWifiClient(connectFails: true)),
-      ),
+      build: () =>
+          WifiCubit(repository: _repo(_FakeWifiClient(connectFails: true))),
       act: (cubit) async {
         await cubit.load();
         await cubit.connect('Studio 5G', psk: 'nope');
@@ -570,33 +556,30 @@ void main() {
       },
     );
 
-    test(
-      'cancelConnect while the helper call is in flight cannot leave '
-      '`retrying` stuck — the abandoned catch never emits',
-      () async {
-        final client = _FakeWifiClient()
-          ..connectErrors.add(StateError(iwdRace))
-          ..connectGate = Completer<void>();
-        final cubit = WifiCubit(
-          repository: _repo(client),
-          retryDelays: const [Duration(milliseconds: 50)],
-        );
-        addTearDown(cubit.close);
+    test('cancelConnect while the helper call is in flight cannot leave '
+        '`retrying` stuck — the abandoned catch never emits', () async {
+      final client = _FakeWifiClient()
+        ..connectErrors.add(StateError(iwdRace))
+        ..connectGate = Completer<void>();
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: const [Duration(milliseconds: 50)],
+      );
+      addTearDown(cubit.close);
 
-        await cubit.load();
-        final pending = cubit.connect('Studio 5G');
-        await pumpEventQueue();
-        await cubit.cancelConnect();
-        // The helper call now fails into the abandoned loop's catch.
-        client.connectGate!.complete();
-        await pending;
+      await cubit.load();
+      final pending = cubit.connect('Studio 5G');
+      await pumpEventQueue();
+      await cubit.cancelConnect();
+      // The helper call now fails into the abandoned loop's catch.
+      client.connectGate!.complete();
+      await pending;
 
-        expect(cubit.state.retrying, isFalse);
-        expect(cubit.state.connectingSsid, isNull);
-        expect(cubit.state.errorMessage, isNull);
-        expect(client.connects.length, 1);
-      },
-    );
+      expect(cubit.state.retrying, isFalse);
+      expect(cubit.state.connectingSsid, isNull);
+      expect(cubit.state.errorMessage, isNull);
+      expect(client.connects.length, 1);
+    });
 
     test('closing the cubit during the backoff stops the retry loop', () async {
       final client = _FakeWifiClient()..connectErrors.add(StateError(iwdRace));
@@ -621,20 +604,17 @@ void main() {
   // cubit and throws `Bad state: Cannot emit new states after calling close`
   // — observed six times from `load` in the appliance log.
   group('WifiCubit closing mid-flight', () {
-    test(
-      'load survives the tray closing while status is in flight',
-      () async {
-        final client = _FakeWifiClient()..statusGate = Completer<void>();
-        final cubit = WifiCubit(repository: _repo(client));
+    test('load survives the tray closing while status is in flight', () async {
+      final client = _FakeWifiClient()..statusGate = Completer<void>();
+      final cubit = WifiCubit(repository: _repo(client));
 
-        final pending = cubit.load();
-        await pumpEventQueue();
-        await cubit.close();
-        client.statusGate!.complete();
+      final pending = cubit.load();
+      await pumpEventQueue();
+      await cubit.close();
+      client.statusGate!.complete();
 
-        await expectLater(pending, completes);
-      },
-    );
+      await expectLater(pending, completes);
+    });
 
     test('load survives the tray closing while status is failing', () async {
       final client = _FakeWifiClient()..statusGate = Completer<void>();
@@ -665,22 +645,19 @@ void main() {
       },
     );
 
-    test(
-      'scan survives the tray closing while the scan is failing',
-      () async {
-        final client = _FakeWifiClient();
-        final cubit = WifiCubit(repository: _repo(client));
-        await cubit.load();
+    test('scan survives the tray closing while the scan is failing', () async {
+      final client = _FakeWifiClient();
+      final cubit = WifiCubit(repository: _repo(client));
+      await cubit.load();
 
-        client.scanGate = Completer<void>();
-        final pending = cubit.scan();
-        await pumpEventQueue();
-        await cubit.close();
-        client.scanGate!.completeError(StateError('scan refused'));
+      client.scanGate = Completer<void>();
+      final pending = cubit.scan();
+      await pumpEventQueue();
+      await cubit.close();
+      client.scanGate!.completeError(StateError('scan refused'));
 
-        await expectLater(pending, completes);
-      },
-    );
+      await expectLater(pending, completes);
+    });
 
     test(
       'connect survives the tray closing while the join is in flight',
@@ -922,33 +899,30 @@ void main() {
       expect(cubit.state.connectingSsid, isNull);
     });
 
-    test(
-      'a saved network joined after Cancel, with nothing up before, is '
-      'disconnected and kept',
-      () async {
-        final client = _FakeWifiClient(
-          status: const WifiStatus(
-            supported: true,
-            enabled: true,
-            connected: false,
-            autoConnect: {'Rehearsal': true},
-          ),
-        )..connectGate = Completer<void>();
-        final cubit = WifiCubit(repository: _repo(client));
-        addTearDown(cubit.close);
-        await cubit.load();
+    test('a saved network joined after Cancel, with nothing up before, is '
+        'disconnected and kept', () async {
+      final client = _FakeWifiClient(
+        status: const WifiStatus(
+          supported: true,
+          enabled: true,
+          connected: false,
+          autoConnect: {'Rehearsal': true},
+        ),
+      )..connectGate = Completer<void>();
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
 
-        final pending = cubit.connect('Rehearsal');
-        await pumpEventQueue();
-        await cubit.cancelConnect();
-        client.connectGate!.complete();
-        await pending;
+      final pending = cubit.connect('Rehearsal');
+      await pumpEventQueue();
+      await cubit.cancelConnect();
+      client.connectGate!.complete();
+      await pending;
 
-        expect(client.forgotten, isEmpty);
-        expect(client.disconnectCalls, 2);
-        expect(cubit.state.status.connected, isFalse);
-      },
-    );
+      expect(client.forgotten, isEmpty);
+      expect(client.disconnectCalls, 2);
+      expect(cubit.state.status.connected, isFalse);
+    });
 
     test('a previous network the helper could not bring back is', () async {
       final client = _FakeWifiClient(status: onStudio)

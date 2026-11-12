@@ -104,9 +104,9 @@ extension FxBindingResolver on LooperRepository {
   FxChainGroup? rackGroupAt(FxAddress address, String rackId) {
     final entries = chainEntriesAt(address);
     if (entries == null) return null;
-    return fxChainGroups(
-      entries,
-    ).where((group) => group.rack?.id == rackId).firstOrNull;
+    return fxChainGroups(entries)
+        .where((group) => group.rack?.id == rackId)
+        .firstOrNull;
   }
 
   /// Whether a pedal's LED for [target] is lit, or `null` when [target] does

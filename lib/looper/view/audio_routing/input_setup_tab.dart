@@ -69,9 +69,8 @@ _SetupValues _setupValues(
     // Only a jack with switches has anything to lock.
     interfaceLocked:
         interface.inputAt(input).hasSwitches &&
-        [
-          for (var jack = first; jack <= last; jack++) jack,
-        ].any((jack) => _inputLocked(state, jack)),
+        [for (var jack = first; jack <= last; jack++) jack]
+            .any((jack) => _inputLocked(state, jack)),
   );
 }
 
@@ -87,9 +86,9 @@ class InputSetupTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-    create: (context) => InterfaceInputsCubit(
-      repository: context.read<LooperRepository>(),
-    )..startWatching(),
+    create: (context) =>
+        InterfaceInputsCubit(repository: context.read<LooperRepository>())
+          ..startWatching(),
     child: const _InputSetupView(),
   );
 }
@@ -792,10 +791,7 @@ class _TrimColumn extends StatelessWidget {
             Positioned(
               left: 0,
               top: 183,
-              child: LoopNote(
-                l10n.routingClipNote,
-                tone: LoopNoteTone.error,
-              ),
+              child: LoopNote(l10n.routingClipNote, tone: LoopNoteTone.error),
             ),
           // The meter reads the input before the trim, so it is where the
           // interface's gain knob is set: to the band (#1646).

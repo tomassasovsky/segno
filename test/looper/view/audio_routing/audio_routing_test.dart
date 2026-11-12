@@ -71,28 +71,23 @@ void main() {
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(() => repository.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
     when(() => repository.clickModeSettled).thenReturn(true);
     // These pages do not initialize or edit recording-start preferences. The
     // repository still exposes its coherent, stopped native-safe pair.
-    when(() => repository.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.recordStartSettingsSettled).thenReturn(true);
     when(() => repository.recordStartRecoveryRequired).thenReturn(false);
     when(() => repository.recordStartCaptureLocked).thenReturn(false);
-    when(() => repository.recordStartSettings).thenReturn(
-      (countInBars: 0, soundStart: false),
-    );
-    when(() => repository.recordStartRestartIntent).thenReturn(
-      (countInBars: 0, soundStart: false),
-    );
+    when(() => repository.recordStartSettings)
+        .thenReturn((countInBars: 0, soundStart: false));
+    when(() => repository.recordStartRestartIntent)
+        .thenReturn((countInBars: 0, soundStart: false));
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.fxRecipesSettled).thenReturn(true);
     when(() => repository.monitorEffects(any())).thenReturn(const []);
@@ -110,12 +105,10 @@ void main() {
     // Live levels reach the meters apart from the state (#1301): silence
     // unless a test sets them.
     when(() => repository.meters).thenReturn(const MeterLevels());
-    when(
-      () => repository.meterLevels,
-    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.meterLevels)
+        .thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.clickVolumeSettled).thenReturn(true);
@@ -123,16 +116,13 @@ void main() {
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.sessionTransport).thenReturn(const TransportState());
-    when(() => repository.monitorChanges).thenAnswer(
-      (_) => monitorChanges.stream,
-    );
-    when(() => repository.monitorParamChanges).thenAnswer(
-      (_) => monitorParams.stream,
-    );
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => monitorChanges.stream);
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => monitorParams.stream);
     when(() => repository.allMonitors()).thenReturn(const {});
-    when(
-      () => repository.readInterfaceInputs(),
-    ).thenAnswer((_) async => InterfaceInputs.none);
+    when(() => repository.readInterfaceInputs())
+        .thenAnswer((_) async => InterfaceInputs.none);
     when(
       () => repository.setMonitorOutput(
         input: any(named: 'input'),
@@ -191,10 +181,7 @@ void main() {
       mixSettings: testMixSettings(repository, settings: settings),
     );
     addTearDown(() => unawaited(monitors.close()));
-    tempoOwner = TempoSettings(
-      repository: repository,
-      settings: settings,
-    );
+    tempoOwner = TempoSettings(repository: repository, settings: settings);
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
@@ -345,17 +332,12 @@ void main() {
   testWidgets('a track capturing this input locks the format and says why', (
     tester,
   ) async {
-    await pump(
-      tester,
-      state: _rig.copyWithCapturing(),
-    );
+    await pump(tester, state: _rig.copyWithCapturing());
     final l10n = l10nOf(tester);
     expect(find.text(l10n.routingLockedFormat), findsOneWidget);
     await tester.tap(find.byKey(const Key('routing_format_stereo')));
     await tester.pump();
-    verifyNever(
-      () => bloc.add(any(that: isA<LooperInputPairChanged>())),
-    );
+    verifyNever(() => bloc.add(any(that: isA<LooperInputPairChanged>())));
   });
 
   testWidgets('a clipping input says so beside the trim note, and the meter '
@@ -438,9 +420,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      state: _rig.copyWithLanes(
-        const [Lane(inputChannel: 1), Lane()],
-      ),
+      state: _rig.copyWithLanes(const [Lane(inputChannel: 1), Lane()]),
     );
     await openRecord(tester);
     await tester.tap(find.byKey(const Key('routing_record_card_2')));
@@ -472,9 +452,10 @@ void main() {
       'they are', (tester) async {
     await pump(
       tester,
-      state: _rig.copyWithLanes(
-        const [Lane(inputChannel: 1), Lane(inputChannel: 2)],
-      ),
+      state: _rig.copyWithLanes(const [
+        Lane(inputChannel: 1),
+        Lane(inputChannel: 2),
+      ]),
     );
     await openRecord(tester);
     await tester.tap(find.byKey(const Key('routing_record_card_1')));
@@ -567,14 +548,13 @@ void main() {
     expect(find.text(l10n.routingNoDestinations), findsOneWidget);
   });
 
-  testWidgets("a track's route is one atomic whole-track edit", (
-    tester,
-  ) async {
+  testWidgets("a track's route is one atomic whole-track edit", (tester) async {
     await pump(
       tester,
-      state: _rig.copyWithLanes(
-        const [Lane(inputChannel: 0), Lane(inputChannel: 1)],
-      ),
+      state: _rig.copyWithLanes(const [
+        Lane(inputChannel: 0),
+        Lane(inputChannel: 1),
+      ]),
     );
     await openOutputs(tester);
     await tester.tap(find.byKey(const Key('routing_kind_tracks')));
@@ -718,12 +698,10 @@ void main() {
     await tester.tap(find.byKey(const Key('output_mute')));
     await tester.pump();
 
-    verify(
-      () => bloc.add(const LooperOutputMonoChanged(1, mono: true)),
-    ).called(1);
-    verify(
-      () => bloc.add(const LooperOutputMuteChanged(1, muted: true)),
-    ).called(1);
+    verify(() => bloc.add(const LooperOutputMonoChanged(1, mono: true)))
+        .called(1);
+    verify(() => bloc.add(const LooperOutputMuteChanged(1, muted: true)))
+        .called(1);
   });
 
   testWidgets('Mono says what it does, and Stereo says nothing', (
@@ -823,9 +801,8 @@ void main() {
   testWidgets("the meters read the destination's own jacks", (tester) async {
     // Outputs 1-4 at four different peaks: the master hears the first pair
     // and the second destination the second.
-    when(() => repository.meters).thenReturn(
-      const MeterLevels(outputPeaks: [1, 0.5, 0.25, 0.125]),
-    );
+    when(() => repository.meters)
+        .thenReturn(const MeterLevels(outputPeaks: [1, 0.5, 0.25, 0.125]));
     await pump(tester, state: _rig.copyWithOutput(const OutputBus()));
     await openOutputSetup(tester);
     final l10n = l10nOf(tester);
@@ -841,9 +818,8 @@ void main() {
 
   testWidgets('a muted destination meters silence, whatever the engine last '
       'reported', (tester) async {
-    when(
-      () => repository.meters,
-    ).thenReturn(const MeterLevels(outputPeaks: [1, 1, 0, 0]));
+    when(() => repository.meters)
+        .thenReturn(const MeterLevels(outputPeaks: [1, 1, 0, 0]));
     await pump(
       tester,
       state: _rig.copyWithOutput(const OutputBus(muted: true)),
@@ -872,9 +848,7 @@ void main() {
       '(#1590 SET-1, SET-6)', (tester) async {
     await pump(tester);
     final title = tester.getRect(find.byKey(const Key('loop_settings_title')));
-    final first = tester.getRect(
-      find.byKey(const Key('routing_input_card_0')),
-    );
+    final first = tester.getRect(find.byKey(const Key('routing_input_card_0')));
     final last = tester.getRect(find.byKey(const Key('routing_input_card_3')));
     expect(title.left, 32);
     expect(first.left, title.left);
@@ -954,10 +928,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(inputs.state.nameOf(1), 'di');
-    expect(
-      await settings.loadInputName(device: 'Fake Device', input: 1),
-      'di',
-    );
+    expect(await settings.loadInputName(device: 'Fake Device', input: 1), 'di');
   });
 
   testWidgets('rename sheet only closes through an explicit action', (
@@ -1169,10 +1140,7 @@ void main() {
 
     // Outputs 5-6 on a four-out rig is silence, and the note says so rather
     // than leaving an inaudible source looking routed.
-    expect(
-      find.text(l10nOf(tester).routingNoDestinations),
-      findsOneWidget,
-    );
+    expect(find.text(l10nOf(tester).routingNoDestinations), findsOneWidget);
   });
 
   testWidgets('with no interface open every task says so instead of drawing '
@@ -1224,9 +1192,8 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('routing_monitor_on')));
     await tester.pump();
-    verify(
-      () => repository.setMonitorInputMode(input: 2, mode: MonitorMode.on),
-    ).called(1);
+    verify(() => repository.setMonitorInputMode(input: 2, mode: MonitorMode.on))
+        .called(1);
 
     // And Send to now writes that jack's monitor, not the first one's.
     await tester.tap(find.byKey(const Key('routing_destination_1')));
@@ -1270,9 +1237,7 @@ void main() {
 
     await gesture.up();
     await tester.pump();
-    verify(
-      () => bloc.add(any(that: isA<LooperInputTrimChanged>())),
-    ).called(1);
+    verify(() => bloc.add(any(that: isA<LooperInputTrimChanged>()))).called(1);
     await tester.pump(const Duration(milliseconds: 400));
   });
 
@@ -1496,10 +1461,7 @@ extension on LooperState {
   /// [_rig] with track 0 capturing input 0.
   LooperState copyWithCapturing() => LooperState(
     tracks: const [
-      Track(
-        state: TrackState.recording,
-        lanes: [Lane(inputChannel: 0)],
-      ),
+      Track(state: TrackState.recording, lanes: [Lane(inputChannel: 0)]),
       Track(channel: 1),
     ],
     status: status,

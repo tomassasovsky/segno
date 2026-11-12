@@ -331,12 +331,7 @@ void main() {
         final oldLifetime = cubit.state.lifetime;
         generation++;
         expect(
-          await renameResult(
-            cubit,
-            0,
-            'stale',
-            expectedLifetime: oldLifetime,
-          ),
+          await renameResult(cubit, 0, 'stale', expectedLifetime: oldLifetime),
           AliasRenameResult.refused,
         );
         expect(

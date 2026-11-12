@@ -127,10 +127,7 @@ class LibraryCubit extends Cubit<LibraryState> {
     final peaks = <int, List<double>>{};
     for (final track in preview.tracks) {
       try {
-        final read = await _sessions.readPeaks(
-          id,
-          track,
-        );
+        final read = await _sessions.readPeaks(id, track);
         if (read != null) peaks[track.channel] = read;
       } on Object {
         // Length only for this track.
@@ -341,9 +338,8 @@ class LibraryCubit extends Cubit<LibraryState> {
   }
 
   /// Selects the backup [id] on the USB list.
-  void selectBackup(String id) => emit(
-    state.copyWith(selectedBackup: id, clearRestoreError: true),
-  );
+  void selectBackup(String id) =>
+      emit(state.copyWith(selectedBackup: id, clearRestoreError: true));
 
   /// `Restore to Library`: adds the selected backup as a new session, then
   /// shows it selected in Internal (pen 34 `Restored session selected`).

@@ -164,10 +164,7 @@ class ScreenLinkWaveformService implements WaveformWindowService {
     final generation = ++_openGeneration;
     final ready = _ready ??= Completer<void>();
     var arrived = true;
-    await ready.future.timeout(
-      readyTimeout,
-      onTimeout: () => arrived = false,
-    );
+    await ready.future.timeout(readyTimeout, onTimeout: () => arrived = false);
     if (!arrived && generation == _openGeneration) _opening = false;
     return arrived;
   }

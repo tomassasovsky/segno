@@ -95,10 +95,9 @@ void main() {
       );
       expect(fxAssignmentsTo(cleaned, _track, {'a'}, rackIds: {'r1'}), 0);
       // The other rack keeps its binding.
-      expect(
-        cleaned.globalBindings.bindings.map((b) => b.target),
-        [otherRack.canonicalString()],
-      );
+      expect(cleaned.globalBindings.bindings.map((b) => b.target), [
+        otherRack.canonicalString(),
+      ]);
     });
 
     test('is zero when nothing points at the effects', () {
@@ -153,11 +152,7 @@ void main() {
                   controls: ExternalControls(
                     activations: const [ExternalActivation(target: slotA)],
                     parameters: [
-                      ExternalParameter(
-                        target: paramB,
-                        active: 1,
-                        inactive: 0,
-                      ),
+                      ExternalParameter(target: paramB, active: 1, inactive: 0),
                     ],
                   ),
                 ),
@@ -224,11 +219,9 @@ void main() {
       );
 
       expect(fxAssignmentsTo(state, _track, {'a'}), 1);
-      final binding = _cleaned(
-        state,
-        _track,
-        {'a'},
-      ).globalBindings.bindings.single;
+      final binding = _cleaned(state, _track, {
+        'a',
+      }).globalBindings.bindings.single;
       expect(binding.decodeTarget(), chain);
       expect(binding.hasHold, isFalse);
     });
@@ -332,10 +325,9 @@ void main() {
         isEmpty,
       );
       // A control held off at both ends turns nothing on.
-      expect(
-        reach(with_(button(MidiBehavior.toggle, [power(rackA, 0, 0)]))),
-        [const FxControlReach()],
-      );
+      expect(reach(with_(button(MidiBehavior.toggle, [power(rackA, 0, 0)]))), [
+        const FxControlReach(),
+      ]);
     });
 
     test('an external switch alternates On with Off and Held with Released, '
@@ -460,10 +452,7 @@ void main() {
     );
 
     test('is empty when nothing acts on the effect', () {
-      expect(
-        fxAssignmentNames(en, const ControlState(), _track),
-        isEmpty,
-      );
+      expect(fxAssignmentNames(en, const ControlState(), _track), isEmpty);
     });
 
     test('names the console switches, the CTRL jacks and the MIDI controls '
@@ -549,11 +538,7 @@ void main() {
                   controls: ExternalControls(
                     activations: const [ExternalActivation(target: slotA)],
                     parameters: [
-                      ExternalParameter(
-                        target: paramA,
-                        active: 1,
-                        inactive: 0,
-                      ),
+                      ExternalParameter(target: paramA, active: 1, inactive: 0),
                     ],
                   ),
                 ),

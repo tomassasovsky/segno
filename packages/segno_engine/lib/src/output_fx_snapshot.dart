@@ -1,11 +1,7 @@
 /// A built-in output effect at the actual performance arm boundary.
 class OutputEffectSnapshot {
   /// Creates an effect snapshot.
-  const new({
-    required this.type,
-    required this.params,
-    this.enabled = true,
-  });
+  const new({required this.type, required this.params, this.enabled = true});
 
   /// Native effect type identifier.
   final int type;

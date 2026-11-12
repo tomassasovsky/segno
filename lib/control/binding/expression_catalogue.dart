@@ -73,11 +73,7 @@ class ExpressionControlGroup extends Equatable {
 /// One effect a destination offers to turn on and off.
 class ExpressionActivation extends Equatable {
   /// Creates an [ExpressionActivation].
-  const new({
-    required this.target,
-    required this.label,
-    this.art,
-  });
+  const new({required this.target, required this.label, this.art});
 
   /// The chain, the rack or the effect.
   final FxBindingTarget target;
@@ -337,15 +333,12 @@ List<ExpressionDestination> expressionDestinations(
   final drafts = <String, _Draft>{};
   // One picture per pedal, however many of its parameters are listed.
   final arts = <Object, FxArt?>{};
-  FxArt? artOf(Object target) => arts.putIfAbsent(
-    switch (target) {
-      FxParamTarget(:final address, :final slotId) ||
-      FxSlotTarget(:final address, :final slotId) => (address, slotId),
-      FxRackTarget(:final address, :final rackId) => (address, #rack, rackId),
-      _ => target,
-    },
-    () => expressionTargetArt(looper, target),
-  );
+  FxArt? artOf(Object target) => arts.putIfAbsent(switch (target) {
+    FxParamTarget(:final address, :final slotId) ||
+    FxSlotTarget(:final address, :final slotId) => (address, slotId),
+    FxRackTarget(:final address, :final rackId) => (address, #rack, rackId),
+    _ => target,
+  }, () => expressionTargetArt(looper, target));
   _Draft draftFor(
     ({String id, ExpressionDestinationKind kind, int order}) place,
     String label,

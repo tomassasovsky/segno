@@ -27,21 +27,16 @@ void main() {
       expect(await screenCaptureRequests(appliance: false).isEmpty, isTrue);
     });
 
-    test(
-      'on the console a SIGUSR1 to the process asks',
-      () async {
-        final asked = Completer<void>();
-        final sub = screenCaptureRequests(appliance: true).listen(
-          (_) => asked.complete(),
-        );
-        addTearDown(sub.cancel);
-        // The listen above installed the handler, so this cannot end the
-        // test process.
-        Process.killPid(pid, ProcessSignal.sigusr1);
-        await asked.future.timeout(const Duration(seconds: 5));
-      },
-      skip: Platform.isWindows ? 'no SIGUSR1 on Windows' : null,
-    );
+    test('on the console a SIGUSR1 to the process asks', () async {
+      final asked = Completer<void>();
+      final sub = screenCaptureRequests(appliance: true)
+          .listen((_) => asked.complete());
+      addTearDown(sub.cancel);
+      // The listen above installed the handler, so this cannot end the
+      // test process.
+      Process.killPid(pid, ProcessSignal.sigusr1);
+      await asked.future.timeout(const Duration(seconds: 5));
+    }, skip: Platform.isWindows ? 'no SIGUSR1 on Windows' : null);
   });
 
   test('screenCaptureName is the screen and the UTC time', () {
@@ -69,9 +64,8 @@ void main() {
     });
 
     test("keeps that screen's newest captures and no other's", () async {
-      File('${dir.path}/readout-20261101T000000.000Z.png').writeAsBytesSync([
-        0,
-      ]);
+      File('${dir.path}/readout-20261101T000000.000Z.png')
+          .writeAsBytesSync([0]);
       for (var minute = 0; minute < 4; minute++) {
         await saveScreenCapture(
           directory: dir.path,
@@ -90,9 +84,8 @@ void main() {
 
     test('keeps the new capture when the clock went back', () async {
       for (final day in [10, 11]) {
-        File(
-          '${dir.path}/main-202611${day}T000000.000Z.png',
-        ).writeAsBytesSync([day]);
+        File('${dir.path}/main-202611${day}T000000.000Z.png')
+            .writeAsBytesSync([day]);
       }
       final path = await saveScreenCapture(
         directory: dir.path,

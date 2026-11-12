@@ -266,11 +266,7 @@ class _Face extends StatelessWidget {
         ? l10n.perfSavedSubtitlePlain(name)
         : state.tracks.isEmpty
         ? l10n.perfSavedSubtitleTimed(name, _mmss(duration))
-        : l10n.perfSavedSubtitle(
-            name,
-            state.tracks.length,
-            _mmss(duration),
-          );
+        : l10n.perfSavedSubtitle(name, state.tracks.length, _mmss(duration));
     // What went wrong on the way, if anything — the pen draws each as a
     // banner between the subtitle and the action row. Stopped-early outranks
     // a glitch: a capture that ended early with dropped frames has the

@@ -38,8 +38,7 @@ class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit;
 
 class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit;
 
-class _MockOutputsCubit extends MockCubit<OutputsState>
-    implements OutputsCubit;
+class _MockOutputsCubit extends MockCubit<OutputsState> implements OutputsCubit;
 
 /// The console's standing conditions as must-act messages (#1562): raised
 /// while they hold, cleared the moment they are over, on whatever screen is
@@ -275,9 +274,8 @@ void main() {
       await tester.tap(
         find.byKey(const Key(AppNoticeId.outputFxWaitingDismiss)),
       );
-      verify(
-        () => looper.add(const LooperOutputFxWaitingDismissed()),
-      ).called(1);
+      verify(() => looper.add(const LooperOutputFxWaitingDismissed()))
+          .called(1);
     });
 
     testWidgets('goes when nothing waits', (tester) async {
@@ -323,9 +321,7 @@ void main() {
       expect(find.text("Vox and Guitar's input chain are off"), findsOneWidget);
     });
 
-    testWidgets('offers the fix, Open effects, beside Dismiss', (
-      tester,
-    ) async {
+    testWidgets('offers the fix, Open effects, beside Dismiss', (tester) async {
       await pump(
         tester,
         looperState: held(const [FxAddress(stage: FxStage.allTracks)]),
@@ -388,9 +384,7 @@ void main() {
       looperStates.add(
         const LooperState(
           status: EngineStatus(isConnected: true),
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-          ],
+          tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
         ),
       );
       await tester.pump();

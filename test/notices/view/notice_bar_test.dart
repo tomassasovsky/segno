@@ -127,9 +127,7 @@ void main() {
   }
 
   group(NoticeBarMessage, () {
-    testWidgets('shows the session name while nothing is said', (
-      tester,
-    ) async {
+    testWidgets('shows the session name while nothing is said', (tester) async {
       await pumpBar(tester);
       expect(find.byKey(const Key('session')), findsOneWidget);
       expect(find.byKey(const Key('notice_bar_time_left')), findsNothing);

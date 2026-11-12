@@ -24,9 +24,7 @@ void main() {
         devices: devices,
         openResult: openResult,
       );
-      source = MidiControllerSource(
-        client: MidiClient(bindings: bindings),
-      );
+      source = MidiControllerSource(client: MidiClient(bindings: bindings));
       addTearDown(source.dispose);
       source.open('test-device');
       return source;
@@ -257,10 +255,7 @@ void main() {
         build();
         await source.dispose();
         await source.dispose();
-        expect(
-          bindings.calls.where((c) => c == 'destroy').length,
-          1,
-        );
+        expect(bindings.calls.where((c) => c == 'destroy').length, 1);
       });
 
       test('a message after dispose emits nothing', () async {

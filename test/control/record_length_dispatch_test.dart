@@ -293,75 +293,66 @@ void main() {
       });
     });
     for (final external in [false, true]) {
-      check(
-        '${external ? 'External' : 'MIDI'} holds live and saves '
-        'authored Released',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          expect(r.live, external ? 16 : 48);
-          expect(r.durable, external ? 8 : 0);
-          expect(r.store.values['tempo.length_preset.0'], external ? 8 : 0);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          expect(r.live, external ? 8 : 0);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} Use default defeats old '
-        'release and preserves inheritance',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.ordinary(value: null);
-          unawaited(r.owner.setDefaultLengthBars(12));
-          r.pump();
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
+      check('${external ? 'External' : 'MIDI'} holds live and saves '
+          'authored Released', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        expect(r.live, external ? 16 : 48);
+        expect(r.durable, external ? 8 : 0);
+        expect(r.store.values['tempo.length_preset.0'], external ? 8 : 0);
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        expect(r.live, external ? 8 : 0);
+      });
+      check('${external ? 'External' : 'MIDI'} Use default defeats old '
+          'release and preserves inheritance', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.ordinary(value: null);
+        unawaited(r.owner.setDefaultLengthBars(12));
+        r.pump();
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        r.retire();
+        expect(r.live, 12);
+        expect(r.owner.recordLengthSnapshot!.trackOverrides, isEmpty);
+        expect(r.store.values.containsKey('tempo.length_preset.0'), isFalse);
+      });
+      check('${external ? 'External' : 'MIDI'} capture retirement stays '
+          'owed and retries at idle', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.capture(TrackState.recording);
+        if (external) {
+          r.external(high: false);
+        } else {
           r.retire();
-          expect(r.live, 12);
-          expect(r.owner.recordLengthSnapshot!.trackOverrides, isEmpty);
-          expect(r.store.values.containsKey('tempo.length_preset.0'), isFalse);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} capture retirement stays '
-        'owed and retries at idle',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.capture(TrackState.recording);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.retire();
-          }
-          expect(r.live, external ? 16 : 48);
-          expect(r.durable, external ? 8 : 0);
-          expect(r.engine.stopCalls, 0);
-          r.capture(TrackState.empty);
-          expect(r.live, external ? 8 : 0);
-          expect(r.engine.stopCalls, 0);
-        },
-      );
+        }
+        expect(r.live, external ? 16 : 48);
+        expect(r.durable, external ? 8 : 0);
+        expect(r.engine.stopCalls, 0);
+        r.capture(TrackState.empty);
+        expect(r.live, external ? 8 : 0);
+        expect(r.engine.stopCalls, 0);
+      });
     }
     check(
       'accepted Multi retires track holder and leaving Multi reveals Released',

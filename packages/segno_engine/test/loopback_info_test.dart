@@ -8,9 +8,8 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 void _writeName(Pointer<le_loopback_info> ptr, String name) {
   final offset = sizeOf<le_loopback_info>() - 256;
-  final bytes = Pointer<Uint8>.fromAddress(
-    ptr.address + offset,
-  ).asTypedList(256);
+  final bytes = Pointer<Uint8>.fromAddress(ptr.address + offset)
+      .asTypedList(256);
   final units = utf8.encode(name);
   bytes.setRange(0, units.length, units);
   bytes[units.length] = 0;

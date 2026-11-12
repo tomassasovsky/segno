@@ -23,16 +23,14 @@ part 'tuner_state.dart';
 /// last played, until it is old enough not to be.
 class TunerCubit extends Cubit<TunerState> {
   /// Creates a [TunerCubit] following [_repository] and [settings].
-  new({
-    required this._repository,
-    required TunerSettings settings,
-  }) : _settings = settings,
-       super(
-         TunerState(
-           input: settings.live.input < 0 ? 0 : settings.live.input,
-           referenceHz: settings.live.referenceHz,
-         ),
-       ) {
+  new({required this._repository, required TunerSettings settings})
+    : _settings = settings,
+      super(
+        TunerState(
+          input: settings.live.input < 0 ? 0 : settings.live.input,
+          referenceHz: settings.live.referenceHz,
+        ),
+      ) {
     _subscription = _repository.looperState.listen(_onLooperState);
     _settingsSubscription = _settings.changes.listen(_onPreferences);
   }

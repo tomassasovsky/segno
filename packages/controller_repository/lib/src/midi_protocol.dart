@@ -179,9 +179,8 @@ class MidiSource extends Equatable {
     MidiProtocol.nrpn => const {'cc:6', 'cc:38', 'cc:98', 'cc:99'},
     MidiProtocol.cc14 => {'cc:$number', 'cc:${number + 32}'},
     MidiProtocol.bankProgram => {'cc:0', 'cc:32', 'program:$number'},
-    MidiProtocol.standard || MidiProtocol.relative => {
-      '${_kindToken(kind)}:$number',
-    },
+    MidiProtocol.standard ||
+    MidiProtocol.relative => {'${_kindToken(kind)}:$number'},
   };
 
   bool _channelsMeet(MidiSource other) =>
@@ -339,10 +338,11 @@ class MidiDecoder {
         break;
     }
 
-    final state = _states.putIfAbsent(
-      (device, channel, protocol),
-      _PartialState.new,
-    );
+    final state = _states.putIfAbsent((
+      device,
+      channel,
+      protocol,
+    ), _PartialState.new);
     final now = _clock();
 
     switch (protocol) {

@@ -147,8 +147,7 @@ sealed class StorageDestination extends Equatable {
   const factory internal() = InternalDestination;
 
   /// The removable drive attached as [generation].
-  const factory removable(int generation) =
-      RemovableDestination;
+  const factory removable(int generation) = RemovableDestination;
 }
 
 /// The appliance's internal storage.

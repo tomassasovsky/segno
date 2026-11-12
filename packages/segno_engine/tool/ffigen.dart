@@ -89,9 +89,8 @@ Future<void> main() async {
           // side can read its fields.
           node.dependencies = CompoundDependencies.full;
         },
-        enumClass: (node) => node.isIncluded = _enums.contains(
-          node.originalName,
-        ),
+        enumClass: (node) =>
+            node.isIncluded = _enums.contains(node.originalName),
         macroConstant: (node) => node.isIncluded = true,
         typealias: (node) => node.isIncluded = TypealiasInclude.ifUsed,
         unnamedEnumConstant: (node) => node.isIncluded = true,

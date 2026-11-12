@@ -26,11 +26,7 @@ import 'package:segno/theme/theme.dart';
 /// and capture.
 class LoopPlaybackPage extends StatefulWidget {
   /// Creates a [LoopPlaybackPage] showing [track]'s fields.
-  const new({
-    required this.track,
-    required this.onTrack,
-    super.key,
-  });
+  const new({required this.track, required this.onTrack, super.key});
 
   /// The selected channel, or `null` for the defaults; shared with the
   /// Recording tab for the visit.

@@ -31,8 +31,7 @@ import 'fake_power_key_source.dart';
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockRecorder extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
@@ -148,9 +147,7 @@ void main() {
               BlocProvider<SessionCubit>.value(value: session),
             ],
             child: const PowerHost(
-              child: Scaffold(
-                body: SizedBox(key: Key('power_host_child')),
-              ),
+              child: Scaffold(body: SizedBox(key: Key('power_host_child'))),
             ),
           ),
         ),
@@ -197,9 +194,8 @@ void main() {
         rootNavigator: true,
       ).push(
         MaterialPageRoute<void>(
-          builder: (_) => const Scaffold(
-            body: SizedBox(key: Key('power_underlay')),
-          ),
+          builder: (_) =>
+              const Scaffold(body: SizedBox(key: Key('power_underlay'))),
         ),
       );
       await settle(tester);
@@ -271,15 +267,13 @@ void main() {
         final updates = _MockUpdateRepository();
         when(() => updates.isSupported).thenReturn(true);
         when(() => updates.channel).thenReturn('production');
-        when(
-          updates.currentVersion,
-        ).thenAnswer((_) async => Version.parse('1.0.0'));
+        when(updates.currentVersion)
+            .thenAnswer((_) async => Version.parse('1.0.0'));
         when(updates.stagedVersion).thenAnswer((_) async => Version.none);
         when(updates.checkForUpdate).thenAnswer((_) async => offer);
         when(updates.installInProgress).thenAnswer((_) async => false);
-        when(
-          () => updates.downloadAndStage(offer),
-        ).thenAnswer((_) => download.stream);
+        when(() => updates.downloadAndStage(offer))
+            .thenAnswer((_) => download.stream);
         update = UpdateCubit(
           updates: updates,
           settings: _MockSettingsRepository(),

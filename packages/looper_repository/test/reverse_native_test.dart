@@ -50,45 +50,41 @@ void main() {
     await ticks.close();
   });
 
-  test(
-    'toggle confirms the callback receipt, projects direction and refuses '
-    'the punch-in',
-    () async {
-      final subscription = repository.looperState.listen((_) {});
-      addTearDown(subscription.cancel);
-      await Future<void>.delayed(Duration.zero);
-      engine.pump(frames: 37);
-      final toggled = repository.toggleReverse(channel: 0);
-      final empty = repository.toggleReverse(channel: 1);
-      var completed = false;
-      final completion = toggled.then((_) {
-        completed = true;
-      });
-      await Future<void>.delayed(Duration.zero);
-      expect(completed, isFalse); // queue acceptance is not the outcome
-      engine.pump(frames: 1);
-      expect(await toggled, EngineResult.ok);
-      expect(await empty, EngineResult.invalid);
-      await completion;
-      // 128 frames is shorter than two turn windows, so the read snaps: the
-      // toggle frame itself reads index 37, the index the turn continues from.
-      expect(engine.snapshot().outputPeaks[0], closeTo(37 / 128, 1e-6));
-      expect(engine.snapshot().tracks[0].reversed, isTrue);
-      ticks.add(null);
-      expect(repository.state.tracks[0].reversed, isTrue);
-      expect(repository.record(), EngineResult.reversed);
-      expect(engine.snapshot().tracks[0].state, TrackState.playing);
-      final back = repository.toggleReverse(channel: 0);
-      engine.pump(frames: 1);
-      expect(await back, EngineResult.ok);
-      ticks.add(null);
-      expect(repository.state.tracks[0].reversed, isFalse);
-      expect(repository.record(), EngineResult.ok);
-      engine.pump(frames: 1);
-      expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
-    },
-    skip: skip,
-  );
+  test('toggle confirms the callback receipt, projects direction and refuses '
+      'the punch-in', () async {
+    final subscription = repository.looperState.listen((_) {});
+    addTearDown(subscription.cancel);
+    await Future<void>.delayed(Duration.zero);
+    engine.pump(frames: 37);
+    final toggled = repository.toggleReverse(channel: 0);
+    final empty = repository.toggleReverse(channel: 1);
+    var completed = false;
+    final completion = toggled.then((_) {
+      completed = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, isFalse); // queue acceptance is not the outcome
+    engine.pump(frames: 1);
+    expect(await toggled, EngineResult.ok);
+    expect(await empty, EngineResult.invalid);
+    await completion;
+    // 128 frames is shorter than two turn windows, so the read snaps: the
+    // toggle frame itself reads index 37, the index the turn continues from.
+    expect(engine.snapshot().outputPeaks[0], closeTo(37 / 128, 1e-6));
+    expect(engine.snapshot().tracks[0].reversed, isTrue);
+    ticks.add(null);
+    expect(repository.state.tracks[0].reversed, isTrue);
+    expect(repository.record(), EngineResult.reversed);
+    expect(engine.snapshot().tracks[0].state, TrackState.playing);
+    final back = repository.toggleReverse(channel: 0);
+    engine.pump(frames: 1);
+    expect(await back, EngineResult.ok);
+    ticks.add(null);
+    expect(repository.state.tracks[0].reversed, isFalse);
+    expect(repository.record(), EngineResult.ok);
+    engine.pump(frames: 1);
+    expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
+  }, skip: skip);
 
   Future<void> reverseTrack0() async {
     final result = repository.toggleReverse(channel: 0);
@@ -103,37 +99,33 @@ void main() {
     return repository.state.tracks[0];
   }
 
-  test(
-    'direction dies with the material: undo to empty, redo from empty, '
-    'Clear and its undo all read forward',
-    () async {
-      final subscription = repository.looperState.listen((_) {});
-      addTearDown(subscription.cancel);
+  test('direction dies with the material: undo to empty, redo from empty, '
+      'Clear and its undo all read forward', () async {
+    final subscription = repository.looperState.listen((_) {});
+    addTearDown(subscription.cancel);
+    await Future<void>.delayed(Duration.zero);
+    await reverseTrack0();
+    expect(track0().reversed, isTrue);
+
+    expect(repository.undo(), EngineResult.ok);
+    expect(track0().hasContent, isFalse);
+    expect(track0().reversed, isFalse);
+    expect(repository.redo(), EngineResult.ok);
+    expect(track0().hasContent, isTrue);
+    expect(track0().reversed, isFalse);
+
+    await reverseTrack0();
+    expect(track0().reversed, isTrue);
+    expect(repository.clear(), EngineResult.ok);
+    expect(track0().hasContent, isFalse);
+    expect(track0().reversed, isFalse);
+    for (var i = 0; i < 20 && !track0().hasContent; i++) {
+      repository.undo();
       await Future<void>.delayed(Duration.zero);
-      await reverseTrack0();
-      expect(track0().reversed, isTrue);
-
-      expect(repository.undo(), EngineResult.ok);
-      expect(track0().hasContent, isFalse);
-      expect(track0().reversed, isFalse);
-      expect(repository.redo(), EngineResult.ok);
-      expect(track0().hasContent, isTrue);
-      expect(track0().reversed, isFalse);
-
-      await reverseTrack0();
-      expect(track0().reversed, isTrue);
-      expect(repository.clear(), EngineResult.ok);
-      expect(track0().hasContent, isFalse);
-      expect(track0().reversed, isFalse);
-      for (var i = 0; i < 20 && !track0().hasContent; i++) {
-        repository.undo();
-        await Future<void>.delayed(Duration.zero);
-      }
-      expect(track0().hasContent, isTrue);
-      expect(track0().reversed, isFalse);
-    },
-    skip: skip,
-  );
+    }
+    expect(track0().hasContent, isTrue);
+    expect(track0().reversed, isFalse);
+  }, skip: skip);
 
   test(
     'a Session recall installs direction before the stopped commit: Play '

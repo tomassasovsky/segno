@@ -218,9 +218,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       // In a finally so the flag can never wedge true past this call: if
       // recovery itself blew up (a genuine bug escaping its guards), a
       // permanently-disabled record button must not be the second casualty.
-      _clearRecoveringWhenRenderSettles(
-        _performance.unrecoveredTakes.length,
-      );
+      _clearRecoveringWhenRenderSettles(_performance.unrecoveredTakes.length);
     }
   }
 
@@ -240,9 +238,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     try {
       await _performance.retryUnrecovered();
     } finally {
-      _clearRecoveringWhenRenderSettles(
-        _performance.unrecoveredTakes.length,
-      );
+      _clearRecoveringWhenRenderSettles(_performance.unrecoveredTakes.length);
     }
   }
 
@@ -309,10 +305,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       PerformanceRecordDone() => PerformanceRecordDone(newPath),
       PerformanceRecordPartial() => PerformanceRecordPartial(newPath),
       PerformanceRecordStoppedEarly(:final reason) =>
-        PerformanceRecordStoppedEarly(
-          newPath,
-          reason,
-        ),
+        PerformanceRecordStoppedEarly(newPath, reason),
     };
     _emit(
       PerformanceRecorderCompleted(
@@ -682,18 +675,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// ([PerformanceStopReason.volumeLost]). Whichever comes first wins; the
   /// pulled drive also fails the engine's next write, and that second stop
   /// is the one this guard swallows.
-  Future<void> _finishSelfStopped(PerfStopReason reason) => _stopEarly(
-    switch (reason) {
-      PerfStopReason.reserveReached => PerformanceStopReason.reserveReached,
-      PerfStopReason.slowStorage => PerformanceStopReason.slowStorage,
-      PerfStopReason.deviceChanged => PerformanceStopReason.deviceChanged,
-      PerfStopReason.writeFailed => PerformanceStopReason.diskFull,
-      PerfStopReason.idle => PerformanceStopReason.idle,
-      PerfStopReason.lengthLimit => PerformanceStopReason.lengthLimit,
-      // No reason published: the sidecar's `stopped_early` decides.
-      PerfStopReason.none || PerfStopReason.disarm => null,
-    },
-  );
+  Future<void> _finishSelfStopped(PerfStopReason reason) =>
+      _stopEarly(switch (reason) {
+        PerfStopReason.reserveReached => PerformanceStopReason.reserveReached,
+        PerfStopReason.slowStorage => PerformanceStopReason.slowStorage,
+        PerfStopReason.deviceChanged => PerformanceStopReason.deviceChanged,
+        PerfStopReason.writeFailed => PerformanceStopReason.diskFull,
+        PerfStopReason.idle => PerformanceStopReason.idle,
+        PerfStopReason.lengthLimit => PerformanceStopReason.lengthLimit,
+        // No reason published: the sidecar's `stopped_early` decides.
+        PerfStopReason.none || PerfStopReason.disarm => null,
+      });
 
   /// Ends the take at what it has, remembering [reason] (null leaves it to
   /// the sidecar's `stopped_early`).
@@ -733,10 +725,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       ),
     );
     _armedTicker?.cancel();
-    _armedTicker = Timer.periodic(
-      _armedTickInterval,
-      (_) => _emitArmedTick(),
-    );
+    _armedTicker = Timer.periodic(_armedTickInterval, (_) => _emitArmedTick());
   }
 
   /// Ends a take that could not be finalized or delivered on an idle that

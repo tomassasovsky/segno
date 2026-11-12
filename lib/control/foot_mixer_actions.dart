@@ -46,10 +46,7 @@ class FootMixerActions {
         tracks.where((track) => track.channel == cursor).firstOrNull?.channel ??
         tracks.firstOrNull?.channel;
     return project(
-      FootMixerSelection(
-        page: (channel ?? 0) ~/ 4,
-        channel: channel,
-      ),
+      FootMixerSelection(page: (channel ?? 0) ~/ 4, channel: channel),
     ).selection;
   }
 

@@ -123,9 +123,8 @@ void main() {
         for (final f in [...files]..sort()) 'Segno/Sessions/$id/$f',
       ]);
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/track1_lane0_L0.wav',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/track1_lane0_L0.wav')
+            .readAsBytesSync(),
         [2, 2],
       );
       expect(heldDuring.first, [
@@ -192,9 +191,8 @@ void main() {
 
       expect(drive.files, contains('Segno/Sessions/$id (2)/session.json'));
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/session.json',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/session.json')
+            .readAsBytesSync(),
         [9],
       );
     });
@@ -231,9 +229,8 @@ void main() {
       );
       expect(drive.files, ['Segno/Sessions/$id/session.json']);
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/session.json',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/session.json')
+            .readAsBytesSync(),
         [9],
       );
 
@@ -243,9 +240,8 @@ void main() {
       expect(drive.copies.last.policy, ConflictPolicy.replace);
       expect(drive.files, hasLength(files.length));
       expect(
-        File(
-          '${drive.mount}/Segno/Sessions/$id/session.json',
-        ).readAsBytesSync(),
+        File('${drive.mount}/Segno/Sessions/$id/session.json')
+            .readAsBytesSync(),
         [3, 3],
       );
       expect(cubit.state.backup, isA<LibraryBackupDone>());
@@ -382,9 +378,8 @@ void main() {
       cubit.setLocation(LibraryLocation.usb);
 
       expect(cubit.state.backups, backups);
-      verify(
-        () => sessions.listBackups('${drive.mount}/Segno/Sessions'),
-      ).called(1);
+      verify(() => sessions.listBackups('${drive.mount}/Segno/Sessions'))
+          .called(1);
 
       cubit.selectBackup('s-b');
       drive.announce();
@@ -410,9 +405,8 @@ void main() {
     test('Restore to Library adds the backup and shows it selected in '
         'Internal', () async {
       when(() => sessions.listBackups(any())).thenReturn(backups);
-      when(
-        () => sessions.restoreFrom(any()),
-      ).thenAnswer((_) async => 's-restored');
+      when(() => sessions.restoreFrom(any()))
+          .thenAnswer((_) async => 's-restored');
       final cubit = await selected();
       cubit
         ..setLocation(LibraryLocation.usb)
@@ -420,9 +414,8 @@ void main() {
 
       await cubit.restore();
 
-      verify(
-        () => sessions.restoreFrom('${drive.mount}/Segno/Sessions/s-a'),
-      ).called(1);
+      verify(() => sessions.restoreFrom('${drive.mount}/Segno/Sessions/s-a'))
+          .called(1);
       expect(cubit.state.location, LibraryLocation.internal);
       expect(cubit.state.restoredId, 's-restored');
       expect(cubit.state.selectedId, 's-restored');

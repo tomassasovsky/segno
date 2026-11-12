@@ -226,11 +226,7 @@ bool readoutSignatureEditable(PerformanceReadout readout) =>
 
 /// `1 ♛ GUITAR`, then the state, the bars, a small waveform and Done.
 class _PanelHeader extends StatelessWidget {
-  const new({
-    required this.readout,
-    required this.frame,
-    required this.onDone,
-  });
+  const new({required this.readout, required this.frame, required this.onDone});
 
   final PerformanceReadout readout;
   final ValueListenable<WaveformFrame> frame;
@@ -540,9 +536,7 @@ class _TempoCard extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: editable ? onTypeTempo : null,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  minHeight: kReadoutMinTarget,
-                ),
+                constraints: const BoxConstraints(minHeight: kReadoutMinTarget),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Opacity(
@@ -944,11 +938,7 @@ class _Choices extends StatelessWidget {
 /// One of the panel's choice sections: its label over rows of buttons, the
 /// rows and the buttons in them [gap] apart.
 class _ChoiceSection extends StatelessWidget {
-  const new({
-    required this.label,
-    required this.rows,
-    required this.gap,
-  });
+  const new({required this.label, required this.rows, required this.gap});
 
   final Widget label;
   final List<List<Widget>> rows;

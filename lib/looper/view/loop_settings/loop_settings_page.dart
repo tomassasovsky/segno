@@ -123,9 +123,7 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
         child: LoopEditScope(
           coordinator: _edits,
           child: CallbackShortcuts(
-            bindings: {
-              const SingleActivator(LogicalKeyboardKey.escape): _back,
-            },
+            bindings: {const SingleActivator(LogicalKeyboardKey.escape): _back},
             child: Focus(
               autofocus: true,
               child: Scaffold(

@@ -552,11 +552,7 @@ class _ParameterValue extends StatelessWidget {
                   ),
                 ),
                 AppText(
-                  controlValueReadout(
-                    context.l10n,
-                    parameter.target,
-                    value,
-                  ),
+                  controlValueReadout(context.l10n, parameter.target, value),
                   key: Key('external_value_${id}_label'),
                   style: TextStyle(
                     color: surface.textSecondary,

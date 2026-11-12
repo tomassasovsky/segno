@@ -54,9 +54,8 @@ void main() {
     timing = _MockTiming();
     when(() => tempo.state).thenReturn(const TempoState());
     when(() => playback.state).thenReturn(const PlaybackOptions());
-    when(
-      () => record.state,
-    ).thenReturn(const RecordOptionsViewState(options: RecordOptions()));
+    when(() => record.state)
+        .thenReturn(const RecordOptionsViewState(options: RecordOptions()));
     when(() => timing.state).thenReturn(const RecordTimingState());
   });
 

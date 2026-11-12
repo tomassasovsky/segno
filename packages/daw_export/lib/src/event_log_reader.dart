@@ -170,11 +170,7 @@ abstract final class EventLogReader {
 /// `docs/formats/performance-event-log-format.md`).
 class RawLogEntry {
   /// Creates a [RawLogEntry].
-  const new({
-    required this.frame,
-    required this.code,
-    required this.payload,
-  });
+  const new({required this.frame, required this.code, required this.payload});
 
   /// Frames elapsed since arm.
   final int frame;

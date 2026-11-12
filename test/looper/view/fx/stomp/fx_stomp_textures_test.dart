@@ -7,20 +7,17 @@ void main() {
   test('every tile the app paints is one the tool writes, at its scale', () {
     final tool = File('tool/stomp_textures.py').readAsStringSync();
     final scales = {
-      for (final m in RegExp(r"'(\w+)': (\d+(?:\.\d+)?)").allMatches(
-        RegExp(r'SCALES = \{([^}]*)\}').firstMatch(tool)!.group(1)!,
-      ))
+      for (final m in RegExp(
+        r"'(\w+)': (\d+(?:\.\d+)?)",
+      ).allMatches(RegExp(r'SCALES = \{([^}]*)\}').firstMatch(tool)!.group(1)!))
         m.group(1)!: double.parse(m.group(2)!),
     };
-    final finishes =
-        RegExp(
-              r"'(\w+)'",
-            )
-            .allMatches(
-              RegExp(r'FINISHES = \(([^)]*)\)').firstMatch(tool)!.group(1)!,
-            )
-            .map((m) => m.group(1)!)
-            .toSet();
+    final finishes = RegExp(r"'(\w+)'")
+        .allMatches(
+          RegExp(r'FINISHES = \(([^)]*)\)').firstMatch(tool)!.group(1)!,
+        )
+        .map((m) => m.group(1)!)
+        .toSet();
 
     expect(FxStompTextures.assets.keys.toSet(), finishes);
     expect(FxStompTextures.scales, scales);

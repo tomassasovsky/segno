@@ -387,9 +387,8 @@ class FxChannelFooter extends StatelessWidget {
                 key: const Key('fx_output_mono'),
                 label: l10n.fxChannelMono,
                 selected: mono,
-                onTap: () => onChannels(
-                  channels.copyWith(output: FxChannelOutput.mono),
-                ),
+                onTap: () =>
+                    onChannels(channels.copyWith(output: FxChannelOutput.mono)),
                 width: 99,
                 height: 64,
                 fontSize: 22,
@@ -436,12 +435,7 @@ class FxChannelFooter extends StatelessWidget {
 /// One captioned control of the footer, with an optional consequence line.
 class FxBlock extends StatelessWidget {
   /// Creates an [FxBlock].
-  const new({
-    required this.caption,
-    required this.child,
-    this.hint,
-    super.key,
-  });
+  const new({required this.caption, required this.child, this.hint, super.key});
 
   /// What the control is called.
   final String caption;

@@ -31,9 +31,8 @@ void main() {
     repository = _MockLooperRepository();
     settings = SettingsRepository(store: FakeKeyValueStore());
     stateController = StreamController<LooperState>.broadcast();
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => stateController.stream);
+    when(() => repository.looperState)
+        .thenAnswer((_) => stateController.stream);
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.lastEngineConfig).thenReturn(null);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
@@ -51,10 +50,7 @@ void main() {
 
   Widget wrap(Widget child) => BlocProvider<AudioSetupCubit>.value(
     value: cubit,
-    child: Directionality(
-      textDirection: TextDirection.ltr,
-      child: child,
-    ),
+    child: Directionality(textDirection: TextDirection.ltr, child: child),
   );
 
   testWidgets('nothing polls until a scope is mounted', (tester) async {

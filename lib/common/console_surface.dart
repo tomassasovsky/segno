@@ -96,11 +96,7 @@ Duration consoleMotion(BuildContext context) =>
 /// has nothing of its own in the tree, and nothing tappable.
 class ConsoleExpansion extends StatefulWidget {
   /// Creates a [ConsoleExpansion].
-  const new({
-    required this.expanded,
-    required this.child,
-    super.key,
-  });
+  const new({required this.expanded, required this.child, super.key});
 
   /// Whether [child] is showing.
   final bool expanded;
@@ -800,9 +796,8 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
         // Flutter's own word for this, not one of ours: every barrier in the
         // app should say the same thing to a reader, and this one is already
         // translated into every locale the framework ships.
-        dismissLabel: MaterialLocalizations.of(
-          context,
-        ).modalBarrierDismissLabel,
+        dismissLabel: MaterialLocalizations.of(context)
+            .modalBarrierDismissLabel,
       ),
       child: _CaptionButton(
         anchorKey: _anchorKey,
@@ -1878,11 +1873,7 @@ class ConsoleBanner extends StatelessWidget {
 /// A short, low-emphasis button — the banner's Cancel / Try again.
 class ConsoleSmallButton extends StatelessWidget {
   /// Creates a [ConsoleSmallButton].
-  const new({
-    required this.label,
-    required this.onPressed,
-    super.key,
-  });
+  const new({required this.label, required this.onPressed, super.key});
 
   /// Visible caption, and the announced label.
   final String label;
@@ -2720,15 +2711,12 @@ class ConsoleChooser extends StatelessWidget {
   /// The inset was being re-stated by every face that opened a grid; it
   /// belongs to the drawer, which is the thing that knows how far in its
   /// contents sit.
-  factory grid({
-    required bool open,
-    required Widget grid,
-    Key? key,
-  }) => ConsoleChooser(
-    key: key,
-    open: open,
-    children: [Padding(padding: gridInset, child: grid)],
-  );
+  factory grid({required bool open, required Widget grid, Key? key}) =>
+      ConsoleChooser(
+        key: key,
+        open: open,
+        children: [Padding(padding: gridInset, child: grid)],
+      );
 
   /// Whether the chooser is showing.
   final bool open;
@@ -3589,11 +3577,7 @@ class ConsoleDialogButton extends StatelessWidget {
 /// screen.
 class ConsoleDialogShell extends StatelessWidget {
   /// Creates a [ConsoleDialogShell].
-  const new({
-    required this.child,
-    this.width = defaultWidth,
-    super.key,
-  });
+  const new({required this.child, this.width = defaultWidth, super.key});
 
   /// The panel's contents, already laid out as rows.
   final Widget child;

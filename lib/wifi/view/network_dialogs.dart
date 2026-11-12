@@ -452,12 +452,7 @@ class _DetailsDialog extends StatelessWidget {
 /// One row of the details dialog: its name at the left, then a control, or a
 /// chevron when the whole row leads somewhere.
 class _DetailRow extends StatelessWidget {
-  const new({
-    required this.label,
-    this.trailing,
-    this.onTap,
-    super.key,
-  });
+  const new({required this.label, this.trailing, this.onTap, super.key});
 
   final String label;
   final Widget? trailing;
@@ -501,11 +496,7 @@ class _DetailRow extends StatelessWidget {
       excludeSemantics: true,
       child: LoopFocusable(
         onActivate: onTap,
-        child: InkWell(
-          canRequestFocus: false,
-          onTap: onTap,
-          child: row,
-        ),
+        child: InkWell(canRequestFocus: false, onTap: onTap, child: row),
       ),
     );
   }

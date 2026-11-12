@@ -152,16 +152,13 @@ class _PreviewNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return LibraryPreviewNotice(
-      switch (kind) {
-        _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
-        _PreviewNoticeKind.unsupportedVersion =>
-          l10n.sessionErrorUnsupportedVersion,
-        _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
-        _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
-      },
-      textKey: Key('library_preview_${kind.name}'),
-    );
+    return LibraryPreviewNotice(switch (kind) {
+      _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
+      _PreviewNoticeKind.unsupportedVersion =>
+        l10n.sessionErrorUnsupportedVersion,
+      _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
+      _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
+    }, textKey: Key('library_preview_${kind.name}'));
   }
 }
 
@@ -642,10 +639,8 @@ class LibraryPreviewFooter extends StatelessWidget {
                   width: 235,
                   tone: LoopButtonTone.accent,
                   label: l10n.libraryReturnToTracks,
-                  onTap: () => Navigator.popUntil(
-                    context,
-                    (route) => route.isFirst,
-                  ),
+                  onTap: () =>
+                      Navigator.popUntil(context, (route) => route.isFirst),
                 )
               : Opacity(
                   // Inert while another session action runs, and drawn so.

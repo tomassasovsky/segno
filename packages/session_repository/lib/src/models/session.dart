@@ -369,19 +369,14 @@ class SessionTrack {
 @immutable
 class SessionLaneChain {
   /// Creates a [SessionLaneChain].
-  const new({
-    required this.channel,
-    required this.lane,
-    required this.encoded,
-  });
+  const new({required this.channel, required this.lane, required this.encoded});
 
   /// Projects a [SessionLaneChain] from a decoded JSON map.
-  factory fromJson(Map<String, dynamic> json) =>
-      SessionLaneChain(
-        channel: (json['channel'] as num).toInt(),
-        lane: (json['lane'] as num).toInt(),
-        encoded: json['encoded'] as String,
-      );
+  factory fromJson(Map<String, dynamic> json) => SessionLaneChain(
+    channel: (json['channel'] as num).toInt(),
+    lane: (json['lane'] as num).toInt(),
+    encoded: json['encoded'] as String,
+  );
 
   /// Track channel this chain belongs to.
   final int channel;
@@ -427,11 +422,10 @@ class SessionTrackChain {
   const new({required this.channel, required this.encoded});
 
   /// Projects a [SessionTrackChain] from a decoded JSON map.
-  factory fromJson(Map<String, dynamic> json) =>
-      SessionTrackChain(
-        channel: (json['channel'] as num).toInt(),
-        encoded: json['encoded'] as String,
-      );
+  factory fromJson(Map<String, dynamic> json) => SessionTrackChain(
+    channel: (json['channel'] as num).toInt(),
+    encoded: json['encoded'] as String,
+  );
 
   /// Track channel whose stereo bus this chain sits on.
   final int channel;

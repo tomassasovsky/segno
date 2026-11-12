@@ -123,15 +123,12 @@ void main() {
   });
 
   test('a saved history never holds a Bounce', () {
-    const history = TrackHistory(
-      [HistoryEntry(HistoryKind.layer), HistoryEntry(HistoryKind.bounce)],
-      undoCount: 2,
-    );
+    const history = TrackHistory([
+      HistoryEntry(HistoryKind.layer),
+      HistoryEntry(HistoryKind.bounce),
+    ], undoCount: 2);
     expect(history.malformation, contains('Bounce'));
-    const clean = TrackHistory(
-      [HistoryEntry(HistoryKind.layer)],
-      undoCount: 1,
-    );
+    const clean = TrackHistory([HistoryEntry(HistoryKind.layer)], undoCount: 1);
     expect(clean.malformation, isNull);
   });
 }

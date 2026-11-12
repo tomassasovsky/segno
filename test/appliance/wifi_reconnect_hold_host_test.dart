@@ -65,11 +65,10 @@ void main() {
       addTearDown(backingStates.close);
       wifi = _MockWifiRepository();
       holds = [];
-      when(
-        () => wifi.holdReconnects(hold: any(named: 'hold')),
-      ).thenAnswer((invocation) async {
-        holds.add(invocation.namedArguments[#hold] as bool);
-      });
+      when(() => wifi.holdReconnects(hold: any(named: 'hold')))
+          .thenAnswer((invocation) async {
+            holds.add(invocation.namedArguments[#hold] as bool);
+          });
       addTearDown(looperStates.close);
       addTearDown(performanceStates.close);
 
@@ -112,9 +111,7 @@ void main() {
       expect(holds, [false, true, false]);
     });
 
-    testWidgets('holds while a performance recording is armed', (
-      tester,
-    ) async {
+    testWidgets('holds while a performance recording is armed', (tester) async {
       await pump(tester);
       performanceStates.add(
         const PerformanceRecorderArmed(elapsed: Duration.zero, overrun: false),
@@ -144,13 +141,12 @@ void main() {
     ) async {
       await pump(tester);
       var calls = 0;
-      when(
-        () => wifi.holdReconnects(hold: any(named: 'hold')),
-      ).thenAnswer((invocation) async {
-        calls++;
-        if (calls == 1) throw StateError('no /run/segno');
-        holds.add(invocation.namedArguments[#hold] as bool);
-      });
+      when(() => wifi.holdReconnects(hold: any(named: 'hold')))
+          .thenAnswer((invocation) async {
+            calls++;
+            if (calls == 1) throw StateError('no /run/segno');
+            holds.add(invocation.namedArguments[#hold] as bool);
+          });
       looperStates.add(_playing);
       await tester.pump();
       looperStates.add(const LooperState());

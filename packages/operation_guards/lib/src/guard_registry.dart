@@ -95,11 +95,7 @@ class GuardScope {
 @immutable
 class ActiveOperation {
   /// Creates an [ActiveOperation].
-  const new({
-    required this.kind,
-    required this.scope,
-    required this.purpose,
-  });
+  const new({required this.kind, required this.scope, required this.purpose});
 
   /// What the operation is.
   final GuardKind kind;

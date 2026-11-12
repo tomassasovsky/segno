@@ -102,11 +102,8 @@ void setSegnoFxCatalogueForTest(FxCatalogue? catalogue) =>
 Future<void> openFx({FxDestination? destination, VoidCallback? onStage}) =>
     _pushOnce(segnoFxRouteName, () async {
       final catalogue = await segnoFxCatalogue();
-      return (_) => FxPage(
-        initial: destination,
-        catalogue: catalogue,
-        onStage: onStage,
-      );
+      return (_) =>
+          FxPage(initial: destination, catalogue: catalogue, onStage: onStage);
     });
 
 /// Pushes the page [page] builds onto the root navigator under [name], once:

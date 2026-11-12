@@ -9,10 +9,7 @@ import 'package:session_repository/session_repository.dart';
 class SessionBackingPort {
   /// Joins the [_player] (prepared order and loaded item) and the [_settings]
   /// owners (mix, End and click pan).
-  const new({
-    required this._player,
-    required this._settings,
-  });
+  const new({required this._player, required this._settings});
 
   final BackingPlayer _player;
   final BackingSettings _settings;

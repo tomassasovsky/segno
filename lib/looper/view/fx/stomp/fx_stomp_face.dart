@@ -144,11 +144,7 @@ FxStompFace? fxStompFace(AppLocalizations l10n, FxPedalPicture pedal) {
   // A look missing from the table draws no pedal; a test keeps the table
   // complete.
   if (spec == null) return null;
-  final knobs = fxStompKnobs(
-    look,
-    controls,
-    room: spec.face.maxKnobs,
-  );
+  final knobs = fxStompKnobs(look, controls, room: spec.face.maxKnobs);
   final name = pedal.name;
   return FxStompFace(
     spec: spec,

@@ -526,11 +526,7 @@ class LoopFieldLabel extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        heading,
-        const SizedBox(height: 10),
-        tagText,
-      ],
+      children: [heading, const SizedBox(height: 10), tagText],
     );
   }
 }

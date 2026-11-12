@@ -53,11 +53,7 @@ enum LibraryDialogRole {
   /// A chooser row, the panel's full inner width.
   choice(width: 878, tone: LoopButtonTone.outlined);
 
-  new({
-    required this.width,
-    required this.tone,
-    this.destructive = false,
-  });
+  new({required this.width, required this.tone, this.destructive = false});
 
   /// The button's width.
   final double width;

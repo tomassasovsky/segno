@@ -88,11 +88,7 @@ class InterfaceInputInfo {
 @immutable
 class PhantomSwitchInfo {
   /// Creates a [PhantomSwitchInfo].
-  const new({
-    required this.first,
-    required this.last,
-    required this.on,
-  });
+  const new({required this.first, required this.last, required this.on});
 
   /// The first input it powers, 0-based.
   final int first;

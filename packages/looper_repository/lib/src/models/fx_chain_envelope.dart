@@ -68,11 +68,7 @@ class FxChainMeta extends Equatable {
 /// engine never consumes [chainEnabled] or [meta].
 class FxChainEnvelope extends Equatable {
   /// Creates an [FxChainEnvelope].
-  const new({
-    this.chainEnabled = true,
-    this.meta,
-    this.entries = const [],
-  });
+  const new({this.chainEnabled = true, this.meta, this.entries = const []});
 
   /// Whether the whole chain is engaged (R15). Disabled == the chain renders
   /// dry while keeping every per-entry flag intact.

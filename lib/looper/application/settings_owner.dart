@@ -419,10 +419,7 @@ class SettingsOwner<V extends Object, C> {
 
   Future<T> _queue<T>(Future<T> Function() operation) {
     final result = _tail.then((_) => operation());
-    _tail = result.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
 
@@ -549,9 +546,7 @@ class SettingsOwner<V extends Object, C> {
       } on Object catch (error) {
         // A read that fails after the lifetime moved on reports nothing.
         if (!current()) return const SettingOutcome(SettingStatus.superseded);
-        return _report(
-          SettingOutcome(SettingStatus.rejected, error: error),
-        );
+        return _report(SettingOutcome(SettingStatus.rejected, error: error));
       }
       if (!current()) return const SettingOutcome(SettingStatus.superseded);
       try {

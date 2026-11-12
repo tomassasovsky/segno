@@ -88,11 +88,7 @@ abstract final class WavCodec {
   /// Decodes a 32-bit float WAV byte stream. Throws [FormatException] for a
   /// malformed file or an unsupported (non 32-bit-float) format.
   static WavData decodeFloat32(Uint8List bytes) {
-    final bd = ByteData.view(
-      bytes.buffer,
-      bytes.offsetInBytes,
-      bytes.length,
-    );
+    final bd = ByteData.view(bytes.buffer, bytes.offsetInBytes, bytes.length);
     if (bytes.length < 12 ||
         _readTag(bytes, 0) != 'RIFF' ||
         _readTag(bytes, 8) != 'WAVE') {

@@ -188,9 +188,7 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
           child: switch (values) {
             final it when it.locked => LoopNote(l10n.routingLockedInputs),
             _ when recorded.isEmpty => LoopNote(l10n.routingNoInputs),
-            _ when available == 0 => LoopNote(
-              l10n.routingTrackFull(kMaxLanes),
-            ),
+            _ when available == 0 => LoopNote(l10n.routingTrackFull(kMaxLanes)),
             _ => const SizedBox.shrink(),
           },
         ),

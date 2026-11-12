@@ -15,11 +15,8 @@ import 'package:settings_repository/settings_repository.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository;
 
-BuiltInEffect _drive(String slotId, {List<double>? params}) => BuiltInEffect(
-  type: TrackEffectType.drive,
-  slotId: slotId,
-  params: params,
-);
+BuiltInEffect _drive(String slotId, {List<double>? params}) =>
+    BuiltInEffect(type: TrackEffectType.drive, slotId: slotId, params: params);
 
 void main() {
   late _MockLooperRepository looper;
@@ -52,10 +49,7 @@ void main() {
       ],
     };
     masterChain = [_drive('mx-1')];
-    tracks = [
-      const Track(volume: 0.5),
-      const Track(channel: 1),
-    ];
+    tracks = [const Track(volume: 0.5), const Track(channel: 1)];
     inputs = InputSetup(pairs: const {0: 0.2}, pan: const {2: -0.4});
     mix = MixSettingsSnapshot(
       trackLevels: const {0: 0.5},
@@ -83,9 +77,8 @@ void main() {
           channel: const FxChainEnvelope(),
       },
     );
-    when(
-      () => looper.monitorEffects(any()),
-    ).thenAnswer((i) => monitorChains[i.positionalArguments[0]] ?? const []);
+    when(() => looper.monitorEffects(any()))
+        .thenAnswer((i) => monitorChains[i.positionalArguments[0]] ?? const []);
     when(() => looper.laneEffects(any(), any())).thenAnswer(
       (i) =>
           laneChains[(
@@ -94,9 +87,8 @@ void main() {
           )] ??
           const [],
     );
-    when(
-      () => looper.trackEffects(any()),
-    ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
+    when(() => looper.trackEffects(any()))
+        .thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
     when(() => looper.outputEffects(0)).thenAnswer((_) => masterChain);
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.outputChainEnabled(any())).thenReturn(true);
@@ -192,9 +184,7 @@ void main() {
     });
 
     test('Click needs a confirmed owner, including silent zero, not a bus', () {
-      when(() => looper.state).thenAnswer(
-        (_) => const LooperState(),
-      );
+      when(() => looper.state).thenAnswer((_) => const LooperState());
       const target = ClickVolumeTarget();
       expect(
         looper.availableValueTargets().whereType<ClickVolumeTarget>(),
@@ -205,9 +195,7 @@ void main() {
       expect(
         looper
             .availableValueTargets(
-              owned: const OwnedValueSnapshots(
-                clickVolume: 0,
-              ),
+              owned: const OwnedValueSnapshots(clickVolume: 0),
             )
             .whereType<ClickVolumeTarget>(),
         [target],
@@ -215,36 +203,28 @@ void main() {
       expect(
         looper.valueTargetResolves(
           target,
-          owned: const OwnedValueSnapshots(
-            clickVolume: 0,
-          ),
+          owned: const OwnedValueSnapshots(clickVolume: 0),
         ),
         isTrue,
       );
       expect(
         looper.readValueTarget(
           target,
-          owned: const OwnedValueSnapshots(
-            clickVolume: 0,
-          ),
+          owned: const OwnedValueSnapshots(clickVolume: 0),
         ),
         0,
       );
       expect(
         looper.readValueTarget(
           target,
-          owned: const OwnedValueSnapshots(
-            clickVolume: 1,
-          ),
+          owned: const OwnedValueSnapshots(clickVolume: 1),
         ),
         0.5,
       );
       expect(
         looper.readValueTarget(
           target,
-          owned: const OwnedValueSnapshots(
-            clickVolume: 2,
-          ),
+          owned: const OwnedValueSnapshots(clickVolume: 2),
         ),
         1,
       );
@@ -266,9 +246,7 @@ void main() {
       expect(
         looper
             .availableValueTargets(
-              owned: const OwnedValueSnapshots(
-                clickModeSnapshot: off,
-              ),
+              owned: const OwnedValueSnapshots(clickModeSnapshot: off),
             )
             .whereType<ClickModeValueTarget>(),
         [target],
@@ -276,36 +254,28 @@ void main() {
       expect(
         looper.valueTargetResolves(
           target,
-          owned: const OwnedValueSnapshots(
-            clickModeSnapshot: off,
-          ),
+          owned: const OwnedValueSnapshots(clickModeSnapshot: off),
         ),
         isTrue,
       );
       expect(
         looper.readValueTarget(
           target,
-          owned: const OwnedValueSnapshots(
-            clickModeSnapshot: off,
-          ),
+          owned: const OwnedValueSnapshots(clickModeSnapshot: off),
         ),
         0,
       );
       expect(
         looper.valueTargetResolves(
           target,
-          owned: const OwnedValueSnapshots(
-            clickModeSnapshot: locked,
-          ),
+          owned: const OwnedValueSnapshots(clickModeSnapshot: locked),
         ),
         isTrue,
       );
       expect(
         looper.readValueTarget(
           target,
-          owned: const OwnedValueSnapshots(
-            clickModeSnapshot: locked,
-          ),
+          owned: const OwnedValueSnapshots(clickModeSnapshot: locked),
         ),
         1 / 3,
       );
@@ -330,9 +300,7 @@ void main() {
       expect(
         looper
             .availableValueTargets(
-              owned: OwnedValueSnapshots(
-                recordStartSnapshot: off,
-              ),
+              owned: OwnedValueSnapshots(recordStartSnapshot: off),
             )
             .whereType<CountInValueTarget>(),
         [target],
@@ -340,36 +308,28 @@ void main() {
       expect(
         looper.valueTargetResolves(
           target,
-          owned: OwnedValueSnapshots(
-            recordStartSnapshot: off,
-          ),
+          owned: OwnedValueSnapshots(recordStartSnapshot: off),
         ),
         isTrue,
       );
       expect(
         looper.readValueTarget(
           target,
-          owned: OwnedValueSnapshots(
-            recordStartSnapshot: off,
-          ),
+          owned: OwnedValueSnapshots(recordStartSnapshot: off),
         ),
         0,
       );
       expect(
         looper.valueTargetResolves(
           target,
-          owned: OwnedValueSnapshots(
-            recordStartSnapshot: locked,
-          ),
+          owned: OwnedValueSnapshots(recordStartSnapshot: locked),
         ),
         isTrue,
       );
       expect(
         looper.readValueTarget(
           target,
-          owned: OwnedValueSnapshots(
-            recordStartSnapshot: locked,
-          ),
+          owned: OwnedValueSnapshots(recordStartSnapshot: locked),
         ),
         1,
       );
@@ -388,9 +348,7 @@ void main() {
       expect(looper.readValueTarget(const TrackDecayTarget(0)), isNull);
       final offered = looper
           .availableValueTargets(
-            owned: OwnedValueSnapshots(
-              decaySnapshot: snapshot,
-            ),
+            owned: OwnedValueSnapshots(decaySnapshot: snapshot),
           )
           .whereType<DecayValueTarget>()
           .toList();
@@ -402,54 +360,42 @@ void main() {
       expect(
         looper.valueTargetResolves(
           const TrackDecayTarget(7),
-          owned: OwnedValueSnapshots(
-            decaySnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(decaySnapshot: snapshot),
         ),
         isTrue,
       );
       expect(
         looper.valueTargetResolves(
           const TrackDecayTarget(8),
-          owned: OwnedValueSnapshots(
-            decaySnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(decaySnapshot: snapshot),
         ),
         isFalse,
       );
       expect(
         looper.readValueTarget(
           const DefaultDecayTarget(),
-          owned: OwnedValueSnapshots(
-            decaySnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(decaySnapshot: snapshot),
         ),
         0.5,
       );
       expect(
         looper.readValueTarget(
           const TrackDecayTarget(0),
-          owned: OwnedValueSnapshots(
-            decaySnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(decaySnapshot: snapshot),
         ),
         0,
       );
       expect(
         looper.readValueTarget(
           const TrackDecayTarget(1),
-          owned: OwnedValueSnapshots(
-            decaySnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(decaySnapshot: snapshot),
         ),
         0.5,
       );
       expect(
         looper.readValueTarget(
           const TrackDecayTarget(7),
-          owned: OwnedValueSnapshots(
-            decaySnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(decaySnapshot: snapshot),
         ),
         0.8,
       );
@@ -468,9 +414,7 @@ void main() {
       expect(looper.readValueTarget(const TrackFadeTarget(0)), isNull);
       final offered = looper
           .availableValueTargets(
-            owned: OwnedValueSnapshots(
-              fadeDurations: durations,
-            ),
+            owned: OwnedValueSnapshots(fadeDurations: durations),
           )
           .whereType<FadeValueTarget>()
           .toList();
@@ -481,9 +425,7 @@ void main() {
       expect(
         looper.valueTargetResolves(
           const TrackFadeTarget(8),
-          owned: OwnedValueSnapshots(
-            fadeDurations: durations,
-          ),
+          owned: OwnedValueSnapshots(fadeDurations: durations),
         ),
         isFalse,
       );
@@ -497,9 +439,7 @@ void main() {
         expect(
           looper.readValueTarget(
             target,
-            owned: OwnedValueSnapshots(
-              fadeDurations: durations,
-            ),
+            owned: OwnedValueSnapshots(fadeDurations: durations),
           ),
           travel,
         );
@@ -519,9 +459,7 @@ void main() {
       expect(looper.readValueTarget(const TrackOneShotTarget(0)), isNull);
       final offered = looper
           .availableValueTargets(
-            owned: OwnedValueSnapshots(
-              oneShotSnapshot: snapshot,
-            ),
+            owned: OwnedValueSnapshots(oneShotSnapshot: snapshot),
           )
           .whereType<OneShotValueTarget>()
           .toList();
@@ -533,36 +471,28 @@ void main() {
       expect(
         looper.valueTargetResolves(
           const TrackOneShotTarget(8),
-          owned: OwnedValueSnapshots(
-            oneShotSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(oneShotSnapshot: snapshot),
         ),
         isFalse,
       );
       expect(
         looper.readValueTarget(
           const DefaultOneShotTarget(),
-          owned: OwnedValueSnapshots(
-            oneShotSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(oneShotSnapshot: snapshot),
         ),
         1,
       );
       expect(
         looper.readValueTarget(
           const TrackOneShotTarget(0),
-          owned: OwnedValueSnapshots(
-            oneShotSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(oneShotSnapshot: snapshot),
         ),
         0,
       );
       expect(
         looper.readValueTarget(
           const TrackOneShotTarget(1),
-          owned: OwnedValueSnapshots(
-            oneShotSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(oneShotSnapshot: snapshot),
         ),
         1,
       );
@@ -586,9 +516,7 @@ void main() {
       );
       final offered = looper
           .availableValueTargets(
-            owned: OwnedValueSnapshots(
-              recordLengthSnapshot: snapshot,
-            ),
+            owned: OwnedValueSnapshots(recordLengthSnapshot: snapshot),
           )
           .whereType<RecordLengthValueTarget>()
           .toList();
@@ -601,45 +529,35 @@ void main() {
       expect(
         looper.valueTargetResolves(
           last,
-          owned: OwnedValueSnapshots(
-            recordLengthSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(recordLengthSnapshot: snapshot),
         ),
         isTrue,
       );
       expect(
         looper.valueTargetResolves(
           const TrackRecordLengthTarget(8),
-          owned: OwnedValueSnapshots(
-            recordLengthSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(recordLengthSnapshot: snapshot),
         ),
         isFalse,
       );
       expect(
         looper.readValueTarget(
           defaults,
-          owned: OwnedValueSnapshots(
-            recordLengthSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(recordLengthSnapshot: snapshot),
         ),
         0,
       );
       expect(
         looper.readValueTarget(
           first,
-          owned: OwnedValueSnapshots(
-            recordLengthSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(recordLengthSnapshot: snapshot),
         ),
         1 / 64,
       );
       expect(
         looper.readValueTarget(
           last,
-          owned: OwnedValueSnapshots(
-            recordLengthSnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(recordLengthSnapshot: snapshot),
         ),
         1,
       );
@@ -654,9 +572,7 @@ void main() {
       expect(
         looper.readValueTarget(
           first,
-          owned: OwnedValueSnapshots(
-            recordLengthSnapshot: multi,
-          ),
+          owned: OwnedValueSnapshots(recordLengthSnapshot: multi),
         ),
         4 / 64,
       );
@@ -757,9 +673,7 @@ void main() {
         expect(looper.availableValueTargets(), isNot(contains(defaultTarget)));
         expect(looper.valueTargetResolves(trackTarget), isFalse);
         final offered = looper.availableValueTargets(
-          owned: OwnedValueSnapshots(
-            recordTimingSnapshot: timing,
-          ),
+          owned: OwnedValueSnapshots(recordTimingSnapshot: timing),
         );
         expect(offered.whereType<RecordTimingValueTarget>(), hasLength(9));
         expect(offered, contains(defaultTarget));
@@ -767,9 +681,7 @@ void main() {
         expect(
           looper.valueTargetResolves(
             trackTarget,
-            owned: OwnedValueSnapshots(
-              recordTimingSnapshot: timing,
-            ),
+            owned: OwnedValueSnapshots(recordTimingSnapshot: timing),
           ),
           isTrue,
           reason:
@@ -778,18 +690,14 @@ void main() {
         expect(
           looper.readValueTarget(
             defaultTarget,
-            owned: OwnedValueSnapshots(
-              recordTimingSnapshot: timing,
-            ),
+            owned: OwnedValueSnapshots(recordTimingSnapshot: timing),
           ),
           2 / 6,
         );
         expect(
           looper.readValueTarget(
             trackTarget,
-            owned: OwnedValueSnapshots(
-              recordTimingSnapshot: timing,
-            ),
+            owned: OwnedValueSnapshots(recordTimingSnapshot: timing),
           ),
           0,
           reason: 'explicit Immediately is not inheritance',
@@ -797,18 +705,14 @@ void main() {
         expect(
           looper.readValueTarget(
             const TrackRecordTimingTarget(6),
-            owned: OwnedValueSnapshots(
-              recordTimingSnapshot: timing,
-            ),
+            owned: OwnedValueSnapshots(recordTimingSnapshot: timing),
           ),
           2 / 6,
         );
         expect(
           looper.readValueTarget(
             const TrackRecordTimingTarget(8),
-            owned: OwnedValueSnapshots(
-              recordTimingSnapshot: timing,
-            ),
+            owned: OwnedValueSnapshots(recordTimingSnapshot: timing),
           ),
           isNull,
         );

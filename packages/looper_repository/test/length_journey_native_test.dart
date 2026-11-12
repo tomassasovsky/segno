@@ -76,55 +76,51 @@ void main() {
     return repository.state.tracks[0];
   }
 
-  test(
-    'Divide bakes the passes into the kept half; Peel then has nothing to '
-    'remove until Undo restores the full length and its layers',
-    () async {
-      callback = Timer.periodic(
-        const Duration(milliseconds: 1),
-        (_) => engine.pump(frames: 0),
-      );
-      final subscription = repository.looperState.listen((_) {});
-      addTearDown(subscription.cancel);
-      var track = await settle((t) => t.layers == 3);
-      expect(track.layers, 3);
-      expect(engine.exportTrack(0), everyElement(closeTo(1, 1e-6)));
+  test('Divide bakes the passes into the kept half; Peel then has nothing to '
+      'remove until Undo restores the full length and its layers', () async {
+    callback = Timer.periodic(
+      const Duration(milliseconds: 1),
+      (_) => engine.pump(frames: 0),
+    );
+    final subscription = repository.looperState.listen((_) {});
+    addTearDown(subscription.cancel);
+    var track = await settle((t) => t.layers == 3);
+    expect(track.layers, 3);
+    expect(engine.exportTrack(0), everyElement(closeTo(1, 1e-6)));
 
-      // Divide: the sole track re-clocks to its last half.
-      expect(
-        await repository.editLength(channel: 0, edit: LengthEdit.lastHalf),
-        EngineResult.ok,
-      );
-      track = await settle((t) => t.lengthFrames == 64);
-      expect(track.lengthFrames, 64);
-      expect(engine.snapshot().masterLengthFrames, 64);
-      expect(engine.exportTrack(0), everyElement(closeTo(1, 1e-6)));
-      // The kept half is one image: no overdub layer sits above the edit.
-      expect(track.layers, 1);
-      expect(track.canPeel, isFalse);
-      expect(repository.peel(), isNot(EngineResult.ok));
+    // Divide: the sole track re-clocks to its last half.
+    expect(
+      await repository.editLength(channel: 0, edit: LengthEdit.lastHalf),
+      EngineResult.ok,
+    );
+    track = await settle((t) => t.lengthFrames == 64);
+    expect(track.lengthFrames, 64);
+    expect(engine.snapshot().masterLengthFrames, 64);
+    expect(engine.exportTrack(0), everyElement(closeTo(1, 1e-6)));
+    // The kept half is one image: no overdub layer sits above the edit.
+    expect(track.layers, 1);
+    expect(track.canPeel, isFalse);
+    expect(repository.peel(), isNot(EngineResult.ok));
 
-      // Undo puts back the full length with both passes.
-      expect(repository.undo(), EngineResult.ok);
-      track = await settle((t) => t.lengthFrames == 128);
-      expect(track.lengthFrames, 128);
-      expect(track.layers, 3);
-      expect(engine.snapshot().masterLengthFrames, 128);
+    // Undo puts back the full length with both passes.
+    expect(repository.undo(), EngineResult.ok);
+    track = await settle((t) => t.lengthFrames == 128);
+    expect(track.lengthFrames, 128);
+    expect(track.layers, 3);
+    expect(engine.snapshot().masterLengthFrames, 128);
 
-      // Peel removes the newest pass; Undo and Redo move it like any layer.
-      expect(repository.peel(), EngineResult.ok);
-      expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
-      expect(repository.undo(), EngineResult.ok);
-      track = await settle((t) => t.layers == 3);
-      expect(engine.exportTrack(0), everyElement(closeTo(1, 1e-6)));
-      expect(repository.redo(), EngineResult.ok);
-      track = await settle((t) => t.layers == 2);
-      expect(track.layers, 2);
-      expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
-      // The Divide was retired from Redo by the Peel: Redo has no length to
-      // put back, and the track keeps its full length.
-      expect(track.lengthFrames, 128);
-    },
-    skip: skip,
-  );
+    // Peel removes the newest pass; Undo and Redo move it like any layer.
+    expect(repository.peel(), EngineResult.ok);
+    expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
+    expect(repository.undo(), EngineResult.ok);
+    track = await settle((t) => t.layers == 3);
+    expect(engine.exportTrack(0), everyElement(closeTo(1, 1e-6)));
+    expect(repository.redo(), EngineResult.ok);
+    track = await settle((t) => t.layers == 2);
+    expect(track.layers, 2);
+    expect(engine.exportTrack(0), everyElement(closeTo(.75, 1e-6)));
+    // The Divide was retired from Redo by the Peel: Redo has no length to
+    // put back, and the track keeps its full length.
+    expect(track.lengthFrames, 128);
+  }, skip: skip);
 }

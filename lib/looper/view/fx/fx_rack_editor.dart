@@ -136,10 +136,8 @@ class FxRackEditor extends StatelessWidget {
             top: 32,
             child: _RackActions(
               enabled: group.isOn,
-              onToggle: () => edits.setGroupEnabled(
-                fxGroupId(group),
-                enabled: !group.isOn,
-              ),
+              onToggle: () =>
+                  edits.setGroupEnabled(fxGroupId(group), enabled: !group.isOn),
               onOptions: onOptions,
               onSavePreset: onSavePreset,
               onAddEffect: onAddEffect,

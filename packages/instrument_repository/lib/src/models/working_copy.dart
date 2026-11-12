@@ -16,10 +16,7 @@ enum AddRefusal {
 /// Immutable; each edit returns the next copy for the owner to write.
 class InstrumentsWorkingCopy extends Equatable {
   /// Creates an [InstrumentsWorkingCopy].
-  const new({
-    this.instruments = const [],
-    this.tombstones = const [],
-  });
+  const new({this.instruments = const [], this.tombstones = const []});
 
   /// Decodes [json]; throws [FormatException] when it is malformed or two
   /// entries claim one slot or id.

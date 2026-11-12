@@ -62,8 +62,7 @@ class _MockTransportClockCubit extends MockCubit<TransportClockState>
 class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
     implements OutputLevelCubit;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
@@ -148,9 +147,8 @@ void main() {
     when(() => repository.meters).thenReturn(const MeterLevels());
     when(() => repository.meterLevels).thenAnswer((_) => meterLevels.stream);
     when(() => repository.playhead).thenReturn(const Playhead());
-    when(
-      () => repository.playheads,
-    ).thenAnswer((_) => const Stream<Playhead>.empty());
+    when(() => repository.playheads)
+        .thenAnswer((_) => const Stream<Playhead>.empty());
     when(() => repository.fxReplayConfirmed).thenAnswer(
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
@@ -166,18 +164,14 @@ void main() {
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     for (final stub in [
       () => repository.record(channel: any(named: 'channel')),
       () => repository.play(channel: any(named: 'channel')),
@@ -253,13 +247,11 @@ void main() {
     when(session.refreshSessions).thenAnswer((_) async {});
     when(() => session.saveAs(any())).thenAnswer((_) async {});
     performanceRecorder = _MockPerformanceRecorderCubit();
-    when(
-      () => performanceRecorder.state,
-    ).thenReturn(const PerformanceRecorderIdle());
+    when(() => performanceRecorder.state)
+        .thenReturn(const PerformanceRecorderIdle());
     when(performanceRecorder.toggleArm).thenAnswer((_) async {});
-    when(
-      () => performanceRecorder.renameCompletedCapture(any()),
-    ).thenAnswer((_) async {});
+    when(() => performanceRecorder.renameCompletedCapture(any()))
+        .thenAnswer((_) async {});
   });
 
   /// Sets the live levels the meters read: the starting levels for a pump,
@@ -532,9 +524,7 @@ void main() {
       tester,
     ) async {
       seed(
-        const LooperState(
-          tracks: [Track(), Track(channel: 1, pending: true)],
-        ),
+        const LooperState(tracks: [Track(), Track(channel: 1, pending: true)]),
       );
       await pump(tester);
       notices.showOnTrack(1, refused());
@@ -701,19 +691,16 @@ void main() {
       ),
     );
     when(() => repository.trackMuted(0)).thenReturn(false);
-    when(
-      () => repository.setMute(muted: true),
-    ).thenReturn(EngineResult.invalid);
-    when(
-      () => repository.setTunerInput(input: any(named: 'input')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.setMute(muted: true))
+        .thenReturn(EngineResult.invalid);
+    when(() => repository.setTunerInput(input: any(named: 'input')))
+        .thenReturn(EngineResult.ok);
     when(() => repository.laneMuted(any(), any())).thenReturn(false);
     when(() => repository.fxRecipesSettled).thenReturn(true);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
     when(() => repository.laneChainEnabled(any(), any())).thenReturn(true);
-    when(
-      () => repository.laneChainInheritedFrom(any(), any()),
-    ).thenReturn(const []);
+    when(() => repository.laneChainInheritedFrom(any(), any()))
+        .thenReturn(const []);
     await pump(tester);
     control.setMode(InteractionMode.mixer);
     await tester.pump();
@@ -839,14 +826,11 @@ void main() {
       pin(tester);
       seed(
         const LooperState(
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-          ],
+          tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
         ),
       );
-      when(
-        () => repository.toggleReverse(channel: any(named: 'channel')),
-      ).thenAnswer((_) async => EngineResult.invalid);
+      when(() => repository.toggleReverse(channel: any(named: 'channel')))
+          .thenAnswer((_) async => EngineResult.invalid);
       await pump(tester);
       control.setMode(InteractionMode.reverse);
       await tester.pump();
@@ -1077,9 +1061,7 @@ void main() {
     });
   }
 
-  testWidgets('a refused assignment is named in its notice', (
-    tester,
-  ) async {
+  testWidgets('a refused assignment is named in its notice', (tester) async {
     tester.view
       ..physicalSize = const Size(1920, 1080)
       ..devicePixelRatio = 1;
@@ -1090,9 +1072,8 @@ void main() {
         tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
       ),
     );
-    when(
-      () => repository.undo(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.invalid);
+    when(() => repository.undo(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.invalid);
     const undo = TrackOperationAction(
       operation: TrackOperation.undo,
       scope: FixedTrackScope(0),
@@ -1119,9 +1100,7 @@ void main() {
     expect(
       said.titles,
       contains(
-        l10n.assignedActionRefused(
-          controlActionLabel(l10n, const [], undo),
-        ),
+        l10n.assignedActionRefused(controlActionLabel(l10n, const [], undo)),
       ),
     );
     expect(control.state.assignedActionFailure, 1);
@@ -1142,12 +1121,9 @@ void main() {
         tracks: [Track()],
       ),
     );
-    when(
-      () => repository.setTunerInput(input: any(named: 'input')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setTunerMute(any()),
-    ).thenReturn(EngineResult.invalid);
+    when(() => repository.setTunerInput(input: any(named: 'input')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.setTunerMute(any())).thenReturn(EngineResult.invalid);
     await pump(tester);
     control.setMode(InteractionMode.tuner);
     await tester.pumpAndSettle();
@@ -1188,9 +1164,7 @@ void main() {
   });
 
   group('Multiply / Divide (#1168)', () {
-    testWidgets('a sub-bar loop reads its beats on the stage', (
-      tester,
-    ) async {
+    testWidgets('a sub-bar loop reads its beats on the stage', (tester) async {
       tester.view
         ..physicalSize = const Size(1920, 1080)
         ..devicePixelRatio = 1;
@@ -1224,9 +1198,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       seed(
         const LooperState(
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-          ],
+          tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
         ),
       );
       when(
@@ -1266,9 +1238,8 @@ void main() {
   testWidgets('the top bar Tuner button enters the Tuner by touch', (
     tester,
   ) async {
-    when(
-      () => repository.setTunerInput(input: any(named: 'input')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.setTunerInput(input: any(named: 'input')))
+        .thenReturn(EngineResult.ok);
     when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
@@ -1277,18 +1248,14 @@ void main() {
     expect(control.state.mode, InteractionMode.tuner);
   });
 
-  testWidgets('the stage has no settings tray or pull handle', (
-    tester,
-  ) async {
+  testWidgets('the stage has no settings tray or pull handle', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
 
     expect(find.byKey(const Key('settingsTray_handle')), findsNothing);
   });
 
-  testWidgets('G reaches the Effects route', (
-    tester,
-  ) async {
+  testWidgets('G reaches the Effects route', (tester) async {
     setSegnoFxCatalogueForTest(FxCatalogue.empty);
     addTearDown(() => setSegnoFxCatalogueForTest(null));
     seed(const LooperState(tracks: [Track()]));
@@ -1331,17 +1298,11 @@ void main() {
     }
 
     testWidgets('the BPM opens the Tempo & click tab', (tester) async {
-      expect(
-        await opened(tester, 'stage_footer_bpm'),
-        LoopSettingsTab.tempo,
-      );
+      expect(await opened(tester, 'stage_footer_bpm'), LoopSettingsTab.tempo);
     });
 
     testWidgets('the mode pill opens the Loop mode tab', (tester) async {
-      expect(
-        await opened(tester, 'stage_footer_mode'),
-        LoopSettingsTab.mode,
-      );
+      expect(await opened(tester, 'stage_footer_mode'), LoopSettingsTab.mode);
     });
 
     testWidgets('both are named buttons', (tester) async {
@@ -1406,9 +1367,8 @@ void main() {
       PedalBindingSet([
         PedalBinding(
           key: const PedalBindingKey(button: PedalButton.undo),
-          target: const FxChainTarget(
-            FxAddress(stage: FxStage.input, index: 9),
-          ).canonicalString(),
+          target: const FxChainTarget(FxAddress(stage: FxStage.input, index: 9))
+              .canonicalString(),
         ),
       ]),
     );
@@ -1458,9 +1418,8 @@ void main() {
       PedalBindingSet([
         PedalBinding(
           key: const PedalBindingKey(button: PedalButton.track2, bank: 1),
-          target: const FxChainTarget(
-            FxAddress(stage: FxStage.input, index: 9),
-          ).canonicalString(),
+          target: const FxChainTarget(FxAddress(stage: FxStage.input, index: 9))
+              .canonicalString(),
         ),
       ]),
     );
@@ -1978,11 +1937,7 @@ void main() {
             transport: TransportState(looperMode: mode, primaryTrack: 1),
             tracks: const [
               Track(state: TrackState.playing, lengthFrames: 1000),
-              Track(
-                channel: 1,
-                state: TrackState.playing,
-                lengthFrames: 1000,
-              ),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 1000),
             ],
           ),
         );
@@ -2578,10 +2533,7 @@ void main() {
         ),
       );
       final pushed = <Route<dynamic>>[];
-      await pump(
-        tester,
-        navigatorObservers: [_PushObserver(pushed.add)],
-      );
+      await pump(tester, navigatorObservers: [_PushObserver(pushed.add)]);
       await showMixer(tester);
       pushed.clear();
 
@@ -2610,9 +2562,7 @@ void main() {
       );
       await pump(tester);
       await showMixer(tester);
-      final l10n = AppLocalizations.of(
-        tester.element(find.byType(TracksView)),
-      );
+      final l10n = AppLocalizations.of(tester.element(find.byType(TracksView)));
       String readout() => tester
           .widget<Text>(
             find.descendant(
@@ -2775,9 +2725,7 @@ void main() {
         expect(marker.top, closeTo(expected, 0.02));
         expect(
           tester
-              .widget<AppText>(
-                find.byKey(const Key('mixer_gain_readout_0')),
-              )
+              .widget<AppText>(find.byKey(const Key('mixer_gain_readout_0')))
               .data,
           switch (gain) {
             0 => '−∞',
@@ -2985,9 +2933,7 @@ void main() {
           0.05,
         ),
       );
-      final title = tester.renderObject<RenderParagraph>(
-        find.text('GUITAR'),
-      );
+      final title = tester.renderObject<RenderParagraph>(find.text('GUITAR'));
       expect(title.size.height, lessThan(50));
       expect(
         tester.getSize(find.byKey(const Key('mixer_mute_0'))).width,
@@ -3160,10 +3106,7 @@ void main() {
         find.byKey(const Key('stage_footer_output')),
       );
       expect(output.data, 'OUT CLIP');
-      expect(
-        output.style!.color,
-        AppTheme.neon.extension<SurfaceTheme>()!.rec,
-      );
+      expect(output.style!.color, AppTheme.neon.extension<SurfaceTheme>()!.rec);
     });
 
     testWidgets('Wave fits the desktop launch size with four tracks', (
@@ -3196,9 +3139,7 @@ void main() {
 
     testWidgets(
       'bars describe divided and multiple takes on both stage views',
-      (
-        tester,
-      ) async {
+      (tester) async {
         await tester.binding.setSurfaceSize(const Size(1920, 1080));
         addTearDown(() => tester.binding.setSurfaceSize(null));
         seed(
@@ -3247,9 +3188,7 @@ void main() {
         expect(
           tester
               .widgetList<WaveformView>(find.byType(WaveformView))
-              .map(
-                (waveform) => waveform.bars,
-              ),
+              .map((waveform) => waveform.bars),
           [1, 0, 8],
         );
       },
@@ -3269,9 +3208,9 @@ void main() {
     Rect rectOf(WidgetTester tester, String key) =>
         tester.getRect(find.byKey(Key(key)));
 
-    void name(String? value) => when(
-      () => session.state,
-    ).thenReturn(SessionState(currentSessionName: value));
+    void name(String? value) =>
+        when(() => session.state)
+            .thenReturn(SessionState(currentSessionName: value));
 
     for (final size in sizes) {
       final at = '${size.width.toInt()}x${size.height.toInt()}';
@@ -3425,9 +3364,8 @@ void main() {
         for (final (looper, output, elapsed) in variants) {
           seed(looper);
           when(() => outputLevel.state).thenReturn(output);
-          when(
-            () => transportClock.state,
-          ).thenReturn(TransportClockState(elapsed: elapsed));
+          when(() => transportClock.state)
+              .thenReturn(TransportClockState(elapsed: elapsed));
           await remount(tester, size);
           expect(tester.takeException(), isNull);
           final rects = [
@@ -3578,10 +3516,7 @@ void main() {
         final cpu = rectOf(tester, 'stage_cpu_load');
         expect(cpu.left, record.right + 24);
         expect(cpu.center.dy, closeTo(record.center.dy, 1));
-        expect(
-          cpu.right,
-          lessThan(rectOf(tester, 'stage_session_name').left),
-        );
+        expect(cpu.right, lessThan(rectOf(tester, 'stage_session_name').left));
         // The title stays centred on the bar with the readout beside it.
         expect(
           rectOf(tester, 'stage_session_name').center.dx,
@@ -3690,9 +3625,7 @@ void main() {
       );
     });
 
-    testWidgets('is absent where the load cannot be measured', (
-      tester,
-    ) async {
+    testWidgets('is absent where the load cannot be measured', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       expect(find.byKey(const Key('stage_cpu_load')), findsNothing);
@@ -3825,10 +3758,7 @@ void main() {
       // Try again salvages it again: a salvage the app did not survive is
       // not started again on its own (#1747).
       final action = said.shown.single.action!;
-      expect(
-        action.label(en),
-        'Try again',
-      );
+      expect(action.label(en), 'Try again');
       when(performanceRecorder.retryRecovery).thenAnswer((_) async {});
       action.onPressed();
       await tester.pump();
@@ -3858,9 +3788,8 @@ void main() {
       await tester.pump();
       final action = said.shown.single.action!;
       when(performanceRecorder.retryRecovery).thenAnswer((_) async {
-        when(
-          () => performanceRecorder.state,
-        ).thenReturn(const PerformanceRecorderIdle());
+        when(() => performanceRecorder.state)
+            .thenReturn(const PerformanceRecorderIdle());
       });
 
       action.onPressed();
@@ -3940,27 +3869,24 @@ void main() {
       expect(find.byType(ConsoleDialogShell), findsNothing);
     });
 
-    testWidgets(
-      'a short-capture auto-discard is said in the top bar, not the '
-      'completion sheet',
-      (tester) async {
-        whenListen(
-          performanceRecorder,
-          Stream.fromIterable(const [
-            PerformanceRecorderCompleted.discardedShort(),
-          ]),
-          initialState: const PerformanceRecorderRendering(percent: 100),
-        );
-        seed(const LooperState(tracks: [Track()]));
-        await pump(tester);
-        await tester.pump();
+    testWidgets('a short-capture auto-discard is said in the top bar, not the '
+        'completion sheet', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderCompleted.discardedShort(),
+        ]),
+        initialState: const PerformanceRecorderRendering(percent: 100),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
 
-        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-        expect(said.titles, [l10n.perfDiscarded]);
-        expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
-        await tester.pump(const Duration(seconds: 4));
-      },
-    );
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(said.titles, [l10n.perfDiscarded]);
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+      await tester.pump(const Duration(seconds: 4));
+    });
 
     testWidgets('every refused arm says so in its own message (#1198, '
         '#640)', (tester) async {
@@ -4202,9 +4128,8 @@ void main() {
             ],
           ),
         );
-        when(
-          () => repository.undo(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.undo(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.ok);
         await pump(tester);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -4230,9 +4155,8 @@ void main() {
             tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
           ),
         );
-        when(
-          () => repository.undo(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.undo(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.ok);
         await pump(tester);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -4261,9 +4185,8 @@ void main() {
             ],
           ),
         );
-        when(
-          () => repository.undo(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.undo(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.ok);
         await pump(tester);
 
         // Every surface's clear-all lands in ControlCubit.clearAll, which
@@ -4319,10 +4242,7 @@ void main() {
         await control.clearAll();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 200));
-        expect(
-          notices.state.message?.notice.id,
-          AppNoticeId.undoClearAll,
-        );
+        expect(notices.state.message?.notice.id, AppNoticeId.undoClearAll);
       }
 
       Future<void> tap(WidgetTester tester, PedalButton button) async {
@@ -4335,12 +4255,11 @@ void main() {
       }
 
       testWidgets('an Undo pedal press takes it down', (tester) async {
-        when(
-          () => repository.undo(channel: any(named: 'channel')),
-        ).thenAnswer((_) {
-          report(const LooperState(status: connected, tracks: [playing]));
-          return EngineResult.ok;
-        });
+        when(() => repository.undo(channel: any(named: 'channel')))
+            .thenAnswer((_) {
+              report(const LooperState(status: connected, tracks: [playing]));
+              return EngineResult.ok;
+            });
         await clearAllOnTheStage(tester);
 
         await tap(tester, PedalButton.undo);
@@ -4725,10 +4644,7 @@ void main() {
           isTrue,
         );
         final meter = tester.widget<PeakMeterBar>(
-          find.descendant(
-            of: _column(0),
-            matching: find.byType(PeakMeterBar),
-          ),
+          find.descendant(of: _column(0), matching: find.byType(PeakMeterBar)),
         );
         expect(meter.hasContent, change.after.hasContent);
       });

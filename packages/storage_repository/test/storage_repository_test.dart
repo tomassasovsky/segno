@@ -253,9 +253,7 @@ void main() {
       await pumpEventQueue();
       final export = repo.acquire(usb1, WritePurpose.export);
 
-      h.client.update(
-        h.record(1, status: RemovableVolumeRecordStatus.ejected),
-      );
+      h.client.update(h.record(1, status: RemovableVolumeRecordStatus.ejected));
       await pumpEventQueue();
 
       expect(await export.lost, const StorageFailure.volumeLost(1));
@@ -388,10 +386,7 @@ void main() {
       unawaited(outcome.then((_) => settled = true));
       await pumpEventQueue();
       h.client.update(
-        h.record(
-          1,
-          eject: const EjectOutcomeRecord(request: 'old', ok: false),
-        ),
+        h.record(1, eject: const EjectOutcomeRecord(request: 'old', ok: false)),
       );
       await pumpEventQueue();
       expect(settled, isFalse);

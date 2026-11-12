@@ -80,12 +80,7 @@ class ReadoutTrack extends Equatable {
 /// is a separate engine.
 class ReadoutNotice extends Equatable {
   /// Creates a [ReadoutNotice].
-  const new({
-    required this.title,
-    required this.tone,
-    this.body,
-    this.track,
-  });
+  const new({required this.title, required this.tone, this.body, this.track});
 
   /// Rebuilds a notice from [map] as pushed across the window channel, or
   /// null when [map] is not one.

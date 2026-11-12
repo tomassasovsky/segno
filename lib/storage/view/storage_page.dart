@@ -69,13 +69,10 @@ class _StoragePageState extends State<StoragePage> {
             ejectTaken: state.ejectTaken,
           ),
           if (state.ejectFailed == volume.generation)
-            StorageNotice(
-              switch (state.ejectBlockedBy) {
-                final kind? => context.l10n.operationBusy(kind.name),
-                null => context.l10n.storageEjectFailed,
-              },
-              key: const Key('storage_eject_failed'),
-            ),
+            StorageNotice(switch (state.ejectBlockedBy) {
+              final kind? => context.l10n.operationBusy(kind.name),
+              null => context.l10n.storageEjectFailed,
+            }, key: const Key('storage_eject_failed')),
           if (state.ejectStuck == volume.generation)
             StorageNotice(
               context.l10n.storageEjectStuck,
@@ -143,10 +140,7 @@ class _InternalCard extends StatelessWidget {
       key: const Key('storage_internal_card'),
       title: l10n.storageInternalTitle,
       subtitle: l10n.storageInternalSubtitle,
-      body: _Capacity(
-        space: state.internalSpace,
-        low: state.lowInternalSpace,
-      ),
+      body: _Capacity(space: state.internalSpace, low: state.lowInternalSpace),
       actions: [
         StorageCardButton(
           key: const Key('storage_open_library'),
@@ -172,10 +166,7 @@ class _RecordingTime extends StatelessWidget {
       headline: switch (time) {
         null => l10n.storageRecordingTimeUnavailable,
         Duration(inMinutes: 0) => l10n.storageNoRecordingSpace,
-        _ => l10n.storageRecordingRemaining(
-          time.inHours,
-          time.inMinutes % 60,
-        ),
+        _ => l10n.storageRecordingRemaining(time.inHours, time.inMinutes % 60),
       },
       format: state.sampleRate > 0
           ? l10n.storageRecordingFormat(state.sampleRate / 1000)

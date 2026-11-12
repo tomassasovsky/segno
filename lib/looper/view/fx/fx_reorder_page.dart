@@ -10,12 +10,7 @@ import 'package:segno/theme/theme.dart';
 /// One card on the reorder strip.
 class FxReorderCard {
   /// Creates an [FxReorderCard].
-  const new({
-    required this.id,
-    required this.name,
-    this.art,
-    this.stageTag,
-  });
+  const new({required this.id, required this.name, this.art, this.stageTag});
 
   /// The card's stable identity, which is what the reorder actually moves.
   final String id;
@@ -123,9 +118,9 @@ class _FxReorderPageState extends State<FxReorderPage> {
                   width: 110,
                   tone: LoopButtonTone.accent,
                   label: l10n.done,
-                  onTap: () => Navigator.of(context).pop(
-                    [for (final card in _draft) card.id],
-                  ),
+                  onTap: () =>
+                      Navigator.of(context)
+                          .pop([for (final card in _draft) card.id]),
                 ),
               ],
             ),

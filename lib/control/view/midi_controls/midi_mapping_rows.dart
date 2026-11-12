@@ -171,10 +171,7 @@ class _Row extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 28),
-            _Meter(
-              key: Key('midi_row_meter_$id'),
-              reading: reading,
-            ),
+            _Meter(key: Key('midi_row_meter_$id'), reading: reading),
             if (warning != null) ...[
               const SizedBox(width: 28),
               AppText(

@@ -224,21 +224,18 @@ void main() {
       expect(backend.clearInterruptedCount, 1);
     });
 
-    test(
-      'installPackage forwards the path and streams progress',
-      () async {
-        final backend = _FakeBackend();
-        final repo = UpdateRepository(backend: backend);
+    test('installPackage forwards the path and streams progress', () async {
+      final backend = _FakeBackend();
+      final repo = UpdateRepository(backend: backend);
 
-        expect(repo.stagingDirectory, '/staging');
-        final progress = await repo
-            .installPackage('/staging/segno.raucb')
-            .toList();
+      expect(repo.stagingDirectory, '/staging');
+      final progress = await repo
+          .installPackage('/staging/segno.raucb')
+          .toList();
 
-        expect(progress, [0.25, 1.0]);
-        expect(backend.packageArg, '/staging/segno.raucb');
-      },
-    );
+      expect(progress, [0.25, 1.0]);
+      expect(backend.packageArg, '/staging/segno.raucb');
+    });
 
     test(
       'downloadAndStage forwards the manifest and streams progress',

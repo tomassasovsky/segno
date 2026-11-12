@@ -46,9 +46,7 @@ class PluginCatalogCache extends Equatable {
   });
 
   /// An empty cache for [appVersion].
-  const new empty(this.appVersion)
-    : descriptors = const [],
-      keys = const [];
+  const new empty(this.appVersion) : descriptors = const [], keys = const [];
 
   /// The app version that produced this cache.
   final String appVersion;

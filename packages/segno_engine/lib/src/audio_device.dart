@@ -49,14 +49,8 @@ class AudioDevice {
           outputChannels == other.outputChannels;
 
   @override
-  int get hashCode => Object.hash(
-    id,
-    name,
-    isDefault,
-    isInput,
-    inputChannels,
-    outputChannels,
-  );
+  int get hashCode =>
+      Object.hash(id, name, isDefault, isInput, inputChannels, outputChannels);
 
   @override
   String toString() =>

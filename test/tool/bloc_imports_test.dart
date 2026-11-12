@@ -11,9 +11,10 @@ void main() {
     final offenders = [
       for (final root in [
         Directory('lib'),
-        ...Directory('packages').listSync().whereType<Directory>().map(
-          (package) => Directory('${package.path}/lib'),
-        ),
+        ...Directory('packages')
+            .listSync()
+            .whereType<Directory>()
+            .map((package) => Directory('${package.path}/lib')),
       ])
         if (root.existsSync())
           for (final file in root.listSync(recursive: true))

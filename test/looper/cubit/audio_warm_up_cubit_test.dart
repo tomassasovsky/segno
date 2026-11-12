@@ -288,10 +288,7 @@ void main() {
       addTearDown(calibration.close);
       await pumpEventQueue();
       expect(calibration.state.phase, TouchCalibrationPhase.capture);
-      expect(
-        guards.active.map((op) => op.kind),
-        [GuardKind.touchCalibration],
-      );
+      expect(guards.active.map((op) => op.kind), [GuardKind.touchCalibration]);
       await build();
 
       await tick(4);

@@ -79,9 +79,9 @@ class PlaybackSettings {
   Stream<PlaybackOptions> get stream => _states.stream;
 
   /// Loads both owners independently.
-  Future<void> load() => _loadFuture ??= Future.wait([
-    for (final owner in owners) owner.load(),
-  ]).then((_) {});
+  Future<void> load() =>
+      _loadFuture ??= Future.wait([for (final owner in owners) owner.load()])
+          .then((_) {});
 
   void _sync() {
     if (_states.isClosed) return;

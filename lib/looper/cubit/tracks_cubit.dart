@@ -18,9 +18,7 @@ class TracksCubit extends Cubit<TracksState> {
     required this._settings,
     int trackCount = TracksState.tracksPerBank * TracksState.bankCountMax,
   }) : super(
-         TracksState(
-           names: List.generate(trackCount, storedDefaultTrackName),
-         ),
+         TracksState(names: List.generate(trackCount, storedDefaultTrackName)),
        );
 
   final SettingsRepository _settings;

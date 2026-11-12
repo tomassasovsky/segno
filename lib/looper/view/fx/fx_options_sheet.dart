@@ -37,20 +37,13 @@ Future<String?> showFxOptionsSheet(
   return showDialog<String>(
     context: context,
     barrierColor: surface.scrim.withValues(alpha: 0.86),
-    builder: (context) => _FxOptionsSheet(
-      title: title,
-      body: body,
-      options: options,
-    ),
+    builder: (context) =>
+        _FxOptionsSheet(title: title, body: body, options: options),
   );
 }
 
 class _FxOptionsSheet extends StatelessWidget {
-  const new({
-    required this.title,
-    required this.body,
-    required this.options,
-  });
+  const new({required this.title, required this.body, required this.options});
 
   final String title;
   final String? body;

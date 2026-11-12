@@ -33,8 +33,7 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit;
@@ -69,13 +68,11 @@ void main() {
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.meters).thenReturn(const MeterLevels());
-    when(
-      () => repository.meterLevels,
-    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.meterLevels)
+        .thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(() => repository.playhead).thenReturn(const Playhead());
-    when(
-      () => repository.playheads,
-    ).thenAnswer((_) => const Stream<Playhead>.empty());
+    when(() => repository.playheads)
+        .thenAnswer((_) => const Stream<Playhead>.empty());
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);
@@ -85,18 +82,14 @@ void main() {
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.state).thenReturn(const LooperState());
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
     when(() => repository.allMonitors()).thenReturn(const {});
     when(() => repository.monitorEffects(any())).thenReturn(const []);
     final pedal = PedalRepository(NoopPedalLink());
@@ -256,9 +249,7 @@ void main() {
     for (final view in StageView.values) {
       testWidgets(
         'the ${view.name} view shows every text in full ($language)',
-        (
-          tester,
-        ) async {
+        (tester) async {
           seedLongCounts();
           tracks.showView(view);
           await pump(tester, locale);

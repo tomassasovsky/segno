@@ -977,11 +977,7 @@ class _StripPanBarState extends State<_StripPanBar> {
 
 /// The level's caption: the word and the gain the marker below is at.
 class _StripGainCaption extends StatelessWidget {
-  const new({
-    required this.volume,
-    required this.channel,
-    required this.fade,
-  });
+  const new({required this.volume, required this.channel, required this.fade});
 
   final double volume;
   final int channel;
@@ -1030,9 +1026,10 @@ class _StripGainCaption extends StatelessWidget {
             key: Key('mixer_gain_readout_$channel'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: signalMono(color: surface.textPrimary, size: 22).copyWith(
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+            style: signalMono(
+              color: surface.textPrimary,
+              size: 22,
+            ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
           ),
         ),
       ],

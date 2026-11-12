@@ -85,9 +85,7 @@ abstract final class FxChainsWriter {
           buffer.writeln('  (no effects)');
         } else {
           for (var i = 0; i < effects.length; i++) {
-            final rendered = _renderEffect(
-              effects[i] as Map<String, dynamic>,
-            );
+            final rendered = _renderEffect(effects[i] as Map<String, dynamic>);
             buffer.writeln('  ${i + 1}. $rendered');
           }
         }

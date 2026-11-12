@@ -149,10 +149,7 @@ void main() {
     final chevrons = find.byType(Icon);
     expect(chevrons, findsNWidgets(2));
     for (var i = 0; i < 2; i++) {
-      expect(
-        tester.getRect(chevrons.at(i)).right,
-        moreOrLessEquals(right),
-      );
+      expect(tester.getRect(chevrons.at(i)).right, moreOrLessEquals(right));
     }
     // The value sits just before its chevron, not mid-card.
     final chevronLeft = tester.getRect(chevrons.last).left;

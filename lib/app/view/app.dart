@@ -657,9 +657,8 @@ class _AppState extends State<App> {
           // The stage footer's `OUT` readout, refreshed four times a second
           // rather than on every 16 ms engine poll (#1301).
           BlocProvider(
-            create: (context) => OutputLevelCubit(
-              repository: context.read<LooperRepository>(),
-            ),
+            create: (context) =>
+                OutputLevelCubit(repository: context.read<LooperRepository>()),
           ),
           // Beside the track names and for the same reason: an input is called
           // what the player calls it on every surface that shows one — the
@@ -799,9 +798,8 @@ class _AppState extends State<App> {
           // there) — the cubits know nothing of each other.
           BlocProvider(
             lazy: false,
-            create: (context) => PedalCubit(
-              pedal: context.read<PedalRepository>(),
-            ),
+            create: (context) =>
+                PedalCubit(pedal: context.read<PedalRepository>()),
           ),
           // The console LEDs' brightness (#1564), Manual or following the
           // light sensor. Eager: it sends the board its level from launch.
@@ -1165,9 +1163,7 @@ class _AppViewState extends State<_AppView> {
   Future<void> _bootstrapWindow() async {
     await context.read<WaveformWindowCubit>().load();
     if (!mounted) return;
-    _display.start(
-      enabled: context.read<WaveformWindowCubit>().state.enabled,
-    );
+    _display.start(enabled: context.read<WaveformWindowCubit>().state.enabled);
   }
 
   void _syncWindow() => _display.setEnabled(

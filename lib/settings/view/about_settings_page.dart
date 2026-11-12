@@ -160,11 +160,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
         onBack: () => Navigator.maybePop(context),
         onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
         children: [
-          Positioned(
-            left: 0,
-            top: AboutSettingsPage.top,
-            child: thisConsole,
-          ),
+          Positioned(left: 0, top: AboutSettingsPage.top, child: thisConsole),
           Positioned(
             right: 0,
             top: AboutSettingsPage.top,

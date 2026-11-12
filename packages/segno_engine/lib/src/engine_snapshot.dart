@@ -1264,19 +1264,18 @@ class CallbackWindowStats {
   });
 
   /// Projects a native `le_cb_window_snapshot`.
-  factory fromNative(le_cb_window_snapshot native) =>
-      CallbackWindowStats(
-        calls: native.calls,
-        periods: native.periods,
-        latePeriods: native.late_periods,
-        gapEvents: native.gap_events,
-        maxUs: native.max_us,
-        meanUs: native.mean_us,
-        maxGapUs: native.max_gap_us,
-        buckets: [for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i]],
-        xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
-        overSharePeriods: native.over_share_periods,
-      );
+  factory fromNative(le_cb_window_snapshot native) => CallbackWindowStats(
+    calls: native.calls,
+    periods: native.periods,
+    latePeriods: native.late_periods,
+    gapEvents: native.gap_events,
+    maxUs: native.max_us,
+    meanUs: native.mean_us,
+    maxGapUs: native.max_gap_us,
+    buckets: [for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i]],
+    xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
+    overSharePeriods: native.over_share_periods,
+  );
 
   /// The all-zero window: no device has run, so nothing was measured.
   static const CallbackWindowStats empty = CallbackWindowStats();
@@ -1442,12 +1441,11 @@ class CallbackTelemetry {
   });
 
   /// Projects a native `le_callback_telemetry`.
-  factory fromNative(le_callback_telemetry native) =>
-      CallbackTelemetry(
-        budgetUs: native.budget_us,
-        session: CallbackWindowStats.fromNative(native.session),
-        armed: CallbackWindowStats.fromNative(native.armed),
-      );
+  factory fromNative(le_callback_telemetry native) => CallbackTelemetry(
+    budgetUs: native.budget_us,
+    session: CallbackWindowStats.fromNative(native.session),
+    armed: CallbackWindowStats.fromNative(native.armed),
+  );
 
   /// Nothing measured: no device has run.
   static const CallbackTelemetry empty = CallbackTelemetry();
@@ -1507,19 +1505,18 @@ class FxWorkerStats {
   });
 
   /// Projects a native `le_fx_worker_snapshot`.
-  factory fromNative(le_fx_worker_snapshot native) =>
-      FxWorkerStats(
-        wakes: native.wakes,
-        wakeMeanNs: native.wake_mean_ns,
-        wakeMaxNs: native.wake_max_ns,
-        wakeBuckets: [
-          for (var i = 0; i < LE_FX_WAKE_BUCKETS; i++) native.wake_buckets[i],
-        ],
-        jobs: native.jobs,
-        jobMeanNs: native.job_mean_ns,
-        jobMaxNs: native.job_max_ns,
-        jobTotalNs: native.job_total_ns,
-      );
+  factory fromNative(le_fx_worker_snapshot native) => FxWorkerStats(
+    wakes: native.wakes,
+    wakeMeanNs: native.wake_mean_ns,
+    wakeMaxNs: native.wake_max_ns,
+    wakeBuckets: [
+      for (var i = 0; i < LE_FX_WAKE_BUCKETS; i++) native.wake_buckets[i],
+    ],
+    jobs: native.jobs,
+    jobMeanNs: native.job_mean_ns,
+    jobMaxNs: native.job_max_ns,
+    jobTotalNs: native.job_total_ns,
+  );
 
   /// The rounds this worker woke for.
   final int wakes;
@@ -1591,20 +1588,19 @@ class FxWorkersTelemetry {
   });
 
   /// Projects a native `le_fx_workers_telemetry`.
-  factory fromNative(le_fx_workers_telemetry native) =>
-      FxWorkersTelemetry(
-        requested: native.requested,
-        running: native.running,
-        rounds: native.rounds,
-        callbackJobs: native.callback_jobs,
-        joinWaits: native.join_waits,
-        joinWaitMeanNs: native.join_wait_mean_ns,
-        joinWaitMaxNs: native.join_wait_max_ns,
-        workers: [
-          for (var i = 0; i < LE_FX_WORKERS_MAX; i++)
-            FxWorkerStats.fromNative(native.worker[i]),
-        ],
-      );
+  factory fromNative(le_fx_workers_telemetry native) => FxWorkersTelemetry(
+    requested: native.requested,
+    running: native.running,
+    rounds: native.rounds,
+    callbackJobs: native.callback_jobs,
+    joinWaits: native.join_waits,
+    joinWaitMeanNs: native.join_wait_mean_ns,
+    joinWaitMaxNs: native.join_wait_max_ns,
+    workers: [
+      for (var i = 0; i < LE_FX_WORKERS_MAX; i++)
+        FxWorkerStats.fromNative(native.worker[i]),
+    ],
+  );
 
   /// No workers: the desktop, and every engine that was not asked for any.
   static const FxWorkersTelemetry empty = FxWorkersTelemetry();
@@ -1884,10 +1880,7 @@ class EngineSnapshot {
   /// (clamped to the native `LE_MAX_CHANNELS` arrays), not to the arrays:
   /// this runs at render rate, and the entries past the device would only
   /// be zeros that every `==` and `hashCode` then walks.
-  factory fromNative(
-    le_snapshot native,
-    List<TrackSnapshot> tracks,
-  ) {
+  factory fromNative(le_snapshot native, List<TrackSnapshot> tracks) {
     final inputs = native.input_channels.clamp(0, LE_MAX_CHANNELS);
     final outputs = native.output_channels.clamp(0, LE_MAX_CHANNELS);
     final buses = native.output_bus_count.clamp(0, LE_MAX_OUTPUT_BUSES);

@@ -507,10 +507,9 @@ void main() {
           channel: 0,
           effects: [BuiltInEffect(type: TrackEffectType.reverb)],
         );
-      final cost = fxChainCostNs(
-        [BuiltInEffect(type: TrackEffectType.reverb)],
-        period: 128,
-      );
+      final cost = fxChainCostNs([
+        BuiltInEffect(type: TrackEffectType.reverb),
+      ], period: 128);
       expect(repo.fxRoomAt(96000, 128), fxBudgetNs(96000, period: 128) - cost);
       // A higher rate leaves less room for the same chains.
       expect(repo.fxRoomAt(96000, 128), lessThan(repo.fxRoomAt(48000, 128)));

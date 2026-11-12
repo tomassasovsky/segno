@@ -173,10 +173,7 @@ void main() {
       // A Browse that opened Internal would show the wrong files as the
       // drive's (#1217 review).
       expect(find.text('Browse'), findsNothing);
-      expect(
-        inCard(2, find.byKey(const Key('storage_eject'))),
-        findsOneWidget,
-      );
+      expect(inCard(2, find.byKey(const Key('storage_eject'))), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('storage_open_library')));
       expect(opened, ['library']);

@@ -148,11 +148,7 @@ class TrackStereoMeter extends StatelessWidget {
 /// not the tile.
 class TrackProgressBar extends StatelessWidget {
   /// Creates a [TrackProgressBar].
-  const new({
-    required this.channel,
-    required this.color,
-    super.key,
-  });
+  const new({required this.channel, required this.color, super.key});
 
   /// The channel whose playhead this bar follows.
   final int channel;

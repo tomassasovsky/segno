@@ -88,11 +88,7 @@ List<MidiDeviceCard> midiDeviceCards(
 /// plugged-in input feeds its own mappings; choosing one lists them.
 class MidiDeviceCards extends StatefulWidget {
   /// Creates a [MidiDeviceCards].
-  const new({
-    required this.cards,
-    required this.onSelect,
-    super.key,
-  });
+  const new({required this.cards, required this.onSelect, super.key});
 
   /// The inputs, in the order the host lists them.
   final List<MidiDeviceCard> cards;

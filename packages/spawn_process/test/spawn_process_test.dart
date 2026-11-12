@@ -230,16 +230,10 @@ void main() {
     });
 
     test('reports the exit while a grandchild holds the pipes', () async {
-      final process = await startProcess('/bin/sh', [
-        '-c',
-        'sleep 2 & exit 5',
-      ]);
+      final process = await startProcess('/bin/sh', ['-c', 'sleep 2 & exit 5']);
       var stdoutDone = false;
       unawaited(process.stdout.drain<void>().then((_) => stdoutDone = true));
-      expect(
-        await process.exitCode.timeout(const Duration(seconds: 1)),
-        5,
-      );
+      expect(await process.exitCode.timeout(const Duration(seconds: 1)), 5);
       expect(stdoutDone, isFalse);
     });
 

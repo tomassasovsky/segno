@@ -103,9 +103,7 @@ class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
     if (looper.status.warmingUp) {
       _emit(AudioWarmUpStatus.settling);
       _tickSubscription ??= (_ticker ?? Stream<void>.periodic(_interval))
-          .listen(
-            (_) => _tick(),
-          );
+          .listen((_) => _tick());
       return;
     }
     unawaited(_tickSubscription?.cancel());

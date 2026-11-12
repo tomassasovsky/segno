@@ -53,12 +53,10 @@ void main() {
     when(() => performance.listCaptures()).thenAnswer((_) async => []);
     when(() => sessions.listSessions()).thenAnswer((_) async => []);
     when(() => sessions.mixdownOf(any())).thenAnswer((_) async => null);
-    when(
-      () => performance.readPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => Float32List.fromList([0.5]));
-    when(
-      () => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')),
-    ).thenAnswer((_) async => Float32List.fromList([0.25]));
+    when(() => performance.readPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => Float32List.fromList([0.5]));
+    when(() => sessions.readMixdownPeaks(any(), buckets: any(named: 'buckets')))
+        .thenAnswer((_) async => Float32List.fromList([0.25]));
     when(() => sessions.stopAudition()).thenReturn(EngineResult.ok);
     when(() => sessions.auditionState()).thenReturn(const AuditionState());
   });
@@ -130,9 +128,8 @@ void main() {
   }
 
   Future<LibraryAudioCubit> withSession(String id, String name) async {
-    when(
-      () => sessions.listSessions(),
-    ).thenAnswer((_) async => [SessionSummary(id: id, name: name)]);
+    when(() => sessions.listSessions())
+        .thenAnswer((_) async => [SessionSummary(id: id, name: name)]);
     when(() => sessions.mixdownOf(id)).thenAnswer((_) async => _mixdown);
     final cubit = build();
     addTearDown(cubit.close);
@@ -173,9 +170,8 @@ void main() {
     });
 
     test('a listing that fails leaves the folders empty', () async {
-      when(
-        () => performance.listCaptures(),
-      ).thenThrow(const FileSystemException());
+      when(() => performance.listCaptures())
+          .thenThrow(const FileSystemException());
       final cubit = build();
       addTearDown(cubit.close);
 
@@ -217,9 +213,8 @@ void main() {
     });
 
     test('none when it does not read', () async {
-      when(
-        () => performance.readPeaks(any(), buckets: any(named: 'buckets')),
-      ).thenThrow(StateError('no'));
+      when(() => performance.readPeaks(any(), buckets: any(named: 'buckets')))
+          .thenThrow(StateError('no'));
       final cubit = await withRecording(take('perf-a'));
       expect(cubit.state.peaks, isNull);
     });
@@ -241,9 +236,8 @@ void main() {
           sourceRate: 48000,
         ),
       );
-      when(
-        () => sessions.auditionState(),
-      ).thenReturn(const AuditionState(frames: 4800, position: 960));
+      when(() => sessions.auditionState())
+          .thenReturn(const AuditionState(frames: 4800, position: 960));
       final cubit = await withRecording(capture);
 
       await cubit.preview();
@@ -317,9 +311,8 @@ void main() {
           sourceRate: 48000,
         ),
       );
-      when(
-        () => sessions.auditionState(),
-      ).thenReturn(const AuditionState(frames: 4800));
+      when(() => sessions.auditionState())
+          .thenReturn(const AuditionState(frames: 4800));
       final cubit = await withRecording(take('perf-a'));
       await cubit.preview();
 
@@ -372,9 +365,8 @@ void main() {
           'Segno/Performances/Evening loop · Part 003.wav',
         ]);
         expect(
-          File(
-            '${drive.mount}/Segno/Performances/Evening loop · Part 002.wav',
-          ).readAsBytesSync(),
+          File('${drive.mount}/Segno/Performances/Evening loop · Part 002.wav')
+              .readAsBytesSync(),
           [2, 2],
         );
       },
@@ -383,9 +375,8 @@ void main() {
     test('the DAW package writes the project first when it is missing, '
         'then copies the bundle as one directory', () async {
       final capture = take('Evening loop');
-      when(() => performance.dawPackageFiles(any())).thenAnswer(
-        (_) => ['master-001.wav', 'project.als'],
-      );
+      when(() => performance.dawPackageFiles(any()))
+          .thenAnswer((_) => ['master-001.wav', 'project.als']);
       final cubit = await withRecording(capture);
 
       await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
@@ -428,12 +419,9 @@ void main() {
 
     test('Replace writes over it; Cancel leaves it', () async {
       final cubit = await withRecording(take('Evening loop'));
-      final there =
-          File(
-              '${drive.mount}/Segno/Performances/Evening loop.wav',
-            )
-            ..createSync(recursive: true)
-            ..writeAsBytesSync([9]);
+      final there = File('${drive.mount}/Segno/Performances/Evening loop.wav')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([9]);
 
       await cubit.export(LibraryAudioExportKind.recording, purpose: 'p');
       cubit.cancelExport();
@@ -496,9 +484,8 @@ void main() {
     test(
       'a drive lost part-way leaves no package and asks for the drive',
       () async {
-        when(() => performance.dawPackageFiles(any())).thenAnswer(
-          (_) => ['master-001.wav', 'master-002.wav'],
-        );
+        when(() => performance.dawPackageFiles(any()))
+            .thenAnswer((_) => ['master-001.wav', 'master-002.wav']);
         final cubit = await withRecording(take('Evening loop', parts: 2));
         drive
           ..failOnCopy = 2
@@ -562,9 +549,9 @@ void main() {
 
       expect(drive.files, ['Segno/Sessions/Gig- night-.wav']);
       final scratch =
-          verify(
-                () => sessions.exportMixdown('s-a', captureAny()),
-              ).captured.single
+          verify(() => sessions.exportMixdown('s-a', captureAny()))
+                  .captured
+                  .single
               as String;
       expect(File(scratch).existsSync(), isFalse);
       expect(

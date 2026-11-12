@@ -234,10 +234,7 @@ void main() {
         (_) => engine.pump(frames: 0),
       );
       expect(
-        looper.setTrackRecordTiming(
-          channel: 1,
-          timing: RecordTiming.loopStart,
-        ),
+        looper.setTrackRecordTiming(channel: 1, timing: RecordTiming.loopStart),
         EngineResult.ok,
       );
       engine.pump(frames: 64);

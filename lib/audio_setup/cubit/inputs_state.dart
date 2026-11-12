@@ -4,11 +4,7 @@ part of 'inputs_cubit.dart';
 /// called.
 class InputsState extends Equatable {
   /// Creates an [InputsState].
-  const new({
-    this.device = '',
-    this.names = const {},
-    this.lifetime = 0,
-  });
+  const new({this.device = '', this.names = const {}, this.lifetime = 0});
 
   /// How many sockets a device change probes for stored names.
   ///

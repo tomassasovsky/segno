@@ -301,15 +301,9 @@ class ControlCubit extends Cubit<ControlState> {
   final Duration Function()? _midiClock;
   final _midiStopwatch = Stopwatch()..start();
   Duration _midiReadTime = Duration.zero;
-  late final _midiDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
-  late final _midiLearnDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
-  late final _midiSignalDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
+  late final _midiDecoder = MidiDecoder(clock: () => _midiReadTime);
+  late final _midiLearnDecoder = MidiDecoder(clock: () => _midiReadTime);
+  late final _midiSignalDecoder = MidiDecoder(clock: () => _midiReadTime);
   late final _midiEngine = MidiMappingEngine(
     read: _readMidiValue,
     step: _midiStep,
@@ -966,13 +960,10 @@ class ControlCubit extends Cubit<ControlState> {
               await _mixSettings.runExclusive(() async {});
               if (cancelled()) return;
               resolveSurvivors();
-              outcome = await _mixSettings.setControllerValues(
-                {
-                  for (final target in mixValues.keys)
-                    target: parameters[target]!,
-                },
-                releasedValues: released(),
-              );
+              outcome = await _mixSettings.setControllerValues({
+                for (final target in mixValues.keys)
+                  target: parameters[target]!,
+              }, releasedValues: released());
             }
             if (outcome.isOk) mixValues.keys.forEach(heldApplied);
             if (outcome.isOk && !cancelled()) {
@@ -1085,10 +1076,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
-  bool? _survivingActivation(
-    FxBindingTarget target, {
-    Object? excluding,
-  }) {
+  bool? _survivingActivation(FxBindingTarget target, {Object? excluding}) {
     ({bool value, int order})? latest;
     for (final entry in (_activationHolders[target] ?? {}).entries) {
       if (entry.key == excluding) continue;
@@ -1099,10 +1087,7 @@ class ControlCubit extends Cubit<ControlState> {
     return latest?.value;
   }
 
-  double? _survivingParameter(
-    ControlValueTarget target, {
-    Object? excluding,
-  }) {
+  double? _survivingParameter(ControlValueTarget target, {Object? excluding}) {
     ({double value, int order})? latest;
     for (final entry in (_parameterHolders[target] ?? {}).entries) {
       if (entry.key == excluding) continue;
@@ -2130,11 +2115,7 @@ class ControlCubit extends Cubit<ControlState> {
     final waiting = live.transport.songQueuedTrack;
     // A Stop on the waiting section drops its request (and a waiting
     // Record's arm) in the engine, or stops it if the handoff started it.
-    final stopping = {
-      ...running,
-      ...playingNow,
-      if (waiting >= 0) waiting,
-    };
+    final stopping = {...running, ...playingNow, if (waiting >= 0) waiting};
     if (stopping.isEmpty) return true; // Keep the parked resume set.
     final latch = {...(playingNow.isEmpty ? running : playingNow)}
       ..removeWhere(state.excluded.contains);
@@ -2316,9 +2297,7 @@ class ControlCubit extends Cubit<ControlState> {
       if (_l.isSection(channel) && t.isRunning) return;
       // Joining is the explicit un-exclude.
       if (state.excluded.contains(channel)) {
-        emit(
-          state.copyWith(excluded: {...state.excluded}..remove(channel)),
-        );
+        emit(state.copyWith(excluded: {...state.excluded}..remove(channel)));
       }
       _looper.play(channel: channel);
     }
@@ -2894,9 +2873,7 @@ class ControlCubit extends Cubit<ControlState> {
   void nextFootMixerPage() {
     if (!_mixerEditable) return;
     emit(
-      state.copyWith(
-        footMixer: _footMixerActions.nextPage(state.footMixer),
-      ),
+      state.copyWith(footMixer: _footMixerActions.nextPage(state.footMixer)),
     );
   }
 
@@ -3404,9 +3381,7 @@ class ControlCubit extends Cubit<ControlState> {
         if (operation == TrackOperation.solo && channels.length > 1) {
           return _mixSettings
               .toggleTrackSolos(channels.toSet())
-              .then(
-                (outcome) => outcome.isOk,
-              );
+              .then((outcome) => outcome.isOk);
         }
         var accepted = false;
         for (final channel in channels) {
@@ -3479,9 +3454,7 @@ class ControlCubit extends Cubit<ControlState> {
       case TrackOperation.solo:
         return _mixSettings
             .toggleTrackSolo(channel: channel)
-            .then(
-              (outcome) => outcome.isOk,
-            );
+            .then((outcome) => outcome.isOk);
       case TrackOperation.clear:
         if (_fxPersistence.sessionTransitionActive) return false;
         if (!_looper.clear(channel: channel).isOk) return false;
@@ -4540,12 +4513,7 @@ class ControlCubit extends Cubit<ControlState> {
     final channels = completed && contact
         ? last.channels
         : _channelsForAction(action);
-    return _customActionIsActive(
-      action,
-      channels,
-      looper,
-      contact: contact,
-    );
+    return _customActionIsActive(action, channels, looper, contact: contact);
   }
 
   bool _customActionIsActive(

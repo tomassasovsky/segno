@@ -108,11 +108,7 @@ List<TakePart> convertRawStream({
             ? take
             : current.remainingFrames;
         current.append(
-          Float32List.view(
-            buffer.buffer,
-            offset,
-            frames * channels,
-          ),
+          Float32List.view(buffer.buffer, offset, frames * channels),
         );
         offset += frames * frameBytes;
       }

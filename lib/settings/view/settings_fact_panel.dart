@@ -166,11 +166,7 @@ class _LabelAndValue extends StatelessWidget {
     final gap = context.spacing.xl;
     final text = AppText(
       label,
-      style: TextStyle(
-        color: surface.textSecondary,
-        fontSize: 24,
-        height: 1.2,
-      ),
+      style: TextStyle(color: surface.textSecondary, fontSize: 24, height: 1.2),
     );
     if (value == null && caption == null) {
       return Align(alignment: Alignment.centerLeft, child: text);

@@ -87,9 +87,7 @@ class StorageDestinationPicker extends StatelessWidget {
                 .firstOrNull ??
             l10n.storageUsbTitle,
     };
-    final refusals = [
-      for (final volume in offered) ?_refusal(context, volume),
-    ];
+    final refusals = [for (final volume in offered) ?_refusal(context, volume)];
     return Column(
       key: const Key('save_to'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -257,11 +255,7 @@ class _DestinationPill extends StatelessWidget {
 /// that is already there, and `Cancel` leaves the choice on Internal.
 class ConnectUsbSheet extends StatelessWidget {
   /// Creates a [ConnectUsbSheet].
-  const new({
-    required this.onTryAgain,
-    required this.onCancel,
-    super.key,
-  });
+  const new({required this.onTryAgain, required this.onCancel, super.key});
 
   /// `Try again`.
   final VoidCallback onTryAgain;

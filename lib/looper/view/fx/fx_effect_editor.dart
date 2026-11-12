@@ -262,11 +262,7 @@ class _ChainActions extends StatelessWidget {
 
 /// The effect's own controls, two to a row as the pen lays them out.
 class _Parameters extends StatelessWidget {
-  const new({
-    required this.effect,
-    required this.slotId,
-    required this.edits,
-  });
+  const new({required this.effect, required this.slotId, required this.edits});
 
   final BuiltInEffect? effect;
   final String? slotId;

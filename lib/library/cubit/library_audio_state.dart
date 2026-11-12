@@ -92,11 +92,7 @@ sealed class LibraryAudioExport extends Equatable {
 /// Copying (pen 20/08).
 final class LibraryExportRunning extends LibraryAudioExport {
   /// Creates the running export of [name] into [folder].
-  const new({
-    required this.name,
-    required this.folder,
-    this.fraction = 0,
-  });
+  const new({required this.name, required this.folder, this.fraction = 0});
 
   /// What is being exported.
   final String name;

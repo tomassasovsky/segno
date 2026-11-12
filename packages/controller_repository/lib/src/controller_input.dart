@@ -86,11 +86,7 @@ enum ControllerSourceKind {
 /// distinct controls.
 class MappingTrigger extends Equatable {
   /// Creates a [MappingTrigger].
-  const new({
-    required this.kind,
-    required this.id,
-    this.midiChannel,
-  });
+  const new({required this.kind, required this.id, this.midiChannel});
 
   /// Rebuilds a trigger from its [toJson] map, or `null` when the map does not
   /// describe one (unknown kind, missing/out-of-range control number, or an

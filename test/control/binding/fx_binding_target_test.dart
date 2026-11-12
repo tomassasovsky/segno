@@ -48,10 +48,10 @@ void main() {
     test('a slot target round-trips and appends exactly one key', () {
       const target = FxSlotTarget(address: loop, slotId: 'slot-abc');
       expect(FxBindingTarget.tryParse(target.canonicalString()), target);
-      expect(
-        jsonDecode(target.canonicalString()),
-        {...loop.toJson(), 'slot': 'slot-abc'},
-      );
+      expect(jsonDecode(target.canonicalString()), {
+        ...loop.toJson(),
+        'slot': 'slot-abc',
+      });
     });
 
     test('the encoding is byte-stable, so string equality is target '
@@ -92,15 +92,11 @@ void main() {
           'widening an effect binding to its whole chain would bypass far '
           'more than the user asked for', () {
         expect(
-          FxBindingTarget.tryParse(
-            jsonEncode({...track.toJson(), 'slot': 7}),
-          ),
+          FxBindingTarget.tryParse(jsonEncode({...track.toJson(), 'slot': 7})),
           isNull,
         );
         expect(
-          FxBindingTarget.tryParse(
-            jsonEncode({...track.toJson(), 'slot': ''}),
-          ),
+          FxBindingTarget.tryParse(jsonEncode({...track.toJson(), 'slot': ''})),
           isNull,
         );
         expect(
@@ -121,10 +117,10 @@ void main() {
     test('a rack target round-trips and appends exactly one key', () {
       const target = FxRackTarget(address: loop, rackId: 'rack-1');
       expect(FxBindingTarget.tryParse(target.canonicalString()), target);
-      expect(
-        jsonDecode(target.canonicalString()),
-        {...loop.toJson(), 'rack': 'rack-1'},
-      );
+      expect(jsonDecode(target.canonicalString()), {
+        ...loop.toJson(),
+        'rack': 'rack-1',
+      });
       // A rack and an effect never share an identity, even with one id.
       expect(
         target,
@@ -156,10 +152,7 @@ void main() {
 
     test('address exposes the containing chain for both variants', () {
       expect(const FxChainTarget(loop).address, loop);
-      expect(
-        const FxSlotTarget(address: loop, slotId: 'x').address,
-        loop,
-      );
+      expect(const FxSlotTarget(address: loop, slotId: 'x').address, loop);
     });
   });
 }

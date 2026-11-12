@@ -39,12 +39,7 @@ enum FootFadeAction {
 /// One physical pedal's semantics; Control alone supplies gesture timing.
 class FootFadePedal {
   /// Creates one static role in the accepted ten-pedal layout.
-  const new(
-    this.press, {
-    this.hold,
-    this.slot,
-    this.immediate = false,
-  });
+  const new(this.press, {this.hold, this.slot, this.immediate = false});
 
   /// Short action, either at contact or matching release.
   final FootFadeAction press;

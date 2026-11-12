@@ -360,9 +360,7 @@ void main() {
       expect(client.joined, [('Cafe Free', null)]);
     });
 
-    testWidgets('a wrong password reopens the sheet saying so', (
-      tester,
-    ) async {
+    testWidgets('a wrong password reopens the sheet saying so', (tester) async {
       final client = _PageWifiClient()
         ..connectError = StateError('segno-wifi-ctl: authentication failed');
       await pumpPage(tester, client: client);
@@ -569,10 +567,7 @@ void main() {
 
   group('other states', () {
     testWidgets('a scan that finds nothing says so', (tester) async {
-      await pumpPage(
-        tester,
-        client: _PageWifiClient()..networks = const [],
-      );
+      await pumpPage(tester, client: _PageWifiClient()..networks = const []);
 
       expect(
         find.text('No networks found. Scan to try again.'),

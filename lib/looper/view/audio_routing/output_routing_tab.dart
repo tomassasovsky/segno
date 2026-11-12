@@ -237,10 +237,7 @@ class _OutputRoutingTabState extends State<OutputRoutingTab> {
           Positioned(
             left: 0,
             top: 545,
-            child: _HearLive(
-              input: values.input,
-              busy: values.sourceBusy,
-            ),
+            child: _HearLive(input: values.input, busy: values.sourceBusy),
           ),
         Positioned(
           left: 0,

@@ -69,9 +69,7 @@ class FxUserPreset extends Equatable {
       return const [];
     }
     if (raw is! List) return const [];
-    return [
-      for (final item in raw) ?FxUserPreset.fromJson(item),
-    ];
+    return [for (final item in raw) ?FxUserPreset.fromJson(item)];
   }
 
   /// Encodes a whole saved list.

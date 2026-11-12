@@ -50,54 +50,51 @@ void main() {
     expect(find.byIcon(Icons.fiber_manual_record_outlined), findsOneWidget);
   });
 
-  testWidgets(
-    'armed: enabled, tooltip reads "disarm", uses the record color',
-    (tester) async {
-      await pump(
-        tester,
-        const PerformanceRecorderArmed(
-          elapsed: Duration(seconds: 3),
-          overrun: false,
-        ),
-      );
-      final strings = await l10n();
+  testWidgets('armed: enabled, tooltip reads "disarm", uses the record color', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PerformanceRecorderArmed(
+        elapsed: Duration(seconds: 3),
+        overrun: false,
+      ),
+    );
+    final strings = await l10n();
 
-      final button = tester.widget<IconButton>(
-        find.byKey(const Key('tracks_perfRecord')),
-      );
-      expect(button.onPressed, isNotNull);
-      expect(button.tooltip, strings.perfDisarm);
-      expect(find.byIcon(Icons.fiber_manual_record), findsOneWidget);
-    },
-  );
+    final button = tester.widget<IconButton>(
+      find.byKey(const Key('tracks_perfRecord')),
+    );
+    expect(button.onPressed, isNotNull);
+    expect(button.tooltip, strings.perfDisarm);
+    expect(find.byIcon(Icons.fiber_manual_record), findsOneWidget);
+  });
 
-  testWidgets(
-    'disabled while finalizing, with the "still rendering" tooltip',
-    (tester) async {
-      await pump(tester, const PerformanceRecorderFinalizing());
-      final strings = await l10n();
+  testWidgets('disabled while finalizing, with the "still rendering" tooltip', (
+    tester,
+  ) async {
+    await pump(tester, const PerformanceRecorderFinalizing());
+    final strings = await l10n();
 
-      final button = tester.widget<IconButton>(
-        find.byKey(const Key('tracks_perfRecord')),
-      );
-      expect(button.onPressed, isNull);
-      expect(button.tooltip, strings.perfArmDisabledRendering);
-    },
-  );
+    final button = tester.widget<IconButton>(
+      find.byKey(const Key('tracks_perfRecord')),
+    );
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, strings.perfArmDisabledRendering);
+  });
 
-  testWidgets(
-    'disabled while rendering, with the "still rendering" tooltip',
-    (tester) async {
-      await pump(tester, const PerformanceRecorderRendering(percent: 42));
-      final strings = await l10n();
+  testWidgets('disabled while rendering, with the "still rendering" tooltip', (
+    tester,
+  ) async {
+    await pump(tester, const PerformanceRecorderRendering(percent: 42));
+    final strings = await l10n();
 
-      final button = tester.widget<IconButton>(
-        find.byKey(const Key('tracks_perfRecord')),
-      );
-      expect(button.onPressed, isNull);
-      expect(button.tooltip, strings.perfArmDisabledRendering);
-    },
-  );
+    final button = tester.widget<IconButton>(
+      find.byKey(const Key('tracks_perfRecord')),
+    );
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, strings.perfArmDisabledRendering);
+  });
 
   testWidgets(
     'disabled while the boot salvage is still recovering, with the busy '

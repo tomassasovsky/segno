@@ -755,9 +755,7 @@ void main() {
     );
 
     test('every scope but all tracks is offered', () {
-      final keys = {
-        for (final action in controlActionCatalogue()) action.key,
-      };
+      final keys = {for (final action in controlActionCatalogue()) action.key};
       for (final operation in [
         TrackOperation.multiply,
         TrackOperation.divideFirstHalf,
@@ -841,10 +839,7 @@ void main() {
         rig.engine.verdicts.add(EngineResult.capacity);
         await stomp(PedalButton.clear);
         expect(rig.control.state.footLengthFailure, 2);
-        expect(
-          rig.control.state.footLengthRefusal,
-          FootLengthRefusal.capacity,
-        );
+        expect(rig.control.state.footLengthRefusal, FootLengthRefusal.capacity);
         expect(rig.control.state.mode, InteractionMode.custom);
       } finally {
         await rig.close();

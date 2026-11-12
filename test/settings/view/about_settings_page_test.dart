@@ -43,10 +43,8 @@ void main() {
   AppLocalizations l10n(WidgetTester tester) =>
       AppLocalizations.of(tester.element(find.byType(Scaffold).first));
 
-  Finder inRow(String key, String text) => find.descendant(
-    of: find.byKey(Key(key)),
-    matching: find.text(text),
-  );
+  Finder inRow(String key, String text) =>
+      find.descendant(of: find.byKey(Key(key)), matching: find.text(text));
 
   const console = ConsoleFacts(
     serial: '10000000abcd1234',
@@ -96,14 +94,8 @@ void main() {
       expect(inRow('about_version', '1.0.0'), findsOneWidget);
       expect(inRow('about_image', '1.2.3'), findsOneWidget);
       expect(inRow('about_serial', '10000000abcd1234'), findsOneWidget);
-      expect(
-        inRow('about_interface', 'Scarlett 4i4 4th Gen'),
-        findsOneWidget,
-      );
-      expect(
-        inRow('about_displays', 'LG ULTRAFINE\nSegno 7'),
-        findsOneWidget,
-      );
+      expect(inRow('about_interface', 'Scarlett 4i4 4th Gen'), findsOneWidget);
+      expect(inRow('about_displays', 'LG ULTRAFINE\nSegno 7'), findsOneWidget);
       // The pen's preview line is a mockup's, not the product's.
       expect(find.textContaining('simulated'), findsNothing);
     });
@@ -124,10 +116,7 @@ void main() {
     });
 
     testWidgets('a fact the console did not read has no row', (tester) async {
-      await openAbout(
-        tester,
-        facts: const ConsoleFacts(systemImage: '1.2.3'),
-      );
+      await openAbout(tester, facts: const ConsoleFacts(systemImage: '1.2.3'));
       expect(find.byKey(const Key('about_image')), findsOneWidget);
       expect(find.byKey(const Key('about_name')), findsNothing);
       expect(find.byKey(const Key('about_serial')), findsNothing);
@@ -347,10 +336,7 @@ void main() {
     });
 
     testWidgets('Software updates goes back down to Updates', (tester) async {
-      await harness.pump(
-        tester,
-        factsClient: const _FactsClient(console),
-      );
+      await harness.pump(tester, factsClient: const _FactsClient(console));
       unawaited(openUpdateSettings());
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('updates_about_row')));

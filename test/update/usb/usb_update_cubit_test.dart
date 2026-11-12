@@ -59,9 +59,8 @@ void main() {
       (_) async => const VolumeSpace(totalBytes: 1 << 34, freeBytes: 1 << 33),
     );
     when(() => updates.stagingDirectory).thenReturn('${root.path}/staging');
-    when(
-      () => updates.currentVersion(),
-    ).thenAnswer((_) async => Version(1, 0, 0));
+    when(() => updates.currentVersion())
+        .thenAnswer((_) async => Version(1, 0, 0));
   });
 
   tearDown(() async {
@@ -160,9 +159,8 @@ void main() {
       final cubit = await ready();
       copies();
       final install = StreamController<double>();
-      when(() => updates.installPackage(any())).thenAnswer(
-        (_) => install.stream,
-      );
+      when(() => updates.installPackage(any()))
+          .thenAnswer((_) => install.stream);
 
       cubit.choose(package);
       await pumpEventQueue();
@@ -199,9 +197,8 @@ void main() {
           cancelled: any(named: 'cancelled'),
         ),
       ).thenAnswer((_) => copy.future);
-      when(() => updates.installPackage(any())).thenAnswer(
-        (_) => Stream.fromIterable(const [1.0]),
-      );
+      when(() => updates.installPackage(any()))
+          .thenAnswer((_) => Stream.fromIterable(const [1.0]));
       cubit
         ..choose(package)
         ..choose(package);
@@ -224,9 +221,8 @@ void main() {
       final cubit = await ready();
       copies();
       final install = StreamController<double>();
-      when(() => updates.installPackage(any())).thenAnswer(
-        (_) => install.stream,
-      );
+      when(() => updates.installPackage(any()))
+          .thenAnswer((_) => install.stream);
       cubit.choose(package);
       await pumpEventQueue();
       await cubit.close();

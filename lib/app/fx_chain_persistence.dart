@@ -274,10 +274,8 @@ class FxChainPersistence {
 
   /// Persists the latest confirmed owner, retaining failed writes for retry.
   /// The queue is shared by track and input editors and contains no rig copy.
-  Future<void> saveConfirmed(
-    FxAddress address,
-    SettingsRepository settings,
-  ) => _saveConfirmed(address, settings);
+  Future<void> saveConfirmed(FxAddress address, SettingsRepository settings) =>
+      _saveConfirmed(address, settings);
 
   /// Saves only lane mute intent, sharing ordering with complete FX saves.
   /// A mute can be admitted before startup has restored the lane FX envelope.
@@ -675,11 +673,7 @@ class FxChainPersistence {
     _syncSession();
     var entries = live.entries;
     for (final MapEntry(key: target, value: on) in _powers.entries) {
-      if (target
-          case FxRackTarget(
-            address: final at,
-            :final rackId,
-          )
+      if (target case FxRackTarget(address: final at, :final rackId)
           when at == address) {
         entries = fxWithRackEnabled(entries, rackId, enabled: on) ?? entries;
       }
@@ -806,10 +800,7 @@ Future<void> _writeFxOwner({
               address.index,
               address.lane!,
             ),
-            printed: looper.lanePrintedWhenEdited(
-              address.index,
-              address.lane!,
-            ),
+            printed: looper.lanePrintedWhenEdited(address.index, address.lane!),
           ),
         ),
       );

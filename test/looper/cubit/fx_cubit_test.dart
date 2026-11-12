@@ -18,11 +18,8 @@ class _Settings extends Mock implements SettingsRepository;
 
 class _Persistence extends Mock implements FxChainPersistence;
 
-BuiltInEffect _effect(String id, {bool enabled = true}) => BuiltInEffect(
-  type: TrackEffectType.filter,
-  slotId: id,
-  enabled: enabled,
-);
+BuiltInEffect _effect(String id, {bool enabled = true}) =>
+    BuiltInEffect(type: TrackEffectType.filter, slotId: id, enabled: enabled);
 
 void main() {
   late _Repository repository;
@@ -72,9 +69,8 @@ void main() {
         outputBusCount: 2,
       ),
     );
-    when(() => repository.allTrackChains()).thenAnswer(
-      (_) => {0: FxChainEnvelope(entries: chain)},
-    );
+    when(() => repository.allTrackChains())
+        .thenAnswer((_) => {0: FxChainEnvelope(entries: chain)});
     when(() => repository.trackEffects(0)).thenAnswer((_) => chain);
     when(
       () => repository.setTrackEffects(
@@ -114,12 +110,9 @@ void main() {
     ).thenAnswer((_) async => EngineResult.ok);
     when(() => persistence.beginPending()).thenAnswer((_) => Object());
     when(() => persistence.finishPending(any())).thenReturn(null);
-    when(
-      () => persistence.retainConfirmed(any(), settings),
-    ).thenReturn(null);
-    when(
-      () => persistence.saveConfirmed(any(), settings),
-    ).thenAnswer((_) async {});
+    when(() => persistence.retainConfirmed(any(), settings)).thenReturn(null);
+    when(() => persistence.saveConfirmed(any(), settings))
+        .thenAnswer((_) async {});
     when(() => persistence.scheduleSave(any(), settings)).thenReturn(null);
     when(
       () => persistence.ordinarySlotAt(
@@ -128,14 +121,8 @@ void main() {
         enabled: any(named: 'enabled'),
       ),
     ).thenReturn(null);
-    when(
-      () => persistence.ordinaryParameterAt(
-        any(),
-        any(),
-        any(),
-        any(),
-      ),
-    ).thenReturn(null);
+    when(() => persistence.ordinaryParameterAt(any(), any(), any(), any()))
+        .thenReturn(null);
     cubit = FxCubit(
       repository: repository,
       settings: settings,
@@ -345,9 +332,8 @@ void main() {
   );
 
   test('storage refusal reports live but unsaved state', () async {
-    when(
-      () => persistence.saveConfirmed(any(), settings),
-    ).thenThrow(StateError('disk unavailable'));
+    when(() => persistence.saveConfirmed(any(), settings))
+        .thenThrow(StateError('disk unavailable'));
 
     final result = await cubit.removeEffect(
       const FxAddress(stage: FxStage.track),
@@ -536,10 +522,7 @@ void main() {
 
     test('appended into an existing rack keeps that rack its own '
         'level', () async {
-      final added = await cubit.appendChoice(
-        track,
-        const FxRackChoice(preset),
-      );
+      final added = await cubit.appendChoice(track, const FxRackChoice(preset));
       final rackId = added.groupId!;
       await cubit.setGroupChannels(
         address,
@@ -653,11 +636,10 @@ void main() {
     test('a replacement saved while the player moves to another destination '
         'is stale for the page and still committed', () async {
       final first = await cubit.appendChoice(track, const FxRackChoice(preset));
-      when(() => persistence.saveConfirmed(any(), settings)).thenAnswer((
-        _,
-      ) async {
-        cubit.show(const FxDestination.recordedTrack(1));
-      });
+      when(() => persistence.saveConfirmed(any(), settings))
+          .thenAnswer((_) async {
+            cubit.show(const FxDestination.recordedTrack(1));
+          });
 
       final result = await cubit.replaceRack(
         track,
@@ -705,12 +687,10 @@ void main() {
       when(() => repository.allTracksEffects).thenReturn([_effect('a')]);
       when(() => repository.outputEffects(0)).thenReturn([_effect('o')]);
       // The rig holds settings for every one of them.
-      when(
-        () => repository.allMonitors(),
-      ).thenReturn(const {0: InputMonitor(input: 0)});
-      when(
-        () => repository.allLaneChains(),
-      ).thenReturn(const {(0, 0): FxChainEnvelope()});
+      when(() => repository.allMonitors())
+          .thenReturn(const {0: InputMonitor(input: 0)});
+      when(() => repository.allLaneChains())
+          .thenReturn(const {(0, 0): FxChainEnvelope()});
       when(
         () => persistence.ordinaryChain(any(), enabled: any(named: 'enabled')),
       ).thenReturn(null);
@@ -719,15 +699,13 @@ void main() {
       const track = FxAddress(stage: FxStage.track);
       const all = FxAddress(stage: FxStage.allTracks);
       const output = FxAddress(stage: FxStage.output);
-      when(
-        () => repository.monitorChainEnabled(0),
-      ).thenAnswer((_) => on(input));
+      when(() => repository.monitorChainEnabled(0))
+          .thenAnswer((_) => on(input));
       when(() => repository.laneChainEnabled(0, 0)).thenAnswer((_) => on(lane));
       when(() => repository.trackChainEnabled(0)).thenAnswer((_) => on(track));
       when(() => repository.allTracksChainEnabled).thenAnswer((_) => on(all));
-      when(
-        () => repository.outputChainEnabled(0),
-      ).thenAnswer((_) => on(output));
+      when(() => repository.outputChainEnabled(0))
+          .thenAnswer((_) => on(output));
       when(
         () => repository.setMonitorChainEnabled(
           input: 0,
@@ -754,9 +732,8 @@ void main() {
         (call) => write(track, enabled: call.namedArguments[#enabled]! as bool),
       );
       when(
-        () => repository.setAllTracksChainEnabled(
-          enabled: any(named: 'enabled'),
-        ),
+        () =>
+            repository.setAllTracksChainEnabled(enabled: any(named: 'enabled')),
       ).thenAnswer(
         (call) => write(all, enabled: call.namedArguments[#enabled]! as bool),
       );
@@ -784,9 +761,8 @@ void main() {
 
         expect(result.status, FxEditStatus.applied);
         expect(power[address], isFalse);
-        verify(
-          () => persistence.ordinaryChain(address, enabled: false),
-        ).called(1);
+        verify(() => persistence.ordinaryChain(address, enabled: false))
+            .called(1);
         verify(() => persistence.scheduleSave(address, settings)).called(1);
       });
 
@@ -846,9 +822,8 @@ void main() {
       const input = FxAddress(stage: FxStage.input);
       power[input] = false;
       room = 10;
-      when(
-        () => repository.fxGrowthNs(const {}, chainSwitches: {input: true}),
-      ).thenReturn(11);
+      when(() => repository.fxGrowthNs(const {}, chainSwitches: {input: true}))
+          .thenReturn(11);
 
       final result = cubit.setChainEnabled(input, enabled: true);
 
@@ -928,11 +903,7 @@ void main() {
       // Rack order: Compressor, Reverb, Delay.
       ('a factory rack', const FxRackChoice(rack), [true, true, false]),
       ('a saved sound', FxSavedChoice(saved), [true, false]),
-      (
-        'a single effect',
-        const FxSingleChoice(TrackEffectType.reverb),
-        [true],
-      ),
+      ('a single effect', const FxSingleChoice(TrackEffectType.reverb), [true]),
     ];
 
     /// Points the destination's chain at [staged], which every replacement
@@ -1012,10 +983,7 @@ void main() {
             final result = await cubit.appendChoice(destination, choice);
 
             expect(result.status, FxEditStatus.applied);
-            expect(
-              current().skip(before).map((fx) => fx.enabled),
-              states,
-            );
+            expect(current().skip(before).map((fx) => fx.enabled), states);
           },
         );
       }
@@ -1026,9 +994,9 @@ void main() {
         const track = FxDestination.recordedTrack(0);
         final host = await cubit.appendChoice(track, const FxRackChoice(rack));
         final rackId = host.groupId!;
-        final hostSize = fxChainGroups(
-          chain,
-        ).firstWhere((group) => group.rack?.id == rackId).length;
+        final hostSize = fxChainGroups(chain)
+            .firstWhere((group) => group.rack?.id == rackId)
+            .length;
 
         final result = await cubit.appendToRack(
           const FxAddress(stage: FxStage.track),
@@ -1037,9 +1005,8 @@ void main() {
         );
 
         expect(result.status, FxEditStatus.applied);
-        final grown = fxChainGroups(
-          chain,
-        ).firstWhere((group) => group.rack?.id == rackId);
+        final grown = fxChainGroups(chain)
+            .firstWhere((group) => group.rack?.id == rackId);
         expect(grown.entries.skip(hostSize).map((fx) => fx.enabled), states);
       });
     }

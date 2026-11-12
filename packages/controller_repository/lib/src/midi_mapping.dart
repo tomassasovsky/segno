@@ -89,11 +89,7 @@ sealed class MidiControl extends Equatable {
 /// A parameter with independent low/high values; reversed ranges are valid.
 final class MidiParameterControl extends MidiControl {
   /// Creates a parameter control with finite normalized endpoints.
-  new({
-    required super.key,
-    required this.low,
-    required this.high,
-  }) {
+  new({required super.key, required this.low, required this.high}) {
     if (!_unit(low) || !_unit(high)) {
       throw const FormatException('Invalid MIDI parameter range');
     }
@@ -189,13 +185,7 @@ class MidiMapping extends Equatable {
     );
   }
 
-  const new _(
-    this.id,
-    this.source,
-    this.behavior,
-    this.controls,
-    this.enabled,
-  );
+  const new _(this.id, this.source, this.behavior, this.controls, this.enabled);
 
   /// Decodes a complete mapping, rejecting malformed explicit fields.
   factory fromJson(Map<String, dynamic> json) {

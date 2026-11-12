@@ -22,8 +22,7 @@ import 'package:session_repository/session_repository.dart';
 
 import '../helpers/helpers.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit;
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockSessionRepository extends Mock implements SessionRepository;
 
@@ -140,12 +139,7 @@ void main() {
       (call) async => _previewOf(call.positionalArguments.first as String),
     );
     // A recorded take's shape, different per track.
-    when(
-      () => repository.readPeaks(
-        any(),
-        any(),
-      ),
-    ).thenAnswer((call) async {
+    when(() => repository.readPeaks(any(), any())).thenAnswer((call) async {
       final channel =
           (call.positionalArguments[1] as SessionPreviewTrack).channel;
       return Float32List.fromList([

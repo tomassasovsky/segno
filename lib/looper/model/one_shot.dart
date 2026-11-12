@@ -23,10 +23,8 @@ final class OneShotAddress extends Equatable {
 /// inherit.
 final class OneShotSnapshot extends Equatable {
   /// Takes an immutable copy of the explicit track overrides.
-  new({
-    required this.defaultOneShot,
-    required Map<int, bool> trackOverrides,
-  }) : trackOverrides = Map.unmodifiable(trackOverrides);
+  new({required this.defaultOneShot, required Map<int, bool> trackOverrides})
+    : trackOverrides = Map.unmodifiable(trackOverrides);
 
   /// Default playback choice: false loops, true plays once.
   final bool defaultOneShot;

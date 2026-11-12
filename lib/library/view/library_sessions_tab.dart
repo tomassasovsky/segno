@@ -494,11 +494,7 @@ enum LibraryTrackStripSize {
   /// The New loop sheet's before and after strips (19/02): 346 x 36.
   sheet(width: 346, height: 36, slotWidth: 38);
 
-  new({
-    required this.width,
-    required this.height,
-    required this.slotWidth,
-  });
+  new({required this.width, required this.height, required this.slotWidth});
 
   /// The strip's width.
   final double width;

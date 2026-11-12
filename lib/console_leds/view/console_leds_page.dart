@@ -153,9 +153,7 @@ class _BrightnessColumn extends StatelessWidget {
         l10n.trayBrightnessPercent((brightnessAt(travel) * 100).round());
     String shift(double travel) {
       final points = (offsetAt(travel) * _offsetPoints).round();
-      return l10n.consoleLedsOffsetPercent(
-        points > 0 ? '+$points' : '$points',
-      );
+      return l10n.consoleLedsOffsetPercent(points > 0 ? '+$points' : '$points');
     }
 
     final note = switch (state.light?.sensor) {
@@ -207,10 +205,8 @@ class _BrightnessColumn extends StatelessWidget {
             // Without a sensor Automatic cannot be chosen; a console left on
             // it can still go back to Manual.
             enabled: state.sensorFitted || automatic,
-            onSelected: (value) => _edit(
-              context,
-              (cubit) => cubit.setAutomatic(automatic: value),
-            ),
+            onSelected: (value) =>
+                _edit(context, (cubit) => cubit.setAutomatic(automatic: value)),
             width: width,
             height: 80,
           ),
@@ -298,10 +294,8 @@ class _BrightnessColumn extends StatelessWidget {
 class _SensorColumn extends StatelessWidget {
   const new();
 
-  static int _countsOf(int level) => PedalAmbientLight(
-    sensor: PedalLightSensor.reading,
-    level: level,
-  ).counts;
+  static int _countsOf(int level) =>
+      PedalAmbientLight(sensor: PedalLightSensor.reading, level: level).counts;
 
   @override
   Widget build(BuildContext context) {

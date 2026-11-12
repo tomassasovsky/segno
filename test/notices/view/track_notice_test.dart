@@ -17,11 +17,7 @@ Notice _refused() => Notice(
 
 /// A card's free area: a box with a tap target under the message.
 class _Area extends StatelessWidget {
-  const new({
-    required this.channel,
-    required this.size,
-    required this.onTap,
-  });
+  const new({required this.channel, required this.size, required this.onTap});
 
   final int channel;
   final Size size;
@@ -109,9 +105,7 @@ void main() {
   ) async {
     await pumpCards(tester);
     expect(find.byKey(const Key('track_notice_0')), findsNothing);
-    final ring = tester.widget<DecoratedBox>(
-      find.byKey(const Key('card_0')),
-    );
+    final ring = tester.widget<DecoratedBox>(find.byKey(const Key('card_0')));
     expect(
       (ring.decoration as BoxDecoration).border!.top.color,
       SurfaceTheme.dark.card,
@@ -138,9 +132,7 @@ void main() {
     expect(find.byKey(const Key('track_notice_0')), findsNothing);
   });
 
-  testWidgets("the message is centred in the card's free area", (
-    tester,
-  ) async {
+  testWidgets("the message is centred in the card's free area", (tester) async {
     await pumpCards(tester);
     notices.showOnTrack(0, _refused());
     await tester.pump();

@@ -41,10 +41,7 @@ class RemovableVolume extends Equatable {
 
   /// The volume from the helper's [record]; [ejecting] overrides the status
   /// while this repository's eject request is in flight.
-  factory fromRecord(
-    RemovableVolumeRecord record, {
-    bool ejecting = false,
-  }) {
+  factory fromRecord(RemovableVolumeRecord record, {bool ejecting = false}) {
     return RemovableVolume(
       generation: record.generation,
       fingerprint: record.fingerprint,

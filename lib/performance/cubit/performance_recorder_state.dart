@@ -335,11 +335,5 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   final bool hadGlitch;
 
   @override
-  List<Object?> get props => [
-    result,
-    discarded,
-    tracks,
-    duration,
-    hadGlitch,
-  ];
+  List<Object?> get props => [result, discarded, tracks, duration, hadGlitch];
 }

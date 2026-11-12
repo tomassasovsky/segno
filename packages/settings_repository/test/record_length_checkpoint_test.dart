@@ -23,23 +23,20 @@ void main() {
       store = _Store();
       settings = SettingsRepository(store: store);
     });
-    test(
-      'all slots preserve explicit Auto and exact absence without '
-      'sibling writes',
-      () async {
-        store.values['unrelated'] = 13;
-        for (var c = 0; c < 8; c++) {
-          expect(await settings.readRecordLengthCheckpoint(channel: c), isNull);
-          await settings.restoreRecordLengthCheckpoint(channel: c, bars: 0);
-          expect(await settings.readRecordLengthCheckpoint(channel: c), 0);
-          await settings.restoreRecordLengthCheckpoint(channel: c, bars: null);
-        }
-        await settings.restoreRecordLengthCheckpoint(channel: null, bars: 64);
-        expect(await settings.readRecordLengthCheckpoint(channel: null), 64);
-        await settings.restoreRecordLengthCheckpoint(channel: null, bars: null);
-        expect(store.values, {'unrelated': 13});
-      },
-    );
+    test('all slots preserve explicit Auto and exact absence without '
+        'sibling writes', () async {
+      store.values['unrelated'] = 13;
+      for (var c = 0; c < 8; c++) {
+        expect(await settings.readRecordLengthCheckpoint(channel: c), isNull);
+        await settings.restoreRecordLengthCheckpoint(channel: c, bars: 0);
+        expect(await settings.readRecordLengthCheckpoint(channel: c), 0);
+        await settings.restoreRecordLengthCheckpoint(channel: c, bars: null);
+      }
+      await settings.restoreRecordLengthCheckpoint(channel: null, bars: 64);
+      expect(await settings.readRecordLengthCheckpoint(channel: null), 64);
+      await settings.restoreRecordLengthCheckpoint(channel: null, bars: null);
+      expect(store.values, {'unrelated': 13});
+    });
     test('malformed type and out-of-range values remain untouched', () async {
       for (final bad in ['broken', -1, 65]) {
         store.values['tempo.length_preset.7'] = bad;

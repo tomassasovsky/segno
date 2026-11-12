@@ -392,9 +392,8 @@ void main() {
         PedalBindingSet([
           PedalBinding(
             key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
-            target: const FxChainTarget(
-              FxAddress(stage: FxStage.allTracks),
-            ).canonicalString(),
+            target: const FxChainTarget(FxAddress(stage: FxStage.allTracks))
+                .canonicalString(),
           ),
         ]),
       );

@@ -35,10 +35,7 @@ const int kTrackEffectParams = 32;
 /// that sound the same compare equal however their lists were built, and a
 /// list saved by a narrower build (or trimmed by [BuiltInEffect.toJson])
 /// decodes to the same entry.
-List<double> canonicalEffectParams(
-  TrackEffectType type,
-  List<double>? params,
-) {
+List<double> canonicalEffectParams(TrackEffectType type, List<double>? params) {
   assert(
     params == null || params.length <= kTrackEffectParams,
     'an entry holds at most $kTrackEffectParams parameter cells',
@@ -1747,16 +1744,8 @@ class FxParamInfo {
       other.off == off;
 
   @override
-  int get hashCode => Object.hash(
-    key,
-    unit,
-    steps,
-    atMin,
-    atMax,
-    curve,
-    defaultValue,
-    off,
-  );
+  int get hashCode =>
+      Object.hash(key, unit, steps, atMin, atMax, curve, defaultValue, off);
 
   @override
   String toString() =>
@@ -1772,11 +1761,7 @@ class FxParamInfo {
 @immutable
 final class PluginRef {
   /// Creates a [PluginRef].
-  const new({
-    required this.format,
-    required this.id,
-    this.version = 0,
-  });
+  const new({required this.format, required this.id, this.version = 0});
 
   /// Rebuilds a [PluginRef] from its [toJson] map.
   factory fromJson(Map<String, dynamic> json) => PluginRef(
@@ -2205,9 +2190,7 @@ final class PluginEffect extends TrackEffect {
     'type': kPluginFxCode,
     'plugin': ref.toJson(),
     if (paramValues.isNotEmpty)
-      'paramValues': {
-        for (final e in paramValues.entries) '${e.key}': e.value,
-      },
+      'paramValues': {for (final e in paramValues.entries) '${e.key}': e.value},
     if (state.isNotEmpty) 'state': state,
     if (name.isNotEmpty) 'name': name,
     // Omitted when default so a pre-FX-v3 chain's encoding is byte-unchanged.

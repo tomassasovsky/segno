@@ -57,11 +57,7 @@ class FxState extends Equatable {
 
   /// A copy with the given fields replaced. [index] writes the current kind's
   /// own remembered source.
-  FxState copyWith({
-    FxDestinationKind? kind,
-    int? index,
-    FxTrackPart? part,
-  }) {
+  FxState copyWith({FxDestinationKind? kind, int? index, FxTrackPart? part}) {
     final nextKind = kind ?? this.kind;
     return FxState(
       kind: nextKind,

@@ -13,11 +13,7 @@ import 'package:segno/visualizer/readout_panel/readout_button.dart';
 /// BPM with up to two decimals.
 class ReadoutTempoKeypad extends StatefulWidget {
   /// Creates a [ReadoutTempoKeypad].
-  const new({
-    required this.onSet,
-    required this.onCancel,
-    super.key,
-  });
+  const new({required this.onSet, required this.onCancel, super.key});
 
   /// Called with the typed tempo when Set takes it.
   final ValueChanged<double> onSet;

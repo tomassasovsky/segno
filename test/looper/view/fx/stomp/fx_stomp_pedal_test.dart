@@ -39,10 +39,7 @@ void main() {
   /// centred in it.
   Rect drawn(WidgetTester tester) => tester.getRect(
     find
-        .descendant(
-          of: find.byType(FxStompPedal),
-          matching: find.byType(Stack),
-        )
+        .descendant(of: find.byType(FxStompPedal), matching: find.byType(Stack))
         .first,
   );
 
@@ -74,9 +71,7 @@ void main() {
   }
 
   for (final count in [4, 5, 6]) {
-    testWidgets('a box and a module draw with $count knobs', (
-      tester,
-    ) async {
+    testWidgets('a box and a module draw with $count knobs', (tester) async {
       await pump(tester, face('Reverb', count));
 
       await pump(tester, face('Compressor', count));

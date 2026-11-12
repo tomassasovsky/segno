@@ -190,29 +190,28 @@ class InstrumentsSnapshot {
   });
 
   /// Projects the instrument fields of a native snapshot.
-  factory fromNative(le_snapshot native) =>
-      InstrumentsSnapshot(
-        patches: [
-          for (var k = 0; k < kMaxInstruments; k++) native.instrument_patch[k],
-        ],
-        voices: [
-          for (var k = 0; k < kMaxInstruments; k++) native.instrument_voices[k],
-        ],
-        peaks: [
-          for (var k = 0; k < kMaxInstruments; k++) native.instrument_peaks[k],
-        ],
-        monitorPeaks: [
-          for (var k = 0; k < kMaxInstruments; k++)
-            native.monitor_peaks[kInstrumentSourceBase + k],
-        ],
-        voiceLimit: native.voice_limit,
-        voicesStolen: native.voices_stolen,
-        voicesStolenHard: native.voices_stolen_hard,
-        synthEpoch: native.synth_epoch,
-        eventsRefused: native.instrument_events_refused,
-        fallbackBlocks: native.instrument_fallback_blocks,
-        sustainRefused: native.instrument_sustain_refused,
-      );
+  factory fromNative(le_snapshot native) => InstrumentsSnapshot(
+    patches: [
+      for (var k = 0; k < kMaxInstruments; k++) native.instrument_patch[k],
+    ],
+    voices: [
+      for (var k = 0; k < kMaxInstruments; k++) native.instrument_voices[k],
+    ],
+    peaks: [
+      for (var k = 0; k < kMaxInstruments; k++) native.instrument_peaks[k],
+    ],
+    monitorPeaks: [
+      for (var k = 0; k < kMaxInstruments; k++)
+        native.monitor_peaks[kInstrumentSourceBase + k],
+    ],
+    voiceLimit: native.voice_limit,
+    voicesStolen: native.voices_stolen,
+    voicesStolenHard: native.voices_stolen_hard,
+    synthEpoch: native.synth_epoch,
+    eventsRefused: native.instrument_events_refused,
+    fallbackBlocks: native.instrument_fallback_blocks,
+    sustainRefused: native.instrument_sustain_refused,
+  );
 
   /// No instruments: every slot empty and silent.
   static const InstrumentsSnapshot initial = InstrumentsSnapshot(

@@ -401,9 +401,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
 
-      Focus.of(
-        tester.element(find.text('elsewhere')),
-      ).requestFocus();
+      Focus.of(tester.element(find.text('elsewhere'))).requestFocus();
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);

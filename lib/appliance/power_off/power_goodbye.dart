@@ -99,10 +99,7 @@ class PowerGoodbye extends StatelessWidget {
             version: version,
           ),
           (PowerAction.restart, null) => const SizedBox.shrink(),
-          _ => _SafeToSwitchOffFace(
-            state: state,
-            unplugToApply: unplugToApply,
-          ),
+          _ => _SafeToSwitchOffFace(state: state, unplugToApply: unplugToApply),
         };
       case PowerPhase.idle:
       case PowerPhase.refuse:
@@ -186,9 +183,9 @@ class _StepRow extends StatelessWidget {
         Icons.check,
         key: const Key('power_step_done'),
         size: 28,
-        color: Theme.of(
-          context,
-        ).extension<LooperTheme>()!.waveformColor(LooperMeterState.playing),
+        color: Theme.of(context)
+            .extension<LooperTheme>()!
+            .waveformColor(LooperMeterState.playing),
       ),
       _StepProgress.current => Padding(
         key: const Key('power_step_current'),
@@ -228,10 +225,7 @@ class _StepRow extends StatelessWidget {
 
 /// The ring, "Safe to switch off", the saved line and the unplug line.
 class _SafeToSwitchOffFace extends StatelessWidget {
-  const new({
-    required this.state,
-    required this.unplugToApply,
-  });
+  const new({required this.state, required this.unplugToApply});
 
   final PowerState state;
   final bool unplugToApply;
@@ -324,9 +318,8 @@ String? _savedLine(BuildContext context, PowerState state) {
   final session = state.session;
   final at = state.savedAt;
   if (session == null || at == null) return null;
-  final time = DateFormat.Hm(
-    Localizations.localeOf(context).toString(),
-  ).format(at.toLocal());
+  final time = DateFormat.Hm(Localizations.localeOf(context).toString())
+      .format(at.toLocal());
   return context.l10n.powerSavedAt(session, time);
 }
 
@@ -441,11 +434,7 @@ class _ReadoutContent extends StatelessWidget {
           key: const Key('readout_goodbye_restarting'),
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.restart_alt,
-              size: 96 * s,
-              color: surface.textSecondary,
-            ),
+            Icon(Icons.restart_alt, size: 96 * s, color: surface.textSecondary),
             SizedBox(height: 28 * s),
             AppText(
               l10n.powerRestarting,
@@ -466,9 +455,9 @@ class _CheckRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final green = Theme.of(
-      context,
-    ).extension<LooperTheme>()!.waveformColor(LooperMeterState.playing);
+    final green = Theme.of(context)
+        .extension<LooperTheme>()!
+        .waveformColor(LooperMeterState.playing);
     return Container(
       key: const Key('power_check_ring'),
       width: diameter,
@@ -485,11 +474,7 @@ class _CheckRing extends StatelessWidget {
 
 /// The save's progress: [value] of the steps finished.
 class _ProgressBar extends StatelessWidget {
-  const new({
-    required this.value,
-    required this.width,
-    this.height = 8,
-  });
+  const new({required this.value, required this.width, this.height = 8});
 
   final double value;
   final double width;

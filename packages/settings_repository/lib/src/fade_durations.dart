@@ -4,10 +4,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class FadeDurations {
   /// Validates and detaches exact millisecond values and Custom membership.
-  factory({
-    int defaultMs = 4000,
-    Map<int, int> overrides = const {},
-  }) {
+  factory({int defaultMs = 4000, Map<int, int> overrides = const {}}) {
     _validateDuration(defaultMs);
     for (final entry in overrides.entries) {
       _validateChannel(entry.key);

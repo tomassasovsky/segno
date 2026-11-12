@@ -57,9 +57,7 @@ void main() {
     test('MODE: red in Record, green in Mute, blue in FX, else yellow', () {
       for (final mode in InteractionMode.values) {
         expect(
-          PedalLedMap.schema(
-            mode,
-          )[PedalLedGroup.mode]![PedalLedState.current],
+          PedalLedMap.schema(mode)[PedalLedGroup.mode]![PedalLedState.current],
           switch (mode) {
             InteractionMode.record => ledRed,
             InteractionMode.mute => ledGreen,
@@ -147,10 +145,7 @@ void main() {
     ]);
 
     test('track pedals show their own track state', () {
-      final lights = _lights(
-        looper,
-        overlay.copyWith(cursor: 3),
-      );
+      final lights = _lights(looper, overlay.copyWith(cursor: 3));
       expect(lights[PedalButton.track1], PedalLedState.recording);
       expect(lights[PedalButton.track2], isNull);
       expect(lights[PedalButton.track3], PedalLedState.overdubbing);

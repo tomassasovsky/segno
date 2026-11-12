@@ -17,10 +17,7 @@ enum ControlEditBlock {
 /// Ephemeral read projection shared by MIDI, external controls and catalogues.
 /// Create it for each render or intent; it owns no saved or mutable state.
 class ControlAvailability {
-  const new({
-    required this.looper,
-    this.owned = const OwnedValueSnapshots(),
-  });
+  const new({required this.looper, this.owned = const OwnedValueSnapshots()});
 
   final LooperRepository looper;
 

@@ -217,9 +217,8 @@ class LooperState extends Equatable {
   /// engine's loop clock advances exactly then and otherwise waits at the
   /// loop top. Not [TransportState.deviceRunning], which only says the audio
   /// device is open.
-  bool get isPlaying => tracks.any(
-    (t) => t.state == TrackState.playing || t.isCapturing,
-  );
+  bool get isPlaying =>
+      tracks.any((t) => t.state == TrackState.playing || t.isCapturing);
 
   /// Whether [channel] is a section that plays one at a time (#1077, #1323):
   /// any Song track, or a Band track other than an established primary (the

@@ -95,10 +95,7 @@ void main() {
         BuiltInEffect(type: TrackEffectType.reverb),
       ],
     );
-    expect(
-      looper.setLaneVolume(0.6, channel: 0, lane: 0),
-      EngineResult.ok,
-    );
+    expect(looper.setLaneVolume(0.6, channel: 0, lane: 0), EngineResult.ok);
     looper
       ..setLaneMute(muted: true, channel: 0, lane: 0)
       ..setMonitorEffects(

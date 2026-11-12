@@ -243,10 +243,8 @@ class AudioExporter {
     try {
       if (aside.existsSync()) aside.deleteSync(recursive: true);
       aside.createSync(recursive: true);
-      File('${aside.path}/$targetsName').writeAsStringSync(
-        entries.join('\n'),
-        flush: true,
-      );
+      File('${aside.path}/$targetsName')
+          .writeAsStringSync(entries.join('\n'), flush: true);
       for (final entry in moving) {
         final path = '${folder.path}/$entry';
         if (FileSystemEntity.typeSync(path) != FileSystemEntityType.notFound) {

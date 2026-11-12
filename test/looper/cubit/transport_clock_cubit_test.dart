@@ -90,9 +90,7 @@ void main() {
   const recordingFirstTake = LooperState(
     tracks: [Track(state: TrackState.recording)],
   );
-  const countingIn = LooperState(
-    transport: TransportState(countingIn: true),
-  );
+  const countingIn = LooperState(transport: TransportState(countingIn: true));
 
   group('TransportClockCubit', () {
     test('reads zero, stopped, on an idle rig', () {
@@ -338,10 +336,8 @@ void main() {
         );
       final ticker = StreamController<void>.broadcast();
       addTearDown(ticker.close);
-      final repo = LooperRepository(
-        engine: fakeEngine,
-        ticker: ticker.stream,
-      )..startEngine(const EngineConfig());
+      final repo = LooperRepository(engine: fakeEngine, ticker: ticker.stream)
+        ..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
       final clockWatch = _FakeStopwatch();

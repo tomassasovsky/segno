@@ -129,10 +129,7 @@ class TempoSettings {
     _closing = true;
     // Initialization failures belong to the load caller. They must not bypass
     // disposal or prevent the remaining application owners from closing.
-    await _loadFuture?.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
+    await _loadFuture?.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     try {
       await Future.wait<void>([
         _subscription.cancel(),

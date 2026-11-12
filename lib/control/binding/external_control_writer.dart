@@ -26,11 +26,7 @@ extension ExternalControlWriter on LooperRepository {
       // activation of one module then still has the last word on it.
       var racked = original;
       for (final MapEntry(key: target, value: on) in activations.entries) {
-        if (target
-            case FxRackTarget(
-              address: final at,
-              :final rackId,
-            )
+        if (target case FxRackTarget(address: final at, :final rackId)
             when at == address) {
           racked = fxWithRackEnabled(racked, rackId, enabled: on) ?? racked;
         }
@@ -111,11 +107,7 @@ TrackEffect _edited(
           if (id == null)
             effect.params[p]
           else
-            parameters[FxParamTarget(
-                  address: address,
-                  slotId: id,
-                  param: p,
-                )] ??
+            parameters[FxParamTarget(address: address, slotId: id, param: p)] ??
                 effect.params[p],
       ],
     ),

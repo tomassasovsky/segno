@@ -177,14 +177,8 @@ class _KnobSpot {
         final r = count <= 3 ? 36.0 : 32.0;
         // The panel spans 66..384 with 44 corners; a label 7 above its
         // bottom edge has 90..360.
-        _KnobSpot onPanel(Offset c) => _KnobSpot(
-          c,
-          r,
-          c.dy + r + 26,
-          14,
-          labelLeft: 90,
-          labelRight: 360,
-        );
+        _KnobSpot onPanel(Offset c) =>
+            _KnobSpot(c, r, c.dy + r + 26, 14, labelLeft: 90, labelRight: 360);
         const spots = {
           1: [Offset(225, 200)],
           2: [Offset(160, 200), Offset(290, 200)],
@@ -276,10 +270,7 @@ final class _KnobParts {
         r,
         const Offset(.4, .35),
         .75,
-        const [
-          Color(0xFF3B4048),
-          Color(0xFF121418),
-        ],
+        const [Color(0xFF3B4048), Color(0xFF121418)],
         const [0, 1],
       );
     capPaint = Paint()
@@ -287,11 +278,7 @@ final class _KnobParts {
         r * .74,
         const Offset(.38, .3),
         .8,
-        const [
-          Color(0xFF4D535D),
-          Color(0xFF262A30),
-          Color(0xFF16181C),
-        ],
+        const [Color(0xFF4D535D), Color(0xFF262A30), Color(0xFF16181C)],
         const [0, .6, 1],
       );
     dome = Paint()..shader = fxStompDome(Rect.fromCircle(center: c, radius: r));
@@ -385,11 +372,7 @@ final class _KnobParts {
 
 /// The knobs of one pedal, at their [settings].
 class _KnobsPainter extends CustomPainter {
-  new({
-    required this.spec,
-    required this.spots,
-    required this.settings,
-  });
+  new({required this.spec, required this.spots, required this.settings});
 
   final FxStompSpec spec;
   final List<_KnobSpot> spots;
@@ -403,10 +386,7 @@ class _KnobsPainter extends CustomPainter {
       final spot = spots[i];
       canvas
         ..save()
-        ..translate(
-          spot.centre.dx - spot.radius,
-          spot.centre.dy - spot.radius,
-        );
+        ..translate(spot.centre.dx - spot.radius, spot.centre.dy - spot.radius);
       _paintKnob(
         canvas,
         spot.radius,
@@ -480,11 +460,7 @@ void _paintKnob(
         ..rotate(degrees * math.pi / 180)
         ..drawPath(parts.chicken, parts.chickenCream)
         ..drawPath(parts.chicken, parts.chickenLine)
-        ..drawLine(
-          Offset(0, -r * .95),
-          Offset(0, -r * .35),
-          parts.chickenMark,
-        )
+        ..drawLine(Offset(0, -r * .95), Offset(0, -r * .35), parts.chickenMark)
         ..restore();
     case FxStompKnobStyle.cap:
       canvas
@@ -953,10 +929,7 @@ class _Enclosure {
       name,
       Offset(x, y),
       maxWidth: room,
-      style.copyWith(
-        color: ink,
-        shadows: [printShadow],
-      ),
+      style.copyWith(color: ink, shadows: [printShadow]),
     );
     canvas.restore();
   }

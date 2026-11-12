@@ -358,8 +358,7 @@ class _MonitorRestoreStore extends FakeKeyValueStore {
 }
 
 class _NoticeSessionRepository extends SessionRepository {
-  new()
-    : super(engine: FakeAudioEngine(), guards: GuardRegistry());
+  new() : super(engine: FakeAudioEngine(), guards: GuardRegistry());
 
   final readEntered = Completer<void>();
   final readRelease = Completer<void>();
@@ -834,9 +833,8 @@ void main() {
         expect(control.isClosed, isTrue);
         expect(looper.isClosed, isTrue);
         expect(tester.takeException(), isNull);
-        final log = File(
-          '${directory.path}/${AppLog.fileName}',
-        ).readAsStringSync();
+        final log = File('${directory.path}/${AppLog.fileName}')
+            .readAsStringSync();
         expect(
           'waveform display teardown failed'.allMatches(log),
           hasLength(1),
@@ -940,9 +938,8 @@ void main() {
         expect(control.isClosed, isTrue);
         expect(power.isClosed, isTrue);
         expect(tester.takeException(), isNull);
-        final log = File(
-          '${logDirectory.path}/${AppLog.fileName}',
-        ).readAsStringSync();
+        final log = File('${logDirectory.path}/${AppLog.fileName}')
+            .readAsStringSync();
         expect('application teardown failed'.allMatches(log), hasLength(1));
         expect(log, contains('FX storage unavailable during disposal'));
         expect(log, contains('_TrackFxStore.setString'));
@@ -1012,63 +1009,57 @@ void main() {
     });
 
     for (final recovery in ['Retry', 'Session', 'Power']) {
-      testWidgets(
-        'Fade startup notice resolves through $recovery',
-        (tester) async {
-          final store = FakeKeyValueStore()
-            ..values['looper.fade_durations'] =
-                '{"defaultMs":501,"overrides":{}}';
-          settings = SettingsRepository(store: store);
-          final bundles = _NoticeSessionRepository();
-          sessionRepository = bundles;
-          var halted = false;
-          await pumpApp(
-            tester,
-            NoopWaveformWindowService(),
-            powerOff: () async => halted = true,
-          );
+      testWidgets('Fade startup notice resolves through $recovery', (
+        tester,
+      ) async {
+        final store = FakeKeyValueStore()
+          ..values['looper.fade_durations'] =
+              '{"defaultMs":501,"overrides":{}}';
+        settings = SettingsRepository(store: store);
+        final bundles = _NoticeSessionRepository();
+        sessionRepository = bundles;
+        var halted = false;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => halted = true,
+        );
+        expect(noticeTitles(tester), contains('Fade duration needs recovery'));
+        if (recovery == 'Session') {
+          final context = tester.element(find.byType(TracksView));
+          bundles.readRelease.complete();
+          final loading = context.read<SessionCubit>().open('Replacement');
+          await tester.pumpAndSettle();
+          await loading;
           expect(
-            noticeTitles(tester),
-            contains('Fade duration needs recovery'),
+            context.read<SessionCubit>().state.outcome,
+            SessionOutcome.loaded,
           );
-          if (recovery == 'Session') {
-            final context = tester.element(find.byType(TracksView));
-            bundles.readRelease.complete();
-            final loading = context.read<SessionCubit>().open(
-              'Replacement',
-            );
-            await tester.pumpAndSettle();
-            await loading;
-            expect(
-              context.read<SessionCubit>().state.outcome,
-              SessionOutcome.loaded,
-            );
-          } else if (recovery == 'Power') {
-            final context = tester.element(find.byType(TracksView));
-            final power = context.read<PowerCubit>()
-              ..press(_named)
-              ..shutDown(_named, save: () async {});
-            await tester.pumpAndSettle();
-            expect(halted, isFalse);
-            store.values.remove('looper.fade_durations');
-            power.retry(_named, save: () async {});
-            await tester.pumpAndSettle();
-            await tester.pump(const Duration(seconds: 6));
-            expect(halted, isTrue);
-          } else {
-            store.values.remove('looper.fade_durations');
-            await tapRetry(tester, AppNoticeId.fadeSettings);
-            await tester.pumpAndSettle();
-          }
-          expect(
-            noticeTitles(tester),
-            isNot(contains('Fade duration needs recovery')),
-          );
-          expect(noticeUp(tester, AppNoticeId.fadeSettings), isFalse);
-          await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump();
-        },
-      );
+        } else if (recovery == 'Power') {
+          final context = tester.element(find.byType(TracksView));
+          final power = context.read<PowerCubit>()
+            ..press(_named)
+            ..shutDown(_named, save: () async {});
+          await tester.pumpAndSettle();
+          expect(halted, isFalse);
+          store.values.remove('looper.fade_durations');
+          power.retry(_named, save: () async {});
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 6));
+          expect(halted, isTrue);
+        } else {
+          store.values.remove('looper.fade_durations');
+          await tapRetry(tester, AppNoticeId.fadeSettings);
+          await tester.pumpAndSettle();
+        }
+        expect(
+          noticeTitles(tester),
+          isNot(contains('Fade duration needs recovery')),
+        );
+        expect(noticeUp(tester, AppNoticeId.fadeSettings), isFalse);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      });
     }
 
     testWidgets('power off waits for an ordinary Click preference', (
@@ -1272,9 +1263,7 @@ void main() {
 
     testWidgets(
       'Foot Mixer mute caption follows admitted input after failed restore',
-      (
-        tester,
-      ) async {
+      (tester) async {
         tester.view.physicalSize = const Size(1920, 1080);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
@@ -1320,9 +1309,7 @@ void main() {
     for (final cancelLoad in [false, true]) {
       testWidgets(
         'monitor notice yields during Session load; cancel=$cancelLoad',
-        (
-          tester,
-        ) async {
+        (tester) async {
           final store = _MonitorRestoreStore()
             ..refuseRead = false
             ..readGate = Completer<void>();
@@ -1483,9 +1470,7 @@ void main() {
     for (final projectBeforeFrame in [false, true]) {
       testWidgets(
         'idle monitor failure requests frame; projected=$projectBeforeFrame',
-        (
-          tester,
-        ) async {
+        (tester) async {
           final gate = Completer<void>();
           final store = _MonitorRestoreStore()..readGate = gate;
           store.values[_tunerSeededKey] = true;
@@ -1518,9 +1503,7 @@ void main() {
 
     testWidgets(
       'Session projection retires monitor recovery across Power overlay',
-      (
-        tester,
-      ) async {
+      (tester) async {
         final store = _MonitorRestoreStore();
         settings = SettingsRepository(store: store);
         await pumpApp(tester, NoopWaveformWindowService());
@@ -1583,10 +1566,7 @@ void main() {
           );
           if (malformed) {
             // Retry removes only the unreadable key, then restores the rest.
-            expect(
-              store.values.containsKey('tempo.length_preset.7'),
-              isFalse,
-            );
+            expect(store.values.containsKey('tempo.length_preset.7'), isFalse);
             before.remove('tempo.length_preset.7');
             for (final entry in before.entries) {
               expect(store.values[entry.key], entry.value);
@@ -1643,10 +1623,7 @@ void main() {
           );
           if (malformed) {
             // Retry removes only the unreadable key; the rest survive.
-            expect(
-              store.values.containsKey('track_record_timing.7'),
-              isFalse,
-            );
+            expect(store.values.containsKey('track_record_timing.7'), isFalse);
             before.remove('track_record_timing.7');
             for (final entry in before.entries) {
               expect(store.values[entry.key], entry.value);
@@ -1669,58 +1646,55 @@ void main() {
     }
 
     for (final malformed in [false, true]) {
-      testWidgets(
-        'recording-start startup recovery remains actionable; '
-        'malformed=$malformed',
-        (tester) async {
-          final store = _RecordStartStore()..refuseNextRead = !malformed;
-          store.values['tempo.count_in_bars'] = malformed ? 3 : 4;
-          store.values['looper.auto_record'] = false;
-          store.values[_tunerSeededKey] = true;
-          final before = Map<String, Object>.of(store.values);
-          settings = SettingsRepository(store: store);
-          await pumpApp(tester, NoopWaveformWindowService());
-          final tempo = tester
-              .element(find.byType(TracksView))
-              .read<TempoCubit>();
-          expect(tempo.state.recordStartSnapshot, isNull);
-          expect(
-            noticeTitles(tester),
-            contains('Recording start needs recovery'),
-          );
-          await tester.pump(const Duration(seconds: 6));
-          expect(
-            noticeTitles(tester),
-            contains('Recording start needs recovery'),
-          );
-          await tapRetry(tester);
-          await tester.pumpAndSettle();
-          // A transient read reads cleanly on Retry; a pair that stays
-          // unreadable is repaired to (0, false).
-          expect(tempo.state.recordStartReady, isTrue);
-          expect(
-            store.values,
-            malformed
-                ? {
-                    'tempo.count_in_bars': 0,
-                    'looper.auto_record': false,
-                    _tunerSeededKey: true,
-                  }
-                : before,
-          );
-          expect(
-            tempo.state.recordStartSnapshot?.settings.countInBars,
-            malformed ? 0 : 4,
-          );
-          expect(tempo.state.recordStartSnapshot?.settings.soundStart, isFalse);
-          expect(
-            noticeTitles(tester),
-            isNot(contains('Recording start needs recovery')),
-          );
-          await tester.pumpWidget(const SizedBox.shrink());
-          await tester.pump(const Duration(milliseconds: 100));
-        },
-      );
+      testWidgets('recording-start startup recovery remains actionable; '
+          'malformed=$malformed', (tester) async {
+        final store = _RecordStartStore()..refuseNextRead = !malformed;
+        store.values['tempo.count_in_bars'] = malformed ? 3 : 4;
+        store.values['looper.auto_record'] = false;
+        store.values[_tunerSeededKey] = true;
+        final before = Map<String, Object>.of(store.values);
+        settings = SettingsRepository(store: store);
+        await pumpApp(tester, NoopWaveformWindowService());
+        final tempo = tester
+            .element(find.byType(TracksView))
+            .read<TempoCubit>();
+        expect(tempo.state.recordStartSnapshot, isNull);
+        expect(
+          noticeTitles(tester),
+          contains('Recording start needs recovery'),
+        );
+        await tester.pump(const Duration(seconds: 6));
+        expect(
+          noticeTitles(tester),
+          contains('Recording start needs recovery'),
+        );
+        await tapRetry(tester);
+        await tester.pumpAndSettle();
+        // A transient read reads cleanly on Retry; a pair that stays
+        // unreadable is repaired to (0, false).
+        expect(tempo.state.recordStartReady, isTrue);
+        expect(
+          store.values,
+          malformed
+              ? {
+                  'tempo.count_in_bars': 0,
+                  'looper.auto_record': false,
+                  _tunerSeededKey: true,
+                }
+              : before,
+        );
+        expect(
+          tempo.state.recordStartSnapshot?.settings.countInBars,
+          malformed ? 0 : 4,
+        );
+        expect(tempo.state.recordStartSnapshot?.settings.soundStart, isFalse);
+        expect(
+          noticeTitles(tester),
+          isNot(contains('Recording start needs recovery')),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 100));
+      });
     }
 
     testWidgets('Hear click Retry preserves independent recording recovery', (
@@ -1754,9 +1728,7 @@ void main() {
     for (final customName in [false, true]) {
       testWidgets(
         'Sound without input identifies its track; named=$customName',
-        (
-          tester,
-        ) async {
+        (tester) async {
           final store = FakeKeyValueStore();
           store.values['tempo.count_in_bars'] = 0;
           store.values['looper.auto_record'] = true;
@@ -1778,10 +1750,7 @@ void main() {
           // Said on the track it was pressed for, whose card names it.
           expect(noticeTracks(AppNoticeId.recordingInputRequired), [3]);
           expect(saidTitles, contains('Choose recording inputs'));
-          expect(
-            find.text(customName ? 'Harmony' : 'TRACK 4'),
-            findsWidgets,
-          );
+          expect(find.text(customName ? 'Harmony' : 'TRACK 4'), findsWidgets);
           expect(engine.recordCalls, initialCalls);
           expect(engine.lastRecordImage, isNull);
           expect(engine.pendingImages, isEmpty);
@@ -2495,9 +2464,7 @@ void main() {
         expect(halted, isFalse);
         store.refuseWrite = false;
         await tester.tap(
-          find.byKey(
-            Key(retry ? 'power_retry' : 'power_stay_on'),
-          ),
+          find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
         );
         await tester.pumpAndSettle();
         await tester.pump(const Duration(seconds: 6));
@@ -2967,9 +2934,7 @@ void main() {
     for (final retry in [false, true]) {
       testWidgets(
         'Record length refusal stays on; recovery choice retry=$retry',
-        (
-          tester,
-        ) async {
+        (tester) async {
           final store = _LengthStore();
           settings = SettingsRepository(store: store);
           store.values['looper.mode'] = LooperMode.free.code;
@@ -2995,9 +2960,7 @@ void main() {
           expect(halted, isFalse);
           store.refuseWrite = false;
           await tester.tap(
-            find.byKey(
-              Key(retry ? 'power_retry' : 'power_stay_on'),
-            ),
+            find.byKey(Key(retry ? 'power_retry' : 'power_stay_on')),
           );
           await tester.pumpAndSettle();
           await tester.pump(const Duration(seconds: 6));
@@ -3107,106 +3070,103 @@ void main() {
     });
 
     for (final releasedBeforeShutdown in [false, true]) {
-      testWidgets(
-        'power off waits for an owed timing release; '
-        'releasedBeforeShutdown=$releasedBeforeShutdown',
-        (tester) async {
-          final rejectingEngine = _RefusingTimingEngine();
-          engine = rejectingEngine;
-          repository = LooperRepository(
-            engine: engine,
-            ticker: const Stream<void>.empty(),
-          );
-          final store = FakeKeyValueStore();
-          settings = SettingsRepository(store: store);
-          final midi = _ShutdownMidi(settings);
-          midiDeviceRepository = midi;
-          addTearDown(() => unawaited(midi.dispose()));
-          var haltCalls = 0;
-          await pumpApp(
-            tester,
-            NoopWaveformWindowService(),
-            powerOff: () async => haltCalls++,
-          );
-          repository.startEngine(const EngineConfig());
-          await tester.pumpAndSettle();
-          final context = tester.element(find.byType(TracksView));
-          final control = context.read<ControlCubit>();
-          final timing = context.read<RecordTimingCubit>();
-          final power = context.read<PowerCubit>();
-          final editor = Object();
-          control.beginMidiEdit(device: 'shutdown-test', owner: editor);
-          MidiSaveResult? saved;
-          unawaited(
-            control
-                .saveMidiMapping(
-                  MidiMapping(
-                    id: 'held-timing-shutdown',
-                    source: MidiSource(
-                      device: 'shutdown-test',
-                      kind: ControllerSourceKind.midiCc,
-                      number: 21,
-                    ),
-                    behavior: MidiBehavior.momentary,
-                    controls: [
-                      MidiParameterControl(
-                        key: '{"ctl":"trackRecordTiming","index":0}',
-                        low: 0,
-                        high: 1,
-                      ),
-                    ],
+      testWidgets('power off waits for an owed timing release; '
+          'releasedBeforeShutdown=$releasedBeforeShutdown', (tester) async {
+        final rejectingEngine = _RefusingTimingEngine();
+        engine = rejectingEngine;
+        repository = LooperRepository(
+          engine: engine,
+          ticker: const Stream<void>.empty(),
+        );
+        final store = FakeKeyValueStore();
+        settings = SettingsRepository(store: store);
+        final midi = _ShutdownMidi(settings);
+        midiDeviceRepository = midi;
+        addTearDown(() => unawaited(midi.dispose()));
+        var haltCalls = 0;
+        await pumpApp(
+          tester,
+          NoopWaveformWindowService(),
+          powerOff: () async => haltCalls++,
+        );
+        repository.startEngine(const EngineConfig());
+        await tester.pumpAndSettle();
+        final context = tester.element(find.byType(TracksView));
+        final control = context.read<ControlCubit>();
+        final timing = context.read<RecordTimingCubit>();
+        final power = context.read<PowerCubit>();
+        final editor = Object();
+        control.beginMidiEdit(device: 'shutdown-test', owner: editor);
+        MidiSaveResult? saved;
+        unawaited(
+          control
+              .saveMidiMapping(
+                MidiMapping(
+                  id: 'held-timing-shutdown',
+                  source: MidiSource(
+                    device: 'shutdown-test',
+                    kind: ControllerSourceKind.midiCc,
+                    number: 21,
                   ),
-                  owner: editor,
-                  create: true,
-                )
-                .then((result) => saved = result),
-          );
+                  behavior: MidiBehavior.momentary,
+                  controls: [
+                    MidiParameterControl(
+                      key: '{"ctl":"trackRecordTiming","index":0}',
+                      low: 0,
+                      high: 1,
+                    ),
+                  ],
+                ),
+                owner: editor,
+                create: true,
+              )
+              .then((result) => saved = result),
+        );
+        await tester.pumpAndSettle();
+        expect(saved?.saved, isTrue);
+        control.endMidiEdit(editor);
+        midi.push(127);
+        await tester.pumpAndSettle();
+        expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+        expect(
+          context
+              .read<RecordTimingSettings>()
+              .durableRecordTimingSnapshot
+              .trackOverrides[0],
+          RecordTiming.immediately,
+        );
+        rejectingEngine.refuseTiming = true;
+        if (releasedBeforeShutdown) {
+          midi.push(0);
           await tester.pumpAndSettle();
-          expect(saved?.saved, isTrue);
-          control.endMidiEdit(editor);
-          midi.push(127);
-          await tester.pumpAndSettle();
+          expect(noticeSaid(AppNoticeId.recordTimingSettings), isTrue);
           expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
-          expect(
-            context
-                .read<RecordTimingSettings>()
-                .durableRecordTimingSnapshot
-                .trackOverrides[0],
-            RecordTiming.immediately,
-          );
-          rejectingEngine.refuseTiming = true;
-          if (releasedBeforeShutdown) {
-            midi.push(0);
-            await tester.pumpAndSettle();
-            expect(noticeSaid(AppNoticeId.recordTimingSettings), isTrue);
-            expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
-          }
-          final stopCalls = engine.stopCalls;
-          power
-            ..press(_named)
-            ..shutDown(_named, save: () async {});
-          await tester.pumpAndSettle();
-          expect(power.state.phase, PowerPhase.saveFailed);
-          expect(find.byKey(const Key('power_retry')), findsOneWidget);
-          expect(haltCalls, 0);
-          expect(engine.stopCalls, stopCalls);
-          expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
-          expect(store.values['track_record_timing.0'], 0);
-          expect(noticeUp(tester, AppNoticeId.recordTimingSettings), isFalse);
-          expect(
-            find.byKey(const Key('power_retry')).hitTestable(),
-            findsOneWidget,
-          );
+        }
+        final stopCalls = engine.stopCalls;
+        power
+          ..press(_named)
+          ..shutDown(_named, save: () async {});
+        await tester.pumpAndSettle();
+        expect(power.state.phase, PowerPhase.saveFailed);
+        expect(find.byKey(const Key('power_retry')), findsOneWidget);
+        expect(haltCalls, 0);
+        expect(engine.stopCalls, stopCalls);
+        expect(timing.state.trackOverrides[0], RecordTiming.sixteenth);
+        expect(store.values['track_record_timing.0'], 0);
+        expect(noticeUp(tester, AppNoticeId.recordTimingSettings), isFalse);
+        expect(
+          find.byKey(const Key('power_retry')).hitTestable(),
+          findsOneWidget,
+        );
 
-          rejectingEngine.refuseTiming = false;
-          await tester.tap(find.byKey(const Key('power_retry')));
-          await tester.pumpAndSettle();
-          expect(timing.state.trackOverrides[0], RecordTiming.immediately);
-          expect(power.state.phase, PowerPhase.goodbye);
-          await tester.pump(const Duration(seconds: 6));
-          expect(haltCalls, 1);
-        },
-      );
+        rejectingEngine.refuseTiming = false;
+        await tester.tap(find.byKey(const Key('power_retry')));
+        await tester.pumpAndSettle();
+        expect(timing.state.trackOverrides[0], RecordTiming.immediately);
+        expect(power.state.phase, PowerPhase.goodbye);
+        await tester.pump(const Duration(seconds: 6));
+        expect(haltCalls, 1);
+      });
     }
 
     testWidgets(
@@ -3491,9 +3451,7 @@ void main() {
 
     testWidgets(
       'power off releases held Record length and rejects later MIDI',
-      (
-        tester,
-      ) async {
+      (tester) async {
         final store = _LengthStore();
         settings = SettingsRepository(store: store);
         store.values['looper.mode'] = LooperMode.free.code;
@@ -3857,9 +3815,7 @@ void main() {
 
     testWidgets(
       'the stage Library mark opens the Library, and a footswitch returns',
-      (
-        tester,
-      ) async {
+      (tester) async {
         final sessionsRoot = Directory.systemTemp.createTempSync(
           'segno-app-sessions-',
         );
@@ -4764,9 +4720,7 @@ void main() {
 
     testWidgets(
       'shows a banner when the waveform window fails to open',
-      (
-        tester,
-      ) async {
+      (tester) async {
         final windowService = _RecordingWindowService(openResult: false);
         await pumpApp(tester, windowService);
 
@@ -4812,9 +4766,7 @@ void main() {
       tester
           .element(find.byType(LooperPage))
           .read<ControlCubit>()
-          .browseBank(
-            1,
-          );
+          .browseBank(1);
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.activeBank, 1);
     });
@@ -5145,10 +5097,7 @@ void main() {
 
       /// Boots the app on a repository whose poll the test drives by hand.
       Future<({_RecordingWindowService window, StreamController<void> ticker})>
-      pumpPlaying(
-        WidgetTester tester, {
-        le.EngineSnapshot? snapshot,
-      }) async {
+      pumpPlaying(WidgetTester tester, {le.EngineSnapshot? snapshot}) async {
         final ticker = StreamController<void>.broadcast();
         addTearDown(() => unawaited(ticker.close()));
         final driven = LooperRepository(engine: engine, ticker: ticker.stream);
@@ -5678,72 +5627,54 @@ void main() {
       },
     );
 
-    testWidgets(
-      'macOS PlatformMenuBar survives MaterialApp theme rebuild and '
-      'DevTools select-widget override without remounting',
-      (tester) async {
-        // Regression for #614: PlatformMenuBar inside MaterialApp.builder
-        // remounted when the inspector override flipped, tripping the
-        // single-delegate lock assertion.
-        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    testWidgets('macOS PlatformMenuBar survives MaterialApp theme rebuild and '
+        'DevTools select-widget override without remounting', (tester) async {
+      // Regression for #614: PlatformMenuBar inside MaterialApp.builder
+      // remounted when the inspector override flipped, tripping the
+      // single-delegate lock assertion.
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('flutter/menu'),
+            (_) async => null,
+          );
+
+      try {
+        await pumpApp(tester, NoopWaveformWindowService());
+
+        expect(find.byKey(const Key('segno_platform_menu')), findsOneWidget);
+
+        // Theme change rebuilds MaterialApp (context.watch on
+        // HighContrastCubit).
+        await tester
+            .element(find.byType(MaterialApp))
+            .read<HighContrastCubit>()
+            .toggle();
+        await tester.pump();
+
+        // DevTools "Select Widget Mode" flips this notifier on WidgetsApp.
+        WidgetsBinding.instance.debugShowWidgetInspectorOverrideNotifier.value =
+            true;
+        await tester.pump();
+        WidgetsBinding.instance.debugShowWidgetInspectorOverrideNotifier.value =
+            false;
+        await tester.pump();
+
+        expect(find.byKey(const Key('segno_platform_menu')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        // Must clear before the test binding's invariant check (addTearDown
+        // runs too late).
+        debugDefaultTargetPlatformOverride = null;
+        WidgetsBinding.instance.debugShowWidgetInspectorOverrideNotifier.value =
+            false;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(
               const MethodChannel('flutter/menu'),
-              (_) async => null,
+              null,
             );
-
-        try {
-          await pumpApp(tester, NoopWaveformWindowService());
-
-          expect(
-            find.byKey(const Key('segno_platform_menu')),
-            findsOneWidget,
-          );
-
-          // Theme change rebuilds MaterialApp (context.watch on
-          // HighContrastCubit).
-          await tester
-              .element(find.byType(MaterialApp))
-              .read<HighContrastCubit>()
-              .toggle();
-          await tester.pump();
-
-          // DevTools "Select Widget Mode" flips this notifier on WidgetsApp.
-          WidgetsBinding
-                  .instance
-                  .debugShowWidgetInspectorOverrideNotifier
-                  .value =
-              true;
-          await tester.pump();
-          WidgetsBinding
-                  .instance
-                  .debugShowWidgetInspectorOverrideNotifier
-                  .value =
-              false;
-          await tester.pump();
-
-          expect(
-            find.byKey(const Key('segno_platform_menu')),
-            findsOneWidget,
-          );
-          expect(tester.takeException(), isNull);
-        } finally {
-          // Must clear before the test binding's invariant check (addTearDown
-          // runs too late).
-          debugDefaultTargetPlatformOverride = null;
-          WidgetsBinding
-                  .instance
-                  .debugShowWidgetInspectorOverrideNotifier
-                  .value =
-              false;
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-              .setMockMethodCallHandler(
-                const MethodChannel('flutter/menu'),
-                null,
-              );
-        }
-      },
-    );
+      }
+    });
   });
 }
 
@@ -5792,10 +5723,7 @@ List<Notice> _retries(WidgetTester tester) {
     );
   return [
     for (final shown in ranked)
-      if (shown.notice.action?.key
-          case ValueKey<String>(
-            :final value,
-          )
+      if (shown.notice.action?.key case ValueKey<String>(:final value)
           when value.endsWith('_${AppNoticeId.retry}'))
         shown.notice,
   ];

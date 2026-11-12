@@ -41,8 +41,7 @@ class WaveformWindowState extends Equatable {
 class WaveformWindowCubit extends Cubit<WaveformWindowState> {
   /// Creates a [WaveformWindowCubit], enabled until [load] restores the saved
   /// preference.
-  new({required this._settings})
-    : super(const WaveformWindowState());
+  new({required this._settings}) : super(const WaveformWindowState());
 
   final SettingsRepository _settings;
   Future<void>? _loadFuture;

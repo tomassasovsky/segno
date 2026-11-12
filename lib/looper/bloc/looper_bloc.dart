@@ -85,10 +85,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperTrackOutputChanged>((event, _) {
       unawaited(
-        _mixSettings.setTrackOutput(
-          channel: event.channel,
-          mask: event.mask,
-        ),
+        _mixSettings.setTrackOutput(channel: event.channel, mask: event.mask),
       );
     });
     on<LooperLaneVolumeChanged>((event, _) {
@@ -611,9 +608,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       unawaited(_mixSettings.setTrackPan(event.pan, channel: event.channel));
     });
     on<LooperTrackSoloToggled>((event, _) {
-      unawaited(
-        _mixSettings.toggleTrackSolo(channel: event.channel),
-      );
+      unawaited(_mixSettings.toggleTrackSolo(channel: event.channel));
     });
     on<LooperSoloCleared>((_, _) {
       unawaited(_mixSettings.clearSolo());
@@ -629,18 +624,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperInputPairChanged>((event, _) {
       unawaited(
-        _mixSettings.setInputPair(
-          input: event.input,
-          paired: event.paired,
-        ),
+        _mixSettings.setInputPair(input: event.input, paired: event.paired),
       );
     });
     on<LooperInputBalanceChanged>((event, _) {
       unawaited(
-        _mixSettings.setPairBalance(
-          input: event.input,
-          balance: event.balance,
-        ),
+        _mixSettings.setPairBalance(input: event.input, balance: event.balance),
       );
     });
     on<LooperOutputLevelChanged>((event, _) {
@@ -656,10 +645,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperOutputBalanceChanged>((event, _) {
       unawaited(
-        _mixSettings.setOutputBalance(
-          bus: event.bus,
-          balance: event.balance,
-        ),
+        _mixSettings.setOutputBalance(bus: event.bus, balance: event.balance),
       );
     });
     on<LooperCutSoundPressed>((_, _) => _repository.cutSound());
@@ -774,11 +760,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     final settings = _settings;
     if (settings == null) return;
     unawaited(
-      _fxPersistence.saveConfirmed(address, settings).catchError(
-        (Object error, StackTrace stack) {
-          if (!isClosed) addError(error, stack);
-        },
-      ),
+      _fxPersistence.saveConfirmed(address, settings).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        if (!isClosed) addError(error, stack);
+      }),
     );
   }
 
@@ -881,10 +868,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   EngineResult _writeBusChain(FxAddress address, List<TrackEffect> next) =>
       address.stage == FxStage.output
       ? _repository.setOutputEffects(bus: address.index, effects: next)
-      : _repository.setTrackEffects(
-          channel: address.index,
-          effects: next,
-        );
+      : _repository.setTrackEffects(channel: address.index, effects: next);
 
   /// Coalesced bus-chain persistence — the bus half of
   /// [_schedulePersistLaneChain], keyed by the address it persists.

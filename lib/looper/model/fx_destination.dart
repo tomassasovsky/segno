@@ -88,8 +88,7 @@ class FxDestination extends Equatable {
     : this(kind: FxDestinationKind.recordedTrack, index: allTracksIndex);
 
   /// One output destination's chain.
-  const new output(int bus)
-    : this(kind: FxDestinationKind.output, index: bus);
+  const new output(int bus) : this(kind: FxDestinationKind.output, index: bus);
 
   /// The [index] that means All tracks rather than a track channel.
   static const int allTracksIndex = -1;

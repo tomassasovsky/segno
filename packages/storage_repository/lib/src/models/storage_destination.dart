@@ -9,8 +9,7 @@ sealed class StorageDestination extends Equatable {
   const factory internal() = InternalDestination;
 
   /// The removable volume with this [generation].
-  const factory removable(int generation) =
-      RemovableDestination;
+  const factory removable(int generation) = RemovableDestination;
 }
 
 /// Internal storage.

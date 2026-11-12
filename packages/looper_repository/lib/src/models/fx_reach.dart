@@ -172,10 +172,7 @@ final class FxReach extends Equatable {
 /// controls, in order, turns on no more than one of [before]'s on each side,
 /// each of [before]'s standing for one of them at most. What deleting a
 /// binding, a MIDI mapping or a row, or emptying a store, leaves.
-bool fxReachShrinks(
-  List<FxControlReach> before,
-  List<FxControlReach> after,
-) {
+bool fxReachShrinks(List<FxControlReach> before, List<FxControlReach> after) {
   var at = 0;
   for (final control in after) {
     // A control that turns nothing on (a switch with no activations) takes

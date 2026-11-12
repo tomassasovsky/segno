@@ -691,11 +691,9 @@ void main() {
         expect(rig.engine.toggles.take(2), [1, 4]);
         expect(rig.engine.toggles.skip(2).toSet(), {0, 1, 4});
         await rig.poll();
-        expect(
-          rig.engine.reversedTracks,
-          {0},
-          reason: '1 and 4 were turned twice',
-        );
+        expect(rig.engine.reversedTracks, {
+          0,
+        }, reason: '1 and 4 were turned twice');
         bool lit(PedalButton button) =>
             rig.link.lastFrame!.activeButtonMask & (1 << button.index) != 0;
         // The all-tracks assignment reads active only once every recorded

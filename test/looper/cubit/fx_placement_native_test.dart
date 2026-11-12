@@ -59,9 +59,8 @@ void main() {
     when(() => persistence.beginPending()).thenAnswer((_) => Object());
     when(() => persistence.finishPending(any())).thenReturn(null);
     when(() => persistence.retainConfirmed(any(), settings)).thenReturn(null);
-    when(
-      () => persistence.saveConfirmed(any(), settings),
-    ).thenAnswer((_) async {});
+    when(() => persistence.saveConfirmed(any(), settings))
+        .thenAnswer((_) async {});
   });
   tearDown(() async {
     if (skip != null) return;

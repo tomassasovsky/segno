@@ -112,9 +112,8 @@ void main() {
   group('isSupported', () {
     test('true only when both the version file and the helper exist', () {
       expect(
-        backend(
-          _FakeEnv(files: {_version: '0.2.0', kApplianceHelperPath: ''}),
-        ).isSupported,
+        backend(_FakeEnv(files: {_version: '0.2.0', kApplianceHelperPath: ''}))
+            .isSupported,
         isTrue,
       );
       expect(
@@ -146,10 +145,7 @@ void main() {
       expect(
         backend(
           _FakeEnv(
-            files: {
-              _channel: 'production',
-              _channelOverride: 'experimental\n',
-            },
+            files: {_channel: 'production', _channelOverride: 'experimental\n'},
           ),
         ).channel,
         'experimental',
@@ -282,10 +278,7 @@ void main() {
     });
 
     test('returns null on malformed or non-object JSON', () async {
-      expect(
-        await backend(_FakeEnv(body: 'not json')).fetchManifest(),
-        isNull,
-      );
+      expect(await backend(_FakeEnv(body: 'not json')).fetchManifest(), isNull);
       expect(await backend(_FakeEnv(body: '[1,2]')).fetchManifest(), isNull);
     });
   });

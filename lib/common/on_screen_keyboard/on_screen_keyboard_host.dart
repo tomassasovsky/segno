@@ -23,11 +23,7 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 /// touched.
 class OnScreenKeyboardHost extends StatefulWidget {
   /// Creates an [OnScreenKeyboardHost] around [child].
-  const new({
-    required this.child,
-    this.enabled = true,
-    super.key,
-  });
+  const new({required this.child, this.enabled = true, super.key});
 
   /// The app below the keyboard.
   final Widget child;

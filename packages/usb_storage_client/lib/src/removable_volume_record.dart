@@ -31,11 +31,7 @@ enum RemovableVolumeRecordStatus {
 /// The outcome the helper wrote for an eject request.
 class EjectOutcomeRecord extends Equatable {
   /// Creates an [EjectOutcomeRecord].
-  const new({
-    required this.request,
-    required this.ok,
-    this.reason,
-  });
+  const new({required this.request, required this.ok, this.reason});
 
   /// Parses the helper's `eject` object.
   factory fromJson(Map<String, Object?> json) {

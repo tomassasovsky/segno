@@ -59,9 +59,7 @@ class NoticeBar extends StatelessWidget {
           right: 0,
           bottom: 0,
           height: colors == null ? 1 : theme.ruleThickness,
-          child: ColoredBox(
-            color: colors?.line ?? restingRule ?? surface.line,
-          ),
+          child: ColoredBox(color: colors?.line ?? restingRule ?? surface.line),
         ),
         child,
       ],
@@ -102,9 +100,7 @@ class NoticeBarMessage extends StatelessWidget {
     final passing = context.selectNotices<({int? channel, ShownNotice shown})?>(
       (state) => state.passing(onCard: trackCards),
     );
-    final banner = context.selectNotices<ShownNotice?>(
-      (state) => state.banner,
-    );
+    final banner = context.selectNotices<ShownNotice?>((state) => state.banner);
     final Widget current;
     if (passing case (:final channel, :final shown)) {
       current = _PassingMessage(
@@ -331,11 +327,7 @@ class _Icon extends StatelessWidget {
 
 /// The message's one action, the height of the bar's own controls.
 class _ActionButton extends StatelessWidget {
-  const new({
-    required this.action,
-    required this.tone,
-    this.quiet = false,
-  });
+  const new({required this.action, required this.tone, this.quiet = false});
 
   final NoticeAction action;
   final NoticeTone tone;

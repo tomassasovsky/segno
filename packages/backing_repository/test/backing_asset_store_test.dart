@@ -44,10 +44,7 @@ void main() {
       expect(asset.digest, 'sha256:$hex');
       expect(asset.id, hex!.substring(0, 16));
       expect(asset.name, 'Evening lights.wav');
-      expect(
-        asset.path,
-        '${storeDir().path}/${asset.id}/Evening lights.wav',
-      );
+      expect(asset.path, '${storeDir().path}/${asset.id}/Evening lights.wav');
       expect(asset.sourceRate, 48000);
       expect(asset.sourceFrames, 4800);
       expect(asset.sourceChannels, 2);
@@ -60,9 +57,7 @@ void main() {
       expect(decoder.mock.live, 0);
       // info.json renamed into place, the asset and the store synced.
       final info = jsonDecode(
-        File(
-          '${storeDir().path}/${asset.id}/info.json',
-        ).readAsStringSync(),
+        File('${storeDir().path}/${asset.id}/info.json').readAsStringSync(),
       ) as Map<String, Object?>;
       expect(info['digest'], asset.digest);
       expect(info['sourceFrames'], 4800);
@@ -262,14 +257,8 @@ void main() {
     expect(BackingAsset.isDigest(digest), isTrue);
     expect(BackingAsset.isDigest('sha256:XYZ'), isFalse);
     expect(BackingAsset.idOf(digest), '0123456789abcdef');
-    expect(
-      const BackingAsset(digest: digest, name: 'a', path: 'p').seconds,
-      0,
-    );
-    const failure = BackingFailure(
-      BackingFailureReason.storage,
-      name: 'a.wav',
-    );
+    expect(const BackingAsset(digest: digest, name: 'a', path: 'p').seconds, 0);
+    const failure = BackingFailure(BackingFailureReason.storage, name: 'a.wav');
     expect(
       failure,
       const BackingFailure(BackingFailureReason.storage, name: 'a.wav'),

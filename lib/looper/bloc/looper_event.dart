@@ -172,11 +172,7 @@ final class LooperInputPairChanged extends LooperInputEvent {
 /// Selects one recording source for a track; linked pairs move together.
 final class LooperRecordingInputChanged extends LooperChannelEvent {
   /// Creates a [LooperRecordingInputChanged].
-  const new(
-    super.channel,
-    this.input, {
-    required this.selected,
-  });
+  const new(super.channel, this.input, {required this.selected});
 
   /// The hardware input selected or removed.
   final int input;
@@ -424,12 +420,7 @@ final class LooperLaneEffectRemoved extends LooperLaneEvent {
 /// that entry's DSP and seeds its default params).
 final class LooperLaneEffectTypeChanged extends LooperLaneEvent {
   /// Creates a [LooperLaneEffectTypeChanged].
-  const new(
-    super.channel,
-    super.lane,
-    this.index,
-    this.type,
-  );
+  const new(super.channel, super.lane, this.index, this.type);
 
   /// The chain entry index to retype (`0..length-1`).
   final int index;
@@ -467,12 +458,7 @@ final class LooperLaneEffectMoved extends LooperLaneEvent {
 /// audible.
 final class LooperLaneEffectChannelsChanged extends LooperLaneEvent {
   /// Creates a [LooperLaneEffectChannelsChanged].
-  const new(
-    super.channel,
-    super.lane,
-    this.index,
-    this.channels,
-  );
+  const new(super.channel, super.lane, this.index, this.channels);
 
   /// The entry's current index in the chain.
   final int index;
@@ -488,11 +474,7 @@ final class LooperLaneEffectChannelsChanged extends LooperLaneEvent {
 /// twin of the lane event above.
 final class LooperBusEffectChannelsChanged extends LooperBusChainEvent {
   /// Creates a [LooperBusEffectChannelsChanged].
-  const new(
-    super.address,
-    this.index,
-    this.channels,
-  );
+  const new(super.address, this.index, this.channels);
 
   /// The entry's current index in the chain.
   final int index;
@@ -526,12 +508,7 @@ final class LooperAllTracksEffectChannelsChanged extends LooperEvent {
 /// end of the destination stage's run.
 final class LooperLaneEffectPlacementChanged extends LooperLaneEvent {
   /// Creates a [LooperLaneEffectPlacementChanged].
-  const new(
-    super.channel,
-    super.lane,
-    this.slotId,
-    this.placement,
-  );
+  const new(super.channel, super.lane, this.slotId, this.placement);
 
   /// Stable identity of the entry to move.
   final String slotId;
@@ -547,13 +524,7 @@ final class LooperLaneEffectPlacementChanged extends LooperLaneEvent {
 /// changed to [value] (`0..1`). A live tweak — does not reset DSP state.
 final class LooperLaneEffectParamChanged extends LooperLaneEvent {
   /// Creates a [LooperLaneEffectParamChanged].
-  const new(
-    super.channel,
-    super.lane,
-    this.index,
-    this.param,
-    this.value,
-  );
+  const new(super.channel, super.lane, this.index, this.param, this.value);
 
   /// The chain entry index (`0..kTrackEffectMax-1`).
   final int index;
@@ -574,13 +545,7 @@ final class LooperLaneEffectParamChanged extends LooperLaneEvent {
 /// (already-scaled) [value], routed to the plugin through the RT param queue.
 final class LooperLanePluginParamChanged extends LooperLaneEvent {
   /// Creates a [LooperLanePluginParamChanged].
-  const new(
-    super.channel,
-    super.lane,
-    this.index,
-    this.paramId,
-    this.value,
-  );
+  const new(super.channel, super.lane, this.index, this.paramId, this.value);
 
   /// The chain entry index (`0..kTrackEffectMax-1`).
   final int index;
@@ -613,12 +578,7 @@ final class LooperLanePluginInserted extends LooperLaneEvent {
 /// the captured state + tweaks.
 final class LooperLanePluginRelinked extends LooperLaneEvent {
   /// Creates a [LooperLanePluginRelinked].
-  const new(
-    super.channel,
-    super.lane,
-    this.index,
-    this.ref,
-  );
+  const new(super.channel, super.lane, this.index, this.ref);
 
   /// The chain entry index.
   final int index;
@@ -822,12 +782,7 @@ final class LooperBusEffectTypeChanged extends LooperBusChainEvent {
 /// [address] to the normalized [value], without a structural reset.
 final class LooperBusEffectParamChanged extends LooperBusChainEvent {
   /// Creates a [LooperBusEffectParamChanged].
-  const new(
-    super.address,
-    this.index,
-    this.param,
-    this.value,
-  );
+  const new(super.address, this.index, this.param, this.value);
 
   /// The chain entry index.
   final int index;
@@ -860,12 +815,7 @@ final class LooperBusPluginInserted extends LooperBusChainEvent {
 /// [address] to the plain [value].
 final class LooperBusPluginParamChanged extends LooperBusChainEvent {
   /// Creates a [LooperBusPluginParamChanged].
-  const new(
-    super.address,
-    this.index,
-    this.paramId,
-    this.value,
-  );
+  const new(super.address, this.index, this.paramId, this.value);
 
   /// The chain entry index.
   final int index;
@@ -949,11 +899,7 @@ final class LooperOutputEffectsChanged extends LooperEvent {
 /// part.
 final class LooperTrackEffectPlacementChanged extends LooperChannelEvent {
   /// Creates a [LooperTrackEffectPlacementChanged].
-  const new(
-    super.channel,
-    this.slotId,
-    this.placement,
-  );
+  const new(super.channel, this.slotId, this.placement);
 
   /// Stable identity of the entry to move.
   final String slotId;

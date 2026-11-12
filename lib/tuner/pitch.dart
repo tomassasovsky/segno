@@ -4,11 +4,7 @@ import 'dart:math' as math;
 /// and how far off it is.
 class TunedPitch {
   /// Creates a [TunedPitch].
-  const new({
-    required this.note,
-    required this.octave,
-    required this.cents,
-  });
+  const new({required this.note, required this.octave, required this.cents});
 
   /// The nearest note's name, sharps only — `C`, `C♯`, `D`, …
   ///

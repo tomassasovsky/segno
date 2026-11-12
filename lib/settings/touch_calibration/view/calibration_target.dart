@@ -63,11 +63,7 @@ class _TargetPainter extends CustomPainter {
 /// coordinates, inside a box of that [area]'s size.
 class PositionedCalibrationTarget extends StatelessWidget {
   /// Creates a [PositionedCalibrationTarget].
-  const new({
-    required this.target,
-    required this.area,
-    super.key,
-  });
+  const new({required this.target, required this.area, super.key});
 
   /// Where the target sits, `(0, 0)` top-left to `(1, 1)` bottom-right.
   final ({double x, double y}) target;

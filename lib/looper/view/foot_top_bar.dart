@@ -47,9 +47,7 @@ class FootTopBar extends StatelessWidget {
       height: height,
       child: NoticeBar(
         child: Padding(
-          padding: const EdgeInsetsDirectional.symmetric(
-            horizontal: sideInset,
-          ),
+          padding: const EdgeInsetsDirectional.symmetric(horizontal: sideInset),
           child: TopBarLayout(
             leading: IconButton.outlined(
               key: exitKey,

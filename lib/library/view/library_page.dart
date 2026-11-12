@@ -93,10 +93,7 @@ class _LibraryViewState extends State<LibraryView> {
 
   void _reselect(BuildContext context, SessionState session) {
     final library = context.read<LibraryCubit>();
-    if (library.state.folderFilter
-        case FolderSessions(
-          :final folder,
-        )
+    if (library.state.folderFilter case FolderSessions(:final folder)
         when !session.folders.contains(folder)) {
       // The chip's folder was renamed or deleted.
       library.filterFolder(const AllSessions());
@@ -175,9 +172,8 @@ class _LibraryViewState extends State<LibraryView> {
               previous.backup != current.backup &&
               (current.backup is LibraryBackupConflict ||
                   current.backup is LibraryBackupInterrupted),
-          listener: (context, state) => unawaited(
-            showLibraryBackupQuestion(context, state.backup!),
-          ),
+          listener: (context, state) =>
+              unawaited(showLibraryBackupQuestion(context, state.backup!)),
         ),
         // A restore added a session: the catalog shows it.
         BlocListener<LibraryCubit, LibraryState>(
@@ -388,11 +384,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
   /// Creates the line for [failure].
-  const new({
-    required this.failure,
-    this.refusedBy,
-    super.key,
-  });
+  const new({required this.failure, this.refusedBy, super.key});
 
   /// What failed.
   final LibraryFailure failure;
@@ -422,11 +414,7 @@ class LibraryFailureLine extends StatelessWidget {
         child: AppText(
           message,
           key: const Key('library_failure'),
-          style: TextStyle(
-            color: context.surface.rec,
-            fontSize: 23,
-            height: 1,
-          ),
+          style: TextStyle(color: context.surface.rec, fontSize: 23, height: 1),
         ),
       ),
     );

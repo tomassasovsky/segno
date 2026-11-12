@@ -622,9 +622,8 @@ void onPerformanceRecorderState(
       body: (l10n) => l10n.perfTakesNotRecoveredBody(count),
       action: NoticeAction(
         label: (l10n) => l10n.consoleTryAgain,
-        onPressed: () => unawaited(
-          retryRecoveryWithNotices(recorder, notices, count),
-        ),
+        onPressed: () =>
+            unawaited(retryRecoveryWithNotices(recorder, notices, count)),
       ),
     );
     return;

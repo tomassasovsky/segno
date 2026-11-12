@@ -157,9 +157,7 @@ class _ReadoutPressButtonState extends State<ReadoutPressButton> {
   void _leave(PointerMoveEvent event) {
     final box = context.findRenderObject();
     if (box is RenderBox &&
-        !(Offset.zero & box.size).contains(
-          event.localPosition,
-        )) {
+        !(Offset.zero & box.size).contains(event.localPosition)) {
       _release();
     }
   }

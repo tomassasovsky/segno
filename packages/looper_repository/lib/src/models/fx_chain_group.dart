@@ -12,11 +12,7 @@ import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
 /// on where one rack ends and the next begins.
 class FxChainGroup extends Equatable {
   /// Creates an [FxChainGroup] spanning `[start, end)` of [chain].
-  const new({
-    required this.chain,
-    required this.start,
-    required this.end,
-  });
+  const new({required this.chain, required this.start, required this.end});
 
   /// The whole chain this group is part of.
   ///
@@ -212,9 +208,9 @@ List<TrackEffect> fxOrderRackModules(
   String rackId,
   List<String> slotIds,
 ) {
-  final group = fxChainGroups(
-    chain,
-  ).where((g) => g.rack?.id == rackId).firstOrNull;
+  final group = fxChainGroups(chain)
+      .where((g) => g.rack?.id == rackId)
+      .firstOrNull;
   if (group == null) return chain;
   final modules = group.entries;
   final byId = {for (final fx in modules) fx.slotId ?? '': fx};
@@ -284,9 +280,9 @@ List<TrackEffect>? fxWithRackEnabled(
   String rackId, {
   required bool enabled,
 }) {
-  final group = fxChainGroups(
-    chain,
-  ).where((g) => g.rack?.id == rackId).firstOrNull;
+  final group = fxChainGroups(chain)
+      .where((g) => g.rack?.id == rackId)
+      .firstOrNull;
   if (group == null) return null;
   final rack = group.rack!.copyWith(bypassed: !enabled);
   return [
@@ -363,9 +359,9 @@ List<TrackEffect> fxMoveWithinRack(
   int from,
   int to,
 ) {
-  final group = fxChainGroups(
-    chain,
-  ).where((g) => g.rack?.id == rackId).firstOrNull;
+  final group = fxChainGroups(chain)
+      .where((g) => g.rack?.id == rackId)
+      .firstOrNull;
   if (group == null) return chain;
   final modules = [...group.entries];
   if (from < 0 || from >= modules.length) return chain;
@@ -374,11 +370,7 @@ List<TrackEffect> fxMoveWithinRack(
   modules.insert(to, modules.removeAt(from));
   if (_pathRuns(modules) > _pathRuns(group.entries)) return chain;
   return fxSetGroupChannels(
-    [
-      ...chain.sublist(0, group.start),
-      ...modules,
-      ...chain.sublist(group.end),
-    ],
+    [...chain.sublist(0, group.start), ...modules, ...chain.sublist(group.end)],
     group.start,
     group.end,
     group.channels,

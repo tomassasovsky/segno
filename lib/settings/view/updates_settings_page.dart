@@ -285,16 +285,8 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
             onStage: () =>
                 Navigator.popUntil(context, (route) => route.isFirst),
             children: [
-              Positioned(
-                left: 0,
-                top: AboutSettingsPage.top,
-                child: left,
-              ),
-              Positioned(
-                right: 0,
-                top: AboutSettingsPage.top,
-                child: right,
-              ),
+              Positioned(left: 0, top: AboutSettingsPage.top, child: left),
+              Positioned(right: 0, top: AboutSettingsPage.top, child: right),
             ],
           ),
         ),
@@ -318,11 +310,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
 /// the state's actions sit under it. [next] goes to the action the encoder
 /// should land on.
 class _StatusPanel extends StatelessWidget {
-  const new({
-    required this.state,
-    required this.cubit,
-    required this.next,
-  });
+  const new({required this.state, required this.cubit, required this.next});
 
   final UpdateState state;
   final UpdateCubit cubit;

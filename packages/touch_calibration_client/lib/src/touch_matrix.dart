@@ -56,10 +56,8 @@ class TouchMatrix extends Equatable {
   final double f;
 
   /// Where this matrix maps [point].
-  TouchPoint map(TouchPoint point) => (
-    x: a * point.x + b * point.y + c,
-    y: d * point.x + e * point.y + f,
-  );
+  TouchPoint map(TouchPoint point) =>
+      (x: a * point.x + b * point.y + c, y: d * point.x + e * point.y + f);
 
   /// The matrix that applies [inner] first and this matrix after it.
   TouchMatrix after(TouchMatrix inner) => TouchMatrix(

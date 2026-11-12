@@ -20,9 +20,8 @@ void main() {
     rigReplaced = StreamController<void>.broadcast();
     sessionRevision = 0;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => failures.stream,
-    );
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => failures.stream);
     when(() => repository.rigReplaced).thenAnswer((_) => rigReplaced.stream);
   });
 

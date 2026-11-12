@@ -40,8 +40,7 @@ class _MockSessionRepository extends Mock implements SessionRepository;
 
 class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockPerformanceRepository extends Mock
-    implements PerformanceRepository;
+class _MockPerformanceRepository extends Mock implements PerformanceRepository;
 
 class _WriteThenThrowPersistence implements MixSettingsPersistence {
   String? durable = 'previous mix';
@@ -268,9 +267,7 @@ void main() {
         pedalBindings: any(named: 'pedalBindings'),
       ),
     ).thenAnswer((_) => liveFingerprint);
-    when(
-      () => repository.releaseSessionId(any()),
-    ).thenAnswer((_) async {});
+    when(() => repository.releaseSessionId(any())).thenAnswer((_) async {});
     looper = _MockLooperRepository();
     performance = _MockPerformanceRepository();
     looperStates = StreamController<LooperState>.broadcast();
@@ -300,9 +297,8 @@ void main() {
     when(() => looper.lengthSettingsSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.sessionRevision).thenReturn(0);
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
@@ -326,9 +322,8 @@ void main() {
     captureSettings = buildCapture();
     // open's auto-disarm-before-load orchestration; a no-op success by
     // default since nothing is armed in these tests.
-    when(
-      performance.disarmAndFinalize,
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(performance.disarmAndFinalize)
+        .thenAnswer((_) async => EngineResult.ok);
   });
 
   SessionCubit build() => SessionCubit(
@@ -344,68 +339,62 @@ void main() {
   );
 
   for (final accepted in [true, false]) {
-    test(
-      'Save waits for a pending length receipt, and writes the requested '
-      'value even when it ends owed; accepted=$accepted',
-      () async {
-        final settled = Completer<EngineResult>();
-        when(() => looper.lengthSettingsSettled).thenReturn(false);
-        when(
-          () => looper.settleLengthSettings(),
-        ).thenAnswer((_) => settled.future);
-        when(repository.listSessions).thenAnswer((_) async => []);
-        when(
-          () => repository.bundlePathOf('new'),
-        ).thenAnswer((_) async => '/tmp/pending');
-        when(
-          () => repository.save(
-            any(),
-            chains: any(named: 'chains'),
-            settings: any(named: 'settings'),
-            pedalBindings: any(named: 'pedalBindings'),
+    test('Save waits for a pending length receipt, and writes the requested '
+        'value even when it ends owed; accepted=$accepted', () async {
+      final settled = Completer<EngineResult>();
+      when(() => looper.lengthSettingsSettled).thenReturn(false);
+      when(() => looper.settleLengthSettings())
+          .thenAnswer((_) => settled.future);
+      when(repository.listSessions).thenAnswer((_) async => []);
+      when(() => repository.bundlePathOf('new'))
+          .thenAnswer((_) async => '/tmp/pending');
+      when(
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
 
-            name: any(named: 'name'),
-            captureStillValid: any(named: 'captureStillValid'),
-          ),
-        ).thenAnswer((_) async => _session);
-        final cubit = build();
-        addTearDown(cubit.close);
-        final save = cubit.saveAs('pending');
-        await Future<void>.delayed(Duration.zero);
-        verifyNever(
-          () => repository.save(
-            any(),
-            chains: any(named: 'chains'),
-            settings: any(named: 'settings'),
-            pedalBindings: any(named: 'pedalBindings'),
+          name: any(named: 'name'),
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      ).thenAnswer((_) async => _session);
+      final cubit = build();
+      addTearDown(cubit.close);
+      final save = cubit.saveAs('pending');
+      await Future<void>.delayed(Duration.zero);
+      verifyNever(
+        () => repository.save(
+          any(),
+          chains: any(named: 'chains'),
+          settings: any(named: 'settings'),
+          pedalBindings: any(named: 'pedalBindings'),
 
-            name: any(named: 'name'),
-            captureStillValid: any(named: 'captureStillValid'),
-          ),
-        );
-        when(
-          () => looper.sessionTransport,
-        ).thenReturn(const TransportState(defaultLengthPresetBars: 8));
-        settled.complete(accepted ? EngineResult.ok : EngineResult.invalid);
-        await save;
-        // An owed value is the durable one: Save never refuses it.
-        expect(cubit.state.status, SessionStatus.success);
-        final settings =
-            verify(
-                  () => repository.save(
-                    '/tmp/pending',
-                    chains: any(named: 'chains'),
-                    settings: captureAny(named: 'settings'),
-                    pedalBindings: any(named: 'pedalBindings'),
+          name: any(named: 'name'),
+          captureStillValid: any(named: 'captureStillValid'),
+        ),
+      );
+      when(() => looper.sessionTransport)
+          .thenReturn(const TransportState(defaultLengthPresetBars: 8));
+      settled.complete(accepted ? EngineResult.ok : EngineResult.invalid);
+      await save;
+      // An owed value is the durable one: Save never refuses it.
+      expect(cubit.state.status, SessionStatus.success);
+      final settings =
+          verify(
+                () => repository.save(
+                  '/tmp/pending',
+                  chains: any(named: 'chains'),
+                  settings: captureAny(named: 'settings'),
+                  pedalBindings: any(named: 'pedalBindings'),
 
-                    name: any(named: 'name'),
-                    captureStillValid: any(named: 'captureStillValid'),
-                  ),
-                ).captured.single
-                as SessionSettings;
-        expect(settings.defaultLengthPresetBars, 8);
-      },
-    );
+                  name: any(named: 'name'),
+                  captureStillValid: any(named: 'captureStillValid'),
+                ),
+              ).captured.single
+              as SessionSettings;
+      expect(settings.defaultLengthPresetBars, 8);
+    });
   }
 
   test(
@@ -413,13 +402,11 @@ void main() {
     () async {
       final settled = Completer<EngineResult>();
       when(() => looper.lengthSettingsSettled).thenReturn(false);
-      when(
-        () => looper.settleLengthSettings(),
-      ).thenAnswer((_) => settled.future);
+      when(() => looper.settleLengthSettings())
+          .thenAnswer((_) => settled.future);
       when(repository.listSessions).thenAnswer((_) async => []);
-      when(
-        () => repository.bundlePathOf('new'),
-      ).thenAnswer((_) async => '/tmp/pending');
+      when(() => repository.bundlePathOf('new'))
+          .thenAnswer((_) async => '/tmp/pending');
       final cubit = build();
       addTearDown(cubit.close);
       final save = cubit.saveAs('pending');
@@ -450,9 +437,8 @@ void main() {
       when(() => looper.mixSettingsSettled).thenReturn(false);
       when(() => looper.settleMixSettings()).thenAnswer((_) => settled.future);
       when(repository.listSessions).thenAnswer((_) async => []);
-      when(
-        () => repository.bundlePathOf('new'),
-      ).thenAnswer((_) async => '/tmp/mix');
+      when(() => repository.bundlePathOf('new'))
+          .thenAnswer((_) async => '/tmp/mix');
       final cubit = build();
       addTearDown(cubit.close);
 
@@ -491,9 +477,8 @@ void main() {
   test('Save As keeps the invocation rig through catalog lookup', () async {
     final catalog = Completer<List<SessionSummary>>();
     when(repository.listSessions).thenAnswer((_) => catalog.future);
-    when(
-      () => repository.bundlePathOf('new'),
-    ).thenAnswer((_) async => '/tmp/new');
+    when(() => repository.bundlePathOf('new'))
+        .thenAnswer((_) async => '/tmp/new');
     final cubit = build();
     addTearDown(cubit.close);
 
@@ -521,9 +506,8 @@ void main() {
 
   group('load failure classification', () {
     void stubRead(Object error) {
-      when(
-        () => repository.bundlePathOf(any()),
-      ).thenAnswer((_) async => '/root/x');
+      when(() => repository.bundlePathOf(any()))
+          .thenAnswer((_) async => '/root/x');
       when(
         () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
       ).thenThrow(error);
@@ -559,9 +543,8 @@ void main() {
 
     blocTest<SessionCubit, SessionState>(
       'open rejects a newer version without replacing the open rig',
-      setUp: () => stubRead(
-        const SessionUnsupportedVersion(version: 13, supported: 12),
-      ),
+      setUp: () =>
+          stubRead(const SessionUnsupportedVersion(version: 13, supported: 12)),
       build: build,
       seed: () => const SessionState(
         currentSessionId: 'Current',
@@ -628,9 +611,8 @@ void main() {
     ];
 
     void stubCatalog({List<SessionSummary> list = summaries}) {
-      when(
-        () => repository.bundlePathOf(any()),
-      ).thenAnswer((inv) async => '/root/${inv.positionalArguments.first}');
+      when(() => repository.bundlePathOf(any()))
+          .thenAnswer((inv) async => '/root/${inv.positionalArguments.first}');
       when(repository.listSessions).thenAnswer((_) async => list);
       when(
         () => repository.save(
@@ -720,12 +702,10 @@ void main() {
           blocked = false;
           boot = _BootStore()..fail = failBoot;
           settings = SettingsRepository(store: boot);
-          when(
-            looper.blockStartForSessionBoot,
-          ).thenAnswer((_) => blocked = true);
-          when(
-            looper.clearSessionBootStartBlock,
-          ).thenAnswer((_) => blocked = false);
+          when(looper.blockStartForSessionBoot)
+              .thenAnswer((_) => blocked = true);
+          when(looper.clearSessionBootStartBlock)
+              .thenAnswer((_) => blocked = false);
           when(
             () => repository.open(
               any(),
@@ -804,9 +784,8 @@ void main() {
     test('an open is refused at its commit while an audio change is in '
         'flight, before anything changes (#1198)', () async {
       stubCatalog();
-      when(
-        () => repository.bundlePathOf(any()),
-      ).thenAnswer((_) async => '/root/A');
+      when(() => repository.bundlePathOf(any()))
+          .thenAnswer((_) async => '/root/A');
       when(
         () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
       ).thenAnswer(
@@ -853,9 +832,8 @@ void main() {
     test('an open holds the apply guard from its commit to its end '
         '(#1198)', () async {
       stubCatalog();
-      when(
-        () => repository.bundlePathOf(any()),
-      ).thenAnswer((_) async => '/root/A');
+      when(() => repository.bundlePathOf(any()))
+          .thenAnswer((_) async => '/root/A');
       when(
         () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
       ).thenAnswer(
@@ -939,9 +917,8 @@ void main() {
       );
       when(() => looper.defaultOneShot).thenReturn(true);
       when(() => looper.trackOneShotOverrides).thenReturn(const {2: false});
-      when(
-        () => looper.trackRecordTimingOverrides,
-      ).thenReturn(const {2: RecordTiming.bar});
+      when(() => looper.trackRecordTimingOverrides)
+          .thenReturn(const {2: RecordTiming.bar});
       when(() => looper.trackOverdubDecayOverrides).thenReturn(const {2: 35});
       final cubit = build();
       addTearDown(cubit.close);
@@ -996,12 +973,10 @@ void main() {
         final finishSave = Completer<Session>();
         final order = <String>[];
         when(repository.listSessions).thenAnswer((_) async => []);
-        when(
-          () => repository.bundlePathOf('new'),
-        ).thenAnswer((_) async => '/root/new');
-        when(
-          () => repository.bundlePathOf('B'),
-        ).thenAnswer((_) async => '/root/B');
+        when(() => repository.bundlePathOf('new'))
+            .thenAnswer((_) async => '/root/new');
+        when(() => repository.bundlePathOf('B'))
+            .thenAnswer((_) async => '/root/B');
         when(
           () => repository.save(
             '/root/new',
@@ -1053,59 +1028,55 @@ void main() {
     );
 
     for (final refuseRestore in [false, true]) {
-      test(
-        'session write-then-throw restores or requires recovery '
-        'refuseRestore=$refuseRestore',
-        () async {
-          final failing = _WriteThenThrowPersistence()
-            ..refuseRestore = refuseRestore;
-          mixPersistence = failing;
-          mixSettings = MixSettingsCoordinator(
-            repository: looper,
-            persistence: failing,
-            device: () => looper.state.status.deviceName,
-          );
-          captureSettings = buildCapture();
-          when(
-            () => repository.bundlePathOf('B'),
-          ).thenAnswer((_) async => '/root/B');
-          when(
-            () => repository.open(
-              '/root/B',
-              liveSettings: any(named: 'liveSettings'),
+      test('session write-then-throw restores or requires recovery '
+          'refuseRestore=$refuseRestore', () async {
+        final failing = _WriteThenThrowPersistence()
+          ..refuseRestore = refuseRestore;
+        mixPersistence = failing;
+        mixSettings = MixSettingsCoordinator(
+          repository: looper,
+          persistence: failing,
+          device: () => looper.state.status.deviceName,
+        );
+        captureSettings = buildCapture();
+        when(() => repository.bundlePathOf('B'))
+            .thenAnswer((_) async => '/root/B');
+        when(
+          () => repository.open(
+            '/root/B',
+            liveSettings: any(named: 'liveSettings'),
+          ),
+        ).thenAnswer(
+          _opened(
+            (_) async => (
+              session: _session,
+              heardStems: const <(int, int), List<Float32List>>{},
+              laneStems: <(int, int), List<Float32List>>{},
             ),
-          ).thenAnswer(
-            _opened(
-              (_) async => (
-                session: _session,
-                heardStems: const <(int, int), List<Float32List>>{},
-                laneStems: <(int, int), List<Float32List>>{},
-              ),
-            ),
+          ),
+        );
+        when(repository.listSessions).thenAnswer((_) async => const []);
+        final cubit = build();
+        addTearDown(cubit.close);
+        addTearDown(mixSettings.close);
+
+        await cubit.open('B');
+
+        expect(cubit.state.status, SessionStatus.failure);
+        expect(cubit.state.currentSessionName, isNull);
+        verifyNever(() => looper.applySession(any()));
+        expect(failing.restores, 1);
+        if (refuseRestore) {
+          expect(failing.durable, 'incoming mix');
+          expect(
+            cubit.state.errorMessage,
+            contains('Mix settings recovery required'),
           );
-          when(repository.listSessions).thenAnswer((_) async => const []);
-          final cubit = build();
-          addTearDown(cubit.close);
-          addTearDown(mixSettings.close);
-
-          await cubit.open('B');
-
-          expect(cubit.state.status, SessionStatus.failure);
-          expect(cubit.state.currentSessionName, isNull);
-          verifyNever(() => looper.applySession(any()));
-          expect(failing.restores, 1);
-          if (refuseRestore) {
-            expect(failing.durable, 'incoming mix');
-            expect(
-              cubit.state.errorMessage,
-              contains('Mix settings recovery required'),
-            );
-            failing.refuseRestore = false;
-            expect((await mixSettings.recover()).isOk, isTrue);
-          }
-          expect(failing.durable, 'previous mix');
-        },
-      );
+          failing.refuseRestore = false;
+          expect((await mixSettings.recover()).isOk, isTrue);
+        }
+        expect(failing.durable, 'previous mix');
+      });
     }
 
     blocTest<SessionCubit, SessionState>(
@@ -1222,9 +1193,8 @@ void main() {
       'makes it current (D4)',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.nextAutomaticName(any()),
-        ).thenAnswer((_) async => 'New loop 2');
+        when(() => repository.nextAutomaticName(any()))
+            .thenAnswer((_) async => 'New loop 2');
       },
       build: build,
       act: (cubit) => cubit.save(),
@@ -1392,9 +1362,8 @@ void main() {
         'is written back after it applies and the player is told what changed',
         setUp: () {
           stubConvertedOpen();
-          when(
-            () => repository.commitConversion(any(), any()),
-          ).thenAnswer((_) async => true);
+          when(() => repository.commitConversion(any(), any()))
+              .thenAnswer((_) async => true);
         },
         build: build,
         act: (cubit) => cubit.open('A'),
@@ -1436,9 +1405,8 @@ void main() {
         'unchanged',
         setUp: () {
           stubConvertedOpen();
-          when(
-            () => repository.commitConversion(any(), any()),
-          ).thenThrow(const FileSystemException('read-only'));
+          when(() => repository.commitConversion(any(), any()))
+              .thenThrow(const FileSystemException('read-only'));
         },
         build: build,
         act: (cubit) => cubit.open('A'),
@@ -1455,9 +1423,8 @@ void main() {
         'whose manifest changed before the write-back says nothing was written',
         setUp: () {
           stubConvertedOpen();
-          when(
-            () => repository.commitConversion(any(), any()),
-          ).thenAnswer((_) async => false);
+          when(() => repository.commitConversion(any(), any()))
+              .thenAnswer((_) async => false);
         },
         build: build,
         act: (cubit) => cubit.open('A'),
@@ -1475,9 +1442,8 @@ void main() {
         'is not written back when it does not apply',
         setUp: () {
           stubConvertedOpen();
-          when(
-            () => looper.applySession(any()),
-          ).thenThrow(StateError('refused'));
+          when(() => looper.applySession(any()))
+              .thenThrow(StateError('refused'));
         },
         build: build,
         act: (cubit) => cubit.open('A'),
@@ -1502,9 +1468,8 @@ void main() {
           ),
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {});
-        when(
-          () => repository.nextAutomaticName(any()),
-        ).thenAnswer((_) async => 'New loop 3');
+        when(() => repository.nextAutomaticName(any()))
+            .thenAnswer((_) async => 'New loop 3');
       }
 
       VerificationResult verifySavedTo(String path, {String? name}) => verify(
@@ -1780,12 +1745,11 @@ void main() {
             var live = rig(capture);
             when(() => looper.state).thenAnswer((_) => live);
             when(() => looper.laneCount(any())).thenReturn(1);
-            when(
-              () => looper.stopRecordControl(channel: any(named: 'channel')),
-            ).thenAnswer((_) {
-              live = rig(TrackState.playing);
-              return EngineResult.ok;
-            });
+            when(() => looper.stopRecordControl(channel: any(named: 'channel')))
+                .thenAnswer((_) {
+                  live = rig(TrackState.playing);
+                  return EngineResult.ok;
+                });
             final cubit = build();
             addTearDown(cubit.close);
             cubit.emit(
@@ -1836,9 +1800,8 @@ void main() {
           );
           when(() => looper.state).thenAnswer((_) => live);
           when(() => looper.laneCount(any())).thenReturn(1);
-          when(
-            () => looper.cancelArm(channel: any(named: 'channel')),
-          ).thenReturn(EngineResult.ok);
+          when(() => looper.cancelArm(channel: any(named: 'channel')))
+              .thenReturn(EngineResult.ok);
           when(looper.cancelCountIn).thenAnswer((_) {
             // The engine has taken both withdrawals by its next block.
             live = LooperState(
@@ -1889,9 +1852,8 @@ void main() {
               ],
             ),
           );
-          when(
-            () => looper.cancelArm(channel: any(named: 'channel')),
-          ).thenReturn(EngineResult.ok);
+          when(() => looper.cancelArm(channel: any(named: 'channel')))
+              .thenReturn(EngineResult.ok);
           final cubit = SessionCubit(
             captureSettings: captureSettings,
             fxPersistence: fxPersistence,
@@ -1919,9 +1881,8 @@ void main() {
             'nothing', () async {
           stubOpen();
           when(() => looper.state).thenReturn(rig(TrackState.recording));
-          when(
-            () => looper.stopRecordControl(channel: any(named: 'channel')),
-          ).thenReturn(EngineResult.ok);
+          when(() => looper.stopRecordControl(channel: any(named: 'channel')))
+              .thenReturn(EngineResult.ok);
           final cubit = SessionCubit(
             captureSettings: captureSettings,
             fxPersistence: fxPersistence,
@@ -1991,9 +1952,8 @@ void main() {
           events.add('apply');
           applied.add(inv.positionalArguments.first as SessionRig);
         });
-        when(
-          () => repository.nextAutomaticName(any()),
-        ).thenAnswer((_) async => 'New loop 3');
+        when(() => repository.nextAutomaticName(any()))
+            .thenAnswer((_) async => 'New loop 3');
       }
 
       VerificationResult verifySavedTo(String path, {String? name}) => verify(
@@ -2085,12 +2045,11 @@ void main() {
         var live = rig(TrackState.recording);
         when(() => looper.state).thenAnswer((_) => live);
         when(() => looper.laneCount(any())).thenReturn(1);
-        when(
-          () => looper.stopRecordControl(channel: any(named: 'channel')),
-        ).thenAnswer((_) {
-          live = rig(TrackState.playing);
-          return EngineResult.ok;
-        });
+        when(() => looper.stopRecordControl(channel: any(named: 'channel')))
+            .thenAnswer((_) {
+              live = rig(TrackState.playing);
+              return EngineResult.ok;
+            });
         final cubit = build();
         addTearDown(cubit.close);
         cubit.emit(
@@ -2211,9 +2170,8 @@ void main() {
       test('a refusal before the apply gives the new id back and leaves the '
           'current session', () async {
         stubNewLoop();
-        when(
-          performance.disarmAndFinalize,
-        ).thenAnswer((_) async => EngineResult.device);
+        when(performance.disarmAndFinalize)
+            .thenAnswer((_) async => EngineResult.device);
         final cubit = build();
         addTearDown(cubit.close);
         cubit.emit(
@@ -2349,9 +2307,7 @@ void main() {
         /// The names the port was handed.
         late List<Map<int, String>> renamed;
 
-        setUpAll(
-          () => registerFallbackValue(<FxAddress, List<TrackEffect>>{}),
-        );
+        setUpAll(() => registerFallbackValue(<FxAddress, List<TrackEffect>>{}));
 
         setUp(() {
           room = 1000;
@@ -2539,13 +2495,12 @@ void main() {
           when(() => looper.laneCount(any())).thenReturn(1);
           // Ending the take on track 5 copies its input chain onto a lane,
           // which uses up the room the sheet saw.
-          when(
-            () => looper.stopRecordControl(channel: any(named: 'channel')),
-          ).thenAnswer((_) {
-            live = rigWith(TrackState.playing);
-            room = 100;
-            return EngineResult.ok;
-          });
+          when(() => looper.stopRecordControl(channel: any(named: 'channel')))
+              .thenAnswer((_) {
+                live = rigWith(TrackState.playing);
+                room = 100;
+                return EngineResult.ok;
+              });
           final cubit = buildWithNames();
           addTearDown(cubit.close);
 
@@ -2783,9 +2738,8 @@ void main() {
             ),
           ),
         );
-        when(
-          performance.disarmAndFinalize,
-        ).thenAnswer((_) async => EngineResult.device);
+        when(performance.disarmAndFinalize)
+            .thenAnswer((_) async => EngineResult.device);
       },
       seed: () =>
           const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
@@ -2815,9 +2769,8 @@ void main() {
       'renameSession makes the current pointer follow a rename of the open one',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.renameSession(any(), any()),
-        ).thenAnswer((_) async {});
+        when(() => repository.renameSession(any(), any()))
+            .thenAnswer((_) async {});
       },
       seed: () =>
           const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
@@ -2842,9 +2795,8 @@ void main() {
       'renameSession leaves the current pointer alone for a non-open session',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.renameSession(any(), any()),
-        ).thenAnswer((_) async {});
+        when(() => repository.renameSession(any(), any()))
+            .thenAnswer((_) async {});
       },
       seed: () =>
           const SessionState(currentSessionId: 'A', currentSessionName: 'A'),
@@ -2934,9 +2886,8 @@ void main() {
       'moveSession moves the bundle and re-lists sessions and folders',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.moveSession(any(), folder: any(named: 'folder')),
-        ).thenAnswer((_) async {});
+        when(() => repository.moveSession(any(), folder: any(named: 'folder')))
+            .thenAnswer((_) async {});
         when(repository.listFolders).thenAnswer((_) async => ['Gigs']);
       },
       seed: () => const SessionState(
@@ -2962,9 +2913,8 @@ void main() {
       'moveSession with no folder moves to Unfiled',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.moveSession(any(), folder: any(named: 'folder')),
-        ).thenAnswer((_) async {});
+        when(() => repository.moveSession(any(), folder: any(named: 'folder')))
+            .thenAnswer((_) async {});
       },
       build: build,
       act: (cubit) => cubit.moveSession('B'),
@@ -3012,9 +2962,8 @@ void main() {
       'deleteFolder on a folder holding sessions fails with folderNotEmpty',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.deleteFolder(any()),
-        ).thenThrow(const SessionFolderNotEmpty(folder: 'Gigs'));
+        when(() => repository.deleteFolder(any()))
+            .thenThrow(const SessionFolderNotEmpty(folder: 'Gigs'));
       },
       build: build,
       act: (cubit) => cubit.deleteFolder('Gigs'),
@@ -3030,9 +2979,8 @@ void main() {
       'renameFolder renames it and re-lists',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.renameFolder(any(), any()),
-        ).thenAnswer((_) async {});
+        when(() => repository.renameFolder(any(), any()))
+            .thenAnswer((_) async {});
         when(repository.listFolders).thenAnswer((_) async => ['Shows']);
       },
       build: build,
@@ -3051,9 +2999,8 @@ void main() {
       'createFolder on a taken name fails with nameCollision',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.createFolder(any()),
-        ).thenThrow(const SessionNameCollision(slug: 'Gigs'));
+        when(() => repository.createFolder(any()))
+            .thenThrow(const SessionNameCollision(slug: 'Gigs'));
       },
       build: build,
       act: (cubit) => cubit.createFolder('Gigs'),
@@ -3069,9 +3016,8 @@ void main() {
       'an unreadable folder list keeps the folders already in state',
       setUp: () {
         stubCatalog();
-        when(
-          repository.listFolders,
-        ).thenThrow(const FileSystemException('denied'));
+        when(repository.listFolders)
+            .thenThrow(const FileSystemException('denied'));
       },
       seed: () => const SessionState(folders: ['Gigs']),
       build: build,
@@ -3087,9 +3033,8 @@ void main() {
       'duplicateSession copies the bundle and refreshes the catalog',
       setUp: () {
         stubCatalog();
-        when(
-          () => repository.duplicateSession(any(), any()),
-        ).thenAnswer((_) async => 'copy-id');
+        when(() => repository.duplicateSession(any(), any()))
+            .thenAnswer((_) async => 'copy-id');
       },
       seed: () => const SessionState(
         currentSessionId: 'A',
@@ -3200,9 +3145,8 @@ void main() {
       'a write-back preserves the open session + catalog across the '
       'transition (C1)',
       setUp: () {
-        when(
-          () => repository.bundlePathOf(any()),
-        ).thenAnswer((_) async => '/root/Open');
+        when(() => repository.bundlePathOf(any()))
+            .thenAnswer((_) async => '/root/Open');
         when(
           () => repository.save(
             any(),
@@ -3247,9 +3191,8 @@ void main() {
       'renameSession finishes before close completes (success path)',
       () async {
         final completer = Completer<void>();
-        when(
-          () => repository.renameSession(any(), any()),
-        ).thenAnswer((_) => completer.future);
+        when(() => repository.renameSession(any(), any()))
+            .thenAnswer((_) => completer.future);
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = build();
@@ -3269,9 +3212,8 @@ void main() {
       'renameSession error settles before close (SessionException)',
       () async {
         final completer = Completer<void>();
-        when(
-          () => repository.renameSession(any(), any()),
-        ).thenAnswer((_) => completer.future);
+        when(() => repository.renameSession(any(), any()))
+            .thenAnswer((_) => completer.future);
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = build();
@@ -3286,44 +3228,37 @@ void main() {
       },
     );
 
-    test(
-      'renameSession error settles before close (unknown error)',
-      () async {
-        final completer = Completer<void>();
-        when(
-          () => repository.renameSession(any(), any()),
-        ).thenAnswer((_) => completer.future);
-        when(repository.listSessions).thenAnswer((_) async => const []);
+    test('renameSession error settles before close (unknown error)', () async {
+      final completer = Completer<void>();
+      when(() => repository.renameSession(any(), any()))
+          .thenAnswer((_) => completer.future);
+      when(repository.listSessions).thenAnswer((_) async => const []);
 
-        final cubit = build();
-        final future = cubit.renameSession('x', 'Renamed');
+      final cubit = build();
+      final future = cubit.renameSession('x', 'Renamed');
 
-        final closing = cubit.close();
-        expect(cubit.isClosed, isFalse);
-        completer.completeError(Exception('disk full'));
+      final closing = cubit.close();
+      expect(cubit.isClosed, isFalse);
+      completer.completeError(Exception('disk full'));
 
-        await expectLater(future, completes);
-        await closing;
-      },
-    );
+      await expectLater(future, completes);
+      await closing;
+    });
 
-    test(
-      'refreshSessions completes before close',
-      () async {
-        final completer = Completer<List<SessionSummary>>();
-        when(repository.listSessions).thenAnswer((_) => completer.future);
+    test('refreshSessions completes before close', () async {
+      final completer = Completer<List<SessionSummary>>();
+      when(repository.listSessions).thenAnswer((_) => completer.future);
 
-        final cubit = build();
-        final future = cubit.refreshSessions();
+      final cubit = build();
+      final future = cubit.refreshSessions();
 
-        final closing = cubit.close();
-        expect(cubit.isClosed, isFalse);
-        completer.complete(const []);
+      final closing = cubit.close();
+      expect(cubit.isClosed, isFalse);
+      completer.complete(const []);
 
-        await expectLater(future, completes);
-        await closing;
-      },
-    );
+      await expectLater(future, completes);
+      await closing;
+    });
   });
 
   group('SessionCubit backing (#1200)', () {
@@ -3369,9 +3304,8 @@ void main() {
         pan: 0.25,
         outputMask: 0x3,
       );
-      when(
-        () => repository.bundlePathOf(any()),
-      ).thenAnswer((_) async => '/b/X');
+      when(() => repository.bundlePathOf(any()))
+          .thenAnswer((_) async => '/b/X');
       when(
         () => repository.open(any(), liveSettings: any(named: 'liveSettings')),
       ).thenAnswer(
@@ -3431,9 +3365,8 @@ void main() {
       'only AFTER it',
       () async {
         final order = <String>[];
-        when(
-          () => repository.bundlePathOf(any()),
-        ).thenAnswer((_) async => '/b/X');
+        when(() => repository.bundlePathOf(any()))
+            .thenAnswer((_) async => '/b/X');
         when(
           () =>
               repository.open(any(), liveSettings: any(named: 'liveSettings')),
@@ -3487,9 +3420,8 @@ void main() {
       'dispatching a session that never loaded against the rig still live',
       () async {
         var committed = false;
-        when(
-          () => repository.bundlePathOf(any()),
-        ).thenAnswer((_) async => '/b/X');
+        when(() => repository.bundlePathOf(any()))
+            .thenAnswer((_) async => '/b/X');
         when(
           () =>
               repository.open(any(), liveSettings: any(named: 'liveSettings')),
@@ -3508,9 +3440,8 @@ void main() {
             ),
           ),
         );
-        when(
-          () => looper.applySession(any()),
-        ).thenThrow(StateError('engine refused the rig'));
+        when(() => looper.applySession(any()))
+            .thenThrow(StateError('engine refused the rig'));
         when(repository.listSessions).thenAnswer((_) async => const []);
 
         final cubit = SessionCubit(
@@ -3536,9 +3467,8 @@ void main() {
     );
 
     test('saves the remap IN FORCE, so a session can acquire one', () async {
-      when(
-        () => repository.bundlePathOf(any()),
-      ).thenAnswer((_) async => '/b/X');
+      when(() => repository.bundlePathOf(any()))
+          .thenAnswer((_) async => '/b/X');
       when(repository.listSessions).thenAnswer((_) async => const []);
       when(
         () => repository.save(

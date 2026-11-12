@@ -121,10 +121,7 @@ void main() {
           ),
         ]),
       );
-      const overlay = ControlState(
-        mode: InteractionMode.mute,
-        excluded: {1},
-      );
+      const overlay = ControlState(mode: InteractionMode.mute, excluded: {1});
       expect(armedTracks(looper, overlay), {0});
     });
   });
@@ -159,9 +156,7 @@ void main() {
     test('Fade mode: an emptied track stays dark before its reset lands', () {
       // Clear publishes EMPTY before the callback publishes the unity image.
       final looper = _stateWith(
-        _tracksWith(const [
-          Track(fade: FadeImage(amount: 0, target: 0)),
-        ]),
+        _tracksWith(const [Track(fade: FadeImage(amount: 0, target: 0))]),
       );
       const overlay = ControlState(mode: InteractionMode.fade);
       expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
@@ -187,9 +182,7 @@ void main() {
 
     test('Rec mode: the cursor and any capturing track read red', () {
       final looper = _stateWith(
-        _tracksWith(const [
-          Track(channel: 3, state: TrackState.recording),
-        ]),
+        _tracksWith(const [Track(channel: 3, state: TrackState.recording)]),
         masterLengthFrames: 0,
       );
       const overlay = ControlState(cursor: 1);
@@ -240,9 +233,7 @@ void main() {
       // track (dark) that redo resurrects reads green off the very next
       // snapshot — nothing stored needs reconciling.
       const overlay = ControlState(mode: InteractionMode.mute);
-      final empty = _stateWith(
-        _tracksWith(const [Track(redoDepth: 2)]),
-      );
+      final empty = _stateWith(_tracksWith(const [Track(redoDepth: 2)]));
       expect(projectTrackLed(empty, overlay, 0), PedalTrackLed.off);
 
       final resurrected = _stateWith(
@@ -325,11 +316,7 @@ void main() {
           _stateWith(
             _tracksWith(const [
               Track(state: TrackState.recording),
-              Track(
-                channel: 1,
-                state: TrackState.playing,
-                lengthFrames: 48000,
-              ),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
             ]),
           ),
           overlay,
@@ -493,11 +480,7 @@ void main() {
 
     test('a fill without a held contact changes nothing', () {
       expect(
-        projectFrame(
-          looper,
-          record,
-          clearFilling: const {PedalButton.track1},
-        ),
+        projectFrame(looper, record, clearFilling: const {PedalButton.track1}),
         projectFrame(looper, record),
       );
     });

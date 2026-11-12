@@ -173,10 +173,7 @@ void main() {
   });
 
   test('a paired source mutes both members', () async {
-    final rig = await enter(
-      setup: InputSetup(pairs: const {2: 0}),
-      input: 3,
-    );
+    final rig = await enter(setup: InputSetup(pairs: const {2: 0}), input: 3);
     try {
       expect(rig.engine.tunerInput, 3);
       expect(rig.engine.tunerMuteMask, 0xC);
@@ -507,9 +504,9 @@ void main() {
           expect(rig.control.state.tunerDefaultSeeded, isTrue);
           expect(rig.store.values['pedal.tuner_default_seeded'], isTrue);
           expect(
-            PedalSetup.decode(
-              rig.store.values['pedal.setup']! as String,
-            ).customFor(PedalButton.track2, bank: 0).hold,
+            PedalSetup.decode(rig.store.values['pedal.setup']! as String)
+                .customFor(PedalButton.track2, bank: 0)
+                .hold,
             tuner,
           );
         } finally {

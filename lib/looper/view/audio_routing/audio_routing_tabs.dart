@@ -11,11 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// columns.
 class AudioRoutingTabBar extends StatelessWidget {
   /// Creates an [AudioRoutingTabBar].
-  const new({
-    required this.selected,
-    required this.onSelected,
-    super.key,
-  });
+  const new({required this.selected, required this.onSelected, super.key});
 
   /// The task now showing.
   final AudioRoutingTab selected;

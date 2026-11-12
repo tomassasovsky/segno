@@ -278,10 +278,7 @@ class Track extends Equatable {
   /// even when the nominal BPM differs. Without that grid, [sampleRate] and
   /// denominator-note BPM determine the duration of [TransportState.tsNum]
   /// beats. One frame of rounding is allowed; fractional bars remain unknown.
-  int? wholeBars({
-    required TransportState transport,
-    required int sampleRate,
-  }) {
+  int? wholeBars({required TransportState transport, required int sampleRate}) {
     final perBeat = _framesPerBeat(transport, sampleRate);
     if (perBeat == null || transport.tsNum <= 0) return null;
     return _whole(perBeat * transport.tsNum);

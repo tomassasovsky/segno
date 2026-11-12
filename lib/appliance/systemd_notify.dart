@@ -54,9 +54,7 @@ final class UnixDatagramNotifier {
       .lookupFunction<
         Int32 Function(Int32, Int32, Int32),
         int Function(int, int, int)
-      >(
-        'socket',
-      );
+      >('socket');
   static final int Function(int, Pointer<Uint8>, int, int, Pointer<Uint8>, int)
   _sendto = _libc
       .lookupFunction<

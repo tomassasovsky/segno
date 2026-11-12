@@ -175,12 +175,10 @@ class NewLoopSheet extends StatelessWidget {
                       tone: LoopButtonTone.accent,
                       label: l10n.libraryNewLoopStart,
                       onTap: state.canStart
-                          ? () =>
-                                Navigator.of(
-                                  context,
-                                ).pop<NewLoopConfirmation>(
-                                  (template: state.chosenTemplate),
-                                )
+                          ? () => Navigator.of(context)
+                                .pop<NewLoopConfirmation>((
+                                  template: state.chosenTemplate,
+                                ))
                           : null,
                     ),
                   ),
@@ -198,11 +196,7 @@ class NewLoopSheet extends StatelessWidget {
 /// pick-one (19/07), [selected] chosen.
 class NewLoopStartPick extends StatelessWidget {
   /// Creates the row with [selected] chosen, its label in [style].
-  const new({
-    required this.selected,
-    required this.style,
-    super.key,
-  });
+  const new({required this.selected, required this.style, super.key});
 
   /// The chosen start.
   final NewLoopStart selected;
@@ -282,11 +276,7 @@ class NewLoopEdsLine extends StatelessWidget {
 /// on tracks 1 to 4 that Ed's setup replaces.
 class NewLoopNamesLine extends StatelessWidget {
   /// Creates the line for the current [trackNames] in [style].
-  const new({
-    required this.trackNames,
-    required this.style,
-    super.key,
-  });
+  const new({required this.trackNames, required this.style, super.key});
 
   /// The track names, by channel.
   final List<String> trackNames;

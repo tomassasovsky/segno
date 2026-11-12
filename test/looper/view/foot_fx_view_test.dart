@@ -19,8 +19,7 @@ import '../../helpers/helpers.dart';
 
 class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc;
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
 class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
@@ -34,9 +33,7 @@ void main() {
   late _Repository repository;
 
   const input2 = FxChainTarget(FxAddress(stage: FxStage.input, index: 1));
-  const lane = FxChainTarget(
-    FxAddress(stage: FxStage.loop, index: 1, lane: 0),
-  );
+  const lane = FxChainTarget(FxAddress(stage: FxStage.loop, index: 1, lane: 0));
   const master = FxChainTarget(FxAddress(stage: FxStage.output));
 
   PedalBinding bind(
@@ -73,20 +70,16 @@ void main() {
         effects: [BuiltInEffect(type: TrackEffectType.reverb)],
       ),
     });
-    when(
-      () => repository.monitorEffects(1),
-    ).thenReturn([BuiltInEffect(type: TrackEffectType.reverb)]);
-    when(
-      repository.allLaneChains,
-    ).thenReturn(const {(1, 0): FxChainEnvelope()});
+    when(() => repository.monitorEffects(1))
+        .thenReturn([BuiltInEffect(type: TrackEffectType.reverb)]);
+    when(repository.allLaneChains)
+        .thenReturn(const {(1, 0): FxChainEnvelope()});
     when(() => repository.laneEffects(1, 0)).thenReturn(const []);
     when(repository.allTrackChains).thenReturn(const {});
-    when(
-      () => repository.state,
-    ).thenReturn(const LooperState(outputBusCount: 1));
-    when(
-      () => repository.outputEffects(0),
-    ).thenReturn([BuiltInEffect(type: TrackEffectType.delay)]);
+    when(() => repository.state)
+        .thenReturn(const LooperState(outputBusCount: 1));
+    when(() => repository.outputEffects(0))
+        .thenReturn([BuiltInEffect(type: TrackEffectType.delay)]);
     whenListen(
       looper,
       const Stream<LooperState>.empty(),
@@ -140,10 +133,8 @@ void main() {
   Finder pedal(PedalButton button) =>
       find.byKey(Key('foot_fx_pedal_${button.name}'));
 
-  Finder performancePedal(PedalButton button) => find.ancestor(
-    of: pedal(button),
-    matching: find.byType(PerformancePedal),
-  );
+  Finder performancePedal(PedalButton button) =>
+      find.ancestor(of: pedal(button), matching: find.byType(PerformancePedal));
 
   Finder within(PedalButton button, String text) =>
       find.descendant(of: pedal(button), matching: find.text(text));
@@ -198,11 +189,7 @@ void main() {
       ControlState(
         mode: InteractionMode.fx,
         globalBindings: PedalBindingSet([
-          bind(
-            PedalButton.track3,
-            master,
-            behavior: BindingBehavior.momentary,
-          ),
+          bind(PedalButton.track3, master, behavior: BindingBehavior.momentary),
           bind(PedalButton.track4, input2, hold: master),
         ]),
         fxSwitches: const {
@@ -318,9 +305,7 @@ void main() {
     verify(() => control.activateFootFxPedal(PedalButton.mode)).called(1);
   });
 
-  testWidgets('a cancelled contact is reported, not released', (
-    tester,
-  ) async {
+  testWidgets('a cancelled contact is reported, not released', (tester) async {
     given(const ControlState(mode: InteractionMode.fx));
     await pump(tester);
     final gesture = await tester.startGesture(
@@ -329,9 +314,7 @@ void main() {
     await tester.pump();
     await gesture.cancel();
     await tester.pump();
-    verify(
-      () => control.footFxCancelled(PedalButton.track1, any()),
-    ).called(1);
+    verify(() => control.footFxCancelled(PedalButton.track1, any())).called(1);
     verifyNever(() => control.footFxReleased(PedalButton.track1, any()));
   });
 

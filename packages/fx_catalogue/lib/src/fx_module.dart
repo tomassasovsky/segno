@@ -74,11 +74,7 @@ class FxModule {
   bool appearsIn(String family) => families?.contains(family) ?? true;
 }
 
-const Set<String> _paraEqFamilies = {
-  'Dub Rack',
-  'Lo-Fi Rack',
-  'Rhythmic Rack',
-};
+const Set<String> _paraEqFamilies = {'Dub Rack', 'Lo-Fi Rack', 'Rhythmic Rack'};
 
 const Set<String> _fourBandEqFamilies = {
   'Drum Rack',
@@ -122,16 +118,8 @@ const List<FxModule> kFxModules = [
     enables: ['Comp', 'Compressor'],
     groups: ['Comp'],
   ),
-  FxModule(
-    name: 'Overdrive',
-    enables: ['OvDrive'],
-    groups: ['OD'],
-  ),
-  FxModule(
-    name: 'Distortion',
-    enables: ['Dist', 'Distort'],
-    groups: ['Dist'],
-  ),
+  FxModule(name: 'Overdrive', enables: ['OvDrive'], groups: ['OD']),
+  FxModule(name: 'Distortion', enables: ['Dist', 'Distort'], groups: ['Dist']),
   FxModule(
     name: 'Four-band EQ',
     enables: ['EQ', 'EQ 4-Band'],
@@ -150,41 +138,13 @@ const List<FxModule> kFxModules = [
     groups: ['EQ'],
     families: _paraEqFamilies,
   ),
-  FxModule(
-    name: 'Low-pass filter',
-    enables: ['LPF'],
-    groups: ['LPF'],
-  ),
-  FxModule(
-    name: 'Wah',
-    enables: ['Wah'],
-    groups: ['Wah'],
-  ),
-  FxModule(
-    name: 'Chorus',
-    enables: ['Chor'],
-    groups: ['Chor'],
-  ),
-  FxModule(
-    name: 'Modulation',
-    enables: ['Mod'],
-    groups: ['Mod'],
-  ),
-  FxModule(
-    name: 'Octaver',
-    enables: ['Oct'],
-    groups: ['Oct', 'Octave'],
-  ),
-  FxModule(
-    name: 'Pitch shift',
-    enables: ['Pitch'],
-    groups: ['Pitch'],
-  ),
-  FxModule(
-    name: 'Whammy',
-    enables: ['Whammy'],
-    groups: ['Whammy'],
-  ),
+  FxModule(name: 'Low-pass filter', enables: ['LPF'], groups: ['LPF']),
+  FxModule(name: 'Wah', enables: ['Wah'], groups: ['Wah']),
+  FxModule(name: 'Chorus', enables: ['Chor'], groups: ['Chor']),
+  FxModule(name: 'Modulation', enables: ['Mod'], groups: ['Mod']),
+  FxModule(name: 'Octaver', enables: ['Oct'], groups: ['Oct', 'Octave']),
+  FxModule(name: 'Pitch shift', enables: ['Pitch'], groups: ['Pitch']),
+  FxModule(name: 'Whammy', enables: ['Whammy'], groups: ['Whammy']),
   FxModule(
     name: 'Delay',
     enables: ['Delay'],
@@ -199,16 +159,8 @@ const List<FxModule> kFxModules = [
     groups: ['Del'],
     families: _dubDelayFamilies,
   ),
-  FxModule(
-    name: 'Reverb',
-    enables: ['Reverb'],
-    groups: ['Rev'],
-  ),
-  FxModule(
-    name: 'Spring reverb',
-    enables: ['Spring'],
-    groups: ['Spring'],
-  ),
+  FxModule(name: 'Reverb', enables: ['Reverb'], groups: ['Rev']),
+  FxModule(name: 'Spring reverb', enables: ['Spring'], groups: ['Spring']),
   FxModule(
     name: 'Ambience',
     // The source spells the group three ways across the Dub Rack, including
@@ -216,16 +168,8 @@ const List<FxModule> kFxModules = [
     enables: ['Amb-Verb'],
     groups: ['Amb-Verb', 'Amb-verb', 'Amb-Dub'],
   ),
-  FxModule(
-    name: 'Dub reverb',
-    enables: ['Dub-Verb'],
-    groups: ['Dub-Verb'],
-  ),
-  FxModule(
-    name: 'Doubler',
-    enables: ['Doubler'],
-    groups: ['Doubler'],
-  ),
+  FxModule(name: 'Dub reverb', enables: ['Dub-Verb'], groups: ['Dub-Verb']),
+  FxModule(name: 'Doubler', enables: ['Doubler'], groups: ['Doubler']),
   FxModule(
     name: 'High-pass gate',
     // Two power keys that are not alternatives of one another: `HP/Gate` is
@@ -239,26 +183,10 @@ const List<FxModule> kFxModules = [
     enables: ['Transient'],
     groups: ['Attack', 'Sustain'],
   ),
-  FxModule(
-    name: 'Pumper',
-    enables: ['Pumper'],
-    groups: ['Pumper'],
-  ),
-  FxModule(
-    name: 'Slicer',
-    enables: ['Slicer'],
-    groups: ['Slic'],
-  ),
-  FxModule(
-    name: 'Vinyl',
-    enables: ['Vinyl'],
-    groups: ['Vinyl'],
-  ),
-  FxModule(
-    name: 'Degrade',
-    enables: ['Degrade'],
-    groups: ['Degrade'],
-  ),
+  FxModule(name: 'Pumper', enables: ['Pumper'], groups: ['Pumper']),
+  FxModule(name: 'Slicer', enables: ['Slicer'], groups: ['Slic']),
+  FxModule(name: 'Vinyl', enables: ['Vinyl'], groups: ['Vinyl']),
+  FxModule(name: 'Degrade', enables: ['Degrade'], groups: ['Degrade']),
   FxModule(
     name: 'Harmonizer',
     enables: ['Harmonize'],
@@ -318,13 +246,7 @@ const Set<String> kFxUnclaimedGroups = {'Master'};
 /// Reverb then Delay. This table follows the processor. Both are linear, so in
 /// series the order does not change the sound.
 const Map<String, List<String>> kFxRackOrders = {
-  'Drum Rack': [
-    'Transient',
-    'Delay',
-    'Reverb',
-    'Four-band EQ',
-    'Compressor',
-  ],
+  'Drum Rack': ['Transient', 'Delay', 'Reverb', 'Four-band EQ', 'Compressor'],
   'Dub Rack': [
     'Doubler',
     'Dub delay',
@@ -486,10 +408,7 @@ bool _names(FxPreset preset, FxModule module) {
 /// the same in the list and in the rack (#1752).
 class FxAddableEffect {
   /// Creates an [FxAddableEffect].
-  const new({
-    required this.module,
-    required this.family,
-  });
+  const new({required this.module, required this.family});
 
   /// The [FxModule.name] of the pedal the row adds.
   final String module;
@@ -515,63 +434,27 @@ class FxAddableEffect {
 const List<FxAddableEffect> kFxAddableEffects = [
   FxAddableEffect(module: 'Amp', family: "Ed's Rack"),
   FxAddableEffect(module: 'Chorus', family: "Ed's Rack"),
-  FxAddableEffect(
-    module: 'Compressor',
-    family: "Ed's Rack",
-  ),
+  FxAddableEffect(module: 'Compressor', family: "Ed's Rack"),
   FxAddableEffect(module: 'Degrade', family: 'Lo-Fi Rack'),
   FxAddableEffect(module: 'Delay', family: "Ed's Rack"),
-  FxAddableEffect(
-    module: 'Distortion',
-    family: 'Lo-Fi Rack',
-  ),
+  FxAddableEffect(module: 'Distortion', family: 'Lo-Fi Rack'),
   FxAddableEffect(module: 'Doubler', family: 'Dub Rack'),
   FxAddableEffect(module: 'Dub delay', family: 'Dub Rack'),
-  FxAddableEffect(
-    module: 'Four-band EQ',
-    family: "Ed's Rack",
-  ),
-  FxAddableEffect(
-    module: 'Harmonizer',
-    family: 'Vocal Tuner Rack',
-  ),
-  FxAddableEffect(
-    module: 'High-pass gate',
-    family: 'Vocal Rack',
-  ),
-  FxAddableEffect(
-    module: 'Low-pass filter',
-    family: 'Rhythmic Rack',
-  ),
-  FxAddableEffect(
-    module: 'Modulation',
-    family: 'Guitar Rack',
-  ),
+  FxAddableEffect(module: 'Four-band EQ', family: "Ed's Rack"),
+  FxAddableEffect(module: 'Harmonizer', family: 'Vocal Tuner Rack'),
+  FxAddableEffect(module: 'High-pass gate', family: 'Vocal Rack'),
+  FxAddableEffect(module: 'Low-pass filter', family: 'Rhythmic Rack'),
+  FxAddableEffect(module: 'Modulation', family: 'Guitar Rack'),
   FxAddableEffect(module: 'Octaver', family: "Ed's Rack"),
   FxAddableEffect(module: 'Overdrive', family: "Ed's Rack"),
-  FxAddableEffect(
-    module: 'Parametric EQ',
-    family: 'Dub Rack',
-  ),
-  FxAddableEffect(
-    module: 'Pitch shift',
-    family: 'Studio Rack',
-  ),
+  FxAddableEffect(module: 'Parametric EQ', family: 'Dub Rack'),
+  FxAddableEffect(module: 'Pitch shift', family: 'Studio Rack'),
   FxAddableEffect(module: 'Pumper', family: 'Rhythmic Rack'),
   FxAddableEffect(module: 'Reverb', family: "Ed's Rack"),
   FxAddableEffect(module: 'Slicer', family: 'Rhythmic Rack'),
-  FxAddableEffect(
-    module: 'Smart tune',
-    family: 'Vocal Tuner Rack',
-  ),
-  FxAddableEffect(
-    module: 'Spring reverb',
-    family: 'Guitar Rack',
-  ),
-  FxAddableEffect(
-    module: 'Transient',
-    family: 'Drum Rack',
-  ),
+  FxAddableEffect(module: 'Smart tune', family: 'Vocal Tuner Rack'),
+  FxAddableEffect(module: 'Spring reverb', family: 'Guitar Rack'),
+  FxAddableEffect(module: 'Transient', family: 'Drum Rack'),
   FxAddableEffect(module: 'Vinyl', family: 'Lo-Fi Rack'),
   FxAddableEffect(module: 'Wah', family: "Ed's Rack"),
   FxAddableEffect(module: 'Whammy', family: 'Guitar Rack'),

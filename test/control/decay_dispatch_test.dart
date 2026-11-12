@@ -291,78 +291,69 @@ void main() {
     });
 
     for (final external in [false, true]) {
-      check(
-        '${external ? 'External' : 'MIDI'} release keeps explicit '
-        'authored zero',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          expect(r.live, external ? 20 : 75);
-          expect(r.durable, external ? 60 : 0);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          expect(r.looper.trackOverdubDecayOverrides[0], external ? 60 : 0);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} Use default retires stale '
-        'cleanup without numeric override',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.ordinary(null);
-          unawaited(
-            r.owner.decayControl.setOverdubDecay(
-              const DecayAddress.defaults(),
-              40,
-            ),
-          );
-          r.pump();
-          final writes = r.engine.decayWrites;
-          expect(r.live, 40);
-          expect(r.looper.trackOverdubDecayOverrides, isEmpty);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          r.retire();
-          expect(r.engine.decayWrites, writes);
-          expect(r.live, 40);
-          expect(r.looper.trackOverdubDecayOverrides, isEmpty);
-          expect(r.store.values.containsKey('track_overdub_decay.0'), isFalse);
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} earlier ordinary value '
-        'does not defeat authored release',
-        (r) {
+      check('${external ? 'External' : 'MIDI'} release keeps explicit '
+          'authored zero', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        expect(r.live, external ? 20 : 75);
+        expect(r.durable, external ? 60 : 0);
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        expect(r.looper.trackOverdubDecayOverrides[0], external ? 60 : 0);
+      });
+      check('${external ? 'External' : 'MIDI'} Use default retires stale '
+          'cleanup without numeric override', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.ordinary(null);
+        unawaited(
+          r.owner.decayControl.setOverdubDecay(
+            const DecayAddress.defaults(),
+            40,
+          ),
+        );
+        r.pump();
+        final writes = r.engine.decayWrites;
+        expect(r.live, 40);
+        expect(r.looper.trackOverdubDecayOverrides, isEmpty);
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        r.retire();
+        expect(r.engine.decayWrites, writes);
+        expect(r.live, 40);
+        expect(r.looper.trackOverdubDecayOverrides, isEmpty);
+        expect(r.store.values.containsKey('track_overdub_decay.0'), isFalse);
+      });
+      check('${external ? 'External' : 'MIDI'} earlier ordinary value '
+          'does not defeat authored release', (r) {
+        r
+          ..ordinary(40)
+          ..bind();
+        if (external) {
           r
-            ..ordinary(40)
-            ..bind();
-          if (external) {
-            r
-              ..external(high: true)
-              ..external(high: false);
-          } else {
-            r
-              ..note(127)
-              ..note(0);
-          }
-          expect(r.live, external ? 60 : 0);
-        },
-      );
+            ..external(high: true)
+            ..external(high: false);
+        } else {
+          r
+            ..note(127)
+            ..note(0);
+        }
+        expect(r.live, external ? 60 : 0);
+      });
     }
     check(
       'surviving MIDI and External hold keeps the survivor Released value',

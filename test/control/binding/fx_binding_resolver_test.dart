@@ -46,18 +46,14 @@ void main() {
     masterChain = [_fx('mx-1')];
     chainEnabled = {'input:2': true, 'loop:1:0': true, 'track:5': true};
 
-    when(
-      () => looper.allMonitors(),
-    ).thenAnswer(
+    when(() => looper.allMonitors()).thenAnswer(
       (_) => {
         for (final input in monitorChains.keys)
           input: InputMonitor(input: input),
       },
     );
     when(() => looper.allLaneChains()).thenAnswer(
-      (_) => {
-        for (final key in laneChains.keys) key: const FxChainEnvelope(),
-      },
+      (_) => {for (final key in laneChains.keys) key: const FxChainEnvelope()},
     );
     when(() => looper.allTrackChains()).thenAnswer(
       (_) => {
@@ -66,9 +62,8 @@ void main() {
       },
     );
 
-    when(
-      () => looper.monitorEffects(any()),
-    ).thenAnswer((i) => monitorChains[i.positionalArguments[0]] ?? const []);
+    when(() => looper.monitorEffects(any()))
+        .thenAnswer((i) => monitorChains[i.positionalArguments[0]] ?? const []);
     when(() => looper.laneEffects(any(), any())).thenAnswer(
       (i) =>
           laneChains[(
@@ -77,15 +72,12 @@ void main() {
           )] ??
           const [],
     );
-    when(
-      () => looper.trackEffects(any()),
-    ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
+    when(() => looper.trackEffects(any()))
+        .thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
     when(() => looper.outputEffects(0)).thenAnswer((_) => masterChain);
     when(() => looper.allTracksEffects).thenReturn(const []);
 
-    when(
-      () => looper.monitorChainEnabled(any()),
-    ).thenAnswer(
+    when(() => looper.monitorChainEnabled(any())).thenAnswer(
       (i) => chainEnabled['input:${i.positionalArguments[0]}'] ?? true,
     );
     when(() => looper.laneChainEnabled(any(), any())).thenAnswer(
@@ -94,19 +86,15 @@ void main() {
               '${i.positionalArguments[1]}'] ??
           true,
     );
-    when(
-      () => looper.trackChainEnabled(any()),
-    ).thenAnswer(
+    when(() => looper.trackChainEnabled(any())).thenAnswer(
       (i) => chainEnabled['track:${i.positionalArguments[0]}'] ?? true,
     );
-    when(
-      () => looper.outputChainEnabled(any()),
-    ).thenAnswer((_) => chainEnabled['output'] ?? true);
+    when(() => looper.outputChainEnabled(any()))
+        .thenAnswer((_) => chainEnabled['output'] ?? true);
     // One destination, so an address past it is a malformed one.
     when(() => looper.state).thenReturn(const LooperState(outputBusCount: 1));
-    when(() => looper.allTracksChainEnabled).thenAnswer(
-      (_) => chainEnabled['allTracks'] ?? true,
-    );
+    when(() => looper.allTracksChainEnabled)
+        .thenAnswer((_) => chainEnabled['allTracks'] ?? true);
 
     when(
       () => looper.setTrackChainEnabled(
@@ -338,9 +326,8 @@ void main() {
           const FxChainTarget(FxAddress(stage: FxStage.track, index: 5)),
           enabled: false,
         );
-        verify(
-          () => looper.setTrackChainEnabled(channel: 5, enabled: false),
-        ).called(1);
+        verify(() => looper.setTrackChainEnabled(channel: 5, enabled: false))
+            .called(1);
       });
 
       test('a CONFIGURED but empty chain still resolves — its flag is real '

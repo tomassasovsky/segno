@@ -83,11 +83,8 @@ class AppLog {
 
   /// Error, optionally with [error] / [stack]. The only level that syncs to
   /// the disk — see the class doc.
-  static void error(
-    String message, {
-    Object? error,
-    StackTrace? stack,
-  }) => _write('E', message, error: error, stack: stack);
+  static void error(String message, {Object? error, StackTrace? stack}) =>
+      _write('E', message, error: error, stack: stack);
 
   /// Releases the logfile handle, syncing whatever the OS still holds.
   ///

@@ -29,8 +29,7 @@ sealed class StorageFailure extends Equatable implements Exception {
   const factory busy(GuardKind kind) = StorageBusy;
 
   /// Any other I/O failure, with the OS's own words.
-  const factory io(String reason, {String? writtenTo}) =
-      StorageIo;
+  const factory io(String reason, {String? writtenTo}) = StorageIo;
 
   @override
   List<Object?> get props => const [];

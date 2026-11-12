@@ -90,10 +90,8 @@ class PowerDialog extends StatelessWidget {
                   l10n.powerTransferTitle,
                   l10n.powerTransferBody,
                 ),
-                PowerRefusal.take || null => (
-                  l10n.powerRefuseTitle,
-                  l10n.powerRefuseBody,
-                ),
+                PowerRefusal.take ||
+                null => (l10n.powerRefuseTitle, l10n.powerRefuseBody),
               };
               body = _PowerBody(
                 title: title,

@@ -108,9 +108,8 @@ void main() {
   test(
     'removed effect and malformed saved key never retarget another slot',
     () {
-      when(
-        () => looper.allTrackChains(),
-      ).thenReturn({0: const FxChainEnvelope()});
+      when(() => looper.allTrackChains())
+          .thenReturn({0: const FxChainEnvelope()});
       when(() => looper.trackEffects(0)).thenReturn([
         BuiltInEffect(type: TrackEffectType.drive, slotId: 'new-slot'),
       ]);

@@ -11,13 +11,7 @@ void main() {
           width: 400,
           height: 200,
           fitIdentity: [1, 2],
-          children: [
-            Positioned(
-              left: 10,
-              top: 10,
-              child: Text('node'),
-            ),
-          ],
+          children: [Positioned(left: 10, top: 10, child: Text('node'))],
         ),
       );
       await tester.pumpAndSettle();
@@ -34,9 +28,7 @@ void main() {
           fitIdentity: const [1],
           onTapBackground: () => taps++,
           // The only child sits at the top-left, so the canvas centre is empty.
-          children: const [
-            Positioned(left: 10, top: 10, child: Text('node')),
-          ],
+          children: const [Positioned(left: 10, top: 10, child: Text('node'))],
         ),
       );
       await tester.pumpAndSettle();
@@ -118,9 +110,7 @@ void main() {
         width: 400,
         height: 200,
         fitIdentity: identity,
-        children: const [
-          Positioned(left: 10, top: 10, child: Text('node')),
-        ],
+        children: const [Positioned(left: 10, top: 10, child: Text('node'))],
       );
 
       await tester.pumpApp(canvas(const [1]));

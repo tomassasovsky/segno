@@ -296,10 +296,7 @@ void main() {
           await fx.flush();
           await expectRestored(cubit, muted: true);
         },
-        errors: () => [
-          isA<StateError>(),
-          if (!shared) isA<StateError>(),
-        ],
+        errors: () => [isA<StateError>(), if (!shared) isA<StateError>()],
       );
     }
 

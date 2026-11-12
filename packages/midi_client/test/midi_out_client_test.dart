@@ -101,10 +101,7 @@ void main() {
           ..dispose();
 
         expect(client.isDisposed, isTrue);
-        expect(
-          bindings.calls.where((c) => c == 'out_destroy'),
-          hasLength(1),
-        );
+        expect(bindings.calls.where((c) => c == 'out_destroy'), hasLength(1));
       });
 
       test('rejects use after dispose', () {

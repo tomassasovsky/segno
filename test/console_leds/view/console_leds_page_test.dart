@@ -108,10 +108,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(harness.leds.state.settings.automatic, isFalse);
     // The board stays at full, as it always was.
-    expect(
-      link.sent.whereType<LedLevelMessage>().map((m) => m.level).toSet(),
-      {PedalLinkCodec.ledLevelFull},
-    );
+    expect(link.sent.whereType<LedLevelMessage>().map((m) => m.level).toSet(), {
+      PedalLinkCodec.ledLevelFull,
+    });
     await silence(tester);
   });
 
@@ -161,10 +160,7 @@ void main() {
     await tester.tap(find.byKey(const Key('console_leds_set_dark')));
     await tester.pumpAndSettle();
     expect(harness.leds.state.settings.darkReading, 20);
-    expect(
-      (await harness.settings.loadConsoleLeds()).darkReading,
-      20,
-    );
+    expect((await harness.settings.loadConsoleLeds()).darkReading, 20);
     await silence(tester);
   });
 

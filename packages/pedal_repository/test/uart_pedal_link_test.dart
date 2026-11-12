@@ -360,9 +360,7 @@ class _FakeReader implements UartPedalReader {
   final int fd;
   // Complete cancellation in the test's clock zone instead of returning the
   // SDK's shared null future, which can have been created outside fakeAsync.
-  final _chunks = StreamController<Uint8List>(
-    onCancel: Future<void>.value,
-  );
+  final _chunks = StreamController<Uint8List>(onCancel: Future<void>.value);
   Completer<void>? stopGate;
   bool stopped = false;
   int stopCalls = 0;

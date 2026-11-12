@@ -282,9 +282,7 @@ void main() {
   });
 
   group('Fade duration controller dispatch', () {
-    check('a held MIDI CC applies to the next gesture but saves Released', (
-      r,
-    ) {
+    check('a held MIDI CC applies to the next gesture but saves Released', (r) {
       r
         ..bind(const DefaultFadeTarget())
         ..cc(127);

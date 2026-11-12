@@ -40,20 +40,16 @@ void main() {
     when(() => updates.checkForUpdate()).thenAnswer((_) async => null);
     when(() => settings.loadUpdateAutoCheck()).thenAnswer((_) async => true);
     when(() => settings.loadUpdateChannel()).thenAnswer((_) async => null);
-    when(
-      () => settings.loadDismissedUpdateVersions(),
-    ).thenAnswer((_) async => const {});
-    when(
-      () => settings.saveUpdateAutoCheck(value: any(named: 'value')),
-    ).thenAnswer((_) async {});
+    when(() => settings.loadDismissedUpdateVersions())
+        .thenAnswer((_) async => const {});
+    when(() => settings.saveUpdateAutoCheck(value: any(named: 'value')))
+        .thenAnswer((_) async {});
     when(() => settings.saveUpdateChannel(any())).thenAnswer((_) async {});
-    when(
-      () => settings.saveDismissedUpdateVersions(any()),
-    ).thenAnswer((_) async {});
+    when(() => settings.saveDismissedUpdateVersions(any()))
+        .thenAnswer((_) async {});
     when(() => updates.setChannel(any())).thenAnswer((_) async {});
-    when(
-      () => updates.recover(),
-    ).thenAnswer((_) async => const UpdateRecovery());
+    when(() => updates.recover())
+        .thenAnswer((_) async => const UpdateRecovery());
     when(() => updates.clearInterrupted()).thenAnswer((_) async {});
     when(() => updates.installInProgress()).thenAnswer((_) async => false);
     when(() => settings.loadUpdateRollback()).thenAnswer((_) async => null);
@@ -72,9 +68,8 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'restores prefs and auto-checks when enabled + supported',
       setUp: () {
-        when(
-          () => settings.loadDismissedUpdateVersions(),
-        ).thenAnswer((_) async => {Version.parse('0.5.0')});
+        when(() => settings.loadDismissedUpdateVersions())
+            .thenAnswer((_) async => {Version.parse('0.5.0')});
         when(() => updates.checkForUpdate()).thenAnswer((_) async => _v2);
       },
       build: build,
@@ -99,9 +94,9 @@ void main() {
 
     blocTest<UpdateCubit, UpdateState>(
       'does not auto-check when the preference is off',
-      setUp: () => when(
-        () => settings.loadUpdateAutoCheck(),
-      ).thenAnswer((_) async => false),
+      setUp: () =>
+          when(() => settings.loadUpdateAutoCheck())
+              .thenAnswer((_) async => false),
       build: build,
       act: (cubit) => cubit.load(),
       expect: () => [
@@ -169,9 +164,8 @@ void main() {
 
     blocTest<UpdateCubit, UpdateState>(
       'emits error when the check throws',
-      setUp: () => when(
-        () => updates.checkForUpdate(),
-      ).thenThrow(Exception('offline')),
+      setUp: () =>
+          when(() => updates.checkForUpdate()).thenThrow(Exception('offline')),
       build: build,
       act: (cubit) => cubit.check(),
       expect: () => [
@@ -199,9 +193,9 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'streams progress then reaches staged',
       seed: () => UpdateState(available: _v2),
-      setUp: () => when(
-        () => updates.downloadAndStage(_v2),
-      ).thenAnswer((_) => Stream.fromIterable([0.5, 1.0])),
+      setUp: () =>
+          when(() => updates.downloadAndStage(_v2))
+              .thenAnswer((_) => Stream.fromIterable([0.5, 1.0])),
       build: build,
       act: (cubit) => cubit.startDownload(),
       expect: () => [
@@ -224,12 +218,9 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'names a read-only boot partition as its own failure',
       seed: () => UpdateState(available: _v2),
-      setUp: () =>
-          when(
-            () => updates.downloadAndStage(_v2),
-          ).thenAnswer(
-            (_) => Stream.error(const BootPartitionReadOnlyException('ro')),
-          ),
+      setUp: () => when(() => updates.downloadAndStage(_v2)).thenAnswer(
+        (_) => Stream.error(const BootPartitionReadOnlyException('ro')),
+      ),
       build: build,
       act: (cubit) => cubit.startDownload(),
       expect: () => [
@@ -247,9 +238,9 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'emits error when staging fails',
       seed: () => UpdateState(available: _v2),
-      setUp: () => when(
-        () => updates.downloadAndStage(_v2),
-      ).thenAnswer((_) => Stream.error(Exception('sha mismatch'))),
+      setUp: () =>
+          when(() => updates.downloadAndStage(_v2))
+              .thenAnswer((_) => Stream.error(Exception('sha mismatch'))),
       build: build,
       act: (cubit) => cubit.startDownload(),
       expect: () => [
@@ -269,12 +260,9 @@ void main() {
     test('kills the helper, forgets the attempt its kill left, and returns '
         'to the offer with nothing staged', () async {
       var cancelled = false;
-      final helper = StreamController<double>(
-        onCancel: () => cancelled = true,
-      );
-      when(
-        () => updates.downloadAndStage(_v2),
-      ).thenAnswer((_) => helper.stream);
+      final helper = StreamController<double>(onCancel: () => cancelled = true);
+      when(() => updates.downloadAndStage(_v2))
+          .thenAnswer((_) => helper.stream);
       final cubit = build()..emit(UpdateState(available: _v2));
 
       final download = cubit.startDownload();
@@ -297,12 +285,9 @@ void main() {
 
     test('is refused once RAUC is writing the slot', () async {
       var cancelled = false;
-      final helper = StreamController<double>(
-        onCancel: () => cancelled = true,
-      );
-      when(
-        () => updates.downloadAndStage(_v2),
-      ).thenAnswer((_) => helper.stream);
+      final helper = StreamController<double>(onCancel: () => cancelled = true);
+      when(() => updates.downloadAndStage(_v2))
+          .thenAnswer((_) => helper.stream);
       final cubit = build()..emit(UpdateState(available: _v2));
       unawaited(cubit.startDownload());
       helper.add(0.6);
@@ -327,12 +312,9 @@ void main() {
 
     test('closing the cubit kills a download in flight', () async {
       var cancelled = false;
-      final helper = StreamController<double>(
-        onCancel: () => cancelled = true,
-      );
-      when(
-        () => updates.downloadAndStage(_v2),
-      ).thenAnswer((_) => helper.stream);
+      final helper = StreamController<double>(onCancel: () => cancelled = true);
+      when(() => updates.downloadAndStage(_v2))
+          .thenAnswer((_) => helper.stream);
       final cubit = build()..emit(UpdateState(available: _v2));
       unawaited(cubit.startDownload());
       await Future<void>.delayed(Duration.zero);
@@ -349,9 +331,9 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'loads as interrupted with nothing staged, and waits rather than '
       'checking over it',
-      setUp: () => when(
-        () => updates.recover(),
-      ).thenAnswer((_) async => UpdateRecovery(interrupted: paused)),
+      setUp: () =>
+          when(() => updates.recover())
+              .thenAnswer((_) async => UpdateRecovery(interrupted: paused)),
       build: build,
       act: (cubit) => cubit.load(),
       expect: () => [
@@ -368,13 +350,11 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'is moot when a build was staged since',
       setUp: () {
-        when(
-          () => updates.recover(),
-        ).thenAnswer((_) async => UpdateRecovery(interrupted: paused));
+        when(() => updates.recover())
+            .thenAnswer((_) async => UpdateRecovery(interrupted: paused));
         when(() => updates.stagedVersion()).thenAnswer((_) async => _v2Number);
-        when(
-          () => settings.loadUpdateAutoCheck(),
-        ).thenAnswer((_) async => false);
+        when(() => settings.loadUpdateAutoCheck())
+            .thenAnswer((_) async => false);
       },
       build: build,
       act: (cubit) => cubit.load(),
@@ -395,9 +375,8 @@ void main() {
       ),
       setUp: () {
         when(() => updates.checkForUpdate()).thenAnswer((_) async => _v2);
-        when(
-          () => updates.downloadAndStage(_v2),
-        ).thenAnswer((_) => Stream.fromIterable([1.0]));
+        when(() => updates.downloadAndStage(_v2))
+            .thenAnswer((_) => Stream.fromIterable([1.0]));
       },
       build: build,
       act: (cubit) => cubit.retryInterrupted(),
@@ -530,38 +509,31 @@ void main() {
       'tryboot-not-taken: a notice naming the staged and installed versions, '
       'saved so it outlives a restart',
       setUp: () {
-        when(
-          () => updates.currentVersion(),
-        ).thenAnswer((_) async => installed);
-        when(
-          () => updates.recover(),
-        ).thenAnswer((_) async => UpdateRecovery(rolledBack: staged));
-        when(
-          () => settings.loadUpdateAutoCheck(),
-        ).thenAnswer((_) async => false);
+        when(() => updates.currentVersion()).thenAnswer((_) async => installed);
+        when(() => updates.recover())
+            .thenAnswer((_) async => UpdateRecovery(rolledBack: staged));
+        when(() => settings.loadUpdateAutoCheck())
+            .thenAnswer((_) async => false);
       },
       build: build,
       act: (cubit) => cubit.load(),
       expect: () => [
-        isA<UpdateState>().having(
-          (s) => s.rollback,
-          'rollback',
-          (attempted: staged, restored: installed),
-        ),
-      ],
-      verify: (_) => verify(
-        () => settings.saveUpdateRollback(
+        isA<UpdateState>().having((s) => s.rollback, 'rollback', (
           attempted: staged,
           restored: installed,
-        ),
+        )),
+      ],
+      verify: (_) => verify(
+        () =>
+            settings.saveUpdateRollback(attempted: staged, restored: installed),
       ).called(1),
     );
 
     blocTest<UpdateCubit, UpdateState>(
       'already-running (no rollback reported): no notice',
-      setUp: () => when(
-        () => settings.loadUpdateAutoCheck(),
-      ).thenAnswer((_) async => false),
+      setUp: () =>
+          when(() => settings.loadUpdateAutoCheck())
+              .thenAnswer((_) async => false),
       build: build,
       act: (cubit) => cubit.load(),
       expect: () => [
@@ -578,21 +550,18 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'an undismissed notice from an earlier start is still shown',
       setUp: () {
-        when(
-          () => settings.loadUpdateRollback(),
-        ).thenAnswer((_) async => (attempted: staged, restored: installed));
-        when(
-          () => settings.loadUpdateAutoCheck(),
-        ).thenAnswer((_) async => false);
+        when(() => settings.loadUpdateRollback())
+            .thenAnswer((_) async => (attempted: staged, restored: installed));
+        when(() => settings.loadUpdateAutoCheck())
+            .thenAnswer((_) async => false);
       },
       build: build,
       act: (cubit) => cubit.load(),
       expect: () => [
-        isA<UpdateState>().having(
-          (s) => s.rollback,
-          'rollback',
-          (attempted: staged, restored: installed),
-        ),
+        isA<UpdateState>().having((s) => s.rollback, 'rollback', (
+          attempted: staged,
+          restored: installed,
+        )),
       ],
     );
 
@@ -600,12 +569,10 @@ void main() {
       'a notice whose build is running now is dropped',
       setUp: () {
         when(() => updates.currentVersion()).thenAnswer((_) async => staged);
-        when(
-          () => settings.loadUpdateRollback(),
-        ).thenAnswer((_) async => (attempted: staged, restored: installed));
-        when(
-          () => settings.loadUpdateAutoCheck(),
-        ).thenAnswer((_) async => false);
+        when(() => settings.loadUpdateRollback())
+            .thenAnswer((_) async => (attempted: staged, restored: installed));
+        when(() => settings.loadUpdateAutoCheck())
+            .thenAnswer((_) async => false);
       },
       build: build,
       act: (cubit) => cubit.load(),
@@ -635,11 +602,10 @@ void main() {
       build: build,
       act: (cubit) => cubit.dismiss(_v2Number),
       expect: () => [
-        isA<UpdateState>().having(
-          (s) => s.dismissed,
-          'dismissed',
-          {Version.parse('0.1.0'), _v2Number},
-        ),
+        isA<UpdateState>().having((s) => s.dismissed, 'dismissed', {
+          Version.parse('0.1.0'),
+          _v2Number,
+        }),
       ],
       verify: (_) => verify(
         () => settings.saveDismissedUpdateVersions({
@@ -730,13 +696,11 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'calls setChannel before the first check',
       setUp: () {
-        when(
-          () => settings.loadUpdateChannel(),
-        ).thenAnswer((_) async => 'experimental');
+        when(() => settings.loadUpdateChannel())
+            .thenAnswer((_) async => 'experimental');
         when(() => updates.channel).thenReturn('experimental');
-        when(
-          () => settings.loadUpdateAutoCheck(),
-        ).thenAnswer((_) async => false);
+        when(() => settings.loadUpdateAutoCheck())
+            .thenAnswer((_) async => false);
       },
       build: build,
       act: (cubit) => cubit.load(),
@@ -748,9 +712,9 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'holds while a download runs and ends when it stages',
       seed: () => UpdateState(available: _v2),
-      setUp: () => when(
-        () => updates.downloadAndStage(_v2),
-      ).thenAnswer((_) => Stream.fromIterable([0.5])),
+      setUp: () =>
+          when(() => updates.downloadAndStage(_v2))
+              .thenAnswer((_) => Stream.fromIterable([0.5])),
       build: build,
       act: (cubit) => cubit.startDownload(),
       expect: () => [
@@ -765,9 +729,9 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'ends when the download fails',
       seed: () => UpdateState(available: _v2),
-      setUp: () => when(
-        () => updates.downloadAndStage(_v2),
-      ).thenAnswer((_) => Stream.error(Exception('sha mismatch'))),
+      setUp: () =>
+          when(() => updates.downloadAndStage(_v2))
+              .thenAnswer((_) => Stream.error(Exception('sha mismatch'))),
       build: build,
       act: (cubit) => cubit.startDownload(),
       expect: () => [
@@ -802,13 +766,11 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'holds installInFlight until RAUC stops reporting it',
       setUp: () {
-        when(
-          () => settings.loadUpdateAutoCheck(),
-        ).thenAnswer((_) async => false);
+        when(() => settings.loadUpdateAutoCheck())
+            .thenAnswer((_) async => false);
         final answers = [true, true, false];
-        when(
-          () => updates.installInProgress(),
-        ).thenAnswer((_) async => answers.removeAt(0));
+        when(() => updates.installInProgress())
+            .thenAnswer((_) async => answers.removeAt(0));
       },
       build: polling,
       act: (cubit) async {
@@ -828,9 +790,9 @@ void main() {
 
     blocTest<UpdateCubit, UpdateState>(
       'asks once and never again when RAUC is idle',
-      setUp: () => when(
-        () => settings.loadUpdateAutoCheck(),
-      ).thenAnswer((_) async => false),
+      setUp: () =>
+          when(() => settings.loadUpdateAutoCheck())
+              .thenAnswer((_) async => false),
       build: polling,
       act: (cubit) async {
         await cubit.load();
@@ -857,13 +819,11 @@ void main() {
       "a download whose helper died follows RAUC's install to its end",
       seed: () => UpdateState(available: _v2),
       setUp: () {
-        when(
-          () => updates.downloadAndStage(_v2),
-        ).thenAnswer((_) => Stream.error(Exception('helper killed')));
+        when(() => updates.downloadAndStage(_v2))
+            .thenAnswer((_) => Stream.error(Exception('helper killed')));
         final answers = [true, false];
-        when(
-          () => updates.installInProgress(),
-        ).thenAnswer((_) async => answers.removeAt(0));
+        when(() => updates.installInProgress())
+            .thenAnswer((_) async => answers.removeAt(0));
       },
       build: polling,
       act: (cubit) async {
@@ -888,9 +848,8 @@ void main() {
       'a USB run that ends with RAUC still writing keeps installInFlight',
       setUp: () {
         final answers = [true, false];
-        when(
-          () => updates.installInProgress(),
-        ).thenAnswer((_) async => answers.removeAt(0));
+        when(() => updates.installInProgress())
+            .thenAnswer((_) async => answers.removeAt(0));
       },
       build: polling,
       act: (cubit) async {
@@ -912,9 +871,8 @@ void main() {
     blocTest<UpdateCubit, UpdateState>(
       'stops asking once closed',
       setUp: () {
-        when(
-          () => settings.loadUpdateAutoCheck(),
-        ).thenAnswer((_) async => false);
+        when(() => settings.loadUpdateAutoCheck())
+            .thenAnswer((_) async => false);
         when(() => updates.installInProgress()).thenAnswer((_) async => true);
       },
       build: polling,

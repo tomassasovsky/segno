@@ -63,10 +63,7 @@ void main() {
         );
 
     for (final (reason, title) in const [
-      (
-        PerformanceStopReason.idle,
-        'Capture stopped after 20 idle minutes.',
-      ),
+      (PerformanceStopReason.idle, 'Capture stopped after 20 idle minutes.'),
       (
         PerformanceStopReason.lengthLimit,
         'Capture reached its longest length.',

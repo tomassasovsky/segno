@@ -60,9 +60,8 @@ void main() {
           )] ??
           const [],
     );
-    when(
-      () => looper.trackEffects(any()),
-    ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
+    when(() => looper.trackEffects(any()))
+        .thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
     when(() => looper.outputEffects(0)).thenReturn(const []);
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.outputChainEnabled(any())).thenReturn(true);
@@ -164,12 +163,7 @@ void main() {
         '${l10n.expressionDestinationLoopDefaults} · ${l10n.loopTimingLabel}',
       );
       expect(
-        valueTargetLabel(
-          l10n,
-          names,
-          looper,
-          const TrackRecordTimingTarget(1),
-        ),
+        valueTargetLabel(l10n, names, looper, const TrackRecordTimingTarget(1)),
         '${l10n.trackName(names, 1)} · ${l10n.loopTimingLabel}',
       );
     });
@@ -198,25 +192,22 @@ void main() {
       expect(labels[6], contains('1'));
     });
 
-    test(
-      "names a live FX param with the effect type's own parameter name",
-      () {
-        const target = FxParamTarget(
-          address: FxAddress(stage: FxStage.track, index: 3),
-          slotId: 't-1',
-          param: 1,
-        );
+    test("names a live FX param with the effect type's own parameter name", () {
+      const target = FxParamTarget(
+        address: FxAddress(stage: FxStage.track, index: 3),
+        slotId: 't-1',
+        param: 1,
+      );
 
-        expect(
-          valueTargetLabel(l10n, names, looper, target),
-          l10n.midiLearnTargetParam(
-            l10n.pedalAssignStageTrack('TRACK 4'),
-            't-1',
-            l10n.paramLevel,
-          ),
-        );
-      },
-    );
+      expect(
+        valueTargetLabel(l10n, names, looper, target),
+        l10n.midiLearnTargetParam(
+          l10n.pedalAssignStageTrack('TRACK 4'),
+          't-1',
+          l10n.paramLevel,
+        ),
+      );
+    });
 
     test('falls back to the bare index when the slot is gone', () {
       // A stale row still has to say what it used to drive, so the label never
@@ -246,20 +237,17 @@ void main() {
       expect(valueTargetLabel(l10n, names, looper, past), contains('#99'));
     });
 
-    test(
-      'a lane-less Loop address names no parameter, like the resolver',
-      () {
-        // The resolvers refuse to coerce it onto lane 0 (A9); a label naming
-        // lane 0's effect would describe a chain nothing ever writes to.
-        const laneless = FxParamTarget(
-          address: FxAddress(stage: FxStage.loop, index: 1),
-          slotId: 'l-1',
-          param: 0,
-        );
+    test('a lane-less Loop address names no parameter, like the resolver', () {
+      // The resolvers refuse to coerce it onto lane 0 (A9); a label naming
+      // lane 0's effect would describe a chain nothing ever writes to.
+      const laneless = FxParamTarget(
+        address: FxAddress(stage: FxStage.loop, index: 1),
+        slotId: 'l-1',
+        param: 0,
+      );
 
-        expect(valueTargetLabel(l10n, names, looper, laneless), contains('#0'));
-      },
-    );
+      expect(valueTargetLabel(l10n, names, looper, laneless), contains('#0'));
+    });
   });
 
   group('fxSlotName', () {

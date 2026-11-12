@@ -5,11 +5,7 @@ import 'package:segno/theme/theme.dart';
 /// Interaction and focus belong to the enclosing pedal, not its painted parts.
 class PedalHardwareFace extends StatelessWidget {
   /// Creates the hardware face with its physical label.
-  const new({
-    required this.label,
-    required this.selected,
-    super.key,
-  });
+  const new({required this.label, required this.selected, super.key});
 
   /// The label printed on the nameplate.
   final String label;
@@ -132,10 +128,7 @@ class _PedalFacePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas
       ..save()
-      ..scale(
-        size.width / _artSize.width,
-        size.height / _artSize.height,
-      );
+      ..scale(size.width / _artSize.width, size.height / _artSize.height);
     // Everything is authored in the 84 x 114 box, so the whole face scales
     // with one transform and no outline has to know its final size.
     _paintHinges(canvas);

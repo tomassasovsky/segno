@@ -53,10 +53,7 @@ void main() {
     expect(engine.commitSession(8, loopBeats: 0), EngineResult.ok);
     engine.pump(frames: 0);
 
-    const render = SelectedRender(
-      sources: {0, 1},
-      tails: RenderTailRule.cut,
-    );
+    const render = SelectedRender(sources: {0, 1}, tails: RenderTailRule.cut);
     final measured = repository.measureRender(render);
     expect(measured.result, EngineResult.ok);
     expect(measured.plan!.frames, 48);

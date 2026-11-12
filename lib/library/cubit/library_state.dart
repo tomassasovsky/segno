@@ -172,11 +172,7 @@ sealed class LibraryBackup extends Equatable {
 /// Copying: the inline progress with `Cancel`.
 final class LibraryBackupRunning extends LibraryBackup {
   /// Creates the running backup of [id].
-  const new({
-    required super.id,
-    required super.name,
-    this.fraction = 0,
-  });
+  const new({required super.id, required super.name, this.fraction = 0});
 
   /// The share of its bytes copied.
   final double fraction;

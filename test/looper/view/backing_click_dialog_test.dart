@@ -17,8 +17,7 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockBacking extends MockCubit<BackingCubitState>
-    implements BackingCubit;
+class _MockBacking extends MockCubit<BackingCubitState> implements BackingCubit;
 
 class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit;
 
@@ -43,10 +42,7 @@ void main() {
       ),
     );
     when(() => tempo.state).thenReturn(
-      const TempoState(
-        clickMode: ClickMode.recFirst,
-        clickReady: true,
-      ),
+      const TempoState(clickMode: ClickMode.recFirst, clickReady: true),
     );
   });
 

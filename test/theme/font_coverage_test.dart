@@ -94,9 +94,8 @@ Set<int> _familyCodePoints(Map<String, List<String>> bundled, String family) {
   if (files == null || files.isEmpty) {
     throw StateError('$family is not bundled in pubspec.yaml');
   }
-  return [
-    for (final file in files) _codePoints(File(file).readAsBytesSync()),
-  ].reduce((a, b) => a.intersection(b));
+  return [for (final file in files) _codePoints(File(file).readAsBytesSync())]
+      .reduce((a, b) => a.intersection(b));
 }
 
 /// Every string literal in the Dart files under [roots], with where each
@@ -148,10 +147,9 @@ class _StringCollector extends RecursiveAstVisitor<void> {
 
 /// Every ARB value under `lib/l10n/arb`, with its file and key.
 Map<String, String> _arbStrings() => {
-  for (final file
-      in Directory('lib/l10n/arb').listSync().whereType<File>().where(
-        (f) => f.path.endsWith('.arb'),
-      ))
+  for (final file in Directory(
+    'lib/l10n/arb',
+  ).listSync().whereType<File>().where((f) => f.path.endsWith('.arb')))
     for (final MapEntry(:key, :value) in (jsonDecode(
       file.readAsStringSync(),
     ) as Map<String, dynamic>).entries)

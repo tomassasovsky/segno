@@ -28,9 +28,8 @@ class TouchCalibrationPage extends StatelessWidget {
   final TouchScreen screen;
 
   /// The route that opens the page for [screen].
-  static Route<void> route(TouchScreen screen) => MaterialPageRoute(
-    builder: (_) => TouchCalibrationPage(screen: screen),
-  );
+  static Route<void> route(TouchScreen screen) =>
+      MaterialPageRoute(builder: (_) => TouchCalibrationPage(screen: screen));
 
   /// Where the capture targets sit, in the calibrated screen's normalized
   /// coordinates: the four corners pen 30 starts from, and the centre.
@@ -181,9 +180,7 @@ class _TouchCalibrationViewState extends State<TouchCalibrationView> {
         }
       },
       child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): _cancel,
-        },
+        bindings: {const SingleActivator(LogicalKeyboardKey.escape): _cancel},
         child: Focus(
           autofocus: true,
           child: Scaffold(

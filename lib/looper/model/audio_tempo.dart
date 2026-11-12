@@ -37,10 +37,8 @@ const audioTempoAddresses = <Object?>[
 /// inherit, including an override equal to the default.
 final class InheritSnapshot<T extends Object> extends Equatable {
   /// Takes an immutable copy of the explicit track overrides.
-  new({
-    required this.defaultValue,
-    required Map<int, T> trackOverrides,
-  }) : trackOverrides = Map.unmodifiable(trackOverrides);
+  new({required this.defaultValue, required Map<int, T> trackOverrides})
+    : trackOverrides = Map.unmodifiable(trackOverrides);
 
   /// The value tracks without an override inherit.
   final T defaultValue;

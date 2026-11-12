@@ -12,9 +12,7 @@ class _WithoutBoomDry extends TestAssetBundle {
   @override
   Future<ByteData> load(String key) async {
     if (key != 'AssetManifest.bin') return await super.load(key);
-    final manifest = await AssetManifest.loadFromAssetBundle(
-      TestAssetBundle(),
-    );
+    final manifest = await AssetManifest.loadFromAssetBundle(TestAssetBundle());
     return const StandardMessageCodec().encodeMessage({
       for (final asset in manifest.listAssets())
         if (!asset.contains('Boom Dry')) asset: <Object>[],

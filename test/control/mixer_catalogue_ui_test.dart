@@ -69,10 +69,7 @@ void main() {
       expect(controlValueReadout(l10n, target, 0.5), 'Center');
       expect(controlValueReadout(l10n, target, 1), '100% right');
     }
-    expect(
-      controlValueReadout(l10n, const OutputLevelTarget(0), 0.75),
-      '75%',
-    );
+    expect(controlValueReadout(l10n, const OutputLevelTarget(0), 0.75), '75%');
   });
 
   test('Click endpoints show percent of physical unity', () async {

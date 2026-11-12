@@ -22,10 +22,7 @@ void main() {
     test('layers count the base take plus every peelable pass', () {
       expect(const Track().layers, 0);
       expect(
-        const Track(
-          state: TrackState.playing,
-          lengthFrames: 10,
-        ).layers,
+        const Track(state: TrackState.playing, lengthFrames: 10).layers,
         1,
       );
       expect(

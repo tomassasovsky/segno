@@ -137,9 +137,10 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
 
   String _readText(String path) {
     try {
-      return File(
-        '$_factsRoot$path',
-      ).readAsStringSync().replaceAll('\x00', '').trim();
+      return File('$_factsRoot$path')
+          .readAsStringSync()
+          .replaceAll('\x00', '')
+          .trim();
     } on FileSystemException {
       return '';
     }
@@ -259,9 +260,8 @@ String? edidMonitorName(List<int> edid) {
     if (edid[offset + 3] != 0xFC) continue;
     final text = edid.sublist(offset + 5, offset + 18);
     final end = text.indexOf(0x0A);
-    final name = String.fromCharCodes(
-      end < 0 ? text : text.sublist(0, end),
-    ).trim();
+    final name = String.fromCharCodes(end < 0 ? text : text.sublist(0, end))
+        .trim();
     return name.isEmpty ? null : name;
   }
   return null;
@@ -272,10 +272,7 @@ final _bluetoothAddress = RegExp(r'^[0-9A-F]{2}(:[0-9A-F]{2}){5}$');
 
 String _name(String path) => path
     .split('/')
-    .lastWhere(
-      (segment) => segment.isNotEmpty,
-      orElse: () => '',
-    );
+    .lastWhere((segment) => segment.isNotEmpty, orElse: () => '');
 
 /// The nearest existing directory at or above [path], or `null` if even the
 /// filesystem root is unreadable. Lets the capacity reader measure the right

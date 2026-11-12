@@ -23,10 +23,8 @@ final class DecayAddress extends Equatable {
 /// inherit.
 final class DecaySnapshot extends Equatable {
   /// Takes an immutable copy of the explicit track overrides.
-  new({
-    required this.defaultPercent,
-    required Map<int, int> trackOverrides,
-  }) : trackOverrides = Map.unmodifiable(trackOverrides);
+  new({required this.defaultPercent, required Map<int, int> trackOverrides})
+    : trackOverrides = Map.unmodifiable(trackOverrides);
 
   /// Default decay as an integer percent, 0 through 100.
   final int defaultPercent;

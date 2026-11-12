@@ -169,11 +169,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
           Positioned(
             left: 0,
             top: 425,
-            child: _FormatRow(
-              bus: selected,
-              mono: bus.mono,
-              muted: bus.muted,
-            ),
+            child: _FormatRow(bus: selected, mono: bus.mono, muted: bus.muted),
           ),
           Positioned(
             left: 0,
@@ -305,11 +301,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
 
 /// The pen's `output-format-row`: Stereo or Mono, and the mute.
 class _FormatRow extends StatelessWidget {
-  const new({
-    required this.bus,
-    required this.mono,
-    required this.muted,
-  });
+  const new({required this.bus, required this.mono, required this.muted});
 
   final int bus;
   final bool mono;

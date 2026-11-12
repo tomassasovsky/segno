@@ -282,11 +282,7 @@ class FootLengthOutcome extends Equatable {
 /// Shared semantic read model for captions, touch and physical feedback.
 class FootLengthProjection extends Equatable {
   /// Creates a complete projection.
-  const new({
-    required this.bank,
-    required this.cursor,
-    required this.tracks,
-  });
+  const new({required this.bank, required this.cursor, required this.tracks});
 
   /// Shared rig bank (0 = tracks 1–4, 1 = tracks 5–8).
   final int bank;
@@ -358,9 +354,9 @@ class FootLengthProjection extends Equatable {
   FootLengthTrack get selected => tracks[cursor];
 
   /// Whether the visible bank holds any recording.
-  bool get bankHasContent => [
-    for (var slot = 0; slot < 4; slot++) trackAt(slot),
-  ].any((track) => track.hasContent);
+  bool get bankHasContent =>
+      [for (var slot = 0; slot < 4; slot++) trackAt(slot)]
+          .any((track) => track.hasContent);
 
   @override
   List<Object?> get props => [bank, cursor, tracks];

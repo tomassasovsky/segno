@@ -162,10 +162,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
               child: _TempoReadout(
                 bpm: bpm,
                 // Its column, short of the controls by the page's gap.
-                size: Size(
-                  _controlsLeft - context.spacing.xxl,
-                  _readoutHeight,
-                ),
+                size: Size(_controlsLeft - context.spacing.xxl, _readoutHeight),
                 onTap: () => unawaited(_enterTempo(bpm)),
               ),
             ),
@@ -186,9 +183,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
                 value: fraction,
                 onChanged: _previewTempo,
                 onChangeEnd: _commitTempo,
-                onDoubleTap: () => unawaited(
-                  tempo.setTempo(_openingBpm!),
-                ),
+                onDoubleTap: () => unawaited(tempo.setTempo(_openingBpm!)),
                 onEditCancel: (_) => setState(() => _draftBpm = null),
                 keyboardStep: (_fine ? 0.01 : 1) / (_maxBpm - _minBpm),
                 width: sliderWidth,
@@ -378,11 +373,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
 /// The tempo in large figures over its unit, or `not set`: a button that
 /// opens the keypad, with the console's pressed and encoder-focus states.
 class _TempoReadout extends StatelessWidget {
-  const new({
-    required this.bpm,
-    required this.size,
-    required this.onTap,
-  });
+  const new({required this.bpm, required this.size, required this.onTap});
 
   final double bpm;
   final Size size;

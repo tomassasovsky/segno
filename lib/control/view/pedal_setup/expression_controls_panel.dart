@@ -209,9 +209,7 @@ class _ExpressionList extends StatelessWidget {
         ),
       );
     }
-    final openIndex = rows.indexWhere(
-      (row) => row.mapping.target == selected,
-    );
+    final openIndex = rows.indexWhere((row) => row.mapping.target == selected);
     final at = position;
     return ControlRowList(
       itemCount: rows.length,
@@ -411,9 +409,7 @@ class _ExpressionEndpoint extends StatelessWidget {
             )
           else if (row.mapping.target is OneShotValueTarget)
             PlaybackEndpointChoice(
-              key: Key(
-                'expression_endpoint_${endpointId}_$targetKey',
-              ),
+              key: Key('expression_endpoint_${endpointId}_$targetKey'),
               value: value,
               width: 625,
               enabled: row.available && row.disabledReason == null,
@@ -426,11 +422,8 @@ class _ExpressionEndpoint extends StatelessWidget {
               value: value,
               width: 625,
               semanticLabel: '${row.control} $name',
-              semanticValueBuilder: (normalized) => controlValueReadout(
-                l10n,
-                row.mapping.target,
-                normalized,
-              ),
+              semanticValueBuilder: (normalized) =>
+                  controlValueReadout(l10n, row.mapping.target, normalized),
               // A control the rig no longer has cannot be auditioned, so its
               // endpoints are shown and not movable: the row is there to be
               // repointed or removed, not tuned.

@@ -216,11 +216,7 @@ class StorageCapacity extends StatelessWidget {
 /// `Safe to remove` with a check, `No USB drive` with a dash).
 class StorageCardMessage extends StatelessWidget {
   /// Creates a [StorageCardMessage].
-  const new({
-    required this.icon,
-    required this.message,
-    super.key,
-  });
+  const new({required this.icon, required this.message, super.key});
 
   /// The mark before the sentence.
   final IconData icon;

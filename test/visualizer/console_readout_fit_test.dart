@@ -67,9 +67,8 @@ void main() {
             activeBank: 3,
             // The longest must-act line the band carries.
             notice: ReadoutNotice(
-              title: lookupAppLocalizations(
-                locale,
-              ).deviceLostNamedBanner('Scarlett 18i20 4th Gen'),
+              title: lookupAppLocalizations(locale)
+                  .deviceLostNamedBanner('Scarlett 18i20 4th Gen'),
               tone: NoticeTone.critical,
             ),
           ),
