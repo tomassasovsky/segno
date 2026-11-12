@@ -14,8 +14,8 @@ typedef DecodeRunner = Future<R> Function<R>(R Function() work);
 /// The [AudioDecoder] backed by the native engine library
 /// (`le_backing_decode_file`, `le_backing_probe_file`).
 ///
-/// Each call opens the library inside a background isolate and decodes
-/// there, so the calling isolate never decodes. The decoded samples are a
+/// Each call decodes in a background isolate, so the calling isolate never
+/// decodes. The decoded samples are a
 /// native heap buffer; its address crosses back to the caller, who owns it
 /// (see [DecodedAudio]).
 class NativeAudioDecoder implements AudioDecoder {

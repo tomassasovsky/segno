@@ -3310,8 +3310,8 @@ _decodeAuditionOffIsolate(
 
 /// Decodes at most [maxFrames] frames of the preview at [path] at [rate],
 /// a bounded read of the app's one decoder (`le_backing_decode_file`). Runs
-/// inside `Isolate.run`, so it opens the library itself and hands the buffer
-/// back as an address the caller owns.
+/// inside `Isolate.run` and hands the buffer back as an address the caller
+/// owns.
 ({int code, int address, int frames, int sourceRate, bool truncated})
 _decodeAudition(String path, int rate, int maxFrames) {
   final out = calloc<Pointer<le_backing_buffer>>();
@@ -3359,8 +3359,8 @@ Future<int> _setInterfaceInputOffIsolate(
   int value,
 ) => run(() => _setInterfaceInput(captureDeviceId, control, index, value));
 
-/// Reads the interface's input switches (`le_interface_inputs_read`). Opens
-/// the library itself, since it runs inside `Isolate.run`.
+/// Reads the interface's input switches (`le_interface_inputs_read`). Runs
+/// inside `Isolate.run`.
 InterfaceInputsInfo _readInterfaceInputs(String captureDeviceId) {
   final out = calloc<le_interface_inputs>();
   final uid = captureDeviceId.isEmpty

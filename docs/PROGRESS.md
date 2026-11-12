@@ -3121,9 +3121,9 @@ remains open — see "On-hardware validations" below.
   mappings learned from it (#1040). Hardware-gated only for a live DIN-MIDI
   smoke test and a two-controller check.
 - **VST3/CLAP plugin hosting on Linux.** Hosting is on by default only on
-  macOS; the Linux CMake build leaves `SEGNO_ENABLE_PLUGINS` off unless the
-  environment overrides it, since third-party plugins rarely ship for aarch64
-  Linux.
+  macOS; the build hook (`packages/segno_engine/hook/build.dart`) passes
+  `SEGNO_ENABLE_PLUGINS=OFF` for Linux, since third-party plugins rarely ship
+  for aarch64 Linux. Turning it on is a change to the hook.
 - **Readout screen** — the console's 7″ runs as the second Flutter engine under
   ivi-homescreen, fed over the screen link (`lib/visualizer/screen_link.dart`,
   #1318, #1330); the on-device check is in `docs/HARDWARE_VALIDATION.md`.

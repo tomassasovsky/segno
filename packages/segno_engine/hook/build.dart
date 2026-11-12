@@ -29,6 +29,17 @@ void main(List<String> args) async {
         'segno_engine builds for Linux and macOS, not $os',
       );
     }
+    // CMake builds for the host compiler's target. macOS passes the
+    // architecture through CMAKE_OSX_ARCHITECTURES; Linux builds natively
+    // only (the appliance bundle builds in an arm64 container).
+    if (os != OS.current ||
+        (os == OS.linux && code.targetArchitecture != Architecture.current)) {
+      throw UnsupportedError(
+        'segno_engine does not cross-compile: the host is '
+        '${OS.current}/${Architecture.current}, the target '
+        '$os/${code.targetArchitecture}',
+      );
+    }
 
     final packageRoot = input.packageRoot;
     final source = packageRoot.resolve('src/');
@@ -106,7 +117,11 @@ Uri _cxxFor(Uri cc) {
   final name = cc.pathSegments.last;
   final cxx = name.contains('clang')
       ? name.replaceFirst('clang', 'clang++')
-      : name.replaceFirst('gcc', 'g++');
+      : name.contains('gcc')
+      ? name.replaceFirst('gcc', 'g++')
+      : throw UnsupportedError(
+          'segno_engine: no C++ compiler known for the C compiler $cc',
+        );
   return cc.resolve(cxx);
 }
 

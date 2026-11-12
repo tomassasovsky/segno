@@ -40,7 +40,7 @@ jobs:
               - 'packages/segno_engine/src/**'
               - 'packages/segno_engine/third_party/**'
               - 'packages/segno_engine/tool/**'
-              - 'packages/segno_engine/macos/**'
+              - 'packages/segno_engine/hook/**'
             # The console link contract test in native-tests
             # (firmware/test/run_tests.sh): the firmware, the Dart codec's
             # golden frames, and the ring updater it builds.

@@ -25,8 +25,8 @@ flutter test --tags fuzz
 ```
 
 The engine library is built by `segno_engine`'s build hook, so a plain
-`flutter test` runs the suite too. CI runs it as the `fuzz` job
-(.github/workflows/main.yaml).
+`flutter test` runs the suite too. CI runs it in the `build` job, with the
+rest of the app's tests (.github/workflows/main.yaml).
 
 Scale the search:
 
