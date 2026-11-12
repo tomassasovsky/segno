@@ -76,7 +76,7 @@ Future<PerformanceRecorderCompleted> waitForCompleted(
 ) async {
   final state = cubit.state;
   if (state is PerformanceRecorderCompleted) return state;
-  return cubit.stream
+  return await cubit.stream
       .firstWhere((s) => s is PerformanceRecorderCompleted)
       .timeout(const Duration(seconds: 5))
       .then((s) => s as PerformanceRecorderCompleted);
@@ -2227,7 +2227,7 @@ void main() {
     ) async {
       final state = cubit.state;
       if (state is PerformanceRecorderCompleted) return state;
-      return cubit.stream
+      return await cubit.stream
           .firstWhere((s) => s is PerformanceRecorderCompleted)
           .timeout(const Duration(seconds: 30))
           .then((s) => s as PerformanceRecorderCompleted);

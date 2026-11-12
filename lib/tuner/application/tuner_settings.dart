@@ -39,8 +39,8 @@ class TunerPreferences extends Equatable {
 /// Tuner (Control): one live value, written through, with a failed write
 /// restoring the previous value.
 class TunerSettings {
-  /// Creates the owner over [settings].
-  TunerSettings({required SettingsRepository settings}) : _settings = settings;
+  /// Creates the owner over [_settings].
+  TunerSettings({required this._settings});
 
   final SettingsRepository _settings;
   final _changes = StreamController<TunerPreferences>.broadcast(sync: true);

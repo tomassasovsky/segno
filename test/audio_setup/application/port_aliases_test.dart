@@ -27,7 +27,7 @@ class _Store extends FakeKeyValueStore {
       failNextRead = false;
       throw StateError('read failed');
     }
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override

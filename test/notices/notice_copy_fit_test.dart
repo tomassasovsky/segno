@@ -1,8 +1,8 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show LooperModeGate;
+import 'package:material_ui/material_ui.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/control/model/foot_length.dart';

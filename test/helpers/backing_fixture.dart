@@ -60,7 +60,7 @@ class ContentAudioDecoder implements AudioDecoder {
   }) async {
     _learn(path);
     await beforeDecode?.call();
-    return mock.decode(
+    return await mock.decode(
       path,
       sampleRate: sampleRate,
       startFrame: startFrame,

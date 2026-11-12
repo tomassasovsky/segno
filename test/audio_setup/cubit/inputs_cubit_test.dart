@@ -21,7 +21,7 @@ class _DelayedInputStore extends FakeKeyValueStore {
       firstReadGate = null;
       await gate.future;
     }
-    return super.getString(key);
+    return await super.getString(key);
   }
 }
 

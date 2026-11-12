@@ -12,12 +12,11 @@ import 'package:settings_repository/settings_repository.dart';
 /// are always the same copy.
 final class InstrumentsFamily
     implements SettingsFamily<InstrumentsWorkingCopy, String?> {
-  /// Binds the family to [instruments] and [settings]' record.
+  /// Binds the family to [_instruments] and [_settings]' record.
   InstrumentsFamily({
-    required InstrumentRepository instruments,
-    required SettingsRepository settings,
-  }) : _instruments = instruments,
-       _settings = settings;
+    required this._instruments,
+    required this._settings,
+  });
 
   final InstrumentRepository _instruments;
   final SettingsRepository _settings;

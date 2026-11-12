@@ -31,9 +31,7 @@ FxUserPreset? fxPresetNamed(List<FxUserPreset> presets, String name) {
 
 class FxPresetsCubit extends Cubit<List<FxUserPreset>> {
   /// Creates an [FxPresetsCubit].
-  FxPresetsCubit({required SettingsRepository settings})
-    : _settings = settings,
-      super(const []);
+  FxPresetsCubit({required this._settings}) : super(const []);
 
   final SettingsRepository _settings;
   Future<void>? _loadFuture;

@@ -56,8 +56,7 @@ class WriteLease extends Equatable {
 /// Internal never completes [lost].
 class HeldLease {
   /// Creates a [HeldLease]; `StorageRepository.acquire` is the only caller.
-  HeldLease(this.lease, {required void Function(HeldLease held) onRelease})
-    : _onRelease = onRelease;
+  HeldLease(this.lease, {required this._onRelease});
 
   /// What is held.
   final WriteLease lease;

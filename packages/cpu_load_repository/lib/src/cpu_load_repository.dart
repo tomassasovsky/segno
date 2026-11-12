@@ -14,12 +14,11 @@ typedef ProcStatReader = Future<String> Function();
 /// build without `/proc/stat` (macOS desktop) is [isSupported] false and
 /// reports nothing.
 class CpuLoadRepository {
-  /// Creates a [CpuLoadRepository] reading through [readStat].
+  /// Creates a [CpuLoadRepository] reading through [_readStat].
   const CpuLoadRepository({
-    required ProcStatReader readStat,
+    required ProcStatReader this._readStat,
     this.interval = const Duration(seconds: 1),
-  }) : _readStat = readStat,
-       isSupported = true;
+  }) : isSupported = true;
 
   /// A repository for a build that cannot measure the load.
   const CpuLoadRepository.unsupported()

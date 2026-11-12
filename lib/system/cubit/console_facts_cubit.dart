@@ -16,9 +16,8 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// Creates a [ConsoleFactsCubit].
   ConsoleFactsCubit({
     required ConsoleFactsClient client,
-    required SettingsRepository settings,
+    required this._settings,
   }) : _client = client,
-       _settings = settings,
        super(ConsoleFactsState(supported: client.isSupported));
 
   final ConsoleFactsClient _client;

@@ -21,7 +21,7 @@ class _Store extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
     if (refuseRead) throw StateError('read refused');
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override

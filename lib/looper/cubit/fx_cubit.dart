@@ -70,14 +70,11 @@ final class FxEditResult {
 class FxCubit extends Cubit<FxState> {
   /// Creates an [FxCubit] pointed at [initial].
   FxCubit({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-    required FxChainPersistence persistence,
+    required this._repository,
+    required this._settings,
+    required this._persistence,
     FxDestination? initial,
-  }) : _repository = repository,
-       _settings = settings,
-       _persistence = persistence,
-       super(
+  }) : super(
          initial == null ? const FxState() : FxState.at(initial),
        );
 

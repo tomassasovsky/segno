@@ -37,16 +37,12 @@ final class SettingsReceipt<T extends Object> {
   /// Creates a receipt whose accepted and restart values start at [initial].
   SettingsReceipt(
     T initial, {
-    required ReceiptSend<T> send,
-    required bool Function() running,
-    required void Function() publish,
-    void Function(T value)? accepted,
+    required this._send,
+    required this._running,
+    required this._publish,
+    this._accepted,
   }) : _live = initial,
-       _restart = initial,
-       _send = send,
-       _running = running,
-       _publish = publish,
-       _accepted = accepted;
+       _restart = initial;
 
   final ReceiptSend<T> _send;
   final bool Function() _running;

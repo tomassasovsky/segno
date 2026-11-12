@@ -82,6 +82,6 @@ class BackingCubit extends Cubit<BackingCubitState> {
   @override
   Future<void> close() async {
     await _subscription.cancel();
-    return super.close();
+    return await super.close();
   }
 }

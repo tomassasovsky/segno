@@ -35,7 +35,7 @@ enum SettingsDestination {
   /// Software updates.
   updates('updates');
 
-  const SettingsDestination(this.key);
+  SettingsDestination(this.key);
 
   /// The name of this destination's artwork, and its tile's key suffix.
   final String key;

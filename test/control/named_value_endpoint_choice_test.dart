@@ -1,6 +1,6 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/view/named_value_endpoint_choice.dart';

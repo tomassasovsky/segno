@@ -354,7 +354,7 @@ class SettingsOwner<V extends Object, C> {
   /// unavailable family does not refuse: capture uses the durable value.
   Future<T> runExclusive<T>(Future<T> Function() operation) async {
     await load();
-    return _queue(() async {
+    return await _queue(() async {
       await _family.settle();
       _exclusive++;
       try {

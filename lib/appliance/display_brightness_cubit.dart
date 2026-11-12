@@ -63,13 +63,10 @@ class DisplayBrightnessState extends Equatable {
 class DisplayBrightnessCubit extends Cubit<DisplayBrightnessState> {
   /// Creates a [DisplayBrightnessCubit].
   DisplayBrightnessCubit({
-    required SettingsRepository settings,
-    BrightnessClient client = const UnsupportedBrightnessClient(),
-    DisplayOutputs outputs = const UnknownDisplayOutputs(),
-  }) : _settings = settings,
-       _client = client,
-       _outputs = outputs,
-       super(const DisplayBrightnessState());
+    required this._settings,
+    this._client = const UnsupportedBrightnessClient(),
+    this._outputs = const UnknownDisplayOutputs(),
+  }) : super(const DisplayBrightnessState());
 
   final SettingsRepository _settings;
   final BrightnessClient _client;

@@ -43,7 +43,7 @@ enum FxRackEdge {
   /// The only entry of a one-entry rack.
   only(3);
 
-  const FxRackEdge(this.bits);
+  FxRackEdge(this.bits);
 
   /// The native bits.
   final int bits;

@@ -12,23 +12,20 @@ part 'wifi_state.dart';
 ///
 /// Lives as long as the page does, so nothing here runs while it is shut.
 class WifiCubit extends Cubit<WifiState> {
-  /// Creates a [WifiCubit] over [repository].
+  /// Creates a [WifiCubit] over [_repository].
   ///
-  /// [retryDelays] is the backoff schedule for re-activating after a
+  /// [_retryDelays] is the backoff schedule for re-activating after a
   /// backend/transient join failure — one entry per automatic retry.
-  /// Injectable so tests do not sit through real seconds. [clock] times the
+  /// Injectable so tests do not sit through real seconds. [_clock] times the
   /// internet check's [connectivityInterval].
   WifiCubit({
-    required WifiRepository repository,
-    List<Duration> retryDelays = const [
+    required this._repository,
+    this._retryDelays = const [
       Duration(seconds: 2),
       Duration(seconds: 5),
     ],
-    DateTime Function() clock = DateTime.now,
-  }) : _repository = repository,
-       _retryDelays = retryDelays,
-       _clock = clock,
-       super(const WifiState());
+    this._clock = DateTime.now,
+  }) : super(const WifiState());
 
   /// How often the open page looks at the internet (#1270 D14): one HEAD
   /// request to the update host per period, for one connection.
@@ -496,7 +493,7 @@ class WifiCubit extends Cubit<WifiState> {
   Future<void> changePassword(String ssid, String psk) async {
     if (!state.supported) return;
     final inRange = state.networks.any((n) => n.ssid == ssid && n.inRange);
-    if (inRange) return connect(ssid, psk: psk);
+    if (inRange) return await connect(ssid, psk: psk);
     emit(state.copyWith(busy: true, clearError: true));
     try {
       await _repository.changePassword(ssid, psk);

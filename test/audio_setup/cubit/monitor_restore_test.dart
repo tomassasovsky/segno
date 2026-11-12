@@ -70,7 +70,7 @@ class _RestoreStore extends FakeKeyValueStore {
     if (refuseRead && key == 'monitor_input_mode.0') {
       throw StateError('saved monitor unavailable');
     }
-    return super.getString(key);
+    return await super.getString(key);
   }
 }
 

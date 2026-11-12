@@ -9,9 +9,9 @@ environment:
   flutter: ^3.50.0
 
 dependencies:
-  bloc: ^9.2.1
   backing_repository:
     path: packages/backing_repository
+  bloc: ^9.2.1
   brightness_client:
     path: packages/brightness_client
   # Already resolved (transitive); declared direct so the volume overlay's
@@ -20,10 +20,10 @@ dependencies:
   clock: ^1.1.2
   console_facts_client:
     path: packages/console_facts_client
-  cpu_load_repository:
-    path: packages/cpu_load_repository
   controller_repository:
     path: packages/controller_repository
+  cpu_load_repository:
+    path: packages/cpu_load_repository
   cupertino_icons: ^2.0.0
   daw_export:
     path: packages/daw_export
@@ -42,6 +42,7 @@ dependencies:
   looper_repository:
     path: packages/looper_repository
   lucide_icons_flutter: ^4.0.1
+  material_ui: ^1.11.0
   midi_device_repository:
     path: packages/midi_device_repository
   operation_guards:
@@ -55,10 +56,10 @@ dependencies:
     path: packages/routing_graph
   session_repository:
     path: packages/session_repository
-  spawn_process:
-    path: packages/spawn_process
   settings_repository:
     path: packages/settings_repository
+  spawn_process:
+    path: packages/spawn_process
   storage_repository:
     path: packages/storage_repository
   touch_calibration_client:
@@ -70,7 +71,6 @@ dependencies:
     path: packages/usb_storage_client
   wifi_repository:
     path: packages/wifi_repository
-  material_ui: ^1.11.0
 
 dev_dependencies:
   # tool/check_no_widget_methods.dart resolves the app with it.

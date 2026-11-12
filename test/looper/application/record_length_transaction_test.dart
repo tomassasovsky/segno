@@ -68,7 +68,7 @@ class _Store extends FakeKeyValueStore {
       await readGate?.future;
       if (readFailure) throw StateError('read refused');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   @override

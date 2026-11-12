@@ -19,10 +19,10 @@ import 'package:segno/visualizer/waveform_window_service.dart';
 class ScreenLinkWaveformService implements WaveformWindowService {
   /// Creates a [ScreenLinkWaveformService].
   ScreenLinkWaveformService({
-    PortDirectory directory = const IsolateNameServerDirectory(),
+    this._directory = const IsolateNameServerDirectory(),
     this.readyTimeout = const Duration(seconds: 10),
     this.ackTimeout = const Duration(seconds: 2),
-  }) : _directory = directory;
+  });
 
   final PortDirectory _directory;
 

@@ -17,21 +17,15 @@ part 'looper_event.dart';
 /// back through the stream, keeping the repository the single source of truth.
 /// Hardware assignments are interpreted by the shared control layer.
 class LooperBloc extends Bloc<LooperEvent, LooperState> {
-  /// Creates a [LooperBloc] backed by [repository].
+  /// Creates a [LooperBloc] backed by [_repository].
   LooperBloc({
-    required LooperRepository repository,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
-    SettingsRepository? settings,
-    Duration fxPersistDebounce = const Duration(milliseconds: 300),
-    bool Function() takeLocked = _neverLocked,
-  }) : _repository = repository,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
-       _settings = settings,
-       _takeLocked = takeLocked,
-       _fxPersistDebounce = fxPersistDebounce,
-       super(const LooperState()) {
+    required this._repository,
+    required this._mixSettings,
+    required this._fxPersistence,
+    this._settings,
+    this._fxPersistDebounce = const Duration(milliseconds: 300),
+    this._takeLocked = _neverLocked,
+  }) : super(const LooperState()) {
     on<LooperStateUpdated>((event, emit) {
       emit(event.state);
     });

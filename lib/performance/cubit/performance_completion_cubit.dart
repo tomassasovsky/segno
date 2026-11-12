@@ -37,6 +37,6 @@ class PerformanceCompletionCubit extends Cubit<PerformanceCompletionStatus> {
   @override
   Future<void> close() async {
     await _pedalSubscription.cancel();
-    return super.close();
+    return await super.close();
   }
 }

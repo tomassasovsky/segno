@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:cpu_load_repository/cpu_load_repository.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/console_surface.dart';

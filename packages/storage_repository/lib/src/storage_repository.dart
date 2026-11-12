@@ -60,10 +60,10 @@ class SourceReadFailure implements Exception {
 class StorageRepository implements ActiveOperationSource {
   /// Creates a [StorageRepository].
   ///
-  /// [exportsRoot] is the resolver the performance repository is wired with:
+  /// [_exportsRoot] is the resolver the performance repository is wired with:
   /// Internal is measured there and Internal copies land under it.
-  /// [volumeSpace] is the engine's `statvfs` (synchronous, microseconds on a
-  /// local volume; null when the path cannot be measured). [storageIo] is
+  /// [_volumeSpace] is the engine's `statvfs` (synchronous, microseconds on a
+  /// local volume; null when the path cannot be measured). [_storageIo] is
   /// the engine's durable-publication primitives (#1198): a rename that never
   /// replaces and a directory sync, both things Dart cannot do itself (see
   /// [copyFile]). It defaults to the engine's own, opened on the first copy,
@@ -72,20 +72,16 @@ class StorageRepository implements ActiveOperationSource {
   /// with it as a source, so the table sees its leases and eject however the
   /// table was made.
   StorageRepository({
-    required UsbStorageClient client,
-    required Future<String> Function() exportsRoot,
-    required VolumeSpace? Function(String path) volumeSpace,
+    required this._client,
+    required this._exportsRoot,
+    required this._volumeSpace,
     required GuardRegistry guards,
-    engine.StorageIo? storageIo,
+    this._storageIo,
     this.ejectTimeout = const Duration(seconds: 20),
     this.ejectServedTimeout = const Duration(minutes: 2),
     this.volumeLossGrace = const Duration(seconds: 10),
     @visibleForTesting CopyBytes? copyBytes,
-  }) : _client = client,
-       _exportsRoot = exportsRoot,
-       _volumeSpace = volumeSpace,
-       _storageIo = storageIo,
-       _guards = guards,
+  }) : _guards = guards,
        _copyBytes = copyBytes ?? copyChunks {
     _subscription = _client.volumes.listen(_onRecords);
     guards.addSource(this);
@@ -441,7 +437,7 @@ class StorageRepository implements ActiveOperationSource {
           // Taken: the helper is syncing and unmounting, and its answer is
           // coming. Saying "failed" now would be followed by the drive being
           // ejected anyway.
-          return answer.timeout(
+          return await answer.timeout(
             ejectServedTimeout,
             onTimeout: () {
               _unanswered[generation] = eject.requestId!;

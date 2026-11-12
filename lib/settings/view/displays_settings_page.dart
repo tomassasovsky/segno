@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:brightness_client/brightness_client.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/display_brightness_edit.dart';

@@ -363,7 +363,7 @@ void main() {
     engine.pump(frames: 0);
     await looper.settleFxRecipes();
   });
-  tearDown(() async => looper.dispose());
+  tearDown(() async => await looper.dispose());
 
   void check(
     String name,

@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:clock/clock.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Which key layout the on-screen keyboard offers.

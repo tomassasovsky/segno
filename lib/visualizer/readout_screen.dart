@@ -48,8 +48,8 @@ typedef ReadoutCalibration = ({({double x, double y}) target, String label});
 class ReadoutScreenLink {
   /// Creates a [ReadoutScreenLink]; nothing is published until [start].
   ReadoutScreenLink({
-    PortDirectory directory = const IsolateNameServerDirectory(),
-  }) : _directory = directory;
+    this._directory = const IsolateNameServerDirectory(),
+  });
 
   final PortDirectory _directory;
   ReceivePort? _inbox;

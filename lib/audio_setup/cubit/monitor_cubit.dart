@@ -47,20 +47,15 @@ class MonitorState extends Equatable {
 /// Owns the per-input live monitors: applies them to the [LooperRepository] and
 /// persists them via [SettingsRepository].
 class MonitorCubit extends Cubit<MonitorState> {
-  /// Creates a [MonitorCubit] driving [repository], persisted through
-  /// [settings].
+  /// Creates a [MonitorCubit] driving [_repository], persisted through
+  /// [_settings].
   MonitorCubit({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
-    Duration fxPersistDebounce = const Duration(milliseconds: 300),
-  }) : _repository = repository,
-       _settings = settings,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
-       _fxPersistDebounce = fxPersistDebounce,
-       super(const MonitorState()) {
+    required this._repository,
+    required this._settings,
+    required this._mixSettings,
+    required this._fxPersistence,
+    this._fxPersistDebounce = const Duration(milliseconds: 300),
+  }) : super(const MonitorState()) {
     // Subscribed at construction, not in [load]: this cubit is a cache of
     // state another writer can change from the first frame, and a session
     // applied before the restore finished would already have gone past it.

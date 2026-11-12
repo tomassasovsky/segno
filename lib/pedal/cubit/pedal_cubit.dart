@@ -76,6 +76,6 @@ class PedalCubit extends Cubit<PedalState> {
     await _powerSub.cancel();
     _pedal.goodbye();
     await _pedal.dispose();
-    return super.close();
+    return await super.close();
   }
 }

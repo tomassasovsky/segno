@@ -22,9 +22,8 @@ const _retryCeiling = Duration(seconds: 30);
 class UartPedalLink implements PedalLink {
   /// Starts opening the appliance UART. [io] allows device-free lifecycle
   /// tests; production uses the native UART implementation.
-  UartPedalLink({UartPedalIo? io, void Function(String message)? log})
-    : _io = io ?? const NativeUartPedalIo(),
-      _log = log {
+  UartPedalLink({UartPedalIo? io, this._log})
+    : _io = io ?? const NativeUartPedalIo() {
     _startOpen();
   }
 

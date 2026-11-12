@@ -23,7 +23,7 @@ enum HistoryKind {
   /// one is malformed.
   bounce(5);
 
-  const HistoryKind(this.code);
+  HistoryKind(this.code);
 
   /// The engine's `le_hist_kind` value. Explicit so the engine's numbering,
   /// not declaration order, is the wire: 3 was the loop-close restoration

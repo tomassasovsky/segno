@@ -41,7 +41,7 @@ Future<MixSettingsOutcome> _drive(
     await Future<void>.delayed(Duration.zero);
   }
   expect(completed, isTrue, reason: 'mix operation did not settle');
-  return operation;
+  return await operation;
 }
 
 void main() {

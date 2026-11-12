@@ -86,10 +86,9 @@ final class MidiProposal {
 class MidiMappingEngine {
   /// Creates an engine with application-owned current-value and step reads.
   MidiMappingEngine({
-    required double? Function(String key) read,
-    required double Function(String key) step,
-  }) : _read = read,
-       _step = step;
+    required this._read,
+    required this._step,
+  });
 
   final double? Function(String key) _read;
   final double Function(String key) _step;

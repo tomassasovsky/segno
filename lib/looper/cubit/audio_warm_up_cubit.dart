@@ -33,23 +33,19 @@ part 'audio_warm_up_state.dart';
 class AudioWarmUpCubit extends Cubit<AudioWarmUpState> {
   /// Creates an [AudioWarmUpCubit].
   ///
-  /// [ready] completes when the startup work is done (the app passes the
-  /// first rasterized frame). [ticker] drives the checks (a periodic timer of
+  /// [_ready] completes when the startup work is done (the app passes the
+  /// first rasterized frame). [_ticker] drives the checks (a periodic timer of
   /// [interval] when omitted). The console has settled after [quiet] with no
   /// new fault, and the switch happens anyway [cap] after watching began.
   AudioWarmUpCubit({
-    required LooperRepository looper,
-    required GuardRegistry guards,
-    Future<void> Function()? ready,
-    Stream<void>? ticker,
+    required this._looper,
+    required this._guards,
+    this._ready,
+    this._ticker,
     Duration interval = const Duration(milliseconds: 500),
     Duration quiet = const Duration(seconds: 3),
     Duration cap = const Duration(seconds: 20),
-  }) : _looper = looper,
-       _guards = guards,
-       _ready = ready,
-       _ticker = ticker,
-       _interval = interval,
+  }) : _interval = interval,
        _quietTicks = _ticksIn(quiet, interval),
        _capTicks = _ticksIn(cap, interval),
        super(const AudioWarmUpState());

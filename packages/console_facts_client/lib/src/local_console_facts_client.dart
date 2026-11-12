@@ -49,25 +49,21 @@ class DiskSpace {
 class LocalConsoleFactsClient implements ConsoleFactsClient {
   /// Creates a [LocalConsoleFactsClient].
   ///
-  /// [sessionsRoot] and [capturesRoot] resolve the same directories the session
-  /// and performance repositories write to (the composition root passes the
-  /// very functions it wires into those repositories), so the accounting is of
-  /// the app's own data by construction rather than a second guess at where it
-  /// lives. [diskSpace] reads a volume's total/free capacity for an EXISTING
+  /// [_sessionsRoot] and [_capturesRoot] resolve the same directories the
+  /// session and performance repositories write to (the composition root passes
+  /// the very functions it wires into those repositories), so the accounting is
+  /// of the app's own data by construction rather than a second guess at where
+  /// it lives. [_diskSpace] reads a volume's total/free capacity for an EXISTING
   /// path; the root passes the engine's `statvfs`, tests a function of their
   /// own. There is deliberately no default: the one this had was a `df`
   /// subprocess, and a fork from the app is what #806 ruled out.
   LocalConsoleFactsClient({
-    required Future<String> Function() sessionsRoot,
-    required Future<String> Function() capturesRoot,
-    required Future<DiskSpace?> Function(String path) diskSpace,
-    String bluetoothState = kRetiredBluetoothState,
+    required this._sessionsRoot,
+    required this._capturesRoot,
+    required this._diskSpace,
+    this._bluetoothState = kRetiredBluetoothState,
     String factsRoot = '/',
-  }) : _sessionsRoot = sessionsRoot,
-       _capturesRoot = capturesRoot,
-       _diskSpace = diskSpace,
-       _bluetoothState = bluetoothState,
-       _factsRoot = factsRoot.endsWith('/') ? factsRoot : '$factsRoot/';
+  }) : _factsRoot = factsRoot.endsWith('/') ? factsRoot : '$factsRoot/';
 
   final Future<String> Function() _sessionsRoot;
   final Future<String> Function() _capturesRoot;

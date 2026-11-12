@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -50,7 +50,7 @@ class _ControlledStore extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
     if (key == 'pedal.setup') await loading?.future;
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override

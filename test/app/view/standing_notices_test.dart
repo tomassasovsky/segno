@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
@@ -15,6 +14,7 @@ import 'package:looper_repository/looper_repository.dart'
         Track,
         TrackState,
         UndoableClear;
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/view/standing_notices.dart';

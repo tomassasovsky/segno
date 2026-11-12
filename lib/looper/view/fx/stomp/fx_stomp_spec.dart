@@ -18,7 +18,7 @@ enum FxStompFaceKind {
   /// A rubber rocker treadle, the name along its side, and no knobs.
   rocker(Size(450, 780), 0);
 
-  const FxStompFaceKind(this.size, this.maxKnobs);
+  FxStompFaceKind(this.size, this.maxKnobs);
 
   /// The face's drawing space.
   final Size size;

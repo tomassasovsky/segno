@@ -29,16 +29,15 @@ import 'package:settings_repository/settings_repository.dart';
 /// page shows an empty state rather than crashing the app.
 class MidiDeviceRepository {
   /// Creates a [MidiDeviceRepository] capturing through [captures], persisting
-  /// the selection through [settings].
+  /// the selection through [_settings].
   ///
   /// [pollInterval] is the hotplug re-enumeration cadence; pass [Duration.zero]
   /// to disable the timer (tests drive [refresh] directly).
   MidiDeviceRepository({
     required MidiControllerSource Function()? captures,
-    required SettingsRepository settings,
+    required this._settings,
     Duration pollInterval = const Duration(seconds: 2),
   }) : _newCapture = captures,
-       _settings = settings,
        // One never-opened source lists the host's inputs.
        _scanner = _scannerOf(captures) {
     // Capture what is plugged in now, so input works before the saved

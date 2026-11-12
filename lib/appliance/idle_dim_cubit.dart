@@ -29,9 +29,7 @@ class IdleDimState extends Equatable {
 /// music stops. Never is the default, as the console has always been.
 class IdleDimCubit extends Cubit<IdleDimState> {
   /// Creates an [IdleDimCubit].
-  IdleDimCubit({required SettingsRepository settings})
-    : _settings = settings,
-      super(const IdleDimState());
+  IdleDimCubit({required this._settings}) : super(const IdleDimState());
 
   final SettingsRepository _settings;
   Timer? _timer;

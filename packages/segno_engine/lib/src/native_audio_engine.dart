@@ -2991,7 +2991,7 @@ class NativeAudioEngine implements AudioEngine {
   @override
   Future<Float32List?> filePeaks(String path, {required int buckets}) async {
     if (buckets <= 0) return null;
-    return Isolate.run(() => _filePeaks(path, buckets));
+    return await Isolate.run(() => _filePeaks(path, buckets));
   }
 
   @override

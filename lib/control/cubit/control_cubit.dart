@@ -204,7 +204,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// that cubit observes this repository's own status stream, so it reflects
   /// a pedal-triggered arm/disarm too.
   ///
-  /// [currentChains] resolves the live lane/monitor chains + master-limiter
+  /// [_currentChains] resolves the live lane/monitor chains + master-limiter
   /// state to stamp into the arm snapshot, read fresh at each arm — the same
   /// narrow function dependency `PerformanceRecorderCubit` takes for the
   /// toolbar path, so both arm gestures record the same rig. It is injected
@@ -219,36 +219,33 @@ class ControlCubit extends Cubit<ControlState> {
   /// a build or test with no MIDI seam simply never receives external
   /// control.
   ///
-  /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
-  /// route is up, so a take cannot start behind the dialog. [inputLocked]
+  /// [_takeLocked] suppresses Rec / overdub / perf-arm while the power-off
+  /// route is up, so a take cannot start behind the dialog. [_inputLocked]
   /// holds continuous writes (expression sweeps, External values, MIDI
   /// values) during Session transitions and disposal only; the power-off
   /// route leaves them running until its flush suspends input.
   ControlCubit({
     required LooperRepository looper,
-    required PedalRepository pedal,
+    required this._pedal,
     required SettingsRepository settings,
     required PerformanceRepository performance,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
+    required this._mixSettings,
+    required this._fxPersistence,
     required OwnedValueControl ownedValues,
     required FadeSettings fadeSettings,
     TunerSettings? tunerSettings,
     bool seedTunerDefault = false,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
-    Duration Function()? midiClock,
-    Duration learnTimeout = const Duration(seconds: 15),
-    PerformanceChains Function() currentChains = _noChains,
-    bool Function() takeLocked = _neverLocked,
-    bool Function() inputLocked = _neverLocked,
+    this._midiClock,
+    this._learnTimeout = const Duration(seconds: 15),
+    this._currentChains = _noChains,
+    this._takeLocked = _neverLocked,
+    this._inputLocked = _neverLocked,
     Future<int?> Function(String path)? freeSpaceBytes,
   }) : _looper = looper,
-       _pedal = pedal,
        _settings = settings,
        _performance = performance,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
        _owned = ownedValues,
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
@@ -261,14 +258,9 @@ class ControlCubit extends Cubit<ControlState> {
          settings: fadeSettings,
        ),
        _midiDevices = midiDevices,
-       _midiClock = midiClock,
-       _learnTimeout = learnTimeout,
-       _currentChains = currentChains,
-       _takeLocked = takeLocked,
-       _inputLocked = inputLocked,
        _freeSpaceBytes =
            freeSpaceBytes ??
-           ((String path) async => performance.volumeSpace(path)?.freeBytes),
+           ((path) async => performance.volumeSpace(path)?.freeBytes),
        super(const ControlState()) {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
     _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
@@ -1572,7 +1564,7 @@ class ControlCubit extends Cubit<ControlState> {
     // A change to what the switches reach is admitted and committed as one
     // step of the reach queue (#1723); a press's logical state is not one.
     if (!setup.external.sameConfigurationAs(state.pedalSetup.external)) {
-      return _serializeReach(() async {
+      return await _serializeReach(() async {
         if (isClosed) return;
         _admitReach(state.copyWith(pedalSetup: setup));
         await _commitPedalSetup(setup);

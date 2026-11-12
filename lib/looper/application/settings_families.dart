@@ -18,10 +18,9 @@ import 'package:settings_repository/settings_repository.dart';
 final class ClickVolumeFamily implements SettingsFamily<double, double?> {
   /// Binds the family to its repository receipt and its stored key.
   const ClickVolumeFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+    required this._repository,
+    required this._settings,
+  });
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -104,10 +103,9 @@ final class ClickVolumeFamily implements SettingsFamily<double, double?> {
 final class HearClickFamily implements SettingsFamily<ClickMode, int?> {
   /// Binds the family to its repository receipt and its stored key.
   const HearClickFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+    required this._repository,
+    required this._settings,
+  });
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -295,10 +293,9 @@ final class RecordStartFamily
     implements SettingsFamily<RecordStartSettings, StoredRecordStart> {
   /// Binds the family to its repository receipt and its stored keys.
   const RecordStartFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+    required this._repository,
+    required this._settings,
+  });
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -500,10 +497,9 @@ const _decayAddresses = <Object?>[
 final class DecayFamily implements SettingsFamily<DecaySnapshot, int?> {
   /// Binds the family to the repository and its stored keys.
   const DecayFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+    required this._repository,
+    required this._settings,
+  });
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -665,10 +661,9 @@ const _oneShotAddresses = <Object?>[
 final class OneShotFamily implements SettingsFamily<OneShotSnapshot, bool?> {
   /// Binds the family to its repository receipt and its stored keys.
   const OneShotFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+    required this._repository,
+    required this._settings,
+  });
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -955,10 +950,9 @@ final class RecordLengthFamily
     implements SettingsFamily<RecordLengthVector, int?> {
   /// Binds the family to its repository receipt and its stored keys.
   const RecordLengthFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+    required this._repository,
+    required this._settings,
+  });
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -1142,10 +1136,9 @@ final class RecordTimingFamily
     implements SettingsFamily<RecordTimingVector, Object?> {
   /// Binds the family to its repository receipt and its stored keys.
   const RecordTimingFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+    required this._repository,
+    required this._settings,
+  });
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -1335,7 +1328,7 @@ final class RecordTimingFamily
 /// value is live only, and the record keeps its Released value.
 final class FadeFamily implements SettingsFamily<FadeDurations, String?> {
   /// Binds the family to its stored record.
-  FadeFamily({required SettingsRepository settings}) : _settings = settings;
+  FadeFamily({required this._settings});
 
   final SettingsRepository _settings;
   FadeDurations _live = FadeDurations.defaults;
@@ -1480,10 +1473,9 @@ FadeDurations fadeWith(FadeDurations base, int? channel, int? milliseconds) {
 final class BackingMixFamily implements SettingsFamily<BackingMix, String?> {
   /// Binds the family to its stored record and the repository it drives.
   BackingMixFamily({
-    required SettingsRepository settings,
-    required BackingRepository backing,
-  }) : _settings = settings,
-       _backing = backing;
+    required this._settings,
+    required this._backing,
+  });
 
   final SettingsRepository _settings;
   final BackingRepository _backing;
@@ -1605,10 +1597,9 @@ final class BackingMixFamily implements SettingsFamily<BackingMix, String?> {
 final class ClickPanFamily implements SettingsFamily<double, double?> {
   /// Binds the family to its stored key and the repository it drives.
   ClickPanFamily({
-    required SettingsRepository settings,
-    required BackingRepository backing,
-  }) : _settings = settings,
-       _backing = backing;
+    required this._settings,
+    required this._backing,
+  });
 
   final SettingsRepository _settings;
   final BackingRepository _backing;

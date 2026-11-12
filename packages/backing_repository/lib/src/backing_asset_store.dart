@@ -31,17 +31,14 @@ typedef BackingDirSync = void Function(String path);
 /// identity is the full digest, which `info.json` carries and [resolve]
 /// checks against the bytes before a load.
 class BackingAssetStore {
-  /// Creates a [BackingAssetStore] under [root] (the exports root).
+  /// Creates a [BackingAssetStore] under [_root] (the exports root).
   BackingAssetStore({
-    required Future<String> Function() root,
-    required AudioDecoder decoder,
-    required BackingCopier copier,
+    required this._root,
+    required this._decoder,
+    required this._copier,
     BackingDigester? digester,
     BackingDirSync? syncDirectory,
-  }) : _root = root,
-       _decoder = decoder,
-       _copier = copier,
-       _digester = digester ?? _nativeDigest,
+  }) : _digester = digester ?? _nativeDigest,
        _sync = syncDirectory ?? NativeStorageIo().syncDirectory;
 
   /// The store's directory name under the root.

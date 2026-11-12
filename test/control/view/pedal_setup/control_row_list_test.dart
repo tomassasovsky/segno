@@ -1,5 +1,5 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/view/pedal_setup/control_row_list.dart';
 
 import '../../../helpers/helpers.dart';

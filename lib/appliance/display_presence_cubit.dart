@@ -10,13 +10,11 @@ import 'package:segno/appliance/display_role.dart';
 /// no connector in homescreen.toml) is not reported unplugged: "Not
 /// connected" is a fact the console read, never a guess.
 class DisplayPresenceCubit extends Cubit<Set<DisplayRole>> {
-  /// Creates a [DisplayPresenceCubit] that re-reads every [interval].
+  /// Creates a [DisplayPresenceCubit] that re-reads every [_interval].
   DisplayPresenceCubit({
-    required DisplayOutputs outputs,
-    Duration interval = const Duration(seconds: 2),
-  }) : _outputs = outputs,
-       _interval = interval,
-       super(const {});
+    required this._outputs,
+    this._interval = const Duration(seconds: 2),
+  }) : super(const {});
 
   final DisplayOutputs _outputs;
 

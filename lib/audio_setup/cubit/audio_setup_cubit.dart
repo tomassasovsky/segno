@@ -24,21 +24,16 @@ part 'audio_setup_state.dart';
 /// device, rate and buffer, or, when an open owes one that was never saved,
 /// one measured through the interface's own loopback and saved.
 class AudioSetupCubit extends Cubit<AudioSetupState> {
-  /// Creates an [AudioSetupCubit] backed by [repository], persisting the
-  /// config through [settings]. [guards] is the app's operation table, and
-  /// [backing] the backing player an apply stops along with the tracks.
+  /// Creates an [AudioSetupCubit] backed by [_repository], persisting the
+  /// config through [_settings]. [_guards] is the app's operation table, and
+  /// [_backing] the backing player an apply stops along with the tracks.
   AudioSetupCubit({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-    required GuardRegistry guards,
-    required BackingRepository backing,
-    Duration deviceRefreshInterval = const Duration(seconds: 1),
-  }) : _repository = repository,
-       _settings = settings,
-       _guards = guards,
-       _backing = backing,
-       _deviceRefreshInterval = deviceRefreshInterval,
-       super(const AudioSetupState()) {
+    required this._repository,
+    required this._settings,
+    required this._guards,
+    required this._backing,
+    this._deviceRefreshInterval = const Duration(seconds: 1),
+  }) : super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
 
     // Hydrate from the repository immediately — [looperState] is a broadcast

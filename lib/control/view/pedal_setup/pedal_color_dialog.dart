@@ -20,7 +20,7 @@ Future<PedalColor?> showPedalColorDialog(
   required PedalColor initial,
 }) async {
   final surface = context.surface;
-  return showDialog<PedalColor>(
+  return await showDialog<PedalColor>(
     context: context,
     barrierColor: surface.scrim.withValues(alpha: 0.86),
     builder: (context) => _PedalColorDialog(initial: initial),

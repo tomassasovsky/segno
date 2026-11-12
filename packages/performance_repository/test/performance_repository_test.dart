@@ -28,7 +28,7 @@ class _GatedReadFile implements File {
   @override
   Future<String> readAsString({Encoding encoding = utf8}) async {
     await _gate;
-    return _inner.readAsString(encoding: encoding);
+    return await _inner.readAsString(encoding: encoding);
   }
 
   @override

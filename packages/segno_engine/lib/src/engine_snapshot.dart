@@ -392,7 +392,7 @@ enum SpeedFactor {
   /// Eight times the speed, three octaves up.
   eightfold(8, 1);
 
-  const SpeedFactor(this.numer, this.denom);
+  SpeedFactor(this.numer, this.denom);
 
   /// The factor's numerator.
   final int numer;
@@ -453,7 +453,7 @@ enum PitchMode {
   /// The pitch moves with the tempo ratio: faster raises it.
   followsSpeed(1);
 
-  const PitchMode(this.code);
+  PitchMode(this.code);
 
   /// The native value.
   final int code;

@@ -170,11 +170,9 @@ class MixSettingsCoordinator {
   /// Connects the shared repository, atomic storage and device identity.
   MixSettingsCoordinator({
     required LooperRepository repository,
-    required MixSettingsPersistence persistence,
-    required String Function() device,
-  }) : _repository = repository,
-       _persistence = persistence,
-       _device = device {
+    required this._persistence,
+    required this._device,
+  }) : _repository = repository {
     _syncControllerTopology();
     _topologySub = repository.looperState.listen((_) {
       if (_owedReported && !_repository.mixRecoveryRequired) {
@@ -334,7 +332,7 @@ class MixSettingsCoordinator {
             (entry) =>
                 !entry.value.isFinite || !normalized.containsKey(entry.key),
           )) {
-        return _reject();
+        return await _reject();
       }
       final current = durableSnapshot;
       final released = Map<MixValueTarget, double>.of(_releasedValues);
@@ -740,7 +738,7 @@ class MixSettingsCoordinator {
       try {
         await _persistence.write(device, durableCandidate);
       } on Object catch (error) {
-        return _rollback(
+        return await _rollback(
           device,
           checkpoint,
           MixSettingsOutcome(MixSettingsStatus.storageFailed, error: error),
@@ -748,7 +746,7 @@ class MixSettingsCoordinator {
       }
     }
     if (!_current(generation, device)) {
-      return _rollback(
+      return await _rollback(
         device,
         checkpoint,
         const MixSettingsOutcome(MixSettingsStatus.superseded),
@@ -779,7 +777,9 @@ class MixSettingsCoordinator {
             : MixSettingsStatus.superseded,
         engineResult: settled,
       );
-      return persistent ? _rollback(device, checkpoint, failure) : failure;
+      return persistent
+          ? await _rollback(device, checkpoint, failure)
+          : failure;
     }
     final acceptedReleased = Map<MixValueTarget, double>.of(nextReleased);
     _releasedValues
@@ -854,7 +854,7 @@ class MixSettingsCoordinator {
       if (!recovery && _recovery != null) {
         throw MixSettingsRecoveryException(_recovery!);
       }
-      return action();
+      return await action();
     });
     _exclusiveTail = result.then<void>(
       (_) => _exclusiveCount--,

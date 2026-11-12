@@ -48,7 +48,7 @@ enum InterfaceControl {
   /// Turns a unit's setup mode off; index and value are unused.
   setupModeOff(4);
 
-  const InterfaceControl(this.code);
+  InterfaceControl(this.code);
 
   /// The native `le_interface_control` value.
   final int code;

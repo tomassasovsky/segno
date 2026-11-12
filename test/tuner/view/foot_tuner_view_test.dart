@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
@@ -101,7 +101,7 @@ void main() {
       ],
       child: const Scaffold(body: FootTunerView()),
     );
-    if (locale == null) return tester.pumpApp(face);
+    if (locale == null) return await tester.pumpApp(face);
     await tester.pumpWidget(
       MaterialApp(
         locale: locale,

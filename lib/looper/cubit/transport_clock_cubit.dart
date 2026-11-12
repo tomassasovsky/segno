@@ -46,14 +46,13 @@ class TransportClockCubit extends Cubit<TransportClockState> {
   ///
   /// [stopwatch] supplies the monotonic run timer; injectable for
   /// deterministic tests (`fake_async` fakes `Timer`, not [Stopwatch]).
-  /// [tickInterval] paces the running re-read; shorter than a second so a
+  /// [_tickInterval] paces the running re-read; shorter than a second so a
   /// displayed second never lags a full second behind the wall.
   TransportClockCubit({
     required LooperRepository repository,
     Stopwatch? stopwatch,
-    Duration tickInterval = const Duration(milliseconds: 250),
+    this._tickInterval = const Duration(milliseconds: 250),
   }) : _watch = stopwatch ?? Stopwatch(),
-       _tickInterval = tickInterval,
        super(const TransportClockState()) {
     // Seed from the live snapshot rather than waiting for the first
     // projection: created while the transport is already running (a lazy

@@ -17,11 +17,9 @@ class FadeSettings {
   FadeSettings({
     required LooperRepository repository,
     required SettingsRepository settings,
-    required bool Function() blocked,
-    required bool Function() sessionBlocked,
-  }) : _blocked = blocked,
-       _sessionBlocked = sessionBlocked,
-       owner = SettingsOwner(
+    required this._blocked,
+    required this._sessionBlocked,
+  }) : owner = SettingsOwner(
          repository: repository,
          family: FadeFamily(settings: settings),
        );

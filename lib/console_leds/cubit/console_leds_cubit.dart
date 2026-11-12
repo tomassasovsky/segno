@@ -20,10 +20,9 @@ part 'console_leds_state.dart';
 class ConsoleLedsCubit extends Cubit<ConsoleLedsState> {
   /// Creates a [ConsoleLedsCubit].
   ConsoleLedsCubit({
-    required SettingsRepository settings,
+    required this._settings,
     required PedalRepository pedal,
-  }) : _settings = settings,
-       _pedal = pedal,
+  }) : _pedal = pedal,
        super(const ConsoleLedsState().withLight(pedal.ambientLight)) {
     _lightSub = pedal.ambientLightChanges.listen(_onLight);
   }
@@ -130,6 +129,6 @@ class ConsoleLedsCubit extends Cubit<ConsoleLedsState> {
   @override
   Future<void> close() async {
     await _lightSub.cancel();
-    return super.close();
+    return await super.close();
   }
 }

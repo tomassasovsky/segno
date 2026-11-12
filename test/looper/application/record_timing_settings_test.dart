@@ -18,7 +18,7 @@ class _FaultStore extends FakeKeyValueStore {
     if (key == 'track_record_timing.7' && blockedRead != null) {
       await blockedRead!.future;
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   @override

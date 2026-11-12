@@ -62,7 +62,7 @@ class ContentDecoder implements AudioDecoder {
   }) async {
     if (File(path).existsSync()) _register(path);
     await beforeDecode?.call();
-    return mock.decode(
+    return await mock.decode(
       path,
       sampleRate: sampleRate,
       startFrame: startFrame,

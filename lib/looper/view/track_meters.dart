@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/looper/view/live_playhead.dart';
 import 'package:segno/theme/theme.dart';
