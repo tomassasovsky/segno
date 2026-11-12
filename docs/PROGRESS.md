@@ -106,16 +106,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   cycle's decision, so the log ends where the take does (#1549). The paused
   #1747 capture's idle 18 minutes peaked at -46 dBFS. An input whose noise
   stays over the level keeps the take going until the 3-hour stop.
-- The device's own input meter (the last block's raw peak, which the
-  engine already publishes) also counts, once a drain cycle, for playing the
-  captured streams do not carry: a monitor turned down or muted, the player
-  on the interface's direct monitoring, an input not monitored at arm. It is
-  not high-passed, so it counts only at the level that starts a
-  sound-triggered take (`LE_AUTO_RECORD_THRESHOLD`, -34 dBFS). At -40 dBFS,
-  as first shipped, hum between the two levels counted whenever a cycle
-  happened to read it mid-take, and a take's end depended on the drain's
-  pacing (#1772 caught it). Hum louder than -34 dBFS on the raw input keeps
-  a take going until the 3-hour stop.
+- Only high-passed input counts (#1772 caught it): the drain also read the
+  device's raw input meter once a cycle, at the same -40 dBFS, so mains hum
+  over that level counted as playing whenever a cycle happened to read it,
+  and on a console with hum a take would never idle-stop. The meter read is
+  gone. Playing the captured streams do not carry (a monitor turned down or
+  muted, the player on the interface's direct monitoring, an input not
+  monitored at arm) does not keep a take going; high-passing the meter
+  would need work in the callback.
 - Nobody is there, so the capture dialog does not open for such a take
   (`PerformanceRecorderRendering.stoppedOnItsOwn`); `PerformanceAutoStopNotice`
   says it as a passing warning at the player's next touch, key, encoder,
