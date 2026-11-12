@@ -16,8 +16,13 @@ name: ci-caches
 # defaults (the packages, design and fuzz jobs), the Very Good workflows' key
 # (flutter_package.yml adds the hash of every pubspec.lock), and the console
 # firmware job's Arduino key, and the native jobs' apt packages.
+#
+# This is the only workflow that saves caches for the PR checks: main.yaml
+# runs with cache-mode read (#1787).
 
-# A PR that changes this file runs it too, to prove the jobs still work.
+# A PR that changes this file runs it too, to prove the jobs still work. A
+# dispatch from the trunk saves the caches at once, without waiting for the
+# next merge.
 on:
   push:
     branches:
@@ -26,6 +31,11 @@ on:
     paths:
       - .github/workflows/ci-caches.yaml
   workflow_dispatch:
+
+# Save only on the trunk (#1787). A PR run, or a dispatch from another
+# branch, would save its copy under its own ref, where no PR into the trunk
+# can read it; there it restores and saves nothing.
+cache-mode: ${{ github.ref == 'refs/heads/claude/segno-integration' && 'write' || 'read' }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

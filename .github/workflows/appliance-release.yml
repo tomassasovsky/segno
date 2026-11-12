@@ -55,6 +55,14 @@ on:
         options: ['no', 'yes']
         default: 'no'
 
+# Save caches only on the trunk (#1787). A run dispatched from another
+# branch, a push to experimental or a tag would save its copy under its own
+# ref, where only that ref can read it: the Arduino core alone is 856 MB, and
+# the repository has 10 GB of cache for every workflow. Those runs restore
+# what they can and save nothing. The Arduino core is also saved on the trunk
+# by ci-caches.yaml, under the same key.
+cache-mode: ${{ github.ref == 'refs/heads/claude/segno-integration' && 'write' || 'read' }}
+
 permissions:
   contents: write        # create releases
 

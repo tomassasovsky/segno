@@ -4,6 +4,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Restore caches, never save them (#1787). A cache saved by a pull request
+# lives under refs/pull/<N>/merge, where only that PR can read it, and a few
+# Flutter SDK copies (1.7 GB each) fill the repository's 10 GB, after which
+# no job can save anything. The caches the jobs here restore are saved on
+# the trunk by ci-caches.yaml, under the keys these jobs compute. The mode
+# is enforced by the cache service, so it also covers the actions that have
+# no restore-only switch (subosito/flutter-action, cache-apt-pkgs-action)
+# and the Very Good workflows called below. A job that misses downloads
+# what it needs and skips the save.
+cache-mode: read
+
 on:
   push:
     branches:
@@ -224,17 +235,17 @@ jobs:
           clang=$(command -v clang || ls /usr/bin/clang-[0-9]* | sort -V | tail -n 1)
           "$clang" --version
           echo "CLANG=$clang" >> "$GITHUB_ENV"
-      # Compiler output from earlier runs (#1771): a TU that has not changed
-      # is not compiled again. ccache is downloaded from its GitHub release.
-      # One entry per job and PR, saved by the PR's first run and restored
-      # by its later ones: without the timestamp each run would add another
-      # entry, and the repository's 10 GB of cache is shared by every job.
-      - name: Restore the compiler cache
+      # ccache (#1771), downloaded from its GitHub release: a TU that several
+      # of the run's binaries build with the same flags is compiled once. The
+      # cache is not kept between runs: a PR may not save it (cache-mode
+      # above), and these jobs do not run on the trunk, where it could be
+      # saved for every PR to restore.
+      - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
-          key: ${{ github.job }}
           install: binary
-          append-timestamp: false
+          restore: false
+          save: false
           max-size: 100M
       - name: Build + run the pitch/time bench (arm64 proxy thresholds)
         # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
@@ -412,17 +423,17 @@ jobs:
         with:
           packages: libasound2-dev libpulse0
           version: "1"
-      # Compiler output from earlier runs (#1771): a TU that has not changed
-      # is not compiled again. ccache is downloaded from its GitHub release.
-      # One entry per job and PR, saved by the PR's first run and restored
-      # by its later ones: without the timestamp each run would add another
-      # entry, and the repository's 10 GB of cache is shared by every job.
-      - name: Restore the compiler cache
+      # ccache (#1771), downloaded from its GitHub release: a TU that several
+      # of the run's binaries build with the same flags is compiled once. The
+      # cache is not kept between runs: a PR may not save it (cache-mode
+      # above), and these jobs do not run on the trunk, where it could be
+      # saved for every PR to restore.
+      - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
-          key: ${{ github.job }}
           install: binary
-          append-timestamp: false
+          restore: false
+          save: false
           max-size: 100M
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
@@ -471,7 +482,8 @@ jobs:
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
       # ci-caches.yaml saves it on the trunk under the same key, so a PR finds
-      # it there (#1771): change the two together.
+      # it there (#1771); this job only restores it (cache-mode above): change
+      # the two keys together.
       - name: Cache the Arduino core and libraries
         id: arduino-cache
         uses: actions/cache@v6
@@ -555,17 +567,17 @@ jobs:
         with:
           packages: libasound2-dev libpulse0
           version: "1"
-      # Compiler output from earlier runs (#1771): a TU that has not changed
-      # is not compiled again. ccache is downloaded from its GitHub release.
-      # One entry per job and PR, saved by the PR's first run and restored
-      # by its later ones: without the timestamp each run would add another
-      # entry, and the repository's 10 GB of cache is shared by every job.
-      - name: Restore the compiler cache
+      # ccache (#1771), downloaded from its GitHub release: a TU that several
+      # of the run's binaries build with the same flags is compiled once. The
+      # cache is not kept between runs: a PR may not save it (cache-mode
+      # above), and these jobs do not run on the trunk, where it could be
+      # saved for every PR to restore.
+      - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
-          key: ${{ github.job }}-${{ strategy.job-index }}
           install: binary
-          append-timestamp: false
+          restore: false
+          save: false
           max-size: 100M
       - name: Build + run native tests under AddressSanitizer
         # The decoder fuzz driver also runs under UBSan, for longer (#1200).
@@ -607,17 +619,17 @@ jobs:
         with:
           packages: libasound2-dev libpulse0
           version: "1"
-      # Compiler output from earlier runs (#1771): a TU that has not changed
-      # is not compiled again. ccache is downloaded from its GitHub release.
-      # One entry per job and PR, saved by the PR's first run and restored
-      # by its later ones: without the timestamp each run would add another
-      # entry, and the repository's 10 GB of cache is shared by every job.
-      - name: Restore the compiler cache
+      # ccache (#1771), downloaded from its GitHub release: a TU that several
+      # of the run's binaries build with the same flags is compiled once. The
+      # cache is not kept between runs: a PR may not save it (cache-mode
+      # above), and these jobs do not run on the trunk, where it could be
+      # saved for every PR to restore.
+      - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
-          key: ${{ github.job }}
           install: binary
-          append-timestamp: false
+          restore: false
+          save: false
           max-size: 100M
       - name: Build + run native tests with LE_CALLBACK_TELEMETRY=0
         run: >
@@ -647,17 +659,17 @@ jobs:
       # No packages to install: the race binaries build from the runner
       # image's compilers, the header-only telemetry and pthreads, and
       # NATIVE_TESTS_ONLY skips the suites that link the audio backends.
-      # Compiler output from earlier runs (#1771): a TU that has not changed
-      # is not compiled again. ccache is downloaded from its GitHub release.
-      # One entry per job and PR, saved by the PR's first run and restored
-      # by its later ones: without the timestamp each run would add another
-      # entry, and the repository's 10 GB of cache is shared by every job.
-      - name: Restore the compiler cache
+      # ccache (#1771), downloaded from its GitHub release: a TU that several
+      # of the run's binaries build with the same flags is compiled once. The
+      # cache is not kept between runs: a PR may not save it (cache-mode
+      # above), and these jobs do not run on the trunk, where it could be
+      # saved for every PR to restore.
+      - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
-          key: ${{ github.job }}
           install: binary
-          append-timestamp: false
+          restore: false
+          save: false
           max-size: 100M
       - name: Build + run the telemetry race tests under ThreadSanitizer
         run: >
@@ -678,17 +690,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      # Compiler output from earlier runs (#1771): a TU that has not changed
-      # is not compiled again. ccache is downloaded from its GitHub release.
-      # One entry per job and PR, saved by the PR's first run and restored
-      # by its later ones: without the timestamp each run would add another
-      # entry, and the repository's 10 GB of cache is shared by every job.
-      - name: Restore the compiler cache
+      # ccache (#1771), downloaded from its GitHub release: a TU that several
+      # of the run's binaries build with the same flags is compiled once. The
+      # cache is not kept between runs: a PR may not save it (cache-mode
+      # above), and these jobs do not run on the trunk, where it could be
+      # saved for every PR to restore.
+      - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
-          key: ${{ github.job }}
           install: binary
-          append-timestamp: false
+          restore: false
+          save: false
           max-size: 100M
       - uses: subosito/flutter-action@v2
         with:

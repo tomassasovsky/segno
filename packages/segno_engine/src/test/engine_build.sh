@@ -23,8 +23,9 @@ ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
 # one per CPU unless BUILD_JOBS says otherwise.
 BUILD_JOBS="${BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
-# ccache when it is installed (CI keeps its directory between runs), so a TU
-# that has not changed is not compiled again. CCACHE= turns it off.
+# ccache when it is installed, so a TU that has not changed is not compiled
+# again: locally across runs, in CI within one job (its cache is not kept
+# between CI runs, #1787). CCACHE= turns it off.
 if [ -z "${CCACHE+set}" ]; then
   CCACHE="$(command -v ccache || true)"
 fi
