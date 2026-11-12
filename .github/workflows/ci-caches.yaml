@@ -40,13 +40,13 @@ jobs:
       - name: Flutter, with the packages and design jobs' cache keys
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.47.x"
+          flutter-version: "3.50.x"
           channel: stable
           cache: true
       - name: Flutter, with the Very Good workflows' cache key
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.47.x"
+          flutter-version: "3.50.x"
           channel: stable
           cache: true
           cache-key: flutter-:os:-:channel:-:version:-:arch:-:hash:-${{ hashFiles('**/pubspec.lock') }}

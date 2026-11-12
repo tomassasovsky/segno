@@ -4,11 +4,11 @@ library;
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -36,9 +36,9 @@ import '../helpers/helpers.dart';
 import '../looper/view/fx/stomp/factory_pedals.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 BuiltInEffect _fx(
   String slot,
@@ -93,12 +93,7 @@ final _rackRig = LooperState(
           module: 'Pumper',
           enabled: false,
         ),
-        _module(
-          'r1c',
-          TrackEffectType.reverb,
-          rackId: 'R1',
-          module: 'Reverb',
-        ),
+        _module('r1c', TrackEffectType.reverb, rackId: 'R1', module: 'Reverb'),
         _fx('s1', TrackEffectType.echo),
       ],
     ),
@@ -237,8 +232,7 @@ const _library = FxCatalogue(
   ],
 );
 
-class _MockControlCubit extends MockCubit<ControlState>
-    implements ControlCubit {}
+class _MockControlCubit extends MockCubit<ControlState> implements ControlCubit;
 
 /// The console's second track switch on the reverb, and CTRL 1 on it too:
 /// the Recorded track card names both (#1757).
@@ -326,12 +320,10 @@ void main() {
     monitorParams = StreamController<int>.broadcast();
     addTearDown(monitorChanges.close);
     addTearDown(monitorParams.close);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(_rig);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.fxRoomNs).thenReturn(1 << 40);
@@ -366,12 +358,10 @@ void main() {
       _fx('m2', TrackEffectType.reverb),
     ]);
     when(() => repository.monitorChainEnabled(any())).thenReturn(true);
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => monitorChanges.stream);
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => monitorParams.stream);
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => monitorChanges.stream);
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => monitorParams.stream);
     when(() => repository.allMonitors()).thenReturn({
       0: InputMonitor(
         input: 0,
@@ -421,11 +411,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final rig = state ?? _rig;
     when(() => bloc.state).thenReturn(rig);
-    whenListen(
-      bloc,
-      const Stream<LooperState>.empty(),
-      initialState: rig,
-    );
+    whenListen(bloc, const Stream<LooperState>.empty(), initialState: rig);
     final inputs = InputsCubit(repository: repository, settings: settings);
     final outputs = OutputsCubit(repository: repository, settings: settings);
     final fxPersistence = FxChainPersistence(looper: repository);
@@ -459,7 +445,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         locale: locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           fontFamily: SurfaceTheme.displayFont,
@@ -474,9 +460,7 @@ void main() {
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<SettingsRepository>.value(value: settings),
-            RepositoryProvider<FxChainPersistence>.value(
-              value: fxPersistence,
-            ),
+            RepositoryProvider<FxChainPersistence>.value(value: fxPersistence),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -605,9 +589,8 @@ void main() {
             art: kFxFamilySlugs[family],
           ),
         ))
-          if (fxEntryControls(entry).params.any(
-            (i) => fxEntryParam(entry, i).unit == FxParamUnit.choice,
-          ))
+          if (fxEntryControls(entry).params
+              .any((i) => fxEntryParam(entry, i).unit == FxParamUnit.choice))
             entry,
       ];
       await pump(
@@ -739,12 +722,7 @@ void main() {
     await presets.save(
       name: 'Warm rhythmic guitar',
       entries: [
-        _module(
-          'a',
-          TrackEffectType.modeDelay,
-          rackId: 'X',
-          module: 'Delay',
-        ),
+        _module('a', TrackEffectType.modeDelay, rackId: 'X', module: 'Delay'),
         _module('b', TrackEffectType.reverb, rackId: 'X', module: 'Reverb'),
       ],
       art: 'guitar',

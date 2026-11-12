@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -176,9 +176,7 @@ void main() {
       expect(find.byType(DisplaysSettingsPage), findsNothing);
     });
 
-    testWidgets('a screen reader can increase and decrease it', (
-      tester,
-    ) async {
+    testWidgets('a screen reader can increase and decrease it', (tester) async {
       final semantics = tester.ensureSemantics();
       await openDisplays(tester);
       final node = tester.getSemantics(slider(DisplayRole.main));
@@ -316,12 +314,10 @@ void main() {
       tester,
     ) async {
       await openDisplays(tester);
-      when(
-        () => harness.waveform.setEnabled(value: any(named: 'value')),
-      ).thenAnswer((_) async {});
-      when(
-        () => harness.contrast.setEnabled(value: any(named: 'value')),
-      ).thenAnswer((_) async {});
+      when(() => harness.waveform.setEnabled(value: any(named: 'value')))
+          .thenAnswer((_) async {});
+      when(() => harness.contrast.setEnabled(value: any(named: 'value')))
+          .thenAnswer((_) async {});
       when(() => harness.refresh.setHz(any())).thenAnswer((_) async {});
 
       await tester.tap(find.byKey(const Key('displays_waveform_switch')));
@@ -420,9 +416,7 @@ void main() {
               find
                   .descendant(
                     of: owner,
-                    matching: find.byElementPredicate(
-                      (e) => e == focused,
-                    ),
+                    matching: find.byElementPredicate((e) => e == focused),
                   )
                   .evaluate()
                   .isNotEmpty) {

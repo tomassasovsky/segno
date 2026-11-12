@@ -10,11 +10,11 @@ import 'package:looper_repository/src/models/track_effect.dart';
 /// persisted envelope only.
 class FxChainMeta extends Equatable {
   /// Creates an [FxChainMeta].
-  const FxChainMeta({this.inheritedFrom = const [], this.printed});
+  const new({this.inheritedFrom = const [], this.printed});
 
   /// Rebuilds an [FxChainMeta] from its [toJson] map; malformed entries are
   /// dropped. Unknown keys are ignored (additive-only contract).
-  factory FxChainMeta.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final raw = json['inheritedFrom'];
     final printed = json['printed'];
     return FxChainMeta(
@@ -68,11 +68,7 @@ class FxChainMeta extends Equatable {
 /// engine never consumes [chainEnabled] or [meta].
 class FxChainEnvelope extends Equatable {
   /// Creates an [FxChainEnvelope].
-  const FxChainEnvelope({
-    this.chainEnabled = true,
-    this.meta,
-    this.entries = const [],
-  });
+  const new({this.chainEnabled = true, this.meta, this.entries = const []});
 
   /// Whether the whole chain is engaged (R15). Disabled == the chain renders
   /// dry while keeping every per-entry flag intact.

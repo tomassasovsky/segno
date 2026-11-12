@@ -50,7 +50,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('click-test', 1);
@@ -76,7 +76,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig(this.clock, this.engine, this.looper) {
+  new(this.clock, this.engine, this.looper) {
     store.values['tempo.click_volume'] = .5;
     store.values['pedal.setup'] = const PedalSetup()
         .copyWith(
@@ -273,7 +273,7 @@ void main() {
     await looper.settleMixSettings();
     await looper.settleClickVolume();
   });
-  tearDown(() async => looper.dispose());
+  tearDown(() async => await looper.dispose());
   void check(String name, void Function(_Rig) body) => test(
     name,
     () => fakeAsync((clock) {
@@ -582,29 +582,26 @@ void main() {
   // (#1153), whether or not an ordinary edit came first.
   for (final external in [false, true]) {
     for (final edited in [false, true]) {
-      check(
-        '${external ? 'External' : 'MIDI'} refused Held voids its Released'
-        '${edited ? ' after an ordinary edit' : ''}',
-        (r) {
-          if (edited) r.ordinary(1);
-          r.bind();
-          final before = (r.live, r.durable);
-          engine.refuseClick = true;
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          expect((r.live, r.durable), before);
-          engine.refuseClick = false;
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          expect((r.live, r.durable), before);
-        },
-      );
+      check('${external ? 'External' : 'MIDI'} refused Held voids its Released'
+          '${edited ? ' after an ordinary edit' : ''}', (r) {
+        if (edited) r.ordinary(1);
+        r.bind();
+        final before = (r.live, r.durable);
+        engine.refuseClick = true;
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        expect((r.live, r.durable), before);
+        engine.refuseClick = false;
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        expect((r.live, r.durable), before);
+      });
     }
   }
 }

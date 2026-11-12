@@ -4,14 +4,14 @@ import 'package:segno/control/binding/control_value_target.dart';
 /// Directed raw byte readings at the mechanical ends of an expression pedal.
 class ExpressionCalibration extends Equatable {
   /// Creates a usable calibration. Reverse-wired pedals may have heel > toe.
-  ExpressionCalibration({required this.heel, required this.toe}) {
+  new({required this.heel, required this.toe}) {
     if (heel < 0 || heel > 255 || toe < 0 || toe > 255 || !isUsable) {
       throw const FormatException('Invalid expression calibration');
     }
   }
 
   /// Decodes an explicit calibration without guessing missing or invalid ends.
-  factory ExpressionCalibration.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final heel = json['heel'];
     final toe = json['toe'];
     if (heel is! int || toe is! int) {
@@ -54,7 +54,7 @@ class ExpressionMapping extends Equatable {
   /// the target's [ControlValueTarget.mappingTop]: unity on a level fader.
   /// A literal 1.0 endpoint on a level fader is unity, at authoring as at
   /// load ([ControlValueTarget.decodeEndpoint]).
-  ExpressionMapping({required this.target, double heel = 0, double? toe})
+  new({required this.target, double heel = 0, double? toe})
     : heel = target.decodeEndpoint(heel),
       toe = target.decodeEndpoint(toe ?? target.mappingTop) {
     if (!target.isStructurallyValid) {
@@ -67,7 +67,7 @@ class ExpressionMapping extends Equatable {
 
   /// Decodes a mapping. A missing target is malformed; a removed live target
   /// remains a valid, unavailable row with its stable identity intact.
-  factory ExpressionMapping.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final encoded = json['target'];
     if (encoded is! String || encoded.isEmpty) {
       throw const FormatException('Invalid expression target');
@@ -127,7 +127,7 @@ class ExpressionMapping extends Equatable {
 /// The retained expression configuration of one jack.
 class ExternalExpressionSetup extends Equatable {
   /// Creates a detached, ordered mapping list with unique target identities.
-  factory ExternalExpressionSetup({
+  factory({
     ExpressionCalibration? calibration,
     List<ExpressionMapping> mappings = const [],
   }) {
@@ -140,10 +140,10 @@ class ExternalExpressionSetup extends Equatable {
     return ExternalExpressionSetup._(calibration, List.unmodifiable(mappings));
   }
 
-  const ExternalExpressionSetup._(this.calibration, this.mappings);
+  const new _(this.calibration, this.mappings);
 
   /// Decodes an explicit expression value strictly.
-  factory ExternalExpressionSetup.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final rawCalibration = json['calibration'];
     if (json.containsKey('calibration') &&
         rawCalibration is! Map<String, dynamic>) {

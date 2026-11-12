@@ -16,7 +16,7 @@ import 'package:meta/meta.dart';
 @immutable
 class DiskSpace {
   /// Creates a [DiskSpace].
-  const DiskSpace({required this.totalBytes, required this.freeBytes});
+  const new({required this.totalBytes, required this.freeBytes});
 
   /// The volume's total size.
   final int totalBytes;
@@ -49,25 +49,21 @@ class DiskSpace {
 class LocalConsoleFactsClient implements ConsoleFactsClient {
   /// Creates a [LocalConsoleFactsClient].
   ///
-  /// [sessionsRoot] and [capturesRoot] resolve the same directories the session
-  /// and performance repositories write to (the composition root passes the
-  /// very functions it wires into those repositories), so the accounting is of
-  /// the app's own data by construction rather than a second guess at where it
-  /// lives. [diskSpace] reads a volume's total/free capacity for an EXISTING
+  /// [_sessionsRoot] and [_capturesRoot] resolve the same directories the
+  /// session and performance repositories write to (the composition root passes
+  /// the very functions it wires into those repositories), so the accounting is
+  /// of the app's own data by construction rather than a second guess at where
+  /// it lives. [_diskSpace] reads a volume's total/free capacity for an EXISTING
   /// path; the root passes the engine's `statvfs`, tests a function of their
   /// own. There is deliberately no default: the one this had was a `df`
   /// subprocess, and a fork from the app is what #806 ruled out.
-  LocalConsoleFactsClient({
-    required Future<String> Function() sessionsRoot,
-    required Future<String> Function() capturesRoot,
-    required Future<DiskSpace?> Function(String path) diskSpace,
-    String bluetoothState = kRetiredBluetoothState,
+  new({
+    required this._sessionsRoot,
+    required this._capturesRoot,
+    required this._diskSpace,
+    this._bluetoothState = kRetiredBluetoothState,
     String factsRoot = '/',
-  }) : _sessionsRoot = sessionsRoot,
-       _capturesRoot = capturesRoot,
-       _diskSpace = diskSpace,
-       _bluetoothState = bluetoothState,
-       _factsRoot = factsRoot.endsWith('/') ? factsRoot : '$factsRoot/';
+  }) : _factsRoot = factsRoot.endsWith('/') ? factsRoot : '$factsRoot/';
 
   final Future<String> Function() _sessionsRoot;
   final Future<String> Function() _capturesRoot;
@@ -141,9 +137,10 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
 
   String _readText(String path) {
     try {
-      return File(
-        '$_factsRoot$path',
-      ).readAsStringSync().replaceAll('\x00', '').trim();
+      return File('$_factsRoot$path')
+          .readAsStringSync()
+          .replaceAll('\x00', '')
+          .trim();
     } on FileSystemException {
       return '';
     }
@@ -263,9 +260,8 @@ String? edidMonitorName(List<int> edid) {
     if (edid[offset + 3] != 0xFC) continue;
     final text = edid.sublist(offset + 5, offset + 18);
     final end = text.indexOf(0x0A);
-    final name = String.fromCharCodes(
-      end < 0 ? text : text.sublist(0, end),
-    ).trim();
+    final name = String.fromCharCodes(end < 0 ? text : text.sublist(0, end))
+        .trim();
     return name.isEmpty ? null : name;
   }
   return null;
@@ -276,10 +272,7 @@ final _bluetoothAddress = RegExp(r'^[0-9A-F]{2}(:[0-9A-F]{2}){5}$');
 
 String _name(String path) => path
     .split('/')
-    .lastWhere(
-      (segment) => segment.isNotEmpty,
-      orElse: () => '',
-    );
+    .lastWhere((segment) => segment.isNotEmpty, orElse: () => '');
 
 /// The nearest existing directory at or above [path], or `null` if even the
 /// filesystem root is unreadable. Lets the capacity reader measure the right

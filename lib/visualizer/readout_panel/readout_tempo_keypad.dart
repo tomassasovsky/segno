@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_rename_sheet.dart' show ConsoleEntryField;
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -13,11 +13,7 @@ import 'package:segno/visualizer/readout_panel/readout_button.dart';
 /// BPM with up to two decimals.
 class ReadoutTempoKeypad extends StatefulWidget {
   /// Creates a [ReadoutTempoKeypad].
-  const ReadoutTempoKeypad({
-    required this.onSet,
-    required this.onCancel,
-    super.key,
-  });
+  const new({required this.onSet, required this.onCancel, super.key});
 
   /// Called with the typed tempo when Set takes it.
   final ValueChanged<double> onSet;

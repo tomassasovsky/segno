@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// pattern in this toolbar).
 class PerfRecordButton extends StatelessWidget {
   /// Creates a [PerfRecordButton].
-  const PerfRecordButton({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

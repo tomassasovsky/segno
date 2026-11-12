@@ -11,7 +11,7 @@ class _Store extends FakeKeyValueStore {
   @override
   Future<void> setInt(String key, int value) async {
     if (fail) throw StateError('disk full');
-    return super.setInt(key, value);
+    return await super.setInt(key, value);
   }
 }
 
@@ -38,10 +38,7 @@ void main() {
       ..['tuner.reference_hz'] = 432
       ..['tuner.input'] = 2;
     await settings.load();
-    expect(
-      settings.live,
-      const TunerPreferences(referenceHz: 432, input: 2),
-    );
+    expect(settings.live, const TunerPreferences(referenceHz: 432, input: 2));
   });
 
   test('the reference clamps to 420-460 Hz and resets to 440', () async {

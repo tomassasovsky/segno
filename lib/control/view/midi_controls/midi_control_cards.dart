@@ -1,6 +1,6 @@
 import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/view/control_value_readout.dart';
 import 'package:segno/control/view/midi_controls/midi_segmented.dart';
@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// How one thing a mapping drives reads in the editor.
 class MidiControlCard {
   /// Creates a [MidiControlCard].
-  const MidiControlCard({
+  const new({
     required this.control,
     required this.label,
     required this.available,
@@ -48,10 +48,8 @@ class MidiControlCard {
 }) {
   if (program) return (low: null, high: l10n.midiRangeValue);
   return switch (behavior) {
-    MidiBehavior.continuous || MidiBehavior.trigger => (
-      low: l10n.midiRangeFrom,
-      high: l10n.midiRangeTo,
-    ),
+    MidiBehavior.continuous ||
+    MidiBehavior.trigger => (low: l10n.midiRangeFrom, high: l10n.midiRangeTo),
     MidiBehavior.toggle => (
       low: l10n.externalConditionOff,
       high: l10n.externalConditionOn,
@@ -66,7 +64,7 @@ class MidiControlCard {
 /// The editor's right column: everything the mapping drives.
 class MidiControlCards extends StatefulWidget {
   /// Creates a [MidiControlCards].
-  const MidiControlCards({
+  const new({
     required this.cards,
     required this.behavior,
     required this.program,
@@ -197,7 +195,7 @@ class _MidiControlCardsState extends State<MidiControlCards> {
 }
 
 class _Card extends StatelessWidget {
-  const _Card({
+  const new({
     required this.card,
     required this.captions,
     required this.program,
@@ -474,7 +472,7 @@ class _Card extends StatelessWidget {
 
 /// One end of a parameter's range: its caption and value over a slider.
 class _Range extends StatelessWidget {
-  const _Range({
+  const new({
     required this.caption,
     required this.value,
     required this.width,
@@ -552,7 +550,7 @@ class _Range extends StatelessWidget {
 
 /// Binary endpoints keep effect activation distinct from a numeric parameter.
 class _ActivationRange extends StatelessWidget {
-  const _ActivationRange({
+  const new({
     required this.caption,
     required this.value,
     required this.width,
@@ -576,10 +574,7 @@ class _ActivationRange extends StatelessWidget {
       children: [
         AppText(
           caption,
-          style: TextStyle(
-            color: context.surface.textSecondary,
-            fontSize: 21,
-          ),
+          style: TextStyle(color: context.surface.textSecondary, fontSize: 21),
         ),
         const SizedBox(height: 8),
         Row(

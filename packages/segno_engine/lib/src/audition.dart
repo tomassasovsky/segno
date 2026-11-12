@@ -10,7 +10,7 @@ const int kAuditionMaxSeconds = 120;
 @immutable
 class AuditionStart {
   /// Creates an [AuditionStart].
-  const AuditionStart({
+  const new({
     required this.result,
     this.frames = 0,
     this.rate = 0,
@@ -66,7 +66,7 @@ class AuditionStart {
 @immutable
 class AuditionState {
   /// Creates an [AuditionState].
-  const AuditionState({
+  const new({
     this.epoch = 0,
     this.frames = 0,
     this.position = 0,

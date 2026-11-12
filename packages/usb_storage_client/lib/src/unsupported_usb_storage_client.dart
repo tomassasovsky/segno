@@ -8,7 +8,7 @@ import 'package:usb_storage_client/src/usb_storage_client.dart';
 /// rather than "no drive".
 class UnsupportedUsbStorageClient implements UsbStorageClient {
   /// Creates an [UnsupportedUsbStorageClient].
-  const UnsupportedUsbStorageClient();
+  const new();
 
   @override
   bool get isSupported => false;

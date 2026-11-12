@@ -12,7 +12,7 @@ enum LibraryAudioFolder {
 
 /// One file the Audio tab lists.
 sealed class LibraryAudioItem extends Equatable {
-  const LibraryAudioItem();
+  const new();
 
   /// What identifies it in the list and the selection.
   String get key;
@@ -27,7 +27,7 @@ sealed class LibraryAudioItem extends Equatable {
 /// A finished recording.
 final class LibraryRecording extends LibraryAudioItem {
   /// Creates the item for [capture].
-  const LibraryRecording(this.capture);
+  const new(this.capture);
 
   /// The take.
   final CaptureSummary capture;
@@ -48,7 +48,7 @@ final class LibraryRecording extends LibraryAudioItem {
 /// A saved session's mixdown.
 final class LibraryMixdown extends LibraryAudioItem {
   /// Creates the item for [session]'s [mixdown].
-  const LibraryMixdown(this.session, this.mixdown);
+  const new(this.session, this.mixdown);
 
   /// The catalog entry.
   final SessionSummary session;
@@ -86,17 +86,13 @@ enum LibraryAudioExportKind {
 
 /// An export in front of the player.
 sealed class LibraryAudioExport extends Equatable {
-  const LibraryAudioExport();
+  const new();
 }
 
 /// Copying (pen 20/08).
 final class LibraryExportRunning extends LibraryAudioExport {
   /// Creates the running export of [name] into [folder].
-  const LibraryExportRunning({
-    required this.name,
-    required this.folder,
-    this.fraction = 0,
-  });
+  const new({required this.name, required this.folder, this.fraction = 0});
 
   /// What is being exported.
   final String name;
@@ -114,7 +110,7 @@ final class LibraryExportRunning extends LibraryAudioExport {
 /// The name is taken on the drive (pen 20/09): `Keep both` or `Replace`.
 final class LibraryExportConflict extends LibraryAudioExport {
   /// Creates the conflict for [name].
-  const LibraryExportConflict(this.name);
+  const new(this.name);
 
   /// The export's name.
   final String name;
@@ -126,7 +122,7 @@ final class LibraryExportConflict extends LibraryAudioExport {
 /// No writable drive, or it went away (pen 20/10).
 final class LibraryExportNeedsDrive extends LibraryAudioExport {
   /// Creates the request for a drive.
-  const LibraryExportNeedsDrive();
+  const new();
 
   @override
   List<Object?> get props => const [];
@@ -135,7 +131,7 @@ final class LibraryExportNeedsDrive extends LibraryAudioExport {
 /// Done (pen 20/12).
 final class LibraryExportDone extends LibraryAudioExport {
   /// Creates the done state for [name], written into [folder].
-  const LibraryExportDone({required this.name, required this.folder});
+  const new({required this.name, required this.folder});
 
   /// What landed on the drive: the file or the package's name.
   final String name;
@@ -178,7 +174,7 @@ enum LibraryAudioError {
 /// A file playing through `Preview`.
 class LibraryAudioPreview extends Equatable {
   /// Creates the preview of the item [key].
-  const LibraryAudioPreview({
+  const new({
     required this.key,
     required this.frames,
     required this.sampleRate,
@@ -230,7 +226,7 @@ class LibraryAudioPreview extends Equatable {
 /// the player.
 class LibraryAudioState extends Equatable {
   /// Creates a [LibraryAudioState].
-  const LibraryAudioState({
+  const new({
     this.loaded = false,
     this.folder,
     this.query = '',

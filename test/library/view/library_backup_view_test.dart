@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -19,15 +19,14 @@ import 'package:session_repository/session_repository.dart';
 import '../../helpers/helpers.dart';
 import '../helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 const _id = 's-cur';
 
@@ -88,9 +87,8 @@ void main() {
       ),
     );
     when(() => sessions.bundlePathOf(_id)).thenAnswer((_) async => bundle);
-    when(
-      () => sessions.bundleFiles(_id),
-    ).thenAnswer((_) async => ['track0_lane0_L0.wav', 'session.json']);
+    when(() => sessions.bundleFiles(_id))
+        .thenAnswer((_) async => ['track0_lane0_L0.wav', 'session.json']);
     when(() => sessions.listBackups(any())).thenReturn([
       _current,
       const SessionSummary(id: 's-other', name: 'Acoustic set'),
@@ -277,9 +275,8 @@ void main() {
     await tester.tap(find.byKey(const Key('library_restore')));
     await tester.pumpAndSettle();
 
-    verify(
-      () => sessions.restoreFrom('${drive.mount}/Segno/Sessions/$_id'),
-    ).called(1);
+    verify(() => sessions.restoreFrom('${drive.mount}/Segno/Sessions/$_id'))
+        .called(1);
     verify(session.refreshSessions).called(greaterThan(1));
     expect(find.byKey(const Key('library_backups')), findsNothing);
     expect(
@@ -293,9 +290,8 @@ void main() {
   });
 
   testWidgets('a restore that fails says so and adds nothing', (tester) async {
-    when(
-      () => sessions.restoreFrom(any()),
-    ).thenThrow(const FileSystemException('gone'));
+    when(() => sessions.restoreFrom(any()))
+        .thenThrow(const FileSystemException('gone'));
     await openLibrary(tester);
     await tester.tap(find.byKey(const Key('library_location_usb')));
     await tester.pumpAndSettle();

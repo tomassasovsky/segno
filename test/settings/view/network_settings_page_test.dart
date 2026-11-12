@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -12,7 +12,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// A radio with just enough behaviour to drive the page through pen 29's
 /// eight screens.
 class _PageWifiClient implements WifiClient {
-  _PageWifiClient({
+  new({
     this.supported = true,
     this.enabled = true,
     this.connectedSsid = 'HomeNet',
@@ -146,7 +146,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: _theme(),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         // The progress bar sweeps while a join runs; held still, a settled
         // pump means the page is idle rather than mid-animation.
@@ -360,9 +360,7 @@ void main() {
       expect(client.joined, [('Cafe Free', null)]);
     });
 
-    testWidgets('a wrong password reopens the sheet saying so', (
-      tester,
-    ) async {
+    testWidgets('a wrong password reopens the sheet saying so', (tester) async {
       final client = _PageWifiClient()
         ..connectError = StateError('segno-wifi-ctl: authentication failed');
       await pumpPage(tester, client: client);
@@ -569,10 +567,7 @@ void main() {
 
   group('other states', () {
     testWidgets('a scan that finds nothing says so', (tester) async {
-      await pumpPage(
-        tester,
-        client: _PageWifiClient()..networks = const [],
-      );
+      await pumpPage(tester, client: _PageWifiClient()..networks = const []);
 
       expect(
         find.text('No networks found. Scan to try again.'),

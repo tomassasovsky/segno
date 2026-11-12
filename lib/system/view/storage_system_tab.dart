@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -23,7 +23,7 @@ import 'package:segno/system/cubit/console_facts_cubit.dart';
 /// be worse than saying nothing.
 class StorageSystemTab extends StatefulWidget {
   /// Creates a [StorageSystemTab].
-  const StorageSystemTab({super.key});
+  const new({super.key});
 
   /// How old a capture has to be for the housekeeping action to take it.
   static const int retentionDays = 30;
@@ -167,7 +167,7 @@ class _StorageSystemTabState extends State<StorageSystemTab> {
 /// The figure goes in [ConsoleRow.value] rather than `state`: `41.6 GB` is a
 /// quantity a person reads, not a machine word about the row.
 class _UsageRow extends StatelessWidget {
-  const _UsageRow({
+  const new({
     required this.rowKey,
     required this.title,
     required this.bytes,

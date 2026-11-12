@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
@@ -22,7 +22,7 @@ import 'package:segno/theme/theme.dart';
 /// to keep a name in step with.
 class FxSavedList extends StatelessWidget {
   /// Creates an [FxSavedList].
-  const FxSavedList({
+  const new({
     required this.freeSlots,
     required this.fitsRoom,
     required this.onChoose,
@@ -83,7 +83,7 @@ class FxSavedList extends StatelessWidget {
 
 /// One saved sound: the card that recalls it, and the row that manages it.
 class _SavedPreset extends StatelessWidget {
-  const _SavedPreset({
+  const new({
     required this.preset,
     required this.fits,
     required this.roomy,

@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/interface_inputs_cubit.dart';
 import 'package:segno/audio_setup/view/device_dialog.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -18,7 +18,7 @@ import 'package:segno/theme/theme.dart';
 /// turns off without asking. The row is read-only while [locked].
 class InterfaceSwitchesRow extends StatelessWidget {
   /// Creates an [InterfaceSwitchesRow].
-  const InterfaceSwitchesRow({
+  const new({
     required this.input,
     required this.state,
     required this.locked,
@@ -90,7 +90,7 @@ class InterfaceSwitchesRow extends StatelessWidget {
 /// What the row shows after its label: the switches, or the note that says
 /// why there are none.
 class _Content extends StatelessWidget {
-  const _Content({
+  const new({
     required this.input,
     required this.state,
     required this.locked,
@@ -157,7 +157,7 @@ class _Content extends StatelessWidget {
 }
 
 class _Switches extends StatelessWidget {
-  const _Switches({
+  const new({
     required this.input,
     required this.switches,
     required this.phantom,

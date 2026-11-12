@@ -22,7 +22,7 @@ import '../helpers/helpers.dart';
 /// The Pending Hold cue's state (#1229 Part 1): which pedals have a hold
 /// armed and not yet settled, published by the one gesture interpreter.
 class _Rig {
-  _Rig({int longPressMs = 300}) {
+  new({int longPressMs = 300}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(
       tracks: [
         for (var channel = 0; channel < 8; channel++)

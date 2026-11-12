@@ -2036,7 +2036,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
 }
 
 class _LengthSnapshot extends EngineSnapshot {
-  _LengthSnapshot(
+  new(
     FakeAudioEngine engine,
     EngineSnapshot source,
     Map<int, int> lengths,
@@ -2155,7 +2155,7 @@ class _LengthSnapshot extends EngineSnapshot {
 }
 
 class _LengthTrack extends TrackSnapshot {
-  _LengthTrack(
+  new(
     TrackSnapshot source,
     int? bars, {
     int? imageRevision,

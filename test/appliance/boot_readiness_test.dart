@@ -317,9 +317,9 @@ void main() {
         callbackRuns = true;
         async.elapse(const Duration(seconds: 5));
       });
-      final lines = File(
-        '${dir.path}/${AppLog.fileName}',
-      ).readAsLinesSync().where((l) => l.contains('boot health: audio'));
+      final lines = File('${dir.path}/${AppLog.fileName}')
+          .readAsLinesSync()
+          .where((l) => l.contains('boot health: audio'));
       // Once per change, not once per beat.
       expect(lines, hasLength(2));
       expect(lines.first, endsWith(' W boot health: audio ok -> stalled'));

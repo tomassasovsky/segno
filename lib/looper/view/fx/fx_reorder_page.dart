@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/fx/fx_art_view.dart';
@@ -10,12 +10,7 @@ import 'package:segno/theme/theme.dart';
 /// One card on the reorder strip.
 class FxReorderCard {
   /// Creates an [FxReorderCard].
-  const FxReorderCard({
-    required this.id,
-    required this.name,
-    this.art,
-    this.stageTag,
-  });
+  const new({required this.id, required this.name, this.art, this.stageTag});
 
   /// The card's stable identity, which is what the reorder actually moves.
   final String id;
@@ -47,7 +42,7 @@ class FxReorderCard {
 /// the player was still trying out.
 class FxReorderPage extends StatefulWidget {
   /// Creates an [FxReorderPage].
-  const FxReorderPage({
+  const new({
     required this.crumb,
     required this.cards,
     required this.onStage,
@@ -123,9 +118,9 @@ class _FxReorderPageState extends State<FxReorderPage> {
                   width: 110,
                   tone: LoopButtonTone.accent,
                   label: l10n.done,
-                  onTap: () => Navigator.of(context).pop(
-                    [for (final card in _draft) card.id],
-                  ),
+                  onTap: () =>
+                      Navigator.of(context)
+                          .pop([for (final card in _draft) card.id]),
                 ),
               ],
             ),
@@ -197,7 +192,7 @@ class _FxReorderPageState extends State<FxReorderPage> {
 /// The space before card [index]: the plain cable, or nothing where the strip
 /// breaks between the two stages.
 class _ReorderGap extends StatelessWidget {
-  const _ReorderGap({required this.index, required this.cable});
+  const new({required this.index, required this.cable});
 
   final int index;
 
@@ -223,7 +218,7 @@ class _ReorderGap extends StatelessWidget {
 /// One card: its position, its artwork, its name and the grip that says it
 /// can be moved.
 class _Card extends StatelessWidget {
-  const _Card({
+  const new({
     required this.card,
     required this.position,
     required this.total,

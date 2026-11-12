@@ -16,7 +16,7 @@ import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 BuiltInEffect _drive(String slotId) =>
     BuiltInEffect(type: TrackEffectType.drive, slotId: slotId);
@@ -58,9 +58,8 @@ void main() {
           channel: const FxChainEnvelope(),
       },
     );
-    when(
-      () => looper.monitorEffects(any()),
-    ).thenAnswer((i) => monitorChains[i.positionalArguments[0]] ?? const []);
+    when(() => looper.monitorEffects(any()))
+        .thenAnswer((i) => monitorChains[i.positionalArguments[0]] ?? const []);
     when(() => looper.laneEffects(any(), any())).thenAnswer(
       (i) =>
           laneChains[(
@@ -69,9 +68,8 @@ void main() {
           )] ??
           const [],
     );
-    when(
-      () => looper.trackEffects(any()),
-    ).thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
+    when(() => looper.trackEffects(any()))
+        .thenAnswer((i) => trackChains[i.positionalArguments[0]] ?? const []);
     when(() => looper.outputEffects(any())).thenAnswer((_) => const []);
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.state).thenAnswer(
@@ -251,11 +249,8 @@ void main() {
     const address = FxAddress(stage: FxStage.input);
     const reverb = FxRack(id: 'r-1', name: 'Reverb + Delay', art: 'ambient');
     const chords = FxRack(id: 'r-2', name: 'Soft Chords', art: 'guitar');
-    BuiltInEffect module(String slotId, FxRack rack) => BuiltInEffect(
-      type: TrackEffectType.drive,
-      slotId: slotId,
-      rack: rack,
-    );
+    BuiltInEffect module(String slotId, FxRack rack) =>
+        BuiltInEffect(type: TrackEffectType.drive, slotId: slotId, rack: rack);
 
     List<ExpressionActivation> activations() => expressionDestinations(
       l10n,
@@ -316,9 +311,7 @@ void main() {
 
   group('the catalogue', () {
     test('Click is a separate Outputs destination even with no output bus', () {
-      when(() => looper.state).thenAnswer(
-        (_) => const LooperState(),
-      );
+      when(() => looper.state).thenAnswer((_) => const LooperState());
       final absent = expressionDestinations(l10n, names, looper);
       expect(absent.where((destination) => destination.id == 'click'), isEmpty);
 
@@ -326,9 +319,7 @@ void main() {
         l10n,
         names,
         looper,
-        owned: const OwnedValueSnapshots(
-          clickVolume: 0,
-        ),
+        owned: const OwnedValueSnapshots(clickVolume: 0),
       );
       final click = present.singleWhere(
         (destination) => destination.id == 'click',
@@ -359,9 +350,7 @@ void main() {
         l10n,
         names,
         looper,
-        owned: const OwnedValueSnapshots(
-          clickModeSnapshot: ready,
-        ),
+        owned: const OwnedValueSnapshots(clickModeSnapshot: ready),
       );
       final loop = places.singleWhere((place) => place.id == 'loop:defaults');
       expect(loop.kind, ExpressionDestinationKind.loopControls);
@@ -375,9 +364,7 @@ void main() {
         l10n,
         names,
         looper,
-        owned: const OwnedValueSnapshots(
-          clickModeSnapshot: locked,
-        ),
+        owned: const OwnedValueSnapshots(clickModeSnapshot: locked),
       ).singleWhere((place) => place.id == 'loop:defaults');
       expect(lockedLoop.controls.single.target, const ClickModeValueTarget());
       expect(
@@ -405,9 +392,7 @@ void main() {
         l10n,
         names,
         looper,
-        owned: OwnedValueSnapshots(
-          recordStartSnapshot: off,
-        ),
+        owned: OwnedValueSnapshots(recordStartSnapshot: off),
       ).singleWhere((place) => place.id == 'loop:defaults');
       expect(ready.kind, ExpressionDestinationKind.loopControls);
       expect(ready.controls.single.target, const CountInValueTarget());
@@ -420,9 +405,7 @@ void main() {
         l10n,
         names,
         looper,
-        owned: OwnedValueSnapshots(
-          recordStartSnapshot: locked,
-        ),
+        owned: OwnedValueSnapshots(recordStartSnapshot: locked),
       ).singleWhere((place) => place.id == 'loop:defaults');
       expect(lockedRow.controls.single.target, const CountInValueTarget());
       expect(
@@ -442,9 +425,7 @@ void main() {
           l10n,
           names,
           looper,
-          owned: OwnedValueSnapshots(
-            decaySnapshot: snapshot,
-          ),
+          owned: OwnedValueSnapshots(decaySnapshot: snapshot),
         );
         final loop = destinations.singleWhere((d) => d.id == 'loop:defaults');
         expect(loop.kind, ExpressionDestinationKind.loopControls);
@@ -480,9 +461,7 @@ void main() {
         l10n,
         names,
         looper,
-        owned: const OwnedValueSnapshots(
-          fadeDurations: FadeDurations.defaults,
-        ),
+        owned: const OwnedValueSnapshots(fadeDurations: FadeDurations.defaults),
       );
       final loop = destinations.singleWhere((d) => d.id == 'loop:defaults');
       expect(loop.controls.single.target, const DefaultFadeTarget());
@@ -529,10 +508,10 @@ void main() {
       );
       expect(defaults.groups, hasLength(1));
       expect(defaults.groups.single.label, l10n.loopPlaybackLabel);
-      expect(
-        defaults.controls.map((row) => row.target),
-        [const DefaultDecayTarget(), const DefaultOneShotTarget()],
-      );
+      expect(defaults.controls.map((row) => row.target), [
+        const DefaultDecayTarget(),
+        const DefaultOneShotTarget(),
+      ]);
       for (var channel = 0; channel < 8; channel++) {
         final track = destinations.singleWhere(
           (destination) => destination.id == 'track:$channel',
@@ -555,9 +534,7 @@ void main() {
         l10n,
         names,
         looper,
-        owned: OwnedValueSnapshots(
-          recordTimingSnapshot: ready,
-        ),
+        owned: OwnedValueSnapshots(recordTimingSnapshot: ready),
       );
       final timing = choices
           .expand((place) => place.controls)
@@ -636,17 +613,14 @@ void main() {
 
     test('offers track and lane controls, one output, and the master', () {
       final destinations = build();
-      expect(
-        destinations.map((d) => d.id),
-        [
-          'track:0',
-          'loop:0:0',
-          'track:1',
-          'loop:1:0',
-          'output:0',
-          'master',
-        ],
-      );
+      expect(destinations.map((d) => d.id), [
+        'track:0',
+        'loop:0:0',
+        'track:1',
+        'loop:1:0',
+        'output:0',
+        'master',
+      ]);
       expect(
         destinations.last.kind,
         ExpressionDestinationKind.output,
@@ -663,11 +637,10 @@ void main() {
         0: [_drive('t-1')],
       };
       final track = build().firstWhere((d) => d.id == 'track:0');
-      expect(
-        track.groups.map((g) => g.label),
-        [TrackEffectType.drive.label, 'drums'],
-        reason: 'the rig reports the chain first and the fader later',
-      );
+      expect(track.groups.map((g) => g.label), [
+        TrackEffectType.drive.label,
+        'drums',
+      ], reason: 'the rig reports the chain first and the fader later');
       expect(track.controls.length, TrackEffectType.drive.params.length + 2);
     });
 
@@ -675,18 +648,14 @@ void main() {
       laneChains = {
         (1, 0): [_drive('l-1')],
       };
-      expect(
-        build().map((d) => d.id),
-        [
-          'track:0',
-          'loop:0:0',
-          'track:1',
-          'loop:1:0',
-          'output:0',
-          'master',
-        ],
-        reason: 'the rig reports every lane before any fader',
-      );
+      expect(build().map((d) => d.id), [
+        'track:0',
+        'loop:0:0',
+        'track:1',
+        'loop:1:0',
+        'output:0',
+        'master',
+      ], reason: 'the rig reports every lane before any fader');
     });
 
     test('groups all eight Mixer controls at stable destinations', () {
@@ -756,10 +725,7 @@ void main() {
       final ids = build().map((d) => d.id).toList();
       expect(ids.first, 'input:1');
       expect(ids.last, 'master');
-      expect(
-        build().first.kind,
-        ExpressionDestinationKind.liveInput,
-      );
+      expect(build().first.kind, ExpressionDestinationKind.liveInput);
     });
 
     test('every kind has the same name the Effects page gives it', () {

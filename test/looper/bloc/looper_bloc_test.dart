@@ -14,13 +14,13 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockRecordLengthControl extends Mock implements RecordLengthControl {}
+class _MockRecordLengthControl extends Mock implements RecordLengthControl;
 
-class _MockRecordTimingControl extends Mock implements RecordTimingControl {}
+class _MockRecordTimingControl extends Mock implements RecordTimingControl;
 
-class _MockSettingsRepository extends Mock implements SettingsRepository {}
+class _MockSettingsRepository extends Mock implements SettingsRepository;
 
 const _playingState = LooperState(
   transport: TransportState(deviceRunning: true, masterLengthFrames: 48000),
@@ -78,12 +78,10 @@ void main() {
     confirmedTrackOneShot = {};
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.sessionRevision).thenReturn(0);
-    when(
-      () => repository.defaultOverdubDecay,
-    ).thenAnswer((_) => confirmedDecay);
-    when(
-      () => repository.trackOverdubDecayOverrides,
-    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackDecay));
+    when(() => repository.defaultOverdubDecay)
+        .thenAnswer((_) => confirmedDecay);
+    when(() => repository.trackOverdubDecayOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackDecay));
     when(() => repository.decayRestartIntent).thenAnswer(
       (_) => (
         defaultPercent: confirmedDecay,
@@ -91,24 +89,19 @@ void main() {
       ),
     );
     when(() => repository.defaultOneShot).thenAnswer((_) => confirmedOneShot);
-    when(() => repository.trackOneShotOverrides).thenAnswer(
-      (_) => Map.unmodifiable(confirmedTrackOneShot),
-    );
+    when(() => repository.trackOneShotOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackOneShot));
     when(() => repository.oneShotSettingsSettled).thenReturn(true);
     when(() => repository.oneShotRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.oneShotFailures,
-    ).thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.oneShotFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     // Audio & tempo (#1179): owners PlaybackSettings builds beside Loop/Once.
-    when(
-      () => repository.followTempoFailures,
-    ).thenAnswer((_) => const Stream<EngineResult>.empty());
-    when(
-      () => repository.pitchModeFailures,
-    ).thenAnswer((_) => const Stream<EngineResult>.empty());
-    when(
-      () => repository.settleOneShot(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.followTempoFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.pitchModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.settleOneShot())
+        .thenAnswer((_) async => EngineResult.ok);
     when(() => repository.oneShotRestartIntent).thenAnswer(
       (_) => (
         defaultOneShot: confirmedOneShot,
@@ -151,17 +144,15 @@ void main() {
     ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.mixSettingsSettled).thenReturn(true);
     when(() => repository.mixRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
     when(() => repository.allTracksChainEnabled).thenReturn(true);
     when(() => repository.allTracksEffects).thenReturn(const []);
     when(repository.allLaneChains).thenReturn(const {});
     when(repository.allTrackChains).thenReturn(const {});
-    when(
-      () => repository.validateMixSettings(any()),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.validateMixSettings(any()))
+        .thenReturn(EngineResult.ok);
     when(
       () => repository.prepareInputPair(
         any(),
@@ -182,19 +173,14 @@ void main() {
     });
     when(() => repository.laneCount(any())).thenReturn(1);
     when(() => repository.sessionRevision).thenReturn(0);
-    when(
-      () => repository.settleLengthSettings(),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.settleMixSettings(),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.trackLengthPresetOverrides,
-    ).thenReturn(const {1: 8});
+    when(() => repository.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.settleMixSettings())
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.trackLengthPresetOverrides).thenReturn(const {1: 8});
     stateController = StreamController<LooperState>.broadcast();
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => stateController.stream);
+    when(() => repository.looperState)
+        .thenAnswer((_) => stateController.stream);
     // Repository state is a fresh synchronous snapshot; per-test overrides
     // supply recorded or pending tracks independently of stream publication.
     when(() => repository.state).thenReturn(const LooperState());
@@ -210,27 +196,20 @@ void main() {
           false,
     );
     when(() => repository.trackMuted(any())).thenReturn(false);
-    when(
-      () => repository.record(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.stopTrack(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.play(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.clear(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.undo(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.redo(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setVolume(any(), channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.record(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.stopTrack(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.play(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.clear(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.undo(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.redo(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
+    when(() => repository.setVolume(any(), channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
     when(
       () => repository.setMute(
         muted: any(named: 'muted'),
@@ -264,13 +243,11 @@ void main() {
         bars: any(named: 'bars'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.crownPrimary(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.crownPrimary(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
     // The mix (slice 3).
-    when(
-      () => repository.setTrackPan(any(), channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.setTrackPan(any(), channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
     when(
       () => repository.setTrackSolo(
         channel: any(named: 'channel'),
@@ -429,9 +406,8 @@ void main() {
     ).thenReturn(EngineResult.ok);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
     when(() => repository.laneChainEnabled(any(), any())).thenReturn(true);
-    when(
-      () => repository.laneChainInheritedFrom(any(), any()),
-    ).thenReturn(const []);
+    when(() => repository.laneChainInheritedFrom(any(), any()))
+        .thenReturn(const []);
     when(
       () => repository.setOutputEnabled(
         output: any(named: 'output'),
@@ -587,9 +563,7 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'LooperUndoPressed on an empty track forwards to undo, not clear',
     build: buildBloc,
-    seed: () => const LooperState(
-      tracks: [Track(), Track(channel: 1)],
-    ),
+    seed: () => const LooperState(tracks: [Track(), Track(channel: 1)]),
     act: (bloc) => bloc.add(const LooperUndoPressed(1)),
     verify: (_) {
       verify(() => repository.undo(channel: 1)).called(1);
@@ -692,11 +666,7 @@ void main() {
     build: () {
       when(() => repository.state).thenReturn(
         const LooperState(
-          tracks: [
-            Track(),
-            Track(channel: 1),
-            Track(channel: 2, pan: -0.5),
-          ],
+          tracks: [Track(), Track(channel: 1), Track(channel: 2, pan: -0.5)],
         ),
       );
       return buildBlocWithSettings();
@@ -711,9 +681,8 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'a refused track pan leaves the saved value unchanged',
     setUp: () {
-      when(
-        () => repository.applyMixSettings(any()),
-      ).thenReturn(EngineResult.notReady);
+      when(() => repository.applyMixSettings(any()))
+          .thenReturn(EngineResult.notReady);
     },
     build: buildBlocWithSettings,
     act: (bloc) async {
@@ -729,9 +698,8 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'a late mix refusal leaves the saved value unchanged',
     setUp: () {
-      when(
-        () => repository.settleMixSettings(),
-      ).thenAnswer((_) async => EngineResult.invalid);
+      when(() => repository.settleMixSettings())
+          .thenAnswer((_) async => EngineResult.invalid);
     },
     build: buildBlocWithSettings,
     act: (bloc) async {
@@ -771,9 +739,8 @@ void main() {
     'LooperMixerReset resets the mixer and puts every saved track pan back '
     'to centre',
     build: () {
-      when(() => repository.state).thenReturn(
-        const LooperState(tracks: [Track(), Track(channel: 1)]),
-      );
+      when(() => repository.state)
+          .thenReturn(const LooperState(tracks: [Track(), Track(channel: 1)]));
       return buildBlocWithSettings();
     },
     act: (bloc) async {
@@ -814,10 +781,8 @@ void main() {
     }
 
     /// The keys written under the open device.
-    Future<StoredInputSetup> stored() => trackSettings.loadInputSetup(
-      device: 'Scarlett 18i20',
-      inputCount: 4,
-    );
+    Future<StoredInputSetup> stored() =>
+        trackSettings.loadInputSetup(device: 'Scarlett 18i20', inputCount: 4);
 
     blocTest<LooperBloc, LooperState>(
       'LooperInputTrimChanged forwards the trim and persists that trim only',
@@ -924,10 +889,7 @@ void main() {
         ..add(const LooperInputBalanceChanged(0, balance: 0.2)),
       verify: (_) async {
         verifyNever(() => repository.applyMixSettings(any()));
-        final s = await trackSettings.loadInputSetup(
-          device: '',
-          inputCount: 4,
-        );
+        final s = await trackSettings.loadInputSetup(device: '', inputCount: 4);
         expect(s.trimDb, isEmpty);
         expect(s.pan, isEmpty);
         expect(s.pairs, isEmpty);
@@ -963,9 +925,8 @@ void main() {
         ..add(const LooperOutputMonoChanged(0, mono: true))
         ..add(const LooperOutputBalanceChanged(0, balance: -0.25)),
       verify: (_) async {
-        final setup = (await trackSettings.loadMixSettings(
-          'Scarlett 18i20',
-        )).outputSetup;
+        final setup = (await trackSettings.loadMixSettings('Scarlett 18i20'))
+            .outputSetup;
         expect(setup.level, {1: .5});
         expect(setup.muted, {1: true});
         expect(setup.mono, {0: true});
@@ -1023,18 +984,18 @@ void main() {
     build: buildBloc,
     act: (bloc) =>
         bloc.add(const LooperOutputEnabledToggled(2, enabled: false)),
-    verify: (_) => verify(
-      () => repository.setOutputEnabled(output: 2, enabled: false),
-    ).called(1),
+    verify: (_) =>
+        verify(() => repository.setOutputEnabled(output: 2, enabled: false))
+            .called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
     'LooperLaneMuteToggled mutes from the current (unmuted) state',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperLaneMuteToggled(0, 0)),
-    verify: (_) => verify(
-      () => repository.setLaneMute(muted: true, channel: 0, lane: 0),
-    ).called(1),
+    verify: (_) =>
+        verify(() => repository.setLaneMute(muted: true, channel: 0, lane: 0))
+            .called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -1047,9 +1008,9 @@ void main() {
       ],
     ),
     act: (bloc) => bloc.add(const LooperLaneMuteToggled(0, 0)),
-    verify: (_) => verify(
-      () => repository.setLaneMute(muted: false, channel: 0, lane: 0),
-    ).called(1),
+    verify: (_) =>
+        verify(() => repository.setLaneMute(muted: false, channel: 0, lane: 0))
+            .called(1),
   );
 
   // The chain surgery lives in the bloc: each intent event reads the current
@@ -1095,9 +1056,8 @@ void main() {
   blocTest<LooperBloc, LooperState>(
     'LooperLaneEffectTypeChanged retypes the entry at the given index',
     build: () {
-      when(() => repository.laneEffects(1, 2)).thenReturn([
-        BuiltInEffect(type: TrackEffectType.delay),
-      ]);
+      when(() => repository.laneEffects(1, 2))
+          .thenReturn([BuiltInEffect(type: TrackEffectType.delay)]);
       return buildBloc();
     },
     act: (bloc) => bloc.add(
@@ -1119,11 +1079,10 @@ void main() {
       return buildBloc();
     },
     act: (bloc) => bloc.add(const LooperLaneEffectMoved(1, 2, 0, 1)),
-    verify: (_) =>
-        expect(capturePushedChain().map((e) => (e as BuiltInEffect).type), [
-          TrackEffectType.reverb,
-          TrackEffectType.delay,
-        ]),
+    verify: (_) => expect(
+      capturePushedChain().map((e) => (e as BuiltInEffect).type),
+      [TrackEffectType.reverb, TrackEffectType.delay],
+    ),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -1219,10 +1178,7 @@ void main() {
     'a lane reorder across the Pre/Post boundary is refused (slice 3e)',
     build: () {
       when(() => repository.laneEffects(1, 2)).thenReturn([
-        BuiltInEffect(
-          type: TrackEffectType.delay,
-          placement: FxPlacement.pre,
-        ),
+        BuiltInEffect(type: TrackEffectType.delay, placement: FxPlacement.pre),
         BuiltInEffect(type: TrackEffectType.reverb),
       ]);
       return buildBloc();
@@ -1450,9 +1406,8 @@ void main() {
       when(
         () => settings.saveLaneMute(any(), any(), muted: any(named: 'muted')),
       ).thenAnswer((_) async {});
-      when(
-        () => settings.saveLaneEffects(any(), any(), any()),
-      ).thenAnswer((_) async {});
+      when(() => settings.saveLaneEffects(any(), any(), any()))
+          .thenAnswer((_) async {});
       when(
         () => settings.saveOutputEnabled(
           device: any(named: 'device'),
@@ -1468,9 +1423,7 @@ void main() {
         // The gate is persisted against the OPEN device (#569), so the save
         // must carry the interface's name, not just the output index.
         when(() => repository.state).thenReturn(
-          const LooperState(
-            status: EngineStatus(deviceName: 'Scarlett 18i20'),
-          ),
+          const LooperState(status: EngineStatus(deviceName: 'Scarlett 18i20')),
         );
         return LooperBloc(
           fxPersistence: FxChainPersistence(looper: repository),
@@ -1482,9 +1435,8 @@ void main() {
       act: (bloc) =>
           bloc.add(const LooperOutputEnabledToggled(1, enabled: false)),
       verify: (_) {
-        verify(
-          () => repository.setOutputEnabled(output: 1, enabled: false),
-        ).called(1);
+        verify(() => repository.setOutputEnabled(output: 1, enabled: false))
+            .called(1);
         verify(
           () => settings.saveOutputEnabled(
             device: 'Scarlett 18i20',
@@ -1527,9 +1479,8 @@ void main() {
       ),
       act: (bloc) => bloc.add(const LooperLaneMuteToggled(1, 0)),
       verify: (_) {
-        verify(
-          () => repository.setLaneMute(muted: true, channel: 1, lane: 0),
-        ).called(1);
+        verify(() => repository.setLaneMute(muted: true, channel: 1, lane: 0))
+            .called(1);
         verify(() => settings.saveLaneMute(1, 0, muted: true)).called(1);
       },
     );
@@ -1562,9 +1513,9 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'refused Clear leaves mute and its saved value untouched',
-      setUp: () => when(
-        () => repository.clear(channel: 1),
-      ).thenReturn(EngineResult.invalid),
+      setUp: () =>
+          when(() => repository.clear(channel: 1))
+              .thenReturn(EngineResult.invalid),
       build: () => LooperBloc(
         fxPersistence: FxChainPersistence(looper: repository),
         mixSettings: testMixSettings(repository),
@@ -1599,39 +1550,36 @@ void main() {
       },
     );
 
-    test(
-      'persists the take chain when the repository reports a record-time '
-      'snapshot copy (F3)',
-      () async {
-        final bloc = LooperBloc(
-          fxPersistence: FxChainPersistence(looper: repository),
-          mixSettings: testMixSettings(repository),
-          repository: repository,
-          settings: settings,
-        );
-        addTearDown(bloc.close);
-        // The bloc wires a chain-persist callback onto the repository; capture
-        // it and simulate the record-time snapshot firing it.
-        final callback =
-            verify(
-                  () => repository.onLaneChainChanged = captureAny(),
-                ).captured.last
-                as void Function(int, int)?;
-        expect(callback, isNotNull);
+    test('persists the take chain when the repository reports a record-time '
+        'snapshot copy (F3)', () async {
+      final bloc = LooperBloc(
+        fxPersistence: FxChainPersistence(looper: repository),
+        mixSettings: testMixSettings(repository),
+        repository: repository,
+        settings: settings,
+      );
+      addTearDown(bloc.close);
+      // The bloc wires a chain-persist callback onto the repository; capture
+      // it and simulate the record-time snapshot firing it.
+      final callback =
+          verify(() => repository.onLaneChainChanged = captureAny())
+                  .captured
+                  .last
+              as void Function(int, int)?;
+      expect(callback, isNotNull);
 
-        final takeChain = [BuiltInEffect(type: TrackEffectType.delay)];
-        when(() => repository.laneEffects(0, 1)).thenReturn(takeChain);
+      final takeChain = [BuiltInEffect(type: TrackEffectType.delay)];
+      when(() => repository.laneEffects(0, 1)).thenReturn(takeChain);
 
-        callback!(0, 1);
-        await pumpEventQueue();
-        final saved =
-            verify(
-                  () => settings.saveLaneEffects(0, 1, captureAny()),
-                ).captured.single
-                as String;
-        expect(decodeFxChain(saved), FxChainEnvelope(entries: takeChain));
-      },
-    );
+      callback!(0, 1);
+      await pumpEventQueue();
+      final saved =
+          verify(() => settings.saveLaneEffects(0, 1, captureAny()))
+                  .captured
+                  .single
+              as String;
+      expect(decodeFxChain(saved), FxChainEnvelope(entries: takeChain));
+    });
 
     blocTest<LooperBloc, LooperState>(
       'inserting a plugin persists the chain enriched with its resolved name',
@@ -1661,9 +1609,9 @@ void main() {
       ),
       verify: (_) {
         final encoded =
-            verify(
-                  () => settings.saveLaneEffects(1, 2, captureAny()),
-                ).captured.single
+            verify(() => settings.saveLaneEffects(1, 2, captureAny()))
+                    .captured
+                    .single
                 as String;
         final decoded = decodeFxChain(encoded).entries.single as PluginEffect;
         expect(decoded.name, 'Acme Reverb');
@@ -1767,12 +1715,10 @@ void main() {
         when(() => repository.trackChainEnabled(any())).thenReturn(false);
         when(() => repository.outputEffects(0)).thenReturn(masterChain);
         when(() => repository.outputChainEnabled(0)).thenReturn(false);
-        when(
-          () => settings.saveTrackFxChain(any(), any()),
-        ).thenAnswer((_) async {});
-        when(
-          () => settings.saveOutputFxChain(0, any()),
-        ).thenAnswer((_) async {});
+        when(() => settings.saveTrackFxChain(any(), any()))
+            .thenAnswer((_) async {});
+        when(() => settings.saveOutputFxChain(0, any()))
+            .thenAnswer((_) async {});
       });
 
       blocTest<LooperBloc, LooperState>(
@@ -1790,9 +1736,9 @@ void main() {
             () => repository.setTrackEffects(channel: 1, effects: trackChain),
           ).called(1);
           final encoded =
-              verify(
-                    () => settings.saveTrackFxChain(1, captureAny()),
-                  ).captured.single
+              verify(() => settings.saveTrackFxChain(1, captureAny()))
+                      .captured
+                      .single
                   as String;
           final decoded = decodeFxChain(encoded);
           expect(decoded.entries, trackChain);
@@ -1866,10 +1812,7 @@ void main() {
           expect(await accepted.future, isTrue);
 
           when(
-            () => repository.setTrackEffects(
-              channel: 1,
-              effects: trackChain,
-            ),
+            () => repository.setTrackEffects(channel: 1, effects: trackChain),
           ).thenReturn(EngineResult.notReady);
           final refused = Completer<bool>();
           bloc.add(
@@ -1889,9 +1832,8 @@ void main() {
               ({int mixGeneration, int sessionRevision})
             >.broadcast();
         addTearDown(replay.close);
-        when(
-          () => repository.fxReplayConfirmed,
-        ).thenAnswer((_) => replay.stream);
+        when(() => repository.fxReplayConfirmed)
+            .thenAnswer((_) => replay.stream);
         var generation = 0;
         var settled = false;
         when(() => repository.mixGeneration).thenAnswer((_) => generation);
@@ -1936,9 +1878,8 @@ void main() {
           final firstWrite = Completer<void>();
           var sessionRevision = 0;
           var writes = 0;
-          when(
-            () => repository.sessionRevision,
-          ).thenAnswer((_) => sessionRevision);
+          when(() => repository.sessionRevision)
+              .thenAnswer((_) => sessionRevision);
           when(() => settings.saveTrackFxChain(1, any())).thenAnswer((_) {
             writes++;
             return writes == 1 ? firstWrite.future : Future<void>.value();
@@ -1966,9 +1907,9 @@ void main() {
 
       blocTest<LooperBloc, LooperState>(
         'a failed FX store write reports once without a retry spin',
-        setUp: () => when(
-          () => settings.saveTrackFxChain(1, any()),
-        ).thenAnswer((_) async => throw StateError('storage refused')),
+        setUp: () =>
+            when(() => settings.saveTrackFxChain(1, any()))
+                .thenAnswer((_) async => throw StateError('storage refused')),
         build: () => LooperBloc(
           fxPersistence: FxChainPersistence(looper: repository),
           mixSettings: testMixSettings(repository),
@@ -2032,19 +1973,18 @@ void main() {
           // Both adds landed, each carrying its own picked type — the second
           // did not overwrite the first from a stale base.
           expect(pushes.last, hasLength(2));
-          expect(
-            pushes.last.map((fx) => (fx as BuiltInEffect).type),
-            [TrackEffectType.reverb, TrackEffectType.echo],
-          );
+          expect(pushes.last.map((fx) => (fx as BuiltInEffect).type), [
+            TrackEffectType.reverb,
+            TrackEffectType.echo,
+          ]);
         },
       );
 
       blocTest<LooperBloc, LooperState>(
         'a bus edit on the master stage writes the Master insert',
         setUp: () {
-          when(
-            () => repository.outputEffects(0),
-          ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
+          when(() => repository.outputEffects(0))
+              .thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
         },
         build: () => LooperBloc(
           fxPersistence: FxChainPersistence(looper: repository),
@@ -2068,10 +2008,7 @@ void main() {
                     ),
                   ).captured.single
                   as List<TrackEffect>;
-          expect(
-            (pushed.single as BuiltInEffect).type,
-            TrackEffectType.reverb,
-          );
+          expect((pushed.single as BuiltInEffect).type, TrackEffectType.reverb);
           verify(() => settings.saveOutputFxChain(0, any())).called(1);
         },
       );
@@ -2277,9 +2214,8 @@ void main() {
       blocTest<LooperBloc, LooperState>(
         'a bus param change goes through the granular setter, not a re-push',
         setUp: () {
-          when(() => repository.trackEffects(0)).thenReturn([
-            BuiltInEffect(type: TrackEffectType.reverb),
-          ]);
+          when(() => repository.trackEffects(0))
+              .thenReturn([BuiltInEffect(type: TrackEffectType.reverb)]);
           when(
             () => repository.setTrackEffectParam(
               channel: any(named: 'channel'),
@@ -2414,9 +2350,8 @@ void main() {
           // The poll must stop at the re-sync: the chain it was keyed to is
           // gone, so continuing would rebind it to whatever lands at that
           // index. Without the cancel it keeps ticking (~10 Hz).
-          verify(
-            () => repository.resyncLaneChainFromInput(channel: 0, lane: 0),
-          ).called(1);
+          verify(() => repository.resyncLaneChainFromInput(channel: 0, lane: 0))
+              .called(1);
           verifyNever(
             () => repository.refreshLanePluginParams(
               channel: any(named: 'channel'),
@@ -2470,9 +2405,8 @@ void main() {
         verify: (_) {
           // Explicit and user initiated (A6) — the repository owns the copy and
           // notifies back for persistence, so the bloc adds no second write.
-          verify(
-            () => repository.resyncLaneChainFromInput(channel: 0, lane: 1),
-          ).called(1);
+          verify(() => repository.resyncLaneChainFromInput(channel: 0, lane: 1))
+              .called(1);
         },
       );
 
@@ -2491,9 +2425,9 @@ void main() {
             () => repository.setOutputEffects(bus: 0, effects: masterChain),
           ).called(1);
           final encoded =
-              verify(
-                    () => settings.saveOutputFxChain(0, captureAny()),
-                  ).captured.single
+              verify(() => settings.saveOutputFxChain(0, captureAny()))
+                      .captured
+                      .single
                   as String;
           expect(decodeFxChain(encoded).entries, masterChain);
         },
@@ -2546,12 +2480,10 @@ void main() {
 
     setUp(() {
       settings = _MockSettingsRepository();
-      when(
-        () => settings.saveLaneEffects(any(), any(), any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => settings.saveTrackFxChain(any(), any()),
-      ).thenAnswer((_) async {});
+      when(() => settings.saveLaneEffects(any(), any(), any()))
+          .thenAnswer((_) async {});
+      when(() => settings.saveTrackFxChain(any(), any()))
+          .thenAnswer((_) async {});
       when(() => repository.trackEffects(any())).thenReturn(const []);
       when(() => repository.trackChainEnabled(any())).thenReturn(true);
       when(() => repository.outputEffects(0)).thenReturn(const []);
@@ -2817,11 +2749,7 @@ void main() {
       () => fakeAsync((clock) {
         // The flush also confirms lane mutes; only the FX write is asserted.
         when(
-          () => settings.saveLaneMute(
-            any(),
-            any(),
-            muted: any(named: 'muted'),
-          ),
+          () => settings.saveLaneMute(any(), any(), muted: any(named: 'muted')),
         ).thenAnswer((_) async {});
         final fx = FxChainPersistence(looper: repository);
         final bloc = LooperBloc(

@@ -18,7 +18,7 @@ const _config = EngineConfig(playbackDeviceId: 'out-1');
 /// One receipt family driven through the repository's public surface, with
 /// the engine-side switches that withhold or deliver its callback receipt.
 final class _Family<T> {
-  const _Family({
+  const new({
     required this.name,
     required this.prior,
     required this.next,

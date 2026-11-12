@@ -3,7 +3,7 @@ part of 'control_cubit.dart';
 /// Accepted controls still owe a release that their owner has not confirmed.
 final class ControlCleanupPending implements Exception {
   /// Creates a retryable retirement failure without dropping the held claims.
-  const ControlCleanupPending();
+  const new();
 
   @override
   String toString() => 'Controller release is not yet confirmed';
@@ -109,7 +109,7 @@ extension MidiControlEditing on ControlCubit {
     final next = _midiWrites.then((_) async {
       await load();
       if (_closing || isClosed) return const MidiSaveResult.refused('closed');
-      return operation();
+      return await operation();
     });
     _midiWrites = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return next;
@@ -225,7 +225,7 @@ extension MidiControlEditing on ControlCubit {
         null) {
       return const MidiSaveResult.refused('sourceConflict');
     }
-    return _saveMidiConfiguration(
+    return await _saveMidiConfiguration(
       state.midiMappings.withMapping(saved),
       state.midiControlEnabled,
       mappingId: saved.id,
@@ -245,7 +245,7 @@ extension MidiControlEditing on ControlCubit {
     if (existing == null || (expected != null && expected != existing)) {
       return const MidiSaveResult.refused('staleMapping');
     }
-    return _saveMidiConfiguration(
+    return await _saveMidiConfiguration(
       state.midiMappings.withoutMapping(id),
       state.midiControlEnabled,
     );
@@ -259,7 +259,7 @@ extension MidiControlEditing on ControlCubit {
   ) => _serializeMidi(() async {
     final next = state.midiMappings.withoutControls(removes);
     if (next == state.midiMappings) return const MidiSaveResult.saved();
-    return _saveMidiConfiguration(next, state.midiControlEnabled);
+    return await _saveMidiConfiguration(next, state.midiControlEnabled);
   });
 
   /// Confirms a mapping's enabled state while retaining its source reservation.
@@ -269,7 +269,7 @@ extension MidiControlEditing on ControlCubit {
   }) => _serializeMidi(() async {
     final current = state.midiMappings.byId(id);
     if (current == null) return const MidiSaveResult.refused('staleMapping');
-    return _saveMidiConfiguration(
+    return await _saveMidiConfiguration(
       state.midiMappings.withMapping(current.copyWith(enabled: enabled)),
       state.midiControlEnabled,
     );
@@ -283,11 +283,7 @@ extension MidiControlEditing on ControlCubit {
       _retireMidi();
     }
     return _serializeMidi(
-      () => _saveMidiConfiguration(
-        state.midiMappings,
-        enabled,
-        resume: true,
-      ),
+      () => _saveMidiConfiguration(state.midiMappings, enabled, resume: true),
     );
   }
 
@@ -332,11 +328,7 @@ extension MidiControlEditing on ControlCubit {
     _publishMidi(
       state.copyWith(
         midiEdit: edit.withLearn(
-          MidiLearn(
-            protocol: protocol,
-            token: token,
-            channel: channel,
-          ),
+          MidiLearn(protocol: protocol, token: token, channel: channel),
         ),
       ),
     );

@@ -8,7 +8,7 @@ import 'package:segno/looper/model/record_timing.dart';
 /// Presents the application-owned recording timing settings.
 class RecordTimingCubit extends Cubit<RecordTimingState> {
   /// Borrows [settings]; closing this projection does not close its owner.
-  RecordTimingCubit({required RecordTimingSettings settings})
+  new({required RecordTimingSettings settings})
     : _settings = settings,
       super(settings.state) {
     _subscription = settings.stream.listen(emit);

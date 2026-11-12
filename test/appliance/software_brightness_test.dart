@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/software_brightness.dart';
 
 void main() {
@@ -8,10 +8,7 @@ void main() {
       await tester.pumpWidget(
         const Directionality(
           textDirection: TextDirection.ltr,
-          child: SoftwareBrightness(
-            brightness: 1,
-            child: Text('hi'),
-          ),
+          child: SoftwareBrightness(brightness: 1, child: Text('hi')),
         ),
       );
       expect(find.byType(ColorFiltered), findsNothing);
@@ -22,10 +19,7 @@ void main() {
       await tester.pumpWidget(
         const Directionality(
           textDirection: TextDirection.ltr,
-          child: SoftwareBrightness(
-            brightness: 0.5,
-            child: Text('hi'),
-          ),
+          child: SoftwareBrightness(brightness: 0.5, child: Text('hi')),
         ),
       );
       expect(find.byType(ColorFiltered), findsOneWidget);
@@ -87,7 +81,7 @@ void main() {
 }
 
 class _Counter extends StatefulWidget {
-  const _Counter();
+  const new();
 
   @override
   State<_Counter> createState() => _CounterState();

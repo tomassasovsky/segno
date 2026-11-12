@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -32,9 +32,9 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 /// The fake, except that the housekeeping write is refused.
 class _FailingDeleteFactsClient implements ConsoleFactsClient {
@@ -73,13 +73,13 @@ class _SlowFactsClient implements ConsoleFactsClient {
   @override
   Future<StorageUsage> storage() async {
     await _gate.future;
-    return _inner.storage();
+    return await _inner.storage();
   }
 
   @override
   Future<ConsoleFacts> facts() async {
     await _gate.future;
-    return _inner.facts();
+    return await _inner.facts();
   }
 
   @override
@@ -133,10 +133,7 @@ final _running = UpdateState(
 );
 
 /// The two bodies the Storage and About pages show.
-enum _SystemBody {
-  storage,
-  about,
-}
+enum _SystemBody { storage, about }
 
 void main() {
   late _MockLooperRepository repository;
@@ -161,9 +158,8 @@ void main() {
     // test inherits every package the ones before it registered.
     LicenseRegistry.reset();
     repository = _MockLooperRepository();
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(const LooperState(status: _open));
     when(() => repository.lastEngineConfig).thenReturn(
       const EngineConfig(
@@ -211,9 +207,7 @@ void main() {
       backing: testBackingRepository(),
       deviceRefreshInterval: Duration.zero,
     );
-    pedal = PedalCubit(
-      pedal: PedalRepository(NoopPedalLink()),
-    );
+    pedal = PedalCubit(pedal: PedalRepository(NoopPedalLink()));
     facts = ConsoleFactsCubit(
       // Zero latency: even `Future.delayed(Duration.zero)` schedules a timer,
       // and a testWidgets body that awaits one without pumping waits forever.
@@ -251,7 +245,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
@@ -299,9 +293,7 @@ void main() {
 
       expect(find.text(l10n.storageGigabytes(6.2)), findsOneWidget);
 
-      await tester.tap(
-        find.byKey(const Key('system_storage_delete_captures')),
-      );
+      await tester.tap(find.byKey(const Key('system_storage_delete_captures')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('console_confirm_confirm')), findsOneWidget);
 
@@ -310,9 +302,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(l10n.storageGigabytes(6.2)), findsOneWidget);
 
-      await tester.tap(
-        find.byKey(const Key('system_storage_delete_captures')),
-      );
+      await tester.tap(find.byKey(const Key('system_storage_delete_captures')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
@@ -355,9 +345,7 @@ void main() {
         find.byKey(const Key('system_storage_delete_captures')),
         200,
       );
-      await tester.tap(
-        find.byKey(const Key('system_storage_delete_captures')),
-      );
+      await tester.tap(find.byKey(const Key('system_storage_delete_captures')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('console_confirm_confirm')));
       await tester.pumpAndSettle();
@@ -576,10 +564,9 @@ void main() {
       LicenseRegistry.addLicense(
         () => Stream.fromIterable([
           for (var i = 0; i < 150; i++)
-            LicenseEntryWithLineBreaks(
-              ['pkg_${i.toString().padLeft(3, '0')}'],
-              'TERMS $i',
-            ),
+            LicenseEntryWithLineBreaks([
+              'pkg_${i.toString().padLeft(3, '0')}',
+            ], 'TERMS $i'),
         ]),
       );
       await pump(tester, tab: _SystemBody.about);

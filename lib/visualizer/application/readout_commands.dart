@@ -22,20 +22,15 @@ import 'package:segno/visualizer/readout_command.dart';
 /// it.
 class ReadoutCommands {
   /// Creates a [ReadoutCommands] over the running rig's settings owners.
-  /// [dimmed] says whether the console is idle-dimmed.
-  ReadoutCommands({
-    required LooperRepository repository,
-    required TempoSettings tempo,
-    required RecordSettings record,
-    required RecordTimingSettings timing,
-    required bool Function() dimmed,
-    required void Function(ReadoutRefusal refusal) onRefused,
-  }) : _repository = repository,
-       _tempo = tempo,
-       _record = record,
-       _timing = timing,
-       _dimmed = dimmed,
-       _onRefused = onRefused;
+  /// [_dimmed] says whether the console is idle-dimmed.
+  new({
+    required this._repository,
+    required this._tempo,
+    required this._record,
+    required this._timing,
+    required this._dimmed,
+    required this._onRefused,
+  });
 
   /// Where a nudge starts when no tempo is set: where the main screen's Tempo
   /// page starts its slider.

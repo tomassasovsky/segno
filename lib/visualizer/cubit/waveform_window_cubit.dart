@@ -17,7 +17,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// to report, and would show a clean face on a console with no second screen.
 class WaveformWindowState extends Equatable {
   /// Creates a [WaveformWindowState].
-  const WaveformWindowState({this.enabled = true, this.openFailed = false});
+  const new({this.enabled = true, this.openFailed = false});
 
   /// Whether the window should be open.
   final bool enabled;
@@ -41,9 +41,7 @@ class WaveformWindowState extends Equatable {
 class WaveformWindowCubit extends Cubit<WaveformWindowState> {
   /// Creates a [WaveformWindowCubit], enabled until [load] restores the saved
   /// preference.
-  WaveformWindowCubit({required SettingsRepository settings})
-    : _settings = settings,
-      super(const WaveformWindowState());
+  new({required this._settings}) : super(const WaveformWindowState());
 
   final SettingsRepository _settings;
   Future<void>? _loadFuture;

@@ -111,10 +111,7 @@ void main() {
 
   group('MidiException', () {
     test('toString carries the message', () {
-      expect(
-        const MidiException('boom').toString(),
-        'MidiException: boom',
-      );
+      expect(const MidiException('boom').toString(), 'MidiException: boom');
     });
   });
 }

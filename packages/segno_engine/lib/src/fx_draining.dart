@@ -11,13 +11,13 @@ import 'package:segno_engine/src/fx_recipe.dart';
 final class FxDraining {
   /// Creates the masks, by owner, channel and lane (the lane is `0` for
   /// every owner but [FxOwner.lane]). Zero masks are dropped.
-  FxDraining(Map<(FxOwner, int, int), int> masks)
+  new(Map<(FxOwner, int, int), int> masks)
     : _masks = Map.unmodifiable({
         for (final MapEntry(:key, :value) in masks.entries)
           if (value != 0) key: value,
       });
 
-  const FxDraining._none() : _masks = const {};
+  const new _none() : _masks = const {};
 
   /// Nothing drains.
   static const FxDraining none = FxDraining._none();

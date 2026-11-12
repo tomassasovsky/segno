@@ -209,10 +209,9 @@ void main() {
           expect(repo.ambientLight, darker);
           expect(changes, [room, darker]);
           // One log line for the sensor appearing, none per reading.
-          expect(
-            lines.where((line) => line.contains('light sensor')),
-            ['pedal link: light sensor reading'],
-          );
+          expect(lines.where((line) => line.contains('light sensor')), [
+            'pedal link: light sensor reading',
+          ]);
           // A board reflashed under the app to firmware without the sensor
           // says nothing more of it: the reading goes with the old hello.
           link.hello(firmwareMinor: 6);
@@ -554,10 +553,7 @@ void main() {
       link.hello(firmwareMinor: 1); // reflashed under a running app
       await pumpEventQueue();
       expect(repo.firmwareVersion, '1.1');
-      expect(statuses, [
-        PedalLinkStatus.connected,
-        PedalLinkStatus.connected,
-      ]);
+      expect(statuses, [PedalLinkStatus.connected, PedalLinkStatus.connected]);
     });
 
     test('dispose reports the link as disconnected', () async {

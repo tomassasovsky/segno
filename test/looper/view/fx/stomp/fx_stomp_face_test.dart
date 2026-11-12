@@ -37,10 +37,10 @@ void main() {
 
   test('every catalogue module and every standalone built-in has a look, '
       'and only they do', () {
-    expect(
-      kFxStompSpecs.keys.toSet(),
-      {...kFxModules.map((m) => m.name), ...kFxBuiltInLooks.values},
-    );
+    expect(kFxStompSpecs.keys.toSet(), {
+      ...kFxModules.map((m) => m.name),
+      ...kFxBuiltInLooks.values,
+    });
   });
 
   test('every standalone built-in is drawn with its look and shows its own '
@@ -57,11 +57,9 @@ void main() {
       expect(face.knobs.map((k) => k.label), [
         for (final p in type.params) label(p.key),
       ], reason: '$type');
-      expect(
-        face.knobs.map((k) => k.setting),
-        [for (var i = 0; i < type.params.length; i++) entry.params[i]],
-        reason: '$type',
-      );
+      expect(face.knobs.map((k) => k.setting), [
+        for (var i = 0; i < type.params.length; i++) entry.params[i],
+      ], reason: '$type');
     }
   });
 
@@ -89,11 +87,7 @@ void main() {
         type: TrackEffectType.overdrive,
         module: module,
       );
-      expect(
-        faceOf(entry).name,
-        kFxStompSpecs[module]!.name,
-        reason: module,
-      );
+      expect(faceOf(entry).name, kFxStompSpecs[module]!.name, reason: module);
     }
   });
 
@@ -206,10 +200,14 @@ void main() {
         ],
       );
 
-      expect(
-        fxStompKnobs('Four-band EQ', controls, room: 6),
-        [0, 1, 2, 3, 5, 7],
-      );
+      expect(fxStompKnobs('Four-band EQ', controls, room: 6), [
+        0,
+        1,
+        2,
+        3,
+        5,
+        7,
+      ]);
     });
 
     test('otherwise shows the first ones the rack editor lists', () {
@@ -276,10 +274,7 @@ void main() {
       fxEntryArt(turned, live: true),
       isNot(fxEntryArt(entry, live: true)),
     );
-    expect(
-      faceOf(turned, live: false).knobs,
-      faceOf(entry, live: false).knobs,
-    );
+    expect(faceOf(turned, live: false).knobs, faceOf(entry, live: false).knobs);
   });
 
   test('a module the engine cannot build has no knobs, never dead ones', () {

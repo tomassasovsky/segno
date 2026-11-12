@@ -14,14 +14,11 @@ part 'tracks_state.dart';
 /// its own presentation.
 class TracksCubit extends Cubit<TracksState> {
   /// Creates a [TracksCubit] for [trackCount] tracks.
-  TracksCubit({
-    required SettingsRepository settings,
+  new({
+    required this._settings,
     int trackCount = TracksState.tracksPerBank * TracksState.bankCountMax,
-  }) : _settings = settings,
-       super(
-         TracksState(
-           names: List.generate(trackCount, storedDefaultTrackName),
-         ),
+  }) : super(
+         TracksState(names: List.generate(trackCount, storedDefaultTrackName)),
        );
 
   final SettingsRepository _settings;

@@ -37,18 +37,15 @@ part 'library_state.dart';
 /// other, and the page refreshes the catalog when it lands
 /// ([LibraryState.restoredId]). Selecting a row can never reach the engine.
 class LibraryCubit extends Cubit<LibraryState> {
-  /// Creates a [LibraryCubit] over [sessions], [volumes] and [pedal].
-  LibraryCubit({
-    required SessionRepository sessions,
+  /// Creates a [LibraryCubit] over [_sessions], [volumes] and [pedal].
+  new({
+    required this._sessions,
     required RemovableVolumes volumes,
     required PedalRepository pedal,
-    required GuardRegistry guards,
-    Duration listenPoll = const Duration(milliseconds: 100),
-  }) : _sessions = sessions,
-       _volumes = volumes,
+    required this._guards,
+    this._listenPoll = const Duration(milliseconds: 100),
+  }) : _volumes = volumes,
        _exporter = AudioExporter(volumes),
-       _guards = guards,
-       _listenPoll = listenPoll,
        super(LibraryState(volumes: volumes.current)) {
     _pedalSubscription = pedal.events.listen(_onPedalEvent);
     _volumesSubscription = volumes.volumes.listen(_onVolumes);
@@ -130,10 +127,7 @@ class LibraryCubit extends Cubit<LibraryState> {
     final peaks = <int, List<double>>{};
     for (final track in preview.tracks) {
       try {
-        final read = await _sessions.readPeaks(
-          id,
-          track,
-        );
+        final read = await _sessions.readPeaks(id, track);
         if (read != null) peaks[track.channel] = read;
       } on Object {
         // Length only for this track.
@@ -344,9 +338,8 @@ class LibraryCubit extends Cubit<LibraryState> {
   }
 
   /// Selects the backup [id] on the USB list.
-  void selectBackup(String id) => emit(
-    state.copyWith(selectedBackup: id, clearRestoreError: true),
-  );
+  void selectBackup(String id) =>
+      emit(state.copyWith(selectedBackup: id, clearRestoreError: true));
 
   /// `Restore to Library`: adds the selected backup as a new session, then
   /// shows it selected in Internal (pen 34 `Restored session selected`).
@@ -554,6 +547,6 @@ class LibraryCubit extends Cubit<LibraryState> {
     _listenTimer?.cancel();
     await _pedalSubscription.cancel();
     await _volumesSubscription.cancel();
-    return super.close();
+    return await super.close();
   }
 }

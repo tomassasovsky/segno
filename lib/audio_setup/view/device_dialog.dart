@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// two thirds of the size of everything around it.
 class DeviceDialog extends StatelessWidget {
   /// Creates a [DeviceDialog].
-  const DeviceDialog({
+  const new({
     required this.title,
     required this.actions,
     this.body,

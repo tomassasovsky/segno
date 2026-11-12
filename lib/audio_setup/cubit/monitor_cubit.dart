@@ -16,7 +16,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// when you record into the input, so what you monitor is what the take stores.
 class MonitorState extends Equatable {
   /// Creates a [MonitorState] from a map of input index to its [InputMonitor].
-  const MonitorState({this.inputs = const {}, this.restoreFailed = false});
+  const new({this.inputs = const {}, this.restoreFailed = false});
 
   /// Saved monitoring has not been fully restored; an explicit retry is needed.
   final bool restoreFailed;
@@ -47,20 +47,15 @@ class MonitorState extends Equatable {
 /// Owns the per-input live monitors: applies them to the [LooperRepository] and
 /// persists them via [SettingsRepository].
 class MonitorCubit extends Cubit<MonitorState> {
-  /// Creates a [MonitorCubit] driving [repository], persisted through
-  /// [settings].
-  MonitorCubit({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
-    Duration fxPersistDebounce = const Duration(milliseconds: 300),
-  }) : _repository = repository,
-       _settings = settings,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
-       _fxPersistDebounce = fxPersistDebounce,
-       super(const MonitorState()) {
+  /// Creates a [MonitorCubit] driving [_repository], persisted through
+  /// [_settings].
+  new({
+    required this._repository,
+    required this._settings,
+    required this._mixSettings,
+    required this._fxPersistence,
+    this._fxPersistDebounce = const Duration(milliseconds: 300),
+  }) : super(const MonitorState()) {
     // Subscribed at construction, not in [load]: this cubit is a cache of
     // state another writer can change from the first frame, and a session
     // applied before the restore finished would already have gone past it.
@@ -215,12 +210,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final settledFx = await _repository.settleFxRecipes();
     if (!stillOwned()) return;
     if (!settledFx.isOk) throw StateError('saved monitor FX was refused');
-    emit(
-      MonitorState(
-        inputs: restored,
-        restoreFailed: state.restoreFailed,
-      ),
-    );
+    emit(MonitorState(inputs: restored, restoreFailed: state.restoreFailed));
     // Read the APPLIED chains back into state. What was decoded from settings
     // says nothing about whether a plugin actually loaded: `unavailable`,
     // `loading` and the enumerated params are the repository's answer, made
@@ -510,9 +500,8 @@ class MonitorCubit extends Cubit<MonitorState> {
         mixSettings: _mixSettings,
         input: input,
         muted: muted,
-        onAccepted: () => emit(
-          state.withInput(state.forInput(input).copyWith(muted: muted)),
-        ),
+        onAccepted: () =>
+            emit(state.withInput(state.forInput(input).copyWith(muted: muted))),
       );
     } on Object catch (error, stack) {
       if (!isClosed) addError(error, stack);
@@ -820,9 +809,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   void _emitInputEffects(int input) {
     final next = state
         .forInput(input)
-        .copyWith(
-          effects: _repository.monitorEffects(input),
-        );
+        .copyWith(effects: _repository.monitorEffects(input));
     emit(state.withInput(next));
   }
 

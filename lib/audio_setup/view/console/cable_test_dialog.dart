@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/device_dialog.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -28,7 +28,7 @@ Future<void> showCableTestDialog(BuildContext context) {
 /// a turn steps focus.
 class CableTestDialog extends StatelessWidget {
   /// Creates a [CableTestDialog].
-  const CableTestDialog({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -181,7 +181,7 @@ class CableTestDialog extends StatelessWidget {
 
 /// One jack of the cable: its label and its number in a box a press steps.
 class _JackPicker extends StatelessWidget {
-  const _JackPicker({
+  const new({
     required this.label,
     required this.jack,
     required this.order,

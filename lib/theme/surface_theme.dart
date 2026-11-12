@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// The neutral "setup surface" design tokens (onboarding, settings, and the
@@ -16,7 +16,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 @immutable
 class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// Creates a [SurfaceTheme].
-  const SurfaceTheme({
+  const new({
     required this.background,
     required this.surface,
     required this.card,
@@ -581,10 +581,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       ledBlue: c(ledBlue, other.ledBlue),
       ringGlow: c(ringGlow, other.ringGlow),
       chromeGradientTop: c(chromeGradientTop, other.chromeGradientTop),
-      chromeGradientBottom: c(
-        chromeGradientBottom,
-        other.chromeGradientBottom,
-      ),
+      chromeGradientBottom: c(chromeGradientBottom, other.chromeGradientBottom),
       chromeBar: c(chromeBar, other.chromeBar),
       meterTrack: c(meterTrack, other.meterTrack),
       pageGlow: c(pageGlow, other.pageGlow),

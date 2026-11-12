@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -19,7 +19,7 @@ enum MidiDeviceStatus {
 /// One MIDI input the page can configure.
 class MidiDeviceCard {
   /// Creates a [MidiDeviceCard].
-  const MidiDeviceCard({
+  const new({
     required this.id,
     required this.name,
     required this.status,
@@ -88,11 +88,7 @@ List<MidiDeviceCard> midiDeviceCards(
 /// plugged-in input feeds its own mappings; choosing one lists them.
 class MidiDeviceCards extends StatefulWidget {
   /// Creates a [MidiDeviceCards].
-  const MidiDeviceCards({
-    required this.cards,
-    required this.onSelect,
-    super.key,
-  });
+  const new({required this.cards, required this.onSelect, super.key});
 
   /// The inputs, in the order the host lists them.
   final List<MidiDeviceCard> cards;
@@ -149,7 +145,7 @@ class _MidiDeviceCardsState extends State<MidiDeviceCards> {
 }
 
 class _DeviceCard extends StatelessWidget {
-  const _DeviceCard({required this.card, required this.onTap});
+  const new({required this.card, required this.onTap});
 
   final MidiDeviceCard card;
   final VoidCallback onTap;

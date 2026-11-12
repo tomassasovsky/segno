@@ -40,27 +40,18 @@ typedef _Lifetimes = ({
 /// place that converts an owned target to its family's owner.
 class OwnedValuePort implements OwnedValueControl {
   /// Joins the owned families' ports for `ControlCubit`.
-  OwnedValuePort({
-    required LooperRepository looper,
-    required ClickVolumeControl clickVolume,
-    required ClickModeControl clickMode,
-    required RecordStartControl recordStart,
-    required DecayControl decay,
-    required OneShotControl oneShot,
-    required RecordLengthControl recordLength,
-    required RecordTimingControl recordTiming,
-    required FadeSettings fade,
-    BackingSettings? backing,
-  }) : _looper = looper,
-       _clickVolume = clickVolume,
-       _clickMode = clickMode,
-       _recordStart = recordStart,
-       _decay = decay,
-       _oneShot = oneShot,
-       _recordLength = recordLength,
-       _recordTiming = recordTiming,
-       _fade = fade,
-       _backing = backing;
+  new({
+    required this._looper,
+    required this._clickVolume,
+    required this._clickMode,
+    required this._recordStart,
+    required this._decay,
+    required this._oneShot,
+    required this._recordLength,
+    required this._recordTiming,
+    required this._fade,
+    this._backing,
+  });
 
   final LooperRepository _looper;
   final ClickVolumeControl _clickVolume;

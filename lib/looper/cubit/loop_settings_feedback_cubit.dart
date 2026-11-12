@@ -10,7 +10,7 @@ typedef LoopSettingsFeedback = ({int refused, int sessionRevision});
 /// open. Each refusal is a new notification, including identical failures.
 class LoopSettingsFeedbackCubit extends Cubit<LoopSettingsFeedback> {
   /// Subscribes to the repository's immediate and callback refusals.
-  LoopSettingsFeedbackCubit({required LooperRepository repository})
+  new({required LooperRepository repository})
     : super((refused: 0, sessionRevision: repository.sessionRevision)) {
     _failureSubscription = repository.lengthSettingsFailures.listen((_) {
       emit((

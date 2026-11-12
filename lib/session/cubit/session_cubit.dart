@@ -27,12 +27,12 @@ part 'session_state.dart';
 /// (a session load while armed would otherwise pull the rug out from under an
 /// in-progress capture).
 class SessionCubit extends Cubit<SessionState> {
-  /// Creates a [SessionCubit] backed by [repository], [looper], and
-  /// [performance].
+  /// Creates a [SessionCubit] backed by [_repository], [_looper], and
+  /// [_performance].
   ///
-  /// [currentPedalBindings] / [onPedalBindings] are the session's pedal remap
+  /// [_currentPedalBindings] / [_onPedalBindings] are the session's pedal remap
   /// (part 6b) crossing this cubit as an opaque string — read fresh at each
-  /// save, handed back on each load. [releaseHeldBindings] restores any held
+  /// save, handed back on each load. [_releaseHeldBindings] restores any held
   /// momentary and runs BEFORE a load applies its rig (see [open] for why
   /// the two halves sit on opposite sides of the apply). All three are narrow
   /// injected functions rather than a `ControlCubit` dependency for the usual
@@ -40,38 +40,24 @@ class SessionCubit extends Cubit<SessionState> {
   /// control layer. Each defaults to a no-op, which is exactly the pre-6b
   /// behavior.
   ///
-  /// [renameTracks] writes a loop template's track names (#1513), which are
+  /// [_renameTracks] writes a loop template's track names (#1513), which are
   /// global settings outside the session; it defaults to a no-op.
-  SessionCubit({
-    required SessionRepository repository,
-    required LooperRepository looper,
-    required PerformanceRepository performance,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
-    required SettingsRepository settings,
-    required MixSettingsPersistence mixPersistence,
-    required SessionSettingsCoordinator captureSettings,
-    required GuardRegistry guards,
-    String Function() currentPedalBindings = _noBindings,
-    void Function(String encoded) onPedalBindings = _ignoreBindings,
-    void Function() releaseHeldBindings = _noRelease,
-    Future<void> Function(Map<int, String> names) renameTracks = _noRename,
-    Duration captureEndTimeout = const Duration(seconds: 20),
-  }) : _captureEndTimeout = captureEndTimeout,
-       _repository = repository,
-       _guards = guards,
-       _looper = looper,
-       _performance = performance,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
-       _settings = settings,
-       _mixPersistence = mixPersistence,
-       _captureSettings = captureSettings,
-       _currentPedalBindings = currentPedalBindings,
-       _onPedalBindings = onPedalBindings,
-       _releaseHeldBindings = releaseHeldBindings,
-       _renameTracks = renameTracks,
-       super(const SessionState());
+  new({
+    required this._repository,
+    required this._looper,
+    required this._performance,
+    required this._mixSettings,
+    required this._fxPersistence,
+    required this._settings,
+    required this._mixPersistence,
+    required this._captureSettings,
+    required this._guards,
+    this._currentPedalBindings = _noBindings,
+    this._onPedalBindings = _ignoreBindings,
+    this._releaseHeldBindings = _noRelease,
+    this._renameTracks = _noRename,
+    this._captureEndTimeout = const Duration(seconds: 20),
+  }) : super(const SessionState());
 
   /// The default `currentPedalBindings`: no session remap, so the global set
   /// applies (A12).
@@ -189,7 +175,7 @@ class SessionCubit extends Cubit<SessionState> {
     return _run(
       () => _captureSettings.runExclusive(() async {
         _savedFingerprint = await _asSaveFailure(
-          () async => _saveCurrentRig(
+          () async => await _saveCurrentRig(
             await _repository.bundlePathOf(id),
             name,
             revision,
@@ -253,7 +239,7 @@ class SessionCubit extends Cubit<SessionState> {
     final id = await _repository.newSessionId();
     try {
       _savedFingerprint = await _asSaveFailure(
-        () async => _saveCurrentRig(
+        () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
           slug,
           revision,
@@ -347,7 +333,7 @@ class SessionCubit extends Cubit<SessionState> {
     final id = state.currentSessionId;
     if (id != null) {
       _savedFingerprint = await _asSaveFailure(
-        () async => _saveCurrentRig(
+        () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
           state.currentSessionName,
           revision,
@@ -388,9 +374,8 @@ class SessionCubit extends Cubit<SessionState> {
     // the Count-in downbeat) would fire during the save and be cleared by
     // the apply: withdraw it first, so no take can start from here on
     // (#1178 Part 4 review, D-1).
-    bool armed() => _looper.state.tracks.any(
-      (t) => t.pending || t.pendingLaunch != null,
-    );
+    bool armed() =>
+        _looper.state.tracks.any((t) => t.pending || t.pendingLaunch != null);
     bool capturing() => _looper.state.tracks.any((t) => t.isCapturing);
     if (!armed() && !capturing()) return;
     for (final track in _looper.state.tracks) {
@@ -499,59 +484,55 @@ class SessionCubit extends Cubit<SessionState> {
     return _open(id);
   }
 
-  Future<void> _open(SessionId id) => _run(
-    subject: id,
-    () async {
-      try {
-        return await _captureSettings.runExclusive(() async {
-          // The target is read and validated first (read-only: a refusal
-          // leaves every bundle as it was), so an Open the target refuses
-          // never withdraws the player's arms or Count-in, nor stops a take
-          // (#1178 Part 4 lows review, 1).
-          final path = await _repository.bundlePathOf(id);
-          final (:bundle, :conversion) = await _repository.open(
-            path,
-            liveSettings: _captureSettings.current,
-          );
-          await _endCaptures();
-          await _preserveOutgoing();
-          // The header shows the manifest's name; a bundle saved before names
-          // were metadata shows its directory name, as the catalog does.
-          final loadedName = bundle.session.name ?? id;
-          final (:sessions, :notice) = await _applyRig(
-            id: id,
-            name: loadedName,
-            rig: rigFromBundle(bundle),
-            fade: FadeDurations(
-              defaultMs: bundle.session.defaultFadeDurationMs,
-              overrides: bundle.session.trackFadeDurationOverrides,
-            ),
-            pedalBindings: bundle.session.pedalBindings,
-            backing: (
-              backing: bundle.session.backing,
-              clickPan: bundle.session.clickPan,
-            ),
-            path: path,
-            conversion: conversion,
-          );
-          await _recordOpenedFingerprint();
-          return _ActionResult(
-            SessionOutcome.loaded,
-            currentId: id,
-            currentName: loadedName,
-            sessions: sessions,
-            conversion: notice,
-          );
-        });
-      } on _SessionBootException {
-        rethrow;
-      } on Object {
-        _fxPersistence.cancelSessionLoad();
-        rethrow;
-      }
-    },
-    reserveSessionLoad: true,
-  );
+  Future<void> _open(SessionId id) => _run(subject: id, () async {
+    try {
+      return await _captureSettings.runExclusive(() async {
+        // The target is read and validated first (read-only: a refusal
+        // leaves every bundle as it was), so an Open the target refuses
+        // never withdraws the player's arms or Count-in, nor stops a take
+        // (#1178 Part 4 lows review, 1).
+        final path = await _repository.bundlePathOf(id);
+        final (:bundle, :conversion) = await _repository.open(
+          path,
+          liveSettings: _captureSettings.current,
+        );
+        await _endCaptures();
+        await _preserveOutgoing();
+        // The header shows the manifest's name; a bundle saved before names
+        // were metadata shows its directory name, as the catalog does.
+        final loadedName = bundle.session.name ?? id;
+        final (:sessions, :notice) = await _applyRig(
+          id: id,
+          name: loadedName,
+          rig: rigFromBundle(bundle),
+          fade: FadeDurations(
+            defaultMs: bundle.session.defaultFadeDurationMs,
+            overrides: bundle.session.trackFadeDurationOverrides,
+          ),
+          pedalBindings: bundle.session.pedalBindings,
+          backing: (
+            backing: bundle.session.backing,
+            clickPan: bundle.session.clickPan,
+          ),
+          path: path,
+          conversion: conversion,
+        );
+        await _recordOpenedFingerprint();
+        return _ActionResult(
+          SessionOutcome.loaded,
+          currentId: id,
+          currentName: loadedName,
+          sessions: sessions,
+          conversion: notice,
+        );
+      });
+    } on _SessionBootException {
+      rethrow;
+    } on Object {
+      _fxPersistence.cancelSessionLoad();
+      rethrow;
+    }
+  }, reserveSessionLoad: true);
 
   /// Starts a new loop (plan D9): saves the outgoing rig first when it has
   /// changed (plan D7), clears every track and its history, keeps the
@@ -574,100 +555,95 @@ class SessionCubit extends Cubit<SessionState> {
   /// session already saved. Its names are written after the apply and before
   /// the first save; a failed write keeps the loop and sets
   /// [SessionState.trackNamesNotSaved] on the outcome.
-  Future<void> newLoop({NewLoopTemplate? template}) => _run(
-    () async {
-      SessionId? reserved;
-      var applied = false;
-      try {
-        return await _captureSettings.runExclusive(() async {
-          await _endCaptures();
-          await _preserveOutgoing();
-          // Checked before anything on the live rig changes, on the chains
-          // as they are now: ending a take can have copied an input chain
-          // onto a lane since the sheet checked.
-          if (template != null && !newLoopTemplateFits(_looper, template)) {
-            throw const _SessionRefusal(SessionError.templateDoesNotFit);
-          }
-          // A held momentary belongs to the outgoing rig, not to the chains
-          // the new loop keeps.
-          _releaseHeldBindings();
-          final revision = _looper.sessionRevision;
-          final generation = _looper.mixGeneration;
-          final device = _looper.state.status.deviceName;
-          final captured = await _captureSettings.capture(
-            stillOwned: () =>
-                !isClosed &&
-                revision == _looper.sessionRevision &&
-                generation == _looper.mixGeneration &&
-                device == _looper.state.status.deviceName,
-          );
-          final live = _repository.liveSession(
-            settings: captured.settings,
-            chains: captured.chains,
-            pedalBindings: _currentPedalBindings(),
-          );
-          final name = await _repository.nextAutomaticName(
-            automaticNamePrefix,
-          );
-          final id = reserved = await _repository.newSessionId();
-          await _applyRig(
-            id: id,
-            name: name,
-            rig: rigForNewLoop(live, template: template),
-            fade: FadeDurations(
-              defaultMs: live.defaultFadeDurationMs,
-              overrides: live.trackFadeDurationOverrides,
-            ),
-            pedalBindings: live.pedalBindings,
-          );
-          applied = true;
-          var namesSaved = true;
-          if (template != null) {
-            try {
-              await _renameTracks(template.names);
-            } on Object catch (error) {
-              // The loop is started; only the names are missing.
-              AppLog.warn('new loop track names not saved: $error');
-              namesSaved = false;
-            }
-          }
-          // The outgoing rig's fingerprint no longer describes anything.
-          _savedFingerprint = null;
-          try {
-            _savedFingerprint = await _saveCurrentRig(
-              await _repository.bundlePathOf(id),
-              name,
-              _looper.sessionRevision,
-              _looper.mixGeneration,
-              _looper.state.status.deviceName,
-            );
-          } on Object catch (error) {
-            // Not a failed save of the outgoing loop, which is safe: the new
-            // loop is started and named, and only its empty bundle is
-            // missing. The first Save writes it.
-            throw _SessionRefusal(SessionError.newLoopNotSaved, error);
-          }
-          return _ActionResult(
-            SessionOutcome.newLoop,
-            currentId: id,
-            currentName: name,
-            sessions: await _repository.listSessions(),
-            trackNamesNotSaved: !namesSaved,
-          );
-        });
-      } on _SessionBootException {
-        rethrow;
-      } on Object {
-        if (!applied) {
-          _fxPersistence.cancelSessionLoad();
-          final id = reserved;
-          if (id != null) await _repository.releaseSessionId(id);
+  Future<void> newLoop({NewLoopTemplate? template}) => _run(() async {
+    SessionId? reserved;
+    var applied = false;
+    try {
+      return await _captureSettings.runExclusive(() async {
+        await _endCaptures();
+        await _preserveOutgoing();
+        // Checked before anything on the live rig changes, on the chains
+        // as they are now: ending a take can have copied an input chain
+        // onto a lane since the sheet checked.
+        if (template != null && !newLoopTemplateFits(_looper, template)) {
+          throw const _SessionRefusal(SessionError.templateDoesNotFit);
         }
-        rethrow;
+        // A held momentary belongs to the outgoing rig, not to the chains
+        // the new loop keeps.
+        _releaseHeldBindings();
+        final revision = _looper.sessionRevision;
+        final generation = _looper.mixGeneration;
+        final device = _looper.state.status.deviceName;
+        final captured = await _captureSettings.capture(
+          stillOwned: () =>
+              !isClosed &&
+              revision == _looper.sessionRevision &&
+              generation == _looper.mixGeneration &&
+              device == _looper.state.status.deviceName,
+        );
+        final live = _repository.liveSession(
+          settings: captured.settings,
+          chains: captured.chains,
+          pedalBindings: _currentPedalBindings(),
+        );
+        final name = await _repository.nextAutomaticName(automaticNamePrefix);
+        final id = reserved = await _repository.newSessionId();
+        await _applyRig(
+          id: id,
+          name: name,
+          rig: rigForNewLoop(live, template: template),
+          fade: FadeDurations(
+            defaultMs: live.defaultFadeDurationMs,
+            overrides: live.trackFadeDurationOverrides,
+          ),
+          pedalBindings: live.pedalBindings,
+        );
+        applied = true;
+        var namesSaved = true;
+        if (template != null) {
+          try {
+            await _renameTracks(template.names);
+          } on Object catch (error) {
+            // The loop is started; only the names are missing.
+            AppLog.warn('new loop track names not saved: $error');
+            namesSaved = false;
+          }
+        }
+        // The outgoing rig's fingerprint no longer describes anything.
+        _savedFingerprint = null;
+        try {
+          _savedFingerprint = await _saveCurrentRig(
+            await _repository.bundlePathOf(id),
+            name,
+            _looper.sessionRevision,
+            _looper.mixGeneration,
+            _looper.state.status.deviceName,
+          );
+        } on Object catch (error) {
+          // Not a failed save of the outgoing loop, which is safe: the new
+          // loop is started and named, and only its empty bundle is
+          // missing. The first Save writes it.
+          throw _SessionRefusal(SessionError.newLoopNotSaved, error);
+        }
+        return _ActionResult(
+          SessionOutcome.newLoop,
+          currentId: id,
+          currentName: name,
+          sessions: await _repository.listSessions(),
+          trackNamesNotSaved: !namesSaved,
+        );
+      });
+    } on _SessionBootException {
+      rethrow;
+    } on Object {
+      if (!applied) {
+        _fxPersistence.cancelSessionLoad();
+        final id = reserved;
+        if (id != null) await _repository.releaseSessionId(id);
       }
-    },
-    reserveSessionLoad: true,
-  );
+      rethrow;
+    }
+  }, reserveSessionLoad: true);
 
   /// Applies [rig] as the session [id] named [name] through the looper
   /// repository, the one apply path Open and New loop share, and makes it
@@ -696,9 +672,7 @@ class SessionCubit extends Cubit<SessionState> {
       if (rig.tracks.isNotEmpty) {
         final live = _looper.state;
         if (!live.transport.deviceRunning || !live.status.devicePresent) {
-          throw StateError(
-            'audio device must be running before session load',
-          );
+          throw StateError('audio device must be running before session load');
         }
       }
       final candidate = MixSettingsSnapshot.fromRig(rig);
@@ -1213,14 +1187,14 @@ class SessionCubit extends Cubit<SessionState> {
 /// A refusal the cubit itself decides ([SessionError.currentSessionProtected])
 /// or classifies ([SessionError.saveFailed], with the write's own [cause]).
 class _SessionRefusal implements Exception {
-  const _SessionRefusal(this.error, [this.cause]);
+  const new(this.error, [this.cause]);
 
   final SessionError error;
   final Object? cause;
 }
 
 class _SessionBootException implements Exception {
-  const _SessionBootException(this.cause);
+  const new(this.cause);
 
   final Object cause;
 }
@@ -1228,7 +1202,7 @@ class _SessionBootException implements Exception {
 /// What a session action changed: its success [outcome] plus any durable
 /// catalog updates to fold into the next state.
 class _ActionResult {
-  const _ActionResult(
+  const new(
     this.outcome, {
     this.currentId,
     this.currentName,

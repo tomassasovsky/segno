@@ -8,7 +8,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 
-class _Repository extends Mock implements LooperRepository {}
+class _Repository extends Mock implements LooperRepository;
 
 class _Store extends FakeKeyValueStore {
   bool fail = false;
@@ -16,7 +16,7 @@ class _Store extends FakeKeyValueStore {
   @override
   Future<void> setInt(String key, int value) async {
     if (fail) throw StateError('disk full');
-    return super.setInt(key, value);
+    return await super.setInt(key, value);
   }
 }
 
@@ -33,9 +33,8 @@ void main() {
     store = _Store();
     settings = TunerSettings(settings: SettingsRepository(store: store));
     actions = FootTunerActions(repository: repository, settings: settings);
-    when(
-      () => repository.setTunerInput(input: any(named: 'input')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.setTunerInput(input: any(named: 'input')))
+        .thenReturn(EngineResult.ok);
     when(() => repository.setTunerMute(any())).thenReturn(EngineResult.ok);
   });
 
@@ -81,9 +80,8 @@ void main() {
   test('a refused arm or mute is reported', () {
     when(() => repository.setTunerMute(any())).thenReturn(EngineResult.invalid);
     expect(actions.arm(project(2)), FootTunerRefusal.armFailed);
-    when(
-      () => repository.setTunerInput(input: any(named: 'input')),
-    ).thenReturn(EngineResult.notReady);
+    when(() => repository.setTunerInput(input: any(named: 'input')))
+        .thenReturn(EngineResult.notReady);
     expect(actions.arm(project(2)), FootTunerRefusal.armFailed);
   });
 
@@ -120,10 +118,7 @@ void main() {
   });
 
   test('Mute toggles the selection', () {
-    expect(
-      actions.toggleMute(const FootTunerSelection()).muted,
-      isFalse,
-    );
+    expect(actions.toggleMute(const FootTunerSelection()).muted, isFalse);
   });
 
   test('the next page wraps and tunes its first input', () {

@@ -76,24 +76,21 @@ void main() {
       },
     );
 
-    test(
-      'hard handshake evidence is credentials even on an autonomous join — '
-      'the key was tested and failed',
-      () {
-        const handshake = 'segno-wifi-ctl: 4-way handshake failed';
-        expect(
-          classifyWifiJoinFailure(raw: handshake, interactive: false),
-          WifiJoinErrorKind.credentials,
-        );
-        expect(
-          classifyWifiJoinFailure(
-            raw: 'WPA: pre-shared key may be incorrect',
-            interactive: false,
-          ),
-          WifiJoinErrorKind.credentials,
-        );
-      },
-    );
+    test('hard handshake evidence is credentials even on an autonomous join — '
+        'the key was tested and failed', () {
+      const handshake = 'segno-wifi-ctl: 4-way handshake failed';
+      expect(
+        classifyWifiJoinFailure(raw: handshake, interactive: false),
+        WifiJoinErrorKind.credentials,
+      );
+      expect(
+        classifyWifiJoinFailure(
+          raw: 'WPA: pre-shared key may be incorrect',
+          interactive: false,
+        ),
+        WifiJoinErrorKind.credentials,
+      );
+    });
 
     test('the helper wording for auth failure maps to credentials', () {
       expect(
@@ -138,25 +135,22 @@ void main() {
       );
     });
 
-    test(
-      'a line carrying BOTH iwd.Failed and the secrets family reads as '
-      'credentials when interactive — the cautious call for a user who just '
-      'typed a password — and transient otherwise',
-      () {
-        const both =
-            'Activation: (wifi) Network.Connect failed: '
-            'GDBus.Error:net.connman.iwd.Failed — Connection activation '
-            'failed: Secrets were required, but not provided.';
-        expect(
-          classifyWifiJoinFailure(raw: both, interactive: true),
-          WifiJoinErrorKind.credentials,
-        );
-        expect(
-          classifyWifiJoinFailure(raw: both, interactive: false),
-          WifiJoinErrorKind.transient,
-        );
-      },
-    );
+    test('a line carrying BOTH iwd.Failed and the secrets family reads as '
+        'credentials when interactive — the cautious call for a user who just '
+        'typed a password — and transient otherwise', () {
+      const both =
+          'Activation: (wifi) Network.Connect failed: '
+          'GDBus.Error:net.connman.iwd.Failed — Connection activation '
+          'failed: Secrets were required, but not provided.';
+      expect(
+        classifyWifiJoinFailure(raw: both, interactive: true),
+        WifiJoinErrorKind.credentials,
+      );
+      expect(
+        classifyWifiJoinFailure(raw: both, interactive: false),
+        WifiJoinErrorKind.transient,
+      );
+    });
 
     test('unrecognized text stays unknown', () {
       expect(

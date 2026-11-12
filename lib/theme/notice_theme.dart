@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/surface_theme.dart';
 
 /// The sizes and type ramp of the app's notices (#1562): the message in the
@@ -17,7 +17,7 @@ import 'package:segno/theme/surface_theme.dart';
 @immutable
 class NoticeTheme extends ThemeExtension<NoticeTheme> {
   /// Creates a [NoticeTheme].
-  const NoticeTheme({
+  const new({
     required this.barTitle,
     required this.barBody,
     required this.barAction,

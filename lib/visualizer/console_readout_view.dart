@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/track_column.dart' show PrimaryCrown;
 import 'package:segno/notices/model/notice.dart' show NoticeTone;
@@ -28,7 +28,7 @@ import 'package:segno/visualizer/readout_panel/readout_labels.dart';
 /// size — the proportions are the contract, not the pixels.
 class ConsoleReadoutView extends StatelessWidget {
   /// Creates a [ConsoleReadoutView].
-  const ConsoleReadoutView({
+  const new({
     required this.readout,
     required this.waveform,
     this.onOpenControls,
@@ -119,7 +119,7 @@ class ConsoleReadoutView extends StatelessWidget {
 /// bar had no room for, is said whole over the readout below. Nothing on the
 /// readout moves for it, and it takes no touch: the readout stays inert.
 class _NoticeBand extends StatelessWidget {
-  const _NoticeBand({required this.notice, required this.s});
+  const new({required this.notice, required this.s});
 
   final ReadoutNotice notice;
   final double s;
@@ -205,7 +205,7 @@ class _NoticeBand extends StatelessWidget {
 /// crown only when the selected track is primary, the name in the display
 /// face.
 class _Header extends StatelessWidget {
-  const _Header({required this.selected, required this.s});
+  const new({required this.selected, required this.s});
 
   final ReadoutTrack? selected;
   final double s;
@@ -274,7 +274,7 @@ class _Header extends StatelessWidget {
 /// trailing edge — the one place a routine state word is shown, because the
 /// small display has no meter fill to carry the state by colour alone.
 class _StateLine extends StatelessWidget {
-  const _StateLine({required this.selected, required this.s});
+  const new({required this.selected, required this.s});
 
   final ReadoutTrack? selected;
   final double s;
@@ -343,7 +343,7 @@ class _StateLine extends StatelessWidget {
 /// reference like the rest of the readout; the strip never goes under the
 /// 48 px a finger needs.
 class _Footer extends StatelessWidget {
-  const _Footer({required this.readout, required this.s, this.onTap});
+  const new({required this.readout, required this.s, this.onTap});
 
   final PerformanceReadout readout;
   final double s;
@@ -388,10 +388,7 @@ class _Footer extends StatelessWidget {
           ),
         ),
         SizedBox(width: 10 * s),
-        AppText(
-          l10n.stageBpmUnit,
-          style: secondary.copyWith(fontSize: 22 * s),
-        ),
+        AppText(l10n.stageBpmUnit, style: secondary.copyWith(fontSize: 22 * s)),
         SizedBox(width: 30 * s),
         AppText(
           '${readout.tsNum}/${readout.tsDen}',

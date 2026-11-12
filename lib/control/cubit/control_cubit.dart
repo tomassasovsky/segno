@@ -76,7 +76,7 @@ bool _isSharedValue(ControlValueTarget target) =>
 /// the effects budget (#1723). Nothing was saved.
 final class FxReachOverBudget implements Exception {
   /// Creates the refusal.
-  const FxReachOverBudget();
+  const new();
 
   @override
   String toString() => 'Not enough effects budget for what it can switch on';
@@ -168,7 +168,7 @@ class _HoldGesture {
 /// clock from the fill's start, the time the fill runs, and whether it can
 /// still fire.
 class _ClearFill {
-  _ClearFill({required this.fillTime, required this.stillValid});
+  new({required this.fillTime, required this.stillValid});
 
   final Stopwatch clock = Stopwatch()..start();
   final Duration fillTime;
@@ -204,7 +204,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// that cubit observes this repository's own status stream, so it reflects
   /// a pedal-triggered arm/disarm too.
   ///
-  /// [currentChains] resolves the live lane/monitor chains + master-limiter
+  /// [_currentChains] resolves the live lane/monitor chains + master-limiter
   /// state to stamp into the arm snapshot, read fresh at each arm — the same
   /// narrow function dependency `PerformanceRecorderCubit` takes for the
   /// toolbar path, so both arm gestures record the same rig. It is injected
@@ -219,36 +219,33 @@ class ControlCubit extends Cubit<ControlState> {
   /// a build or test with no MIDI seam simply never receives external
   /// control.
   ///
-  /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
-  /// route is up, so a take cannot start behind the dialog. [inputLocked]
+  /// [_takeLocked] suppresses Rec / overdub / perf-arm while the power-off
+  /// route is up, so a take cannot start behind the dialog. [_inputLocked]
   /// holds continuous writes (expression sweeps, External values, MIDI
   /// values) during Session transitions and disposal only; the power-off
   /// route leaves them running until its flush suspends input.
-  ControlCubit({
+  new({
     required LooperRepository looper,
-    required PedalRepository pedal,
+    required this._pedal,
     required SettingsRepository settings,
     required PerformanceRepository performance,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
+    required this._mixSettings,
+    required this._fxPersistence,
     required OwnedValueControl ownedValues,
     required FadeSettings fadeSettings,
     TunerSettings? tunerSettings,
     bool seedTunerDefault = false,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
-    Duration Function()? midiClock,
-    Duration learnTimeout = const Duration(seconds: 15),
-    PerformanceChains Function() currentChains = _noChains,
-    bool Function() takeLocked = _neverLocked,
-    bool Function() inputLocked = _neverLocked,
+    this._midiClock,
+    this._learnTimeout = const Duration(seconds: 15),
+    this._currentChains = _noChains,
+    this._takeLocked = _neverLocked,
+    this._inputLocked = _neverLocked,
     Future<int?> Function(String path)? freeSpaceBytes,
   }) : _looper = looper,
-       _pedal = pedal,
        _settings = settings,
        _performance = performance,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
        _owned = ownedValues,
        _footReverseActions = FootReverseActions(repository: looper),
        _footPeelActions = FootPeelActions(repository: looper),
@@ -261,14 +258,9 @@ class ControlCubit extends Cubit<ControlState> {
          settings: fadeSettings,
        ),
        _midiDevices = midiDevices,
-       _midiClock = midiClock,
-       _learnTimeout = learnTimeout,
-       _currentChains = currentChains,
-       _takeLocked = takeLocked,
-       _inputLocked = inputLocked,
        _freeSpaceBytes =
            freeSpaceBytes ??
-           ((String path) async => performance.volumeSpace(path)?.freeBytes),
+           ((path) async => performance.volumeSpace(path)?.freeBytes),
        super(const ControlState()) {
     _fxPersistence.onOrdinaryWrite = _onOrdinaryFxWrite;
     _mixSettings.onOrdinaryValues = _onOrdinaryMixValues;
@@ -309,15 +301,9 @@ class ControlCubit extends Cubit<ControlState> {
   final Duration Function()? _midiClock;
   final _midiStopwatch = Stopwatch()..start();
   Duration _midiReadTime = Duration.zero;
-  late final _midiDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
-  late final _midiLearnDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
-  late final _midiSignalDecoder = MidiDecoder(
-    clock: () => _midiReadTime,
-  );
+  late final _midiDecoder = MidiDecoder(clock: () => _midiReadTime);
+  late final _midiLearnDecoder = MidiDecoder(clock: () => _midiReadTime);
+  late final _midiSignalDecoder = MidiDecoder(clock: () => _midiReadTime);
   late final _midiEngine = MidiMappingEngine(
     read: _readMidiValue,
     step: _midiStep,
@@ -974,13 +960,10 @@ class ControlCubit extends Cubit<ControlState> {
               await _mixSettings.runExclusive(() async {});
               if (cancelled()) return;
               resolveSurvivors();
-              outcome = await _mixSettings.setControllerValues(
-                {
-                  for (final target in mixValues.keys)
-                    target: parameters[target]!,
-                },
-                releasedValues: released(),
-              );
+              outcome = await _mixSettings.setControllerValues({
+                for (final target in mixValues.keys)
+                  target: parameters[target]!,
+              }, releasedValues: released());
             }
             if (outcome.isOk) mixValues.keys.forEach(heldApplied);
             if (outcome.isOk && !cancelled()) {
@@ -1093,10 +1076,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
-  bool? _survivingActivation(
-    FxBindingTarget target, {
-    Object? excluding,
-  }) {
+  bool? _survivingActivation(FxBindingTarget target, {Object? excluding}) {
     ({bool value, int order})? latest;
     for (final entry in (_activationHolders[target] ?? {}).entries) {
       if (entry.key == excluding) continue;
@@ -1107,10 +1087,7 @@ class ControlCubit extends Cubit<ControlState> {
     return latest?.value;
   }
 
-  double? _survivingParameter(
-    ControlValueTarget target, {
-    Object? excluding,
-  }) {
+  double? _survivingParameter(ControlValueTarget target, {Object? excluding}) {
     ({double value, int order})? latest;
     for (final entry in (_parameterHolders[target] ?? {}).entries) {
       if (entry.key == excluding) continue;
@@ -1572,7 +1549,7 @@ class ControlCubit extends Cubit<ControlState> {
     // A change to what the switches reach is admitted and committed as one
     // step of the reach queue (#1723); a press's logical state is not one.
     if (!setup.external.sameConfigurationAs(state.pedalSetup.external)) {
-      return _serializeReach(() async {
+      return await _serializeReach(() async {
         if (isClosed) return;
         _admitReach(state.copyWith(pedalSetup: setup));
         await _commitPedalSetup(setup);
@@ -2138,11 +2115,7 @@ class ControlCubit extends Cubit<ControlState> {
     final waiting = live.transport.songQueuedTrack;
     // A Stop on the waiting section drops its request (and a waiting
     // Record's arm) in the engine, or stops it if the handoff started it.
-    final stopping = {
-      ...running,
-      ...playingNow,
-      if (waiting >= 0) waiting,
-    };
+    final stopping = {...running, ...playingNow, if (waiting >= 0) waiting};
     if (stopping.isEmpty) return true; // Keep the parked resume set.
     final latch = {...(playingNow.isEmpty ? running : playingNow)}
       ..removeWhere(state.excluded.contains);
@@ -2324,9 +2297,7 @@ class ControlCubit extends Cubit<ControlState> {
       if (_l.isSection(channel) && t.isRunning) return;
       // Joining is the explicit un-exclude.
       if (state.excluded.contains(channel)) {
-        emit(
-          state.copyWith(excluded: {...state.excluded}..remove(channel)),
-        );
+        emit(state.copyWith(excluded: {...state.excluded}..remove(channel)));
       }
       _looper.play(channel: channel);
     }
@@ -2902,9 +2873,7 @@ class ControlCubit extends Cubit<ControlState> {
   void nextFootMixerPage() {
     if (!_mixerEditable) return;
     emit(
-      state.copyWith(
-        footMixer: _footMixerActions.nextPage(state.footMixer),
-      ),
+      state.copyWith(footMixer: _footMixerActions.nextPage(state.footMixer)),
     );
   }
 
@@ -3412,9 +3381,7 @@ class ControlCubit extends Cubit<ControlState> {
         if (operation == TrackOperation.solo && channels.length > 1) {
           return _mixSettings
               .toggleTrackSolos(channels.toSet())
-              .then(
-                (outcome) => outcome.isOk,
-              );
+              .then((outcome) => outcome.isOk);
         }
         var accepted = false;
         for (final channel in channels) {
@@ -3487,9 +3454,7 @@ class ControlCubit extends Cubit<ControlState> {
       case TrackOperation.solo:
         return _mixSettings
             .toggleTrackSolo(channel: channel)
-            .then(
-              (outcome) => outcome.isOk,
-            );
+            .then((outcome) => outcome.isOk);
       case TrackOperation.clear:
         if (_fxPersistence.sessionTransitionActive) return false;
         if (!_looper.clear(channel: channel).isOk) return false;
@@ -4548,12 +4513,7 @@ class ControlCubit extends Cubit<ControlState> {
     final channels = completed && contact
         ? last.channels
         : _channelsForAction(action);
-    return _customActionIsActive(
-      action,
-      channels,
-      looper,
-      contact: contact,
-    );
+    return _customActionIsActive(action, channels, looper, contact: contact);
   }
 
   bool _customActionIsActive(

@@ -312,10 +312,7 @@ void main() {
         ..commandsAreSettled = false;
       expect(repo.setTrackPan(-.5), EngineResult.ok);
       expect(
-        await repo.settleMixSettings(
-          attempts: 1,
-          pollInterval: Duration.zero,
-        ),
+        await repo.settleMixSettings(attempts: 1, pollInterval: Duration.zero),
         EngineResult.notReady,
       );
       expect(engine.calls, isNot(contains('stop')));
@@ -542,14 +539,8 @@ void main() {
         repo.setInputPair(input: kMaxChannels - 1, paired: true),
         EngineResult.invalid,
       );
-      expect(
-        repo.setInputPair(input: 1, paired: true),
-        EngineResult.invalid,
-      );
-      expect(
-        repo.setPairBalance(input: 0, balance: 0.5),
-        EngineResult.invalid,
-      );
+      expect(repo.setInputPair(input: 1, paired: true), EngineResult.invalid);
+      expect(repo.setPairBalance(input: 0, balance: 0.5), EngineResult.invalid);
     });
 
     test('the monitors carry the pan', () {
@@ -786,9 +777,8 @@ void main() {
           2,
         );
         expect(
-          MixSettingsSnapshot.fromRig(
-            SessionRig(tracks: rig.tracks),
-          ).laneCounts[0],
+          MixSettingsSnapshot.fromRig(SessionRig(tracks: rig.tracks))
+              .laneCounts[0],
           2,
         );
       },
@@ -931,12 +921,7 @@ void main() {
         ..setOutputMono(bus: 1, mono: true);
       expect(
         repo.outputSetup.of(1),
-        const OutputBus(
-          level: .5,
-          balance: -1,
-          muted: true,
-          mono: true,
-        ),
+        const OutputBus(level: .5, balance: -1, muted: true, mono: true),
       );
       expect(engine.outputLevel[1], .5);
       expect(engine.outputBalance[1], -1);
@@ -970,14 +955,7 @@ void main() {
         ..publishMixCommands = false
         ..commandsAreSettled = false;
       const next = OutputSetup(
-        buses: {
-          1: OutputBus(
-            level: .4,
-            muted: true,
-            mono: true,
-            balance: -.7,
-          ),
-        },
+        buses: {1: OutputBus(level: .4, muted: true, mono: true, balance: -.7)},
       );
       expect(repo.setOutputSetup(next), EngineResult.ok);
       expect(repo.outputSetup, const OutputSetup());
@@ -1281,9 +1259,7 @@ void main() {
     test('missing destinations retain intent but cannot be newly selected', () {
       final repo = start();
       final before = repo.mixSettingsSnapshot.copyWith(
-        laneOutputs: {
-          for (var lane = 0; lane < 8; lane++) (0, lane): 0x81,
-        },
+        laneOutputs: {for (var lane = 0; lane < 8; lane++) (0, lane): 0x81},
       );
       expect(
         repo.prepareTrackOutput(before, channel: 0, mask: 0x80),

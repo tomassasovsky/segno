@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -37,7 +37,7 @@ import 'package:update_repository/update_repository.dart';
 /// leaves focus on a button that has gone.
 class UpdatesSettingsPage extends StatefulWidget {
   /// Creates an [UpdatesSettingsPage].
-  const UpdatesSettingsPage({super.key});
+  const new({super.key});
 
   /// The width of the panels' controls column inside a fact row.
   static const double controlWidth = 320;
@@ -285,16 +285,8 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
             onStage: () =>
                 Navigator.popUntil(context, (route) => route.isFirst),
             children: [
-              Positioned(
-                left: 0,
-                top: AboutSettingsPage.top,
-                child: left,
-              ),
-              Positioned(
-                right: 0,
-                top: AboutSettingsPage.top,
-                child: right,
-              ),
+              Positioned(left: 0, top: AboutSettingsPage.top, child: left),
+              Positioned(right: 0, top: AboutSettingsPage.top, child: right),
             ],
           ),
         ),
@@ -318,11 +310,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
 /// the state's actions sit under it. [next] goes to the action the encoder
 /// should land on.
 class _StatusPanel extends StatelessWidget {
-  const _StatusPanel({
-    required this.state,
-    required this.cubit,
-    required this.next,
-  });
+  const new({required this.state, required this.cubit, required this.next});
 
   final UpdateState state;
   final UpdateCubit cubit;
@@ -557,7 +545,7 @@ class _StatusPanel extends StatelessWidget {
 
 /// The download's real progress: a track, its fill, and the percentage.
 class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.progress});
+  const new({required this.progress});
 
   final double progress;
 
@@ -614,7 +602,7 @@ class _ProgressBar extends StatelessWidget {
 /// versions, and Dismiss. It stays, whatever the panel shows, until
 /// dismissed.
 class _RollbackNotice extends StatelessWidget {
-  const _RollbackNotice({required this.text, required this.onDismiss});
+  const new({required this.text, required this.onDismiss});
 
   final String text;
   final VoidCallback onDismiss;

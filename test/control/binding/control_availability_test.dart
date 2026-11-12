@@ -9,7 +9,7 @@ import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
-class _Looper extends Mock implements LooperRepository {}
+class _Looper extends Mock implements LooperRepository;
 
 void main() {
   late _Looper looper;
@@ -108,9 +108,8 @@ void main() {
   test(
     'removed effect and malformed saved key never retarget another slot',
     () {
-      when(
-        () => looper.allTrackChains(),
-      ).thenReturn({0: const FxChainEnvelope()});
+      when(() => looper.allTrackChains())
+          .thenReturn({0: const FxChainEnvelope()});
       when(() => looper.trackEffects(0)).thenReturn([
         BuiltInEffect(type: TrackEffectType.drive, slotId: 'new-slot'),
       ]);

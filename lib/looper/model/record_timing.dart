@@ -4,10 +4,10 @@ import 'package:looper_repository/looper_repository.dart';
 /// The recording timing default or one fixed track.
 final class RecordTimingAddress extends Equatable {
   /// The timing inherited by tracks without an explicit override.
-  const RecordTimingAddress.defaults() : channel = null;
+  const new defaults() : channel = null;
 
   /// A zero-based track independent of selection, content, or label.
-  const RecordTimingAddress.track(int this.channel);
+  const new track(int this.channel);
 
   /// Null denotes the default; supported track coordinates are zero to seven.
   final int? channel;
@@ -23,7 +23,7 @@ final class RecordTimingAddress extends Equatable {
 /// the value the Record timing owner holds.
 final class RecordTimingVector extends Equatable {
   /// Copies overrides so a caller cannot change an accepted vector.
-  RecordTimingVector({
+  new({
     required this.defaultTiming,
     required this.rememberedDivision,
     required Map<int, RecordTiming> trackOverrides,
@@ -85,7 +85,7 @@ final class RecordTimingVector extends Equatable {
 /// Confirmed timing, explicit inheritance membership, and edit eligibility.
 final class RecordTimingSnapshot extends Equatable {
   /// Copies overrides so a caller cannot change accepted owner state.
-  RecordTimingSnapshot({
+  new({
     required this.defaultTiming,
     required this.rememberedDivision,
     required Map<int, RecordTiming> trackOverrides,
@@ -130,7 +130,7 @@ enum RecordTimingStatus { applied, rejected, superseded, recoveryRequired }
 /// Persistence and native receipt result, without treating enqueue as success.
 final class RecordTimingOutcome {
   /// Creates an outcome for one attempted timing transaction.
-  const RecordTimingOutcome(
+  const new(
     this.status, {
     this.deferred = false,
     this.engineResult,
@@ -189,7 +189,7 @@ abstract interface class RecordTimingControl {
 
 /// Confirmed recording policy and independent initialization availability.
 final class RecordTimingState extends Equatable {
-  const RecordTimingState({
+  const new({
     this.defaultTiming = RecordTiming.immediately,
     this.rememberedDivision = GridDivision.off,
     this.trackOverrides = const {},

@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -22,7 +22,7 @@ import 'package:segno/theme/theme.dart';
 /// tab (#1653, #1659).
 class StageFooter extends StatelessWidget {
   /// Creates a [StageFooter].
-  const StageFooter({super.key});
+  const new({super.key});
 
   /// The narrowest strip the four slots are laid out at; a narrower window
   /// scales the strip down as one piece.
@@ -79,7 +79,7 @@ typedef _TempoFacts = ({
 /// bpm figure reads `—` on the tempo-free path (`TempoSource.none`): drawing
 /// `0.0` over a grid that does not exist would state a wrong fact.
 class _TempoBlock extends StatelessWidget {
-  const _TempoBlock();
+  const new();
 
   /// The bpm figure's box: five tabular Inter figures at 32.
   static const double bpmWidth = 96;
@@ -161,7 +161,7 @@ class _TempoBlock extends StatelessWidget {
 /// when the rig empties (#678). Whole seconds in the state, so the select
 /// slice fires once per displayed second.
 class _ElapsedClock extends StatelessWidget {
-  const _ElapsedClock();
+  const new();
 
   static String format(int totalSeconds) {
     final hours = (totalSeconds ~/ 3600).toString().padLeft(2, '0');
@@ -202,7 +202,7 @@ class _ElapsedClock extends StatelessWidget {
 /// sized for the longest normal reading, so the level's changes move
 /// nothing (#1308).
 class _OutputLevel extends StatelessWidget {
-  const _OutputLevel();
+  const new();
 
   /// Seventeen JetBrains Mono characters at 20: `SALIDA -60.0 dBFS`.
   static const double width = 204;
@@ -244,7 +244,7 @@ class _OutputLevel extends StatelessWidget {
 /// The loop mode in its bordered pill: `MULTI`, `SYNC`, `BAND`, `SONG`,
 /// `FREE`.
 class _LoopModePill extends StatelessWidget {
-  const _LoopModePill();
+  const new();
 
   /// The pill's corner.
   static const double _radius = 5;
@@ -293,7 +293,7 @@ class _LoopModePill extends StatelessWidget {
 /// A footer readout as a button (#1653): one encoder stop with the console's
 /// pressed state, as tall as the strip so the whole height takes the touch.
 class _FooterTarget extends StatelessWidget {
-  const _FooterTarget({
+  const new({
     required this.semanticLabel,
     required this.onTap,
     required this.child,

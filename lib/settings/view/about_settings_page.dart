@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
@@ -28,7 +28,7 @@ import 'package:segno/update/cubit/update_cubit.dart';
 /// Opened from the Updates page; leads to the Controller firmware page.
 class AboutSettingsPage extends StatefulWidget {
   /// Creates an [AboutSettingsPage].
-  const AboutSettingsPage({super.key});
+  const new({super.key});
 
   /// The columns' top in the frame's main area, under the title row.
   static const double top = 120;
@@ -160,11 +160,7 @@ class _AboutSettingsPageState extends State<AboutSettingsPage> {
         onBack: () => Navigator.maybePop(context),
         onStage: () => Navigator.popUntil(context, (route) => route.isFirst),
         children: [
-          Positioned(
-            left: 0,
-            top: AboutSettingsPage.top,
-            child: thisConsole,
-          ),
+          Positioned(left: 0, top: AboutSettingsPage.top, child: thisConsole),
           Positioned(
             right: 0,
             top: AboutSettingsPage.top,
@@ -232,7 +228,7 @@ String controllerConnection(AppLocalizations l10n, PedalLinkStatus status) =>
 /// board itself.
 class ControllerFirmwareRow extends StatelessWidget {
   /// Creates the Firmware row for [facts].
-  const ControllerFirmwareRow({required this.facts, super.key});
+  const new({required this.facts, super.key});
 
   /// What the console knows about the board.
   final ControllerFacts facts;
@@ -257,7 +253,7 @@ class ControllerFirmwareRow extends StatelessWidget {
 /// firmware page.
 class ControllerProtocolRow extends StatelessWidget {
   /// Creates the Wire protocol row for [facts].
-  const ControllerProtocolRow({required this.facts, super.key});
+  const new({required this.facts, super.key});
 
   /// What the console knows about the board.
   final ControllerFacts facts;

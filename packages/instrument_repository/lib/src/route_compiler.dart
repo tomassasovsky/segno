@@ -20,7 +20,7 @@ enum RouteProblemKind {
 /// One compile problem, for the instrument named.
 class RouteProblem extends Equatable {
   /// Creates a [RouteProblem].
-  const RouteProblem(this.instrumentId, this.kind);
+  const new(this.instrumentId, this.kind);
 
   /// The instrument it concerns.
   final String instrumentId;

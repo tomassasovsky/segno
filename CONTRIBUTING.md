@@ -37,9 +37,8 @@ Every change comes with tests:
   `packages/pedal_repository`, must keep the link contract test passing.
 
 After changing the engine's public header
-(`packages/segno_engine/src/segno_engine_api.h`), regenerate the Dart
-bindings with `dart run ffigen --config ffigen.yaml` from
-`packages/segno_engine`, then run `dart format` on the generated file.
+(`packages/segno_engine/src/core/segno_engine_api.h`), regenerate the Dart
+bindings with `dart run tool/ffigen.dart` from `packages/segno_engine`.
 
 ## Checks
 

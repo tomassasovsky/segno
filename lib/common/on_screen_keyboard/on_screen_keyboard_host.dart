@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 
 /// Wraps the app and supplies an on-screen keyboard whenever a text field takes
@@ -23,11 +23,7 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 /// touched.
 class OnScreenKeyboardHost extends StatefulWidget {
   /// Creates an [OnScreenKeyboardHost] around [child].
-  const OnScreenKeyboardHost({
-    required this.child,
-    this.enabled = true,
-    super.key,
-  });
+  const new({required this.child, this.enabled = true, super.key});
 
   /// The app below the keyboard.
   final Widget child;

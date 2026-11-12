@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/audio_setup/view/device_page.dart';
@@ -126,10 +126,7 @@ void main() {
       unawaited(openNetworkSettings());
       await tester.pumpAndSettle();
       expect(harness.wifi.statusReads, 1);
-      expect(
-        find.byKey(const Key('network_connection_card')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('network_connection_card')), findsOneWidget);
       final cubit = BlocProvider.of<WifiCubit>(
         tester.element(find.byKey(const Key('network_connection_card'))),
       );

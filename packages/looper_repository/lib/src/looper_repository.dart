@@ -71,7 +71,7 @@ enum RecoveryAction {
 /// A recovery refused before changing the current session.
 class RecoveryRefusal {
   /// Creates a refusal for the requested [action].
-  const RecoveryRefusal({required this.action, required this.result});
+  const new({required this.action, required this.result});
 
   /// The requested direction through history.
   final RecoveryAction action;
@@ -81,7 +81,7 @@ class RecoveryRefusal {
 }
 
 class _TimingIntent {
-  _TimingIntent(
+  new(
     this.defaultTiming,
     this.rememberedDivision,
     Map<int, RecordTiming> overrides,
@@ -92,7 +92,7 @@ class _TimingIntent {
 }
 
 class _LengthIntent {
-  _LengthIntent(this.defaultBars, Map<int, int> overrides, this.mode)
+  new(this.defaultBars, Map<int, int> overrides, this.mode)
     : overrides = Map.unmodifiable(overrides);
   final int defaultBars;
   final Map<int, int> overrides;
@@ -148,26 +148,20 @@ typedef _ClearMark = ({int seq, Set<int> empty, Set<int> refused});
 /// publishes distinct states on [looperState]. Looper commands are forwarded to
 /// the engine. The bloc layer depends on this repository, never on the engine.
 class LooperRepository {
-  /// Creates a [LooperRepository] driving [engine].
+  /// Creates a [LooperRepository] driving [_engine].
   ///
-  /// [ticker] drives snapshot polling; when omitted a periodic stream at
-  /// [pollInterval] (~60 Hz) is used. Injecting a ticker makes tests
+  /// [_ticker] drives snapshot polling; when omitted a periodic stream at
+  /// [_pollInterval] (~60 Hz) is used. Injecting a ticker makes tests
   /// deterministic.
-  LooperRepository({
-    required AudioEngine engine,
-    Stream<void>? ticker,
-    Duration pollInterval = const Duration(milliseconds: 16),
-    Stream<void>? reconnectTicker,
-    Duration reconnectInterval = const Duration(seconds: 1),
-    Duration renderPollInterval = const Duration(milliseconds: 16),
-    Duration renderFreezeTimeout = const Duration(seconds: 2),
-  }) : _engine = engine,
-       _ticker = ticker,
-       _pollInterval = pollInterval,
-       _reconnectTicker = reconnectTicker,
-       _reconnectInterval = reconnectInterval,
-       _renderPollInterval = renderPollInterval,
-       _renderFreezeTimeout = renderFreezeTimeout {
+  new({
+    required this._engine,
+    this._ticker,
+    this._pollInterval = const Duration(milliseconds: 16),
+    this._reconnectTicker,
+    this._reconnectInterval = const Duration(seconds: 1),
+    this._renderPollInterval = const Duration(milliseconds: 16),
+    this._renderFreezeTimeout = const Duration(seconds: 2),
+  }) {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
@@ -256,11 +250,7 @@ class LooperRepository {
       outputPeaks: s.outputPeaks,
       tracks: [
         for (final track in s.tracks)
-          TrackLevels(
-            peak: track.peak,
-            peakL: track.peakL,
-            peakR: track.peakR,
-          ),
+          TrackLevels(peak: track.peak, peakL: track.peakL, peakR: track.peakR),
       ],
     );
     if (next == _meters) return;
@@ -463,10 +453,8 @@ class LooperRepository {
     _InheritIntent(const {}, defaultValue: false),
     send: (intent) => _sendInherit(
       intent,
-      published: (s) => (
-        s.followTempo,
-        [for (final t in s.tracks) t.followTempoOverride],
-      ),
+      published: (s) =>
+          (s.followTempo, [for (final t in s.tracks) t.followTempoOverride]),
       post: (channel, value) =>
           _engine.setFollowTempo(channel: channel, follow: value),
     ),
@@ -477,10 +465,8 @@ class LooperRepository {
     _InheritIntent(const {}, defaultValue: PitchMode.unchanged),
     send: (intent) => _sendInherit(
       intent,
-      published: (s) => (
-        s.pitchMode,
-        [for (final t in s.tracks) t.pitchModeOverride],
-      ),
+      published: (s) =>
+          (s.pitchMode, [for (final t in s.tracks) t.pitchModeOverride]),
       post: (channel, value) =>
           _engine.setPitchMode(channel: channel, mode: value),
     ),
@@ -1358,9 +1344,7 @@ class LooperRepository {
           final lane = inherited.key;
           final effects = inherited.value;
           final key = (ch, lane);
-          _fxHeld.remove(
-            FxAddress(stage: FxStage.loop, index: ch, lane: lane),
-          );
+          _fxHeld.remove(FxAddress(stage: FxStage.loop, index: ch, lane: lane));
           // The take plays what it was heard as while the lane keeps the
           // chain it was recorded through.
           if (effects.isEmpty) {
@@ -1447,11 +1431,7 @@ class LooperRepository {
   /// chain its take was recorded through. Compared as the chains persist, so
   /// transient state (a plugin's parameter list, a loading flag) does not
   /// count as an edit.
-  bool _printMatches(
-    (int, int) key,
-    List<TrackEffect> chain, {
-    bool? chainOn,
-  }) {
+  bool _printMatches((int, int) key, List<TrackEffect> chain, {bool? chainOn}) {
     final printed = _lanePrinted[key] ?? const <TrackEffect>[];
     if (!(chainOn ?? _laneChainEnabled[key] ?? true)) return false;
     return identical(chain, printed) ||
@@ -1741,9 +1721,8 @@ class LooperRepository {
         // whether the callback applied it, so it reads as refused.
         final unchanged =
             intent.mode == priorMode &&
-            [
-              for (var c = 0; c < 8; c++) c,
-            ].every((c) => c < priorBars.length && bars[c] == priorBars[c]);
+            [for (var c = 0; c < 8; c++) c]
+                .every((c) => c < priorBars.length && bars[c] == priorBars[c]);
         final capturing = snapshot.tracks.any(
           (t) =>
               t.state == TrackState.recording ||
@@ -2281,11 +2260,8 @@ class LooperRepository {
   Future<EngineResult> setInterfacePhantomPower(
     int phantomSwitch, {
     required bool on,
-  }) => _setInterfaceSwitch(
-    InterfaceControl.phantom,
-    phantomSwitch,
-    on ? 1 : 0,
-  );
+  }) =>
+      _setInterfaceSwitch(InterfaceControl.phantom, phantomSwitch, on ? 1 : 0);
 
   /// Turns a Focusrite unit's setup (MSD) mode off. The unit shows its
   /// controls once it is power-cycled.
@@ -2299,7 +2275,7 @@ class LooperRepository {
   ) async {
     final id = _interfaceCaptureId;
     if (id == null) return EngineResult.notRunning;
-    return _engine.setInterfaceInput(
+    return await _engine.setInterfaceInput(
       id,
       control: control,
       index: index,
@@ -4859,10 +4835,7 @@ class LooperRepository {
         _clearGroupIsAll = true;
         _clearFallback = null;
         // The re-clear is the newest edit now.
-        _clearMark = _markClear(
-          _engine.snapshot(),
-          refused: _clearRedoRefused,
-        );
+        _clearMark = _markClear(_engine.snapshot(), refused: _clearRedoRefused);
         return EngineResult.ok;
       }
       _clearRedoGroup = const {};
@@ -4955,9 +4928,7 @@ class LooperRepository {
   ({EngineResult result, RenderJob? job}) renderToFile(
     SelectedRender render,
     String path,
-  ) => _beginRender(
-    _renderRequest(render, RenderTarget.file, path: path),
-  );
+  ) => _beginRender(_renderRequest(render, RenderTarget.file, path: path));
 
   /// Renders [render] into the engine's memory, at most [maxFrames] frames
   /// (a Bounce destination's capacity). The finished job keeps its result
@@ -5796,10 +5767,7 @@ class LooperRepository {
         }
         // The lap the take was played on (#854); the import cleared it.
         if (track.anchorLap > 0) {
-          final anchored = _engine.importAnchor(
-            track.channel,
-            track.anchorLap,
-          );
+          final anchored = _engine.importAnchor(track.channel, track.anchorLap);
           if (!anchored.isOk) {
             throw StateError(
               'failed to restore track ${track.channel} anchor: '
@@ -5863,10 +5831,7 @@ class LooperRepository {
           ? rig.recordedLengthFrames
           : rig.baseLengthFrames;
       if (rig.tracks.isNotEmpty && base > 0) {
-        final committed = _engine.commitSession(
-          base,
-          loopBeats: rig.gridBeats,
-        );
+        final committed = _engine.commitSession(base, loopBeats: rig.gridBeats);
         if (!committed.isOk) {
           throw StateError('failed to commit the session: ${committed.name}');
         }
@@ -7935,9 +7900,7 @@ class LooperRepository {
     final released = _fxReleaseFor(address, enabled: enabled);
     if (released != null) return released;
     if (_intendRunning) {
-      final result = _engine.setAllTracksFxChainEnabled(
-        enabled: enabled,
-      );
+      final result = _engine.setAllTracksFxChainEnabled(enabled: enabled);
       if (!result.isOk) return result;
     }
     _fxReleaseAfter(address, enabled: enabled);
@@ -8937,12 +8900,7 @@ class LooperRepository {
   }) {
     final period = _fxPeriod;
     final rate = _fxRate;
-    return _fxLoadAt(
-          rate,
-          period,
-          replaced: chains,
-          switches: chainSwitches,
-        ) -
+    return _fxLoadAt(rate, period, replaced: chains, switches: chainSwitches) -
         _fxLoadAt(rate, period);
   }
 
@@ -9306,11 +9264,7 @@ class LooperRepository {
   /// chain (#1713): it holds one, and [chain] is the one it was recorded
   /// through (its Pre run, #1741). Such a lane runs only its Post entries,
   /// so it charges those; an edit that re-amps it is weighed like any other.
-  bool _playsImage(
-    FxAddress at,
-    List<TrackEffect> chain, {
-    bool? chainOn,
-  }) {
+  bool _playsImage(FxAddress at, List<TrackEffect> chain, {bool? chainOn}) {
     if (at.stage != FxStage.loop) return false;
     final key = (at.index, at.lane ?? 0);
     return _laneHeard.contains(key) &&
@@ -10689,7 +10643,7 @@ int resolvedPrimaryTrack(int designation, List<TrackSnapshot> tracks) {
 /// content changed; a playhead tick, a level tick, a mute or a volume change
 /// move none of these.
 class _WaveformKey extends Equatable {
-  const _WaveformKey({
+  const new({
     required this.state,
     required this.lengthFrames,
     required this.undoDepth,
@@ -10697,7 +10651,7 @@ class _WaveformKey extends Equatable {
     required this.clearRestore,
   });
 
-  factory _WaveformKey.of(Track track) => _WaveformKey(
+  factory of(Track track) => _WaveformKey(
     state: track.state,
     lengthFrames: track.lengthFrames,
     undoDepth: track.undoDepth,
@@ -10723,7 +10677,7 @@ class _WaveformKey extends Equatable {
 
 /// One cached waveform read with the sweep it is waiting on.
 class _WaveformRead {
-  _WaveformRead(this.key, this.samples, {required this.sweepFrom})
+  new(this.key, this.samples, {required this.sweepFrom})
     : lastProgress = sweepFrom;
 
   final _WaveformKey key;
@@ -10741,7 +10695,7 @@ class _WaveformRead {
 }
 
 class _MixIntent {
-  _MixIntent({
+  new({
     required Map<int, double> pans,
     required Map<int, double> trackLevels,
     required Map<int, bool> solos,
@@ -10787,7 +10741,7 @@ class _MixIntent {
 }
 
 class _PendingImage {
-  _PendingImage(
+  new(
     this.revision,
     this.images,
     this.balances,
@@ -10811,7 +10765,7 @@ class _PendingImage {
 
 /// One refused fresh-capture press waiting for its retry (#1146).
 class _RecordRetry {
-  _RecordRetry(this.channel);
+  new(this.channel);
 
   final int channel;
 
@@ -10820,7 +10774,7 @@ class _RecordRetry {
 }
 
 class _FxPreparationRefused implements Exception {
-  const _FxPreparationRefused(this.result);
+  const new(this.result);
 
   final EngineResult result;
 }
@@ -10828,14 +10782,14 @@ class _FxPreparationRefused implements Exception {
 /// A Loop setting with the inherit grammar (#1179 Follow tempo and Pitch):
 /// the default every track inherits and per-track overrides.
 final class _InheritIntent<V extends Object> {
-  _InheritIntent(Map<int, V> overrides, {required this.defaultValue})
+  new(Map<int, V> overrides, {required this.defaultValue})
     : overrides = Map.unmodifiable(overrides);
   final V defaultValue;
   final Map<int, V> overrides;
 }
 
 final class _OneShotIntent {
-  _OneShotIntent(Map<int, bool> overrides, {required this.defaultValue})
+  new(Map<int, bool> overrides, {required this.defaultValue})
     : overrides = Map.unmodifiable(overrides);
   final bool defaultValue;
   final Map<int, bool> overrides;
@@ -10844,7 +10798,7 @@ final class _OneShotIntent {
 
 /// A cable measurement waiting for its result.
 class _LatencyWait {
-  _LatencyWait(this.request, this.timeout);
+  new(this.request, this.timeout);
 
   final int request;
   final Timer timeout;

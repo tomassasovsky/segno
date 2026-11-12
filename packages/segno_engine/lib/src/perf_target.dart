@@ -9,7 +9,7 @@ import 'package:meta/meta.dart';
 class PerfTarget {
   /// Creates a [PerfTarget]. [takeId] is the take's 16-byte identity, minted
   /// when recording starts; it is copied.
-  PerfTarget({
+  new({
     required this.captureDir,
     required Uint8List takeId,
     this.liveSidecarDir,

@@ -18,7 +18,7 @@ class _FaultStore extends FakeKeyValueStore {
     if (key == 'track_record_timing.7' && blockedRead != null) {
       await blockedRead!.future;
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   @override
@@ -267,10 +267,7 @@ void main() {
   test('flush preserves malformed startup recovery blocker', () async {
     store.values['track_record_timing.7'] = 7;
     await owner.load();
-    expect(
-      (await owner.owner.flush()).status,
-      SettingStatus.recoveryRequired,
-    );
+    expect((await owner.owner.flush()).status, SettingStatus.recoveryRequired);
     expect(owner.recordTimingSnapshot, isNull);
     expect(store.values['track_record_timing.7'], 7);
   });

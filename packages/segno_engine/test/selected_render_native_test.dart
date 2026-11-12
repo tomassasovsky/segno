@@ -24,9 +24,7 @@ void main() {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);
     expect(
-      engine.start(
-        const EngineConfig(inputChannels: 1, outputChannels: 2),
-      ),
+      engine.start(const EngineConfig(inputChannels: 1, outputChannels: 2)),
       EngineResult.ok,
     );
     engine.pump(frames: 0);
@@ -76,10 +74,7 @@ void main() {
     engine.pump(frames: 0);
     const request = RenderRequest(sources: {0}, lengthBars: 1);
     expect(engine.measureRender(request).plan!.onceCutTracks, isEmpty);
-    expect(
-      engine.setOneShotMask(channels: 1, oneShot: true),
-      EngineResult.ok,
-    );
+    expect(engine.setOneShotMask(channels: 1, oneShot: true), EngineResult.ok);
     engine.pump(frames: 0);
     final measured = engine.measureRender(request);
     expect(measured.result, EngineResult.ok);

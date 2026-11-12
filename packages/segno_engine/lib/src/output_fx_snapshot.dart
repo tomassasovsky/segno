@@ -1,11 +1,7 @@
 /// A built-in output effect at the actual performance arm boundary.
 class OutputEffectSnapshot {
   /// Creates an effect snapshot.
-  const OutputEffectSnapshot({
-    required this.type,
-    required this.params,
-    this.enabled = true,
-  });
+  const new({required this.type, required this.params, this.enabled = true});
 
   /// Native effect type identifier.
   final int type;
@@ -20,7 +16,7 @@ class OutputEffectSnapshot {
 /// The selected destination chain frozen by the callback at performance arm.
 class OutputFxSnapshot {
   /// Creates a chain snapshot.
-  const OutputFxSnapshot({this.effects = const [], this.chainEnabled = true});
+  const new({this.effects = const [], this.chainEnabled = true});
 
   /// Ordered effect instances.
   final List<OutputEffectSnapshot> effects;

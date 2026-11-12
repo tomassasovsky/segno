@@ -8,10 +8,8 @@ extension _FootLengthControl on ControlCubit {
       state.mode.isLength &&
       !_fxPersistence.sessionTransitionActive;
 
-  FootLengthProjection _lengthProjection() => _footLengthActions.project(
-    bank: state.activeBank,
-    cursor: state.cursor,
-  );
+  FootLengthProjection _lengthProjection() =>
+      _footLengthActions.project(bank: state.activeBank, cursor: state.cursor);
 
   /// The role [button] plays on the current length surface.
   FootLengthPedal _lengthRole(PedalButton button) =>

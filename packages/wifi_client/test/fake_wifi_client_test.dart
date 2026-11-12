@@ -38,10 +38,7 @@ void main() {
           ),
         ),
       );
-      await client.connect(
-        'Studio 5G',
-        psk: FakeWifiClient.workingPassphrase,
-      );
+      await client.connect('Studio 5G', psk: FakeWifiClient.workingPassphrase);
       expect((await client.status()).ssid, 'Studio 5G');
     });
 

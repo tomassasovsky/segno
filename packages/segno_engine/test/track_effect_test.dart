@@ -358,9 +358,10 @@ void main() {
     });
 
     test('a part-4 entry without paramValues decodes to an empty map', () {
-      final decoded =
-          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
-              as PluginEffect;
+      final decoded = TrackEffect.fromJson({
+        'type': kPluginFxCode,
+        'plugin': ref.toJson(),
+      }) as PluginEffect;
       expect(decoded.paramValues, isEmpty);
     });
 
@@ -386,9 +387,10 @@ void main() {
     });
 
     test('a pre-state entry decodes to an empty state', () {
-      final decoded =
-          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
-              as PluginEffect;
+      final decoded = TrackEffect.fromJson({
+        'type': kPluginFxCode,
+        'plugin': ref.toJson(),
+      }) as PluginEffect;
       expect(decoded.state, isEmpty);
     });
 
@@ -618,18 +620,7 @@ void main() {
     test('codes match the native enums', () {
       expect(
         [for (final u in FxParamUnit.values) u.code],
-        [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8,
-          9,
-        ],
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
       );
       expect(FxParamUnit.choice.code, 5);
       expect(FxParamCurve.linear.code, 0);
@@ -787,33 +778,30 @@ void main() {
       expect((decoded.first as PluginEffect).ref.id, 'keep.me');
     });
 
-    test(
-      'the exact pre-plugin bare-array string still decodes',
-      () {
-        // Back-compat: a v1 chain is a bare array of {type, params} with no
-        // envelope and no plugin entries; it must decode unchanged.
-        const v1 =
-            '[{"type":1,"params":[0.5,0.8,0.0,0.0]},'
-            '{"type":3,"params":[0.35,0.35,0.35,0.0]}]';
-        final decoded = decodeTrackEffects(v1);
-        expect(decoded, [
-          BuiltInEffect(type: TrackEffectType.drive),
-          BuiltInEffect(type: TrackEffectType.delay),
-        ]);
-        for (final e in decoded) {
-          expect(e, isA<BuiltInEffect>());
-        }
-        // Re-encoding yields a bare array — no envelope, no plugin keys —
-        // carrying only the cells each type reads, which decodes back to the
-        // same entries.
-        expect(
-          encodeTrackEffects(decoded),
-          '[{"type":1,"params":[0.5,0.8]},'
-          '{"type":3,"params":[0.35,0.35,0.35]}]',
-        );
-        expect(decodeTrackEffects(encodeTrackEffects(decoded)), decoded);
-      },
-    );
+    test('the exact pre-plugin bare-array string still decodes', () {
+      // Back-compat: a v1 chain is a bare array of {type, params} with no
+      // envelope and no plugin entries; it must decode unchanged.
+      const v1 =
+          '[{"type":1,"params":[0.5,0.8,0.0,0.0]},'
+          '{"type":3,"params":[0.35,0.35,0.35,0.0]}]';
+      final decoded = decodeTrackEffects(v1);
+      expect(decoded, [
+        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: TrackEffectType.delay),
+      ]);
+      for (final e in decoded) {
+        expect(e, isA<BuiltInEffect>());
+      }
+      // Re-encoding yields a bare array — no envelope, no plugin keys —
+      // carrying only the cells each type reads, which decodes back to the
+      // same entries.
+      expect(
+        encodeTrackEffects(decoded),
+        '[{"type":1,"params":[0.5,0.8]},'
+        '{"type":3,"params":[0.35,0.35,0.35]}]',
+      );
+      expect(decodeTrackEffects(encodeTrackEffects(decoded)), decoded);
+    });
 
     test('decodes a legacy chain that still carries stage keys', () {
       final legacy = jsonEncode([
@@ -945,9 +933,7 @@ void main() {
       );
       expect(builtIn.toJson()['placement'], 'pre');
       expect(plugin.toJson()['placement'], 'pre');
-      final decoded = decodeTrackEffects(
-        encodeTrackEffects([builtIn, plugin]),
-      );
+      final decoded = decodeTrackEffects(encodeTrackEffects([builtIn, plugin]));
       expect(decoded.map((e) => e.placement), [
         FxPlacement.pre,
         FxPlacement.pre,

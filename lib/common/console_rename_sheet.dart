@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -62,7 +62,7 @@ Future<String?> showConsoleRenameSheet(
 }
 
 class _ConsoleRenameSheet extends StatefulWidget {
-  const _ConsoleRenameSheet({
+  const new({
     required this.title,
     required this.subtitle,
     required this.current,
@@ -245,7 +245,7 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
 /// uses for prose.
 class ConsoleEntryField extends StatelessWidget {
   /// Creates a [ConsoleEntryField] showing [text], announced as [label].
-  const ConsoleEntryField({
+  const new({
     required this.text,
     required this.label,
     this.textKey,

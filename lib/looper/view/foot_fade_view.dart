@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fade.dart';
@@ -19,7 +19,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// claim a stopped or muted track is audible.
 class FootFadeView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootFadeView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +50,7 @@ String _seconds(int? milliseconds) =>
     milliseconds == null ? '—' : (milliseconds / 1000).toStringAsFixed(1);
 
 class _FootFadeContent extends StatelessWidget {
-  const _FootFadeContent({required this.durations});
+  const new({required this.durations});
 
   final FadeDurations? durations;
 
@@ -207,7 +207,7 @@ class _FootFadeContent extends StatelessWidget {
 
 /// One track in the all-eight overview: name, effective time, level, state.
 class _FadeOverviewCell extends StatelessWidget {
-  const _FadeOverviewCell({required this.track, required this.name});
+  const new({required this.track, required this.name});
 
   final FootFadeTrack track;
   final String name;
@@ -257,7 +257,7 @@ class _FadeOverviewCell extends StatelessWidget {
 }
 
 class _FootFadePedal extends StatelessWidget {
-  const _FootFadePedal({required this.button, required this.projection});
+  const new({required this.button, required this.projection});
 
   final PedalButton button;
   final FootFadeProjection projection;

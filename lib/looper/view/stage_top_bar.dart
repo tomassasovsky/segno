@@ -1,9 +1,10 @@
 import 'dart:async';
+
 import 'package:cpu_load_repository/cpu_load_repository.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/console_surface.dart';
@@ -34,7 +35,7 @@ import 'package:segno/theme/theme.dart';
 /// name and a bank change the bank button.
 class StageTopBar extends StatelessWidget {
   /// Creates a [StageTopBar].
-  const StageTopBar({super.key});
+  const new({super.key});
 
   /// The bar's height — the pen's 96.
   static const double height = 96;
@@ -129,7 +130,7 @@ class StageTopBar extends StatelessWidget {
 /// Track view gives to a queued action's cue, and every track on the
 /// Mixer, whose strips are all controls and only ring.
 class _StageMessage extends StatelessWidget {
-  const _StageMessage();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +165,7 @@ class _StageMessage extends StatelessWidget {
 /// A 60×60 icon target, bordered like the pen's trailing buttons or bare like
 /// its Library mark.
 class _StageIconButton extends StatelessWidget {
-  const _StageIconButton({
+  const new({
     required this.semanticLabel,
     required this.onTap,
     required this.child,
@@ -203,7 +204,7 @@ class _StageIconButton extends StatelessWidget {
 /// The open session's name, centred — a readout; Library is the way to the
 /// sessions. `Unsaved`, in italic, while no session is open.
 class _SessionName extends StatelessWidget {
-  const _SessionName();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -231,7 +232,7 @@ class _SessionName extends StatelessWidget {
 /// The pen's `stage-aux` button (25 `bZDIR`): opens the Backing & click
 /// volume and pan dialog. Mixer view only, beside Reset mixer.
 class _BackingClickButton extends StatelessWidget {
-  const _BackingClickButton();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -270,7 +271,7 @@ class _BackingClickButton extends StatelessWidget {
 /// Only in the Mixer view, because that is where the pen puts it and because
 /// an action that changes eight values at once wants to be beside them.
 class _ResetMixerButton extends StatelessWidget {
-  const _ResetMixerButton();
+  const new();
 
   Future<void> _confirmReset(BuildContext context) async {
     final l10n = context.l10n;
@@ -323,7 +324,7 @@ class _ResetMixerButton extends StatelessWidget {
 /// The bank button: the visible bank's letter; a tap reveals the other bank's
 /// four tracks without moving the selection or touching playback.
 class _BankButton extends StatelessWidget {
-  const _BankButton();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -362,7 +363,7 @@ class _BankButton extends StatelessWidget {
 /// The view button: opens the Track / Wave / Mixer menu below itself. A radio
 /// menu (`menuitemradio` in the prototype): the current view is checked.
 class _ViewButton extends StatelessWidget {
-  const _ViewButton();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -410,7 +411,7 @@ class _ViewButton extends StatelessWidget {
 /// A fixed slot (#1308): the elapsed readout appears inside room the light
 /// always holds, so arming moves nothing beside it.
 class _RecordLight extends StatelessWidget {
-  const _RecordLight();
+  const new();
 
   /// The light's 36, the 12 before the readout, and the readout's 60 — six
   /// JetBrains Mono figures at 16, enough for `100:00`.
@@ -511,7 +512,7 @@ const int kCpuLoadDanger = 75;
 /// bar is on screen, and only a change in the shown figure rebuilds the
 /// figure. A fixed slot sized for `CPU 100%`, so no reading moves anything.
 class _CpuLoad extends StatelessWidget {
-  const _CpuLoad();
+  const new();
 
   /// Eight JetBrains Mono characters at 16: `CPU 100%`.
   static const double slotWidth = 80;
@@ -535,7 +536,7 @@ class _CpuLoad extends StatelessWidget {
 /// accent, amber from [kCpuLoadWarning] and red from [kCpuLoadDanger].
 /// Nothing until the first reading.
 class _CpuLoadBar extends StatelessWidget {
-  const _CpuLoadBar({required this.load});
+  const new({required this.load});
 
   /// The load in percent of the whole machine, or `null` before the first
   /// reading.
@@ -594,7 +595,7 @@ class _CpuLoadBar extends StatelessWidget {
 }
 
 class _CpuLoadFigure extends StatelessWidget {
-  const _CpuLoadFigure();
+  const new();
 
   @override
   Widget build(BuildContext context) {

@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/appliance/idle_dim_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 void main() {
   group('PerformanceAutoStopNotice (#1767)', () {
@@ -63,10 +63,7 @@ void main() {
         );
 
     for (final (reason, title) in const [
-      (
-        PerformanceStopReason.idle,
-        'Capture stopped after 20 idle minutes.',
-      ),
+      (PerformanceStopReason.idle, 'Capture stopped after 20 idle minutes.'),
       (
         PerformanceStopReason.lengthLimit,
         'Capture reached its longest length.',

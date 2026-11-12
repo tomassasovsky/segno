@@ -1,15 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Editable pedal artwork using the accepted Fusion-derived 84 by 114 geometry.
 /// Interaction and focus belong to the enclosing pedal, not its painted parts.
 class PedalHardwareFace extends StatelessWidget {
   /// Creates the hardware face with its physical label.
-  const PedalHardwareFace({
-    required this.label,
-    required this.selected,
-    super.key,
-  });
+  const new({required this.label, required this.selected, super.key});
 
   /// The label printed on the nameplate.
   final String label;
@@ -58,7 +54,7 @@ class PedalHardwareFace extends StatelessWidget {
 
 class _PedalFacePainter extends CustomPainter {
   /// Creates a [_PedalFacePainter].
-  const _PedalFacePainter({required this.selected});
+  const new({required this.selected});
 
   static const Size _artSize = Size(84, 114);
   static const Rect _namePlateRect = Rect.fromLTRB(
@@ -132,10 +128,7 @@ class _PedalFacePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas
       ..save()
-      ..scale(
-        size.width / _artSize.width,
-        size.height / _artSize.height,
-      );
+      ..scale(size.width / _artSize.width, size.height / _artSize.height);
     // Everything is authored in the 84 x 114 box, so the whole face scales
     // with one transform and no outline has to know its final size.
     _paintHinges(canvas);

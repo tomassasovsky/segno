@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -11,7 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// it.
 class ArmedIndicator extends StatelessWidget {
   /// Creates an [ArmedIndicator].
-  const ArmedIndicator({super.key});
+  const new({super.key});
 
   static String _format(Duration elapsed) {
     final minutes = elapsed.inMinutes.toString().padLeft(2, '0');

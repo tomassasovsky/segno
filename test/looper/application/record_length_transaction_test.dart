@@ -68,7 +68,7 @@ class _Store extends FakeKeyValueStore {
       await readGate?.future;
       if (readFailure) throw StateError('read refused');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   @override
@@ -159,26 +159,23 @@ void main() {
         expect(owner.state.recordLengthReady, isTrue);
       },
     );
-    test(
-      'malformed last slot prevents every length and mode restore until '
-      'Retry repairs it',
-      () async {
-        store.values.addAll({
-          'looper.default_length_bars': 8,
-          'tempo.length_preset.7': 65,
-        });
-        await owner.load();
-        expect(owner.recordLengthSnapshot, isNull);
-        expect(repository.sessionTransport.defaultLengthPresetBars, 0);
-        expect(repository.sessionTransport.looperMode, LooperMode.multi);
-        expect(store.values['tempo.length_preset.7'], 65);
-        // Retry removes the unreadable key and restores the rest.
-        expect((await owner.owner.recover()).isOk, isTrue);
-        expect(store.values.containsKey('tempo.length_preset.7'), isFalse);
-        expect(owner.recordLengthSnapshot!.defaultBars, 8);
-        expect(owner.recordLengthSnapshot!.mode, LooperMode.free);
-      },
-    );
+    test('malformed last slot prevents every length and mode restore until '
+        'Retry repairs it', () async {
+      store.values.addAll({
+        'looper.default_length_bars': 8,
+        'tempo.length_preset.7': 65,
+      });
+      await owner.load();
+      expect(owner.recordLengthSnapshot, isNull);
+      expect(repository.sessionTransport.defaultLengthPresetBars, 0);
+      expect(repository.sessionTransport.looperMode, LooperMode.multi);
+      expect(store.values['tempo.length_preset.7'], 65);
+      // Retry removes the unreadable key and restores the rest.
+      expect((await owner.owner.recover()).isOk, isTrue);
+      expect(store.values.containsKey('tempo.length_preset.7'), isFalse);
+      expect(owner.recordLengthSnapshot!.defaultBars, 8);
+      expect(owner.recordLengthSnapshot!.mode, LooperMode.free);
+    });
     test(
       'failed startup exposes persistent Retry and revalidates on recovery',
       () async {
@@ -298,56 +295,50 @@ void main() {
         expect((await hold()).isOk, isTrue);
       },
     );
-    test(
-      'an unknown vector is owed without a stop, and Retry lands the '
-      'Released value',
-      () async {
-        await start();
-        engine
-          ..publishLengthCommands = false
-          ..corruptLength = true;
-        expect((await hold()).status, RecordLengthStatus.recoveryRequired);
-        expect(repository.sessionTransport.deviceRunning, isTrue);
-        expect(engine.stopCalls, 0);
-        // Storage keeps the Released value the receipt owes.
-        expect(store.values['tempo.length_preset.0'], 4);
-        engine
-          ..publishLengthCommands = true
-          ..corruptLength = false;
-        expect((await owner.owner.recover()).isOk, isTrue);
-        expect(owner.recordLengthSnapshot!.trackOverrides, {0: 4});
-      },
-    );
-    test(
-      'Multi atomically retires track Held to Released but preserves '
-      'default Held',
-      () async {
-        await start();
-        await hold();
-        await owner.setControllerRecordLength(
-          const RecordLengthAddress.defaults(),
-          12,
-          releasedBars: 6,
-          lifetime: owner.recordLengthLifetime,
-          revision: 0,
-        );
-        final rev = owner.recordLengthRevision(
-          const RecordLengthAddress.track(0),
-        );
-        expect((await owner.setLooperMode(LooperMode.multi)).isOk, isTrue);
-        expect(owner.recordLengthSnapshot!.trackOverrides, {0: 4});
-        expect(owner.recordLengthSnapshot!.defaultBars, 12);
-        expect(owner.durableRecordLengthSnapshot.defaultBars, 6);
-        expect(
-          owner.recordLengthRevision(const RecordLengthAddress.track(0)),
-          rev + 1,
-        );
-        expect((await hold()).isOk, isFalse);
-        expect((await owner.setLooperMode(LooperMode.free)).isOk, isTrue);
-        expect(engine.publishedLengths[0], 4);
-        expect(engine.publishedLengths[1], 12);
-      },
-    );
+    test('an unknown vector is owed without a stop, and Retry lands the '
+        'Released value', () async {
+      await start();
+      engine
+        ..publishLengthCommands = false
+        ..corruptLength = true;
+      expect((await hold()).status, RecordLengthStatus.recoveryRequired);
+      expect(repository.sessionTransport.deviceRunning, isTrue);
+      expect(engine.stopCalls, 0);
+      // Storage keeps the Released value the receipt owes.
+      expect(store.values['tempo.length_preset.0'], 4);
+      engine
+        ..publishLengthCommands = true
+        ..corruptLength = false;
+      expect((await owner.owner.recover()).isOk, isTrue);
+      expect(owner.recordLengthSnapshot!.trackOverrides, {0: 4});
+    });
+    test('Multi atomically retires track Held to Released but preserves '
+        'default Held', () async {
+      await start();
+      await hold();
+      await owner.setControllerRecordLength(
+        const RecordLengthAddress.defaults(),
+        12,
+        releasedBars: 6,
+        lifetime: owner.recordLengthLifetime,
+        revision: 0,
+      );
+      final rev = owner.recordLengthRevision(
+        const RecordLengthAddress.track(0),
+      );
+      expect((await owner.setLooperMode(LooperMode.multi)).isOk, isTrue);
+      expect(owner.recordLengthSnapshot!.trackOverrides, {0: 4});
+      expect(owner.recordLengthSnapshot!.defaultBars, 12);
+      expect(owner.durableRecordLengthSnapshot.defaultBars, 6);
+      expect(
+        owner.recordLengthRevision(const RecordLengthAddress.track(0)),
+        rev + 1,
+      );
+      expect((await hold()).isOk, isFalse);
+      expect((await owner.setLooperMode(LooperMode.free)).isOk, isTrue);
+      expect(engine.publishedLengths[0], 4);
+      expect(engine.publishedLengths[1], 12);
+    });
     test(
       'refused Multi preserves Held membership priority and saved mode',
       () async {
@@ -363,20 +354,17 @@ void main() {
         expect(store.values['looper.mode'], LooperMode.free.code);
       },
     );
-    test(
-      'mutated scalar is exactly rolled back and failed rollback '
-      'requires Retry',
-      () async {
-        await owner.load();
-        store.values['tempo.length_preset.0'] = 0;
-        store.failures = 2;
-        expect((await hold()).status, RecordLengthStatus.recoveryRequired);
-        expect((await hold()).isOk, isFalse);
-        expect((await owner.owner.recover()).isOk, isTrue);
-        expect(store.values['tempo.length_preset.0'], 0);
-        expect((await hold()).isOk, isTrue);
-      },
-    );
+    test('mutated scalar is exactly rolled back and failed rollback '
+        'requires Retry', () async {
+      await owner.load();
+      store.values['tempo.length_preset.0'] = 0;
+      store.failures = 2;
+      expect((await hold()).status, RecordLengthStatus.recoveryRequired);
+      expect((await hold()).isOk, isFalse);
+      expect((await owner.owner.recover()).isOk, isTrue);
+      expect(store.values['tempo.length_preset.0'], 0);
+      expect((await hold()).isOk, isTrue);
+    });
     test('Save can project Released while capture keeps live Held', () async {
       await start();
       await hold();

@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_destination.dart';
@@ -24,7 +24,7 @@ import 'package:segno/theme/theme.dart';
 /// the effect they belong to, and touch moves the actual slider.
 class FxEffectEditor extends StatelessWidget {
   /// Creates an [FxEffectEditor].
-  const FxEffectEditor({
+  const new({
     required this.group,
     required this.destination,
     required this.destinationLabel,
@@ -194,7 +194,7 @@ class FxEffectEditor extends StatelessWidget {
 /// pedal's picture is, and while its chain is off, as the parameters beside
 /// it are.
 class _EffectPedal extends StatelessWidget {
-  const _EffectPedal({required this.effect, required this.chainOn});
+  const new({required this.effect, required this.chainOn});
 
   final TrackEffect effect;
   final bool chainOn;
@@ -213,7 +213,7 @@ class _EffectPedal extends StatelessWidget {
 
 /// The titlebar's own row: the effect's bypass, its options and Save preset.
 class _ChainActions extends StatelessWidget {
-  const _ChainActions({
+  const new({
     required this.enabled,
     required this.onToggle,
     required this.onOptions,
@@ -262,11 +262,7 @@ class _ChainActions extends StatelessWidget {
 
 /// The effect's own controls, two to a row as the pen lays them out.
 class _Parameters extends StatelessWidget {
-  const _Parameters({
-    required this.effect,
-    required this.slotId,
-    required this.edits,
-  });
+  const new({required this.effect, required this.slotId, required this.edits});
 
   final BuiltInEffect? effect;
   final String? slotId;

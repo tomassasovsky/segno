@@ -334,10 +334,7 @@ void main() {
       );
       bootId = 'boot-b';
 
-      expect(
-        (await repo.findUnfinalized()).map((c) => c.directory),
-        [dir],
-      );
+      expect((await repo.findUnfinalized()).map((c) => c.directory), [dir]);
       await repo.recoverCapture(dir);
 
       final manifest = manifestOf(dir);
@@ -455,10 +452,7 @@ void main() {
       final half = seed('.perf-half${PerformanceRepository.deletingSuffix}');
       checkpoint(half, master: [openEntry(1, 4)]);
 
-      expect(
-        (await repo.findUnfinalized()).map((c) => c.directory),
-        [dir],
-      );
+      expect((await repo.findUnfinalized()).map((c) => c.directory), [dir]);
       await repo.discardUnfinalized(dir);
 
       expect(Directory(dir).existsSync(), isFalse);

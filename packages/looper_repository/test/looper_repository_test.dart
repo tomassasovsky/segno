@@ -934,18 +934,15 @@ void main() {
     });
 
     group('looper mode (accepted design, slice 2)', () {
-      test(
-        "the gate is the engine's answer while running, open otherwise",
-        () {
-          final repo = buildRepo();
-          engine.nextLooperModeGate = LooperModeGate.spans;
-          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.open);
-          engine.nextLooperModeGate = LooperModeGate.open;
-          repo.startEngine(const EngineConfig());
-          engine.nextLooperModeGate = LooperModeGate.spans;
-          expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.spans);
-        },
-      );
+      test("the gate is the engine's answer while running, open otherwise", () {
+        final repo = buildRepo();
+        engine.nextLooperModeGate = LooperModeGate.spans;
+        expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.open);
+        engine.nextLooperModeGate = LooperModeGate.open;
+        repo.startEngine(const EngineConfig());
+        engine.nextLooperModeGate = LooperModeGate.spans;
+        expect(repo.looperModeGate(LooperMode.multi), LooperModeGate.spans);
+      });
 
       test('a refused change leaves the remembered mode alone', () {
         final repo = buildRepo()..startEngine(const EngineConfig());
@@ -2669,10 +2666,7 @@ void main() {
     });
 
     test('startEngine stores the last successful config', () {
-      const config = EngineConfig(
-        sampleRate: 96000,
-        bufferFrames: 64,
-      );
+      const config = EngineConfig(sampleRate: 96000, bufferFrames: 64);
       final repo = buildRepo();
 
       expect(repo.lastEngineConfig, isNull);
@@ -4184,10 +4178,7 @@ void main() {
             ),
           ],
         );
-      expect(
-        repo.openMonitorPluginEditor(input: 1, index: 0),
-        EngineResult.ok,
-      );
+      expect(repo.openMonitorPluginEditor(input: 1, index: 0), EngineResult.ok);
       expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isTrue);
 
       engine.nextParamValues[200] = 0.4;
@@ -4504,10 +4495,7 @@ void main() {
           bus: 0,
           effects: const [
             PluginEffect(
-              ref: PluginRef(
-                format: PluginFormat.vst3,
-                id: 'aab1cc2200000000',
-              ),
+              ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
             ),
           ],
         );
@@ -5483,10 +5471,10 @@ void main() {
       repo.undo();
 
       expect(repo.laneEffects(0, 0), hasLength(2));
-      expect(
-        repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type),
-        [TrackEffectType.reverb, TrackEffectType.delay],
-      );
+      expect(repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.reverb,
+        TrackEffectType.delay,
+      ]);
       // Re-persisted, or a restart would replay the clear's emptied chain over
       // the restored take (F3).
       expect(persisted, contains((0, 0)));
@@ -6098,24 +6086,21 @@ void main() {
       },
     );
 
-    test(
-      'setVolume changes track gain without overwriting part levels',
-      () {
-        engine.nextSnapshot = _playingTracksSnapshot(3);
-        final repo = buildRepo()
-          ..startEngine(const EngineConfig())
-          ..setLaneCount(channel: 2, count: 3);
-        addTearDown(repo.dispose);
+    test('setVolume changes track gain without overwriting part levels', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneCount(channel: 2, count: 3);
+      addTearDown(repo.dispose);
 
-        repo.setLaneVolume(0.7, channel: 2, lane: 1);
-        expect(repo.setVolume(0.4, channel: 2), EngineResult.ok);
-        expect(engine.trackLevels[2], 0.4);
-        expect(repo.state.tracks[2].volume, 0.4);
-        expect(engine.laneVol[(2, 1)], 0.7);
-        expect(engine.laneVol[(2, 0)] ?? 1, 1);
-        expect(engine.laneVol[(2, 2)] ?? 1, 1);
-      },
-    );
+      repo.setLaneVolume(0.7, channel: 2, lane: 1);
+      expect(repo.setVolume(0.4, channel: 2), EngineResult.ok);
+      expect(engine.trackLevels[2], 0.4);
+      expect(repo.state.tracks[2].volume, 0.4);
+      expect(engine.laneVol[(2, 1)], 0.7);
+      expect(engine.laneVol[(2, 0)] ?? 1, 1);
+      expect(engine.laneVol[(2, 2)] ?? 1, 1);
+    });
 
     test('clearing a muted multi-lane track unmutes every lane (so a later '
         'record/overdub is audible)', () {
@@ -6373,82 +6358,73 @@ void main() {
       expect(engine.lastLooperMode, LooperMode.band);
     });
 
-    test(
-      'the grid-off defaults (signature 4/4, sync on, quantize div/click/ '
-      'count-in off, looper mode multi) still re-apply on a plain start',
-      () {
-        buildRepo().startEngine(const EngineConfig());
-        expect(engine.lastTimeSignature, (4, 4));
-        expect(engine.lastSyncTempo, isTrue);
-        expect(engine.lastQuantizeDiv, GridDivision.off);
-        expect(engine.lastClickMode, ClickMode.off);
-        expect(engine.lastClickOutput, 0);
-        expect(engine.lastClickVolume, 1.0);
-        expect(engine.lastCountIn, 0);
-        expect(engine.lastLooperMode, LooperMode.multi);
-      },
-    );
+    test('the grid-off defaults (signature 4/4, sync on, quantize div/click/ '
+        'count-in off, looper mode multi) still re-apply on a plain start', () {
+      buildRepo().startEngine(const EngineConfig());
+      expect(engine.lastTimeSignature, (4, 4));
+      expect(engine.lastSyncTempo, isTrue);
+      expect(engine.lastQuantizeDiv, GridDivision.off);
+      expect(engine.lastClickMode, ClickMode.off);
+      expect(engine.lastClickOutput, 0);
+      expect(engine.lastClickVolume, 1.0);
+      expect(engine.lastCountIn, 0);
+      expect(engine.lastLooperMode, LooperMode.multi);
+    });
 
-    test(
-      'signature, sync, quantize div, click mode/output/volume, count-in, '
-      'and looper mode re-apply on every restart (device change)',
-      () {
-        final repo = buildRepo()
-          ..startEngine(const EngineConfig())
-          ..setTimeSignature(3, 4)
-          ..setSyncTempo(on: false)
-          ..setRecordTimingSettings(
-            defaultTiming: RecordTiming.immediately,
-            rememberedDivision: GridDivision.bar,
-            trackOverrides: {},
-          )
-          ..setClickMode(ClickMode.rec)
-          ..setClickOutput(0x1)
-          ..setClickVolume(0.7)
-          ..setRecordStartSettings(
-            countInBars: 4,
-            soundStart: false,
-            editKind: RecordStartEditKind.countIn,
-          )
-          ..setLooperMode(LooperMode.free);
+    test('signature, sync, quantize div, click mode/output/volume, count-in, '
+        'and looper mode re-apply on every restart (device change)', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTimeSignature(3, 4)
+        ..setSyncTempo(on: false)
+        ..setRecordTimingSettings(
+          defaultTiming: RecordTiming.immediately,
+          rememberedDivision: GridDivision.bar,
+          trackOverrides: {},
+        )
+        ..setClickMode(ClickMode.rec)
+        ..setClickOutput(0x1)
+        ..setClickVolume(0.7)
+        ..setRecordStartSettings(
+          countInBars: 4,
+          soundStart: false,
+          editKind: RecordStartEditKind.countIn,
+        )
+        ..setLooperMode(LooperMode.free);
 
-        engine
-          ..lastTimeSignature = null
-          ..lastSyncTempo = null
-          ..lastQuantizeDiv = null
-          ..lastClickMode = null
-          ..lastClickOutput = null
-          ..lastClickVolume = null
-          ..lastCountIn = null
-          ..lastLooperMode = null;
-        repo
-          ..stopEngine()
-          ..startEngine(const EngineConfig());
+      engine
+        ..lastTimeSignature = null
+        ..lastSyncTempo = null
+        ..lastQuantizeDiv = null
+        ..lastClickMode = null
+        ..lastClickOutput = null
+        ..lastClickVolume = null
+        ..lastCountIn = null
+        ..lastLooperMode = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
 
-        expect(engine.lastTimeSignature, (3, 4));
-        expect(engine.lastSyncTempo, isFalse);
-        expect(engine.lastQuantizeDiv, GridDivision.bar);
-        expect(engine.lastClickMode, ClickMode.rec);
-        expect(engine.lastClickOutput, 0x1);
-        expect(engine.lastClickVolume, 0.7);
-        expect(engine.lastCountIn, 4);
-        expect(engine.lastLooperMode, LooperMode.free);
-      },
-    );
+      expect(engine.lastTimeSignature, (3, 4));
+      expect(engine.lastSyncTempo, isFalse);
+      expect(engine.lastQuantizeDiv, GridDivision.bar);
+      expect(engine.lastClickMode, ClickMode.rec);
+      expect(engine.lastClickOutput, 0x1);
+      expect(engine.lastClickVolume, 0.7);
+      expect(engine.lastCountIn, 4);
+      expect(engine.lastLooperMode, LooperMode.free);
+    });
 
-    test(
-      'setTrackLengthPreset is deferred until running, then re-applied',
-      () {
-        engine.nextSnapshot = _playingTracksSnapshot(3);
-        final repo = buildRepo()
-          ..setLooperMode(LooperMode.free)
-          ..setTrackLengthPreset(channel: 1, bars: 4);
-        expect(engine.trackLengthPreset, isEmpty); // not running yet
+    test('setTrackLengthPreset is deferred until running, then re-applied', () {
+      engine.nextSnapshot = _playingTracksSnapshot(3);
+      final repo = buildRepo()
+        ..setLooperMode(LooperMode.free)
+        ..setTrackLengthPreset(channel: 1, bars: 4);
+      expect(engine.trackLengthPreset, isEmpty); // not running yet
 
-        repo.startEngine(const EngineConfig());
-        expect(engine.trackLengthPreset[1], 4);
-      },
-    );
+      repo.startEngine(const EngineConfig());
+      expect(engine.trackLengthPreset[1], 4);
+    });
 
     test('setTrackLengthPreset applies immediately while running', () {
       engine.nextSnapshot = _playingTracksSnapshot(3);
@@ -6512,22 +6488,19 @@ void main() {
       expect(engine.lastCrownedChannel, 5);
     });
 
-    test(
-      'a crown is pushed once and never re-applied on restart — the engine '
-      'owns it, and a restarted rig is empty, so it has no crown',
-      () {
-        final repo = buildRepo()
-          ..startEngine(const EngineConfig())
-          ..crownPrimary(channel: 4);
-        expect(engine.lastCrownedChannel, 4);
+    test('a crown is pushed once and never re-applied on restart — the engine '
+        'owns it, and a restarted rig is empty, so it has no crown', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..crownPrimary(channel: 4);
+      expect(engine.lastCrownedChannel, 4);
 
-        engine.lastCrownedChannel = null;
-        repo
-          ..stopEngine()
-          ..startEngine(const EngineConfig());
-        expect(engine.lastCrownedChannel, isNull);
-      },
-    );
+      engine.lastCrownedChannel = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, isNull);
+    });
 
     test('a crown requested while stopped lands on the next start, once', () {
       final repo = buildRepo()
@@ -6595,89 +6568,86 @@ void main() {
       },
     );
 
-    test(
-      'TransportState projects snapshot fields while Hear click requires '
-      'an accepted receipt',
-      () {
-        engine.nextSnapshot = const EngineSnapshot(
-          isRunning: true,
-          sampleRate: 48000,
-          bufferFrames: 128,
-          framesProcessed: 0,
-          xrunCount: 0,
-          inputRms: 0,
-          inputPeak: 0,
-          outputRms: 0,
-          latencyState: le.LatencyState.idle,
-          measuredLatencyMs: -1,
-          tempoBpm: 128,
-          tempoSource: TempoSource.manual,
-          tsNum: 3,
-          syncTempo: false,
-          quantizeDiv: GridDivision.quarter,
-          loopBars: 4,
-          currentBeat: 2,
-          clickMode: ClickMode.playRec,
-          clickMask: 0x3,
-          clickVolume: 0.8,
-          countInBars: 2,
-          countingIn: true,
-          countInBeatsLeft: 3,
-          looperMode: LooperMode.band,
-          primaryTrack: 2,
-          songQueuedTrack: 1,
-          songQueueProgress: 0.375,
-          songLastSection: 2,
-          songQueueRecord: true,
-          outputPeak: 0.5,
-          // The crown only projects onto a track that holds a completed
-          // take (see `resolvedPrimaryTrack`), so give the designated
-          // channel one.
-          tracks: [
-            TrackSnapshot.empty(),
-            TrackSnapshot.empty(),
-            TrackSnapshot(
-              state: TrackState.playing,
-              volume: 1,
-              muted: false,
-              lengthFrames: 4,
-              undoDepth: 0,
-              rms: 0,
-              peak: 0,
-            ),
-          ],
-        );
+    test('TransportState projects snapshot fields while Hear click requires '
+        'an accepted receipt', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tempoBpm: 128,
+        tempoSource: TempoSource.manual,
+        tsNum: 3,
+        syncTempo: false,
+        quantizeDiv: GridDivision.quarter,
+        loopBars: 4,
+        currentBeat: 2,
+        clickMode: ClickMode.playRec,
+        clickMask: 0x3,
+        clickVolume: 0.8,
+        countInBars: 2,
+        countingIn: true,
+        countInBeatsLeft: 3,
+        looperMode: LooperMode.band,
+        primaryTrack: 2,
+        songQueuedTrack: 1,
+        songQueueProgress: 0.375,
+        songLastSection: 2,
+        songQueueRecord: true,
+        outputPeak: 0.5,
+        // The crown only projects onto a track that holds a completed
+        // take (see `resolvedPrimaryTrack`), so give the designated
+        // channel one.
+        tracks: [
+          TrackSnapshot.empty(),
+          TrackSnapshot.empty(),
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 4,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+          ),
+        ],
+      );
 
-        final transport = buildRepo().state.transport;
-        expect(transport.tempoBpm, 128);
-        expect(transport.tempoSource, TempoSource.manual);
-        expect(transport.tsNum, 3);
-        expect(transport.tsDen, 4);
-        expect(transport.syncTempo, isFalse);
-        expect(transport.quantizeDiv, GridDivision.quarter);
-        expect(transport.loopBars, 4);
-        expect(transport.currentBeat, 2);
-        // Raw callback progress is not an accepted Hear click command. The
-        // repository has not settled any request, so retain its accepted Off.
-        // click_mode_receipt_test covers the pending-to-settled transition.
-        expect(transport.clickMode, ClickMode.off);
-        expect(transport.clickMask, 0x3);
-        expect(transport.clickVolume, closeTo(0.8, 1e-9));
-        // The count-in is the repository's own held value (slice 2b), not
-        // the engine's mirror: nothing was set here, so it reads off even
-        // though the snapshot says 2.
-        expect(transport.countInBars, 0);
-        expect(transport.countingIn, isTrue);
-        expect(transport.countInBeatsLeft, 3);
-        expect(transport.looperMode, LooperMode.band);
-        expect(transport.primaryTrack, 2);
-        // The Song queue is the engine's own fact, carried as it is (#1077).
-        expect(transport.songQueuedTrack, 1);
-        expect(transport.songQueueProgress, 0.375);
-        expect(transport.songLastSection, 2);
-        expect(transport.songQueueRecord, isTrue);
-      },
-    );
+      final transport = buildRepo().state.transport;
+      expect(transport.tempoBpm, 128);
+      expect(transport.tempoSource, TempoSource.manual);
+      expect(transport.tsNum, 3);
+      expect(transport.tsDen, 4);
+      expect(transport.syncTempo, isFalse);
+      expect(transport.quantizeDiv, GridDivision.quarter);
+      expect(transport.loopBars, 4);
+      expect(transport.currentBeat, 2);
+      // Raw callback progress is not an accepted Hear click command. The
+      // repository has not settled any request, so retain its accepted Off.
+      // click_mode_receipt_test covers the pending-to-settled transition.
+      expect(transport.clickMode, ClickMode.off);
+      expect(transport.clickMask, 0x3);
+      expect(transport.clickVolume, closeTo(0.8, 1e-9));
+      // The count-in is the repository's own held value (slice 2b), not
+      // the engine's mirror: nothing was set here, so it reads off even
+      // though the snapshot says 2.
+      expect(transport.countInBars, 0);
+      expect(transport.countingIn, isTrue);
+      expect(transport.countInBeatsLeft, 3);
+      expect(transport.looperMode, LooperMode.band);
+      expect(transport.primaryTrack, 2);
+      // The Song queue is the engine's own fact, carried as it is (#1077).
+      expect(transport.songQueuedTrack, 1);
+      expect(transport.songQueueProgress, 0.375);
+      expect(transport.songLastSection, 2);
+      expect(transport.songQueueRecord, isTrue);
+    });
 
     group('resolvedPrimaryTrack', () {
       const playing = TrackSnapshot(
@@ -6704,13 +6674,10 @@ void main() {
         expect(resolvedPrimaryTrack(2, [playing, empty, playing]), 2);
       });
 
-      test(
-        'falls onto the lowest recorded track while the designated one is '
-        'empty (its clear kept the designation, D18)',
-        () {
-          expect(resolvedPrimaryTrack(2, [empty, playing, empty, playing]), 1);
-        },
-      );
+      test('falls onto the lowest recorded track while the designated one is '
+          'empty (its clear kept the designation, D18)', () {
+        expect(resolvedPrimaryTrack(2, [empty, playing, empty, playing]), 1);
+      });
 
       test('is none for an empty session, or one still on its first take', () {
         expect(resolvedPrimaryTrack(-1, [empty, empty]), -1);
@@ -6744,28 +6711,25 @@ void main() {
       });
     });
 
-    test(
-      'TransportState defaults to the tempo-free grid-off values',
-      () {
-        final transport = buildRepo().state.transport;
-        expect(transport.tempoBpm, 0);
-        expect(transport.tempoSource, TempoSource.none);
-        expect(transport.tsNum, 4);
-        expect(transport.tsDen, 4);
-        expect(transport.syncTempo, isTrue);
-        expect(transport.quantizeDiv, GridDivision.off);
-        expect(transport.loopBars, 0);
-        expect(transport.currentBeat, 0);
-        expect(transport.clickMode, ClickMode.off);
-        expect(transport.clickMask, 0);
-        expect(transport.clickVolume, 1);
-        expect(transport.countInBars, 0);
-        expect(transport.countingIn, isFalse);
-        expect(transport.countInBeatsLeft, 0);
-        expect(transport.looperMode, LooperMode.multi);
-        expect(transport.primaryTrack, -1);
-      },
-    );
+    test('TransportState defaults to the tempo-free grid-off values', () {
+      final transport = buildRepo().state.transport;
+      expect(transport.tempoBpm, 0);
+      expect(transport.tempoSource, TempoSource.none);
+      expect(transport.tsNum, 4);
+      expect(transport.tsDen, 4);
+      expect(transport.syncTempo, isTrue);
+      expect(transport.quantizeDiv, GridDivision.off);
+      expect(transport.loopBars, 0);
+      expect(transport.currentBeat, 0);
+      expect(transport.clickMode, ClickMode.off);
+      expect(transport.clickMask, 0);
+      expect(transport.clickVolume, 1);
+      expect(transport.countInBars, 0);
+      expect(transport.countingIn, isFalse);
+      expect(transport.countInBeatsLeft, 0);
+      expect(transport.looperMode, LooperMode.multi);
+      expect(transport.primaryTrack, -1);
+    });
   });
 
   group('applySession', () {
@@ -7063,69 +7027,60 @@ void main() {
       expect(engine.laneMute, {(0, 0): false});
     });
 
-    test(
-      'resets a stale length preset to AUTO when the loaded session leaves '
-      'it undefined (A6)',
-      () async {
-        engine.nextSnapshot = clearedSnapshot();
-        final repo = buildRepo()
-          ..startEngine(const EngineConfig())
-          // A live/prior session left track 0 at a 4-bar preset.
-          ..setLooperMode(LooperMode.free)
-          ..setTrackLengthPreset(channel: 0, bars: 4);
-        addTearDown(repo.dispose);
-        expect(engine.trackLengthPreset[0], 4);
+    test('resets a stale length preset to AUTO when the loaded session leaves '
+        'it undefined (A6)', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        // A live/prior session left track 0 at a 4-bar preset.
+        ..setLooperMode(LooperMode.free)
+        ..setTrackLengthPreset(channel: 0, bars: 4);
+      addTearDown(repo.dispose);
+      expect(engine.trackLengthPreset[0], 4);
 
-        // The loaded session's track 0 has content but no preset (AUTO),
-        // and it says nothing at all about track 1.
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-            ],
-          ),
-          clearPollInterval: Duration.zero,
-        );
+      // The loaded session's track 0 has content but no preset (AUTO),
+      // and it says nothing at all about track 1.
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
 
-        expect(engine.trackLengthPreset[0], 0);
-        expect(engine.trackLengthPreset[1], 0);
+      expect(engine.trackLengthPreset[0], 0);
+      expect(engine.trackLengthPreset[1], 0);
 
-        // A restart replays only the loaded (AUTO) value, not the stale 4.
-        engine.trackLengthPreset.clear();
-        repo
-          ..stopEngine()
-          ..startEngine(const EngineConfig());
-        expect(engine.trackLengthPreset[0], 0);
-      },
-    );
+      // A restart replays only the loaded (AUTO) value, not the stale 4.
+      engine.trackLengthPreset.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.trackLengthPreset[0], 0);
+    });
 
-    test(
-      "applies the loaded session's own nonzero length preset per track "
-      '(A6)',
-      () async {
-        engine.nextSnapshot = clearedSnapshot();
-        final repo = buildRepo()..startEngine(const EngineConfig());
-        addTearDown(repo.dispose);
+    test("applies the loaded session's own nonzero length preset per track "
+        '(A6)', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
 
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            looperMode: LooperMode.free,
-            trackLengthPresetOverrides: const {0: 8},
-            tracks: [
-              rigTrack(
-                0,
-                Float32List.fromList([1, 1, 1, 1]),
-              ),
-            ],
-          ),
-          clearPollInterval: Duration.zero,
-        );
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          looperMode: LooperMode.free,
+          trackLengthPresetOverrides: const {0: 8},
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
 
-        expect(engine.trackLengthPreset[0], 8);
-      },
-    );
+      expect(engine.trackLengthPreset[0], 8);
+    });
 
     test(
       'resets a stale one-shot flag when the loaded session leaves it '
@@ -7224,159 +7179,144 @@ void main() {
       },
     );
 
-    test(
-      'rejects an out-of-range playback override without '
-      'pushing an invalid ninth channel to the engine',
-      () async {
-        engine.nextSnapshot = clearedSnapshot();
-        final repo = buildRepo()..startEngine(const EngineConfig());
-        addTearDown(repo.dispose);
-        final priorEngineChoices = Map<int, bool>.of(engine.trackOneShot);
-        final priorRememberedChoices = repo.trackOneShotOverrides;
+    test('rejects an out-of-range playback override without '
+        'pushing an invalid ninth channel to the engine', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final priorEngineChoices = Map<int, bool>.of(engine.trackOneShot);
+      final priorRememberedChoices = repo.trackOneShotOverrides;
 
-        await expectLater(
-          repo.applySession(
-            SessionRig(
-              baseLengthFrames: 4,
-              tracks: [
-                rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-              ],
-              trackOneShotOverrides: const {8: true},
-            ),
-            clearPollInterval: Duration.zero,
-          ),
-          throwsA(isA<StateError>()),
-        );
-
-        expect(engine.trackOneShot.containsKey(8), isFalse);
-        expect(engine.trackOneShot, priorEngineChoices);
-        expect(repo.trackOneShotOverrides, priorRememberedChoices);
-      },
-    );
-
-    test(
-      'ignores an out-of-range rig.primaryTrack rather than pushing an '
-      'invalid channel to the engine or poisoning the re-apply cache '
-      '(the ninth channel is not in this native rig)',
-      () async {
-        engine.nextSnapshot = clearedSnapshot();
-        final repo = buildRepo()..startEngine(const EngineConfig());
-        addTearDown(repo.dispose);
-
-        await repo.applySession(
+      await expectLater(
+        repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
             tracks: [
               rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
-            primaryTrack: 8,
+            trackOneShotOverrides: const {8: true},
           ),
           clearPollInterval: Duration.zero,
-        );
+        ),
+        throwsA(isA<StateError>()),
+      );
 
-        expect(engine.lastCrownedChannel, isNull);
-      },
-    );
+      expect(engine.trackOneShot.containsKey(8), isFalse);
+      expect(engine.trackOneShot, priorEngineChoices);
+      expect(repo.trackOneShotOverrides, priorRememberedChoices);
+    });
 
-    test(
-      "applies the loaded session's looper mode and crown (B5c)",
-      () async {
-        engine.nextSnapshot = clearedSnapshot();
-        final repo = buildRepo()..startEngine(const EngineConfig());
-        addTearDown(repo.dispose);
+    test('ignores an out-of-range rig.primaryTrack rather than pushing an '
+        'invalid channel to the engine or poisoning the re-apply cache '
+        '(the ninth channel is not in this native rig)', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
 
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-            ],
-            looperMode: LooperMode.band,
-            primaryTrack: 1,
-          ),
-          clearPollInterval: Duration.zero,
-        );
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+          primaryTrack: 8,
+        ),
+        clearPollInterval: Duration.zero,
+      );
 
-        expect(engine.lastLooperMode, LooperMode.band);
-        expect(engine.lastCrownedChannel, 1);
-      },
-    );
+      expect(engine.lastCrownedChannel, isNull);
+    });
 
-    test(
-      'pushes the looper mode BEFORE any content is imported, so a '
-      "content-bearing session's mode is never dropped by the content rules "
-      'content lock (B5c)',
-      () async {
-        engine.nextSnapshot = clearedSnapshot();
-        final repo = buildRepo()..startEngine(const EngineConfig());
-        addTearDown(repo.dispose);
-        // `startEngine`'s own re-apply cascade (independent review of #295)
-        // pushes a `setLooperMode` call of its own BEFORE `applySession` ever
-        // runs — leaving it in `engine.calls` would let `indexOf` resolve to
-        // that pre-existing call instead of `applySession`'s own, making
-        // `modeIndex < importIndex` trivially true regardless of where
-        // `applySession` actually places its mode push. Clear it first, like
-        // every other test in this file that asserts on `engine.calls` after
-        // `startEngine` (e.g. the effects test above).
-        engine.calls.clear();
+    test("applies the loaded session's looper mode and crown (B5c)", () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
 
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-            ],
-            looperMode: LooperMode.sync,
-          ),
-          clearPollInterval: Duration.zero,
-        );
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+          looperMode: LooperMode.band,
+          primaryTrack: 1,
+        ),
+        clearPollInterval: Duration.zero,
+      );
 
-        final modeIndex = engine.calls.indexOf('setLooperMode');
-        final importIndex = engine.calls.indexOf('importLayer');
-        expect(modeIndex, greaterThanOrEqualTo(0));
-        expect(importIndex, greaterThanOrEqualTo(0));
-        expect(modeIndex, lessThan(importIndex));
-      },
-    );
+      expect(engine.lastLooperMode, LooperMode.band);
+      expect(engine.lastCrownedChannel, 1);
+    });
 
-    test(
-      'a session load resets the primary-track RE-APPLY CACHE when it '
-      'defines no crown, even though the live engine keeps a prior crown '
-      '(B5c, D18: no un-crown call exists on the live engine)',
-      () async {
-        engine.nextSnapshot = clearedSnapshot();
-        final repo = buildRepo()
-          ..startEngine(const EngineConfig())
-          // A live/prior session crowned track 1.
-          ..crownPrimary(channel: 1);
-        addTearDown(repo.dispose);
-        expect(engine.lastCrownedChannel, 1);
+    test('pushes the looper mode BEFORE any content is imported, so a '
+        "content-bearing session's mode is never dropped by the content rules "
+        'content lock (B5c)', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      // `startEngine`'s own re-apply cascade (independent review of #295)
+      // pushes a `setLooperMode` call of its own BEFORE `applySession` ever
+      // runs — leaving it in `engine.calls` would let `indexOf` resolve to
+      // that pre-existing call instead of `applySession`'s own, making
+      // `modeIndex < importIndex` trivially true regardless of where
+      // `applySession` actually places its mode push. Clear it first, like
+      // every other test in this file that asserts on `engine.calls` after
+      // `startEngine` (e.g. the effects test above).
+      engine.calls.clear();
 
-        // The loaded session defines no crown at all.
-        engine.lastCrownedChannel = null;
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
-            ],
-          ),
-          clearPollInterval: Duration.zero,
-        );
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+          looperMode: LooperMode.sync,
+        ),
+        clearPollInterval: Duration.zero,
+      );
 
-        // No new crownPrimary call was pushed to the LIVE engine — D18's "no
-        // un-crown call" means the prior crown is not (and cannot be) undone
-        // here. This is the documented limitation, not a bug.
-        expect(engine.lastCrownedChannel, isNull);
+      final modeIndex = engine.calls.indexOf('setLooperMode');
+      final importIndex = engine.calls.indexOf('importLayer');
+      expect(modeIndex, greaterThanOrEqualTo(0));
+      expect(importIndex, greaterThanOrEqualTo(0));
+      expect(modeIndex, lessThan(importIndex));
+    });
 
-        // But the re-apply CACHE was reset: a subsequent restart does not
-        // resurrect the stale crown.
-        repo
-          ..stopEngine()
-          ..startEngine(const EngineConfig());
-        expect(engine.lastCrownedChannel, isNull);
-      },
-    );
+    test('a session load resets the primary-track RE-APPLY CACHE when it '
+        'defines no crown, even though the live engine keeps a prior crown '
+        '(B5c, D18: no un-crown call exists on the live engine)', () async {
+      engine.nextSnapshot = clearedSnapshot();
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        // A live/prior session crowned track 1.
+        ..crownPrimary(channel: 1);
+      addTearDown(repo.dispose);
+      expect(engine.lastCrownedChannel, 1);
+
+      // The loaded session defines no crown at all.
+      engine.lastCrownedChannel = null;
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+
+      // No new crownPrimary call was pushed to the LIVE engine — D18's "no
+      // un-crown call" means the prior crown is not (and cannot be) undone
+      // here. This is the documented limitation, not a bug.
+      expect(engine.lastCrownedChannel, isNull);
+
+      // But the re-apply CACHE was reset: a subsequent restart does not
+      // resurrect the stale crown.
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, isNull);
+    });
 
     test(
       'a loaded take replaces an ineligible stale crown with its own channel',
@@ -8032,50 +7972,44 @@ void main() {
       },
     );
 
-    test(
-      'retries a heard image the engine is not ready for (#1713)',
-      () async {
-        engine
-          ..nextSnapshot = clearedSnapshot()
-          ..importHeardNotReadyCountdown = 2;
-        final repo = buildRepo()..startEngine(const EngineConfig());
-        addTearDown(repo.dispose);
+    test('retries a heard image the engine is not ready for (#1713)', () async {
+      engine
+        ..nextSnapshot = clearedSnapshot()
+        ..importHeardNotReadyCountdown = 2;
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
 
-        final heard = Float32List.fromList([.5, -.5, .5, -.5]);
-        await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 2,
-            tracks: [
-              SessionRigTrack(
-                fadeAmount: 1,
-                reversed: false,
-                channel: 0,
-                lanes: [
-                  SessionRigLane(
-                    lane: 0,
-                    layers: [
-                      Float32List.fromList([1, 1]),
-                    ],
-                    heard: [heard],
-                    volume: 1,
-                    muted: false,
-                    outputMask: 0x3,
-                    inputChannel: 0,
-                  ),
-                ],
-              ),
-            ],
-          ),
-          clearPollInterval: Duration.zero,
-        );
+      final heard = Float32List.fromList([.5, -.5, .5, -.5]);
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 2,
+          tracks: [
+            SessionRigTrack(
+              fadeAmount: 1,
+              reversed: false,
+              channel: 0,
+              lanes: [
+                SessionRigLane(
+                  lane: 0,
+                  layers: [
+                    Float32List.fromList([1, 1]),
+                  ],
+                  heard: [heard],
+                  volume: 1,
+                  muted: false,
+                  outputMask: 0x3,
+                  inputChannel: 0,
+                ),
+              ],
+            ),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
 
-        expect(engine.importedHeard, {(0, 0, 0): heard});
-        expect(
-          engine.calls.where((c) => c == 'importLayerHeard'),
-          hasLength(3),
-        );
-      },
-    );
+      expect(engine.importedHeard, {(0, 0, 0): heard});
+      expect(engine.calls.where((c) => c == 'importLayerHeard'), hasLength(3));
+    });
 
     test(
       'finalizes length edits with every image at its own length (#1168)',
@@ -8122,90 +8056,81 @@ void main() {
   });
 
   group('chain and monitor read accessors', () {
-    test(
-      'allLaneChains and allMonitors expose the remembered chains',
-      () {
-        final repo = buildRepo()
-          ..setLaneEffects(
-            channel: 1,
-            lane: 2,
-            effects: [BuiltInEffect(type: TrackEffectType.drive)],
-          )
-          ..setMonitorEffects(
-            input: 3,
-            effects: [BuiltInEffect(type: TrackEffectType.echo)],
-          );
-        addTearDown(repo.dispose);
-
-        final lanes = repo.allLaneChains();
-        expect(lanes.keys, [(1, 2)]);
-        expect(
-          (lanes[(1, 2)]!.entries.single as BuiltInEffect).type,
-          TrackEffectType.drive,
+    test('allLaneChains and allMonitors expose the remembered chains', () {
+      final repo = buildRepo()
+        ..setLaneEffects(
+          channel: 1,
+          lane: 2,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 3,
+          effects: [BuiltInEffect(type: TrackEffectType.echo)],
         );
-        expect(lanes[(1, 2)]!.chainEnabled, isTrue);
-        final monitors = repo.allMonitors();
-        expect(monitors.keys, [3]);
-        expect(
-          (monitors[3]!.effects.single as BuiltInEffect).type,
-          TrackEffectType.echo,
-        );
-      },
-    );
+      addTearDown(repo.dispose);
 
-    test(
-      'allLaneChains enumerates a lane that carries ONLY a disabled chain '
-      'flag or an inheritance marker — state a chain-keyed enumeration would '
-      'silently drop on save',
-      () {
-        final repo = buildRepo()
-          ..setLaneChainEnabled(channel: 0, lane: 1, enabled: false)
-          ..setLaneChainMeta(channel: 2, lane: 0, inheritedFrom: [3]);
-        addTearDown(repo.dispose);
+      final lanes = repo.allLaneChains();
+      expect(lanes.keys, [(1, 2)]);
+      expect(
+        (lanes[(1, 2)]!.entries.single as BuiltInEffect).type,
+        TrackEffectType.drive,
+      );
+      expect(lanes[(1, 2)]!.chainEnabled, isTrue);
+      final monitors = repo.allMonitors();
+      expect(monitors.keys, [3]);
+      expect(
+        (monitors[3]!.effects.single as BuiltInEffect).type,
+        TrackEffectType.echo,
+      );
+    });
 
-        final lanes = repo.allLaneChains();
-        expect(lanes.keys.toSet(), {(0, 1), (2, 0)});
-        expect(lanes[(0, 1)]!.chainEnabled, isFalse);
-        expect(lanes[(0, 1)]!.entries, isEmpty);
-        expect(lanes[(2, 0)]!.meta?.inheritedFrom, [3]);
-      },
-    );
+    test('allLaneChains enumerates a lane that carries ONLY a disabled chain '
+        'flag or an inheritance marker — state a chain-keyed enumeration would '
+        'silently drop on save', () {
+      final repo = buildRepo()
+        ..setLaneChainEnabled(channel: 0, lane: 1, enabled: false)
+        ..setLaneChainMeta(channel: 2, lane: 0, inheritedFrom: [3]);
+      addTearDown(repo.dispose);
 
-    test(
-      'allTrackChains and masterChainEnvelope expose the remembered bus '
-      'stages, flag-only channels included',
-      () {
-        final repo = buildRepo()
-          ..setTrackEffects(
-            channel: 1,
-            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
-          )
-          ..setTrackChainEnabled(channel: 2, enabled: false)
-          ..setOutputEffects(
-            bus: 0,
-            effects: [BuiltInEffect(type: TrackEffectType.filter)],
-          )
-          ..setOutputChainEnabled(bus: 0, enabled: false);
-        addTearDown(repo.dispose);
+      final lanes = repo.allLaneChains();
+      expect(lanes.keys.toSet(), {(0, 1), (2, 0)});
+      expect(lanes[(0, 1)]!.chainEnabled, isFalse);
+      expect(lanes[(0, 1)]!.entries, isEmpty);
+      expect(lanes[(2, 0)]!.meta?.inheritedFrom, [3]);
+    });
 
-        final tracks = repo.allTrackChains();
-        expect(tracks.keys.toSet(), {1, 2});
-        expect(
-          (tracks[1]!.entries.single as BuiltInEffect).type,
-          TrackEffectType.reverb,
-        );
-        expect(tracks[1]!.chainEnabled, isTrue);
-        expect(tracks[2]!.entries, isEmpty);
-        expect(tracks[2]!.chainEnabled, isFalse);
+    test('allTrackChains and masterChainEnvelope expose the remembered bus '
+        'stages, flag-only channels included', () {
+      final repo = buildRepo()
+        ..setTrackEffects(
+          channel: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setTrackChainEnabled(channel: 2, enabled: false)
+        ..setOutputEffects(
+          bus: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.filter)],
+        )
+        ..setOutputChainEnabled(bus: 0, enabled: false);
+      addTearDown(repo.dispose);
 
-        final master = repo.outputChainEnvelope(0);
-        expect(
-          (master.entries.single as BuiltInEffect).type,
-          TrackEffectType.filter,
-        );
-        expect(master.chainEnabled, isFalse);
-      },
-    );
+      final tracks = repo.allTrackChains();
+      expect(tracks.keys.toSet(), {1, 2});
+      expect(
+        (tracks[1]!.entries.single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
+      expect(tracks[1]!.chainEnabled, isTrue);
+      expect(tracks[2]!.entries, isEmpty);
+      expect(tracks[2]!.chainEnabled, isFalse);
+
+      final master = repo.outputChainEnvelope(0);
+      expect(
+        (master.entries.single as BuiltInEffect).type,
+        TrackEffectType.filter,
+      );
+      expect(master.chainEnabled, isFalse);
+    });
 
     test('masterChainEnvelope reads as the empty enabled envelope when no '
         'Master chain is configured', () {
@@ -8659,42 +8584,39 @@ void main() {
       },
     );
 
-    test(
-      'a refused attempt neither reopens nor consumes the device list; the '
-      'next admissible tick reopens on the same list',
-      () async {
-        engine.nextSnapshot = runningSnapshot(devicePresent: true);
-        final repo = buildSupervised()
-          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
-        final sub = repo.looperState.listen((_) {});
-        addTearDown(sub.cancel);
-        await Future<void>.delayed(Duration.zero);
+    test('a refused attempt neither reopens nor consumes the device list; the '
+        'next admissible tick reopens on the same list', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
 
-        engine.nextSnapshot = runningSnapshot(devicePresent: false);
-        ticker.add(null);
-        await Future<void>.delayed(Duration.zero);
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
 
-        // The device is back, but a Session boot fence holds the engine: the
-        // attempt is refused outright — no raw stop, no reopen, and the device
-        // list is NOT recorded as tried.
-        repo.blockStartForSessionBoot();
-        engine.devices = const [pinned];
-        reconnectTicker.add(null);
-        await Future<void>.delayed(Duration.zero);
-        expect(reopenCount(), 0);
-        expect(stopCount(), 0);
-        expect(repo.sessionTransport.deviceRunning, isTrue);
+      // The device is back, but a Session boot fence holds the engine: the
+      // attempt is refused outright — no raw stop, no reopen, and the device
+      // list is NOT recorded as tried.
+      repo.blockStartForSessionBoot();
+      engine.devices = const [pinned];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(reopenCount(), 0);
+      expect(stopCount(), 0);
+      expect(repo.sessionTransport.deviceRunning, isTrue);
 
-        // The fence lifts. The SAME device list now reopens — the refusal must
-        // not have burned the one attempt this list gets.
-        repo.clearSessionBootStartBlock();
-        reconnectTicker.add(null);
-        await Future<void>.delayed(Duration.zero);
-        expect(engine.calls, containsAllInOrder(<String>['stop', 'reopen']));
-        expect(reopenCount(), 1);
-        expect(stopCount(), 1);
-      },
-    );
+      // The fence lifts. The SAME device list now reopens — the refusal must
+      // not have burned the one attempt this list gets.
+      repo.clearSessionBootStartBlock();
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.calls, containsAllInOrder(<String>['stop', 'reopen']));
+      expect(reopenCount(), 1);
+      expect(stopCount(), 1);
+    });
 
     test(
       'the reconnect verdict rides the status until the next deliberate start',
@@ -8814,59 +8736,53 @@ void main() {
       },
     );
 
-    test(
-      'a reopen whose rig replay rolls back carries its verdict through the '
-      'next deliberate start, and only that one',
-      () async {
-        engine.nextSnapshot = runningSnapshot(
-          devicePresent: true,
-          trackCount: 8,
-        );
-        final repo = buildSupervised()
-          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
-        final sub = repo.looperState.listen((_) {});
-        addTearDown(sub.cancel);
-        await Future<void>.delayed(Duration.zero);
-        engine.nextSnapshot = runningSnapshot(
-          devicePresent: false,
-          trackCount: 8,
-        );
-        ticker.add(null);
-        await Future<void>.delayed(Duration.zero);
-        // The device comes back at another rate (every loop cleared) and the
-        // replay's mix step is refused: the start rolls back.
-        engine
-          ..devices = const [pinned]
-          ..reopenResult = (
-            result: EngineResult.ok,
-            outcome: ReopenOutcome.clearedRate,
-            droppedTracks: 0,
-            openedRate: 0,
-          )
-          ..mixResult = EngineResult.invalid;
-        reconnectTicker.add(null);
-        await Future<void>.delayed(Duration.zero);
-        expect(reopenCount(), 1);
-        expect(repo.sessionTransport.deviceRunning, isFalse);
-        expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+    test('a reopen whose rig replay rolls back carries its verdict through the '
+        'next deliberate start, and only that one', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true, trackCount: 8);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      engine.nextSnapshot = runningSnapshot(
+        devicePresent: false,
+        trackCount: 8,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      // The device comes back at another rate (every loop cleared) and the
+      // replay's mix step is refused: the start rolls back.
+      engine
+        ..devices = const [pinned]
+        ..reopenResult = (
+          result: EngineResult.ok,
+          outcome: ReopenOutcome.clearedRate,
+          droppedTracks: 0,
+          openedRate: 0,
+        )
+        ..mixResult = EngineResult.invalid;
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(reopenCount(), 1);
+      expect(repo.sessionTransport.deviceRunning, isFalse);
+      expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
 
-        // The player re-applies: the start that opens the rig again still
-        // carries what the reopen did to the loops...
-        engine.mixResult = EngineResult.ok;
-        expect(
-          repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
-          EngineResult.ok,
-        );
-        expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
-        // ...and the start after that is an ordinary one.
-        repo.stopEngine();
-        expect(
-          repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
-          EngineResult.ok,
-        );
-        expect(repo.state.status.reopen, isNull);
-      },
-    );
+      // The player re-applies: the start that opens the rig again still
+      // carries what the reopen did to the loops...
+      engine.mixResult = EngineResult.ok;
+      expect(
+        repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
+        EngineResult.ok,
+      );
+      expect(repo.state.status.reopen?.outcome, ReopenOutcome.clearedRate);
+      // ...and the start after that is an ordinary one.
+      repo.stopEngine();
+      expect(
+        repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1')),
+        EngineResult.ok,
+      );
+      expect(repo.state.status.reopen, isNull);
+    });
 
     test('a reopen the engine refuses leaves no verdict', () async {
       engine.nextSnapshot = runningSnapshot(devicePresent: true);
@@ -9065,10 +8981,7 @@ void main() {
       final slots = engine.recipes[(FxOwner.lane, 0, 0)]!.slots;
       expect(slots[0].channels.level, 1.0);
       expect(slots[1].channels.level, 0.25);
-      expect(
-        slots[1].channels.output,
-        le.FxChannelOutput.mono,
-      );
+      expect(slots[1].channels.output, le.FxChannelOutput.mono);
     });
 
     test('the setter names the instance by slot id, never by index', () {
@@ -9318,15 +9231,12 @@ void main() {
         ],
       );
 
-      expect(
-        repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type),
-        [
-          TrackEffectType.filter,
-          TrackEffectType.echo,
-          TrackEffectType.drive,
-          TrackEffectType.delay,
-        ],
-      );
+      expect(repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type), [
+        TrackEffectType.filter,
+        TrackEffectType.echo,
+        TrackEffectType.drive,
+        TrackEffectType.delay,
+      ]);
       expect(fxPreCount(repo.laneEffects(0, 0)), 2);
     });
 
@@ -9630,10 +9540,10 @@ void main() {
         ],
       );
 
-      expect(
-        repo.outputEffects(0).map((e) => e.placement),
-        [FxPlacement.post, FxPlacement.post],
-      );
+      expect(repo.outputEffects(0).map((e) => e.placement), [
+        FxPlacement.post,
+        FxPlacement.post,
+      ]);
       expect(fxPreCount(repo.outputEffects(0)), 0);
       // Order is the order it was handed: nothing moved, only the placement.
       expect(repo.outputEffects(0).map((e) => (e as BuiltInEffect).type), [
@@ -10128,12 +10038,7 @@ void main() {
       engine.calls.clear();
 
       expect(
-        repo.setTrackEffectParam(
-          channel: 0,
-          index: 1,
-          param: 0,
-          value: 0.75,
-        ),
+        repo.setTrackEffectParam(channel: 0, index: 1, param: 0, value: 0.75),
         EngineResult.ok,
       );
 
@@ -10142,10 +10047,7 @@ void main() {
       // setter exists to avoid.
       expect(engine.calls, contains('setTrackFxParam'));
       expect(engine.calls, isNot(contains('setFxRecipe')));
-      expect(
-        (repo.trackEffects(0)[1] as BuiltInEffect).params[0],
-        0.75,
-      );
+      expect((repo.trackEffects(0)[1] as BuiltInEffect).params[0], 0.75);
       // The untouched sibling keeps its params.
       expect(
         (repo.trackEffects(0)[0] as BuiltInEffect).params,
@@ -10203,12 +10105,7 @@ void main() {
       engine.calls.clear();
 
       expect(
-        repo.setTrackPluginParam(
-          channel: 0,
-          index: 1,
-          paramId: 42,
-          value: 0.3,
-        ),
+        repo.setTrackPluginParam(channel: 0, index: 1, paramId: 42, value: 0.3),
         EngineResult.invalid,
       );
 
@@ -10260,12 +10157,7 @@ void main() {
       addTearDown(repo.dispose);
 
       expect(
-        repo.setTrackPluginParam(
-          channel: 0,
-          index: 0,
-          paramId: 1,
-          value: 0.5,
-        ),
+        repo.setTrackPluginParam(channel: 0, index: 0, paramId: 1, value: 0.5),
         EngineResult.invalid,
       );
       expect(
@@ -10274,12 +10166,7 @@ void main() {
       );
       // ...and an out-of-range index too.
       expect(
-        repo.setTrackPluginParam(
-          channel: 0,
-          index: 9,
-          paramId: 1,
-          value: 0.5,
-        ),
+        repo.setTrackPluginParam(channel: 0, index: 9, paramId: 1, value: 0.5),
         EngineResult.invalid,
       );
       expect(
@@ -10458,10 +10345,7 @@ void main() {
       // The input's Pre entry is what the take records; its Post entry runs
       // after that take's player. Both ride the same copy.
       final take = repo.laneEffects(0, 0);
-      expect(take.map((e) => e.placement), [
-        FxPlacement.pre,
-        FxPlacement.post,
-      ]);
+      expect(take.map((e) => e.placement), [FxPlacement.pre, FxPlacement.post]);
       expect(fxPreCount(take), 1);
       expect(engine.recipes[(FxOwner.lane, 0, 0)]?.preCount, 1);
     });
@@ -10695,9 +10579,7 @@ void main() {
       // Two all-disabled chains of DIFFERENT types: still dry vs dry.
       repo.setMonitorEffects(
         input: 0,
-        effects: [
-          BuiltInEffect(type: TrackEffectType.drive, enabled: false),
-        ],
+        effects: [BuiltInEffect(type: TrackEffectType.drive, enabled: false)],
       );
       expect(repo.laneChainDivergesFromInput(0, 0), isFalse);
 

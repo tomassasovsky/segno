@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -21,7 +21,7 @@ Future<void> showShortcutsHelp(BuildContext context) {
 /// A single legend entry: a platform-aware key [chip] and its [description].
 /// [id] is a stable, locale/platform-independent handle for the row's key.
 class _Shortcut {
-  const _Shortcut(this.id, this.chip, this.description);
+  const new(this.id, this.chip, this.description);
 
   /// Stable identifier used in the row's widget key.
   final String id;
@@ -38,7 +38,7 @@ class _Shortcut {
 /// merged [Semantics] node so a screen reader reads "R: Record or overdub the
 /// selected track" as a unit, and the dialog names its route.
 class _ShortcutsHelpDialog extends StatelessWidget {
-  const _ShortcutsHelpDialog();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +158,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
 /// The legend's groups, with every description in one column: the key caps
 /// all take the widest cap's width (#1590 DLG-1).
 class _ShortcutTable extends StatelessWidget {
-  const _ShortcutTable({required this.groups});
+  const new({required this.groups});
 
   /// Each group's heading and its rows.
   final List<(String, List<_Shortcut>)> groups;
@@ -222,7 +222,7 @@ class _ShortcutTable extends StatelessWidget {
 
 /// One legend entry: its key cap, then its description.
 class _ShortcutRow extends StatelessWidget {
-  const _ShortcutRow({required this.row, required this.capWidth});
+  const new({required this.row, required this.capWidth});
 
   final _Shortcut row;
 

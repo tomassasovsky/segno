@@ -32,9 +32,9 @@ part 'performance_recorder_state.dart';
 class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Creates a [PerformanceRecorderCubit] driving [performance].
   ///
-  /// [armedTickInterval] paces the [PerformanceRecorderArmed] elapsed-time
-  /// readout; [renderPollInterval] paces polling
-  /// [PerformanceRepository.renderProgress] after a disarm. [now] supplies
+  /// [_armedTickInterval] paces the [PerformanceRecorderArmed] elapsed-time
+  /// readout; [_renderPollInterval] paces polling
+  /// [PerformanceRepository.renderProgress] after a disarm. [_now] supplies
   /// the double-press-guard clock; injectable for deterministic tests.
   ///
   /// [freeSpaceBytes] answers "how much room is left on this volume", and
@@ -58,44 +58,37 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// where the live transport tempo at export time would be an arbitrary
   /// value unrelated to the take anyway.
   ///
-  /// [currentChains] resolves the REAL lane/monitor effect chains and
+  /// [_currentChains] resolves the REAL lane/monitor effect chains and
   /// master-limiter state to stamp into the arm snapshot
   /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — a
-  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
+  /// narrow function dependency (matching [_now]/[freeSpaceBytes]'s own
   /// pattern here), since the mapping
   /// from the live rig lives in the session feature rather than in this cubit.
   /// Defaults to the empty snapshot (what every call site passed before this
   /// was wired); the composition root (`lib/app/view/app.dart`) supplies
   /// `performanceChainsFromLooper` over the live `LooperRepository`.
   ///
-  /// [storage] and [destination] are where a take may go (#1177 Part 6):
-  /// [destination] is read at each arm (the recorder's `Save to`), and a take
+  /// [_storage] and [_destination] are where a take may go (#1177 Part 6):
+  /// [_destination] is read at each arm (the recorder's `Save to`), and a take
   /// on a USB drive holds a `recording` lease on it from the arm until it is
   /// finalized, so the drive cannot be ejected under it; the lease failing
   /// (the drive pulled) ends the take as [PerformanceStopReason.volumeLost].
-  /// Without [storage] every take goes to Internal. A pedal arm reaches the
+  /// Without [_storage] every take goes to Internal. A pedal arm reaches the
   /// repository directly and records to Internal.
-  PerformanceRecorderCubit({
+  new({
     required PerformanceRepository performance,
-    Duration armedTickInterval = const Duration(milliseconds: 250),
-    Duration renderPollInterval = const Duration(milliseconds: 200),
-    DateTime Function() now = DateTime.now,
+    this._armedTickInterval = const Duration(milliseconds: 250),
+    this._renderPollInterval = const Duration(milliseconds: 200),
+    this._now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
-    PerformanceChains Function() currentChains = _noChains,
-    bool Function() takeLocked = _neverLocked,
-    StorageRepository? storage,
-    StorageDestination Function() destination = _internal,
+    this._currentChains = _noChains,
+    this._takeLocked = _neverLocked,
+    this._storage,
+    this._destination = _internal,
   }) : _performance = performance,
-       _storage = storage,
-       _destination = destination,
-       _armedTickInterval = armedTickInterval,
-       _renderPollInterval = renderPollInterval,
-       _now = now,
        _freeSpaceBytes =
            freeSpaceBytes ??
-           ((String path) async => performance.volumeSpace(path)?.freeBytes),
-       _currentChains = currentChains,
-       _takeLocked = takeLocked,
+           ((path) async => performance.volumeSpace(path)?.freeBytes),
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
     _refusalSubscription = _performance.armRefusals.listen(_onArmRefused);
@@ -225,9 +218,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       // In a finally so the flag can never wedge true past this call: if
       // recovery itself blew up (a genuine bug escaping its guards), a
       // permanently-disabled record button must not be the second casualty.
-      _clearRecoveringWhenRenderSettles(
-        _performance.unrecoveredTakes.length,
-      );
+      _clearRecoveringWhenRenderSettles(_performance.unrecoveredTakes.length);
     }
   }
 
@@ -247,9 +238,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     try {
       await _performance.retryUnrecovered();
     } finally {
-      _clearRecoveringWhenRenderSettles(
-        _performance.unrecoveredTakes.length,
-      );
+      _clearRecoveringWhenRenderSettles(_performance.unrecoveredTakes.length);
     }
   }
 
@@ -316,10 +305,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       PerformanceRecordDone() => PerformanceRecordDone(newPath),
       PerformanceRecordPartial() => PerformanceRecordPartial(newPath),
       PerformanceRecordStoppedEarly(:final reason) =>
-        PerformanceRecordStoppedEarly(
-          newPath,
-          reason,
-        ),
+        PerformanceRecordStoppedEarly(newPath, reason),
     };
     _emit(
       PerformanceRecorderCompleted(
@@ -689,18 +675,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// ([PerformanceStopReason.volumeLost]). Whichever comes first wins; the
   /// pulled drive also fails the engine's next write, and that second stop
   /// is the one this guard swallows.
-  Future<void> _finishSelfStopped(PerfStopReason reason) => _stopEarly(
-    switch (reason) {
-      PerfStopReason.reserveReached => PerformanceStopReason.reserveReached,
-      PerfStopReason.slowStorage => PerformanceStopReason.slowStorage,
-      PerfStopReason.deviceChanged => PerformanceStopReason.deviceChanged,
-      PerfStopReason.writeFailed => PerformanceStopReason.diskFull,
-      PerfStopReason.idle => PerformanceStopReason.idle,
-      PerfStopReason.lengthLimit => PerformanceStopReason.lengthLimit,
-      // No reason published: the sidecar's `stopped_early` decides.
-      PerfStopReason.none || PerfStopReason.disarm => null,
-    },
-  );
+  Future<void> _finishSelfStopped(PerfStopReason reason) =>
+      _stopEarly(switch (reason) {
+        PerfStopReason.reserveReached => PerformanceStopReason.reserveReached,
+        PerfStopReason.slowStorage => PerformanceStopReason.slowStorage,
+        PerfStopReason.deviceChanged => PerformanceStopReason.deviceChanged,
+        PerfStopReason.writeFailed => PerformanceStopReason.diskFull,
+        PerfStopReason.idle => PerformanceStopReason.idle,
+        PerfStopReason.lengthLimit => PerformanceStopReason.lengthLimit,
+        // No reason published: the sidecar's `stopped_early` decides.
+        PerfStopReason.none || PerfStopReason.disarm => null,
+      });
 
   /// Ends the take at what it has, remembering [reason] (null leaves it to
   /// the sidecar's `stopped_early`).
@@ -740,10 +725,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       ),
     );
     _armedTicker?.cancel();
-    _armedTicker = Timer.periodic(
-      _armedTickInterval,
-      (_) => _emitArmedTick(),
-    );
+    _armedTicker = Timer.periodic(_armedTickInterval, (_) => _emitArmedTick());
   }
 
   /// Ends a take that could not be finalized or delivered on an idle that
@@ -827,7 +809,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       _pollRender(dir, completer);
     });
     _pollRender(dir, completer);
-    return completer.future;
+    return await completer.future;
   }
 
   void _pollRender(String dir, Completer<void> completer) {

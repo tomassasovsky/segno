@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 import 'package:routing_graph/src/widgets/focusable_tap_target.dart';
 
@@ -19,7 +19,7 @@ import 'package:routing_graph/src/widgets/focusable_tap_target.dart';
 /// overlaid in the corner.
 class GraphCanvas extends StatefulWidget {
   /// Creates a graph canvas.
-  const GraphCanvas({
+  const new({
     required this.width,
     required this.height,
     required this.fitIdentity,
@@ -157,7 +157,7 @@ class _GraphCanvasState extends State<GraphCanvas> {
 /// The corner zoom/fit control cluster: the keyboard/single-pointer alternative
 /// to drag-pan/pinch-zoom (WCAG 2.5.7). Each button is focusable and labelled.
 class _ZoomControls extends StatelessWidget {
-  const _ZoomControls({
+  const new({
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onFit,
@@ -205,7 +205,7 @@ class _ZoomControls extends StatelessWidget {
 
 /// One of [_ZoomControls]' buttons: a labelled, focusable icon.
 class _ZoomButton extends StatelessWidget {
-  const _ZoomButton({
+  const new({
     required this.buttonKey,
     required this.icon,
     required this.tooltip,

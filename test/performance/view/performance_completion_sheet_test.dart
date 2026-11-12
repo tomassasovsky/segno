@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:daw_export/daw_export.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -16,13 +16,13 @@ import 'package:segno/performance/performance.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockPerformanceCompletionCubit
     extends MockCubit<PerformanceCompletionStatus>
-    implements PerformanceCompletionCubit {}
+    implements PerformanceCompletionCubit;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 /// Types [name] into the console rename sheet and confirms with Enter.
 ///
@@ -49,9 +49,8 @@ void main() {
     cubit = _MockPerformanceRecorderCubit();
     completion = _MockPerformanceCompletionCubit();
     pedal = _MockPedalRepository();
-    when(
-      () => pedal.events,
-    ).thenAnswer((_) => const Stream<PedalEvent>.empty());
+    when(() => pedal.events)
+        .thenAnswer((_) => const Stream<PedalEvent>.empty());
     whenListen(
       completion,
       const Stream<PerformanceCompletionStatus>.empty(),
@@ -274,60 +273,51 @@ void main() {
     expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
   });
 
-  testWidgets(
-    'submitting a valid name in the rename dialog calls '
-    'renameCompletedCapture',
-    (tester) async {
-      when(
-        () => cubit.renameCompletedCapture(any()),
-      ).thenAnswer((_) async {});
-      await pump(
-        tester,
-        const PerformanceRecorderCompleted(
-          PerformanceRecordDone('/exports/perf-1'),
-        ),
-      );
+  testWidgets('submitting a valid name in the rename dialog calls '
+      'renameCompletedCapture', (tester) async {
+    when(() => cubit.renameCompletedCapture(any())).thenAnswer((_) async {});
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordDone('/exports/perf-1'),
+      ),
+    );
 
-      await tester.tap(find.byKey(const Key('perfCompletion_rename')));
-      await tester.pumpAndSettle();
-      await typeSheetName(tester, 'My Take');
+    await tester.tap(find.byKey(const Key('perfCompletion_rename')));
+    await tester.pumpAndSettle();
+    await typeSheetName(tester, 'My Take');
 
-      verify(() => cubit.renameCompletedCapture('My Take')).called(1);
-    },
-  );
+    verify(() => cubit.renameCompletedCapture('My Take')).called(1);
+  });
 
-  testWidgets(
-    'renaming to the reserved "recovered" name shows the inline '
-    'invalid-name error instead of a dead Save — the take would otherwise '
-    "BECOME the boot salvage's recovered/ area (#679 r5)",
-    (tester) async {
-      await pump(
-        tester,
-        const PerformanceRecorderCompleted(
-          PerformanceRecordDone('/exports/perf-1'),
-        ),
-      );
-      final strings = await l10n();
+  testWidgets('renaming to the reserved "recovered" name shows the inline '
+      'invalid-name error instead of a dead Save — the take would otherwise '
+      "BECOME the boot salvage's recovered/ area (#679 r5)", (tester) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordDone('/exports/perf-1'),
+      ),
+    );
+    final strings = await l10n();
 
-      await tester.tap(find.byKey(const Key('perfCompletion_rename')));
-      await tester.pumpAndSettle();
-      await typeSheetName(tester, 'Recovered');
+    await tester.tap(find.byKey(const Key('perfCompletion_rename')));
+    await tester.pumpAndSettle();
+    await typeSheetName(tester, 'Recovered');
 
-      // Said under the field, with the sheet still open for another name.
-      // What matters is that the reserved name never reaches the cubit.
-      expect(find.text(strings.perfRenameInvalid), findsOneWidget);
-      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
-      verifyNever(() => cubit.renameCompletedCapture(any()));
-    },
-  );
+    // Said under the field, with the sheet still open for another name.
+    // What matters is that the reserved name never reaches the cubit.
+    expect(find.text(strings.perfRenameInvalid), findsOneWidget);
+    expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+    verifyNever(() => cubit.renameCompletedCapture(any()));
+  });
 
   testWidgets(
     'a PerformanceNameCollision thrown by the cubit says the duplicate '
     'message under the field',
     (tester) async {
-      when(
-        () => cubit.renameCompletedCapture(any()),
-      ).thenThrow(const PerformanceNameCollision(slug: 'Taken'));
+      when(() => cubit.renameCompletedCapture(any()))
+          .thenThrow(const PerformanceNameCollision(slug: 'Taken'));
       await pump(
         tester,
         const PerformanceRecorderCompleted(
@@ -538,36 +528,33 @@ void main() {
       expect(find.byType(ModalBarrier).evaluate().length, barriers);
     });
 
-    testWidgets(
-      'a foreign state after the dialog already left leaves the home '
-      'route alone',
-      (tester) async {
-        // Regression (#712): the operator's Done/Hide races a pedal-side
-        // state change — the listener still fires while the dialog route is
-        // animating out, and an unconditional pop removed the HOME route
-        // (black stage). Not-current means already leaving: correct no-op.
-        final context = await host(
-          tester,
-          const PerformanceRecorderRendering(percent: 40),
-        );
-        unawaited(showPerformanceCompletionSheet(context));
-        await tester.pumpAndSettle();
+    testWidgets('a foreign state after the dialog already left leaves the home '
+        'route alone', (tester) async {
+      // Regression (#712): the operator's Done/Hide races a pedal-side
+      // state change — the listener still fires while the dialog route is
+      // animating out, and an unconditional pop removed the HOME route
+      // (black stage). Not-current means already leaving: correct no-op.
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 40),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('perfRendering_hide')));
-        await tester.pump(const Duration(milliseconds: 20)); // mid-exit
+      await tester.tap(find.byKey(const Key('perfRendering_hide')));
+      await tester.pump(const Duration(milliseconds: 20)); // mid-exit
 
-        states.add(const PerformanceRecorderIdle());
-        await tester.pumpAndSettle();
+      states.add(const PerformanceRecorderIdle());
+      await tester.pumpAndSettle();
 
-        expect(tester.takeException(), isNull);
-        expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
-        expect(
-          find.byType(Scaffold),
-          findsOneWidget,
-          reason: 'the home route must survive the foreign state',
-        );
-      },
-    );
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
+      expect(
+        find.byType(Scaffold),
+        findsOneWidget,
+        reason: 'the home route must survive the foreign state',
+      );
+    });
 
     testWidgets(
       'two foreign states in quick succession pop once, not the home route',

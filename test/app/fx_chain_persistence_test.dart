@@ -11,7 +11,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_key_value_store.dart';
 
-class _Looper extends Mock implements LooperRepository {}
+class _Looper extends Mock implements LooperRepository;
 
 class _ControlledStore extends FakeKeyValueStore {
   bool refuse = false;
@@ -61,9 +61,8 @@ void main() {
     when(() => looper.laneMuted(any(), any())).thenReturn(false);
     when(() => looper.mixGeneration).thenReturn(1);
     when(() => looper.fxRecipesSettled).thenReturn(true);
-    when(
-      () => looper.fxReplayConfirmed,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.fxReplayConfirmed)
+        .thenAnswer((_) => const Stream.empty());
     held = BuiltInEffect(
       type: TrackEffectType.drive,
       slotId: 'drive',
@@ -78,9 +77,7 @@ void main() {
   tearDown(() => projection.close());
 
   void stubLoadedRig({bool withTrackFx = false}) {
-    when(() => looper.state).thenReturn(
-      const LooperState(tracks: [Track()]),
-    );
+    when(() => looper.state).thenReturn(const LooperState(tracks: [Track()]));
     when(looper.allLaneChains).thenReturn(const {});
     when(looper.allTrackChains).thenReturn(
       withTrackFx
@@ -200,11 +197,7 @@ void main() {
     final store = _ControlledStore()..refuse = true;
     final settings = SettingsRepository(store: store);
     projection
-      ..scheduleSave(
-        address,
-        settings,
-        debounce: const Duration(minutes: 1),
-      )
+      ..scheduleSave(address, settings, debounce: const Duration(minutes: 1))
       ..flushScheduled();
     await pumpEventQueue();
     expect(store.writes, 1);

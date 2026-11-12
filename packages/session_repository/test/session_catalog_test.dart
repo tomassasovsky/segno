@@ -65,29 +65,26 @@ void main() {
   }
 
   group('listSessions', () {
-    test(
-      'lists every bundle at the root and one folder down, skipping folders '
-      'and interrupted saves',
-      () async {
-        makeBundle('s-a');
-        makeBundle('s-b', folder: 'Gigs');
-        Directory('${root.path}/Empty folder').createSync();
-        // A save that never reached its manifest: layer WAVs, no manifest.
-        // It is not a folder either, so a bundle nested in it is not filed.
-        Directory('${root.path}/s-interrupted').createSync();
-        File('${root.path}/s-interrupted/track0_lane0_L0.wav').createSync();
-        makeBundle('s-nested', folder: 's-interrupted');
-        // A second level is ignored.
-        makeBundle('s-deep', folder: 'Gigs/Nested');
-        File('${root.path}/stray.txt').createSync();
+    test('lists every bundle at the root and one folder down, skipping folders '
+        'and interrupted saves', () async {
+      makeBundle('s-a');
+      makeBundle('s-b', folder: 'Gigs');
+      Directory('${root.path}/Empty folder').createSync();
+      // A save that never reached its manifest: layer WAVs, no manifest.
+      // It is not a folder either, so a bundle nested in it is not filed.
+      Directory('${root.path}/s-interrupted').createSync();
+      File('${root.path}/s-interrupted/track0_lane0_L0.wav').createSync();
+      makeBundle('s-nested', folder: 's-interrupted');
+      // A second level is ignored.
+      makeBundle('s-deep', folder: 'Gigs/Nested');
+      File('${root.path}/stray.txt').createSync();
 
-        final sessions = await repo().listSessions();
+      final sessions = await repo().listSessions();
 
-        expect(sessions.map((s) => s.id), unorderedEquals(['s-a', 's-b']));
-        expect(sessions.singleWhere((s) => s.id == 's-a').folder, isNull);
-        expect(sessions.singleWhere((s) => s.id == 's-b').folder, 'Gigs');
-      },
-    );
+      expect(sessions.map((s) => s.id), unorderedEquals(['s-a', 's-b']));
+      expect(sessions.singleWhere((s) => s.id == 's-a').folder, isNull);
+      expect(sessions.singleWhere((s) => s.id == 's-b').folder, 'Gigs');
+    });
 
     test('a legacy bundle lists under its directory name', () async {
       makeBundle('Evening loop');
@@ -182,9 +179,8 @@ void main() {
       'a bundle whose manifest does not decode still lists, unreadable',
       () async {
         Directory('${root.path}/s-bad').createSync();
-        File(
-          '${root.path}/s-bad/${Session.manifestName}',
-        ).writeAsStringSync('{not json');
+        File('${root.path}/s-bad/${Session.manifestName}')
+            .writeAsStringSync('{not json');
         makeBundle('s-future', version: 999);
 
         final sessions = await repo().listSessions();
@@ -204,17 +200,13 @@ void main() {
       makeBundle(
         's-old',
         name: 'zebra',
-        modifiedAt: now.subtract(
-          const Duration(days: 2),
-        ),
+        modifiedAt: now.subtract(const Duration(days: 2)),
       );
       makeBundle('s-new', name: 'apple', modifiedAt: now);
       makeBundle(
         's-mid',
         name: 'Mango',
-        modifiedAt: now.subtract(
-          const Duration(days: 1),
-        ),
+        modifiedAt: now.subtract(const Duration(days: 1)),
       );
 
       final names = (await repo().listSessions()).map((s) => s.name).toList();
@@ -240,9 +232,8 @@ void main() {
         Directory('${root.path}/gigs').createSync();
         makeBundle('s-a');
         Directory('${root.path}/s-interrupted').createSync();
-        File(
-          '${root.path}/s-interrupted/${SessionRepository.mixdownName}',
-        ).createSync();
+        File('${root.path}/s-interrupted/${SessionRepository.mixdownName}')
+            .createSync();
 
         expect(await repo().listFolders(), ['gigs', 'Studio']);
       },
@@ -469,20 +460,15 @@ void main() {
     test('treats a folder or an interrupted save named like an id as '
         'taken', () async {
       makeBundle('s-gig', folder: 's-20261006-120000');
-      Directory('${root.path}/Gigs/s-20261006-120000-2').createSync(
-        recursive: true,
-      );
-      File(
-        '${root.path}/Gigs/s-20261006-120000-2/track0_lane0_L0.wav',
-      ).createSync();
+      Directory('${root.path}/Gigs/s-20261006-120000-2')
+          .createSync(recursive: true);
+      File('${root.path}/Gigs/s-20261006-120000-2/track0_lane0_L0.wav')
+          .createSync();
 
       final id = await repo().newSessionId();
 
       expect(id, 's-20261006-120000-3');
-      expect(
-        await repo().bundlePathOf(id),
-        '${root.path}/s-20261006-120000-3',
-      );
+      expect(await repo().bundlePathOf(id), '${root.path}/s-20261006-120000-3');
       expect((await repo().listSessions()).single.id, 's-gig');
     });
 
@@ -498,9 +484,8 @@ void main() {
         expect(copyId, isNot(saveAsId));
         expect(Directory('${root.path}/$saveAsId').listSync(), isEmpty);
         expect(
-          File(
-            '${root.path}/Gigs/$copyId/${Session.manifestName}',
-          ).existsSync(),
+          File('${root.path}/Gigs/$copyId/${Session.manifestName}')
+              .existsSync(),
           isTrue,
         );
       },
@@ -548,10 +533,7 @@ void main() {
       await repo().releaseSessionId(id);
       await repo().releaseSessionId('s-ghost');
 
-      expect(
-        File('${root.path}/$id/track0_lane0_L0.wav').existsSync(),
-        isTrue,
-      );
+      expect(File('${root.path}/$id/track0_lane0_L0.wav').existsSync(), isTrue);
     });
   });
 
@@ -574,20 +556,13 @@ void main() {
       'rewrites only the manifest name; every WAV is byte-identical',
       () async {
         final engine = FakeSessionEngine()
-          ..seedLayers(
-            0,
-            [
-              Float32List.fromList([1, 1, 1, 1]),
-              Float32List.fromList([2, 2, 2, 2]),
-            ],
-            undoDepth: 1,
-          );
+          ..seedLayers(0, [
+            Float32List.fromList([1, 1, 1, 1]),
+            Float32List.fromList([2, 2, 2, 2]),
+          ], undoDepth: 1);
         final dir = await repo().bundlePathOf('s-a');
-        await repo(engine: engine).save(
-          dir,
-          settings: const SessionSettings(),
-          name: 'Old name',
-        );
+        await repo(engine: engine)
+            .save(dir, settings: const SessionSettings(), name: 'Old name');
         final before = {
           for (final f in Directory(dir).listSync().whereType<File>())
             f.path: f.readAsBytesSync(),
@@ -600,11 +575,9 @@ void main() {
           if (entry.key.endsWith(Session.manifestName)) continue;
           expect(File(entry.key).readAsBytesSync(), entry.value);
         }
-        final json =
-            jsonDecode(
-                  File('$dir/${Session.manifestName}').readAsStringSync(),
-                )
-                as Map<String, dynamic>;
+        final json = jsonDecode(
+          File('$dir/${Session.manifestName}').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(json['name'], 'New name');
         expect(json['version'], Session.formatVersion);
         expect((await repo().listSessions()).single.name, 'New name');
@@ -716,11 +689,8 @@ void main() {
         ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
       await repo().createFolder('Gigs');
       final dir = '${root.path}/Gigs/s-a';
-      await repo(engine: engine).save(
-        dir,
-        settings: const SessionSettings(),
-        name: 'Source',
-      );
+      await repo(engine: engine)
+          .save(dir, settings: const SessionSettings(), name: 'Source');
 
       final id = await repo().duplicateSession('s-a', 'A Copy');
 
@@ -822,14 +792,10 @@ void main() {
       'writes the manifest last, so a copy cut short lists nowhere',
       () async {
         final engine = FakeSessionEngine()
-          ..seedLayers(
-            0,
-            [
-              Float32List.fromList([1, 1, 1, 1]),
-              Float32List.fromList([2, 2, 2, 2]),
-            ],
-            undoDepth: 1,
-          );
+          ..seedLayers(0, [
+            Float32List.fromList([1, 1, 1, 1]),
+            Float32List.fromList([2, 2, 2, 2]),
+          ], undoDepth: 1);
         await repo(engine: engine).save(
           '${root.path}/s-a',
           settings: const SessionSettings(),
@@ -891,11 +857,11 @@ void main() {
       final engine = FakeSessionEngine()
         ..tempoBpm = 120
         ..tempoSource = TempoSource.manual
-        ..seedLayers(
-          0,
-          [Float32List(96000), Float32List(96000), Float32List(96000)],
-          undoDepth: 2,
-        )
+        ..seedLayers(0, [
+          Float32List(96000),
+          Float32List(96000),
+          Float32List(96000),
+        ], undoDepth: 2)
         ..seedTrack(2, Float32List(192000), multiple: 2, muted: true);
       final dir = await repo().bundlePathOf('s-a');
       await repo(engine: engine).save(
@@ -961,10 +927,7 @@ void main() {
       // Lane 2, lane 1, track 1, Master and monitor 0: one entry each but
       // lane 0's two.
       expect(preview.fxCount, 6);
-      expect(
-        File('$dir/${Session.manifestName}').readAsBytesSync(),
-        manifest,
-      );
+      expect(File('$dir/${Session.manifestName}').readAsBytesSync(), manifest);
     });
 
     test('renames a schema-7 bundle in place and it still previews', () async {
@@ -980,9 +943,9 @@ void main() {
 
       final listed = (await repo().listSessions()).single;
       expect((listed.id, listed.name), ('s-old', 'Old gig'));
-      final json =
-          jsonDecode(File('$dir/${Session.manifestName}').readAsStringSync())
-              as Map<String, dynamic>;
+      final json = jsonDecode(
+        File('$dir/${Session.manifestName}').readAsStringSync(),
+      ) as Map<String, dynamic>;
       // Only the name changed: the manifest stays schema 7, converted on the
       // next read as before.
       expect(json['version'], 7);
@@ -1029,9 +992,8 @@ void main() {
       File('${dir.path}/${SessionRepository.mixdownName}').createSync();
 
       var wanted = true;
-      final started = await repo(
-        engine: engine,
-      ).startAudition('s-a', stillWanted: () => wanted);
+      final started = await repo(engine: engine)
+          .startAudition('s-a', stillWanted: () => wanted);
 
       expect(engine.auditioned.single, '${dir.path}/mixdown.wav');
       // The caller's check reaches the engine, which asks it before the
@@ -1108,9 +1070,8 @@ void main() {
       final dir = makeBundle('s-a');
       File('${dir.path}/track2_lane0_L0.wav').createSync();
 
-      final peaks = await repo(
-        engine: engine,
-      ).readPeaks('s-a', track, buckets: 2);
+      final peaks = await repo(engine: engine)
+          .readPeaks('s-a', track, buckets: 2);
 
       expect(peaks, [0.5, 1]);
       final read = engine.peakReads.single;

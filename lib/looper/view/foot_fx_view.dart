@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_fx.dart';
@@ -20,7 +20,7 @@ import 'package:segno/theme/theme.dart';
 /// here and are drawn dimmed.
 class FootFxView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootFxView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +87,7 @@ class FootFxView extends StatelessWidget {
 }
 
 class _FootFxPedal extends StatelessWidget {
-  const _FootFxPedal({required this.pedal});
+  const new({required this.pedal});
 
   final FootFxPedal pedal;
 

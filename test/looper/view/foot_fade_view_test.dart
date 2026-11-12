@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -19,12 +19,11 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 const _playing = Track(state: TrackState.playing, lengthFrames: 48000);
 
@@ -79,23 +78,23 @@ void main() {
 
   // Storage I/O runs outside the fake clock: awaiting it inside the
   // widget-test zone never completes.
-  Future<void> durations(
-    WidgetTester tester, {
-    bool load = true,
-  }) => tester.runAsync(() async {
-    final store = SettingsRepository(store: FakeKeyValueStore());
-    await store.saveFadeDurations(FadeDurations(overrides: const {1: 8000}));
-    settings = FadeSettings(
-      repository: LooperRepository(
-        engine: FakeAudioEngine(),
-        ticker: const Stream.empty(),
-      ),
-      settings: store,
-      blocked: () => false,
-      sessionBlocked: () => false,
-    );
-    if (load) await settings.load();
-  });
+  Future<void> durations(WidgetTester tester, {bool load = true}) =>
+      tester.runAsync(() async {
+        final store = SettingsRepository(store: FakeKeyValueStore());
+        await store.saveFadeDurations(
+          FadeDurations(overrides: const {1: 8000}),
+        );
+        settings = FadeSettings(
+          repository: LooperRepository(
+            engine: FakeAudioEngine(),
+            ticker: const Stream.empty(),
+          ),
+          settings: store,
+          blocked: () => false,
+          sessionBlocked: () => false,
+        );
+        if (load) await settings.load();
+      });
 
   void given(ControlState state) => whenListen(
     control,
@@ -157,7 +156,7 @@ void main() {
           child: MaterialApp(
             navigatorKey: segnoNavigatorKey,
             theme: AppTheme.neon,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localizationsDelegates: appLocalizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             home: const Scaffold(body: FootFadeView()),
           ),

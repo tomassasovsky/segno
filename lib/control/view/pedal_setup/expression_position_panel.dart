@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// nothing.
 class ExpressionPositionPanel extends StatelessWidget {
   /// Creates an [ExpressionPositionPanel].
-  const ExpressionPositionPanel({
+  const new({
     required this.raw,
     required this.calibration,
     required this.height,
@@ -115,7 +115,7 @@ class ExpressionPositionPanel extends StatelessWidget {
 
 /// The position in the taught travel, as a percentage.
 class _PositionReadout extends StatelessWidget {
-  const _PositionReadout({required this.position});
+  const new({required this.position});
 
   /// The position in the taught travel, or `null` when there is none.
   final double? position;
@@ -163,7 +163,7 @@ class _PositionReadout extends StatelessWidget {
 
 /// A bar filled to where the pedal is.
 class _PositionMeter extends StatelessWidget {
-  const _PositionMeter({required this.fraction});
+  const new({required this.fraction});
 
   /// How far along the bar is filled, or `null` for empty.
   final double? fraction;
@@ -197,7 +197,7 @@ class _PositionMeter extends StatelessWidget {
 
 /// The heel and toe labels under the meter.
 class _TravelEnds extends StatelessWidget {
-  const _TravelEnds();
+  const new();
 
   @override
   Widget build(BuildContext context) {

@@ -34,7 +34,7 @@ SystemdNotify? systemdNotifyFromEnvironment(Map<String, String> environment) {
 /// Linux only: the constants and `sockaddr_un` layout below are Linux's.
 final class UnixDatagramNotifier {
   /// Creates a [UnixDatagramNotifier] for the socket at [socketPath].
-  UnixDatagramNotifier(this.socketPath);
+  new(this.socketPath);
 
   /// `NOTIFY_SOCKET`.
   final String socketPath;
@@ -54,9 +54,7 @@ final class UnixDatagramNotifier {
       .lookupFunction<
         Int32 Function(Int32, Int32, Int32),
         int Function(int, int, int)
-      >(
-        'socket',
-      );
+      >('socket');
   static final int Function(int, Pointer<Uint8>, int, int, Pointer<Uint8>, int)
   _sendto = _libc
       .lookupFunction<

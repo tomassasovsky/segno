@@ -11,7 +11,7 @@ import 'package:meta/meta.dart';
 @immutable
 class VolumeSpace {
   /// Creates a [VolumeSpace].
-  const VolumeSpace({required this.totalBytes, required this.freeBytes});
+  const new({required this.totalBytes, required this.freeBytes});
 
   /// The volume's size.
   final int totalBytes;

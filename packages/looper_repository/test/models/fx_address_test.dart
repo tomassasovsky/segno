@@ -111,10 +111,7 @@ void main() {
         FxAddress.fromJson(const {'stage': 'track', 'index': 999}),
         const FxAddress(stage: FxStage.track, index: 999),
       );
-      expect(
-        const FxAddress(stage: FxStage.loop).isStructurallyValid,
-        isFalse,
-      );
+      expect(const FxAddress(stage: FxStage.loop).isStructurallyValid, isFalse);
     });
 
     test('equality and props cover stage, index, and lane', () {
@@ -122,10 +119,7 @@ void main() {
       expect(a, const FxAddress(stage: FxStage.loop, lane: 1));
       expect(a, isNot(const FxAddress(stage: FxStage.loop, lane: 0)));
       expect(a, isNot(const FxAddress(stage: FxStage.loop, index: 1, lane: 1)));
-      expect(
-        a,
-        isNot(const FxAddress(stage: FxStage.track, lane: 1)),
-      );
+      expect(a, isNot(const FxAddress(stage: FxStage.track, lane: 1)));
     });
 
     test('copyWith replaces the given fields', () {

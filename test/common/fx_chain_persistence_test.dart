@@ -8,7 +8,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The ONE Track-stage chain-envelope writer, shared by `LooperBloc` (the
 /// on-screen FX dock and keyboard) and `ControlCubit` (the pedal's FX-mode
@@ -25,9 +25,8 @@ void main() {
       looper = _MockLooperRepository();
       when(() => looper.sessionRevision).thenReturn(0);
       when(() => looper.fxRecipesSettled).thenReturn(true);
-      when(
-        () => looper.fxReplayConfirmed,
-      ).thenAnswer((_) => const Stream.empty());
+      when(() => looper.fxReplayConfirmed)
+          .thenAnswer((_) => const Stream.empty());
       projection = FxChainPersistence(looper: looper);
       settings = SettingsRepository(store: FakeKeyValueStore());
       when(() => looper.trackChainEnabled(any())).thenReturn(true);
@@ -36,9 +35,8 @@ void main() {
 
     test('writes the chain-enabled flag and entries as one envelope', () async {
       when(() => looper.trackChainEnabled(2)).thenReturn(false);
-      when(
-        () => looper.trackEffects(2),
-      ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
+      when(() => looper.trackEffects(2))
+          .thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
 
       await saveTrackFxChain(
         projection: projection,

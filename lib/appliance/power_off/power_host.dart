@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/appliance/power_off/power_dialog.dart';
@@ -77,7 +77,7 @@ String? _stagedUpdate(BuildContext context) {
 /// either is missing (widget tests that pump the page without the cubit).
 class PowerHost extends StatefulWidget {
   /// Creates a [PowerHost] wrapping [child].
-  const PowerHost({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The rest of the looper page.
   final Widget child;

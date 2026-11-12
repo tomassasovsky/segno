@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_graphics.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
@@ -18,7 +18,7 @@ import 'package:segno/theme/theme.dart';
 /// only the knobs over them.
 class FxStompPedal extends StatelessWidget {
   /// Creates an [FxStompPedal].
-  const FxStompPedal({required this.face, super.key});
+  const new({required this.face, super.key});
 
   /// What the pedal shows.
   final FxStompFace face;
@@ -99,7 +99,7 @@ class FxStompPedal extends StatelessWidget {
 
 /// Where a knob sits on a face, and where its label prints.
 class _KnobSpot {
-  const _KnobSpot(
+  const new(
     this.centre,
     this.radius,
     this.labelBaseline,
@@ -177,14 +177,8 @@ class _KnobSpot {
         final r = count <= 3 ? 36.0 : 32.0;
         // The panel spans 66..384 with 44 corners; a label 7 above its
         // bottom edge has 90..360.
-        _KnobSpot onPanel(Offset c) => _KnobSpot(
-          c,
-          r,
-          c.dy + r + 26,
-          14,
-          labelLeft: 90,
-          labelRight: 360,
-        );
+        _KnobSpot onPanel(Offset c) =>
+            _KnobSpot(c, r, c.dy + r + 26, 14, labelLeft: 90, labelRight: 360);
         const spots = {
           1: [Offset(225, 200)],
           2: [Offset(160, 200), Offset(290, 200)],
@@ -210,7 +204,7 @@ class _KnobSpot {
 
 /// The labels under the knobs.
 class _LabelsPainter extends CustomPainter {
-  _LabelsPainter({
+  new({
     required this.kind,
     required this.labels,
     required this.spots,
@@ -253,10 +247,10 @@ class _LabelsPainter extends CustomPainter {
 /// The paints of one knob look at one radius, built once.
 final class _KnobParts {
   /// The parts for a knob with a [cap] colour at radius [r].
-  factory _KnobParts.of(double r, Color? cap) =>
+  factory of(double r, Color? cap) =>
       _cache.putIfAbsent((r, cap), () => _KnobParts._(r, cap));
 
-  _KnobParts._(this.r, Color? cap) {
+  new _(this.r, Color? cap) {
     final c = Offset(r, r);
     Shader radial(
       double radius,
@@ -276,10 +270,7 @@ final class _KnobParts {
         r,
         const Offset(.4, .35),
         .75,
-        const [
-          Color(0xFF3B4048),
-          Color(0xFF121418),
-        ],
+        const [Color(0xFF3B4048), Color(0xFF121418)],
         const [0, 1],
       );
     capPaint = Paint()
@@ -287,11 +278,7 @@ final class _KnobParts {
         r * .74,
         const Offset(.38, .3),
         .8,
-        const [
-          Color(0xFF4D535D),
-          Color(0xFF262A30),
-          Color(0xFF16181C),
-        ],
+        const [Color(0xFF4D535D), Color(0xFF262A30), Color(0xFF16181C)],
         const [0, .6, 1],
       );
     dome = Paint()..shader = fxStompDome(Rect.fromCircle(center: c, radius: r));
@@ -385,11 +372,7 @@ final class _KnobParts {
 
 /// The knobs of one pedal, at their [settings].
 class _KnobsPainter extends CustomPainter {
-  _KnobsPainter({
-    required this.spec,
-    required this.spots,
-    required this.settings,
-  });
+  new({required this.spec, required this.spots, required this.settings});
 
   final FxStompSpec spec;
   final List<_KnobSpot> spots;
@@ -403,10 +386,7 @@ class _KnobsPainter extends CustomPainter {
       final spot = spots[i];
       canvas
         ..save()
-        ..translate(
-          spot.centre.dx - spot.radius,
-          spot.centre.dy - spot.radius,
-        );
+        ..translate(spot.centre.dx - spot.radius, spot.centre.dy - spot.radius);
       _paintKnob(
         canvas,
         spot.radius,
@@ -480,11 +460,7 @@ void _paintKnob(
         ..rotate(degrees * math.pi / 180)
         ..drawPath(parts.chicken, parts.chickenCream)
         ..drawPath(parts.chicken, parts.chickenLine)
-        ..drawLine(
-          Offset(0, -r * .95),
-          Offset(0, -r * .35),
-          parts.chickenMark,
-        )
+        ..drawLine(Offset(0, -r * .95), Offset(0, -r * .35), parts.chickenMark)
         ..restore();
     case FxStompKnobStyle.cap:
       canvas
@@ -506,7 +482,7 @@ typedef _LabelsKey = ({FxStompFaceKind kind, String labels, Color colour});
 /// are dropped when the finish tiles arrive, which the pedals then repaint
 /// for.
 final class _StompPictures {
-  _StompPictures._() {
+  new _() {
     PaintingBinding.instance.systemFonts.addListener(_dropAll);
     FxStompTextures.instance.images.addListener(_dropUntextured);
   }
@@ -546,7 +522,7 @@ typedef _EnclosureKey = ({
 /// per look and printed name ([_EnclosureKey]) and replayed. A look a
 /// built-in shares with a rack module records one picture for each name.
 class _EnclosurePainter extends CustomPainter {
-  _EnclosurePainter({
+  new({
     required this.spec,
     required this.name,
     required this.led,
@@ -614,7 +590,7 @@ class _EnclosurePainter extends CustomPainter {
 
 /// Draws one enclosure, as the design's face functions do.
 class _Enclosure {
-  _Enclosure(
+  new(
     this.canvas,
     this.spec, {
     required this.name,
@@ -953,10 +929,7 @@ class _Enclosure {
       name,
       Offset(x, y),
       maxWidth: room,
-      style.copyWith(
-        color: ink,
-        shadows: [printShadow],
-      ),
+      style.copyWith(color: ink, shadows: [printShadow]),
     );
     canvas.restore();
   }
@@ -1178,7 +1151,7 @@ class _Enclosure {
 /// One knob label, laid out: on one line, or on two when it does not fit on
 /// one, and scaled to the width its knob's column has.
 class _LabelLayout {
-  _LabelLayout(this.lines, this.spot, this.scale);
+  new(this.lines, this.spot, this.scale);
 
   final List<TextPainter> lines;
   final _KnobSpot spot;

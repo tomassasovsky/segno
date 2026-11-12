@@ -4,11 +4,7 @@ part of 'notices_cubit.dart';
 /// which is new each time it is shown, so a repeat restarts its time.
 class ShownNotice extends Equatable {
   /// Creates a [ShownNotice].
-  const ShownNotice({
-    required this.notice,
-    required this.serial,
-    required this.age,
-  });
+  const new({required this.notice, required this.serial, required this.age});
 
   /// What it says.
   final Notice notice;
@@ -35,7 +31,7 @@ class ShownNotice extends Equatable {
 /// Everything the notice surfaces draw (#1562).
 class NoticesState extends Equatable {
   /// Creates a [NoticesState].
-  const NoticesState({
+  const new({
     this.message,
     this.banners = const [],
     this.tracks = const {},
@@ -59,9 +55,7 @@ class NoticesState extends Equatable {
   /// the rest, then the newest. Null while [held].
   ShownNotice? get banner {
     if (held || banners.isEmpty) return null;
-    return banners.reduce(
-      (best, next) => _outranks(next, best) ? next : best,
-    );
+    return banners.reduce((best, next) => _outranks(next, best) ? next : best);
   }
 
   /// [channel]'s passing message, null while [held].

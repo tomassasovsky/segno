@@ -49,18 +49,17 @@ class PedalRepository {
   /// [clock] stamps button events for the cubit's tap / long-press timing; it
   /// defaults to a monotonic stopwatch. [helloTimeout] is how long the board
   /// may stay silent before the link reads as disconnected: three hellos, so
-  /// one lost on the wire does not flap the status. [log] receives one line
+  /// one lost on the wire does not flap the status. [_log] receives one line
   /// per link status change — the app hands it its persistent log, so a dark
   /// panel has a breadcrumb.
-  PedalRepository(
+  new(
     PedalLink link, {
     Duration Function()? clock,
     this.helloTimeout = const Duration(
       milliseconds: 3 * PedalLinkCodec.helloIntervalMs,
     ),
-    void Function(String message)? log,
-  }) : _link = link,
-       _log = log {
+    this._log,
+  }) : _link = link {
     final stopwatch = Stopwatch()..start();
     _clock = clock ?? (() => stopwatch.elapsed);
     _inboundSub = _link.inbound.listen(_onMessage);

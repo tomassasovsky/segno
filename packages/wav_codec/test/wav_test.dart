@@ -41,10 +41,7 @@ void main() {
     });
 
     test('rejects non-WAVE bytes', () {
-      expect(
-        () => WavCodec.decodeFloat32(Uint8List(8)),
-        throwsFormatException,
-      );
+      expect(() => WavCodec.decodeFloat32(Uint8List(8)), throwsFormatException);
     });
 
     test('rejects a non-float (PCM16) format', () {

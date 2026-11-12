@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/record_start.dart';
@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// restores its exact opening value, including an older noncanonical value.
 class NamedValueEndpointChoice extends StatefulWidget {
   /// Creates a compact four-choice endpoint.
-  const NamedValueEndpointChoice({
+  const new({
     required this.target,
     required this.value,
     required this.width,

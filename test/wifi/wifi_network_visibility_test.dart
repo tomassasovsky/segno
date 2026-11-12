@@ -9,10 +9,7 @@ void main() {
 
   test('keeps the joining SSID in the list while connect is in flight', () {
     final visible = visibleWifiNetworks(
-      const WifiState(
-        networks: [studio, guest],
-        connectingSsid: 'Studio',
-      ),
+      const WifiState(networks: [studio, guest], connectingSsid: 'Studio'),
     );
     expect(visible, [studio, guest]);
   });

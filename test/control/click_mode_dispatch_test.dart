@@ -43,7 +43,7 @@ class _Engine extends FakeAudioEngine {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('mode-test', 1);
@@ -69,7 +69,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig(this.clock, this.engine, this.looper) {
+  new(this.clock, this.engine, this.looper) {
     store.values['pedal.setup'] = const PedalSetup()
         .copyWith(
           external: ExternalPedalSetup(
@@ -412,91 +412,79 @@ void main() {
       }
     }
 
-    check(
-      '${external ? "External" : "MIDI"} authored Held and Released '
-      'share the confirmed mode owner',
-      (r) {
-        r.bind();
-        press(r, high: true);
-        expect(r.live, 3);
-        expect(r.durable, external ? 2 : 0);
-        expect(r.store.values['tempo.click_mode'], external ? 2 : 0);
-        press(r, high: false);
-        expect(r.live, external ? 2 : 0);
-      },
-    );
-    check(
-      '${external ? "External" : "MIDI"} refused cleanup blocks halt '
-      'then retries once accepted',
-      (r) {
-        r.bind();
-        press(r, high: true);
-        r.fakeEngine.refuse = true;
-        Object? error;
-        var done = false;
-        unawaited(
-          r.cubit
-              .flushMidiConfiguration(retireControls: true)
-              .then((_) => done = true, onError: (Object e) => error = e),
-        );
-        r.pump();
-        expect(error, isA<ControlCleanupPending>());
-        expect(done, isFalse);
-        expect(r.live, 3);
-        expect(r.fakeEngine.stopCalls, 0);
-        r.fakeEngine.refuse = false;
-        unawaited(
-          r.cubit
-              .flushMidiConfiguration(retireControls: true)
-              .then((_) => done = true),
-        );
-        r.pump();
-        expect(done, isTrue);
-        expect(r.live, external ? 2 : 0);
-      },
-    );
-    check(
-      '${external ? "External" : "MIDI"} accepted ordinary mode '
-      'defeats old release',
-      (r) {
-        r.bind();
-        press(r, high: true);
-        r.ordinary(ClickMode.rec);
-        press(r, high: false);
-        r.retire();
-        expect(r.live, 1);
-        expect(r.durable, 1);
-        expect(r.store.values['tempo.click_mode'], 1);
-      },
-    );
+    check('${external ? "External" : "MIDI"} authored Held and Released '
+        'share the confirmed mode owner', (r) {
+      r.bind();
+      press(r, high: true);
+      expect(r.live, 3);
+      expect(r.durable, external ? 2 : 0);
+      expect(r.store.values['tempo.click_mode'], external ? 2 : 0);
+      press(r, high: false);
+      expect(r.live, external ? 2 : 0);
+    });
+    check('${external ? "External" : "MIDI"} refused cleanup blocks halt '
+        'then retries once accepted', (r) {
+      r.bind();
+      press(r, high: true);
+      r.fakeEngine.refuse = true;
+      Object? error;
+      var done = false;
+      unawaited(
+        r.cubit
+            .flushMidiConfiguration(retireControls: true)
+            .then((_) => done = true, onError: (Object e) => error = e),
+      );
+      r.pump();
+      expect(error, isA<ControlCleanupPending>());
+      expect(done, isFalse);
+      expect(r.live, 3);
+      expect(r.fakeEngine.stopCalls, 0);
+      r.fakeEngine.refuse = false;
+      unawaited(
+        r.cubit
+            .flushMidiConfiguration(retireControls: true)
+            .then((_) => done = true),
+      );
+      r.pump();
+      expect(done, isTrue);
+      expect(r.live, external ? 2 : 0);
+    });
+    check('${external ? "External" : "MIDI"} accepted ordinary mode '
+        'defeats old release', (r) {
+      r.bind();
+      press(r, high: true);
+      r.ordinary(ClickMode.rec);
+      press(r, high: false);
+      r.retire();
+      expect(r.live, 1);
+      expect(r.durable, 1);
+      expect(r.store.values['tempo.click_mode'], 1);
+    });
   }
   // A refused Held voids its whole gesture, so its Released does nothing
   // (#1153), whether or not an ordinary edit came first.
   for (final external in [false, true]) {
     for (final edited in [false, true]) {
-      check(
-        '${external ? 'External' : 'MIDI'} refused Held voids its Released'
-        '${edited ? ' after an ordinary edit' : ''}',
-        (r) {
-          if (edited) r.ordinary(ClickMode.rec);
-          r.bind();
-          final before = (r.live, r.durable);
-          r.capture(TrackState.recording);
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          expect((r.live, r.durable), before);
-          r.capture(TrackState.empty);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          expect((r.live, r.durable), before);
-        },
-      );
+      check('${external ? 'External' : 'MIDI'} refused Held voids its Released'
+          '${edited ? ' after an ordinary edit' : ''}', (r) {
+        if (edited) r.ordinary(ClickMode.rec);
+        r.bind();
+        final before = (r.live, r.durable);
+        r.capture(TrackState.recording);
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        expect((r.live, r.durable), before);
+        r.capture(TrackState.empty);
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        expect((r.live, r.durable), before);
+      });
     }
   }
 }

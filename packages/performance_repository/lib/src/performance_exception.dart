@@ -4,14 +4,14 @@
 /// package can't import that one, so the shape is deliberately duplicated,
 /// not shared).
 sealed class PerformanceException implements Exception {
-  const PerformanceException();
+  const new();
 }
 
 /// A capture rename targeted a name whose folder [slug] already exists.
 /// Captures never silently overwrite, so the caller must pick another name.
 class PerformanceNameCollision extends PerformanceException {
   /// Creates a [PerformanceNameCollision] for the colliding [slug].
-  const PerformanceNameCollision({required this.slug});
+  const new({required this.slug});
 
   /// The folder slug (the sanitized name) that already exists.
   final String slug;
@@ -24,7 +24,7 @@ class PerformanceNameCollision extends PerformanceException {
 /// finalized or rendered: any of them may be writing into a bundle.
 class PerformanceCaptureBusy extends PerformanceException {
   /// Creates a [PerformanceCaptureBusy].
-  const PerformanceCaptureBusy();
+  const new();
 
   @override
   String toString() => 'a take is being recorded or rendered';

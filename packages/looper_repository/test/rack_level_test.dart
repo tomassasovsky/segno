@@ -10,9 +10,8 @@ import 'package:segno_engine/segno_engine.dart'
 /// Master Vol is +10.6 dB, past the old x2 entry-level ceiling.
 FxPreset _rhythmAtmos() => FxPreset.tryParse(
   'Guitar Rack',
-  File(
-    '../fx_catalogue/assets/presets/Guitar Rack/Rhythm Atmos.fxpreset',
-  ).readAsStringSync(),
+  File('../fx_catalogue/assets/presets/Guitar Rack/Rhythm Atmos.fxpreset')
+      .readAsStringSync(),
 )!;
 
 void main() {
@@ -130,9 +129,8 @@ void main() {
   test("a Dub Rack's recipe puts its pedals on the rack's two paths", () {
     final preset = FxPreset.tryParse(
       'Dub Rack',
-      File(
-        '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
-      ).readAsStringSync(),
+      File('../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset')
+          .readAsStringSync(),
     )!;
     final entries = asRack(fxRackEntries(preset));
     expect(repo.setTrackEffects(channel: 0, effects: entries), EngineResult.ok);

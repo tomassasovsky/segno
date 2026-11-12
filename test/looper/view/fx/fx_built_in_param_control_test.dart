@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 
@@ -68,9 +68,8 @@ void main() {
       final effect = BuiltInEffect(
         type: TrackEffectType.eq,
         module: 'Four-band EQ',
-        params: [
-          for (final p in TrackEffectType.eq.params) p.defaultValue,
-        ]..[1] = 0.75,
+        params: [for (final p in TrackEffectType.eq.params) p.defaultValue]
+          ..[1] = 0.75,
       );
 
       expect(await _valueText(tester, effect, 1), '9.0 dB');
@@ -81,9 +80,8 @@ void main() {
       final effect = BuiltInEffect(
         type: TrackEffectType.eq,
         module: 'Four-band EQ',
-        params: [
-          for (final p in TrackEffectType.eq.params) p.defaultValue,
-        ]..[5] = 0.5,
+        params: [for (final p in TrackEffectType.eq.params) p.defaultValue]
+          ..[5] = 0.5,
       );
 
       expect(await _valueText(tester, effect, 5), '632 Hz');
@@ -112,10 +110,7 @@ void main() {
       expect(slider.value, closeTo(19 / 24, 1e-6)); // +7 of -12..+12
       slider.onChanged(1); // +12 semitones
       expect(reported, hasLength(1));
-      expect(
-        effect.type.params[0].valueAt(reported.single),
-        closeTo(12, 1e-4),
-      );
+      expect(effect.type.params[0].valueAt(reported.single), closeTo(12, 1e-4));
     });
   });
 }

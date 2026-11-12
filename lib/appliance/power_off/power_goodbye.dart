@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -61,7 +61,7 @@ String powerStepLabel(
 /// console take the charger's full power (#1352).
 class PowerGoodbye extends StatelessWidget {
   /// Creates a [PowerGoodbye] for [state].
-  const PowerGoodbye({
+  const new({
     required this.state,
     this.stagedUpdate,
     this.unplugToApply = false,
@@ -99,10 +99,7 @@ class PowerGoodbye extends StatelessWidget {
             version: version,
           ),
           (PowerAction.restart, null) => const SizedBox.shrink(),
-          _ => _SafeToSwitchOffFace(
-            state: state,
-            unplugToApply: unplugToApply,
-          ),
+          _ => _SafeToSwitchOffFace(state: state, unplugToApply: unplugToApply),
         };
       case PowerPhase.idle:
       case PowerPhase.refuse:
@@ -123,7 +120,7 @@ class PowerGoodbye extends StatelessWidget {
 
 /// "Saving `session`", the step list and the bar.
 class _SavingFace extends StatelessWidget {
-  const _SavingFace({required this.state});
+  const new({required this.state});
 
   final PowerState state;
 
@@ -173,7 +170,7 @@ enum _StepProgress { done, current, pending }
 /// One step: a green check once done, a spinner while current, a muted ring
 /// before.
 class _StepRow extends StatelessWidget {
-  const _StepRow({required this.label, required this.progress});
+  const new({required this.label, required this.progress});
 
   final String label;
   final _StepProgress progress;
@@ -186,9 +183,9 @@ class _StepRow extends StatelessWidget {
         Icons.check,
         key: const Key('power_step_done'),
         size: 28,
-        color: Theme.of(
-          context,
-        ).extension<LooperTheme>()!.waveformColor(LooperMeterState.playing),
+        color: Theme.of(context)
+            .extension<LooperTheme>()!
+            .waveformColor(LooperMeterState.playing),
       ),
       _StepProgress.current => Padding(
         key: const Key('power_step_current'),
@@ -228,10 +225,7 @@ class _StepRow extends StatelessWidget {
 
 /// The ring, "Safe to switch off", the saved line and the unplug line.
 class _SafeToSwitchOffFace extends StatelessWidget {
-  const _SafeToSwitchOffFace({
-    required this.state,
-    required this.unplugToApply,
-  });
+  const new({required this.state, required this.unplugToApply});
 
   final PowerState state;
   final bool unplugToApply;
@@ -277,7 +271,7 @@ class _SafeToSwitchOffFace extends StatelessWidget {
 
 /// "Restarting", the saved line and the update it installs. No icon.
 class _RestartingFace extends StatelessWidget {
-  const _RestartingFace({required this.state, required this.version});
+  const new({required this.state, required this.version});
 
   final PowerState state;
   final String version;
@@ -324,9 +318,8 @@ String? _savedLine(BuildContext context, PowerState state) {
   final session = state.session;
   final at = state.savedAt;
   if (session == null || at == null) return null;
-  final time = DateFormat.Hm(
-    Localizations.localeOf(context).toString(),
-  ).format(at.toLocal());
+  final time = DateFormat.Hm(Localizations.localeOf(context).toString())
+      .format(at.toLocal());
   return context.l10n.powerSavedAt(session, time);
 }
 
@@ -340,7 +333,7 @@ String? _savedLine(BuildContext context, PowerState state) {
 /// design's, times the limiting-axis scale against it.
 class ReadoutGoodbyeFace extends StatelessWidget {
   /// Creates a [ReadoutGoodbyeFace] for [readout].
-  const ReadoutGoodbyeFace({required this.readout, super.key});
+  const new({required this.readout, super.key});
 
   /// What the main window pushed.
   final PerformanceReadout readout;
@@ -381,7 +374,7 @@ class ReadoutGoodbyeFace extends StatelessWidget {
 }
 
 class _ReadoutContent extends StatelessWidget {
-  const _ReadoutContent({required this.readout, required this.s});
+  const new({required this.readout, required this.s});
 
   final PerformanceReadout readout;
   final double s;
@@ -441,11 +434,7 @@ class _ReadoutContent extends StatelessWidget {
           key: const Key('readout_goodbye_restarting'),
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.restart_alt,
-              size: 96 * s,
-              color: surface.textSecondary,
-            ),
+            Icon(Icons.restart_alt, size: 96 * s, color: surface.textSecondary),
             SizedBox(height: 28 * s),
             AppText(
               l10n.powerRestarting,
@@ -460,15 +449,15 @@ class _ReadoutContent extends StatelessWidget {
 
 /// A check in a green ring: the save landed and the console is off.
 class _CheckRing extends StatelessWidget {
-  const _CheckRing({required this.diameter});
+  const new({required this.diameter});
 
   final double diameter;
 
   @override
   Widget build(BuildContext context) {
-    final green = Theme.of(
-      context,
-    ).extension<LooperTheme>()!.waveformColor(LooperMeterState.playing);
+    final green = Theme.of(context)
+        .extension<LooperTheme>()!
+        .waveformColor(LooperMeterState.playing);
     return Container(
       key: const Key('power_check_ring'),
       width: diameter,
@@ -485,11 +474,7 @@ class _CheckRing extends StatelessWidget {
 
 /// The save's progress: [value] of the steps finished.
 class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({
-    required this.value,
-    required this.width,
-    this.height = 8,
-  });
+  const new({required this.value, required this.width, this.height = 8});
 
   final double value;
   final double width;

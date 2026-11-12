@@ -6,10 +6,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -43,9 +43,9 @@ import '../helpers/helpers.dart';
 import '../helpers/mock_click_tempo_settings.dart';
 import '../helpers/mock_decay_playback_settings.dart';
 
-class _MockLooper extends Mock implements LooperRepository {}
+class _MockLooper extends Mock implements LooperRepository;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
 class _Store extends FakeKeyValueStore {
   Completer<void>? gate;
@@ -131,26 +131,22 @@ void main() {
     when(() => looper.fxRecipesSettled).thenReturn(true);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.allMonitors()).thenReturn(const {});
     when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.outputEffects(any())).thenReturn(const []);
     when(() => looper.trackEffects(any())).thenReturn(const []);
-    when(
-      () => looper.allTrackChains(),
-    ).thenReturn(const {0: FxChainEnvelope()});
+    when(() => looper.allTrackChains())
+        .thenReturn(const {0: FxChainEnvelope()});
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordTimingCaptureLocked).thenReturn(false);
     when(() => looper.recordTimingSettingsSettled).thenReturn(true);
     when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
@@ -163,9 +159,8 @@ void main() {
         trackOverrides: const <int, RecordTiming>{},
       ),
     );
-    when(() => looper.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -189,9 +184,8 @@ void main() {
         quantizeDiv: rememberedDivision,
       ),
     );
-    when(() => looper.settleLengthSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
@@ -200,16 +194,13 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
+    when(() => looper.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
     when(() => devices.connection).thenReturn(_connection);
-    when(
-      () => devices.sessions,
-    ).thenReturn(const {'usb': MidiInputSession('usb', 1)});
+    when(() => devices.sessions)
+        .thenReturn(const {'usb': MidiInputSession('usb', 1)});
     when(() => devices.connections).thenAnswer((_) => connections.stream);
     when(() => devices.messages).thenAnswer((_) => messages.stream);
     when(() => devices.activity).thenAnswer((_) => const Stream<void>.empty());
@@ -302,10 +293,8 @@ void main() {
     timing = RecordTimingCubit(settings: timingOwner);
     addTearDown(() => unawaited(timing.close()));
     await timingOwner.load();
-    when(() => tempo.clickVolumeLifetime).thenReturn((
-      sessionRevision: 1,
-      mixGeneration: 1,
-    ));
+    when(() => tempo.clickVolumeLifetime)
+        .thenReturn((sessionRevision: 1, mixGeneration: 1));
     final fade = testFadeSettings();
     addTearDown(() => unawaited(fade.close()));
     control = ControlCubit(
@@ -360,7 +349,7 @@ void main() {
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
             navigatorKey: routeEntry ? segnoNavigatorKey : null,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localizationsDelegates: appLocalizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             theme: ThemeData(
               fontFamily: SurfaceTheme.displayFont,
@@ -406,9 +395,8 @@ void main() {
       await shot(tester, 'continuous');
     });
     testWidgets('activation and parameter button', (tester) async {
-      final target = const FxChainTarget(
-        FxAddress(stage: FxStage.track),
-      ).canonicalString();
+      final target = const FxChainTarget(FxAddress(stage: FxStage.track))
+          .canonicalString();
       await pump(
         tester,
         savedMapping: MidiMapping(
@@ -556,9 +544,7 @@ void main() {
       expect(find.text('Once'), findsWidgets);
       await shot(tester, 'playback_range');
     });
-    testWidgets('Outputs offers one Click destination', (
-      tester,
-    ) async {
+    testWidgets('Outputs offers one Click destination', (tester) async {
       await pump(tester, seeded: true);
       await tap(tester, 'midi_row_edit_m1');
       await tap(tester, 'midi_add_control');

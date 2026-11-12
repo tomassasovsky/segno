@@ -55,7 +55,7 @@ enum UsbUpdateError {
 /// State of Load from USB.
 class UsbUpdateState extends Equatable {
   /// Creates a [UsbUpdateState].
-  const UsbUpdateState({
+  const new({
     this.phase = UsbUpdatePhase.closed,
     this.driveLabel = '',
     this.packages = const [],

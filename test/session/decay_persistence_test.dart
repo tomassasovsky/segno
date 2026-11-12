@@ -86,10 +86,7 @@ void main() {
       tempo = TempoSettings(repository: looper, settings: settings);
       await tempo.load();
       expect((await tempo.recordStartControl.setCountInBars(0)).isOk, isTrue);
-      playback = PlaybackSettings(
-        repository: looper,
-        settings: settings,
-      );
+      playback = PlaybackSettings(repository: looper, settings: settings);
       await playback.load();
       record = RecordSettings(repository: looper, settings: settings);
       await record.load();

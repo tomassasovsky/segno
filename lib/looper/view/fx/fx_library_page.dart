@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_library_choice.dart';
 import 'package:segno/looper/view/fx/fx_saved_list.dart';
@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// Back here changes nothing and choosing returns.
 class FxLibraryPage extends StatefulWidget {
   /// Creates an [FxLibraryPage] adding to [destinationLabel].
-  const FxLibraryPage({
+  const new({
     required this.catalogue,
     required this.destinationLabel,
     required this.onStage,
@@ -182,7 +182,7 @@ class _FxLibraryPageState extends State<FxLibraryPage> {
 
 /// The artwork grid: My presets, the rack families and Single FX.
 class _LibraryGrid extends StatelessWidget {
-  const _LibraryGrid({
+  const new({
     required this.catalogue,
     required this.onFamily,
     required this.onSingle,
@@ -261,7 +261,7 @@ class _LibraryGrid extends StatelessWidget {
 
 /// One catalogue entry: its artwork over its name.
 class _LibraryCard extends StatelessWidget {
-  const _LibraryCard({
+  const new({
     required this.label,
     required this.onTap,
     required this.width,
@@ -341,7 +341,7 @@ class _LibraryCard extends StatelessWidget {
 
 /// One family's presets, as the pen's plain rows.
 class _PresetList extends StatelessWidget {
-  const _PresetList({
+  const new({
     required this.family,
     required this.freeSlots,
     required this.fitsRoom,
@@ -386,7 +386,7 @@ class _PresetList extends StatelessWidget {
 
 /// The standalone effects this engine can build.
 class _SingleList extends StatelessWidget {
-  const _SingleList({required this.fitsRoom, required this.onChoose});
+  const new({required this.fitsRoom, required this.onChoose});
 
   final bool Function(List<TrackEffect>) fitsRoom;
   final void Function(FxLibraryChoice) onChoose;
@@ -422,7 +422,7 @@ class _SingleList extends StatelessWidget {
 
 /// One row of the pen's preset list: a name, an optional note, a chevron.
 class _PresetRow extends StatelessWidget {
-  const _PresetRow({
+  const new({
     required this.name,
     required this.onTap,
     required this.surface,
@@ -508,7 +508,7 @@ class _PresetRow extends StatelessWidget {
 /// My presets' picture is rounded too: its own corners are black, which
 /// read as rounded on the old cards.
 class _ArtCorners extends CustomClipper<RRect> {
-  const _ArtCorners();
+  const new();
 
   @override
   RRect getClip(Size size) => RRect.fromRectAndRadius(

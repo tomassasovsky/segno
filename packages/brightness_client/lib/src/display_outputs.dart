@@ -18,7 +18,7 @@ abstract class DisplayOutputs {
 /// No outputs known: the macOS dev host.
 class UnknownDisplayOutputs implements DisplayOutputs {
   /// Creates an [UnknownDisplayOutputs].
-  const UnknownDisplayOutputs();
+  const new();
 
   @override
   Future<Map<String, String>> screenConnectors() async => const {};
@@ -31,7 +31,7 @@ class UnknownDisplayOutputs implements DisplayOutputs {
 /// configuration, and the DRM connector status under sysfs.
 class SystemDisplayOutputs implements DisplayOutputs {
   /// Creates a [SystemDisplayOutputs]; the paths are overridable for tests.
-  const SystemDisplayOutputs({
+  const new({
     this.homescreenConfig = '/etc/segno/homescreen.toml',
     this.drmRoot = '/sys/class/drm',
   });

@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/theme/theme.dart';
@@ -78,7 +78,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.neon,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) =>
               AppTextDefaults(child: child ?? const SizedBox.shrink()),
@@ -195,13 +195,8 @@ void main() {
       expect(find.text('FX · Bank B'), findsOneWidget);
     });
 
-    testWidgets('shows — for the tempo on the tempo-free path', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        readout: const PerformanceReadout(selected: selected),
-      );
+    testWidgets('shows — for the tempo on the tempo-free path', (tester) async {
+      await pump(tester, readout: const PerformanceReadout(selected: selected));
       expect(find.text('—'), findsOneWidget);
     });
 
@@ -282,10 +277,7 @@ void main() {
           tester.getRect(find.byKey(const Key('console_readout_function'))),
           footer,
         );
-        expect(
-          find.text(lost.title, findRichText: true),
-          findsOneWidget,
-        );
+        expect(find.text(lost.title, findRichText: true), findsOneWidget);
       });
 
       testWidgets('a sentence too long for one line is said whole, the band '

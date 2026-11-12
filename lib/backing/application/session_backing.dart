@@ -7,13 +7,9 @@ import 'package:session_repository/session_repository.dart';
 /// coordinator sees it: what Save captures, what Open installs, and the
 /// stop Open and New Loop make.
 class SessionBackingPort {
-  /// Joins the [player] (prepared order and loaded item) and the [settings]
+  /// Joins the [_player] (prepared order and loaded item) and the [_settings]
   /// owners (mix, End and click pan).
-  const SessionBackingPort({
-    required BackingPlayer player,
-    required BackingSettings settings,
-  }) : _player = player,
-       _settings = settings;
+  const new({required this._player, required this._settings});
 
   final BackingPlayer _player;
   final BackingSettings _settings;

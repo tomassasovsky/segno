@@ -138,11 +138,11 @@ class _Store extends FakeKeyValueStore {
       await modeReadGate?.future;
       if (failModeRead) throw StateError('Hear click read failed');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   Future<void> _write(String key, Future<void> Function() write) async {
-    if (!_owned(key)) return write();
+    if (!_owned(key)) return await write();
     writes[key] = (writes[key] ?? 0) + 1;
     await write();
     if (failKey == key) {
@@ -174,7 +174,7 @@ class _Store extends FakeKeyValueStore {
 /// One owned family seen through literal oracles: its store keys, the fake
 /// engine's own published value, and the repository's restart intent.
 final class _Case<V extends Object> {
-  _Case({
+  new({
     required this.name,
     required this.keys,
     required this.stored,
@@ -545,7 +545,7 @@ const _defaults = <String, Object>{
 };
 
 class _Rig {
-  _Rig(
+  new(
     this.clock, {
     Map<String, Object?> stored = const {},
     void Function(_Store)? prepare,
@@ -875,39 +875,35 @@ void main() {
   contract(_timing(const RecordTimingAddress.track(3)));
 
   void unreadable<V extends Object>(_Case<V> c) {
-    check(
-      '${c.name} ${c.invalid}: audio keeps running, Session capture '
-      'proceeds, and Retry repairs the stored data',
-      (r) {
-        final owner = c.owner(r);
-        expect(r.looper.sessionTransport.deviceRunning, isTrue);
-        expect(r.engine.stopCalls, 0);
-        expect(owner.ready, isFalse);
-        expect(owner.value, isNull);
-        Object? captured;
-        Object? refusal;
-        unawaited(
-          r.owners
-              .runExclusive<void>(() async => captured = owner.durable)
-              .catchError((Object error) => refusal = error),
-        );
-        r.pump();
-        expect(refusal, isNull);
-        expect(captured, isNotNull);
-        expect(
-          r.store.values,
-          containsPair(c.keys.first, c.invalid[c.keys.first]),
-        );
-        // Storage does not hold the value a start would replay: power-off
-        // waits for Retry.
-        expect(r.run(owner.flush())?.status, SettingStatus.recoveryRequired);
-        expect(r.run(owner.recover())?.status, SettingStatus.applied);
-        expect(c.read(r.store), c.repaired);
-        expect(owner.ready, isTrue);
-        expect(owner.value, c.repairedValue);
-      },
-      stored: {...c.setup, ...c.invalid},
-    );
+    check('${c.name} ${c.invalid}: audio keeps running, Session capture '
+        'proceeds, and Retry repairs the stored data', (r) {
+      final owner = c.owner(r);
+      expect(r.looper.sessionTransport.deviceRunning, isTrue);
+      expect(r.engine.stopCalls, 0);
+      expect(owner.ready, isFalse);
+      expect(owner.value, isNull);
+      Object? captured;
+      Object? refusal;
+      unawaited(
+        r.owners
+            .runExclusive<void>(() async => captured = owner.durable)
+            .catchError((Object error) => refusal = error),
+      );
+      r.pump();
+      expect(refusal, isNull);
+      expect(captured, isNotNull);
+      expect(
+        r.store.values,
+        containsPair(c.keys.first, c.invalid[c.keys.first]),
+      );
+      // Storage does not hold the value a start would replay: power-off
+      // waits for Retry.
+      expect(r.run(owner.flush())?.status, SettingStatus.recoveryRequired);
+      expect(r.run(owner.recover())?.status, SettingStatus.applied);
+      expect(c.read(r.store), c.repaired);
+      expect(owner.ready, isTrue);
+      expect(owner.value, c.repairedValue);
+    }, stored: {...c.setup, ...c.invalid});
 
     check('${c.name}: unreadable data, Session load, then Retry', (r) {
       final owner = c.owner(r);
@@ -1130,9 +1126,7 @@ void main() {
   });
 
   group('Click volume family', () {
-    check('held admission waits native publication and stores Released', (
-      r,
-    ) {
+    check('held admission waits native publication and stores Released', (r) {
       final owner = r.tempo.clickVolumeOwner;
       r.engine
         ..publishClickCommands = false
@@ -1313,15 +1307,12 @@ void main() {
         r.tempo.recordStartOwner.value,
         RecordStartSettings(countInBars: 2, soundStart: false),
       );
-      expect(
-        r.engine.recordStartRequests.skip(before).map((v) => v.editKind),
-        [
-          RecordStartEditKind.sound,
-          RecordStartEditKind.countIn,
-          RecordStartEditKind.countIn,
-          RecordStartEditKind.sound,
-        ],
-      );
+      expect(r.engine.recordStartRequests.skip(before).map((v) => v.editKind), [
+        RecordStartEditKind.sound,
+        RecordStartEditKind.countIn,
+        RecordStartEditKind.countIn,
+        RecordStartEditKind.sound,
+      ]);
       expect(
         run(control.setCountInBars(-1))?.status,
         RecordStartStatus.rejected,
@@ -1385,10 +1376,7 @@ void main() {
     check('a partial write of the second stored value rolls back both', (r) {
       final owner = r.tempo.recordStartOwner;
       r.store.failKey = 'looper.auto_record';
-      expect(
-        r.run(owner.set(released))?.status,
-        SettingStatus.rejected,
-      );
+      expect(r.run(owner.set(released))?.status, SettingStatus.rejected);
       expect(r.store.values['tempo.count_in_bars'], 0);
       expect(r.store.values['looper.auto_record'], true);
       expect(_recordStart.audible(r.engine), sound);
@@ -1513,11 +1501,7 @@ void main() {
       unawaited(owner.set(ClickMode.playRec).then((value) => latest = value));
       unawaited(
         owner
-            .setController(
-              ClickMode.off,
-              lifetime: origin,
-              revision: revision,
-            )
+            .setController(ClickMode.off, lifetime: origin, revision: revision)
             .then((value) => release = value),
       );
       r.clock.flushMicrotasks();
@@ -1562,9 +1546,7 @@ void main() {
       r.engine.publishClickModeCommands = false;
       final revision = r.engine.nextSnapshot.clickModeRevision;
       SettingOutcome? outcome;
-      unawaited(
-        owner.set(ClickMode.rec).then((value) => outcome = value),
-      );
+      unawaited(owner.set(ClickMode.rec).then((value) => outcome = value));
       r.clock.flushMicrotasks();
       r.engine.nextSnapshot = r.engine.nextSnapshot.copyWith(
         clickModeRevision: revision + 1,

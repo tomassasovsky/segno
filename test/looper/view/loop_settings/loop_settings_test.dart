@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -24,9 +24,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// Three playing takes at 120 BPM in Sync mode, Multi's shared length off.
 const _rig = LooperState(
@@ -101,9 +101,8 @@ void main() {
     });
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     store = FakeKeyValueStore();
     settings = SettingsRepository(store: store);
     confirmedLength = 0;
@@ -132,12 +131,10 @@ void main() {
     recordStartSettled = true;
     when(() => repository.sessionRevision).thenAnswer((_) => sessionRevision);
     when(() => repository.mixGeneration).thenReturn(0);
-    when(
-      () => repository.defaultOverdubDecay,
-    ).thenAnswer((_) => confirmedDecay);
-    when(
-      () => repository.trackOverdubDecayOverrides,
-    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackDecay));
+    when(() => repository.defaultOverdubDecay)
+        .thenAnswer((_) => confirmedDecay);
+    when(() => repository.trackOverdubDecayOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackDecay));
     when(() => repository.decayRestartIntent).thenAnswer(
       (_) => (
         defaultPercent: confirmedDecay,
@@ -145,17 +142,14 @@ void main() {
       ),
     );
     when(() => repository.defaultOneShot).thenAnswer((_) => confirmedOneShot);
-    when(() => repository.trackOneShotOverrides).thenAnswer(
-      (_) => Map.unmodifiable(confirmedTrackOneShot),
-    );
+    when(() => repository.trackOneShotOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackOneShot));
     when(() => repository.oneShotSettingsSettled).thenReturn(true);
     when(() => repository.oneShotRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.oneShotFailures,
-    ).thenAnswer((_) => const Stream<EngineResult>.empty());
-    when(
-      () => repository.settleOneShot(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.oneShotFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.settleOneShot())
+        .thenAnswer((_) async => EngineResult.ok);
     when(() => repository.oneShotRestartIntent).thenAnswer(
       (_) => (
         defaultOneShot: confirmedOneShot,
@@ -177,21 +171,16 @@ void main() {
     });
 
     // Audio & tempo (#1179): the repository's accepted vectors.
-    when(
-      () => repository.defaultFollowTempo,
-    ).thenAnswer((_) => confirmedFollow);
-    when(
-      () => repository.trackFollowTempoOverrides,
-    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackFollow));
-    when(
-      () => repository.followTempoRecoveryRequired,
-    ).thenAnswer((_) => followRecovery);
-    when(
-      () => repository.followTempoFailures,
-    ).thenAnswer((_) => const Stream<EngineResult>.empty());
-    when(
-      () => repository.settleFollowTempo(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.defaultFollowTempo)
+        .thenAnswer((_) => confirmedFollow);
+    when(() => repository.trackFollowTempoOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackFollow));
+    when(() => repository.followTempoRecoveryRequired)
+        .thenAnswer((_) => followRecovery);
+    when(() => repository.followTempoFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.settleFollowTempo())
+        .thenAnswer((_) async => EngineResult.ok);
     when(() => repository.followTempoRestartIntent).thenAnswer(
       (_) => (
         defaultFollow: confirmedFollow,
@@ -212,16 +201,13 @@ void main() {
       return EngineResult.ok;
     });
     when(() => repository.defaultPitchMode).thenAnswer((_) => confirmedPitch);
-    when(
-      () => repository.trackPitchModeOverrides,
-    ).thenAnswer((_) => Map.unmodifiable(confirmedTrackPitch));
+    when(() => repository.trackPitchModeOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackPitch));
     when(() => repository.pitchModeRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.pitchModeFailures,
-    ).thenAnswer((_) => const Stream<EngineResult>.empty());
-    when(
-      () => repository.settlePitchMode(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.pitchModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.settlePitchMode())
+        .thenAnswer((_) async => EngineResult.ok);
     when(() => repository.pitchModeRestartIntent).thenAnswer(
       (_) => (
         defaultMode: confirmedPitch,
@@ -264,23 +250,18 @@ void main() {
     });
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
-    when(() => repository.clickModeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.clickVolumeFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.clickModeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.clickVolumeFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.clickModeSettled).thenReturn(true);
     when(() => repository.clickModeRecoveryRequired).thenReturn(false);
-    when(() => repository.clickModeCaptureLocked).thenAnswer(
-      (_) => clickModeCaptureLocked,
-    );
-    when(() => repository.clickModeRestartIntent).thenAnswer(
-      (_) => confirmedClickMode,
-    );
-    when(() => repository.settleClickMode()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => repository.clickModeCaptureLocked)
+        .thenAnswer((_) => clickModeCaptureLocked);
+    when(() => repository.clickModeRestartIntent)
+        .thenAnswer((_) => confirmedClickMode);
+    when(() => repository.settleClickMode())
+        .thenAnswer((_) async => EngineResult.ok);
     when(() => repository.setClickMode(any())).thenAnswer((call) {
       confirmedClickMode = call.positionalArguments.single as ClickMode;
       return EngineResult.ok;
@@ -294,33 +275,22 @@ void main() {
       confirmedClickMode = call.positionalArguments.single as ClickMode;
       return EngineResult.ok;
     });
-    when(() => repository.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
-    when(() => repository.recordStartSettingsSettled).thenAnswer(
-      (_) => recordStartSettled,
-    );
-    when(
-      () => repository.recordStartRecoveryRequired,
-    ).thenAnswer((_) => recordStartRecovery);
-    when(() => repository.recordStartCaptureLocked).thenAnswer(
-      (_) => currentRig.tracks.any((track) => track.isCapturing),
-    );
+    when(() => repository.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
+    when(() => repository.recordStartSettingsSettled)
+        .thenAnswer((_) => recordStartSettled);
+    when(() => repository.recordStartRecoveryRequired)
+        .thenAnswer((_) => recordStartRecovery);
+    when(() => repository.recordStartCaptureLocked)
+        .thenAnswer((_) => currentRig.tracks.any((track) => track.isCapturing));
     when(() => repository.recordStartSettings).thenAnswer(
-      (_) => (
-        countInBars: confirmedCountIn,
-        soundStart: confirmedSoundStart,
-      ),
+      (_) => (countInBars: confirmedCountIn, soundStart: confirmedSoundStart),
     );
     when(() => repository.recordStartRestartIntent).thenAnswer(
-      (_) => (
-        countInBars: confirmedCountIn,
-        soundStart: confirmedSoundStart,
-      ),
+      (_) => (countInBars: confirmedCountIn, soundStart: confirmedSoundStart),
     );
-    when(() => repository.settleRecordStartSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => repository.settleRecordStartSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecordStartSettings(
         countInBars: any(named: 'countInBars'),
@@ -333,9 +303,8 @@ void main() {
       confirmedSoundStart = call.namedArguments[#soundStart] as bool;
       return EngineResult.ok;
     });
-    when(() => repository.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.recordTimingCaptureLocked).thenAnswer(
       (_) => currentRig.tracks.any(
         (track) =>
@@ -345,12 +314,10 @@ void main() {
     );
     when(() => repository.recordTimingSettingsSettled).thenReturn(true);
     when(() => repository.recordTimingRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.defaultRecordTiming,
-    ).thenAnswer((_) => confirmedTiming);
-    when(() => repository.trackRecordTimingOverrides).thenAnswer(
-      (_) => Map.unmodifiable(confirmedTrackTiming),
-    );
+    when(() => repository.defaultRecordTiming)
+        .thenAnswer((_) => confirmedTiming);
+    when(() => repository.trackRecordTimingOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackTiming));
     when(() => repository.recordTimingRestartIntent).thenAnswer(
       (_) => (
         defaultTiming: confirmedTiming,
@@ -358,9 +325,8 @@ void main() {
         trackOverrides: Map.unmodifiable(confirmedTrackTiming),
       ),
     );
-    when(() => repository.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => repository.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -415,9 +381,8 @@ void main() {
     );
     when(() => repository.lengthRecoveryRequired).thenReturn(false);
     when(() => repository.lengthSettingsSettled).thenReturn(true);
-    when(() => repository.trackLengthPresetOverrides).thenAnswer(
-      (_) => Map.unmodifiable(confirmedTrackLengths),
-    );
+    when(() => repository.trackLengthPresetOverrides)
+        .thenAnswer((_) => Map.unmodifiable(confirmedTrackLengths));
     when(() => repository.lengthRestartIntent).thenAnswer(
       (_) => (
         defaultBars: confirmedLength,
@@ -436,14 +401,12 @@ void main() {
         autoRecord: confirmedSoundStart,
       ),
     );
-    when(
-      () => repository.settleLengthSettings(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     states = StreamController<LooperState>.broadcast();
     rigReplaced = StreamController<void>.broadcast();
-    when(() => repository.looperModeGate(any())).thenReturn(
-      LooperModeGate.open,
-    );
+    when(() => repository.looperModeGate(any()))
+        .thenReturn(LooperModeGate.open);
     when(() => repository.looperState).thenAnswer(
       (_) => states.stream.map((state) {
         currentRig = state;
@@ -507,40 +470,37 @@ void main() {
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
       () => when(repository.tapTempo).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setTimeSignature(any(), any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setSyncTempo(on: any(named: 'on')),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickOutput(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickVolume(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.settleClickVolume(),
-      ).thenAnswer((_) async => EngineResult.ok),
-      () => when(
-        () => repository.setRecDub(enabled: any(named: 'enabled')),
-      ).thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setTimeSignature(any(), any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setSyncTempo(on: any(named: 'on')))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setClickOutput(any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setClickVolume(any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.settleClickVolume())
+              .thenAnswer((_) async => EngineResult.ok),
+      () =>
+          when(() => repository.setRecDub(enabled: any(named: 'enabled')))
+              .thenReturn(EngineResult.ok),
       () => when(
         () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
       ).thenReturn(EngineResult.ok),
-      () => when(() => repository.setDefaultLengthPreset(any())).thenAnswer((
-        call,
-      ) {
-        confirmedLength = call.positionalArguments.single as int;
+      () =>
+          when(() => repository.setDefaultLengthPreset(any()))
+              .thenAnswer((call) {
+                confirmedLength = call.positionalArguments.single as int;
+                return EngineResult.ok;
+              }),
+      () => when(() => repository.setOverdubDecay(any())).thenAnswer((call) {
+        confirmedDecay = call.positionalArguments.single as int;
         return EngineResult.ok;
       }),
-      () =>
-          when(
-            () => repository.setOverdubDecay(any()),
-          ).thenAnswer((call) {
-            confirmedDecay = call.positionalArguments.single as int;
-            return EngineResult.ok;
-          }),
     ]) {
       stub();
     }
@@ -657,10 +617,7 @@ void main() {
           entry.key: entry.value.code,
       },
     ));
-    tempoOwner = TempoSettings(
-      repository: repository,
-      settings: settings,
-    );
+    tempoOwner = TempoSettings(repository: repository, settings: settings);
     final closeTempoOwner = tempoOwner.close;
     addTearDown(() => unawaited(closeTempoOwner()));
     tempo = TempoCubit(settings: tempoOwner);
@@ -687,12 +644,7 @@ void main() {
     resetSegnoNavigatorForTest();
     final closeRecordOwner = options.close;
     addTearDown(() => unawaited(closeRecordOwner()));
-    for (final cubit in <BlocBase<Object?>>[
-      tempo,
-      playback,
-      timing,
-      tracks,
-    ]) {
+    for (final cubit in <BlocBase<Object?>>[tempo, playback, timing, tracks]) {
       addTearDown(() => unawaited(cubit.close()));
     }
     await tester.pumpWidget(
@@ -711,7 +663,7 @@ void main() {
             builder: (context, child) =>
                 BlocProvider.value(value: notices, child: child),
             navigatorKey: segnoNavigatorKey,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localizationsDelegates: appLocalizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             theme: ThemeData(
               extensions: [
@@ -750,9 +702,8 @@ void main() {
   ) async {
     final failures = StreamController<EngineResult>.broadcast();
     addTearDown(failures.close);
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => failures.stream,
-    );
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => failures.stream);
     when(() => repository.setDefaultLengthPreset(any())).thenAnswer((_) {
       failures.add(EngineResult.invalid);
       return EngineResult.invalid;
@@ -772,9 +723,7 @@ void main() {
     );
     expect(
       tester
-          .widget<LoopChoiceButton>(
-            find.byKey(const Key('loop_length_auto')),
-          )
+          .widget<LoopChoiceButton>(find.byKey(const Key('loop_length_auto')))
           .selected,
       isTrue,
     );
@@ -790,9 +739,8 @@ void main() {
   ) async {
     final failures = StreamController<EngineResult>.broadcast();
     addTearDown(failures.close);
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => failures.stream,
-    );
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => failures.stream);
     when(() => repository.setDefaultLengthPreset(any())).thenAnswer((_) {
       failures.add(EngineResult.capacity);
       return EngineResult.capacity;
@@ -837,9 +785,8 @@ void main() {
         );
         final receipt = Completer<EngineResult>();
         var observedReceipt = false;
-        when(
-          () => repository.setTrackLengthPreset(channel: 0, bars: null),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.setTrackLengthPreset(channel: 0, bars: null))
+            .thenReturn(EngineResult.ok);
         when(() => repository.settleLengthSettings()).thenAnswer((_) {
           observedReceipt = true;
           return receipt.future;
@@ -871,9 +818,8 @@ void main() {
   testWidgets('callback refusal is visible on the mode page', (tester) async {
     final failures = StreamController<EngineResult>.broadcast();
     addTearDown(failures.close);
-    when(() => repository.lengthSettingsFailures).thenAnswer(
-      (_) => failures.stream,
-    );
+    when(() => repository.lengthSettingsFailures)
+        .thenAnswer((_) => failures.stream);
     await pump(tester);
     failures.add(EngineResult.invalid);
     await tester.pumpAndSettle();
@@ -1051,9 +997,7 @@ void main() {
     // Where each tab's first element sits: 30 under the tab row.
     const contentTop = 96 + 124.0;
 
-    testWidgets('every tab starts its content under the tabs', (
-      tester,
-    ) async {
+    testWidgets('every tab starts its content under the tabs', (tester) async {
       await pump(tester);
       expect(
         tester.getTopLeft(find.byKey(const Key('loop_mode_multi'))).dy,
@@ -1082,9 +1026,7 @@ void main() {
       );
     });
 
-    testWidgets('the exact-tempo keypad is drawn at full size', (
-      tester,
-    ) async {
+    testWidgets('the exact-tempo keypad is drawn at full size', (tester) async {
       await pump(tester, initial: LoopSettingsTab.tempo);
       await tester.tap(find.byKey(const Key('loop_tempo_entry')));
       await tester.pumpAndSettle();
@@ -1125,10 +1067,8 @@ void main() {
   });
 
   group('tabs (#1659)', () {
-    LoopChoiceButton tab(WidgetTester tester, String name) =>
-        tester.widget<LoopChoiceButton>(
-          find.byKey(Key('loop_settings_tab_$name')),
-        );
+    LoopChoiceButton tab(WidgetTester tester, String name) => tester
+        .widget<LoopChoiceButton>(find.byKey(Key('loop_settings_tab_$name')));
 
     testWidgets('four tabs replace the hub and switch the page', (
       tester,
@@ -1147,10 +1087,7 @@ void main() {
         expect(tab(tester, name).label, label);
         await tester.tap(find.byKey(Key('loop_settings_tab_$name')));
         await tester.pumpAndSettle();
-        expect(
-          find.byKey(Key('loop_settings_page_$name')),
-          findsOneWidget,
-        );
+        expect(find.byKey(Key('loop_settings_page_$name')), findsOneWidget);
         for (final other in LoopSettingsTab.values) {
           expect(tab(tester, other.name).selected, other.name == name);
         }
@@ -1192,9 +1129,8 @@ void main() {
       await pump(tester, initial: LoopSettingsTab.recording);
       segnoNavigatorKey.currentState!.push(
         MaterialPageRoute<void>(
-          builder: (_) => const LoopSettingsPage(
-            initial: LoopSettingsTab.tempo,
-          ),
+          builder: (_) =>
+              const LoopSettingsPage(initial: LoopSettingsTab.tempo),
         ),
       );
       await tester.pumpAndSettle();
@@ -1319,10 +1255,7 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_settings_tab_recording')));
       await tester.pumpAndSettle();
       expect(scoped(tester, 'track_2'), isTrue);
-      expect(
-        find.byKey(const Key('loop_length_use_default')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('loop_length_use_default')), findsOneWidget);
       expect(find.text('6'), findsOneWidget);
     });
 
@@ -1500,12 +1433,10 @@ void main() {
     testWidgets('a refused mode shows its reason and dispatches nothing', (
       tester,
     ) async {
-      when(
-        () => repository.looperModeGate(LooperMode.multi),
-      ).thenReturn(LooperModeGate.spans);
-      when(
-        () => repository.looperModeGate(LooperMode.band),
-      ).thenReturn(LooperModeGate.capturing);
+      when(() => repository.looperModeGate(LooperMode.multi))
+          .thenReturn(LooperModeGate.spans);
+      when(() => repository.looperModeGate(LooperMode.band))
+          .thenReturn(LooperModeGate.capturing);
       await pump(tester);
       final l10n = l10nOf(tester);
       expect(find.text(l10n.loopModeReasonEqualLengths), findsOneWidget);
@@ -1518,9 +1449,8 @@ void main() {
     testWidgets('playing loops ask before the switch, in the pen dialog', (
       tester,
     ) async {
-      when(
-        () => repository.looperModeGate(LooperMode.multi),
-      ).thenReturn(LooperModeGate.playing);
+      when(() => repository.looperModeGate(LooperMode.multi))
+          .thenReturn(LooperModeGate.playing);
       await pump(tester);
       final l10n = l10nOf(tester);
       await tester.tap(find.byKey(const Key('loop_mode_multi')));
@@ -1577,11 +1507,7 @@ void main() {
     });
 
     testWidgets('a count-in names itself in the note', (tester) async {
-      await pump(
-        tester,
-        initial: LoopSettingsTab.recording,
-        savedCountIn: 2,
-      );
+      await pump(tester, initial: LoopSettingsTab.recording, savedCountIn: 2);
       await tester.pumpAndSettle();
       expect(
         find.text(l10nOf(tester).loopRecordingNoteCountIn(2)),
@@ -1631,10 +1557,7 @@ void main() {
       await pump(tester, initial: LoopSettingsTab.tempo);
       await tempo.setSoundStart(enabled: true);
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('loop_count_in_sound_note')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('loop_count_in_sound_note')), findsOneWidget);
       states.add(
         const LooperState(
           tracks: [Track(state: TrackState.recording, lengthFrames: 10)],
@@ -1752,14 +1675,8 @@ void main() {
       );
     });
 
-    testWidgets('recovery retains but disables Count-in 2', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        initial: LoopSettingsTab.tempo,
-        savedCountIn: 2,
-      );
+    testWidgets('recovery retains but disables Count-in 2', (tester) async {
+      await pump(tester, initial: LoopSettingsTab.tempo, savedCountIn: 2);
       expect(tempo.state.confirmedRecordStart?.countInBars, 2);
       // A pending receipt alone no longer disables the choice: a write waits
       // for it. Only an owed pair does.
@@ -1800,15 +1717,9 @@ void main() {
     testWidgets('capture retains and locks Count-in without a write', (
       tester,
     ) async {
-      await pump(
-        tester,
-        initial: LoopSettingsTab.tempo,
-        savedCountIn: 2,
-      );
+      await pump(tester, initial: LoopSettingsTab.tempo, savedCountIn: 2);
       states.add(
-        const LooperState(
-          tracks: [Track(state: TrackState.recording)],
-        ),
+        const LooperState(tracks: [Track(state: TrackState.recording)]),
       );
       await tester.pumpAndSettle();
       expect(tempo.state.recordStartSnapshot?.captureLocked, isTrue);
@@ -1841,24 +1752,18 @@ void main() {
       expect(tempo.state.clickModeSnapshot?.mode, ClickMode.off);
       expect(
         tester
-            .widget<LoopChoiceButton>(
-              find.byKey(const Key('loop_click_off')),
-            )
+            .widget<LoopChoiceButton>(find.byKey(const Key('loop_click_off')))
             .selected,
         isTrue,
       );
       states.add(
-        const LooperState(
-          tracks: [Track(state: TrackState.recording)],
-        ),
+        const LooperState(tracks: [Track(state: TrackState.recording)]),
       );
       await tester.pumpAndSettle();
       expect(tempo.state.clickModeSnapshot?.captureLocked, isTrue);
       expect(
         tester
-            .widget<LoopChoiceButton>(
-              find.byKey(const Key('loop_click_off')),
-            )
+            .widget<LoopChoiceButton>(find.byKey(const Key('loop_click_off')))
             .selected,
         isTrue,
       );
@@ -1879,9 +1784,8 @@ void main() {
     testWidgets('unconfirmed owner displays no provisional First selection', (
       tester,
     ) async {
-      when(() => repository.setClickMode(any())).thenReturn(
-        EngineResult.notReady,
-      );
+      when(() => repository.setClickMode(any()))
+          .thenReturn(EngineResult.notReady);
       await pump(tester, initial: LoopSettingsTab.tempo);
       expect(tempo.state.clickModeSnapshot, isNull);
       expect(
@@ -1990,9 +1894,7 @@ void main() {
         await tester.tap(
           find.descendant(
             of: sheet(),
-            matching: find.byIcon(
-              Icons.backspace_outlined,
-            ),
+            matching: find.byIcon(Icons.backspace_outlined),
           ),
         );
         await tester.pump();
@@ -2000,9 +1902,7 @@ void main() {
         await tester.tap(
           find.descendant(
             of: sheet(),
-            matching: find.byIcon(
-              Icons.backspace_outlined,
-            ),
+            matching: find.byIcon(Icons.backspace_outlined),
           ),
         );
         await tester.pump();
@@ -2087,9 +1987,8 @@ void main() {
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
       addTearDown(failures.close);
-      when(() => repository.lengthSettingsFailures).thenAnswer(
-        (_) => failures.stream,
-      );
+      when(() => repository.lengthSettingsFailures)
+          .thenAnswer((_) => failures.stream);
       when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
         final bars = call.positionalArguments.single as int;
         // Four 4/4 bars at 30 BPM need 32 seconds; three need 24.
@@ -2113,9 +2012,7 @@ void main() {
       expect(await settings.loadDefaultLengthPreset(), 3);
       expect(
         tester
-            .widget<AppText>(
-              find.byKey(const Key('loop_stepper_value')),
-            )
+            .widget<AppText>(find.byKey(const Key('loop_stepper_value')))
             .data,
         '3',
       );
@@ -2127,9 +2024,8 @@ void main() {
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
       addTearDown(failures.close);
-      when(() => repository.lengthSettingsFailures).thenAnswer(
-        (_) => failures.stream,
-      );
+      when(() => repository.lengthSettingsFailures)
+          .thenAnswer((_) => failures.stream);
       var capacityBars = 8;
       when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
         final bars = call.positionalArguments.single as int;
@@ -2166,9 +2062,8 @@ void main() {
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
       addTearDown(failures.close);
-      when(() => repository.lengthSettingsFailures).thenAnswer(
-        (_) => failures.stream,
-      );
+      when(() => repository.lengthSettingsFailures)
+          .thenAnswer((_) => failures.stream);
       when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
         final bars = call.positionalArguments.single as int;
         if (bars > 3) {
@@ -2193,9 +2088,7 @@ void main() {
       );
       expect(
         tester
-            .widget<LoopChoiceButton>(
-              find.byKey(const Key('loop_length_bars')),
-            )
+            .widget<LoopChoiceButton>(find.byKey(const Key('loop_length_bars')))
             .selected,
         isTrue,
       );
@@ -2206,12 +2099,10 @@ void main() {
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
       addTearDown(failures.close);
-      when(() => repository.lengthSettingsFailures).thenAnswer(
-        (_) => failures.stream,
-      );
-      when(() => repository.setDefaultLengthPreset(any())).thenReturn(
-        EngineResult.invalid,
-      );
+      when(() => repository.lengthSettingsFailures)
+          .thenAnswer((_) => failures.stream);
+      when(() => repository.setDefaultLengthPreset(any()))
+          .thenReturn(EngineResult.invalid);
       await pump(tester, initial: LoopSettingsTab.recording);
 
       await tester.tap(find.byKey(const Key('loop_length_bars')));
@@ -2237,9 +2128,8 @@ void main() {
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
       addTearDown(failures.close);
-      when(() => repository.lengthSettingsFailures).thenAnswer(
-        (_) => failures.stream,
-      );
+      when(() => repository.lengthSettingsFailures)
+          .thenAnswer((_) => failures.stream);
       when(() => repository.setDefaultLengthPreset(any())).thenAnswer((call) {
         final bars = call.positionalArguments.single as int;
         if (bars > 3) {
@@ -2277,9 +2167,8 @@ void main() {
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
       addTearDown(failures.close);
-      when(() => repository.lengthSettingsFailures).thenAnswer(
-        (_) => failures.stream,
-      );
+      when(() => repository.lengthSettingsFailures)
+          .thenAnswer((_) => failures.stream);
       when(() => repository.setDefaultLengthPreset(any())).thenAnswer((_) {
         failures.add(EngineResult.invalid);
         return EngineResult.invalid;
@@ -2312,9 +2201,8 @@ void main() {
     ) async {
       final failures = StreamController<EngineResult>.broadcast();
       addTearDown(failures.close);
-      when(() => repository.lengthSettingsFailures).thenAnswer(
-        (_) => failures.stream,
-      );
+      when(() => repository.lengthSettingsFailures)
+          .thenAnswer((_) => failures.stream);
       when(() => repository.setDefaultLengthPreset(any())).thenAnswer((_) {
         failures.add(EngineResult.invalid);
         return EngineResult.invalid;
@@ -2558,9 +2446,7 @@ void main() {
       expect(confirmedTrackTiming.containsKey(1), isFalse);
     });
 
-    testWidgets('in Multi a track shares the default length', (
-      tester,
-    ) async {
+    testWidgets('in Multi a track shares the default length', (tester) async {
       const state = LooperState(
         tracks: [Track(state: TrackState.playing, lengthFrames: 96000)],
       );
@@ -2714,9 +2600,8 @@ void main() {
       await tester.tap(find.byKey(const Key('loop_decay_use_default')));
       await tester.pumpAndSettle();
       // The page writes the track through the Decay owner, not a Bloc event.
-      verify(
-        () => repository.setTrackOverdubDecay(channel: 1, percent: null),
-      ).called(1);
+      verify(() => repository.setTrackOverdubDecay(channel: 1, percent: null))
+          .called(1);
       expect(store.values.containsKey('track_overdub_decay.1'), isFalse);
     });
 
@@ -2829,10 +2714,7 @@ void main() {
       await tester.tapAt(Offset(box.left + box.width / 2, box.center.dy));
       await tester.pump(const Duration(milliseconds: 400));
       expect(playback.state.overdubDecay, 50);
-      expect(
-        find.text(l10nOf(tester).loopDecayNote(50)),
-        findsOneWidget,
-      );
+      expect(find.text(l10nOf(tester).loopDecayNote(50)), findsOneWidget);
     });
   });
 

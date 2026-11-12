@@ -61,11 +61,7 @@ void main() {
       expect(
         a,
         isNot(
-          const InputMonitor(
-            input: 0,
-            mode: MonitorMode.on,
-            outputMask: 0x2,
-          ),
+          const InputMonitor(input: 0, mode: MonitorMode.on, outputMask: 0x2),
         ),
       );
     });

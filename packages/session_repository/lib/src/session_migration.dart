@@ -29,7 +29,7 @@ enum SessionConversionChange {
 /// every field it filled in, moved or changed.
 class SessionMigrationContext {
   /// Creates a context that fills formerly global settings from [live].
-  SessionMigrationContext({this.live = const SessionSettings()});
+  new({this.live = const SessionSettings()});
 
   /// The player's settings at the moment of opening. A schema-7 session never
   /// carried the settings that master kept as global preferences (sync, rec
@@ -55,11 +55,10 @@ class SessionMigrationContext {
 
 /// One schema bump: rewrites a decoded `vN` manifest in place into `vN+1`,
 /// except for the `version` key, which the driver advances.
-typedef SessionMigrationStep =
-    void Function(
-      Map<String, dynamic> manifest,
-      SessionMigrationContext context,
-    );
+typedef SessionMigrationStep = void Function(
+  Map<String, dynamic> manifest,
+  SessionMigrationContext context,
+);
 
 /// One step per schema bump, keyed by the version it reads. Each later bump
 /// adds its own entry here; the chain from [oldestConvertibleSessionVersion]
@@ -98,7 +97,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
 @immutable
 class SessionConversion {
   /// Creates a [SessionConversion].
-  const SessionConversion({
+  const new({
     required this.fromVersion,
     required this.original,
     required this.manifest,

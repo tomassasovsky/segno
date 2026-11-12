@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -27,7 +27,7 @@ import 'package:segno/visualizer/widgets/waveform_view.dart';
 /// meter, and the selection outline is the same white ring.
 class WaveTrackRow extends StatelessWidget {
   /// Creates a [WaveTrackRow].
-  const WaveTrackRow({
+  const new({
     required this.track,
     required this.name,
     required this.selected,
@@ -321,7 +321,7 @@ class WaveTrackRow extends StatelessWidget {
 /// costs a lookup, not a copy across the engine boundary.
 class TrackWaveform extends StatelessWidget {
   /// Creates a [TrackWaveform].
-  const TrackWaveform({
+  const new({
     required this.channel,
     required this.state,
     required this.hasContent,

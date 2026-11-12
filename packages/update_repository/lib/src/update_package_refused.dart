@@ -17,7 +17,7 @@ enum UpdatePackageRefusal {
 /// package. Nothing was changed.
 class UpdatePackageRefused implements Exception {
   /// Creates an [UpdatePackageRefused].
-  const UpdatePackageRefused(this.refusal, {this.version});
+  const new(this.refusal, {this.version});
 
   /// Why.
   final UpdatePackageRefusal refusal;

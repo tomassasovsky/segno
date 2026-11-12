@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/fx/fx_chain_strip.dart';
 
 import '../../../helpers/helpers.dart';
@@ -164,9 +164,8 @@ void main() {
         },
       );
       final card = find.byKey(const Key('fx_card_R'));
-      Rect text(String label) => tester.getRect(
-        find.descendant(of: card, matching: find.text(label)),
-      );
+      Rect text(String label) =>
+          tester.getRect(find.descendant(of: card, matching: find.text(label)));
       // The names above the count, the count still level with a single
       // card's assignment line.
       expect(

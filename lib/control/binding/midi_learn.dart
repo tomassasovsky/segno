@@ -4,7 +4,7 @@ import 'package:equatable/equatable.dart';
 /// One format- and channel-scoped learning lifetime.
 class MidiLearn extends Equatable {
   /// Creates a capture owned by [token].
-  const MidiLearn({
+  const new({
     required this.protocol,
     required this.token,
     this.channel,

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Paints a mirrored, centered loop waveform from peak [samples] (index 0 =
@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// repaint the wave.
 class WaveformView extends StatelessWidget {
   /// Creates a [WaveformView].
-  const WaveformView({
+  const new({
     required this.samples,
     required this.state,
     this.progress = 0,
@@ -113,11 +113,7 @@ class WaveformView extends StatelessWidget {
 /// The wave of [WaveformView]; public so it can be unit-tested.
 class WaveformPainter extends CustomPainter {
   /// Creates a [WaveformPainter].
-  WaveformPainter({
-    required this.samples,
-    required this.color,
-    this.bars = 0,
-  });
+  new({required this.samples, required this.color, this.bars = 0});
 
   /// Loop waveform peaks, index 0 = loop start, each in `0..1`.
   final Float32List samples;
@@ -177,11 +173,7 @@ class WaveformPainter extends CustomPainter {
 /// (`0..1`); hidden when `<= 0`.
 class PlayheadPainter extends CustomPainter {
   /// Creates a [PlayheadPainter].
-  PlayheadPainter({
-    required this.progress,
-    required this.background,
-    this.bars = 0,
-  });
+  new({required this.progress, required this.background, this.bars = 0});
 
   /// Playhead position in `0..1`.
   final double progress;
@@ -233,7 +225,7 @@ class PlayheadPainter extends CustomPainter {
 /// into each other or past the end (#1524).
 class BarRulerPainter extends CustomPainter {
   /// Creates a [BarRulerPainter] for [bars] whole bars.
-  BarRulerPainter({required this.bars, required this.color});
+  new({required this.bars, required this.color});
 
   /// Whole bars across the loop; `0` paints nothing.
   final int bars;

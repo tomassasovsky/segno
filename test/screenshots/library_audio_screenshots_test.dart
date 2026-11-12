@@ -7,10 +7,10 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -24,17 +24,16 @@ import 'package:session_repository/session_repository.dart';
 import '../helpers/helpers.dart';
 import '../library/helpers/fake_drive.dart';
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 /// Images of Library > Audio to compare with pen 18/01 and 20/07 to 20/12.
 /// CI renders them into the `screenshots` artifact; nothing compares pixels.

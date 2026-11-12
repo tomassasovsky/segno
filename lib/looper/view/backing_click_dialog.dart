@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
 import 'package:segno/backing/cubit/backing_mix_cubit.dart';
 import 'package:segno/control/binding/mix_value_scale.dart';
@@ -41,7 +41,7 @@ Future<void> showBackingClickDialog(BuildContext context) {
 /// The pen's 1260 x 549 `Backing & click` panel.
 class BackingClickDialog extends StatelessWidget {
   /// Creates a [BackingClickDialog].
-  const BackingClickDialog({super.key});
+  const new({super.key});
 
   static const double _width = 1260;
   static const double _pad = 41;
@@ -145,7 +145,7 @@ class BackingClickDialog extends StatelessWidget {
 /// One `stage-aux-channel` row: the name and what it plays, then Volume on
 /// the Mixer's gain axis and Pan. A double tap restores unity or centre.
 class _AuxChannel extends StatefulWidget {
-  const _AuxChannel({
+  const new({
     required this.name,
     required this.subtitle,
     required this.level,
@@ -268,7 +268,7 @@ class _AuxChannelState extends State<_AuxChannel> {
 
 /// One of a channel's sliders, with its label and readout above it.
 class _AuxControl extends StatelessWidget {
-  const _AuxControl({
+  const new({
     required this.label,
     required this.semanticLabel,
     required this.readout,

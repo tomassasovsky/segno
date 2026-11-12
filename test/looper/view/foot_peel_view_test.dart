@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
@@ -15,12 +15,11 @@ import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 void main() {
   late _Control control;
@@ -169,9 +168,7 @@ void main() {
   });
 
   testWidgets('Undo, Clear and empty tracks admit no contact; recorded '
-      'tracks do', (
-    tester,
-  ) async {
+      'tracks do', (tester) async {
     given(const ControlState(mode: InteractionMode.peel));
     await pump(tester);
     for (final button in [PedalButton.undo, PedalButton.clear]) {
@@ -253,7 +250,7 @@ void main() {
     late AppLocalizations es;
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Builder(
           builder: (context) {

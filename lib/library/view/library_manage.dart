@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -205,11 +205,7 @@ Future<void> _move(BuildContext context, SessionSummary summary) async {
         enabled: summary.folder != null,
       ),
       for (final folder in session.state.folders)
-        FxOption(
-          id: folder,
-          label: folder,
-          enabled: folder != summary.folder,
-        ),
+        FxOption(id: folder, label: folder, enabled: folder != summary.folder),
       FxOption(id: create, label: l10n.libraryNewFolderOption),
     ],
   );

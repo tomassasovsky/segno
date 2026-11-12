@@ -41,9 +41,7 @@ void main() {
     );
     final incompatible = blank
         .learned(relative)
-        .withControl(
-          MidiActionControl(key: 'command:undo'),
-        );
+        .withControl(MidiActionControl(key: 'command:undo'));
     expect(incompatible.canSaveIn(MidiMappingSet.empty), isFalse);
     expect(incompatible.toMapping('draft'), isNull);
   });

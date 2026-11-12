@@ -17,11 +17,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Click volume: one physical gain, stored as an exact scalar.
 final class ClickVolumeFamily implements SettingsFamily<double, double?> {
   /// Binds the family to its repository receipt and its stored key.
-  const ClickVolumeFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+  const new({required this._repository, required this._settings});
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -103,11 +99,7 @@ final class ClickVolumeFamily implements SettingsFamily<double, double?> {
 /// Hear click: one native mode, stored as its enum code.
 final class HearClickFamily implements SettingsFamily<ClickMode, int?> {
   /// Binds the family to its repository receipt and its stored key.
-  const HearClickFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+  const new({required this._repository, required this._settings});
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -193,7 +185,7 @@ final class HearClickFamily implements SettingsFamily<ClickMode, int?> {
 /// Temporary: Part 3 of #1159 replaces the per-family ports with one.
 final class ClickVolumeOwnerControl implements ClickVolumeControl {
   /// Adapts the Click volume owner.
-  const ClickVolumeOwnerControl(this._owner);
+  const new(this._owner);
 
   final SettingsOwner<double, double?> _owner;
 
@@ -234,7 +226,7 @@ final class ClickVolumeOwnerControl implements ClickVolumeControl {
 /// Temporary: Part 3 of #1159 replaces the per-family ports with one.
 final class ClickModeOwnerControl implements ClickModeControl {
   /// Adapts the Hear click owner.
-  const ClickModeOwnerControl(this._owner);
+  const new(this._owner);
 
   final SettingsOwner<ClickMode, int?> _owner;
 
@@ -294,11 +286,7 @@ typedef StoredRecordStart = ({int? countInBars, bool? soundStart});
 final class RecordStartFamily
     implements SettingsFamily<RecordStartSettings, StoredRecordStart> {
   /// Binds the family to its repository receipt and its stored keys.
-  const RecordStartFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+  const new({required this._repository, required this._settings});
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -318,10 +306,8 @@ final class RecordStartFamily
       _settings.readRecordStartCheckpoint();
 
   @override
-  Future<void> writeCheckpoint(
-    Object? address,
-    StoredRecordStart checkpoint,
-  ) => _settings.restoreRecordStartCheckpoint(checkpoint);
+  Future<void> writeCheckpoint(Object? address, StoredRecordStart checkpoint) =>
+      _settings.restoreRecordStartCheckpoint(checkpoint);
 
   @override
   StoredRecordStart checkpointOf(
@@ -407,7 +393,7 @@ final class RecordStartFamily
 /// Temporary: Part 3 of #1159 replaces the per-family ports with one.
 final class RecordStartOwnerControl implements RecordStartControl {
   /// Adapts the Count-in owner.
-  const RecordStartOwnerControl(this._owner);
+  const new(this._owner);
 
   final SettingsOwner<RecordStartSettings, StoredRecordStart> _owner;
 
@@ -499,11 +485,7 @@ const _decayAddresses = <Object?>[
 /// each. Decay has no callback receipt: the engine applies it on admission.
 final class DecayFamily implements SettingsFamily<DecaySnapshot, int?> {
   /// Binds the family to the repository and its stored keys.
-  const DecayFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+  const new({required this._repository, required this._settings});
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -664,11 +646,7 @@ const _oneShotAddresses = <Object?>[
 /// confirmed by one callback receipt for the whole vector.
 final class OneShotFamily implements SettingsFamily<OneShotSnapshot, bool?> {
   /// Binds the family to its repository receipt and its stored keys.
-  const OneShotFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+  const new({required this._repository, required this._settings});
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -786,7 +764,7 @@ final class OneShotFamily implements SettingsFamily<OneShotSnapshot, bool?> {
 /// Temporary: Part 3 of #1159 replaces the per-family ports with one.
 final class DecayOwnerControl implements DecayControl {
   /// Adapts the Decay owner.
-  const DecayOwnerControl(this._owner);
+  const new(this._owner);
 
   final SettingsOwner<DecaySnapshot, int?> _owner;
 
@@ -857,7 +835,7 @@ final class DecayOwnerControl implements DecayControl {
 /// Temporary: Part 3 of #1159 replaces the per-family ports with one.
 final class OneShotOwnerControl implements OneShotControl {
   /// Adapts the Loop/Once owner.
-  const OneShotOwnerControl(this._owner);
+  const new(this._owner);
 
   final SettingsOwner<OneShotSnapshot, bool?> _owner;
 
@@ -954,11 +932,7 @@ const _allTrackLengths = <Object?>[
 final class RecordLengthFamily
     implements SettingsFamily<RecordLengthVector, int?> {
   /// Binds the family to its repository receipt and its stored keys.
-  const RecordLengthFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+  const new({required this._repository, required this._settings});
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -1110,12 +1084,12 @@ final class RecordLengthFamily
 
 /// The stored Record timing gate, one storage address of the timing family.
 final class _TimingGate {
-  const _TimingGate();
+  const new();
 }
 
 /// The stored Record timing division, one storage address of the family.
 final class _TimingDivision {
-  const _TimingDivision();
+  const new();
 }
 
 /// The default's two stored scalars, as one write checkpoint.
@@ -1141,11 +1115,7 @@ const _timingAddresses = <Object?>[
 final class RecordTimingFamily
     implements SettingsFamily<RecordTimingVector, Object?> {
   /// Binds the family to its repository receipt and its stored keys.
-  const RecordTimingFamily({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-  }) : _repository = repository,
-       _settings = settings;
+  const new({required this._repository, required this._settings});
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -1335,7 +1305,7 @@ final class RecordTimingFamily
 /// value is live only, and the record keeps its Released value.
 final class FadeFamily implements SettingsFamily<FadeDurations, String?> {
   /// Binds the family to its stored record.
-  FadeFamily({required SettingsRepository settings}) : _settings = settings;
+  new({required this._settings});
 
   final SettingsRepository _settings;
   FadeDurations _live = FadeDurations.defaults;
@@ -1366,11 +1336,7 @@ final class FadeFamily implements SettingsFamily<FadeDurations, String?> {
   /// The whole record for [durable]; [stored] when it already holds it, so
   /// an absent record is not written for the defaults.
   @override
-  String? checkpointOf(
-    FadeDurations durable,
-    Object? address,
-    String? stored,
-  ) {
+  String? checkpointOf(FadeDurations durable, Object? address, String? stored) {
     final current = stored == null ? FadeDurations.defaults : _decode(stored);
     return current == durable ? stored : jsonEncode(durable.toJson());
   }
@@ -1479,11 +1445,7 @@ FadeDurations fadeWith(FadeDurations base, int? channel, int? milliseconds) {
 /// field's controller is never superseded by another field's edit.
 final class BackingMixFamily implements SettingsFamily<BackingMix, String?> {
   /// Binds the family to its stored record and the repository it drives.
-  BackingMixFamily({
-    required SettingsRepository settings,
-    required BackingRepository backing,
-  }) : _settings = settings,
-       _backing = backing;
+  new({required this._settings, required this._backing});
 
   final SettingsRepository _settings;
   final BackingRepository _backing;
@@ -1604,11 +1566,7 @@ final class BackingMixFamily implements SettingsFamily<BackingMix, String?> {
 /// replays it after the engine restarts). No native receipt.
 final class ClickPanFamily implements SettingsFamily<double, double?> {
   /// Binds the family to its stored key and the repository it drives.
-  ClickPanFamily({
-    required SettingsRepository settings,
-    required BackingRepository backing,
-  }) : _settings = settings,
-       _backing = backing;
+  new({required this._settings, required this._backing});
 
   final SettingsRepository _settings;
   final BackingRepository _backing;

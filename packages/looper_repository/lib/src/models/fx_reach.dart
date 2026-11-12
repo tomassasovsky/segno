@@ -6,15 +6,15 @@ import 'package:looper_repository/src/models/track_effect.dart';
 /// chain's effects power, one rack's, or one effect's own.
 final class FxSwitchKey extends Equatable {
   /// The effects power of the chain at [address].
-  const FxSwitchKey.chain(this.address) : rackId = null, slotId = null;
+  const new chain(this.address) : rackId = null, slotId = null;
 
   /// The switch of the rack [rackId] ([FxRack.id]) in the chain at
   /// [address].
-  const FxSwitchKey.rack(this.address, String this.rackId) : slotId = null;
+  const new rack(this.address, String this.rackId) : slotId = null;
 
   /// The own switch of the effect [slotId] ([TrackEffect.slotId]) in the
   /// chain at [address].
-  const FxSwitchKey.slot(this.address, String this.slotId) : rackId = null;
+  const new slot(this.address, String this.slotId) : rackId = null;
 
   /// The chain the switch is in.
   final FxAddress address;
@@ -38,7 +38,7 @@ final class FxSwitchKey extends Equatable {
 /// button driving two racks with opposite ranges, has two.
 final class FxControlReach extends Equatable {
   /// Creates the reach of one control.
-  const FxControlReach({this.whenOn = const {}, this.whenOff = const {}});
+  const new({this.whenOn = const {}, this.whenOff = const {}});
 
   /// The switches on while the control is on.
   final Set<FxSwitchKey> whenOn;
@@ -67,7 +67,7 @@ final class FxReach extends Equatable {
   /// switches are free too. Past [maxAlternations], the rest are free: their
   /// sides are charged together, which over-reserves but never refuses a
   /// press.
-  factory FxReach(Iterable<FxControlReach> controls) {
+  factory(Iterable<FxControlReach> controls) {
     final all = controls.toList();
     final seen = <FxSwitchKey, int>{};
     for (final control in all) {
@@ -109,7 +109,7 @@ final class FxReach extends Equatable {
     );
   }
 
-  const FxReach._(this.free, this.alternations, this.alternated);
+  const new _(this.free, this.alternations, this.alternated);
 
   /// No control reaches anything: only what is on is charged.
   static const FxReach none = FxReach._({}, [], {});
@@ -172,10 +172,7 @@ final class FxReach extends Equatable {
 /// controls, in order, turns on no more than one of [before]'s on each side,
 /// each of [before]'s standing for one of them at most. What deleting a
 /// binding, a MIDI mapping or a row, or emptying a store, leaves.
-bool fxReachShrinks(
-  List<FxControlReach> before,
-  List<FxControlReach> after,
-) {
+bool fxReachShrinks(List<FxControlReach> before, List<FxControlReach> after) {
   var at = 0;
   for (final control in after) {
     // A control that turns nothing on (a switch with no activations) takes

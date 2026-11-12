@@ -12,7 +12,7 @@ import 'package:segno/looper/model/playback_options.dart';
 class MockDecayPlaybackSettings extends Mock
     implements PlaybackSettings, DecayControl, OneShotControl {
   /// Creates an available accepted owner, or one still uninitialized.
-  MockDecayPlaybackSettings({
+  new({
     DecaySnapshot? snapshot,
     OneShotSnapshot? oneShot,
     InheritSnapshot<bool>? followTempo,
@@ -34,9 +34,8 @@ class MockDecayPlaybackSettings extends Mock
     );
     when(() => stream).thenAnswer((_) => _states.stream);
     when(() => decaySnapshot).thenReturn(snapshot);
-    when(
-      () => decayLifetime,
-    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => decayLifetime)
+        .thenReturn((sessionRevision: 0, mixGeneration: 0));
     when(() => ordinaryDecayChanges).thenAnswer(
       (_) => const Stream<({DecayAddress address, int? percent})>.empty(),
     );
@@ -46,9 +45,8 @@ class MockDecayPlaybackSettings extends Mock
       oneShot ??
           OneShotSnapshot(defaultOneShot: false, trackOverrides: const {}),
     );
-    when(
-      () => oneShotLifetime,
-    ).thenReturn((sessionRevision: 0, mixGeneration: 0));
+    when(() => oneShotLifetime)
+        .thenReturn((sessionRevision: 0, mixGeneration: 0));
     when(() => ordinaryOneShotChanges).thenAnswer(
       (_) => const Stream<({OneShotAddress address, bool? oneShot})>.empty(),
     );

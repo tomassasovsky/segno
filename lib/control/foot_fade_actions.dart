@@ -7,7 +7,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Control owns contacts and selection; this component caches nothing.
 class FootFadeActions {
   /// Connects the already shared owners without introducing a new lifetime.
-  const FootFadeActions({required this.repository, required this.settings});
+  const new({required this.repository, required this.settings});
 
   /// Callback-owned envelopes.
   final LooperRepository repository;

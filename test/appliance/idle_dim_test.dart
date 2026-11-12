@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:backing_repository/backing_repository.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:fake_async/fake_async.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
@@ -22,13 +22,13 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockBackingCubit extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+    implements BackingCubit;
 
 const _playing = LooperState(tracks: [Track(state: TrackState.playing)]);
 

@@ -41,10 +41,11 @@ void main() {
           await repository.toggleReverse(channel: 1),
           EngineResult.invalid,
         );
-        expect(
-          engine.editCalls.single,
-          (kind: 'reverse', channel: 1, value: null),
-        );
+        expect(engine.editCalls.single, (
+          kind: 'reverse',
+          channel: 1,
+          value: null,
+        ));
       },
     );
 

@@ -3,10 +3,10 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -24,7 +24,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The accepted Pedals setup, drawn at the console's own size.
 void main() {
@@ -56,9 +56,8 @@ void main() {
     });
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -127,7 +126,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           fontFamily: SurfaceTheme.displayFont,

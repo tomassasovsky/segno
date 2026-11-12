@@ -1,15 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Fade + subtle scale-up (96% → 100%) transition shared by
 /// [FadeScalePageTransitionsBuilder] (the app-wide theme default) and
 /// [desktopPageRoute] (Segno's own asymmetric desktop timing).
 class FadeScaleTransition extends StatelessWidget {
   /// Fades and scales [child] in as [animation] runs.
-  const FadeScaleTransition({
-    required this.animation,
-    required this.child,
-    super.key,
-  });
+  const new({required this.animation, required this.child, super.key});
 
   /// The route's animation, 0 to 1 as it opens.
   final Animation<double> animation;
@@ -42,7 +38,7 @@ class FadeScaleTransition extends StatelessWidget {
 /// — no extra package.
 class FadeScalePageTransitionsBuilder extends PageTransitionsBuilder {
   /// Creates a [FadeScalePageTransitionsBuilder].
-  const FadeScalePageTransitionsBuilder();
+  const new();
 
   @override
   Widget buildTransitions<T>(

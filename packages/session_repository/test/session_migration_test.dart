@@ -75,17 +75,14 @@ void main() {
         reason: 'no conversion step from schema $version to ${version + 1}',
       );
     }
-    expect(
-      sessionMigrationSteps.keys.toSet(),
-      {
-        for (
-          var version = oldestConvertibleSessionVersion;
-          version < Session.formatVersion;
-          version++
-        )
-          version,
-      },
-    );
+    expect(sessionMigrationSteps.keys.toSet(), {
+      for (
+        var version = oldestConvertibleSessionVersion;
+        version < Session.formatVersion;
+        version++
+      )
+        version,
+    });
   });
 
   group('a schema-7 bundle written by master', () {
@@ -516,10 +513,7 @@ void main() {
       final before = snapshotOf(dir);
       final (:bundle, :conversion) = await repo().open(dir);
       expect(conversion, isNull);
-      expect(
-        bundle.session,
-        Session.fromJson(manifestOf(dir)),
-      );
+      expect(bundle.session, Session.fromJson(manifestOf(dir)));
       expect(bundle.session.tracks.map((t) => t.reversed), [
         false,
         true,
@@ -546,10 +540,13 @@ void main() {
       expect(bundle.session.backing.loaded?.name, 'Count-in.mp3');
       expect(bundle.session.clickPan, 0.4);
       // The retimed rig and the Audio & tempo settings (#1179).
-      expect(
-        bundle.session.tracks.map((t) => t.spanFrames),
-        [0, 0, 0, 2400, 2400],
-      );
+      expect(bundle.session.tracks.map((t) => t.spanFrames), [
+        0,
+        0,
+        0,
+        2400,
+        2400,
+      ]);
       expect(bundle.session.recordedTempoBpm, 120);
       expect(bundle.session.recordedLengthFrames, 1200);
       expect(bundle.session.defaultFollowTempo, isFalse);
@@ -680,9 +677,8 @@ void main() {
     void rewrite(String dir, void Function(Map<String, dynamic>) edit) {
       final manifest = manifestOf(dir);
       edit(manifest);
-      File(
-        '$dir/${Session.manifestName}',
-      ).writeAsStringSync(jsonEncode(manifest));
+      File('$dir/${Session.manifestName}')
+          .writeAsStringSync(jsonEncode(manifest));
     }
 
     test('newer than this build', () async {
@@ -946,14 +942,10 @@ void main() {
     final manifest = manifestOf(dir);
     final lane = (_first(manifest['tracks'])['lanes'] as List).first as Map;
     (lane['layers'] as List).removeLast();
-    File(
-      '$dir/${Session.manifestName}',
-    ).writeAsStringSync(jsonEncode(manifest));
+    File('$dir/${Session.manifestName}')
+        .writeAsStringSync(jsonEncode(manifest));
 
-    await expectLater(
-      repo().open(dir),
-      throwsA(isA<SessionCorruptLayers>()),
-    );
+    await expectLater(repo().open(dir), throwsA(isA<SessionCorruptLayers>()));
   });
 
   group('a schema older than 7 written by its own commit', () {
@@ -1097,10 +1089,7 @@ void main() {
       final manifest = manifestOf(copyFixture('v9_trunk_623a5a7ba'));
       _first(manifest['outputChains'])['bus'] = 0;
       manifest['masterChain'] = '{"entries":[]}';
-      expect(
-        () => convert(manifest),
-        throwsA(isA<SessionUnconvertible>()),
-      );
+      expect(() => convert(manifest), throwsA(isA<SessionUnconvertible>()));
     });
 
     test('the strict decoder still reads only the current schema', () {

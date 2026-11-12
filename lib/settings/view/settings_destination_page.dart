@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
 import 'package:segno/theme/theme.dart';
@@ -15,12 +15,7 @@ import 'package:segno/theme/theme.dart';
 /// not the route or the tile that opens it.
 class SettingsDestinationPage extends StatelessWidget {
   /// Creates a [SettingsDestinationPage] titled [title] around [body].
-  const SettingsDestinationPage({
-    required this.title,
-    required this.body,
-    this.crumb,
-    super.key,
-  });
+  const new({required this.title, required this.body, this.crumb, super.key});
 
   /// The page title, and the last part of the default breadcrumb.
   final String title;

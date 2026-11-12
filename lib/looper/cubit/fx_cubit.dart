@@ -39,7 +39,7 @@ final class FxEditResult {
   /// Creates an [FxEditResult]. An applied or unsaved edit is [committed];
   /// a stale one is when [chainCommitted] says the chain was written and
   /// confirmed before the destination moved on.
-  const FxEditResult(this.status, {this.groupId, bool chainCommitted = false})
+  const new(this.status, {this.groupId, bool chainCommitted = false})
     : committed =
           chainCommitted ||
           status == FxEditStatus.applied ||
@@ -69,17 +69,12 @@ final class FxEditResult {
 /// strip's position").
 class FxCubit extends Cubit<FxState> {
   /// Creates an [FxCubit] pointed at [initial].
-  FxCubit({
-    required LooperRepository repository,
-    required SettingsRepository settings,
-    required FxChainPersistence persistence,
+  new({
+    required this._repository,
+    required this._settings,
+    required this._persistence,
     FxDestination? initial,
-  }) : _repository = repository,
-       _settings = settings,
-       _persistence = persistence,
-       super(
-         initial == null ? const FxState() : FxState.at(initial),
-       );
+  }) : super(initial == null ? const FxState() : FxState.at(initial));
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -248,10 +243,7 @@ class FxCubit extends Cubit<FxState> {
     final groupId = added.first.rack?.id ?? added.first.slotId;
     return _editChain(
       address,
-      (current) => (
-        entries: [...current, ...added],
-        groupId: groupId,
-      ),
+      (current) => (entries: [...current, ...added], groupId: groupId),
       expectedDestination: destination,
     );
   }
@@ -263,16 +255,12 @@ class FxCubit extends Cubit<FxState> {
     String rackId,
     FxLibraryChoice choice,
   ) => _editChain(address, (current) {
-    final group = fxChainGroups(
-      current,
-    ).where((entry) => entry.rack?.id == rackId).firstOrNull;
+    final group = fxChainGroups(current)
+        .where((entry) => entry.rack?.id == rackId)
+        .firstOrNull;
     if (group == null) return null;
     final added = withFreshSlotIds(
-      _entriesFor(
-        choice,
-        placement: group.placement,
-        into: group.rack,
-      ),
+      _entriesFor(choice, placement: group.placement, into: group.rack),
     );
     if (added.isEmpty || current.length + added.length > kTrackEffectMax) {
       return null;
@@ -309,28 +297,24 @@ class FxCubit extends Cubit<FxState> {
     if (address == null) {
       return Future.value(const FxEditResult(FxEditStatus.refused));
     }
-    return _editChain(
-      address,
-      (current) {
-        final group = fxChainGroups(
-          current,
-        ).where((entry) => entry.rack?.id == rackId).firstOrNull;
-        if (group == null) return null;
-        final added = withFreshSlotIds(
-          _entriesFor(choice, placement: group.placement),
-        );
-        if (added.isEmpty) return null;
-        return (
-          entries: [
-            ...current.sublist(0, group.start),
-            ...added,
-            ...current.sublist(group.end),
-          ],
-          groupId: added.first.rack?.id,
-        );
-      },
-      expectedDestination: destination,
-    );
+    return _editChain(address, (current) {
+      final group = fxChainGroups(current)
+          .where((entry) => entry.rack?.id == rackId)
+          .firstOrNull;
+      if (group == null) return null;
+      final added = withFreshSlotIds(
+        _entriesFor(choice, placement: group.placement),
+      );
+      if (added.isEmpty) return null;
+      return (
+        entries: [
+          ...current.sublist(0, group.start),
+          ...added,
+          ...current.sublist(group.end),
+        ],
+        groupId: added.first.rack?.id,
+      );
+    }, expectedDestination: destination);
   }
 
   /// Renames the current rack without changing its stable identity.
@@ -367,10 +351,7 @@ class FxCubit extends Cubit<FxState> {
     List<String> groupIds,
   ) => _editChain(
     address,
-    (current) => (
-      entries: fxOrderGroups(current, groupIds),
-      groupId: null,
-    ),
+    (current) => (entries: fxOrderGroups(current, groupIds), groupId: null),
   );
 
   /// Removes one module from a rack, retaining its other modules.
@@ -380,9 +361,9 @@ class FxCubit extends Cubit<FxState> {
     String rackId,
     String slotId,
   ) => _editChain(address, (current) {
-    final group = fxChainGroups(
-      current,
-    ).where((entry) => entry.rack?.id == rackId).firstOrNull;
+    final group = fxChainGroups(current)
+        .where((entry) => entry.rack?.id == rackId)
+        .firstOrNull;
     if (group == null || group.length < 2) return null;
     final index = current.indexWhere((entry) => entry.slotId == slotId);
     if (index < group.start || index >= group.end) return null;
@@ -393,9 +374,9 @@ class FxCubit extends Cubit<FxState> {
   // ignore: prefer_void_public_cubit_methods
   Future<FxEditResult> removeRack(FxAddress address, String rackId) =>
       _editChain(address, (current) {
-        final group = fxChainGroups(
-          current,
-        ).where((entry) => entry.rack?.id == rackId).firstOrNull;
+        final group = fxChainGroups(current)
+            .where((entry) => entry.rack?.id == rackId)
+            .firstOrNull;
         if (group == null) return null;
         return (
           entries: fxRemoveRange(current, group.start, group.end),
@@ -405,14 +386,15 @@ class FxCubit extends Cubit<FxState> {
 
   /// Removes the one effect the user chose, even if the chain was reordered.
   // ignore: prefer_void_public_cubit_methods
-  Future<FxEditResult> removeEffect(
-    FxAddress address,
-    String slotId,
-  ) => _editChain(address, (current) {
-    final index = current.indexWhere((entry) => entry.slotId == slotId);
-    if (index < 0 || current[index].rack != null) return null;
-    return (entries: fxRemoveRange(current, index, index + 1), groupId: null);
-  });
+  Future<FxEditResult> removeEffect(FxAddress address, String slotId) =>
+      _editChain(address, (current) {
+        final index = current.indexWhere((entry) => entry.slotId == slotId);
+        if (index < 0 || current[index].rack != null) return null;
+        return (
+          entries: fxRemoveRange(current, index, index + 1),
+          groupId: null,
+        );
+      });
 
   /// Moves one current group to the requested stage.
   // ignore: prefer_void_public_cubit_methods
@@ -421,21 +403,16 @@ class FxCubit extends Cubit<FxState> {
     String groupId,
     FxPlacement placement,
   ) => _editChain(address, (current) {
-    final group = fxChainGroups(
-      current,
-    ).where((entry) => fxGroupId(entry) == groupId).firstOrNull;
+    final group = fxChainGroups(current)
+        .where((entry) => fxGroupId(entry) == groupId)
+        .firstOrNull;
     if (group == null ||
         address.stage == FxStage.output ||
         address.stage == FxStage.allTracks) {
       return null;
     }
     return (
-      entries: fxSetGroupPlacement(
-        current,
-        group.start,
-        group.end,
-        placement,
-      ),
+      entries: fxSetGroupPlacement(current, group.start, group.end, placement),
       groupId: groupId,
     );
   });
@@ -515,9 +492,9 @@ class FxCubit extends Cubit<FxState> {
     if (chain == null || isClosed) {
       return const FxEditResult(FxEditStatus.refused);
     }
-    final group = fxChainGroups(
-      chain,
-    ).where((entry) => fxGroupId(entry) == groupId).firstOrNull;
+    final group = fxChainGroups(chain)
+        .where((entry) => fxGroupId(entry) == groupId)
+        .firstOrNull;
     if (group == null) return const FxEditResult(FxEditStatus.refused);
     if (group.rack case final rack?) {
       if (group.isOn == enabled) {
@@ -684,9 +661,9 @@ class FxCubit extends Cubit<FxState> {
     String groupId,
     FxChannels channels,
   ) => _editChain(address, (current) {
-    final group = fxChainGroups(
-      current,
-    ).where((entry) => fxGroupId(entry) == groupId).firstOrNull;
+    final group = fxChainGroups(current)
+        .where((entry) => fxGroupId(entry) == groupId)
+        .firstOrNull;
     if (group == null) return null;
     final writes = fxGroupChannelWrites(group, channels);
     if (writes.isEmpty) return (entries: current, groupId: groupId);
@@ -711,22 +688,12 @@ class FxCubit extends Cubit<FxState> {
   }) {
     switch (choice) {
       case FxSingleChoice(:final type):
-        return [
-          BuiltInEffect(
-            type: type,
-            placement: placement,
-            rack: into,
-          ),
-        ];
+        return [BuiltInEffect(type: type, placement: placement, rack: into)];
       case FxSavedChoice(:final preset):
         final rack =
             into ??
             (preset.isRack
-                ? FxRack(
-                    id: SlotIds.mint(),
-                    name: preset.name,
-                    art: preset.art,
-                  )
+                ? FxRack(id: SlotIds.mint(), name: preset.name, art: preset.art)
                 : null);
         return [
           for (final effect in preset.entries)

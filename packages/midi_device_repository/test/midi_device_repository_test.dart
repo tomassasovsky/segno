@@ -302,9 +302,7 @@ void main() {
       final said = <(MidiConnectivity, String)>[];
       final sub = repository.connections
           .skip(1)
-          .listen(
-            (c) => said.add((c.connectivity, c.connectivityDeviceId)),
-          );
+          .listen((c) => said.add((c.connectivity, c.connectivityDeviceId)));
       addTearDown(sub.cancel);
       await pumpEventQueue();
 

@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -38,7 +38,7 @@ import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _ControlledStore extends FakeKeyValueStore {
   Completer<void>? pending;
@@ -50,7 +50,7 @@ class _ControlledStore extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
     if (key == 'pedal.setup') await loading?.future;
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override
@@ -86,9 +86,8 @@ void main() {
     looperStates = StreamController<LooperState>.broadcast();
     store = _ControlledStore();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -160,7 +159,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
@@ -353,12 +352,7 @@ void main() {
       await pump(tester);
       expect(control.state.pedalSetup.modePress, InteractionMode.mute);
 
-      await choose(
-        tester,
-        field: press,
-        group: 'modes',
-        choice: 'mode_fx',
-      );
+      await choose(tester, field: press, group: 'modes', choice: 'mode_fx');
       // Nothing has reached the rig yet: the edit is a draft.
       expect(control.state.pedalSetup.modePress, InteractionMode.mute);
 
@@ -373,12 +367,7 @@ void main() {
 
     testWidgets('Cancel discards the draft', (tester) async {
       await pump(tester);
-      await choose(
-        tester,
-        field: hold,
-        group: 'modes',
-        choice: 'none',
-      );
+      await choose(tester, field: hold, group: 'modes', choice: 'none');
       await tester.tap(find.byKey(cancel));
       await tester.pumpAndSettle();
       expect(control.state.pedalSetup.modeHold, InteractionMode.custom);
@@ -722,9 +711,7 @@ void main() {
     for (var i = 1; i <= 4; i++) {
       expect(
         tester
-            .widget<PedalSetupCap>(
-              find.byKey(Key('pedal_setup_cap_track$i')),
-            )
+            .widget<PedalSetupCap>(find.byKey(Key('pedal_setup_cap_track$i')))
             .ledActive,
         isFalse,
         reason: 'Draft bank B is not live bank A',
@@ -732,9 +719,7 @@ void main() {
     }
     expect(
       tester
-          .widget<PedalSetupCap>(
-            find.byKey(const Key('pedal_setup_cap_stop')),
-          )
+          .widget<PedalSetupCap>(find.byKey(const Key('pedal_setup_cap_stop')))
           .ledActive,
       isTrue,
     );
@@ -802,17 +787,13 @@ void main() {
     expect(pages, 1);
   });
 
-  testWidgets(
-    'desktop picker attaches its visible scrollbar',
-    (tester) async {
-      await pump(tester);
-      await tester.tap(find.byKey(hold));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      expect(find.byKey(const Key('pedal_choice_picker')), findsOneWidget);
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
-  );
+  testWidgets('desktop picker attaches its visible scrollbar', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(hold));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('pedal_choice_picker')), findsOneWidget);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
   testWidgets('Stage closes the calling tray without saving the draft', (
     tester,
@@ -843,20 +824,14 @@ void main() {
     await tester.tap(find.byKey(save));
     await tester.pumpAndSettle();
     expect(control.state.pedalSetup.external, external);
-    expect(
-      control.state.pedalSetup.modePress,
-      InteractionMode.fx,
-    );
+    expect(control.state.pedalSetup.modePress, InteractionMode.fx);
   });
 
   testWidgets('startup waits for the saved setup before the first edit', (
     tester,
   ) async {
     store.values['pedal.setup'] = const PedalSetup()
-        .copyWith(
-          recordHold: RecordHold.none,
-          trackHold: TrackHold.clearTrack,
-        )
+        .copyWith(recordHold: RecordHold.none, trackHold: TrackHold.clearTrack)
         .encode();
     store.loading = Completer<void>();
     await pump(tester, preload: false);
@@ -958,9 +933,7 @@ void main() {
 
   testWidgets(
     'unreadable assignments need a deliberate confirmed replacement',
-    (
-      tester,
-    ) async {
+    (tester) async {
       const damaged = '{"trackHold":"unknown-hold"}';
       store.values['pedal.setup'] = damaged;
       await pump(tester);
@@ -1105,10 +1078,8 @@ void main() {
   }
 
   const black = PedalColor(0, 0, 0);
-  PedalSetupCap capOf(WidgetTester tester, PedalButton button) =>
-      tester.widget<PedalSetupCap>(
-        find.byKey(Key('pedal_setup_cap_${button.name}')),
-      );
+  PedalSetupCap capOf(WidgetTester tester, PedalButton button) => tester
+      .widget<PedalSetupCap>(find.byKey(Key('pedal_setup_cap_${button.name}')));
 
   group('LED colors', () {
     testWidgets(
@@ -1191,10 +1162,7 @@ void main() {
       await ledMode(tester, InteractionMode.mute);
       expect(capOf(tester, PedalButton.mode).ledColor, ledGreen);
       expect(capOf(tester, PedalButton.track1).ledColor, ledGreen);
-      expect(
-        find.byKey(const Key('pedal_led_state_armed')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('pedal_led_state_armed')), findsOneWidget);
       // Custom colours only MODE and Bank; its pedals carry their own colour
       // beside their assignment.
       await ledMode(tester, InteractionMode.custom);
@@ -1205,10 +1173,7 @@ void main() {
       }
       expect(capOf(tester, PedalButton.mode).selected, isTrue);
       expect(capOf(tester, PedalButton.mode).ledColor, ledYellow);
-      expect(
-        find.byKey(const Key('pedal_led_state_current')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('pedal_led_state_current')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

@@ -11,7 +11,7 @@ import 'package:wifi_client/src/wifi_models.dart';
 /// Production [WifiClient]: shells out to `/usr/bin/segno-wifi-ctl`.
 class SystemWifiClient implements WifiClient {
   /// Creates a [SystemWifiClient].
-  const SystemWifiClient({
+  const new({
     this.helperPath = '/usr/bin/segno-wifi-ctl',
     this.holdPath = '/run/segno/wifi-hold',
   });

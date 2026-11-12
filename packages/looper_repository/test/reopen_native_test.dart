@@ -200,80 +200,71 @@ void main() {
       },
     );
 
-    test(
-      'an undo pressed while the device was away drops only its track, '
-      'and the verdict names it',
-      () async {
-        final subscription = repository.looperState.listen((_) {});
-        addTearDown(subscription.cancel);
-        await tick();
-        recordLoop(0, .5);
-        recordLoop(1, .3);
-        final pcm0 = engine.exportTrack(0);
-        await tick();
+    test('an undo pressed while the device was away drops only its track, '
+        'and the verdict names it', () async {
+      final subscription = repository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      await tick();
+      recordLoop(0, .5);
+      recordLoop(1, .3);
+      final pcm0 = engine.exportTrack(0);
+      await tick();
 
-        await loseDevice();
-        // The press is accepted (the ring is configured-gated) but no callback
-        // ever applies it.
-        expect(repository.undo(channel: 1), EngineResult.ok);
+      await loseDevice();
+      // The press is accepted (the ring is configured-gated) but no callback
+      // ever applies it.
+      expect(repository.undo(channel: 1), EngineResult.ok);
 
-        await replugDevice();
-        final after = repository.state;
-        expect(
-          after.status.reopen,
-          const EngineReopened(
-            outcome: ReopenOutcome.retainedPartial,
-            droppedTracks: 1 << 1,
-            previousSampleRate: 48000,
-            sampleRate: 48000,
-          ),
-        );
-        expect(after.tracks[0].state, TrackState.stopped);
-        expect(after.tracks[0].lengthFrames, 64);
-        expect(engine.exportTrack(0), pcm0);
-        expect(after.tracks[1].state, TrackState.empty);
-        expect(after.tracks[1].lengthFrames, 0);
-        expect(after.tracks[1].undoDepth, 0);
-        expect(after.tracks[1].redoDepth, 0);
-      },
-    );
+      await replugDevice();
+      final after = repository.state;
+      expect(
+        after.status.reopen,
+        const EngineReopened(
+          outcome: ReopenOutcome.retainedPartial,
+          droppedTracks: 1 << 1,
+          previousSampleRate: 48000,
+          sampleRate: 48000,
+        ),
+      );
+      expect(after.tracks[0].state, TrackState.stopped);
+      expect(after.tracks[0].lengthFrames, 64);
+      expect(engine.exportTrack(0), pcm0);
+      expect(after.tracks[1].state, TrackState.empty);
+      expect(after.tracks[1].lengthFrames, 0);
+      expect(after.tracks[1].undoDepth, 0);
+      expect(after.tracks[1].redoDepth, 0);
+    });
 
-    test(
-      'a device that comes back at another sample rate clears the loops and '
-      'the verdict names both rates',
-      () async {
-        final subscription = repository.looperState.listen((_) {});
-        addTearDown(subscription.cancel);
-        await tick();
-        recordLoop(0, .5);
-        await tick();
-        expect(repository.state.status.sampleRate, 48000);
+    test('a device that comes back at another sample rate clears the loops and '
+        'the verdict names both rates', () async {
+      final subscription = repository.looperState.listen((_) {});
+      addTearDown(subscription.cancel);
+      await tick();
+      recordLoop(0, .5);
+      await tick();
+      expect(repository.state.status.sampleRate, 48000);
 
-        await loseDevice();
-        engine.simulatedSampleRate = 44100;
-        await replugDevice();
-        final after = repository.state;
-        expect(
-          after.status.reopen,
-          const EngineReopened(
-            outcome: ReopenOutcome.clearedRate,
-            droppedTracks: 0,
-            previousSampleRate: 48000,
-            sampleRate: 44100,
-          ),
-        );
-        expect(after.status.sampleRate, 44100);
-        expect(after.tracks[0].state, TrackState.empty);
-        expect(after.tracks[0].lengthFrames, 0);
-        expect(after.status.reopen!.keepsMaterial, isFalse);
-        // Recording works again on the new clock.
-        recordLoop(0, .4);
-        expect(
-          engine.exportTrack(0),
-          Float32List.fromList(List.filled(64, .4)),
-        );
-      },
-    );
+      await loseDevice();
+      engine.simulatedSampleRate = 44100;
+      await replugDevice();
+      final after = repository.state;
+      expect(
+        after.status.reopen,
+        const EngineReopened(
+          outcome: ReopenOutcome.clearedRate,
+          droppedTracks: 0,
+          previousSampleRate: 48000,
+          sampleRate: 44100,
+        ),
+      );
+      expect(after.status.sampleRate, 44100);
+      expect(after.tracks[0].state, TrackState.empty);
+      expect(after.tracks[0].lengthFrames, 0);
+      expect(after.status.reopen!.keepsMaterial, isFalse);
+      // Recording works again on the new clock.
+      recordLoop(0, .4);
+      expect(engine.exportTrack(0), Float32List.fromList(List.filled(64, .4)));
+    });
 
     test('a device still absent from enumeration reopens nothing', () async {
       final subscription = repository.looperState.listen((_) {});

@@ -16,7 +16,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// play-and-stop must not land its release before its hold.
 class WifiReconnectHoldHost extends StatefulWidget {
   /// Creates a [WifiReconnectHoldHost] around [child].
-  const WifiReconnectHoldHost({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The app.
   final Widget child;

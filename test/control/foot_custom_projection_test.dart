@@ -14,10 +14,7 @@ void main() {
       .withCustom(
         PedalButton.track1,
         bank: 0,
-        pair: const ControlGesturePair(
-          press: SelectTrackAction(0),
-          hold: fade,
-        ),
+        pair: const ControlGesturePair(press: SelectTrackAction(0), hold: fade),
       )
       .withCustom(
         PedalButton.track1,

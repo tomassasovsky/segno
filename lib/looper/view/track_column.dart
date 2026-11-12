@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/common/pen_icons.dart';
 import 'package:segno/control/control.dart';
@@ -122,7 +122,7 @@ enum _FxMarker { active, bypassed, absent }
 /// long-press stops. Tapping the name renames. The crown is a readout.
 class TrackColumn extends StatelessWidget {
   /// Creates a [TrackColumn].
-  const TrackColumn({
+  const new({
     required this.track,
     required this.name,
     required this.selected,
@@ -441,7 +441,7 @@ String _queueTimingLabel(AppLocalizations l10n, QueueTiming timing) =>
 /// is primary) centred over two lines, and the meta row — number, bars,
 /// layers, FX — along the block's bottom edge. Tapping the name renames.
 class _TrackInfo extends StatelessWidget {
-  const _TrackInfo({
+  const new({
     required this.channel,
     required this.name,
     required this.isPrimary,
@@ -486,10 +486,7 @@ class _TrackInfo extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (isPrimary) ...[
-                    PrimaryCrown(
-                      key: Key('tracks_crown_$channel'),
-                      size: 28,
-                    ),
+                    PrimaryCrown(key: Key('tracks_crown_$channel'), size: 28),
                     const SizedBox(width: 12),
                   ],
                   Flexible(
@@ -532,7 +529,7 @@ class _TrackInfo extends StatelessWidget {
 /// edge. FX is bright when the chain is engaged, dim when bypassed; REV shows
 /// while the track plays reversed. Every part has a fixed slot (#1308).
 class _TrackMeta extends StatelessWidget {
-  const _TrackMeta({
+  const new({
     required this.channel,
     required this.bars,
     required this.beats,
@@ -704,7 +701,7 @@ class _TrackMeta extends StatelessWidget {
 /// published direction, so it stays after the Reverse surface is left. A
 /// forward track keeps an invisible, unkeyed one holding the slot.
 class _ReverseMarker extends StatelessWidget {
-  const _ReverseMarker({required this.channel});
+  const new({required this.channel});
 
   /// The reversed track's channel; null for the forward placeholder.
   final int? channel;
@@ -736,7 +733,7 @@ class _ReverseMarker extends StatelessWidget {
 /// (#1524).
 class SlotFigure extends StatelessWidget {
   /// Creates a [SlotFigure].
-  const SlotFigure({
+  const new({
     required this.figure,
     required this.unit,
     required this.figureStyle,
@@ -800,7 +797,7 @@ class SlotFigure extends StatelessWidget {
 /// the track as primary for a screen reader and takes no tap.
 class PrimaryCrown extends StatelessWidget {
   /// Creates a [PrimaryCrown] [size] wide.
-  const PrimaryCrown({required this.size, super.key});
+  const new({required this.size, super.key});
 
   /// The glyph's width; the crown is wider than tall.
   final double size;
@@ -821,7 +818,7 @@ class PrimaryCrown extends StatelessWidget {
 /// (the tile beneath keeps the gesture, so a second press still cancels the
 /// arm).
 class _QueuedCue extends StatelessWidget {
-  const _QueuedCue({required this.action, required this.timing, super.key});
+  const new({required this.action, required this.timing, super.key});
 
   final String action;
   final String timing;

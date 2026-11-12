@@ -203,20 +203,17 @@ void main() {
       expect(await repository.loadLaneMute(0, 0), isTrue);
     });
 
-    test(
-      'mutation then error fails the write '
-      'without pretending bytes rolled back',
-      () async {
-        store.failAfterWriteKey = 'lane_mute.0.0';
-        await expectLater(
-          repository.saveLaneMute(0, 0, muted: true),
-          throwsStateError,
-        );
-        expect(await repository.loadLaneMute(0, 0), isTrue);
-        await repository.saveLaneMute(0, 0, muted: false);
-        expect(await repository.loadLaneMute(0, 0), isFalse);
-      },
-    );
+    test('mutation then error fails the write '
+        'without pretending bytes rolled back', () async {
+      store.failAfterWriteKey = 'lane_mute.0.0';
+      await expectLater(
+        repository.saveLaneMute(0, 0, muted: true),
+        throwsStateError,
+      );
+      expect(await repository.loadLaneMute(0, 0), isTrue);
+      await repository.saveLaneMute(0, 0, muted: false);
+      expect(await repository.loadLaneMute(0, 0), isFalse);
+    });
   });
 
   group('live-input gain admission', () {
@@ -249,9 +246,9 @@ void main() {
           expect(loaded.monitorLevels[0], 0.5);
           expect(loaded.monitorLevels[1] ?? 1, 1);
           expect(loaded.trackLevels[0], 1.5, reason: 'track gain untouched');
-          final stored =
-              jsonDecode(store.values['mix_settings']! as String)
-                  as Map<String, dynamic>;
+          final stored = jsonDecode(
+            store.values['mix_settings']! as String,
+          ) as Map<String, dynamic>;
           final monitors = stored['monitorLevels'] as Map<String, dynamic>;
           expect(
             monitors.values.every((gain) => (gain as num) <= 1),
@@ -460,29 +457,26 @@ void main() {
       expect(store.values, {'latency_offset.Scarlett.96000.64.p8': 240});
     });
 
-    test(
-      'a period-qualified offset is invisible to the legacy key',
-      () async {
-        // The period count moves the playback start threshold (#809), so an
-        // offset calibrated under a period count must not leak into the
-        // legacy (period-less) profile.
-        final appliance = SettingsRepository(store: store, alsaPeriods: 8);
-        await appliance.saveLatencyOffsetFrames(
+    test('a period-qualified offset is invisible to the legacy key', () async {
+      // The period count moves the playback start threshold (#809), so an
+      // offset calibrated under a period count must not leak into the
+      // legacy (period-less) profile.
+      final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+      await appliance.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 96000,
+        bufferFrames: 64,
+        frames: 240,
+      );
+      expect(
+        await repository.loadLatencyOffsetFrames(
           device: 'Scarlett',
           sampleRate: 96000,
           bufferFrames: 64,
-          frames: 240,
-        );
-        expect(
-          await repository.loadLatencyOffsetFrames(
-            device: 'Scarlett',
-            sampleRate: 96000,
-            bufferFrames: 64,
-          ),
-          isNull,
-        );
-      },
-    );
+        ),
+        isNull,
+      );
+    });
   });
 
   group('latency offset migration (legacy -> period-qualified)', () {
@@ -562,23 +556,20 @@ void main() {
       expect(store.values['latency_offset.Scarlett.96000.64'], 480);
     });
 
-    test(
-      'a delta-0 migration still materialises the qualified key',
-      () async {
-        // At periods <= 4 the shift is 0 (#809 is a no-op there), but the
-        // qualified key must still be written: subsequent saves then land on
-        // the p4 key instead of overwriting the legacy entry, which stays a
-        // pristine pre-#809 baseline for any later period-count migration.
-        store.values['latency_offset.Scarlett.96000.64'] = 480;
+    test('a delta-0 migration still materialises the qualified key', () async {
+      // At periods <= 4 the shift is 0 (#809 is a no-op there), but the
+      // qualified key must still be written: subsequent saves then land on
+      // the p4 key instead of overwriting the legacy entry, which stays a
+      // pristine pre-#809 baseline for any later period-count migration.
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
 
-        final appliance = SettingsRepository(store: store, alsaPeriods: 4);
-        expect(await load(appliance), 480);
-        expect(store.values, {
-          'latency_offset.Scarlett.96000.64': 480,
-          'latency_offset.Scarlett.96000.64.p4': 480,
-        });
-      },
-    );
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      expect(await load(appliance), 480);
+      expect(store.values, {
+        'latency_offset.Scarlett.96000.64': 480,
+        'latency_offset.Scarlett.96000.64.p4': 480,
+      });
+    });
   });
 
   group('alsaPeriodsFromEnvironment', () {
@@ -998,10 +989,7 @@ void main() {
     });
 
     test('round-trips a saved config', () async {
-      const config = StoredAudioConfig(
-        sampleRate: 96000,
-        bufferFrames: 256,
-      );
+      const config = StoredAudioConfig(sampleRate: 96000, bufferFrames: 256);
       await repository.saveAudioConfig(config);
       expect(await repository.loadAudioConfig(), config);
     });
@@ -1878,14 +1866,7 @@ void main() {
       () async {
         await repository.replaceMixSettings(
           device: builtIn,
-          mix: mix(
-            output: (
-              level: {0: .4},
-              muted: {},
-              mono: {},
-              balance: {},
-            ),
-          ),
+          mix: mix(output: (level: {0: .4}, muted: {}, mono: {}, balance: {})),
         );
         await repository.replaceMixSettings(
           device: scarlett,
@@ -2146,10 +2127,10 @@ void main() {
         restored: Version.parse('1.0.0'),
       );
       expect(store.values['updates.rollback'], '1.1.0,1.0.0');
-      expect(
-        await repository.loadUpdateRollback(),
-        (attempted: Version.parse('1.1.0'), restored: Version.parse('1.0.0')),
-      );
+      expect(await repository.loadUpdateRollback(), (
+        attempted: Version.parse('1.1.0'),
+        restored: Version.parse('1.0.0'),
+      ));
 
       await repository.clearUpdateRollback();
       expect(await repository.loadUpdateRollback(), isNull);

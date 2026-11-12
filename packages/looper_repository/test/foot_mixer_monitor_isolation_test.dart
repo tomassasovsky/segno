@@ -12,7 +12,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 /// Observes the real callback before the device-free pump frees its buffers.
 class _OutputBindings extends SegnoEngineBindings {
-  _OutputBindings(super.dynamicLibrary);
+  new(super.dynamicLibrary);
 
   Float32List output = Float32List(0);
 
@@ -50,20 +50,13 @@ void main() {
 
       void expectStereo({required double left, required double right}) {
         expect(bindings.output, hasLength(1024));
-        expect(
-          [
-            for (var frame = 0; frame < 512; frame++)
-              bindings.output[frame * 2],
-          ],
-          everyElement(closeTo(left, 1e-6)),
-        );
-        expect(
-          [
-            for (var frame = 0; frame < 512; frame++)
-              bindings.output[frame * 2 + 1],
-          ],
-          everyElement(closeTo(right, 1e-6)),
-        );
+        expect([
+          for (var frame = 0; frame < 512; frame++) bindings.output[frame * 2],
+        ], everyElement(closeTo(left, 1e-6)));
+        expect([
+          for (var frame = 0; frame < 512; frame++)
+            bindings.output[frame * 2 + 1],
+        ], everyElement(closeTo(right, 1e-6)));
       }
 
       Future<void> seedPlayingLoop() async {
@@ -112,10 +105,7 @@ void main() {
           repository.setMonitorInputMode(input: 0, mode: MonitorMode.on),
           EngineResult.ok,
         );
-        expect(
-          repository.setMonitorOutput(input: 0, mask: 1),
-          EngineResult.ok,
-        );
+        expect(repository.setMonitorOutput(input: 0, mask: 1), EngineResult.ok);
         engine.pump(frames: 0);
       });
 
@@ -202,112 +192,103 @@ void main() {
         );
       }
 
-      test(
-        'monitor edits leave recorded playback independent and '
-        'track gain and mute never rewrite its PCM or park it',
-        () async {
-          await seedPlayingLoop();
-          final recorded = engine.exportTrackLane(1, 0);
-          expect(recorded, everyElement(closeTo(.125, 1e-6)));
-          const segments = [
-            (gain: 1.0, muted: false, output: .25),
-            (gain: .5, muted: false, output: .125),
-            (gain: 0.0, muted: false, output: 0.0),
-            (gain: .5, muted: true, output: 0.0),
-            (gain: .5, muted: false, output: .125),
-          ];
-          for (final segment in segments) {
-            expect(
-              repository.setMonitorVolume(input: 0, volume: segment.gain),
-              EngineResult.ok,
-            );
-            await settleMix();
-            expect(
-              repository.setMonitorMute(input: 0, muted: segment.muted),
-              EngineResult.ok,
-            );
-            engine.pump(input: .25);
-            expectStereo(left: segment.output, right: .125);
-            expect(repository.state.tracks[1].state, TrackState.playing);
-            expect(engine.exportTrackLane(1, 0), recorded);
-            expect(repository.inputSetup.trimDbOf(0), 0);
-          }
-          for (final level in [
-            (gain: .5, output: .0625),
-            (gain: 1.5, output: .1875),
-          ]) {
-            expect(
-              repository.setVolume(level.gain, channel: 1),
-              EngineResult.ok,
-            );
-            await settleMix();
-            engine.pump(input: .25);
-            expectStereo(left: .125, right: level.output);
-            expect(engine.exportTrackLane(1, 0), recorded);
-          }
-          final position = engine.snapshot().masterPositionFrames;
-          expect(repository.setMute(channel: 1, muted: true), EngineResult.ok);
-          // A mute and an unmute fade over 480 frames (#1400).
-          engine
-            ..pump(input: .25)
-            ..pump(input: .25);
-          expectStereo(left: .125, right: 0);
-          expect(repository.state.tracks[1].state, TrackState.playing);
+      test('monitor edits leave recorded playback independent and '
+          'track gain and mute never rewrite its PCM or park it', () async {
+        await seedPlayingLoop();
+        final recorded = engine.exportTrackLane(1, 0);
+        expect(recorded, everyElement(closeTo(.125, 1e-6)));
+        const segments = [
+          (gain: 1.0, muted: false, output: .25),
+          (gain: .5, muted: false, output: .125),
+          (gain: 0.0, muted: false, output: 0.0),
+          (gain: .5, muted: true, output: 0.0),
+          (gain: .5, muted: false, output: .125),
+        ];
+        for (final segment in segments) {
           expect(
-            engine.snapshot().masterPositionFrames,
-            (position + 1024) % 4096,
+            repository.setMonitorVolume(input: 0, volume: segment.gain),
+            EngineResult.ok,
           );
-          expect(repository.setMute(channel: 1, muted: false), EngineResult.ok);
-          engine
-            ..pump(input: .25)
-            ..pump(input: .25);
-          expectStereo(left: .125, right: .1875);
+          await settleMix();
+          expect(
+            repository.setMonitorMute(input: 0, muted: segment.muted),
+            EngineResult.ok,
+          );
+          engine.pump(input: .25);
+          expectStereo(left: segment.output, right: .125);
+          expect(repository.state.tracks[1].state, TrackState.playing);
           expect(engine.exportTrackLane(1, 0), recorded);
-        },
-      );
+          expect(repository.inputSetup.trimDbOf(0), 0);
+        }
+        for (final level in [
+          (gain: .5, output: .0625),
+          (gain: 1.5, output: .1875),
+        ]) {
+          expect(repository.setVolume(level.gain, channel: 1), EngineResult.ok);
+          await settleMix();
+          engine.pump(input: .25);
+          expectStereo(left: .125, right: level.output);
+          expect(engine.exportTrackLane(1, 0), recorded);
+        }
+        final position = engine.snapshot().masterPositionFrames;
+        expect(repository.setMute(channel: 1, muted: true), EngineResult.ok);
+        // A mute and an unmute fade over 480 frames (#1400).
+        engine
+          ..pump(input: .25)
+          ..pump(input: .25);
+        expectStereo(left: .125, right: 0);
+        expect(repository.state.tracks[1].state, TrackState.playing);
+        expect(
+          engine.snapshot().masterPositionFrames,
+          (position + 1024) % 4096,
+        );
+        expect(repository.setMute(channel: 1, muted: false), EngineResult.ok);
+        engine
+          ..pump(input: .25)
+          ..pump(input: .25);
+        expectStereo(left: .125, right: .1875);
+        expect(engine.exportTrackLane(1, 0), recorded);
+      });
 
       for (final mode in [MonitorMode.auto, MonitorMode.off]) {
-        test(
-          '$mode stays closed through mute, unity reset and unmute '
-          'while the recorded loop keeps playing',
-          () async {
-            await seedPlayingLoop();
+        test('$mode stays closed through mute, unity reset and unmute '
+            'while the recorded loop keeps playing', () async {
+          await seedPlayingLoop();
+          expect(
+            repository.setMonitorInputMode(input: 0, mode: mode),
+            EngineResult.ok,
+          );
+          expect(
+            repository.setMonitorVolume(input: 0, volume: .4),
+            EngineResult.ok,
+          );
+          await settleMix();
+          expect(repository.monitorResolved(0), isFalse);
+          for (final muted in [true, false]) {
             expect(
-              repository.setMonitorInputMode(input: 0, mode: mode),
+              repository.setMonitorMute(input: 0, muted: muted),
               EngineResult.ok,
             );
             expect(
-              repository.setMonitorVolume(input: 0, volume: .4),
+              repository.setMonitorVolume(input: 0, volume: 1),
               EngineResult.ok,
             );
             await settleMix();
+            engine.pump(input: .25);
+            expectStereo(left: 0, right: .125);
+            expect(repository.monitorMode(0), mode);
             expect(repository.monitorResolved(0), isFalse);
-            for (final muted in [true, false]) {
-              expect(
-                repository.setMonitorMute(input: 0, muted: muted),
-                EngineResult.ok,
-              );
-              expect(
-                repository.setMonitorVolume(input: 0, volume: 1),
-                EngineResult.ok,
-              );
-              await settleMix();
-              engine.pump(input: .25);
-              expectStereo(left: 0, right: .125);
-              expect(repository.monitorMode(0), mode);
-              expect(repository.monitorResolved(0), isFalse);
-              expect(repository.monitorMuted(0), muted);
-              expect(repository.monitorVolume(0), 1);
-              expect(repository.monitorOutput(0), 1);
-              expect(repository.inputSetup.trimDbOf(0), 0);
-              expect(repository.state.tracks[1].state, TrackState.playing);
-              expect(
-                engine.exportTrackLane(1, 0),
-                everyElement(closeTo(.125, 1e-6)),
-              );
-            }
-          },
-        );
+            expect(repository.monitorMuted(0), muted);
+            expect(repository.monitorVolume(0), 1);
+            expect(repository.monitorOutput(0), 1);
+            expect(repository.inputSetup.trimDbOf(0), 0);
+            expect(repository.state.tracks[1].state, TrackState.playing);
+            expect(
+              engine.exportTrackLane(1, 0),
+              everyElement(closeTo(.125, 1e-6)),
+            );
+          }
+        });
       }
     },
     skip: library == null || library.isEmpty

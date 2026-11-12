@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
@@ -86,19 +86,15 @@ void main() {
           params: {'Mod': 1},
         ),
       );
-      final index = fxEntryControls(entry).params.firstWhere(
-        (i) => fxEntryParam(entry, i).unit == FxParamUnit.choice,
-      );
+      final index = fxEntryControls(entry).params
+          .firstWhere((i) => fxEntryParam(entry, i).unit == FxParamUnit.choice);
       await pump(tester, entry, index);
 
       expect(find.byType(LoopChoiceButton), findsNWidgets(2));
       await tester.tap(find.text('Tremolo'));
       await tester.pump();
       expect(written, [fxEntryKindSetting(entry, index, 1)]);
-      expect(
-        TrackEffectType.mod.params[index].positionOf(written.single),
-        3,
-      );
+      expect(TrackEffectType.mod.params[index].positionOf(written.single), 3);
     });
 
     testWidgets("a three-way choice is a list in a rack pedal's narrow "
@@ -115,9 +111,8 @@ void main() {
           params: {'Mod': 1},
         ),
       );
-      final index = fxEntryControls(entry).params.firstWhere(
-        (i) => fxEntryParam(entry, i).unit == FxParamUnit.choice,
-      );
+      final index = fxEntryControls(entry).params
+          .firstWhere((i) => fxEntryParam(entry, i).unit == FxParamUnit.choice);
       expect(fxEntryParam(entry, index).steps, 3);
 
       await pump(tester, entry, index, width: 250);

@@ -32,10 +32,7 @@ typedef SessionBundle = ({
 /// A bundle opened for loading: its decoded [SessionBundle] and, when the
 /// manifest was written by an older schema, the in-memory conversion that
 /// [SessionRepository.commitConversion] writes back once the load succeeds.
-typedef OpenedSession = ({
-  SessionBundle bundle,
-  SessionConversion? conversion,
-});
+typedef OpenedSession = ({SessionBundle bundle, SessionConversion? conversion});
 
 /// The effect-chain data a [SessionRepository.save] persists that the engine
 /// snapshot alone cannot supply: every FX stage's chains — Input
@@ -49,7 +46,7 @@ typedef OpenedSession = ({
 @immutable
 class SessionChains {
   /// Creates a [SessionChains].
-  const SessionChains({
+  const new({
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
@@ -94,7 +91,7 @@ typedef SessionLaneMix = ({
 @immutable
 class SessionSettings {
   /// Creates the settings payload for a session save.
-  const SessionSettings({
+  const new({
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -138,7 +135,7 @@ class SessionSettings {
     this.trackPitchModeOverrides = const {},
   }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
-  SessionSettings._detached(SessionSettings source)
+  new _detached(SessionSettings source)
     : tempoBpm = source.tempoBpm,
       tempoSource = source.tempoSource,
       tsNum = source.tsNum,
@@ -343,33 +340,28 @@ class SessionSettings {
 /// applying a loaded session to the engine is the looper repository's job
 /// (the single owner of looper state) — see [read].
 class SessionRepository {
-  /// Creates a [SessionRepository] capturing from [engine].
+  /// Creates a [SessionRepository] capturing from [_engine].
   ///
-  /// [sessionsRoot] resolves the `sessions/` root directory the catalog
+  /// [_sessionsRoot] resolves the `sessions/` root directory the catalog
   /// ([listSessions] / [bundlePathOf] / [renameSession] / [deleteSession] and
   /// the rest) operates under; it is optional so the path-addressed
   /// save/read flow needs no root. The catalog methods throw [StateError]
   /// when it is absent. Injecting a resolver keeps the catalog testable
-  /// (point it at a temp dir). [now] stamps new bundle ids ([newSessionId]);
+  /// (point it at a temp dir). [_now] stamps new bundle ids ([newSessionId]);
   /// injectable for deterministic tests.
   ///
-  /// [clearPollInterval]/[clearPollAttempts] bound how long a save/export waits
+  /// [_clearPollInterval]/[_clearPollAttempts] bound how long a save/export waits
   /// for queued commands and in-flight overdub layers to settle before
   /// capturing. Tests can shrink
   /// these.
-  SessionRepository({
-    required AudioEngine engine,
-    required GuardRegistry guards,
-    Future<String> Function()? sessionsRoot,
-    DateTime Function() now = DateTime.now,
-    Duration clearPollInterval = const Duration(milliseconds: 8),
-    int clearPollAttempts = 64,
-  }) : _engine = engine,
-       _guards = guards,
-       _sessionsRoot = sessionsRoot,
-       _now = now,
-       _clearPollInterval = clearPollInterval,
-       _clearPollAttempts = clearPollAttempts;
+  new({
+    required this._engine,
+    required this._guards,
+    this._sessionsRoot,
+    this._now = DateTime.now,
+    this._clearPollInterval = const Duration(milliseconds: 8),
+    this._clearPollAttempts = 64,
+  });
 
   final AudioEngine _engine;
   final Future<String> Function()? _sessionsRoot;
@@ -764,7 +756,7 @@ class SessionRepository {
     if (!File(mixdown).existsSync()) {
       return const AuditionStart(result: EngineResult.invalid);
     }
-    return _engine.auditionStartFile(mixdown, stillWanted: stillWanted);
+    return await _engine.auditionStartFile(mixdown, stillWanted: stillWanted);
   }
 
   /// Silences the Library's preview at the next block.
@@ -791,7 +783,7 @@ class SessionRepository {
     }
     final layer = '$path/${track.liveLayerFile}';
     if (!File(layer).existsSync()) return null;
-    return _engine.filePeaks(layer, buckets: buckets);
+    return await _engine.filePeaks(layer, buckets: buckets);
   }
 
   /// The saved bundle [id]'s mixdown, read from its WAV header, or null when
@@ -816,7 +808,7 @@ class SessionRepository {
     if (path == null) return null;
     final mixdown = '$path/$mixdownName';
     if (!File(mixdown).existsSync()) return null;
-    return _engine.filePeaks(mixdown, buckets: buckets);
+    return await _engine.filePeaks(mixdown, buckets: buckets);
   }
 
   /// The canonical 44-byte header [WavCodec] writes: `RIFF`/`WAVE`, `fmt `
@@ -873,9 +865,7 @@ class SessionRepository {
   /// existing one by case alone. This only skips numbers and never refuses;
   /// a name the player picks collides case-sensitively ([_requireFreeName]).
   Future<String> nextAutomaticName(String prefix) async {
-    final taken = {
-      for (final s in await listSessions()) s.name.toLowerCase(),
-    };
+    final taken = {for (final s in await listSessions()) s.name.toLowerCase()};
     for (var n = 1; ; n++) {
       final candidate = '$prefix $n';
       if (!taken.contains(candidate.toLowerCase())) return candidate;
@@ -908,10 +898,7 @@ class SessionRepository {
     final root = await _rootPath();
     final path = _locate(root, id);
     if (path == null) return;
-    final current = _summaryOf(
-      Directory(path),
-      folder: null,
-    ).name;
+    final current = _summaryOf(Directory(path), folder: null).name;
     if (current == slug) return;
     await _requireFreeName(slug, except: id);
     final manifest = '$path/${Session.manifestName}';
@@ -1592,10 +1579,7 @@ class SessionRepository {
   /// interrupted, and the manifest it was for is still in [from], so the
   /// next run reuses that folder and finishes it. A folder is only ever
   /// moved whole, so a backup never ends up split across two folders.
-  static void _keepOriginals({
-    required Directory from,
-    required Directory to,
-  }) {
+  static void _keepOriginals({required Directory from, required Directory to}) {
     for (final name in _originalManifests(from)..sort()) {
       final manifest = File('${from.path}/$name');
       final source = manifest.readAsStringSync();
@@ -1888,9 +1872,8 @@ class SessionRepository {
     String directory, {
     FutureOr<SessionSettings> Function()? liveSettings,
   }) async {
-    final source = await File(
-      '$directory/${Session.manifestName}',
-    ).readAsString();
+    final source = await File('$directory/${Session.manifestName}')
+        .readAsString();
     final version = _versionOf(source);
     final live =
         version != null &&
@@ -2006,11 +1989,7 @@ class SessionRepository {
       }
     }
     return (
-      bundle: (
-        session: session,
-        laneStems: laneStems,
-        heardStems: heardStems,
-      ),
+      bundle: (session: session, laneStems: laneStems, heardStems: heardStems),
       conversion: conversion,
     );
   }
@@ -2475,7 +2454,7 @@ int _lcm(int a, int b) => (a == 0 || b == 0) ? 0 : (a ~/ _gcd(a, b)) * b;
 
 /// The engine state captured once for a save/export.
 class _Capture {
-  const _Capture({
+  const new({
     required this.snapshot,
     required this.laneStems,
     required this.tracks,

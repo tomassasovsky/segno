@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -40,9 +40,7 @@ void main() {
         LooperMeterState.playing: Color(0xFF00FF00),
         LooperMeterState.muted: Color(0xFFFFFFFF),
       },
-      muteMeterColors: {
-        LooperMeterState.playing: Color(0xFF0000FF),
-      },
+      muteMeterColors: {LooperMeterState.playing: Color(0xFF0000FF)},
       toolbarIconColor: Color(0xFFB0B3BC),
     );
 
@@ -90,10 +88,7 @@ void main() {
       );
       // A state the table omits resolves to transparent, matching the
       // meter/indicator tables rather than silently substituting an accent.
-      expect(
-        theme.waveformColor(LooperMeterState.muted),
-        Colors.transparent,
-      );
+      expect(theme.waveformColor(LooperMeterState.muted), Colors.transparent);
     });
 
     test('copyWith overrides only the given fields', () {

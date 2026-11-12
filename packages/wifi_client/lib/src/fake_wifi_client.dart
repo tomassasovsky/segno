@@ -15,7 +15,7 @@ import 'package:wifi_client/src/wifi_models.dart';
 /// and anything else fails the way the supplicant does.
 class FakeWifiClient implements WifiClient {
   /// Creates a [FakeWifiClient].
-  FakeWifiClient();
+  new();
 
   /// The one passphrase that joins a secured network.
   static const workingPassphrase = 'segno123';

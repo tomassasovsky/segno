@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
@@ -17,16 +17,15 @@ import 'package:segno/looper/view/foot_mixer_view.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
-class _Repository extends Mock implements LooperRepository {}
+class _Repository extends Mock implements LooperRepository;
 
-class _Inputs extends MockCubit<InputsState> implements InputsCubit {}
+class _Inputs extends MockCubit<InputsState> implements InputsCubit;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 void main() {
   late _Control control;
@@ -49,9 +48,8 @@ void main() {
     looper = _Looper();
     repository = _Repository();
     when(repository.allMonitors).thenReturn(const {});
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
     inputs = _Inputs();
     tracks = _Tracks();
     whenListen(
@@ -225,9 +223,7 @@ void main() {
   for (final cancelOther in [false, true]) {
     testWidgets(
       'second pointer cannot end admitted contact: cancel=$cancelOther',
-      (
-        tester,
-      ) async {
+      (tester) async {
         await pump(tester);
         final center = tester.getCenter(pedal(PedalButton.clear));
         final first = await tester.startGesture(center, pointer: 1);
@@ -240,9 +236,8 @@ void main() {
         verifyNever(() => control.footMixerReleased(PedalButton.clear, any()));
         verifyNever(() => control.footMixerCancelled(PedalButton.clear, any()));
         await first.up();
-        verify(
-          () => control.footMixerPressed(PedalButton.clear, any()),
-        ).called(1);
+        verify(() => control.footMixerPressed(PedalButton.clear, any()))
+            .called(1);
         verify(
           () => control.footMixerReleased(
             PedalButton.clear,
@@ -308,9 +303,8 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await abandoned.cancel();
     verify(() => control.footMixerReleased(PedalButton.clear, first)).called(1);
-    verify(
-      () => control.footMixerCancelled(PedalButton.clear, second),
-    ).called(1);
+    verify(() => control.footMixerCancelled(PedalButton.clear, second))
+        .called(1);
     verifyNever(() => control.footMixerReleased(PedalButton.clear, second));
     verifyNever(() => control.footMixerCancelled(PedalButton.clear, first));
   });
@@ -337,18 +331,8 @@ void main() {
           contacts[PedalButton.clear]!,
         ),
       );
-      verifyNever(
-        () => control.footMixerCancelled(
-          PedalButton.undo,
-          any(),
-        ),
-      );
-      verifyNever(
-        () => control.footMixerCancelled(
-          PedalButton.track1,
-          any(),
-        ),
-      );
+      verifyNever(() => control.footMixerCancelled(PedalButton.undo, any()));
+      verifyNever(() => control.footMixerCancelled(PedalButton.track1, any()));
       await gesture.cancel();
     },
   );
@@ -366,9 +350,8 @@ void main() {
     semantics.properties.onTap!();
     verify(() => control.activateFootMixerPedal(PedalButton.clear)).called(1);
     semantics.properties.onLongPress!();
-    verify(
-      () => control.activateFootMixerPedal(PedalButton.clear, hold: true),
-    ).called(1);
+    verify(() => control.activateFootMixerPedal(PedalButton.clear, hold: true))
+        .called(1);
   });
 
   testWidgets(
@@ -376,9 +359,8 @@ void main() {
     (tester) async {
       await pump(tester);
       await tester.tap(find.text('Inputs'));
-      verify(
-        () => control.selectFootMixerDomain(FootMixerDomain.inputs),
-      ).called(1);
+      verify(() => control.selectFootMixerDomain(FootMixerDomain.inputs))
+          .called(1);
       await tester.tap(find.byKey(const Key('foot_mixer_exit')));
       verify(() => control.setMode(InteractionMode.record)).called(1);
       verifyNever(() => control.selectTrack(any()));
@@ -398,9 +380,8 @@ void main() {
         ),
       ),
     );
-    when(
-      () => looper.state,
-    ).thenReturn(const LooperState(status: EngineStatus(inputChannels: 18)));
+    when(() => looper.state)
+        .thenReturn(const LooperState(status: EngineStatus(inputChannels: 18)));
     await pump(tester);
     expect(find.text('Inputs 17–18'), findsOneWidget);
     expect(find.text('—'), findsNWidgets(2));
@@ -429,9 +410,8 @@ void main() {
         ),
       ),
     );
-    when(
-      () => looper.state,
-    ).thenReturn(const LooperState(status: EngineStatus(inputChannels: 2)));
+    when(() => looper.state)
+        .thenReturn(const LooperState(status: EngineStatus(inputChannels: 2)));
     when(repository.allMonitors).thenReturn(const {
       0: InputMonitor(input: 0, mode: MonitorMode.auto, volume: .98),
     });
@@ -456,8 +436,7 @@ void main() {
     await tester.tap(pedal(PedalButton.clear));
     verifyNever(() => control.footMixerPressed(PedalButton.clear, any()));
     await tester.tap(find.text('Inputs'));
-    verify(
-      () => control.selectFootMixerDomain(FootMixerDomain.inputs),
-    ).called(1);
+    verify(() => control.selectFootMixerDomain(FootMixerDomain.inputs))
+        .called(1);
   });
 }

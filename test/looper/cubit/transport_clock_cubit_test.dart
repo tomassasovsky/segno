@@ -9,7 +9,7 @@ import 'package:segno_engine/segno_engine.dart' as engine;
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// A hand-driven [Stopwatch]: `fake_async` fakes `Timer`, not the monotonic
 /// tick source, so the cubit's watch is injected and advanced in lockstep
@@ -90,9 +90,7 @@ void main() {
   const recordingFirstTake = LooperState(
     tracks: [Track(state: TrackState.recording)],
   );
-  const countingIn = LooperState(
-    transport: TransportState(countingIn: true),
-  );
+  const countingIn = LooperState(transport: TransportState(countingIn: true));
 
   group('TransportClockCubit', () {
     test('reads zero, stopped, on an idle rig', () {
@@ -338,10 +336,8 @@ void main() {
         );
       final ticker = StreamController<void>.broadcast();
       addTearDown(ticker.close);
-      final repo = LooperRepository(
-        engine: fakeEngine,
-        ticker: ticker.stream,
-      )..startEngine(const EngineConfig());
+      final repo = LooperRepository(engine: fakeEngine, ticker: ticker.stream)
+        ..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
 
       final clockWatch = _FakeStopwatch();

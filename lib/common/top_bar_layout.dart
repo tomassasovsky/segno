@@ -28,7 +28,7 @@ import 'package:segno/theme/theme.dart';
 /// a long middle slides off centre towards the roomier side there.
 class TopBarLayout extends StatelessWidget {
   /// Creates a [TopBarLayout].
-  const TopBarLayout({
+  const new({
     required this.leading,
     required this.centre,
     required this.trailing,
@@ -69,7 +69,7 @@ class TopBarLayout extends StatelessWidget {
 enum _Slot { leading, centre, trailing }
 
 class _CentredLayout extends MultiChildLayoutDelegate {
-  _CentredLayout({required this.gap});
+  new({required this.gap});
 
   final double gap;
 
@@ -83,10 +83,7 @@ class _CentredLayout extends MultiChildLayoutDelegate {
       // has to be scaled down to fit.
       loose.copyWith(maxWidth: math.max(0, size.width - leading.width - gap)),
     );
-    positionChild(
-      _Slot.leading,
-      Offset(0, (size.height - leading.height) / 2),
-    );
+    positionChild(_Slot.leading, Offset(0, (size.height - leading.height) / 2));
     positionChild(
       _Slot.trailing,
       Offset(size.width - trailing.width, (size.height - trailing.height) / 2),

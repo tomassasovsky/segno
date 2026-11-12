@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 import 'package:routing_graph/src/widgets/focusable_tap_target.dart';
 
@@ -15,7 +15,7 @@ import 'package:routing_graph/src/widgets/focusable_tap_target.dart';
 /// accessible name.
 class ChannelChip extends StatelessWidget {
   /// Creates a port chip.
-  const ChannelChip({
+  const new({
     required this.label,
     required this.color,
     required this.strong,

@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/wifi/wifi_error_message.dart';
 import 'package:segno/wifi/wifi_join_failure.dart';
@@ -33,10 +33,7 @@ void main() {
 
   test('maps generic helper process failures', () {
     expect(
-      wifiErrorMessage(
-        l10n,
-        'ProcessException: segno-wifi-ctl failed',
-      ),
+      wifiErrorMessage(l10n, 'ProcessException: segno-wifi-ctl failed'),
       l10n.wifiConnectFailedGeneric,
     );
   });

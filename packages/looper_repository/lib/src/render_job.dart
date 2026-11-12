@@ -14,19 +14,17 @@ import 'package:segno_engine/segno_engine.dart';
 /// job is held, the repository refuses a new render rather than replace it.
 class RenderJob {
   /// Starts polling engine job [id]. A job still waiting for the audio
-  /// callback to freeze its sources after [freezeTimeout] (the device is
+  /// callback to freeze its sources after [_freezeTimeout] (the device is
   /// present but not calling back) is cancelled and ends with
   /// [EngineResult.device].
-  RenderJob({
-    required EngineSelectedRender engine,
+  new({
+    required this._engine,
     required this.id,
-    required RenderTarget target,
+    required this._target,
     required Duration pollInterval,
-    required Duration freezeTimeout,
+    required this._freezeTimeout,
     this.path,
-  }) : _engine = engine,
-       _target = target,
-       _freezeTimeout = freezeTimeout {
+  }) {
     _timer = Timer.periodic(pollInterval, (_) => _poll());
   }
 

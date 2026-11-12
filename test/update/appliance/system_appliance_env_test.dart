@@ -191,9 +191,8 @@ void main() {
 
     test('is null for {}, a failure or an old helper', () async {
       expect(
-        await SystemApplianceEnv(
-          helperPath: stub("#!/bin/sh\necho '{}'\n"),
-        ).updateAttempt(),
+        await SystemApplianceEnv(helperPath: stub("#!/bin/sh\necho '{}'\n"))
+            .updateAttempt(),
         isNull,
       );
       expect(
@@ -203,9 +202,8 @@ void main() {
         isNull,
       );
       expect(
-        await SystemApplianceEnv(
-          helperPath: '${dir.path}/missing',
-        ).updateAttempt(),
+        await SystemApplianceEnv(helperPath: '${dir.path}/missing')
+            .updateAttempt(),
         isNull,
       );
     });
@@ -239,9 +237,8 @@ void main() {
         isNull,
       );
       expect(
-        await SystemApplianceEnv(
-          helperPath: '${dir.path}/missing',
-        ).reconcileStaged(),
+        await SystemApplianceEnv(helperPath: '${dir.path}/missing')
+            .reconcileStaged(),
         isNull,
       );
     });

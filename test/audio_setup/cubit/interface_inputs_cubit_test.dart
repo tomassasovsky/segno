@@ -7,7 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/cubit/interface_inputs_cubit.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 const _scarlett = LooperState(
   status: EngineStatus(
@@ -22,10 +22,8 @@ const _scarlett = LooperState(
 const _closed = LooperState();
 
 /// [_scarlett] after the engine reopened it.
-LooperState _reopened(int generation) => LooperState(
-  mixGeneration: generation,
-  status: _scarlett.status,
-);
+LooperState _reopened(int generation) =>
+    LooperState(mixGeneration: generation, status: _scarlett.status);
 
 InterfaceInputs _fourI4({
   InputLevel level = InputLevel.line,
@@ -67,25 +65,20 @@ void main() {
       reads++;
       return onInterface;
     });
-    when(
-      () => repository.setInterfaceInputLevel(any(), any()),
-    ).thenAnswer((invocation) async {
-      final level = invocation.positionalArguments[1] as InputLevel;
-      onInterface = _fourI4(level: level);
-      return EngineResult.ok;
-    });
-    when(
-      () => repository.setInterfacePhantomPower(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.device);
-    when(
-      () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.setInterfaceInputAir(any(), any()),
-    ).thenAnswer((_) async => EngineResult.ok);
-    when(
-      () => repository.turnOffInterfaceSetupMode(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfaceInputLevel(any(), any()))
+        .thenAnswer((invocation) async {
+          final level = invocation.positionalArguments[1] as InputLevel;
+          onInterface = _fourI4(level: level);
+          return EngineResult.ok;
+        });
+    when(() => repository.setInterfacePhantomPower(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.device);
+    when(() => repository.setInterfaceInputPad(any(), on: any(named: 'on')))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.setInterfaceInputAir(any(), any()))
+        .thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.turnOffInterfaceSetupMode())
+        .thenAnswer((_) async => EngineResult.ok);
   });
 
   setUpAll(() {
@@ -194,9 +187,8 @@ void main() {
 
     test('a read for a device that has gone is dropped', () async {
       final slow = Completer<InterfaceInputs>();
-      when(
-        () => repository.readInterfaceInputs(),
-      ).thenAnswer((_) => slow.future);
+      when(() => repository.readInterfaceInputs())
+          .thenAnswer((_) => slow.future);
       final cubit = build();
       addTearDown(cubit.close);
       engine.add(_closed);
@@ -234,9 +226,8 @@ void main() {
     );
 
     test('a write that throws counts a failure and still reads', () async {
-      when(
-        () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
-      ).thenThrow(StateError('isolate'));
+      when(() => repository.setInterfaceInputPad(any(), on: any(named: 'on')))
+          .thenThrow(StateError('isolate'));
       final cubit = build();
       addTearDown(cubit.close);
       final errors = <Object>[];
@@ -251,9 +242,8 @@ void main() {
     });
 
     test('a stopped engine is not the interface refusing', () async {
-      when(
-        () => repository.setInterfaceInputPad(any(), on: any(named: 'on')),
-      ).thenAnswer((_) async => EngineResult.notRunning);
+      when(() => repository.setInterfaceInputPad(any(), on: any(named: 'on')))
+          .thenAnswer((_) async => EngineResult.notRunning);
       final cubit = build();
       addTearDown(cubit.close);
       await pumpEventQueue();

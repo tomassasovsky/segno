@@ -30,7 +30,7 @@ enum EdsSetupStatus {
 /// State of the [NewLoopCubit].
 class NewLoopState extends Equatable {
   /// Creates a [NewLoopState].
-  const NewLoopState({
+  const new({
     this.start = NewLoopStart.emptyTracks,
     this.eds = EdsSetupStatus.idle,
     this.template,

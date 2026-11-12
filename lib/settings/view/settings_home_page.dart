@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_host.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_frame.dart';
@@ -21,7 +21,7 @@ class SettingsHomePage extends StatelessWidget {
   /// [powerAvailable] decides whether the title bar carries Power; it
   /// defaults to whether this is the console, the one place a power-off can
   /// actually halt anything.
-  const SettingsHomePage({this.powerAvailable, super.key});
+  const new({this.powerAvailable, super.key});
 
   /// Whether Power is shown; null asks the platform.
   final bool? powerAvailable;
@@ -79,11 +79,7 @@ class SettingsHomePage extends StatelessWidget {
 /// ground.
 class SettingsTile extends StatelessWidget {
   /// Creates a [SettingsTile] for [destination].
-  const SettingsTile({
-    required this.destination,
-    this.autofocus = false,
-    super.key,
-  });
+  const new({required this.destination, this.autofocus = false, super.key});
 
   /// Where the tile leads.
   final SettingsDestination destination;

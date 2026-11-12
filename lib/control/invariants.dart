@@ -40,7 +40,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 /// overlay, and the projected wire frame.
 class ControlContext {
   /// Creates a [ControlContext].
-  const ControlContext({
+  const new({
     required this.looper,
     required this.overlay,
     required this.frame,
@@ -79,7 +79,7 @@ class ControlContext {
 /// of the violation.
 class ControlInvariant {
   /// Creates a [ControlInvariant].
-  const ControlInvariant(this.name, this.check);
+  const new(this.name, this.check);
 
   /// Stable identifier, used in failure output and corpus annotations.
   final String name;
@@ -418,7 +418,7 @@ List<String> checkControlInvariants(ControlContext c) => [
 /// only the sequence fuzzer (which owns the step boundary) can check it.
 class LooperTransition {
   /// Creates a [LooperTransition].
-  const LooperTransition({required this.pre, required this.post});
+  const new({required this.pre, required this.post});
 
   /// Engine truth settled BEFORE the action.
   final LooperState pre;
@@ -431,7 +431,7 @@ class LooperTransition {
 /// description.
 class ControlTransitionRule {
   /// Creates a [ControlTransitionRule].
-  const ControlTransitionRule(this.name, this.check);
+  const new(this.name, this.check);
 
   /// Stable identifier, used in failure output and corpus annotations.
   final String name;

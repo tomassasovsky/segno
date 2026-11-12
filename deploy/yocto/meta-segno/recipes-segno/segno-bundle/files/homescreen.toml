@@ -24,6 +24,14 @@ fullscreen = true
 
   [view.args]
   dart = ['--segno-screen=main']
+  # --impeller-use-sdfs is left out on purpose, on both views (#1777).
+  # Flutter's GTK, macOS and Windows embedders always pass it; the embedder
+  # API ivi-homescreen uses leaves it off. Signed-distance-field shapes kept
+  # the Pi 5's V3D 63% busy on the stage against 27%, dropped frames, and
+  # took the readout's raster time from 5.9 to 10.4 ms (p50); paths stay
+  # aliased without the 4x MSAA framebuffer (IVI_DRM_MSAA_SAMPLES, #1687), so
+  # it is needed either way. Never write --impeller-use-sdfs=false: the
+  # engine only checks whether the switch is present, so that turns SDF on.
   engine = ['--enable-impeller=true']
 
   [view.backend]
@@ -67,6 +75,7 @@ pixel_ratio = 1.6
 
   [view.args]
   dart = ['--segno-screen=readout']
+  # No --impeller-use-sdfs: see the main view.
   engine = ['--enable-impeller=true']
 
   [view.backend]

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/external_expression.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// working one.
 class ExpressionCalibrationPanel extends StatelessWidget {
   /// Creates an [ExpressionCalibrationPanel].
-  const ExpressionCalibrationPanel({
+  const new({
     required this.heel,
     required this.toe,
     required this.connected,
@@ -142,7 +142,7 @@ class ExpressionCalibrationPanel extends StatelessWidget {
 /// One end of the travel: its step number, what to do, and its capture
 /// button.
 class _CaptureEnd extends StatelessWidget {
-  const _CaptureEnd({
+  const new({
     required this.isHeel,
     required this.value,
     required this.connected,

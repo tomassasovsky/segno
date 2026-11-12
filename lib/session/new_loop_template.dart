@@ -7,7 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 class NewLoopTemplate extends Equatable {
   /// Creates a template that puts [trackChains] on their tracks and names
   /// them [names].
-  const NewLoopTemplate({required this.trackChains, required this.names});
+  const new({required this.trackChains, required this.names});
 
   /// The track chain each channel (0-based) starts with. It replaces the
   /// chain the track carried, and the channel's lane chains are dropped.

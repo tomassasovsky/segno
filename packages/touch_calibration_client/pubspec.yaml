@@ -8,13 +8,13 @@ version: 0.1.0
 publish_to: none
 
 environment:
-  sdk: ^3.11.0
+  sdk: ^3.14.0
 
 dependencies:
-  equatable: ^2.1.0
+  equatable: ^3.0.0
   spawn_process:
     path: ../spawn_process
 
 dev_dependencies:
   test: ^1.25.0
-  very_good_analysis: ^10.2.0
+  very_good_analysis: ^11.0.0

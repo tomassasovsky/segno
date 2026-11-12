@@ -173,10 +173,8 @@ void main() {
       .95,
     );
     expect(
-      ExpressionMapping.fromJson({
-        'target': gain.canonicalString(),
-        'toe': 1.0,
-      }).toe,
+      ExpressionMapping.fromJson({'target': gain.canonicalString(), 'toe': 1.0})
+          .toe,
       1,
     );
     expect(

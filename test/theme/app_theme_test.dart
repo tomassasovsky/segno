@@ -12,29 +12,23 @@ void main() {
     // Material's default density is compact on desktop targets, which took
     // 8 px off every Material button on the appliance (Linux) but not in the
     // tests (#1590 FT-1).
-    testWidgets(
-      'a 64 px button is 64 px on every platform',
-      (tester) async {
-        expect(AppTheme.neon.visualDensity, VisualDensity.standard);
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: AppTheme.neon,
-            home: Center(
-              child: OutlinedButton(
-                key: const Key('button'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(136, 64),
-                ),
-                onPressed: () {},
-                child: const Text('Settings'),
-              ),
+    testWidgets('a 64 px button is 64 px on every platform', (tester) async {
+      expect(AppTheme.neon.visualDensity, VisualDensity.standard);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.neon,
+          home: Center(
+            child: OutlinedButton(
+              key: const Key('button'),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(136, 64)),
+              onPressed: () {},
+              child: const Text('Settings'),
             ),
           ),
-        );
-        expect(tester.getSize(find.byKey(const Key('button'))).height, 64);
-      },
-      variant: TargetPlatformVariant.all(),
-    );
+        ),
+      );
+      expect(tester.getSize(find.byKey(const Key('button'))).height, 64);
+    }, variant: TargetPlatformVariant.all());
 
     /// WCAG relative contrast of [fg] against the [bg] it sits on.
     double ratio(Color fg, Color bg) {
@@ -72,20 +66,14 @@ void main() {
       },
     );
 
-    test(
-      'highContrast maps tokens from SurfaceTheme.highContrast',
-      () {
-        final theme = AppTheme.highContrast;
-        expect(
-          theme.extension<SurfaceTheme>(),
-          same(SurfaceTheme.highContrast),
-        );
-        expectRoutingGraphMatchesSurface(
-          theme.extension<RoutingGraphTheme>(),
-          SurfaceTheme.highContrast,
-        );
-      },
-    );
+    test('highContrast maps tokens from SurfaceTheme.highContrast', () {
+      final theme = AppTheme.highContrast;
+      expect(theme.extension<SurfaceTheme>(), same(SurfaceTheme.highContrast));
+      expectRoutingGraphMatchesSurface(
+        theme.extension<RoutingGraphTheme>(),
+        SurfaceTheme.highContrast,
+      );
+    });
 
     test('the settings frame keeps the pen in the default flavour and '
         'strengthens it at high contrast', () {
@@ -370,10 +358,7 @@ void main() {
     });
 
     test('highContrast registers a LooperTheme', () {
-      expect(
-        AppTheme.highContrast.extension<LooperTheme>(),
-        isNotNull,
-      );
+      expect(AppTheme.highContrast.extension<LooperTheme>(), isNotNull);
     });
 
     // #1674 decision 3: the 7" readout lifts its two dimmest tiers for a

@@ -33,7 +33,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 void main() {
   test(
@@ -162,13 +162,9 @@ void main() {
           ),
         ),
       );
-      final manifest =
-          jsonDecode(
-                await File(
-                  '${directory.path}/${Session.manifestName}',
-                ).readAsString(),
-              )
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        await File('${directory.path}/${Session.manifestName}').readAsString(),
+      ) as Map<String, dynamic>;
       final track =
           (manifest['tracks'] as List<dynamic>).single as Map<String, dynamic>;
       final savedLane =
@@ -208,9 +204,8 @@ void main() {
           loopBars: 7,
         ),
       );
-      when(
-        () => looper.defaultRecordTiming,
-      ).thenReturn(RecordTiming.immediately);
+      when(() => looper.defaultRecordTiming)
+          .thenReturn(RecordTiming.immediately);
       when(() => looper.defaultOverdubDecay).thenReturn(0);
       when(() => looper.defaultOneShot).thenReturn(false);
       when(() => looper.trackRecordTimingOverrides).thenReturn(const {});
@@ -766,9 +761,10 @@ void main() {
         ),
       });
 
-      final effects = performanceChainsFromLooper(
-        looper,
-      ).laneChains.single.effects;
+      final effects = performanceChainsFromLooper(looper)
+          .laneChains
+          .single
+          .effects;
 
       final effect = effects.single as le.BuiltInEffect;
       expect(effect.type, le.TrackEffectType.octaver);
@@ -793,9 +789,10 @@ void main() {
         ),
       });
 
-      final effects = performanceChainsFromLooper(
-        looper,
-      ).laneChains.single.effects;
+      final effects = performanceChainsFromLooper(looper)
+          .laneChains
+          .single
+          .effects;
 
       final effect = effects.single as le.PluginEffect;
       expect(effect.ref.format, le.PluginFormat.vst3);
@@ -834,9 +831,8 @@ void main() {
     test('captures an enabled DRY monitor (no FX)', () {
       // Same rule as the session save: the capture documents every configured
       // monitor, not just the ones carrying an FX chain.
-      when(looper.allMonitors).thenReturn(const {
-        0: InputMonitor(input: 0, mode: MonitorMode.on),
-      });
+      when(looper.allMonitors)
+          .thenReturn(const {0: InputMonitor(input: 0, mode: MonitorMode.on)});
 
       final monitor = performanceChainsFromLooper(looper).monitors.single;
 
@@ -976,9 +972,7 @@ void main() {
               lanes: [lane(0, 'track0_lane0_L0.wav')],
             ),
           ],
-          laneChains: [
-            SessionLaneChain(channel: 0, lane: 0, encoded: bare),
-          ],
+          laneChains: [SessionLaneChain(channel: 0, lane: 0, encoded: bare)],
           monitors: [
             SessionMonitor(
               input: 0,
@@ -1252,59 +1246,56 @@ void main() {
       );
     });
 
-    test(
-      'a current Session with omitted bus chains maps empty stages '
-      'and FX defaults',
-      () {
-        final pcm = Float32List.fromList([1, 1, 1, 1]);
-        final bundle = (
-          session: Session(
-            sampleRate: 48000,
-            channels: 1,
-            baseLengthFrames: 4,
-            tracks: [
-              SessionTrack(
-                fadeAmount: 1,
-                reversed: false,
-                channel: 0,
-                multiple: 1,
-                lengthFrames: 4,
-                lanes: [lane(0, 'track0_lane0_L0.wav')],
-              ),
-            ],
-            // The FX decoder handles bare-array payloads independently of
-            // the schema-8 manifest reader.
-            laneChains: [
-              SessionLaneChain(
-                channel: 0,
-                lane: 0,
-                encoded: encodeTrackEffects([
-                  BuiltInEffect(type: TrackEffectType.drive),
-                ]),
-              ),
-            ],
-          ),
-          heardStems: const <(int, int), List<Float32List>>{},
-          laneStems: {
-            (0, 0): [pcm],
-          },
-        );
+    test('a current Session with omitted bus chains maps empty stages '
+        'and FX defaults', () {
+      final pcm = Float32List.fromList([1, 1, 1, 1]);
+      final bundle = (
+        session: Session(
+          sampleRate: 48000,
+          channels: 1,
+          baseLengthFrames: 4,
+          tracks: [
+            SessionTrack(
+              fadeAmount: 1,
+              reversed: false,
+              channel: 0,
+              multiple: 1,
+              lengthFrames: 4,
+              lanes: [lane(0, 'track0_lane0_L0.wav')],
+            ),
+          ],
+          // The FX decoder handles bare-array payloads independently of
+          // the schema-8 manifest reader.
+          laneChains: [
+            SessionLaneChain(
+              channel: 0,
+              lane: 0,
+              encoded: encodeTrackEffects([
+                BuiltInEffect(type: TrackEffectType.drive),
+              ]),
+            ),
+          ],
+        ),
+        heardStems: const <(int, int), List<Float32List>>{},
+        laneStems: {
+          (0, 0): [pcm],
+        },
+      );
 
-        final rig = rigFromBundle(bundle);
+      final rig = rigFromBundle(bundle);
 
-        expect(rig.trackChains, isEmpty);
-        expect(rig.outputChains, isEmpty);
-        // The lane it DID describe loads enabled at both levels, with no
-        // inheritance marker — and no slot ids yet (the repository mints
-        // those).
-        final loop = rig.laneChains[(0, 0)]!;
-        expect(loop.chainEnabled, isTrue);
-        expect(loop.meta, isNull);
-        final loopFx = loop.entries.single as BuiltInEffect;
-        expect(loopFx.enabled, isTrue);
-        expect(loopFx.slotId, isNull);
-      },
-    );
+      expect(rig.trackChains, isEmpty);
+      expect(rig.outputChains, isEmpty);
+      // The lane it DID describe loads enabled at both levels, with no
+      // inheritance marker — and no slot ids yet (the repository mints
+      // those).
+      final loop = rig.laneChains[(0, 0)]!;
+      expect(loop.chainEnabled, isTrue);
+      expect(loop.meta, isNull);
+      final loopFx = loop.entries.single as BuiltInEffect;
+      expect(loopFx.enabled, isTrue);
+      expect(loopFx.slotId, isNull);
+    });
 
     test('maps every lane that has decoded audio', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
@@ -1360,10 +1351,7 @@ void main() {
       final rig = rigFromBundle(bundle);
       expect(
         [for (final t in rig.tracks) (t.channel, t.reversed)],
-        [
-          (0, true),
-          (1, false),
-        ],
+        [(0, true), (1, false)],
       );
     });
 
@@ -1751,10 +1739,7 @@ void main() {
         'recordedLengthFrames': 0,
       };
 
-      expect(
-        jsonEncode(full.forNewLoop().toJson()),
-        jsonEncode(expected),
-      );
+      expect(jsonEncode(full.forNewLoop().toJson()), jsonEncode(expected));
     });
 
     test('rigForNewLoop is the empty rig with every setting and chain', () {

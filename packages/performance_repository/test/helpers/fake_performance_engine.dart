@@ -31,7 +31,7 @@ class _FakeTrack {
 /// persistLiveLanes without the native engine, plus the perf-capture surface
 /// (armed flag, captureDir, forced result codes).
 class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
-  FakePerformanceEngine({this.sampleRate = 48000});
+  new({this.sampleRate = 48000});
 
   // The audition voice (#1178): records what it was asked to play and
   // answers peaks through [peaksOf].

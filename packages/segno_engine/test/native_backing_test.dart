@@ -148,9 +148,8 @@ void main() {
         ),
       );
       // A WAV header with no chunks: damaged.
-      File(
-        '${dir.path}/empty.wav',
-      ).writeAsStringSync('RIFF\x00\x00\x00\x00WAVE');
+      File('${dir.path}/empty.wav')
+          .writeAsStringSync('RIFF\x00\x00\x00\x00WAVE');
       await expectLater(
         NativeAudioDecoder().probe('${dir.path}/empty.wav'),
         throwsA(

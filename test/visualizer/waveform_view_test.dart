@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/visualizer.dart';
 
@@ -104,21 +104,17 @@ void main() {
   });
 
   testWidgets('WaveformWindowApp renders the pushed frame', (tester) async {
-    final frame = ValueNotifier<WaveformFrame>(
-      (
-        samples: Float32List.fromList([0, 1, 0]),
-        progress: 0.2,
-        selectedTrack: '',
-      ),
-    );
+    final frame = ValueNotifier<WaveformFrame>((
+      samples: Float32List.fromList([0, 1, 0]),
+      progress: 0.2,
+      selectedTrack: '',
+    ));
     addTearDown(frame.dispose);
 
     final readout = ValueNotifier(const PerformanceReadout());
     addTearDown(readout.dispose);
 
-    await tester.pumpWidget(
-      WaveformWindowApp(frame: frame, readout: readout),
-    );
+    await tester.pumpWidget(WaveformWindowApp(frame: frame, readout: readout));
     await tester.pump();
 
     expect(find.byType(WaveformView), findsOneWidget);
@@ -161,9 +157,7 @@ void main() {
       paints..rect(
         color: hc
             .waveformColor(LooperMeterState.stopped)
-            .withValues(
-              alpha: 0.18,
-            ),
+            .withValues(alpha: 0.18),
       ),
     );
     expect(
@@ -175,10 +169,7 @@ void main() {
     );
     // The state that made this necessary: waveform and playhead are the same
     // white, so only the gutter separates them.
-    expect(
-      hc.waveformColor(LooperMeterState.stopped),
-      const Color(0xFFFFFFFF),
-    );
+    expect(hc.waveformColor(LooperMeterState.stopped), const Color(0xFFFFFFFF));
   });
 
   testWidgets('the view paints the themed waveform background itself', (
@@ -213,13 +204,11 @@ void main() {
   testWidgets('the window colours its waveform from the pushed readout', (
     tester,
   ) async {
-    final frame = ValueNotifier<WaveformFrame>(
-      (
-        samples: Float32List.fromList([0, 1, 0]),
-        progress: 0,
-        selectedTrack: '',
-      ),
-    );
+    final frame = ValueNotifier<WaveformFrame>((
+      samples: Float32List.fromList([0, 1, 0]),
+      progress: 0,
+      selectedTrack: '',
+    ));
     addTearDown(frame.dispose);
     final readout = ValueNotifier(
       const PerformanceReadout(
@@ -228,9 +217,7 @@ void main() {
     );
     addTearDown(readout.dispose);
 
-    await tester.pumpWidget(
-      WaveformWindowApp(frame: frame, readout: readout),
-    );
+    await tester.pumpWidget(WaveformWindowApp(frame: frame, readout: readout));
     await tester.pump();
 
     final looper = AppTheme.neon.extension<LooperTheme>()!;

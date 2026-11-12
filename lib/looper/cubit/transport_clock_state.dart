@@ -4,10 +4,7 @@ part of 'transport_clock_cubit.dart';
 /// whether it is counting right now.
 class TransportClockState extends Equatable {
   /// Creates a [TransportClockState].
-  const TransportClockState({
-    this.elapsed = Duration.zero,
-    this.running = false,
-  });
+  const new({this.elapsed = Duration.zero, this.running = false});
 
   /// Time the transport has spent running (monotonic — see
   /// [TransportClockCubit]'s stopwatch rationale), truncated to whole seconds

@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/loop_settings_feedback_cubit.dart';
@@ -45,11 +45,7 @@ _RecordingValues _recordingValues(LooperState state) => (
 /// banner, which moves the layout down under it.
 class LoopRecordingPage extends StatefulWidget {
   /// Creates a [LoopRecordingPage] showing [track]'s fields.
-  const LoopRecordingPage({
-    required this.track,
-    required this.onTrack,
-    super.key,
-  });
+  const new({required this.track, required this.onTrack, super.key});
 
   /// The selected channel, or `null` for the defaults; shared with the
   /// Playback tab for the visit.
@@ -323,10 +319,7 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
               left: 0,
               top: LoopRecordingPage.noteTop + shift,
               width: half,
-              child: LoopNote(
-                startNote,
-                key: const Key('loop_recording_note'),
-              ),
+              child: LoopNote(startNote, key: const Key('loop_recording_note')),
             ),
             Positioned(
               left: secondLeft,
@@ -393,9 +386,8 @@ class _LoopRecordingPageState extends State<LoopRecordingPage> {
                     Key(fixed ? 'loop_length_bars' : 'loop_length_auto'),
                 selected: bars > 0,
                 enabled: lengthEnabled,
-                onSelected: (fixed) => _setBars(
-                  fixed ? (_lastBars[scope] ?? 4) : 0,
-                ),
+                onSelected: (fixed) =>
+                    _setBars(fixed ? (_lastBars[scope] ?? 4) : 0),
                 width: 392,
                 height: LoopRecordingPage.choiceHeight,
                 fontSize: LoopRecordingPage.choiceFontSize,

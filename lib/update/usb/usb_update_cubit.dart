@@ -21,26 +21,20 @@ const int kUsbUpdateSpareBytes = 64 * 1024 * 1024;
 /// helper, which verifies and stages it exactly as an online update. It then
 /// waits in Ready to install like one.
 class UsbUpdateCubit extends Cubit<UsbUpdateState> {
-  /// Creates a [UsbUpdateCubit]. [takeRunning] says whether a take is
-  /// recording, overdubbing, waiting or counting in; [onlineBusy] whether an
+  /// Creates a [UsbUpdateCubit]. [_takeRunning] says whether a take is
+  /// recording, overdubbing, waiting or counting in; [_onlineBusy] whether an
   /// online update is downloading, or another install is still running;
-  /// [onWorking] hears when a copy or an install starts and ends, so the
-  /// online flow and restart hold off; and [onStaged] runs once a package is
+  /// [_onWorking] hears when a copy or an install starts and ends, so the
+  /// online flow and restart hold off; and [_onStaged] runs once a package is
   /// staged, even if this cubit has closed.
-  UsbUpdateCubit({
-    required StorageRepository storage,
-    required UpdateRepository updates,
-    required bool Function() takeRunning,
-    required bool Function() onlineBusy,
-    required void Function({required bool working}) onWorking,
-    required void Function() onStaged,
-  }) : _storage = storage,
-       _updates = updates,
-       _takeRunning = takeRunning,
-       _onlineBusy = onlineBusy,
-       _onWorking = onWorking,
-       _onStaged = onStaged,
-       super(const UsbUpdateState());
+  new({
+    required this._storage,
+    required this._updates,
+    required this._takeRunning,
+    required this._onlineBusy,
+    required this._onWorking,
+    required this._onStaged,
+  }) : super(const UsbUpdateState());
 
   final StorageRepository _storage;
   final UpdateRepository _updates;
@@ -256,6 +250,6 @@ class UsbUpdateCubit extends Cubit<UsbUpdateState> {
     // A copy in flight stops; an install is RAUC's to finish.
     _cancelled = true;
     await _volumes?.cancel();
-    return super.close();
+    return await super.close();
   }
 }

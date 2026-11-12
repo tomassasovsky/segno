@@ -6,7 +6,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/performance/performance.dart';
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 void main() {
   group(PerformanceCompletionCubit, () {

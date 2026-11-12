@@ -4,10 +4,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class FadeDurations {
   /// Validates and detaches exact millisecond values and Custom membership.
-  factory FadeDurations({
-    int defaultMs = 4000,
-    Map<int, int> overrides = const {},
-  }) {
+  factory({int defaultMs = 4000, Map<int, int> overrides = const {}}) {
     _validateDuration(defaultMs);
     for (final entry in overrides.entries) {
       _validateChannel(entry.key);
@@ -16,10 +13,10 @@ class FadeDurations {
     return FadeDurations._(defaultMs, Map.unmodifiable(overrides));
   }
 
-  const FadeDurations._(this.defaultMs, this.overrides);
+  const new _(this.defaultMs, this.overrides);
 
   /// Decodes a complete record without coercing invalid stored values.
-  factory FadeDurations.fromJson(Object? value) {
+  factory fromJson(Object? value) {
     if (value is! Map<String, dynamic> ||
         value['defaultMs'] is! int ||
         value['overrides'] is! Map<String, dynamic>) {

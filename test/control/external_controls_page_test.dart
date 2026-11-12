@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -46,7 +46,7 @@ import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// A button's Controls panel: the effects and parameters it drives beside its
 /// actions.
@@ -76,12 +76,10 @@ void main() {
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
-    when(() => looper.mixSettingsSnapshot).thenReturn(
-      MixSettingsSnapshot(trackLevels: const {0: 0.4, 1: 1}),
-    );
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsSnapshot)
+        .thenReturn(MixSettingsSnapshot(trackLevels: const {0: 0.4, 1: 1}));
     when(() => looper.laneCount(any())).thenReturn(1);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
     looperStates = StreamController<LooperState>.broadcast();
@@ -92,9 +90,8 @@ void main() {
         status: EngineStatus(sampleRate: 48000),
       ),
     );
-    when(
-      () => looper.allTrackChains(),
-    ).thenReturn(const {0: FxChainEnvelope()});
+    when(() => looper.allTrackChains())
+        .thenReturn(const {0: FxChainEnvelope()});
     when(() => looper.trackEffects(0)).thenReturn([
       BuiltInEffect(
         type: TrackEffectType.drive,
@@ -111,13 +108,11 @@ void main() {
     when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordTimingCaptureLocked).thenReturn(false);
     when(() => looper.recordTimingSettingsSettled).thenReturn(true);
     when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
@@ -130,9 +125,8 @@ void main() {
         trackOverrides: const <int, RecordTiming>{},
       ),
     );
-    when(() => looper.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -156,9 +150,8 @@ void main() {
         quantizeDiv: rememberedDivision,
       ),
     );
-    when(() => looper.settleLengthSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
@@ -167,15 +160,12 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setVolume(any(), channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => looper.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setVolume(any(), channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
   });
 
   setUpAll(() {
@@ -287,17 +277,14 @@ void main() {
     if (jack != null) {
       await control.setPedalSetup(
         control.state.pedalSetup.copyWith(
-          external: ExternalPedalSetup().withJack(
-            PedalCtrlJack.ctrl1,
-            jack,
-          ),
+          external: ExternalPedalSetup().withJack(PedalCtrlJack.ctrl1, jack),
         ),
       );
     }
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
@@ -348,9 +335,8 @@ void main() {
       of: anchor,
       matching: find.byType(GestureDetector),
     );
-    Focus.of(
-      tester.element(gesture.evaluate().isEmpty ? anchor : gesture),
-    ).requestFocus();
+    Focus.of(tester.element(gesture.evaluate().isEmpty ? anchor : gesture))
+        .requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
@@ -382,17 +368,12 @@ void main() {
     expect(find.byKey(const Key('external_press')), findsOneWidget);
   });
 
-  testWidgets('an effect is added through its destination, On', (
-    tester,
-  ) async {
+  testWidgets('an effect is added through its destination, On', (tester) async {
     await pump(tester);
     await openPicker(tester);
     await tap(tester, 'external_pick_${externalControlKey(drive)}');
     await tap(tester, 'external_save');
-    expect(
-      saved().activations.single,
-      const ExternalActivation(target: drive),
-    );
+    expect(saved().activations.single, const ExternalActivation(target: drive));
   });
 
   testWidgets('a removed effect cannot be added from an open picker', (
@@ -423,10 +404,7 @@ void main() {
     );
     Focus.of(
       tester.element(
-        find.descendant(
-          of: rowTile,
-          matching: find.byType(GestureDetector),
-        ),
+        find.descendant(of: rowTile, matching: find.byType(GestureDetector)),
       ),
     ).requestFocus();
     await tester.pump();
@@ -493,9 +471,7 @@ void main() {
     final parameter = saved().parameters.single;
     expect(parameter.active, closeTo(mixerTravelFor(0.4), 1e-9));
     expect(parameter.inactive, closeTo(mixerTravelFor(0.4), 1e-9));
-    verifyNever(
-      () => looper.setVolume(any(), channel: any(named: 'channel')),
-    );
+    verifyNever(() => looper.setVolume(any(), channel: any(named: 'channel')));
   });
 
   for (final (gain, endpoint) in <(double, double)>[(1, 0.5), (0, 0)]) {
@@ -584,9 +560,7 @@ void main() {
 
   testWidgets(
     'Count-in button starts at accepted 2 bars and edits draft only',
-    (
-      tester,
-    ) async {
+    (tester) async {
       await pump(
         tester,
         recordStartSnapshot: RecordStartSnapshot(
@@ -966,9 +940,7 @@ void main() {
     await tester.pumpAndSettle();
     await tap(tester, 'external_save');
     expect(saved().parameters.single.active, closeTo(0.5, 0.02));
-    verifyNever(
-      () => looper.setVolume(any(), channel: any(named: 'channel')),
-    );
+    verifyNever(() => looper.setVolume(any(), channel: any(named: 'channel')));
   });
 
   testWidgets('Escape restores an unfinished button endpoint draft', (
@@ -1170,10 +1142,7 @@ void main() {
     await openPicker(tester);
     await tap(tester, 'external_pick_cancel');
     expect(find.byKey(const Key('external_controls_empty')), findsOneWidget);
-    expect(
-      find.byKey(const Key('external_cancel')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('external_cancel')), findsOneWidget);
   });
 
   testWidgets('Back steps out of the picker before leaving', (tester) async {

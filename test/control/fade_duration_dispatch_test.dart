@@ -45,7 +45,7 @@ class _Engine extends FakeAudioEngine {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('fade-test', 1);
@@ -74,7 +74,7 @@ class _Midi extends MidiDeviceRepository {
 double _travel(int milliseconds) => (milliseconds - 500) / 29500;
 
 class _Rig {
-  _Rig(this.clock, {required ExternalJackSetup jack}) {
+  new(this.clock, {required ExternalJackSetup jack}) {
     engine.nextSnapshot = const EngineSnapshot.initial().copyWith(
       tracks: [
         const TrackSnapshot(
@@ -282,9 +282,7 @@ void main() {
   });
 
   group('Fade duration controller dispatch', () {
-    check('a held MIDI CC applies to the next gesture but saves Released', (
-      r,
-    ) {
+    check('a held MIDI CC applies to the next gesture but saves Released', (r) {
       r
         ..bind(const DefaultFadeTarget())
         ..cc(127);

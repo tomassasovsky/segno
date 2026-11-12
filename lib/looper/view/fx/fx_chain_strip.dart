@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/model/fx_names.dart';
@@ -48,7 +48,7 @@ const double kFxCardArtHeight = 138;
 /// hears.
 class FxChainStrip extends StatelessWidget {
   /// Creates an [FxChainStrip] over [entries].
-  const FxChainStrip({
+  const new({
     required this.entries,
     required this.showPlacement,
     required this.onTogglePower,
@@ -139,7 +139,7 @@ class FxChainStrip extends StatelessWidget {
 /// The space before card [index]: the stage break where the Pre run ends,
 /// and otherwise the plain cable.
 class _ChainGap extends StatelessWidget {
-  const _ChainGap({required this.index, required this.stageBreak});
+  const new({required this.index, required this.stageBreak});
 
   final int index;
 
@@ -169,7 +169,7 @@ class _ChainGap extends StatelessWidget {
 /// dims it. Bypassed is drawn, not hidden — a chain reads as a chain whether
 /// or not every link is passing signal.
 class _FxChainCard extends StatelessWidget {
-  const _FxChainCard({
+  const new({
     required this.group,
     required this.showPlacement,
     required this.assignedTo,
@@ -202,9 +202,7 @@ class _FxChainCard extends StatelessWidget {
         color: lit ? surface.accentSurface : surface.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: lit ? surface.accent : surface.borderSubtle,
-          ),
+          side: BorderSide(color: lit ? surface.accent : surface.borderSubtle),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -247,7 +245,7 @@ const double _kStatusHeight = 28;
 
 /// The Pre/Post tag of a group, as both cards print it.
 class _PlacementTag extends StatelessWidget {
-  const _PlacementTag({required this.placement});
+  const new({required this.placement});
 
   final FxPlacement placement;
 
@@ -269,7 +267,7 @@ class _PlacementTag extends StatelessWidget {
 /// controls acting on the rack or its effects (#1760), and the status line
 /// carrying its pedal count and its power.
 class _RackCardBody extends StatelessWidget {
-  const _RackCardBody({
+  const new({
     required this.group,
     required this.showPlacement,
     required this.assignedTo,
@@ -358,7 +356,7 @@ class _RackCardBody extends StatelessWidget {
 /// the card carries it for a screen reader. An effect with no pedal (a plugin)
 /// prints its name under the app's mark instead.
 class _SingleCardBody extends StatelessWidget {
-  const _SingleCardBody({
+  const new({
     required this.group,
     required this.showPlacement,
     required this.assignedTo,
@@ -435,12 +433,7 @@ class _SingleCardBody extends StatelessWidget {
 /// which has no asset bundle at all.
 class FxRackArt extends StatelessWidget {
   /// Creates an [FxRackArt].
-  const FxRackArt({
-    required this.slug,
-    required this.lit,
-    this.pedal,
-    super.key,
-  });
+  const new({required this.slug, required this.lit, this.pedal, super.key});
 
   /// The catalogue artwork slug, or `null` for a single effect.
   final String? slug;
@@ -483,7 +476,7 @@ class FxRackArt extends StatelessWidget {
 
 /// The app's own mark, drawn where a group has no rack artwork.
 class _FallbackMark extends StatelessWidget {
-  const _FallbackMark({required this.lit});
+  const new({required this.lit});
 
   /// Whether the group is audible.
   final bool lit;
@@ -505,7 +498,7 @@ class _FallbackMark extends StatelessWidget {
 /// has no pedal to print its name. The card's label already names it for a
 /// screen reader.
 class _NamedFallbackMark extends StatelessWidget {
-  const _NamedFallbackMark({required this.name, required this.lit});
+  const new({required this.name, required this.lit});
 
   /// The effect's name.
   final String name;
@@ -542,7 +535,7 @@ class _NamedFallbackMark extends StatelessWidget {
 /// A card's assignment line (#1757, #1760): what the controls acting on the
 /// effect or the rack are called, on one line, aligned to the start.
 class _AssignmentLine extends StatelessWidget {
-  const _AssignmentLine({required this.assignedTo});
+  const new({required this.assignedTo});
 
   /// What the controls are called, or none.
   final List<String> assignedTo;
@@ -587,7 +580,7 @@ String fxGroupName(AppLocalizations l10n, FxChainGroup group) =>
 /// else: the duplicate Off/On parameter row the earlier study drew is exactly
 /// what this replaces.
 class _PowerButton extends StatelessWidget {
-  const _PowerButton({
+  const new({
     required this.on,
     required this.name,
     required this.onTap,

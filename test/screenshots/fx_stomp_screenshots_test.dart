@@ -1,10 +1,10 @@
 @Tags(['screenshots'])
 library;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';

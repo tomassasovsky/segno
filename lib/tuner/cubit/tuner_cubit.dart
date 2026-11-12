@@ -22,18 +22,15 @@ part 'tuner_state.dart';
 /// snap back to "no signal" between picks — the reading is what the player
 /// last played, until it is old enough not to be.
 class TunerCubit extends Cubit<TunerState> {
-  /// Creates a [TunerCubit] following [repository] and [settings].
-  TunerCubit({
-    required LooperRepository repository,
-    required TunerSettings settings,
-  }) : _repository = repository,
-       _settings = settings,
-       super(
-         TunerState(
-           input: settings.live.input < 0 ? 0 : settings.live.input,
-           referenceHz: settings.live.referenceHz,
-         ),
-       ) {
+  /// Creates a [TunerCubit] following [_repository] and [settings].
+  new({required this._repository, required TunerSettings settings})
+    : _settings = settings,
+      super(
+        TunerState(
+          input: settings.live.input < 0 ? 0 : settings.live.input,
+          referenceHz: settings.live.referenceHz,
+        ),
+      ) {
     _subscription = _repository.looperState.listen(_onLooperState);
     _settingsSubscription = _settings.changes.listen(_onPreferences);
   }

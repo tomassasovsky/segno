@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/alias_rename_result.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/outputs_cubit.dart';
@@ -31,7 +31,7 @@ enum RoutingNames {
 /// says.
 class RoutingNamesList extends StatelessWidget {
   /// Creates a [RoutingNamesList].
-  const RoutingNamesList({required this.side, super.key});
+  const new({required this.side, super.key});
 
   /// Which side is being named.
   final RoutingNames side;
@@ -168,7 +168,7 @@ class RoutingNamesList extends StatelessWidget {
 
 /// The pen's `route:rename:*` row: a port, what it is called, and Rename.
 class _NameRow extends StatelessWidget {
-  const _NameRow({
+  const new({
     required this.port,
     required this.name,
     required this.named,

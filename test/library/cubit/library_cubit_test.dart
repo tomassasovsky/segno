@@ -11,9 +11,9 @@ import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:session_repository/session_repository.dart';
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
 class _FakeVolumes implements RemovableVolumes {
   final controller = StreamController<List<RemovableVolume>>.broadcast();
@@ -75,9 +75,7 @@ void main() {
       pedal = _MockPedalRepository();
       when(() => pedal.events).thenAnswer((_) => events.stream);
       sessions = _MockSessionRepository();
-      when(
-        () => sessions.readPreview(any()),
-      ).thenAnswer(
+      when(() => sessions.readPreview(any())).thenAnswer(
         (call) async => _preview(call.positionalArguments.first as String),
       );
       volumes = _FakeVolumes();
@@ -145,9 +143,8 @@ void main() {
       'a read in flight when the selection is cleared never lands',
       () async {
         final slow = Completer<SessionPreview>();
-        when(
-          () => sessions.readPreview('s-slow'),
-        ).thenAnswer((_) => slow.future);
+        when(() => sessions.readPreview('s-slow'))
+            .thenAnswer((_) => slow.future);
         final cubit = build();
         addTearDown(cubit.close);
 
@@ -163,9 +160,9 @@ void main() {
 
     blocTest<LibraryCubit, LibraryState>(
       'a newer-schema preview reads as unsupportedVersion',
-      setUp: () => when(() => sessions.readPreview('s-new')).thenThrow(
-        const SessionUnsupportedVersion(version: 99, supported: 11),
-      ),
+      setUp: () => when(
+        () => sessions.readPreview('s-new'),
+      ).thenThrow(const SessionUnsupportedVersion(version: 99, supported: 11)),
       build: build,
       act: (cubit) => cubit.select('s-new'),
       skip: 1,
@@ -199,9 +196,9 @@ void main() {
 
     blocTest<LibraryCubit, LibraryState>(
       'a preview that does not decode reads as unreadable',
-      setUp: () => when(
-        () => sessions.readPreview('s-bad'),
-      ).thenThrow(const FormatException('bad')),
+      setUp: () =>
+          when(() => sessions.readPreview('s-bad'))
+              .thenThrow(const FormatException('bad')),
       build: build,
       act: (cubit) => cubit.select('s-bad'),
       skip: 1,
@@ -230,9 +227,8 @@ void main() {
     });
 
     test('a new selection clears the previous error', () async {
-      when(
-        () => sessions.readPreview('s-bad'),
-      ).thenThrow(const FormatException('bad'));
+      when(() => sessions.readPreview('s-bad'))
+          .thenThrow(const FormatException('bad'));
       final cubit = build();
       addTearDown(cubit.close);
 
@@ -355,29 +351,26 @@ void main() {
         });
       }
 
-      test(
-        "plays the selected session's preview and follows its progress",
-        () {
-          reports = [
-            const AuditionState(frames: 480000, position: 4800, outputs: 0x3),
-          ];
-          listening((async, cubit) {
-            verify(
-              () => sessions.startAudition(
-                's-a',
-                stillWanted: any(named: 'stillWanted'),
-              ),
-            ).called(1);
-            expect(cubit.state.listen?.id, 's-a');
-            expect(cubit.state.listen?.frames, 480000);
-            expect(cubit.state.listen?.truncated, isTrue);
-            expect(cubit.state.listen?.sampleRate, 48000);
+      test("plays the selected session's preview and follows its progress", () {
+        reports = [
+          const AuditionState(frames: 480000, position: 4800, outputs: 0x3),
+        ];
+        listening((async, cubit) {
+          verify(
+            () => sessions.startAudition(
+              's-a',
+              stillWanted: any(named: 'stillWanted'),
+            ),
+          ).called(1);
+          expect(cubit.state.listen?.id, 's-a');
+          expect(cubit.state.listen?.frames, 480000);
+          expect(cubit.state.listen?.truncated, isTrue);
+          expect(cubit.state.listen?.sampleRate, 48000);
 
-            async.elapse(poll);
-            expect(cubit.state.listen?.position, 4800);
-          });
-        },
-      );
+          async.elapse(poll);
+          expect(cubit.state.listen?.position, 4800);
+        });
+      });
 
       test('ends when the engine no longer plays it: the end, a performance '
           'arm or a device reopen', () {
@@ -707,12 +700,7 @@ void main() {
               sampleRate: 44100,
             ),
           );
-          when(
-            () => sessions.readPeaks(
-              any(),
-              any(),
-            ),
-          ).thenAnswer((call) async {
+          when(() => sessions.readPeaks(any(), any())).thenAnswer((call) async {
             final track = call.positionalArguments[1] as SessionPreviewTrack;
             if (track.channel == 3) throw StateError('unreadable');
             return Float32List.fromList([0.5, 1]);
@@ -724,9 +712,7 @@ void main() {
 
           expect(cubit.state.peaks.keys, [0]);
           expect(cubit.state.peaks[0], [0.5, 1]);
-          verify(
-            () => sessions.readPeaks('s-a', track0),
-          ).called(1);
+          verify(() => sessions.readPeaks('s-a', track0)).called(1);
         },
       );
 
@@ -744,12 +730,10 @@ void main() {
           ),
         );
         final aPeaks = Completer<Float32List?>();
-        when(() => sessions.readPeaks('s-a', any())).thenAnswer(
-          (_) => aPeaks.future,
-        );
-        when(
-          () => sessions.readPeaks('s-b', any()),
-        ).thenAnswer((_) async => Float32List.fromList([0.25]));
+        when(() => sessions.readPeaks('s-a', any()))
+            .thenAnswer((_) => aPeaks.future);
+        when(() => sessions.readPeaks('s-b', any()))
+            .thenAnswer((_) async => Float32List.fromList([0.25]));
         final cubit = build();
         addTearDown(cubit.close);
 
@@ -793,9 +777,7 @@ void main() {
     });
 
     test('Unfiled is the root; a folder chip is that folder', () {
-      expect(ids(const LibraryState(folderFilter: UnfiledSessions())), [
-        's-1',
-      ]);
+      expect(ids(const LibraryState(folderFilter: UnfiledSessions())), ['s-1']);
       expect(ids(const LibraryState(folderFilter: FolderSessions('Gigs'))), [
         's-2',
       ]);
@@ -821,21 +803,20 @@ void main() {
       );
       expect(const LibraryState().unusableVolume, isNull);
       expect(
-        LibraryState(
-          volumes: [drive(RemovableVolumeStatus.unsupported)],
-        ).unusableVolume?.status,
+        LibraryState(volumes: [drive(RemovableVolumeStatus.unsupported)])
+            .unusableVolume
+            ?.status,
         RemovableVolumeStatus.unsupported,
       );
       expect(
-        LibraryState(
-          volumes: [drive(RemovableVolumeStatus.mountFailed)],
-        ).unusableVolume?.status,
+        LibraryState(volumes: [drive(RemovableVolumeStatus.mountFailed)])
+            .unusableVolume
+            ?.status,
         RemovableVolumeStatus.mountFailed,
       );
       expect(
-        LibraryState(
-          volumes: [drive(RemovableVolumeStatus.ejecting)],
-        ).unusableVolume,
+        LibraryState(volumes: [drive(RemovableVolumeStatus.ejecting)])
+            .unusableVolume,
         isNull,
       );
     });

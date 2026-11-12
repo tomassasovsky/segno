@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart'
@@ -15,6 +14,7 @@ import 'package:looper_repository/looper_repository.dart'
         Track,
         TrackState,
         UndoableClear;
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/view/standing_notices.dart';
@@ -29,17 +29,16 @@ import '../../helpers/helpers.dart';
 import '../../helpers/text_fit.dart';
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit {}
+class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit;
 
-class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
+class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit;
 
-class _MockOutputsCubit extends MockCubit<OutputsState>
-    implements OutputsCubit {}
+class _MockOutputsCubit extends MockCubit<OutputsState> implements OutputsCubit;
 
 /// The console's standing conditions as must-act messages (#1562): raised
 /// while they hold, cleared the moment they are over, on whatever screen is
@@ -275,9 +274,8 @@ void main() {
       await tester.tap(
         find.byKey(const Key(AppNoticeId.outputFxWaitingDismiss)),
       );
-      verify(
-        () => looper.add(const LooperOutputFxWaitingDismissed()),
-      ).called(1);
+      verify(() => looper.add(const LooperOutputFxWaitingDismissed()))
+          .called(1);
     });
 
     testWidgets('goes when nothing waits', (tester) async {
@@ -323,9 +321,7 @@ void main() {
       expect(find.text("Vox and Guitar's input chain are off"), findsOneWidget);
     });
 
-    testWidgets('offers the fix, Open effects, beside Dismiss', (
-      tester,
-    ) async {
+    testWidgets('offers the fix, Open effects, beside Dismiss', (tester) async {
       await pump(
         tester,
         looperState: held(const [FxAddress(stage: FxStage.allTracks)]),
@@ -388,9 +384,7 @@ void main() {
       looperStates.add(
         const LooperState(
           status: EngineStatus(isConnected: true),
-          tracks: [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-          ],
+          tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
         ),
       );
       await tester.pump();

@@ -6,7 +6,7 @@ enum LengthEditPhase { pending, applied, refused }
 
 /// One view intent; nullable bars retain the Use default distinction.
 final class LengthEditAttempt extends Equatable {
-  const LengthEditAttempt({
+  const new({
     required this.id,
     required this.channel,
     required this.bars,
@@ -25,7 +25,7 @@ final class LengthEditAttempt extends Equatable {
 
 /// Accepted owner projection plus presentation-only edit acknowledgement.
 final class RecordOptionsViewState extends Equatable {
-  const RecordOptionsViewState({required this.options, this.lengthAttempt});
+  const new({required this.options, this.lengthAttempt});
   final RecordOptions options;
   final LengthEditAttempt? lengthAttempt;
 

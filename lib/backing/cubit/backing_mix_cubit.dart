@@ -13,7 +13,7 @@ part 'backing_mix_state.dart';
 /// dialog. It borrows the owners; closing it never closes them.
 class BackingMixCubit extends Cubit<BackingMixState> {
   /// Follows [settings].
-  BackingMixCubit({required BackingSettings settings})
+  new({required BackingSettings settings})
     : _settings = settings,
       super(_read(settings)) {
     _subscriptions = [
@@ -58,6 +58,6 @@ class BackingMixCubit extends Cubit<BackingMixState> {
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
-    return super.close();
+    return await super.close();
   }
 }

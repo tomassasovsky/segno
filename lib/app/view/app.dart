@@ -7,12 +7,12 @@ import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:instrument_repository/instrument_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -78,7 +78,7 @@ class App extends StatefulWidget {
   /// The repositories and [waveformWindow] are injected so tests can supply
   /// fakes / a no-op window service instead of the native device and the
   /// link to the Track display.
-  const App({
+  const new({
     required this.repository,
     required this.controllerRepository,
     required this.midiDeviceRepository,
@@ -657,9 +657,8 @@ class _AppState extends State<App> {
           // The stage footer's `OUT` readout, refreshed four times a second
           // rather than on every 16 ms engine poll (#1301).
           BlocProvider(
-            create: (context) => OutputLevelCubit(
-              repository: context.read<LooperRepository>(),
-            ),
+            create: (context) =>
+                OutputLevelCubit(repository: context.read<LooperRepository>()),
           ),
           // Beside the track names and for the same reason: an input is called
           // what the player calls it on every surface that shows one — the
@@ -799,9 +798,8 @@ class _AppState extends State<App> {
           // there) — the cubits know nothing of each other.
           BlocProvider(
             lazy: false,
-            create: (context) => PedalCubit(
-              pedal: context.read<PedalRepository>(),
-            ),
+            create: (context) =>
+                PedalCubit(pedal: context.read<PedalRepository>()),
           ),
           // The console LEDs' brightness (#1564), Manual or following the
           // light sensor. Eager: it sends the board its level from launch.
@@ -884,7 +882,7 @@ class _AppState extends State<App> {
 /// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
 /// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
-  const _AppView({required this.waveformWindow});
+  const new({required this.waveformWindow});
 
   final WaveformWindowService waveformWindow;
 
@@ -1165,9 +1163,7 @@ class _AppViewState extends State<_AppView> {
   Future<void> _bootstrapWindow() async {
     await context.read<WaveformWindowCubit>().load();
     if (!mounted) return;
-    _display.start(
-      enabled: context.read<WaveformWindowCubit>().state.enabled,
-    );
+    _display.start(enabled: context.read<WaveformWindowCubit>().state.enabled);
   }
 
   void _syncWindow() => _display.setEnabled(
@@ -1562,7 +1558,7 @@ class _AppViewState extends State<_AppView> {
           ? AppTheme.highContrast
           : AppTheme.neon,
       highContrastTheme: AppTheme.highContrast,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localizationsDelegates: appLocalizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: const LooperPage(),
       debugShowCheckedModeBanner: false,

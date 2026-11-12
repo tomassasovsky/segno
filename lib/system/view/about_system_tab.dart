@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_rename_sheet.dart';
@@ -27,7 +27,7 @@ import 'package:segno/update/cubit/update_cubit.dart';
 /// each row declaring it.
 class AboutSystemTab extends StatefulWidget {
   /// Creates an [AboutSystemTab].
-  const AboutSystemTab({super.key});
+  const new({super.key});
 
   @override
   State<AboutSystemTab> createState() => _AboutSystemTabState();
@@ -269,7 +269,7 @@ typedef _FactRow = ConsoleRow Function({required bool last});
 /// next rig.
 class _FactCard extends StatelessWidget {
   // A card with no rows is a 2px line: the caller leaves the group out.
-  const _FactCard({required this.rows})
+  const new({required this.rows})
     : assert(rows.length > 0, 'a fact card needs at least one row');
 
   final List<_FactRow> rows;

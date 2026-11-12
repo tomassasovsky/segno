@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// the rig is, and the accepted design gives it the room.
 class ExpressionDestinationPicker extends StatelessWidget {
   /// Creates an [ExpressionDestinationPicker].
-  const ExpressionDestinationPicker({
+  const new({
     required this.destinations,
     required this.kind,
     required this.onKind,
@@ -119,7 +119,7 @@ class ExpressionDestinationPicker extends StatelessWidget {
 
 /// One destination: its name and a chevron, opening its controls.
 class _DestinationRow extends StatelessWidget {
-  const _DestinationRow({required this.destination, required this.onOpen});
+  const new({required this.destination, required this.onOpen});
 
   final ExpressionDestination destination;
   final ValueChanged<ExpressionDestination> onOpen;
@@ -178,7 +178,7 @@ class _DestinationRow extends StatelessWidget {
 /// Pick a control on one destination.
 class ExpressionControlPicker extends StatelessWidget {
   /// Creates an [ExpressionControlPicker].
-  const ExpressionControlPicker({
+  const new({
     required this.destination,
     required this.taken,
     required this.onPick,
@@ -258,7 +258,7 @@ class ExpressionControlPicker extends StatelessWidget {
 
 /// One control a pedal can sweep: its art, its name, and whether it is taken.
 class _ControlButton extends StatelessWidget {
-  const _ControlButton({
+  const new({
     required this.control,
     required this.already,
     required this.onPick,
@@ -369,7 +369,7 @@ class _ControlButton extends StatelessWidget {
 
 /// Keeps the track beside the content and visible while lists are scrolled.
 class _PickerScroll extends StatefulWidget {
-  const _PickerScroll({required this.builder});
+  const new({required this.builder});
 
   final Widget Function(ScrollController) builder;
 

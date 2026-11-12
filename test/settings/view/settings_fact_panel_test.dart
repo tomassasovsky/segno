@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/settings/view/settings_fact_panel.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -149,10 +149,7 @@ void main() {
     final chevrons = find.byType(Icon);
     expect(chevrons, findsNWidgets(2));
     for (var i = 0; i < 2; i++) {
-      expect(
-        tester.getRect(chevrons.at(i)).right,
-        moreOrLessEquals(right),
-      );
+      expect(tester.getRect(chevrons.at(i)).right, moreOrLessEquals(right));
     }
     // The value sits just before its chevron, not mid-card.
     final chevronLeft = tester.getRect(chevrons.last).left;

@@ -48,11 +48,7 @@ void main() {
         ),
       );
       final measured = repository.measureRender(
-        render.copyWith(
-          lengthBars: 2,
-          tails: RenderTailRule.cut,
-          mixFx: true,
-        ),
+        render.copyWith(lengthBars: 2, tails: RenderTailRule.cut, mixFx: true),
         maxFrames: 200000,
       );
       expect(measured.result, EngineResult.ok);
