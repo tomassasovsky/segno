@@ -8,9 +8,13 @@
 #
 # There is no Flutter desktop runner. `flutter assemble` runs the same target
 # `flutter build linux` would have run for these files
-# (release_bundle_linux-arm64_assets), and the engine builds from its own CMake
-# project (packages/segno_engine/src), as the FFI plugin build did. The
-# embedder, its engine library and icudtl.dat come from the image.
+# (release_bundle_linux-arm64_assets). That target runs the build hooks, so
+# segno_engine's hook (packages/segno_engine/hook/build.dart) builds the audio
+# engine from its CMake project, and the target writes
+# flutter_assets/NativeAssetsManifest.json, which maps the engine's `@Native`
+# bindings to libsegno_engine.so. The engine resolves that name through the
+# loader's path: segno-kiosk-launch puts /opt/segno/lib on it. The embedder,
+# its engine library and icudtl.dat come from the image.
 #
 #   --keep-dart-symbols   keep the AOT snapshot's symbol table (gen_snapshot
 #                         --no-strip), so segno-prof can name Dart frames on
@@ -65,16 +69,19 @@ flutter assemble --no-version-check --output="$work/app" \
   "${mode}_bundle_linux-arm64_assets"
 cp -R "$work/app/flutter_assets" "$out/data/"
 cp "$work/app/lib/libapp.so" "$out/lib/"
+# The code asset the hook built, installed by the target with the name the
+# manifest gives it.
+cp "$work/app/native_assets/linux/libsegno_engine.so" "$out/lib/"
+grep -q '"package:segno_engine/segno_engine":\["absolute","libsegno_engine.so"\]' \
+  "$out/data/flutter_assets/NativeAssetsManifest.json" || {
+  echo "segno-build: NativeAssetsManifest.json does not map segno_engine to libsegno_engine.so:" >&2
+  cat "$out/data/flutter_assets/NativeAssetsManifest.json" >&2
+  exit 1
+}
 # The Flutter tool still writes its desktop-runner scaffolding (the plugin
 # registrant and the GTK engine) under linux/flutter for a linux target. The
 # repo has no Linux runner, and nothing here reads it.
 rm -rf linux
-
-echo "==> Audio engine: packages/segno_engine/src (Release, clang)"
-CC=clang CXX=clang++ cmake -S packages/segno_engine/src -B "$work/engine" \
-  -G Ninja -DCMAKE_BUILD_TYPE=Release
-ninja -C "$work/engine" segno_engine
-cp "$work/engine/libsegno_engine.so" "$out/lib/"
 
 if [ "$mode" = profile ]; then
   pin=deploy/yocto/meta-segno/recipes-graphics/flutter-engine/flutter-engine-version.inc

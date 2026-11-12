@@ -70,6 +70,9 @@ jobs:
     with:
       flutter_version: "3.50.x"
       run_bloc_lint: true
+      # segno_engine's build hook compiles the engine for `flutter test`; its
+      # Linux MIDI backend needs the ALSA headers (#1783).
+      setup: sudo apt-get update && sudo apt-get install -y libasound2-dev
       # format_directories/analyze_directories default to "lib test", which
       # only covers the root app. Glob in every package's lib/ + test/ too, so
       # `dart format --set-exit-if-changed` and `flutter analyze` actually gate
@@ -108,6 +111,13 @@ jobs:
           flutter-version: "3.50.x"
           channel: stable
           cache: true
+      # segno_engine's build hook compiles the engine for every flutter test
+      # run; its Linux MIDI backend needs the ALSA headers (#1783).
+      - name: Install the ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
+          version: "1"
       - name: Resolve the app's and every package's dependencies
         run: |
           dart pub global activate very_good_cli 1.5.0
@@ -154,6 +164,13 @@ jobs:
           flutter-version: "3.50.x"
           channel: stable
           cache: true
+      # segno_engine's build hook compiles the engine for every flutter test
+      # run; its Linux MIDI backend needs the ALSA headers (#1783).
+      - name: Install the ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
+          version: "1"
       - name: Resolve the app's dependencies
         id: pub-get
         run: flutter pub get
@@ -447,8 +464,6 @@ jobs:
       # the console, not from CI.
       - name: Smoke-run the multi-core effects spike
         run: bash packages/segno_engine/src/test/bench/bench_fx_parallel.sh --smoke --chains 2 --workers 1
-      - name: Check macOS forwarder wiring
-        run: bash packages/segno_engine/tool/test/run_macos_forwarder_wiring_tests.sh
       - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)
         run: bash firmware/test/run_tests.sh
 
@@ -695,12 +710,17 @@ jobs:
           flutter-version: "3.50.x"
           channel: stable
           cache: true
-      - name: Build the engine test library
-        run: |
-          set -eu
-          engine_test_lib=$(bash packages/segno_engine/tool/build_test_lib.sh)
-          test -s "$engine_test_lib"
-          echo "SEGNO_ENGINE_LIB=$engine_test_lib" >> "$GITHUB_ENV"
+      # segno_engine's build hook compiles the engine for every flutter test
+      # run; its Linux MIDI backend needs the ALSA headers (#1783).
+      - name: Install the ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
+          version: "1"
+      # The library is the code asset each flutter test run builds; the
+      # variable only opts the native-backed suites in (#1783).
+      - name: Opt in to the native-backed suites
+        run: echo "SEGNO_ENGINE_LIB=hook" >> "$GITHUB_ENV"
       - name: Run the control-sequence fuzzer
         run: |
           flutter pub get
@@ -709,14 +729,12 @@ jobs:
       # session file. The ordinary app job skips them without the native library.
       - name: Run the native-backed shared control session tests
         run: |
-          test -s "$SEGNO_ENGINE_LIB"
           flutter test test/session/record_timing_persistence_test.dart test/session/click_persistence_test.dart test/session/record_start_persistence_test.dart
       # Root tests do not traverse package test directories. Exercise the Dart
       # engine bridge here against the same native library built above.
       - name: Run the segno_engine package tests
         working-directory: packages/segno_engine
         run: |
-          test -s "$SEGNO_ENGINE_LIB"
           flutter pub get
           flutter test
       # The looper_repository fingerprint agreement suite (R16) is fuzz-tagged
@@ -734,14 +752,12 @@ jobs:
       - name: Run the backing_repository native tests
         working-directory: packages/backing_repository
         run: |
-          test -s "$SEGNO_ENGINE_LIB"
           flutter pub get
           flutter test --tags fuzz
       # instrument_repository's native case (#1197) is fuzz-tagged too.
       - name: Run the instrument_repository native tests
         working-directory: packages/instrument_repository
         run: |
-          test -s "$SEGNO_ENGINE_LIB"
           flutter pub get
           flutter test --tags fuzz
 

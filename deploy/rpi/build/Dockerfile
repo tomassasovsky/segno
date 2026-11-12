@@ -15,8 +15,8 @@
 FROM ubuntu:24.04
 
 # No GTK and no Flutter desktop runner: the app is built with `flutter
-# assemble` and the audio engine with its own CMake project. clang, cmake,
-# ninja and the ALSA headers are for the engine.
+# assemble`, whose build hooks build the audio engine with its CMake project.
+# clang, cmake, ninja and the ALSA headers are for the engine.
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ninja-build libasound2-dev clang cmake pkg-config \

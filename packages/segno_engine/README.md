@@ -113,15 +113,19 @@ Every `src/` subdirectory that holds headers is on the compiler include path
 
 ## Building
 
-The plugin builds as part of `flutter run` and `flutter build` on macOS and
-Linux. C11 is required for `<stdatomic.h>`.
+The engine is this package's code asset. `hook/build.dart` builds
+`src/CMakeLists.txt` with CMake whenever Dart code that uses the package is
+built: `flutter run`, `flutter build`, `flutter test`, and the appliance's
+`flutter assemble`. The bindings are `@Native` externals, so there is no
+library to open, in any isolate. It needs CMake, a C11 compiler and, on Linux,
+the ALSA headers (`libasound2-dev`).
 
-- **macOS:** Swift Package Manager (`macos/segno_engine/Package.swift`), with
-  `macos/segno_engine.podspec` as the CocoaPods fallback. Uses CoreAudio and
-  builds plugin hosting.
-- **Linux:** `linux/CMakeLists.txt` adds `src/CMakeLists.txt`. On the
-  appliance the engine uses ALSA only; on a desktop it prefers JACK, then
-  PulseAudio, then ALSA.
+- **macOS:** builds plugin hosting and links CoreAudio, CoreMIDI and AppKit.
+  Flutter bundles the library as `segno_engine.framework`.
+- **Linux:** plugin hosting is off. On the appliance the engine uses ALSA
+  only; on a desktop it prefers JACK, then PulseAudio, then ALSA. The bundle
+  maps the bindings to `libsegno_engine.so` by name, so the loader's path has
+  to include the bundle's `lib/` (`segno-kiosk-launch` sets it).
 
 ### Regenerate FFI bindings
 
@@ -133,7 +137,7 @@ dart run tool/ffigen.dart
 
 `tool/ffigen.dart` is the configuration. ffigen needs `libclang` (it ships
 with Xcode and LLVM) and formats its output itself.
-`tool/check_ffi_symbols.sh` checks that every symbol the bindings look up is
+`tool/check_ffi_symbols.sh` checks that every symbol the bindings name is
 exported by a built `libsegno_engine.so`.
 
 ### Run the native tests
@@ -158,12 +162,12 @@ sync when adding a file. CI also runs it with
 flutter test
 ```
 
-Tests tagged `fuzz` drive the real engine through `PumpedNativeEngine` and
-skip unless a test build of the library is available:
+`flutter test` builds the library through the hook. Tests tagged `fuzz`
+drive the real engine through `PumpedNativeEngine`; they still skip unless
+`SEGNO_ENGINE_LIB` is set (to any value):
 
 ```sh
-export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
-flutter test --tags fuzz
+SEGNO_ENGINE_LIB=hook flutter test --tags fuzz
 ```
 
 ## Usage

@@ -33,20 +33,19 @@ void main() {
   test(
     'every built-in parameter matches le_fx_param_info field by field',
     () {
-      final bindings = SegnoEngineBindings(DynamicLibrary.open(lib!));
       final desc = calloc<le_fx_param_desc>();
       addTearDown(() => calloc.free(desc));
       for (final type in TrackEffectType.values) {
         final params = type.params;
         expect(
-          bindings.le_fx_param_count(type.code),
+          le_fx_param_count(type.code),
           params.length,
           reason: type.name,
         );
         for (var i = 0; i < params.length; i++) {
           final p = params[i];
           final reason = '${type.name}[$i]';
-          expect(bindings.le_fx_param_info(type.code, i, desc), 0);
+          expect(le_fx_param_info(type.code, i, desc), 0);
           final native = desc.ref;
           expect(
             readNativeString(native.key, capacity: LE_FX_PARAM_KEY_CHARS),
@@ -76,15 +75,15 @@ void main() {
         }
         // One past the last parameter is refused.
         expect(
-          bindings.le_fx_param_info(type.code, params.length, desc),
+          le_fx_param_info(type.code, params.length, desc),
           isNot(0),
           reason: type.name,
         );
       }
       // A hosted plugin has no fixed parameters; an unknown type is refused.
-      expect(bindings.le_fx_param_count(kPluginFxCode), 0);
+      expect(le_fx_param_count(kPluginFxCode), 0);
       final last = TrackEffectType.values.map((t) => t.code).reduce(math.max);
-      expect(bindings.le_fx_param_count(last + 1), lessThan(0));
+      expect(le_fx_param_count(last + 1), lessThan(0));
     },
     skip: skip,
   );

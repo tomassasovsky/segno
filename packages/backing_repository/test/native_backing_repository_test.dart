@@ -71,7 +71,7 @@ void main() {
       );
       final source = writeWav('Evening lights.wav', 1000);
       final asset = await store.import(source);
-      final native = NativeStorageIo().digestFile(source) as FileDigested;
+      final native = const NativeStorageIo().digestFile(source) as FileDigested;
       expect(asset.digest, 'sha256:${native.sha256}');
       expect(asset.sourceFrames, 1000);
       expect(asset.peaks.last, left(999));

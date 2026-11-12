@@ -1,37 +1,12 @@
 @Tags(['fuzz'])
 library;
 
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
-import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
-
-/// Observes the real callback before the device-free pump frees its buffers.
-class _OutputBindings extends SegnoEngineBindings {
-  _OutputBindings(super.dynamicLibrary);
-
-  Float32List output = Float32List(0);
-
-  @override
-  // Native binding names are fixed by the generated FFI interface.
-  // ignore: non_constant_identifier_names
-  void le_engine_process(
-    Pointer<le_engine> engine,
-    Pointer<Float> output,
-    Pointer<Float> input,
-    int frames,
-  ) {
-    super.le_engine_process(engine, output, input, frames);
-    if (frames > 0) {
-      // Every test configures two outputs. Copy, rather than retain the view.
-      this.output = Float32List.fromList(output.asTypedList(frames * 2));
-    }
-  }
-}
 
 void main() {
   final library = Platform.environment['SEGNO_ENGINE_LIB'];
@@ -39,7 +14,8 @@ void main() {
   group(
     '$LooperRepository Foot Mixer native isolation',
     () {
-      late _OutputBindings bindings;
+      // Each pumped block's interleaved stereo output (512 frames).
+      final output = Float32List(1024);
       late PumpedNativeEngine engine;
       late LooperRepository repository;
 
@@ -49,18 +25,16 @@ void main() {
       }
 
       void expectStereo({required double left, required double right}) {
-        expect(bindings.output, hasLength(1024));
+        expect(output, hasLength(1024));
         expect(
           [
-            for (var frame = 0; frame < 512; frame++)
-              bindings.output[frame * 2],
+            for (var frame = 0; frame < 512; frame++) output[frame * 2],
           ],
           everyElement(closeTo(left, 1e-6)),
         );
         expect(
           [
-            for (var frame = 0; frame < 512; frame++)
-              bindings.output[frame * 2 + 1],
+            for (var frame = 0; frame < 512; frame++) output[frame * 2 + 1],
           ],
           everyElement(closeTo(right, 1e-6)),
         );
@@ -82,13 +56,13 @@ void main() {
         );
         await settleMix();
         // The Play fades the loop in over 480 frames (#1400).
-        engine.pump();
+        engine.pump(output: output);
         expect(repository.state.tracks[1].state, TrackState.playing);
       }
 
       setUp(() async {
-        bindings = _OutputBindings(DynamicLibrary.open(library!));
-        engine = PumpedNativeEngine(bindings: bindings);
+        output.fillRange(0, output.length, 0);
+        engine = PumpedNativeEngine();
         repository = LooperRepository(
           engine: engine,
           ticker: const Stream<void>.empty(),
@@ -174,7 +148,7 @@ void main() {
                 repository.setMonitorMute(input: 0, muted: segment.muted),
                 EngineResult.ok,
               );
-              engine.pump(input: .25);
+              engine.pump(input: .25, output: output);
               expect(repository.state.tracks[0].state, TrackState.recording);
               expect(repository.inputSetup, inputSetup);
               expect(repository.monitorEffects(0), effects);
@@ -188,7 +162,7 @@ void main() {
             // The existing defining-take seam consumes a 480-frame overlap
             // without extending the 2560-frame take. Keep the same input in
             // that overlap; assert the entire exported take, not a crop.
-            engine.pump(input: .25);
+            engine.pump(input: .25, output: output);
             expect(repository.state.tracks[0].state, TrackState.stopped);
             final captured = engine.exportTrackLane(0, 0);
             expect(captured, hasLength(2560));
@@ -226,7 +200,7 @@ void main() {
               repository.setMonitorMute(input: 0, muted: segment.muted),
               EngineResult.ok,
             );
-            engine.pump(input: .25);
+            engine.pump(input: .25, output: output);
             expectStereo(left: segment.output, right: .125);
             expect(repository.state.tracks[1].state, TrackState.playing);
             expect(engine.exportTrackLane(1, 0), recorded);
@@ -241,7 +215,7 @@ void main() {
               EngineResult.ok,
             );
             await settleMix();
-            engine.pump(input: .25);
+            engine.pump(input: .25, output: output);
             expectStereo(left: .125, right: level.output);
             expect(engine.exportTrackLane(1, 0), recorded);
           }
@@ -249,8 +223,8 @@ void main() {
           expect(repository.setMute(channel: 1, muted: true), EngineResult.ok);
           // A mute and an unmute fade over 480 frames (#1400).
           engine
-            ..pump(input: .25)
-            ..pump(input: .25);
+            ..pump(input: .25, output: output)
+            ..pump(input: .25, output: output);
           expectStereo(left: .125, right: 0);
           expect(repository.state.tracks[1].state, TrackState.playing);
           expect(
@@ -259,8 +233,8 @@ void main() {
           );
           expect(repository.setMute(channel: 1, muted: false), EngineResult.ok);
           engine
-            ..pump(input: .25)
-            ..pump(input: .25);
+            ..pump(input: .25, output: output)
+            ..pump(input: .25, output: output);
           expectStereo(left: .125, right: .1875);
           expect(engine.exportTrackLane(1, 0), recorded);
         },
@@ -292,7 +266,7 @@ void main() {
                 EngineResult.ok,
               );
               await settleMix();
-              engine.pump(input: .25);
+              engine.pump(input: .25, output: output);
               expectStereo(left: 0, right: .125);
               expect(repository.monitorMode(0), mode);
               expect(repository.monitorResolved(0), isFalse);

@@ -146,12 +146,13 @@ if(UNIX AND NOT APPLE)
   endif()
 endif()
 
-# The CocoaPods (macOS/iOS) build compiles these sources via the podspec, not
-# CMake, and links CoreMIDI there. This APPLE branch only matters if the engine
-# is ever built through CMake on Apple (e.g. the native test harness).
+# macOS, the development host. The build hook (hook/build.dart) builds this
+# project there too, with plugin hosting on. miniaudio and the MIDI seam need
+# the audio and MIDI frameworks; the plugin editor window needs AppKit.
 if(APPLE)
-  target_link_libraries(segno_engine PRIVATE "-framework CoreMIDI"
-    "-framework CoreFoundation")
+  target_link_libraries(segno_engine PRIVATE
+    "-framework CoreAudio" "-framework AudioToolbox" "-framework AudioUnit"
+    "-framework CoreMIDI" "-framework CoreFoundation")
 endif()
 
 # Compile the stretch shim TU with hidden visibility (#1179): on Linux its
@@ -225,4 +226,16 @@ if(SEGNO_ENABLE_PLUGINS)
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp"
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp"
   )
+  # The editor window (the host's only Objective-C) and the SDK include probe.
+  if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(segno_engine PRIVATE
+      host/plugin_probe.cpp
+      host/native_window_controller.mm
+    )
+    set_source_files_properties(host/native_window_controller.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(segno_engine PRIVATE
+      "-framework AppKit" "-framework Foundation")
+  endif()
 endif()

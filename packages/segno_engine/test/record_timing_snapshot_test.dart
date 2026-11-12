@@ -1,39 +1,17 @@
 @Tags(['fuzz'])
 library;
 
-import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
-import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
-
-/// Runs a real callback between the full snapshot and its first track read.
-class _InterleavedBindings extends SegnoEngineBindings {
-  _InterleavedBindings(super.dynamicLibrary);
-
-  void Function()? betweenReads;
-
-  @override
-  void le_engine_get_track(
-    Pointer<le_engine> engine,
-    int channel,
-    Pointer<le_track_snapshot> out,
-  ) {
-    final callback = betweenReads;
-    betweenReads = null;
-    callback?.call();
-    super.le_engine_get_track(engine, channel, out);
-  }
-}
 
 void main() {
   final path = Platform.environment['SEGNO_ENGINE_LIB'];
   test(
     'one timing snapshot stays coherent across a later native publication',
     () {
-      final bindings = _InterleavedBindings(DynamicLibrary.open(path!));
-      final engine = PumpedNativeEngine(bindings: bindings);
+      final engine = PumpedNativeEngine();
       addTearDown(engine.dispose);
       expect(
         engine.start(
@@ -61,7 +39,7 @@ void main() {
       engine.pump(frames: 0);
       final revision = engine.snapshot().recordTimingRevision;
       var interleaved = false;
-      bindings.betweenReads = () {
+      engine.betweenSnapshotReads = () {
         interleaved = true;
         expect(
           engine.setRecordTimingSettings(

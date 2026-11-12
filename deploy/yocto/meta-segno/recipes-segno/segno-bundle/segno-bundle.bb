@@ -429,7 +429,8 @@ do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL FLUTTER_ENGINE_
 # ships, here, where it costs seconds instead of a bench session.
 segno_check_bundle_engine() {
     bundle="$1"
-    for f in data/flutter_assets lib/libapp.so lib/libsegno_engine.so flutter-version.json; do
+    for f in data/flutter_assets data/flutter_assets/NativeAssetsManifest.json \
+             lib/libapp.so lib/libsegno_engine.so flutter-version.json; do
         [ -e "${bundle}/$f" ] || bbfatal "SEGNO_BUNDLE_DIR=${bundle} has no $f"
     done
     revision=$(sed -n 's/.*"engineRevision"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
