@@ -138,6 +138,8 @@ static const eqv_kind k_kinds[] = {
  * round differently from the reference (within LE_EQV_LIMIT_DB). Every
  * other kind must be bit-identical. */
 static const char* const k_reordered[] = {
+    /* the cabinet's 64 direct taps summed in four vector sums */
+    "ampcab",
     NULL,
 };
 

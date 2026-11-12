@@ -16,6 +16,9 @@
 /* #1718: this unit's chain driver goes to the hot section (engine_hot.h). */
 #define LE_AUDIO_TU 1
 
+#if defined(__aarch64__)
+#include <arm_neon.h> /* vsqrtq_f32 */
+#endif
 #include <math.h>
 #include <pthread.h>
 #include <stddef.h>
@@ -6455,6 +6458,276 @@ static int le_hb_latency(int sr) {
   return le_rs_phases(sr) > 1 ? le_os_latency(le_rs_design_rate(sr), 1) : 0;
 }
 
+/* ---- The oversampler in lanes (#1755) ----
+ *
+ * le_os_path_run runs a path's sections one after another, and le_os_up and
+ * le_os_down run a channel's two paths one after the other: every section
+ * waits for the one before it, and the CPU spends most of the oversampler's
+ * time waiting. The Overdrive and the Distortion run their half-bands in
+ * lanes instead. One four-float vector holds the left channel's A0 and A1
+ * and the right channel's (lanes 0 to 3), so a section is one vector
+ * multiply-add for all four. Each lane does what
+ * le_os_path_run does, in the same order and with the same expression (so a
+ * compiler fuses the same multiply-adds), and the output is bit-identical
+ * to the scalar paths'. When a stage's count is odd, A0 has one section
+ * more than A1: on that section A1's lanes keep their input
+ * (le_lanes.keep). The Amp+Cab is mono: its two paths are one chain of
+ * dependent sections however they are laid out, so it keeps le_os. The
+ * vectors are engine_fx_simd.h's. */
+typedef int32_t le_i4 __attribute__((vector_size(16)));
+#define LE_LANES_MAX ((LE_OS_MAX_COEFS + 1) / 2)
+
+/* Lane by lane, [m]'s lanes from [a], the rest from [b]. */
+static inline le_f4 le_f4_sel(le_i4 m, le_f4 a, le_f4 b) {
+  return (le_f4)((m & (le_i4)a) | (~m & (le_i4)b));
+}
+
+/* One half-band in lanes: section j of A0 and of A1, for both channels. */
+typedef struct le_lanes {
+  le_f4 c[LE_LANES_MAX];
+  le_i4 keep;   /* the lanes that run the last section when [odd] */
+  int32_t full; /* the sections both paths run */
+  int32_t odd;  /* A0 runs one more */
+} le_lanes;
+
+/* Each section's last input and output, per lane. */
+typedef struct le_lanes_state {
+  le_f4 x[LE_LANES_MAX], y[LE_LANES_MAX];
+} le_lanes_state;
+
+/* [d] for the [n] coefficients in [c] (le_os_coefs: even A0, odd A1). */
+static void le_lanes_design(le_lanes* d, const float* c, int n) {
+  memset(d, 0, sizeof(*d));
+  d->full = n / 2;
+  d->odd = n & 1;
+  for (int j = 0; j < (n + 1) / 2; ++j) {
+    const float a0 = c[2 * j];
+    const float a1 = 2 * j + 1 < n ? c[2 * j + 1] : 0.0f;
+    d->c[j] = (le_f4){a0, a1, a0, a1};
+  }
+  d->keep = (le_i4){-1, 0, -1, 0};
+}
+
+/* The [m] samples in [v] through every lane's path, in place: each section
+ * y = c (x - y') + x', as le_os_path_run. The states stay in registers over
+ * the [m] samples; [full] and [odd] are constants where le_lanes_block
+ * calls it, so the sections unroll. */
+static inline void le_lanes_run(const le_lanes* d, le_lanes_state* st,
+                                le_f4* v, int m, const int full,
+                                const int odd) {
+  le_f4 x[LE_LANES_MAX], y[LE_LANES_MAX];
+  for (int j = 0; j < full + odd; ++j) {
+    x[j] = st->x[j];
+    y[j] = st->y[j];
+  }
+  for (int i = 0; i < m; ++i) {
+    le_f4 in = v[i];
+    for (int j = 0; j < full; ++j) {
+      const le_f4 out = d->c[j] * (in - y[j]) + x[j];
+      x[j] = in;
+      y[j] = out;
+      in = out;
+    }
+    if (odd) {
+      const le_f4 out = d->c[full] * (in - y[full]) + x[full];
+      x[full] = in;
+      y[full] = out;
+      in = le_f4_sel(d->keep, out, in);
+    }
+    v[i] = in;
+  }
+  for (int j = 0; j < full + odd; ++j) {
+    st->x[j] = x[j];
+    st->y[j] = y[j];
+  }
+}
+
+static inline void le_lanes_block(const le_lanes* d, le_lanes_state* st,
+                                  le_f4* v, int m) {
+  switch (d->full * 2 + d->odd) {
+    case 3: le_lanes_run(d, st, v, m, 1, 1); break;
+    case 4: le_lanes_run(d, st, v, m, 2, 0); break;
+    case 5: le_lanes_run(d, st, v, m, 2, 1); break;
+    case 6: le_lanes_run(d, st, v, m, 3, 0); break;
+    case 7: le_lanes_run(d, st, v, m, 3, 1); break;
+    case 8: le_lanes_run(d, st, v, m, 4, 0); break;
+    default: le_lanes_run(d, st, v, m, d->full, d->odd); break;
+  }
+}
+
+/* le_os for a pair of channels in lanes: the same design and stages. */
+typedef struct le_os4 {
+  int32_t stages; /* log2 of the factor */
+  le_lanes d[LE_OS_MAX_STAGES];
+  le_lanes_state up[LE_OS_MAX_STAGES], down[LE_OS_MAX_STAGES];
+} le_os4;
+
+/* As le_os_design: designs [o] for 2^[stages] times [sr], state cleared. */
+static void le_os4_design(le_os4* o, int sr, int stages) {
+  memset(o, 0, sizeof(*o));
+  o->stages = stages;
+  for (int s = 0; s < stages; ++s) {
+    float c[LE_OS_MAX_COEFS];
+    le_lanes_design(&o->d[s], c, le_os_coefs(sr, s, c));
+  }
+}
+
+/* The oversampled pair is kept as vectors of two samples a channel:
+ * p[i] = {L(2i), L(2i + 1), R(2i), R(2i + 1)}, i up to 2^stages / 2, which is
+ * what an up stage's sections give for one input and what a down stage's
+ * take for one output (a shuffle apart), so no sample goes through memory
+ * between stages. */
+
+/* As le_os_up for both channels: [l] and [r] up 2^stages times, into [p]
+ * as pairs. Returns how many pairs: with no stages, one, {l, 0, r, 0}. */
+static inline int le_os4_up(le_os4* o, float l, float r, le_f4* p) {
+  if (o->stages == 0) {
+    p[0] = (le_f4){l, 0.0f, r, 0.0f};
+    return 1;
+  }
+  p[0] = (le_f4){l, l, r, r};
+  int m = 1; /* the stage's inputs a channel */
+  for (int s = 0;; ++s) {
+    le_lanes_block(&o->d[s], &o->up[s], p, m);
+    if (s + 1 == o->stages) return m;
+    m *= 2;
+    /* sample 2i is each channel's even output, 2i + 1 its odd one */
+    for (int i = m / 2 - 1; i >= 0; --i) {
+      const le_f4 even = __builtin_shufflevector(p[i], p[i], 0, 0, 2, 2);
+      const le_f4 odd = __builtin_shufflevector(p[i], p[i], 1, 1, 3, 3);
+      p[2 * i] = even;
+      p[2 * i + 1] = odd;
+    }
+  }
+}
+
+/* As le_os_down for both channels: the pairs in [p] (as le_os4_up gave
+ * them; used as scratch) down to one sample each, into [l] and [r]. Each
+ * pair goes in newer sample first (A0 takes it), and comes out as
+ * 0.5 (A0 + A1) per channel. */
+static inline void le_os4_down(le_os4* o, le_f4* p, float* l, float* r) {
+  int m = o->stages > 0 ? 1 << (o->stages - 1) : 1; /* pairs into the stage */
+  /* The paths are recursive: a sample that is not finite would stay in
+   * them, so it goes in as 0 (with no stages, as le_os_down does too). */
+  for (int i = 0; i < m; ++i) p[i] = le_f4_sanitize(p[i]);
+  if (o->stages == 0) {
+    *l = p[0][0];
+    *r = p[0][2];
+    return;
+  }
+  for (int s = o->stages - 1;; --s) {
+    for (int i = 0; i < m; ++i) {
+      p[i] = __builtin_shufflevector(p[i], p[i], 1, 0, 3, 2);
+    }
+    le_lanes_block(&o->d[s], &o->down[s], p, m);
+    for (int i = 0; i < m; ++i) {
+      p[i] = 0.5f * (p[i] + __builtin_shufflevector(p[i], p[i], 1, 0, 3, 2));
+    }
+    if (s == 0) {
+      *l = p[0][0];
+      *r = p[0][2];
+      return;
+    }
+    m /= 2;
+    for (int i = 0; i < m; ++i) {
+      p[i] = __builtin_shufflevector(p[2 * i], p[2 * i + 1], 0, 4, 2, 6);
+    }
+  }
+}
+
+/* le_hb for a pair of channels in lanes. */
+typedef struct le_hb4 {
+  le_lanes d;
+  int32_t n;                 /* 0: nothing to do at this rate */
+  le_lanes_state p[LE_RS_PH]; /* per phase */
+  float a1[2];               /* A1's last output, per channel */
+} le_hb4;
+
+static void le_hb4_design(le_hb4* h, int sr) {
+  memset(h, 0, sizeof(*h));
+  if (le_rs_phases(sr) > 1) {
+    float c[LE_OS_MAX_COEFS];
+    h->n = le_os_coefs(le_rs_design_rate(sr), 0, c);
+    le_lanes_design(&h->d, c, h->n);
+  }
+}
+
+/* Each lane's square root, correctly rounded as sqrtf is. */
+static inline le_f4 le_f4_sqrt(le_f4 x) {
+#if defined(__aarch64__)
+  return (le_f4)vsqrtq_f32((float32x4_t)x);
+#elif defined(__SSE__)
+  return (le_f4)_mm_sqrt_ps((__m128)x);
+#else
+  return (le_f4){sqrtf(x[0]), sqrtf(x[1]), sqrtf(x[2]), sqrtf(x[3])};
+#endif
+}
+
+/* tanhf on four lanes (#1755), for the Overdrive's curve: the console's own
+ * tanhf, glibc 2.41's correctly rounded one (CORE-MATH's tanhf, revision
+ * b1ecd83, by Alexei Sibidanov, MIT licence: a rational approximation in
+ * double, evaluated as it is), two lanes of double at a time. Being
+ * correctly rounded, it gives the one right float for every input, so it
+ * is bit-identical to the console's tanhf: checked over every finite float
+ * on the console, with denormals flushed as the engine runs (#1755). Only
+ * the special cases differ in form: glibc's shortcuts below 2^-12 give what
+ * the rational does, and from 9.0109... (0x41102cb3), where tanh rounds to
+ * 1, this returns +-1 as glibc does, and a NaN as a NaN. Its error is
+ * below half an ulp everywhere, where platforms' own tanhf (macOS, glibc
+ * before 2.41) are up to 0.8 and 2.2 ulps off. */
+typedef float le_f2 __attribute__((vector_size(8)));
+
+static inline le_d2 le_tanh_rational(le_d2 z) {
+  const le_d2 z2 = z * z, z4 = z2 * z2, z8 = z4 * z4;
+  le_d2 n0 = 0x1p+0 + z2 * 0x1.30877b8b72d33p-3;
+  const le_d2 n2 = 0x1.694aa09ae9e5ep-8 + z2 * 0x1.4101377abb729p-14;
+  le_d2 n4 = 0x1.e0392b1db0018p-22 + z2 * 0x1.2533756e546f7p-30;
+  const le_d2 n6 = 0x1.d62e5abe6ae8ap-41 + z2 * 0x1.b06be534182dep-54;
+  n0 += z4 * n2;
+  n4 += z4 * n6;
+  n0 += z8 * n4;
+  le_d2 d0 = 0x1p+0 + z2 * 0x1.ed99131b0ebeap-2;
+  const le_d2 d2 = 0x1.0d27ed6c95a69p-5 + z2 * 0x1.7cbdaca0e9fccp-11;
+  le_d2 d4 = 0x1.b4e60b892578ep-18 + z2 * 0x1.a6f707c5c71abp-26;
+  const le_d2 d6 = 0x1.35a8b6e2cd94cp-35 + z2 * 0x1.ca8230677aa01p-47;
+  d0 += z4 * d2;
+  d4 += z4 * d6;
+  d0 += z8 * d4;
+  return z * n0 / d0;
+}
+
+static inline le_f4 le_tanh4(le_f4 x) {
+  const le_u4 ux = (le_u4)x;
+  /* past 0x41102cb3 and not NaN (x != x), which goes through as tanhf's */
+  const le_i4 one = (le_i4)((ux << 1) > (0x41102cb3u << 1)) & (x == x);
+  const le_d2 lo = __builtin_convertvector(__builtin_shufflevector(x, x, 0, 1), le_d2);
+  const le_d2 hi = __builtin_convertvector(__builtin_shufflevector(x, x, 2, 3), le_d2);
+  const le_f4 t = __builtin_shufflevector(
+      __builtin_convertvector(le_tanh_rational(lo), le_f2),
+      __builtin_convertvector(le_tanh_rational(hi), le_f2), 0, 1, 2, 3);
+  const le_f4 sign_one = (le_f4)((ux & 0x80000000u) | 0x3f800000u);
+  /* The engine runs with denormals flushed (le_flush_denormals), where the
+   * console's tanhf returns +0 for a subnormal x (it reads as 0) and a zero
+   * of x's sign at +-2^-126 (x - x^2 is under the smallest normal before
+   * rounding, and flushes). */
+  const le_u4 ax = ux & 0x7fffffffu;
+  const le_i4 sub = (le_i4)(ax - 1u < 0x007fffffu);
+  const le_i4 edge = (le_i4)(ax == 0x00800000u);
+  const le_f4 r = le_f4_sel(one, sign_one, t);
+  return le_f4_sel(sub | edge, (le_f4)(ux & 0x80000000u & (le_u4)edge), r);
+}
+
+/* As le_hb_tick on both channels, in place. */
+static inline void le_hb4_tick(le_hb4* h, int ph, float* l, float* r) {
+  if (h->n == 0) return;
+  le_f4 y = {*l, *l, *r, *r};
+  le_lanes_block(&h->d, &h->p[ph], &y, 1);
+  *l = 0.5f * (y[0] + h->a1[0]);
+  *r = 0.5f * (y[2] + h->a1[1]);
+  h->a1[0] = y[1];
+  h->a1[1] = y[3];
+}
+
 /* The oversampling stages a waveshaper of [type] runs at [sr]: the
  * smallest factor at which every factory setting keeps its aliasing at
  * least 61 dB under its output, a dB inside the effects matrix's 60
@@ -6645,8 +6918,8 @@ typedef struct le_fx_overdrive {
   float z_pk[2][LE_RS_PH][2], z_tone[2][LE_RS_PH][2], z_sh[2][LE_RS_PH][2];
   float z_bl[2][LE_RS_PH][2], z_lp2[2][LE_RS_PH][2];
   int32_t ph, nph; /* the sections' phase this frame (le_rs_phases) */
-  le_os os; /* the curve's oversampling */
-  le_hb hb; /* at 96 kHz, the curve's output under 24 kHz */
+  le_os4 os; /* the curve's oversampling, both channels in lanes */
+  le_hb4 hb; /* at 96 kHz, the curve's output under 24 kHz */
 } le_fx_overdrive;
 
 /* The tone's shelf or bell gain at setting [t], dB: [tab] read at Tone 0,
@@ -6674,8 +6947,8 @@ static void fx_overdrive_update(void* ks, le_fx_dyn_head* h, const float* p,
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
-    le_os_design(&o->os, sr, le_os_stages(LE_FX_OVERDRIVE, sr));
-    le_hb_design(&o->hb, sr);
+    le_os4_design(&o->os, sr, le_os_stages(LE_FX_OVERDRIVE, sr));
+    le_hb4_design(&o->hb, sr);
     o->nph = le_rs_phases(sr);
     memset(o->s_dhp, 0, sizeof(o->s_dhp));
     memset(o->s_dlp, 0, sizeof(o->s_dlp));
@@ -6724,24 +6997,51 @@ static void fx_overdrive_update(void* ks, le_fx_dyn_head* h, const float* p,
   h->moving = moving;
 }
 
+/* The kernel takes both channels together (#1755): the oversampler in lanes
+ * (le_os4), then the curve a step at a time across all sixteen samples (8x,
+ * two channels): the high-passes, every first tanh, the low-passes, every
+ * second tanh. The one-poles stay in time order per channel, and the tanhs
+ * run four at a time (le_tanh4, the console's tanhf exactly). Per sample
+ * the arithmetic is what it was, so on the console the output is
+ * bit-identical. */
 static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
   le_fx_overdrive* o = (le_fx_overdrive*)ks;
   const float g = le_fx_glide_next(&o->g);
   const float level = le_fx_glide_next(&o->level);
-  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
-  for (int ch = 0; ch < 2; ++ch) {
-    float os[1 << LE_OS_MAX_STAGES];
-    const int n = le_os_up(&o->os, ch, io[ch], os);
-    for (int i = 0; i < n; ++i) {
-      /* The clipped part: the 434 Hz high-pass before the curve, the
-       * drive's low-pass after it, at the curve's rate. */
-      const float x = os[i];
-      const float xh = x - le_onepole_lp(&o->s_dhp[ch], o->dhp_g1, x);
-      const float u = LE_OD_K * x + le_onepole_lp(&o->s_dlp[ch], o->dlp_g1,
-                                                  LE_OD_C * tanhf(g * xh));
-      os[i] = (tanhf(LE_OD_A * (u + LE_OD_B)) - LE_OD_OFF) * (1.0f / LE_OD_A);
+  le_f4 p[1 << (LE_OS_MAX_STAGES - 1)];
+  le_f4 t[1 << (LE_OS_MAX_STAGES - 1)];
+  const int m = le_os4_up(&o->os, fx_sanitize(*l), fx_sanitize(*r), p);
+  /* The clipped part: the 434 Hz high-pass before the curve, the drive's
+   * low-pass after it, at the curve's rate. Lane 2 ch + k of pair i is
+   * channel ch's sample 2 i + k. */
+  for (int i = 0; i < m; ++i) {
+    for (int k = 0; k < 2; ++k) {
+      for (int ch = 0; ch < 2; ++ch) {
+        const float x = p[i][2 * ch + k];
+        t[i][2 * ch + k] =
+            g * (x - le_onepole_lp(&o->s_dhp[ch], o->dhp_g1, x));
+      }
     }
-    float v = le_hb_tick(&o->hb, ch, o->ph, le_os_down(&o->os, ch, os));
+  }
+  for (int i = 0; i < m; ++i) t[i] = le_tanh4(t[i]);
+  for (int i = 0; i < m; ++i) {
+    for (int k = 0; k < 2; ++k) {
+      for (int ch = 0; ch < 2; ++ch) {
+        const float u = LE_OD_K * p[i][2 * ch + k] +
+                        le_onepole_lp(&o->s_dlp[ch], o->dlp_g1,
+                                      LE_OD_C * t[i][2 * ch + k]);
+        t[i][2 * ch + k] = LE_OD_A * (u + LE_OD_B);
+      }
+    }
+  }
+  for (int i = 0; i < m; ++i) {
+    p[i] = (le_tanh4(t[i]) - LE_OD_OFF) * (1.0f / LE_OD_A);
+  }
+  float io[2];
+  le_os4_down(&o->os, p, &io[0], &io[1]);
+  le_hb4_tick(&o->hb, o->ph, &io[0], &io[1]);
+  for (int ch = 0; ch < 2; ++ch) {
+    float v = io[ch];
     /* The tone filter: the 17 Hz high-pass, the 680 Hz rise, the tone
      * corner, shelf and bell, and the 11 kHz pole. */
     v = v - le_onepole_lp(&o->s_hp[ch], o->hp_g1, v);
@@ -6802,7 +7102,7 @@ static void fx_overdrive_kprocess(void* ks, float* l, float* r) {
 typedef struct le_cab_bank {
   int32_t parts;
   int32_t pre; /* le_cab_pre at the bank's rate: the D.I. waits as long */
-  float head[LE_CAB_ROWS][LE_CAB_B];
+  float head[LE_CAB_ROWS][LE_CAB_B]; /* last tap first (le_cab_head) */
   float re[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
   float im[LE_CAB_ROWS][LE_CAB_MAX_PARTS][LE_CAB_NB];
 } le_cab_bank;
@@ -6906,7 +7206,9 @@ static void* le_cab_bank_make(int32_t sr) {
         hr[t] *= (float)(c * c);
       }
     }
-    for (int t = 0; t < LE_CAB_B; ++t) b->head[row][t] = t < m ? hr[t] : 0.0f;
+    for (int t = 0; t < LE_CAB_B; ++t) {
+      b->head[row][LE_CAB_B - 1 - t] = t < m ? hr[t] : 0.0f;
+    }
     for (int p = 0; p < b->parts; ++p) {
       for (int t = 0; t < 2 * LE_CAB_B; ++t) {
         const int k = LE_CAB_B + p * LE_CAB_B + t;
@@ -7036,6 +7338,13 @@ static void le_amp_shelf(const float tab[LE_AMP_PTS][3], int flat, float t,
 static inline float le_amp_knee(float z) {
   const float a = z * z;
   return z / sqrtf(sqrtf(1.0f + a * a));
+}
+
+/* le_amp_knee on four lanes: square roots and division are correctly
+ * rounded, in lanes as alone, so each lane is bit-identical to it. */
+static inline le_f4 le_amp_knee4(le_f4 z) {
+  const le_f4 a = z * z;
+  return z / le_f4_sqrt(le_f4_sqrt(1.0f + a * a));
 }
 
 /* One instance (mono). */
@@ -7235,6 +7544,25 @@ static void le_amp_update(le_fx_amp* a, const float* p, int sr) {
   a->settle = 0;
 }
 
+/* A cabinet's first LE_CAB_B taps on the last LE_CAB_B inputs: [h] is the
+ * bank's row, last tap first, so it runs forward over the history from
+ * hx[-(B - 1)] to hx[0]. Sixteen products at a time in four sums (#1755),
+ * where one sum in time order kept each multiply-add waiting on the last;
+ * the order of the additions changes only their rounding, at most a few
+ * ulps of the output. */
+static inline float le_cab_head(const float* h, const float* hx) {
+  const float* x = hx - (LE_CAB_B - 1);
+  le_f4 s[4] = {le_f4_set1(0.0f), le_f4_set1(0.0f), le_f4_set1(0.0f),
+                le_f4_set1(0.0f)};
+  for (int t = 0; t < LE_CAB_B; t += 16) {
+    for (int k = 0; k < 4; ++k) {
+      s[k] += le_f4_load(h + t + 4 * k) * le_f4_load(x + t + 4 * k);
+    }
+  }
+  const le_f4 v = (s[0] + s[1]) + (s[2] + s[3]);
+  return (v[0] + v[1]) + (v[2] + v[3]);
+}
+
 /* One sample through the cabinet, both cabinets while one fades into the
  * other; at a block's end the partitions' spectra make the next block's
  * tails. */
@@ -7252,18 +7580,14 @@ static float le_amp_cab(le_fx_amp* a, float x) {
      * cabinet has the latency the table reports (none at 48 and 96 kHz). */
     yn = hx[-bk->pre];
   } else {
-    const float* h = bk->head[rn];
-    for (int t = 0; t < LE_CAB_B; ++t) yn += h[t] * hx[-t];
-    yn += a->tail[0][a->j];
+    yn = le_cab_head(bk->head[rn], hx) + a->tail[0][a->j];
   }
   const int fading = a->xf > 0;
   if (fading) {
     if (ro < 0) {
       yo = hx[-bk->pre];
     } else {
-      const float* h = bk->head[ro];
-      for (int t = 0; t < LE_CAB_B; ++t) yo += h[t] * hx[-t];
-      yo += a->tail[1][a->j];
+      yo = le_cab_head(bk->head[ro], hx) + a->tail[1][a->j];
     }
   }
   a->hp = (a->hp + 1) & (LE_CAB_B - 1);
@@ -7329,9 +7653,21 @@ static void fx_amp_cab_process(le_fx_state* fx, int slot, int sr, int cap,
   v = le_biquad_tick(a->m_pk, a->z_m[1][ph], v);
   v = le_biquad_tick(a->m_hs, a->z_m[2][ph], v);
   v = le_biquad_tick(a->d_hs, a->z_dhs[ph], v);
+  /* The clipper, four samples at a time (#1755), the rest one by one. */
   float os[1 << LE_OS_MAX_STAGES];
   const int n = le_os_up(&a->os, 0, v * a->mpre_lin * a->gb_lin, os);
-  for (int i = 0; i < n; ++i) {
+  int i = 0;
+  for (; i + 4 <= n; i += 4) {
+    le_f4 w;
+    memcpy(&w, &os[i], sizeof(w));
+    const le_f4 c = le_f4_sel(
+        w >= 0.0f,
+        (le_f4){LE_AMP_CLIP_POS, LE_AMP_CLIP_POS, LE_AMP_CLIP_POS, LE_AMP_CLIP_POS},
+        (le_f4){LE_AMP_CLIP_NEG, LE_AMP_CLIP_NEG, LE_AMP_CLIP_NEG, LE_AMP_CLIP_NEG});
+    w = c * le_amp_knee4(w / c);
+    memcpy(&os[i], &w, sizeof(w));
+  }
+  for (; i < n; ++i) {
     const float w = os[i];
     os[i] = w >= 0.0f ? LE_AMP_CLIP_POS * le_amp_knee(w / LE_AMP_CLIP_POS)
                       : LE_AMP_CLIP_NEG * le_amp_knee(w / LE_AMP_CLIP_NEG);
@@ -7426,8 +7762,8 @@ typedef struct le_fx_distortion {
   float shelf[5];
   float z[LE_DIST_SECTIONS + 1][2][LE_RS_PH][2]; /* [section][channel][phase][state] */
   int32_t ph, nph; /* the sections' phase this frame (le_rs_phases) */
-  le_os os; /* the curve's oversampling */
-  le_hb hb; /* at 96 kHz, the curve's output under 24 kHz */
+  le_os4 os; /* the curve's oversampling, both channels in lanes */
+  le_hb4 hb; /* at 96 kHz, the curve's output under 24 kHz */
 } le_fx_distortion;
 
 /* |H(e^jw)| of one a0-normalized biquad. */
@@ -7447,8 +7783,8 @@ static void fx_distortion_update(void* ks, le_fx_dyn_head* h, const float* p,
   if (!f) return;
   const int rate = sr > 0 ? sr : 48000;
   if (f & LE_FX_DYN_NEW_RATE) {
-    le_os_design(&q->os, sr, le_os_stages(LE_FX_DISTORTION, sr));
-    le_hb_design(&q->hb, sr);
+    le_os4_design(&q->os, sr, le_os_stages(LE_FX_DISTORTION, sr));
+    le_hb4_design(&q->hb, sr);
     q->nph = le_rs_phases(sr);
     memset(q->z, 0, sizeof(q->z));
     q->ph = 0;
@@ -7494,23 +7830,155 @@ static void fx_distortion_update(void* ks, le_fx_dyn_head* h, const float* p,
   h->moving = moving;
 }
 
+/* powf on four lanes (#1755), for the Distortion's curve: glibc 2.41's powf
+ * as the console's glibc builds it for aarch64 (sysdeps/ieee754/flt-32/
+ * e_powf.c, Szabolcs Nagy's algorithm from Arm's optimized-routines,
+ * LGPL-2.1-or-later; TOINT_INTRINSICS, so POWF_SCALE 32 and round), its
+ * tables and its arithmetic in the same order, two lanes of double at a
+ * time. Checked against the console's powf over every positive float for
+ * the curve's two exponents, with denormals flushed as the engine runs:
+ * bit-identical. A lane whose x is not a positive normal float, or whose
+ * y log2 x is past +-126 (where glibc turns to its overflow and underflow
+ * cases), takes powf itself; x = 0 gives 0, as powf does for y > 0. */
+static const double LE_POWF_INVC[16] = {
+    0x1.661ec79f8f3bep+0, 0x1.571ed4aaf883dp+0, 0x1.49539f0f010bp+0,
+    0x1.3c995b0b80385p+0, 0x1.30d190c8864a5p+0, 0x1.25e227b0b8eap+0,
+    0x1.1bb4a4a1a343fp+0, 0x1.12358f08ae5bap+0, 0x1.0953f419900a7p+0,
+    0x1p+0,               0x1.e608cfd9a47acp-1, 0x1.ca4b31f026aap-1,
+    0x1.b2036576afce6p-1, 0x1.9c2d163a1aa2dp-1, 0x1.886e6037841edp-1,
+    0x1.767dcf5534862p-1};
+static const double LE_POWF_LOGC[16] = { /* times POWF_SCALE */
+    -0x1.efec65b963019p-2 * 32, -0x1.b0b6832d4fca4p-2 * 32,
+    -0x1.7418b0a1fb77bp-2 * 32, -0x1.39de91a6dcf7bp-2 * 32,
+    -0x1.01d9bf3f2b631p-2 * 32, -0x1.97c1d1b3b7afp-3 * 32,
+    -0x1.2f9e393af3c9fp-3 * 32, -0x1.960cbbf788d5cp-4 * 32,
+    -0x1.a6f9db6475fcep-5 * 32, 0x0p+0 * 32,
+    0x1.338ca9f24f53dp-4 * 32,  0x1.476a9543891bap-3 * 32,
+    0x1.e840b4ac4e4d2p-3 * 32,  0x1.40645f0c6651cp-2 * 32,
+    0x1.88e9c2c1b9ff8p-2 * 32,  0x1.ce0a44eb17bccp-2 * 32};
+static const double LE_POWF_A[5] = {
+    0x1.27616c9496e0bp-2 * 32, -0x1.71969a075c67ap-2 * 32,
+    0x1.ec70a6ca7baddp-2 * 32, -0x1.7154748bef6c8p-1 * 32,
+    0x1.71547652ab82bp0 * 32};
+/* 2^(i/32) as tab[i] + (i << 47), glibc's __exp2f_data.tab */
+static const uint64_t LE_EXP2F_TAB[32] = {
+    0x3ff0000000000000, 0x3fefd9b0d3158574, 0x3fefb5586cf9890f,
+    0x3fef9301d0125b51, 0x3fef72b83c7d517b, 0x3fef54873168b9aa,
+    0x3fef387a6e756238, 0x3fef1e9df51fdee1, 0x3fef06fe0a31b715,
+    0x3feef1a7373aa9cb, 0x3feedea64c123422, 0x3feece086061892d,
+    0x3feebfdad5362a27, 0x3feeb42b569d4f82, 0x3feeab07dd485429,
+    0x3feea47eb03a5585, 0x3feea09e667f3bcd, 0x3fee9f75e8ec5f74,
+    0x3feea11473eb0187, 0x3feea589994cce13, 0x3feeace5422aa0db,
+    0x3feeb737b0cdc5e5, 0x3feec49182a3f090, 0x3feed503b23e255d,
+    0x3feee89f995ad3ad, 0x3feeff76f2fb5e47, 0x3fef199bdd85529c,
+    0x3fef3720dcef9069, 0x3fef5818dcfba487, 0x3fef7c97337b9b5f,
+    0x3fefa4afa2a490da, 0x3fefd0765b6e4540};
+static const double LE_EXP2F_C[3] = { /* glibc's poly_scaled */
+    0x1.c6af84b912394p-5 / 32 / 32 / 32, 0x1.ebfce50fac4f3p-3 / 32 / 32,
+    0x1.62e42ff0c52d6p-1 / 32};
+
+/* glibc's log2_inline and exp2_inline on two lanes of positive normal
+ * [ix]: x^y as a double; [far] gets the lanes where y log2 x is past
+ * +-126. */
+static inline le_d2 le_powf_d2(const uint32_t* ix, double y, int* far) {
+  le_d2 invc, y0, z;
+  for (int k = 0; k < 2; ++k) {
+    const uint32_t tmp = ix[k] - 0x3f330000u;
+    const int i = (int)((tmp >> (23 - 4)) % 16);
+    const uint32_t top = tmp & 0xff800000u;
+    const uint32_t iz = ix[k] - top;
+    float zf;
+    memcpy(&zf, &iz, sizeof(zf));
+    invc[k] = LE_POWF_INVC[i];
+    y0[k] = LE_POWF_LOGC[i] + (double)((int32_t)top >> (23 - 5));
+    z[k] = (double)zf;
+  }
+  const le_d2 r = z * invc - 1;
+  const le_d2 r2 = r * r;
+  le_d2 v = LE_POWF_A[0] * r + LE_POWF_A[1];
+  const le_d2 p = LE_POWF_A[2] * r + LE_POWF_A[3];
+  const le_d2 r4 = r2 * r2;
+  le_d2 q = LE_POWF_A[4] * r + y0;
+  q = p * r2 + q;
+  v = v * r4 + q;
+  const le_d2 ylogx = y * v;
+  le_d2 kd, s;
+  for (int k = 0; k < 2; ++k) {
+    const double e = ylogx[k];
+    uint64_t u;
+    memcpy(&u, &e, sizeof(u));
+    far[k] = (u >> 47 & 0xffff) >= (0x40af800000000000ull >> 47); /* 126 x 32 */
+    kd[k] = __builtin_round(e);
+    const uint64_t ki = (uint64_t)(int64_t)kd[k];
+    const uint64_t t = LE_EXP2F_TAB[ki % 32] + (ki << (52 - 5));
+    double sk;
+    memcpy(&sk, &t, sizeof(sk));
+    s[k] = sk;
+  }
+  const le_d2 rr = ylogx - kd;
+  const le_d2 c = LE_EXP2F_C[0] * rr + LE_EXP2F_C[1];
+  const le_d2 rr2 = rr * rr;
+  le_d2 e = LE_EXP2F_C[2] * rr + 1;
+  e = c * rr2 + e;
+  return e * s;
+}
+
+static inline le_f4 le_powf4(le_f4 x, float y) {
+  uint32_t ix[4];
+  memcpy(ix, &x, sizeof(ix));
+  int special[4]; /* the lanes powf takes */
+  uint32_t jx[4];
+  for (int k = 0; k < 4; ++k) {
+    special[k] = ix[k] - 0x00800000u >= 0x7f800000u - 0x00800000u;
+    jx[k] = special[k] ? 0x3f800000u : ix[k];
+  }
+  int far[4];
+  const le_d2 lo = le_powf_d2(jx, (double)y, far);
+  const le_d2 hi = le_powf_d2(jx + 2, (double)y, far + 2);
+  le_f4 out = __builtin_shufflevector(__builtin_convertvector(lo, le_f2),
+                                      __builtin_convertvector(hi, le_f2), 0, 1,
+                                      2, 3);
+  for (int k = 0; k < 4; ++k) {
+    if (ix[k] == 0) {
+      out[k] = 0.0f;
+    } else if (special[k] || far[k]) {
+      out[k] = powf(x[k], y);
+    }
+  }
+  return out;
+}
+
+/* The curve on four lanes of [x], at gain [g]: lane by lane the arithmetic
+ * of the scalar curve it replaced (#1755), with the console's powf
+ * (le_powf4), so bit-identical there. */
+static inline le_f4 le_dist_curve4(le_f4 x, float g) {
+  const le_f4 u = g * x;
+  const le_f4 au = LE_DIST_ALPHA * u;
+  const le_f4 w = u + LE_DIST_ALPHA * u * u / (1.0f + au * au);
+  const le_f4 c = le_f4_sel(w > 0.0f,
+                            (le_f4){LE_DIST_UP, LE_DIST_UP, LE_DIST_UP, LE_DIST_UP},
+                            (le_f4){LE_DIST_DOWN, LE_DIST_DOWN, LE_DIST_DOWN,
+                                    LE_DIST_DOWN});
+  const le_f4 a = (le_f4)((le_i4)(w / c) & 0x7fffffff);
+  const le_f4 d =
+      le_powf4(1.0f + le_powf4(a, LE_DIST_KNEE), 1.0f / LE_DIST_KNEE);
+  return w / d;
+}
+
+/* Both channels together (#1755): the oversampler in lanes (le_os4) and
+ * the curve four samples at a time. */
 static void fx_distortion_kprocess(void* ks, float* l, float* r) {
   le_fx_distortion* q = (le_fx_distortion*)ks;
   const float g = le_fx_glide_next(&q->g);
   const float level = le_fx_glide_next(&q->level);
-  float io[2] = {fx_sanitize(*l), fx_sanitize(*r)};
+  float io[2];
+  le_f4 p[1 << (LE_OS_MAX_STAGES - 1)];
+  const int m = le_os4_up(&q->os, fx_sanitize(*l), fx_sanitize(*r), p);
+  for (int i = 0; i < m; ++i) p[i] = le_dist_curve4(p[i], g);
+  le_os4_down(&q->os, p, &io[0], &io[1]);
+  le_hb4_tick(&q->hb, q->ph, &io[0], &io[1]);
   for (int ch = 0; ch < 2; ++ch) {
-    float os[1 << LE_OS_MAX_STAGES];
-    const int n = le_os_up(&q->os, ch, io[ch], os);
-    for (int i = 0; i < n; ++i) {
-      const float u = g * os[i];
-      const float au = LE_DIST_ALPHA * u;
-      const float w = u + LE_DIST_ALPHA * u * u / (1.0f + au * au);
-      const float c = w > 0.0f ? LE_DIST_UP : LE_DIST_DOWN;
-      os[i] = w / powf(1.0f + powf(fabsf(w / c), LE_DIST_KNEE),
-                       1.0f / LE_DIST_KNEE);
-    }
-    float v = le_hb_tick(&q->hb, ch, q->ph, le_os_down(&q->os, ch, os));
+    float v = io[ch];
     for (int s = 0; s < LE_DIST_SECTIONS; ++s) {
       v = le_biquad_tick(q->cab[s], q->z[s][ch][q->ph], v);
     }
