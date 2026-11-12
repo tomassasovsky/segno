@@ -15,7 +15,7 @@ name: ci-caches
 # The keys must be the ones the PR jobs compute: subosito/flutter-action's
 # defaults (the packages and design jobs), the Very Good workflows' key
 # (flutter_package.yml adds the hash of every pubspec.lock), and the console
-# firmware job's Arduino key.
+# firmware job's Arduino key, and the native jobs' apt packages.
 
 # A PR that changes this file runs it too, to prove the jobs still work.
 on:
@@ -83,3 +83,14 @@ jobs:
           arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
           arduino-cli core install rp2040:rp2040@6.0.0 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
           arduino-cli lib install "Adafruit NeoPixel@1.15.5" "NeoPixelBus by Makuna@2.8.4"
+
+  apt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The packages and version are the native jobs' in main.yaml.
+      - name: The ALSA headers and libpulse0
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev libpulse0
+          version: "1"

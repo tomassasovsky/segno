@@ -211,11 +211,15 @@ jobs:
           echo "CLANG=$clang" >> "$GITHUB_ENV"
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
+          append-timestamp: false
           max-size: 300M
       - name: Build + run the pitch/time bench (arm64 proxy thresholds)
         # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
@@ -395,11 +399,15 @@ jobs:
           version: "1"
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
+          append-timestamp: false
           max-size: 300M
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
@@ -535,11 +543,15 @@ jobs:
           version: "1"
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}-${{ strategy.job-index }}
           install: binary
+          append-timestamp: false
           max-size: 300M
       - name: Build + run native tests under AddressSanitizer
         # The decoder fuzz driver also runs under UBSan, for longer (#1200).
@@ -584,11 +596,15 @@ jobs:
           version: "1"
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
+          append-timestamp: false
           max-size: 300M
       - name: Build + run native tests with LE_CALLBACK_TELEMETRY=0
         run: >
@@ -620,11 +636,15 @@ jobs:
       # NATIVE_TESTS_ONLY skips the suites that link the audio backends.
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
+          append-timestamp: false
           max-size: 300M
       - name: Build + run the telemetry race tests under ThreadSanitizer
         run: >
@@ -647,11 +667,15 @@ jobs:
       - uses: actions/checkout@v7
       # Compiler output from earlier runs (#1771): a TU that has not changed
       # is not compiled again. ccache is downloaded from its GitHub release.
+      # One entry per job and PR, saved by the PR's first run and restored
+      # by its later ones: without the timestamp each run would add another
+      # entry, and the repository's 10 GB of cache is shared by every job.
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
           key: ${{ github.job }}
           install: binary
+          append-timestamp: false
           max-size: 300M
       - uses: subosito/flutter-action@v2
         with:
