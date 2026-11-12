@@ -56,14 +56,15 @@ static int file_limit_layout(const char* dir, const char* rel,
 }
 
 /* What le_wav_seal accepts, which a render checks before it writes a
- * master: a take an earlier build stopped at the RIFF limit, one frame past
- * today's longest, still renders its master. The frames are credited, not
+ * master: a take an earlier build stopped at the RIFF limit, a frame or two
+ * past today's longest, still renders its master. The frames are credited, not
  * written (the sealed file is sparse). */
 static void file_limit_check_sealable(void) {
   char path[760];
   snprintf(path, sizeof(path), "%s/sealable.wav", perf_test_dir());
   test_render_mkdir(perf_test_dir());
   CHECK(le_wav_sealable_frames(2) == le_wav_max_frames(2) + 1);
+  CHECK(le_wav_sealable_frames(1) == le_wav_max_frames(1) + 2);
   for (int over = 0; over < 2; ++over) {
     le_wav_writer w;
     CHECK(le_wav_open(&w, path, 96000, 2, NULL, NULL, 0));

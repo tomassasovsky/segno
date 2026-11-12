@@ -110,10 +110,11 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   4 GiB less one byte on `vfat`, no limit on exFAT, NTFS or ext4) and
   refuses with `StorageFileTooLarge`; `copyFile` checks its source the same
   way. The Library's card line, and the backup's interrupted dialog, say
-  "FAT32 drives can't hold files over 4 GB. Use an exFAT drive." With the cap above, nothing this build writes
-  reaches the limit (recording parts are 2 GB, session files are loops of
-  10 minutes at most); the check covers a master an earlier build rendered
-  at 4 GiB + 4 bytes, and any later writer.
+  "FAT32 drives can't hold files over 4 GB. Use an exFAT drive." A take
+  this build records renders no file that reaches the limit (recording
+  parts are 2 GB, session files are loops of 10 minutes at most); the check
+  covers a master rendered at 4 GiB + 4 bytes for a take an earlier build
+  stopped at the RIFF limit, and any later writer.
 
 ## November 2026 The Library writes to USB through the storage repository (#1790)
 
