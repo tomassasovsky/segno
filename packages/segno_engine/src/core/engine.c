@@ -268,6 +268,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_f32(&ln->a_pan_gr_bits, gr);
   }
   store_i32(&ln->a_muted, 0);
+  store_i32(&ln->a_gate_muted, 0);
   ln->pending_mute = 0;
   store_f32(&ln->a_rms_bits, 0.0f);
   store_f32(&ln->a_peak_bits, 0.0f);
@@ -711,6 +712,8 @@ static void le_engine_reset_runtime(le_engine* engine, int32_t sample_rate,
     tr->reverse_pending = 0;
     atomic_store_explicit(&tr->a_reverse_applied, 0, memory_order_relaxed);
     tr->once_ended = 0;
+    tr->tail_spare_next = 0; /* #1773: a reopen spares no tail */
+    tr->gate_spared = 0;
     tr->once_current_pass = 0;
     tr->length_preset_target_frames = 0;
     tr->pending_record = 0;

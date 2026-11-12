@@ -2052,7 +2052,12 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Rec mode: mute the cursor track (finalizing a capture first). Muting the
-  /// only audible loop parks the whole transport.
+  /// only audible loop parks the whole transport. When the track ends up
+  /// stopped (this Stop parks it, or it already was), its mute spares the
+  /// Post tail: the tail rings out while it is stopped, as a Stop's does, and
+  /// the engine gates it once the track runs again (#1773,
+  /// [LooperRepository.spareTail]). The park goes before the mute, so the
+  /// mute lands on the stopped track.
   bool _recStop(int channel) {
     final track = _trackAt(channel);
     if (track == null) return false;
@@ -2063,13 +2068,27 @@ class ControlCubit extends Cubit<ControlState> {
     if (!_looper.stopRecordControl(channel: channel).isOk) {
       return false;
     }
-    if (!_setTrackMute(muted: true, channel: channel).isOk) return false;
-    if (track.state == TrackState.playing && _isLastAudibleTrack(channel)) {
+    final parks =
+        track.state == TrackState.playing && _isLastAudibleTrack(channel);
+    // All or nothing: the spare reserves room for the stops and the lane
+    // mutes after it, and a refusal refuses the whole Stop, so a full
+    // command ring never leaves the loop parked but unmuted.
+    if ((parks || track.state == TrackState.stopped) &&
+        !_looper
+            .spareTail(
+              channel: channel,
+              following:
+                  (parks ? _tracks.length : 0) + _looper.laneCount(channel),
+            )
+            .isOk) {
+      return false;
+    }
+    if (parks) {
       for (final t in _tracks) {
         _looper.stopTrack(channel: t.channel);
       }
     }
-    return true;
+    return _setTrackMute(muted: true, channel: channel).isOk;
   }
 
   /// Parks the play transport: freezes EVERY running content track (muted
