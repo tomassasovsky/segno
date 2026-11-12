@@ -23953,6 +23953,22 @@ static void test_fs_sync_dir(void) {
   CHECK(le_fs_sync_dir_errno(NULL, &err) == LE_ERR_INVALID);
 }
 
+static void test_fs_sync_volume(void) {
+  printf("test_fs_sync_volume\n");
+  test_render_mkdir(perf_test_dir());
+  int32_t err = -1;
+  CHECK(le_fs_sync_volume_errno(perf_test_dir(), &err) == LE_OK);
+  CHECK(err == 0);
+  CHECK(le_fs_sync_volume_errno(perf_test_dir(), NULL) == LE_OK);
+  char missing[600];
+  snprintf(missing, sizeof(missing), "%s/no_such_dir_for_volume_sync",
+           perf_test_dir());
+  CHECK(le_fs_sync_volume_errno(missing, &err) == LE_ERR_DEVICE);
+  CHECK(err == ENOENT);
+  CHECK(le_fs_sync_volume_errno(NULL, &err) == LE_ERR_INVALID);
+  CHECK(le_fs_sync_volume_errno("", NULL) == LE_ERR_INVALID);
+}
+
 static void test_fs_rename_noreplace(void) {
   printf("test_fs_rename_noreplace\n");
   test_render_mkdir(perf_test_dir());
@@ -39942,6 +39958,7 @@ int main(void) {
   SHARD(test_sha256_known_answers);
   SHARD(test_digest_file_ranges);
   SHARD(test_fs_sync_dir);
+  SHARD(test_fs_sync_volume);
   SHARD(test_fs_rename_noreplace);
   SHARD(test_perf_arm_requires_configure);
   SHARD(test_perf_reconfigure_while_armed_resets_cleanly);

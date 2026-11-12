@@ -135,6 +135,22 @@ void main() {
       expect(() => io.syncDirectory(''), throwsA(isA<FileSystemException>()));
     });
 
+    test('syncVolume syncs the volume of an existing directory and throws '
+        'otherwise', () {
+      final io = const NativeStorageIo()..syncVolume(dir.path);
+      expect(
+        () => io.syncVolume('${dir.path}/missing'),
+        throwsA(
+          isA<FileSystemException>().having(
+            (e) => e.osError?.errorCode,
+            'errno, so a pulled drive can be told apart',
+            2,
+          ),
+        ),
+      );
+      expect(() => io.syncVolume(''), throwsA(isA<FileSystemException>()));
+    });
+
     test('renameWithoutReplacing moves to a free name and refuses a taken '
         'one, leaving both files', () {
       const io = NativeStorageIo();

@@ -3419,6 +3419,21 @@ external int le_fs_sync_dir_errno(
   ffi.Pointer<ffi.Int32> out_errno,
 );
 
+/// On Linux, makes everything written to the volume that holds `path`
+/// durable and flushes the device's cache: syncfs(2), then fsync of `path`.
+/// A directory sync is not enough on vfat, where a rename writes the new
+/// entry with size 0 and the file's inode fills it in only when written back
+/// (#1797). Elsewhere it is narrower: F_FULLFSYNC of `path` on macOS, fsync
+/// of `path` on other POSIX systems, and on Windows as le_fs_sync_dir.
+/// `path` must be a directory on that volume. Returns LE_OK; LE_ERR_INVALID
+/// for a NULL or empty `path`; LE_ERR_DEVICE when it cannot be opened or the
+/// sync fails, with *out_errno (when not NULL) the OS error, 0 on LE_OK.
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)>()
+external int le_fs_sync_volume_errno(
+  ffi.Pointer<ffi.Char> path,
+  ffi.Pointer<ffi.Int32> out_errno,
+);
+
 /// The number of parameters built-in [type] uses (0 for LE_FX_NONE and
 /// LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
 /// LE_ERR_INVALID for an unknown type.

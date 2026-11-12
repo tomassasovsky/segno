@@ -120,8 +120,41 @@ void main() {
         for (var i = 1; i <= 3; i++) '$perf/Evening loop · Part 00$i.wav',
       ]);
       expect(progress.last, 1);
-      // The swap's renames are synced before the export is reported.
-      expect(drive.synced, [perf]);
+      // The volume is synced once the swap and its clean-up are done.
+      expect(drive.volumeSyncs, [drive.files]);
+    });
+
+    test('is reported only once the volume sync after the swap has finished '
+        '(#1797)', () async {
+      drive.syncHold = Completer<void>();
+      var reported = false;
+
+      final export = run(parts(2)).then((_) => reported = true);
+      await pumpEventQueue();
+
+      // Every file is in place and nothing of the swap is left...
+      expect(drive.volumeSyncs, [
+        [
+          '$perf/Evening loop · Part 001.wav',
+          '$perf/Evening loop · Part 002.wav',
+        ],
+      ]);
+      expect(
+        Directory('${drive.mount}/$perf').listSync().map((e) => e.path),
+        isNot(contains(contains(AudioExporter.stagingPrefix))),
+      );
+      // ...but the export is not done until the sync is.
+      expect(reported, isFalse);
+
+      drive.syncHold!.complete();
+      await export;
+      expect(reported, isTrue);
+    });
+
+    test('a volume sync the drive refuses fails the export', () async {
+      drive.failOnSync = const StorageFailure.io('Input/output error');
+
+      await expectLater(run(parts(2)), throwsA(isA<StorageIo>()));
     });
 
     test(
@@ -403,7 +436,7 @@ void main() {
         ('$staging/Evening loop/stems/wet/track0.wav', ConflictPolicy.replace),
         ('$staging/Evening loop/project.als', ConflictPolicy.replace),
       ]);
-      expect(drive.synced, [perf, '$perf/Evening loop']);
+      expect(drive.volumeSyncs, [drive.files]);
     });
 
     test('ask reports the directory already there before writing', () async {

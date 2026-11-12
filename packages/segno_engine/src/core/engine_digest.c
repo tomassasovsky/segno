@@ -1,6 +1,6 @@
 /*
- * engine_digest.c — SHA-256, file-range digests, directory sync (#1198) and a
- * rename that never replaces (#1177).
+ * engine_digest.c — SHA-256, file-range digests, directory and volume sync
+ * (#1198, #1797) and a rename that never replaces (#1177).
  *
  * THREAD OWNERSHIP: none. Nothing here touches an engine: every function is
  * a question about bytes or about a path, so the Dart side may call the
@@ -365,6 +365,59 @@ int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno) {
   do {
     rc = fsync(fd);
   } while (rc != 0 && errno == EINTR);
+  const int sync_errno = errno;
+  close(fd);
+  if (rc == 0) return LE_OK;
+  if (out_errno != NULL) *out_errno = sync_errno;
+  return LE_ERR_DEVICE;
+#endif
+}
+
+int32_t le_fs_sync_volume_errno(const char* path, int32_t* out_errno) {
+  if (out_errno != NULL) *out_errno = 0;
+  if (path == NULL || path[0] == '\0') return LE_ERR_INVALID;
+#if defined(_WIN32)
+  /* As le_fs_sync_dir: NTFS needs no flush to keep a rename, and there is
+   * no volume handle to flush without administrator rights. */
+  return le_fs_sync_dir_errno(path, out_errno);
+#else
+#if defined(O_DIRECTORY)
+  const int flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC;
+#else
+  const int flags = O_RDONLY | O_CLOEXEC;
+#endif
+  const int fd = open(path, flags);
+  if (fd < 0) {
+    if (out_errno != NULL) *out_errno = errno;
+    return LE_ERR_DEVICE;
+  }
+  int rc = 0;
+#if defined(__linux__)
+#if !defined(SYS_syncfs)
+#error "le_fs_sync_volume_errno needs syncfs(2): a directory fsync alone loses renamed files on vfat (#1797)"
+#endif
+  /* Every dirty inode and buffer of the filesystem: on vfat a renamed
+   * file's size and first cluster reach its new directory entry only when
+   * its inode is written back, which no fsync of the directory does. */
+  rc = (int)syscall(SYS_syncfs, fd);
+#endif
+  /* Then the device's own cache: syncfs flushes it only through a
+   * filesystem's sync_fs, and FAT has none, while fsync on any of its files
+   * ends with a cache flush. On macOS F_FULLFSYNC is that flush. */
+  if (rc == 0) {
+#if defined(__APPLE__) && defined(F_FULLFSYNC)
+    rc = fcntl(fd, F_FULLFSYNC);
+    if (rc != 0) {
+      do {
+        rc = fsync(fd);
+      } while (rc != 0 && errno == EINTR);
+    }
+#else
+    do {
+      rc = fsync(fd);
+    } while (rc != 0 && errno == EINTR);
+#endif
+  }
   const int sync_errno = errno;
   close(fd);
   if (rc == 0) return LE_OK;

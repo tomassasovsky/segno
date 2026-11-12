@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Wiring tests for the kernel's HDMI force-on (#821, #1318, #1591).
+# Wiring tests for the kernel cmdline: the HDMI force-on (#821, #1318, #1591)
+# and the NVMe power-saving switches (#1795).
 #
 # The `D` in `video=HDMI-A-*:...D` keeps both connectors enabled whatever the
 # hotplug line says. A panel that drops HPD for a moment (a sleeping TV, a
@@ -24,11 +25,20 @@
 #   - pin a mode the command line does not force and ivi-homescreen exits at
 #     start for want of it.
 #
-# So this asserts the kas cmdline and homescreen.toml statically.
+# The Pi 5 cmdline also turns off the NVMe drive's APST and PCIe ASPM on
+# every link (#1795). With either back on, the console's SN770 can drop off
+# the bus mid-recording, which looks like any other freeze until the
+# watchdog reboots. A second value for either argument is as bad as none:
+# the kernel takes the last one it parses. pcie_aspm=off next to the policy
+# is worse than nothing: the kernel then refuses the policy and leaves ASPM
+# as the firmware set it.
+#
+# So this asserts the kas cmdlines and homescreen.toml statically.
 set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 KAS="$here/../kas-segno-common.yml"
+KAS_RPI5="$here/../kas-segno-rpi5.yml"
 TOML="$here/../meta-segno/recipes-segno/segno-bundle/files/homescreen.toml"
 
 pass=0
@@ -45,9 +55,9 @@ check() {
     fi
 }
 
-# The kiosk-console CMDLINE:append line (not comments).
+# Every CMDLINE:append line the Pi 5 image is built from (not comments).
 cmdline() {
-    grep -E '^[[:space:]]*CMDLINE:append' "$KAS"
+    grep -hE '^[[:space:]]*CMDLINE:append' "$KAS" "$KAS_RPI5"
 }
 
 echo "the kernel cmdline force-enables both HDMI connectors"
@@ -105,6 +115,26 @@ main_mode=$(cmdline | grep -oE 'video=HDMI-A-2:[0-9]+x[0-9]+' | head -1)
 main_mode=${main_mode#video=HDMI-A-2:}
 check "HDMI-A-2's forced mode is larger than the 1024x768 fallback" yes \
     "$([ -n "$main_mode" ] && [ "$(area "$main_mode")" -gt $((1024 * 768)) ] && echo yes || echo no)"
+
+# Every value the cmdlines give the argument named $1 (a regex), one per
+# line, in order. Empty when no cmdline sets it.
+arg_values() {
+    cmdline | grep -oE "(^|[ \"])$1=[^ \"]*" | sed 's/^[ "]//; s/^[^=]*=//'
+}
+
+echo
+echo "the Pi 5 cmdline keeps the NVMe drive and its links out of power saving"
+check "rpi5 kas file is where the test expects" yes \
+    "$([ -f "$KAS_RPI5" ] && echo yes || echo no)"
+check "APST off: nvme_core.default_ps_max_latency_us is 0, set once" 0 \
+    "$(arg_values 'nvme_core\.default_ps_max_latency_us' | paste -sd, -)"
+check "ASPM off: pcie_aspm.policy is performance, set once" performance \
+    "$(arg_values 'pcie_aspm\.policy' | paste -sd, -)"
+check "no pcie_aspm= (off makes the kernel refuse the policy)" "" \
+    "$(arg_values 'pcie_aspm' | paste -sd, -)"
+check "no CMDLINE:remove or plain CMDLINE assignment in the image's config" 0 \
+    "$(grep -rhE '^[[:space:]]*CMDLINE(:remove|:prepend)?[[:space:]]*[?:+.]?=' \
+        "$KAS" "$KAS_RPI5" "$here/../meta-segno" | wc -l | tr -d ' ')"
 
 echo
 echo "kernel-cmdline: $pass passed, $fail failed"
