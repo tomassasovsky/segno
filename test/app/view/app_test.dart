@@ -121,7 +121,7 @@ class _DeferredUpdateBackend extends _FakeUpdateBackend {
 }
 
 class _RecordingWindowService implements WaveformWindowService {
-  _RecordingWindowService({this.openResult = true});
+  new({this.openResult = true});
 
   /// What [open] reports — `false` simulates a window that never readies.
   final bool openResult;
@@ -231,7 +231,7 @@ class _RecordingWindowService implements WaveformWindowService {
 
 /// What a push into a window that is not there looks like.
 class _WindowGone implements Exception {
-  const _WindowGone();
+  const new();
 }
 
 /// A MIDI source whose enumeration the test drives by hand, so a pinned
@@ -358,7 +358,7 @@ class _MonitorRestoreStore extends FakeKeyValueStore {
 }
 
 class _NoticeSessionRepository extends SessionRepository {
-  _NoticeSessionRepository()
+  new()
     : super(engine: FakeAudioEngine(), guards: GuardRegistry());
 
   final readEntered = Completer<void>();
@@ -641,7 +641,7 @@ class _PowerKey implements PowerKeySource {
 }
 
 class _ShutdownMidi extends MidiDeviceRepository {
-  _ShutdownMidi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
 
   final _inputs = StreamController<MidiInputMessage>.broadcast();

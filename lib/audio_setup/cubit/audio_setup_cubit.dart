@@ -27,7 +27,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Creates an [AudioSetupCubit] backed by [_repository], persisting the
   /// config through [_settings]. [_guards] is the app's operation table, and
   /// [_backing] the backing player an apply stops along with the tracks.
-  AudioSetupCubit({
+  new({
     required this._repository,
     required this._settings,
     required this._guards,

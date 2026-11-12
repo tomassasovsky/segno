@@ -68,7 +68,7 @@ class _PedalSetupStore extends FakeKeyValueStore {
 /// ordering (persist-before-clear) without mocking file I/O, since the
 /// repository itself is not mock-friendly (real disk access).
 class _RecordingPerformanceRepository extends PerformanceRepository {
-  _RecordingPerformanceRepository({
+  new({
     required this.log,
     required super.engine,
     required super.exportsRoot,
@@ -91,7 +91,7 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
 
 /// One connected MIDI input whose CC messages a test pushes by hand.
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
 
   final inputs = StreamController<MidiInputMessage>.broadcast();

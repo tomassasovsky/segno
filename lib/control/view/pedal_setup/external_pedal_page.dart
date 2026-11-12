@@ -41,7 +41,7 @@ import 'package:segno/theme/theme.dart';
 /// elsewhere can commit for them.
 class ExternalPedalPage extends StatefulWidget {
   /// Creates an [ExternalPedalPage].
-  const ExternalPedalPage({super.key});
+  const new({super.key});
 
   @override
   State<ExternalPedalPage> createState() => _ExternalPedalPageState();
@@ -887,7 +887,7 @@ int? _rawPosition(PedalState state, PedalCtrlJack jack) {
 
 /// The titlebar's save status, Cancel and Save.
 class _SaveActions extends StatelessWidget {
-  const _SaveActions({
+  const new({
     required this.state,
     required this.dirty,
     required this.saved,
@@ -968,7 +968,7 @@ class _SaveActions extends StatelessWidget {
 
 /// Which jack is open, and what is plugged into it.
 class _JackToolbar extends StatelessWidget {
-  const _JackToolbar({
+  const new({
     required this.jack,
     required this.type,
     required this.onJack,
@@ -1032,7 +1032,7 @@ class _JackToolbar extends StatelessWidget {
 /// An expression pedal's workspace: where the pedal is, beside what it
 /// controls and over what range.
 class _ExpressionWorkspace extends StatelessWidget {
-  const _ExpressionWorkspace({
+  const new({
     required this.jack,
     required this.expression,
     required this.selected,
@@ -1135,7 +1135,7 @@ class _ExpressionWorkspace extends StatelessWidget {
 /// Teaching an expression pedal its travel: where it is, beside the heel and
 /// toe captures.
 class _CalibrateWorkspace extends StatelessWidget {
-  const _CalibrateWorkspace({
+  const new({
     required this.jack,
     required this.calibration,
     required this.heel,
@@ -1210,7 +1210,7 @@ class _CalibrateWorkspace extends StatelessWidget {
 
 /// The button's name, and the tab between its actions and its controls.
 class _EditorTitle extends StatelessWidget {
-  const _EditorTitle({
+  const new({
     required this.index,
     required this.showControls,
     required this.onShowControls,
@@ -1267,7 +1267,7 @@ class _EditorTitle extends StatelessWidget {
 
 /// A button's actions: its switch type and what each gesture does.
 class _ActionsPanel extends StatelessWidget {
-  const _ActionsPanel({
+  const new({
     required this.index,
     required this.button,
     required this.onShowControls,
@@ -1386,7 +1386,7 @@ typedef _PickAction = void Function(
 
 /// Whether the button is momentary or latching.
 class _HardwareChoice extends StatelessWidget {
-  const _HardwareChoice({required this.hardware, required this.onSelect});
+  const new({required this.hardware, required this.onSelect});
 
   final ExternalSwitchHardware hardware;
   final ValueChanged<ExternalSwitchHardware> onSelect;
@@ -1439,7 +1439,7 @@ class _HardwareChoice extends StatelessWidget {
 
 /// One gesture's field: its name over the action it carries.
 class _ActionField extends StatelessWidget {
-  const _ActionField({
+  const new({
     required this.label,
     required this.action,
     required this.slot,
@@ -1495,7 +1495,7 @@ class _ActionField extends StatelessWidget {
 
 /// A button's controls: the effects it switches and the parameters it sets.
 class _ControlsPanel extends StatelessWidget {
-  const _ControlsPanel({
+  const new({
     required this.index,
     required this.button,
     required this.open,
@@ -1648,7 +1648,7 @@ class _ControlsPanel extends StatelessWidget {
 /// Choosing a button's new control, inside its editor: the switch art stays
 /// beside it, because the performer is still adding to THAT button.
 class _ButtonPicker extends StatelessWidget {
-  const _ButtonPicker({
+  const new({
     required this.button,
     required this.pick,
     required this.destination,

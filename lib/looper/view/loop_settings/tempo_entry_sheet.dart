@@ -39,7 +39,7 @@ Future<double?> showTempoEntrySheet(
 }
 
 class _TempoEntrySheet extends StatefulWidget {
-  const _TempoEntrySheet({required this.current});
+  const new({required this.current});
 
   final double current;
 

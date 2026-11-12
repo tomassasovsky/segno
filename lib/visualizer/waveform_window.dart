@@ -60,7 +60,7 @@ WaveformFrame waveformFrameFrom(
 /// because the 7" panel is a panel, not a window.
 class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
-  const WaveformWindowApp({
+  const new({
     required this.frame,
     required this.readout,
     this.onActivity = _noActivity,

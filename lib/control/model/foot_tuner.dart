@@ -8,7 +8,7 @@ import 'package:segno/tuner/application/tuner_settings.dart';
 /// muted. Never stored.
 class FootTunerSelection extends Equatable {
   /// Creates a selection.
-  const FootTunerSelection({this.page = 0, this.muted = true});
+  const new({this.page = 0, this.muted = true});
 
   /// The page of four tunable inputs the track switches show.
   final int page;
@@ -63,7 +63,7 @@ enum FootTunerRole {
 /// One switch on the Tuner face.
 class FootTunerPedal extends Equatable {
   /// Creates one switch's read.
-  const FootTunerPedal({
+  const new({
     required this.button,
     required this.role,
     this.input,
@@ -96,7 +96,7 @@ class FootTunerPedal extends Equatable {
 /// The Tuner face and the inputs it reaches.
 class FootTunerProjection extends Equatable {
   /// Creates a complete projection.
-  const FootTunerProjection({
+  const new({
     required this.inputs,
     required this.page,
     required this.source,

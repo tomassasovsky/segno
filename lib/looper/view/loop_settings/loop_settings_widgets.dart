@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// from the blue selection.
 class LoopFocusable extends StatelessWidget {
   /// Creates a focus stop around one actionable control.
-  const LoopFocusable({
+  const new({
     required this.child,
     required this.onActivate,
     this.enabled = true,
@@ -92,7 +92,7 @@ class LoopFocusable extends StatelessWidget {
 /// the recording rows.
 class LoopChoiceButton extends StatelessWidget {
   /// Creates a [LoopChoiceButton].
-  const LoopChoiceButton({
+  const new({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -205,7 +205,7 @@ class LoopChoiceButton extends StatelessWidget {
 /// may not), unless [fitLabel], where the box grows from [width] to fit it
 /// as far as its parent allows.
 class _LoopButtonBox extends StatelessWidget {
-  const _LoopButtonBox({
+  const new({
     required this.width,
     required this.height,
     required this.fitLabel,
@@ -244,7 +244,7 @@ class _LoopButtonBox extends StatelessWidget {
 /// one focus stop, so a tap on either and the encoder press all toggle it.
 class LoopSwitch extends StatelessWidget {
   /// Creates a [LoopSwitch].
-  const LoopSwitch({
+  const new({
     required this.value,
     required this.onChanged,
     required this.semanticLabel,
@@ -357,7 +357,7 @@ class LoopSwitch extends StatelessWidget {
 /// A row of equal [LoopChoiceButton]s sharing [width] with [gap] between.
 class LoopChoiceRow<T> extends StatelessWidget {
   /// Creates a [LoopChoiceRow].
-  const LoopChoiceRow({
+  const new({
     required this.values,
     required this.labelOf,
     required this.keyOf,
@@ -436,7 +436,7 @@ class LoopChoiceRow<T> extends StatelessWidget {
 /// A section heading (the pen's h2).
 class LoopSectionLabel extends StatelessWidget {
   /// Creates a [LoopSectionLabel].
-  const LoopSectionLabel(this.text, {this.fontSize = 28, super.key});
+  const new(this.text, {this.fontSize = 28, super.key});
 
   /// The heading.
   final String text;
@@ -470,7 +470,7 @@ enum LoopFieldOrigin {
 /// A scoped field's heading with its origin tag under or beside it.
 class LoopFieldLabel extends StatelessWidget {
   /// Creates a [LoopFieldLabel].
-  const LoopFieldLabel({
+  const new({
     required this.title,
     this.origin,
     this.originBeside = false,
@@ -539,7 +539,7 @@ class LoopFieldLabel extends StatelessWidget {
 /// needs it.
 class LoopUseDefaultButton extends StatelessWidget {
   /// Creates a [LoopUseDefaultButton].
-  const LoopUseDefaultButton({required this.onTap, super.key});
+  const new({required this.onTap, super.key});
 
   /// Removes the field's override, or null while its owner is unavailable.
   final VoidCallback? onTap;
@@ -581,7 +581,7 @@ enum LoopButtonTone {
 /// optional trailing glyph, or a glyph alone.
 class LoopOutlinedButton extends StatelessWidget {
   /// Creates a [LoopOutlinedButton].
-  const LoopOutlinedButton({
+  const new({
     required this.width,
     required this.onTap,
     this.label,
@@ -769,7 +769,7 @@ LoopFieldOrigin? scopedOrigin({
 /// The one-sentence note under a field (the pen's length-note).
 class LoopNote extends StatelessWidget {
   /// Creates a [LoopNote].
-  const LoopNote(this.text, {this.tone = LoopNoteTone.plain, super.key});
+  const new(this.text, {this.tone = LoopNoteTone.plain, super.key});
 
   /// The sentence.
   final String text;
@@ -807,7 +807,7 @@ enum LoopNoteTone {
 /// 68 high, a neutral inline notice (#1562), at most two lines.
 class LoopLockBanner extends StatelessWidget {
   /// Creates a [LoopLockBanner].
-  const LoopLockBanner({required this.text, required this.width, super.key});
+  const new({required this.text, required this.width, super.key});
 
   /// The reason.
   final String text;
@@ -829,7 +829,7 @@ class LoopLockBanner extends StatelessWidget {
 /// name at the right.
 class LoopScopeSelector extends StatelessWidget {
   /// Creates a [LoopScopeSelector].
-  const LoopScopeSelector({
+  const new({
     required this.trackNames,
     required this.selected,
     required this.onSelected,
@@ -929,7 +929,7 @@ class LoopScopeSelector extends StatelessWidget {
 /// restore its opening value and ownership.
 class LoopStepper extends StatefulWidget {
   /// Creates a [LoopStepper].
-  const LoopStepper({
+  const new({
     required this.value,
     required this.unit,
     required this.onDecrement,
@@ -1142,7 +1142,7 @@ class _LoopStepperState extends State<LoopStepper> {
 /// keyboard/encoder draft, arrows preview it, Enter commits, and Back cancels.
 class LoopSlider extends StatefulWidget {
   /// Creates a [LoopSlider].
-  const LoopSlider({
+  const new({
     required this.value,
     required this.onChanged,
     required this.width,

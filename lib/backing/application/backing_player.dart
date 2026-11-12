@@ -27,7 +27,7 @@ enum UseAsBackingOutcome {
 class BackingPlayer {
   /// Creates the owner over [_repository] (and its store) and the backing
   /// mix owner in [_settings], whose End decides the staging.
-  BackingPlayer({
+  new({
     required this._repository,
     required this._settings,
   });

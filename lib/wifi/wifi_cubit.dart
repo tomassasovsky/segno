@@ -18,7 +18,7 @@ class WifiCubit extends Cubit<WifiState> {
   /// backend/transient join failure — one entry per automatic retry.
   /// Injectable so tests do not sit through real seconds. [_clock] times the
   /// internet check's [connectivityInterval].
-  WifiCubit({
+  new({
     required this._repository,
     this._retryDelays = const [
       Duration(seconds: 2),

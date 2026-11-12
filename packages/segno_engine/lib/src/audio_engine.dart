@@ -202,7 +202,7 @@ typedef ReopenResult = ({
 /// Thrown when an [AudioEngine] operation fails.
 class EngineException implements Exception {
   /// Creates an [EngineException] from a failing [result].
-  const EngineException(this.result, [this.message]);
+  const new(this.result, [this.message]);
 
   /// The failing result code.
   final EngineResult result;

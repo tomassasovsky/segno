@@ -170,7 +170,7 @@ abstract final class EventLogReader {
 /// `docs/formats/performance-event-log-format.md`).
 class RawLogEntry {
   /// Creates a [RawLogEntry].
-  const RawLogEntry({
+  const new({
     required this.frame,
     required this.code,
     required this.payload,

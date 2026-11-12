@@ -13,7 +13,7 @@ import 'package:fx_catalogue/fx_catalogue.dart';
 /// import actually copied, and a hand-written fixture would only ever prove
 /// the parser reads the shape the test author imagined.
 class _DiskBundle extends CachingAssetBundle {
-  _DiskBundle(this.root, this.keys);
+  new(this.root, this.keys);
 
   final Directory root;
   final List<String> keys;
@@ -43,7 +43,7 @@ class _NoManifestBundle extends CachingAssetBundle {
 /// The disk bundle with the IMPORT manifest replaced, to exercise a bundle
 /// that holds the file but not a readable one.
 class _TextBundle extends _DiskBundle {
-  _TextBundle(super.root, super.keys, this.manifest);
+  new(super.root, super.keys, this.manifest);
 
   final String manifest;
 

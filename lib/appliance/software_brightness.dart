@@ -65,7 +65,7 @@ ColorFilter softwareBrightnessFilter(double brightness) {
 /// navigator and every open page) is never remounted by a brightness change.
 class SoftwareBrightness extends StatefulWidget {
   /// Creates a [SoftwareBrightness] wrapper.
-  const SoftwareBrightness({
+  const new({
     required this.brightness,
     required this.child,
     super.key,

@@ -21,7 +21,7 @@ import 'package:session_repository/session_repository.dart';
 /// session list beside the preview card.
 class LibrarySessionsTab extends StatelessWidget {
   /// Creates the Sessions tab.
-  const LibrarySessionsTab({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +64,7 @@ class LibrarySessionsTab extends StatelessWidget {
 /// The internal session list: search, folder chips and the rows.
 class LibrarySessionList extends StatelessWidget {
   /// Creates the internal session list.
-  const LibrarySessionList({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => Column(
@@ -89,7 +89,7 @@ class LibrarySessionList extends StatelessWidget {
 /// and creates it.
 class LibraryNewFolderButton extends StatelessWidget {
   /// Creates the New folder button.
-  const LibraryNewFolderButton({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +110,7 @@ class LibraryNewFolderButton extends StatelessWidget {
 /// on-screen keyboard sheet; an empty answer clears the search.
 class LibrarySearchField extends StatelessWidget {
   /// Creates the search field.
-  const LibrarySearchField({super.key});
+  const new({super.key});
 
   Future<void> _edit(BuildContext context, String query) async {
     final cubit = context.read<LibraryCubit>();
@@ -146,7 +146,7 @@ class LibrarySearchField extends StatelessWidget {
 /// taking keys.
 class LibrarySearchBox extends StatelessWidget {
   /// Creates the search box.
-  const LibrarySearchBox({
+  const new({
     required this.text,
     required this.placeholder,
     required this.semanticLabel,
@@ -216,7 +216,7 @@ class LibrarySearchBox extends StatelessWidget {
 /// The folder chips: `All`, `Unfiled`, then each folder.
 class LibraryFolderChips extends StatelessWidget {
   /// Creates the folder chips.
-  const LibraryFolderChips({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -270,7 +270,7 @@ class LibraryFolderChips extends StatelessWidget {
 /// One folder chip: 56 tall, as wide as its label, filled when selected.
 class LibraryChip extends StatelessWidget {
   /// Creates a [LibraryChip].
-  const LibraryChip({
+  const new({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -341,7 +341,7 @@ class LibraryChip extends StatelessWidget {
 /// first, or a line saying why there are none.
 class LibrarySessionRows extends StatelessWidget {
   /// Creates the session rows.
-  const LibrarySessionRows({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -392,7 +392,7 @@ class LibrarySessionRows extends StatelessWidget {
 /// strip. A tap selects it for the preview; it never opens it.
 class LibrarySessionRow extends StatelessWidget {
   /// Creates a [LibrarySessionRow].
-  const LibrarySessionRow({
+  const new({
     required this.summary,
     required this.current,
     required this.selected,
@@ -494,7 +494,7 @@ enum LibraryTrackStripSize {
   /// The New loop sheet's before and after strips (19/02): 346 x 36.
   sheet(width: 346, height: 36, slotWidth: 38);
 
-  LibraryTrackStripSize({
+  new({
     required this.width,
     required this.height,
     required this.slotWidth,
@@ -514,7 +514,7 @@ enum LibraryTrackStripSize {
 /// session holds recorded audio.
 class LibraryTrackStrip extends StatelessWidget {
   /// Creates a track strip for the populated [channels].
-  const LibraryTrackStrip({
+  const new({
     required this.channels,
     this.setUp = const [],
     this.size = LibraryTrackStripSize.row,
@@ -564,7 +564,7 @@ class LibraryTrackStrip extends StatelessWidget {
 /// One slot of a [LibraryTrackStrip]: filled when its track holds audio,
 /// outlined when a loop template sets it up, else empty.
 class _StripSlot extends StatelessWidget {
-  const _StripSlot({
+  const new({
     required this.filled,
     required this.setUp,
     required this.size,
@@ -620,7 +620,7 @@ String savedDateLabel(BuildContext context, DateTime? at, {DateTime? now}) {
 /// tap away.
 class LibraryConnectUsb extends StatelessWidget {
   /// Creates the no-drive notice.
-  const LibraryConnectUsb({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -661,7 +661,7 @@ class LibraryConnectUsb extends StatelessWidget {
 /// storage service words it.
 class LibraryUnusableUsb extends StatelessWidget {
   /// Creates the notice for [volume].
-  const LibraryUnusableUsb({required this.volume, super.key});
+  const new({required this.volume, super.key});
 
   /// The drive that cannot be read.
   final RemovableVolume volume;

@@ -965,7 +965,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 class _Harness {
-  _Harness(FakeAsync fa) {
+  new(FakeAsync fa) {
     engine = PumpedNativeEngine();
     ticker = StreamController<void>.broadcast(sync: true);
     reconnectTicker = StreamController<void>.broadcast(sync: true);
@@ -1149,13 +1149,13 @@ void _inHarness(void Function(_Harness h, FakeAsync fa) body) {
 // ---------------------------------------------------------------------------
 
 sealed class _FuzzAction {
-  const _FuzzAction();
+  const new();
   void apply(_Harness h, FakeAsync fa);
   String describe();
 }
 
 class _Tap extends _FuzzAction {
-  const _Tap(this.button);
+  const new(this.button);
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
@@ -1173,7 +1173,7 @@ class _Tap extends _FuzzAction {
 }
 
 class _Hold extends _FuzzAction {
-  const _Hold(this.button);
+  const new(this.button);
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
@@ -1185,7 +1185,7 @@ class _Hold extends _FuzzAction {
 }
 
 class _Release extends _FuzzAction {
-  const _Release(this.button);
+  const new(this.button);
   final PedalButton button;
   @override
   void apply(_Harness h, FakeAsync fa) {
@@ -1197,7 +1197,7 @@ class _Release extends _FuzzAction {
 }
 
 class _LongPressUndo extends _FuzzAction {
-  const _LongPressUndo();
+  const new();
   @override
   void apply(_Harness h, FakeAsync fa) {
     h._held.remove(PedalButton.undo);
@@ -1215,7 +1215,7 @@ class _LongPressUndo extends _FuzzAction {
 }
 
 class _Encoder extends _FuzzAction {
-  const _Encoder(this.delta);
+  const new(this.delta);
   final int delta;
   @override
   // A stage turn as EncoderNavigation routes it (#1276).
@@ -1225,7 +1225,7 @@ class _Encoder extends _FuzzAction {
 }
 
 class _Bloc extends _FuzzAction {
-  const _Bloc(this.kind, this.channel);
+  const new(this.kind, this.channel);
   final String kind;
   final int channel;
   @override
@@ -1256,7 +1256,7 @@ class _Bloc extends _FuzzAction {
 }
 
 class _Select extends _FuzzAction {
-  const _Select(this.channel);
+  const new(this.channel);
   final int channel;
   @override
   void apply(_Harness h, FakeAsync fa) => h.control.selectTrack(channel);
@@ -1265,7 +1265,7 @@ class _Select extends _FuzzAction {
 }
 
 class _ToggleMode extends _FuzzAction {
-  const _ToggleMode();
+  const new();
   @override
   void apply(_Harness h, FakeAsync fa) => h.control.toggleMode();
   @override
@@ -1276,7 +1276,7 @@ class _ToggleMode extends _FuzzAction {
 /// only way to reach Rec from Mute without passing through FX (whose entry
 /// finalizes a live capture, A5).
 class _SetMode extends _FuzzAction {
-  const _SetMode(this.mode);
+  const new(this.mode);
   final InteractionMode mode;
   @override
   void apply(_Harness h, FakeAsync fa) => h.control.setMode(mode);
@@ -1285,7 +1285,7 @@ class _SetMode extends _FuzzAction {
 }
 
 class _Pump extends _FuzzAction {
-  const _Pump(this.frames, this.input);
+  const new(this.frames, this.input);
   final int frames;
   final double input;
   @override
@@ -1296,7 +1296,7 @@ class _Pump extends _FuzzAction {
 }
 
 class _Tick extends _FuzzAction {
-  const _Tick();
+  const new();
   @override
   void apply(_Harness h, FakeAsync fa) => h.ticker.add(null);
   @override
@@ -1304,7 +1304,7 @@ class _Tick extends _FuzzAction {
 }
 
 class _Elapse extends _FuzzAction {
-  const _Elapse(this.ms);
+  const new(this.ms);
   final int ms;
   @override
   void apply(_Harness h, FakeAsync fa) => fa.elapse(Duration(milliseconds: ms));
@@ -1316,7 +1316,7 @@ class _Elapse extends _FuzzAction {
 /// snapshot-read toggle) this sets an absolute value, so shrunk repros stay
 /// deterministic and mute-during-capture windows are directly reachable.
 class _MuteTrack extends _FuzzAction {
-  const _MuteTrack(this.channel, {required this.muted});
+  const new(this.channel, {required this.muted});
   final int channel;
   final bool muted;
   @override
@@ -1330,7 +1330,7 @@ class _MuteTrack extends _FuzzAction {
 /// record paths — and their interplay with mutes and parks — that the
 /// immediate paths never exercise.
 class _SetQuantize extends _FuzzAction {
-  const _SetQuantize({required this.enabled});
+  const new({required this.enabled});
   final bool enabled;
   @override
   void apply(_Harness h, FakeAsync fa) => h.repo.setRecordTiming(
@@ -1355,7 +1355,7 @@ const List<TrackEffectType> _fxPalette = [
 /// Sets lane [lane] of track [channel]'s chain to [types] (empty clears it),
 /// straight through the repository — the same call the bloc makes.
 class _SetLaneChain extends _FuzzAction {
-  const _SetLaneChain(this.channel, this.lane, this.types);
+  const new(this.channel, this.lane, this.types);
   final int channel;
   final int lane;
   final List<int> types; // indices into _fxPalette
@@ -1373,7 +1373,7 @@ class _SetLaneChain extends _FuzzAction {
 
 /// Sets monitor input [input]'s chain to [types] (empty clears it).
 class _SetMonitorChain extends _FuzzAction {
-  const _SetMonitorChain(this.input, this.types);
+  const new(this.input, this.types);
   final int input;
   final List<int> types;
 
@@ -1394,7 +1394,7 @@ class _SetMonitorChain extends _FuzzAction {
 /// dry take. The repository owns the snapshot now, so the take must still carry
 /// the chain and cache == engine must hold after the next settle.
 class _SetMonitorThenRecord extends _FuzzAction {
-  const _SetMonitorThenRecord(this.input, this.channel, this.types);
+  const new(this.input, this.channel, this.types);
   final int input;
   final int channel;
   final List<int> types;
@@ -1418,7 +1418,7 @@ class _SetMonitorThenRecord extends _FuzzAction {
 
 /// Hand-rolled xorshift PRNG — deterministic across platforms and runs.
 class _Rng {
-  _Rng(int seed) : _s = seed == 0 ? 0x9E3779B9 : seed;
+  new(int seed) : _s = seed == 0 ? 0x9E3779B9 : seed;
   int _s;
   int next(int max) {
     var x = _s;

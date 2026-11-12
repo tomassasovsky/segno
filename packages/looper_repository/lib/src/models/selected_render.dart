@@ -38,7 +38,7 @@ enum RenderPhase {
 @immutable
 class SelectedRender {
   /// Creates a [SelectedRender].
-  const SelectedRender({
+  const new({
     required this.sources,
     this.lengthBars,
     this.tails = RenderTailRule.wrap,
@@ -96,7 +96,7 @@ class SelectedRender {
 @immutable
 class SelectedRenderPlan {
   /// Creates a [SelectedRenderPlan].
-  const SelectedRenderPlan({
+  const new({
     required this.frames,
     required this.seconds,
     required this.commonCycle,
@@ -112,7 +112,7 @@ class SelectedRenderPlan {
   /// [beatsPerBar] beats to the bar. Without a time signature
   /// ([beatsPerBar] below 1) a bar is four beats, the engine's own default
   /// for a chosen length, so the readout and the rendered length agree.
-  factory SelectedRenderPlan.fromEngine(
+  factory fromEngine(
     RenderPlan plan, {
     required int sampleRate,
     required int beatsPerBar,
@@ -211,7 +211,7 @@ typedef SelectedRenderMeasurement = ({
 @immutable
 class RenderProgress {
   /// Creates a [RenderProgress].
-  const RenderProgress({required this.phase, required this.permille});
+  const new({required this.phase, required this.permille});
 
   /// Where the job is.
   final RenderPhase phase;
@@ -237,7 +237,7 @@ class RenderProgress {
 @immutable
 class RenderOutcome {
   /// Creates a [RenderOutcome].
-  const RenderOutcome({
+  const new({
     required this.result,
     this.path,
     this.cancelled = false,

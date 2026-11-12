@@ -28,7 +28,7 @@ class InstrumentRepository {
   /// Creates an [InstrumentRepository] over [engine], observing [snapshots]
   /// (the caller's engine poll). [defaultVoiceLimit] is the limit a fresh
   /// session and every engine reset start from.
-  InstrumentRepository({
+  new({
     required AudioEngine engine,
     required Stream<EngineSnapshot> snapshots,
     int defaultVoiceLimit = 32,

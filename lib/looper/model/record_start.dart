@@ -7,7 +7,7 @@ const List<int> kCountInBarOptions = [0, 1, 2, 4];
 /// The accepted mutually exclusive Count-in and Sound-start settings.
 final class RecordStartSettings extends Equatable {
   /// Creates a validated pair without coercing unsupported choices.
-  RecordStartSettings({
+  new({
     required this.countInBars,
     required this.soundStart,
   }) {
@@ -18,7 +18,7 @@ final class RecordStartSettings extends Equatable {
   }
 
   /// Decodes exact absence while preserving explicit Off or Sound intent.
-  factory RecordStartSettings.fromCheckpoint(
+  factory fromCheckpoint(
     ({int? countInBars, bool? soundStart}) checkpoint,
   ) => RecordStartSettings(
     countInBars:
@@ -45,7 +45,7 @@ final class RecordStartSettings extends Equatable {
 /// Confirmed recording-start settings and current capture eligibility.
 final class RecordStartSnapshot extends Equatable {
   /// Creates an immutable accepted snapshot.
-  const RecordStartSnapshot({
+  const new({
     required this.settings,
     required this.captureLocked,
   });
@@ -72,7 +72,7 @@ enum RecordStartStatus { applied, rejected, superseded, recoveryRequired }
 /// Persistence and native receipt outcome for the pair.
 final class RecordStartOutcome {
   /// Creates an outcome without treating enqueue as confirmation.
-  const RecordStartOutcome(
+  const new(
     this.status, {
     this.engineResult,
     this.error,

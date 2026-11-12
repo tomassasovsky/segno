@@ -12,7 +12,7 @@ import 'package:segno/looper/model/playback_options.dart';
 class MockDecayPlaybackSettings extends Mock
     implements PlaybackSettings, DecayControl, OneShotControl {
   /// Creates an available accepted owner, or one still uninitialized.
-  MockDecayPlaybackSettings({
+  new({
     DecaySnapshot? snapshot,
     OneShotSnapshot? oneShot,
     InheritSnapshot<bool>? followTempo,

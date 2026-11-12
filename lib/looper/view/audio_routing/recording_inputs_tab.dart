@@ -58,7 +58,7 @@ _RecordValues _recordValues(LooperState state, int chosen) {
 /// which inputs an existing recording holds.
 class RecordingInputsTab extends StatefulWidget {
   /// Creates a [RecordingInputsTab].
-  const RecordingInputsTab({super.key});
+  const new({super.key});
 
   @override
   State<RecordingInputsTab> createState() => _RecordingInputsTabState();
@@ -202,7 +202,7 @@ class _RecordingInputsTabState extends State<RecordingInputsTab> {
 /// The pen's `routing-input` card: the jack's number and name with a check
 /// badge that says whether this track records it.
 class _InputChoiceCard extends StatelessWidget {
-  const _InputChoiceCard({
+  const new({
     required this.ordinal,
     required this.name,
     required this.selected,

@@ -56,7 +56,7 @@ class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
 /// A performance repository whose capture status a scene sets, so the
 /// Control owner's armed LED follows the recorder the scene shows.
 class _ScenePerformance extends PerformanceRepository {
-  _ScenePerformance()
+  new()
     : super(
         guards: GuardRegistry(),
         engine: FakeAudioEngine(),

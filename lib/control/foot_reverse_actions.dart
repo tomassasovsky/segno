@@ -5,7 +5,7 @@ import 'package:segno/control/model/foot_reverse.dart';
 /// Control owns contacts; this component caches nothing.
 class FootReverseActions {
   /// Connects the shared repository without introducing a new lifetime.
-  const FootReverseActions({required this.repository});
+  const new({required this.repository});
 
   /// Callback-owned direction and its receipts.
   final LooperRepository repository;

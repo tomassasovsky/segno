@@ -42,7 +42,7 @@ BuiltInEffect _module(String slotId, FxRack rack, {bool enabled = true}) =>
 /// A console rig over the in-memory engine: the real repository, persistence
 /// and control cubit, with an external switch on CTRL 1.
 class _Rig {
-  _Rig({ExternalJackSetup? jack}) {
+  new({ExternalJackSetup? jack}) {
     if (jack != null) {
       store.values['pedal.setup'] = const PedalSetup()
           .copyWith(

@@ -3,7 +3,7 @@ part of 'tuner_cubit.dart';
 /// State for [TunerCubit]: what the tuner is listening to, and what it heard.
 class TunerState extends Equatable {
   /// Creates a [TunerState].
-  const TunerState({
+  const new({
     this.input = 0,
     this.referenceHz = 440,
     this.hz = 0,

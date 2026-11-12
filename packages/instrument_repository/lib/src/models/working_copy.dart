@@ -16,14 +16,14 @@ enum AddRefusal {
 /// Immutable; each edit returns the next copy for the owner to write.
 class InstrumentsWorkingCopy extends Equatable {
   /// Creates an [InstrumentsWorkingCopy].
-  const InstrumentsWorkingCopy({
+  const new({
     this.instruments = const [],
     this.tombstones = const [],
   });
 
   /// Decodes [json]; throws [FormatException] when it is malformed or two
   /// entries claim one slot or id.
-  factory InstrumentsWorkingCopy.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     if (json['version'] != version) {
       throw FormatException('Unknown instruments version', json['version']);
     }

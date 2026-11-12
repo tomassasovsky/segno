@@ -2350,7 +2350,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
 }
 
 class _LengthSnapshot extends EngineSnapshot {
-  _LengthSnapshot(
+  new(
     EngineSnapshot source,
     Map<int, int> lengths,
     LooperMode? mode,
@@ -2458,7 +2458,7 @@ class _LengthSnapshot extends EngineSnapshot {
 }
 
 class _LengthTrack extends TrackSnapshot {
-  _LengthTrack(
+  new(
     TrackSnapshot source,
     int? bars,
     FakeAudioEngine engine,
@@ -2533,7 +2533,7 @@ int _laneCount(TrackSnapshot source, FakeAudioEngine engine, int channel) {
 }
 
 class _MixLane extends LaneSnapshot {
-  _MixLane(LaneSnapshot source, FakeAudioEngine engine, (int, int) key)
+  new(LaneSnapshot source, FakeAudioEngine engine, (int, int) key)
     : super(
         inputChannel: source.inputChannel,
         outputMask: source.outputMask,

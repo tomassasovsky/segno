@@ -8,7 +8,7 @@ import 'package:pedal_repository/src/pedal_link_message.dart';
 /// as disconnected, and everything sent to it is dropped.
 class NoopPedalLink implements PedalLink {
   /// Creates a [NoopPedalLink].
-  NoopPedalLink();
+  new();
 
   final StreamController<PedalLinkMessage> _inbound =
       StreamController<PedalLinkMessage>.broadcast();

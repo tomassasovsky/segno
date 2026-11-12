@@ -16,7 +16,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// when you record into the input, so what you monitor is what the take stores.
 class MonitorState extends Equatable {
   /// Creates a [MonitorState] from a map of input index to its [InputMonitor].
-  const MonitorState({this.inputs = const {}, this.restoreFailed = false});
+  const new({this.inputs = const {}, this.restoreFailed = false});
 
   /// Saved monitoring has not been fully restored; an explicit retry is needed.
   final bool restoreFailed;
@@ -49,7 +49,7 @@ class MonitorState extends Equatable {
 class MonitorCubit extends Cubit<MonitorState> {
   /// Creates a [MonitorCubit] driving [_repository], persisted through
   /// [_settings].
-  MonitorCubit({
+  new({
     required this._repository,
     required this._settings,
     required this._mixSettings,

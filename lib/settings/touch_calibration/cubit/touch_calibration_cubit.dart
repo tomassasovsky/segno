@@ -44,7 +44,7 @@ enum TouchCalibrationPhase {
 /// A touch calibration's progress.
 class TouchCalibrationState extends Equatable {
   /// Creates a [TouchCalibrationState].
-  const TouchCalibrationState({
+  const new({
     this.phase = TouchCalibrationPhase.loading,
     this.step = 0,
     this.steps = 0,
@@ -109,7 +109,7 @@ class TouchCalibrationState extends Equatable {
 /// that the guard table refuses starts nothing and says what is running.
 class TouchCalibrationCubit extends Cubit<TouchCalibrationState> {
   /// Creates a [TouchCalibrationCubit] for [_screen].
-  TouchCalibrationCubit({
+  new({
     required this._client,
     required this._guards,
     required this._screen,

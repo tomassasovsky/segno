@@ -4,7 +4,7 @@ part of 'transport_clock_cubit.dart';
 /// whether it is counting right now.
 class TransportClockState extends Equatable {
   /// Creates a [TransportClockState].
-  const TransportClockState({
+  const new({
     this.elapsed = Duration.zero,
     this.running = false,
   });

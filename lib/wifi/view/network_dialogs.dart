@@ -14,7 +14,7 @@ import 'package:segno/wifi/wifi_cubit.dart';
 /// it 1:1 and a desktop window sees it smaller.
 class NetworkDialogFrame extends StatelessWidget {
   /// Creates a [NetworkDialogFrame].
-  const NetworkDialogFrame({
+  const new({
     required this.width,
     required this.label,
     required this.child,
@@ -72,7 +72,7 @@ class NetworkDialogFrame extends StatelessWidget {
 /// cutting it.
 class NetworkDialogTitle extends StatelessWidget {
   /// Creates a [NetworkDialogTitle].
-  const NetworkDialogTitle(this.text, {super.key});
+  const new(this.text, {super.key});
 
   /// The heading.
   final String text;
@@ -95,7 +95,7 @@ class NetworkDialogTitle extends StatelessWidget {
 /// join is in flight, and holds still when the platform asks for no motion.
 class NetworkProgressBar extends StatefulWidget {
   /// Creates a [NetworkProgressBar].
-  const NetworkProgressBar({this.width = 240, super.key});
+  const new({this.width = 240, super.key});
 
   /// The track's width.
   final double width;
@@ -181,7 +181,7 @@ Future<void> showNetworkConnectingDialog(
 );
 
 class _ConnectingDialog extends StatefulWidget {
-  const _ConnectingDialog({required this.ssid, required this.previous});
+  const new({required this.ssid, required this.previous});
 
   final String ssid;
   final String? previous;
@@ -300,7 +300,7 @@ Future<NetworkDetailsAction?> showNetworkDetailsDialog(
 );
 
 class _DetailsDialog extends StatelessWidget {
-  const _DetailsDialog({required this.ssid});
+  const new({required this.ssid});
 
   final String ssid;
 
@@ -452,7 +452,7 @@ class _DetailsDialog extends StatelessWidget {
 /// One row of the details dialog: its name at the left, then a control, or a
 /// chevron when the whole row leads somewhere.
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({
+  const new({
     required this.label,
     this.trailing,
     this.onTap,
@@ -514,7 +514,7 @@ class _DetailRow extends StatelessWidget {
 /// Forget network: a borderless action whose label starts at the dialog's
 /// content edge, in line with the rows above it (#1590 NET-1).
 class _ForgetNetworkButton extends StatelessWidget {
-  const _ForgetNetworkButton({required this.onTap, super.key});
+  const new({required this.onTap, super.key});
 
   /// Forgets the network, or null while the Wi-Fi owner is busy.
   final VoidCallback? onTap;
@@ -623,7 +623,7 @@ Future<bool> showNetworkForgetDialog(
 /// The connection's address beside its status line: "IP 192.168.1.42".
 class NetworkIpChip extends StatelessWidget {
   /// Creates a [NetworkIpChip].
-  const NetworkIpChip({required this.ip, super.key});
+  const new({required this.ip, super.key});
 
   /// The IPv4 address.
   final String ip;

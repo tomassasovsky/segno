@@ -17,7 +17,7 @@ import 'package:segno/theme/surface_theme.dart';
 @immutable
 class NoticeTheme extends ThemeExtension<NoticeTheme> {
   /// Creates a [NoticeTheme].
-  const NoticeTheme({
+  const new({
     required this.barTitle,
     required this.barBody,
     required this.barAction,

@@ -87,7 +87,7 @@ void main() {
 }
 
 class _Counter extends StatefulWidget {
-  const _Counter();
+  const new();
 
   @override
   State<_Counter> createState() => _CounterState();

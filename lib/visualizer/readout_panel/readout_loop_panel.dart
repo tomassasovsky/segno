@@ -31,7 +31,7 @@ const List<(int, int)> kReadoutQuickSignatures = [(3, 4), (4, 4), (6, 8)];
 /// rather than hide it.
 class ReadoutLoopPanel extends StatefulWidget {
   /// Creates a [ReadoutLoopPanel].
-  const ReadoutLoopPanel({
+  const new({
     required this.readout,
     required this.frame,
     required this.onCommand,
@@ -226,7 +226,7 @@ bool readoutSignatureEditable(PerformanceReadout readout) =>
 
 /// `1 ♛ GUITAR`, then the state, the bars, a small waveform and Done.
 class _PanelHeader extends StatelessWidget {
-  const _PanelHeader({
+  const new({
     required this.readout,
     required this.frame,
     required this.onDone,
@@ -354,7 +354,7 @@ class _PanelHeader extends StatelessWidget {
 
 /// The band under the header while a take holds the settings.
 class _RecordingBand extends StatelessWidget {
-  const _RecordingBand();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -395,7 +395,7 @@ class _RecordingBand extends StatelessWidget {
 
 /// A section's title, its subtitle, the lock mark and a note.
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({
+  const new({
     required this.title,
     this.subtitle,
     this.locked = false,
@@ -476,7 +476,7 @@ class _SectionLabel extends StatelessWidget {
 
 /// The tempo, its beat lights, the steps and Tap.
 class _TempoCard extends StatelessWidget {
-  const _TempoCard({
+  const new({
     required this.readout,
     required this.frame,
     required this.onCommand,
@@ -700,7 +700,7 @@ class _TempoCard extends StatelessWidget {
 /// One light per beat of the bar, the sounding one lit while the selected
 /// track plays, worked out from its playhead, its bars and the signature.
 class _BeatLights extends StatelessWidget {
-  const _BeatLights({required this.readout, required this.frame});
+  const new({required this.readout, required this.frame});
 
   final PerformanceReadout readout;
   final ValueListenable<WaveformFrame> frame;
@@ -749,7 +749,7 @@ class _BeatLights extends StatelessWidget {
 
 /// The signature, length and record timing sections.
 class _Choices extends StatelessWidget {
-  const _Choices({
+  const new({
     required this.readout,
     required this.lengthBars,
     required this.onSignature,
@@ -944,7 +944,7 @@ class _Choices extends StatelessWidget {
 /// One of the panel's choice sections: its label over rows of buttons, the
 /// rows and the buttons in them [gap] apart.
 class _ChoiceSection extends StatelessWidget {
-  const _ChoiceSection({
+  const new({
     required this.label,
     required this.rows,
     required this.gap,
@@ -973,7 +973,7 @@ class _ChoiceSection extends StatelessWidget {
 
 /// One record timing on the Start rows.
 class _TimingButton extends StatelessWidget {
-  const _TimingButton({
+  const new({
     required this.timing,
     required this.selected,
     required this.enabled,
@@ -998,7 +998,7 @@ class _TimingButton extends StatelessWidget {
 
 /// One of the tempo card's steps: held, it repeats.
 class _TempoStep extends StatelessWidget {
-  const _TempoStep({
+  const new({
     required this.label,
     required this.delta,
     required this.enabled,
@@ -1024,7 +1024,7 @@ class _TempoStep extends StatelessWidget {
 
 /// Every valid signature, four across, with Back.
 class _SignatureGrid extends StatelessWidget {
-  const _SignatureGrid({
+  const new({
     required this.readout,
     required this.onChosen,
     required this.onBack,
@@ -1089,7 +1089,7 @@ class _SignatureGrid extends StatelessWidget {
 
 /// The dotted line under the tempo that says it can be typed.
 class _DottedRule extends StatelessWidget {
-  const _DottedRule();
+  const new();
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -1101,7 +1101,7 @@ class _DottedRule extends StatelessWidget {
 
 /// 3 px dashes, 3 px apart, across the width.
 class _DotsPainter extends CustomPainter {
-  const _DotsPainter(this.color);
+  const new(this.color);
 
   final Color color;
 
@@ -1121,7 +1121,7 @@ class _DotsPainter extends CustomPainter {
 /// notice (#1653): the title in [style]'s weight 600 in `warning`, then the
 /// reason, wrapped whole as the readout's notice band wraps it.
 class _RefusalNote extends StatelessWidget {
-  const _RefusalNote({required this.refusal, required this.style});
+  const new({required this.refusal, required this.style});
 
   final ReadoutRefusal refusal;
   final TextStyle style;

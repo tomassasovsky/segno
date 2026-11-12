@@ -116,7 +116,7 @@ class _RecordStartOwner extends Fake
 /// The Record length owner's Session exclusion as the registry runs it:
 /// it waits for a pending receipt, whatever the receipt's result.
 class _LengthOwner extends Fake implements SettingsOwner<Object, Object?> {
-  _LengthOwner(this.looper);
+  new(this.looper);
   final LooperRepository looper;
 
   @override
@@ -138,7 +138,7 @@ class _TempoOwner extends Fake implements TempoSettings {
 }
 
 class _DecayOwner extends Fake implements SettingsOwner<DecaySnapshot, int?> {
-  _DecayOwner(this.looper);
+  new(this.looper);
   final LooperRepository looper;
 
   @override
@@ -150,7 +150,7 @@ class _DecayOwner extends Fake implements SettingsOwner<DecaySnapshot, int?> {
 
 class _OneShotOwner extends Fake
     implements SettingsOwner<OneShotSnapshot, bool?> {
-  _OneShotOwner(this.looper);
+  new(this.looper);
   final LooperRepository looper;
 
   @override
@@ -162,14 +162,14 @@ class _OneShotOwner extends Fake
 
 class _InheritOwner<T extends Object> extends Fake
     implements SettingsOwner<InheritSnapshot<T>, bool?> {
-  _InheritOwner(this.durable);
+  new(this.durable);
 
   @override
   final InheritSnapshot<T> durable;
 }
 
 class _PlaybackOwner extends Fake implements PlaybackSettings {
-  _PlaybackOwner(LooperRepository looper)
+  new(LooperRepository looper)
     : decayOwner = _DecayOwner(looper),
       oneShotOwner = _OneShotOwner(looper);
 
@@ -196,7 +196,7 @@ class _PlaybackOwner extends Fake implements PlaybackSettings {
 }
 
 class _RecordOwner extends Fake implements RecordSettings {
-  _RecordOwner(this.looper);
+  new(this.looper);
   final LooperRepository looper;
 
   @override
@@ -209,7 +209,7 @@ class _RecordOwner extends Fake implements RecordSettings {
 }
 
 class _TimingOwner extends Fake implements RecordTimingSettings {
-  _TimingOwner(this.looper);
+  new(this.looper);
   final LooperRepository looper;
 
   @override

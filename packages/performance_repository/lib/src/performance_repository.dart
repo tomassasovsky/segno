@@ -50,7 +50,7 @@ class PerformanceRepository {
   /// [_bootId] reads this boot's kernel id, which decides how far recovery
   /// trusts a take's files ([readBootId]).
 
-  PerformanceRepository({
+  new({
     required this._engine,
     required this._exportsRoot,
     required this._guards,
@@ -2200,7 +2200,7 @@ class PerformanceRepository {
 /// A hold on [PerformanceRepository.arm] from
 /// [PerformanceRepository.holdArm]; [release] lets arming through again.
 final class PerformanceArmHold {
-  PerformanceArmHold._(this._onRelease);
+  new _(this._onRelease);
 
   final void Function() _onRelease;
   bool _released = false;

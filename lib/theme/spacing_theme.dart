@@ -15,7 +15,7 @@ import 'package:material_ui/material_ui.dart';
 @immutable
 class SpacingTheme extends ThemeExtension<SpacingTheme> {
   /// Creates a [SpacingTheme].
-  const SpacingTheme({
+  const new({
     required this.xs,
     required this.sm,
     required this.md,

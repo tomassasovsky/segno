@@ -43,7 +43,7 @@ const double _kTitleRight = _kSoloFromRight + 24 + 300;
 /// pedals than fit.
 class FxRackEditor extends StatelessWidget {
   /// Creates an [FxRackEditor].
-  const FxRackEditor({
+  const new({
     required this.group,
     required this.destination,
     required this.destinationLabel,
@@ -219,7 +219,7 @@ class FxRackEditor extends StatelessWidget {
 /// The plain line between two pedals. No arrowhead: the order of the columns
 /// is what says which way the signal goes.
 class _Cable extends StatelessWidget {
-  const _Cable({required this.height, super.key});
+  const new({required this.height, super.key});
 
   final double height;
 
@@ -237,7 +237,7 @@ class _Cable extends StatelessWidget {
 /// The titlebar's own row: the rack's bypass, its options, Save preset and
 /// Add effect.
 class _RackActions extends StatelessWidget {
-  const _RackActions({
+  const new({
     required this.enabled,
     required this.onToggle,
     required this.onOptions,
@@ -300,7 +300,7 @@ class _RackActions extends StatelessWidget {
 /// controls beneath.
 class FxPedalColumn extends StatefulWidget {
   /// Creates an [FxPedalColumn].
-  const FxPedalColumn({
+  const new({
     required this.effect,
     required this.onTogglePower,
     required this.onParam,
@@ -446,7 +446,7 @@ class _FxPedalColumnState extends State<FxPedalColumn> {
 
 /// The app's own mark, drawn where a pedal has no artwork.
 class _PedalMark extends StatelessWidget {
-  const _PedalMark({required this.lit});
+  const new({required this.lit});
 
   /// Whether the pedal is on.
   final bool lit;
@@ -467,7 +467,7 @@ class _PedalMark extends StatelessWidget {
 /// The pedal's title and power in one control, as the accepted design puts it:
 /// power belongs to the title button and nowhere else.
 class _PedalTitle extends StatelessWidget {
-  const _PedalTitle({
+  const new({
     required this.name,
     required this.enabled,
     required this.onTap,

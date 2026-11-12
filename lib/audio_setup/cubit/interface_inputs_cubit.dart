@@ -22,7 +22,7 @@ part 'interface_inputs_state.dart';
 class InterfaceInputsCubit extends Cubit<InterfaceInputsState> {
   /// Creates an [InterfaceInputsCubit] that follows [_repository]'s open
   /// device.
-  InterfaceInputsCubit({
+  new({
     required this._repository,
     this._watchInterval = const Duration(milliseconds: 500),
   }) : super(const InterfaceInputsState()) {

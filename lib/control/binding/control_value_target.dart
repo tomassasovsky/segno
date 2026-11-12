@@ -34,7 +34,7 @@ import 'package:segno/looper/model/record_timing.dart';
 /// and one pickup rule can serve a gain fader, pan, and output level.
 sealed class ControlValueTarget extends Equatable {
   /// Const base constructor for the sealed subtypes.
-  const ControlValueTarget();
+  const new();
 
   /// Valid target coordinates, independent of whether the rig has that target.
   bool get isStructurallyValid => switch (this) {
@@ -185,7 +185,7 @@ sealed class ControlValueTarget extends Equatable {
 /// appear in the picker).
 final class FxParamTarget extends ControlValueTarget {
   /// Creates an FX-parameter target.
-  const FxParamTarget({
+  const new({
     required this.address,
     required this.slotId,
     required this.param,
@@ -211,7 +211,7 @@ final class FxParamTarget extends ControlValueTarget {
 /// One track's volume fader.
 final class TrackVolumeTarget extends MixValueTarget {
   /// Creates a track-volume target on [channel].
-  const TrackVolumeTarget(this.channel);
+  const new(this.channel);
 
   /// The track channel.
   final int channel;
@@ -228,7 +228,7 @@ final class TrackVolumeTarget extends MixValueTarget {
 /// The rig coordinate remains stable even when the current device lacks it.
 sealed class MixValueTarget extends ControlValueTarget {
   /// Const base constructor for Mixer target subtypes.
-  const MixValueTarget();
+  const new();
 
   /// Converts a stored endpoint or live source position into Mixer units.
   double toDomain(double normalized) {
@@ -269,7 +269,7 @@ sealed class MixValueTarget extends ControlValueTarget {
 /// One active lane's independent playback gain.
 final class LaneVolumeTarget extends MixValueTarget {
   /// Creates a lane-volume target.
-  const LaneVolumeTarget(this.channel, this.lane);
+  const new(this.channel, this.lane);
 
   /// The recorded track channel.
   final int channel;
@@ -288,7 +288,7 @@ final class LaneVolumeTarget extends MixValueTarget {
 /// One hardware input's live-monitor gain, separate from capture trim.
 final class MonitorVolumeTarget extends MixValueTarget {
   /// Creates a monitor-volume target.
-  const MonitorVolumeTarget(this.input);
+  const new(this.input);
 
   /// The hardware input channel.
   final int input;
@@ -304,7 +304,7 @@ final class MonitorVolumeTarget extends MixValueTarget {
 /// One track's pan offset, without changing its recorded source images.
 final class TrackPanTarget extends MixValueTarget {
   /// Creates a track-pan target.
-  const TrackPanTarget(this.channel);
+  const new(this.channel);
 
   /// The recorded track channel.
   final int channel;
@@ -319,7 +319,7 @@ final class TrackPanTarget extends MixValueTarget {
 /// The stored pan of a mono hardware input.
 final class InputPanTarget extends MixValueTarget {
   /// Creates an input-pan target.
-  const InputPanTarget(this.input);
+  const new(this.input);
 
   /// The hardware input channel.
   final int input;
@@ -334,7 +334,7 @@ final class InputPanTarget extends MixValueTarget {
 /// Balance of an existing linked hardware-input pair, keyed by its left jack.
 final class PairBalanceTarget extends MixValueTarget {
   /// Creates a pair-balance target.
-  const PairBalanceTarget(this.input);
+  const new(this.input);
 
   /// The even, lower hardware input channel.
   final int input;
@@ -350,7 +350,7 @@ final class PairBalanceTarget extends MixValueTarget {
 /// The level of one output destination, retained behind mute.
 final class OutputLevelTarget extends MixValueTarget {
   /// Creates an output-level target.
-  const OutputLevelTarget(this.bus);
+  const new(this.bus);
 
   /// The output bus ordinal.
   final int bus;
@@ -365,7 +365,7 @@ final class OutputLevelTarget extends MixValueTarget {
 /// Stereo balance of one output destination, retained while Mono.
 final class OutputBalanceTarget extends MixValueTarget {
   /// Creates an output-balance target.
-  const OutputBalanceTarget(this.bus);
+  const new(this.bus);
 
   /// The output bus ordinal.
   final int bus;
@@ -383,7 +383,7 @@ final class OutputBalanceTarget extends MixValueTarget {
 /// conversion to each family's domain lives with its port.
 sealed class OwnedValueTarget extends ControlValueTarget {
   /// Const base constructor for the owned families.
-  const OwnedValueTarget();
+  const new();
 
   /// The family whose owner holds this value.
   OwnedSetting get family;
@@ -399,7 +399,7 @@ sealed class OwnedValueTarget extends ControlValueTarget {
 /// The master output gain — the same value the pedal's encoder turns.
 final class MasterGainTarget extends ControlValueTarget {
   /// Creates the master-gain target.
-  const MasterGainTarget();
+  const new();
 
   @override
   String canonicalString() => jsonEncode({'ctl': 'masterGain'});
@@ -412,7 +412,7 @@ final class MasterGainTarget extends ControlValueTarget {
 /// Mixer output bus. A normalized position of 0.5 is physical unity.
 final class ClickVolumeTarget extends OwnedValueTarget {
   /// Creates the click-volume target.
-  const ClickVolumeTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.clickVolume;
@@ -441,7 +441,7 @@ final class ClickVolumeTarget extends OwnedValueTarget {
 /// enum codes. A mapping stores normalized travel, not the native code.
 final class ClickModeValueTarget extends OwnedValueTarget {
   /// Creates the global Hear click target.
-  const ClickModeValueTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.hearClick;
@@ -482,7 +482,7 @@ final class ClickModeValueTarget extends OwnedValueTarget {
 /// The four Count-in choices, stored as normalized option positions.
 final class CountInValueTarget extends OwnedValueTarget {
   /// Creates the global Count-in target.
-  const CountInValueTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.recordStart;
@@ -519,7 +519,7 @@ final class CountInValueTarget extends OwnedValueTarget {
 /// A decay endpoint uses percent as its native domain and 0..1 in mappings.
 sealed class DecayValueTarget extends OwnedValueTarget {
   /// Creates a decay target.
-  const DecayValueTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.decay;
@@ -549,7 +549,7 @@ sealed class DecayValueTarget extends OwnedValueTarget {
 /// The shared overdub decay inherited by tracks without an override.
 final class DefaultDecayTarget extends DecayValueTarget {
   /// Creates the default decay target.
-  const DefaultDecayTarget();
+  const new();
 
   @override
   DecayAddress get address => const DecayAddress.defaults();
@@ -564,7 +564,7 @@ final class DefaultDecayTarget extends DecayValueTarget {
 /// One fixed track's effective overdub decay, including empty tracks.
 final class TrackDecayTarget extends DecayValueTarget {
   /// Creates a track decay target with a zero-based [channel].
-  const TrackDecayTarget(this.channel);
+  const new(this.channel);
 
   /// Fixed channel, independent of selection and the current track count.
   final int channel;
@@ -583,7 +583,7 @@ final class TrackDecayTarget extends DecayValueTarget {
 /// A binary Loop/Once endpoint represented by normalized controller travel.
 sealed class OneShotValueTarget extends OwnedValueTarget {
   /// Creates a Loop/Once target.
-  const OneShotValueTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.oneShot;
@@ -614,7 +614,7 @@ sealed class OneShotValueTarget extends OwnedValueTarget {
 /// The Loop/Once default inherited by tracks without an override.
 final class DefaultOneShotTarget extends OneShotValueTarget {
   /// Creates the default Loop/Once target.
-  const DefaultOneShotTarget();
+  const new();
 
   @override
   OneShotAddress get address => const OneShotAddress.defaults();
@@ -629,7 +629,7 @@ final class DefaultOneShotTarget extends OneShotValueTarget {
 /// One fixed track's effective Loop/Once choice, including empty tracks.
 final class TrackOneShotTarget extends OneShotValueTarget {
   /// Creates a track Loop/Once target with a zero-based [channel].
-  const TrackOneShotTarget(this.channel);
+  const new(this.channel);
 
   /// Fixed channel, independent of selection and current track count.
   final int channel;
@@ -648,7 +648,7 @@ final class TrackOneShotTarget extends OneShotValueTarget {
 /// A future-recording length: Auto or a whole number of bars.
 sealed class RecordLengthValueTarget extends OwnedValueTarget {
   /// Creates a length target.
-  const RecordLengthValueTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.recordLength;
@@ -678,7 +678,7 @@ sealed class RecordLengthValueTarget extends OwnedValueTarget {
 /// The future-recording length inherited by tracks without an override.
 final class DefaultRecordLengthTarget extends RecordLengthValueTarget {
   /// Creates the default length target.
-  const DefaultRecordLengthTarget();
+  const new();
 
   @override
   RecordLengthAddress get address => const RecordLengthAddress.defaults();
@@ -693,7 +693,7 @@ final class DefaultRecordLengthTarget extends RecordLengthValueTarget {
 /// One fixed track's future-recording length, including an empty slot.
 final class TrackRecordLengthTarget extends RecordLengthValueTarget {
   /// Creates a track length target for zero-based [channel].
-  const TrackRecordLengthTarget(this.channel);
+  const new(this.channel);
 
   /// The fixed track channel.
   final int channel;
@@ -712,7 +712,7 @@ final class TrackRecordLengthTarget extends RecordLengthValueTarget {
 /// A future Record/Overdub timing choice on the established musical grid.
 sealed class RecordTimingValueTarget extends OwnedValueTarget {
   /// Creates a timing target.
-  const RecordTimingValueTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.recordTiming;
@@ -742,7 +742,7 @@ sealed class RecordTimingValueTarget extends OwnedValueTarget {
 /// The timing inherited by tracks without an explicit override.
 final class DefaultRecordTimingTarget extends RecordTimingValueTarget {
   /// Creates the default timing target.
-  const DefaultRecordTimingTarget();
+  const new();
 
   @override
   RecordTimingAddress get address => const RecordTimingAddress.defaults();
@@ -757,7 +757,7 @@ final class DefaultRecordTimingTarget extends RecordTimingValueTarget {
 /// One fixed track's future timing, including an empty track slot.
 final class TrackRecordTimingTarget extends RecordTimingValueTarget {
   /// Creates a track timing target for zero-based [channel].
-  const TrackRecordTimingTarget(this.channel);
+  const new(this.channel);
 
   /// The fixed track channel.
   final int channel;
@@ -777,7 +777,7 @@ final class TrackRecordTimingTarget extends RecordTimingValueTarget {
 /// normalized travel across those 60 values.
 sealed class FadeValueTarget extends OwnedValueTarget {
   /// Creates a Fade duration target.
-  const FadeValueTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.fade;
@@ -815,7 +815,7 @@ sealed class FadeValueTarget extends OwnedValueTarget {
 /// The Fade duration inherited by tracks without an override.
 final class DefaultFadeTarget extends FadeValueTarget {
   /// Creates the default Fade duration target.
-  const DefaultFadeTarget();
+  const new();
 
   @override
   int? get channel => null;
@@ -831,7 +831,7 @@ final class DefaultFadeTarget extends FadeValueTarget {
 /// Writing it while the track inherits the Default creates its override.
 final class TrackFadeTarget extends FadeValueTarget {
   /// Creates a track Fade duration target for zero-based [channel].
-  const TrackFadeTarget(this.channel);
+  const new(this.channel);
 
   @override
   final int channel;
@@ -848,7 +848,7 @@ final class TrackFadeTarget extends FadeValueTarget {
 /// +6.02 dB, unity at the same travel as a track fader.
 final class BackingLevelTarget extends OwnedValueTarget {
   /// Creates the backing-level target.
-  const BackingLevelTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.backingMix;
@@ -877,7 +877,7 @@ final class BackingLevelTarget extends OwnedValueTarget {
 /// right, centre at one half.
 sealed class OwnedPanTarget extends OwnedValueTarget {
   /// Const base constructor.
-  const OwnedPanTarget();
+  const new();
 
   @override
   double coerce(double normalized) =>
@@ -896,7 +896,7 @@ sealed class OwnedPanTarget extends OwnedValueTarget {
 /// The backing's balance (#1200).
 final class BackingPanTarget extends OwnedPanTarget {
   /// Creates the backing-pan target.
-  const BackingPanTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.backingMix;
@@ -911,7 +911,7 @@ final class BackingPanTarget extends OwnedPanTarget {
 /// The click's balance (#1200 D6).
 final class ClickPanTarget extends OwnedPanTarget {
   /// Creates the click-pan target.
-  const ClickPanTarget();
+  const new();
 
   @override
   OwnedSetting get family => OwnedSetting.clickPan;

@@ -17,7 +17,7 @@ part 'midi_setup_state.dart';
 /// engine.
 class MidiSetupCubit extends Cubit<MidiSetupState> {
   /// Creates a [MidiSetupCubit] over [repository].
-  MidiSetupCubit({required MidiDeviceRepository repository})
+  new({required MidiDeviceRepository repository})
     : _repository = repository,
       super(MidiSetupState(connection: repository.connection)) {
     _connectionSub = _repository.connections.listen(

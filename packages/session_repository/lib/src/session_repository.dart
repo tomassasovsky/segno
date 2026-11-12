@@ -49,7 +49,7 @@ typedef OpenedSession = ({
 @immutable
 class SessionChains {
   /// Creates a [SessionChains].
-  const SessionChains({
+  const new({
     this.laneChains = const [],
     this.monitors = const [],
     this.trackChains = const [],
@@ -94,7 +94,7 @@ typedef SessionLaneMix = ({
 @immutable
 class SessionSettings {
   /// Creates the settings payload for a session save.
-  const SessionSettings({
+  const new({
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -138,7 +138,7 @@ class SessionSettings {
     this.trackPitchModeOverrides = const {},
   }) : loopBeats = loopBeats ?? loopBars * tsNum;
 
-  SessionSettings._detached(SessionSettings source)
+  new _detached(SessionSettings source)
     : tempoBpm = source.tempoBpm,
       tempoSource = source.tempoSource,
       tsNum = source.tsNum,
@@ -357,7 +357,7 @@ class SessionRepository {
   /// for queued commands and in-flight overdub layers to settle before
   /// capturing. Tests can shrink
   /// these.
-  SessionRepository({
+  new({
     required this._engine,
     required this._guards,
     this._sessionsRoot,
@@ -2470,7 +2470,7 @@ int _lcm(int a, int b) => (a == 0 || b == 0) ? 0 : (a ~/ _gcd(a, b)) * b;
 
 /// The engine state captured once for a save/export.
 class _Capture {
-  const _Capture({
+  const new({
     required this.snapshot,
     required this.laneStems,
     required this.tracks,

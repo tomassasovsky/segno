@@ -20,7 +20,7 @@ import 'helpers/native_capture_fixture.dart';
 /// the members the finalize path touches on the manifest file are
 /// implemented; anything else is a test bug and throws.
 class _GatedReadFile implements File {
-  _GatedReadFile(this._inner, this._gate);
+  new(this._inner, this._gate);
 
   final File _inner;
   final Future<void> _gate;
@@ -53,7 +53,7 @@ class _GatedReadFile implements File {
 /// Fails the selected asynchronous write while leaving the earlier contents
 /// untouched, as a full disk or revoked export volume can do after native arm.
 class _FailWriteFile implements File {
-  _FailWriteFile(this._inner);
+  new(this._inner);
 
   final File _inner;
 
@@ -112,7 +112,7 @@ class _ThrowAfterArmEngine extends FakePerformanceEngine {
 /// The finalized `performance.json` on its way in, refusing to be written —
 /// the finalize of a take whose disk filled at the end.
 class _ManifestWriteFails implements File {
-  _ManifestWriteFails(this._inner);
+  new(this._inner);
 
   final File _inner;
 
@@ -3875,7 +3875,7 @@ class _InputsUnreadable extends FakeStorageIo {
 /// An engine whose volume frees the room of every unlisted part a cut
 /// conversion left in [dir] once it is deleted.
 class _StrayAwareEngine extends FakePerformanceEngine {
-  _StrayAwareEngine(this.dir, {required this.free});
+  new(this.dir, {required this.free});
 
   final String dir;
   final int free;

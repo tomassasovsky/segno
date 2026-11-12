@@ -21,7 +21,7 @@ enum LibraryLocation {
 /// The folder chip the session list is filtered by: `All`, `Unfiled` (the
 /// sessions directly under the root) or one named folder.
 sealed class LibraryFolderFilter extends Equatable {
-  const LibraryFolderFilter();
+  const new();
 
   /// Whether [summary] passes this filter.
   bool admits(SessionSummary summary);
@@ -30,7 +30,7 @@ sealed class LibraryFolderFilter extends Equatable {
 /// Every session.
 final class AllSessions extends LibraryFolderFilter {
   /// Creates the `All` filter.
-  const AllSessions();
+  const new();
 
   @override
   bool admits(SessionSummary summary) => true;
@@ -42,7 +42,7 @@ final class AllSessions extends LibraryFolderFilter {
 /// The sessions directly under the root.
 final class UnfiledSessions extends LibraryFolderFilter {
   /// Creates the `Unfiled` filter.
-  const UnfiledSessions();
+  const new();
 
   @override
   bool admits(SessionSummary summary) => summary.folder == null;
@@ -54,7 +54,7 @@ final class UnfiledSessions extends LibraryFolderFilter {
 /// The sessions in [folder].
 final class FolderSessions extends LibraryFolderFilter {
   /// Creates the filter for [folder].
-  const FolderSessions(this.folder);
+  const new(this.folder);
 
   /// The folder's directory name.
   final String folder;
@@ -81,7 +81,7 @@ enum LibraryPreviewError {
 /// A preview playing through Listen (plan D10).
 class LibraryListen extends Equatable {
   /// Creates the Listen state for session [id].
-  const LibraryListen({
+  const new({
     required this.id,
     required this.frames,
     this.position = 0,
@@ -160,7 +160,7 @@ enum LibraryBackupProblem {
 
 /// A `Back up to USB` in front of the player (pen section 34).
 sealed class LibraryBackup extends Equatable {
-  const LibraryBackup({required this.id, required this.name});
+  const new({required this.id, required this.name});
 
   /// The session being backed up.
   final SessionId id;
@@ -172,7 +172,7 @@ sealed class LibraryBackup extends Equatable {
 /// Copying: the inline progress with `Cancel`.
 final class LibraryBackupRunning extends LibraryBackup {
   /// Creates the running backup of [id].
-  const LibraryBackupRunning({
+  const new({
     required super.id,
     required super.name,
     this.fraction = 0,
@@ -189,7 +189,7 @@ final class LibraryBackupRunning extends LibraryBackup {
 /// `Replace`.
 final class LibraryBackupConflict extends LibraryBackup {
   /// Creates the conflict for [id].
-  const LibraryBackupConflict({required super.id, required super.name});
+  const new({required super.id, required super.name});
 
   @override
   List<Object?> get props => [id, name];
@@ -198,7 +198,7 @@ final class LibraryBackupConflict extends LibraryBackup {
 /// Stopped or refused, with nothing changed: `Cancel` or `Retry`.
 final class LibraryBackupInterrupted extends LibraryBackup {
   /// Creates the interruption of [id] for [problem].
-  const LibraryBackupInterrupted({
+  const new({
     required super.id,
     required super.name,
     required this.problem,
@@ -218,7 +218,7 @@ final class LibraryBackupInterrupted extends LibraryBackup {
 /// The backup landed on the drive.
 final class LibraryBackupDone extends LibraryBackup {
   /// Creates the done state for [id].
-  const LibraryBackupDone({required super.id, required super.name});
+  const new({required super.id, required super.name});
 
   @override
   List<Object?> get props => [id, name];
@@ -241,7 +241,7 @@ enum LibraryRestoreError {
 /// `SessionCubit`, its one owner; the page reads both.
 class LibraryState extends Equatable {
   /// Creates a [LibraryState].
-  const LibraryState({
+  const new({
     this.section = LibrarySection.sessions,
     this.location = LibraryLocation.internal,
     this.query = '',

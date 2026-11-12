@@ -119,11 +119,11 @@ typedef CustomLedSlot = ({PedalBindingKey key, PedalLedState state});
 /// is the removal of overrides.
 class PedalLedMap extends Equatable {
   /// The defaults, with nothing overridden.
-  const PedalLedMap()
+  const new()
     : modes = const <PedalLedSlot, PedalColor>{},
       custom = const <CustomLedSlot, PedalColor>{};
 
-  PedalLedMap._(
+  new _(
     Map<PedalLedSlot, PedalColor> modes,
     Map<CustomLedSlot, PedalColor> custom,
   ) : modes = Map.unmodifiable(modes),
@@ -131,7 +131,7 @@ class PedalLedMap extends Equatable {
 
   /// Builds a map from overrides, dropping any equal to its default. Rejects
   /// a slot the mode does not have and a Custom colour on MODE or Bank.
-  factory PedalLedMap.fromMaps({
+  factory fromMaps({
     Map<PedalLedSlot, PedalColor> modes = const {},
     Map<CustomLedSlot, PedalColor> custom = const {},
   }) {
@@ -155,7 +155,7 @@ class PedalLedMap extends Equatable {
   }
 
   /// Rebuilds a map from its [toJson] form, rejecting anything malformed.
-  factory PedalLedMap.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     if (json.keys.any((key) => key != 'modes' && key != 'custom')) {
       throw const FormatException('Unknown pedal LED field');
     }

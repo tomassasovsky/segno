@@ -8,7 +8,7 @@ import 'package:segno/session/session.dart';
 /// Projects the shared session and transport owners onto the Tracks surface.
 class LooperPage extends StatelessWidget {
   /// Creates the main performance surface.
-  const LooperPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) =>

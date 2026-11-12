@@ -66,7 +66,7 @@ TextTheme withAppTextMetrics(TextTheme theme) {
 /// Without this, AppText picks the nudge from the string itself.
 class AppTextOptics extends InheritedWidget {
   /// Creates [AppTextOptics].
-  const AppTextOptics({
+  const new({
     required this.opticalOffset,
     required super.child,
     super.key,
@@ -91,7 +91,7 @@ class AppTextOptics extends InheritedWidget {
 /// is chosen per string by [appTextOpticalOffsetFor], not forced here.
 class AppTextDefaults extends StatelessWidget {
   /// Creates an [AppTextDefaults].
-  const AppTextDefaults({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The app subtree.
   final Widget child;

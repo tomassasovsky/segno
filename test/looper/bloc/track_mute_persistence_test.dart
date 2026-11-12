@@ -60,7 +60,7 @@ class _MuteStore extends FakeKeyValueStore {
 }
 
 class _RecordedMuteEngine extends FakeAudioEngine {
-  _RecordedMuteEngine() {
+  new() {
     laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3, 0.4]);
     _publishMute(false);
   }

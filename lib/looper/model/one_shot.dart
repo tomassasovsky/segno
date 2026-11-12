@@ -4,10 +4,10 @@ import 'package:looper_repository/looper_repository.dart';
 /// The shared default or one fixed track's Loop/Once choice.
 final class OneShotAddress extends Equatable {
   /// The default inherited by tracks without an override.
-  const OneShotAddress.defaults() : channel = null;
+  const new defaults() : channel = null;
 
   /// One fixed, zero-based track, independent of selection and its label.
-  const OneShotAddress.track(int this.channel);
+  const new track(int this.channel);
 
   /// Null denotes the default; track coordinates are 0 through 7.
   final int? channel;
@@ -23,7 +23,7 @@ final class OneShotAddress extends Equatable {
 /// inherit.
 final class OneShotSnapshot extends Equatable {
   /// Takes an immutable copy of the explicit track overrides.
-  OneShotSnapshot({
+  new({
     required this.defaultOneShot,
     required Map<int, bool> trackOverrides,
   }) : trackOverrides = Map.unmodifiable(trackOverrides);
@@ -81,7 +81,7 @@ enum OneShotStatus { applied, rejected, superseded, recoveryRequired }
 /// A verified persistence and callback publication outcome.
 final class OneShotOutcome {
   /// Creates the result of one playback transaction.
-  const OneShotOutcome(
+  const new(
     this.status, {
     this.deferred = false,
     this.engineResult,

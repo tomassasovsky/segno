@@ -28,7 +28,7 @@ enum SettingStatus { applied, rejected, superseded, recoveryRequired }
 /// command enqueue.
 final class SettingOutcome {
   /// Creates an outcome for one attempted transaction.
-  const SettingOutcome(
+  const new(
     this.status, {
     this.deferred = false,
     this.engineResult,

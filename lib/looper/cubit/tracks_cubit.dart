@@ -14,7 +14,7 @@ part 'tracks_state.dart';
 /// its own presentation.
 class TracksCubit extends Cubit<TracksState> {
   /// Creates a [TracksCubit] for [trackCount] tracks.
-  TracksCubit({
+  new({
     required this._settings,
     int trackCount = TracksState.tracksPerBank * TracksState.bankCountMax,
   }) : super(

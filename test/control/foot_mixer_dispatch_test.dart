@@ -56,7 +56,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Rig {
-  _Rig({Set<int> recorded = const {0, 1, 4}, int excluded = 0}) {
+  new({Set<int> recorded = const {0, 1, 4}, int excluded = 0}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(
       inputChannels: 18,
       excludedInputMask: excluded,

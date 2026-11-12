@@ -5,7 +5,7 @@ import 'package:meta/meta.dart';
 @immutable
 class WifiStatus extends Equatable {
   /// Creates a [WifiStatus].
-  const WifiStatus({
+  const new({
     required this.supported,
     required this.enabled,
     required this.connected,
@@ -17,7 +17,7 @@ class WifiStatus extends Equatable {
   });
 
   /// Parses the helper's JSON status object.
-  factory WifiStatus.fromJson(Map<String, dynamic> json) => WifiStatus(
+  factory fromJson(Map<String, dynamic> json) => WifiStatus(
     supported: json['supported'] == true,
     enabled: json['enabled'] == true,
     connected: json['connected'] == true,
@@ -83,7 +83,7 @@ class WifiStatus extends Equatable {
 @immutable
 class WifiNetwork extends Equatable {
   /// Creates a [WifiNetwork].
-  const WifiNetwork({
+  const new({
     required this.ssid,
     required this.signal,
     required this.secured,
@@ -92,7 +92,7 @@ class WifiNetwork extends Equatable {
   });
 
   /// Parses one scan-result object.
-  factory WifiNetwork.fromJson(Map<String, dynamic> json) => WifiNetwork(
+  factory fromJson(Map<String, dynamic> json) => WifiNetwork(
     ssid: '${json['ssid'] ?? ''}',
     signal: _asInt(json['signal']),
     secured: json['secured'] == true,

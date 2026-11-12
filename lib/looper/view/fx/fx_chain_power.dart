@@ -69,7 +69,7 @@ String fxChainOffConsequence(AppLocalizations l10n, FxStage stage) =>
 /// says the state in a word rather than by tint alone.
 class FxChainPower extends StatelessWidget {
   /// Creates an [FxChainPower] for the chain at [address].
-  const FxChainPower({
+  const new({
     required this.address,
     required this.onChanged,
     super.key,
@@ -123,7 +123,7 @@ class FxChainPower extends StatelessWidget {
 /// The only notice for this cause: no toast goes with it.
 class FxChainOffNotice extends StatelessWidget {
   /// Creates an [FxChainOffNotice].
-  const FxChainOffNotice({
+  const new({
     required this.message,
     required this.onTurnOn,
     super.key,

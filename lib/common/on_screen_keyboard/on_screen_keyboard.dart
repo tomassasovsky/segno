@@ -55,7 +55,7 @@ OnScreenKeyboardLayout layoutForInputType(TextInputType? type) {
 /// into, and a field's own formatters and validators still run.
 class OnScreenKeyboard extends StatefulWidget {
   /// Creates an [OnScreenKeyboard].
-  const OnScreenKeyboard({
+  const new({
     required this.layout,
     required this.onKey,
     required this.onBackspace,
@@ -313,7 +313,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
 /// The numeric pad: three columns of digits, the point and delete, with
 /// the action key under them.
 class _NumericPad extends StatelessWidget {
-  const _NumericPad({
+  const new({
     required this.doneLabel,
     required this.height,
     required this.labelSize,
@@ -382,7 +382,7 @@ class _NumericPad extends StatelessWidget {
 
 /// A row of character keys sharing the width.
 class _KeyRow extends StatelessWidget {
-  const _KeyRow({
+  const new({
     required this.keys,
     required this.uppercase,
     required this.height,
@@ -416,7 +416,7 @@ class _KeyRow extends StatelessWidget {
 
 /// A key that types [value], showing [display].
 class _CharKey extends StatelessWidget {
-  const _CharKey({
+  const new({
     required this.value,
     required this.display,
     required this.height,
@@ -443,7 +443,7 @@ class _CharKey extends StatelessWidget {
 /// switch or the action. Its width is fixed by kind unless a row stretches
 /// it.
 class _SpecialKey extends StatelessWidget {
-  const _SpecialKey({
+  const new({
     required this.onPressed,
     required this.height,
     required this.labelSize,
@@ -494,7 +494,7 @@ class _SpecialKey extends StatelessWidget {
 /// minimum geometry, none of which the mockups have and all of which fight the
 /// hand-drawn surfaces beside it.
 class _KeyCap extends StatelessWidget {
-  const _KeyCap({
+  const new({
     required this.onPressed,
     required this.height,
     required this.labelSize,

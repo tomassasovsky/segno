@@ -14,10 +14,10 @@ import 'package:session_repository/src/session_exception.dart';
 @immutable
 class SessionLayer {
   /// Creates a [SessionLayer].
-  const SessionLayer({required this.file, this.heard});
+  const new({required this.file, this.heard});
 
   /// Projects a [SessionLayer] from a decoded JSON map.
-  factory SessionLayer.fromJson(Map<String, dynamic> json) => SessionLayer(
+  factory fromJson(Map<String, dynamic> json) => SessionLayer(
     file: json['file'] as String,
     heard: json['heard'] as String?,
   );
@@ -62,7 +62,7 @@ class SessionLayer {
 @immutable
 class SessionLane {
   /// Creates a [SessionLane].
-  const SessionLane({
+  const new({
     required this.lane,
     required this.volume,
     required this.muted,
@@ -78,7 +78,7 @@ class SessionLane {
   /// Projects a [SessionLane] from a decoded JSON map. The stored
   /// `redoCount` is derived on write and cross-checked by
   /// [SessionTrack.fromJson].
-  factory SessionLane.fromJson(Map<String, dynamic> json) => SessionLane(
+  factory fromJson(Map<String, dynamic> json) => SessionLane(
     lane: (json['lane'] as num).toInt(),
     volume: (json['volume'] as num).toDouble(),
     muted: json['muted'] as bool,
@@ -222,7 +222,7 @@ class SessionLane {
 @immutable
 class SessionTrack {
   /// Creates a [SessionTrack].
-  const SessionTrack({
+  const new({
     required this.channel,
     required this.multiple,
     required this.lengthFrames,
@@ -234,7 +234,7 @@ class SessionTrack {
   });
 
   /// Projects a [SessionTrack] from a current-schema JSON map.
-  factory SessionTrack.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final amount = json['fadeAmount'];
     if (amount is! num || !amount.isFinite || amount < 0 || amount > 1) {
       throw const FormatException('invalid track Fade amount');
@@ -369,14 +369,14 @@ class SessionTrack {
 @immutable
 class SessionLaneChain {
   /// Creates a [SessionLaneChain].
-  const SessionLaneChain({
+  const new({
     required this.channel,
     required this.lane,
     required this.encoded,
   });
 
   /// Projects a [SessionLaneChain] from a decoded JSON map.
-  factory SessionLaneChain.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       SessionLaneChain(
         channel: (json['channel'] as num).toInt(),
         lane: (json['lane'] as num).toInt(),
@@ -424,10 +424,10 @@ class SessionLaneChain {
 @immutable
 class SessionTrackChain {
   /// Creates a [SessionTrackChain].
-  const SessionTrackChain({required this.channel, required this.encoded});
+  const new({required this.channel, required this.encoded});
 
   /// Projects a [SessionTrackChain] from a decoded JSON map.
-  factory SessionTrackChain.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       SessionTrackChain(
         channel: (json['channel'] as num).toInt(),
         encoded: json['encoded'] as String,
@@ -459,10 +459,10 @@ class SessionTrackChain {
 @immutable
 class SessionOutputChain {
   /// Creates a [SessionOutputChain].
-  const SessionOutputChain({required this.bus, required this.encoded});
+  const new({required this.bus, required this.encoded});
 
   /// Projects a [SessionOutputChain] from a decoded JSON map.
-  factory SessionOutputChain.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final bus = json['bus'];
     if (bus is! int || bus < 0 || bus >= 16) {
       throw const FormatException('invalid output chain destination');
@@ -496,7 +496,7 @@ class SessionOutputChain {
 @immutable
 class SessionMonitor {
   /// Creates a [SessionMonitor].
-  const SessionMonitor({
+  const new({
     required this.input,
     required this.mode,
     required this.outputMask,
@@ -506,7 +506,7 @@ class SessionMonitor {
   });
 
   /// Projects a [SessionMonitor] from a decoded JSON map.
-  factory SessionMonitor.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final mode = json['mode'];
     if (mode != 'off' && mode != 'on' && mode != 'auto') {
       throw const FormatException('invalid session monitor mode');
@@ -594,7 +594,7 @@ class SessionMonitor {
 @immutable
 class SessionInputSetup {
   /// Creates a [SessionInputSetup].
-  const SessionInputSetup({
+  const new({
     this.trimDb = const {},
     this.pan = const {},
     this.pairs = const {},
@@ -602,7 +602,7 @@ class SessionInputSetup {
 
   /// Projects a [SessionInputSetup] from a decoded JSON map; `null` is the
   /// current schema's omitted empty setup.
-  factory SessionInputSetup.fromJson(Map<String, dynamic>? json) {
+  factory fromJson(Map<String, dynamic>? json) {
     if (json == null) return const SessionInputSetup();
     double value(Object? raw) => (raw! as num).toDouble();
     return SessionInputSetup(
@@ -661,7 +661,7 @@ class SessionInputSetup {
 @immutable
 class SessionOutputSetup {
   /// Creates a [SessionOutputSetup].
-  const SessionOutputSetup({
+  const new({
     this.level = const {},
     this.muted = const {},
     this.mono = const {},
@@ -669,7 +669,7 @@ class SessionOutputSetup {
   });
 
   /// Projects a [SessionOutputSetup] from a current-schema JSON map.
-  factory SessionOutputSetup.fromJson(Map<String, dynamic>? json) {
+  factory fromJson(Map<String, dynamic>? json) {
     if (json == null) return const SessionOutputSetup();
     if (json.keys.any(
       (key) =>
@@ -767,10 +767,10 @@ class SessionOutputSetup {
 @immutable
 class SessionBackingItem {
   /// Creates a [SessionBackingItem].
-  const SessionBackingItem({required this.digest, required this.name});
+  const new({required this.digest, required this.name});
 
   /// Reads exactly `{"digest", "name"}`; anything else is refused.
-  factory SessionBackingItem.fromJson(Object? json) {
+  factory fromJson(Object? json) {
     if (json is! Map<String, dynamic> ||
         json.length != 2 ||
         json['digest'] is! String ||
@@ -819,7 +819,7 @@ class SessionBackingItem {
 @immutable
 class SessionBacking {
   /// Creates a [SessionBacking]; the defaults are an empty, silent player.
-  const SessionBacking({
+  const new({
     this.prepared = const [],
     this.loaded,
     this.endMode = BackingEnd.stop,
@@ -830,7 +830,7 @@ class SessionBacking {
 
   /// Reads the current schema's block strictly: exactly the six keys, a
   /// prepared list without repeated digests, and every value in range.
-  factory SessionBacking.fromJson(Object? json) {
+  factory fromJson(Object? json) {
     const keys = {
       'prepared',
       'loaded',
@@ -946,7 +946,7 @@ class SessionBacking {
 @immutable
 class Session {
   /// Creates a [Session].
-  const Session({
+  const new({
     required this.sampleRate,
     required this.channels,
     required this.baseLengthFrames,
@@ -1006,7 +1006,7 @@ class Session {
   ///
   /// Requires the current integer schema version. Current-schema defaults
   /// omitted by [toJson] still read as their declared defaults.
-  factory Session.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final version = json['version'];
     if (version is! int) {
       throw const FormatException('session version must be an integer');

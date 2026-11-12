@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// go between the survivors.
 class SettingsFactPanel extends StatelessWidget {
   /// Creates a [SettingsFactPanel] headed [title] around [rows].
-  const SettingsFactPanel({
+  const new({
     required this.title,
     required this.rows,
     required this.width,
@@ -64,7 +64,7 @@ class SettingsFactPanel extends StatelessWidget {
 /// focus stop.
 class SettingsFactRow extends StatelessWidget {
   /// Creates a [SettingsFactRow].
-  const SettingsFactRow({
+  const new({
     required this.label,
     this.value,
     this.caption,
@@ -152,7 +152,7 @@ class SettingsFactRow extends StatelessWidget {
 /// wrap, at two thirds of what the gap leaves, so the value keeps at least a
 /// third. A row with no value lets the label take the whole width.
 class _LabelAndValue extends StatelessWidget {
-  const _LabelAndValue(this.label, this.value, this.caption);
+  const new(this.label, this.value, this.caption);
 
   final String label;
   final String? value;

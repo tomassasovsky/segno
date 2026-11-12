@@ -12,7 +12,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class ConsoleLedSettings {
   /// Creates a [ConsoleLedSettings].
-  const ConsoleLedSettings({
+  const new({
     this.brightness = maxBrightness,
     this.automatic = false,
     this.offset = 0,

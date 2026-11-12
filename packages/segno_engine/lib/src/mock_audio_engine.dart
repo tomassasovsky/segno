@@ -34,7 +34,7 @@ import 'package:segno_engine/src/volume_space.dart';
 /// voices reported, no audio is made.
 class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   /// Creates a [MockAudioEngine].
-  MockAudioEngine({
+  new({
     int inputChannels = defaultInputChannels,
     int outputChannels = defaultOutputChannels,
     String? deviceLabel,
@@ -2400,7 +2400,7 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
 class MockPluginSlotHandle implements PluginSlotHandle {
   /// Creates a [MockPluginSlotHandle] for [pluginId], seeded with the default
   /// value of each [mockParams] entry.
-  MockPluginSlotHandle(this.pluginId)
+  new(this.pluginId)
     : _values = {for (final p in mockParams) p.id: p.def},
       stateBlob = Uint8List.fromList('mock-state:$pluginId'.codeUnits);
 

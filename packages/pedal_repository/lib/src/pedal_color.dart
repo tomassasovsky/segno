@@ -6,13 +6,13 @@ import 'package:equatable/equatable.dart';
 /// color gamma and current limit; this value has no Flutter dependency.
 class PedalColor extends Equatable {
   /// Creates a [PedalColor] from its three channels, each `0..255`.
-  const PedalColor(this.r, this.g, this.b)
+  const new(this.r, this.g, this.b)
     : assert(r >= 0 && r <= 255, 'r must be 0..255'),
       assert(g >= 0 && g <= 255, 'g must be 0..255'),
       assert(b >= 0 && b <= 255, 'b must be 0..255');
 
   /// Rebuilds a colour from a `0xRRGGBB` integer.
-  factory PedalColor.fromRgb(int rgb) =>
+  factory fromRgb(int rgb) =>
       PedalColor((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
 
   /// The fresh default hue: white. This never implies an active indicator.

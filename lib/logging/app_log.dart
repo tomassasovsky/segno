@@ -23,7 +23,7 @@ import 'dart:io';
 /// * the journal mirror is one `stderr` write rather than three (stderr is
 ///   unbuffered, so each call was its own syscall).
 class AppLog {
-  AppLog._();
+  new _();
 
   /// Current log file name inside the init directory.
   static const String fileName = 'segno.log';

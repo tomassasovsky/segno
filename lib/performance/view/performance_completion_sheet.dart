@@ -64,7 +64,7 @@ Future<void> showPerformanceCompletionSheet(BuildContext context) async {
 /// Provides [PerformanceCompletionCubit] for the capture dialog route.
 class PerformanceCompletionPage extends StatelessWidget {
   /// Creates the capture dialog page.
-  const PerformanceCompletionPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +91,7 @@ class PerformanceCompletionPage extends StatelessWidget {
 /// pen draws as two frames of one dialog.
 class PerformanceCompletionSheet extends StatefulWidget {
   /// Creates a [PerformanceCompletionSheet].
-  const PerformanceCompletionSheet({super.key});
+  const new({super.key});
 
   /// Whether the dialog route is currently up — see
   /// [showPerformanceCompletionSheet]'s double-open refusal.
@@ -207,7 +207,7 @@ class _PerformanceCompletionSheetState
 /// The face for [state]: the render in progress, the capture's outcome, or
 /// nothing while the dialog closes on a state it cannot draw.
 class _Face extends StatelessWidget {
-  const _Face({required this.state, required this.onRename});
+  const new({required this.state, required this.onRename});
 
   final PerformanceRecorderState state;
 
@@ -370,7 +370,7 @@ class _Face extends StatelessWidget {
 /// `SESSION & CAPTURE / capture-rendering`: the percent, what is being
 /// written, and Hide.
 class _RenderingDialog extends StatelessWidget {
-  const _RenderingDialog({required this.state});
+  const new({required this.state});
 
   final PerformanceRecorderRendering state;
 
@@ -418,7 +418,7 @@ class _RenderingDialog extends StatelessWidget {
 
 /// The 19/650 dialog title both faces share.
 class _DialogTitle extends StatelessWidget {
-  const _DialogTitle(this.text);
+  const new(this.text);
 
   final String text;
 

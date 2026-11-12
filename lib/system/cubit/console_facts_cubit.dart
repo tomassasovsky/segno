@@ -14,7 +14,7 @@ part 'console_facts_state.dart';
 /// open, because a USB stick may have arrived since.
 class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// Creates a [ConsoleFactsCubit].
-  ConsoleFactsCubit({
+  new({
     required ConsoleFactsClient client,
     required this._settings,
   }) : _client = client,

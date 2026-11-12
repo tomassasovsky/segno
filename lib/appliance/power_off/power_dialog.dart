@@ -47,7 +47,7 @@ Future<bool?> showPowerDialog(
 /// (owner, #1543).
 class PowerDialog extends StatelessWidget {
   /// Creates a [PowerDialog].
-  const PowerDialog({
+  const new({
     required this.snapshot,
     required this.save,
     this.stagedUpdate,
@@ -199,7 +199,7 @@ class PowerDialog extends StatelessWidget {
 
 /// Calls [builder] again on every event of [changes].
 class _RebuildOn extends StatefulWidget {
-  const _RebuildOn({required this.changes, required this.builder});
+  const new({required this.changes, required this.builder});
 
   final List<Stream<Object?>> changes;
   final WidgetBuilder builder;
@@ -238,7 +238,7 @@ class _RebuildOnState extends State<_RebuildOn> {
 /// The panel: 760 wide, 48 above the bottom edge, on the surface tone with
 /// a line border.
 class _PowerPanel extends StatelessWidget {
-  const _PowerPanel({required this.child});
+  const new({required this.child});
 
   final Widget child;
 
@@ -270,7 +270,7 @@ class _PowerPanel extends StatelessWidget {
 /// Title, body, an optional small note and the button row. A [warning]
 /// title wears the warning colour and an alert icon.
 class _PowerBody extends StatelessWidget {
-  const _PowerBody({
+  const new({
     required this.title,
     required this.body,
     required this.actions,
@@ -358,7 +358,7 @@ enum PowerPanelTone {
 /// on the floor.
 class PowerPanelButton extends StatelessWidget {
   /// Creates a [PowerPanelButton].
-  const PowerPanelButton({
+  const new({
     required this.label,
     required this.onPressed,
     this.icon,

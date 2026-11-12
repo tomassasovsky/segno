@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// here too.
 class FootTopBar extends StatelessWidget {
   /// Creates a [FootTopBar].
-  const FootTopBar({
+  const new({
     required this.exitKey,
     required this.onExit,
     this.status,

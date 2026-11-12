@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// choices offered when adding either — so the three read as one list.
 class ControlRowTile extends StatelessWidget {
   /// Creates a [ControlRowTile].
-  const ControlRowTile({
+  const new({
     required this.destination,
     required this.name,
     required this.onTap,
@@ -195,7 +195,7 @@ class ControlRowTile extends StatelessWidget {
 /// would have its values edited with nothing on screen saying whose they are.
 class ControlRowList extends StatefulWidget {
   /// Creates a [ControlRowList].
-  const ControlRowList({
+  const new({
     required this.itemCount,
     required this.itemBuilder,
     this.selectedIndex,

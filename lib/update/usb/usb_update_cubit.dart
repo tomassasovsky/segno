@@ -27,7 +27,7 @@ class UsbUpdateCubit extends Cubit<UsbUpdateState> {
   /// [_onWorking] hears when a copy or an install starts and ends, so the
   /// online flow and restart hold off; and [_onStaged] runs once a package is
   /// staged, even if this cubit has closed.
-  UsbUpdateCubit({
+  new({
     required this._storage,
     required this._updates,
     required this._takeRunning,

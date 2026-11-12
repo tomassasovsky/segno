@@ -16,7 +16,7 @@ import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
 /// are.
 class FxArtView extends StatelessWidget {
   /// Creates an [FxArtView].
-  const FxArtView({
+  const new({
     required this.art,
     this.fallback = const SizedBox.shrink(),
     super.key,

@@ -36,7 +36,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Rig {
-  _Rig({int inputs = 4, String? storedSetup, bool seed = false}) {
+  new({int inputs = 4, String? storedSetup, bool seed = false}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(inputChannels: inputs);
     if (storedSetup != null) store.values['pedal.setup'] = storedSetup;
     looper = LooperRepository(engine: engine, ticker: ticks.stream)

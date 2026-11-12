@@ -3,7 +3,7 @@ part of 'control_cubit.dart';
 /// Accepted controls still owe a release that their owner has not confirmed.
 final class ControlCleanupPending implements Exception {
   /// Creates a retryable retirement failure without dropping the held claims.
-  const ControlCleanupPending();
+  const new();
 
   @override
   String toString() => 'Controller release is not yet confirmed';

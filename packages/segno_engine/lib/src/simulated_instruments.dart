@@ -358,7 +358,7 @@ mixin SimulatedInstruments implements InstrumentHost, MidiInputSink {
 /// One voice of [SimulatedInstruments].
 class SimulatedVoice {
   /// Creates a [SimulatedVoice].
-  const SimulatedVoice({
+  const new({
     required this.slot,
     required this.origin,
     required this.note,

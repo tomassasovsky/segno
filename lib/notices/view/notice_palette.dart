@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// - [actionLine]: the edge of the message's action button.
 @immutable
 class NoticePalette {
-  const NoticePalette._({
+  const new _({
     required this.mark,
     required this.line,
     required this.tint,
@@ -23,7 +23,7 @@ class NoticePalette {
   ///
   /// A confirmation's line stays the neutral grey, as the approved top-bar
   /// design draws it: the green is the check mark's, not the time's.
-  factory NoticePalette.of(SurfaceTheme surface, NoticeTone tone) =>
+  factory of(SurfaceTheme surface, NoticeTone tone) =>
       switch (tone) {
         NoticeTone.neutral => NoticePalette._(
           mark: surface.textSecondary,
@@ -52,7 +52,7 @@ class NoticePalette {
       };
 
   /// The colours for [tone] under [context]'s theme.
-  factory NoticePalette.resolve(BuildContext context, NoticeTone tone) =>
+  factory resolve(BuildContext context, NoticeTone tone) =>
       NoticePalette.of(context.surface, tone);
 
   final Color mark;

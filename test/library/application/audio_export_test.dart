@@ -516,5 +516,5 @@ extension on AudioExportPlan {
 /// Stands for the process stopping: no handler of the exporter's catches it
 /// as a filesystem failure.
 class _Cut implements Exception {
-  const _Cut();
+  const new();
 }

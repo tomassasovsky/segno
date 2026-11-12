@@ -118,7 +118,7 @@ enum SessionError {
 /// pointer).
 class SessionState extends Equatable {
   /// Creates a [SessionState].
-  const SessionState({
+  const new({
     this.status = SessionStatus.idle,
     this.outcome,
     this.error,
@@ -250,7 +250,7 @@ class SessionState extends Equatable {
 /// The notice for a session converted on open from an older version.
 class SessionConversionNotice extends Equatable {
   /// Creates a [SessionConversionNotice].
-  const SessionConversionNotice({
+  const new({
     required this.fromVersion,
     required this.written,
     this.changes = const {},

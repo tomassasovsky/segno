@@ -104,7 +104,7 @@ class FakeDisplayOutputs implements DisplayOutputs {
 class DestinationHarness {
   /// Creates a harness with fresh settings (over [store], when a test needs
   /// writes to fail), a stubbed audio cubit and a counting Wi-Fi client.
-  DestinationHarness({KeyValueStore? store})
+  new({KeyValueStore? store})
     : settings = SettingsRepository(store: store ?? FakeKeyValueStore()) {
     when(audio.beginDeviceScan).thenReturn(null);
     when(audio.endDeviceScan).thenReturn(null);

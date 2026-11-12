@@ -122,7 +122,7 @@ Map<String, String> _dartStrings(List<String> roots) {
 }
 
 class _StringCollector extends RecursiveAstVisitor<void> {
-  _StringCollector(this.path, this.lines, this.strings);
+  new(this.path, this.lines, this.strings);
 
   final String path;
   final LineInfo lines;

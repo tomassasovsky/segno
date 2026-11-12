@@ -4,7 +4,7 @@ import 'package:segno/control/binding/midi_learn.dart';
 /// The route/draft lifetime that pauses one device's remote assignments.
 class MidiEdit extends Equatable {
   /// Creates an editor owned by [owner].
-  const MidiEdit({
+  const new({
     required this.device,
     required this.owner,
     this.learn,
@@ -38,14 +38,14 @@ class MidiEdit extends Equatable {
 /// Explicit confirmed Save outcome; equality of live values is not a receipt.
 class MidiSaveResult {
   /// A confirmed mutation, including the committed identity for a new mapping.
-  const MidiSaveResult.saved({this.mappingId}) : saved = true, error = null;
+  const new saved({this.mappingId}) : saved = true, error = null;
 
   /// A refused mutation; the complete editor draft should remain open.
-  const MidiSaveResult.refused(this.error) : saved = false, mappingId = null;
+  const new refused(this.error) : saved = false, mappingId = null;
 
   /// A mutation refused because the effects the mappings could switch on
   /// would not fit the effects budget (#1723); nothing was saved.
-  const MidiSaveResult.overBudget()
+  const new overBudget()
     : saved = false,
       mappingId = null,
       error = overBudgetError;

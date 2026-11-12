@@ -26,7 +26,7 @@ enum StageView {
 /// keyboard, the tiles, and the pedal can never target different tracks.
 class TracksState extends Equatable {
   /// Creates a [TracksState].
-  const TracksState({
+  const new({
     required this.names,
     this.stageView = StageView.track,
   });

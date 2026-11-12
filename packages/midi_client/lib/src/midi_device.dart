@@ -10,7 +10,7 @@ import 'package:meta/meta.dart';
 @immutable
 class MidiDevice {
   /// Creates a [MidiDevice].
-  const MidiDevice({
+  const new({
     required this.id,
     required this.name,
     this.isDefault = false,

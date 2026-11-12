@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// markers are placed as fractions of it, which survives any rescale.
 class ExternalPedalArt extends StatelessWidget {
   /// Creates an [ExternalPedalArt].
-  const ExternalPedalArt({
+  const new({
     required this.type,
     required this.selected,
     required this.onSelect,
@@ -129,7 +129,7 @@ class ExternalPedalArt extends StatelessWidget {
 /// One artwork and the geometry measured in it.
 class ExternalPedalArtwork {
   /// Creates an [ExternalPedalArtwork].
-  const ExternalPedalArtwork({
+  const new({
     required this.asset,
     required this.size,
     required this.switches,
@@ -156,7 +156,7 @@ class ExternalPedalArtwork {
 
 /// A hit target over one switch, with its name under it.
 class _Target extends StatelessWidget {
-  const _Target({
+  const new({
     required this.index,
     required this.selected,
     required this.bezelRadius,
@@ -241,7 +241,7 @@ class _Target extends StatelessWidget {
 /// The contact, not the effect: a latching switch that is closed shows a lit
 /// dot whether or not the action it runs left anything turned on.
 class _Contact extends StatelessWidget {
-  const _Contact({required this.closed, super.key});
+  const new({required this.closed, super.key});
 
   final bool closed;
 

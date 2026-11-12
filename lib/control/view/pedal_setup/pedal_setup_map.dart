@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// positions match the pen's map; no tappable area hangs outside this box.
 class PedalSetupMap extends StatelessWidget {
   /// Creates a [PedalSetupMap].
-  const PedalSetupMap({
+  const new({
     required this.frame,
     required this.selected,
     required this.editable,
@@ -99,7 +99,7 @@ class PedalSetupMap extends StatelessWidget {
 
 /// [button]'s cap on [map], centred where [ConsolePedalLayout] puts it.
 class _MapCap extends StatelessWidget {
-  const _MapCap({required this.map, required this.button, required this.rear});
+  const new({required this.map, required this.button, required this.rear});
 
   /// The map the cap is drawn on, which holds what every cap shows.
   final PedalSetupMap map;
@@ -173,7 +173,7 @@ class _MapCap extends StatelessWidget {
 /// One hardware pedal and its LED, with one touch and encoder target.
 class PedalSetupCap extends StatelessWidget {
   /// Creates a selectable hardware pedal.
-  const PedalSetupCap({
+  const new({
     required this.ledColor,
     required this.ledActive,
     required this.legend,

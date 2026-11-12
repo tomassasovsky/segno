@@ -10,7 +10,7 @@ import 'package:segno/theme/theme.dart';
 /// One card on the reorder strip.
 class FxReorderCard {
   /// Creates an [FxReorderCard].
-  const FxReorderCard({
+  const new({
     required this.id,
     required this.name,
     this.art,
@@ -47,7 +47,7 @@ class FxReorderCard {
 /// the player was still trying out.
 class FxReorderPage extends StatefulWidget {
   /// Creates an [FxReorderPage].
-  const FxReorderPage({
+  const new({
     required this.crumb,
     required this.cards,
     required this.onStage,
@@ -197,7 +197,7 @@ class _FxReorderPageState extends State<FxReorderPage> {
 /// The space before card [index]: the plain cable, or nothing where the strip
 /// breaks between the two stages.
 class _ReorderGap extends StatelessWidget {
-  const _ReorderGap({required this.index, required this.cable});
+  const new({required this.index, required this.cable});
 
   final int index;
 
@@ -223,7 +223,7 @@ class _ReorderGap extends StatelessWidget {
 /// One card: its position, its artwork, its name and the grip that says it
 /// can be moved.
 class _Card extends StatelessWidget {
-  const _Card({
+  const new({
     required this.card,
     required this.position,
     required this.total,

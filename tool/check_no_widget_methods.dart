@@ -44,7 +44,7 @@ const _frameworkUri = 'package:flutter/src/widgets/framework.dart';
 
 /// One declaration that returns a widget.
 class WidgetMethod {
-  const WidgetMethod({
+  const new({
     required this.path,
     required this.line,
     required this.scope,
@@ -171,7 +171,7 @@ Future<InterfaceType> _widgetType(AnalysisContext context) async {
 }
 
 class _Visitor extends RecursiveAstVisitor<void> {
-  _Visitor({
+  new({
     required this.root,
     required this.checked,
     required this.result,

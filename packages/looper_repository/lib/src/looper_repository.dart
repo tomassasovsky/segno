@@ -71,7 +71,7 @@ enum RecoveryAction {
 /// A recovery refused before changing the current session.
 class RecoveryRefusal {
   /// Creates a refusal for the requested [action].
-  const RecoveryRefusal({required this.action, required this.result});
+  const new({required this.action, required this.result});
 
   /// The requested direction through history.
   final RecoveryAction action;
@@ -81,7 +81,7 @@ class RecoveryRefusal {
 }
 
 class _TimingIntent {
-  _TimingIntent(
+  new(
     this.defaultTiming,
     this.rememberedDivision,
     Map<int, RecordTiming> overrides,
@@ -92,7 +92,7 @@ class _TimingIntent {
 }
 
 class _LengthIntent {
-  _LengthIntent(this.defaultBars, Map<int, int> overrides, this.mode)
+  new(this.defaultBars, Map<int, int> overrides, this.mode)
     : overrides = Map.unmodifiable(overrides);
   final int defaultBars;
   final Map<int, int> overrides;
@@ -153,7 +153,7 @@ class LooperRepository {
   /// [_ticker] drives snapshot polling; when omitted a periodic stream at
   /// [_pollInterval] (~60 Hz) is used. Injecting a ticker makes tests
   /// deterministic.
-  LooperRepository({
+  new({
     required this._engine,
     this._ticker,
     this._pollInterval = const Duration(milliseconds: 16),
@@ -10683,7 +10683,7 @@ int resolvedPrimaryTrack(int designation, List<TrackSnapshot> tracks) {
 /// content changed; a playhead tick, a level tick, a mute or a volume change
 /// move none of these.
 class _WaveformKey extends Equatable {
-  const _WaveformKey({
+  const new({
     required this.state,
     required this.lengthFrames,
     required this.undoDepth,
@@ -10691,7 +10691,7 @@ class _WaveformKey extends Equatable {
     required this.clearRestore,
   });
 
-  factory _WaveformKey.of(Track track) => _WaveformKey(
+  factory of(Track track) => _WaveformKey(
     state: track.state,
     lengthFrames: track.lengthFrames,
     undoDepth: track.undoDepth,
@@ -10717,7 +10717,7 @@ class _WaveformKey extends Equatable {
 
 /// One cached waveform read with the sweep it is waiting on.
 class _WaveformRead {
-  _WaveformRead(this.key, this.samples, {required this.sweepFrom})
+  new(this.key, this.samples, {required this.sweepFrom})
     : lastProgress = sweepFrom;
 
   final _WaveformKey key;
@@ -10735,7 +10735,7 @@ class _WaveformRead {
 }
 
 class _MixIntent {
-  _MixIntent({
+  new({
     required Map<int, double> pans,
     required Map<int, double> trackLevels,
     required Map<int, bool> solos,
@@ -10781,7 +10781,7 @@ class _MixIntent {
 }
 
 class _PendingImage {
-  _PendingImage(
+  new(
     this.revision,
     this.images,
     this.balances,
@@ -10805,7 +10805,7 @@ class _PendingImage {
 
 /// One refused fresh-capture press waiting for its retry (#1146).
 class _RecordRetry {
-  _RecordRetry(this.channel);
+  new(this.channel);
 
   final int channel;
 
@@ -10814,7 +10814,7 @@ class _RecordRetry {
 }
 
 class _FxPreparationRefused implements Exception {
-  const _FxPreparationRefused(this.result);
+  const new(this.result);
 
   final EngineResult result;
 }
@@ -10822,14 +10822,14 @@ class _FxPreparationRefused implements Exception {
 /// A Loop setting with the inherit grammar (#1179 Follow tempo and Pitch):
 /// the default every track inherits and per-track overrides.
 final class _InheritIntent<V extends Object> {
-  _InheritIntent(Map<int, V> overrides, {required this.defaultValue})
+  new(Map<int, V> overrides, {required this.defaultValue})
     : overrides = Map.unmodifiable(overrides);
   final V defaultValue;
   final Map<int, V> overrides;
 }
 
 final class _OneShotIntent {
-  _OneShotIntent(Map<int, bool> overrides, {required this.defaultValue})
+  new(Map<int, bool> overrides, {required this.defaultValue})
     : overrides = Map.unmodifiable(overrides);
   final bool defaultValue;
   final Map<int, bool> overrides;
@@ -10838,7 +10838,7 @@ final class _OneShotIntent {
 
 /// A cable measurement waiting for its result.
 class _LatencyWait {
-  _LatencyWait(this.request, this.timeout);
+  new(this.request, this.timeout);
 
   final int request;
   final Timer timeout;

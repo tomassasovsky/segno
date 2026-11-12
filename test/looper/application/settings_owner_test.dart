@@ -174,7 +174,7 @@ class _Store extends FakeKeyValueStore {
 /// One owned family seen through literal oracles: its store keys, the fake
 /// engine's own published value, and the repository's restart intent.
 final class _Case<V extends Object> {
-  _Case({
+  new({
     required this.name,
     required this.keys,
     required this.stored,
@@ -545,7 +545,7 @@ const _defaults = <String, Object>{
 };
 
 class _Rig {
-  _Rig(
+  new(
     this.clock, {
     Map<String, Object?> stored = const {},
     void Function(_Store)? prepare,

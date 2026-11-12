@@ -5,7 +5,7 @@ part of 'midi_setup_cubit.dart';
 /// can show the connection and blink the input indicator from one state.
 class MidiSetupState extends Equatable {
   /// Creates a [MidiSetupState].
-  const MidiSetupState({
+  const new({
     this.connection = const MidiConnection(),
     this.activityTick = 0,
   });

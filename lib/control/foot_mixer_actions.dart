@@ -10,7 +10,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Control owns contacts and selection; this component owns no cached values.
 class FootMixerActions {
   /// Connects the already shared owners without introducing a new lifetime.
-  const FootMixerActions({
+  const new({
     required this.repository,
     required this.settings,
     required this.mix,

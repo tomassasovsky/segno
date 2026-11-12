@@ -3,7 +3,7 @@ import 'package:update_repository/update_repository.dart';
 
 /// A configurable in-memory backend for exercising [UpdateRepository]'s policy.
 class _FakeBackend implements PlatformUpdateBackend {
-  _FakeBackend({
+  new({
     this.isSupported = true,
     this.channel = 'experimental',
     Version? current,

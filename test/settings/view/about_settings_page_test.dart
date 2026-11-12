@@ -21,7 +21,7 @@ import 'destination_harness.dart';
 
 /// A console whose facts are exactly the ones given.
 class _FactsClient extends UnsupportedConsoleFactsClient {
-  const _FactsClient(this._facts);
+  const new(this._facts);
 
   final ConsoleFacts _facts;
 

@@ -10,7 +10,7 @@ import 'package:segno/theme/theme.dart';
 /// One offered choice.
 class PedalChoice<T> {
   /// Creates a [PedalChoice].
-  const PedalChoice({
+  const new({
     required this.value,
     required this.label,
     required this.id,
@@ -30,7 +30,7 @@ class PedalChoice<T> {
 /// A heading and the choices under it.
 class PedalChoiceGroup<T> {
   /// Creates a [PedalChoiceGroup].
-  const PedalChoiceGroup({
+  const new({
     required this.label,
     required this.id,
     required this.choices,
@@ -55,7 +55,7 @@ class PedalChoiceGroup<T> {
 /// assignment every time someone changed their mind.
 class PedalChoiceResult<T> {
   /// Creates a [PedalChoiceResult].
-  const PedalChoiceResult(this.value);
+  const new(this.value);
 
   /// The chosen value.
   final T value;
@@ -86,7 +86,7 @@ Future<PedalChoiceResult<T>?> showPedalChoicePicker<T>(
 }
 
 class _PedalChoicePicker<T> extends StatefulWidget {
-  const _PedalChoicePicker({
+  const new({
     required this.title,
     required this.groups,
     required this.current,

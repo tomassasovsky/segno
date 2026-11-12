@@ -12,7 +12,7 @@ abstract interface class PluginSlotHandle {}
 @immutable
 class PluginParamInfo {
   /// Creates a [PluginParamInfo].
-  const PluginParamInfo({
+  const new({
     required this.id,
     required this.name,
     required this.unit,
@@ -116,7 +116,7 @@ enum PluginFormat {
 @immutable
 class PluginDescriptor {
   /// Creates a [PluginDescriptor].
-  const PluginDescriptor({
+  const new({
     required this.id,
     required this.name,
     required this.vendor,
@@ -174,7 +174,7 @@ class PluginDescriptor {
 @immutable
 class PluginScanProgress {
   /// Creates a [PluginScanProgress].
-  const PluginScanProgress({
+  const new({
     required this.done,
     required this.found,
     required this.scanned,

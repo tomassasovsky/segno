@@ -39,7 +39,7 @@ part 'power_state.dart';
 /// that flag; there is no shared latch.
 class PowerCubit extends Cubit<PowerState> {
   /// Creates a [PowerCubit].
-  PowerCubit({
+  new({
     required this._stopTransport,
     required this._flush,
     required this._storageSettled,

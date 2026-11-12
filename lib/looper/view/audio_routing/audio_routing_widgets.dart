@@ -15,7 +15,7 @@ import 'package:segno/theme/theme.dart';
 /// leaving a gap where the number would be.
 class RoutingSourceCard extends StatelessWidget {
   /// Creates a [RoutingSourceCard].
-  const RoutingSourceCard({
+  const new({
     required this.ordinal,
     required this.name,
     required this.selected,
@@ -168,7 +168,7 @@ class RoutingSourceCard extends StatelessWidget {
 /// A card line that keeps its height when hidden, so the lines under and
 /// over it stay where the other cards draw them.
 class _KeptLine extends StatelessWidget {
-  const _KeptLine({required this.visible, required this.child});
+  const new({required this.visible, required this.child});
 
   final bool visible;
   final Widget child;
@@ -188,7 +188,7 @@ class _KeptLine extends StatelessWidget {
 /// text.
 class RoutingTag extends StatelessWidget {
   /// Creates a [RoutingTag].
-  const RoutingTag(this.text, {super.key});
+  const new(this.text, {super.key});
 
   /// The label.
   final String text;
@@ -218,7 +218,7 @@ class RoutingTag extends StatelessWidget {
 /// showing on the right, over the control itself.
 class RoutingInlineLabel extends StatelessWidget {
   /// Creates a [RoutingInlineLabel].
-  const RoutingInlineLabel({
+  const new({
     required this.label,
     required this.value,
     required this.width,
@@ -268,7 +268,7 @@ class RoutingInlineLabel extends StatelessWidget {
 /// The pen's `input-pan-ends` row: the two ends of a placement slider.
 class RoutingSliderEnds extends StatelessWidget {
   /// Creates a [RoutingSliderEnds].
-  const RoutingSliderEnds({
+  const new({
     required this.start,
     required this.end,
     required this.width,
@@ -351,7 +351,7 @@ const ({double low, double high}) kInputGainTargetDb = (low: -18, high: -6);
 /// the cells marks it whatever the level.
 class RoutingInputMeter extends StatelessWidget {
   /// Creates a [RoutingInputMeter].
-  const RoutingInputMeter({
+  const new({
     required this.level,
     required this.clipping,
     required this.width,
@@ -469,7 +469,7 @@ class RoutingInputMeter extends StatelessWidget {
 /// The pen's `input-meter-scale`: the dBFS ticks under a meter.
 class RoutingMeterScale extends StatelessWidget {
   /// Creates a [RoutingMeterScale].
-  const RoutingMeterScale({
+  const new({
     required this.labels,
     required this.width,
     super.key,
@@ -503,7 +503,7 @@ class RoutingMeterScale extends StatelessWidget {
 /// pair with their ordered left and right identities.
 class RoutingPairMembers extends StatelessWidget {
   /// Creates a [RoutingPairMembers].
-  const RoutingPairMembers({
+  const new({
     required this.leftName,
     required this.rightName,
     required this.leftTag,
@@ -547,7 +547,7 @@ class RoutingPairMembers extends StatelessWidget {
 
 /// One jack of a linked pair: its label and its side tag.
 class _PairMember extends StatelessWidget {
-  const _PairMember({required this.name, required this.tag});
+  const new({required this.name, required this.tag});
 
   final String name;
   final String tag;
@@ -593,7 +593,7 @@ class _PairMember extends StatelessWidget {
 /// a destination.
 class RoutingCheck extends StatelessWidget {
   /// Creates a [RoutingCheck].
-  const RoutingCheck({required this.selected, super.key});
+  const new({required this.selected, super.key});
 
   /// Whether the card is chosen.
   final bool selected;
@@ -623,7 +623,7 @@ class RoutingCheck extends StatelessWidget {
 /// a check that says whether the chosen source reaches it. 684 x 144.
 class RoutingDestinationCard extends StatelessWidget {
   /// Creates a [RoutingDestinationCard].
-  const RoutingDestinationCard({
+  const new({
     required this.jacks,
     required this.name,
     required this.selected,
@@ -727,7 +727,7 @@ class RoutingDestinationCard extends StatelessWidget {
 /// one's name beside them, shared by the two track-scoped routing tasks.
 class RoutingTrackScope extends StatelessWidget {
   /// Creates a [RoutingTrackScope].
-  const RoutingTrackScope({
+  const new({
     required this.heading,
     required this.count,
     required this.selected,

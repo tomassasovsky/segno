@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// and on which channel, Learn, and how the control behaves.
 class MidiSourcePanel extends StatefulWidget {
   /// Creates a [MidiSourcePanel].
-  const MidiSourcePanel({
+  const new({
     required this.deviceName,
     required this.draft,
     required this.protocol,
@@ -255,7 +255,7 @@ class _MidiSourcePanelState extends State<MidiSourcePanel> {
 /// Learn listening: the box that says to move a control, or to reconnect the
 /// controller when it is not there to hear.
 class _Listening extends StatelessWidget {
-  const _Listening({required this.connected});
+  const new({required this.connected});
 
   final bool connected;
 

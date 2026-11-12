@@ -106,7 +106,7 @@ Future<void> _deleteQuietly(File file) async {
 /// renderer faults such as missing glyphs. It is not the display's scanout.
 class ScreenCapture extends StatefulWidget {
   /// Creates a [ScreenCapture] around [child].
-  const ScreenCapture({
+  const new({
     required this.screen,
     required this.requests,
     required this.child,

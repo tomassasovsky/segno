@@ -10,7 +10,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// ledger. This object never interprets mappings or arbitrates source priority.
 class FxChainPersistence {
   /// Binds projection lifetime to the same live repository used by its clients.
-  FxChainPersistence({required this._looper});
+  new({required this._looper});
 
   final LooperRepository _looper;
   int? _session;
@@ -837,7 +837,7 @@ Future<void> _writeFxOwner({
 }
 
 class _FxSave {
-  _FxSave(
+  new(
     this.settings,
     this.session, {
     required this.completeOnClose,
@@ -851,7 +851,7 @@ class _FxSave {
 }
 
 class _SessionBootImage {
-  const _SessionBootImage({
+  const new({
     required this.settings,
     required this.session,
     required this.mixGeneration,
@@ -871,7 +871,7 @@ class _SessionBootImage {
 }
 
 class _SessionBootMonitor {
-  const _SessionBootMonitor({
+  const new({
     required this.mode,
     required this.outputMask,
     required this.muted,

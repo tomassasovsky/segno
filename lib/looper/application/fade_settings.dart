@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// image, keeps the controller's authored Released value.
 class FadeSettings {
   /// Builds the owner over [repository]'s lifetime and [settings]' record.
-  FadeSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
     required this._blocked,

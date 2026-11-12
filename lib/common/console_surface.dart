@@ -96,7 +96,7 @@ Duration consoleMotion(BuildContext context) =>
 /// has nothing of its own in the tree, and nothing tappable.
 class ConsoleExpansion extends StatefulWidget {
   /// Creates a [ConsoleExpansion].
-  const ConsoleExpansion({
+  const new({
     required this.expanded,
     required this.child,
     super.key,
@@ -203,7 +203,7 @@ class _ConsoleExpansionState extends State<ConsoleExpansion>
 /// rounded corner instead of stopping inside it.
 class ConsoleCard extends StatelessWidget {
   /// Creates a [ConsoleCard].
-  const ConsoleCard({required this.children, this.fill, super.key});
+  const new({required this.children, this.fill, super.key});
 
   /// The rows, in display order.
   final List<Widget> children;
@@ -263,7 +263,7 @@ class ConsoleDisclosure extends StatelessWidget {
   /// Creates a [ConsoleDisclosure].
   ///
   /// [expanded] null draws nothing and keeps the space.
-  const ConsoleDisclosure({this.expanded, super.key});
+  const new({this.expanded, super.key});
 
   /// Whether the row this marks is open; null when the row does not open.
   final bool? expanded;
@@ -295,7 +295,7 @@ class ConsoleDisclosure extends StatelessWidget {
 /// Pacer`) and is set in the text face like everything else they typed.
 class ConsoleRow extends StatelessWidget {
   /// Creates a [ConsoleRow].
-  const ConsoleRow({
+  const new({
     required this.title,
     this.subtitle,
     this.state,
@@ -559,7 +559,7 @@ class ConsoleRow extends StatelessWidget {
 /// of its own silences its text piece by piece, because its label already
 /// says it.
 class _Quiet extends StatelessWidget {
-  const _Quiet({required this.silent, required this.child});
+  const new({required this.silent, required this.child});
 
   final bool silent;
   final Widget child;
@@ -577,7 +577,7 @@ class _Quiet extends StatelessWidget {
 /// `toUpperCase()` here would take that away.
 class ConsoleGroupLabel extends StatelessWidget {
   /// Creates a [ConsoleGroupLabel].
-  const ConsoleGroupLabel(this.label, {super.key});
+  const new(this.label, {super.key});
 
   /// The caption.
   final String label;
@@ -609,7 +609,7 @@ class ConsoleGroupLabel extends StatelessWidget {
 /// what the protocol below it says.
 class ConsoleProse extends StatelessWidget {
   /// Creates a [ConsoleProse].
-  const ConsoleProse(this.text, {super.key});
+  const new(this.text, {super.key});
 
   /// The sentence.
   final String text;
@@ -667,7 +667,7 @@ class ConsoleProse extends StatelessWidget {
 /// touch anywhere; the control it describes is one tap away, unmoved.
 class ConsoleCaption extends StatefulWidget {
   /// Creates a [ConsoleCaption].
-  const ConsoleCaption(
+  const new(
     this.label, {
     this.explain,
     this.explainLabel,
@@ -955,7 +955,7 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
 /// The label opens it too. A `?` that only answers when struck dead centre
 /// teaches people it is broken; the words beside it are the same question.
 class _CaptionButton extends StatelessWidget {
-  const _CaptionButton({
+  const new({
     required this.anchorKey,
     required this.open,
     required this.label,
@@ -1012,7 +1012,7 @@ class _CaptionButton extends StatelessWidget {
 
 /// The `?` itself. Drawn, never hit — [_CaptionButton] is the target.
 class _ExplainGlyph extends StatelessWidget {
-  const _ExplainGlyph({required this.open});
+  const new({required this.open});
 
   /// Whether the explanation is showing, which fills the glyph.
   final bool open;
@@ -1050,7 +1050,7 @@ class _ExplainGlyph extends StatelessWidget {
 /// while you go and use the control it describes is a panel, not an answer,
 /// and this surface already has one thing at a time everywhere else.
 class _Explanation extends StatelessWidget {
-  const _Explanation({
+  const new({
     required this.anchor,
     required this.text,
     required this.surface,
@@ -1171,7 +1171,7 @@ class _Explanation extends StatelessWidget {
 /// exercise. An RTL locale would want [getPositionForChild] to hang the answer
 /// off `anchor.right` instead.
 class _ExplanationLayout extends SingleChildLayoutDelegate {
-  const _ExplanationLayout(this.anchor);
+  const new(this.anchor);
 
   /// The caption's rect, in the same coordinates as the laid-out box.
   final Rect anchor;
@@ -1234,7 +1234,7 @@ class _ExplanationLayout extends SingleChildLayoutDelegate {
 /// two frames, which on a 70px row reads as the list jolting.
 class ConsoleExpandedRow extends StatelessWidget {
   /// Creates a [ConsoleExpandedRow].
-  const ConsoleExpandedRow({
+  const new({
     required this.row,
     required this.actions,
     this.expanded = true,
@@ -1302,7 +1302,7 @@ class ConsoleExpandedRow extends StatelessWidget {
 /// pill — a filled red chip inside a list row reads as a state the row is in.
 class ConsoleActionChip extends StatelessWidget {
   /// Creates a [ConsoleActionChip].
-  const ConsoleActionChip({
+  const new({
     required this.label,
     required this.onPressed,
     this.icon,
@@ -1394,7 +1394,7 @@ class ConsoleActionChip extends StatelessWidget {
 /// widget written twice before this existed.
 class ConsoleDomainPanel<T> extends StatelessWidget {
   /// Creates a [ConsoleDomainPanel].
-  const ConsoleDomainPanel({
+  const new({
     required this.title,
     required this.tabs,
     required this.selected,
@@ -1472,7 +1472,7 @@ class ConsoleDomainPanel<T> extends StatelessWidget {
 /// and the title under them.
 class ConsoleFaceHeader extends StatelessWidget {
   /// Creates a [ConsoleFaceHeader].
-  const ConsoleFaceHeader({
+  const new({
     required this.title,
     this.status,
     this.actions = const [],
@@ -1544,7 +1544,7 @@ class ConsoleFaceHeader extends StatelessWidget {
 /// move or resize when a scan starts.
 class ConsoleIconButton extends StatefulWidget {
   /// Creates a [ConsoleIconButton].
-  const ConsoleIconButton({
+  const new({
     required this.icon,
     required this.onPressed,
     required this.tooltip,
@@ -1647,7 +1647,7 @@ class _ConsoleIconButtonState extends State<ConsoleIconButton>
 /// never the words "on" and "off".
 class ConsoleSwitch extends StatelessWidget {
   /// Creates a [ConsoleSwitch].
-  const ConsoleSwitch({
+  const new({
     required this.value,
     required this.onChanged,
     this.semanticLabel,
@@ -1764,7 +1764,7 @@ enum ConsoleBannerTone {
 /// its action change with the phase.
 class ConsoleBanner extends StatelessWidget {
   /// Creates a [ConsoleBanner].
-  const ConsoleBanner({
+  const new({
     required this.message,
     required this.tone,
     this.actions = const [],
@@ -1878,7 +1878,7 @@ class ConsoleBanner extends StatelessWidget {
 /// A short, low-emphasis button — the banner's Cancel / Try again.
 class ConsoleSmallButton extends StatelessWidget {
   /// Creates a [ConsoleSmallButton].
-  const ConsoleSmallButton({
+  const new({
     required this.label,
     required this.onPressed,
     super.key,
@@ -1937,7 +1937,7 @@ class ConsoleSmallButton extends StatelessWidget {
 /// failed to draw.
 class ConsoleEmptyCard extends StatelessWidget {
   /// Creates a [ConsoleEmptyCard].
-  const ConsoleEmptyCard({required this.message, super.key});
+  const new({required this.message, super.key});
 
   /// The sentence to show.
   final String message;
@@ -2084,7 +2084,7 @@ mixin ConsoleResetTap<T extends StatefulWidget> on State<T> {
 /// for the write to come back through the cubit.
 class ConsoleValueBar extends StatefulWidget {
   /// Creates a [ConsoleValueBar].
-  const ConsoleValueBar({
+  const new({
     required this.label,
     required this.value,
     required this.readout,
@@ -2330,7 +2330,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar>
 @immutable
 class ConsoleSegment<T> {
   /// Creates a [ConsoleSegment].
-  const ConsoleSegment({
+  const new({
     required this.value,
     required this.label,
     this.sublabel,
@@ -2371,7 +2371,7 @@ class ConsoleSegment<T> {
 /// the same shape, inside a row, would read as a second set of them.
 class ConsoleSegmented<T> extends StatelessWidget {
   /// Creates a [ConsoleSegmented].
-  const ConsoleSegmented({
+  const new({
     required this.segments,
     required this.selected,
     required this.onChanged,
@@ -2483,7 +2483,7 @@ class ConsoleSegmented<T> extends StatelessWidget {
 /// right on a 1920px surface puts it a screen away from the words it changes.
 class ConsoleMiniToggle<T> extends StatelessWidget {
   /// Creates a [ConsoleMiniToggle].
-  const ConsoleMiniToggle({
+  const new({
     required this.segments,
     required this.selected,
     required this.onChanged,
@@ -2562,7 +2562,7 @@ class ConsoleMiniToggle<T> extends StatelessWidget {
 /// the marker that opened it instead of with the list.
 class ConsoleDrawer extends StatelessWidget {
   /// Creates a [ConsoleDrawer].
-  const ConsoleDrawer({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The revealed block.
   final Widget child;
@@ -2595,7 +2595,7 @@ class ConsoleDrawer extends StatelessWidget {
 /// on every pick.
 class ConsolePickRow extends StatelessWidget {
   /// Creates a [ConsolePickRow].
-  const ConsolePickRow({
+  const new({
     required this.title,
     required this.selected,
     required this.onTap,
@@ -2712,7 +2712,7 @@ class ConsolePickRow extends StatelessWidget {
 /// the close takes.
 class ConsoleChooser extends StatelessWidget {
   /// Creates a [ConsoleChooser].
-  const ConsoleChooser({required this.open, required this.children, super.key});
+  const new({required this.open, required this.children, super.key});
 
   /// A chooser holding one [ConsoleChipGrid], inset the way a drawer's
   /// contents always are.
@@ -2720,7 +2720,7 @@ class ConsoleChooser extends StatelessWidget {
   /// The inset was being re-stated by every face that opened a grid; it
   /// belongs to the drawer, which is the thing that knows how far in its
   /// contents sit.
-  factory ConsoleChooser.grid({
+  factory grid({
     required bool open,
     required Widget grid,
     Key? key,
@@ -2772,7 +2772,7 @@ class ConsoleChooser extends StatelessWidget {
 /// with the choices under it rather than with the list outside.
 class ConsoleDrawerLabel extends StatelessWidget {
   /// Creates a [ConsoleDrawerLabel].
-  const ConsoleDrawerLabel(this.label, {super.key});
+  const new(this.label, {super.key});
 
   /// The caption. Upper-cased by the caller, as [ConsoleGroupLabel]'s is.
   final String label;
@@ -2812,7 +2812,7 @@ class ConsoleDrawerLabel extends StatelessWidget {
 /// the caller knows whether the question has one answer.
 class ConsoleChipGrid<T> extends StatelessWidget {
   /// Creates a [ConsoleChipGrid].
-  const ConsoleChipGrid({
+  const new({
     required this.options,
     required this.selected,
     required this.onTap,
@@ -2935,7 +2935,7 @@ class ConsoleChipGrid<T> extends StatelessWidget {
 }
 
 class _ConsoleChip extends StatelessWidget {
-  const _ConsoleChip({
+  const new({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -3032,7 +3032,7 @@ class _ConsoleChip extends StatelessWidget {
 /// The check that marks the target something is already pointed at.
 class ConsoleCheck extends StatelessWidget {
   /// Creates a [ConsoleCheck].
-  const ConsoleCheck({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => Icon(
@@ -3160,7 +3160,7 @@ Future<bool> showConsoleConfirmDialog(
 /// outgrows the tray sheet exactly as an eight-input one outgrew the panel.
 class ConsolePinnedGroupLabel extends StatelessWidget {
   /// Creates a [ConsolePinnedGroupLabel].
-  const ConsolePinnedGroupLabel(this.label, {this.fill, super.key});
+  const new(this.label, {this.fill, super.key});
 
   /// The caption. Upper-cased by the caller, as [ConsoleGroupLabel]'s is.
   final String label;
@@ -3187,7 +3187,7 @@ class ConsolePinnedGroupLabel extends StatelessWidget {
 }
 
 class _PinnedGroupLabelDelegate extends SliverPersistentHeaderDelegate {
-  const _PinnedGroupLabelDelegate({required this.label, required this.fill});
+  const new({required this.label, required this.fill});
 
   final String label;
   final Color fill;
@@ -3234,7 +3234,7 @@ class _PinnedGroupLabelDelegate extends SliverPersistentHeaderDelegate {
 /// second copy of it.
 class ConsoleStickyGroups extends StatefulWidget {
   /// Creates a [ConsoleStickyGroups].
-  const ConsoleStickyGroups({
+  const new({
     required this.slivers,
     this.upcoming,
     this.upcomingExtent = 0,
@@ -3326,7 +3326,7 @@ class _ConsoleStickyGroupsState extends State<ConsoleStickyGroups> {
 @immutable
 class ConsoleGroup {
   /// Creates a [ConsoleGroup].
-  const ConsoleGroup({required this.blocks, this.caption});
+  const new({required this.blocks, this.caption});
 
   /// The caption over the group, upper-cased by the caller as every
   /// [ConsoleGroupLabel] is — or **null** for a group that has none.
@@ -3370,7 +3370,7 @@ class ConsoleGroup {
 /// under this file's own promotion rule the moment System read it too.
 class ConsoleFace extends StatelessWidget {
   /// Creates a [ConsoleFace].
-  const ConsoleFace({
+  const new({
     required this.groups,
     this.lastGroupExtent = 0,
     this.previewKey,
@@ -3478,7 +3478,7 @@ enum ConsoleDialogTone {
 /// different things.
 class ConsoleDialogButton extends StatelessWidget {
   /// Creates a [ConsoleDialogButton].
-  const ConsoleDialogButton({
+  const new({
     required this.label,
     required this.onPressed,
     this.tone = ConsoleDialogTone.neutral,
@@ -3589,7 +3589,7 @@ class ConsoleDialogButton extends StatelessWidget {
 /// screen.
 class ConsoleDialogShell extends StatelessWidget {
   /// Creates a [ConsoleDialogShell].
-  const ConsoleDialogShell({
+  const new({
     required this.child,
     this.width = defaultWidth,
     super.key,

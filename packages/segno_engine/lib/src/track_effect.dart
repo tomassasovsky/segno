@@ -118,7 +118,7 @@ enum FxChannelOutput {
 @immutable
 final class FxChannels {
   /// Creates an [FxChannels].
-  const FxChannels({
+  const new({
     this.input = FxChannelInput.stereo,
     this.output = FxChannelOutput.stereo,
     this.placement = 0,
@@ -127,7 +127,7 @@ final class FxChannels {
 
   /// Rebuilds an [FxChannels] from its [toJson] map. Omitted fields use their
   /// defaults; invalid explicit fields reject the saved chain.
-  factory FxChannels.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final placement = json['placement'];
     final level = json['level'];
     if ((json.containsKey('input') && json['input'] == null) ||
@@ -224,7 +224,7 @@ final class FxChannels {
 @immutable
 final class FxRack {
   /// Creates an [FxRack].
-  const FxRack({
+  const new({
     required this.id,
     required this.name,
     this.art,
@@ -318,7 +318,7 @@ enum FxRackPath {
   /// The Amb path (the Amb-Verb).
   amb(8);
 
-  FxRackPath(this.bits);
+  new(this.bits);
 
   /// The native bits.
   final int bits;
@@ -513,7 +513,7 @@ enum TrackEffectType {
   /// retuned to the nearest note of a scale, gliding there at its speed.
   smartTune(32, 'Smart Tune');
 
-  TrackEffectType(this.code, this.label);
+  new(this.code, this.label);
 
   /// The native `le_fx_type` integer.
   final int code;
@@ -1591,7 +1591,7 @@ enum FxParamUnit {
   /// Seconds (`LE_FX_UNIT_SECONDS`).
   seconds(9);
 
-  FxParamUnit(this.code);
+  new(this.code);
 
   /// The native `le_fx_param_unit` value.
   final int code;
@@ -1614,7 +1614,7 @@ enum FxParamCurve {
   /// reverb time display (`LE_FX_CURVE_REVERB_TIME`).
   reverbTime(3);
 
-  FxParamCurve(this.code);
+  new(this.code);
 
   /// The native `le_fx_param_curve` value.
   final int code;
@@ -1644,7 +1644,7 @@ enum FxParamOff {
 @immutable
 class FxParamInfo {
   /// Creates an [FxParamInfo].
-  const FxParamInfo({
+  const new({
     required this.key,
     required this.unit,
     required this.atMin,
@@ -1772,14 +1772,14 @@ class FxParamInfo {
 @immutable
 final class PluginRef {
   /// Creates a [PluginRef].
-  const PluginRef({
+  const new({
     required this.format,
     required this.id,
     this.version = 0,
   });
 
   /// Rebuilds a [PluginRef] from its [toJson] map.
-  factory PluginRef.fromJson(Map<String, dynamic> json) => PluginRef(
+  factory fromJson(Map<String, dynamic> json) => PluginRef(
     format: PluginFormat.fromCode((json['format'] as num?)?.toInt() ?? 0),
     id: (json['id'] as String?) ?? '',
     version: (json['version'] as num?)?.toInt() ?? 0,
@@ -1822,14 +1822,14 @@ final class PluginRef {
 /// [FxPlacement.post] one.
 sealed class TrackEffect {
   /// Const base constructor for the sealed subtypes.
-  const TrackEffect();
+  const new();
 
   /// Rebuilds a [TrackEffect] from a persisted entry, dual-decoding by shape: a
   /// `LE_FX_PLUGIN` ([kPluginFxCode]) entry carrying a `plugin` key is a
   /// [PluginEffect]; everything else is a [BuiltInEffect]. There is no envelope
   /// — a pre-plugin chain (an array of bare `{type, params}` entries) decodes
   /// unchanged. A plugin entry is NEVER silently dropped to `none`.
-  factory TrackEffect.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final code = (json['type'] as num?)?.toInt() ?? 0;
     if (code == kPluginFxCode && json['plugin'] is Map<String, dynamic>) {
       return PluginEffect.fromJson(json);
@@ -1869,7 +1869,7 @@ sealed class TrackEffect {
 final class BuiltInEffect extends TrackEffect {
   /// Creates a [BuiltInEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  BuiltInEffect({
+  new({
     required this.type,
     List<double>? params,
     this.enabled = true,
@@ -1895,7 +1895,7 @@ final class BuiltInEffect extends TrackEffect {
   /// missing `enabled` decodes `true` (every pre-FX-v3 entry was audible —
   /// R15's "migration defaults every level to enabled"); a missing `slotId`
   /// stays null for the repository write boundary to mint (A9).
-  factory BuiltInEffect.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final type = TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0);
     // `is`-checks, not casts: a wrong-typed field in a corrupt persisted
     // chain must decode to the default, never throw a TypeError past
@@ -2100,7 +2100,7 @@ final class BuiltInEffect extends TrackEffect {
 final class PluginEffect extends TrackEffect {
   /// Creates a [PluginEffect] for [ref], optionally seeded with persisted
   /// [paramValues] / [state] and live [params] metadata.
-  const PluginEffect({
+  const new({
     required this.ref,
     this.paramValues = const {},
     this.params = const [],
@@ -2119,7 +2119,7 @@ final class PluginEffect extends TrackEffect {
   /// `{type, plugin}` entry stays readable). A missing `enabled` decodes
   /// `true` (R15); a missing `slotId` stays null for the repository write
   /// boundary to mint (A9).
-  factory PluginEffect.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final raw = json['paramValues'];
     final values = <int, double>{};
     if (raw is Map) {

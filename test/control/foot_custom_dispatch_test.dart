@@ -52,7 +52,7 @@ class _Engine extends FakeAudioEngine {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
@@ -78,7 +78,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig({ExternalJackSetup? jack}) {
+  new({ExternalJackSetup? jack}) {
     engine.publish();
     if (jack != null) {
       store.values['pedal.setup'] = const PedalSetup()

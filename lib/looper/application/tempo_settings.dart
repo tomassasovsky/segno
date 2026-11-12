@@ -20,7 +20,7 @@ class TempoSettings {
   /// Creates a [TempoSettings] driving [repository], persisted through
   /// [settings]. Starts at the tempo-free defaults until [load] restores the
   /// saved values.
-  TempoSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
   }) : _repository = repository,

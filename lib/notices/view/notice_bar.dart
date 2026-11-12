@@ -26,7 +26,7 @@ const Duration _tintFade = Duration(milliseconds: 240);
 /// one: the stage's, the performance views' and the settings frame's.
 class NoticeBar extends StatelessWidget {
   /// Creates a [NoticeBar] around a top bar's [child].
-  const NoticeBar({required this.child, this.restingRule, super.key});
+  const new({required this.child, this.restingRule, super.key});
 
   /// The bar's content.
   final Widget child;
@@ -87,7 +87,7 @@ class NoticeBar extends StatelessWidget {
 /// Laid out by `TopBarLayout` at the bar's full height.
 class NoticeBarMessage extends StatelessWidget {
   /// Creates a [NoticeBarMessage].
-  const NoticeBarMessage({this.fallback, this.trackCards, super.key});
+  const new({this.fallback, this.trackCards, super.key});
 
   /// What the centre shows when nothing is said: the session name on the
   /// stage, nothing elsewhere.
@@ -142,7 +142,7 @@ class NoticeBarMessage extends StatelessWidget {
 
 /// A message that goes by itself, with its time-left line.
 class _PassingMessage extends StatelessWidget {
-  const _PassingMessage({required this.shown, this.channel, super.key});
+  const new({required this.shown, this.channel, super.key});
 
   final ShownNotice shown;
 
@@ -183,7 +183,7 @@ class _PassingMessage extends StatelessWidget {
 /// A must-act message: the critical dot or the tone's icon, the sentence and
 /// the fix. No time line: it stays until its condition is over.
 class _MustActMessage extends StatelessWidget {
-  const _MustActMessage({required this.notice, super.key});
+  const new({required this.notice, super.key});
 
   final Notice notice;
 
@@ -216,7 +216,7 @@ class _MustActMessage extends StatelessWidget {
 /// secondary colour — so the two share a baseline and the body is the part
 /// cut short when the bar has no room.
 class _MessageRow extends StatelessWidget {
-  const _MessageRow({required this.notice, required this.lead, this.channel});
+  const new({required this.notice, required this.lead, this.channel});
 
   final Notice notice;
   final Widget? lead;
@@ -313,7 +313,7 @@ class _MessageRow extends StatelessWidget {
 
 /// The notice's icon at the title's size.
 class _Icon extends StatelessWidget {
-  const _Icon({required this.notice, required this.color});
+  const new({required this.notice, required this.color});
 
   final Notice notice;
   final Color color;
@@ -331,7 +331,7 @@ class _Icon extends StatelessWidget {
 
 /// The message's one action, the height of the bar's own controls.
 class _ActionButton extends StatelessWidget {
-  const _ActionButton({
+  const new({
     required this.action,
     required this.tone,
     this.quiet = false,
@@ -403,7 +403,7 @@ class _ActionButton extends StatelessWidget {
 /// The time-left line: as wide as the message when it appears, shrinking to
 /// its centre at a steady rate until the message goes.
 class _TimeLeft extends StatefulWidget {
-  const _TimeLeft({required this.shown, required this.color, super.key});
+  const new({required this.shown, required this.color, super.key});
 
   final ShownNotice shown;
   final Color color;

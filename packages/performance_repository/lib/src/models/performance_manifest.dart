@@ -61,7 +61,7 @@ bool _outputMuted(Object? value, {bool omitted = false}) {
 @immutable
 class PerformanceLaneSnapshot {
   /// Creates a [PerformanceLaneSnapshot].
-  const PerformanceLaneSnapshot({
+  const new({
     required this.lane,
     required this.lengthFrames,
     required this.deferred,
@@ -80,7 +80,7 @@ class PerformanceLaneSnapshot {
   /// Rebuilds a [PerformanceLaneSnapshot] from a decoded JSON map. An absent
   /// `chainEnabled` reads as engaged — see [chainEnabled]. An absent `takeId`
   /// reads as `0` (unknown / not a settled lane-0 entry) — see [takeId].
-  factory PerformanceLaneSnapshot.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       PerformanceLaneSnapshot(
         lane: (json['lane'] as num).toInt(),
         lengthFrames: (json['lenFrames'] as num).toInt(),
@@ -191,7 +191,7 @@ class PerformanceLaneSnapshot {
 @immutable
 class PerformanceTrackSnapshot {
   /// Creates a [PerformanceTrackSnapshot].
-  const PerformanceTrackSnapshot({
+  const new({
     required this.channel,
     required this.state,
     required this.volume,
@@ -203,7 +203,7 @@ class PerformanceTrackSnapshot {
   });
 
   /// Rebuilds a [PerformanceTrackSnapshot] from a decoded JSON map.
-  factory PerformanceTrackSnapshot.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       PerformanceTrackSnapshot(
         channel: (json['channel'] as num).toInt(),
         state: TrackState.values.byName(json['state'] as String),
@@ -278,7 +278,7 @@ class PerformanceTrackSnapshot {
 @immutable
 class PerformanceArmSnapshot {
   /// Creates a [PerformanceArmSnapshot].
-  const PerformanceArmSnapshot({
+  const new({
     required this.masterGain,
     required this.limiterEnabled,
     required this.limiterCeiling,
@@ -306,7 +306,7 @@ class PerformanceArmSnapshot {
   /// is not read: the renderer takes the arm phase from events.log's
   /// `LE_PLOG_PERF_ARMED` fact now (#262), so any such keys in an older bundle
   /// are ignored.
-  factory PerformanceArmSnapshot.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final bus = _captureBus(
       json['captureBus'],
       omitted: !json.containsKey('captureBus'),
@@ -525,10 +525,10 @@ class PerformanceArmSnapshot {
 @immutable
 class PerformanceDisarmSnapshot {
   /// Creates a [PerformanceDisarmSnapshot].
-  const PerformanceDisarmSnapshot({this.tempoBpm = 0, this.tracks = const []});
+  const new({this.tempoBpm = 0, this.tracks = const []});
 
   /// Rebuilds a [PerformanceDisarmSnapshot] from a decoded JSON map.
-  factory PerformanceDisarmSnapshot.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       PerformanceDisarmSnapshot(
         tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
         tracks: [
@@ -562,7 +562,7 @@ class PerformanceDisarmSnapshot {
 @immutable
 class PerformanceLayerEntry {
   /// Creates a [PerformanceLayerEntry].
-  const PerformanceLayerEntry({
+  const new({
     required this.channel,
     required this.slot,
     required this.generation,
@@ -573,7 +573,7 @@ class PerformanceLayerEntry {
   });
 
   /// Rebuilds a [PerformanceLayerEntry] from a decoded JSON map.
-  factory PerformanceLayerEntry.fromJson(Map<String, dynamic> json) =>
+  factory fromJson(Map<String, dynamic> json) =>
       PerformanceLayerEntry(
         channel: (json['channel'] as num).toInt(),
         slot: (json['slot'] as num).toInt(),
@@ -619,7 +619,7 @@ class PerformanceLayerEntry {
 @immutable
 class PerformanceManifest {
   /// Creates a [PerformanceManifest].
-  const PerformanceManifest({
+  const new({
     required this.slug,
     required this.finalized,
     required this.native,
@@ -637,7 +637,7 @@ class PerformanceManifest {
   /// finalize pass that doesn't happen to supply a fresh replacement (see
   /// `PerformanceRepository._finalize`, which re-finalizes via this factory
   /// for exactly that reason).
-  factory PerformanceManifest.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final armJson = json['armSnapshot'];
     final disarmJson = json['disarmSnapshot'];
     final native = Map<String, dynamic>.of(json)

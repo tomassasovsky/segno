@@ -15,7 +15,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// them and projects them.
 class PlaybackSettings {
   /// Builds both owners over [repository] and [settings].
-  PlaybackSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
   }) : decayOwner = SettingsOwner(

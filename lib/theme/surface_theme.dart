@@ -16,7 +16,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 @immutable
 class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// Creates a [SurfaceTheme].
-  const SurfaceTheme({
+  const new({
     required this.background,
     required this.surface,
     required this.card,

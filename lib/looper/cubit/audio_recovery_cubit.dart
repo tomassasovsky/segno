@@ -27,7 +27,7 @@ class AudioRecoveryCubit extends Cubit<AudioRecoveryState> {
   /// the cubit is inert when it is null or carries no pinned device.
   /// [_ticker] drives the enumeration polling (a periodic timer when
   /// omitted); [_interval] is that timer's period.
-  AudioRecoveryCubit({
+  new({
     required this._looper,
     EngineConfig? recoveryConfig,
     this._ticker,

@@ -135,7 +135,7 @@ class _Store extends FakeKeyValueStore {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
@@ -154,7 +154,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig(
+  new(
     this.clock,
     this.engine,
     this.looper,

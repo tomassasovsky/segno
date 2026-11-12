@@ -7,7 +7,7 @@ import 'package:session_repository/session_repository.dart';
 /// chosen bundle simply can't be loaded as-is). Lower-level I/O failures and
 /// engine errors surface as their native exception types.
 sealed class SessionException implements Exception {
-  const SessionException();
+  const new();
 }
 
 /// The session was recorded at a sample rate that differs from the running
@@ -15,7 +15,7 @@ sealed class SessionException implements Exception {
 /// (there is no resampling), so [SessionRepository.read] refuses.
 class SessionSampleRateMismatch extends SessionException {
   /// Creates a [SessionSampleRateMismatch].
-  const SessionSampleRateMismatch({
+  const new({
     required this.sessionRate,
     required this.deviceRate,
   });
@@ -37,7 +37,7 @@ class SessionSampleRateMismatch extends SessionException {
 /// also refuses an older schema this way; opening a bundle converts those.
 class SessionUnsupportedVersion extends SessionException {
   /// Creates a [SessionUnsupportedVersion].
-  const SessionUnsupportedVersion({
+  const new({
     required this.version,
     required this.supported,
   });
@@ -58,7 +58,7 @@ class SessionUnsupportedVersion extends SessionException {
 /// failed. The bundle is left exactly as it was.
 class SessionUnconvertible extends SessionException {
   /// Creates a [SessionUnconvertible].
-  const SessionUnconvertible({required this.version, required this.reason});
+  const new({required this.version, required this.reason});
 
   /// The manifest's declared schema version.
   final int version;
@@ -78,7 +78,7 @@ class SessionUnconvertible extends SessionException {
 /// bundle fails loudly on load rather than mid-apply.
 class SessionCorruptLayers extends SessionException {
   /// Creates a [SessionCorruptLayers].
-  const SessionCorruptLayers({
+  const new({
     required this.channel,
     required this.lane,
     required this.reason,
@@ -104,7 +104,7 @@ class SessionCorruptLayers extends SessionException {
 /// never silently overwrites, so the caller must pick another name.
 class SessionNameCollision extends SessionException {
   /// Creates a [SessionNameCollision] for the colliding [slug].
-  const SessionNameCollision({required this.slug});
+  const new({required this.slug});
 
   /// The sanitized name that already exists.
   final String slug;
@@ -118,7 +118,7 @@ class SessionNameCollision extends SessionException {
 /// audio as a side effect.
 class SessionFolderNotEmpty extends SessionException {
   /// Creates a [SessionFolderNotEmpty] for [folder].
-  const SessionFolderNotEmpty({required this.folder});
+  const new({required this.folder});
 
   /// The folder that still holds sessions.
   final String folder;

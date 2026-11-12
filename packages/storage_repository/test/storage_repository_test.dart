@@ -911,7 +911,7 @@ void main() {
 
 /// A client whose eject requests cannot be written (a read-only run dir).
 class _UnfileableClient extends FakeUsbStorageClient {
-  _UnfileableClient({super.initial});
+  new({super.initial});
 
   @override
   Future<String> requestEject(int generation) async =>

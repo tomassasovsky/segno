@@ -28,7 +28,7 @@ Future<void> showCableTestDialog(BuildContext context) {
 /// a turn steps focus.
 class CableTestDialog extends StatelessWidget {
   /// Creates a [CableTestDialog].
-  const CableTestDialog({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -181,7 +181,7 @@ class CableTestDialog extends StatelessWidget {
 
 /// One jack of the cable: its label and its number in a box a press steps.
 class _JackPicker extends StatelessWidget {
-  const _JackPicker({
+  const new({
     required this.label,
     required this.jack,
     required this.order,

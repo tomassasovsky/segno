@@ -16,7 +16,7 @@ import 'package:fx_catalogue/src/fx_preset.dart';
 /// appears, and no two modules claim the same key or group.
 class FxModule {
   /// Creates an [FxModule].
-  const FxModule({
+  const new({
     required this.name,
     required this.enables,
     required this.groups,
@@ -486,7 +486,7 @@ bool _names(FxPreset preset, FxModule module) {
 /// the same in the list and in the rack (#1752).
 class FxAddableEffect {
   /// Creates an [FxAddableEffect].
-  const FxAddableEffect({
+  const new({
     required this.module,
     required this.family,
   });

@@ -12,7 +12,7 @@ typedef _Owed = ({int token, int? sustainSlot});
 class NoteDispatcher {
   /// Creates a [NoteDispatcher] over [_engine]; [_instruments] reads the
   /// current definitions.
-  NoteDispatcher({
+  new({
     required this._engine,
     required this._instruments,
   });

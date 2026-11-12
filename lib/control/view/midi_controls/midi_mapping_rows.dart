@@ -8,7 +8,7 @@ import 'package:segno/theme/theme.dart';
 /// How one saved mapping reads in the list.
 class MidiMappingRow {
   /// Creates a [MidiMappingRow].
-  const MidiMappingRow({
+  const new({
     required this.mapping,
     required this.name,
     required this.targets,
@@ -32,7 +32,7 @@ class MidiMappingRow {
 /// The saved mappings of the input in use, with what each last received.
 class MidiMappingRows extends StatefulWidget {
   /// Creates a [MidiMappingRows].
-  const MidiMappingRows({
+  const new({
     required this.rows,
     required this.levels,
     required this.onEdit,
@@ -90,7 +90,7 @@ class _MidiMappingRowsState extends State<MidiMappingRows> {
 }
 
 class _Row extends StatelessWidget {
-  const _Row({
+  const new({
     required this.row,
     required this.reading,
     required this.onEdit,
@@ -201,7 +201,7 @@ class _Row extends StatelessWidget {
 
 /// The last value a mapping received, as a bar.
 class _Meter extends StatelessWidget {
-  const _Meter({required this.reading, super.key});
+  const new({required this.reading, super.key});
 
   final MidiControlEvent? reading;
 
@@ -235,7 +235,7 @@ class _Meter extends StatelessWidget {
 
 /// A mapping's power button: filled while the mapping dispatches.
 class _PowerButton extends StatelessWidget {
-  const _PowerButton({
+  const new({
     required this.on,
     required this.semanticLabel,
     required this.onTap,

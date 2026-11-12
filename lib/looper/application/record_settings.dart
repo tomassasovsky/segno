@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// behavior.
 class RecordSettings implements RecordLengthControl {
   /// Builds the length owner over [repository] and [settings].
-  RecordSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
   }) : _repository = repository,

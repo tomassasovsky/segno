@@ -61,7 +61,7 @@ String powerStepLabel(
 /// console take the charger's full power (#1352).
 class PowerGoodbye extends StatelessWidget {
   /// Creates a [PowerGoodbye] for [state].
-  const PowerGoodbye({
+  const new({
     required this.state,
     this.stagedUpdate,
     this.unplugToApply = false,
@@ -123,7 +123,7 @@ class PowerGoodbye extends StatelessWidget {
 
 /// "Saving `session`", the step list and the bar.
 class _SavingFace extends StatelessWidget {
-  const _SavingFace({required this.state});
+  const new({required this.state});
 
   final PowerState state;
 
@@ -173,7 +173,7 @@ enum _StepProgress { done, current, pending }
 /// One step: a green check once done, a spinner while current, a muted ring
 /// before.
 class _StepRow extends StatelessWidget {
-  const _StepRow({required this.label, required this.progress});
+  const new({required this.label, required this.progress});
 
   final String label;
   final _StepProgress progress;
@@ -228,7 +228,7 @@ class _StepRow extends StatelessWidget {
 
 /// The ring, "Safe to switch off", the saved line and the unplug line.
 class _SafeToSwitchOffFace extends StatelessWidget {
-  const _SafeToSwitchOffFace({
+  const new({
     required this.state,
     required this.unplugToApply,
   });
@@ -277,7 +277,7 @@ class _SafeToSwitchOffFace extends StatelessWidget {
 
 /// "Restarting", the saved line and the update it installs. No icon.
 class _RestartingFace extends StatelessWidget {
-  const _RestartingFace({required this.state, required this.version});
+  const new({required this.state, required this.version});
 
   final PowerState state;
   final String version;
@@ -340,7 +340,7 @@ String? _savedLine(BuildContext context, PowerState state) {
 /// design's, times the limiting-axis scale against it.
 class ReadoutGoodbyeFace extends StatelessWidget {
   /// Creates a [ReadoutGoodbyeFace] for [readout].
-  const ReadoutGoodbyeFace({required this.readout, super.key});
+  const new({required this.readout, super.key});
 
   /// What the main window pushed.
   final PerformanceReadout readout;
@@ -381,7 +381,7 @@ class ReadoutGoodbyeFace extends StatelessWidget {
 }
 
 class _ReadoutContent extends StatelessWidget {
-  const _ReadoutContent({required this.readout, required this.s});
+  const new({required this.readout, required this.s});
 
   final PerformanceReadout readout;
   final double s;
@@ -460,7 +460,7 @@ class _ReadoutContent extends StatelessWidget {
 
 /// A check in a green ring: the save landed and the console is off.
 class _CheckRing extends StatelessWidget {
-  const _CheckRing({required this.diameter});
+  const new({required this.diameter});
 
   final double diameter;
 
@@ -485,7 +485,7 @@ class _CheckRing extends StatelessWidget {
 
 /// The save's progress: [value] of the steps finished.
 class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({
+  const new({
     required this.value,
     required this.width,
     this.height = 8,

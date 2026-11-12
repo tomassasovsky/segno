@@ -20,7 +20,7 @@ typedef DriveCopy = ({
 /// protocol does.
 class FakeDrive implements RemovableVolumes {
   /// Creates a drive of [generation] mounted at [mount].
-  FakeDrive(
+  new(
     this.mount, {
     this.generation = 3,
     this.status = RemovableVolumeStatus.mounted,

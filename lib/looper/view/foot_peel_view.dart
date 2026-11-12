@@ -26,7 +26,7 @@ String footPeelRefusalText(AppLocalizations l10n, FootPeelRefusal refusal) =>
 /// overview shows all eight tracks' layers.
 class FootPeelView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootPeelView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +97,7 @@ class FootPeelView extends StatelessWidget {
 
 /// The all-eight overview: a heading over two rows of four tracks.
 class _PeelOverview extends StatelessWidget {
-  const _PeelOverview({required this.projection});
+  const new({required this.projection});
 
   final FootPeelProjection projection;
 
@@ -141,7 +141,7 @@ class _PeelOverview extends StatelessWidget {
 
 /// One track in the overview: its name, then its layers.
 class _PeelOverviewCell extends StatelessWidget {
-  const _PeelOverviewCell({required this.track, required this.name});
+  const new({required this.track, required this.name});
 
   final FootPeelTrack track;
   final String name;
@@ -187,7 +187,7 @@ Color _layersColor(BuildContext context, FootPeelTrack track) {
 }
 
 class _FootPeelPedal extends StatelessWidget {
-  const _FootPeelPedal({required this.button, required this.projection});
+  const new({required this.button, required this.projection});
 
   final PedalButton button;
   final FootPeelProjection projection;

@@ -18,7 +18,7 @@ part 'looper_event.dart';
 /// Hardware assignments are interpreted by the shared control layer.
 class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// Creates a [LooperBloc] backed by [_repository].
-  LooperBloc({
+  new({
     required this._repository,
     required this._mixSettings,
     required this._fxPersistence,

@@ -39,7 +39,7 @@ final class FxEditResult {
   /// Creates an [FxEditResult]. An applied or unsaved edit is [committed];
   /// a stale one is when [chainCommitted] says the chain was written and
   /// confirmed before the destination moved on.
-  const FxEditResult(this.status, {this.groupId, bool chainCommitted = false})
+  const new(this.status, {this.groupId, bool chainCommitted = false})
     : committed =
           chainCommitted ||
           status == FxEditStatus.applied ||
@@ -69,7 +69,7 @@ final class FxEditResult {
 /// strip's position").
 class FxCubit extends Cubit<FxState> {
   /// Creates an [FxCubit] pointed at [initial].
-  FxCubit({
+  new({
     required this._repository,
     required this._settings,
     required this._persistence,

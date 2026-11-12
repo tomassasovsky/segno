@@ -42,7 +42,7 @@ class NativeAudioEngine implements AudioEngine {
   ///
   /// [bindings] may be injected (e.g. against a statically linked test binary);
   /// when omitted, the platform shared library is opened.
-  NativeAudioEngine({SegnoEngineBindings? bindings})
+  new({SegnoEngineBindings? bindings})
     : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
     _engine = _bindings.le_engine_create();
     if (_engine == nullptr) {
@@ -3356,7 +3356,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
   /// [bindings]. The library lookup honours the `SEGNO_ENGINE_LIB`
   /// environment override, which is how test runs point at a freshly built
   /// engine library.
-  PumpedNativeEngine({super.bindings});
+  new({super.bindings});
 
   int _sampleRate = 48000;
   int _inputChannels = 1;
@@ -3521,7 +3521,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
 /// disposed); this is only a token, never freed here.
 @immutable
 class _NativePluginSlotHandle implements PluginSlotHandle {
-  const _NativePluginSlotHandle(this.pointer);
+  const new(this.pointer);
 
   /// The opaque native slot pointer.
   final Pointer<le_plugin_slot> pointer;

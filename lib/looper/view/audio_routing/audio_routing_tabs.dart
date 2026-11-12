@@ -11,7 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// columns.
 class AudioRoutingTabBar extends StatelessWidget {
   /// Creates an [AudioRoutingTabBar].
-  const AudioRoutingTabBar({
+  const new({
     required this.selected,
     required this.onSelected,
     super.key,
@@ -79,7 +79,7 @@ class AudioRoutingTabBar extends StatelessWidget {
 }
 
 class _TaskPill extends StatelessWidget {
-  const _TaskPill({
+  const new({
     required this.label,
     required this.width,
     required this.selected,

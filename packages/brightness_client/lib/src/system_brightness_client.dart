@@ -7,7 +7,7 @@ import 'package:spawn_process/spawn_process.dart';
 /// Production [BrightnessClient]: shells out to `/usr/bin/segno-brightness-ctl`.
 class SystemBrightnessClient implements BrightnessClient {
   /// Creates a [SystemBrightnessClient].
-  const SystemBrightnessClient({
+  const new({
     this.helperPath = '/usr/bin/segno-brightness-ctl',
   });
 

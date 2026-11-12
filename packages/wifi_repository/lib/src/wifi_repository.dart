@@ -4,7 +4,7 @@ import 'package:wifi_client/wifi_client.dart';
 /// never depend on the data package directly.
 class WifiRepository {
   /// Creates a [WifiRepository] over [_client].
-  const WifiRepository({required this._client});
+  const new({required this._client});
 
   final WifiClient _client;
 

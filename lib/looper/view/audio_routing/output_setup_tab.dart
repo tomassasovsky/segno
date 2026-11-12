@@ -42,7 +42,7 @@ _OutputValues _outputValues(LooperState state, int chosen) {
 /// format, level, balance and mute everything routed there is heard through.
 class OutputSetupTab extends StatefulWidget {
   /// Creates an [OutputSetupTab].
-  const OutputSetupTab({super.key});
+  const new({super.key});
 
   @override
   State<OutputSetupTab> createState() => _OutputSetupTabState();
@@ -305,7 +305,7 @@ class _OutputSetupTabState extends State<OutputSetupTab> {
 
 /// The pen's `output-format-row`: Stereo or Mono, and the mute.
 class _FormatRow extends StatelessWidget {
-  const _FormatRow({
+  const new({
     required this.bus,
     required this.mono,
     required this.muted,
@@ -374,7 +374,7 @@ class _FormatRow extends StatelessWidget {
 
 /// The pen's left column: where a stereo destination sits between its jacks.
 class _BalanceColumn extends StatelessWidget {
-  const _BalanceColumn({
+  const new({
     required this.balance,
     required this.enabled,
     required this.onChanged,
@@ -441,7 +441,7 @@ class _BalanceColumn extends StatelessWidget {
 /// The pen's right column: how loud the destination is, and what it is
 /// putting out right now.
 class _LevelColumn extends StatelessWidget {
-  const _LevelColumn({
+  const new({
     required this.level,
     required this.muted,
     required this.bus,
@@ -532,7 +532,7 @@ class _LevelColumn extends StatelessWidget {
 
 /// One jack's meter and its reading.
 class _MeterRow extends StatelessWidget {
-  const _MeterRow({required this.side, required this.peak, super.key});
+  const new({required this.side, required this.peak, super.key});
 
   final String side;
   final double peak;

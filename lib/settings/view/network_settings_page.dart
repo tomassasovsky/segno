@@ -24,7 +24,7 @@ class NetworkSettingsPage extends StatelessWidget {
   /// Creates a [NetworkSettingsPage].
   ///
   /// [repository] overrides the provided [WifiRepository], for tests.
-  const NetworkSettingsPage({this.repository, super.key});
+  const new({this.repository, super.key});
 
   /// Optional repository override.
   final WifiRepository? repository;
@@ -45,7 +45,7 @@ class NetworkSettingsPage extends StatelessWidget {
 }
 
 class _NetworkView extends StatefulWidget {
-  const _NetworkView();
+  const new();
 
   @override
   State<_NetworkView> createState() => _NetworkViewState();
@@ -277,7 +277,7 @@ IconData _signalIcon(int signal) {
 /// The connection card: what the console is on, or why it is on nothing, and
 /// the one thing to do about it (Manage, Reconnect).
 class _ConnectionCard extends StatelessWidget {
-  const _ConnectionCard({
+  const new({
     required this.state,
     required this.onManage,
     required this.onReconnect,
@@ -436,7 +436,7 @@ class _ConnectionCard extends StatelessWidget {
 /// Every network but the one the console is on: saved first, then what the
 /// scan saw, each group strongest first.
 class _NetworkList extends StatelessWidget {
-  const _NetworkList({required this.state, required this.onOpen});
+  const new({required this.state, required this.onOpen});
 
   final WifiState state;
   final ValueChanged<WifiNetwork>? onOpen;
@@ -484,7 +484,7 @@ class _NetworkList extends StatelessWidget {
 }
 
 class _NetworkRow extends StatelessWidget {
-  const _NetworkRow({required this.network, required this.onTap});
+  const new({required this.network, required this.onTap});
 
   final WifiNetwork network;
   final VoidCallback? onTap;

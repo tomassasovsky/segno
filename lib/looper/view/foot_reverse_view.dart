@@ -17,7 +17,7 @@ import 'package:segno/theme/theme.dart';
 /// shows all eight directions.
 class FootReverseView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootReverseView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +88,7 @@ class FootReverseView extends StatelessWidget {
 
 /// The all-eight overview: a heading over two rows of four tracks.
 class _ReverseOverview extends StatelessWidget {
-  const _ReverseOverview({required this.projection});
+  const new({required this.projection});
 
   final FootReverseProjection projection;
 
@@ -132,7 +132,7 @@ class _ReverseOverview extends StatelessWidget {
 
 /// One track in the overview: name, then its direction or Empty.
 class _ReverseOverviewCell extends StatelessWidget {
-  const _ReverseOverviewCell({required this.track, required this.name});
+  const new({required this.track, required this.name});
 
   final FootReverseTrack track;
   final String name;
@@ -194,7 +194,7 @@ IconData _directionIcon({required bool reversed}) =>
     reversed ? Icons.chevron_left : Icons.chevron_right;
 
 class _FootReversePedal extends StatelessWidget {
-  const _FootReversePedal({required this.button, required this.projection});
+  const new({required this.button, required this.projection});
 
   final PedalButton button;
   final FootReverseProjection projection;

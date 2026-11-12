@@ -2328,7 +2328,7 @@ void main() {
 
 /// A port reporting one drive, as the storage service would.
 class _OneDrive implements RemovableVolumes {
-  _OneDrive(this.drive);
+  new(this.drive);
 
   final RemovableVolume drive;
 

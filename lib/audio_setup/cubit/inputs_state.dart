@@ -4,7 +4,7 @@ part of 'inputs_cubit.dart';
 /// called.
 class InputsState extends Equatable {
   /// Creates an [InputsState].
-  const InputsState({
+  const new({
     this.device = '',
     this.names = const {},
     this.lifetime = 0,

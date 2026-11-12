@@ -47,7 +47,7 @@ typedef ReadoutCalibration = ({({double x, double y}) target, String label});
 /// the way back for a touch on the readout.
 class ReadoutScreenLink {
   /// Creates a [ReadoutScreenLink]; nothing is published until [start].
-  ReadoutScreenLink({
+  new({
     this._directory = const IsolateNameServerDirectory(),
   });
 
@@ -201,7 +201,7 @@ class ReadoutScreenLink {
 /// screen wants it drawn, or the readout's own background with nothing on it.
 class ReadoutScreen extends StatelessWidget {
   /// Creates a [ReadoutScreen] drawing [link]'s state.
-  const ReadoutScreen({required this.link, super.key});
+  const new({required this.link, super.key});
 
   /// The readout's end of the screen link.
   final ReadoutScreenLink link;
@@ -240,7 +240,7 @@ class ReadoutScreen extends StatelessWidget {
 /// that is the space the touch calibration matrix maps onto.
 class ReadoutCalibrationFace extends StatelessWidget {
   /// Creates a [ReadoutCalibrationFace].
-  const ReadoutCalibrationFace({
+  const new({
     required this.calibration,
     required this.onTap,
     super.key,

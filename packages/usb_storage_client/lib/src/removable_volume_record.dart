@@ -31,14 +31,14 @@ enum RemovableVolumeRecordStatus {
 /// The outcome the helper wrote for an eject request.
 class EjectOutcomeRecord extends Equatable {
   /// Creates an [EjectOutcomeRecord].
-  const EjectOutcomeRecord({
+  const new({
     required this.request,
     required this.ok,
     this.reason,
   });
 
   /// Parses the helper's `eject` object.
-  factory EjectOutcomeRecord.fromJson(Map<String, Object?> json) {
+  factory fromJson(Map<String, Object?> json) {
     return EjectOutcomeRecord(
       request: _string(json, 'request'),
       ok: _bool(json, 'ok'),
@@ -68,7 +68,7 @@ class EjectOutcomeRecord extends Equatable {
 /// neither is any policy.
 class RemovableVolumeRecord extends Equatable {
   /// Creates a [RemovableVolumeRecord].
-  const RemovableVolumeRecord({
+  const new({
     required this.generation,
     required this.kname,
     required this.fingerprint,
@@ -85,7 +85,7 @@ class RemovableVolumeRecord extends Equatable {
 
   /// Parses one volume file. Throws [FormatException] when the shape is not
   /// the helper's; readers skip such a file rather than failing the stream.
-  factory RemovableVolumeRecord.fromJson(Map<String, Object?> json) {
+  factory fromJson(Map<String, Object?> json) {
     final eject = json['eject'];
     return RemovableVolumeRecord(
       generation: _int(json, 'generation'),

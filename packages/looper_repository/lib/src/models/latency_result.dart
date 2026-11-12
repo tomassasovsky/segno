@@ -25,20 +25,20 @@ enum LatencyOutcome {
 /// leaves the record offset as it was.
 class LatencyResult extends Equatable {
   /// A measurement that ended with [outcome].
-  const LatencyResult(this.outcome)
+  const new(this.outcome)
     : offsetFrames = 0,
       latencyMs = 0,
       engineResult = EngineResult.ok;
 
   /// A measurement that returned [offsetFrames], [latencyMs] round trip.
-  const LatencyResult.done({
+  const new done({
     required this.offsetFrames,
     required this.latencyMs,
   }) : outcome = LatencyOutcome.done,
        engineResult = EngineResult.ok;
 
   /// A request the engine refused with [engineResult].
-  const LatencyResult.refused(this.engineResult)
+  const new refused(this.engineResult)
     : outcome = LatencyOutcome.refused,
       offsetFrames = 0,
       latencyMs = 0;

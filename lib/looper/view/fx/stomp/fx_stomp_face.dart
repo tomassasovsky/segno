@@ -9,7 +9,7 @@ import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';
 /// What one pedal shows: how it looks ([spec]), its knobs and its LED.
 class FxStompFace extends Equatable {
   /// Creates an [FxStompFace].
-  FxStompFace({
+  new({
     required this.spec,
     required this.knobs,
     this.led = FxStompLed.on,
@@ -59,7 +59,7 @@ enum FxStompLed {
 /// One knob on a pedal.
 class FxStompKnob extends Equatable {
   /// Creates an [FxStompKnob].
-  const FxStompKnob({required this.label, required this.setting});
+  const new({required this.label, required this.setting});
 
   /// The label under the knob.
   final String label;

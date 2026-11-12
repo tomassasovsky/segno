@@ -18,7 +18,7 @@ import 'package:segno/visualizer/waveform_window_service.dart';
 /// lands completes with an error, so the caller re-queues it.
 class ScreenLinkWaveformService implements WaveformWindowService {
   /// Creates a [ScreenLinkWaveformService].
-  ScreenLinkWaveformService({
+  new({
     this._directory = const IsolateNameServerDirectory(),
     this.readyTimeout = const Duration(seconds: 10),
     this.ackTimeout = const Duration(seconds: 2),

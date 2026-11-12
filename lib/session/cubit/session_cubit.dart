@@ -42,7 +42,7 @@ class SessionCubit extends Cubit<SessionState> {
   ///
   /// [_renameTracks] writes a loop template's track names (#1513), which are
   /// global settings outside the session; it defaults to a no-op.
-  SessionCubit({
+  new({
     required this._repository,
     required this._looper,
     required this._performance,
@@ -1199,14 +1199,14 @@ class SessionCubit extends Cubit<SessionState> {
 /// A refusal the cubit itself decides ([SessionError.currentSessionProtected])
 /// or classifies ([SessionError.saveFailed], with the write's own [cause]).
 class _SessionRefusal implements Exception {
-  const _SessionRefusal(this.error, [this.cause]);
+  const new(this.error, [this.cause]);
 
   final SessionError error;
   final Object? cause;
 }
 
 class _SessionBootException implements Exception {
-  const _SessionBootException(this.cause);
+  const new(this.cause);
 
   final Object cause;
 }
@@ -1214,7 +1214,7 @@ class _SessionBootException implements Exception {
 /// What a session action changed: its success [outcome] plus any durable
 /// catalog updates to fold into the next state.
 class _ActionResult {
-  const _ActionResult(
+  const new(
     this.outcome, {
     this.currentId,
     this.currentName,

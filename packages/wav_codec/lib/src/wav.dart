@@ -6,7 +6,7 @@ import 'package:meta/meta.dart';
 @immutable
 class WavData {
   /// Creates a [WavData].
-  const WavData({
+  const new({
     required this.samples,
     required this.sampleRate,
     required this.channels,

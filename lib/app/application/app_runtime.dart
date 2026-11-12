@@ -42,7 +42,7 @@ import 'package:storage_repository/storage_repository.dart';
 /// failure listeners before independent settings loads begin.
 class AppRuntime {
   /// Builds one set of owners over the application's injected repositories.
-  AppRuntime({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
     required this.mix,

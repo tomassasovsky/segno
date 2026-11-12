@@ -4767,7 +4767,7 @@ void main() {
 
 /// Records every route pushed onto the navigator it observes.
 class _PushObserver extends NavigatorObserver {
-  _PushObserver(this.onPush);
+  new(this.onPush);
 
   final void Function(Route<dynamic> route) onPush;
 
@@ -4778,7 +4778,7 @@ class _PushObserver extends NavigatorObserver {
 
 /// A supported CPU load that never reports a figure.
 class _SilentCpuLoad extends CpuLoadRepository {
-  const _SilentCpuLoad() : super(readStat: _neverRead);
+  const new() : super(readStat: _neverRead);
 
   @override
   Stream<int> watch() => const Stream<int>.empty();

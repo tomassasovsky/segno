@@ -975,9 +975,9 @@ Future<OpenedSession> Function(Invocation) _opened(
 
 /// A backing repository that counts refreshes.
 class _CountingBacking extends BackingRepository {
-  _CountingBacking() : this._(MockAudioEngine(), MockAudioDecoder());
+  new() : this._(MockAudioEngine(), MockAudioDecoder());
 
-  _CountingBacking._(MockAudioEngine engine, MockAudioDecoder decoder)
+  new _(MockAudioEngine engine, MockAudioDecoder decoder)
     : super(
         engine: engine,
         metering: engine,

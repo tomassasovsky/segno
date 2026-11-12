@@ -23,7 +23,7 @@ part 'tuner_state.dart';
 /// last played, until it is old enough not to be.
 class TunerCubit extends Cubit<TunerState> {
   /// Creates a [TunerCubit] following [_repository] and [settings].
-  TunerCubit({
+  new({
     required this._repository,
     required TunerSettings settings,
   }) : _settings = settings,

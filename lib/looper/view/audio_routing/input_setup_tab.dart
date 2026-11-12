@@ -83,7 +83,7 @@ _SetupValues _setupValues(
 /// change made on the interface itself shows here.
 class InputSetupTab extends StatelessWidget {
   /// Creates an [InputSetupTab].
-  const InputSetupTab({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => BlocProvider(
@@ -95,7 +95,7 @@ class InputSetupTab extends StatelessWidget {
 }
 
 class _InputSetupView extends StatefulWidget {
-  const _InputSetupView();
+  const new();
 
   @override
   State<_InputSetupView> createState() => _InputSetupTabState();
@@ -427,7 +427,7 @@ class _InputSetupTabState extends State<_InputSetupView> {
 }
 
 class _InputCards extends StatelessWidget {
-  const _InputCards({
+  const new({
     required this.count,
     required this.selected,
     required this.names,
@@ -507,7 +507,7 @@ class _InputCards extends StatelessWidget {
 }
 
 class _FormatRow extends StatelessWidget {
-  const _FormatRow({
+  const new({
     required this.input,
     required this.inputCount,
     required this.paired,
@@ -581,7 +581,7 @@ class _FormatRow extends StatelessWidget {
 }
 
 class _PlacementColumn extends StatelessWidget {
-  const _PlacementColumn({
+  const new({
     required this.label,
     required this.value,
     required this.onChanged,
@@ -653,7 +653,7 @@ class _PlacementColumn extends StatelessWidget {
 }
 
 class _TrimColumn extends StatelessWidget {
-  const _TrimColumn({
+  const new({
     required this.side,
     required this.trimDb,
     required this.input,

@@ -78,7 +78,7 @@ enum RemovableVolumeStatus {
 /// so a stale callback can never address the new drive.
 class RemovableVolume extends Equatable {
   /// Creates a [RemovableVolume].
-  const RemovableVolume({
+  const new({
     required this.generation,
     required this.fingerprint,
     required this.label,
@@ -141,20 +141,20 @@ class RemovableVolume extends Equatable {
 /// Where a write goes: the appliance's internal storage, or one removable
 /// drive by its [RemovableVolume.generation].
 sealed class StorageDestination extends Equatable {
-  const StorageDestination();
+  const new();
 
   /// The internal storage.
-  const factory StorageDestination.internal() = InternalDestination;
+  const factory internal() = InternalDestination;
 
   /// The removable drive attached as [generation].
-  const factory StorageDestination.removable(int generation) =
+  const factory removable(int generation) =
       RemovableDestination;
 }
 
 /// The appliance's internal storage.
 final class InternalDestination extends StorageDestination {
   /// Creates an [InternalDestination].
-  const InternalDestination();
+  const new();
 
   @override
   List<Object?> get props => const [];
@@ -163,7 +163,7 @@ final class InternalDestination extends StorageDestination {
 /// One removable drive, by generation.
 final class RemovableDestination extends StorageDestination {
   /// Creates a [RemovableDestination] for [generation].
-  const RemovableDestination(this.generation);
+  const new(this.generation);
 
   /// The drive's attach counter.
   final int generation;
@@ -175,7 +175,7 @@ final class RemovableDestination extends StorageDestination {
 /// A destination's capacity.
 class VolumeSpace extends Equatable {
   /// Creates a [VolumeSpace].
-  const VolumeSpace({required this.totalBytes, required this.freeBytes});
+  const new({required this.totalBytes, required this.freeBytes});
 
   /// The volume's size.
   final int totalBytes;
@@ -191,7 +191,7 @@ class VolumeSpace extends Equatable {
 /// the disabled Eject.
 class WriteLease extends Equatable {
   /// Creates a [WriteLease].
-  const WriteLease({required this.target, required this.purpose});
+  const new({required this.target, required this.purpose});
 
   /// Where the write goes.
   final StorageDestination target;
@@ -218,7 +218,7 @@ enum ConflictPolicy {
 /// A copy with [ConflictPolicy.ask] found [existingPath] in the way.
 class NameConflict implements Exception {
   /// Creates a [NameConflict].
-  const NameConflict(this.existingPath);
+  const new(this.existingPath);
 
   /// The file already at the destination.
   final String existingPath;
@@ -230,28 +230,28 @@ class NameConflict implements Exception {
 /// A storage operation's typed failure. Existing content is intact after
 /// every one of them.
 sealed class StorageFailure implements Exception {
-  const StorageFailure();
+  const new();
 
   /// The destination ran out of space.
-  const factory StorageFailure.full() = StorageFull;
+  const factory full() = StorageFull;
 
   /// The destination is mounted read-only.
-  const factory StorageFailure.readOnly() = StorageReadOnly;
+  const factory readOnly() = StorageReadOnly;
 
   /// The drive [generation] went away before or during the operation.
-  const factory StorageFailure.volumeLost(int generation) = StorageVolumeLost;
+  const factory volumeLost(int generation) = StorageVolumeLost;
 
   /// The destination cannot be used on this build or filesystem.
-  const factory StorageFailure.unsupported() = StorageUnsupported;
+  const factory unsupported() = StorageUnsupported;
 
   /// Another I/O error, with the OS's [reason].
-  const factory StorageFailure.io(String reason) = StorageIo;
+  const factory io(String reason) = StorageIo;
 }
 
 /// See [StorageFailure.full].
 final class StorageFull extends StorageFailure {
   /// Creates a [StorageFull].
-  const StorageFull();
+  const new();
 
   @override
   String toString() => 'the destination is full';
@@ -260,7 +260,7 @@ final class StorageFull extends StorageFailure {
 /// See [StorageFailure.readOnly].
 final class StorageReadOnly extends StorageFailure {
   /// Creates a [StorageReadOnly].
-  const StorageReadOnly();
+  const new();
 
   @override
   String toString() => 'the destination is read-only';
@@ -269,7 +269,7 @@ final class StorageReadOnly extends StorageFailure {
 /// See [StorageFailure.volumeLost].
 final class StorageVolumeLost extends StorageFailure {
   /// Creates a [StorageVolumeLost].
-  const StorageVolumeLost(this.generation);
+  const new(this.generation);
 
   /// The drive that went away.
   final int generation;
@@ -281,7 +281,7 @@ final class StorageVolumeLost extends StorageFailure {
 /// See [StorageFailure.unsupported].
 final class StorageUnsupported extends StorageFailure {
   /// Creates a [StorageUnsupported].
-  const StorageUnsupported();
+  const new();
 
   @override
   String toString() => 'the destination is not supported';
@@ -290,7 +290,7 @@ final class StorageUnsupported extends StorageFailure {
 /// See [StorageFailure.io].
 final class StorageIo extends StorageFailure {
   /// Creates a [StorageIo].
-  const StorageIo(this.reason);
+  const new(this.reason);
 
   /// The OS's description.
   final String reason;
@@ -310,7 +310,7 @@ final class StorageIo extends StorageFailure {
 /// one would need a root this class does not have.
 class InternalOnlyVolumes implements RemovableVolumes {
   /// Creates an [InternalOnlyVolumes].
-  const InternalOnlyVolumes();
+  const new();
 
   @override
   Stream<List<RemovableVolume>> get volumes =>

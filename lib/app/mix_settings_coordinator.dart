@@ -38,7 +38,7 @@ enum MixSettingsStatus {
 /// Carries failures to callers and the shared UI error stream.
 class MixSettingsOutcome {
   /// Creates an outcome.
-  const MixSettingsOutcome(this.status, {this.engineResult, this.error});
+  const new(this.status, {this.engineResult, this.error});
 
   /// Transaction outcome, including persistence failures.
   final MixSettingsStatus status;
@@ -56,7 +56,7 @@ class MixSettingsOutcome {
 /// Session work cannot proceed until the failed durable rollback is retried.
 class MixSettingsRecoveryException implements Exception {
   /// Creates the typed error consumed by session/app error handling.
-  const MixSettingsRecoveryException(this.outcome);
+  const new(this.outcome);
 
   /// The original failure that requires [MixSettingsCoordinator.recover].
   final MixSettingsOutcome outcome;
@@ -92,7 +92,7 @@ typedef _Edit = MixSettingsSnapshot? Function(MixSettingsSnapshot);
 
 /// Constant-size composition of saturated physical gain steps.
 class _GainEdit {
-  _GainEdit(this.target, {this.absolute, int direction = 0})
+  new(this.target, {this.absolute, int direction = 0})
     : high = target.$1 == _Control.trackLevel ? 40 : 20 {
     if (direction != 0) step(direction);
   }
@@ -168,7 +168,7 @@ bool _sameMap<K, V>(Map<K, V> a, Map<K, V> b) =>
 /// use [runExclusive] to share this same publication boundary.
 class MixSettingsCoordinator {
   /// Connects the shared repository, atomic storage and device identity.
-  MixSettingsCoordinator({
+  new({
     required LooperRepository repository,
     required this._persistence,
     required this._device,

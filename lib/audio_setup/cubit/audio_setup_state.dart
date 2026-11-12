@@ -44,7 +44,7 @@ enum ApplyPhase {
 /// once with all of it.
 class AudioDraft extends Equatable {
   /// Creates an [AudioDraft].
-  const AudioDraft({
+  const new({
     required this.playbackDeviceId,
     required this.captureDeviceId,
     required this.sampleRate,
@@ -53,7 +53,7 @@ class AudioDraft extends Equatable {
   });
 
   /// What [state] runs, as a draft.
-  AudioDraft.of(AudioSetupState state)
+  new of(AudioSetupState state)
     : playbackDeviceId = state.playbackDeviceId,
       captureDeviceId = state.captureDeviceId,
       sampleRate = state.sampleRate,
@@ -143,14 +143,14 @@ enum LoopbackMeasure {
 class ApplyRefusal extends Equatable {
   /// Refused because [busyKind] is in flight: the guard table's name of the
   /// operation a device change must not overlap (`capture` for a take).
-  const ApplyRefusal.busy(String this.busyKind)
+  const new busy(String this.busyKind)
     : overBudgetRate = null,
       overBudgetBuffer = null,
       refusedDevice = null,
       settingsRefused = false;
 
   /// Refused because the effects would not fit at [overBudgetRate] (D19).
-  const ApplyRefusal.overBudgetRate(int this.overBudgetRate)
+  const new overBudgetRate(int this.overBudgetRate)
     : busyKind = null,
       overBudgetBuffer = null,
       refusedDevice = null,
@@ -158,7 +158,7 @@ class ApplyRefusal extends Equatable {
 
   /// Refused because the effects would not fit in [overBudgetBuffer]-frame
   /// blocks at the same rate (D19; a buffer below 64 frames, #1529).
-  const ApplyRefusal.overBudgetBuffer(int this.overBudgetBuffer)
+  const new overBudgetBuffer(int this.overBudgetBuffer)
     : busyKind = null,
       overBudgetRate = null,
       refusedDevice = null,
@@ -166,7 +166,7 @@ class ApplyRefusal extends Equatable {
 
   /// Refused by the interface: [refusedDevice] would not open, and the
   /// previous one runs again.
-  const ApplyRefusal.deviceRefused(String this.refusedDevice)
+  const new deviceRefused(String this.refusedDevice)
     : busyKind = null,
       overBudgetRate = null,
       overBudgetBuffer = null,
@@ -174,7 +174,7 @@ class ApplyRefusal extends Equatable {
 
   /// Refused by the interface for a change that moved neither the device nor
   /// the rates (a loop cap): the previous settings run again.
-  const ApplyRefusal.settingsRefused()
+  const new settingsRefused()
     : busyKind = null,
       overBudgetRate = null,
       overBudgetBuffer = null,
@@ -254,7 +254,7 @@ enum DeviceConnectivity {
 /// the live engine status projected from the repository.
 class AudioSetupState extends Equatable {
   /// Creates an [AudioSetupState].
-  const AudioSetupState({
+  const new({
     this.sampleRate = defaultSampleRate,
     this.bufferFrames = defaultBufferFrames,
     this.maxLoopMinutes = 0,

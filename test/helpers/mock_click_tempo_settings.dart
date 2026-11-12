@@ -16,7 +16,7 @@ class MockClickTempoSettings extends Mock
         ClickVolumeControl,
         ClickModeControl,
         RecordStartControl {
-  MockClickTempoSettings({double? clickVolume = 1}) {
+  new({double? clickVolume = 1}) {
     when(() => recordStartSnapshot).thenReturn(null);
     when(() => confirmedRecordStart).thenReturn(null);
     when(

@@ -15,7 +15,7 @@ import 'package:segno_engine/segno_engine_ffi.dart';
 /// methods are never called from MIDI code) and overrides only the five MIDI
 /// entry points. Records call order in [calls] so dispose-ordering is testable.
 class FakeSegnoEngineBindings implements SegnoEngineBindings {
-  FakeSegnoEngineBindings({
+  new({
     List<MidiDevice> devices = const [],
     this.createReturnsNull = false,
     this.openResult = 0,

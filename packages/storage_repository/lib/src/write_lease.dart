@@ -34,7 +34,7 @@ enum WritePurpose {
 /// `StorageRepository.acquire` returns.
 class WriteLease extends Equatable {
   /// Creates a [WriteLease].
-  const WriteLease({required this.target, required this.purpose});
+  const new({required this.target, required this.purpose});
 
   /// Where the write goes.
   final StorageDestination target;
@@ -56,7 +56,7 @@ class WriteLease extends Equatable {
 /// Internal never completes [lost].
 class HeldLease {
   /// Creates a [HeldLease]; `StorageRepository.acquire` is the only caller.
-  HeldLease(this.lease, {required this._onRelease});
+  new(this.lease, {required this._onRelease});
 
   /// What is held.
   final WriteLease lease;

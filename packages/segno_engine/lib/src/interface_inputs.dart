@@ -48,7 +48,7 @@ enum InterfaceControl {
   /// Turns a unit's setup mode off; index and value are unused.
   setupModeOff(4);
 
-  InterfaceControl(this.code);
+  new(this.code);
 
   /// The native `le_interface_control` value.
   final int code;
@@ -59,7 +59,7 @@ enum InterfaceControl {
 @immutable
 class InterfaceInputInfo {
   /// Creates an [InterfaceInputInfo].
-  const InterfaceInputInfo({
+  const new({
     this.level,
     this.pad,
     this.air,
@@ -88,7 +88,7 @@ class InterfaceInputInfo {
 @immutable
 class PhantomSwitchInfo {
   /// Creates a [PhantomSwitchInfo].
-  const PhantomSwitchInfo({
+  const new({
     required this.first,
     required this.last,
     required this.on,
@@ -109,7 +109,7 @@ class PhantomSwitchInfo {
 @immutable
 class InterfaceInputsInfo {
   /// Creates an [InterfaceInputsInfo].
-  const InterfaceInputsInfo({
+  const new({
     required this.state,
     this.inputs = const [],
     this.phantom = const [],
@@ -117,14 +117,14 @@ class InterfaceInputsInfo {
   });
 
   /// An interface with nothing to set from the console.
-  const InterfaceInputsInfo.none()
+  const new none()
     : state = InterfaceInputsState.noControls,
       inputs = const [],
       phantom = const [],
       adapter = '';
 
   /// Projects a native `le_interface_inputs`.
-  factory InterfaceInputsInfo.fromNative(Pointer<le_interface_inputs> ptr) {
+  factory fromNative(Pointer<le_interface_inputs> ptr) {
     final ref = ptr.ref;
     int? some(int v) => v < 0 ? null : v;
     final inputs = [

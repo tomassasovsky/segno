@@ -111,7 +111,7 @@ Future<Map<Object?, C>> _readAll<V extends Object, C>(
 /// Retry re-requests and a restart replays. Nothing here stops audio.
 class SettingsOwner<V extends Object, C> {
   /// Owns [family] over [repository]'s session and device lifetime.
-  SettingsOwner({
+  new({
     required LooperRepository repository,
     required SettingsFamily<V, C> family,
   }) : _repository = repository,
@@ -816,7 +816,7 @@ class SettingsOwner<V extends Object, C> {
 }
 
 final class _Write<V> {
-  _Write(
+  new(
     this.change, {
     required this.lifetime,
     this.address,
@@ -838,6 +838,6 @@ final class _Write<V> {
 /// A queued write not yet started; a write to the same address with the same
 /// edit replaces its content.
 final class _Slot<V> {
-  _Slot(this.write);
+  new(this.write);
   _Write<V> write;
 }

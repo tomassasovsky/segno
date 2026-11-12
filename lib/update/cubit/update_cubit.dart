@@ -26,7 +26,7 @@ const kUpdateInstallStartsAt = 0.4;
 class UpdateCubit extends Cubit<UpdateState> {
   /// Creates an [UpdateCubit]. Off until [load] restores preferences and (when
   /// auto-check is on) runs the first check.
-  UpdateCubit({
+  new({
     required this._updates,
     required this._settings,
     this._installPollInterval = const Duration(seconds: 2),

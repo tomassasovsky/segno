@@ -392,7 +392,7 @@ enum SpeedFactor {
   /// Eight times the speed, three octaves up.
   eightfold(8, 1);
 
-  SpeedFactor(this.numer, this.denom);
+  new(this.numer, this.denom);
 
   /// The factor's numerator.
   final int numer;
@@ -453,7 +453,7 @@ enum PitchMode {
   /// The pitch moves with the tempo ratio: faster raises it.
   followsSpeed(1);
 
-  PitchMode(this.code);
+  new(this.code);
 
   /// The native value.
   final int code;
@@ -527,7 +527,7 @@ enum LaneSource {
 @immutable
 class LaneSnapshot {
   /// Creates a [LaneSnapshot].
-  const LaneSnapshot({
+  const new({
     required this.inputChannel,
     required this.outputMask,
     required this.volume,
@@ -542,7 +542,7 @@ class LaneSnapshot {
   });
 
   /// An empty lane recording no input.
-  const LaneSnapshot.empty()
+  const new empty()
     : inputChannel = -1,
       outputMask = 0x3,
       volume = 1,
@@ -556,7 +556,7 @@ class LaneSnapshot {
       source = LaneSource.heard;
 
   /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
-  factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
+  factory fromNative(le_lane_snapshot native) => LaneSnapshot(
     inputChannel: native.input_channel,
     outputMask: native.output_mask,
     volume: native.volume,
@@ -670,7 +670,7 @@ enum PendingLaunchAction {
 @immutable
 class FadeImage {
   /// Creates one coherent, source-owned envelope image.
-  const FadeImage({
+  const new({
     this.amount = 1,
     this.target = 1,
     this.fullTravelSeconds = 0,
@@ -718,7 +718,7 @@ class FadeImage {
 @immutable
 class TrackSnapshot {
   /// Creates a [TrackSnapshot].
-  const TrackSnapshot({
+  const new({
     required this.state,
     required this.volume,
     required this.muted,
@@ -765,7 +765,7 @@ class TrackSnapshot {
   });
 
   /// An empty track.
-  const TrackSnapshot.empty()
+  const new empty()
     : fade = const FadeImage(),
       fadeRevision = 0,
       state = TrackState.empty,
@@ -815,7 +815,7 @@ class TrackSnapshot {
   /// [lanes] are read separately (via `le_engine_get_lane`, one per active
   /// lane) because this ffi version cannot index a native struct array; their
   /// length is `native.lane_count`.
-  factory TrackSnapshot.fromNative(
+  factory fromNative(
     le_track_snapshot native, [
     List<LaneSnapshot> lanes = const [],
   ]) => TrackSnapshot(
@@ -1250,7 +1250,7 @@ enum XrunKind {
 @immutable
 class CallbackWindowStats {
   /// Creates a [CallbackWindowStats].
-  const CallbackWindowStats({
+  const new({
     this.calls = 0,
     this.periods = 0,
     this.latePeriods = 0,
@@ -1264,7 +1264,7 @@ class CallbackWindowStats {
   });
 
   /// Projects a native `le_cb_window_snapshot`.
-  factory CallbackWindowStats.fromNative(le_cb_window_snapshot native) =>
+  factory fromNative(le_cb_window_snapshot native) =>
       CallbackWindowStats(
         calls: native.calls,
         periods: native.periods,
@@ -1435,14 +1435,14 @@ class CallbackWindowStats {
 @immutable
 class CallbackTelemetry {
   /// Creates a [CallbackTelemetry].
-  const CallbackTelemetry({
+  const new({
     this.budgetUs = 0,
     this.session = CallbackWindowStats.empty,
     this.armed = CallbackWindowStats.empty,
   });
 
   /// Projects a native `le_callback_telemetry`.
-  factory CallbackTelemetry.fromNative(le_callback_telemetry native) =>
+  factory fromNative(le_callback_telemetry native) =>
       CallbackTelemetry(
         budgetUs: native.budget_us,
         session: CallbackWindowStats.fromNative(native.session),
@@ -1495,7 +1495,7 @@ class CallbackTelemetry {
 @immutable
 class FxWorkerStats {
   /// Creates an [FxWorkerStats].
-  const FxWorkerStats({
+  const new({
     this.wakes = 0,
     this.wakeMeanNs = 0,
     this.wakeMaxNs = 0,
@@ -1507,7 +1507,7 @@ class FxWorkerStats {
   });
 
   /// Projects a native `le_fx_worker_snapshot`.
-  factory FxWorkerStats.fromNative(le_fx_worker_snapshot native) =>
+  factory fromNative(le_fx_worker_snapshot native) =>
       FxWorkerStats(
         wakes: native.wakes,
         wakeMeanNs: native.wake_mean_ns,
@@ -1579,7 +1579,7 @@ class FxWorkerStats {
 @immutable
 class FxWorkersTelemetry {
   /// Creates an [FxWorkersTelemetry].
-  const FxWorkersTelemetry({
+  const new({
     this.requested = 0,
     this.running = 0,
     this.rounds = 0,
@@ -1591,7 +1591,7 @@ class FxWorkersTelemetry {
   });
 
   /// Projects a native `le_fx_workers_telemetry`.
-  factory FxWorkersTelemetry.fromNative(le_fx_workers_telemetry native) =>
+  factory fromNative(le_fx_workers_telemetry native) =>
       FxWorkersTelemetry(
         requested: native.requested,
         running: native.running,
@@ -1678,7 +1678,7 @@ class FxWorkersTelemetry {
 @immutable
 class EngineSnapshot {
   /// Creates an [EngineSnapshot] with explicit values.
-  const EngineSnapshot({
+  const new({
     required this.isRunning,
     required this.sampleRate,
     required this.bufferFrames,
@@ -1777,7 +1777,7 @@ class EngineSnapshot {
   });
 
   /// The snapshot of an engine that has never started.
-  const EngineSnapshot.initial()
+  const new initial()
     : isRunning = false,
       devicePresent = false,
       sampleRate = 0,
@@ -1884,7 +1884,7 @@ class EngineSnapshot {
   /// (clamped to the native `LE_MAX_CHANNELS` arrays), not to the arrays:
   /// this runs at render rate, and the entries past the device would only
   /// be zeros that every `==` and `hashCode` then walks.
-  factory EngineSnapshot.fromNative(
+  factory fromNative(
     le_snapshot native,
     List<TrackSnapshot> tracks,
   ) {

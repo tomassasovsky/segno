@@ -41,7 +41,7 @@ enum LoopSettingsTab {
 /// from anywhere.
 class LoopSettingsPage extends StatefulWidget {
   /// Creates a [LoopSettingsPage] opened at [initial].
-  const LoopSettingsPage({
+  const new({
     this.initial = LoopSettingsTab.mode,
     this.onTab,
     this.onStage,
@@ -182,7 +182,7 @@ class _LoopSettingsPageState extends State<LoopSettingsPage> {
 /// The four tabs at the right end of the title row: one 64 high choice each,
 /// the selected one filled, as the Pedals page's contexts are drawn.
 class _LoopSettingsTabs extends StatelessWidget {
-  const _LoopSettingsTabs({required this.selected, required this.onShow});
+  const new({required this.selected, required this.onShow});
 
   final LoopSettingsTab selected;
   final ValueChanged<LoopSettingsTab> onShow;

@@ -12,7 +12,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// A radio with just enough behaviour to drive the page through pen 29's
 /// eight screens.
 class _PageWifiClient implements WifiClient {
-  _PageWifiClient({
+  new({
     this.supported = true,
     this.enabled = true,
     this.connectedSsid = 'HomeNet',

@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 /// One opened lifetime of a selected musical MIDI device.
 class MidiInputSession extends Equatable {
   /// Captures device identity and its monotonically increasing open epoch.
-  const MidiInputSession(this.device, this.epoch);
+  const new(this.device, this.epoch);
 
   /// Stable device identity, never its display name.
   final String device;
@@ -18,7 +18,7 @@ class MidiInputSession extends Equatable {
 /// A raw musical message stamped by its capture callback before queuing.
 class MidiInputMessage extends Equatable {
   /// Creates a captured message.
-  const MidiInputMessage(this.session, this.input, {this.timestampMicros});
+  const new(this.session, this.input, {this.timestampMicros});
 
   /// Native monotonic capture time, before ring and Dart listener delivery.
   /// Fixture messages may omit it and use the consumer's injected clock.
@@ -86,7 +86,7 @@ enum ControllerSourceKind {
 /// distinct controls.
 class MappingTrigger extends Equatable {
   /// Creates a [MappingTrigger].
-  const MappingTrigger({
+  const new({
     required this.kind,
     required this.id,
     this.midiChannel,
@@ -146,13 +146,13 @@ class MappingTrigger extends Equatable {
 
 /// A physical sample or a source-lifetime boundary.
 sealed class ControllerSourceEvent extends Equatable {
-  const ControllerSourceEvent();
+  const new();
 }
 
 /// A source is no longer available; this is not a physical release action.
 final class ControllerSourceUnavailable extends ControllerSourceEvent {
   /// Identifies the source whose pending work must be retired.
-  const ControllerSourceUnavailable(this.trigger);
+  const new(this.trigger);
 
   /// The unavailable physical identity.
   final MappingTrigger trigger;
@@ -163,7 +163,7 @@ final class ControllerSourceUnavailable extends ControllerSourceEvent {
 /// A single raw input from a controller source.
 class RawControllerInput extends ControllerSourceEvent {
   /// Creates a [RawControllerInput].
-  const RawControllerInput({
+  const new({
     required this.kind,
     required this.id,
     required this.value,

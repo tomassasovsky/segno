@@ -75,7 +75,7 @@ void _publish(
 );
 
 class _Rig {
-  _Rig({Set<int> recorded = const {0, 1, 4}}) {
+  new({Set<int> recorded = const {0, 1, 4}}) {
     engine.nextSnapshot = engine.nextSnapshot.copyWith(
       tracks: [
         for (var channel = 0; channel < 8; channel++)

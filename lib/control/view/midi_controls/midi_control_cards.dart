@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// How one thing a mapping drives reads in the editor.
 class MidiControlCard {
   /// Creates a [MidiControlCard].
-  const MidiControlCard({
+  const new({
     required this.control,
     required this.label,
     required this.available,
@@ -66,7 +66,7 @@ class MidiControlCard {
 /// The editor's right column: everything the mapping drives.
 class MidiControlCards extends StatefulWidget {
   /// Creates a [MidiControlCards].
-  const MidiControlCards({
+  const new({
     required this.cards,
     required this.behavior,
     required this.program,
@@ -197,7 +197,7 @@ class _MidiControlCardsState extends State<MidiControlCards> {
 }
 
 class _Card extends StatelessWidget {
-  const _Card({
+  const new({
     required this.card,
     required this.captions,
     required this.program,
@@ -474,7 +474,7 @@ class _Card extends StatelessWidget {
 
 /// One end of a parameter's range: its caption and value over a slider.
 class _Range extends StatelessWidget {
-  const _Range({
+  const new({
     required this.caption,
     required this.value,
     required this.width,
@@ -552,7 +552,7 @@ class _Range extends StatelessWidget {
 
 /// Binary endpoints keep effect activation distinct from a numeric parameter.
 class _ActivationRange extends StatelessWidget {
-  const _ActivationRange({
+  const new({
     required this.caption,
     required this.value,
     required this.width,

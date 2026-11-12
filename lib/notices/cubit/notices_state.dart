@@ -4,7 +4,7 @@ part of 'notices_cubit.dart';
 /// which is new each time it is shown, so a repeat restarts its time.
 class ShownNotice extends Equatable {
   /// Creates a [ShownNotice].
-  const ShownNotice({
+  const new({
     required this.notice,
     required this.serial,
     required this.age,
@@ -35,7 +35,7 @@ class ShownNotice extends Equatable {
 /// Everything the notice surfaces draw (#1562).
 class NoticesState extends Equatable {
   /// Creates a [NoticesState].
-  const NoticesState({
+  const new({
     this.message,
     this.banners = const [],
     this.tracks = const {},

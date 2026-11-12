@@ -9,7 +9,7 @@ import 'package:segno/theme/theme.dart';
 /// One button of a [LibraryAudioDialog].
 class LibraryDialogAction {
   /// Creates an action labelled [label] that closes the dialog with [value].
-  const LibraryDialogAction({
+  const new({
     required this.key,
     required this.role,
     required this.label,
@@ -53,7 +53,7 @@ enum LibraryDialogRole {
   /// A chooser row, the panel's full inner width.
   choice(width: 878, tone: LoopButtonTone.outlined);
 
-  LibraryDialogRole({
+  new({
     required this.width,
     required this.tone,
     this.destructive = false,
@@ -78,7 +78,7 @@ enum LibraryDialogPanel {
   /// Pen 34 `Matching backup name` and `Retry an interrupted copy`.
   backup(width: 900);
 
-  LibraryDialogPanel({required this.width});
+  new({required this.width});
 
   /// The panel's width.
   final double width;
@@ -89,7 +89,7 @@ enum LibraryDialogPanel {
 /// under the title (the package chooser).
 class LibraryAudioDialog extends StatelessWidget {
   /// Creates a dialog.
-  const LibraryAudioDialog({
+  const new({
     required this.title,
     required this.actions,
     this.body,
@@ -178,7 +178,7 @@ class LibraryAudioDialog extends StatelessWidget {
 /// One of [LibraryAudioDialog]'s answers, which closes the dialog with its
 /// value.
 class _DialogButton extends StatelessWidget {
-  const _DialogButton({required this.action});
+  const new({required this.action});
 
   final LibraryDialogAction action;
 

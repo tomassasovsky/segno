@@ -2472,7 +2472,7 @@ class _SnapshotBlockingEngine extends FakeAudioEngine {
 
 /// A manifest whose publish write fails, as a full disk would.
 class _ManifestWriteFails implements File {
-  _ManifestWriteFails(this._inner);
+  new(this._inner);
 
   final File _inner;
 

@@ -51,7 +51,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// a whole track, All tracks and an output all arrive at the same editor.
 class FxPage extends StatelessWidget {
   /// Creates an [FxPage] opened on [initial].
-  const FxPage({this.initial, this.catalogue, this.onStage, super.key});
+  const new({this.initial, this.catalogue, this.onStage, super.key});
 
   /// Where the page opens, or the first live input when absent.
   final FxDestination? initial;
@@ -79,7 +79,7 @@ class FxPage extends StatelessWidget {
 @visibleForTesting
 class FxView extends StatefulWidget {
   /// Creates an [FxView].
-  const FxView({this.catalogue, this.onStage, super.key});
+  const new({this.catalogue, this.onStage, super.key});
 
   /// The catalogue Add effects offers, or the bundled one when absent.
   final FxCatalogue? catalogue;
@@ -945,7 +945,7 @@ class _FxViewState extends State<FxView> {
 
 /// The pen's Sound type row: which strip is showing.
 class _SoundTypeRow extends StatelessWidget {
-  const _SoundTypeRow({required this.kind});
+  const new({required this.kind});
 
   final FxDestinationKind kind;
 
@@ -978,7 +978,7 @@ class _SoundTypeRow extends StatelessWidget {
 
 /// The strip of sources for the current kind.
 class _SourceStrip extends StatelessWidget {
-  const _SourceStrip({required this.destination});
+  const new({required this.destination});
 
   final FxDestination destination;
 
@@ -1005,7 +1005,7 @@ double _sourceCardWidth(BuildContext context, int count) => fillingCardWidth(
 );
 
 class _InputStrip extends StatelessWidget {
-  const _InputStrip({required this.selected});
+  const new({required this.selected});
 
   final int selected;
 
@@ -1040,7 +1040,7 @@ class _InputStrip extends StatelessWidget {
 }
 
 class _TrackStrip extends StatelessWidget {
-  const _TrackStrip({required this.selected});
+  const new({required this.selected});
 
   final int selected;
 
@@ -1081,7 +1081,7 @@ class _TrackStrip extends StatelessWidget {
 }
 
 class _OutputStrip extends StatelessWidget {
-  const _OutputStrip({required this.selected});
+  const new({required this.selected});
 
   final int selected;
 
@@ -1114,7 +1114,7 @@ class _OutputStrip extends StatelessWidget {
 /// One source in a strip, saying "Effects off" while its chain is off, so an
 /// input that sounds dry shows it before it is selected (#1452).
 class _FxSourceCard extends StatelessWidget {
-  const _FxSourceCard({
+  const new({
     required this.cardKey,
     required this.address,
     required this.ordinal,
@@ -1152,7 +1152,7 @@ class _FxSourceCard extends StatelessWidget {
 /// The row under the strip: what this destination processes, the part picker
 /// or the Hear live control when the destination has one, and the actions.
 class _SoundContext extends StatelessWidget {
-  const _SoundContext({
+  const new({
     required this.destination,
     required this.onAdd,
     required this.onReorder,
@@ -1238,7 +1238,7 @@ class _SoundContext extends StatelessWidget {
 
 /// The input's Off / Auto / On monitoring gate, in the row the pen puts it.
 class _HearLive extends StatelessWidget {
-  const _HearLive({required this.input});
+  const new({required this.input});
 
   final int input;
 
@@ -1287,7 +1287,7 @@ class _HearLive extends StatelessWidget {
 /// Each part is named by [_partInput]: a recorded part by the input its take
 /// came from, an empty one by the input it is set to record.
 class _PartPicker extends StatelessWidget {
-  const _PartPicker({required this.destination});
+  const new({required this.destination});
 
   final FxDestination destination;
 
@@ -1390,7 +1390,7 @@ int _partInput(LooperState state, Track track, int lane) {
 
 /// The chain at the selected destination.
 class _DestinationChain extends StatelessWidget {
-  const _DestinationChain({
+  const new({
     required this.destination,
     required this.onOpen,
     this.controller,

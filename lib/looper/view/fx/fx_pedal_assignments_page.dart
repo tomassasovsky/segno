@@ -10,7 +10,7 @@ import 'package:segno/settings/view/settings_destination_page.dart';
 /// Pedal banks redesign replaces the body.
 class FxPedalAssignmentsPage extends StatelessWidget {
   /// Creates a [FxPedalAssignmentsPage].
-  const FxPedalAssignmentsPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

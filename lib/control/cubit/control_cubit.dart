@@ -76,7 +76,7 @@ bool _isSharedValue(ControlValueTarget target) =>
 /// the effects budget (#1723). Nothing was saved.
 final class FxReachOverBudget implements Exception {
   /// Creates the refusal.
-  const FxReachOverBudget();
+  const new();
 
   @override
   String toString() => 'Not enough effects budget for what it can switch on';
@@ -168,7 +168,7 @@ class _HoldGesture {
 /// clock from the fill's start, the time the fill runs, and whether it can
 /// still fire.
 class _ClearFill {
-  _ClearFill({required this.fillTime, required this.stillValid});
+  new({required this.fillTime, required this.stillValid});
 
   final Stopwatch clock = Stopwatch()..start();
   final Duration fillTime;
@@ -224,7 +224,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// holds continuous writes (expression sweeps, External values, MIDI
   /// values) during Session transitions and disposal only; the power-off
   /// route leaves them running until its flush suspends input.
-  ControlCubit({
+  new({
     required LooperRepository looper,
     required this._pedal,
     required SettingsRepository settings,

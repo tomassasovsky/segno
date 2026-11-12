@@ -13,7 +13,7 @@ import 'package:cpu_load_repository/cpu_load_repository.dart';
 /// rebuilds nothing.
 class CpuLoadCubit extends Cubit<int?> {
   /// Creates a [CpuLoadCubit] following [repository].
-  CpuLoadCubit({required CpuLoadRepository repository}) : super(null) {
+  new({required CpuLoadRepository repository}) : super(null) {
     _subscription = repository.watch().listen((load) {
       if (load != state) emit(load);
     });

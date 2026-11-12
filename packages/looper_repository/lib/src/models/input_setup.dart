@@ -16,7 +16,7 @@ import 'package:segno_engine/segno_engine.dart'
 /// member keeps its own trim. Unlinking restores the members' former pans.
 class InputSetup extends Equatable {
   /// Creates an [InputSetup].
-  InputSetup({
+  new({
     Map<int, double> trimDb = const {},
     Map<int, double> pan = const {},
     Map<int, double> pairs = const {},
@@ -25,7 +25,7 @@ class InputSetup extends Equatable {
        pairs = Map.unmodifiable(pairs);
 
   /// An untouched setup with immutable empty maps.
-  const InputSetup.empty()
+  const new empty()
     : trimDb = const {},
       pan = const {},
       pairs = const {};

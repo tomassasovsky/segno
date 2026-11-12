@@ -6,7 +6,7 @@ import 'package:controller_repository/src/midi_protocol.dart';
 /// [MidiMappingEngine.settle].
 sealed class MidiOperation {
   /// Creates an operation for one ordered control row.
-  const MidiOperation(this.controlIndex, this.key);
+  const new(this.controlIndex, this.key);
 
   /// Position in the mapping's ordered controls.
   final int controlIndex;
@@ -18,7 +18,7 @@ sealed class MidiOperation {
 /// Write a parameter; [held] distinguishes a momentary hold or release.
 final class MidiParameterWrite extends MidiOperation {
   /// Creates a parameter write.
-  const MidiParameterWrite(
+  const new(
     super.controlIndex,
     super.key,
     this.value, {
@@ -39,13 +39,13 @@ final class MidiParameterWrite extends MidiOperation {
 /// Remove an accepted continuous or toggle contribution without changing sound.
 final class MidiParameterEnd extends MidiOperation {
   /// Creates a parameter contribution retirement.
-  const MidiParameterEnd(super.controlIndex, super.key);
+  const new(super.controlIndex, super.key);
 }
 
 /// Run an action. The runtime owns the accepted action identity until End.
 final class MidiActionRun extends MidiOperation {
   /// Creates an action run.
-  const MidiActionRun(super.controlIndex, super.key, {this.expectsEnd = false});
+  const new(super.controlIndex, super.key, {this.expectsEnd = false});
 
   /// A press action stays held until the matching accepted End.
   final bool expectsEnd;
@@ -54,12 +54,12 @@ final class MidiActionRun extends MidiOperation {
 /// End an accepted action run by its captured identity.
 final class MidiActionEnd extends MidiOperation {
   /// Creates an action end.
-  const MidiActionEnd(super.controlIndex, super.key);
+  const new(super.controlIndex, super.key);
 }
 
 /// One immutable admission request for one mapping generation.
 final class MidiProposal {
-  MidiProposal._(
+  new _(
     this.mappingId,
     this.generation,
     this.operations,
@@ -85,7 +85,7 @@ final class MidiProposal {
 /// row via [settle]. Call prepare/settle serially, including retirement.
 class MidiMappingEngine {
   /// Creates an engine with application-owned current-value and step reads.
-  MidiMappingEngine({
+  new({
     required this._read,
     required this._step,
   });
@@ -431,7 +431,7 @@ class MidiMappingEngine {
 }
 
 class _MappingState {
-  _MappingState(this.mapping, this.generation);
+  new(this.mapping, this.generation);
 
   final MidiMapping mapping;
   final int generation;

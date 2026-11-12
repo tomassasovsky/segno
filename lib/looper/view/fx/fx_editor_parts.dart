@@ -36,7 +36,7 @@ bool fxParamIsChoice(FxParamInfo param) =>
 /// it did under the slider.
 class FxBuiltInParamControl extends StatelessWidget {
   /// Creates an [FxBuiltInParamControl].
-  const FxBuiltInParamControl({
+  const new({
     required this.effect,
     required this.index,
     required this.width,
@@ -99,7 +99,7 @@ class FxBuiltInParamControl extends StatelessWidget {
 /// One parameter: its name, its value text and the slider.
 class FxParamControl extends StatelessWidget {
   /// Creates an [FxParamControl].
-  const FxParamControl({
+  const new({
     required this.label,
     required this.value,
     required this.valueText,
@@ -177,7 +177,7 @@ class FxParamControl extends StatelessWidget {
 /// footer's input choice is, when one would have to shrink to fit, as the
 /// Guitar Rack Mod's three modes would in a rack pedal's column.
 class _ChoiceParamControl extends StatelessWidget {
-  const _ChoiceParamControl({
+  const new({
     required this.label,
     required this.paramKey,
     required this.choices,
@@ -294,7 +294,7 @@ class _ChoiceParamControl extends StatelessWidget {
 /// one statement of that rule.
 class FxChannelFooter extends StatelessWidget {
   /// Creates an [FxChannelFooter].
-  const FxChannelFooter({
+  const new({
     required this.group,
     required this.destination,
     required this.onPlacement,
@@ -436,7 +436,7 @@ class FxChannelFooter extends StatelessWidget {
 /// One captioned control of the footer, with an optional consequence line.
 class FxBlock extends StatelessWidget {
   /// Creates an [FxBlock].
-  const FxBlock({
+  const new({
     required this.caption,
     required this.child,
     this.hint,
@@ -490,7 +490,7 @@ class FxBlock extends StatelessWidget {
 
 /// The instance's input channel handling, as the pen's dropdown.
 class _InputChoice extends StatelessWidget {
-  const _InputChoice({required this.value, required this.onChanged});
+  const new({required this.value, required this.onChanged});
 
   final FxChannelInput value;
   final ValueChanged<FxChannelInput> onChanged;
@@ -523,7 +523,7 @@ class _InputChoice extends StatelessWidget {
 
 /// The balance or pan slider, with its ends named.
 class _BalanceControl extends StatelessWidget {
-  const _BalanceControl({
+  const new({
     required this.label,
     required this.value,
     required this.onChanged,
@@ -612,7 +612,7 @@ class _BalanceControl extends StatelessWidget {
 /// input, All tracks, an output), since only a track has a Solo.
 class FxTrackSolo extends StatelessWidget {
   /// Creates an [FxTrackSolo] for [destination].
-  const FxTrackSolo({required this.destination, super.key});
+  const new({required this.destination, super.key});
 
   /// What the editor is editing.
   final FxDestination destination;

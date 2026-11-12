@@ -4,7 +4,7 @@ import 'dart:math' as math;
 /// and how far off it is.
 class TunedPitch {
   /// Creates a [TunedPitch].
-  const TunedPitch({
+  const new({
     required this.note,
     required this.octave,
     required this.cents,

@@ -40,7 +40,7 @@ enum FootFxRole {
 /// One switch on the FX face.
 class FootFxPedal extends Equatable {
   /// Creates one switch's projection.
-  const FootFxPedal({
+  const new({
     required this.button,
     required this.role,
     this.binding,
@@ -111,7 +111,7 @@ class FootFxPedal extends Equatable {
 /// what it draws changes, not on every meter tick.
 class FootFxProjection extends Equatable {
   /// Creates a complete projection.
-  const FootFxProjection(this.pedals);
+  const new(this.pedals);
 
   /// All ten switches.
   final Map<PedalButton, FootFxPedal> pedals;

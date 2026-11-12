@@ -78,7 +78,7 @@ class App extends StatefulWidget {
   /// The repositories and [waveformWindow] are injected so tests can supply
   /// fakes / a no-op window service instead of the native device and the
   /// link to the Track display.
-  const App({
+  const new({
     required this.repository,
     required this.controllerRepository,
     required this.midiDeviceRepository,
@@ -884,7 +884,7 @@ class _AppState extends State<App> {
 /// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
 /// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
-  const _AppView({required this.waveformWindow});
+  const new({required this.waveformWindow});
 
   final WaveformWindowService waveformWindow;
 

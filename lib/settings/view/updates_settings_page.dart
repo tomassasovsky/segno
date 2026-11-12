@@ -37,7 +37,7 @@ import 'package:update_repository/update_repository.dart';
 /// leaves focus on a button that has gone.
 class UpdatesSettingsPage extends StatefulWidget {
   /// Creates an [UpdatesSettingsPage].
-  const UpdatesSettingsPage({super.key});
+  const new({super.key});
 
   /// The width of the panels' controls column inside a fact row.
   static const double controlWidth = 320;
@@ -318,7 +318,7 @@ class _UpdatesSettingsPageState extends State<UpdatesSettingsPage> {
 /// the state's actions sit under it. [next] goes to the action the encoder
 /// should land on.
 class _StatusPanel extends StatelessWidget {
-  const _StatusPanel({
+  const new({
     required this.state,
     required this.cubit,
     required this.next,
@@ -557,7 +557,7 @@ class _StatusPanel extends StatelessWidget {
 
 /// The download's real progress: a track, its fill, and the percentage.
 class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({required this.progress});
+  const new({required this.progress});
 
   final double progress;
 
@@ -614,7 +614,7 @@ class _ProgressBar extends StatelessWidget {
 /// versions, and Dismiss. It stays, whatever the panel shows, until
 /// dismissed.
 class _RollbackNotice extends StatelessWidget {
-  const _RollbackNotice({required this.text, required this.onDismiss});
+  const new({required this.text, required this.onDismiss});
 
   final String text;
   final VoidCallback onDismiss;

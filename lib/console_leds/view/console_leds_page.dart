@@ -26,7 +26,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// design file has no frame for it yet.
 class ConsoleLedsPage extends StatefulWidget {
   /// Creates a [ConsoleLedsPage].
-  const ConsoleLedsPage({super.key});
+  const new({super.key});
 
   /// The page as a route.
   static Route<void> route() =>
@@ -111,7 +111,7 @@ void _edit(
 /// Manual or Automatic, the slider for the one that applies, a note on what
 /// it does or why Automatic is unavailable, and the two calibration buttons.
 class _BrightnessColumn extends StatelessWidget {
-  const _BrightnessColumn();
+  const new();
 
   static const double _range =
       ConsoleLedSettings.maxBrightness - ConsoleLedSettings.minBrightness;
@@ -296,7 +296,7 @@ class _BrightnessColumn extends StatelessWidget {
 /// What the sensor reads, where the calibration points are, and the
 /// brightness the LEDs show.
 class _SensorColumn extends StatelessWidget {
-  const _SensorColumn();
+  const new();
 
   static int _countsOf(int level) => PedalAmbientLight(
     sensor: PedalLightSensor.reading,

@@ -76,7 +76,7 @@ class _RestoreStore extends FakeKeyValueStore {
 
 /// Gates the existing transaction stages without changing their effects.
 class _RestoreRepository extends LooperRepository {
-  _RestoreRepository(FakeAudioEngine engine)
+  new(FakeAudioEngine engine)
     : super(engine: engine, ticker: const Stream<void>.empty());
 
   int fxCalls = 0;

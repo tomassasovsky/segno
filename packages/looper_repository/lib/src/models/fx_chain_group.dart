@@ -12,7 +12,7 @@ import 'package:segno_engine/segno_engine.dart' show FxRackEdge;
 /// on where one rack ends and the next begins.
 class FxChainGroup extends Equatable {
   /// Creates an [FxChainGroup] spanning `[start, end)` of [chain].
-  const FxChainGroup({
+  const new({
     required this.chain,
     required this.start,
     required this.end,

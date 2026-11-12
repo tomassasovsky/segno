@@ -40,7 +40,7 @@ typedef _Lifetimes = ({
 /// place that converts an owned target to its family's owner.
 class OwnedValuePort implements OwnedValueControl {
   /// Joins the owned families' ports for `ControlCubit`.
-  OwnedValuePort({
+  new({
     required this._looper,
     required this._clickVolume,
     required this._clickMode,

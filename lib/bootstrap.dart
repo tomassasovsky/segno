@@ -8,7 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:segno/logging/app_log.dart';
 
 class AppBlocObserver extends BlocObserver {
-  const AppBlocObserver();
+  const new();
 
   @override
   void onChange(BlocBase<dynamic> bloc, Change<dynamic> change) {

@@ -356,7 +356,7 @@ class _FakeIo implements UartPedalIo {
 }
 
 class _FakeReader implements UartPedalReader {
-  _FakeReader(this.fd);
+  new(this.fd);
   final int fd;
   // Complete cancellation in the test's clock zone instead of returning the
   // SDK's shared null future, which can have been created outside fakeAsync.

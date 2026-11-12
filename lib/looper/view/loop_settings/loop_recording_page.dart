@@ -45,7 +45,7 @@ _RecordingValues _recordingValues(LooperState state) => (
 /// banner, which moves the layout down under it.
 class LoopRecordingPage extends StatefulWidget {
   /// Creates a [LoopRecordingPage] showing [track]'s fields.
-  const LoopRecordingPage({
+  const new({
     required this.track,
     required this.onTrack,
     super.key,

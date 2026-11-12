@@ -38,7 +38,7 @@ enum ArmTrigger {
 /// they arrive on `LooperRepository.meterLevels` (#1301).
 class Track extends Equatable {
   /// Creates a [Track].
-  const Track({
+  const new({
     this.channel = 0,
     this.state = TrackState.empty,
     this.volume = 1,

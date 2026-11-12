@@ -58,7 +58,7 @@ enum PenIcon {
 /// Draws [icon] in [color], scaled to whatever box it is given.
 class PenIconPainter extends CustomPainter {
   /// Creates a [PenIconPainter].
-  const PenIconPainter({required this.icon, required this.color});
+  const new({required this.icon, required this.color});
 
   /// Which glyph to draw.
   final PenIcon icon;
@@ -258,7 +258,7 @@ class PenIconPainter extends CustomPainter {
 /// A [PenIcon] as a widget, sized and coloured like an [Icon].
 class PenIconView extends StatelessWidget {
   /// Creates a [PenIconView].
-  const PenIconView({
+  const new({
     required this.icon,
     required this.size,
     required this.color,

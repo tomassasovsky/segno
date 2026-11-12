@@ -12,7 +12,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 /// Observes the real callback before the device-free pump frees its buffers.
 class _OutputBindings extends SegnoEngineBindings {
-  _OutputBindings(super.dynamicLibrary);
+  new(super.dynamicLibrary);
 
   Float32List output = Float32List(0);
 

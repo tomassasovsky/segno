@@ -17,7 +17,7 @@ Notice _refused() => Notice(
 
 /// A card's free area: a box with a tap target under the message.
 class _Area extends StatelessWidget {
-  const _Area({
+  const new({
     required this.channel,
     required this.size,
     required this.onTap,

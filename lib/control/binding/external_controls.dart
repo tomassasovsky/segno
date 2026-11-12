@@ -40,14 +40,14 @@ enum ExternalCondition {
 class ExternalActivation extends Equatable {
   /// Creates an [ExternalActivation]. A new one is active while the button is
   /// on, which is what the accepted screen adds it with.
-  const ExternalActivation({
+  const new({
     required this.target,
     this.condition = ExternalCondition.on,
   });
 
   /// Rebuilds an activation from its [toJson] map. Malformed explicit targets
   /// reject the setup; a valid target missing from the rig remains in its row.
-  factory ExternalActivation.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final encoded = json['target'];
     if (encoded is! String || encoded.isEmpty) {
       throw const FormatException('Invalid external activation target');
@@ -116,7 +116,7 @@ class ExternalParameter extends Equatable {
   /// Both values are required rather than defaulted: the accepted screen adds
   /// a parameter with the value it has NOW on both sides, so adding a mapping
   /// invents no sound change, and only the screen knows what that value is.
-  ExternalParameter({
+  new({
     required this.target,
     required this.active,
     required this.inactive,
@@ -136,7 +136,7 @@ class ExternalParameter extends Equatable {
   }
 
   /// Rebuilds a parameter from its [toJson] map, rejecting malformed fields.
-  factory ExternalParameter.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final encoded = json['target'];
     if (encoded is! String || encoded.isEmpty) {
       throw const FormatException('Invalid external parameter target');
@@ -210,7 +210,7 @@ class ExternalParameter extends Equatable {
 /// in an order nothing decides.
 class ExternalControls extends Equatable {
   /// Creates detached lists with at most one row per target identity.
-  factory ExternalControls({
+  factory({
     List<ExternalActivation> activations = const [],
     List<ExternalParameter> parameters = const [],
   }) {
@@ -229,10 +229,10 @@ class ExternalControls extends Equatable {
     );
   }
 
-  const ExternalControls._(this.activations, this.parameters);
+  const new _(this.activations, this.parameters);
 
   /// Rebuilds a button's controls from its [toJson] map.
-  factory ExternalControls.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final activations = json['activations'];
     final parameters = json['parameters'];
     if (json.containsKey('activations') && activations is! List ||

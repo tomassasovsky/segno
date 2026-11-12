@@ -26,7 +26,7 @@ import 'package:segno/theme/theme.dart';
 /// and capture.
 class LoopPlaybackPage extends StatefulWidget {
   /// Creates a [LoopPlaybackPage] showing [track]'s fields.
-  const LoopPlaybackPage({
+  const new({
     required this.track,
     required this.onTrack,
     super.key,

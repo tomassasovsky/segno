@@ -7,7 +7,7 @@ import 'package:segno/wifi/wifi_join_failure.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 class _FakeWifiClient implements WifiClient {
-  _FakeWifiClient({
+  new({
     this.supported = true,
     this.connectFails = false,
     WifiStatus? status,

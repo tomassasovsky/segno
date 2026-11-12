@@ -7,7 +7,7 @@ import 'package:segno/looper/cubit/cpu_load_cubit.dart';
 
 /// A repository whose readings a test pushes by hand.
 class _ManualCpuLoad extends CpuLoadRepository {
-  _ManualCpuLoad() : super(readStat: () async => '');
+  new() : super(readStat: () async => '');
 
   final controller = StreamController<int>.broadcast();
 

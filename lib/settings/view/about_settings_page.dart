@@ -28,7 +28,7 @@ import 'package:segno/update/cubit/update_cubit.dart';
 /// Opened from the Updates page; leads to the Controller firmware page.
 class AboutSettingsPage extends StatefulWidget {
   /// Creates an [AboutSettingsPage].
-  const AboutSettingsPage({super.key});
+  const new({super.key});
 
   /// The columns' top in the frame's main area, under the title row.
   static const double top = 120;
@@ -232,7 +232,7 @@ String controllerConnection(AppLocalizations l10n, PedalLinkStatus status) =>
 /// board itself.
 class ControllerFirmwareRow extends StatelessWidget {
   /// Creates the Firmware row for [facts].
-  const ControllerFirmwareRow({required this.facts, super.key});
+  const new({required this.facts, super.key});
 
   /// What the console knows about the board.
   final ControllerFacts facts;
@@ -257,7 +257,7 @@ class ControllerFirmwareRow extends StatelessWidget {
 /// firmware page.
 class ControllerProtocolRow extends StatelessWidget {
   /// Creates the Wire protocol row for [facts].
-  const ControllerProtocolRow({required this.facts, super.key});
+  const new({required this.facts, super.key});
 
   /// What the console knows about the board.
   final ControllerFacts facts;

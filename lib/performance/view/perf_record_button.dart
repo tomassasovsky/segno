@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// pattern in this toolbar).
 class PerfRecordButton extends StatelessWidget {
   /// Creates a [PerfRecordButton].
-  const PerfRecordButton({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

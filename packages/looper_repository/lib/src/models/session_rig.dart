@@ -22,7 +22,7 @@ import 'package:segno_engine/segno_engine.dart'
 @immutable
 class SessionRigLane {
   /// Creates a [SessionRigLane].
-  const SessionRigLane({
+  const new({
     required this.lane,
     required this.layers,
     required this.volume,
@@ -99,7 +99,7 @@ class SessionRigLane {
 @immutable
 class SessionRigTrack {
   /// Creates a [SessionRigTrack].
-  const SessionRigTrack({
+  const new({
     required this.channel,
     required this.fadeAmount,
     required this.lanes,
@@ -136,7 +136,7 @@ class SessionRigTrack {
 @immutable
 class SessionRigMonitor {
   /// Creates a [SessionRigMonitor].
-  const SessionRigMonitor({
+  const new({
     required this.input,
     required this.mode,
     required this.outputMask,
@@ -192,7 +192,7 @@ class SessionRigMonitor {
 @immutable
 class SessionRig {
   /// Creates a [SessionRig].
-  const SessionRig({
+  const new({
     this.baseLengthFrames = 0,
     this.tracks = const [],
     this.laneChains = const {},

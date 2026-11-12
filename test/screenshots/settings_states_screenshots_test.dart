@@ -154,7 +154,7 @@ ThemeData _theme() => ThemeData(
 /// The pen 29 study's radio: The Studio up, a saved network out of range, and
 /// four others. Each switch reaches one of the eight accepted screens.
 class _PreviewWifiClient implements WifiClient {
-  _PreviewWifiClient({
+  new({
     this.enabled = true,
     this.connected = true,
     this.internet = true,

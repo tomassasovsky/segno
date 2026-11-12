@@ -52,7 +52,7 @@ class PedalRepository {
   /// one lost on the wire does not flap the status. [_log] receives one line
   /// per link status change — the app hands it its persistent log, so a dark
   /// panel has a breadcrumb.
-  PedalRepository(
+  new(
     PedalLink link, {
     Duration Function()? clock,
     this.helloTimeout = const Duration(

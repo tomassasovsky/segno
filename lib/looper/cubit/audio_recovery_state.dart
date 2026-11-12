@@ -16,7 +16,7 @@ enum AudioRecoveryStatus {
 /// State of [AudioRecoveryCubit].
 class AudioRecoveryState extends Equatable {
   /// Creates an [AudioRecoveryState].
-  const AudioRecoveryState({this.status = AudioRecoveryStatus.idle});
+  const new({this.status = AudioRecoveryStatus.idle});
 
   /// The current recovery status.
   final AudioRecoveryStatus status;

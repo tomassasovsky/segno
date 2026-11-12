@@ -18,7 +18,7 @@ import 'package:segno_engine/segno_engine.dart';
 class BackingRepository {
   /// Creates a [BackingRepository] over [_engine] (whose rate [_metering]
   /// reports: the same engine object in production).
-  BackingRepository({
+  new({
     required this._engine,
     required this._metering,
     required this._decoder,
@@ -33,7 +33,7 @@ class BackingRepository {
 
   /// The repository over one engine object that both plays the voice and
   /// reports its rate: the app's engine.
-  factory BackingRepository.forEngine(
+  factory forEngine(
     AudioEngine engine, {
     required AudioDecoder decoder,
     required BackingAssetStore store,

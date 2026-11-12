@@ -75,7 +75,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// (the drive pulled) ends the take as [PerformanceStopReason.volumeLost].
   /// Without [_storage] every take goes to Internal. A pedal arm reaches the
   /// repository directly and records to Internal.
-  PerformanceRecorderCubit({
+  new({
     required PerformanceRepository performance,
     this._armedTickInterval = const Duration(milliseconds: 250),
     this._renderPollInterval = const Duration(milliseconds: 200),

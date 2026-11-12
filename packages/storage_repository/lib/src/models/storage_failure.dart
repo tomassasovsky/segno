@@ -8,28 +8,28 @@ import 'package:operation_guards/operation_guards.dart';
 /// Each one says what happened in words a log line or the UI can print, the
 /// same words the Library's `RemovableVolumes` port uses.
 sealed class StorageFailure extends Equatable implements Exception {
-  const StorageFailure();
+  const new();
 
   /// The destination ran out of space.
-  const factory StorageFailure.full() = StorageFull;
+  const factory full() = StorageFull;
 
   /// The destination refuses writes (a read-only mount).
-  const factory StorageFailure.readOnly() = StorageReadOnly;
+  const factory readOnly() = StorageReadOnly;
 
   /// The removable volume [generation] is gone: unplugged, ejected, or being
   /// ejected.
-  const factory StorageFailure.volumeLost(int generation) = StorageVolumeLost;
+  const factory volumeLost(int generation) = StorageVolumeLost;
 
   /// The destination cannot be written at all (no filesystem, one the image
   /// cannot drive, or a mount that failed).
-  const factory StorageFailure.unsupported() = StorageUnsupported;
+  const factory unsupported() = StorageUnsupported;
 
   /// Another operation the guard table says must not overlap this write is
   /// in flight on that destination (a take on the drive, a shutdown).
-  const factory StorageFailure.busy(GuardKind kind) = StorageBusy;
+  const factory busy(GuardKind kind) = StorageBusy;
 
   /// Any other I/O failure, with the OS's own words.
-  const factory StorageFailure.io(String reason, {String? writtenTo}) =
+  const factory io(String reason, {String? writtenTo}) =
       StorageIo;
 
   @override
@@ -39,7 +39,7 @@ sealed class StorageFailure extends Equatable implements Exception {
 /// The destination ran out of space.
 final class StorageFull extends StorageFailure {
   /// Creates a [StorageFull].
-  const StorageFull();
+  const new();
 
   @override
   String toString() => 'the destination is full';
@@ -48,7 +48,7 @@ final class StorageFull extends StorageFailure {
 /// The destination refuses writes.
 final class StorageReadOnly extends StorageFailure {
   /// Creates a [StorageReadOnly].
-  const StorageReadOnly();
+  const new();
 
   @override
   String toString() => 'the destination is read-only';
@@ -57,7 +57,7 @@ final class StorageReadOnly extends StorageFailure {
 /// The removable volume is gone.
 final class StorageVolumeLost extends StorageFailure {
   /// Creates a [StorageVolumeLost] for [generation].
-  const StorageVolumeLost(this.generation);
+  const new(this.generation);
 
   /// The generation that is no longer present or usable.
   final int generation;
@@ -72,7 +72,7 @@ final class StorageVolumeLost extends StorageFailure {
 /// The destination cannot be written at all.
 final class StorageUnsupported extends StorageFailure {
   /// Creates a [StorageUnsupported].
-  const StorageUnsupported();
+  const new();
 
   @override
   String toString() => 'the destination is not supported';
@@ -81,7 +81,7 @@ final class StorageUnsupported extends StorageFailure {
 /// Refused by the guard table: [kind] is in flight and must finish first.
 final class StorageBusy extends StorageFailure {
   /// Creates a [StorageBusy] naming what holds the destination.
-  const StorageBusy(this.kind);
+  const new(this.kind);
 
   /// What holds it.
   final GuardKind kind;
@@ -96,7 +96,7 @@ final class StorageBusy extends StorageFailure {
 /// Any other I/O failure.
 final class StorageIo extends StorageFailure {
   /// Creates a [StorageIo] with the OS's [reason].
-  const StorageIo(this.reason, {this.writtenTo});
+  const new(this.reason, {this.writtenTo});
 
   /// What the OS said.
   final String reason;

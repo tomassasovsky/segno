@@ -16,7 +16,7 @@ part 'recording_destination_state.dart';
 class RecordingDestinationCubit extends Cubit<RecordingDestinationState> {
   /// Creates a [RecordingDestinationCubit]. [_sampleRate] reads the applied
   /// engine rate the remaining-time estimate is made at.
-  RecordingDestinationCubit({
+  new({
     required StorageRepository repository,
     required this._sampleRate,
   }) : _repository = repository,

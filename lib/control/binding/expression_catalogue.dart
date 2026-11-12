@@ -30,7 +30,7 @@ enum ExpressionDestinationKind {
 /// One control a destination offers.
 class ExpressionControl extends Equatable {
   /// Creates an [ExpressionControl].
-  const ExpressionControl({
+  const new({
     required this.target,
     required this.label,
     this.art,
@@ -58,7 +58,7 @@ class ExpressionControl extends Equatable {
 /// destination's own.
 class ExpressionControlGroup extends Equatable {
   /// Creates an [ExpressionControlGroup].
-  const ExpressionControlGroup({required this.label, required this.controls});
+  const new({required this.label, required this.controls});
 
   /// The heading.
   final String label;
@@ -73,7 +73,7 @@ class ExpressionControlGroup extends Equatable {
 /// One effect a destination offers to turn on and off.
 class ExpressionActivation extends Equatable {
   /// Creates an [ExpressionActivation].
-  const ExpressionActivation({
+  const new({
     required this.target,
     required this.label,
     this.art,
@@ -95,7 +95,7 @@ class ExpressionActivation extends Equatable {
 /// One place a pedal can reach, and everything it offers there.
 class ExpressionDestination extends Equatable {
   /// Creates an [ExpressionDestination].
-  const ExpressionDestination({
+  const new({
     required this.id,
     required this.kind,
     required this.label,
@@ -593,7 +593,7 @@ const int _loopControlsOrder = 400000;
 /// One destination under construction: a map keyed by heading, so groups keep
 /// the order their first control arrived in.
 class _Draft {
-  _Draft({
+  new({
     required this.id,
     required this.kind,
     required this.order,

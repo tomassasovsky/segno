@@ -10,7 +10,7 @@ import 'package:segno/system/view/storage_system_tab.dart';
 /// replaces with the accepted Storage page.
 class StorageSettingsPage extends StatelessWidget {
   /// Creates a [StorageSettingsPage].
-  const StorageSettingsPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => SettingsDestinationPage(

@@ -5,7 +5,7 @@ import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:update_repository/update_repository.dart';
 
 class _FakeEnv implements ApplianceEnv {
-  _FakeEnv({
+  new({
     Map<String, String> files = const {},
     this.body,
     this.stageProgress = const [0.5, 1.0],

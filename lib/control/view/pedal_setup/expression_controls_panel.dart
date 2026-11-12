@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// How one mapping reads: what it points at, and whether the rig still has it.
 class ExpressionRow {
   /// Creates an [ExpressionRow].
-  const ExpressionRow({
+  const new({
     required this.mapping,
     required this.destination,
     required this.control,
@@ -47,7 +47,7 @@ class ExpressionRow {
 /// edited.
 class ExpressionControlsPanel extends StatelessWidget {
   /// Creates an [ExpressionControlsPanel].
-  const ExpressionControlsPanel({
+  const new({
     required this.rows,
     required this.selected,
     required this.position,
@@ -180,7 +180,7 @@ class ExpressionControlsPanel extends StatelessWidget {
 
 /// The mappings as rows, or the invitation to add one when there are none.
 class _ExpressionList extends StatelessWidget {
-  const _ExpressionList({
+  const new({
     required this.rows,
     required this.selected,
     required this.position,
@@ -248,7 +248,7 @@ class _ExpressionList extends StatelessWidget {
 
 /// The open row's range: its title, Change and Remove, and its two endpoints.
 class _ExpressionRange extends StatelessWidget {
-  const _ExpressionRange({
+  const new({
     required this.row,
     required this.onChange,
     required this.onRemove,
@@ -336,7 +336,7 @@ class _ExpressionRange extends StatelessWidget {
 /// One endpoint of the open row: its name, its value, and the control that
 /// moves it.
 class _ExpressionEndpoint extends StatelessWidget {
-  const _ExpressionEndpoint({
+  const new({
     required this.row,
     required this.isHeel,
     required this.onEndpoint,

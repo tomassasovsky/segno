@@ -23,7 +23,7 @@ import 'package:segno/theme/theme.dart';
 /// a function of the [Track] handed in — see `TrackColumn.track`.
 class TrackPeakMeter extends StatelessWidget {
   /// Creates a [TrackPeakMeter].
-  const TrackPeakMeter({
+  const new({
     required this.channel,
     required this.color,
     required this.hasContent,
@@ -74,7 +74,7 @@ class TrackPeakMeter extends StatelessWidget {
 /// meaningful over it.
 class TrackStereoMeter extends StatelessWidget {
   /// Creates a [TrackStereoMeter].
-  const TrackStereoMeter({
+  const new({
     required this.channel,
     required this.color,
     required this.hasContent,
@@ -148,7 +148,7 @@ class TrackStereoMeter extends StatelessWidget {
 /// not the tile.
 class TrackProgressBar extends StatelessWidget {
   /// Creates a [TrackProgressBar].
-  const TrackProgressBar({
+  const new({
     required this.channel,
     required this.color,
     super.key,
@@ -220,7 +220,7 @@ Track? trackOf(LooperState state, int channel) {
 /// cap on a silent track would be a lie.
 class PeakMeterBar extends StatefulWidget {
   /// Creates a [PeakMeterBar].
-  const PeakMeterBar({
+  const new({
     required this.peak,
     required this.color,
     required this.hasContent,

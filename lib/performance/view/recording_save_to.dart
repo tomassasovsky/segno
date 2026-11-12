@@ -17,7 +17,7 @@ import 'package:storage_repository/storage_repository.dart';
 /// Connect USB sheet.
 class RecordingSaveTo extends StatelessWidget {
   /// Creates a [RecordingSaveTo].
-  const RecordingSaveTo({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -16,7 +16,7 @@ import 'package:looper_repository/src/models/track_effect.dart';
 /// sound is used, which the accepted design states in as many words.
 class FxUserPreset extends Equatable {
   /// Creates an [FxUserPreset].
-  const FxUserPreset({
+  const new({
     required this.id,
     required this.name,
     required this.entries,

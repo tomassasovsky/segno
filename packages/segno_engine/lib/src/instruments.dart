@@ -42,7 +42,7 @@ enum MidiRemapKind {
 @immutable
 class InstrumentRemap {
   /// Creates an [InstrumentRemap].
-  const InstrumentRemap({
+  const new({
     required this.port,
     required this.kind,
     required this.number,
@@ -92,7 +92,7 @@ class InstrumentRemap {
 @immutable
 class InstrumentRoute {
   /// Creates an [InstrumentRoute].
-  const InstrumentRoute({
+  const new({
     required this.midiEnabled,
     this.port = 0,
     this.channel = 0,
@@ -158,7 +158,7 @@ class InstrumentRoute {
 @immutable
 class MidiCaptureHandle {
   /// Wraps the native capture [pointer].
-  const MidiCaptureHandle(this.pointer);
+  const new(this.pointer);
 
   /// The native `le_midi*`.
   final Pointer<le_midi> pointer;
@@ -175,7 +175,7 @@ class MidiCaptureHandle {
 @immutable
 class InstrumentsSnapshot {
   /// Creates an [InstrumentsSnapshot].
-  const InstrumentsSnapshot({
+  const new({
     required this.patches,
     required this.voices,
     required this.peaks,
@@ -190,7 +190,7 @@ class InstrumentsSnapshot {
   });
 
   /// Projects the instrument fields of a native snapshot.
-  factory InstrumentsSnapshot.fromNative(le_snapshot native) =>
+  factory fromNative(le_snapshot native) =>
       InstrumentsSnapshot(
         patches: [
           for (var k = 0; k < kMaxInstruments; k++) native.instrument_patch[k],
@@ -300,7 +300,7 @@ class InstrumentsSnapshot {
 @immutable
 class MidiInputSnapshot {
   /// Creates a [MidiInputSnapshot].
-  const MidiInputSnapshot({
+  const new({
     this.overflows = 0,
     this.lost = 0,
     this.attachedMask = 0,
@@ -308,7 +308,7 @@ class MidiInputSnapshot {
   });
 
   /// Projects the MIDI input fields of a native snapshot.
-  factory MidiInputSnapshot.fromNative(le_snapshot native) => MidiInputSnapshot(
+  factory fromNative(le_snapshot native) => MidiInputSnapshot(
     overflows: native.midi_in_overflows,
     lost: native.midi_in_lost,
     attachedMask: native.midi_in_attached_mask,

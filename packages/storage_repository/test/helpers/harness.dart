@@ -14,7 +14,7 @@ const int gib = 1 << 30;
 /// `media/<gen>-SEGNO_USB/` are mount points (real directories, so copies
 /// can land in them), and [spaces] answers the engine's statvfs by path.
 class Harness {
-  Harness() : root = Directory.systemTemp.createTempSync('storage_repository');
+  new() : root = Directory.systemTemp.createTempSync('storage_repository');
 
   final Directory root;
   final spaces = <String, VolumeSpace?>{};

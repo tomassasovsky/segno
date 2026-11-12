@@ -64,7 +64,7 @@ enum FootLengthRefusal {
 /// threshold and [hold] once the threshold passes.
 class FootLengthPedal {
   /// Creates one static role in the accepted ten-pedal layout.
-  const FootLengthPedal(this.press, {this.hold, this.slot});
+  const new(this.press, {this.hold, this.slot});
 
   /// The action at contact, or at release when [hold] is set.
   final FootLengthAction press;
@@ -80,7 +80,7 @@ class FootLengthPedal {
 /// else in beats (pen 16: "Bar 1", "Beats 1–2", "Beats 7–12").
 class FootLengthHalves extends Equatable {
   /// Creates halves of [half] units each.
-  const FootLengthHalves({required this.inBars, required this.half});
+  const new({required this.inBars, required this.half});
 
   /// Whether the units are bars (else beats).
   final bool inBars;
@@ -95,7 +95,7 @@ class FootLengthHalves extends Equatable {
 /// One track's published length.
 class FootLengthTrack extends Equatable {
   /// Creates a read of current repository facts.
-  const FootLengthTrack({
+  const new({
     required this.channel,
     required this.hasContent,
     required this.busy,
@@ -205,7 +205,7 @@ class FootLengthOutcome extends Equatable {
   /// Records [edit] on [channel], which was [fromFrames] long with
   /// [fromUndoDepth] undo steps before it; [toFrames] and [toUndoDepth] are
   /// the state it left, once published.
-  const FootLengthOutcome({
+  const new({
     required this.channel,
     required this.edit,
     required this.fromFrames,
@@ -282,7 +282,7 @@ class FootLengthOutcome extends Equatable {
 /// Shared semantic read model for captions, touch and physical feedback.
 class FootLengthProjection extends Equatable {
   /// Creates a complete projection.
-  const FootLengthProjection({
+  const new({
     required this.bank,
     required this.cursor,
     required this.tracks,

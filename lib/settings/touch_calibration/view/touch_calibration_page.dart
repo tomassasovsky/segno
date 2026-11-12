@@ -22,7 +22,7 @@ import 'package:touch_calibration_client/touch_calibration_client.dart';
 /// target is and carries the countdown and the buttons.
 class TouchCalibrationPage extends StatelessWidget {
   /// Creates a [TouchCalibrationPage] for [screen].
-  const TouchCalibrationPage({required this.screen, super.key});
+  const new({required this.screen, super.key});
 
   /// The panel being calibrated.
   final TouchScreen screen;
@@ -106,7 +106,7 @@ abstract final class MainCalibrationArea {
 /// The calibration page's layout, under its [TouchCalibrationCubit].
 class TouchCalibrationView extends StatefulWidget {
   /// Creates a [TouchCalibrationView].
-  const TouchCalibrationView({required this.screen, super.key});
+  const new({required this.screen, super.key});
 
   /// The panel being calibrated.
   final TouchScreen screen;
@@ -241,7 +241,7 @@ String _stepLabel(AppLocalizations l10n, TouchCalibrationState state) =>
     : l10n.touchCalibrationStep(state.step + 1, state.steps);
 
 class _Instruction extends StatelessWidget {
-  const _Instruction({required this.readout});
+  const new({required this.readout});
 
   final bool readout;
 
@@ -293,7 +293,7 @@ class _Instruction extends StatelessWidget {
 
 /// The main display's area: the target, and the taps it measures.
 class _MainArea extends StatelessWidget {
-  const _MainArea();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +324,7 @@ class _MainArea extends StatelessWidget {
 /// Where the Track display's target is, drawn small here: the taps land on
 /// the Track display, not on this mirror.
 class _TrackMirror extends StatelessWidget {
-  const _TrackMirror();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -342,7 +342,7 @@ class _TrackMirror extends StatelessWidget {
 }
 
 class _AreaBox extends StatelessWidget {
-  const _AreaBox({required this.size, required this.target, super.key});
+  const new({required this.size, required this.target, super.key});
 
   final Size size;
   final TouchPoint? target;
@@ -374,7 +374,7 @@ class _AreaBox extends StatelessWidget {
 }
 
 class _Footer extends StatelessWidget {
-  const _Footer();
+  const new();
 
   @override
   Widget build(BuildContext context) {

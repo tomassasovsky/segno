@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 /// [desktopPageRoute] (Segno's own asymmetric desktop timing).
 class FadeScaleTransition extends StatelessWidget {
   /// Fades and scales [child] in as [animation] runs.
-  const FadeScaleTransition({
+  const new({
     required this.animation,
     required this.child,
     super.key,
@@ -42,7 +42,7 @@ class FadeScaleTransition extends StatelessWidget {
 /// — no extra package.
 class FadeScalePageTransitionsBuilder extends PageTransitionsBuilder {
   /// Creates a [FadeScalePageTransitionsBuilder].
-  const FadeScalePageTransitionsBuilder();
+  const new();
 
   @override
   Widget buildTransitions<T>(

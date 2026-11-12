@@ -16,7 +16,7 @@ import 'package:segno/theme/theme.dart';
 /// it needs, so nothing a message says is lost.
 class NoticeSentence extends StatelessWidget {
   /// Creates a [NoticeSentence].
-  const NoticeSentence({
+  const new({
     required this.title,
     required this.titleStyle,
     this.body,

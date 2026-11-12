@@ -18,7 +18,7 @@ import 'package:segno/theme/theme.dart';
 /// only the knobs over them.
 class FxStompPedal extends StatelessWidget {
   /// Creates an [FxStompPedal].
-  const FxStompPedal({required this.face, super.key});
+  const new({required this.face, super.key});
 
   /// What the pedal shows.
   final FxStompFace face;
@@ -99,7 +99,7 @@ class FxStompPedal extends StatelessWidget {
 
 /// Where a knob sits on a face, and where its label prints.
 class _KnobSpot {
-  const _KnobSpot(
+  const new(
     this.centre,
     this.radius,
     this.labelBaseline,
@@ -210,7 +210,7 @@ class _KnobSpot {
 
 /// The labels under the knobs.
 class _LabelsPainter extends CustomPainter {
-  _LabelsPainter({
+  new({
     required this.kind,
     required this.labels,
     required this.spots,
@@ -253,10 +253,10 @@ class _LabelsPainter extends CustomPainter {
 /// The paints of one knob look at one radius, built once.
 final class _KnobParts {
   /// The parts for a knob with a [cap] colour at radius [r].
-  factory _KnobParts.of(double r, Color? cap) =>
+  factory of(double r, Color? cap) =>
       _cache.putIfAbsent((r, cap), () => _KnobParts._(r, cap));
 
-  _KnobParts._(this.r, Color? cap) {
+  new _(this.r, Color? cap) {
     final c = Offset(r, r);
     Shader radial(
       double radius,
@@ -385,7 +385,7 @@ final class _KnobParts {
 
 /// The knobs of one pedal, at their [settings].
 class _KnobsPainter extends CustomPainter {
-  _KnobsPainter({
+  new({
     required this.spec,
     required this.spots,
     required this.settings,
@@ -506,7 +506,7 @@ typedef _LabelsKey = ({FxStompFaceKind kind, String labels, Color colour});
 /// are dropped when the finish tiles arrive, which the pedals then repaint
 /// for.
 final class _StompPictures {
-  _StompPictures._() {
+  new _() {
     PaintingBinding.instance.systemFonts.addListener(_dropAll);
     FxStompTextures.instance.images.addListener(_dropUntextured);
   }
@@ -546,7 +546,7 @@ typedef _EnclosureKey = ({
 /// per look and printed name ([_EnclosureKey]) and replayed. A look a
 /// built-in shares with a rack module records one picture for each name.
 class _EnclosurePainter extends CustomPainter {
-  _EnclosurePainter({
+  new({
     required this.spec,
     required this.name,
     required this.led,
@@ -614,7 +614,7 @@ class _EnclosurePainter extends CustomPainter {
 
 /// Draws one enclosure, as the design's face functions do.
 class _Enclosure {
-  _Enclosure(
+  new(
     this.canvas,
     this.spec, {
     required this.name,
@@ -1178,7 +1178,7 @@ class _Enclosure {
 /// One knob label, laid out: on one line, or on two when it does not fit on
 /// one, and scaled to the width its knob's column has.
 class _LabelLayout {
-  _LabelLayout(this.lines, this.spot, this.scale);
+  new(this.lines, this.spot, this.scale);
 
   final List<TextPainter> lines;
   final _KnobSpot spot;

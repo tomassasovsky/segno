@@ -30,7 +30,7 @@ import 'package:session_repository/session_repository.dart';
 /// [LibraryAudioCubit] is created the first time that section shows.
 class LibraryPage extends StatelessWidget {
   /// Creates the Library page.
-  const LibraryPage({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) => MultiBlocProvider(
@@ -78,7 +78,7 @@ class LibraryPage extends StatelessWidget {
 /// selected; a failed save stays until a later action, as it stays true.
 class LibraryView extends StatefulWidget {
   /// Creates the Library view.
-  const LibraryView({super.key});
+  const new({super.key});
 
   @override
   State<LibraryView> createState() => _LibraryViewState();
@@ -285,7 +285,7 @@ bool trackStartedCapturing(LooperState previous, LooperState current) {
 /// The Library's crumb tabs: `Sessions` and `Audio`, 180 x 64 each.
 class LibrarySectionTabs extends StatelessWidget {
   /// Creates the tabs; [onShow] switches the section.
-  const LibrarySectionTabs({required this.onShow, super.key});
+  const new({required this.onShow, super.key});
 
   /// Shows a section.
   final ValueChanged<LibrarySection> onShow;
@@ -388,7 +388,7 @@ LibraryFailure? libraryFailureOf(SessionState state) {
 /// any other failed catalog action.
 class LibraryFailureLine extends StatelessWidget {
   /// Creates the line for [failure].
-  const LibraryFailureLine({
+  const new({
     required this.failure,
     this.refusedBy,
     super.key,
@@ -438,7 +438,7 @@ class LibraryFailureLine extends StatelessWidget {
 /// action runs.
 class LibraryActions extends StatelessWidget {
   /// Creates the Library's title-row actions.
-  const LibraryActions({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

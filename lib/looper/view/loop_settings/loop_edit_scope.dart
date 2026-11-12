@@ -32,7 +32,7 @@ class LoopEditCoordinator {
 /// Makes page Back and scope selection share one cancellation boundary.
 class LoopEditScope extends InheritedWidget {
   /// Creates a scope for the active Loop settings route.
-  const LoopEditScope({
+  const new({
     required this.coordinator,
     required super.child,
     super.key,

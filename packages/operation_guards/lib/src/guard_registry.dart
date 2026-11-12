@@ -55,11 +55,11 @@ enum GuardRule {
 @immutable
 class GuardScope {
   /// Internal storage, optionally one [item] on it.
-  const GuardScope.internal({this.item}) : generation = null;
+  const new internal({this.item}) : generation = null;
 
   /// The removable volume [generation] (a replug is a new generation),
   /// optionally one [item] on it.
-  const GuardScope.removable(int this.generation, {this.item});
+  const new removable(int this.generation, {this.item});
 
   /// The removable volume generation, or null for Internal.
   final int? generation;
@@ -95,7 +95,7 @@ class GuardScope {
 @immutable
 class ActiveOperation {
   /// Creates an [ActiveOperation].
-  const ActiveOperation({
+  const new({
     required this.kind,
     required this.scope,
     required this.purpose,
@@ -141,7 +141,7 @@ abstract interface class ActiveOperationSource {
 /// commit.
 class GuardRefused implements Exception {
   /// Creates a [GuardRefused].
-  const GuardRefused({required this.wants, required this.blockers});
+  const new({required this.wants, required this.blockers});
 
   /// The operation that was refused.
   final GuardKind wants;
@@ -155,7 +155,7 @@ class GuardRefused implements Exception {
 
 /// A held guard: its [operation] stays active until [release].
 class OperationGuard {
-  OperationGuard._(this.operation, this._onRelease);
+  new _(this.operation, this._onRelease);
 
   /// The operation this guard holds.
   final ActiveOperation operation;
@@ -184,7 +184,7 @@ class OperationGuard {
 class GuardRegistry {
   /// Creates a [GuardRegistry] that also consults [sources] (owners that
   /// track their own operations).
-  GuardRegistry({Iterable<ActiveOperationSource> sources = const []})
+  new({Iterable<ActiveOperationSource> sources = const []})
     : _sources = List.of(sources);
 
   /// Adds [source] to the owners this table consults. An owner built with

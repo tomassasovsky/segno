@@ -20,7 +20,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _DelayedSettingsRepository extends SettingsRepository {
-  _DelayedSettingsRepository({required super.store});
+  new({required super.store});
 
   final ready = Completer<void>();
 

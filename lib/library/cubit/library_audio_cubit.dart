@@ -39,7 +39,7 @@ typedef DawProjectWriter = Future<Object?> Function(String dir);
 /// cubit stops its own on a new selection, a folder change and its close.
 class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   /// Creates a [LibraryAudioCubit].
-  LibraryAudioCubit({
+  new({
     required this._performance,
     required this._sessions,
     required RemovableVolumes volumes,

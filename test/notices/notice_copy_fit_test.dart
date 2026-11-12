@@ -344,7 +344,7 @@ final _messages = <_Copy>[
 /// wide, which leaves the centre 1128 (the room on every other screen is
 /// wider).
 class _StageBar extends StatelessWidget {
-  const _StageBar();
+  const new();
 
   @override
   Widget build(BuildContext context) => const Scaffold(

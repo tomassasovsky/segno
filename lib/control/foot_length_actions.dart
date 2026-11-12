@@ -5,7 +5,7 @@ import 'package:segno/control/model/foot_length.dart';
 /// (#1168). Control owns contacts; this component caches nothing.
 class FootLengthActions {
   /// Connects the shared repository without introducing a new lifetime.
-  const FootLengthActions({required this.repository});
+  const new({required this.repository});
 
   /// Owner of the tracks and their length edits.
   final LooperRepository repository;

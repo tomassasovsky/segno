@@ -5,7 +5,7 @@ import 'package:segno/theme/theme.dart';
 /// Interaction and focus belong to the enclosing pedal, not its painted parts.
 class PedalHardwareFace extends StatelessWidget {
   /// Creates the hardware face with its physical label.
-  const PedalHardwareFace({
+  const new({
     required this.label,
     required this.selected,
     super.key,
@@ -58,7 +58,7 @@ class PedalHardwareFace extends StatelessWidget {
 
 class _PedalFacePainter extends CustomPainter {
   /// Creates a [_PedalFacePainter].
-  const _PedalFacePainter({required this.selected});
+  const new({required this.selected});
 
   static const Size _artSize = Size(84, 114);
   static const Rect _namePlateRect = Rect.fromLTRB(

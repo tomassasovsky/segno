@@ -44,7 +44,7 @@ _TempoValues _tempoValues(LooperState state) => (
 /// to Pedal (#1659), since Start recording is on the Recording tab.
 class LoopTempoPage extends StatefulWidget {
   /// Creates a [LoopTempoPage].
-  const LoopTempoPage({required this.onOpenSignature, super.key});
+  const new({required this.onOpenSignature, super.key});
 
   /// Opens the Time signature page.
   final VoidCallback onOpenSignature;
@@ -378,7 +378,7 @@ class _LoopTempoPageState extends State<LoopTempoPage> {
 /// The tempo in large figures over its unit, or `not set`: a button that
 /// opens the keypad, with the console's pressed and encoder-focus states.
 class _TempoReadout extends StatelessWidget {
-  const _TempoReadout({
+  const new({
     required this.bpm,
     required this.size,
     required this.onTap,
@@ -455,7 +455,7 @@ class _TempoReadout extends StatelessWidget {
 /// The beat lights under the tempo: one 20 px cell per beat of the bar, the
 /// downbeat ringed, the sounding beat lit while the transport runs.
 class _BeatStrip extends StatelessWidget {
-  const _BeatStrip({required this.beats, required this.lit});
+  const new({required this.beats, required this.lit});
 
   final int beats;
   final int lit;
@@ -491,7 +491,7 @@ class _BeatStrip extends StatelessWidget {
 /// the content width (the pen's `signature-grid`, 424 high at y 124).
 class LoopTimeSignaturePage extends StatelessWidget {
   /// Creates a [LoopTimeSignaturePage].
-  const LoopTimeSignaturePage({required this.onChosen, super.key});
+  const new({required this.onChosen, super.key});
 
   /// Called after a signature is taken.
   final VoidCallback onChosen;

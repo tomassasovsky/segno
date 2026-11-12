@@ -17,7 +17,7 @@ import 'package:segno/visualizer/waveform_window.dart';
 /// that wakes the console presses nothing, as on the main screen.
 class ReadoutControls extends StatefulWidget {
   /// Creates a [ReadoutControls].
-  const ReadoutControls({
+  const new({
     required this.readout,
     required this.frame,
     required this.waveform,

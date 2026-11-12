@@ -17,7 +17,7 @@ typedef RecordTimingCheckpoint = ({
 /// A pedal setup Save that did not complete durably.
 final class PedalSetupSaveException implements Exception {
   /// Keeps the original storage failure and any checkpoint-restore failure.
-  const PedalSetupSaveException({
+  const new({
     required this.cause,
     required this.checkpointRestored,
     this.restoreFailure,
@@ -42,7 +42,7 @@ final class PedalSetupSaveException implements Exception {
 /// A MIDI configuration Save that was not confirmed durable.
 final class MidiSettingsSaveException implements Exception {
   /// Preserves the original refusal and exact-checkpoint recovery result.
-  const MidiSettingsSaveException({
+  const new({
     required this.cause,
     required this.checkpointRestored,
     this.restoreFailure,
@@ -68,7 +68,7 @@ final class MidiSettingsSaveException implements Exception {
 @immutable
 class StoredAudioConfig {
   /// Creates a [StoredAudioConfig].
-  const StoredAudioConfig({
+  const new({
     required this.sampleRate,
     required this.bufferFrames,
     this.inputChannels = 0,
@@ -175,7 +175,7 @@ class SettingsRepository {
   /// or `null` where that knob is not engaged (any non-Linux platform, or
   /// Linux without `SEGNO_ALSA_PERIODS` set). Derive it with
   /// [alsaPeriodsFromEnvironment]; the composition root passes it in.
-  SettingsRepository({required this._store, this._alsaPeriods});
+  new({required this._store, this._alsaPeriods});
 
   final KeyValueStore _store;
   Future<void> _serializedWrite = Future<void>.value();
@@ -2428,7 +2428,7 @@ class SettingsRepository {
 }
 
 class _SavedMixSettings {
-  _SavedMixSettings({
+  new({
     Map<int, double>? trackLevels,
     Map<int, double>? pans,
     Map<(int, int), double>? levels,

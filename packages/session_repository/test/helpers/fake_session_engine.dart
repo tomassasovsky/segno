@@ -65,7 +65,7 @@ class _FakeTrack {
 /// and per-track PCM closely enough to exercise the session repository's
 /// save/load without the native engine.
 class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
-  FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
+  new({this.channels = 1, this.sampleRate = 48000});
 
   // The audition voice (#1178): records what it was asked to play.
 

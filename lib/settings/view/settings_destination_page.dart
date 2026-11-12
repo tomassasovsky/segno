@@ -15,7 +15,7 @@ import 'package:segno/theme/theme.dart';
 /// not the route or the tile that opens it.
 class SettingsDestinationPage extends StatelessWidget {
   /// Creates a [SettingsDestinationPage] titled [title] around [body].
-  const SettingsDestinationPage({
+  const new({
     required this.title,
     required this.body,
     this.crumb,

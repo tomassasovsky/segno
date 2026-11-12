@@ -27,7 +27,7 @@ enum UndoableClear {
 /// projected from one engine snapshot.
 class LooperState extends Equatable {
   /// Creates a [LooperState].
-  const LooperState({
+  const new({
     this.transport = const TransportState(),
     this.tracks = const [],
     this.status = const EngineStatus(),

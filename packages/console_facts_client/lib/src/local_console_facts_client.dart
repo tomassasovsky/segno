@@ -16,7 +16,7 @@ import 'package:meta/meta.dart';
 @immutable
 class DiskSpace {
   /// Creates a [DiskSpace].
-  const DiskSpace({required this.totalBytes, required this.freeBytes});
+  const new({required this.totalBytes, required this.freeBytes});
 
   /// The volume's total size.
   final int totalBytes;
@@ -57,7 +57,7 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
   /// path; the root passes the engine's `statvfs`, tests a function of their
   /// own. There is deliberately no default: the one this had was a `df`
   /// subprocess, and a fork from the app is what #806 ruled out.
-  LocalConsoleFactsClient({
+  new({
     required this._sessionsRoot,
     required this._capturesRoot,
     required this._diskSpace,

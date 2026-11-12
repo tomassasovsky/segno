@@ -38,7 +38,7 @@ part 'library_state.dart';
 /// ([LibraryState.restoredId]). Selecting a row can never reach the engine.
 class LibraryCubit extends Cubit<LibraryState> {
   /// Creates a [LibraryCubit] over [_sessions], [volumes] and [pedal].
-  LibraryCubit({
+  new({
     required this._sessions,
     required RemovableVolumes volumes,
     required PedalRepository pedal,

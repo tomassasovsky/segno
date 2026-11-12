@@ -103,7 +103,7 @@ class _TimingBootStore extends FakeKeyValueStore {
 }
 
 class _RecordStartBootStore extends FakeKeyValueStore {
-  _RecordStartBootStore(this.blockedKey);
+  new(this.blockedKey);
 
   final String blockedKey;
   final entered = Completer<void>();

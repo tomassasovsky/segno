@@ -8,7 +8,7 @@ import 'package:material_ui/material_ui.dart';
 @immutable
 class GraphCardRef {
   /// Creates a card reference.
-  const GraphCardRef(this.rowId, this.index);
+  const new(this.rowId, this.index);
 
   /// The row the card belongs to (lane index / monitored input).
   final int rowId;
