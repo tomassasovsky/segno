@@ -14,7 +14,6 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_surface.dart'
     show ConsoleBanner, ConsoleBannerTone;
 import 'package:segno/l10n/gen/app_localizations.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/library/view/library_preview_card.dart';
@@ -25,8 +24,11 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../../helpers/helpers.dart';
+
+import '../helpers/fake_drive.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
@@ -172,7 +174,7 @@ void main() {
     WidgetTester tester, {
     SessionState? state,
     Stream<SessionState> states = const Stream.empty(),
-    RemovableVolumes volumes = const InternalOnlyVolumes(),
+    StorageRepository? volumes,
     LooperState looperState = const LooperState(),
     Stream<LooperState> looperStates = const Stream.empty(),
     List<String>? trackNames,
@@ -210,7 +212,9 @@ void main() {
           RepositoryProvider<PedalRepository>.value(value: pedal),
           RepositoryProvider<LooperRepository>.value(value: looperRepository),
           RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
-          RepositoryProvider<RemovableVolumes>.value(value: volumes),
+          RepositoryProvider<StorageRepository>.value(
+            value: volumes ?? NoDrive(),
+          ),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -2278,8 +2282,8 @@ void main() {
   });
 }
 
-/// A port reporting one drive, as the storage service would.
-class _OneDrive implements RemovableVolumes {
+/// Storage reporting one drive.
+class _OneDrive extends Fake implements StorageRepository {
   new(this.drive);
 
   final RemovableVolume drive;
@@ -2289,22 +2293,4 @@ class _OneDrive implements RemovableVolumes {
 
   @override
   Stream<List<RemovableVolume>> get volumes => const Stream.empty();
-
-  @override
-  Future<VolumeSpace?> space(StorageDestination destination) async => null;
-
-  @override
-  Future<T> withWriteLease<T>(
-    StorageDestination target,
-    String purpose,
-    Future<T> Function(String mountPoint) body,
-  ) => throw UnimplementedError();
-
-  @override
-  Future<String> copyFile(
-    String sourcePath,
-    StorageDestination destination,
-    String relativePath, {
-    required ConflictPolicy onConflict,
-  }) => throw UnimplementedError();
 }

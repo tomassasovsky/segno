@@ -115,6 +115,36 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   PR). Envelopes are still written only over a dry stem, since the wet render
   already applies them (#1622).
 
+## November 2026 The Library writes to USB through the storage repository (#1790)
+
+- Export to USB, Back up to USB and the Library's USB location never saw a
+  drive on the appliance. The Library read drives through its own
+  `RemovableVolumes` port, and the app never replaced its no-drive default
+  (`InternalOnlyVolumes`) with #1177's `StorageRepository` once that landed,
+  so every export asked for a drive with a stick mounted.
+- The port, its copies of the storage models and `InternalOnlyVolumes` are
+  gone. `LibraryCubit`, `LibraryAudioCubit` and `AudioExporter` take the
+  app's `StorageRepository`, as the Storage page and the recorder do. The
+  drive's lease names `WritePurpose.export` or `WritePurpose.backup`; the
+  translated purpose stays on the guards, where a take's disabled Delete
+  shows it. A `StorageBusy` from the lease reads as busy, like a
+  `GuardRefused`.
+- Two exporter faults the stand-in hid, now that a real drive reaches
+  `AudioExporter`: an export's recovery of its folder deleted every
+  `.segno-export-*` directory there, including the staging of a backup or
+  export still running into the same folder (a backup and a mixdown export
+  both write `Segno/Sessions`); exports into one folder now run one after
+  the other, across the Library's exporters. And
+  the swap's renames were never synced, so "Exported to USB" could show
+  before a pulled stick would keep the export; the exporter now syncs the
+  folder (and a package's own directory) through the new
+  `StorageRepository.syncDirectory` before it reports.
+- Tests fake the repository (`FakeDrive`, `NoDrive` in
+  `test/library/helpers/fake_drive.dart`). One cubit test exports through a
+  real `StorageRepository` over the console's own records (an `iso9660`
+  whole-disk record the helper refused beside the mounted FAT partition),
+  and one app test opens the Library and reads the repository's drive.
+
 ## November 2026 Flutter 3.50 and Dart 3.14 (#1777)
 
 - CI, the app and every package build on Flutter 3.50.0 (Dart 3.14.0):

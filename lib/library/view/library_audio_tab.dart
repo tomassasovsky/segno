@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_audio_dialogs.dart';
@@ -14,6 +13,7 @@ import 'package:segno/library/view/library_preview_card.dart';
 import 'package:segno/library/view/library_sessions_tab.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// Library > Audio (pen 18/01, 20/07 to 20/12; #1178 Part 7): the location
 /// and search row over the file browser and the preview card, or, while an

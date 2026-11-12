@@ -5,8 +5,7 @@ import 'package:operation_guards/operation_guards.dart';
 /// same thing: existing content was left intact, and no partial file is left
 /// under a final name.
 ///
-/// Each one says what happened in words a log line or the UI can print, the
-/// same words the Library's `RemovableVolumes` port uses.
+/// Each one says what happened in words a log line or the UI can print.
 sealed class StorageFailure extends Equatable implements Exception {
   const new();
 

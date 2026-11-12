@@ -15,17 +15,26 @@ name: ci-caches
 # The keys must be the ones the PR jobs compute: subosito/flutter-action's
 # defaults (the packages, design and fuzz jobs), the Very Good workflows' key
 # (flutter_package.yml adds the hash of every pubspec.lock), and the console
-# firmware job's Arduino key, and the native jobs' apt packages.
+# firmware job's Arduino key, and the two apt package sets: the native jobs'
+# and the ALSA headers alone (the packages, design and segno-engine-tests
+# jobs).
+#
+# This is the only workflow that saves caches for the PR checks: main.yaml
+# runs with cache-mode read (#1787). It saves only on the trunk: a run on any
+# other ref would save under that ref, where no PR into the trunk can read
+# it. A dispatch from the trunk saves the caches without waiting for the
+# next merge; from another branch the jobs are skipped.
 
-# A PR that changes this file runs it too, to prove the jobs still work.
+# A PR that changes this file runs it through ci-caches-check.yaml, which
+# calls it with cache-mode read, to prove the jobs still work without saving
+# anything under the PR's ref. cache-mode takes no expression, so the PR run
+# needs a caller of its own.
 on:
   push:
     branches:
       - claude/segno-integration
-  pull_request:
-    paths:
-      - .github/workflows/ci-caches.yaml
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +43,7 @@ concurrency:
 jobs:
   flutter:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -57,6 +67,7 @@ jobs:
 
   arduino:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
     timeout-minutes: 20
     steps:
       # The key and paths are console-firmware's in main.yaml.
@@ -86,6 +97,7 @@ jobs:
 
   apt:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
     timeout-minutes: 10
     steps:
       # The packages and version are the native jobs' in main.yaml.
@@ -93,4 +105,18 @@ jobs:
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
           packages: libasound2-dev libpulse0
+          version: "1"
+
+  # A second job, not a second step: the action caches what it installs, and
+  # in the job above libasound2-dev is already installed.
+  apt-alsa:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
+    timeout-minutes: 10
+    steps:
+      # The package and version are the Flutter jobs' in main.yaml (#1783).
+      - name: The ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
           version: "1"

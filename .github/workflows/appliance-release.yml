@@ -164,9 +164,13 @@ jobs:
 
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
-      - name: Cache the Arduino core and libraries
+      # ci-caches.yaml saves it on the trunk under this key; this job only
+      # restores it (#1787). A run dispatched from another branch, a tag or
+      # experimental cannot read the trunk's copy and downloads the core,
+      # where a save would put another 856 MB copy under its own ref.
+      - name: Restore the Arduino core and libraries
         id: arduino-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.arduino15
@@ -364,9 +368,12 @@ jobs:
             exit 1
           fi
 
+      # Saved only on the trunk, by the step after the firmware check (#1787):
+      # an entry saved on any other ref could be read only by that ref.
       - name: Restore Yocto sstate + downloads (GitHub-hosted only)
+        id: sstate-cache
         if: inputs.runner != 'self-hosted'
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ env.YOCTO_WORK_DIR }}/sstate-cache
@@ -438,6 +445,20 @@ jobs:
             exit 1
           fi
           echo "image firmware matches this run's artifact"
+
+      # After the firmware check, so shared state that handed back a stale
+      # package is not saved for later builds to restore.
+      - name: Save Yocto sstate + downloads (GitHub-hosted, trunk only)
+        if: >-
+          inputs.runner != 'self-hosted'
+          && github.ref == 'refs/heads/claude/segno-integration'
+          && steps.sstate-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.YOCTO_WORK_DIR }}/sstate-cache
+            ${{ env.YOCTO_WORK_DIR }}/downloads
+          key: ${{ steps.sstate-cache.outputs.cache-primary-key }}
 
       - name: Report disk consumed
         if: always()

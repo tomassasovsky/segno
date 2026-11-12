@@ -28,9 +28,8 @@ enum WritePurpose {
 
 /// A write in progress on a destination: where it goes and what it is for.
 ///
-/// A value, so it can be listed, compared and built `const` (the Library's
-/// `RemovableVolumes` port declares it this way). The live side of a lease,
-/// its loss and its release, is the [HeldLease] that
+/// A value, so it can be listed, compared and built `const`. The live side
+/// of a lease, its loss and its release, is the [HeldLease] that
 /// `StorageRepository.acquire` returns.
 class WriteLease extends Equatable {
   /// Creates a [WriteLease].

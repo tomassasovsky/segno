@@ -40,7 +40,6 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/console_leds/cubit/console_leds_cubit.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/record_settings.dart';
 import 'package:segno/looper/application/record_timing_settings.dart';
@@ -101,7 +100,6 @@ class App extends StatefulWidget {
     this.touchCalibration = const UnsupportedTouchCalibrationClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     this.cpuLoad = const CpuLoadRepository.unsupported(),
-    this.removableVolumes = const InternalOnlyVolumes(),
     this.storage,
     this.powerKeySource,
     this.powerOff,
@@ -137,11 +135,6 @@ class App extends StatefulWidget {
   /// unsupported repository, which hides the readout; the entrypoint injects
   /// the `/proc/stat` one.
   final CpuLoadRepository cpuLoad;
-
-  /// The removable drives the Library browses and copies to. Defaults to
-  /// [InternalOnlyVolumes] (no drive, every removable write refused) until
-  /// the storage service (#1177) stands behind the port.
-  final RemovableVolumes removableVolumes;
 
   /// Where a write may go: Internal and the USB volumes. Null (the default)
   /// builds one over no USB at all, measuring Internal through
@@ -563,9 +556,6 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.waveformWindow),
         RepositoryProvider.value(value: widget.consoleFacts),
         RepositoryProvider.value(value: widget.cpuLoad),
-        RepositoryProvider<RemovableVolumes>.value(
-          value: widget.removableVolumes,
-        ),
         RepositoryProvider.value(value: _storage),
         // The one guard table (#1198), for the owners the views build: the
         // Library's exports and backups enter transfer guards on what

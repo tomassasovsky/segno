@@ -871,4 +871,50 @@ void main() {
       expect(part.readAsBytesSync(), source.readAsBytesSync());
     });
   });
+  group('syncDirectory', () {
+    test("syncs the directory under the volume's mount point", () async {
+      repo = h.build(initial: [h.record(1)]);
+      await pumpEventQueue();
+      Directory('${h.mountPoint(1)}/Segno/Sessions')
+          .createSync(recursive: true);
+
+      await repo.syncDirectory(usb1, 'Segno/Sessions');
+
+      expect(h.synced, ['${h.mountPoint(1)}/Segno/Sessions']);
+    });
+
+    test('a sync the device refuses is io, an unmounted volume is lost, and '
+        'a path that leaves the root is refused', () async {
+      repo = h.build(initial: [h.record(1)]);
+      await pumpEventQueue();
+      h.io.failingSyncs.add('${h.mountPoint(1)}/Segno');
+
+      await expectLater(
+        repo.syncDirectory(usb1, 'Segno'),
+        throwsA(isA<StorageIo>()),
+      );
+      await expectLater(
+        repo.syncDirectory(const StorageDestination.removable(2), 'Segno'),
+        throwsA(const StorageFailure.volumeLost(2)),
+      );
+      expect(() => repo.syncDirectory(usb1, '../Segno'), throwsArgumentError);
+      expect(h.synced, isEmpty);
+      expect(repo.leases, isEmpty);
+    });
+
+    test(
+      'a sync that fails because the drive was pulled is a lost volume',
+      () async {
+        repo = h.build(initial: [h.record(1)]);
+        await pumpEventQueue();
+        h.io.failingSyncs.add('${h.mountPoint(1)}/Segno');
+        h.io.onSyncFailure = () => h.client.detach(1);
+
+        await expectLater(
+          repo.syncDirectory(usb1, 'Segno'),
+          throwsA(const StorageFailure.volumeLost(1)),
+        );
+      },
+    );
+  });
 }
