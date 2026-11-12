@@ -12,8 +12,8 @@
 # root. PACKAGE_TEST_JOBS sets how many packages test at once: half the CPUs
 # by default, so a suite gets about the CPU it had in a job of its own (with
 # four at once on four CPUs, session_repository's 8-track Free-mode
-# round-trip, 16 s on an idle runner, ran past its 30 s timeout). The list runs
-# longest first. Every package's output prints when all are done, the failed
+# round-trip, 16 s on an idle runner, ran past its 30 s timeout). After the
+# first, which runs alone (below), the list runs longest first. Every package's output prints when all are done, the failed
 # ones last.
 #
 # A floor is pinned AT the value measured when the package's job was added:
@@ -33,6 +33,7 @@ cd "$(dirname "$0")/.."
 
 # package  runner  floor
 PACKAGES="
+cpu_load_repository   flutter 100
 session_repository    flutter 89
 looper_repository     flutter 95
 performance_repository flutter 99
@@ -48,7 +49,6 @@ pedal_repository      flutter 96
 fx_catalogue          flutter 100
 brightness_client     dart    80
 operation_guards      flutter 100
-cpu_load_repository   flutter 100
 "
 
 CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
@@ -75,8 +75,14 @@ test_package() {   # test_package NAME RUNNER FLOOR
 }
 export -f test_package
 
+# The first suite runs alone: very_good builds its test optimizer's hooks
+# into ~/.mason-cache on first use, and two first uses at once collide
+# there ("Generating kernel failed!"). It is a short one.
+first=$(printf '%s\n' "$PACKAGES" | awk 'NF { print; exit }')
 # shellcheck disable=SC2086
-printf '%s\n' $PACKAGES | xargs -n 3 -P "$JOBS" bash -c 'test_package "$0" "$1" "$2"'
+test_package $first
+# shellcheck disable=SC2086
+printf '%s\n' "$PACKAGES" | awk 'NF' | tail -n +2 | xargs -n 3 -P "$JOBS" bash -c 'test_package "$0" "$1" "$2"'
 
 failed=""
 for name in $(printf '%s\n' "$PACKAGES" | awk 'NF { print $1 }'); do
