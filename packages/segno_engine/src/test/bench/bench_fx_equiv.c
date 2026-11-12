@@ -144,6 +144,8 @@ static const eqv_kind k_kinds[] = {
  *             owner's approval). */
 static const char* const k_reordered[] = {
     "roomverb",
+    /* the cabinet's 64 direct taps summed in four vector sums */
+    "ampcab",
     NULL,
 };
 
