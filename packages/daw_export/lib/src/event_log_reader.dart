@@ -57,36 +57,37 @@ abstract final class EventLogReader {
     return entries;
   }
 
-  /// Extracts channel `channel`'s lane-0 volume-ride and audibility
-  /// breakpoints (in beat units at [tempoBpm]) from [entries], matching the
-  /// scope precedent the native offline renderer already established
-  /// (`perf_render.c`, parts 7-8): only lane 0's track-addressed
-  /// volume/mute — both the legacy generic-arm commands
-  /// (`LE_CMD_SET_VOLUME`/`LE_CMD_SET_MUTE`, which the engine maps to lane 0
-  /// for backward compatibility) and the explicit lane-addressed ones
-  /// (`LE_CMD_SET_LANE_VOLUME`/`LE_CMD_SET_LANE_MUTE` with `lane == 0`) are
-  /// read; a non-zero explicit lane is ignored, same scope restriction as
-  /// the native renderer. Entries are sorted by frame before conversion —
-  /// `events.log`'s two producer streams are not globally pre-sorted (see
-  /// the format doc).
+  /// Extracts channel [channel]'s volume and audibility from [entries], as
+  /// breakpoints in beats at [tempoBpm], with their values at arm.
   ///
-  /// The returned `mute` lane is Ableton's track activator (1 == audible),
-  /// so it carries the channel's *effective* audibility rather than its raw
-  /// mute flag: `!muted && (no track soloed || this track soloed)`. Solo
-  /// (`LE_CMD_SET_TRACK_SOLO`, generic arm, non-zero == soloed) is tracked
-  /// across ALL channels because a solo on another track silences this one
-  /// and clearing the last solo restores it exactly as its mute flag left
-  /// it. [initiallyMuted] and [initiallySoloed] seed that state from the
-  /// arm-time manifest (events are logged relative to arm); a breakpoint is
-  /// emitted only when the effective audibility actually changes, so a
-  /// redundant gesture (muting an already-muted track, unmuting under
-  /// someone else's solo) adds nothing.
-  static ({List<AutomationBreakpoint> volume, List<AutomationBreakpoint> mute})
+  /// Volume follows what the offline renderer applies to lane 0
+  /// (`perf_render.c`): the track gain (`LE_CMD_SET_VOLUME`) times lane 0's
+  /// level (`LE_CMD_SET_LANE_VOLUME` with `lane == 0`), each starting from
+  /// [initialTrackGain] and [initialLaneVolume]. A change to either emits
+  /// their product. Other lanes are ignored, as the renderer's stems do.
+  ///
+  /// Audibility is Live's track activator (1 == audible): `!muted && (no
+  /// track soloed || this track soloed)`, from the lane-0 or track mute
+  /// (`LE_CMD_SET_LANE_MUTE` lane 0, `LE_CMD_SET_MUTE`) and every track's
+  /// solo (`LE_CMD_SET_TRACK_SOLO`), since a solo elsewhere silences this
+  /// track. [initiallyMuted] and [initiallySoloed] seed it from the arm
+  /// snapshot. A breakpoint is emitted only when audibility changes.
+  ///
+  /// Entries are sorted by frame first: `events.log`'s two producer
+  /// streams are not merged in frame order.
+  static ({
+    double initialVolume,
+    List<AutomationBreakpoint> volume,
+    double initialAudible,
+    List<AutomationBreakpoint> mute,
+  })
   readChannelAutomation(
     List<RawLogEntry> entries,
     int channel,
     int sampleRate,
     double tempoBpm, {
+    double initialTrackGain = 1,
+    double initialLaneVolume = 1,
     bool initiallyMuted = false,
     Set<int> initiallySoloed = const {},
   }) {
@@ -96,37 +97,39 @@ abstract final class EventLogReader {
 
     double beatOf(int frame) => (frame / sampleRate) * (tempoBpm / 60.0);
 
+    var trackGain = initialTrackGain;
+    var laneVolume = initialLaneVolume;
     var muted = initiallyMuted;
     final soloed = {...initiallySoloed};
     bool audible() => !muted && (soloed.isEmpty || soloed.contains(channel));
-    var lastAudible = audible();
-    // The activator's manual value is on: a track silent at arm (muted, or
-    // under another track's solo) needs its first breakpoint at the start.
-    if (!lastAudible) {
-      mute.add(const AutomationBreakpoint(beat: 0, value: 0));
-    }
+    final initiallyAudible = audible();
+    var lastAudible = initiallyAudible;
 
     for (final e in sorted) {
       switch (e.code) {
         case _codeSetVolume:
-          if (e.payload.getInt32(0, Endian.little) == channel) {
-            volume.add(
-              AutomationBreakpoint(
-                beat: beatOf(e.frame),
-                value: e.payload.getFloat32(4, Endian.little),
-              ),
-            );
-          }
+          if (e.payload.getInt32(0, Endian.little) != channel) continue;
+          trackGain = e.payload.getFloat32(4, Endian.little);
+          volume.add(
+            AutomationBreakpoint(
+              beat: beatOf(e.frame),
+              value: trackGain * laneVolume,
+            ),
+          );
+          continue;
         case _codeSetLaneVolume:
-          if (e.payload.getInt32(0, Endian.little) == channel &&
-              e.payload.getInt32(4, Endian.little) == 0) {
-            volume.add(
-              AutomationBreakpoint(
-                beat: beatOf(e.frame),
-                value: e.payload.getFloat32(8, Endian.little),
-              ),
-            );
+          if (e.payload.getInt32(0, Endian.little) != channel ||
+              e.payload.getInt32(4, Endian.little) != 0) {
+            continue;
           }
+          laneVolume = e.payload.getFloat32(8, Endian.little);
+          volume.add(
+            AutomationBreakpoint(
+              beat: beatOf(e.frame),
+              value: trackGain * laneVolume,
+            ),
+          );
+          continue;
         case _codeSetMute:
           if (e.payload.getInt32(0, Endian.little) == channel) {
             muted = e.payload.getFloat32(4, Endian.little) != 0.0;
@@ -146,9 +149,6 @@ abstract final class EventLogReader {
         default:
           continue;
       }
-      // Ableton's activator is on == audible; the logged mute flag is
-      // inverted from that (1 == muted == inaudible), and a solo elsewhere
-      // silences this channel without touching its own flag.
       final nowAudible = audible();
       if (nowAudible == lastAudible) continue;
       lastAudible = nowAudible;
@@ -160,7 +160,12 @@ abstract final class EventLogReader {
       );
     }
 
-    return (volume: volume, mute: mute);
+    return (
+      initialVolume: initialTrackGain * initialLaneVolume,
+      volume: volume,
+      initialAudible: initiallyAudible ? 1.0 : 0.0,
+      mute: mute,
+    );
   }
 }
 

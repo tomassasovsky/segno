@@ -5,6 +5,7 @@ import 'package:daw_export/src/automation_thinning.dart';
 import 'package:daw_export/src/daw_project.dart';
 import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/manifest_json.dart';
+import 'package:daw_export/src/wav_info.dart';
 
 /// Reads a finalized performance-recording capture directory's
 /// `performance.json` (docs/formats/performance-manifest-format.md) and
@@ -72,7 +73,6 @@ abstract final class DawManifestReader {
     final sampleRate = (manifest['sample_rate'] as num?)?.toInt() ?? 0;
     final captureFrames = (manifest['capture_frames'] as num?)?.toInt() ?? 0;
     if (sampleRate <= 0 || captureFrames <= 0) return null;
-    final captureSeconds = captureFrames / sampleRate;
 
     final armTracks = tracksOf(manifest['armSnapshot']);
     final disarmTracks = tracksOf(manifest['disarmSnapshot']);
@@ -83,6 +83,7 @@ abstract final class DawManifestReader {
     // track that was already settled at arm keeps its arm-time entry unless
     // disarm captured something newer for the same lane).
     final pcmRefsByChannel = <int, Map<int, String>>{};
+    final laneFramesByChannel = <int, Map<int, int>>{};
     for (final t in [...armTracks, ...disarmTracks]) {
       final channel = (t['channel'] as num?)?.toInt();
       if (channel == null) continue;
@@ -102,20 +103,38 @@ abstract final class DawManifestReader {
             : laneJson['pcmRef'] as String?;
         if (laneIndex == null || pcmRef == null) continue;
         laneMap[laneIndex] = pcmRef;
+        final lenFrames = (laneJson['lenFrames'] as num?)?.toInt();
+        if (lenFrames != null && lenFrames > 0) {
+          laneFramesByChannel.putIfAbsent(channel, () => {})[laneIndex] =
+              lenFrames;
+        }
       }
     }
 
-    // Arm-time mute/solo per channel: the baseline the logged gestures are
-    // applied on top of (events.log is relative to arm), so the activator
-    // lane reflects each track's effective audibility — a solo on one track
-    // silences every unsoloed one — rather than its raw mute flag.
+    // Arm-time gains, mute and solo per channel: the state the logged
+    // gestures start from (events.log is relative to arm). Solo is tracked
+    // across channels, since a solo on one track silences the others.
+    // Mute is lane 0's flag, or the track's when lane 0 has none, as the
+    // renderer reads it (perf_render.c).
     final mutedAtArm = <int>{};
     final soloedAtArm = <int>{};
+    final trackGainAtArm = <int, double>{};
+    final laneVolumeAtArm = <int, double>{};
     for (final t in armTracks) {
       final channel = (t['channel'] as num?)?.toInt();
       if (channel == null) continue;
-      if (t['muted'] as bool? ?? false) mutedAtArm.add(channel);
       if (t['solo'] as bool? ?? false) soloedAtArm.add(channel);
+      final gain = (t['volume'] as num?)?.toDouble();
+      if (gain != null) trackGainAtArm[channel] = gain;
+      bool? laneMuted;
+      for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
+        final laneJson = lane as Map<String, dynamic>;
+        if ((laneJson['lane'] as num?)?.toInt() != 0) continue;
+        final volume = (laneJson['volume'] as num?)?.toDouble();
+        if (volume != null) laneVolumeAtArm[channel] = volume;
+        laneMuted = laneJson['muted'] as bool?;
+      }
+      if (laneMuted ?? t['muted'] as bool? ?? false) mutedAtArm.add(channel);
     }
 
     final logEntries = EventLogReader.readAll(captureDir);
@@ -126,27 +145,30 @@ abstract final class DawManifestReader {
       final lanes = pcmRefsByChannel[channel]!;
       for (final lane in lanes.keys.toList()..sort()) {
         final pcmRef = lanes[lane]!;
-        if (!File('$captureDir/$pcmRef').existsSync()) continue;
-        sessionClips.add(
-          DawSessionClip(
-            laneIndex: lane,
-            fileRef: pcmRef,
-            // The per-lane loop's own length isn't recorded in the
-            // manifest at the top level (only the full capture's is) — a
-            // fixed reference to the capture length is a placeholder until
-            // part 11 threads the lane's actual settled length through;
-            // documented as a known simplification, not a silent guess.
-            lengthSeconds: captureSeconds,
-          ),
+        final audio = _audioFile(
+          captureDir,
+          pcmRef,
+          sampleRate: sampleRate,
+          fallbackFrames: laneFramesByChannel[channel]?[lane],
         );
+        if (audio == null) continue;
+        sessionClips.add(DawSessionClip(laneIndex: lane, audio: audio));
       }
 
       final arrangementFile = _firstExisting(captureDir, [
         'stems/wet/track$channel.wav',
         'stems/dry/track$channel.wav',
       ]);
+      final arrangementAudio = arrangementFile == null
+          ? null
+          : _audioFile(
+              captureDir,
+              arrangementFile,
+              sampleRate: sampleRate,
+              fallbackFrames: captureFrames,
+            );
 
-      if (arrangementFile == null && sessionClips.isEmpty) continue;
+      if (arrangementAudio == null && sessionClips.isEmpty) continue;
 
       // The wet render bakes lane-0 volume, mute and solo into the stem
       // (perf_render.c's wet pass), so only a dry clip gets them as Live
@@ -159,27 +181,36 @@ abstract final class DawManifestReader {
           channel,
           sampleRate,
           effectiveTempoBpm,
+          initialTrackGain: trackGainAtArm[channel] ?? 1,
+          initialLaneVolume: laneVolumeAtArm[channel] ?? 1,
           initiallyMuted: mutedAtArm.contains(channel),
           initiallySoloed: soloedAtArm,
         );
-        if (raw.volume.isNotEmpty) {
+        // A gain other than unity at arm needs a lane even with no
+        // gestures: the dry stem is at unity.
+        if (raw.volume.isNotEmpty || raw.initialVolume != 1) {
           automationLanes.add(
             AutomationLane(
               target: AutomationTarget.volume,
-              breakpoints: thinVolumeAutomation(
-                raw: raw.volume,
-                tempoBpm: effectiveTempoBpm,
-              ),
+              initialValue: raw.initialVolume,
+              breakpoints: raw.volume.isEmpty
+                  ? [AutomationBreakpoint(beat: 0, value: raw.initialVolume)]
+                  : thinVolumeAutomation(
+                      raw: raw.volume,
+                      tempoBpm: effectiveTempoBpm,
+                    ),
             ),
           );
         }
-        if (raw.mute.isNotEmpty) {
-          // Mute is step-shaped, never thinned — see AutomationTarget.
-          // activator's own doc.
+        if (raw.mute.isNotEmpty || raw.initialAudible == 0) {
+          // Mute is step-shaped, never thinned.
           automationLanes.add(
             AutomationLane(
               target: AutomationTarget.activator,
-              breakpoints: raw.mute,
+              initialValue: raw.initialAudible,
+              breakpoints: raw.mute.isEmpty
+                  ? const [AutomationBreakpoint(beat: 0, value: 0)]
+                  : raw.mute,
             ),
           );
         }
@@ -188,13 +219,9 @@ abstract final class DawManifestReader {
       tracks.add(
         DawTrack(
           name: 'Track $channel',
-          arrangementClip: arrangementFile == null
+          arrangementClip: arrangementAudio == null
               ? null
-              : DawClip(
-                  fileRef: arrangementFile,
-                  startSeconds: 0,
-                  lengthSeconds: captureSeconds,
-                ),
+              : DawClip(audio: arrangementAudio, startSeconds: 0),
           sessionClips: sessionClips,
           automationLanes: automationLanes,
         ),
@@ -214,6 +241,34 @@ abstract final class DawManifestReader {
     if (snapshot is! Map<String, dynamic>) return null;
     final bpm = (snapshot['tempoBpm'] as num?)?.toDouble();
     return bpm != null && bpm > 0 ? bpm : null;
+  }
+
+  /// [relative]'s [DawAudioFile]: its rate and length from its WAV
+  /// header, or, when the header does not read, [sampleRate] and
+  /// [fallbackFrames] from the manifest. `null` when the file is missing,
+  /// or unreadable with no manifest length to fall back on.
+  static DawAudioFile? _audioFile(
+    String captureDir,
+    String relative, {
+    required int sampleRate,
+    int? fallbackFrames,
+  }) {
+    final path = '$captureDir/$relative';
+    if (!File(path).existsSync()) return null;
+    final info = readWavInfo(path);
+    if (info != null && info.frames > 0) {
+      return DawAudioFile(
+        fileRef: relative,
+        sampleRate: info.sampleRate,
+        frames: info.frames,
+      );
+    }
+    if (fallbackFrames == null || fallbackFrames <= 0) return null;
+    return DawAudioFile(
+      fileRef: relative,
+      sampleRate: sampleRate,
+      frames: fallbackFrames,
+    );
   }
 
   static String? _firstExisting(String captureDir, List<String> candidates) {

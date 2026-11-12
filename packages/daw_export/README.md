@@ -20,7 +20,8 @@ import 'package:daw_export/daw_export.dart';
 
 void exportCapture(String captureDir) {
   final project = DawManifestReader.read(captureDir);
-  if (project != null) {
+  // Live cannot open a set without tracks, and buildAls refuses one.
+  if (project != null && project.tracks.isNotEmpty) {
     File('$captureDir/project.als').writeAsBytesSync(buildAls(project));
   }
   final chains = FxChainsWriter.render(captureDir);
@@ -32,24 +33,43 @@ void exportCapture(String captureDir) {
 
 ## Notes
 
-- Each recorded channel becomes one audio track. Its arrangement clip is the
-  channel's rendered stem from `stems/wet/` (or `stems/dry/`), placed at the
-  start of the capture; each lane's loop file becomes a session-view clip.
-- Volume and mute gestures from `events.log` become automation lanes. Volume
-  curves are thinned (`thinVolumeAutomation`); mute steps are kept as logged.
+- The set is generated from a set Live 12.2.7 saved
+  (`lib/src/live_set_template.dart`, from `test/corpus/automation.als`): its
+  one audio track is copied once per recorded channel, so every element and
+  default is one Live wrote. `test/corpus/README.md` lists the reference sets
+  and what Live checks when it opens a set.
+- Each recorded channel becomes one audio track. Its Arrangement clip is the
+  channel's rendered stem from `stems/wet/` (or `stems/dry/` when the wet
+  render is missing), unwarped, at the start of the capture and as long as
+  the file. Each lane's loop becomes a Session clip in the scene of the
+  lane's number, warped in Re-Pitch and looping over the whole file at the
+  set's tempo, so at that tempo it plays the file unchanged. Clip lengths and
+  rates come from the WAV headers.
+- Volume and mute gestures from `events.log` become volume and activator
+  envelopes, shown in Automation Mode when the set opens. They are written
+  only over a dry clip: the wet render already applies them, and Live would
+  apply them a second time. Volume is the track gain times lane 0's level,
+  as the renderer applies it, and is thinned (`thinVolumeAutomation`); mute
+  steps are kept as logged.
 - Effects reach Live only as audio, in the wet stem. The set carries no
   devices; `fx-chains.txt` records each lane's chain as text.
 - The tempo comes from the manifest; `kFallbackTempoBpm` (120) is used when
   it has none. A missing or corrupt manifest makes `read` and `render` return
-  null instead of throwing.
-- The `.als` XML is built from public knowledge of the Live set format and
-  has not been checked against sets saved by Live 12. `test/corpus/README.md`
-  tracks that work.
+  null instead of throwing. A capture with no recorded channel gets no set,
+  since Live cannot open a set without tracks.
+- The set opens in the Arrangement, zoomed to show the whole capture.
 
 ## Testing
 
 ```sh
 dart test
+```
+
+After replacing `test/corpus/automation.als` with a set saved by a newer
+Live, regenerate the template:
+
+```sh
+dart run tool/generate_live_set_template.dart
 ```
 
 ## License

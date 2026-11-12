@@ -1471,7 +1471,8 @@
     "blobless",
     "SIGUSR",
     "scanout",
-    "msaa"
+    "msaa",
+    "unwarped"
   ],
   "overrides": [
     {
