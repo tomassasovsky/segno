@@ -72,7 +72,7 @@ cp "$work/app/lib/libapp.so" "$out/lib/"
 # The code asset the hook built, installed by the target with the name the
 # manifest gives it.
 cp "$work/app/native_assets/linux/libsegno_engine.so" "$out/lib/"
-grep -q '"package:segno_engine/segno_engine":\["absolute","libsegno_engine.so"\]' \
+grep -Eq '"package:segno_engine/segno_engine"[[:space:]]*:[[:space:]]*\[[[:space:]]*"absolute"[[:space:]]*,[[:space:]]*"libsegno_engine.so"[[:space:]]*\]' \
   "$out/data/flutter_assets/NativeAssetsManifest.json" || {
   echo "segno-build: NativeAssetsManifest.json does not map segno_engine to libsegno_engine.so:" >&2
   cat "$out/data/flutter_assets/NativeAssetsManifest.json" >&2

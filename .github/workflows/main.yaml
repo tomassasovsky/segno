@@ -80,8 +80,8 @@ jobs:
       # skipping them. The glob is spliced into a plain bash step by the
       # reusable workflow, so it self-expands as packages are added/removed —
       # no need to edit this list when packages/* changes.
-      format_directories: "lib test packages/*/lib packages/*/test"
-      analyze_directories: "lib test packages/*/lib packages/*/test"
+      format_directories: "lib test packages/*/lib packages/*/test packages/*/hook"
+      analyze_directories: "lib test packages/*/lib packages/*/test packages/*/hook"
       # Keep the 90% gate for real logic, but exclude platform / entrypoint glue
       # that can't be meaningfully unit-tested: the Track display's app and its
       # link service, and the app bootstrap/entrypoint. Coverage on the

@@ -7,7 +7,8 @@
 # midi/ (the MIDI input/output seam), and
 # miniaudio/ (the vendored backend). Every subdirectory with headers is on the
 # include path below, so sources keep using flat `#include "x.h"`.
-cmake_minimum_required(VERSION 3.15)
+# 3.16: enable_language(OBJCXX) for the macOS plugin editor window.
+cmake_minimum_required(VERSION 3.16)
 # C for the engine; C++ for the one Signalsmith Stretch shim TU (stretch/
 # le_stretch.cpp, #1179) and, when SEGNO_ENABLE_PLUGINS is on, the plugin host.
 project(segno_engine_core VERSION 0.1.0 LANGUAGES C CXX)

@@ -19,14 +19,16 @@ void main() {
       expect(await repository.settleMixSettings(), EngineResult.ok);
     }
 
+    // Checks the block the last pump wrote, then poisons the buffer with NaN,
+    // so a check with no pump in between fails rather than reading old audio.
     void expectStereo({required double left, required double right}) {
-      expect(output, hasLength(1024));
       expect([
         for (var frame = 0; frame < 512; frame++) output[frame * 2],
       ], everyElement(closeTo(left, 1e-6)));
       expect([
         for (var frame = 0; frame < 512; frame++) output[frame * 2 + 1],
       ], everyElement(closeTo(right, 1e-6)));
+      output.fillRange(0, output.length, double.nan);
     }
 
     Future<void> seedPlayingLoop() async {
@@ -50,7 +52,7 @@ void main() {
     }
 
     setUp(() async {
-      output.fillRange(0, output.length, 0);
+      output.fillRange(0, output.length, double.nan);
       engine = PumpedNativeEngine();
       repository = LooperRepository(
         engine: engine,
