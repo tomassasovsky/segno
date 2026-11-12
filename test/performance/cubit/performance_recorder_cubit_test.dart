@@ -1251,7 +1251,7 @@ void main() {
       // whatever the live transport reads now is irrelevant — the
       // manifest is the only tempo source (#281).
       engine.nextSnapshot = snapshotWithTempo(150);
-      await writeDawProject(dir);
+      await writeDawProject(dir, write: performance.writeTakeFile);
 
       expect(tempoOf(dir), 96);
     });

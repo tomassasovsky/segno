@@ -60,10 +60,12 @@ int le_wav_seal(le_wav_writer* w, int sync);
 void le_wav_abandon(le_wav_writer* w);
 
 /* Replaces `final_path` with `part_path` in one rename, then syncs the
- * containing directory (le_fs_sync_dir, #1198 Part 1) so the new entry is
- * durable. Returns 1 when both succeeded, 2 when the file is published but
- * the directory sync failed (the file is in place; its entry may not survive
- * a power cut), 0 when the rename failed (nothing was published). */
+ * published file and its directory (le_fs_sync_file_errno, le_fs_sync_dir)
+ * so the new entry is durable with the file's size: on vfat a rename writes
+ * the entry with size 0, and only the file's own sync fills it in (#1198
+ * Part 1, #1801). Returns 1 when all succeeded, 2 when the file is published
+ * but a sync failed (the file is in place; its entry may not survive a power
+ * cut or a pulled drive), 0 when the rename failed (nothing was published). */
 int le_wav_publish(const char* part_path, const char* final_path);
 
 /* le_wav_patch_sizes, the repair of a part that was never sealed, is

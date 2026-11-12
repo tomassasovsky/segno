@@ -1,6 +1,6 @@
 /*
- * engine_digest.c — SHA-256, file-range digests, directory sync (#1198) and a
- * rename that never replaces (#1177).
+ * engine_digest.c — SHA-256, file-range digests, directory and file sync
+ * (#1198, #1801) and a rename that never replaces (#1177).
  *
  * THREAD OWNERSHIP: none. Nothing here touches an engine: every function is
  * a question about bytes or about a path, so the Dart side may call the
@@ -26,9 +26,11 @@
 #include "engine_digest.h"
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "engine_internal.h" /* le_fs_trace_syncs_for_test */
 #include "segno_engine_api.h"
 
 #if defined(_WIN32)
@@ -324,6 +326,38 @@ int32_t le_fs_rename_noreplace(const char* from, const char* to,
 #endif
 }
 
+/* Test seam: the paths synced while a trace runs, in the order they were
+ * synced. Off by default, so a sync costs one relaxed load more. */
+#define LE_FS_TRACE_SLOTS 64
+#define LE_FS_TRACE_PATH 512
+static _Atomic int g_fs_trace_on = 0;
+static _Atomic int g_fs_trace_count = 0;
+static char g_fs_trace[LE_FS_TRACE_SLOTS][LE_FS_TRACE_PATH];
+
+static void le_fs_trace(const char* path) {
+  if (!atomic_load_explicit(&g_fs_trace_on, memory_order_relaxed)) return;
+  const int slot =
+      atomic_fetch_add_explicit(&g_fs_trace_count, 1, memory_order_relaxed);
+  if (slot < LE_FS_TRACE_SLOTS) {
+    snprintf(g_fs_trace[slot], LE_FS_TRACE_PATH, "%s", path);
+  }
+}
+
+void le_fs_trace_syncs_for_test(int enabled) {
+  atomic_store_explicit(&g_fs_trace_on, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_fs_trace_count, 0, memory_order_relaxed);
+  atomic_store_explicit(&g_fs_trace_on, enabled ? 1 : 0, memory_order_relaxed);
+}
+
+int le_fs_synced_for_test(const char* path) {
+  int n = atomic_load_explicit(&g_fs_trace_count, memory_order_relaxed);
+  if (n > LE_FS_TRACE_SLOTS) n = LE_FS_TRACE_SLOTS;
+  for (int i = 0; i < n; ++i) {
+    if (strcmp(g_fs_trace[i], path) == 0) return i + 1;
+  }
+  return 0;
+}
+
 int32_t le_fs_sync_dir(const char* path) {
   return le_fs_sync_dir_errno(path, NULL);
 }
@@ -347,10 +381,12 @@ int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno) {
     }
     return LE_ERR_DEVICE;
   }
+  le_fs_trace(path);
   return LE_OK;
 #else
   /* A rename is durable only once the directory that holds the new entry is
-   * synced; fsync on the file itself does not cover its name. */
+   * synced; fsync on the file itself does not cover its name. On vfat the
+   * renamed file needs its own sync too (le_fs_sync_file_errno). */
 #if defined(O_DIRECTORY)
   const int flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC;
 #else
@@ -367,7 +403,63 @@ int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno) {
   } while (rc != 0 && errno == EINTR);
   const int sync_errno = errno;
   close(fd);
-  if (rc == 0) return LE_OK;
+  if (rc == 0) {
+    le_fs_trace(path);
+    return LE_OK;
+  }
+  if (out_errno != NULL) *out_errno = sync_errno;
+  return LE_ERR_DEVICE;
+#endif
+}
+
+int32_t le_fs_sync_file_errno(const char* path, int32_t* out_errno) {
+  if (out_errno != NULL) *out_errno = 0;
+  if (path == NULL || path[0] == '\0') return LE_ERR_INVALID;
+#if defined(_WIN32)
+  WCHAR wide[1024];
+  if (!le_digest_widen(path, wide, (int)(sizeof(wide) / sizeof(wide[0])))) {
+    return LE_ERR_INVALID;
+  }
+  const HANDLE h = CreateFileW(
+      wide, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) {
+    if (out_errno != NULL) {
+      const DWORD e = GetLastError();
+      *out_errno = e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND
+                       ? ENOENT
+                       : EIO;
+    }
+    return LE_ERR_DEVICE;
+  }
+  const BOOL flushed = FlushFileBuffers(h);
+  CloseHandle(h);
+  if (flushed) {
+    le_fs_trace(path);
+    return LE_OK;
+  }
+  if (out_errno != NULL) *out_errno = EIO;
+  return LE_ERR_DEVICE;
+#else
+  /* On vfat a rename leaves the new entry with size 0 and first cluster 0;
+   * the file's inode fills them in, and fsync of the file writes it at the
+   * entry's new place (fat_file_fsync, then __fat_write_inode). A sync of
+   * the directory does not write it (#1801). */
+  const int fd = open(path, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    if (out_errno != NULL) *out_errno = errno;
+    return LE_ERR_DEVICE;
+  }
+  int rc;
+  do {
+    rc = fsync(fd);
+  } while (rc != 0 && errno == EINTR);
+  const int sync_errno = errno;
+  close(fd);
+  if (rc == 0) {
+    le_fs_trace(path);
+    return LE_OK;
+  }
   if (out_errno != NULL) *out_errno = sync_errno;
   return LE_ERR_DEVICE;
 #endif

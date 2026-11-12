@@ -44,10 +44,13 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
     required this._sessions,
     required StorageRepository storage,
     required this._guards,
-    this._dawProject = writeDawProject,
+    DawProjectWriter? dawProject,
     this._previewPoll = const Duration(milliseconds: 100),
   }) : _storage = storage,
        _exporter = AudioExporter(storage),
+       _dawProject =
+           dawProject ??
+           ((dir) => writeDawProject(dir, write: _performance.writeTakeFile)),
        super(const LibraryAudioState());
 
   final PerformanceRepository _performance;

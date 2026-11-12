@@ -865,7 +865,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // [writeDawProject], whose throwing is how the Library reports it.
     List<DawTrack> tracks;
     try {
-      tracks = await writeDawProject(dir);
+      tracks = await writeDawProject(dir, write: _performance.writeTakeFile);
     } on Object {
       // Any failure, not only a full disk: a malformed manifest throws a
       // cast error, and the take must still complete (#1639).

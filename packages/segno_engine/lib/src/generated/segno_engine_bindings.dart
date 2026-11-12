@@ -3399,9 +3399,9 @@ external int le_fs_rename_noreplace(
 
 /// Makes the directory entries of `path` durable: open + fsync on POSIX, which
 /// is what makes a rename into that directory survive a power cut (fsync on
-/// the renamed file does not cover its name). Dart cannot open a directory, so
-/// the atomic publication of a bundle (tmp, fsync, rename, then this) needs it
-/// here. On Windows there is no directory handle to flush; it reports only
+/// the renamed file does not cover its name; on vfat the renamed file needs
+/// le_fs_sync_file_errno as well). Dart cannot open a directory, so the atomic
+/// publication of a bundle (tmp, fsync, rename, then this) needs it here. On Windows there is no directory handle to flush; it reports only
 /// whether the directory exists. Returns LE_OK; LE_ERR_INVALID for a NULL or
 /// empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
 /// fails.
@@ -3415,6 +3415,19 @@ external int le_fs_sync_dir(ffi.Pointer<ffi.Char> path);
 /// LE_OK.
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)>()
 external int le_fs_sync_dir_errno(
+  ffi.Pointer<ffi.Char> path,
+  ffi.Pointer<ffi.Int32> out_errno,
+);
+
+/// Makes the file at `path` durable: open + fsync on POSIX, FlushFileBuffers on
+/// Windows. What a rename on vfat needs besides le_fs_sync_dir: the rename
+/// writes the new entry with size 0 and first cluster 0, and only the file's
+/// inode, which this writes, fills them in (#1801). Returns LE_OK;
+/// LE_ERR_INVALID for a NULL or empty `path`; LE_ERR_DEVICE when the file
+/// cannot be opened or the sync fails, with *out_errno (when not NULL) the OS
+/// error, 0 on LE_OK.
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Int32>)>()
+external int le_fs_sync_file_errno(
   ffi.Pointer<ffi.Char> path,
   ffi.Pointer<ffi.Int32> out_errno,
 );

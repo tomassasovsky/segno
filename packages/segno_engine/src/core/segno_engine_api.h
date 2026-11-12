@@ -4281,9 +4281,9 @@ LE_EXPORT int32_t le_digest_end(void* state, uint8_t* out);
 
 /* Makes the directory entries of `path` durable: open + fsync on POSIX, which
  * is what makes a rename into that directory survive a power cut (fsync on
- * the renamed file does not cover its name). Dart cannot open a directory, so
- * the atomic publication of a bundle (tmp, fsync, rename, then this) needs it
- * here. On Windows there is no directory handle to flush; it reports only
+ * the renamed file does not cover its name; on vfat the renamed file needs
+ * le_fs_sync_file_errno as well). Dart cannot open a directory, so the atomic
+ * publication of a bundle (tmp, fsync, rename, then this) needs it here. On Windows there is no directory handle to flush; it reports only
  * whether the directory exists. Returns LE_OK; LE_ERR_INVALID for a NULL or
  * empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
  * fails. */
@@ -4295,6 +4295,15 @@ LE_EXPORT int32_t le_fs_sync_dir(const char* path);
  * can tell a pulled drive from a failing one (#1177). *out_errno is 0 on
  * LE_OK. */
 LE_EXPORT int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno);
+
+/* Makes the file at `path` durable: open + fsync on POSIX, FlushFileBuffers on
+ * Windows. What a rename on vfat needs besides le_fs_sync_dir: the rename
+ * writes the new entry with size 0 and first cluster 0, and only the file's
+ * inode, which this writes, fills them in (#1801). Returns LE_OK;
+ * LE_ERR_INVALID for a NULL or empty `path`; LE_ERR_DEVICE when the file
+ * cannot be opened or the sync fails, with *out_errno (when not NULL) the OS
+ * error, 0 on LE_OK. */
+LE_EXPORT int32_t le_fs_sync_file_errno(const char* path, int32_t* out_errno);
 
 /* Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
  * atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)

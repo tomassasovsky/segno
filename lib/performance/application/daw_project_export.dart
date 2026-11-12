@@ -18,33 +18,34 @@ import 'package:daw_export/daw_export.dart';
 ///
 /// The tempo comes from the manifest (#281): the capture's own disarm-time
 /// tempo (arm-time for a crash salvage), or 120 BPM for a bundle with none.
-Future<List<DawTrack>> writeDawProject(String dir) async {
+///
+/// Both files go through [write], the repository's durable replacement
+/// (`PerformanceRepository.writeTakeFile`): a write cut short leaves the
+/// previous file or none, and a take on a USB stick keeps the whole file
+/// when the stick is pulled once this returns (#1801).
+Future<List<DawTrack>> writeDawProject(
+  String dir, {
+  required TakeFileWriter write,
+}) async {
   final project = DawManifestReader.read(dir);
   // Live cannot open a set with no tracks, so a take with nothing recorded
   // gets no project, and one an earlier version wrote for it is removed.
   if (project != null && project.tracks.isNotEmpty) {
-    await _replace('$dir/project.als', buildAls(project));
+    await write(dir, 'project.als', buildAls(project));
   } else if (project != null) {
     final stale = File('$dir/project.als');
     if (stale.existsSync()) await stale.delete();
   }
   final chains = FxChainsWriter.render(dir);
   if (chains != null) {
-    await _replace('$dir/fx-chains.txt', utf8.encode(chains));
+    await write(dir, 'fx-chains.txt', utf8.encode(chains));
   }
   return project?.tracks ?? const [];
 }
 
-/// Writes [bytes] to [path] through a flushed temp file and a rename, so a
-/// write cut short (a full disk) leaves the previous file or none, never a
-/// truncated one that would read as a finished project.
-Future<void> _replace(String path, List<int> bytes) async {
-  final temp = File('$path.tmp');
-  try {
-    await temp.writeAsBytes(bytes, flush: true);
-    await temp.rename(path);
-  } on Object {
-    if (temp.existsSync()) temp.deleteSync();
-    rethrow;
-  }
-}
+/// Writes [bytes] as the file [name] of the take at [dir], durably.
+typedef TakeFileWriter = Future<void> Function(
+  String dir,
+  String name,
+  List<int> bytes,
+);
