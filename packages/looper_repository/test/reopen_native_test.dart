@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -15,14 +14,7 @@ import 'package:segno_engine/segno_engine.dart'
 /// device is lost, reappears in enumeration, and the repository reopens it
 /// through `le_engine_reopen_configured` with the recorded loops intact.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
-
   const pinnedId = 'out-1';
   const pinnedDevice = le.AudioDevice(
     id: pinnedId,
@@ -280,5 +272,5 @@ void main() {
       expect(repository.state.status.reopen, isNull);
       expect(engine.snapshot().tracks[0].state, TrackState.playing);
     });
-  }, skip: skip);
+  });
 }

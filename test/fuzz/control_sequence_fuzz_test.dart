@@ -55,15 +55,8 @@ import '../helpers/test_mix_settings.dart';
 /// On failure: the seed and a shrunk, replayable action list are printed —
 /// paste the sequence into the corpus below as a permanent regression test.
 ///
-/// Self-skips when SEGNO_ENGINE_LIB is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 ///   flutter test --tags fuzz
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   group('shared Count-in through real pedal controls', () {
     void prepare(_Harness h, FakeAsync fa) {
       expect(h.repo.setTempo(120), EngineResult.ok);
@@ -99,7 +92,7 @@ void main() {
         expect(h.looper.tracks[6].state, TrackState.empty);
         expect(h.looper.tracks[6].undoDepth, 0);
       });
-    }, skip: skip);
+    });
 
     for (final mode in [
       InteractionMode.fx,
@@ -138,7 +131,6 @@ void main() {
             expect(h.looper.transport.primaryTrack, -1);
           });
         },
-        skip: skip,
       );
     }
 
@@ -163,7 +155,6 @@ void main() {
           expect(h.looper.tracks[1].undoDepth, 0);
         });
       },
-      skip: skip,
     );
   });
 
@@ -224,7 +215,7 @@ void main() {
         expect(h.looper.tracks[2].undoDepth, third.undoDepth);
         expect(h.looper.tracks[2].hasContent, isTrue);
       });
-    }, skip: skip);
+    });
 
     test('in Record, the Undo pedal brings it back after the selection '
         'moved on', () {
@@ -244,7 +235,7 @@ void main() {
         expect(h.looper.tracks[2].undoDepth, third.undoDepth);
         expect(h.looper.tracks[2].hasContent, isTrue);
       });
-    }, skip: skip);
+    });
 
     test('an overdub on the selected track since the clear is what Undo '
         'takes back', () {
@@ -275,7 +266,7 @@ void main() {
         expect(h.looper.tracks[1].hasContent, isTrue);
         expect(h.looper.tracks[2].undoDepth, before);
       });
-    }, skip: skip);
+    });
 
     test('a Peel on the selected track since the clear is what Undo takes '
         'back', () {
@@ -304,7 +295,7 @@ void main() {
         expect(h.looper.tracks[2].peelDepth, peelable);
         expect(h.looper.tracks[1].state, TrackState.empty);
       });
-    }, skip: skip);
+    });
 
     test('a later clear is what Undo takes back first', () {
       _inHarness((h, fa) {
@@ -324,7 +315,7 @@ void main() {
         expect(h.looper.tracks[1].state, TrackState.empty);
         expect(h.looper.tracks[1].clearRestore, isTrue);
       });
-    }, skip: skip);
+    });
   });
 
   group('corpus (found-bug regressions, replayed every run)', () {
@@ -355,7 +346,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.frame.trackLeds[0], PedalTrackLed.green);
       });
-    }, skip: skip);
+    });
 
     test('clear-all also wipes undone-to-empty (redo-able) tracks '
         '(2026-07-04)', () {
@@ -375,7 +366,7 @@ void main() {
         expect(h.looper.tracks[0].canRedo, isFalse); // resurrect path wiped
         expect(h.looper.transport.masterLengthFrames, 0);
       });
-    }, skip: skip);
+    });
 
     test('redo-from-empty comes back unmuted and audible (2026-07-04)', () {
       _inHarness((h, fa) {
@@ -396,7 +387,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.looper.tracks[0].muted, isFalse); // never silent-playing
       });
-    }, skip: skip);
+    });
 
     test('a fresh record after undo-to-empty redefines the ghost grid '
         '(2026-07-04)', () {
@@ -415,7 +406,7 @@ void main() {
         // The new loop defines its own length instead of rounding to 256.
         expect(h.looper.transport.masterLengthFrames, 400);
       });
-    }, skip: skip);
+    });
 
     test('set then clear a lane chain keeps cache == engine (F6)', () {
       _inHarness((h, fa) {
@@ -432,7 +423,7 @@ void main() {
         expect(h.fxFingerprintViolation(), isNull);
         expect(h.repo.laneChainFingerprint(0, 0), FxFingerprint.offset);
       });
-    }, skip: skip);
+    });
 
     test('a staged lane chain survives a dry-monitor record with cache == '
         'engine (F4/F6)', () {
@@ -451,7 +442,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, hasLength(1));
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
 
     test('recording through a monitor chain copies it onto the lane, cache == '
         'engine (F3/F6)', () {
@@ -470,7 +461,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
 
     test('clearing a take drops its FX chain so a later dry record does not '
         'inherit it, cache == engine (leftover-from-previous-config)', () {
@@ -500,7 +491,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, isEmpty);
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
 
     test('monitor FX set then record-from-empty in the SAME turn (no drain) '
         'still lands on the take, cache == engine (snapshot race)', () {
@@ -520,7 +511,7 @@ void main() {
         expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
         expect(h.fxFingerprintViolation(), isNull);
       });
-    }, skip: skip);
+    });
   });
 
   group('mute/unmute corpus (auto-unmute + unpark rules, 2026-07-16)', () {
@@ -545,7 +536,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
         expect(h.looper.tracks[0].muted, isFalse);
       });
-    }, skip: skip);
+    });
 
     test('recording anything while parked unparks the entire loop '
         '(unpark-on-start)', () {
@@ -574,7 +565,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
         expect(h.looper.tracks[1].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('playing anything while parked unparks the loop with mutes '
         'preserved', () {
@@ -604,7 +595,7 @@ void main() {
         expect(h.looper.tracks[1].muted, isTrue);
         expect(h.looper.tracks[0].muted, isFalse);
       });
-    }, skip: skip);
+    });
 
     test('a deselected parked-resume member comes back muted, matching its '
         'dark preview (parked-preview-matches-resume)', () {
@@ -639,7 +630,7 @@ void main() {
         expect(h.frame.trackLeds[0], PedalTrackLed.green);
         expect(h.frame.trackLeds[1], PedalTrackLed.off);
       });
-    }, skip: skip);
+    });
 
     test('mute during an overdub punches out, then lands '
         '(capturing-never-muted)', () {
@@ -660,7 +651,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing); // punched out
         expect(h.looper.tracks[0].muted, isTrue); // the mute landed
       });
-    }, skip: skip);
+    });
 
     test('mute during a defining recording rides the deferred seam-crossfade '
         'finalize and lands with it', () {
@@ -683,7 +674,7 @@ void main() {
         expect(h.looper.tracks[0].muted, isTrue);
         expect(h.looper.transport.masterLengthFrames, 1200);
       });
-    }, skip: skip);
+    });
 
     test('redo-from-empty while parked unparks the rest of the loop', () {
       _inHarness((h, fa) {
@@ -717,7 +708,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.looper.tracks[1].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('a live capture survives the Rec->Mute mode switch and keeps '
         'recording until Rec/Play finalizes it back in Rec mode '
@@ -750,7 +741,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.looper.transport.masterLengthFrames, 200);
       });
-    }, skip: skip);
+    });
 
     test('an overdub survives the Rec->Mute mode switch (2026-07-16)', () {
       _inHarness((h, fa) {
@@ -772,7 +763,7 @@ void main() {
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('mute punch-out clears a pending quantized arm — no spurious '
         'overdub at the next loop top', () {
@@ -803,7 +794,7 @@ void main() {
         expect(h.looper.tracks[1].state, TrackState.playing);
         expect(h.looper.tracks[1].muted, isTrue); // the mute stuck
       });
-    }, skip: skip);
+    });
 
     test('mute-mode Rec/Play resume leaves a live capture alone (does not '
         'punch it out as a deselected member)', () {
@@ -839,7 +830,7 @@ void main() {
         expect(h.looper.tracks[2].state, TrackState.recording);
         expect(h.looper.tracks[2].muted, isFalse);
       });
-    }, skip: skip);
+    });
 
     test('FX mode: track stomps carry chain state into the trackLeds, and '
         'Stop is inert (part 5b, #1229)', () {
@@ -889,7 +880,7 @@ void main() {
         // ...and the loop is untouched: Stop never stops the transport here.
         expect(h.looper.tracks[0].state, TrackState.playing);
       });
-    }, skip: skip);
+    });
 
     test('FX mode: Clear and Rec/Play are inert — a stray stomp cannot erase '
         'the set (part 5b)', () {
@@ -907,7 +898,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.playing); // still there
         expect(h.control.state.mode, InteractionMode.fx); // no home-and-reset
       });
-    }, skip: skip);
+    });
 
     test('a quantized punch-in armed on a muted track auto-unmutes when the '
         'boundary fires it', () {
@@ -933,7 +924,7 @@ void main() {
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
         expect(h.looper.tracks[0].muted, isFalse);
       });
-    }, skip: skip);
+    });
   });
 
   test('seeded random sequences hold every invariant', () {
@@ -955,7 +946,7 @@ void main() {
         '[\n  $repro\n]',
       );
     }
-  }, skip: skip);
+  });
 }
 
 // ---------------------------------------------------------------------------

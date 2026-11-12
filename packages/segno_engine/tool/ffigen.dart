@@ -66,13 +66,10 @@ Future<void> main() async {
       dart: DartOutput(
         path: root.resolve('lib/src/generated/segno_engine_bindings.dart'),
       ),
-      style: const DynamicLibraryBindings(
-        wrapperName: 'SegnoEngineBindings',
-        wrapperDocComment:
-            'Generated low-level FFI bindings for the segno_engine native '
-            'audio engine.\n'
-            'Do not edit by hand — see lib/src/audio_engine.dart for the '
-            'typed Dart API.',
+      // `@Native` externals, resolved through the code asset hook/build.dart
+      // builds: no library to open, in any isolate.
+      style: const NativeExternalBindings(
+        assetId: 'package:segno_engine/segno_engine',
       ),
       commentType: const CommentType(CommentStyle.any, CommentLength.full),
       preamble: '''

@@ -284,9 +284,6 @@ void main() {
         r.close();
       }
     }),
-    skip: Platform.environment['SEGNO_ENGINE_LIB'] == null
-        ? 'Requires native pump library'
-        : null,
   );
 
   check('Click MIDI admission stays pending before real callback', (r) {

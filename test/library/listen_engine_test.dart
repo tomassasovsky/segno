@@ -20,14 +20,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// a saved session's `mixdown.wav` decodes through the engine's decoder and
 /// plays on the audition voice, and its live layer reads back as peaks.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   late PumpedNativeEngine engine;
   late LooperRepository looper;
   late SessionRepository sessions;
@@ -156,5 +149,5 @@ void main() {
     );
     expect(peaks, hasLength(16));
     expect(peaks!.reduce((a, b) => a > b ? a : b), greaterThan(0.4));
-  }, skip: skip);
+  });
 }

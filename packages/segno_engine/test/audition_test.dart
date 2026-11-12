@@ -13,14 +13,7 @@ import 'package:segno_engine/segno_engine.dart';
 /// the file is decoded by the engine's decoder off the test isolate, then
 /// started, reported, stopped and retried once on `notReady`.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   late Directory dir;
   late PumpedNativeEngine engine;
 
@@ -92,7 +85,7 @@ void main() {
     expect(state.playing, isFalse);
     expect(state.outputs, 0);
     expect(state.pairs, isEmpty);
-  }, skip: skip);
+  });
 
   test('plays on every enabled output pair, a disabled one stays silent '
       '(#1305)', () async {
@@ -123,7 +116,7 @@ void main() {
     expect(peaks[3], 0);
     expect(peaks[4], peaks[0]);
     expect(peaks[5], peaks[0]);
-  }, skip: skip);
+  });
 
   test('refuses before decoding when no output is enabled', () async {
     start();
@@ -141,7 +134,7 @@ void main() {
 
     expect(started.result, EngineResult.invalid);
     expect(decoded, 0);
-  }, skip: skip);
+  });
 
   test('the decode runs off the calling isolate', () async {
     start();
@@ -155,14 +148,14 @@ void main() {
 
     expect(started.result, EngineResult.ok);
     expect(offloaded, 1);
-  }, skip: skip);
+  });
 
   test('a preview ends after its last frame', () async {
     start();
     await engine.auditionStartFile(wav('short.wav', 100));
     engine.pump(frames: 128);
     expect(engine.auditionState().frames, 0);
-  }, skip: skip);
+  });
 
   test('another rate is converted to the engine rate', () async {
     start(sampleRate: 16000);
@@ -172,7 +165,7 @@ void main() {
     expect(started.frames, 8000);
     // The frames count at the engine's rate, which the start reports.
     expect(started.rate, 16000);
-  }, skip: skip);
+  });
 
   test('a start its caller withdrew while it decoded never reaches the '
       'voice', () async {
@@ -191,7 +184,7 @@ void main() {
     // The preview that was playing is still the one playing.
     expect(engine.auditionState().frames, 4000);
     expect(engine.auditionState().position, 128);
-  }, skip: skip);
+  });
 
   test(
     'a start withdrawn while it waits for its retry is dropped too',
@@ -215,7 +208,6 @@ void main() {
       engine.pump(frames: 64);
       expect(engine.auditionState().frames, 4000);
     },
-    skip: skip,
   );
 
   test(
@@ -229,7 +221,6 @@ void main() {
       expect(started.truncated, isTrue);
       expect(started.frames, kAuditionMaxSeconds * 8000);
     },
-    skip: skip,
   );
 
   test('reads a file as peaks at its own rate, or nothing', () async {
@@ -244,14 +235,14 @@ void main() {
       await engine.filePeaks('${dir.path}/absent.wav', buckets: 8),
       isNull,
     );
-  }, skip: skip);
+  });
 
   test('an unreadable file is refused', () async {
     start();
     final started = await engine.auditionStartFile('${dir.path}/absent.wav');
     expect(started.result, EngineResult.invalid);
     expect(engine.auditionState().playing, isFalse);
-  }, skip: skip);
+  });
 
   test('a busy voice is retried once, a block later', () async {
     start();
@@ -270,7 +261,7 @@ void main() {
     expect(third.result, EngineResult.ok);
     engine.pump(frames: 64);
     expect(engine.auditionState().frames, 2000);
-  }, skip: skip);
+  });
 
   test('a voice still busy after the retry is refused', () async {
     start();
@@ -282,5 +273,5 @@ void main() {
     expect(third.result, EngineResult.notReady);
     engine.pump(frames: 64);
     expect(engine.auditionState().frames, 4000);
-  }, skip: skip);
+  });
 }

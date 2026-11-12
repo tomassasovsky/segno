@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -30,11 +29,6 @@ class _ImageCountingEngine extends PumpedNativeEngine {
 }
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'SEGNO_ENGINE_LIB is required for actual callback ordering'
-      : null;
-
   for (final record in [false, true]) {
     for (final expired in [false, true]) {
       for (final interleaved in [false, true]) {
@@ -143,7 +137,7 @@ void main() {
             await repository.dispose();
             await ticker.close();
           }
-        }, skip: skip);
+        });
       }
     }
   }

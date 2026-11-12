@@ -1,8 +1,6 @@
 @Tags(['fuzz'])
 library;
 
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 // Only the native pump engine + the fingerprint constant come from the engine
@@ -16,14 +14,7 @@ import 'package:segno_engine/segno_engine.dart'
 /// the guarantee the sequence fuzzer's `cache == engine` invariant relies on.
 /// Drives the REAL native engine through the device-free pump.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   late PumpedNativeEngine engine;
   late LooperRepository repo;
 
@@ -164,7 +155,7 @@ void main() {
         FxFingerprint.offset,
       );
     });
-  }, skip: skip);
+  });
 
   group('monitor fingerprint agreement', () {
     test('a monitor chain agrees between cache and engine', () {
@@ -201,5 +192,5 @@ void main() {
         engine.monitorFxFingerprint(input: 0),
       );
     });
-  }, skip: skip);
+  });
 }

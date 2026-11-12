@@ -26,14 +26,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// engine's published chains match the repository cache (fingerprint-verified).
 /// This is acceptance criterion #1 of the FX-state-robustness plan.
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   late PumpedNativeEngine engine;
   late LooperRepository looper;
   late SessionRepository session;
@@ -203,7 +196,7 @@ void main() {
       looper.monitorChainFingerprint(0),
       engine.monitorFxFingerprint(input: 0),
     );
-  }, skip: skip);
+  });
 
   test('loading a v1-style session (no chains) explicitly clears leftovers, '
       'not resurrects them', () async {
@@ -228,5 +221,5 @@ void main() {
       engine.laneFxFingerprint(channel: 0, lane: 0),
     );
     expect(engine.laneFxFingerprint(channel: 0, lane: 0), FxFingerprint.offset);
-  }, skip: skip);
+  });
 }

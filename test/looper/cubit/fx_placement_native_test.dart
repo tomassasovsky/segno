@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -21,11 +20,6 @@ class _Persistence extends Mock implements FxChainPersistence;
 
 /// The Effects page's Pre/Post switch on the real engine (#1741).
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run '
-            'packages/segno_engine/tool/build_test_lib.sh'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -38,7 +32,6 @@ void main() {
   });
 
   setUp(() {
-    if (skip != null) return;
     engine = PumpedNativeEngine();
     ticks = StreamController<void>.broadcast(sync: true);
     repository = LooperRepository(engine: engine, ticker: ticks.stream);
@@ -63,7 +56,6 @@ void main() {
         .thenAnswer((_) async {});
   });
   tearDown(() async {
-    if (skip != null) return;
     driver?.cancel();
     await repository.dispose();
     await ticks.close();
@@ -215,7 +207,7 @@ void main() {
       }
       await playFor(500);
       expect(tailAfterStop(4800), greaterThan(1e-3));
-    }, skip: skip);
+    });
   }
 
   // The owner's sequence (#1741): the input's reverb and the take's copy,
@@ -233,6 +225,6 @@ void main() {
       expect(repository.laneEffects(0, 0).single.placement, FxPlacement.post);
       expect(engine.snapshot().tracks[0].lanes[0].source, LaneSource.clean);
       expect(tailAfterStop(4800), greaterThan(1e-3));
-    }, skip: skip);
+    });
   }
 }

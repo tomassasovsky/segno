@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -14,10 +13,6 @@ import 'package:segno_engine/segno_engine.dart'
 /// at Post it runs live on the take's clean signal and rings out past Stop;
 /// back at Pre the take plays what was heard again, and Stop cuts it.
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -142,7 +137,6 @@ void main() {
       expect(source(), LaneSource.heard);
       expect(tailAfterStop(), 0);
     },
-    skip: skip,
   );
 
   for (final (placement, outcome) in [
@@ -182,6 +176,6 @@ void main() {
         expect(lane.source, LaneSource.heard);
         expect(tailAfterStop(), 0);
       }
-    }, skip: skip);
+    });
   }
 }

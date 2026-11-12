@@ -21,12 +21,12 @@ Two kinds of rules run per step:
 ## Run it
 
 ```sh
-export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 flutter test --tags fuzz
 ```
 
-Without `SEGNO_ENGINE_LIB` the suite self-skips, so plain `flutter test`
-stays green everywhere. CI runs it as the `fuzz` job (.github/workflows/main.yaml).
+The engine library is built by `segno_engine`'s build hook, so a plain
+`flutter test` runs the suite too. CI runs it in the `build` job, with the
+rest of the app's tests (.github/workflows/main.yaml).
 
 Scale the search:
 

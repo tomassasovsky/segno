@@ -184,16 +184,21 @@ export LD_BIND_NOW=1
 # default stays 2; this override is appliance-only.
 export SEGNO_ALSA_PERIODS=8
 
-# The engine library is opened by name, and ivi-homescreen puts nothing of
-# /opt/segno on the loader's path, so name the file outright: both of its
-# loaders honour this (segno_engine's native_audio_engine.dart and
-# midi_client's native_library.dart).
+# The engine library is a code asset: the bundle's NativeAssetsManifest.json
+# maps segno_engine's `@Native` bindings to the bare name libsegno_engine.so,
+# which the Flutter engine dlopens through the loader's path, as Flutter's own
+# Linux runner does with its RUNPATH of $ORIGIN/lib. ivi-homescreen is
+# /usr/bin/segno, so its $ORIGIN/lib is /usr/bin/lib, which does not exist:
+# the bundle's lib directory goes on the path here instead. Nothing
+# else in /opt/segno/lib (only libapp.so) shares a name with a system library,
+# so the helpers the app starts, which inherit this, load what they did.
 #
-# Both this and the configuration can be overridden from the environment, and
-# only deploy/rpi/profile-on-device.sh does: it runs a profile bundle from
+# The environment can extend the loader path and replace the configuration,
+# and only deploy/rpi/profile-on-device.sh does: it runs a profile bundle from
 # /data/profile through this same script, so the profile measures the
-# environment above rather than a copy of it.
-export SEGNO_ENGINE_LIB="${SEGNO_ENGINE_LIB:-/opt/segno/lib/libsegno_engine.so}"
+# environment above rather than a copy of it. The inherited path (the profile
+# bundle's lib/) comes first, so its library is the one found.
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}/opt/segno/lib"
 # exec, never a child: segno.service is Type=notify with NotifyAccess=main, so
 # the app has to BE the unit's main pid, and it needs NOTIFY_SOCKET from this
 # environment, which nothing here clears (#976, run_mark_good_tests.sh).

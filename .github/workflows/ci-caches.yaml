@@ -15,7 +15,9 @@ name: ci-caches
 # The keys must be the ones the PR jobs compute: subosito/flutter-action's
 # defaults (the packages, design and fuzz jobs), the Very Good workflows' key
 # (flutter_package.yml adds the hash of every pubspec.lock), and the console
-# firmware job's Arduino key, and the native jobs' apt packages.
+# firmware job's Arduino key, and the two apt package sets: the native jobs'
+# and the ALSA headers alone (the packages, design and segno-engine-tests
+# jobs).
 #
 # This is the only workflow that saves caches for the PR checks: main.yaml
 # runs with cache-mode read (#1787). It saves only on the trunk: a run on any
@@ -103,4 +105,18 @@ jobs:
         uses: awalsh128/cache-apt-pkgs-action@v1
         with:
           packages: libasound2-dev libpulse0
+          version: "1"
+
+  # A second job, not a second step: the action caches what it installs, and
+  # in the job above libasound2-dev is already installed.
+  apt-alsa:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
+    timeout-minutes: 10
+    steps:
+      # The package and version are the Flutter jobs' in main.yaml (#1783).
+      - name: The ALSA headers
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: libasound2-dev
           version: "1"

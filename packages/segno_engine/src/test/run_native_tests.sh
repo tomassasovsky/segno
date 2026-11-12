@@ -121,8 +121,8 @@ echo "== compiling (${BUILD_JOBS} at a time${CCACHE:+, through ccache}) =="
 # The stretch shim (#1179) is the only C++ TU in the portable engine: the C
 # ABI over the vendored Signalsmith Stretch. It cannot take the C flags
 # (gnu11 is C-only), so it is compiled with $CXX and linked into every engine
-# binary. Mirrors src/CMakeLists.txt's stretch/le_stretch.cpp entry and
-# tool/build_test_lib.sh — keep in sync.
+# binary. Mirrors src/CMakeLists.txt's stretch/le_stretch.cpp entry — keep
+# in sync.
 STRETCH_OBJ="$OBJ/le_stretch.o"
 queue_compile "$STRETCH_OBJ" $CXX -std=c++17 -O2 $EXTRA_CFLAGS src/stretch/le_stretch.cpp
 if [ "$WANT_RACES" = 1 ] || [ "$WANT_REST" = 1 ]; then

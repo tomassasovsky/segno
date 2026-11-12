@@ -2,8 +2,8 @@
  * le_stretch.cpp — the one C++ translation unit that includes Signalsmith
  * Stretch (see le_stretch.h). Vendored at
  * packages/segno_engine/third_party/signalsmith-stretch (tag 1.1.0, MIT); the
- * relative include keeps every build (CMake, CocoaPods forwarder, SPM
- * forwarder, run_native_tests.sh, the bench) free of a new include path.
+ * relative include keeps every build (CMake, run_native_tests.sh, the
+ * benches) free of a new include path.
  *
  * Exception safety: every exported function is noexcept, and every one that
  * reaches the library or allocates catches everything inside, so a

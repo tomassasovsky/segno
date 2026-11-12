@@ -2,8 +2,8 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
+import 'package:midi_client/src/midi_bindings.dart';
 import 'package:midi_client/src/midi_device.dart';
-import 'package:midi_client/src/native_library.dart';
 import 'package:segno_engine/segno_engine.dart' show MidiCaptureHandle;
 import 'package:segno_engine/segno_engine_ffi.dart';
 
@@ -22,8 +22,7 @@ class MidiException implements Exception {
 /// A thin, typed wrapper over the native `le_midi_*` capture seam.
 ///
 /// Owns a single native MIDI handle (`le_midi`). `bindings` may be injected for
-/// tests (e.g. a `FakeSegnoEngineBindings`); when omitted the platform shared
-/// library is opened, exactly like `NativeAudioEngine`.
+/// tests (a fake [MidiBindings]); the default calls the engine library.
 ///
 /// This is a low-level seam: callers pass a native `le_midi_event_cb` to [open]
 /// and are responsible for its lifetime. `MidiControllerSource` is the
@@ -33,8 +32,7 @@ class MidiClient {
   ///
   /// Throws a [MidiException] when the platform has no MIDI backend or the
   /// handle cannot be allocated.
-  new({SegnoEngineBindings? bindings})
-    : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
+  new({this._bindings = const MidiBindings()}) {
     _handle = _bindings.le_midi_create();
     if (_handle == nullptr) {
       throw const MidiException('failed to allocate native MIDI handle');
@@ -45,7 +43,7 @@ class MidiClient {
   /// (far more than any realistic host exposes).
   static const int _maxDevices = 64;
 
-  final SegnoEngineBindings _bindings;
+  final MidiBindings _bindings;
   late final Pointer<le_midi> _handle;
   bool _disposed = false;
 

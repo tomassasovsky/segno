@@ -56,9 +56,9 @@
  *     remove. Exchange makes a break raised at any point either observed by
  *     this callback or left standing for the next; it can never be lost.
  *
- * HEADER-ONLY on purpose. A new .c TU would have to be added to six build
- * descriptions (CMakeLists, the macOS podspec forwarders, the SPM forwarders,
- * the native test runner, …); static inline in a header that engine_private.h
+ * HEADER-ONLY on purpose. A new .c TU would have to be added to every build
+ * description (CMakeLists, ENGINE_SRC for the native tests and benches, …);
+ * static inline in a header that engine_private.h
  * already pulls in costs nothing and drifts nowhere.
  *
  * Gate: -DLE_CALLBACK_TELEMETRY=0 (engine_telemetry_gate.h) compiles the timing

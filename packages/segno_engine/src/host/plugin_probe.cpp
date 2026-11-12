@@ -5,10 +5,8 @@
 // so later parts of the stack can `#include` them without re-litigating the
 // build wiring. The pass/fail criterion for part 1 is "this TU compiles."
 //
-// It is compiled only when SEGNO_ENABLE_PLUGINS is defined — default ON for the
-// macOS SPM / CocoaPods builds (see Package.swift and segno_engine.podspec),
-// and OFF for the Windows/Linux CMake builds, where plugin hosting lands in
-// parts 8–9. When the flag is off this file is an empty object, exactly like
+// It is compiled only when SEGNO_ENABLE_PLUGINS is defined — ON for the macOS
+// build (hook/build.dart) and OFF for Linux. When the flag is off this file is an empty object, exactly like
 // the OS-guarded platform/MIDI seams.
 //
 // Include roots are supplied by the build system, not relative paths here, so

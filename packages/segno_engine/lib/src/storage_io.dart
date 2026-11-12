@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_engine.dart';
-import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 /// The outcome of digesting a file range ([StorageIo.digestFile]).
@@ -117,12 +116,9 @@ enum RenameOutcome {
 
 /// The [StorageIo] backed by the native engine library.
 class NativeStorageIo implements StorageIo {
-  /// Creates a [NativeStorageIo], opening the native library in the current
-  /// isolate unless [bindings] are injected.
-  new({SegnoEngineBindings? bindings})
-    : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary());
-
-  final SegnoEngineBindings _bindings;
+  /// Creates a [NativeStorageIo]. It works in any isolate: the calls bind to
+  /// the package's code asset.
+  const new();
 
   static const int _digestBytes = 32;
 
@@ -142,17 +138,15 @@ class NativeStorageIo implements StorageIo {
     );
     final out = calloc<Uint8>(_digestBytes);
     try {
-      _check(_bindings.le_digest_begin(state.cast(), LE_DIGEST_STATE_BYTES));
+      _check(le_digest_begin(state.cast(), LE_DIGEST_STATE_BYTES));
       for (var at = 0; at < bytes.length; at += windowBytes) {
         final end = at + windowBytes < bytes.length
             ? at + windowBytes
             : bytes.length;
         window.asTypedList(end - at).setRange(0, end - at, bytes, at);
-        _check(
-          _bindings.le_digest_update(state.cast(), window.cast(), end - at),
-        );
+        _check(le_digest_update(state.cast(), window.cast(), end - at));
       }
-      _check(_bindings.le_digest_end(state.cast(), out));
+      _check(le_digest_end(state.cast(), out));
       return _hex(out);
     } finally {
       calloc
@@ -178,7 +172,7 @@ class NativeStorageIo implements StorageIo {
     final pathPtr = path.toNativeUtf8();
     final out = calloc<Uint8>(_digestBytes);
     try {
-      final code = _bindings.le_digest_file(
+      final code = le_digest_file(
         pathPtr.cast(),
         offset,
         length ?? _toEnd,
@@ -202,7 +196,7 @@ class NativeStorageIo implements StorageIo {
     final pathPtr = path.toNativeUtf8();
     final errorPtr = calloc<Int32>();
     try {
-      final code = _bindings.le_fs_sync_dir_errno(pathPtr.cast(), errorPtr);
+      final code = le_fs_sync_dir_errno(pathPtr.cast(), errorPtr);
       if (!EngineResult.fromCode(code).isOk) {
         final errno = errorPtr.value;
         throw FileSystemException(
@@ -223,7 +217,7 @@ class NativeStorageIo implements StorageIo {
     final toPtr = to.toNativeUtf8();
     final errorPtr = calloc<Int32>();
     try {
-      final code = _bindings.le_fs_rename_noreplace(
+      final code = le_fs_rename_noreplace(
         fromPtr.cast(),
         toPtr.cast(),
         errorPtr,

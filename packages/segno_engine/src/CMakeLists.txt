@@ -1,14 +1,14 @@
-# Builds the segno_engine_core native audio engine as a shared library that the
-# Flutter FFI plugin bundles. Consumed by the linux/ and windows/ plugin
-# CMakeLists via add_subdirectory; macOS/iOS compile these same sources through
-# the CocoaPods podspec instead.
+# Builds the segno_engine_core native audio engine as a shared library: the
+# package's code asset. hook/build.dart configures and builds this project
+# for every Flutter build and test run, on Linux and macOS.
 #
 # Sources are grouped into subdirectories by concern: core/ (the portable engine
 # + primitives + the public ABI header), platform/ (the per-OS device seams),
 # midi/ (the MIDI input/output seam), and
 # miniaudio/ (the vendored backend). Every subdirectory with headers is on the
 # include path below, so sources keep using flat `#include "x.h"`.
-cmake_minimum_required(VERSION 3.15)
+# 3.16: enable_language(OBJCXX) for the macOS plugin editor window.
+cmake_minimum_required(VERSION 3.16)
 # C for the engine; C++ for the one Signalsmith Stretch shim TU (stretch/
 # le_stretch.cpp, #1179) and, when SEGNO_ENABLE_PLUGINS is on, the plugin host.
 project(segno_engine_core VERSION 0.1.0 LANGUAGES C CXX)
@@ -97,8 +97,8 @@ add_library(segno_engine SHARED
   # ---- stretch/: the C ABI over the vendored Signalsmith Stretch (#1179) ----
   # The only C++ TU of the portable engine; it includes the header-only
   # library relatively from ../third_party/signalsmith-stretch, so no include
-  # path is added. Mirrored by run_native_tests.sh / tool/build_test_lib.sh
-  # (compiled with $CXX) and by the macOS forwarders — keep them in sync.
+  # path is added. Mirrored by run_native_tests.sh and the benches (compiled
+  # with $CXX) — keep them in sync.
   stretch/le_stretch.cpp
 )
 
@@ -146,12 +146,13 @@ if(UNIX AND NOT APPLE)
   endif()
 endif()
 
-# The CocoaPods (macOS/iOS) build compiles these sources via the podspec, not
-# CMake, and links CoreMIDI there. This APPLE branch only matters if the engine
-# is ever built through CMake on Apple (e.g. the native test harness).
+# macOS, the development host. The build hook (hook/build.dart) builds this
+# project there too, with plugin hosting on. miniaudio and the MIDI seam need
+# the audio and MIDI frameworks; the plugin editor window needs AppKit.
 if(APPLE)
-  target_link_libraries(segno_engine PRIVATE "-framework CoreMIDI"
-    "-framework CoreFoundation")
+  target_link_libraries(segno_engine PRIVATE
+    "-framework CoreAudio" "-framework AudioToolbox" "-framework AudioUnit"
+    "-framework CoreMIDI" "-framework CoreFoundation")
 endif()
 
 # Compile the stretch shim TU with hidden visibility (#1179): on Linux its
@@ -168,9 +169,8 @@ endif()
 # --- VST3 + CLAP plugin hosting (vendored SDK include roots) ----------------
 #
 # Plugin hosting (third_party/vst3sdk + third_party/clap, both MIT — see
-# third_party/README.md) is macOS-only today: the macOS build (SPM
-# Package.swift / CocoaPods podspec) defines SEGNO_ENABLE_PLUGINS and compiles
-# the host sources directly. On Linux this is OFF; the engine then links only
+# third_party/README.md) is macOS-only today: hook/build.dart turns
+# SEGNO_ENABLE_PLUGINS on for macOS. On Linux this is OFF; the engine then links only
 # the le_plugin_scan_* stub (core/plugin_scan_disabled.c, above) so FFI
 # resolves, and the build stays byte-identical apart from that stub.
 #
@@ -178,12 +178,6 @@ endif()
 # unavailable (vendors do not ship arm64 Linux builds), so enabling this here
 # would buy nothing today — see the product call on issue #920.
 option(SEGNO_ENABLE_PLUGINS "Build VST3/CLAP plugin hosting" OFF)
-
-# The Flutter build drives CMake through the plugin and cannot forward -D cache
-# flags, so honor an env override applied after option().
-if(DEFINED ENV{SEGNO_ENABLE_PLUGINS} AND NOT "$ENV{SEGNO_ENABLE_PLUGINS}" STREQUAL "")
-  set(SEGNO_ENABLE_PLUGINS "$ENV{SEGNO_ENABLE_PLUGINS}")
-endif()
 
 # Vendored and used as-is — fixed (non-configurable) paths normalized to an
 # absolute location every configure, so they can never go stale.
@@ -207,8 +201,7 @@ if(SEGNO_ENABLE_PLUGINS)
   )
   target_compile_definitions(segno_engine PRIVATE SEGNO_ENABLE_PLUGINS)
   # The scan ABI + thread and the two format backends, plus the three vendored
-  # IID translation units the host queryInterface()s against (the same set the
-  # macOS podspec compiles via its vst3_*iids.cpp forwarders):
+  # IID translation units the host queryInterface()s against:
   #   - coreiids.cpp    : pluginterfaces base IIDs (IComponent / scanning).
   #   - commoniids.cpp  : the GUI IIDs (IPlugView / IPlugFrame) the editor needs.
   #   - vstinitiids.cpp : the VST-domain class IIDs (IAudioProcessor / …).
@@ -225,4 +218,16 @@ if(SEGNO_ENABLE_PLUGINS)
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp"
     "${SEGNO_VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp"
   )
+  # The editor window (the host's only Objective-C) and the SDK include probe.
+  if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(segno_engine PRIVATE
+      host/plugin_probe.cpp
+      host/native_window_controller.mm
+    )
+    set_source_files_properties(host/native_window_controller.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(segno_engine PRIVATE
+      "-framework AppKit" "-framework Foundation")
+  endif()
 endif()

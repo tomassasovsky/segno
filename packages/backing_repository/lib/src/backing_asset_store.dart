@@ -39,7 +39,7 @@ class BackingAssetStore {
     BackingDigester? digester,
     BackingDirSync? syncDirectory,
   }) : _digester = digester ?? _nativeDigest,
-       _sync = syncDirectory ?? NativeStorageIo().syncDirectory;
+       _sync = syncDirectory ?? const NativeStorageIo().syncDirectory;
 
   /// The store's directory name under the root.
   static const String folder = 'Backing tracks';
@@ -54,7 +54,7 @@ class BackingAssetStore {
   final BackingDirSync _sync;
 
   static Future<String?> _nativeDigest(String path) => Isolate.run(
-    () => switch (NativeStorageIo().digestFile(path)) {
+    () => switch (const NativeStorageIo().digestFile(path)) {
       FileDigested(:final sha256) => sha256,
       _ => null,
     },
