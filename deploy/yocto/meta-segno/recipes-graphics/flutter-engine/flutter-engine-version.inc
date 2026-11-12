@@ -10,11 +10,11 @@
 # the commit is that release's bin/internal/engine.version, which is also the
 # `engineRevision` of `flutter --version --machine`. Bump both together, with
 # the prebuilt recipe's file name (its PV) and SRC_URI checksum.
-FLUTTER_ENGINE_VERSION = "3.47.5"
-FLUTTER_ENGINE_COMMIT = "af7e796e161ae0bb1ff0758c71a7105418bd9ded"
+FLUTTER_ENGINE_VERSION = "3.50.0"
+FLUTTER_ENGINE_COMMIT = "371f77202a73e8dff57a8b3bff75bca55c090aee"
 
 # The profile build of the same engine, for DevTools on the device
 # (deploy/rpi/profile-on-device.sh). Not in the image: `segno-build --profile`
 # fetches it into the profile bundle, checked against this digest. Bump it with
 # the commit.
-FLUTTER_ENGINE_PROFILE_SHA256 = "b7628eff74d3ed30e036094f5cfe9a384fa403568ea71bbd4b279af028a79d83"
+FLUTTER_ENGINE_PROFILE_SHA256 = "924e4351d1584f3aec755e2d6c2af6f47c3e6750e21c8b388a523132148f99f6"

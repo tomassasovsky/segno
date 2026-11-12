@@ -87,6 +87,31 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The appliance on Flutter engine 3.50.0 (#1777)
+
+- The image ships meta-flutter's prebuilt engine for Flutter 3.50.0 (engine
+  `371f77202a73e8dff57a8b3bff75bca55c090aee`), the release the app bundle is
+  built on. The embedder API only gained members between 3.47 and 3.50
+  (Vulkan external textures, frozen-struct notes), and
+  `MakeRenderTargetFromBackingStoreImpeller` is unchanged, so ivi-homescreen
+  stays at its pinned revision and its three patches apply as they are,
+  the MSAA framebuffer (#1687) included.
+- 3.50 adds `--impeller-use-sdfs`: rects, rounded rects, circles, ovals and
+  lines drawn from signed distance fields and anti-aliased in the shader.
+  Flutter's GTK, macOS and Windows embedders always pass it; the embedder API
+  does not, and the console does not either. Measured on the console at
+  48 kHz / 32 with a loop playing, release mode, 30 s windows: on the stage
+  the V3D render queue was 27% busy without SDF and 63-66% with it (7.8 ms a
+  render job against 3.1), the profile build drew about 10% fewer frames on
+  the main screen, and the readout's raster time went from 5.9 to 10.4 ms
+  (p50). Paths (the pen icons, the waveform, the stomp art) still alias
+  without MSAA, so SDF cannot replace it.
+- Against build 243 (3.47.5), 3.50 without SDF is level: app CPU 11.4% of the
+  machine on the stage against 11.8-11.9%, GPU 26% against 27%, build p50
+  0.2-0.4 ms on both screens in profile mode.
+- Scanout comparisons (kmsgrab) of every combination: MSAA 4x / 2x / off,
+  with and without SDF, against build 243, are in the PR.
+
 ## November 2026 A capture left running stops on its own (#1767)
 
 - The owner's call on the #1747 recommendation. The drain (`perf_drain.c`)

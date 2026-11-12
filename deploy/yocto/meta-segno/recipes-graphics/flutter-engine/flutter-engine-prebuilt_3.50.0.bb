@@ -15,7 +15,7 @@ COMPATIBLE_HOST = "aarch64.*-linux"
 
 ENGINE_SDK = "linux-engine-sdk-release-arm64-${FLUTTER_ENGINE_COMMIT}"
 SRC_URI = "https://github.com/meta-flutter/flutter-engine/releases/download/${ENGINE_SDK}/${ENGINE_SDK}.tar.gz;subdir=engine-sdk"
-SRC_URI[sha256sum] = "03aead599727309f9e5b3bc968c5bd8d8ffda8dcfd719b2eb781db1dd9aa4ee7"
+SRC_URI[sha256sum] = "ac11dbe391c80e84fe88b07ccb7bf2435eaae56ae17df50f90244a68101a059f"
 S = "${UNPACKDIR}/engine-sdk/flutter/engine/src/out/linux_release_arm64/engine-sdk"
 
 do_configure[noexec] = "1"
