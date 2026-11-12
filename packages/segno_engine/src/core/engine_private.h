@@ -1094,6 +1094,11 @@ typedef struct le_lane {
   _Atomic uint32_t a_pan_gl_bits;
   _Atomic uint32_t a_pan_gr_bits;
   _Atomic int32_t a_muted;         /* per-lane mute */
+  /* The mute the mixer gates by: a_muted, except while a mute the Rec-mode
+   * Stop sent spares the Post tail of the track it stopped, until the track
+   * runs again (#1773; le_track::tail_spare_next, le_track_gate_mutes).
+   * Written beside a_muted on the audio thread. */
+  _Atomic int32_t a_gate_muted;
   int32_t pending_mute; /* audio-thread-local: a mute that arrived while the
                          * track was capturing. Applied (into a_muted) when the
                          * capture ends — a capturing track is never muted, so
@@ -2069,6 +2074,15 @@ typedef struct le_track {
   /* Automatic-end marker: an explicit launch starts at frame zero. It also
    * prevents a sibling's launch from automatically unparking this track. */
   int once_ended;
+  /* Audio-thread-local (#1773). tail_spare_next: the lanes whose next mute
+   * command, if it lands while the track is stopped and turns the lane from
+   * unmuted to muted, leaves the gate open so the tail drains
+   * (LE_CMD_SPARE_TAIL, which the Rec-mode Stop sends ahead of its stops and
+   * mute). Any mute command of a lane spends its bit. gate_spared: some lane
+   * of the track is muted with its gate open. Both clear when the track
+   * runs again or is cleared. */
+  uint32_t tail_spare_next;
+  int gate_spared;
   /* Enabling Once during existing playback ends the current pass, even when
    * that pass began less than a full lap ago. */
   int once_current_pass;
