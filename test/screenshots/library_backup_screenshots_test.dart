@@ -12,11 +12,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/helpers.dart';
 import '../library/helpers/fake_drive.dart';
@@ -127,7 +127,7 @@ void main() {
           RepositoryProvider<SessionRepository>.value(value: sessions),
           RepositoryProvider<PedalRepository>.value(value: pedal),
           RepositoryProvider<GuardRegistry>.value(value: GuardRegistry()),
-          RepositoryProvider<RemovableVolumes>.value(value: drive),
+          RepositoryProvider<StorageRepository>.value(value: drive),
         ],
         child: MultiBlocProvider(
           providers: [

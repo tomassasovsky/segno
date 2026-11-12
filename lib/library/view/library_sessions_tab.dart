@@ -7,7 +7,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_backup_view.dart';
 import 'package:segno/library/view/library_manage.dart';
@@ -16,6 +15,7 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// The Sessions tab (pen 19/01 `session-library-layout`): the 709-wide
 /// session list beside the preview card.

@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/library/application/audio_export.dart';
-import 'package:segno/library/application/removable_volumes.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/fake_drive.dart';
 
@@ -88,7 +89,7 @@ void main() {
     plan,
     generation: drive.generation,
     policy: policy,
-    purpose: 'Exporting Evening loop',
+    purpose: WritePurpose.export,
     cancelled: cancelled,
     onProgress: onProgress,
   );
@@ -110,7 +111,7 @@ void main() {
       final at = await run(parts(3), onProgress: progress.add);
 
       expect(at, '$perf/Evening loop · Part 001.wav');
-      expect(drive.leases, ['Exporting Evening loop']);
+      expect(drive.leasePurposes, [WritePurpose.export]);
       expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
         for (var i = 1; i <= 3; i++)
           ('$staging/Evening loop · Part 00$i.wav', ConflictPolicy.replace),
@@ -119,6 +120,8 @@ void main() {
         for (var i = 1; i <= 3; i++) '$perf/Evening loop · Part 00$i.wav',
       ]);
       expect(progress.last, 1);
+      // The swap's renames are synced before the export is reported.
+      expect(drive.synced, [perf]);
     });
 
     test(
@@ -323,6 +326,7 @@ void main() {
         ('$staging/Evening loop/stems/wet/track0.wav', ConflictPolicy.replace),
         ('$staging/Evening loop/project.als', ConflictPolicy.replace),
       ]);
+      expect(drive.synced, [perf, '$perf/Evening loop']);
     });
 
     test('ask reports the directory already there before writing', () async {
@@ -404,6 +408,77 @@ void main() {
     });
   });
 
+  group('two exports into one folder at once', () {
+    test("the second one's recovery leaves the first one's staging alone, so "
+        'both land whole', () async {
+      final hold = Completer<void>();
+      // The first export stops on its second file, its first one staged.
+      drive.beforeCopy = (copy) {
+        if (copy == 2) drive.hold = hold;
+      };
+      final first = run(package());
+      while (drive.copies.length < 2) {
+        await pumpEventQueue();
+      }
+      final second = run(
+        AudioExportPlan(
+          name: 'Acoustic set',
+          folder: perf,
+          files: [
+            AudioExportFile(
+              source('other/master-001.wav', fill: 2),
+              '{name}.wav',
+            ),
+          ],
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        File('${drive.mount}/$staging/Evening loop/master-001.wav')
+            .existsSync(),
+        isTrue,
+      );
+      hold.complete();
+      await Future.wait([first, second]);
+      expect(drive.files, [
+        '$perf/Acoustic set.wav',
+        '$perf/Evening loop/master-001.wav',
+        '$perf/Evening loop/project.als',
+        '$perf/Evening loop/stems/wet/track0.wav',
+      ]);
+    });
+  });
+
+  group('two exports of one name at once', () {
+    test('Keep both gives the second the next free name, as it would one '
+        'after the other', () async {
+      final hold = Completer<void>();
+      drive.beforeCopy = (copy) {
+        if (copy == 2) drive.hold = hold;
+      };
+      final first = run(package(), policy: ConflictPolicy.keepBoth);
+      while (drive.copies.length < 2) {
+        await pumpEventQueue();
+      }
+      final second = run(package(), policy: ConflictPolicy.keepBoth);
+      await pumpEventQueue();
+      // The second waits for the first's turn in the folder.
+      expect(drive.copies, hasLength(2));
+
+      hold.complete();
+      expect(await first, '$perf/Evening loop');
+      expect(await second, '$perf/Evening loop (2)');
+      expect(drive.files, [
+        for (final name in ['Evening loop (2)', 'Evening loop']) ...[
+          '$perf/$name/master-001.wav',
+          '$perf/$name/project.als',
+          '$perf/$name/stems/wet/track0.wav',
+        ],
+      ]);
+    });
+  });
+
   group('after a cut', () {
     /// What a power cut between the two renames of a package Replace leaves:
     /// the old package aside with its target list, the new one staged, no
@@ -475,7 +550,7 @@ void main() {
           parts(1),
           generation: drive.generation + 1,
           policy: ConflictPolicy.ask,
-          purpose: 'Exporting',
+          purpose: WritePurpose.export,
         ),
         throwsA(isA<StorageVolumeLost>()),
       );

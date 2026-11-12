@@ -537,10 +537,7 @@ class StorageRepository implements ActiveOperationSource {
   ///
   /// `freeBytes` is the filesystem's available figure, with NO reserve taken
   /// off: the Internal reserve ([internalReserveBytes]) applies only to
-  /// [recordingTimeRemaining] and [lowInternalSpace]. (The Library's
-  /// `RemovableVolumes` port documents free as "after any reserve the
-  /// service keeps"; for a removable volume that is the same figure, and the
-  /// port never asks about Internal.)
+  /// [recordingTimeRemaining] and [lowInternalSpace].
   Future<VolumeSpace?> space(StorageDestination destination) async {
     final path = switch (destination) {
       InternalDestination() => _nearestExisting(await _exportsRoot()),
@@ -648,14 +645,7 @@ class StorageRepository implements ActiveOperationSource {
     String relativePath, {
     required ConflictPolicy onConflict,
   }) async {
-    final segments = relativePath.split('/');
-    if (segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
-      throw ArgumentError.value(
-        relativePath,
-        'relativePath',
-        'must be a relative path inside the destination',
-      );
-    }
+    final segments = _insideRoot(relativePath);
     final held = acquire(destination, WritePurpose.copy);
     try {
       final wanted = '${await _writeRoot(destination)}/$relativePath';
@@ -703,6 +693,49 @@ class StorageRepository implements ActiveOperationSource {
     } finally {
       held.release();
     }
+  }
+
+  /// Makes the entries of the directory at [relativePath] under
+  /// [destination]'s root durable, as [copyFile] does after its own rename.
+  /// For a writer that renames what it copied into place itself (the
+  /// Library's export swap), so it reports nothing as written before the
+  /// renames would survive a pulled drive. A `copy` lease is held for the
+  /// sync, as for a copy.
+  ///
+  /// Fails as [copyFile] does: `volumeLost` when the volume is gone or goes
+  /// with the sync, `readOnly` or `unsupported` for a volume that cannot be
+  /// written, `io` when the device refuses the sync. [relativePath] follows
+  /// [copyFile]'s rule.
+  Future<void> syncDirectory(
+    StorageDestination destination,
+    String relativePath,
+  ) async {
+    _insideRoot(relativePath);
+    final held = acquire(destination, WritePurpose.copy);
+    try {
+      final path = '${await _writeRoot(destination)}/$relativePath';
+      try {
+        _io.syncDirectory(path);
+      } on FileSystemException catch (e) {
+        throw await _classify(e, destination, held);
+      }
+    } finally {
+      held.release();
+    }
+  }
+
+  /// [relativePath]'s segments, or an [ArgumentError] when it is empty,
+  /// absolute, or has an empty, `.` or `..` segment.
+  static List<String> _insideRoot(String relativePath) {
+    final segments = relativePath.split('/');
+    if (segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
+      throw ArgumentError.value(
+        relativePath,
+        'relativePath',
+        'must be a relative path inside the destination',
+      );
+    }
+    return segments;
   }
 
   /// Copies the update package at [sourcePath], on removable volume
