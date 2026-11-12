@@ -392,7 +392,10 @@ int32_t le_fs_sync_volume_errno(const char* path, int32_t* out_errno) {
     return LE_ERR_DEVICE;
   }
   int rc = 0;
-#if defined(__linux__) && defined(SYS_syncfs)
+#if defined(__linux__)
+#if !defined(SYS_syncfs)
+#error "le_fs_sync_volume_errno needs syncfs(2): a directory fsync alone loses renamed files on vfat (#1797)"
+#endif
   /* Every dirty inode and buffer of the filesystem: on vfat a renamed
    * file's size and first cluster reach its new directory entry only when
    * its inode is written back, which no fsync of the directory does. */

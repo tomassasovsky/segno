@@ -612,7 +612,8 @@ class StorageRepository implements ActiveOperationSource {
   /// hidden, so neither the Library nor a computer lists it, and never shared
   /// with another copy in flight), are fsynced, and are renamed to the final
   /// name; then the whole volume is synced (`syncfs`, then a flush of the
-  /// device's cache), so the rename, every directory the copy created and
+  /// device's cache, on the appliance's Linux: see `StorageIo.syncVolume`
+  /// for elsewhere), so the rename, every directory the copy created and
   /// the file's size in its new entry are on the device before the copy
   /// returns. A directory sync would not do: on vfat a rename writes the new
   /// entry with size 0, and only the file's inode, written back later, fills

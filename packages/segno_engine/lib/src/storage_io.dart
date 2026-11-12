@@ -92,15 +92,15 @@ abstract interface class StorageIo {
   void syncDirectory(String path);
 
   /// Makes everything written to the volume that holds the directory at
-  /// [path] durable, and flushes the device's cache (`syncfs(2)` and fsync
-  /// on Linux).
+  /// [path] durable, and flushes the device's cache: `syncfs(2)`, then an
+  /// fsync of [path]. That is on Linux, the appliance; on macOS it is
+  /// `F_FULLFSYNC` of [path] only.
   ///
   /// What a removable FAT volume needs before a write is reported done: a
   /// rename there writes the new entry with size 0, and the file's size
   /// reaches it only when its inode is written back, which [syncDirectory]
   /// does not do (#1797). Throws a [FileSystemException], carrying the OS
-  /// error, when the directory cannot be opened or the sync fails, a write
-  /// the device lost earlier included.
+  /// error, when the directory cannot be opened or the sync fails.
   void syncVolume(String path);
 
   /// Renames [from] to [to] only if nothing is at [to], as one atomic step.
