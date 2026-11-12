@@ -32,31 +32,41 @@ class DawProject {
 /// content recorded with the grid off.
 const double kFallbackTempoBpm = 120;
 
-/// One Live audio track: the channel's full-length stem in the Arrangement,
-/// one Session clip per lane loop, and the automation reconstructed from the
-/// capture's logged gestures.
+/// One Live audio track: what it plays in the Arrangement and the Session,
+/// whether it plays at all, its volume automation, and its info text.
 @immutable
 class DawTrack {
   /// Creates a [DawTrack].
   const new({
     required this.name,
-    this.arrangementClip,
+    this.active = true,
+    this.arrangementClips = const [],
     this.sessionClips = const [],
-    this.automationLanes = const [],
+    this.volume,
+    this.info = '',
   });
 
-  /// The track's name in Live (for example `Track 0`).
+  /// The track's name in Live.
   final String name;
 
-  /// The channel's stem in the Arrangement, or `null` when the channel has
-  /// no stem and only its lane loops exist.
-  final DawClip? arrangementClip;
+  /// Whether the track's activator is on. A reference track (a dry stem, a
+  /// raw input, the master as heard) is off, so the set does not play the
+  /// same audio twice; switching it on in Live plays it.
+  final bool active;
+
+  /// The track's clips in the Arrangement, in timeline order. A long
+  /// recording held in several files has one clip per file.
+  final List<DawClip> arrangementClips;
 
   /// One Session clip per lane that exported a loop.
   final List<DawSessionClip> sessionClips;
 
-  /// At most one lane per [AutomationTarget].
-  final List<AutomationLane> automationLanes;
+  /// The track's volume automation, or `null` when it has none.
+  final AutomationLane? volume;
+
+  /// The track's info text in Live (the Info View), for example the effect
+  /// chains the take was played through. Empty for none.
+  final String info;
 }
 
 /// A WAV file a clip plays, as the set references it.
@@ -83,36 +93,18 @@ class DawAudioFile {
   double get seconds => frames / sampleRate;
 }
 
-/// Which Live mixer parameter an [AutomationLane] drives.
-enum AutomationTarget {
-  /// The track's volume, a linear gain: one breakpoint per logged change,
-  /// with Live ramping between them.
-  volume,
-
-  /// The track's activator (Live's track on/off switch), which is how a
-  /// mute or a solo elsewhere shows: 1 is audible, 0 is silent. Each
-  /// breakpoint holds until the next one.
-  activator,
-}
-
-/// One automation envelope for a track's [AutomationTarget].
+/// A track's volume envelope.
 @immutable
 class AutomationLane {
   /// Creates an [AutomationLane].
-  const new({
-    required this.target,
-    required this.initialValue,
-    required this.breakpoints,
-  });
+  const new({required this.initialValue, required this.breakpoints});
 
-  /// Which mixer parameter this envelope drives.
-  final AutomationTarget target;
-
-  /// The parameter's value when the capture starts, before the first
-  /// breakpoint.
+  /// The volume when the capture starts, before the first breakpoint, as a
+  /// linear gain.
   final double initialValue;
 
-  /// Ordered by [AutomationBreakpoint.beat], ascending. Never empty.
+  /// Ordered by [AutomationBreakpoint.beat], ascending. Never empty. Two
+  /// breakpoints at one beat make a step.
   final List<AutomationBreakpoint> breakpoints;
 }
 
@@ -125,8 +117,7 @@ class AutomationBreakpoint {
   /// Position on the Arrangement timeline, in beats.
   final double beat;
 
-  /// The parameter's value at [beat]: a linear gain for
-  /// [AutomationTarget.volume], `0` or `1` for [AutomationTarget.activator].
+  /// The volume at [beat], as a linear gain.
   final double value;
 }
 

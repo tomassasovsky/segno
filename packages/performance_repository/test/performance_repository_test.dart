@@ -932,6 +932,37 @@ void main() {
       expect(armSnapshot.outputChainEnabled, isFalse);
     });
 
+    test('records the names the player gave tracks and inputs, trimmed, '
+        'and nothing for the rest (#1799)', () async {
+      engine
+        ..seedLane(0, 0, Float32List.fromList([1, 1]))
+        ..seedLane(1, 0, Float32List.fromList([1, 1]));
+
+      await repo.arm(
+        names: const PerformanceNames(
+          tracks: {0: ' Rhythm ', 1: '  '},
+          inputs: {1: 'Vocal', 0: ''},
+        ),
+      );
+
+      final dir = repo.armedDirectory!;
+      final json = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final armSnapshot = PerformanceArmSnapshot.fromJson(json);
+      expect(armSnapshot.tracks.map((t) => t.name), ['Rhythm', null]);
+      expect(armSnapshot.inputNames, {1: 'Vocal'});
+      expect(json['inputs'], [
+        {'input': 1, 'name': 'Vocal'},
+      ]);
+      expect(
+        (json['tracks'] as List<dynamic>).map(
+          (t) => (t as Map<String, dynamic>).containsKey('name'),
+        ),
+        [true, false],
+      );
+    });
+
     test('a lane the rig defines NO chain for is written dry and engaged, not '
         "given a sibling lane's chain", () async {
       engine

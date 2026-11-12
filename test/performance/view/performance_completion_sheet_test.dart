@@ -357,14 +357,17 @@ void main() {
     expect(find.byKey(const Key('perfCompletion_banner')), findsNothing);
   });
 
-  testWidgets('the subtitle carries the track count and length', (
-    tester,
-  ) async {
+  testWidgets('the subtitle carries the recorded track count and length, '
+      "not the set's switched-off reference tracks", (tester) async {
     await pump(
       tester,
       const PerformanceRecorderCompleted(
         PerformanceRecordDone('/exports/perf-1'),
-        tracks: [DawTrack(name: 'Track 0')],
+        tracks: [
+          DawTrack(name: 'Track 1'),
+          DawTrack(name: 'Track 1 dry', active: false),
+          DawTrack(name: 'Master (as heard)', active: false),
+        ],
         duration: Duration(minutes: 2, seconds: 14),
       ),
     );

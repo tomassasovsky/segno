@@ -4,243 +4,214 @@ import 'dart:io';
 import 'package:daw_export/daw_export.dart';
 import 'package:test/test.dart';
 
+Map<String, dynamic> _effect(
+  int type, {
+  bool enabled = true,
+  Map<String, dynamic>? rack,
+}) => {
+  'type': type,
+  'params': <double>[],
+  if (!enabled) 'enabled': false,
+  'rack': ?rack,
+};
+
 void main() {
   group('FxChainsWriter.render', () {
     late Directory dir;
 
-    setUp(() {
-      dir = Directory.systemTemp.createTempSync('daw_export_fx_chains_test_');
-    });
+    setUp(() => dir = Directory.systemTemp.createTempSync('fx_chains_'));
+    tearDown(() => dir.deleteSync(recursive: true));
 
-    tearDown(() {
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
-    });
+    void manifest(Map<String, dynamic> json) =>
+        File('${dir.path}/performance.json')
+            .writeAsStringSync(jsonEncode(json));
 
-    test('returns null when performance.json is missing', () {
+    test('returns null when performance.json is missing, corrupt or not an '
+        'object', () {
       expect(FxChainsWriter.render(dir.path), isNull);
-    });
-
-    test('returns null when performance.json is corrupt', () {
       File('${dir.path}/performance.json').writeAsStringSync('{not json');
       expect(FxChainsWriter.render(dir.path), isNull);
+      File('${dir.path}/performance.json').writeAsStringSync('[]');
+      expect(FxChainsWriter.render(dir.path), isNull);
     });
 
-    test('returns an empty summary when there is nothing to chain', () {
-      File('${dir.path}/performance.json').writeAsStringSync(
-        jsonEncode({
-          'sample_rate': 48000,
-          'capture_frames': 48000,
-          'armSnapshot': {'tracks': <dynamic>[]},
-          'disarmSnapshot': {'tracks': <dynamic>[]},
-          'layers': <dynamic>[],
-        }),
-      );
-      expect(FxChainsWriter.render(dir.path), isEmpty);
-    });
-
-    test('renders a built-in effect chain with its normalized params', () {
-      File('${dir.path}/performance.json').writeAsStringSync(
-        jsonEncode({
-          'sample_rate': 48000,
-          'capture_frames': 48000,
-          'armSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'effects': [
-                      {
-                        'type': 1,
-                        'params': [0.5, 0.8, 0.0, 0.0],
-                      },
-                      {
-                        'type': 7,
-                        'params': [0.5, 0.5, 0.35, 0.0],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          'disarmSnapshot': {'tracks': <dynamic>[]},
-          'layers': <dynamic>[],
-        }),
-      );
-
-      final text = FxChainsWriter.render(dir.path);
-      expect(text, isNotNull);
-      expect(text, contains('Track 0 / Lane 0:'));
-      expect(text, contains('1. Drive (params: 0.50, 0.80, 0.00, 0.00)'));
-      expect(text, contains('2. Reverb (params: 0.50, 0.50, 0.35, 0.00)'));
-    });
-
-    test('renders a lane with no effects explicitly', () {
-      File('${dir.path}/performance.json').writeAsStringSync(
-        jsonEncode({
-          'sample_rate': 48000,
-          'capture_frames': 48000,
-          'armSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {'lane': 0, 'deferred': false, 'effects': <dynamic>[]},
-                ],
-              },
-            ],
-          },
-          'disarmSnapshot': {'tracks': <dynamic>[]},
-          'layers': <dynamic>[],
-        }),
-      );
-
-      final text = FxChainsWriter.render(dir.path);
-      expect(text, contains('Track 0 / Lane 0:'));
-      expect(text, contains('(no effects)'));
-    });
-
-    test('renders a plugin entry with its format/id/version and the '
-        'offline dry-passthrough note', () {
-      File('${dir.path}/performance.json').writeAsStringSync(
-        jsonEncode({
-          'sample_rate': 48000,
-          'capture_frames': 48000,
-          'armSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'effects': [
-                      {
-                        'type': 8,
-                        'plugin': {
-                          'format': 0,
-                          'id': 'abc123',
-                          // 1<<16 | 2<<8 | 3 -> v1.2.3
-                          'version': (1 << 16) | (2 << 8) | 3,
-                        },
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          'disarmSnapshot': {'tracks': <dynamic>[]},
-          'layers': <dynamic>[],
-        }),
-      );
-
-      final text = FxChainsWriter.render(dir.path);
+    test('says so when the take recorded no effects, instead of writing '
+        'nothing', () {
+      manifest({
+        'armSnapshot': {
+          'tracks': [
+            {
+              'channel': 0,
+              'lanes': [
+                {'lane': 0},
+              ],
+            },
+          ],
+        },
+      });
       expect(
-        text,
-        contains('1. Plugin: VST3 abc123 v1.2.3 [rendered as dry passthrough]'),
+        FxChainsWriter.render(dir.path),
+        'Effects when the take started. Changes made during the\n'
+        'take are in events.log.\n'
+        '\n'
+        'No effects were recorded.\n',
       );
     });
 
-    test('renders an unversioned plugin as vunknown', () {
-      File('${dir.path}/performance.json').writeAsStringSync(
-        jsonEncode({
-          'sample_rate': 48000,
-          'capture_frames': 48000,
-          'armSnapshot': {
-            'tracks': [
+    test("lists each track's, input's and the output's chains under the "
+        'names the Live set gives their tracks', () {
+      manifest({
+        'channel_layout': {
+          'captured_inputs': [0],
+        },
+        'armSnapshot': {
+          'tracks': [
+            {
+              'channel': 1,
+              'name': 'Bass',
+              'lanes': [
+                {
+                  'lane': 0,
+                  'effects': [_effect(16)],
+                },
+                {'lane': 1},
+              ],
+            },
+            {
+              'channel': 0,
+              'lanes': [
+                {
+                  'lane': 1,
+                  'effects': [_effect(7)],
+                },
+              ],
+            },
+          ],
+          'trackChains': [
+            {
+              'channel': 1,
+              'effects': [_effect(14)],
+            },
+          ],
+          'inputs': [
+            {'input': 0, 'name': 'Guitar'},
+          ],
+          'monitors': [
+            {
+              'input': 0,
+              'effects': [_effect(29)],
+            },
+          ],
+          'outputEffects': [_effect(10)],
+        },
+      });
+      expect(
+        FxChainsWriter.render(dir.path),
+        'Effects when the take started. Changes made during the\n'
+        'take are in events.log.\n'
+        '\n'
+        'Track 1:\n'
+        '  Lane 2: Reverb\n'
+        'Bass:\n'
+        '  Track: Chorus\n'
+        '  Lane 1: Overdrive\n'
+        'Guitar:\n'
+        '  Amp\n'
+        'Master (as heard):\n'
+        '  Compressor\n',
+      );
+    });
+  });
+
+  group('EffectText', () {
+    Map<String, dynamic> lane(
+      List<Map<String, dynamic>> effects, {
+      bool chainEnabled = true,
+    }) => {
+      'armSnapshot': {
+        'tracks': [
+          {
+            'channel': 0,
+            'lanes': [
               {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'effects': [
-                      {
-                        'type': 8,
-                        'plugin': {
-                          'format': 1,
-                          'id': 'clap-thing',
-                          'version': 0,
-                        },
-                      },
-                    ],
-                  },
-                ],
+                'lane': 0,
+                'effects': effects,
+                if (!chainEnabled) 'chainEnabled': false,
               },
             ],
           },
-          'disarmSnapshot': {'tracks': <dynamic>[]},
-          'layers': <dynamic>[],
-        }),
-      );
+        ],
+      },
+    };
 
-      final text = FxChainsWriter.render(dir.path);
+    test('groups a rack under its name and marks what is off', () {
+      const studio = {'id': 'r1', 'name': 'Studio'};
+      const dub = {'id': 'r2', 'name': 'Dub', 'bypassed': true};
       expect(
-        text,
-        contains(
-          '1. Plugin: CLAP clap-thing vunknown [rendered as dry passthrough]',
+        EffectText.track(
+          lane([
+            _effect(1),
+            _effect(16, rack: studio),
+            _effect(29, rack: studio, enabled: false),
+            _effect(22, rack: dub),
+            _effect(3),
+          ]),
+          0,
         ),
+        'Lane 1: Drive, Studio (Overdrive, Amp off), Dub off (Dub reverb), '
+        'Delay',
       );
     });
 
-    test('reads effects only from armSnapshot — a disarmSnapshot entry never '
-        'carries effects (docs/formats/performance-manifest-format.md), and '
-        'even a defensively-malformed one carrying it anyway is ignored', () {
-      File('${dir.path}/performance.json').writeAsStringSync(
-        jsonEncode({
-          'sample_rate': 48000,
-          'capture_frames': 48000,
-          'armSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'effects': [
-                      {
-                        'type': 1,
-                        'params': [0.1, 0.1, 0.0, 0.0],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          // Real writers never emit `effects` here — this is exactly
-          // the malformed-input shape being defended against.
-          'disarmSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'effects': [
-                      {
-                        'type': 2,
-                        'params': [0.9, 0.9, 0.0, 0.0],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          'layers': <dynamic>[],
-        }),
+    test('marks a chain switched off as a whole', () {
+      expect(
+        EffectText.track(lane([_effect(7)], chainEnabled: false), 0),
+        'Lane 1: Reverb (chain off)',
       );
+    });
 
-      final text = FxChainsWriter.render(dir.path);
-      expect(text, contains('Drive'));
-      expect(text, isNot(contains('Filter')));
+    test('names a plugin by format and id, and an unknown type by its '
+        'code', () {
+      expect(
+        EffectText.track(
+          lane([
+            {
+              'type': 8,
+              'plugin': {'format': 1, 'id': 'org.example.verb'},
+            },
+            {'type': 8},
+            {'type': 99},
+          ]),
+          0,
+        ),
+        'Lane 1: CLAP org.example.verb, VST3 plugin, Effect 99',
+      );
+    });
+
+    test('skips empty slots, and a chain of only empty slots is no chain', () {
+      expect(
+        EffectText.track(lane([_effect(0), _effect(5)]), 0),
+        'Lane 1: Octaver',
+      );
+      expect(EffectText.track(lane([_effect(0)]), 0), isNull);
+      expect(EffectText.track(lane([]), 0), isNull);
+    });
+
+    test('reads nothing from a missing or malformed snapshot', () {
+      expect(EffectText.track(const {}, 0), isNull);
+      expect(EffectText.input(const {}, 0), isNull);
+      expect(EffectText.output(const {}), isNull);
+      expect(
+        EffectText.input(const {
+          'armSnapshot': {
+            'monitors': [
+              {'input': 1, 'effects': <dynamic>[]},
+              'not a map',
+            ],
+          },
+        }, 0),
+        isNull,
+      );
     });
   });
 }

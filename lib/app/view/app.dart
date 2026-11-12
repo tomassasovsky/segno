@@ -19,6 +19,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/application/app_runtime.dart';
+import 'package:segno/app/application/performance_names.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -51,6 +52,7 @@ import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/session/session_mapping.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -654,17 +656,10 @@ class _AppState extends State<App> {
           // what the player calls it on every surface that shows one — the
           // Audio face's input list, the Tracks routing summary, and the
           // per-track lane list — so the names load once, here.
-          // Eager: the names key off the OPEN DEVICE, so the cubit has to be
-          // listening before the engine reports one — created lazily it would
-          // miss the boot device entirely and show ordinals until the next
-          // reopen.
-          BlocProvider(
-            lazy: false,
-            create: (context) => InputsCubit(
-              settings: context.read<SettingsRepository>(),
-              repository: context.read<LooperRepository>(),
-            ),
-          ),
+          // The runtime creates it, eagerly: the names key off the OPEN
+          // DEVICE, so the cubit has to be listening before the engine
+          // reports one, and a take's arm records them (#1799).
+          BlocProvider<InputsCubit>.value(value: _runtime.inputs),
           // Destination names, the output-side twin of the inputs above and
           // eager for the same reason: they key off the OPEN DEVICE.
           BlocProvider(
@@ -849,8 +844,15 @@ class _AppState extends State<App> {
           BlocProvider(
             lazy: false,
             create: (context) {
+              final looper = context.read<LooperRepository>();
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                // The rig and names a take's arm records (#375, #1799).
+                currentChains: () => performanceChainsFromLooper(looper),
+                currentNames: () => performanceNames(
+                  tracks: _runtime.tracks.state.names,
+                  inputs: _runtime.inputs.state.names,
+                ),
                 // The runtime's lock, which also holds during an audio
                 // warm-up (#1533).
                 takeLocked: () => _runtime.takeLocked,

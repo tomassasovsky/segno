@@ -10,15 +10,12 @@ import 'package:xml/xml.dart';
 /// parameter's value before the song starts.
 const double _kBeforeSongTime = -63072000;
 
-/// Where Live's Arrangement lane chooser finds a track's mixer envelopes,
-/// as Live 12.2.7 numbers them for an audio track with no devices and no
-/// sends: device 1 is the Mixer, and its envelope 0 is the activator
-/// ("Speaker On") and 2 the volume.
+/// Where Live's Arrangement lane chooser finds a track's volume envelope,
+/// as Live 12.2.7 numbers it for an audio track with no devices and no
+/// sends: device 1 is the Mixer, and its envelope 2 the volume (0 is the
+/// activator, "Speaker On").
 const int _kLaneMixerDevice = 1;
-const Map<AutomationTarget, int> _kLaneMixerEnvelope = {
-  AutomationTarget.activator: 0,
-  AutomationTarget.volume: 2,
-};
+const int _kLaneMixerVolume = 2;
 
 /// Live's `WarpMode` number for Re-Pitch, which at the clip's own tempo plays
 /// the file's samples unchanged.
@@ -87,7 +84,7 @@ Uint8List buildAls(DawProject project) {
   _setValue(liveSet.getElement('SelectedDocumentViewInMainWindow')!, '0');
   _zoomToFit(liveSet, project);
   // Automation Mode draws each track's envelopes over its clips.
-  final automated = project.tracks.any((t) => t.automationLanes.isNotEmpty);
+  final automated = project.tracks.any((t) => t.volume != null);
   _setValue(liveSet.getElement('AutomationMode')!, '$automated');
 
   final xml = document.toXmlString();
@@ -146,25 +143,18 @@ class _TrackPrototype {
   final XmlElement lane;
   final int trackId;
 
-  /// Shows one Arrangement lane per envelope [source] has, so its
-  /// automation is visible when the set opens. A track without automation
-  /// keeps the template's single lane.
-  void _showLanes(XmlElement track, DawTrack source) {
-    final targets = [
-      for (final target in AutomationTarget.values)
-        if (_laneFor(source, target) != null) target,
-    ];
-    if (targets.isEmpty) return;
+  /// Shows the volume lane of a track with volume automation, so it is
+  /// visible when the set opens. A track without keeps the template's lane.
+  void _showVolumeLane(XmlElement track) {
     _automationLanes(track).children
       ..clear()
-      ..addAll([
-        for (var i = 0; i < targets.length; i++)
-          (lane.copy()..setAttribute('Id', '$i'))
-            ..getElement('SelectedDevice')!
-                .setAttribute('Value', '$_kLaneMixerDevice')
-            ..getElement('SelectedEnvelope')!
-                .setAttribute('Value', '${_kLaneMixerEnvelope[targets[i]]}'),
-      ]);
+      ..add(
+        (lane.copy()..setAttribute('Id', '0'))
+          ..getElement('SelectedDevice')!
+              .setAttribute('Value', '$_kLaneMixerDevice')
+          ..getElement('SelectedEnvelope')!
+              .setAttribute('Value', '$_kLaneMixerVolume'),
+      );
   }
 
   XmlElement build(
@@ -184,6 +174,7 @@ class _TrackPrototype {
     final name = track.getElement('Name')!;
     _setValue(name.getElement('EffectiveName')!, source.name);
     _setValue(name.getElement('UserName')!, source.name);
+    _setValue(name.getElement('Annotation')!, source.info);
 
     final deviceChain = track.getElement('DeviceChain')!;
     for (final sequencer in ['MainSequencer', 'FreezeSequencer']) {
@@ -194,19 +185,18 @@ class _TrackPrototype {
       );
     }
 
-    final arrangement = source.arrangementClip;
-    if (arrangement != null) {
-      _arrangerEvents(track).children.add(
+    final clips = source.arrangementClips;
+    _arrangerEvents(track).children.addAll([
+      for (var i = 0; i < clips.length; i++)
         _clip(
-          id: 0,
-          startBeats: secondsToBeats(arrangement.startSeconds, tempoBpm),
-          audio: arrangement.audio,
+          id: i,
+          startBeats: secondsToBeats(clips[i].startSeconds, tempoBpm),
+          audio: clips[i].audio,
           name: source.name,
           tempoBpm: tempoBpm,
           loop: false,
         ),
-      );
-    }
+    ]);
 
     final slots = _clipSlotValues(track).toList();
     for (final session in source.sessionClips) {
@@ -223,43 +213,38 @@ class _TrackPrototype {
     }
 
     final mixer = deviceChain.getElement('Mixer')!;
-    final envelopes = _envelopes(track);
-    for (final target in AutomationTarget.values) {
-      final lane = _laneFor(source, target);
-      if (lane == null) continue;
-      final parameter = mixer.getElement(switch (target) {
-        AutomationTarget.volume => 'Volume',
-        AutomationTarget.activator => 'Speaker',
-      })!;
-      envelopes.children.add(
+    _setValue(
+      mixer.getElement('Speaker')!.getElement('Manual')!,
+      '${source.active}',
+    );
+    final volume = source.volume;
+    if (volume != null) {
+      final parameter = mixer.getElement('Volume')!;
+      _envelopes(track).children.add(
         _envelope(
-          id: envelopes.childElements.length,
           pointeeId: parameter
               .getElement('AutomationTarget')!
               .getAttribute('Id')!,
-          lane: lane,
-          range: target == AutomationTarget.volume ? _range(parameter) : null,
+          lane: volume,
+          range: _range(parameter),
         ),
       );
+      _showVolumeLane(track);
     }
-    _showLanes(track, source);
     return track;
   }
 
-  /// An envelope for [lane] on the parameter whose automation target is
-  /// [pointeeId], opening with the value before the song starts, as every
-  /// envelope Live writes does. Volume values are clamped to [range], the
-  /// Volume parameter's own; the activator is a switch and has none.
+  /// A volume envelope for [lane] on the parameter whose automation target
+  /// is [pointeeId], opening with the value before the song starts, as every
+  /// envelope Live writes does. Values are clamped to [range], the Volume
+  /// parameter's own, whose lowest is Live's silence.
   XmlElement _envelope({
-    required int id,
     required String pointeeId,
     required AutomationLane lane,
-    required (double, double)? range,
+    required (double, double) range,
   }) {
-    final isBool = lane.target == AutomationTarget.activator;
     String value(double v) {
-      if (isBool) return '${v != 0}';
-      final (min, max) = range!;
+      final (min, max) = range;
       return _number(v < min ? min : (v > max ? max : v));
     }
 
@@ -271,7 +256,7 @@ class _TrackPrototype {
       if (lane.breakpoints.first.beat > 0) (0.0, lane.initialValue),
       for (final b in lane.breakpoints) (b.beat, b.value),
     ];
-    final envelope = this.envelope.copy()..setAttribute('Id', '$id');
+    final envelope = this.envelope.copy()..setAttribute('Id', '0');
     _setValue(
       envelope.getElement('EnvelopeTarget')!.getElement('PointeeId')!,
       pointeeId,
@@ -280,7 +265,7 @@ class _TrackPrototype {
       ..clear()
       ..addAll([
         for (var i = 0; i < points.length; i++)
-          _element(isBool ? 'BoolEvent' : 'FloatEvent', {
+          _element('FloatEvent', {
             'Id': '$i',
             'Time': _number(points[i].$1),
             'Value': value(points[i].$2),
@@ -374,21 +359,6 @@ XmlElement _element(String name, Map<String, String> attributes) =>
   );
 }
 
-/// [track]'s lane for [target], or `null`. A track may carry at most one
-/// lane per target.
-AutomationLane? _laneFor(DawTrack track, AutomationTarget target) {
-  final matches = track.automationLanes.where((l) => l.target == target);
-  if (matches.length > 1) {
-    throw ArgumentError.value(
-      track.name,
-      'track',
-      'has ${matches.length} automation lanes for $target; at most one is '
-          'allowed per track per target',
-    );
-  }
-  return matches.isEmpty ? null : matches.single;
-}
-
 void _setTempo(XmlElement liveSet, double tempoBpm) {
   final mainTrack = liveSet.getElement('MainTrack')!;
   final tempo = mainTrack
@@ -423,13 +393,13 @@ const double _kFitWidthPixels = 500;
 void _zoomToFit(XmlElement liveSet, DawProject project) {
   var beats = 0.0;
   for (final track in project.tracks) {
-    final clip = track.arrangementClip;
-    if (clip == null) continue;
-    final end = secondsToBeats(
-      clip.startSeconds + clip.audio.seconds,
-      project.tempoBpm,
-    );
-    if (end > beats) beats = end;
+    for (final clip in track.arrangementClips) {
+      final end = secondsToBeats(
+        clip.startSeconds + clip.audio.seconds,
+        project.tempoBpm,
+      );
+      if (end > beats) beats = end;
+    }
   }
   if (beats <= 0) return;
   _setValue(

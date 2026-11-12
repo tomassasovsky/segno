@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:daw_export/src/automation_thinning.dart';
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/effect_text.dart';
 import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/manifest_json.dart';
 import 'package:daw_export/src/wav_info.dart';
@@ -155,75 +156,108 @@ abstract final class DawManifestReader {
         sessionClips.add(DawSessionClip(laneIndex: lane, audio: audio));
       }
 
-      final arrangementFile = _firstExisting(captureDir, [
-        'stems/wet/track$channel.wav',
-        'stems/dry/track$channel.wav',
-      ]);
-      final arrangementAudio = arrangementFile == null
-          ? null
-          : _audioFile(
-              captureDir,
-              arrangementFile,
-              sampleRate: sampleRate,
-              fallbackFrames: captureFrames,
-            );
-
-      if (arrangementAudio == null && sessionClips.isEmpty) continue;
-
-      // The wet render bakes lane-0 volume, mute and solo into the stem
-      // (perf_render.c's wet pass), so only a dry clip gets them as Live
-      // automation.
-      final gainsBaked = arrangementFile?.startsWith('stems/wet/') ?? false;
-      final automationLanes = <AutomationLane>[];
-      if (logEntries != null && !gainsBaked) {
-        final raw = EventLogReader.readChannelAutomation(
-          logEntries,
-          channel,
-          sampleRate,
-          effectiveTempoBpm,
-          initialTrackGain: trackGainAtArm[channel] ?? 1,
-          initialLaneVolume: laneVolumeAtArm[channel] ?? 1,
-          initiallyMuted: mutedAtArm.contains(channel),
-          initiallySoloed: soloedAtArm,
+      DawClip? stem(String kind) {
+        final audio = _audioFile(
+          captureDir,
+          'stems/$kind/track$channel.wav',
+          sampleRate: sampleRate,
+          fallbackFrames: captureFrames,
         );
-        // A gain other than unity at arm needs a lane even with no
-        // gestures: the dry stem is at unity.
-        if (raw.volume.isNotEmpty || raw.initialVolume != 1) {
-          automationLanes.add(
-            AutomationLane(
-              target: AutomationTarget.volume,
-              initialValue: raw.initialVolume,
-              breakpoints: raw.volume.isEmpty
-                  ? [AutomationBreakpoint(beat: 0, value: raw.initialVolume)]
-                  : thinVolumeAutomation(
-                      raw: raw.volume,
-                      tempoBpm: effectiveTempoBpm,
-                    ),
-            ),
-          );
-        }
-        if (raw.mute.isNotEmpty || raw.initialAudible == 0) {
-          // Mute is step-shaped, never thinned.
-          automationLanes.add(
-            AutomationLane(
-              target: AutomationTarget.activator,
-              initialValue: raw.initialAudible,
-              breakpoints: raw.mute.isEmpty
-                  ? const [AutomationBreakpoint(beat: 0, value: 0)]
-                  : raw.mute,
-            ),
-          );
-        }
+        return audio == null ? null : DawClip(audio: audio, startSeconds: 0);
       }
 
+      final wet = stem('wet');
+      final dry = stem('dry');
+      if (wet == null && dry == null && sessionClips.isEmpty) continue;
+
+      // The dry stem plays at unity, so its track carries the logged volume
+      // and mute as volume automation: off while not audible. The wet render
+      // already applies them (perf_render.c's wet pass), so the wet track
+      // carries none.
+      final volume = dry == null || logEntries == null
+          ? null
+          : _dryVolume(
+              EventLogReader.readChannelAutomation(
+                logEntries,
+                channel,
+                sampleRate,
+                effectiveTempoBpm,
+                initialTrackGain: trackGainAtArm[channel] ?? 1,
+                initialLaneVolume: laneVolumeAtArm[channel] ?? 1,
+                initiallyMuted: mutedAtArm.contains(channel),
+                initiallySoloed: soloedAtArm,
+              ),
+              effectiveTempoBpm,
+            );
+      final name = trackNameOf(manifest, channel);
+      final info = _info(EffectText.track(manifest, channel));
+      if (wet != null) {
+        tracks.add(
+          DawTrack(
+            name: name,
+            arrangementClips: [wet],
+            sessionClips: sessionClips,
+            info: info,
+          ),
+        );
+        if (dry != null) {
+          // The same take before its effects, for processing again: off, so
+          // the set does not play it on top of the wet stem.
+          tracks.add(
+            DawTrack(
+              name: '$name dry',
+              active: false,
+              arrangementClips: [dry],
+              volume: volume,
+              info: info,
+            ),
+          );
+        }
+      } else {
+        tracks.add(
+          DawTrack(
+            name: name,
+            arrangementClips: [?dry],
+            sessionClips: sessionClips,
+            volume: volume,
+            info: info,
+          ),
+        );
+      }
+    }
+
+    // Each captured input as the player heard it: the engine records an
+    // input after its monitor chain, volume and pan (mix_monitors_frame,
+    // silent while its monitor is off), so it plays beside the loops. Then
+    // the captured output, which holds both: a reference, off.
+    final parts = _partsByStream(captureDir, manifest, sampleRate);
+    final layout = manifest['channel_layout'];
+    final inputs = [
+      if (layout is Map<String, dynamic> && layout['captured_inputs'] is List)
+        for (final i in layout['captured_inputs'] as List)
+          if (i is num) i.toInt(),
+    ]..sort();
+    for (final input in inputs) {
+      final clips = parts[1 + input];
+      if (clips == null) continue;
       tracks.add(
         DawTrack(
-          name: 'Track $channel',
-          arrangementClip: arrangementAudio == null
-              ? null
-              : DawClip(audio: arrangementAudio, startSeconds: 0),
-          sessionClips: sessionClips,
-          automationLanes: automationLanes,
+          name: inputNameOf(manifest, input),
+          arrangementClips: clips,
+          info:
+              'The input as heard: after its effects, volume and pan.\n'
+              '${_info(EffectText.input(manifest, input))}',
+        ),
+      );
+    }
+    final master = parts[0];
+    if (master != null) {
+      tracks.add(
+        DawTrack(
+          name: kMasterTrackName,
+          active: false,
+          arrangementClips: master,
+          info: _info(EffectText.output(manifest)),
         ),
       );
     }
@@ -241,6 +275,136 @@ abstract final class DawManifestReader {
     if (snapshot is! Map<String, dynamic>) return null;
     final bpm = (snapshot['tempoBpm'] as num?)?.toDouble();
     return bpm != null && bpm > 0 ? bpm : null;
+  }
+
+  /// The info text for a track whose effects are [effects].
+  static String _info(String? effects) => effects == null
+      ? 'No effects were recorded when the take started.'
+      : 'Effects when the take started:\n$effects';
+
+  /// The dry track's volume: [raw]'s gain times its audibility, so a mute
+  /// is a step to silence and back. Two breakpoints at a toggle's beat make
+  /// the step. `null` when it stays at unity throughout.
+  static AutomationLane? _dryVolume(
+    ({
+      double initialVolume,
+      List<AutomationBreakpoint> volume,
+      double initialAudible,
+      List<AutomationBreakpoint> mute,
+    })
+    raw,
+    double tempoBpm,
+  ) {
+    final initial = raw.initialVolume * raw.initialAudible;
+    if (raw.volume.isEmpty && raw.mute.isEmpty) {
+      return initial == 1
+          ? null
+          : AutomationLane(
+              initialValue: initial,
+              breakpoints: [AutomationBreakpoint(beat: 0, value: initial)],
+            );
+    }
+    final ride = raw.volume.isEmpty
+        ? const <AutomationBreakpoint>[]
+        : thinVolumeAutomation(raw: raw.volume, tempoBpm: tempoBpm);
+    // The ride's value at [beat], as Live interpolates it.
+    double gainAt(double beat) {
+      var before = raw.initialVolume;
+      var beforeBeat = 0.0;
+      for (final point in ride) {
+        if (point.beat >= beat) {
+          if (point.beat == beforeBeat) return point.value;
+          final t = (beat - beforeBeat) / (point.beat - beforeBeat);
+          return before + (point.value - before) * t;
+        }
+        before = point.value;
+        beforeBeat = point.beat;
+      }
+      return before;
+    }
+
+    final breakpoints = <AutomationBreakpoint>[];
+    var audible = raw.initialAudible;
+    var ri = 0;
+    var mi = 0;
+    while (ri < ride.length || mi < raw.mute.length) {
+      if (mi == raw.mute.length ||
+          (ri < ride.length && ride[ri].beat < raw.mute[mi].beat)) {
+        final point = ride[ri++];
+        breakpoints.add(
+          AutomationBreakpoint(beat: point.beat, value: point.value * audible),
+        );
+        continue;
+      }
+      final toggle = raw.mute[mi++];
+      final gain = gainAt(toggle.beat);
+      breakpoints.add(
+        AutomationBreakpoint(beat: toggle.beat, value: gain * audible),
+      );
+      audible = toggle.value;
+      breakpoints.add(
+        AutomationBreakpoint(beat: toggle.beat, value: gain * audible),
+      );
+    }
+    return AutomationLane(initialValue: initial, breakpoints: breakpoints);
+  }
+
+  /// Each captured stream's audio as Arrangement clips, one per part file
+  /// placed where the previous ones end: stream 0 is the master, `1 + n`
+  /// input `n`. Read from the sidecar's `parts` (#1198), or for a take
+  /// finalized before them, its single `master.wav` and
+  /// `live-input-<n>.wav`.
+  static Map<int, List<DawClip>> _partsByStream(
+    String captureDir,
+    Map<String, dynamic> manifest,
+    int sampleRate,
+  ) {
+    final byStream = <int, List<(int, String, int)>>{};
+    final listed = manifest['parts'];
+    if (listed is List) {
+      for (final part in listed.whereType<Map<String, dynamic>>()) {
+        final stream = part['stream'];
+        final index = part['index'];
+        final file = part['file'];
+        if (stream is! num || index is! num || file is! String) continue;
+        byStream.putIfAbsent(stream.toInt(), () => []).add((
+          index.toInt(),
+          file,
+          (part['frames'] as num?)?.toInt() ?? 0,
+        ));
+      }
+    } else {
+      final frames = (manifest['capture_frames'] as num?)?.toInt() ?? 0;
+      byStream[0] = [(1, 'master.wav', frames)];
+      final layout = manifest['channel_layout'];
+      if (layout is Map<String, dynamic> && layout['captured_inputs'] is List) {
+        for (final input in layout['captured_inputs'] as List) {
+          if (input is! num) continue;
+          byStream[1 + input.toInt()] = [
+            (1, 'live-input-${input.toInt()}.wav', frames),
+          ];
+        }
+      }
+    }
+    final clips = <int, List<DawClip>>{};
+    for (final MapEntry(key: stream, value: files) in byStream.entries) {
+      files.sort((a, b) => a.$1.compareTo(b.$1));
+      var start = 0.0;
+      final list = <DawClip>[];
+      for (final (_, file, frames) in files) {
+        final audio = _audioFile(
+          captureDir,
+          file,
+          sampleRate: sampleRate,
+          fallbackFrames: frames,
+        );
+        // A missing part leaves a gap rather than shifting what follows.
+        if (audio != null) list.add(DawClip(audio: audio, startSeconds: start));
+        start += (audio?.frames ?? frames) / (audio?.sampleRate ?? sampleRate);
+      }
+      if (list.isNotEmpty) clips[stream] = list;
+    }
+    return clips;
   }
 
   /// [relative]'s [DawAudioFile]: its rate and length from its WAV
@@ -269,12 +433,5 @@ abstract final class DawManifestReader {
       sampleRate: sampleRate,
       frames: fallbackFrames,
     );
-  }
-
-  static String? _firstExisting(String captureDir, List<String> candidates) {
-    for (final relative in candidates) {
-      if (File('$captureDir/$relative').existsSync()) return relative;
-    }
-    return null;
   }
 }

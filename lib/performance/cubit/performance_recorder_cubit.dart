@@ -67,6 +67,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Defaults to the empty snapshot (what every call site passed before this
   /// was wired); the composition root (`lib/app/view/app.dart`) supplies
   /// `performanceChainsFromLooper` over the live `LooperRepository`.
+  /// [_currentNames] resolves what the player calls each track and input,
+  /// read at each arm the same way (#1799).
   ///
   /// [_storage] and [_destination] are where a take may go (#1177 Part 6):
   /// [_destination] is read at each arm (the recorder's `Save to`), and a take
@@ -82,6 +84,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     this._now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
     this._currentChains = _noChains,
+    this._currentNames = _noNames,
     this._takeLocked = _neverLocked,
     this._storage,
     this._destination = _internal,
@@ -97,6 +100,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// The default `currentChains`: an empty rig, which is what
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
+
+  /// The default `currentNames`: nothing named.
+  static PerformanceNames _noNames() => const PerformanceNames();
 
   static bool _neverLocked() => false;
 
@@ -121,6 +127,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final DateTime Function() _now;
   final Future<int?> Function(String path) _freeSpaceBytes;
   final PerformanceChains Function() _currentChains;
+  final PerformanceNames Function() _currentNames;
   final bool Function() _takeLocked;
   final StorageRepository? _storage;
   final StorageDestination Function() _destination;
@@ -378,6 +385,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         try {
           await _performance.arm(
             chains: _currentChains(),
+            names: _currentNames(),
             root: target.root,
             scope: target.scope,
           );

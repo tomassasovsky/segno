@@ -66,6 +66,7 @@ List<int> _generic(int argI, double argF) {
 }
 
 void main() {
+  _layoutTests();
   group('DawManifestReader.read', () {
     late Directory dir;
 
@@ -87,8 +88,8 @@ void main() {
     });
 
     test(
-      'builds one track with an arrangement clip from a wet stem, preferring '
-      'it over dry',
+      'builds a track over the wet stem, then the dry stem on a track of its '
+      'own, switched off',
       () {
         Directory('${dir.path}/stems/wet').createSync(recursive: true);
         Directory('${dir.path}/stems/dry').createSync(recursive: true);
@@ -115,12 +116,21 @@ void main() {
 
         final project = DawManifestReader.read(dir.path);
         expect(project, isNotNull);
-        expect(project!.tracks, hasLength(1));
+        final [wet, dry] = project!.tracks;
+        expect(wet.name, 'Track 1');
+        expect(wet.active, isTrue);
         expect(
-          project.tracks.single.arrangementClip!.audio.fileRef,
+          wet.arrangementClips.single.audio.fileRef,
           'stems/wet/track0.wav',
         );
-        expect(project.tracks.single.arrangementClip!.audio.seconds, 1.0);
+        expect(wet.arrangementClips.single.audio.seconds, 1.0);
+        expect(dry.name, 'Track 1 dry');
+        expect(dry.active, isFalse);
+        expect(
+          dry.arrangementClips.single.audio.fileRef,
+          'stems/dry/track0.wav',
+        );
+        expect(dry.sessionClips, isEmpty);
       },
     );
 
@@ -143,7 +153,7 @@ void main() {
 
       final project = DawManifestReader.read(dir.path);
       expect(
-        project!.tracks.single.arrangementClip!.audio.fileRef,
+        project!.tracks.single.arrangementClips.single.audio.fileRef,
         'stems/dry/track0.wav',
       );
     });
@@ -188,7 +198,7 @@ void main() {
       // stems/dry file for channel 0 at all) is that the track has no
       // arrangement clip — asserted explicitly rather than left to
       // whatever `sessionClips` happens to check.
-      expect(track.arrangementClip, isNull);
+      expect(track.arrangementClips, isEmpty);
       // A loop is as long as its own file.
       expect(track.sessionClips.first.audio.seconds, 1.0);
     });
@@ -230,9 +240,9 @@ void main() {
         manifest([lane(0, 'loops/a.wav', 12345)]);
 
         final track = DawManifestReader.read(dir.path)!.tracks.single;
-        final stem = track.arrangementClip!.audio;
+        final stem = track.arrangementClips.single.audio;
         expect((stem.sampleRate, stem.frames), (96000, 96000 * 3));
-        expect(track.arrangementClip!.startSeconds, 0);
+        expect(track.arrangementClips.single.startSeconds, 0);
         final loop = track.sessionClips.single.audio;
         expect((loop.sampleRate, loop.frames), (96000, 96000));
       });
@@ -244,8 +254,8 @@ void main() {
         manifest([lane(0, 'loops/a.wav', 24000)]);
 
         final track = DawManifestReader.read(dir.path)!.tracks.single;
-        expect(track.arrangementClip!.audio.frames, 48000 * 4);
-        expect(track.arrangementClip!.audio.sampleRate, 48000);
+        expect(track.arrangementClips.single.audio.frames, 48000 * 4);
+        expect(track.arrangementClips.single.audio.sampleRate, 48000);
         expect(track.sessionClips.single.audio.frames, 24000);
       });
 
@@ -256,13 +266,13 @@ void main() {
 
         final track = DawManifestReader.read(dir.path)!.tracks.single;
         expect(track.sessionClips, isEmpty);
-        expect(track.arrangementClip, isNotNull);
+        expect(track.arrangementClips, hasLength(1));
       });
     });
 
-    test("a dry clip's volume lane starts from the arm-time track gain "
-        "times lane 0's level, and lane 0's mute silences it from the "
-        'start', () {
+    test("a dry clip's volume starts from the arm-time track gain times lane "
+        "0's level times its audibility: lane 0 muted at arm holds it silent "
+        'through a volume change', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
       File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
@@ -290,19 +300,10 @@ void main() {
         (24000, codeSetVolume, _generic(0, 1)),
       ]);
 
-      final lanes = DawManifestReader.read(dir.path)!
-          .tracks
-          .single
-          .automationLanes;
-      final volume = lanes.firstWhere(
-        (l) => l.target == AutomationTarget.volume,
-      );
-      expect(volume.initialValue, closeTo(0.4, 1e-9));
-      expect(volume.breakpoints.single.value, closeTo(0.8, 1e-6));
-      final activator = lanes.firstWhere(
-        (l) => l.target == AutomationTarget.activator,
-      );
-      expect(activator.initialValue, 0);
+      final volume = DawManifestReader.read(dir.path)!.tracks.single.volume!;
+      expect(volume.initialValue, 0);
+      expect(volume.breakpoints.single.beat, 1);
+      expect(volume.breakpoints.single.value, 0);
     });
 
     group('arm-time state on a dry clip', () {
@@ -334,12 +335,7 @@ void main() {
             {'lane': 0, 'deferred': false, 'pcmRef': 'stems/dry/track0.wav'},
           ],
         });
-        final lane = DawManifestReader.read(dir.path)!
-            .tracks
-            .single
-            .automationLanes
-            .single;
-        expect(lane.target, AutomationTarget.volume);
+        final lane = DawManifestReader.read(dir.path)!.tracks.single.volume!;
         expect(lane.initialValue, 0.5);
         expect(lane.breakpoints.single.beat, 0);
         expect(lane.breakpoints.single.value, 0.5);
@@ -358,10 +354,7 @@ void main() {
             },
           ],
         });
-        expect(
-          DawManifestReader.read(dir.path)!.tracks.single.automationLanes,
-          isEmpty,
-        );
+        expect(DawManifestReader.read(dir.path)!.tracks.single.volume, isNull);
       });
 
       test("the track's mute applies when lane 0 has no flag", () {
@@ -371,13 +364,9 @@ void main() {
             {'lane': 0, 'deferred': false, 'pcmRef': 'stems/dry/track0.wav'},
           ],
         });
-        final lane = DawManifestReader.read(dir.path)!
-            .tracks
-            .single
-            .automationLanes
-            .single;
-        expect(lane.target, AutomationTarget.activator);
+        final lane = DawManifestReader.read(dir.path)!.tracks.single.volume!;
         expect(lane.initialValue, 0);
+        expect(lane.breakpoints.single.value, 0);
       });
     });
 
@@ -618,16 +607,16 @@ void main() {
       ]);
 
       final project = DawManifestReader.read(dir.path);
-      final lanes = project!.tracks.single.automationLanes;
-      expect(lanes, hasLength(1));
-      expect(lanes.single.target, AutomationTarget.volume);
-      expect(lanes.single.breakpoints, hasLength(2));
-      expect(lanes.single.breakpoints.first.beat, 0.0);
-      expect(lanes.single.breakpoints.last.beat, 2.0); // 1s at 120bpm
+      final lane = project!.tracks.single.volume!;
+      expect(lane.breakpoints, hasLength(2));
+      expect(lane.breakpoints.first.beat, 0.0);
+      expect(lane.breakpoints.first.value, closeTo(0.5, 1e-6));
+      expect(lane.breakpoints.last.beat, 2.0); // 1s at 120bpm
+      expect(lane.breakpoints.last.value, closeTo(0.9, 1e-6));
     });
 
-    test('builds an activator (mute) automation lane from events.log, '
-        'independent of whether a volume lane exists', () {
+    test('a mute is a step to silence in the volume and back, two '
+        'breakpoints at each toggle', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
       File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
@@ -659,17 +648,22 @@ void main() {
       ]);
 
       final project = DawManifestReader.read(dir.path);
-      final lanes = project!.tracks.single.automationLanes;
-      expect(lanes, hasLength(1));
-      expect(lanes.single.target, AutomationTarget.activator);
-      expect(lanes.single.breakpoints, hasLength(2));
-      expect(lanes.single.breakpoints.first.value, 0.0); // muted -> off
-      expect(lanes.single.breakpoints.last.value, 1.0); // unmuted -> on
+      final lane = project!.tracks.single.volume!;
+      expect(lane.initialValue, 1);
+      expect(
+        [for (final b in lane.breakpoints) (b.beat, b.value)],
+        [
+          (0.0, 1.0),
+          (0.0, 0.0), // muted
+          (2.0, 0.0),
+          (2.0, 1.0), // unmuted
+        ],
+      );
     });
 
-    test("seeds the activator lane from the arm snapshot's muted/solo flags: "
-        "a track muted at arm stays off through another track's solo, and a "
-        'track soloed at arm silences the rest until that solo clears', () {
+    test("seeds audibility from the arm snapshot's muted/solo flags: a track "
+        "muted at arm stays silent through another track's solo, and a track "
+        'soloed at arm silences the rest until that solo clears', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
       for (final channel in [0, 1, 2]) {
         File('${dir.path}/stems/dry/track$channel.wav')
@@ -713,19 +707,20 @@ void main() {
 
       // Track 0: silenced by track 2's solo from arm (off at the start),
       // audible once it clears.
-      final lane0 = tracks[0].automationLanes.single;
-      expect(lane0.target, AutomationTarget.activator);
+      final lane0 = tracks[0].volume!;
       expect(lane0.initialValue, 0);
-      expect(lane0.breakpoints.single.beat, 2.0);
-      expect(lane0.breakpoints.single.value, 1.0);
-      // Track 1: muted at arm, off from the start; the solo clear changes
-      // nothing, so its one breakpoint holds it off.
-      final lane1 = tracks[1].automationLanes.single;
+      expect(
+        [for (final b in lane0.breakpoints) (b.beat, b.value)],
+        [(2.0, 0.0), (2.0, 1.0)],
+      );
+      // Track 1: muted at arm, silent from the start; the solo clear changes
+      // nothing, so its one breakpoint holds it silent.
+      final lane1 = tracks[1].volume!;
       expect(lane1.initialValue, 0);
       expect(lane1.breakpoints.single.beat, 0);
       expect(lane1.breakpoints.single.value, 0);
       // Track 2: the soloed track itself was audible throughout.
-      expect(tracks[2].automationLanes, isEmpty);
+      expect(tracks[2].volume, isNull);
     });
 
     test('a wet arrangement clip gets no volume or activator automation: the '
@@ -761,8 +756,11 @@ void main() {
       ]);
 
       final track = DawManifestReader.read(dir.path)!.tracks.single;
-      expect(track.arrangementClip!.audio.fileRef, 'stems/wet/track0.wav');
-      expect(track.automationLanes, isEmpty);
+      expect(
+        track.arrangementClips.single.audio.fileRef,
+        'stems/wet/track0.wav',
+      );
+      expect(track.volume, isNull);
     });
 
     test('a channel with an effects chain still exports the wet stem: the '
@@ -801,8 +799,13 @@ void main() {
       );
 
       final project = DawManifestReader.read(dir.path);
-      final track = project!.tracks.single;
-      expect(track.arrangementClip!.audio.fileRef, 'stems/wet/track0.wav');
+      final [wet, dry] = project!.tracks;
+      expect(wet.arrangementClips.single.audio.fileRef, 'stems/wet/track0.wav');
+      expect(wet.active, isTrue);
+      expect(dry.active, isFalse);
+      // The chain is told in each track's info text.
+      expect(wet.info, 'Effects when the take started:\nLane 1: Delay');
+      expect(dry.info, wet.info);
     });
 
     test('threads a real, explicit tempoBpm through to the returned DawProject '
@@ -843,8 +846,8 @@ void main() {
       // beats the earlier test at the same frame offset asserts, proving
       // this reader's own internal beat-time conversion (not just the
       // returned DawProject.tempoBpm) uses the real tempo too.
-      final lanes = project.tracks.single.automationLanes;
-      expect(lanes.single.breakpoints.last.beat, closeTo(140 / 60, 1e-9));
+      final lane = project.tracks.single.volume!;
+      expect(lane.breakpoints.last.beat, closeTo(140 / 60, 1e-9));
     });
 
     test('a non-positive tempoBpm (a legacy v3 session, or v4 grid-off content '
@@ -952,7 +955,213 @@ void main() {
       );
       // No events.log at all.
       final project = DawManifestReader.read(dir.path);
-      expect(project!.tracks.single.automationLanes, isEmpty);
+      expect(project!.tracks.single.volume, isNull);
+    });
+  });
+}
+
+void _layoutTests() {
+  group('DawManifestReader.read layout (#1799)', () {
+    late Directory dir;
+
+    setUp(() => dir = Directory.systemTemp.createTempSync('daw_layout_'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    void write(String file, int frames) => (File(
+      '${dir.path}/$file',
+    )..parent.createSync(recursive: true)).writeAsBytesSync(_wav(frames));
+
+    void manifest(Map<String, dynamic> fields) =>
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000 * 3,
+            'channel_layout': {
+              'master_channels': 2,
+              'captured_inputs': [1, 0],
+            },
+            ...fields,
+          }),
+        );
+
+    test('names the tracks and inputs the player named, and numbers the '
+        'rest from 1', () {
+      write('stems/wet/track0.wav', 48000);
+      write('stems/wet/track2.wav', 48000);
+      write('input-0-001.wav', 48000);
+      write('input-1-001.wav', 48000);
+      manifest({
+        'armSnapshot': {
+          'tracks': [
+            {'channel': 0, 'name': 'Rhythm', 'lanes': <dynamic>[]},
+            {'channel': 2, 'lanes': <dynamic>[]},
+          ],
+          'inputs': [
+            {'input': 1, 'name': 'Vocal'},
+          ],
+        },
+        'parts': [
+          {'stream': 1, 'index': 1, 'file': 'input-0-001.wav', 'frames': 1},
+          {'stream': 2, 'index': 1, 'file': 'input-1-001.wav', 'frames': 1},
+        ],
+      });
+
+      final tracks = DawManifestReader.read(dir.path)!.tracks;
+      expect(tracks.map((t) => t.name), [
+        'Rhythm',
+        'Track 3',
+        'Input 1',
+        'Vocal',
+      ]);
+      expect(tracks.map((t) => t.active), everyElement(isTrue));
+    });
+
+    test('an input and the master hold their parts end to end, the master '
+        'last and switched off', () {
+      write('stems/wet/track0.wav', 48000);
+      write('master-001.wav', 48000 * 2);
+      write('master-002.wav', 48000);
+      write('input-0-001.wav', 48000 * 2);
+      write('input-0-002.wav', 48000);
+      manifest({
+        'channel_layout': {
+          'master_channels': 2,
+          'captured_inputs': [0],
+        },
+        'armSnapshot': {
+          'tracks': [
+            {'channel': 0, 'lanes': <dynamic>[]},
+          ],
+        },
+        'parts': [
+          {'stream': 1, 'index': 2, 'file': 'input-0-002.wav', 'frames': 48000},
+          {'stream': 0, 'index': 2, 'file': 'master-002.wav', 'frames': 48000},
+          {'stream': 0, 'index': 1, 'file': 'master-001.wav', 'frames': 96000},
+          {'stream': 1, 'index': 1, 'file': 'input-0-001.wav', 'frames': 96000},
+        ],
+      });
+
+      final [_, input, master] = DawManifestReader.read(dir.path)!.tracks;
+      expect(input.active, isTrue);
+      expect(master.active, isFalse);
+      for (final (track, prefix) in [(input, 'input-0'), (master, 'master')]) {
+        expect(track.sessionClips, isEmpty);
+        expect(track.volume, isNull);
+        expect(
+          [
+            for (final c in track.arrangementClips)
+              (c.audio.fileRef, c.startSeconds),
+          ],
+          [('$prefix-001.wav', 0.0), ('$prefix-002.wav', 2.0)],
+        );
+      }
+      expect(master.name, 'Master (as heard)');
+    });
+
+    test('a missing part leaves its gap instead of moving the next one '
+        'up', () {
+      write('master-002.wav', 48000);
+      manifest({
+        'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
+        'parts': [
+          {'stream': 0, 'index': 1, 'file': 'master-001.wav', 'frames': 96000},
+          {'stream': 0, 'index': 2, 'file': 'master-002.wav', 'frames': 48000},
+        ],
+      });
+
+      final master = DawManifestReader.read(dir.path)!.tracks.single;
+      expect(master.arrangementClips.single.audio.fileRef, 'master-002.wav');
+      expect(master.arrangementClips.single.startSeconds, 2);
+    });
+
+    test('a take from before the parts format reads master.wav and '
+        'live-input-<n>.wav', () {
+      write('master.wav', 48000);
+      write('live-input-0.wav', 48000);
+      manifest({
+        'channel_layout': {
+          'master_channels': 2,
+          'captured_inputs': [0, 1],
+        },
+      });
+
+      final tracks = DawManifestReader.read(dir.path)!.tracks;
+      expect(tracks.map((t) => t.name), ['Input 1', 'Master (as heard)']);
+      expect(tracks.map((t) => t.arrangementClips.single.audio.fileRef), [
+        'live-input-0.wav',
+        'master.wav',
+      ]);
+    });
+
+    test('each track tells the effects it started with, or that there were '
+        'none', () {
+      write('stems/wet/track0.wav', 48000);
+      write('input-0-001.wav', 48000);
+      write('master-001.wav', 48000);
+      manifest({
+        'channel_layout': {
+          'master_channels': 2,
+          'captured_inputs': [0],
+        },
+        'armSnapshot': {
+          'tracks': [
+            {'channel': 0, 'lanes': <dynamic>[]},
+          ],
+          'monitors': [
+            {
+              'input': 0,
+              'effects': [
+                {'type': 14, 'params': <double>[]},
+              ],
+            },
+          ],
+        },
+        'parts': [
+          {'stream': 0, 'index': 1, 'file': 'master-001.wav', 'frames': 1},
+          {'stream': 1, 'index': 1, 'file': 'input-0-001.wav', 'frames': 1},
+        ],
+      });
+
+      final tracks = DawManifestReader.read(dir.path)!.tracks;
+      const inputInfo =
+          'The input as heard: after its effects, volume and pan.\n'
+          'Effects when the take started:\nChorus';
+      expect(tracks.map((t) => t.info), [
+        'No effects were recorded when the take started.',
+        inputInfo,
+        'No effects were recorded when the take started.',
+      ]);
+    });
+
+    test("a mute in the middle of a volume ramp steps from the ramp's value "
+        'there', () {
+      write('stems/dry/track0.wav', 48000 * 3);
+      manifest({
+        'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
+        'armSnapshot': {
+          'tracks': [
+            {'channel': 0, 'lanes': <dynamic>[]},
+          ],
+        },
+      });
+      const codeSetVolume = 7;
+      const codeSetMute = 8;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetVolume, _generic(0, 0)),
+        (96000, codeSetVolume, _generic(0, 1)),
+        (48000, codeSetMute, _generic(0, 1)),
+      ]);
+
+      final lane = DawManifestReader.read(dir.path)!.tracks.single.volume!;
+      expect(
+        [for (final b in lane.breakpoints) (b.beat, b.value)],
+        [
+          (0.0, 0.0),
+          (2.0, 0.5), // halfway up the ramp, when the mute lands
+          (2.0, 0.0),
+          (4.0, 0.0), // the ramp's end, silent
+        ],
+      );
     });
   });
 }

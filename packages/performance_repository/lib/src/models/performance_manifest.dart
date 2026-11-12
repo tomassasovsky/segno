@@ -1,5 +1,6 @@
 import 'package:meta/meta.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
+import 'package:performance_repository/src/models/performance_names.dart';
 import 'package:performance_repository/src/models/recording_format.dart';
 import 'package:segno_engine/segno_engine.dart';
 
@@ -199,6 +200,7 @@ class PerformanceTrackSnapshot {
     this.solo = false,
     this.anchorLap = 0,
     this.lanes = const [],
+    this.name,
   });
 
   /// Rebuilds a [PerformanceTrackSnapshot] from a decoded JSON map.
@@ -216,6 +218,8 @@ class PerformanceTrackSnapshot {
       for (final l in (json['lanes'] as List<dynamic>? ?? const []))
         PerformanceLaneSnapshot.fromJson(l as Map<String, dynamic>),
     ],
+    // Absent when the player gave none, and before #1799.
+    name: json['name'] as String?,
   );
 
   /// Track channel index.
@@ -246,9 +250,14 @@ class PerformanceTrackSnapshot {
   /// Per-lane snapshots, in lane order.
   final List<PerformanceLaneSnapshot> lanes;
 
+  /// The name the player gave the track ([PerformanceNames.tracks]), or
+  /// `null` when it has none. Recorded on the arm pass only (#1799).
+  final String? name;
+
   /// Serializes this track snapshot to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
+    if (name != null) 'name': name,
     'state': state.name,
     'volume': volume,
     'muted': muted,
@@ -295,6 +304,7 @@ class PerformanceArmSnapshot {
     this.outputEnabledMask = 0xFFFFFFFF,
     this.outputLevel = 1,
     this.outputMuted = false,
+    this.inputNames = const {},
   });
 
   /// Presence-keyed, matching the session manifest's own migration style (no
@@ -325,6 +335,11 @@ class PerformanceArmSnapshot {
         json['outputEnabledMask'],
         omitted: !json.containsKey('outputEnabledMask'),
       ),
+      inputNames: {
+        for (final e in (json['inputs'] as List<dynamic>? ?? const []))
+          ((e as Map<String, dynamic>)['input'] as num).toInt():
+              e['name'] as String,
+      },
       outputLevel: _outputLevel(
         json['outputLevel'],
         omitted: !json.containsKey('outputLevel'),
@@ -377,6 +392,7 @@ class PerformanceArmSnapshot {
     latencyOffsetFrames: latencyOffsetFrames,
     tempoBpm: tempoBpm,
     tracks: tracks,
+    inputNames: inputNames,
     monitors: monitors,
     trackChains: trackChains,
     outputChains: outputChains,
@@ -453,6 +469,11 @@ class PerformanceArmSnapshot {
   /// Every track's state at arm time.
   final List<PerformanceTrackSnapshot> tracks;
 
+  /// Hardware input to the name the player gave it
+  /// ([PerformanceNames.inputs]), written as `inputs`: `[{input, name}]`.
+  /// Empty when no input is named, and before #1799.
+  final Map<int, String> inputNames;
+
   /// Every monitor input's configuration at arm time (the Input stage), as
   /// pre-encoded JSON maps (`{input, enabled, outputMask, volume, muted,
   /// chainEnabled?, effects}`).
@@ -504,6 +525,11 @@ class PerformanceArmSnapshot {
       if (fxStagesVersion != legacyFxStagesVersion)
         'fxStagesVersion': fxStagesVersion,
       'tracks': [for (final t in tracks) t.toJson()],
+      if (inputNames.isNotEmpty)
+        'inputs': [
+          for (final input in inputNames.keys.toList()..sort())
+            {'input': input, 'name': inputNames[input]},
+        ],
       'monitors': monitors,
       if (trackChains.isNotEmpty)
         'trackChains': [for (final c in trackChains) c.toJson()],

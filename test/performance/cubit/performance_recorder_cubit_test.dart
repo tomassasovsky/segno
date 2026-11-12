@@ -147,6 +147,7 @@ void main() {
     DateTime Function()? now,
     Future<int?> Function(String path)? freeSpaceBytes,
     PerformanceChains Function()? currentChains,
+    PerformanceNames Function()? currentNames,
     Duration armedTickInterval = const Duration(milliseconds: 10),
     bool Function()? takeLocked,
   }) => PerformanceRecorderCubit(
@@ -156,6 +157,7 @@ void main() {
     now: now ?? (() => clock),
     freeSpaceBytes: freeSpaceBytes ?? (_) async => null,
     currentChains: currentChains ?? PerformanceChains.new,
+    currentNames: currentNames ?? PerformanceNames.new,
     takeLocked: takeLocked ?? () => false,
   );
 
@@ -462,6 +464,24 @@ void main() {
       expect(snapshot['limiterCeiling'], 0.8);
       expect(snapshot['monitors'], hasLength(1));
       expect((snapshot['monitors'] as List).single, containsPair('input', 1));
+    });
+
+    test('stamps the provider names into the arm snapshot (#1799)', () async {
+      final cubit = build(
+        currentNames: () => const PerformanceNames(inputs: {1: 'Vocal'}),
+      );
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      final snapshot = jsonDecode(
+        File('${performance.armedDirectory}/arm-snapshot.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(snapshot['inputs'], [
+        {'input': 1, 'name': 'Vocal'},
+      ]);
     });
 
     test('reads the chains at arm time, not at construction', () async {
@@ -1184,7 +1204,7 @@ void main() {
       final completed = await waitForCompleted(cubit);
 
       expect(completed.tracks, hasLength(1));
-      expect(completed.tracks.single.name, 'Track 0');
+      expect(completed.tracks.single.name, 'Track 1');
     });
   });
 

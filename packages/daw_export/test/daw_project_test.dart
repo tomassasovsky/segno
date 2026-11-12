@@ -23,6 +23,15 @@ void main() {
   });
 
   group('DawTrack', () {
+    test('defaults to an active track with nothing in it', () {
+      const track = DawTrack(name: 'Track 1');
+      expect(track.active, isTrue);
+      expect(track.arrangementClips, isEmpty);
+      expect(track.sessionClips, isEmpty);
+      expect(track.volume, isNull);
+      expect(track.info, '');
+    });
+
     test('may have no Arrangement clip, only Session clips', () {
       const loop = DawAudioFile(
         fileRef: 'loops/track0-lane0.wav',
@@ -33,9 +42,8 @@ void main() {
         name: 'Track 0',
         sessionClips: [DawSessionClip(laneIndex: 0, audio: loop)],
       );
-      expect(track.arrangementClip, isNull);
+      expect(track.arrangementClips, isEmpty);
       expect(track.sessionClips.single.audio, loop);
-      expect(track.automationLanes, isEmpty);
     });
   });
 
@@ -67,14 +75,12 @@ void main() {
   });
 
   group('AutomationLane', () {
-    test('carries its target, initial value and breakpoints', () {
+    test('carries its initial value and breakpoints', () {
       const lane = AutomationLane(
-        target: AutomationTarget.activator,
-        initialValue: 0,
+        initialValue: 0.5,
         breakpoints: [AutomationBreakpoint(beat: 4, value: 1)],
       );
-      expect(lane.target, AutomationTarget.activator);
-      expect(lane.initialValue, 0);
+      expect(lane.initialValue, 0.5);
       expect(lane.breakpoints.single.beat, 4);
       expect(lane.breakpoints.single.value, 1);
     });

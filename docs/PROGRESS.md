@@ -88,6 +88,27 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The Live set carries the whole capture (#1799)
+
+- A take's arm records the rig again: the app had stopped handing
+  `PerformanceRecorderCubit` and `ControlCubit` the rig's chains (#375's
+  wiring was lost), so every arm recorded no effects, `fx-chains.txt` came
+  out empty and the wet stems were rendered without effects. Both now get
+  `performanceChainsFromLooper`, and a `PerformanceNames` of what the player
+  calls each track and input (`armSnapshot.tracks[].name`,
+  `armSnapshot.inputs`). `InputsCubit` moved into `AppRuntime` beside
+  `TracksCubit`, so the pedal path reads both.
+- The Live set holds every looper track's wet stem, its dry stem on a
+  switched-off `<name> dry` track (with the volume and mute as volume
+  automation), each captured input, and `Master (as heard)` switched off,
+  each named, with its effect chains in the track's info text.
+- Captured inputs are recorded after their monitor chain, volume and pan
+  (`mix_monitors_frame`), so they already are the inputs as heard, and play
+  in the set. No dry input is recorded: re-processing an input would need a
+  second tap before the monitor chain.
+- The DAW package now copies `loops/`: without it the Session clips were
+  missing media on the drive.
+
 ## November 2026 Exported Live sets open in Live (#1791)
 
 - Ableton Live 12.2.7 refused every `project.als` Segno exported: "corrupt
