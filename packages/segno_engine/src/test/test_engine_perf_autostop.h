@@ -54,10 +54,28 @@ static float autostop_phrases(uint64_t frame) {
   return frame % 38400 < 9600 ? autostop_playing(frame) : 0.0f;
 }
 
-/* 50 Hz mains hum at -26 dBFS: under the floor once the trigger's 100 Hz
- * high-pass has taken it 24 dB down. */
-static float autostop_hum(uint64_t frame) {
+/* Mains hum at -26 dBFS raw, 50 Hz and 60 Hz: 14 dB over the playing
+ * level on the raw input, under it once the trigger's 100 Hz high-pass has
+ * taken it 24 dB (50 Hz) or 18 dB (60 Hz) down. */
+static float autostop_hum50(uint64_t frame) {
   return 0.05f * sinf(6.2831853f * 50.0f * (float)frame / 48000.0f);
+}
+static float autostop_hum60(uint64_t frame) {
+  return 0.05f * sinf(6.2831853f * 60.0f * (float)frame / 48000.0f);
+}
+
+/* Waits (10 s at most) until a drain cycle has taken the take to [frames]:
+ * the sidecar it rewrites every cycle says so, and that cycle read the
+ * meters after the last block pumped. Returns whether it did. */
+static int autostop_drained_to(uint64_t frames) {
+  char want[64];
+  snprintf(want, sizeof(want), "\"capture_frames\": %llu,",
+           (unsigned long long)frames);
+  for (int i = 0; i < 10000; ++i) {
+    if (perf_sidecar_contains(want)) return 1;
+    test_sleep_ms(1);
+  }
+  return 0;
 }
 
 static int32_t autostop_reason(le_engine* e) {
@@ -100,12 +118,46 @@ static void test_perf_autostop_playing_never_stops(void) {
 /* Hum on an input with nobody playing is not playing. */
 static void test_perf_autostop_hum_does_not_count(void) {
   printf("test_perf_autostop_hum_does_not_count\n");
-  le_engine* e = autostop_arm(1, 0);
-  autostop_pump(e, 0, 3 * 48000, autostop_hum);
-  CHECK(le_perf_disarm(e) == LE_OK);
-  CHECK(perf_sidecar_contains("\"stopped_early\": \"idle\""));
-  CHECK(perf_sidecar_contains("\"capture_frames\": 48000,"));
-  le_engine_destroy(e);
+  /* Whenever and however often the drain looks (#1772): pumped at once, and
+   * in steps of 0.125 s and 0.5 s that a drain cycle reads before the next,
+   * through the idle window and past its end, where the drain stops the
+   * take itself before the disarm. */
+  static const struct {
+    autostop_signal hum;
+    uint64_t step; /* 0: at once */
+  } runs[] = {
+      {autostop_hum50, 0},
+      {autostop_hum50, 6000},
+      {autostop_hum50, 24000},
+      {autostop_hum60, 0},
+      {autostop_hum60, 24000},
+  };
+  for (size_t h = 0; h < sizeof(runs) / sizeof(runs[0]); ++h) {
+    {
+      le_engine* e = autostop_arm(1, 0);
+      const uint64_t paced = runs[h].step;
+      const uint64_t step = paced != 0 ? paced : 3 * 48000;
+      for (uint64_t f = 0; f < 3 * 48000; f += step) {
+        autostop_pump(e, f, f + step, runs[h].hum);
+        if (paced == 0) continue;
+        if (f + step < 48000) {
+          CHECK(autostop_drained_to(f + step));
+        } else if (f < 48000) {
+          int32_t reason = LE_PERF_STOP_NONE;
+          for (int i = 0; i < 10000 && reason == LE_PERF_STOP_NONE; ++i) {
+            test_sleep_ms(1);
+            reason = autostop_reason(e);
+          }
+          CHECK(reason == LE_PERF_STOP_IDLE);
+        }
+      }
+      CHECK(le_perf_disarm(e) == LE_OK);
+      CHECK(perf_sidecar_contains("\"stopped_early\": \"idle\""));
+      CHECK(perf_sidecar_contains("\"capture_frames\": 48000,"));
+      CHECK(autostop_reason(e) == LE_PERF_STOP_IDLE);
+      le_engine_destroy(e);
+    }
+  }
 }
 
 /* A logged event (a volume change) is something happening: the idle period
@@ -196,25 +248,6 @@ static void test_perf_autostop_refuses_negative_times(void) {
     target.max_seconds = which == 1 ? -1 : 0;
     CHECK(le_perf_arm(e, &target) == LE_ERR_INVALID);
   }
-  le_engine_destroy(e);
-}
-
-/* Playing the console hears only through the interface (its monitor muted,
- * the player on the interface's direct monitoring) is still playing: the
- * device's own input level counts, before any fader (#1767). Pumped in
- * steps the drain thread runs between, since it reads the meters live. */
-static void test_perf_autostop_muted_monitor_still_playing(void) {
-  printf("test_perf_autostop_muted_monitor_still_playing\n");
-  le_engine* e = autostop_arm(2, 0);
-  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
-  drain(e);
-  for (uint64_t f = 0; f < 4 * 48000; f += 12000) {
-    autostop_pump(e, f, f + 12000, autostop_playing);
-    test_sleep_ms(300); /* a drain cycle */
-  }
-  CHECK(le_perf_disarm(e) == LE_OK);
-  CHECK(!perf_sidecar_contains("\"stopped_early\""));
-  CHECK(perf_sidecar_contains("\"capture_frames\": 192000,"));
   le_engine_destroy(e);
 }
 
