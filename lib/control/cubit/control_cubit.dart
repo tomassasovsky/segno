@@ -1859,10 +1859,11 @@ class ControlCubit extends Cubit<ControlState> {
   /// Rec mode: advance the cursor track through record / overdub / play. A
   /// muted track is first unmuted and brought back: overdub if its loop still
   /// runs, plain resume if it was parked (the engine unparks the rest of the
-  /// loop with it — starting anything resumes everything). In Song and Band
-  /// the engine holds the start of a stopped or empty section while another
-  /// section sounds, until that section's end (#1323): a Record or an
-  /// overdub, or, for a muted section that is brought back, a Play.
+  /// loop with it — starting anything resumes everything). A track the Rec
+  /// mode Stop parked unmuted ([_recStop]) resumes the same way. In Song and
+  /// Band the engine holds the start of a stopped or empty section while
+  /// another section sounds, until that section's end (#1323): a Record or
+  /// an overdub, or, for a muted section that is brought back, a Play.
   bool _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
@@ -1882,8 +1883,13 @@ class ControlCubit extends Cubit<ControlState> {
         return _recordAccepted(channel);
       }
     }
+    if (track != null &&
+        track.state == TrackState.stopped &&
+        state.parkedResume.contains(channel)) {
+      return _looper.play(channel: channel).isOk;
+    }
     // The engine's cycling record() walks empty -> record, capturing -> play
-    // (finalize), playing -> overdub.
+    // (finalize), playing or stopped -> overdub.
     return _recordAccepted(channel);
   }
 
@@ -2059,8 +2065,12 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
-  /// Rec mode: mute the cursor track (finalizing a capture first). Muting the
-  /// only audible loop parks the whole transport.
+  /// Rec mode: mute the cursor track (finalizing a capture first). When it
+  /// is the only audible loop, the Stop parks the whole transport instead:
+  /// every track stops and the cursor track stays unmuted, so its Post
+  /// effects ring out while it is stopped (#1773; a Mute gates them, tail
+  /// included). It is latched in `parkedResume`, so Rec/Play resumes it
+  /// rather than overdubbing a stopped track.
   bool _recStop(int channel) {
     final track = _trackAt(channel);
     if (track == null) return false;
@@ -2071,13 +2081,14 @@ class ControlCubit extends Cubit<ControlState> {
     if (!_looper.stopRecordControl(channel: channel).isOk) {
       return false;
     }
-    if (!_setTrackMute(muted: true, channel: channel).isOk) return false;
     if (track.state == TrackState.playing && _isLastAudibleTrack(channel)) {
       for (final t in _tracks) {
         _looper.stopTrack(channel: t.channel);
       }
+      emit(state.copyWith(parkedResume: {channel}));
+      return true;
     }
-    return true;
+    return _setTrackMute(muted: true, channel: channel).isOk;
   }
 
   /// Parks the play transport: freezes EVERY running content track (muted
