@@ -305,6 +305,82 @@ void main() {
       expect(activator.initialValue, 0);
     });
 
+    group('arm-time state on a dry clip', () {
+      void manifest(Map<String, dynamic> track) {
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {'channel': 0, ...track},
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+        // A log with no gesture for channel 0.
+        _writeLog('${dir.path}/events.log', 48000, const []);
+      }
+
+      test('a gain other than unity at arm gets a volume lane with no '
+          'gestures, since the dry stem is at unity', () {
+        manifest({
+          'volume': 0.5,
+          'lanes': [
+            {'lane': 0, 'deferred': false, 'pcmRef': 'stems/dry/track0.wav'},
+          ],
+        });
+        final lane = DawManifestReader.read(dir.path)!
+            .tracks
+            .single
+            .automationLanes
+            .single;
+        expect(lane.target, AutomationTarget.volume);
+        expect(lane.initialValue, 0.5);
+        expect(lane.breakpoints.single.beat, 0);
+        expect(lane.breakpoints.single.value, 0.5);
+      });
+
+      test("lane 0's mute flag wins over the track's, as the renderer reads "
+          'it', () {
+        manifest({
+          'muted': true,
+          'lanes': [
+            {
+              'lane': 0,
+              'muted': false,
+              'deferred': false,
+              'pcmRef': 'stems/dry/track0.wav',
+            },
+          ],
+        });
+        expect(
+          DawManifestReader.read(dir.path)!.tracks.single.automationLanes,
+          isEmpty,
+        );
+      });
+
+      test("the track's mute applies when lane 0 has no flag", () {
+        manifest({
+          'muted': true,
+          'lanes': [
+            {'lane': 0, 'deferred': false, 'pcmRef': 'stems/dry/track0.wav'},
+          ],
+        });
+        final lane = DawManifestReader.read(dir.path)!
+            .tracks
+            .single
+            .automationLanes
+            .single;
+        expect(lane.target, AutomationTarget.activator);
+        expect(lane.initialValue, 0);
+      });
+    });
+
     test('reads a lane pcmRef verbatim rather than reconstructing a '
         'conventional filename', () {
       Directory('${dir.path}/captured').createSync(recursive: true);

@@ -85,7 +85,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
-| #1791 | Exported Live sets open in Ableton Live 12: generated from a set Live saved, reference sets as fixtures | in-review | merge-gate | `claude/als-live-open-1791` |
 
 ---
 

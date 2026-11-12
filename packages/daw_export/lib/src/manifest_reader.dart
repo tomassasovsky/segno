@@ -114,6 +114,8 @@ abstract final class DawManifestReader {
     // Arm-time gains, mute and solo per channel: the state the logged
     // gestures start from (events.log is relative to arm). Solo is tracked
     // across channels, since a solo on one track silences the others.
+    // Mute is lane 0's flag, or the track's when lane 0 has none, as the
+    // renderer reads it (perf_render.c).
     final mutedAtArm = <int>{};
     final soloedAtArm = <int>{};
     final trackGainAtArm = <int, double>{};
@@ -121,17 +123,18 @@ abstract final class DawManifestReader {
     for (final t in armTracks) {
       final channel = (t['channel'] as num?)?.toInt();
       if (channel == null) continue;
-      if (t['muted'] as bool? ?? false) mutedAtArm.add(channel);
       if (t['solo'] as bool? ?? false) soloedAtArm.add(channel);
       final gain = (t['volume'] as num?)?.toDouble();
       if (gain != null) trackGainAtArm[channel] = gain;
+      bool? laneMuted;
       for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
         final laneJson = lane as Map<String, dynamic>;
         if ((laneJson['lane'] as num?)?.toInt() != 0) continue;
         final volume = (laneJson['volume'] as num?)?.toDouble();
         if (volume != null) laneVolumeAtArm[channel] = volume;
-        if (laneJson['muted'] as bool? ?? false) mutedAtArm.add(channel);
+        laneMuted = laneJson['muted'] as bool?;
       }
+      if (laneMuted ?? t['muted'] as bool? ?? false) mutedAtArm.add(channel);
     }
 
     final logEntries = EventLogReader.readAll(captureDir);
@@ -183,15 +186,19 @@ abstract final class DawManifestReader {
           initiallyMuted: mutedAtArm.contains(channel),
           initiallySoloed: soloedAtArm,
         );
-        if (raw.volume.isNotEmpty) {
+        // A gain other than unity at arm needs a lane even with no
+        // gestures: the dry stem is at unity.
+        if (raw.volume.isNotEmpty || raw.initialVolume != 1) {
           automationLanes.add(
             AutomationLane(
               target: AutomationTarget.volume,
               initialValue: raw.initialVolume,
-              breakpoints: thinVolumeAutomation(
-                raw: raw.volume,
-                tempoBpm: effectiveTempoBpm,
-              ),
+              breakpoints: raw.volume.isEmpty
+                  ? [AutomationBreakpoint(beat: 0, value: raw.initialVolume)]
+                  : thinVolumeAutomation(
+                      raw: raw.volume,
+                      tempoBpm: effectiveTempoBpm,
+                    ),
             ),
           );
         }

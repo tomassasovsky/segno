@@ -20,7 +20,8 @@ import 'package:daw_export/daw_export.dart';
 
 void exportCapture(String captureDir) {
   final project = DawManifestReader.read(captureDir);
-  if (project != null) {
+  // Live cannot open a set without tracks, and buildAls refuses one.
+  if (project != null && project.tracks.isNotEmpty) {
     File('$captureDir/project.als').writeAsBytesSync(buildAls(project));
   }
   final chains = FxChainsWriter.render(captureDir);

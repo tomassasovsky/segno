@@ -263,8 +263,12 @@ class _TrackPrototype {
       return _number(v < min ? min : (v > max ? max : v));
     }
 
+    // Live ramps between consecutive events, the one before the song
+    // included, so the value at arm is held to the song's start with an
+    // event at 0, as Live's own sets do.
     final points = [
       (_kBeforeSongTime, lane.initialValue),
+      if (lane.breakpoints.first.beat > 0) (0.0, lane.initialValue),
       for (final b in lane.breakpoints) (b.beat, b.value),
     ];
     final envelope = this.envelope.copy()..setAttribute('Id', '$id');

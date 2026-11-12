@@ -68,6 +68,15 @@ void main() {
     expect(File('${dir.path}/fx-chains.txt').existsSync(), isTrue);
   });
 
+  test('removes a project.als an earlier version wrote for a take with no '
+      'tracks, which Live refuses', () async {
+    writeManifest();
+    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+
+    expect(await writeDawProject(dir.path), isEmpty);
+    expect(File('${dir.path}/project.als').existsSync(), isFalse);
+  });
+
   test('reads the manifest afresh on every call', () async {
     writeManifest();
     expect(await writeDawProject(dir.path), isEmpty);

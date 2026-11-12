@@ -61,7 +61,8 @@ Set<String> _shape(XmlElement root) {
 bool _isPointee(String name) =>
     name == 'AutomationTarget' ||
     name == 'Pointee' ||
-    name.endsWith('ModulationTarget');
+    name.endsWith('ModulationTarget') ||
+    name.startsWith('ControllerTargets.');
 
 const _stem = DawAudioFile(
   fileRef: 'stems/wet/track0.wav',
@@ -625,14 +626,18 @@ void main() {
         expect(volume.map((e) => e.getAttribute('Value')), ['1', '1', '0.25']);
         expect(volume.map((e) => e.getAttribute('Id')), ['0', '1', '2']);
 
+        // Its first breakpoint is after the start: an event at 0 holds the
+        // value at arm until then, since Live ramps between events.
         final activator = events(track, 1);
         expect(activator.map((e) => e.name.local), everyElement('BoolEvent'));
         expect(activator.map((e) => e.getAttribute('Time')), [
           '-63072000',
+          '0',
           '2',
           '6',
         ]);
         expect(activator.map((e) => e.getAttribute('Value')), [
+          'true',
           'true',
           'false',
           'true',
@@ -700,6 +705,7 @@ void main() {
           'DeviceChain/Mixer/Volume/MidiControllerRange',
         );
         expect(events(track, 0).map((e) => e.getAttribute('Value')), [
+          _value(range, 'Min'),
           _value(range, 'Min'),
           _value(range, 'Max'),
         ]);

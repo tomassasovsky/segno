@@ -9,16 +9,15 @@ import 'dart:typed_data';
 typedef WavInfo = ({int sampleRate, int frames});
 
 /// Reads [path]'s `fmt ` and `data` chunks, or returns `null` when the file
-/// is missing or is not a RIFF/WAVE file with both.
+/// is missing or unreadable, or is not a RIFF/WAVE file with both.
 ///
 /// The frame count comes from the `data` chunk's size, limited to the bytes
 /// the file actually holds: a writer that stopped before patching the size
 /// leaves it at 0 or past the end of the file.
 WavInfo? readWavInfo(String path) {
-  final file = File(path);
-  if (!file.existsSync()) return null;
-  final raf = file.openSync();
+  RandomAccessFile? raf;
   try {
+    raf = File(path).openSync();
     final length = raf.lengthSync();
     if (length < 12) return null;
     final riff = raf.readSync(12);
@@ -49,7 +48,9 @@ WavInfo? readWavInfo(String path) {
       offset = body + size + (size.isOdd ? 1 : 0);
     }
     return null;
+  } on FileSystemException {
+    return null;
   } finally {
-    raf.closeSync();
+    raf?.closeSync();
   }
 }
