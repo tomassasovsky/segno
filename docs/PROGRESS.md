@@ -154,20 +154,25 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   and at 3 hours (`LE_PERF_STOP_LENGTH_LIMIT`, `"length_limit"`), never past
   what a 32-bit WAV of the rendered master holds (a stereo master at
   96 kHz: 93 minutes). The times come from the repository
-  (`PerformanceRepository.defaultIdleStopAfter`, `defaultLongestTake`) on
+  (`PerformanceRepository.idleStopAfter`, `longestTake`) on
   `le_perf_target.idle_stop_seconds` and `max_seconds`.
 - Something happening is a logged event a player's action leaves (a
   press, a transport change, an edit; not the facts the engine logs on its
   own, such as a loop top's tempo anchor or an overdub pass retiring) or a
   captured input sample over the engine's activity level (-40 dBFS)
   through the sound trigger's 100 Hz high-pass, measured in the drain, not
-  the callback, or the device's own input meter over that level once a
-  drain cycle (before any fader: a player on the interface's direct
-  monitoring with the console's monitor muted is playing). Entries the
-  engine logs past the idle end wait for the cycle's decision, so the log
-  ends where the take does (#1549). The paused #1747 capture's idle 18 minutes peaked at
-  -46 dBFS. An input whose noise stays over the level keeps the take going
-  until the 3-hour stop.
+  the callback. Entries the engine logs past the idle end wait for the
+  cycle's decision, so the log ends where the take does (#1549). The paused
+  #1747 capture's idle 18 minutes peaked at -46 dBFS. An input whose noise
+  stays over the level keeps the take going until the 3-hour stop.
+- Only high-passed input counts (#1772 caught it): the drain also read the
+  device's raw input meter once a cycle, at the same -40 dBFS, so mains hum
+  over that level counted as playing whenever a cycle happened to read it,
+  and on a console with hum a take would never idle-stop. The meter read is
+  gone. Playing the captured streams do not carry (a monitor turned down or
+  muted, the player on the interface's direct monitoring, an input not
+  monitored at arm) does not keep a take going; high-passing the meter
+  would need work in the callback.
 - Nobody is there, so the capture dialog does not open for such a take
   (`PerformanceRecorderRendering.stoppedOnItsOwn`); `PerformanceAutoStopNotice`
   says it as a passing warning at the player's next touch, key, encoder,

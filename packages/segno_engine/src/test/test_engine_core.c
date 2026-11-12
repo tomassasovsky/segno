@@ -39938,7 +39938,6 @@ int main(void) {
   test_perf_autostop_length_limit();
   test_perf_autostop_unattended_loop_stops();
   test_perf_autostop_refuses_negative_times();
-  test_perf_autostop_muted_monitor_still_playing();
   test_perf_autostop_log_ends_with_the_take();
   test_perf_reserve_stops_every_stream_together();
   test_perf_reserve_counts_the_next_part_header();

@@ -262,6 +262,19 @@ void main() {
           looper.waveformBackground,
         );
 
+    test("the stage CPU bar's groove edge clears 3:1 on the page, so the "
+        'empty part of the bar shows (#1774)', () {
+      for (final surface in const [
+        SurfaceTheme.dark,
+        SurfaceTheme.highContrast,
+      ]) {
+        expect(
+          ratio(surface.textMuted, surface.background),
+          greaterThanOrEqualTo(3),
+        );
+      }
+    });
+
     test('every waveform state clears 3:1 on its background', () {
       // WCAG 1.4.11: the waveform is a non-text component, so every state it
       // can be drawn in has to clear the 3:1 non-text threshold against its

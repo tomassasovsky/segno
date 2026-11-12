@@ -789,9 +789,10 @@ struct le_perf_drain {
   /* Stopping a take nobody is playing (#1767). `idle_frames` is the
    * target's idle_stop_seconds in frames (0: never), `max_frames` the
    * longest take; `last_activity` the latest capture frame at which
-   * something happened: a logged event, or a captured input sample over
-   * `activity_level` through the sound trigger's high-pass, whose section
-   * states per input stream and side are `hp_z`. Drain-thread only. */
+   * something happened: a logged event a player's action leaves, or a
+   * captured input sample over `activity_level` through the sound trigger's
+   * high-pass (its section states per input stream and side are `hp_z`),
+   * every sample, whenever the drain runs. Drain-thread only. */
   uint64_t idle_frames;
   uint64_t max_frames;
   uint64_t last_activity;
@@ -2179,22 +2180,6 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    * add). A drop in a later block may or may not be; either is handled. */
   const uint64_t first_drop = atomic_load_explicit(
       &e->a_perf_first_drop_frame, memory_order_relaxed);
-
-  /* What the device hears now, before any monitor's fader, mute or effects
-   * (#1767): the meters' last block peak of every real input. A player
-   * heard only through the interface's own direct monitoring, with the
-   * console's monitor muted, is still playing. One block a cycle, so it
-   * catches playing, not a single short note. */
-  if (d->idle_frames > 0 && !final) {
-    const int32_t inputs =
-        atomic_load_explicit(&e->a_in_channels, memory_order_relaxed);
-    for (int32_t c = 0; c < inputs && c < LE_MAX_CHANNELS; ++c) {
-      if (load_f32(&e->a_in_peak_ch_bits[c]) > d->activity_level) {
-        le_pd_note_activity(d, elapsed);
-        break;
-      }
-    }
-  }
 
   const int sample_every =
       atomic_load_explicit(&g_pd_free_sample_cycles, memory_order_relaxed);
