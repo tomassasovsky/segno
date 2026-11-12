@@ -4281,6 +4281,15 @@ class LooperRepository {
   EngineResult stopTrack({int channel = 0}) =>
       _engine.stopTrack(channel: channel);
 
+  /// The Rec-mode Stop's mute (#1773, [AudioEngine.spareTail]): the next
+  /// mute of track [channel], landing on it stopped, lets the Post tail its
+  /// Stop set ringing drain. Nothing to remember across a restart: the
+  /// engine drops it when the track runs again.
+  EngineResult spareTail({int channel = 0}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.spareTail(channel: channel);
+  }
+
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0}) {
     if (_transportReserved) return EngineResult.notReady;

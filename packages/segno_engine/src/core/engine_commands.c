@@ -2791,6 +2791,12 @@ int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
   if (rc == LE_OK) le_ticket_emptying(engine, channel); /* void take -> EMPTY */
   return rc;
 }
+int32_t le_engine_spare_tail(le_engine* engine, int32_t channel) {
+  if (!engine || channel < 0 || channel >= engine->track_count) {
+    return LE_ERR_INVALID;
+  }
+  return le_push(engine, LE_CMD_SPARE_TAIL, channel, 0.0f);
+}
 int32_t le_engine_play(le_engine* engine, int32_t channel) {
   if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (le_launch_cancellable(&engine->tracks[channel]))

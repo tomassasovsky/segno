@@ -48,6 +48,12 @@ void main() {
       expect(engine.snapshot().tracks, before.tracks);
     });
 
+    test('spareTail needs a running engine (#1773)', () {
+      expect(engine.spareTail(), EngineResult.notRunning);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(engine.spareTail(channel: 2), EngineResult.ok);
+    });
+
     test(
       'speed needs material the mock never holds, so capture stays open',
       () {

@@ -60,14 +60,15 @@ static double gf_out_gain(int k) {
 }
 
 /* The repro from the console capture (perf-20261023-015001): a mute, a Stop,
- * and the record-mode Stop's mute and Stop on one frame, each pressed at the
+ * and a mute and a Stop on one frame (the record-mode Stop's order before
+ * #1773, which now spares the tail and parks first), each pressed at the
  * loop's peak. Each one now fades the waveform out over F frames instead of
  * stepping from 0.5 to 0. A Stop keeps reading the loop through its fade
  * even though the transport is held (the only track stopped), so the fade
  * follows the waveform rather than holding a sample. */
 static void test_gate_fade_stop_and_mute_at_the_peak(void) {
   printf("test_gate_fade_stop_and_mute_at_the_peak\n");
-  for (int how = 0; how < 3; ++how) {
+  for (int how = 0; how < 4; ++how) {
     le_engine* e = gf_fixture(1, 0);
     float out[3 * GF_F];
     int n = 0;
@@ -77,9 +78,15 @@ static void test_gate_fade_stop_and_mute_at_the_peak(void) {
       CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
     } else if (how == 1) {
       CHECK(le_engine_stop_track(e, 0) == LE_OK);
-    } else {
+    } else if (how == 2) {
       CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
       CHECK(le_engine_stop_track(e, 0) == LE_OK);
+    } else {
+      /* The record-mode Stop since #1773: spare, park, mute. The mute
+       * leaves the gate open, so only the Stop's fade runs. */
+      CHECK(le_engine_spare_tail(e, 0) == LE_OK);
+      CHECK(le_engine_stop_track(e, 0) == LE_OK);
+      CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
     }
     feed_const(e, 0.0f, 3 * GF_F, out, &n);
     const double worst = gf_worst_step(out, n, before);

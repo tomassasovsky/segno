@@ -1327,6 +1327,7 @@ void main() {
         expect(engine.record(channel: channel), EngineResult.ok);
         // Let Free mode's first-take seam finalization complete before edits.
         engine.pump(frames: 480, input: 0.25 * (channel + 1));
+        expect(engine.spareTail(channel: channel), EngineResult.ok);
         expect(engine.stopTrack(channel: channel), EngineResult.ok);
         engine.pump(frames: 0);
         expect(engine.snapshot().tracks[channel].lengthFrames, frames);

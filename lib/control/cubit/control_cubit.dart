@@ -2060,10 +2060,12 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Rec mode: mute the cursor track (finalizing a capture first). Muting the
-  /// only audible loop parks the whole transport. The park goes first, so
-  /// the mute lands on a stopped track and its Post tails ring out while it
-  /// is stopped, as a Stop's do (#1773: the engine spares the tail of a
-  /// track a Stop stopped until it runs again).
+  /// only audible loop parks the whole transport. When the track ends up
+  /// stopped (this Stop parks it, or it already was), its mute spares the
+  /// Post tail: the tail rings out while it is stopped, as a Stop's does, and
+  /// the engine gates it once the track runs again (#1773,
+  /// [LooperRepository.spareTail]). The park goes before the mute, so the
+  /// mute lands on the stopped track.
   bool _recStop(int channel) {
     final track = _trackAt(channel);
     if (track == null) return false;
@@ -2074,7 +2076,12 @@ class ControlCubit extends Cubit<ControlState> {
     if (!_looper.stopRecordControl(channel: channel).isOk) {
       return false;
     }
-    if (track.state == TrackState.playing && _isLastAudibleTrack(channel)) {
+    final parks =
+        track.state == TrackState.playing && _isLastAudibleTrack(channel);
+    if (parks || track.state == TrackState.stopped) {
+      _looper.spareTail(channel: channel);
+    }
+    if (parks) {
       for (final t in _tracks) {
         _looper.stopTrack(channel: t.channel);
       }

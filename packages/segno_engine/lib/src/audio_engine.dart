@@ -462,6 +462,13 @@ abstract interface class LooperTransport {
   /// Halts track [channel]'s playback, retaining the loop buffer.
   EngineResult stopTrack({int channel = 0});
 
+  /// The Rec-mode Stop's mute (#1773): the next mute of each of track
+  /// [channel]'s lanes, when it lands on the stopped track and the lane was
+  /// unmuted, lets the Post tail the Stop set ringing drain. The track reads
+  /// muted; the tail is gated once the track runs again. Send it before the
+  /// Stop and the mute.
+  EngineResult spareTail({int channel = 0});
+
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0});
 

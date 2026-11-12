@@ -2628,6 +2628,7 @@ void main() {
       buildRepo()
         ..startEngine(const EngineConfig(sampleRate: 48000))
         ..record()
+        ..spareTail()
         ..stopTrack()
         ..play()
         ..undo()
@@ -2642,6 +2643,7 @@ void main() {
         containsAllInOrder(<String>[
           'start',
           'record',
+          'spareTail',
           'stopTrack',
           'play',
           // undo asks what the tap would do before making it, so it knows
@@ -2659,6 +2661,11 @@ void main() {
       // The stopped engine keeps the fader intent for its next start.
       expect(engine.lastVolume, isNull);
       expect(engine.lastMuted, isNull);
+    });
+
+    test('spareTail before the engine starts sends nothing (#1773)', () {
+      expect(buildRepo().spareTail(), EngineResult.ok);
+      expect(engine.calls, isNot(contains('spareTail')));
     });
 
     test('startEngine stores the last successful config', () {

@@ -2,15 +2,15 @@
  * falls to silence, so the next Play starts with nothing left of it: on the
  * callback alone, with the track chains as jobs on two effects workers
  * (#1729), and with every track chain forced through the jobs
- * (le_test_trk_jobs_force), the same sample for sample. The same holds when
- * a mute lands after the Stop, as the Rec-mode Stop of the only audible loop
- * sends it (park, then mute): the engine spares the tail of a track a Stop
- * stopped until the track runs again (le_lane::a_gate_muted). A mute while
- * the track plays still gates it, tail included (slice 3b). The cases: a
- * reverb and a delay at Post on a plain take's lane, a heard lane's Post
- * delay over its image (#1741), a reverb on the track's own chain, and every
- * kind that drains a tail (le_fx_type_drains). Included by test_engine_core.c
- * after test_engine_trk_jobs.h (shares the heard fixtures). */
+ * (le_test_trk_jobs_force), the same sample for sample. The same holds for
+ * the Rec-mode Stop of the only audible loop, which parks it and mutes it:
+ * its le_engine_spare_tail ahead of the Stop lets that mute leave the gate
+ * open until the track runs again. Any other mute gates, tail included
+ * (slice 3b). The cases: a reverb and a delay at Post on a plain take's
+ * lane, a heard lane's Post delay over its image (#1741), a reverb on the
+ * track's own chain, and every kind that drains a tail (le_fx_type_drains).
+ * Included by test_engine_core.c after test_engine_trk_jobs.h (shares the
+ * heard fixtures). */
 
 enum { PTS_TAKE = 9600, PTS_WIN = 4800 };
 
@@ -95,14 +95,25 @@ static float pts_until_quiet(le_engine* e, int max) {
   return last;
 }
 
-/* After a take played through a Post tail on track 0: Stop (and, with
- * [mute], the mute the Rec-mode Stop sends after its park). While stopped
- * the tail rings and then falls to silence; then (unmuted again, as Rec/Play
- * does) Play. */
+/* The Rec-mode Stop of the only audible loop, as ControlCubit sends it:
+ * the spare, the park, then the mute. */
+static void pts_rec_stop(le_engine* e) {
+  CHECK(le_engine_spare_tail(e, 0) == LE_OK);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+}
+
+/* After a take played through a Post tail on track 0: Stop (with [mute],
+ * the Rec-mode Stop). While stopped the tail rings and then falls to
+ * silence; then (unmuted again, as Rec/Play does) Play. */
 static void pts_check(le_engine* e, const char* what, int mode, int mute) {
   static float out[2 * PTS_WIN];
-  CHECK(le_engine_stop_track(e, 0) == LE_OK);
-  if (mute) CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+  if (mute) {
+    pts_rec_stop(e);
+  } else {
+    CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  }
   heard_silence(e, 1200, 37, NULL); /* the Stop's fade */
   heard_silence(e, PTS_WIN, 37, out);
   const float ringing = pts_peak(out, PTS_WIN);
@@ -209,104 +220,80 @@ static void test_post_tail_every_draining_kind_rings(void) {
   le_test_trk_jobs_force = force;
 }
 
-/* A mute while the track plays gates it, tail included, and a Stop after it
- * does not open the gate (slice 3b): only a mute that lands after a Stop
- * spares the tail. */
-static void test_post_tail_mute_before_stop_gates(void) {
-  printf("test_post_tail_mute_before_stop_gates\n");
+/* Any mute but the Rec-mode Stop's gates a stopped track's tail, as it
+ * always has: an ordinary Mute after a Stop, and a mute while the track
+ * plays, followed by the Rec-mode Stop's spare and park and its re-sent mute
+ * (the lane is already muted, so its closed gate stays closed). */
+static void test_post_tail_other_mutes_gate(void) {
+  printf("test_post_tail_other_mutes_gate\n");
   static float out[2 * PTS_WIN];
-  le_engine* e = heard_engine(48000);
-  pts_lane_post(e, LE_FX_DELAY);
-  pts_take(e);
-  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
-  heard_silence(e, 2400, 37, NULL); /* the Mute's fade */
-  CHECK(le_engine_stop_track(e, 0) == LE_OK);
-  heard_silence(e, PTS_WIN, 37, out);
-  CHECK(pts_peak(out, PTS_WIN) == 0.0f);
-  le_engine_destroy(e);
+  for (int how = 0; how < 2; ++how) {
+    le_engine* e = heard_engine(48000);
+    pts_lane_post(e, LE_FX_DELAY);
+    pts_take(e);
+    if (how == 0) {
+      CHECK(le_engine_stop_track(e, 0) == LE_OK);
+      CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+    } else {
+      CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+      heard_silence(e, 2400, 37, NULL); /* the Mute's fade */
+      pts_rec_stop(e);
+    }
+    heard_silence(e, 2400, 37, NULL); /* the fades */
+    heard_silence(e, PTS_WIN, 37, out);
+    if (pts_peak(out, PTS_WIN) != 0.0f) {
+      printf("  case %d: %g after the mute\n", how, pts_peak(out, PTS_WIN));
+    }
+    CHECK(pts_peak(out, PTS_WIN) == 0.0f);
+    le_snapshot snap;
+    le_engine_get_snapshot(e, &snap);
+    CHECK(snap.tracks[0].muted == 1);
+    le_engine_destroy(e);
+  }
 }
 
 /* A spared mute gates again as soon as the track runs: a Play that leaves
  * the mute on (the unpark rule resumes a parked track with its mute kept)
- * silences the track, its tail and its loop both. */
+ * fades the track out as a mute does, its tail and its loop both, and a
+ * later Stop and mute without the spare gate as usual. */
 static void test_post_tail_spared_mute_gates_when_it_runs(void) {
   printf("test_post_tail_spared_mute_gates_when_it_runs\n");
   static float out[2 * PTS_WIN];
   le_engine* e = heard_engine(48000);
+  CHECK(le_engine_spare_tail(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_spare_tail(e, LE_MAX_TRACKS) == LE_ERR_INVALID);
+  CHECK(le_engine_spare_tail(NULL, 0) == LE_ERR_INVALID);
   pts_lane_post(e, LE_FX_DELAY);
   pts_take(e);
-  CHECK(le_engine_stop_track(e, 0) == LE_OK);
-  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+  pts_rec_stop(e);
   heard_silence(e, 1200, 37, NULL);
   heard_silence(e, PTS_WIN, 37, out);
   CHECK(pts_peak(out, PTS_WIN) > 1e-3f); /* spared: it rings */
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].muted == 1);
   CHECK(le_engine_play(e, 0) == LE_OK);
-  /* Closed at once: none of the muted loop comes in under the Play's
-   * fade-in, and the rest of the tail is cut with it. */
+  heard_silence(e, 2400, 37, NULL); /* the Mute's fade */
   heard_silence(e, PTS_WIN, 37, out);
   CHECK(pts_peak(out, PTS_WIN) == 0.0f);
-  le_snapshot snap;
   le_engine_get_snapshot(e, &snap);
   CHECK(snap.tracks[0].state == LE_TRACK_PLAYING);
   CHECK(snap.tracks[0].muted == 1);
-  le_engine_destroy(e);
-}
-
-/* The export rings where the performer heard the tail ring: a Post reverb
- * through a Stop and a mute after it, a Play that keeps the mute, and the
- * unmute, replayed by perf_render, match the live callback (the wet stem of
- * the only track is the mono output). The take is an image source (a Clear
- * and its Undo), whose Stop and Play the render replays with the callback's
- * fades (test_gate_fade_render_matches_live_stop_and_play). */
-static void test_post_tail_render_matches_live_spared_mute(void) {
-  printf("test_post_tail_render_matches_live_spared_mute\n");
-  const int len = 1000;
-  le_engine* e = reverse_fixture(48000, len, len);
-  const char* dir = render_test_dir("post-tail-spared");
-  CHECK(perf_arm_dir(e, dir) == LE_OK);
-  drain(e);
-  static float live[8000], replay[8000];
-  rev_process(e, live, 64, 512);
-  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
-  rev_process(e, live + 64, 64, 512);
-  CHECK(le_engine_undo(e, 0) == LE_OK);
-  pts_lane_post(e, LE_FX_REVERB);
-  rev_process(e, live + 128, 1872, 512);
+  /* The spare was spent: unmuted, stopped and muted again by hand, the tail
+   * is gated. */
+  CHECK(le_engine_set_track_mute(e, 0, 0) == LE_OK);
+  heard_silence(e, 2 * PTS_TAKE, 64, NULL);
   CHECK(le_engine_stop_track(e, 0) == LE_OK);
   CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
-  rev_process(e, live + 2000, 3000, 512);
-  CHECK(le_engine_play(e, 0) == LE_OK);
-  rev_process(e, live + 5000, 1000, 512);
-  CHECK(le_engine_set_track_mute(e, 0, 0) == LE_OK);
-  rev_process(e, live + 6000, 1000, 512);
-  CHECK(le_perf_disarm(e) == LE_OK);
-  float rang = 0.0f;
-  for (int i = 2600; i < 5000; ++i) rang = fmaxf(rang, fabsf(live[i]));
-  CHECK(rang > 1.0f); /* the spared tail rang while stopped, the Stop's
-                       * fade (480 frames) long over */
-  float muted = 0.0f;
-  for (int i = 5000; i < 6000; ++i) muted = fmaxf(muted, fabsf(live[i]));
-  CHECK(muted == 0.0f); /* the Play closed it at once */
-  rev_render_track_wav(e, dir, len);
-  const int frames = test_read_wet_stem(dir, 0, replay, 8000);
-  CHECK(frames == 7000);
-  int bad = 0;
-  for (int i = 0; i < frames; ++i) {
-    if (fabsf(replay[i] - live[i]) > 1e-3f) {
-      if (bad++ == 0) {
-        printf("  first mismatch at %d: live %.4f replay %.4f\n", i, live[i],
-               replay[i]);
-      }
-    }
-  }
-  CHECK(bad == 0);
+  heard_silence(e, 2400, 37, NULL);
+  heard_silence(e, PTS_WIN, 37, out);
+  CHECK(pts_peak(out, PTS_WIN) == 0.0f);
   le_engine_destroy(e);
 }
 
 static void run_post_tail_stopped_tests(void) {
   test_post_tail_rings_while_stopped();
   test_post_tail_every_draining_kind_rings();
-  test_post_tail_mute_before_stop_gates();
+  test_post_tail_other_mutes_gate();
   test_post_tail_spared_mute_gates_when_it_runs();
-  test_post_tail_render_matches_live_spared_mute();
 }

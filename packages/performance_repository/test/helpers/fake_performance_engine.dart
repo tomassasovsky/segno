@@ -599,6 +599,8 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
   @override
   EngineResult stopTrack({int channel = 0}) => EngineResult.ok;
   @override
+  EngineResult spareTail({int channel = 0}) => EngineResult.ok;
+  @override
   EngineResult play({int channel = 0}) => EngineResult.ok;
   @override
   EngineResult undo({int channel = 0}) => EngineResult.ok;

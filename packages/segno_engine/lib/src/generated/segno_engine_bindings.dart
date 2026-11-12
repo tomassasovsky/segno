@@ -1803,6 +1803,33 @@ class SegnoEngineBindings {
   late final _le_engine_stop_track = _le_engine_stop_trackPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// The Rec-mode Stop's mute (#1773): the next mute of each of track
+  /// `channel`'s lanes, if it lands while the track is stopped and the lane was
+  /// unmuted, leaves the lane's tail ringing: the gate stays open, so the Post
+  /// tail the Stop set ringing drains while the track reports muted. The gate
+  /// closes (with the usual mute fade) as soon as the track runs again. Post
+  /// it before the Stop and the mutes; any other mute gates as it always has.
+  /// The performance render does not follow it: a spared tail is absent from
+  /// the rendered stems. LE_ERR_INVALID for a bad channel.
+  int le_engine_spare_tail(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_spare_tail(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_spare_tailPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_spare_tail');
+  late final _le_engine_spare_tail = _le_engine_spare_tailPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// In Song (#1077, #1323) Play is a section request: with nothing sounding
   /// it starts the stopped section alone from its beginning; while another
   /// section sounds (plays, overdubs or records) it waits for that section's
@@ -8882,6 +8909,11 @@ enum le_command_code {
   /// channel, lane, value = the slot. Typed producer only.
   LE_CMD_HEARD_ATTACH(144),
 
+  /// The next mute of each of track arg_i's lanes, if it lands while the
+  /// track is stopped, spares the Post tail (#1773; le_engine_spare_tail).
+  /// Never perf-logged.
+  LE_CMD_SPARE_TAIL(145),
+
   /// render recipe (#1202): the callback records
   /// every source's read law; never raw-posted
   LE_CMD_RENDER_FREEZE(112),
@@ -9014,6 +9046,7 @@ enum le_command_code {
     141 => LE_CMD_CANCEL_LATENCY,
     142 => LE_CMD_CLEAR_TEMPO,
     144 => LE_CMD_HEARD_ATTACH,
+    145 => LE_CMD_SPARE_TAIL,
     112 => LE_CMD_RENDER_FREEZE,
     113 => LE_CMD_BOUNCE,
     114 => LE_CMD_BOUNCE_RECOVER,
