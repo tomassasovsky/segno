@@ -318,7 +318,7 @@ jobs:
       - name: Install C/C++ build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential
+          sudo apt-get install -y build-essential clang
       - name: Build + run the pitch/time bench (arm64 proxy thresholds)
         # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
         # has no pipefail, so the pipeline would exit with tee's status and a
@@ -397,6 +397,16 @@ jobs:
         run: >
           bash packages/segno_engine/src/test/bench/bench_alias.sh
           | tee bench-alias-arm64.md
+      # The pitch kinds against their kernels before #1755, built with
+      # Clang, the console's compiler: their NEON paths build only there,
+      # so native-tests (x86, GCC) holds the scalar ones and this the NEON.
+      - name: Run the pitch kinds' oracle with Clang
+        if: always()
+        shell: bash
+        env:
+          CC: clang
+          CXX: clang++
+        run: bash packages/segno_engine/src/test/run_pitch_oracle.sh --ci
       # The effects matrix (#1547): its CI subset runs in native-tests; this
       # builds the full run's binary for the console, where the owner runs
       # it, and runs the subset on arm64 too.

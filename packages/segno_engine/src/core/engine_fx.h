@@ -65,12 +65,12 @@ extern "C" {
                                   * LE_PV_HOP - 1 */
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
-/* The hop split (#887 part 9): a frame's work runs in four stages, one per
- * quarter of its hop (analysis, envelope, shift, synthesis), so on a device
- * period no longer than a quarter hop (64 frames, the console's) no callback
- * carries a whole frame, whatever the hop phase. A longer period runs
- * several stages in one callback and gains nothing, but pays the same
- * latency: the engine keeps one schedule for every host. The synthesis runs
+/* The hop split (#887 part 9): a frame's work runs in steps over the
+ * thirteen slots 16 ticks apart from its analysis to its synthesis (#1755;
+ * four stages a quarter apart before it), so a 32-frame callback at the
+ * kernel's 48 kHz carries two slots, whatever the hop phase. A longer
+ * period runs more of them in one callback and gains nothing, but pays the
+ * same latency: the engine keeps one schedule for every host. The synthesis runs
  * LE_PV_SYNTH_TICK ticks after the analysis and its first sample is emitted
  * on that tick, so the output runs that much later than an unsplit frame's:
  * the octaver's latency is LE_PV_LATENCY in both modes (PSOLA reads its
@@ -84,8 +84,9 @@ extern "C" {
 /* A frame's state between stages, per channel: the window (reused for the
  * inverse transform), the spectrum, magnitude, true frequency and envelope;
  * then a second voice's synthesis spectrum and its running phases (the Dual
- * Octaver's Octave 2, #1464), which persist from frame to frame. */
-#define LE_PV_SCRATCH (LE_PV_N + 8 * LE_PV_BINS)
+ * Octaver's Octave 2, #1464), which persist from frame to frame; then the
+ * shift's own, carried between its two steps (#1755). */
+#define LE_PV_SCRATCH (LE_PV_N + 11 * LE_PV_BINS)
 
 /* Analysis-hop stagger (#915). Every octaver instance used to start its hop
  * counter at 0, so all instances ran their four length-LE_PV_N FFTs on the
@@ -100,7 +101,7 @@ extern "C" {
  *
  * and its analysis ticks (the PV frame's first stage, or PSOLA's YIN pass)
  * fall on the engine frames c with (c + phase) mod LE_PV_HOP equal to 0
- * (#941); the PV frame's later stages follow a quarter apart. The hop is
+ * (#941); the PV frame's later steps follow in its slots (above). The hop is
  * anchored to the engine's own frame count, not to the instant the instance
  * was reset, so the spread holds for instances added at any time: one added
  * to a second track long after the first keeps its quarter, and so does a
@@ -117,9 +118,9 @@ extern "C" {
  * With four callbacks per hop, a fifth instance always shares one, and two
  * axes cannot both be kept apart: slot s on track t + 1 shares a quarter
  * with slot s + 1 on track t. Spreading the work does not reduce it. Since
- * the hop split (above), every quarter carries one PV stage whatever the
- * phase, so the phase only decides which stage lands in which callback;
- * PSOLA's YIN pass still runs on one tick a hop. */
+ * the hop split (above), every quarter carries some of a PV frame's steps
+ * whatever the phase, so the phase only decides which steps land in which
+ * callback; PSOLA's YIN pass starts on one tick a hop. */
 #define LE_PV_STAGGER_QUARTER (LE_PV_HOP / 4)
 
 /* Engine frame [top]'s place on the grid of [len]-frame laps (#1620): where a
@@ -194,8 +195,10 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
  * a voiced one to a kernel sample, as the tuner does. A pass starts every
  * hop, about every 5 ms, and averages LE_PSOLA_WORK_PER_TICK iterations a
  * tick (a credit, carried tick to tick), so it spreads over its hop instead
- * of landing in one callback. A 64-frame callback carries at most
- * 64 x 896 = 57k of it, plus one lag of overshoot. */
+ * of landing in one callback. A 64-frame callback is charged at most
+ * 64 x 896 = 57k of it, plus one lag of overshoot; it works out up to
+ * LE_YIN_GROUP - 1 lags more ahead of their charge (le_lag_sums), each a
+ * fraction of a lag alone's cost (#1755). */
 #define LE_PSOLA_DECIM 2
 #define LE_PSOLA_DWIN 800
 #define LE_PSOLA_MIN_HZ 60
@@ -205,10 +208,31 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 /* Where PSOLA's detection state starts in the octaver scratch (16-byte
  * aligned, after the frame arrays), and the scratch's whole length. */
 #define LE_PS_STATE_OFF ((LE_PV_SCRATCH + 3) & ~3)
-#define LE_PV_SCRATCH_ALLOC \
+/* What fx_octaver keeps between samples and the phase vocoder between a
+ * frame's steps (#1755), after PSOLA's state in the scratch (heap), so the
+ * octaver's state in le_fx_state keeps the size the mixer's structs embed:
+ * the shift's ratio for the smoothed shift ratio_shift and the gain dip's
+ * gain for its position dip_xfade (cached: 0 until the first), and the
+ * shift's peaks, the region it is at and that region's first bin. */
+typedef struct le_oct_aux {
+  int32_t cached;
+  float ratio_shift;
+  float ratio;
+  float dip_xfade;
+  float dip_g;
+  int32_t shift_np;
+  int32_t shift_r;
+  int32_t shift_start;
+} le_oct_aux;
+#define LE_OCT_AUX_OFF \
   (LE_PS_STATE_OFF + (int)((sizeof(le_psola_pass) + 3) / 4))
+#define LE_PV_SCRATCH_ALLOC \
+  (LE_OCT_AUX_OFF + (int)((sizeof(le_oct_aux) + 3) / 4))
 static inline le_psola_pass* le_ps(le_octaver_state* o) {
   return (le_psola_pass*)(void*)(o->scratch + LE_PS_STATE_OFF);
+}
+static inline le_oct_aux* le_oa(le_octaver_state* o) {
+  return (le_oct_aux*)(void*)(o->scratch + LE_OCT_AUX_OFF);
 }
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
 /* Grain half-width cap. A grain is laid around LE_PV_N / 2 ahead of the read
@@ -454,6 +478,18 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
  * the Whammy, the Dual Octaver and Smart Tune): the kinds an offline render
  * (the render recipe, the stems) seeds on the live owner's hop. */
 int le_fx_type_hops(int32_t type);
+#ifdef LE_NATIVE_TESTS
+/* Native tests only: when set, the chain hands each pitch-kind entry
+ * (le_fx_type_hops) to this instead of its kernel, and the kernel runs only
+ * when it returns 0 (test_pitch_oracle.c runs the kernels frozen before
+ * #1755 through it, test/pitch_ref/pitch_ref.c). */
+typedef int (*le_fx_test_process_fn)(le_fx_state* fx, int slot, int32_t type,
+                                     int sr, int cap, float* l, float* r,
+                                     const float* p);
+extern le_fx_test_process_fn le_fx_test_process_hook;
+/* Smart Tune's per-tick settings (engine_fx.c), for that copy. */
+void le_fx_test_st_tick(le_fx_state* fx, int slot, const float* p, float* q);
+#endif
 /* Puts a Pumper slot's depth glide at [params]'s, and its duck at the one
  * the beat of the frame [fx] is at gives, as a slot that has been running
  * is: what an offline render seeds a Pumper with, once its tempo and clock
@@ -607,6 +643,18 @@ int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
  * is in (and le_yin_finish may be called), else 0. */
 int le_yin_step(le_yin_pass* p, long budget);
 
+/* le_yin_step, its lags worked out LE_YIN_GROUP at a time ahead of their
+ * charge (le_lag_sums, engine_fx.c) into the caller's [sums]: the same
+ * budget and the same results, for a fraction of a lag alone's cost each
+ * (#1755). [sums] must be the same LE_YIN_GROUP doubles, untouched between
+ * calls, for the whole pass (a group is worked out only at its first lag);
+ * NULL takes the lags one at a time, which is le_yin_step. The PSOLA
+ * octaver's and the Dual Octaver's passes run it with sums in their heap
+ * state; the tuner keeps le_yin_step, so the callback's le_engine_process,
+ * which inlines its slice and calls these in this unit, is the code it
+ * was. */
+int le_yin_step_lanes(le_yin_pass* p, long budget, double* sums);
+
 /* Peak-picks a COMPLETED pass: writes the parabolic-interpolated period in
  * samples to *out_period and the voicing confidence in [0,1] to *out_voiced,
  * and returns 1 when the frame reads as confidently voiced. */
@@ -638,7 +686,9 @@ void le_eq_design(int kind, double hz, double db, double q, int sr,
                   double c[5]);
 
 /* Accumulates lags over window [x] until at least [budget] inner iterations
- * are spent (one whole lag always runs). Returns 1 once every lag is in. */
+ * are charged (one whole lag always runs; the lags are worked out
+ * LE_YIN_GROUP at a time, so up to LE_YIN_GROUP - 1 of them ahead of their
+ * charge, #1755). Returns 1 once every lag is in. */
 int le_refine_step(le_lag_refine* r, const float* x, long budget);
 
 /* The completed refinement's minimum, interpolated, or [coarse] when the

@@ -281,13 +281,21 @@ typedef struct le_fx_snapshot {
  * cadence, so spreading it over a few dozen blocks changes nothing observable.
  * The PSOLA octaver slices its own pass the same way, across each hop (#913).
  *
- * le_psola_detect_band is le_yin_begin + one unbounded le_yin_step +
+ * le_psola_detect_band is le_yin_begin + one unbounded le_yin_step_lanes +
  * le_yin_finish, so the sliced and the one-shot paths run the same arithmetic
  * in the same order and cannot drift apart. `x` and `dp` are borrowed, not
  * owned: the caller keeps both alive and unchanged for the life of the pass
  * (the one-shot form uses stack buffers; the tuner uses a frozen snapshot in
- * le_tuner_pass, the PSOLA octaver one in its scratch). No array member, so this type carries none of the octaver's
- * tuning constants and can live beside the rest of the DSP state here. */
+ * le_tuner_pass, the PSOLA octaver one in its scratch). No array member,
+ * so this type carries none of the octaver's tuning constants and can live
+ * beside the rest of the DSP state here. The engine embeds it in le_engine
+ * (the tuner): a field added here moves every field the mixer reads after
+ * it (#1755's follow-up), so state for one caller goes in that caller. */
+/* The lags the difference function works out together (le_lag_sums and
+ * le_yin_step_lanes, engine_fx.c, #1755): the caller holds their sums in
+ * its own LE_YIN_GROUP doubles, outside this type, so the pass stays the
+ * size the engine's tuner has always embedded. */
+#define LE_YIN_GROUP 8
 typedef struct le_yin_pass {
   const float* x; /* analysis window; maxlag + integ contiguous samples */
   float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
@@ -325,6 +333,7 @@ typedef struct le_psola_pass {
   float coarse;   /* the coarse period, in kernel samples */
   le_yin_pass yin;
   le_lag_refine ref;
+  double yin_sums[LE_YIN_GROUP]; /* the pass's lags worked out ahead */
 } le_psola_pass;
 
 /* The Dual Octaver's low band (#1467): its sizes (the tuning is in
@@ -392,6 +401,7 @@ typedef struct le_oct_low {
   float win[LE_OCT_LOW_DWIN];
   float dp[LE_OCT_LOW_DWIN / 2 + 1];
   float ring[LE_OCT_LOW_RING];
+  double yin_sums[LE_YIN_GROUP]; /* the pass's lags worked out ahead */
 } le_oct_low;
 
 /* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
@@ -399,7 +409,10 @@ typedef struct le_oct_low {
  * allocates when the slot becomes OCTAVER (sized by the LE_PV_* constants in
  * engine.c) and frees on retype/reset/destroy; everything else is plain scalar
  * state the audio thread owns. The PSOLA fields are defined now but unused until
- * part 4, so that PR needs no struct/ABI change. */
+ * part 4, so that PR needs no struct/ABI change. le_fx_state holds 128 of
+ * these and every lane, track and monitor a le_fx_state, so a field added
+ * here moves what the mixer reads and slows it (#1755's follow-up): new
+ * per-channel state goes in the scratch (le_oct_aux, engine_fx.h). */
 typedef struct le_octaver_state {
   float* out;        /* synthesis overlap-add accumulator, LE_PV_OUT long */
   /* Each bin's phase at the latest analysis, length LE_PV_BINS: the next
@@ -2254,7 +2267,9 @@ typedef struct le_render_freeze {
  * scales with the block exactly as the DSP around it does, so the tuner costs
  * the same per frame at every period instead of dumping a whole pass into one
  * callback. Worst case for one block is this budget plus one integration
- * length of overshoot (a lag is never split). See tuner_slice. */
+ * length of overshoot (a lag is never split), and in the refinement up to
+ * LE_YIN_GROUP - 1 lags worked out ahead of their charge (le_refine_step,
+ * each a fraction of a lag alone's cost, #1755). See tuner_slice. */
 #define LE_TUNER_WORK_PER_FRAME 192
 
 
