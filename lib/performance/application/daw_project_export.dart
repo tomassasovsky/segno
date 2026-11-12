@@ -20,8 +20,13 @@ import 'package:daw_export/daw_export.dart';
 /// tempo (arm-time for a crash salvage), or 120 BPM for a bundle with none.
 Future<List<DawTrack>> writeDawProject(String dir) async {
   final project = DawManifestReader.read(dir);
-  if (project != null) {
+  // Live cannot open a set with no tracks, so a take with nothing recorded
+  // gets no project, and one an earlier version wrote for it is removed.
+  if (project != null && project.tracks.isNotEmpty) {
     await _replace('$dir/project.als', buildAls(project));
+  } else if (project != null) {
+    final stale = File('$dir/project.als');
+    if (stale.existsSync()) await stale.delete();
   }
   final chains = FxChainsWriter.render(dir);
   if (chains != null) {

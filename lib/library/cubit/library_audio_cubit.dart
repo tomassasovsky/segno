@@ -488,8 +488,9 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
       case LibraryRecording(:final capture):
         final name = driveSafeName(capture.name);
         if (kind == LibraryAudioExportKind.dawPackage) {
-          final als = File('${capture.path}/project.als');
-          if (!als.existsSync()) await _dawProject(capture.path);
+          // Written afresh, not reused: a set an earlier version wrote may
+          // be one Live refuses (#1791), and writing one reads no audio.
+          await _dawProject(capture.path);
           return AudioExportPlan(
             name: name,
             folder: AudioExportFolders.performances,

@@ -4,84 +4,79 @@ import 'package:test/test.dart';
 void main() {
   group('DawProject', () {
     test('defaults tempoBpm to 120', () {
-      const project = DawProject(tracks: []);
-      expect(project.tempoBpm, 120.0);
-      expect(project.tracks, isEmpty);
-    });
-
-    test('normalizes a non-positive tempoBpm (the v4 session manifest "unset" '
-        'sentinel) to the kFallbackTempoBpm fallback', () {
       expect(const DawProject(tracks: []).tempoBpm, kFallbackTempoBpm);
-      expect(
-        const DawProject(tracks: [], tempoBpm: 0).tempoBpm,
-        kFallbackTempoBpm,
-      );
-      expect(
-        const DawProject(tracks: [], tempoBpm: -5).tempoBpm,
-        kFallbackTempoBpm,
-      );
-      expect(kFallbackTempoBpm, 120.0);
+      expect(kFallbackTempoBpm, 120);
     });
 
-    test('carries an explicit tempo and track list', () {
-      const clip = DawClip(
-        fileRef: 'stems/wet/track0.wav',
-        startSeconds: 0,
-        lengthSeconds: 4,
-      );
-      const session = DawSessionClip(
-        laneIndex: 0,
+    test('normalizes a non-positive tempoBpm (a manifest\'s "unset") to the '
+        'fallback', () {
+      expect(const DawProject(tracks: [], tempoBpm: 0).tempoBpm, 120);
+      expect(const DawProject(tracks: [], tempoBpm: -5).tempoBpm, 120);
+    });
+
+    test('carries an explicit tempo and its tracks', () {
+      const track = DawTrack(name: 'Track 0');
+      const project = DawProject(tracks: [track], tempoBpm: 93.5);
+      expect(project.tempoBpm, 93.5);
+      expect(project.tracks, [track]);
+    });
+  });
+
+  group('DawTrack', () {
+    test('may have no Arrangement clip, only Session clips', () {
+      const loop = DawAudioFile(
         fileRef: 'loops/track0-lane0.wav',
-        lengthSeconds: 1,
+        sampleRate: 48000,
+        frames: 96000,
       );
       const track = DawTrack(
         name: 'Track 0',
-        arrangementClip: clip,
-        sessionClips: [session],
-      );
-      const project = DawProject(tracks: [track], tempoBpm: 140);
-
-      expect(project.tempoBpm, 140.0);
-      expect(project.tracks.single.name, 'Track 0');
-      expect(project.tracks.single.arrangementClip, clip);
-      expect(project.tracks.single.sessionClips, [session]);
-    });
-
-    test('a track may have no arrangement clip, only session clips', () {
-      const track = DawTrack(
-        name: 'Input 1',
-        sessionClips: [
-          DawSessionClip(
-            laneIndex: 0,
-            fileRef: 'loops/track1-lane0.wav',
-            lengthSeconds: 1,
-          ),
-        ],
+        sessionClips: [DawSessionClip(laneIndex: 0, audio: loop)],
       );
       expect(track.arrangementClip, isNull);
-      expect(track.sessionClips, hasLength(1));
+      expect(track.sessionClips.single.audio, loop);
+      expect(track.automationLanes, isEmpty);
     });
+  });
 
-    test('DawClip carries fileRef/start/length verbatim', () {
-      const clip = DawClip(
+  group('DawAudioFile', () {
+    test('its length in seconds is frames over rate', () {
+      const audio = DawAudioFile(
         fileRef: 'stems/wet/track0.wav',
-        startSeconds: 1.5,
-        lengthSeconds: 3.25,
+        sampleRate: 96000,
+        frames: 144000,
       );
-      expect(clip.fileRef, 'stems/wet/track0.wav');
-      expect(clip.startSeconds, 1.5);
-      expect(clip.lengthSeconds, 3.25);
+      expect(audio.seconds, 1.5);
     });
+  });
 
-    test('DawSessionClip carries laneIndex/fileRef/length verbatim', () {
-      const clip = DawSessionClip(
-        laneIndex: 2,
-        fileRef: 'loops/track0-lane2.wav',
-        lengthSeconds: 2,
+  group('DawClip and DawSessionClip', () {
+    test('carry their file and placement verbatim', () {
+      const audio = DawAudioFile(
+        fileRef: 'stems/wet/track0.wav',
+        sampleRate: 48000,
+        frames: 48000,
       );
-      expect(clip.laneIndex, 2);
-      expect(clip.fileRef, 'loops/track0-lane2.wav');
-      expect(clip.lengthSeconds, 2.0);
+      const clip = DawClip(audio: audio, startSeconds: 2);
+      expect(clip.audio, audio);
+      expect(clip.startSeconds, 2);
+      const session = DawSessionClip(laneIndex: 3, audio: audio);
+      expect(session.laneIndex, 3);
+      expect(session.audio, audio);
+    });
+  });
+
+  group('AutomationLane', () {
+    test('carries its target, initial value and breakpoints', () {
+      const lane = AutomationLane(
+        target: AutomationTarget.activator,
+        initialValue: 0,
+        breakpoints: [AutomationBreakpoint(beat: 4, value: 1)],
+      );
+      expect(lane.target, AutomationTarget.activator);
+      expect(lane.initialValue, 0);
+      expect(lane.breakpoints.single.beat, 4);
+      expect(lane.breakpoints.single.value, 1);
     });
   });
 }

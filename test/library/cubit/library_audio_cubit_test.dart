@@ -453,8 +453,8 @@ void main() {
       },
     );
 
-    test('the DAW package writes the project first when it is missing, '
-        'then copies the bundle as one directory', () async {
+    test('the DAW package writes the project afresh, then copies the bundle '
+        'as one directory', () async {
       final capture = take('Evening loop');
       when(() => performance.dawPackageFiles(any()))
           .thenAnswer((_) => ['master-001.wav', 'project.als']);
@@ -469,9 +469,10 @@ void main() {
       ]);
       expect(cubit.state.export, isA<LibraryExportDone>());
 
-      // Written once: the next package finds it.
+      // Written again for the next package: one an earlier version left
+      // may be a set Live refuses.
       await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
-      expect(dawWrites, hasLength(1));
+      expect(dawWrites, [capture.path, capture.path]);
     });
 
     test('a name already on the drive asks first, writing nothing, and '
