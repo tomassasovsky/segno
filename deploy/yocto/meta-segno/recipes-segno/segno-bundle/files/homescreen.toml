@@ -24,11 +24,13 @@ fullscreen = true
 
   [view.args]
   dart = ['--segno-screen=main']
-  # No --impeller-use-sdfs, which Flutter's desktop embedders pass and this
-  # one does not (#1777). Signed-distance-field shapes cost the Pi 5's V3D
-  # about 2.5x the GPU time on the stage (63% busy against 27%) and drop
-  # frames, and they leave paths aliased, so the 4x MSAA framebuffer
-  # (IVI_DRM_MSAA_SAMPLES, #1687) is needed either way.
+  # --impeller-use-sdfs is left out on purpose, on both views (#1777).
+  # Flutter's GTK, macOS and Windows embedders always pass it; the embedder
+  # API ivi-homescreen uses leaves it off. Signed-distance-field shapes cost
+  # the Pi 5's V3D about 2.5x the GPU time on the stage (63% busy against
+  # 27%), drop frames, and double the readout's raster time, and paths stay
+  # aliased without the 4x MSAA framebuffer (IVI_DRM_MSAA_SAMPLES, #1687), so
+  # it is needed either way.
   engine = ['--enable-impeller=true']
 
   [view.backend]
@@ -72,6 +74,7 @@ pixel_ratio = 1.6
 
   [view.args]
   dart = ['--segno-screen=readout']
+  # No --impeller-use-sdfs: see the main view.
   engine = ['--enable-impeller=true']
 
   [view.backend]

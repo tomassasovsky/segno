@@ -9,7 +9,11 @@
 # arm64 release engine for (github.com/meta-flutter/flutter-engine releases);
 # the commit is that release's bin/internal/engine.version, which is also the
 # `engineRevision` of `flutter --version --machine`. Bump both together, with
-# the prebuilt recipe's file name (its PV) and SRC_URI checksum.
+# the prebuilt recipe's file name (its PV) and SRC_URI checksum. After a bump,
+# check that the console's log still says "Using the Impeller rendering
+# backend (OpenGLES)", not "(OpenGLESSDF)": the console leaves Impeller's SDF
+# shapes off (homescreen.toml says why), and only the engine default keeps
+# them off.
 FLUTTER_ENGINE_VERSION = "3.50.0"
 FLUTTER_ENGINE_COMMIT = "371f77202a73e8dff57a8b3bff75bca55c090aee"
 
