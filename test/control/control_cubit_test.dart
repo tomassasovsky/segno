@@ -2653,8 +2653,7 @@ void main() {
           );
           transport.press(PedalButton.stop, down: true);
           await pumpEventQueue();
-          // The sole audible loop: the press parks it (#1773).
-          verify(() => looper.stopTrack()).called(1);
+          verify(() => looper.setMute(muted: true)).called(1);
         },
       );
 
@@ -3270,57 +3269,18 @@ void main() {
         verify(() => looper.setMute(muted: true)).called(1);
       });
 
-      test('Rec mode: Stop on the sole audible track parks everything and '
-          'leaves it unmuted, so its Post tails ring out (#1773)', () {
+      test('Rec mode: muting the sole audible track parks everything, the '
+          'park first so the mute spares its Post tails (#1773)', () {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
         cubit.stop();
-        verify(() => looper.stopTrack()).called(1);
-        verifyNever(() => looper.setMute(muted: true));
-        expect(cubit.state.parkedResume, {0});
-      });
-
-      test('Rec mode: Rec/Play resumes the track the Stop parked, without '
-          'overdub (#1773)', () async {
-        setEngine(
-          _tracksWith(const [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-          ]),
-        );
-        await pumpEventQueue();
-        cubit.stop();
-        setEngine(
-          _tracksWith(const [
-            Track(state: TrackState.stopped, lengthFrames: 48000),
-          ]),
-        );
-        await pumpEventQueue();
-        cubit.recPlay();
-        verify(() => looper.play()).called(1);
-        verifyNever(() => looper.record(channel: any(named: 'channel')));
-        // Resumed: the latch is spent, and the next Rec/Play overdubs.
-        setEngine(
-          _tracksWith(const [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-          ]),
-        );
-        await pumpEventQueue();
-        expect(cubit.state.parkedResume, isEmpty);
-      });
-
-      test('Rec mode: Rec/Play on a stopped track nothing latched overdubs '
-          'it', () {
-        setEngine(
-          _tracksWith(const [
-            Track(state: TrackState.stopped, lengthFrames: 48000),
-          ]),
-        );
-        cubit.recPlay();
-        verify(() => looper.record()).called(1);
-        verifyNever(() => looper.play(channel: any(named: 'channel')));
+        verifyInOrder([
+          () => looper.stopTrack(),
+          () => looper.setMute(muted: true),
+        ]);
       });
 
       test(

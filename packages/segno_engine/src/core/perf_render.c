@@ -2043,6 +2043,11 @@ typedef struct le_pr_wet_run {
   float track_gain;
   float volume;
   int muted;
+  /* The callback's spared mute (#1773, le_lane::a_gate_muted): a mute
+   * logged after this track's Stop leaves the gate open until the track
+   * plays, records or clears again, so the Stop's tail drains. */
+  int stop_spare;
+  int gate_muted;
   float pan;
   uint32_t route;
   uint32_t output_enabled;
@@ -2116,6 +2121,7 @@ static le_pr_wet_run* le_pr_wet_open(const le_pr_manifest* m,
   w->volume = (float)le_json_number(le_json_get(arm_lane, "volume"), 1.0);
   w->muted = le_json_bool(le_json_get(arm_lane, "muted"),
       le_json_bool(le_json_get(arm_track, "muted"), 0));
+  w->gate_muted = w->muted;
   w->pan = (float)le_json_number(le_json_get(arm_lane, "pan"), 0);
   w->route = (uint32_t)le_json_number(le_json_get(arm_lane, "outputMask"), 1);
   w->output_enabled = m->output_enabled_mask;
@@ -2309,10 +2315,25 @@ static void le_pr_wet_render(le_pr_wet_run* w, const le_pr_manifest* m,
           }
           break;
         case LE_CMD_PLAY:
-          if (cmd->arg_i == channel) w->cut_silenced = 0;
-          break;
         case LE_PLOG_RECORD_START:
-          if (cmd->arg_i == channel) w->cut_silenced = 0;
+          if (cmd->arg_i == channel) {
+            w->cut_silenced = 0;
+            /* A Play closes a spared mute at once, as the callback does
+             * (le_track_gate_mutes). */
+            if (cmd->code == LE_CMD_PLAY && w->stop_spare && w->muted) {
+              w->mute_gain = 0.0f;
+            }
+            w->stop_spare = 0;
+            w->gate_muted = w->muted;
+          }
+          break;
+        case LE_CMD_RECORD:
+          /* A Record leaves the track running (a take, a punch-in that
+           * unmutes it, or a finish into playback). */
+          if (cmd->arg_i == channel) {
+            w->stop_spare = 0;
+            w->gate_muted = w->muted;
+          }
           break;
         case LE_CMD_CUT_SOUND:
           w->cut_silenced = 1;
@@ -2340,10 +2361,23 @@ static void le_pr_wet_render(le_pr_wet_run* w, const le_pr_manifest* m,
         case LE_CMD_SET_LANE_MUTE:
           if (cmd->lanef.channel == channel && cmd->lanef.lane == 0) {
             w->muted = cmd->lanef.value != 0.0f;
+            w->gate_muted = w->muted && !w->stop_spare;
           }
           break;
         case LE_CMD_SET_MUTE:
-          if (cmd->arg_i == channel) w->muted = cmd->arg_f != 0.0f;
+          if (cmd->arg_i == channel) {
+            w->muted = cmd->arg_f != 0.0f;
+            w->gate_muted = w->muted && !w->stop_spare;
+          }
+          break;
+        case LE_CMD_STOP:
+          if (cmd->arg_i == channel) w->stop_spare = 1;
+          break;
+        case LE_CMD_CLEAR:
+          if (cmd->arg_i == channel) {
+            w->stop_spare = 0;
+            w->gate_muted = w->muted;
+          }
           break;
         case LE_CMD_SET_TRACK_SOLO:
           if (cmd->arg_i >= 0 && cmd->arg_i < LE_MAX_TRACKS) {
@@ -2382,7 +2416,7 @@ static void le_pr_wet_render(le_pr_wet_run* w, const le_pr_manifest* m,
       w->gates_fade = runs->on[++w->run_index];
     }
     const int gates_fade = w->gates_fade;
-    const float mute_target = w->muted ? 0.0f : 1.0f;
+    const float mute_target = w->gate_muted ? 0.0f : 1.0f;
     const float solo_target = !any_solo || solo[channel] ? 1.0f : 0.0f;
     const float cut_target = w->cut_silenced ? 0.0f : 1.0f;
     if (f == 0 || !gates_fade) {

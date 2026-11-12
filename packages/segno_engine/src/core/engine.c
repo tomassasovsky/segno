@@ -268,6 +268,7 @@ void le_lane_reset_settings(le_lane* ln, int32_t input_channel) {
     store_f32(&ln->a_pan_gr_bits, gr);
   }
   store_i32(&ln->a_muted, 0);
+  store_i32(&ln->a_gate_muted, 0);
   ln->pending_mute = 0;
   store_f32(&ln->a_rms_bits, 0.0f);
   store_f32(&ln->a_peak_bits, 0.0f);

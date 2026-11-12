@@ -234,6 +234,27 @@ static void le_restart_once(le_engine* e, le_track* t) {
                                   pos, len);
 }
 
+/* Stores lane [l]'s mute and the gate the mixer reads (#1773): a mute on a
+ * track a Stop stopped leaves the gate open, so the Post tail drains. */
+static void le_lane_store_muted(le_track* t, int32_t l, int32_t muted) {
+  store_i32(&t->lanes[l].a_muted, muted);
+  store_i32(&t->lanes[l].a_gate_muted, muted && !t->stop_spare);
+}
+
+/* The track runs again: its mutes gate it from here (#1773). A lane whose
+ * mute spared the Stop's tail closes at once rather than fading: a fade
+ * would let the muted loop in under the Play's fade-in, and nobody heard
+ * that lane's loop since the Stop. */
+static void le_track_gate_mutes(le_engine* e, le_track* t) {
+  const int32_t ch = (int32_t)(t - e->tracks);
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    const int32_t muted = load_i32(&t->lanes[l].a_muted);
+    if (t->stop_spare && muted) e->lane_mute_gain[ch][l] = 0.0f;
+    store_i32(&t->lanes[l].a_gate_muted, muted);
+  }
+  t->stop_spare = 0;
+}
+
 /* The unpark rule: starting to record or play ANYTHING while the transport is
  * held resumes the parked loop — each manually stopped content track returns to
  * PLAYING with its mute preserved (mute silences, park freezes; unparking
@@ -255,6 +276,7 @@ static void le_unpark_stopped(le_engine* e, uint64_t frame) {
     if (t->once_ended) continue; /* an automatic end needs its own launch */
     if (load_i32(&t->lanes[0].a_len) <= 0) continue;
     store_i32(&t->a_state, LE_TRACK_PLAYING);
+    le_track_gate_mutes(e, t);
     le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = c});
   }
 }
@@ -533,11 +555,13 @@ static void le_capture_start_unmute(le_engine* e, le_track* t,
   for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
     t->lanes[l].pending_mute = 0;
     if (load_i32(&t->lanes[l].a_muted) == 0) continue;
-    store_i32(&t->lanes[l].a_muted, 0);
+    le_lane_store_muted(t, l, 0);
     le_plog_push(e, frame,
                  (le_command){.code = LE_CMD_SET_LANE_MUTE,
                               .lanef = {ch, l, 0.0f}});
   }
+  /* Unmuted first, so a spared tail keeps ringing into the take. */
+  le_track_gate_mutes(e, t);
 }
 
 /* Lands the mutes deferred during a capture (LE_CMD_SET_LANE_MUTE's capturing
@@ -558,7 +582,7 @@ static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
     t->lanes[l].pending_mute = 0;
     any = 1;
     if (!apply) continue;
-    store_i32(&t->lanes[l].a_muted, 1);
+    le_lane_store_muted(t, l, 1);
     le_plog_push(e, frame,
                  (le_command){.code = LE_CMD_SET_LANE_MUTE,
                               .lanef = {ch, l, 1.0f}});
@@ -2843,6 +2867,8 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
    * normally — a no-op on the idle transport a count-in requires. */
   if (e->count_in_total > 0) le_count_in_reset(e);
   le_track* t = &e->tracks[ch];
+  /* A mute from here on spares the tail this Stop sets ringing (#1773). */
+  t->stop_spare = 1;
   const int32_t st = load_i32(&t->a_state);
   if (st == LE_TRACK_RECORDING) {
     if (e->clock.length == 0) {
@@ -3224,6 +3250,7 @@ static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (load_i32(&t->a_state) == LE_TRACK_STOPPED) {
     le_restart_once(e, t);
     store_i32(&t->a_state, LE_TRACK_PLAYING);
+    le_track_gate_mutes(e, t);
     /* Playing anything from a held transport unparks the entire loop
      * (except in Song: le_unpark_stopped). */
     if (was_held) le_unpark_stopped(e, frame);
@@ -3390,6 +3417,7 @@ static void le_song_start(le_engine* e, int32_t ch, uint64_t frame) {
   t->free_iteration = 0;
   le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = ch});
   store_i32(&t->a_state, LE_TRACK_PLAYING);
+  le_track_gate_mutes(e, t);
 }
 
 /* Starts stopped section [ch] now: alone and from its top in Song; in
@@ -3733,7 +3761,7 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
     return;
   }
   ln->pending_mute = 0;
-  store_i32(&ln->a_muted, muting ? 1 : 0);
+  le_lane_store_muted(t, lane, muting ? 1 : 0);
   le_plog_push(e, frame, *cmd);
 }
 
@@ -3833,8 +3861,9 @@ static void handle_clear(le_engine* e, int32_t ch, int freeze, uint64_t frame) {
   /* A cleared track comes back unmuted: the next recording is always audible
    * rather than silently muted by a leftover Stop (or a pending mid-capture
    * mute whose capture this clear just destroyed). */
+  t->stop_spare = 0;
   for (int l = 0; l < LE_MAX_LANES; ++l) {
-    store_i32(&t->lanes[l].a_muted, 0);
+    le_lane_store_muted(t, l, 0);
     t->lanes[l].pending_mute = 0;
   }
   /* If every track is now empty, reset the master so a new loop can be defined.
@@ -4691,7 +4720,7 @@ static int32_t le_bounce_install(le_engine* e, le_bounce_bundle* b,
     const int32_t muted = (g->muted_mask >> l) & 1u;
     t->lanes[l].pending_mute = 0;
     if (load_i32(&t->lanes[l].a_muted) == muted) continue;
-    store_i32(&t->lanes[l].a_muted, muted);
+    le_lane_store_muted(t, l, muted);
     le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_MUTE,
                                        .lanef = {ch, l, (float)muted}});
   }
@@ -9251,7 +9280,7 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
       vol[t][l] = load_f32(&ln->a_vol_bits);
       pan_gl[t][l] = load_f32(&ln->a_pan_gl_bits);
       pan_gr[t][l] = load_f32(&ln->a_pan_gr_bits);
-      mut[t][l] = load_i32(&ln->a_muted);
+      mut[t][l] = load_i32(&ln->a_gate_muted);
       lane_in[t][l] = load_i32(&ln->a_input_channel);
       out_mask[t][l] =
           atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
@@ -9918,6 +9947,9 @@ LE_AUDIO_HOT_AT(4) void mix_tracks_frame_heard(
        * Stop or Clear cuts the feed and the lane's Post tail drains through
        * the same route, while a Mute (or another track's solo) gates the
        * lane entirely, tail included, and its player continues underneath.
+       * A Mute that lands after a Stop gates only once the track runs
+       * again, so the tail the Stop set ringing drains (`mut` reads
+       * a_gate_muted, #1773).
        * EXCEPTION (part 2): while cached playback is engaged below, the live
        * chain is skipped entirely — its state was settled to bypass at the
        * engage edge, and a fallback re-enters through the clean re-enable
@@ -10998,6 +11030,18 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
     e->commands_applied++; /* rejected and no-op commands settle too */
   }
   le_head_land(e, perf_frame_base);
+  /* A track that runs again gates by its mutes (#1773). The starts the
+   * commands make close a spared gate as they land; this closes it for a
+   * start made any other way (a Bounce or Undo installing a playing take,
+   * at the last block's end) before the frames below mix it. */
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (!t->stop_spare) continue;
+    const int32_t st = load_i32(&t->a_state);
+    if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) {
+      le_track_gate_mutes(e, t);
+    }
+  }
 
   /* Instruments (#1197): parameter changes and the note rings in posting
    * order before the MIDI drain, so a MIDI note meets a patch posted ahead
