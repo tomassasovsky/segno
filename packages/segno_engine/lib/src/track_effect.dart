@@ -318,7 +318,7 @@ enum FxRackPath {
   /// The Amb path (the Amb-Verb).
   amb(8);
 
-  const FxRackPath(this.bits);
+  FxRackPath(this.bits);
 
   /// The native bits.
   final int bits;
@@ -513,7 +513,7 @@ enum TrackEffectType {
   /// retuned to the nearest note of a scale, gliding there at its speed.
   smartTune(32, 'Smart Tune');
 
-  const TrackEffectType(this.code, this.label);
+  TrackEffectType(this.code, this.label);
 
   /// The native `le_fx_type` integer.
   final int code;
@@ -1591,7 +1591,7 @@ enum FxParamUnit {
   /// Seconds (`LE_FX_UNIT_SECONDS`).
   seconds(9);
 
-  const FxParamUnit(this.code);
+  FxParamUnit(this.code);
 
   /// The native `le_fx_param_unit` value.
   final int code;
@@ -1614,7 +1614,7 @@ enum FxParamCurve {
   /// reverb time display (`LE_FX_CURVE_REVERB_TIME`).
   reverbTime(3);
 
-  const FxParamCurve(this.code);
+  FxParamCurve(this.code);
 
   /// The native `le_fx_param_curve` value.
   final int code;

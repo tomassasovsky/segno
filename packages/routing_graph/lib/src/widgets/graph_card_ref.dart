@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The drag payload when reordering an effect: a reference to one card by its
 /// [rowId] (lane index or monitored input) and its [index] in that row's chain.

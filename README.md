@@ -133,7 +133,7 @@ earlier Pencil file (`segno-ui.pen`), now frozen.
 Segno targets the appliance. A Mac can run the application for development,
 and the mock flavor runs it without any audio hardware.
 
-Requirements: Flutter 3.47, Xcode for the macOS host, and a C compiler for
+Requirements: Flutter 3.50, Xcode for the macOS host, and a C compiler for
 the engine tests.
 
 ```sh

@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/expression_catalogue.dart';
 import 'package:segno/control/binding/external_controls.dart';

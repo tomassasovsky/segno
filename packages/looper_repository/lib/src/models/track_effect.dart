@@ -483,7 +483,7 @@ enum TrackEffectType {
   /// The Looper X's Smart Tune (#1480).
   smartTune(32);
 
-  const TrackEffectType(this.code);
+  TrackEffectType(this.code);
 
   /// Whether this is one of the Looper X kinds (#887): a type built to
   /// reproduce a factory module, whose descriptors carry that module's own

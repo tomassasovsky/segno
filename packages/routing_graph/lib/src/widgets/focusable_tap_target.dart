@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 
 /// A keyboard- and screen-reader-accessible tap target for the custom-painted

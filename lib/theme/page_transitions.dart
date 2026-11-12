@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Fade + subtle scale-up (96% → 100%) transition shared by
 /// [FadeScalePageTransitionsBuilder] (the app-wide theme default) and

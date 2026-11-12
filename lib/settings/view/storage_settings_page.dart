@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/settings/view/settings_destination_page.dart';
 import 'package:segno/system/view/storage_system_tab.dart';

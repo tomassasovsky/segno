@@ -6,11 +6,11 @@ import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_client/testing.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -294,7 +294,7 @@ class _RecordStartStore extends FakeKeyValueStore {
       refuseNextRead = false;
       throw StateError('Recording start temporarily unreadable');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   Future<void> _beforeWrite(String key) async {
@@ -353,7 +353,7 @@ class _MonitorRestoreStore extends FakeKeyValueStore {
     if (refuseRead && key == 'monitor_input_mode.0') {
       throw StateError('saved monitor temporarily unreadable');
     }
-    return super.getString(key);
+    return await super.getString(key);
   }
 }
 
@@ -429,7 +429,7 @@ class _ClickModeStore extends FakeKeyValueStore {
       refuseNextRead = false;
       throw StateError('Hear click temporarily unreadable');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   @override
@@ -542,7 +542,7 @@ class _LengthStore extends FakeKeyValueStore {
       refuseNextRead = false;
       throw StateError('Record length preference temporarily unavailable');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   bool refuseCompensation = true;
@@ -591,7 +591,7 @@ class _TimingStore extends FakeKeyValueStore {
       refuseNextRead = false;
       throw StateError('Record timing preference temporarily unavailable');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   Future<void> _beforeWrite(String key) async {
@@ -5792,9 +5792,11 @@ List<Notice> _retries(WidgetTester tester) {
     );
   return [
     for (final shown in ranked)
-      if (shown.notice.action?.key case ValueKey<String>(
-        :final value,
-      ) when value.endsWith('_${AppNoticeId.retry}'))
+      if (shown.notice.action?.key
+          case ValueKey<String>(
+            :final value,
+          )
+          when value.endsWith('_${AppNoticeId.retry}'))
         shown.notice,
   ];
 }

@@ -25,7 +25,7 @@ class _FaultStore extends FakeKeyValueStore {
       firstReadGate = null;
       await gate.future;
     }
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override

@@ -1,8 +1,8 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -125,7 +125,7 @@ void main() {
         child: MaterialApp(
           navigatorKey: segnoNavigatorKey,
           theme: AppTheme.neon,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: const Scaffold(body: FootReverseView()),
         ),

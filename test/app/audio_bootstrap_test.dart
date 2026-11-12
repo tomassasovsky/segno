@@ -84,7 +84,7 @@ class _LengthBootStore extends FakeKeyValueStore {
       if (!entered.isCompleted) entered.complete();
       await release.future;
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 }
 
@@ -98,7 +98,7 @@ class _TimingBootStore extends FakeKeyValueStore {
       if (!entered.isCompleted) entered.complete();
       await release.future;
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 }
 
@@ -119,13 +119,13 @@ class _RecordStartBootStore extends FakeKeyValueStore {
   @override
   Future<int?> getInt(String key) async {
     await _wait(key);
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   @override
   Future<bool?> getBool(String key) async {
     await _wait(key);
-    return super.getBool(key);
+    return await super.getBool(key);
   }
 }
 
@@ -139,7 +139,7 @@ class _ClickModeBootStore extends FakeKeyValueStore {
       if (!entered.isCompleted) entered.complete();
       await release.future;
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 }
 

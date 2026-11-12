@@ -533,9 +533,9 @@ void main() {
           PedalBindingSet.decode((await settings.loadPedalBindings())!),
           cubit.state.globalBindings,
         );
-        final midi =
-            jsonDecode((await settings.loadMidiConfiguration())!)
-                as Map<String, dynamic>;
+        final midi = jsonDecode(
+          (await settings.loadMidiConfiguration())!,
+        ) as Map<String, dynamic>;
         expect(midi['mappings'], isEmpty);
         final setup = PedalSetup.decode(
           (await settings.loadPedalSetup())!,
@@ -555,9 +555,9 @@ void main() {
 
         expect(saved, isFalse);
         expectExternalAndMidiCleaned();
-        final midi =
-            jsonDecode((await settings.loadMidiConfiguration())!)
-                as Map<String, dynamic>;
+        final midi = jsonDecode(
+          (await settings.loadMidiConfiguration())!,
+        ) as Map<String, dynamic>;
         expect(midi['mappings'], isEmpty);
       });
     });
@@ -4567,13 +4567,11 @@ void main() {
           wired.togglePerformanceRecord();
           await armed;
 
-          final snapshot =
-              jsonDecode(
-                    File(
-                      '${performance.armedDirectory}/arm-snapshot.json',
-                    ).readAsStringSync(),
-                  )
-                  as Map<String, dynamic>;
+          final snapshot = jsonDecode(
+            File(
+              '${performance.armedDirectory}/arm-snapshot.json',
+            ).readAsStringSync(),
+          ) as Map<String, dynamic>;
           expect(snapshot['limiterOn'], isTrue);
           expect(snapshot['limiterCeiling'], 0.8);
           expect(

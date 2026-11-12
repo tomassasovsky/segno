@@ -162,13 +162,11 @@ void main() {
           ),
         ),
       );
-      final manifest =
-          jsonDecode(
-                await File(
-                  '${directory.path}/${Session.manifestName}',
-                ).readAsString(),
-              )
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        await File(
+          '${directory.path}/${Session.manifestName}',
+        ).readAsString(),
+      ) as Map<String, dynamic>;
       final track =
           (manifest['tracks'] as List<dynamic>).single as Map<String, dynamic>;
       final savedLane =

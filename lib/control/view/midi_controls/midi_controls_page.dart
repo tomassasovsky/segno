@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/control/binding/binding_labels.dart';

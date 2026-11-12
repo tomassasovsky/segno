@@ -17,15 +17,13 @@ export 'storage_state.dart';
 /// Shutdown asks the repository itself whether a transfer is in flight: a
 /// lease can be taken between two of this cubit's reads.
 class StorageCubit extends Cubit<StorageState> {
-  /// Creates a [StorageCubit]. [sampleRate] reads the applied engine rate the
+  /// Creates a [StorageCubit]. [_sampleRate] reads the applied engine rate the
   /// recording estimate is made at.
   StorageCubit({
     required StorageRepository repository,
-    required int Function() sampleRate,
-    Duration refreshInterval = const Duration(seconds: 5),
+    required this._sampleRate,
+    this._refreshInterval = const Duration(seconds: 5),
   }) : _repository = repository,
-       _sampleRate = sampleRate,
-       _refreshInterval = refreshInterval,
        super(
          StorageState(removableSupported: repository.isRemovableSupported),
        ) {
@@ -190,6 +188,6 @@ class StorageCubit extends Cubit<StorageState> {
   Future<void> close() async {
     _watch?.cancel();
     await _volumes.cancel();
-    return super.close();
+    return await super.close();
   }
 }

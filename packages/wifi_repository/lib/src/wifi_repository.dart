@@ -3,8 +3,8 @@ import 'package:wifi_client/wifi_client.dart';
 /// App-facing WiFi API. Thin facade over [WifiClient] so presentation/cubits
 /// never depend on the data package directly.
 class WifiRepository {
-  /// Creates a [WifiRepository] over [client].
-  const WifiRepository({required WifiClient client}) : _client = client;
+  /// Creates a [WifiRepository] over [_client].
+  const WifiRepository({required this._client});
 
   final WifiClient _client;
 

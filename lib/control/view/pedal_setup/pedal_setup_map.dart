@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/control/binding/pedal_button_legend.dart';

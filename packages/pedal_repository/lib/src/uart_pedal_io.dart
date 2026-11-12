@@ -40,10 +40,9 @@ abstract interface class UartPedalReader {
 /// Linux UART operations. Serial descriptors use libc because a serial line
 /// is not seekable and `File.open` rejects it with `Illegal seek`.
 class NativeUartPedalIo implements UartPedalIo {
-  /// Uses [allocator] for native buffers, allowing ownership to be checked
+  /// Uses [_allocator] for native buffers, allowing ownership to be checked
   /// with a counting allocator without opening a device.
-  const NativeUartPedalIo({Allocator allocator = malloc})
-    : _allocator = allocator;
+  const NativeUartPedalIo({this._allocator = malloc});
 
   final Allocator _allocator;
 

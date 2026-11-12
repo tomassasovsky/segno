@@ -249,9 +249,9 @@ void main() {
           expect(loaded.monitorLevels[0], 0.5);
           expect(loaded.monitorLevels[1] ?? 1, 1);
           expect(loaded.trackLevels[0], 1.5, reason: 'track gain untouched');
-          final stored =
-              jsonDecode(store.values['mix_settings']! as String)
-                  as Map<String, dynamic>;
+          final stored = jsonDecode(
+            store.values['mix_settings']! as String,
+          ) as Map<String, dynamic>;
           final monitors = stored['monitorLevels'] as Map<String, dynamic>;
           expect(
             monitors.values.every((gain) => (gain as num) <= 1),

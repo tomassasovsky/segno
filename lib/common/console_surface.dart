@@ -21,10 +21,10 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';

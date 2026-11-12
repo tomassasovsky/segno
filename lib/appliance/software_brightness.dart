@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// The dimmest a panel can be SET to (`0..1`): 20%, the accepted range's

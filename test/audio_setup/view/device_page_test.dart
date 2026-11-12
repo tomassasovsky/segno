@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -322,7 +322,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [
@@ -894,11 +894,9 @@ void main() {
         await open(tester);
         await tester.tap(find.byKey(const Key('cable_test_start')));
         await tester.pump();
-        unawaited(
-          showDialog<void>(
-            context: tester.element(find.byKey(const Key('cable_test_dialog'))),
-            builder: (_) => const Text('power', key: Key('over_the_dialog')),
-          ),
+        showDialog<void>(
+          context: tester.element(find.byKey(const Key('cable_test_dialog'))),
+          builder: (_) => const Text('power', key: Key('over_the_dialog')),
         );
         await tester.pumpAndSettle();
         result.complete(

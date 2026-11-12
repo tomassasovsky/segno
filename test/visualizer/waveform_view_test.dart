@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 import 'dart:ui';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/visualizer.dart';
 

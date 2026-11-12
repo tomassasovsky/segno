@@ -153,13 +153,11 @@ void main() {
       expect(copy['track0_lane0_L0.wav'], [1, 2, 3]);
       expect(copy['mixdown.wav'], [4]);
       expect(copy['session.v7/session.json'], [5]);
-      final manifest =
-          jsonDecode(
-                File(
-                  '${restored.path}/${Session.manifestName}',
-                ).readAsStringSync(),
-              )
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        File(
+          '${restored.path}/${Session.manifestName}',
+        ).readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(manifest['name'], 'Evening loop');
       expect(manifest['tracks'], [
         {'channel': 0},

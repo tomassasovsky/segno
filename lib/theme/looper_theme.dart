@@ -1,7 +1,7 @@
 import 'dart:math' show ln10, log;
 
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/model/meter_scale.dart';
 import 'package:segno/theme/surface_theme.dart';

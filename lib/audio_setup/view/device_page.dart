@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart'
     show EngineStatus, LatencyState;
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:segno/audio_setup/view/audio_interfaces.dart';

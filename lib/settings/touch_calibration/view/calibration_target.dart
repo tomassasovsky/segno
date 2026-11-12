@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Touch calibration's target (pen 30): a 72 px ring with a crosshair through

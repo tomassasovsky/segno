@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -298,7 +298,7 @@ void main() {
         navigatorObservers: navigatorObservers,
         theme: AppTheme.neon,
         locale: locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: MultiRepositoryProvider(
           providers: [
@@ -1318,13 +1318,11 @@ void main() {
       expect(pushed, hasLength(1));
       final route = pushed.single as PageRouteBuilder<void>;
       expect(route.settings.name, segnoLoopSettingsRouteName);
-      final page =
-          route.pageBuilder(
-                tester.element(find.byType(TracksView)),
-                kAlwaysCompleteAnimation,
-                kAlwaysCompleteAnimation,
-              )
-              as LoopSettingsPage;
+      final page = route.pageBuilder(
+        tester.element(find.byType(TracksView)),
+        kAlwaysCompleteAnimation,
+        kAlwaysCompleteAnimation,
+      ) as LoopSettingsPage;
       // The pages are covered by their own tests; take the route down
       // before it builds against this test's providers.
       segnoNavigatorKey.currentState!.removeRoute(route);
@@ -1591,7 +1589,7 @@ void main() {
       return tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.neon,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           home: MultiRepositoryProvider(
             providers: [
@@ -2591,13 +2589,11 @@ void main() {
       expect(pushed, hasLength(1));
       final route = pushed.single as PageRouteBuilder<void>;
       expect(route.settings.name, segnoFxRouteName);
-      final page =
-          route.pageBuilder(
-                tester.element(find.byType(TracksView)),
-                kAlwaysCompleteAnimation,
-                kAlwaysCompleteAnimation,
-              )
-              as FxPage;
+      final page = route.pageBuilder(
+        tester.element(find.byType(TracksView)),
+        kAlwaysCompleteAnimation,
+        kAlwaysCompleteAnimation,
+      ) as FxPage;
       expect(page.initial, const FxDestination.recordedTrack(1));
       // The editor itself is covered by its own tests; take the route down
       // before it builds against this test's providers.

@@ -5,13 +5,13 @@ publish_to: none
 license: GPL-3.0-or-later
 
 environment:
-  sdk: ^3.11.0
-  flutter: ^3.41.0
+  sdk: ^3.14.0
+  flutter: ^3.50.0
 
 dependencies:
-  bloc: ^9.2.1
   backing_repository:
     path: packages/backing_repository
+  bloc: ^9.2.1
   brightness_client:
     path: packages/brightness_client
   # Already resolved (transitive); declared direct so the volume overlay's
@@ -20,14 +20,14 @@ dependencies:
   clock: ^1.1.2
   console_facts_client:
     path: packages/console_facts_client
-  cpu_load_repository:
-    path: packages/cpu_load_repository
   controller_repository:
     path: packages/controller_repository
+  cpu_load_repository:
+    path: packages/cpu_load_repository
   cupertino_icons: ^2.0.0
   daw_export:
     path: packages/daw_export
-  equatable: ^2.1.0
+  equatable: ^3.0.0
   ffi: ^2.1.3
   flutter:
     sdk: flutter
@@ -39,9 +39,16 @@ dependencies:
   instrument_repository:
     path: packages/instrument_repository
   intl: ^0.20.2
+  # Not used directly: path_provider_android pulls it in. From 1.0.1 it
+  # depends on jni_util, whose JDK lookup calls Process.runSync, and
+  # tool/check_no_dart_process.sh refuses any runtime package that can start
+  # a process through dart:io (#1367). 1.0.0 is the last version without it.
+  # This also holds shared_preferences_android at 2.4, since 2.5 needs jni 1.1.
+  jni: 1.0.0
   looper_repository:
     path: packages/looper_repository
   lucide_icons_flutter: ^4.0.1
+  material_ui: ^1.11.0
   midi_device_repository:
     path: packages/midi_device_repository
   operation_guards:
@@ -55,10 +62,10 @@ dependencies:
     path: packages/routing_graph
   session_repository:
     path: packages/session_repository
-  spawn_process:
-    path: packages/spawn_process
   settings_repository:
     path: packages/settings_repository
+  spawn_process:
+    path: packages/spawn_process
   storage_repository:
     path: packages/storage_repository
   touch_calibration_client:
@@ -73,7 +80,7 @@ dependencies:
 
 dev_dependencies:
   # tool/check_no_widget_methods.dart resolves the app with it.
-  analyzer: ^12.1.0
+  analyzer: ^14.4.0
   bloc_lint: ^0.4.1
   bloc_test: ^10.0.0
   bloc_tools: ^0.1.0-dev.25
@@ -94,7 +101,7 @@ dev_dependencies:
   path: ^1.9.1
   segno_engine:
     path: packages/segno_engine
-  very_good_analysis: ^10.3.0
+  very_good_analysis: ^11.0.0
   wifi_client:
     path: packages/wifi_client
 

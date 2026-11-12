@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/control/binding/binding_labels.dart';
@@ -1378,8 +1378,11 @@ class _ActionsPanel extends StatelessWidget {
 
 /// Opens the action picker for the gesture named [gesture], which carries
 /// [current] now.
-typedef _PickAction =
-    void Function(String gesture, ControlAction? current, _ActionSlot slot);
+typedef _PickAction = void Function(
+  String gesture,
+  ControlAction? current,
+  _ActionSlot slot,
+);
 
 /// Whether the button is momentary or latching.
 class _HardwareChoice extends StatelessWidget {

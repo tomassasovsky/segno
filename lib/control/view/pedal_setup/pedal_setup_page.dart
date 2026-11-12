@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/binding/control_action.dart';

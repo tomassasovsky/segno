@@ -94,12 +94,10 @@ class WaveformDisplayController {
   /// Connects the live repository to its exclusively owned window channel.
   /// Await [close] before handing the injected service to another controller.
   WaveformDisplayController({
-    required LooperRepository repository,
-    required WaveformWindowService window,
-    required WaveformDisplayContext context,
-  }) : _repository = repository,
-       _window = window,
-       _context = context {
+    required this._repository,
+    required this._window,
+    required this._context,
+  }) {
     _window.onWindowReady = _onWindowReady;
   }
 

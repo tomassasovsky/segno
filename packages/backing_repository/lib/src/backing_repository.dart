@@ -16,23 +16,17 @@ import 'package:segno_engine/segno_engine.dart';
 /// replaced buffer still on its way back). Knows nothing about sessions,
 /// pedals or the prepared order.
 class BackingRepository {
-  /// Creates a [BackingRepository] over [engine] (whose rate [metering]
+  /// Creates a [BackingRepository] over [_engine] (whose rate [_metering]
   /// reports: the same engine object in production).
   BackingRepository({
-    required BackingControl engine,
-    required EngineMetering metering,
-    required AudioDecoder decoder,
-    required BackingAssetStore store,
-    Duration pollInterval = const Duration(milliseconds: 50),
-    Duration retryDelay = const Duration(milliseconds: 10),
-    int retries = 8,
-  }) : _engine = engine,
-       _metering = metering,
-       _decoder = decoder,
-       _store = store,
-       _pollInterval = pollInterval,
-       _retryDelay = retryDelay,
-       _retries = retries {
+    required this._engine,
+    required this._metering,
+    required this._decoder,
+    required this._store,
+    this._pollInterval = const Duration(milliseconds: 50),
+    this._retryDelay = const Duration(milliseconds: 10),
+    this._retries = 8,
+  }) {
     _epoch = _engine.backingState().epoch;
     _readDevice();
   }

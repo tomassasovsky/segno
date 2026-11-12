@@ -138,11 +138,11 @@ class _Store extends FakeKeyValueStore {
       await modeReadGate?.future;
       if (failModeRead) throw StateError('Hear click read failed');
     }
-    return super.getInt(key);
+    return await super.getInt(key);
   }
 
   Future<void> _write(String key, Future<void> Function() write) async {
-    if (!_owned(key)) return write();
+    if (!_owned(key)) return await write();
     writes[key] = (writes[key] ?? 0) + 1;
     await write();
     if (failKey == key) {

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';

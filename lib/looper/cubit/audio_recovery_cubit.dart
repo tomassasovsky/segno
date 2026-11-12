@@ -24,18 +24,15 @@ class AudioRecoveryCubit extends Cubit<AudioRecoveryState> {
   ///
   /// [recoveryConfig] is the pinned config a boot auto-start could not open
   /// (null when the engine started, on first run, or for the system default) —
-  /// the cubit is inert when it is null or carries no pinned device. [ticker]
-  /// drives the enumeration polling (a periodic timer when omitted); [interval]
-  /// is that timer's period.
+  /// the cubit is inert when it is null or carries no pinned device.
+  /// [_ticker] drives the enumeration polling (a periodic timer when
+  /// omitted); [_interval] is that timer's period.
   AudioRecoveryCubit({
-    required LooperRepository looper,
+    required this._looper,
     EngineConfig? recoveryConfig,
-    Stream<void>? ticker,
-    Duration interval = const Duration(seconds: 2),
-  }) : _looper = looper,
-       _config = recoveryConfig,
-       _ticker = ticker,
-       _interval = interval,
+    this._ticker,
+    this._interval = const Duration(seconds: 2),
+  }) : _config = recoveryConfig,
        super(const AudioRecoveryState());
 
   final LooperRepository _looper;

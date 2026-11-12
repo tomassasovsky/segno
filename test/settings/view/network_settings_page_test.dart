@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
@@ -146,7 +146,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: _theme(),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         // The progress bar sweeps while a join runs; held still, a settled
         // pump means the page is idle rather than mid-animation.

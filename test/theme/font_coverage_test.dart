@@ -152,9 +152,9 @@ Map<String, String> _arbStrings() => {
       in Directory('lib/l10n/arb').listSync().whereType<File>().where(
         (f) => f.path.endsWith('.arb'),
       ))
-    for (final MapEntry(:key, :value)
-        in (jsonDecode(file.readAsStringSync()) as Map<String, dynamic>)
-            .entries)
+    for (final MapEntry(:key, :value) in (jsonDecode(
+      file.readAsStringSync(),
+    ) as Map<String, dynamic>).entries)
       if (!key.startsWith('@') && value is String) value: '${file.path} $key',
 };
 

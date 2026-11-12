@@ -27,13 +27,10 @@ class UpdateCubit extends Cubit<UpdateState> {
   /// Creates an [UpdateCubit]. Off until [load] restores preferences and (when
   /// auto-check is on) runs the first check.
   UpdateCubit({
-    required UpdateRepository updates,
-    required SettingsRepository settings,
-    Duration installPollInterval = const Duration(seconds: 2),
-  }) : _updates = updates,
-       _settings = settings,
-       _installPollInterval = installPollInterval,
-       super(const UpdateState());
+    required this._updates,
+    required this._settings,
+    this._installPollInterval = const Duration(seconds: 2),
+  }) : super(const UpdateState());
 
   final UpdateRepository _updates;
   final SettingsRepository _settings;
@@ -382,6 +379,6 @@ class UpdateCubit extends Cubit<UpdateState> {
     // running for a cubit that can no longer report it.
     await _download?.cancel();
     _endDownload();
-    return super.close();
+    return await super.close();
   }
 }

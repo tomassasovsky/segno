@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart' show LooperState;
+import 'package:material_ui/material_ui.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -93,9 +93,11 @@ class _LibraryViewState extends State<LibraryView> {
 
   void _reselect(BuildContext context, SessionState session) {
     final library = context.read<LibraryCubit>();
-    if (library.state.folderFilter case FolderSessions(
-      :final folder,
-    ) when !session.folders.contains(folder)) {
+    if (library.state.folderFilter
+        case FolderSessions(
+          :final folder,
+        )
+        when !session.folders.contains(folder)) {
       // The chip's folder was renamed or deleted.
       library.filterFolder(const AllSessions());
     }

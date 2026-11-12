@@ -183,7 +183,7 @@ enum TrackOperation {
   /// Keep the last half of the track: Divide (#1168).
   divideLastHalf('divide-last');
 
-  const TrackOperation(this.token);
+  TrackOperation(this.token);
 
   /// The key fragment this operation contributes.
   final String token;
@@ -251,7 +251,7 @@ enum ControlCommand {
   /// Switch the track bank A / B.
   nextBank('bank:next');
 
-  const ControlCommand(this.key);
+  ControlCommand(this.key);
 
   /// The whole key for this command. Spelled out per member rather than
   /// derived from the member name, because the accepted catalogue does not

@@ -15,7 +15,7 @@ class _ControlledPresetStore extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
     if (key == 'fx_user_presets' && holdRead) await readGate.future;
-    return super.getString(key);
+    return await super.getString(key);
   }
 
   @override

@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
@@ -367,7 +367,7 @@ void main() {
           ],
           child: MaterialApp(
             navigatorKey: routeEntry ? segnoNavigatorKey : null,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localizationsDelegates: appLocalizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             theme: ThemeData(
               extensions: [
@@ -997,11 +997,9 @@ void main() {
       );
       final top = (saved.controls.single as MidiParameterControl).high;
       expect(target.toDomain(top), closeTo(1.0, 1e-9));
-      final persisted =
-          jsonDecode(
-                (await store.getString('midi.configuration'))!,
-              )
-              as Map<String, dynamic>;
+      final persisted = jsonDecode(
+        (await store.getString('midi.configuration'))!,
+      ) as Map<String, dynamic>;
       expect(persisted['mappings'], [saved.toJson()]);
       expect(control.state.midiEdit, isNull);
       expect(find.byKey(Key('midi_row_edit_${saved.id}')), findsOneWidget);

@@ -1212,11 +1212,9 @@ void main() {
         'map', () async {
       final dir = '${tempDir.path}/length_edits';
       await repoFor(edited()).save(dir, settings: const SessionSettings());
-      final manifest =
-          jsonDecode(
-                await File('$dir/${Session.manifestName}').readAsString(),
-              )
-              as Map;
+      final manifest = jsonDecode(
+        await File('$dir/${Session.manifestName}').readAsString(),
+      ) as Map;
       expect(manifest['version'], Session.formatVersion);
       final lane =
           (((manifest['tracks'] as List).single as Map)['lanes'] as List).single
@@ -1648,9 +1646,9 @@ void main() {
       name: 'Evening loop',
     );
     expect(saved.name, 'Evening loop');
-    final json =
-        jsonDecode(File('$dir/${Session.manifestName}').readAsStringSync())
-            as Map<String, dynamic>;
+    final json = jsonDecode(
+      File('$dir/${Session.manifestName}').readAsStringSync(),
+    ) as Map<String, dynamic>;
     expect(json['name'], 'Evening loop');
     expect(json['version'], Session.formatVersion);
     expect(
@@ -1664,9 +1662,9 @@ void main() {
     await repoFor(
       FakeSessionEngine(),
     ).save(dir, settings: const SessionSettings());
-    final json =
-        jsonDecode(File('$dir/${Session.manifestName}').readAsStringSync())
-            as Map<String, dynamic>;
+    final json = jsonDecode(
+      File('$dir/${Session.manifestName}').readAsStringSync(),
+    ) as Map<String, dynamic>;
     expect(json.containsKey('name'), isFalse);
   });
 

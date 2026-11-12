@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/power_off/power_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -106,7 +106,7 @@ class WaveformWindowApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: AppTheme.readout,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) =>
             AppTextDefaults(child: child ?? const SizedBox.shrink()),

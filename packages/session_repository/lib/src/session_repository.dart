@@ -343,33 +343,28 @@ class SessionSettings {
 /// applying a loaded session to the engine is the looper repository's job
 /// (the single owner of looper state) — see [read].
 class SessionRepository {
-  /// Creates a [SessionRepository] capturing from [engine].
+  /// Creates a [SessionRepository] capturing from [_engine].
   ///
-  /// [sessionsRoot] resolves the `sessions/` root directory the catalog
+  /// [_sessionsRoot] resolves the `sessions/` root directory the catalog
   /// ([listSessions] / [bundlePathOf] / [renameSession] / [deleteSession] and
   /// the rest) operates under; it is optional so the path-addressed
   /// save/read flow needs no root. The catalog methods throw [StateError]
   /// when it is absent. Injecting a resolver keeps the catalog testable
-  /// (point it at a temp dir). [now] stamps new bundle ids ([newSessionId]);
+  /// (point it at a temp dir). [_now] stamps new bundle ids ([newSessionId]);
   /// injectable for deterministic tests.
   ///
-  /// [clearPollInterval]/[clearPollAttempts] bound how long a save/export waits
+  /// [_clearPollInterval]/[_clearPollAttempts] bound how long a save/export waits
   /// for queued commands and in-flight overdub layers to settle before
   /// capturing. Tests can shrink
   /// these.
   SessionRepository({
-    required AudioEngine engine,
-    required GuardRegistry guards,
-    Future<String> Function()? sessionsRoot,
-    DateTime Function() now = DateTime.now,
-    Duration clearPollInterval = const Duration(milliseconds: 8),
-    int clearPollAttempts = 64,
-  }) : _engine = engine,
-       _guards = guards,
-       _sessionsRoot = sessionsRoot,
-       _now = now,
-       _clearPollInterval = clearPollInterval,
-       _clearPollAttempts = clearPollAttempts;
+    required this._engine,
+    required this._guards,
+    this._sessionsRoot,
+    this._now = DateTime.now,
+    this._clearPollInterval = const Duration(milliseconds: 8),
+    this._clearPollAttempts = 64,
+  });
 
   final AudioEngine _engine;
   final Future<String> Function()? _sessionsRoot;
@@ -764,7 +759,7 @@ class SessionRepository {
     if (!File(mixdown).existsSync()) {
       return const AuditionStart(result: EngineResult.invalid);
     }
-    return _engine.auditionStartFile(mixdown, stillWanted: stillWanted);
+    return await _engine.auditionStartFile(mixdown, stillWanted: stillWanted);
   }
 
   /// Silences the Library's preview at the next block.
@@ -791,7 +786,7 @@ class SessionRepository {
     }
     final layer = '$path/${track.liveLayerFile}';
     if (!File(layer).existsSync()) return null;
-    return _engine.filePeaks(layer, buckets: buckets);
+    return await _engine.filePeaks(layer, buckets: buckets);
   }
 
   /// The saved bundle [id]'s mixdown, read from its WAV header, or null when
@@ -816,7 +811,7 @@ class SessionRepository {
     if (path == null) return null;
     final mixdown = '$path/$mixdownName';
     if (!File(mixdown).existsSync()) return null;
-    return _engine.filePeaks(mixdown, buckets: buckets);
+    return await _engine.filePeaks(mixdown, buckets: buckets);
   }
 
   /// The canonical 44-byte header [WavCodec] writes: `RIFF`/`WAVE`, `fmt `

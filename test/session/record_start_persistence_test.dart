@@ -391,9 +391,9 @@ void main() {
             final manifest = File(
               '${await sessions.bundlePathOf(await idOf('Bad'))}/${Session.manifestName}',
             );
-            final json =
-                jsonDecode(await manifest.readAsString())
-                    as Map<String, dynamic>;
+            final json = jsonDecode(
+              await manifest.readAsString(),
+            ) as Map<String, dynamic>;
             json[bad.field] = bad.value;
             await manifest.writeAsString(jsonEncode(json));
             final before = engine.snapshot().tracks.first;

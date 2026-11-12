@@ -48,7 +48,7 @@ enum InterfaceControl {
   /// Turns a unit's setup mode off; index and value are unused.
   setupModeOff(4);
 
-  const InterfaceControl(this.code);
+  InterfaceControl(this.code);
 
   /// The native `le_interface_control` value.
   final int code;
@@ -146,7 +146,7 @@ class InterfaceInputsInfo {
         PhantomSwitchInfo(
           first: ref.phantom[g].first - 1,
           last: ref.phantom[g].last - 1,
-          on: ref.phantom[g].on$ != 0,
+          on: ref.phantom[g].on != 0,
         ),
     ];
     return InterfaceInputsInfo(

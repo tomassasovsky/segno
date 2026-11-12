@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The neutral structural design tokens for a routing graph — backgrounds,
 /// card fills, lines, and text shades — layered onto [ThemeData] via a

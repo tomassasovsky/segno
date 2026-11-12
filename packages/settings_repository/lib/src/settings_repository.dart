@@ -169,15 +169,13 @@ typedef StoredOutputSetup = ({
 /// device configuration (so the engine can auto-start on launch), per-track
 /// display names, and big-picture view preferences.
 class SettingsRepository {
-  /// Creates a [SettingsRepository] backed by [store].
+  /// Creates a [SettingsRepository] backed by [_store].
   ///
-  /// [alsaPeriods] is the effective ALSA period count the engine runs with,
+  /// [_alsaPeriods] is the effective ALSA period count the engine runs with,
   /// or `null` where that knob is not engaged (any non-Linux platform, or
   /// Linux without `SEGNO_ALSA_PERIODS` set). Derive it with
   /// [alsaPeriodsFromEnvironment]; the composition root passes it in.
-  SettingsRepository({required KeyValueStore store, int? alsaPeriods})
-    : _store = store,
-      _alsaPeriods = alsaPeriods;
+  SettingsRepository({required this._store, this._alsaPeriods});
 
   final KeyValueStore _store;
   Future<void> _serializedWrite = Future<void>.value();
@@ -510,7 +508,7 @@ class SettingsRepository {
   /// One atomic opaque envelope for Remote enable and all mappings.
   Future<String?> loadMidiConfiguration() async {
     await _serializedWrite;
-    return _store.getString(_midiConfigurationKey);
+    return await _store.getString(_midiConfigurationKey);
   }
 
   /// Confirms exact saved bytes; on refusal restores and verifies the
@@ -632,7 +630,7 @@ class SettingsRepository {
   /// second place able to decide what a footswitch means.
   Future<String?> loadPedalSetup() async {
     await _serializedWrite;
-    return _store.getString(_pedalSetupKey);
+    return await _store.getString(_pedalSetupKey);
   }
 
   /// Saves the built-in footswitch setup blob, restoring the exact prior value
@@ -1028,7 +1026,7 @@ class SettingsRepository {
   /// Reads the exact Click scalar, preserving absence for rollback.
   Future<double?> readClickVolumeCheckpoint() async {
     await _serializedWrite;
-    return _store.getDouble(_clickVolumeKey);
+    return await _store.getDouble(_clickVolumeKey);
   }
 
   /// Writes and verifies the exact scalar, including an absent preference.
@@ -1046,7 +1044,7 @@ class SettingsRepository {
   /// Reads the exact click pan scalar (#1200), preserving absence.
   Future<double?> readClickPanCheckpoint() async {
     await _serializedWrite;
-    return _store.getDouble(_clickPanKey);
+    return await _store.getDouble(_clickPanKey);
   }
 
   /// Writes and verifies the exact click pan, including an absent one.
@@ -1504,7 +1502,7 @@ class SettingsRepository {
   /// Reads the exact durable mix value before a coordinated edit.
   Future<String?> readMixSettingsCheckpoint() async {
     await _serializedWrite;
-    return _store.getString(_mixSettingsKey);
+    return await _store.getString(_mixSettingsKey);
   }
 
   /// Restores an exact previously read durable mix value in one operation.
@@ -1683,7 +1681,7 @@ class SettingsRepository {
       // repairs it.
       try {
         await _serialize(
-          () async => _writeMixSettings(await _readMixSettings()),
+          () async => await _writeMixSettings(await _readMixSettings()),
         );
       } on Object {
         // Retried implicitly by the next mix write.
@@ -2060,7 +2058,7 @@ class SettingsRepository {
   /// be repaired without the others.
   Future<bool?> readRecordTimingGateCheckpoint() async {
     await _serializedWrite;
-    return _store.getBool(_quantizeKey);
+    return await _store.getBool(_quantizeKey);
   }
 
   /// The stored Record timing division alone; see
@@ -2181,7 +2179,7 @@ class SettingsRepository {
   Future<bool?> readOneShotCheckpoint({required int? channel}) async {
     final key = _oneShotKey(channel);
     await _serializedWrite;
-    return _store.getBool(key);
+    return await _store.getBool(key);
   }
 
   /// Saves/removes and verifies one exact playback scalar.
@@ -2209,7 +2207,7 @@ class SettingsRepository {
   Future<bool?> readFollowTempoCheckpoint({required int? channel}) async {
     final key = _audioTempoKey('follow_tempo', channel);
     await _serializedWrite;
-    return _store.getBool(key);
+    return await _store.getBool(key);
   }
 
   /// Saves/removes and verifies one exact Follow tempo scalar.
@@ -2227,7 +2225,7 @@ class SettingsRepository {
   Future<bool?> readPitchFollowsSpeedCheckpoint({required int? channel}) async {
     final key = _audioTempoKey('pitch_follows_speed', channel);
     await _serializedWrite;
-    return _store.getBool(key);
+    return await _store.getBool(key);
   }
 
   /// Saves/removes and verifies one exact Pitch scalar.
@@ -2248,7 +2246,7 @@ class SettingsRepository {
   /// Loads lane [lane] of track [channel]'s mute state, or `null` if unset.
   Future<bool?> loadLaneMute(int channel, int lane) async {
     await _serializedWrite;
-    return _store.getBool(_laneMuteKey(channel, lane));
+    return await _store.getBool(_laneMuteKey(channel, lane));
   }
 
   /// Saves lane [lane] of track [channel]'s [muted] state.

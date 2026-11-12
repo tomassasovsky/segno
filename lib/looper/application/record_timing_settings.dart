@@ -114,7 +114,7 @@ class RecordTimingSettings implements RecordTimingControl {
   /// Toggles the gate while keeping the confirmed remembered division.
   Future<RecordTimingOutcome> setEnabled({required bool value}) async {
     await load();
-    return setTiming(
+    return await setTiming(
       RecordTiming.of(quantize: value, division: state.rememberedDivision),
     );
   }

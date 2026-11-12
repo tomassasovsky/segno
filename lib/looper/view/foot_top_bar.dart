@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/common/top_bar_layout.dart';
 import 'package:segno/l10n/l10n.dart';

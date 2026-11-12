@@ -40,19 +40,14 @@ typedef DawProjectWriter = Future<Object?> Function(String dir);
 class LibraryAudioCubit extends Cubit<LibraryAudioState> {
   /// Creates a [LibraryAudioCubit].
   LibraryAudioCubit({
-    required PerformanceRepository performance,
-    required SessionRepository sessions,
+    required this._performance,
+    required this._sessions,
     required RemovableVolumes volumes,
-    required GuardRegistry guards,
-    DawProjectWriter dawProject = writeDawProject,
-    Duration previewPoll = const Duration(milliseconds: 100),
-  }) : _performance = performance,
-       _sessions = sessions,
-       _volumes = volumes,
-       _guards = guards,
+    required this._guards,
+    this._dawProject = writeDawProject,
+    this._previewPoll = const Duration(milliseconds: 100),
+  }) : _volumes = volumes,
        _exporter = AudioExporter(volumes),
-       _dawProject = dawProject,
-       _previewPoll = previewPoll,
        super(const LibraryAudioState());
 
   final PerformanceRepository _performance;

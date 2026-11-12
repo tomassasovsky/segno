@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_face.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_pedal.dart';
 import 'package:segno/looper/view/fx/stomp/fx_stomp_spec.dart';

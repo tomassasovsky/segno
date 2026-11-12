@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:console_facts_client/console_facts_client.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -73,13 +73,13 @@ class _SlowFactsClient implements ConsoleFactsClient {
   @override
   Future<StorageUsage> storage() async {
     await _gate.future;
-    return _inner.storage();
+    return await _inner.storage();
   }
 
   @override
   Future<ConsoleFacts> facts() async {
     await _gate.future;
-    return _inner.facts();
+    return await _inner.facts();
   }
 
   @override
@@ -251,7 +251,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: ThemeData(
           extensions: [

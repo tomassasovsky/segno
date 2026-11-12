@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/screen_capture.dart';
 import 'package:segno/settings/touch_calibration/view/calibration_target.dart';
 import 'package:segno/theme/theme.dart';
@@ -48,8 +48,8 @@ typedef ReadoutCalibration = ({({double x, double y}) target, String label});
 class ReadoutScreenLink {
   /// Creates a [ReadoutScreenLink]; nothing is published until [start].
   ReadoutScreenLink({
-    PortDirectory directory = const IsolateNameServerDirectory(),
-  }) : _directory = directory;
+    this._directory = const IsolateNameServerDirectory(),
+  });
 
   final PortDirectory _directory;
   ReceivePort? _inbox;

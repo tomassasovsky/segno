@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:looper_repository/looper_repository.dart' show kMaxTracks;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
@@ -494,7 +494,7 @@ enum LibraryTrackStripSize {
   /// The New loop sheet's before and after strips (19/02): 346 x 36.
   sheet(width: 346, height: 36, slotWidth: 38);
 
-  const LibraryTrackStripSize({
+  LibraryTrackStripSize({
     required this.width,
     required this.height,
     required this.slotWidth,

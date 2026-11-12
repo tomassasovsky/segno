@@ -27,12 +27,12 @@ part 'session_state.dart';
 /// (a session load while armed would otherwise pull the rug out from under an
 /// in-progress capture).
 class SessionCubit extends Cubit<SessionState> {
-  /// Creates a [SessionCubit] backed by [repository], [looper], and
-  /// [performance].
+  /// Creates a [SessionCubit] backed by [_repository], [_looper], and
+  /// [_performance].
   ///
-  /// [currentPedalBindings] / [onPedalBindings] are the session's pedal remap
+  /// [_currentPedalBindings] / [_onPedalBindings] are the session's pedal remap
   /// (part 6b) crossing this cubit as an opaque string — read fresh at each
-  /// save, handed back on each load. [releaseHeldBindings] restores any held
+  /// save, handed back on each load. [_releaseHeldBindings] restores any held
   /// momentary and runs BEFORE a load applies its rig (see [open] for why
   /// the two halves sit on opposite sides of the apply). All three are narrow
   /// injected functions rather than a `ControlCubit` dependency for the usual
@@ -40,38 +40,24 @@ class SessionCubit extends Cubit<SessionState> {
   /// control layer. Each defaults to a no-op, which is exactly the pre-6b
   /// behavior.
   ///
-  /// [renameTracks] writes a loop template's track names (#1513), which are
+  /// [_renameTracks] writes a loop template's track names (#1513), which are
   /// global settings outside the session; it defaults to a no-op.
   SessionCubit({
-    required SessionRepository repository,
-    required LooperRepository looper,
-    required PerformanceRepository performance,
-    required MixSettingsCoordinator mixSettings,
-    required FxChainPersistence fxPersistence,
-    required SettingsRepository settings,
-    required MixSettingsPersistence mixPersistence,
-    required SessionSettingsCoordinator captureSettings,
-    required GuardRegistry guards,
-    String Function() currentPedalBindings = _noBindings,
-    void Function(String encoded) onPedalBindings = _ignoreBindings,
-    void Function() releaseHeldBindings = _noRelease,
-    Future<void> Function(Map<int, String> names) renameTracks = _noRename,
-    Duration captureEndTimeout = const Duration(seconds: 20),
-  }) : _captureEndTimeout = captureEndTimeout,
-       _repository = repository,
-       _guards = guards,
-       _looper = looper,
-       _performance = performance,
-       _mixSettings = mixSettings,
-       _fxPersistence = fxPersistence,
-       _settings = settings,
-       _mixPersistence = mixPersistence,
-       _captureSettings = captureSettings,
-       _currentPedalBindings = currentPedalBindings,
-       _onPedalBindings = onPedalBindings,
-       _releaseHeldBindings = releaseHeldBindings,
-       _renameTracks = renameTracks,
-       super(const SessionState());
+    required this._repository,
+    required this._looper,
+    required this._performance,
+    required this._mixSettings,
+    required this._fxPersistence,
+    required this._settings,
+    required this._mixPersistence,
+    required this._captureSettings,
+    required this._guards,
+    this._currentPedalBindings = _noBindings,
+    this._onPedalBindings = _ignoreBindings,
+    this._releaseHeldBindings = _noRelease,
+    this._renameTracks = _noRename,
+    this._captureEndTimeout = const Duration(seconds: 20),
+  }) : super(const SessionState());
 
   /// The default `currentPedalBindings`: no session remap, so the global set
   /// applies (A12).
@@ -189,7 +175,7 @@ class SessionCubit extends Cubit<SessionState> {
     return _run(
       () => _captureSettings.runExclusive(() async {
         _savedFingerprint = await _asSaveFailure(
-          () async => _saveCurrentRig(
+          () async => await _saveCurrentRig(
             await _repository.bundlePathOf(id),
             name,
             revision,
@@ -253,7 +239,7 @@ class SessionCubit extends Cubit<SessionState> {
     final id = await _repository.newSessionId();
     try {
       _savedFingerprint = await _asSaveFailure(
-        () async => _saveCurrentRig(
+        () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
           slug,
           revision,
@@ -347,7 +333,7 @@ class SessionCubit extends Cubit<SessionState> {
     final id = state.currentSessionId;
     if (id != null) {
       _savedFingerprint = await _asSaveFailure(
-        () async => _saveCurrentRig(
+        () async => await _saveCurrentRig(
           await _repository.bundlePathOf(id),
           state.currentSessionName,
           revision,

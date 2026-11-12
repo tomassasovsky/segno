@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/notices/cubit/notices_cubit.dart';
 import 'package:segno/notices/model/notice.dart';

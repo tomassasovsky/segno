@@ -122,7 +122,7 @@ class _LengthOwner extends Fake implements SettingsOwner<Object, Object?> {
   @override
   Future<T> runExclusive<T>(Future<T> Function() operation) async {
     if (!looper.lengthSettingsSettled) await looper.settleLengthSettings();
-    return operation();
+    return await operation();
   }
 }
 

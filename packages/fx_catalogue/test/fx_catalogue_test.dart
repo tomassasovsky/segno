@@ -55,7 +55,7 @@ class _TextBundle extends _DiskBundle {
         Uint8List.fromList(bytes).buffer,
       );
     }
-    return super.load(key);
+    return await super.load(key);
   }
 }
 

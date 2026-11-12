@@ -11,7 +11,7 @@ class _Store extends FakeKeyValueStore {
   @override
   Future<void> setInt(String key, int value) async {
     if (fail) throw StateError('disk full');
-    return super.setInt(key, value);
+    return await super.setInt(key, value);
   }
 }
 

@@ -58,6 +58,6 @@ class BackingMixCubit extends Cubit<BackingMixState> {
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
-    return super.close();
+    return await super.close();
   }
 }

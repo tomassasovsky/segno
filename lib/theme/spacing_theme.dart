@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The app's spacing scale: every gap and inset a component sets comes from
 /// one of these steps instead of a literal, so neighbouring components keep

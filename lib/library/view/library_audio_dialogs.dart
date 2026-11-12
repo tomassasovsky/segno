@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
@@ -53,7 +53,7 @@ enum LibraryDialogRole {
   /// A chooser row, the panel's full inner width.
   choice(width: 878, tone: LoopButtonTone.outlined);
 
-  const LibraryDialogRole({
+  LibraryDialogRole({
     required this.width,
     required this.tone,
     this.destructive = false,
@@ -78,7 +78,7 @@ enum LibraryDialogPanel {
   /// Pen 34 `Matching backup name` and `Retry an interrupted copy`.
   backup(width: 900);
 
-  const LibraryDialogPanel({required this.width});
+  LibraryDialogPanel({required this.width});
 
   /// The panel's width.
   final double width;

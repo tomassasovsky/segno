@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// How much recording Internal still holds (pen 31 `storage-recording-time`):

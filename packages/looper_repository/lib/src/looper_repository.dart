@@ -148,26 +148,20 @@ typedef _ClearMark = ({int seq, Set<int> empty, Set<int> refused});
 /// publishes distinct states on [looperState]. Looper commands are forwarded to
 /// the engine. The bloc layer depends on this repository, never on the engine.
 class LooperRepository {
-  /// Creates a [LooperRepository] driving [engine].
+  /// Creates a [LooperRepository] driving [_engine].
   ///
-  /// [ticker] drives snapshot polling; when omitted a periodic stream at
-  /// [pollInterval] (~60 Hz) is used. Injecting a ticker makes tests
+  /// [_ticker] drives snapshot polling; when omitted a periodic stream at
+  /// [_pollInterval] (~60 Hz) is used. Injecting a ticker makes tests
   /// deterministic.
   LooperRepository({
-    required AudioEngine engine,
-    Stream<void>? ticker,
-    Duration pollInterval = const Duration(milliseconds: 16),
-    Stream<void>? reconnectTicker,
-    Duration reconnectInterval = const Duration(seconds: 1),
-    Duration renderPollInterval = const Duration(milliseconds: 16),
-    Duration renderFreezeTimeout = const Duration(seconds: 2),
-  }) : _engine = engine,
-       _ticker = ticker,
-       _pollInterval = pollInterval,
-       _reconnectTicker = reconnectTicker,
-       _reconnectInterval = reconnectInterval,
-       _renderPollInterval = renderPollInterval,
-       _renderFreezeTimeout = renderFreezeTimeout {
+    required this._engine,
+    this._ticker,
+    this._pollInterval = const Duration(milliseconds: 16),
+    this._reconnectTicker,
+    this._reconnectInterval = const Duration(seconds: 1),
+    this._renderPollInterval = const Duration(milliseconds: 16),
+    this._renderFreezeTimeout = const Duration(seconds: 2),
+  }) {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
@@ -2299,7 +2293,7 @@ class LooperRepository {
   ) async {
     final id = _interfaceCaptureId;
     if (id == null) return EngineResult.notRunning;
-    return _engine.setInterfaceInput(
+    return await _engine.setInterfaceInput(
       id,
       control: control,
       index: index,

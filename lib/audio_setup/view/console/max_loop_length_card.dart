@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';

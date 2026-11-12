@@ -273,9 +273,8 @@ class MidiControlEvent extends Equatable {
 /// - a partial bank pair invalidates the previous bank until a full one
 ///   completes.
 class MidiDecoder {
-  /// Creates a [MidiDecoder] reading time from [clock].
-  MidiDecoder({required Duration Function() clock, this.freshness = _fresh})
-    : _clock = clock;
+  /// Creates a [MidiDecoder] reading time from [_clock].
+  MidiDecoder({required this._clock, this.freshness = _fresh});
 
   static const Duration _fresh = Duration(milliseconds: 100);
 

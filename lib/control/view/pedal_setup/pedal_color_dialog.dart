@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/pedal_color_display.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -20,7 +20,7 @@ Future<PedalColor?> showPedalColorDialog(
   required PedalColor initial,
 }) async {
   final surface = context.surface;
-  return showDialog<PedalColor>(
+  return await showDialog<PedalColor>(
     context: context,
     barrierColor: surface.scrim.withValues(alpha: 0.86),
     builder: (context) => _PedalColorDialog(initial: initial),

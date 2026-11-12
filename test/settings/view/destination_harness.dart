@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -272,7 +272,7 @@ class DestinationHarness {
               navigatorKey: segnoNavigatorKey,
               debugShowCheckedModeBanner: false,
               theme: AppTheme.neon,
-              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              localizationsDelegates: appLocalizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
               home: Scaffold(body: home),
             ),

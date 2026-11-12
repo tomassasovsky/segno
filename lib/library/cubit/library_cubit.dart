@@ -37,18 +37,15 @@ part 'library_state.dart';
 /// other, and the page refreshes the catalog when it lands
 /// ([LibraryState.restoredId]). Selecting a row can never reach the engine.
 class LibraryCubit extends Cubit<LibraryState> {
-  /// Creates a [LibraryCubit] over [sessions], [volumes] and [pedal].
+  /// Creates a [LibraryCubit] over [_sessions], [volumes] and [pedal].
   LibraryCubit({
-    required SessionRepository sessions,
+    required this._sessions,
     required RemovableVolumes volumes,
     required PedalRepository pedal,
-    required GuardRegistry guards,
-    Duration listenPoll = const Duration(milliseconds: 100),
-  }) : _sessions = sessions,
-       _volumes = volumes,
+    required this._guards,
+    this._listenPoll = const Duration(milliseconds: 100),
+  }) : _volumes = volumes,
        _exporter = AudioExporter(volumes),
-       _guards = guards,
-       _listenPoll = listenPoll,
        super(LibraryState(volumes: volumes.current)) {
     _pedalSubscription = pedal.events.listen(_onPedalEvent);
     _volumesSubscription = volumes.volumes.listen(_onVolumes);
@@ -554,6 +551,6 @@ class LibraryCubit extends Cubit<LibraryState> {
     _listenTimer?.cancel();
     await _pedalSubscription.cancel();
     await _volumesSubscription.cancel();
-    return super.close();
+    return await super.close();
   }
 }

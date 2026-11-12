@@ -14,14 +14,13 @@ import 'package:bloc/bloc.dart';
 /// values are not emitted, so a change that does not change the drawing
 /// rebuilds nothing.
 class LiveCubit<S, T extends Object> extends Cubit<T> {
-  /// Creates a [LiveCubit] following [values] through [select], starting
+  /// Creates a [LiveCubit] following [_values] through [select], starting
   /// from [latest].
   LiveCubit({
-    required Stream<S> values,
+    required this._values,
     required S Function() latest,
     required T Function(S value) select,
-  }) : _values = values,
-       _latest = latest,
+  }) : _latest = latest,
        _select = select,
        super(select(latest())) {
     _subscription = _listen();

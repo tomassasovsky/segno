@@ -28,7 +28,7 @@ class _GatedReadFile implements File {
   @override
   Future<String> readAsString({Encoding encoding = utf8}) async {
     await _gate;
-    return _inner.readAsString(encoding: encoding);
+    return await _inner.readAsString(encoding: encoding);
   }
 
   @override
@@ -296,13 +296,11 @@ void main() {
       engine.acknowledgePerfArm();
 
       expect(await arming, EngineResult.ok);
-      final json =
-          jsonDecode(
-                File(
-                  '${repo.armedDirectory}/arm-snapshot.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, dynamic>;
+      final json = jsonDecode(
+        File(
+          '${repo.armedDirectory}/arm-snapshot.json',
+        ).readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(json['captureBus'], 1);
       expect(json['captureMask'], 0xC);
     });
@@ -365,9 +363,9 @@ void main() {
 
       broken.perfDisarmResult = EngineResult.ok;
       expect(await localRepo.disarmAndFinalize(), EngineResult.ok);
-      final manifest =
-          jsonDecode(File('$dir/performance.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        File('$dir/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(manifest.containsKey('armSnapshot'), isFalse);
     });
 
@@ -403,9 +401,9 @@ void main() {
       expect(await localRepo.disarm(), EngineResult.ok);
       expect(broken.perfArmed, isFalse);
       expect(localRepo.armedDirectory, isNull);
-      final manifest =
-          jsonDecode(File('$dir/performance.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        File('$dir/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(manifest.containsKey('armSnapshot'), isFalse);
     });
 
@@ -446,9 +444,9 @@ void main() {
 
       await repo.arm();
       final dir = repo.armedDirectory!;
-      final armJson =
-          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final armJson = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(armJson['followOutput'], isTrue);
       expect(armJson.containsKey('captureBus'), isFalse);
       expect(armJson['outputLevel'], 0.5);
@@ -468,9 +466,9 @@ void main() {
 
       await repo.arm();
       final dir = repo.armedDirectory!;
-      final armJson =
-          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final armJson = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(armJson['captureBus'], 1);
       expect(armJson['outputLevel'], 0.25);
       expect(armJson.containsKey('outputMuted'), isFalse);
@@ -483,13 +481,11 @@ void main() {
           ..perfFollowOutput = false
           ..perfFollowOutputAtArm = true;
         expect(await repo.arm(), EngineResult.ok);
-        final manifest =
-            jsonDecode(
-                  File(
-                    '${repo.armedDirectory}/arm-snapshot.json',
-                  ).readAsStringSync(),
-                )
-                as Map<String, dynamic>;
+        final manifest = jsonDecode(
+          File(
+            '${repo.armedDirectory}/arm-snapshot.json',
+          ).readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(manifest['followOutput'], isTrue);
         engine.perfFollowOutput = false;
         expect(engine.snapshot().perfFollowOutput, isTrue);
@@ -522,13 +518,11 @@ void main() {
           chainEnabled: false,
         );
         expect(await repo.arm(), EngineResult.ok);
-        final manifest =
-            jsonDecode(
-                  File(
-                    '${repo.armedDirectory}/arm-snapshot.json',
-                  ).readAsStringSync(),
-                )
-                as Map<String, dynamic>;
+        final manifest = jsonDecode(
+          File(
+            '${repo.armedDirectory}/arm-snapshot.json',
+          ).readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(manifest['captureBus'], 1);
         expect(manifest['captureMask'], 0xC);
         expect(manifest['outputEnabledMask'], 0xC);
@@ -616,9 +610,9 @@ void main() {
       await repo.arm();
       final dir = repo.armedDirectory!;
 
-      final armJson =
-          jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final armJson = jsonDecode(
+        File('$dir/arm-snapshot.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       final armSnapshot = PerformanceArmSnapshot.fromJson(armJson);
       expect(armSnapshot.tracks, hasLength(2));
 
@@ -649,9 +643,9 @@ void main() {
         await repo.arm();
         final dir = repo.armedDirectory!;
 
-        final armJson =
-            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final armJson = jsonDecode(
+          File('$dir/arm-snapshot.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         final tracks = PerformanceArmSnapshot.fromJson(armJson).tracks;
         final lane0 = tracks.firstWhere((t) => t.channel == 0).lanes.single;
         expect(lane0.heardFile, 'loops/track0-lane0-heard.wav');
@@ -709,9 +703,9 @@ void main() {
         await repo.arm();
         final dir = repo.armedDirectory!;
 
-        final armJson =
-            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final armJson = jsonDecode(
+          File('$dir/arm-snapshot.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         final lane = PerformanceArmSnapshot.fromJson(
           armJson,
         ).tracks.single.lanes.single;
@@ -761,15 +755,13 @@ void main() {
         await repo.arm();
         final dir = repo.armedDirectory!;
 
-        final raw =
-            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final raw = jsonDecode(
+          File('$dir/arm-snapshot.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         final rawTracks = raw['tracks'] as List<dynamic>;
-        final rawT0 =
-            rawTracks.firstWhere(
-                  (t) => (t as Map<String, dynamic>)['channel'] == 0,
-                )
-                as Map<String, dynamic>;
+        final rawT0 = rawTracks.firstWhere(
+          (t) => (t as Map<String, dynamic>)['channel'] == 0,
+        ) as Map<String, dynamic>;
         final rawLane0 =
             (rawT0['lanes'] as List<dynamic>).first as Map<String, dynamic>;
         expect(rawLane0.containsKey('takeId'), isFalse);
@@ -791,9 +783,9 @@ void main() {
         await repo.arm();
         final dir = repo.armedDirectory!;
 
-        final armJson =
-            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final armJson = jsonDecode(
+          File('$dir/arm-snapshot.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(armJson['tempoBpm'], 87.5);
         expect(PerformanceArmSnapshot.fromJson(armJson).tempoBpm, 87.5);
       },
@@ -1665,17 +1657,15 @@ void main() {
         expect(t0.lanes.single.takeId, 1);
         expect(t1.lanes.single.takeId, 3);
         // And it is presence-keyed on the raw JSON, on lane 0 only.
-        final raw =
-            jsonDecode(File('$dir/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final raw = jsonDecode(
+          File('$dir/performance.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         final rawTracks =
             (raw['disarmSnapshot'] as Map<String, dynamic>)['tracks']
                 as List<dynamic>;
-        final rawT1 =
-            rawTracks.firstWhere(
-                  (t) => (t as Map<String, dynamic>)['channel'] == 1,
-                )
-                as Map<String, dynamic>;
+        final rawT1 = rawTracks.firstWhere(
+          (t) => (t as Map<String, dynamic>)['channel'] == 1,
+        ) as Map<String, dynamic>;
         final rawLane0 =
             (rawT1['lanes'] as List<dynamic>).first as Map<String, dynamic>;
         expect(rawLane0['takeId'], 3);
@@ -1692,17 +1682,15 @@ void main() {
 
         await repo.disarm();
 
-        final raw =
-            jsonDecode(File('$dir/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final raw = jsonDecode(
+          File('$dir/performance.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         final rawTracks =
             (raw['disarmSnapshot'] as Map<String, dynamic>)['tracks']
                 as List<dynamic>;
-        final rawT3 =
-            rawTracks.firstWhere(
-                  (t) => (t as Map<String, dynamic>)['channel'] == 3,
-                )
-                as Map<String, dynamic>;
+        final rawT3 = rawTracks.firstWhere(
+          (t) => (t as Map<String, dynamic>)['channel'] == 3,
+        ) as Map<String, dynamic>;
         final rawLane0 =
             (rawT3['lanes'] as List<dynamic>).first as Map<String, dynamic>;
         expect(rawLane0.containsKey('takeId'), isFalse);
@@ -1769,9 +1757,9 @@ void main() {
         expect(result, EngineResult.device);
         expect(repo.armedDirectory, dir);
 
-        final native =
-            jsonDecode(File('$dir/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final native = jsonDecode(
+          File('$dir/performance.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(native['finalized'], isFalse);
       },
     );
@@ -1780,9 +1768,9 @@ void main() {
       await armAndSeedNative(engine, repo);
       final dir = repo.armedDirectory!;
       await repo.disarmAndFinalize();
-      final manifest =
-          jsonDecode(File('$dir/performance.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        File('$dir/performance.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(manifest['finalized'], isTrue);
     });
 
@@ -1820,9 +1808,9 @@ void main() {
         await repo.disarm();
 
         expect(engine.renderBeginCalls, 1);
-        final manifest =
-            jsonDecode(File('$dir/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final manifest = jsonDecode(
+          File('$dir/performance.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(
           manifest['finalized'],
           isTrue,
@@ -1934,9 +1922,9 @@ void main() {
         await repo.recoverCapture(dir.path);
 
         expect(partSizes('${dir.path}/master-001.wav'), (84 - 8 + 8, 8));
-        final manifest =
-            jsonDecode(File('${dir.path}/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final manifest = jsonDecode(
+          File('${dir.path}/performance.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(manifest['finalized'], isTrue);
         expect(manifest['disarmSnapshot'], isNull);
       },
@@ -2573,9 +2561,9 @@ void main() {
           (84 - 8 + 8, 8),
           reason: 'the salvage seals the open part so the take plays',
         );
-        final manifest =
-            jsonDecode(File('$recovered/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final manifest = jsonDecode(
+          File('$recovered/performance.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(manifest['finalized'], isTrue);
         expect(
           engine.lastRenderCaptureDir,

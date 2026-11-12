@@ -273,7 +273,7 @@ void main() {
     await looper.settleMixSettings();
     await looper.settleClickVolume();
   });
-  tearDown(() async => looper.dispose());
+  tearDown(() async => await looper.dispose());
   void check(String name, void Function(_Rig) body) => test(
     name,
     () => fakeAsync((clock) {

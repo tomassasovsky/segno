@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/src/widgets/graph_edge.dart';
 
 /// The width of an effect card in a chain.

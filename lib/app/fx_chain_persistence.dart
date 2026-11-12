@@ -10,7 +10,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// ledger. This object never interprets mappings or arbitrates source priority.
 class FxChainPersistence {
   /// Binds projection lifetime to the same live repository used by its clients.
-  FxChainPersistence({required LooperRepository looper}) : _looper = looper;
+  FxChainPersistence({required this._looper});
 
   final LooperRepository _looper;
   int? _session;
@@ -207,7 +207,7 @@ class FxChainPersistence {
           } else {
             await settings.saveLaneEffects(address.index, lane, encoded);
           }
-          return settings.loadLaneEffects(address.index, lane);
+          return await settings.loadLaneEffects(address.index, lane);
         }(),
         FxStage.track => () async {
           if (encoded == null) {
@@ -215,7 +215,7 @@ class FxChainPersistence {
           } else {
             await settings.saveTrackFxChain(address.index, encoded);
           }
-          return settings.loadTrackFxChain(address.index);
+          return await settings.loadTrackFxChain(address.index);
         }(),
         FxStage.output => () async {
           if (encoded == null) {
@@ -223,11 +223,11 @@ class FxChainPersistence {
           } else {
             await settings.saveOutputFxChain(address.index, encoded);
           }
-          return settings.loadOutputFxChain(address.index);
+          return await settings.loadOutputFxChain(address.index);
         }(),
         FxStage.allTracks => () async {
           await settings.saveAllTracksFxChain(encoded!);
-          return settings.loadAllTracksFxChain();
+          return await settings.loadAllTracksFxChain();
         }(),
         FxStage.input => throw StateError('monitor FX is saved with its input'),
       };
@@ -675,10 +675,12 @@ class FxChainPersistence {
     _syncSession();
     var entries = live.entries;
     for (final MapEntry(key: target, value: on) in _powers.entries) {
-      if (target case FxRackTarget(
-        address: final at,
-        :final rackId,
-      ) when at == address) {
+      if (target
+          case FxRackTarget(
+            address: final at,
+            :final rackId,
+          )
+          when at == address) {
         entries = fxWithRackEnabled(entries, rackId, enabled: on) ?? entries;
       }
     }

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/fx_chain_persistence.dart';

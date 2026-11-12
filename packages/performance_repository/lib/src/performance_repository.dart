@@ -31,46 +31,37 @@ import 'package:wav_codec/wav_codec.dart';
 /// all land directly where the finished bundle expects them, and [disarm]
 /// only needs to merge the snapshot metadata into the sidecar.
 class PerformanceRepository {
-  /// Creates a [PerformanceRepository] driving [engine].
+  /// Creates a [PerformanceRepository] driving [_engine].
   ///
-  /// [exportsRoot] resolves the `exports/` root directory new bundles are
-  /// created under (mirrors `SessionRepository`'s `sessionsRoot`). [now]
+  /// [_exportsRoot] resolves the `exports/` root directory new bundles are
+  /// created under (mirrors `SessionRepository`'s `sessionsRoot`). [_now]
   /// supplies the timestamp [arm] slugs from; injectable for deterministic
-  /// tests. [bootRecoveryPollInterval] paces [runBootRecovery]'s wait for
+  /// tests. [_bootRecoveryPollInterval] paces [runBootRecovery]'s wait for
   /// the salvage render to finish before it moves the bundle; injectable so
   /// tests interleave against the wait without real 200ms sleeps.
-  /// [bootRecoveryRenderTimeout] bounds that wait (default
+  /// [_bootRecoveryRenderTimeout] bounds that wait (default
   /// [defaultBootRecoveryRenderTimeout]) so a wedged render can never park
   /// boot recovery — and [arm]'s render-poll refusal — forever.
   ///
-  /// [storageIo] makes the engine's digest and directory sync, without an
+  /// [_storageIo] makes the engine's digest and directory sync, without an
   /// engine; it is called on a background isolate too, so it must be a
-  /// top-level or static function. [partBytes] is the size of the parts a
+  /// top-level or static function. [_partBytes] is the size of the parts a
   /// take from before #1198 is converted into (tests pass small sizes).
-  /// [bootId] reads this boot's kernel id, which decides how far recovery
+  /// [_bootId] reads this boot's kernel id, which decides how far recovery
   /// trusts a take's files ([readBootId]).
 
   PerformanceRepository({
-    required AudioEngine engine,
-    required Future<String> Function() exportsRoot,
-    required GuardRegistry guards,
-    DateTime Function() now = DateTime.now,
-    Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
-    Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
-    int? reserveBytes,
-    StorageIo Function() storageIo = NativeStorageIo.new,
-    int partBytes = RecordedPartWriter.defaultPartBytes,
-    String Function() bootId = readBootId,
-  }) : _engine = engine,
-       _guards = guards,
-       _exportsRoot = exportsRoot,
-       _reserveBytes = reserveBytes,
-       _now = now,
-       _bootRecoveryPollInterval = bootRecoveryPollInterval,
-       _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout,
-       _storageIo = storageIo,
-       _partBytes = partBytes,
-       _bootId = bootId;
+    required this._engine,
+    required this._exportsRoot,
+    required this._guards,
+    this._now = DateTime.now,
+    this._bootRecoveryPollInterval = const Duration(milliseconds: 200),
+    this._bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
+    this._reserveBytes,
+    this._storageIo = NativeStorageIo.new,
+    this._partBytes = RecordedPartWriter.defaultPartBytes,
+    this._bootId = readBootId,
+  });
 
   final AudioEngine _engine;
   final Future<String> Function() _exportsRoot;
@@ -716,7 +707,7 @@ class PerformanceRepository {
     if (armedAt != null && _now().difference(armedAt) < disarmGuardWindow) {
       return EngineResult.ok;
     }
-    return _finalizeArmed(dir);
+    return await _finalizeArmed(dir);
   }
 
   /// Disarms performance-recording capture unconditionally — the
@@ -747,7 +738,7 @@ class PerformanceRepository {
     await _armFinished?.future;
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
-    return _finalizeArmed(dir);
+    return await _finalizeArmed(dir);
   }
 
   /// The disarm-time snapshot of the take in [dir], taken while the engine
@@ -1556,7 +1547,7 @@ class PerformanceRepository {
     if (path == null || !File(path).existsSync()) {
       return const AuditionStart(result: EngineResult.invalid);
     }
-    return _engine.auditionStartFile(path, stillWanted: stillWanted);
+    return await _engine.auditionStartFile(path, stillWanted: stillWanted);
   }
 
   /// Whether a take's stems may still be being written: the engine's one
