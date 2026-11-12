@@ -883,6 +883,30 @@ typedef struct le_fx_state {
  * In the header because both threads need it: the audio thread's ring handlers
  * store a lane's pan gains with it, and the control thread precomputes an FX
  * entry's channel gains with it (slice 3e). */
+/* [x] through the sound trigger's detector high-pass (#1623): the two
+ * sections [c] (le_engine.trig_hp_c) with their states [z], transposed
+ * direct form II. A non-finite result (a driver glitch) would stay in the
+ * states for good: they start clean and the sample reads 0. The drain's
+ * idle detector (#1767) runs it off the audio thread; the callback keeps its
+ * own copy (le_trigger_hp, engine_process.c), the same arithmetic, so the
+ * pinned hot path (#1719) is untouched. A change to one is a change to
+ * both. */
+static inline float le_trigger_hp_step(float c[2][5], float z[2][2],
+                                       float x) {
+  for (int k = 0; k < 2; ++k) {
+    const float* b = c[k];
+    const float y = b[0] * x + z[k][0];
+    z[k][0] = b[1] * x - b[3] * y + z[k][1];
+    z[k][1] = b[2] * x - b[4] * y;
+    x = y;
+  }
+  if (!isfinite(x)) {
+    memset(z, 0, sizeof(float) * 4);
+    return 0.0f;
+  }
+  return x;
+}
+
 static inline void le_pan_gains(float pan, float* gl, float* gr) {
   if (pan > 1.0f) pan = 1.0f;
   if (pan < -1.0f) pan = -1.0f;

@@ -5958,7 +5958,8 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   if (engine == NULL || target == NULL || target->capture_dir == NULL ||
       target->capture_dir[0] == '\0' || target->ring_seconds < 0 ||
       target->ring_seconds > LE_PERF_RING_SECONDS_MAX ||
-      target->checkpoint_ms < 0) {
+      target->checkpoint_ms < 0 || target->idle_stop_seconds < 0 ||
+      target->max_seconds < 0) {
     return LE_ERR_INVALID;
   }
   /* A part must hold at least one stereo frame after its header, and its

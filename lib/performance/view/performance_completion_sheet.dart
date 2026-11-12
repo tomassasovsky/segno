@@ -21,7 +21,6 @@ import 'package:url_launcher/url_launcher.dart';
 /// draws this as a 744 panel in the console's own `Dialog` idiom, over the
 /// stage. The sheet this replaces rose from the bottom edge in Material's
 /// idiom, which nothing else on the console uses.
-
 Future<void> showPerformanceCompletionSheet(BuildContext context) async {
   // One at a time. The listener fires on entering Rendering AND on entering
   // Completed; when the render outlives the operator's patience they Hide the
@@ -97,6 +96,9 @@ class PerformanceCompletionSheet extends StatefulWidget {
   /// Whether the dialog route is currently up — see
   /// [showPerformanceCompletionSheet]'s double-open refusal.
   static bool _open = false;
+
+  /// Whether the capture dialog is up: what it says is on screen.
+  static bool get isOpen => _open;
 
   @override
   State<PerformanceCompletionSheet> createState() =>
@@ -285,10 +287,12 @@ class _Face extends StatelessWidget {
           PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
           PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
           PerformanceStopReason.idle || PerformanceStopReason.lengthLimit =>
-            '${perfAutoStopTitle(l10n, reason)!} ${l10n.perfStoppedKept}',
+            '${perfAutoStopTitle(l10n, reason, _idleStopAfter(context))!} '
+                '${l10n.perfStoppedKept}',
         },
         // Stopped on its own (#1767): nothing failed.
-        perfAutoStopTitle(l10n, reason) != null
+        reason == PerformanceStopReason.idle ||
+                reason == PerformanceStopReason.lengthLimit
             ? ConsoleBannerTone.warning
             : ConsoleBannerTone.failure,
       ),
@@ -441,10 +445,13 @@ class _DialogTitle extends StatelessWidget {
 String? perfAutoStopTitle(
   AppLocalizations l10n,
   PerformanceStopReason reason,
+  Duration idleStopAfter,
 ) => switch (reason) {
-  PerformanceStopReason.idle => l10n.perfStoppedIdle(
-    PerformanceRepository.defaultIdleStopAfter.inMinutes,
-  ),
+  PerformanceStopReason.idle => l10n.perfStoppedIdle(idleStopAfter.inMinutes),
   PerformanceStopReason.lengthLimit => l10n.perfStoppedLengthLimit,
   _ => null,
 };
+
+/// The idle period the recorder's takes stop after (#1767).
+Duration _idleStopAfter(BuildContext context) =>
+    context.read<PerformanceRecorderCubit>().idleStopAfter;

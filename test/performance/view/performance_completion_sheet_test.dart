@@ -47,6 +47,7 @@ void main() {
 
   setUp(() {
     cubit = _MockPerformanceRecorderCubit();
+    when(() => cubit.idleStopAfter).thenReturn(const Duration(minutes: 20));
     completion = _MockPerformanceCompletionCubit();
     pedal = _MockPedalRepository();
     when(

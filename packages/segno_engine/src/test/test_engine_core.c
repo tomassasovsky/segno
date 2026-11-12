@@ -39936,6 +39936,8 @@ int main(void) {
   test_perf_autostop_hum_does_not_count();
   test_perf_autostop_event_restarts_the_period();
   test_perf_autostop_length_limit();
+  test_perf_autostop_unattended_loop_stops();
+  test_perf_autostop_refuses_negative_times();
   test_perf_reserve_stops_every_stream_together();
   test_perf_reserve_counts_the_next_part_header();
   test_perf_no_budget_never_stops_on_space();

@@ -791,6 +791,14 @@ struct le_perf_drain {
   uint64_t idle_frames;
   uint64_t max_frames;
   uint64_t last_activity;
+  /* Activity past the idle end as it stood when seen (late_first, the
+   * earliest; late_last, the latest; LE_PD_NO_LIMIT and 0 when none): an
+   * event logged after the take went idle, which counts only once earlier
+   * activity proves it had not (le_pd_fold_late). The two log rings and the
+   * input streams reach the drain out of frame order, so none of them may
+   * move the idle end by itself. */
+  uint64_t late_first;
+  uint64_t late_last;
   float activity_level;
   float hp_z[LE_MAX_MONITORED_INPUTS][2][2][2];
 
@@ -1063,13 +1071,69 @@ static int le_pd_write_log_entry(FILE* f, const le_perf_log_entry* entry) {
  * a later cycle: it may follow a drop this cycle has not seen. An entry past
  * `end`, the take's end, is consumed and never written, like the audio past
  * it (#1549). */
+/* Something happened at capture frame [frame] (#1767): the idle period
+ * starts over from it, unless it is past the idle end as it stands, which
+ * it then waits behind (late_first, late_last). */
+static void le_pd_note_activity(le_perf_drain* d, uint64_t frame) {
+  if (frame <= d->last_activity) return;
+  if (d->idle_frames == 0 || frame <= d->last_activity + d->idle_frames) {
+    d->last_activity = frame;
+    return;
+  }
+  if (frame < d->late_first) d->late_first = frame;
+  if (frame > d->late_last) d->late_last = frame;
+}
+
+/* Late activity the idle end has since moved past counts: earlier activity
+ * showed the take had not gone idle before it. Late activity arrives within
+ * a drain cycle, so what came between its first and last is taken as
+ * continuous. */
+static void le_pd_fold_late(le_perf_drain* d) {
+  if (d->late_first == LE_PD_NO_LIMIT ||
+      d->late_first > d->last_activity + d->idle_frames) {
+    return;
+  }
+  if (d->late_last > d->last_activity) d->last_activity = d->late_last;
+  d->late_first = LE_PD_NO_LIMIT;
+  d->late_last = 0;
+}
+
+/* Whether a logged entry is someone doing something (#1767): every command
+ * and every fact a player's action leaves, but not the facts the engine
+ * logs on its own while nobody plays: a loop top's musical-time anchor, an
+ * overdub pass retiring, a take's own start and end, the arm, a held
+ * transport, a fade's callback image, a source the callback applied or
+ * whose length or span it set, a lane's heard source. */
+static int le_pd_player_event(int32_t code) {
+  switch (code) {
+    case LE_PLOG_RECORD_START:
+    case LE_PLOG_RECORD_END:
+    case LE_PLOG_LOOP_LENGTH_LOCKED:
+    case LE_PLOG_LAYER_RETIRED:
+    case LE_PLOG_RECORD_ABORT:
+    case LE_PLOG_PERF_ARMED:
+    case LE_PLOG_TRANSPORT_HELD:
+    case LE_PLOG_FADE:
+    case LE_PLOG_SOURCE_APPLIED:
+    case LE_PLOG_SOURCE_TRANSPORT:
+    case LE_PLOG_HEAD_SPAN:
+    case LE_PLOG_SOURCE_LEN:
+    case LE_PLOG_FX_TEMPO:
+    case LE_PLOG_HEARD_SOURCE:
+      return 0;
+    default:
+      return 1;
+  }
+}
+
 static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring,
                                 uint64_t ready, uint64_t end) {
   le_perf_log_entry entry;
   while (le_perf_log_ring_peek(ring, &entry) && entry.frame <= ready) {
     (void)le_perf_log_ring_pop(ring, &entry);
-    /* Every logged event is something happening (#1767). */
-    if (entry.frame > d->last_activity) d->last_activity = entry.frame;
+    if (le_pd_player_event(entry.cmd.code)) {
+      le_pd_note_activity(d, entry.frame);
+    }
     if (entry.frame > end) continue;
     if (!le_pd_write_log_entry(d->events_file, &entry)) return 0;
     le_pd_count_bytes(d, LE_PD_EVENTS_ENTRY_BYTES);
@@ -1405,17 +1469,6 @@ static int le_pd_append(le_perf_drain* d, le_pd_file* pf, const float* src,
   return 1;
 }
 
-/* Drains everything currently available from `ring` into `pf`'s parts,
- * looping until the ring reports less than a full scratch buffer.
- *
- * ADVANCES `pf->written` ON THE FAILURE PATH TOO, by whatever the short write
- * landed (#790), through le_pd_append. The popped frames are gone from the
- * ring either way, so no audio is re-written; what IS retried is this
- * function itself, on the drain thread's unconditional final pass, and the
- * catch-up that follows it pads from `pf->written`.
- *
- * Returns 0 on any write failure, short or refused, which self-stops the
- * capture — see le_pd_write_some for why a short write is not retried. */
 /* Notes the last of [frames] captured input frames in [samples] (stream
  * [pf], whose first frame is capture frame [at]) loud enough to be someone
  * playing (#1767): over d->activity_level through the sound trigger's
@@ -1432,26 +1485,25 @@ static void le_pd_note_input(le_perf_drain* d, const le_pd_file* pf,
   const float level = d->activity_level;
   for (size_t f = 0; f < frames; ++f) {
     for (int ch = 0; ch < channels; ++ch) {
-      float x = samples[f * (size_t)pf->channels + (size_t)ch];
-      for (int k = 0; k < 2; ++k) {
-        const float* b = d->engine->trig_hp_c[k];
-        float* z = d->hp_z[input][ch][k];
-        const float y = b[0] * x + z[0];
-        z[0] = b[1] * x - b[3] * y + z[1];
-        z[1] = b[2] * x - b[4] * y;
-        x = y;
-      }
-      if (!isfinite(x)) {
-        memset(d->hp_z[input][ch], 0, sizeof(d->hp_z[input][ch]));
-        continue;
-      }
-      if (fabsf(x) > level && at + f > d->last_activity) {
-        d->last_activity = at + f;
-      }
+      const float y = le_trigger_hp_step(
+          d->engine->trig_hp_c, d->hp_z[input][ch],
+          samples[f * (size_t)pf->channels + (size_t)ch]);
+      if (fabsf(y) > level) le_pd_note_activity(d, at + f);
     }
   }
 }
 
+/* Drains everything currently available from `ring` into `pf`'s parts,
+ * looping until the ring reports less than a full scratch buffer.
+ *
+ * ADVANCES `pf->written` ON THE FAILURE PATH TOO, by whatever the short write
+ * landed (#790), through le_pd_append. The popped frames are gone from the
+ * ring either way, so no audio is re-written; what IS retried is this
+ * function itself, on the drain thread's unconditional final pass, and the
+ * catch-up that follows it pads from `pf->written`.
+ *
+ * Returns 0 on any write failure, short or refused, which self-stops the
+ * capture — see le_pd_write_some for why a short write is not retried. */
 static int le_pd_drain_ring(le_perf_drain* d, le_pd_file* pf,
                             le_audio_ring* ring, float* scratch,
                             size_t scratch_samples, uint64_t cap) {
@@ -2167,6 +2219,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    * (#1767): it ends that long after the last thing that happened. The idle
    * end is checked again once this cycle's input is drained (below), since
    * its samples up to the cap may hold someone playing. */
+  le_pd_fold_late(d);
   if (d->max_frames < cap) {
     cap = d->max_frames;
     cap_reason = LE_PERF_STOP_LENGTH_LIMIT;
@@ -2225,6 +2278,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    * counted) waits for the next cycle. */
   /* Someone played before the idle end after all: the take goes on, from
    * the frames this cycle left in the rings. */
+  le_pd_fold_late(d);
   if (cap_reason == LE_PERF_STOP_IDLE &&
       d->last_activity + d->idle_frames > cap) {
     cap_reason = LE_PERF_STOP_NONE;
@@ -2398,7 +2452,8 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
   const char* mirror_dir = target->mirror_dir != NULL ? target->mirror_dir : "";
   if (strlen(target->capture_dir) >= LE_PD_PATH_MAX ||
       strlen(sidecar_dir) >= LE_PD_PATH_MAX ||
-      strlen(mirror_dir) >= LE_PD_PATH_MAX || target->checkpoint_ms < 0) {
+      strlen(mirror_dir) >= LE_PD_PATH_MAX || target->checkpoint_ms < 0 ||
+      target->idle_stop_seconds < 0 || target->max_seconds < 0) {
     return NULL;
   }
   if (mirror_dir[0] != '\0' && !le_pd_mkdir_recursive(mirror_dir)) {
@@ -2432,12 +2487,14 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
                        : 0;
   const int32_t master_channels =
       engine->perf.master_channels > 0 ? engine->perf.master_channels : 1;
-  d->max_frames = (UINT32_MAX - 36u) / (sizeof(float) * (uint64_t)master_channels);
+  d->max_frames = le_wav_max_frames(master_channels);
   if (target->max_seconds > 0 &&
       (uint64_t)target->max_seconds * rate < d->max_frames) {
     d->max_frames = (uint64_t)target->max_seconds * rate;
   }
   d->last_activity = 0;
+  d->late_first = LE_PD_NO_LIMIT;
+  d->late_last = 0;
   d->activity_level = (float)pow(10.0, LE_PERF_ACTIVITY_DBFS / 20.0);
   /* Read before the first header is written, so the budget counts every
    * byte the take puts on the volume. */

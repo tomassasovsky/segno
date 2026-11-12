@@ -226,6 +226,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     }
   }
 
+  /// How long a take runs with nothing happening before it stops on its
+  /// own ([PerformanceStopReason.idle], #1767), for what says so.
+  Duration get idleStopAfter => _performance.idleStopAfter;
+
   /// Salvages again the takes the last recovery could not recover, the
   /// player's Try again on the notice that says so (#1747). Recovery the app
   /// did not survive is never started by a start on its own; this is how

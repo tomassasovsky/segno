@@ -95,15 +95,18 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   96 kHz: 93 minutes). The times come from the repository
   (`PerformanceRepository.defaultIdleStopAfter`, `defaultLongestTake`) on
   `le_perf_target.idle_stop_seconds` and `max_seconds`.
-- Something happening is a logged event (a press, a transport change, an
-  edit) or a captured input sample over the engine's activity level (-40 dBFS)
+- Something happening is a logged event a player's action leaves (a
+  press, a transport change, an edit; not the facts the engine logs on its
+  own, such as a loop top's tempo anchor or an overdub pass retiring) or a
+  captured input sample over the engine's activity level (-40 dBFS)
   through the sound trigger's 100 Hz high-pass, measured in the drain, not
   the callback. The paused #1747 capture's idle 18 minutes peaked at
   -46 dBFS. An input whose noise stays over the level keeps the take going
   until the 3-hour stop.
 - The completion banner says it as a warning, and `PerformanceAutoStopNotice`
   says it as a passing warning at the player's next touch, key, encoder,
-  pedal or MIDI message (`IdleDimCubit.activities`).
+  pedal or MIDI message (`IdleDimCubit.activities`), unless the capture
+  dialog, which says it too, is up.
 
 ## November 2026 Cheaper effects, the same sound: reverbs, delays, filters (#1755)
 

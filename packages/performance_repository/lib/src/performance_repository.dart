@@ -91,6 +91,10 @@ class PerformanceRepository {
   final Duration _idleStopAfter;
   final Duration _longestTake;
 
+  /// How long a take runs with nothing happening before it stops on its own
+  /// (#1767), as this repository arms it.
+  Duration get idleStopAfter => _idleStopAfter;
+
   /// How long a take runs with nothing happening (no press, no transport
   /// change, no edit, no input above the playing level) before it stops on
   /// its own, keeping everything recorded (#1767, owner's call). A take left
