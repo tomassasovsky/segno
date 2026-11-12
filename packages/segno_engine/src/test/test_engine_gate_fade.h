@@ -84,7 +84,7 @@ static void test_gate_fade_stop_and_mute_at_the_peak(void) {
     } else {
       /* The record-mode Stop since #1773: spare, park, mute. The mute
        * leaves the gate open, so only the Stop's fade runs. */
-      CHECK(le_engine_spare_tail(e, 0) == LE_OK);
+      CHECK(le_engine_spare_tail(e, 0, 2) == LE_OK);
       CHECK(le_engine_stop_track(e, 0) == LE_OK);
       CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
     }

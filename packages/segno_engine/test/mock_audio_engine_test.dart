@@ -51,7 +51,7 @@ void main() {
     test('spareTail needs a running engine (#1773)', () {
       expect(engine.spareTail(), EngineResult.notRunning);
       expect(engine.start(engine.defaultConfig), EngineResult.ok);
-      expect(engine.spareTail(channel: 2), EngineResult.ok);
+      expect(engine.spareTail(channel: 2, following: 3), EngineResult.ok);
     });
 
     test(

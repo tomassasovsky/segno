@@ -467,7 +467,12 @@ abstract interface class LooperTransport {
   /// unmuted, lets the Post tail the Stop set ringing drain. The track reads
   /// muted; the tail is gated once the track runs again. Send it before the
   /// Stop and the mute.
-  EngineResult spareTail({int channel = 0});
+  ///
+  /// It reserves command room for itself and the [following] commands sent
+  /// right after it (the stops and the lane mutes):
+  /// [EngineResult.notReady], with nothing sent, when they would not all
+  /// fit, so the caller refuses the whole Stop instead of applying half.
+  EngineResult spareTail({int channel = 0, int following = 0});
 
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0});

@@ -2078,8 +2078,18 @@ class ControlCubit extends Cubit<ControlState> {
     }
     final parks =
         track.state == TrackState.playing && _isLastAudibleTrack(channel);
-    if (parks || track.state == TrackState.stopped) {
-      _looper.spareTail(channel: channel);
+    // All or nothing: the spare reserves room for the stops and the lane
+    // mutes after it, and a refusal refuses the whole Stop, so a full
+    // command ring never leaves the loop parked but unmuted.
+    if ((parks || track.state == TrackState.stopped) &&
+        !_looper
+            .spareTail(
+              channel: channel,
+              following:
+                  (parks ? _tracks.length : 0) + _looper.laneCount(channel),
+            )
+            .isOk) {
+      return false;
     }
     if (parks) {
       for (final t in _tracks) {

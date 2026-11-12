@@ -2575,8 +2575,17 @@ LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
  * closes (with the usual mute fade) as soon as the track runs again. Post
  * it before the Stop and the mutes; any other mute gates as it always has.
  * The performance render does not follow it: a spared tail is absent from
- * the rendered stems. LE_ERR_INVALID for a bad channel. */
-LE_EXPORT int32_t le_engine_spare_tail(le_engine* engine, int32_t channel);
+ * the rendered stems.
+ *
+ * `following` is how many commands the caller posts right after it (its
+ * stops and its mutes). The call reserves room for all of them: the control
+ * thread is the ring's sole producer, so once this admits, they fit. When
+ * the ring cannot hold this command and `following` more, nothing is posted
+ * and it returns LE_ERR_NOT_READY, so the caller refuses its whole sequence
+ * rather than leave half of it applied. LE_ERR_INVALID for a bad channel or
+ * a negative `following`. */
+LE_EXPORT int32_t le_engine_spare_tail(le_engine* engine, int32_t channel,
+                                       int32_t following);
 /* In Song (#1077, #1323) Play is a section request: with nothing sounding
  * it starts the stopped section alone from its beginning; while another
  * section sounds (plays, overdubs or records) it waits for that section's

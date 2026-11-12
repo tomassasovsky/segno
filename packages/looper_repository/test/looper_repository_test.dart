@@ -2628,7 +2628,7 @@ void main() {
       buildRepo()
         ..startEngine(const EngineConfig(sampleRate: 48000))
         ..record()
-        ..spareTail()
+        ..spareTail(following: 2)
         ..stopTrack()
         ..play()
         ..undo()

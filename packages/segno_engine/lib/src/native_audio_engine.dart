@@ -1084,10 +1084,10 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult spareTail({int channel = 0}) {
+  EngineResult spareTail({int channel = 0, int following = 0}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_spare_tail(_engine, channel),
+      _bindings.le_engine_spare_tail(_engine, channel, following),
     );
   }
 

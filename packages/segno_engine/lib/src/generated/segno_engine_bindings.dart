@@ -1810,25 +1810,35 @@ class SegnoEngineBindings {
   /// closes (with the usual mute fade) as soon as the track runs again. Post
   /// it before the Stop and the mutes; any other mute gates as it always has.
   /// The performance render does not follow it: a spared tail is absent from
-  /// the rendered stems. LE_ERR_INVALID for a bad channel.
+  /// the rendered stems.
+  ///
+  /// `following` is how many commands the caller posts right after it (its
+  /// stops and its mutes). The call reserves room for all of them: the control
+  /// thread is the ring's sole producer, so once this admits, they fit. When
+  /// the ring cannot hold this command and `following` more, nothing is posted
+  /// and it returns LE_ERR_NOT_READY, so the caller refuses its whole sequence
+  /// rather than leave half of it applied. LE_ERR_INVALID for a bad channel or
+  /// a negative `following`.
   int le_engine_spare_tail(
     ffi.Pointer<le_engine> engine,
     int channel,
+    int following,
   ) {
     return _le_engine_spare_tail(
       engine,
       channel,
+      following,
     );
   }
 
   late final _le_engine_spare_tailPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
         >
       >('le_engine_spare_tail');
   late final _le_engine_spare_tail = _le_engine_spare_tailPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// In Song (#1077, #1323) Play is a section request: with nothing sounding
   /// it starts the stopped section alone from its beginning; while another

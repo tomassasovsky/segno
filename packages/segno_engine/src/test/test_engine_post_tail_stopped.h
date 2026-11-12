@@ -98,7 +98,7 @@ static float pts_until_quiet(le_engine* e, int max) {
 /* The Rec-mode Stop of the only audible loop, as ControlCubit sends it:
  * the spare, the park, then the mute. */
 static void pts_rec_stop(le_engine* e) {
-  CHECK(le_engine_spare_tail(e, 0) == LE_OK);
+  CHECK(le_engine_spare_tail(e, 0, 3) == LE_OK);
   CHECK(le_engine_stop_track(e, 0) == LE_OK);
   CHECK(le_engine_stop_track(e, 1) == LE_OK);
   CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
@@ -260,9 +260,10 @@ static void test_post_tail_spared_mute_gates_when_it_runs(void) {
   printf("test_post_tail_spared_mute_gates_when_it_runs\n");
   static float out[2 * PTS_WIN];
   le_engine* e = heard_engine(48000);
-  CHECK(le_engine_spare_tail(e, -1) == LE_ERR_INVALID);
-  CHECK(le_engine_spare_tail(e, LE_MAX_TRACKS) == LE_ERR_INVALID);
-  CHECK(le_engine_spare_tail(NULL, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_spare_tail(e, -1, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_spare_tail(e, LE_MAX_TRACKS, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_spare_tail(NULL, 0, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_spare_tail(e, 0, -1) == LE_ERR_INVALID);
   pts_lane_post(e, LE_FX_DELAY);
   pts_take(e);
   pts_rec_stop(e);
@@ -291,9 +292,41 @@ static void test_post_tail_spared_mute_gates_when_it_runs(void) {
   le_engine_destroy(e);
 }
 
+/* The Rec-mode Stop is all or nothing: le_engine_spare_tail admits only
+ * when the ring holds it and the commands that follow it, so with the ring
+ * nearly full it refuses and nothing is posted, and with exactly enough room
+ * the whole sequence fits. */
+static void test_post_tail_spare_reserves_its_sequence(void) {
+  printf("test_post_tail_spare_reserves_its_sequence\n");
+  le_engine* e = heard_engine(48000);
+  pts_take(e);
+  drain(e);
+  /* Leave exactly 4 free slots: the spare and 3 more fit, 4 more do not. */
+  const size_t usable = e->ring.capacity - 1;
+  for (size_t i = 0; i < usable - 4; ++i) {
+    CHECK(le_engine_set_track_volume(e, 1, 1.0f) == LE_OK);
+  }
+  const uint64_t posted = e->commands_posted;
+  CHECK(le_engine_spare_tail(e, 0, 4) == LE_ERR_NOT_READY);
+  CHECK(e->commands_posted == posted); /* nothing went in */
+  CHECK(le_engine_spare_tail(e, 0, 3) == LE_OK);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(le_engine_stop_track(e, 1) == LE_OK);
+  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+  /* Full now: the next command is refused. */
+  CHECK(le_engine_set_track_volume(e, 1, 1.0f) != LE_OK);
+  drain(e);
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(snap.tracks[0].muted == 1);
+  le_engine_destroy(e);
+}
+
 static void run_post_tail_stopped_tests(void) {
   test_post_tail_rings_while_stopped();
   test_post_tail_every_draining_kind_rings();
   test_post_tail_other_mutes_gate();
   test_post_tail_spared_mute_gates_when_it_runs();
+  test_post_tail_spare_reserves_its_sequence();
 }

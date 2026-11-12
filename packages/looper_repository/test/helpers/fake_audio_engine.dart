@@ -511,7 +511,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   }
 
   @override
-  EngineResult spareTail({int channel = 0}) {
+  EngineResult spareTail({int channel = 0, int following = 0}) {
     lastChannel = channel;
     calls.add('spareTail');
     return EngineResult.ok;
