@@ -3,14 +3,15 @@
 # `dart format` style so formatting never shows up as review noise
 # (ffigen regens and hand edits alike).
 #
-# Only formats when the file resolves to a package config. `dart format` keeps
-# trailing commas because `formatter: trailing_commas: preserve` reaches it
-# through analysis_options.yaml's `include: package:very_good_analysis/...`,
-# and that include resolves only through a `.dart_tool/package_config.json`
-# found by walking up from the file. With none, the include silently fails,
-# the formatter falls back to collapsing trailing commas, and edits in an
-# unresolved worktree turn into a repo-wide reformat. Sub-packages without
-# their own `.dart_tool` resolve through the root's, as they do for dart.
+# Only formats when the file resolves to a package config. `dart format` reads
+# the package's language version from `.dart_tool/package_config.json`, and
+# its formatter settings (very_good_analysis 11's `trailing_commas: automate`)
+# from analysis_options.yaml's `include: package:very_good_analysis/...`,
+# which resolves only through that same file, found by walking up from the
+# file being formatted. With none, the include silently fails and the
+# formatter falls back to the SDK's defaults, so the result can differ from
+# CI's. Sub-packages without their own `.dart_tool` resolve through the
+# root's, as they do for dart.
 set -uo pipefail
 
 FILE=$(jq -r '.tool_input.file_path // empty' 2>/dev/null) || exit 0
@@ -31,8 +32,9 @@ until [ -f "$DIR/.dart_tool/package_config.json" ]; do
 done
 
 # A config that exists but does not resolve (truncated by an interrupted
-# `pub get`) still collapses commas; dart exits 0 and only warns on stderr.
-# So format into a buffer and write back only on a clean, non-empty run.
+# `pub get`) still falls back to the defaults; dart exits 0 and only warns on
+# stderr. So format into a buffer and write back only on a clean, non-empty
+# run.
 OUT=$(mktemp) || exit 0
 ERR=$(mktemp) || { rm -f "$OUT"; exit 0; }
 trap 'rm -f "$OUT" "$ERR"' EXIT
