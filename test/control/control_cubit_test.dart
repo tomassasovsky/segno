@@ -319,6 +319,10 @@ void main() {
         () => looper.clear(channel: any(named: 'channel')),
         () => looper.play(channel: any(named: 'channel')),
         () => looper.stopTrack(channel: any(named: 'channel')),
+        () => looper.spareTail(
+          channel: any(named: 'channel'),
+          following: any(named: 'following'),
+        ),
         () => looper.stopRecordControl(channel: any(named: 'channel')),
       ]) {
         when(stub).thenReturn(EngineResult.ok);
@@ -3256,6 +3260,13 @@ void main() {
         );
         cubit.stop();
         verify(() => looper.setMute(muted: true)).called(1);
+        // It keeps playing, so its mute gates its tail (#1773).
+        verifyNever(
+          () => looper.spareTail(
+            channel: any(named: 'channel'),
+            following: any(named: 'following'),
+          ),
+        );
         // ch1 keeps sounding: no park.
         verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
       });
@@ -3269,15 +3280,88 @@ void main() {
         verify(() => looper.setMute(muted: true)).called(1);
       });
 
-      test('Rec mode: muting the sole audible track parks everything', () {
+      test('Rec mode: muting the sole audible track parks everything, and '
+          'the mute after the park spares its Post tails (#1773)', () {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
+        final sent = <String>[];
+        when(
+          () => looper.spareTail(
+            channel: any(named: 'channel'),
+            following: any(named: 'following'),
+          ),
+        ).thenAnswer((i) {
+          sent.add(
+            'spare ${i.namedArguments[#channel]} '
+            '${i.namedArguments[#following]}',
+          );
+          return EngineResult.ok;
+        });
+        when(
+          () => looper.stopTrack(channel: any(named: 'channel')),
+        ).thenAnswer((i) {
+          sent.add('stop ${i.namedArguments[#channel]}');
+          return EngineResult.ok;
+        });
+        when(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        ).thenAnswer((i) {
+          sent.add(
+            'mute ${i.namedArguments[#channel]} '
+            '${i.namedArguments[#muted]}',
+          );
+          return EngineResult.ok;
+        });
         cubit.stop();
+        // The spare reserves room for the 8 stops and the 1 lane mute.
+        expect(sent, [
+          'spare 0 9',
+          for (var c = 0; c < 8; c++) 'stop $c',
+          'mute 0 true',
+        ]);
+      });
+
+      test('Rec mode: a full command ring refuses the whole sole-loop Stop: '
+          'no stops, no mute (#1773)', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        when(
+          () => looper.spareTail(
+            channel: any(named: 'channel'),
+            following: any(named: 'following'),
+          ),
+        ).thenReturn(EngineResult.notReady);
+        cubit.stop();
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+      });
+
+      test('Rec mode: Stop on a stopped track spares its tail, with no '
+          'stops (#1773)', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.stopped, lengthFrames: 48000),
+          ]),
+        );
+        cubit.stop();
+        // Room for the one lane mute; nothing to stop.
+        verify(() => looper.spareTail(following: 1)).called(1);
         verify(() => looper.setMute(muted: true)).called(1);
-        verify(() => looper.stopTrack()).called(1);
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
       });
 
       test(

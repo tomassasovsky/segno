@@ -1059,6 +1059,10 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult stopTrack({int channel = 0}) => _requireRunning();
 
   @override
+  EngineResult spareTail({int channel = 0, int following = 0}) =>
+      _requireRunning();
+
+  @override
   EngineResult play({int channel = 0}) => _requireRunning();
 
   @override

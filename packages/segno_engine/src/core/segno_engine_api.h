@@ -600,6 +600,10 @@ typedef enum le_command_code {
    * from a lane's live clean slot, if that slot is still live. lanei arm:
    * channel, lane, value = the slot. Typed producer only. */
   LE_CMD_HEARD_ATTACH = 144,
+  /* The next mute of each of track arg_i's lanes, if it lands while the
+   * track is stopped, spares the Post tail (#1773; le_engine_spare_tail).
+   * Never perf-logged. */
+  LE_CMD_SPARE_TAIL = 145,
   LE_CMD_RENDER_FREEZE = 112, /* render recipe (#1202): the callback records
                                * every source's read law; never raw-posted */
   LE_CMD_BOUNCE = 113,         /* Bounce (#1202): installs a rendered result on
@@ -2564,6 +2568,24 @@ LE_EXPORT int32_t le_engine_cancel_latency(le_engine* engine, uint32_t request);
  * undo — never a copy. */
 LE_EXPORT int32_t le_engine_record(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
+/* The Rec-mode Stop's mute (#1773): the next mute of each of track
+ * `channel`'s lanes, if it lands while the track is stopped and the lane was
+ * unmuted, leaves the lane's tail ringing: the gate stays open, so the Post
+ * tail the Stop set ringing drains while the track reports muted. The gate
+ * closes (with the usual mute fade) as soon as the track runs again. Post
+ * it before the Stop and the mutes; any other mute gates as it always has.
+ * The performance render does not follow it: a spared tail is absent from
+ * the rendered stems.
+ *
+ * `following` is how many commands the caller posts right after it (its
+ * stops and its mutes). The call reserves room for all of them: the control
+ * thread is the ring's sole producer, so once this admits, they fit. When
+ * the ring cannot hold this command and `following` more, nothing is posted
+ * and it returns LE_ERR_NOT_READY, so the caller refuses its whole sequence
+ * rather than leave half of it applied. LE_ERR_INVALID for a bad channel or
+ * a negative `following`. */
+LE_EXPORT int32_t le_engine_spare_tail(le_engine* engine, int32_t channel,
+                                       int32_t following);
 /* In Song (#1077, #1323) Play is a section request: with nothing sounding
  * it starts the stopped section alone from its beginning; while another
  * section sounds (plays, overdubs or records) it waits for that section's

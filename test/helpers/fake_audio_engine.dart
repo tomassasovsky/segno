@@ -485,6 +485,10 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   }
 
   @override
+  EngineResult spareTail({int channel = 0, int following = 0}) =>
+      EngineResult.ok;
+
+  @override
   EngineResult play({int channel = 0}) {
     playCalls++;
     return EngineResult.ok;
