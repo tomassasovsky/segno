@@ -32,7 +32,7 @@
  *     tail.
  *
  * The verdict, per kind: every render's largest difference on either
- * channel below LE_EQV_LIMIT_DB, no NaN or infinity in either, both
+ * channel below its ceiling (LE_EQV_LIMIT_DB; eqv_limit_db), no NaN or infinity in either, both
  * libraries preparing it, and, for a kind not in k_reordered, every render
  * bit-identical. A kind goes in k_reordered only when its optimisation
  * reorders arithmetic (a sum split across lanes, a fused multiply-add the
@@ -135,16 +135,45 @@ static const eqv_kind k_kinds[] = {
 #define EQV_NKINDS (int)(sizeof(k_kinds) / sizeof(k_kinds[0]))
 
 /* The kinds whose optimisation reorders arithmetic, so their renders may
- * round differently from the reference (within LE_EQV_LIMIT_DB). Every
- * other kind must be bit-identical. */
+ * round differently from the reference (within eqv_limit_db). Every other
+ * kind must be bit-identical.
+ *   roomverb  its early taps summed in four lanes a side (#1761, the
+ *             owner's approval). */
 static const char* const k_reordered[] = {
+    "roomverb",
     NULL,
 };
+
+/* What a Drum room's low cut (a float biquad at 8 to 65 Hz) makes of a
+ * rounding change ahead of it: the trunk's own clang -O2 and -O3 builds
+ * differ by up to -48.8 dBFS on Drum Rack / Wet+Tight; the reordered taps
+ * by up to -48.9 (#1761). */
+#define LE_EQV_DRUM_ROOM_DB (-45.0)
+
+static int kind_named(int32_t type, const char* name);
+
+/* The ceiling of a render's residual: LE_EQV_LIMIT_DB, but for a Room
+ * reverb render that runs a Drum room (its room is one, or the sweeps,
+ * which move the room through every one) LE_EQV_DRUM_ROOM_DB. */
+static double eqv_limit_db(int32_t type, const float* p, int sweeps) {
+  if (kind_named(type, "roomverb")) {
+    const int room = (int)(p[2] * 15.0f + 0.5f); /* of 16: 4 to 15 Drum */
+    if (sweeps || room >= 4) return LE_EQV_DRUM_ROOM_DB;
+  }
+  return LE_EQV_LIMIT_DB;
+}
 
 /* The kinds whose sound a commit after the reference changed on purpose. */
 static const char* const k_moved[] = {
     NULL,
 };
+
+static int kind_named(int32_t type, const char* name) {
+  for (int k = 0; k < EQV_NKINDS; ++k) {
+    if (k_kinds[k].type == type) return !strcmp(k_kinds[k].name, name);
+  }
+  return 0;
+}
 
 static int kind_index(int32_t type) {
   for (int k = 0; k < EQV_NKINDS; ++k) {
@@ -664,7 +693,7 @@ int main(int argc, char** argv) {
   printf("| kind       | renders | identical | worst residual | where |\n");
   printf("|------------|---------|-----------|----------------|-------|\n");
   for (int k = 0; k < EQV_NKINDS; ++k) {
-    int total = 0, same = 0, bad = 0;
+    int total = 0, same = 0, bad = 0, over = 0;
     double worst = -INFINITY;
     const eqv_item* at = NULL;
     const char* what = "";
@@ -686,6 +715,12 @@ int main(int argc, char** argv) {
           continue;
         }
         if (c->identical) same++;
+        if (c->worst_db >= eqv_limit_db(it->s.type, it->s.p, w)) {
+          over = 1;
+          printf("  %s %s %d Hz / %d: %.1f dBFS, over its %.0f\n", it->name,
+                 names[w], it->rate, it->period, c->worst_db,
+                 eqv_limit_db(it->s.type, it->s.p, w));
+        }
         if (c->worst_db > worst || at == NULL) {
           worst = c->worst_db;
           at = it;
@@ -702,7 +737,7 @@ int main(int argc, char** argv) {
     }
     if (total == 0) continue;
     const int moved = kind_listed(k_moved, k);
-    const int over = !moved && worst >= LE_EQV_LIMIT_DB;
+    if (moved) over = 0;
     const int inexact = !moved && same != total && !kind_listed(k_reordered, k);
     char where[220] = "";
     if (at != NULL && worst > -INFINITY) {

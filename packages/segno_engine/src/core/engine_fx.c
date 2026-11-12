@@ -8918,6 +8918,7 @@ static void fx_verb_rkprocess(void* ks, float* r0, float* r1, int cap, float* l,
  * rings. */
 #define LE_RV_ROOMS 16
 #define LE_RV_ER 16
+_Static_assert(LE_RV_ER % 4 == 0, "the taps run four at a time");
 #define LE_RV_FIR 64 /* the most taps a network's early part runs a side */
 _Static_assert(LE_RV_FIR % 4 == 0, "the taps' gains ramp four at a time");
 
@@ -8970,6 +8971,12 @@ typedef struct le_fx_rverb {
   float er_g[2][LE_RV_ER];
   uint32_t fir_n[2];
   uint32_t fir_at[2][LE_RV_FIR];
+  /* The taps as the wrapped history reads them (le_rv_taps4): each one's
+   * index off the newest sample (-at), both sides padded to the same whole
+   * fours with silent taps (gain 0, index 0). */
+  uint32_t er_np, fir_np;
+  int32_t er_back[2][LE_RV_ER];
+  int32_t fir_back[2][LE_RV_FIR];
   float fir_g[2][LE_RV_FIR]; /* at the Density they were set for */
   float fir_d;               /* that Density (-1: none) */
   float dens;                /* Density, gliding */
@@ -9014,13 +9021,26 @@ static double le_rv_tone_hz(double v, int drum) {
 }
 
 /* The room's network and taps laid out at [rate]. */
+static uint32_t le_rv_fours(uint32_t a, uint32_t b) {
+  return ((a > b ? a : b) + 3u) & ~3u;
+}
+
 static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
   const le_rv_room* rm = &LE_RV_ROOM_TABLE[room];
   uint32_t reach = 0;
+  /* Every tap past a side's own is silent: its gain stays 0, as no update
+   * writes it. */
+  memset(q->er_g, 0, sizeof(q->er_g));
+  memset(q->er_back, 0, sizeof(q->er_back));
+  memset(q->fir_g, 0, sizeof(q->fir_g));
+  memset(q->fir_to, 0, sizeof(q->fir_to));
+  memset(q->fir_d_g, 0, sizeof(q->fir_d_g));
+  memset(q->fir_back, 0, sizeof(q->fir_back));
   for (int c = 0; c < 2; ++c) {
     q->er_n[c] = (uint32_t)rm->er_n[c];
     for (int i = 0; i < rm->er_n[c]; ++i) {
       q->er_at[c][i] = le_vb_len(rm->er_ms[c][i], rate);
+      q->er_back[c][i] = -(int32_t)q->er_at[c][i];
       q->er_g[c][i] = rm->er_g[c][i];
       if (q->er_at[c][i] > reach) reach = q->er_at[c][i];
     }
@@ -9030,9 +9050,12 @@ static void le_rv_lay(le_fx_rverb* q, int room, int rate) {
     q->fir_n[c] = (uint32_t)fir->n[c];
     for (uint32_t i = 0; i < q->fir_n[c]; ++i) {
       q->fir_at[c][i] = le_vb_at(fir->ms[c][i], rate);
+      q->fir_back[c][i] = -(int32_t)q->fir_at[c][i];
       if (q->fir_at[c][i] > reach) reach = q->fir_at[c][i];
     }
   }
+  q->er_np = le_rv_fours(q->er_n[0], q->er_n[1]);
+  q->fir_np = le_rv_fours(q->fir_n[0], q->fir_n[1]);
   q->fir_d = -1.0f;
   q->v.reach = reach + 1u;
   le_vb_lay(&q->v, rm->tail, rate);
@@ -9188,21 +9211,42 @@ static void fx_room_verb_update(void* ks, le_fx_dyn_head* h, const float* p,
 }
 
 /* [n] taps (delays [at], gains [g]) off the history [hist], whose newest
- * sample is at [now]: once it has wrapped, straight reads of its second
- * copy; before, only what it holds since it was cleared. */
-static inline float le_rv_taps(const float* hist, uint32_t now,
-                               const le_fx_verb* v, const uint32_t* at,
-                               const float* g, uint32_t n) {
+ * sample is at [now], before it has wrapped: only what it holds since it
+ * was cleared. */
+static float le_rv_taps_filling(const float* hist, uint32_t now,
+                                const uint32_t* at, const float* g,
+                                uint32_t n) {
   float acc = 0.0f;
-  if (v->hist_full) {
-    const float* h = hist + now + v->hist_n;
-    for (uint32_t i = 0; i < n; ++i) acc += g[i] * h[-(int32_t)at[i]];
-  } else {
-    for (uint32_t i = 0; i < n; ++i) {
-      if (at[i] <= now) acc += g[i] * hist[now - at[i]];
-    }
+  for (uint32_t i = 0; i < n; ++i) {
+    if (at[i] <= now) acc += g[i] * hist[now - at[i]];
   }
   return acc;
+}
+
+/* Both sides' taps off the wrapped history, [h] its newest sample in the
+ * second copy, [np] taps a side (whole fours; le_rv_lay pads them), into
+ * [s]: each side's sum in four lanes, added pairwise at the end. The
+ * order changes the rounding (#1761, the owner's approval): about
+ * -140 dBFS on the modes, about -62 behind a Drum room's low cut, which
+ * carries a rounding that far (the trunk's own -O2 and -O3 builds differ
+ * by as much). */
+static inline void le_rv_taps4(const float* h, const int32_t* o0,
+                               const float* g0, const int32_t* o1,
+                               const float* g1, uint32_t np, float s[2]) {
+  float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
+  float b0 = 0.0f, b1 = 0.0f, b2 = 0.0f, b3 = 0.0f;
+  for (uint32_t i = 0; i < np; i += 4u) {
+    a0 += g0[i] * h[o0[i]];
+    a1 += g0[i + 1u] * h[o0[i + 1u]];
+    a2 += g0[i + 2u] * h[o0[i + 2u]];
+    a3 += g0[i + 3u] * h[o0[i + 3u]];
+    b0 += g1[i] * h[o1[i]];
+    b1 += g1[i + 1u] * h[o1[i + 1u]];
+    b2 += g1[i + 2u] * h[o1[i + 2u]];
+    b3 += g1[i + 3u] * h[o1[i + 3u]];
+  }
+  s[0] = (a0 + a1) + (a2 + a3);
+  s[1] = (b0 + b1) + (b2 + b3);
 }
 
 static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
@@ -9245,17 +9289,25 @@ static void fx_room_verb_rkprocess(void* ks, float* r0, float* r1, int cap,
   const int ph = v->ph; /* the phase le_vb_network runs */
   le_vb_network(v, r0, r1, 0.5f * (x0 + x1) * in_g, w);
   /* The early taps read the history the network just wrote: the newest
-   * sample sits one behind its write position. le_rv_taps is the reference
-   * engine's, character for character: the compilers decide per loop shape
-   * whether to fuse each tap's multiply-add, and a Drum room's low cut
-   * carries a changed rounding to about -62 dBFS (#1755, #1761). */
+   * sample sits one behind its write position. */
   const float* hist = r0;
   const uint32_t now = v->hist_w == 0u ? v->hist_n - 1u : v->hist_w - 1u;
+  float e[2], f[2];
+  if (v->hist_full) {
+    const float* h = hist + now + v->hist_n;
+    le_rv_taps4(h, q->er_back[0], q->er_g[0], q->er_back[1], q->er_g[1],
+                q->er_np, e);
+    le_rv_taps4(h, q->fir_back[0], q->fir_g[0], q->fir_back[1], q->fir_g[1],
+                q->fir_np, f);
+  } else {
+    for (int c = 0; c < 2; ++c) {
+      e[c] = le_rv_taps_filling(hist, now, q->er_at[c], q->er_g[c], q->er_n[c]);
+      f[c] = le_rv_taps_filling(hist, now, q->fir_at[c], q->fir_g[c],
+                                q->fir_n[c]);
+    }
+  }
   for (int c = 0; c < 2; ++c) {
-    const float e = le_rv_taps(hist, now, v, q->er_at[c], q->er_g[c], q->er_n[c]);
-    const float f =
-        le_rv_taps(hist, now, v, q->fir_at[c], q->fir_g[c], q->fir_n[c]);
-    float y = erk * e + tk * (w[c] + f);
+    float y = erk * e[c] + tk * (w[c] + f[c]);
     y = le_vb_tick(q->tone, q->tone_z[c][ph], y);
     if (q->cut) y = le_biquad_tick(q->lc, q->lc_z[c][ph], y);
     w[c] = y;
