@@ -212,6 +212,18 @@ case "$(uname -s)" in
     ;;
 esac
 
+echo "== building the pitch kinds' oracle =="
+# The pitch kinds against their kernels before #1755 (test_pitch_oracle.c,
+# test/pitch_ref/pitch_ref.c): every case must render bit-identically on
+# the live kernels and the frozen ones. -O2 last so it wins, as the matrix.
+# -fmath-errno, Linux's default, also on macOS, where without it Clang may
+# fuse a sinf and a cosf into Apple's sincos in one copy and not the other.
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS -O2 -fmath-errno -DLE_NATIVE_TESTS src/test/test_pitch_oracle.c \
+  src/test/pitch_ref/pitch_ref.c $ENGINE_SRC "$STRETCH_OBJ" $ENGINE_LIBS \
+  -o "$OUT/segno_pitch_oracle.exe"
+"$OUT/segno_pitch_oracle.exe" --ci
+
 echo "== building the decoder fuzz driver =="
 # The app's audio-file decoder over whole-file mutations of every accepted and
 # refused format (#1200): a bounded, fixed-seed run in every configuration, so
