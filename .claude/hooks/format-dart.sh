@@ -9,9 +9,11 @@
 # from analysis_options.yaml's `include: package:very_good_analysis/...`,
 # which resolves only through that same file, found by walking up from the
 # file being formatted. With none, the include silently fails and the
-# formatter falls back to the SDK's defaults, so the result can differ from
-# CI's. Sub-packages without their own `.dart_tool` resolve through the
-# root's, as they do for dart.
+# formatter uses the SDK's defaults. Today those give the same result
+# (`automate` is the default, and very_good_analysis 11 sets nothing else),
+# so the check only matters if the options set formatter settings again.
+# Sub-packages without their own `.dart_tool` resolve through the root's, as
+# they do for dart.
 set -uo pipefail
 
 FILE=$(jq -r '.tool_input.file_path // empty' 2>/dev/null) || exit 0
