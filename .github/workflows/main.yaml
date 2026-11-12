@@ -447,6 +447,8 @@ jobs:
           echo "$PWD/bin" >> "$GITHUB_PATH"
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
+      # ci-caches.yaml saves it on the trunk under the same key, so a PR finds
+      # it there (#1771): change the two together.
       - name: Cache the Arduino core and libraries
         id: arduino-cache
         uses: actions/cache@v6
@@ -490,11 +492,32 @@ jobs:
   # coverage. Separate from native-tests so a sanitizer-only failure is
   # instantly distinguishable from a logic failure. The firmware protocol test
   # is not repeated here — it is pure fixed-size parsing already covered above.
+  #
+  # It runs as three jobs (#1771). Four sanitized processes on one runner's
+  # four vCPUs (two cores, two threads each) run at about half speed each,
+  # so on one runner the suite took 14 minutes however it was spread. Each
+  # part builds only what it runs; two take half the core suite's 16 shards
+  # each (the count is fixed here so both parts agree on it), the third the
+  # rest, and the race binaries ride with the second.
   native-tests-asan:
+    name: native-tests-asan (${{ matrix.part }})
     needs: changes
     if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: core 1 of 2
+            only: core
+            core_part: 0/2
+          - part: core 2 of 2, races
+            only: core,races
+            core_part: 1/2
+          - part: the rest
+            only: rest
+            core_part: 0/1
     steps:
       - uses: actions/checkout@v7
       # The ALSA headers, and libpulse0 (no PulseAudio server running): not
@@ -515,7 +538,7 @@ jobs:
       - name: Restore the compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
-          key: ${{ github.job }}
+          key: ${{ github.job }}-${{ strategy.job-index }}
           install: binary
           max-size: 300M
       - name: Build + run native tests under AddressSanitizer
@@ -524,6 +547,9 @@ jobs:
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
           FUZZ_CFLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined"
           SEGNO_FUZZ_ITERATIONS=20000
+          NATIVE_TESTS_ONLY="${{ matrix.only }}"
+          SEGNO_CORE_SHARDS=16
+          SEGNO_CORE_PART="${{ matrix.core_part }}"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
   # The same suites with the callback telemetry GATED OFF (#722). That gate is
