@@ -55,14 +55,6 @@ on:
         options: ['no', 'yes']
         default: 'no'
 
-# Save caches only on the trunk (#1787). A run dispatched from another
-# branch, a push to experimental or a tag would save its copy under its own
-# ref, where only that ref can read it: the Arduino core alone is 856 MB, and
-# the repository has 10 GB of cache for every workflow. Those runs restore
-# what they can and save nothing. The Arduino core is also saved on the trunk
-# by ci-caches.yaml, under the same key.
-cache-mode: ${{ github.ref == 'refs/heads/claude/segno-integration' && 'write' || 'read' }}
-
 permissions:
   contents: write        # create releases
 
@@ -172,9 +164,13 @@ jobs:
 
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
-      - name: Cache the Arduino core and libraries
+      # ci-caches.yaml saves it on the trunk under this key; this job only
+      # restores it (#1787). A run dispatched from another branch, a tag or
+      # experimental cannot read the trunk's copy and downloads the core,
+      # where a save would put another 856 MB copy under its own ref.
+      - name: Restore the Arduino core and libraries
         id: arduino-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.arduino15
@@ -372,9 +368,12 @@ jobs:
             exit 1
           fi
 
+      # Saved only on the trunk (the save step after the build, #1787): from
+      # any other ref the entry could be read only by that ref.
       - name: Restore Yocto sstate + downloads (GitHub-hosted only)
+        id: sstate-cache
         if: inputs.runner != 'self-hosted'
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ env.YOCTO_WORK_DIR }}/sstate-cache
@@ -399,6 +398,18 @@ jobs:
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
             ./kas-container shell ${{ needs.determine-meta.outputs.kas }} \
             -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle segno-kiosk-image"
+
+      - name: Save Yocto sstate + downloads (GitHub-hosted, trunk only)
+        if: >-
+          inputs.runner != 'self-hosted'
+          && github.ref == 'refs/heads/claude/segno-integration'
+          && steps.sstate-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.YOCTO_WORK_DIR }}/sstate-cache
+            ${{ env.YOCTO_WORK_DIR }}/downloads
+          key: ${{ steps.sstate-cache.outputs.cache-primary-key }}
 
       # Make growth visible in the run log, so it is noticed here rather than
       # by a hypervisor falling over.
