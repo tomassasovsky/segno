@@ -47,6 +47,7 @@
  *   ./bench_fx_cpu.sh --racks              # each rack as built today on one
  *                                          # input, against its budget
  *   ./bench_fx_cpu.sh --table              # each kind's admission charge
+ *   ./bench_fx_cpu.sh --table --rows a,b   # only those rows (k_table names)
  *   ./bench_fx_cpu.sh --kind comp          # or transient, hpgate, doubler,
  *                                          # chorus, wah, overdrive,
  *                                          # distortion, vinyl, degrade,
@@ -593,6 +594,22 @@ static int time_kinds(const bench_opts* o, float* src, int32_t frames,
   return 1;
 }
 
+/* --rows a,b: the table's rows by name, every one when NULL. */
+static const char* g_rows;
+
+static int table_row_wanted(const char* name) {
+  if (g_rows == NULL) return 1;
+  const size_t n = strlen(name);
+  for (const char* at = g_rows; *at != '\0';) {
+    const char* end = strchr(at, ',');
+    const size_t len = end != NULL ? (size_t)(end - at) : strlen(at);
+    if (len == n && strncmp(at, name, n) == 0) return 1;
+    if (end == NULL) break;
+    at = end + 1;
+  }
+  return 0;
+}
+
 static int run_table(const bench_opts* o, float* src, int32_t frames,
                      int blocks, int warm) {
   printf("bench_fx_cpu: cost table, %s, %d Hz, %d-frame periods, %d timed "
@@ -610,6 +627,8 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
   int have_base_bass = 0;
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
     const table_kind* kind = &k_table[k];
+    ns[k] = -1.0;
+    if (!table_row_wanted(kind->name)) continue;
     stats one, eight;
     float* in = source_for(kind->type, src);
     if (in == g_bass && !have_base_bass) { /* the rig alone on the bass */
@@ -641,7 +660,7 @@ static int run_table(const bench_opts* o, float* src, int32_t frames,
    * largest across the offered settings. */
   printf("charges, ns per frame:");
   for (size_t k = 0; k < sizeof(k_table) / sizeof(k_table[0]); ++k) {
-    printf(" %s=%.0f", k_table[k].name, ns[k]);
+    if (ns[k] >= 0.0) printf(" %s=%.0f", k_table[k].name, ns[k]);
   }
   printf("\n(octaver, whammy, dualoct, overdrive, distortion, vinyl and "
          "ampcab: kFxSettingCostNs at %d Hz / %d; psola and smarttune: "
@@ -669,6 +688,8 @@ int main(int argc, char** argv) {
       g_racks = 1;
     } else if (!strcmp(argv[i], "--table")) {
       table = 1;
+    } else if (!strcmp(argv[i], "--rows") && i + 1 < argc) {
+      g_rows = argv[++i];
     } else if (!strcmp(argv[i], "--kind") && i + 1 < argc) {
       const char* kind = argv[++i];
       if (!strcmp(kind, "octaver")) {
@@ -784,7 +805,7 @@ int main(int argc, char** argv) {
               "wah|overdrive|distortion|vinyl|degrade|lpf|lpflfo|spring|drive|filter|"
               "delay|tremolo|echo|reverb|dubverb|ambverb|whammy|"
               "pumper|slicer|modedelay|drumdelay|dubdelay|dualoct|roomverb] "
-              "[--table]\n",
+              "[--table [--rows NAME,...]]\n",
               argv[0]);
       return 2;
     }
