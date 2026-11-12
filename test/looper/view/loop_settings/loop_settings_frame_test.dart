@@ -82,9 +82,10 @@ void main() {
       );
       expect(backMaterial.color, Colors.transparent);
       expect(
-        (shapeOf(tester, 'loop_settings_back') as RoundedRectangleBorder)
-            .side
-            .color,
+        (shapeOf(
+          tester,
+          'loop_settings_back',
+        ) as RoundedRectangleBorder).side.color,
         surface.frameControlLine,
       );
 
@@ -94,9 +95,10 @@ void main() {
       );
       expect(stageMaterial.color, surface.frameControlFill);
       expect(
-        (shapeOf(tester, 'loop_settings_stage') as RoundedRectangleBorder)
-            .side
-            .color,
+        (shapeOf(
+          tester,
+          'loop_settings_stage',
+        ) as RoundedRectangleBorder).side.color,
         surface.frameControlLine,
       );
     });

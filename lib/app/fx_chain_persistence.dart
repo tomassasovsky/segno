@@ -675,10 +675,12 @@ class FxChainPersistence {
     _syncSession();
     var entries = live.entries;
     for (final MapEntry(key: target, value: on) in _powers.entries) {
-      if (target case FxRackTarget(
-        address: final at,
-        :final rackId,
-      ) when at == address) {
+      if (target
+          case FxRackTarget(
+            address: final at,
+            :final rackId,
+          )
+          when at == address) {
         entries = fxWithRackEnabled(entries, rackId, enabled: on) ?? entries;
       }
     }

@@ -1318,13 +1318,11 @@ void main() {
       expect(pushed, hasLength(1));
       final route = pushed.single as PageRouteBuilder<void>;
       expect(route.settings.name, segnoLoopSettingsRouteName);
-      final page =
-          route.pageBuilder(
-                tester.element(find.byType(TracksView)),
-                kAlwaysCompleteAnimation,
-                kAlwaysCompleteAnimation,
-              )
-              as LoopSettingsPage;
+      final page = route.pageBuilder(
+        tester.element(find.byType(TracksView)),
+        kAlwaysCompleteAnimation,
+        kAlwaysCompleteAnimation,
+      ) as LoopSettingsPage;
       // The pages are covered by their own tests; take the route down
       // before it builds against this test's providers.
       segnoNavigatorKey.currentState!.removeRoute(route);
@@ -2591,13 +2589,11 @@ void main() {
       expect(pushed, hasLength(1));
       final route = pushed.single as PageRouteBuilder<void>;
       expect(route.settings.name, segnoFxRouteName);
-      final page =
-          route.pageBuilder(
-                tester.element(find.byType(TracksView)),
-                kAlwaysCompleteAnimation,
-                kAlwaysCompleteAnimation,
-              )
-              as FxPage;
+      final page = route.pageBuilder(
+        tester.element(find.byType(TracksView)),
+        kAlwaysCompleteAnimation,
+        kAlwaysCompleteAnimation,
+      ) as FxPage;
       expect(page.initial, const FxDestination.recordedTrack(1));
       // The editor itself is covered by its own tests; take the route down
       // before it builds against this test's providers.

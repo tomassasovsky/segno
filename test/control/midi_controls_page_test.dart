@@ -997,11 +997,9 @@ void main() {
       );
       final top = (saved.controls.single as MidiParameterControl).high;
       expect(target.toDomain(top), closeTo(1.0, 1e-9));
-      final persisted =
-          jsonDecode(
-                (await store.getString('midi.configuration'))!,
-              )
-              as Map<String, dynamic>;
+      final persisted = jsonDecode(
+        (await store.getString('midi.configuration'))!,
+      ) as Map<String, dynamic>;
       expect(persisted['mappings'], [saved.toJson()]);
       expect(control.state.midiEdit, isNull);
       expect(find.byKey(Key('midi_row_edit_${saved.id}')), findsOneWidget);

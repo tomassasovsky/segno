@@ -21,8 +21,9 @@ typedef ReceiptCheck =
 
 /// Enqueues one native command for a value. A refused admission returns its
 /// result and no check.
-typedef ReceiptSend<T> =
-    ({EngineResult result, ReceiptCheck? check}) Function(T value);
+typedef ReceiptSend<T> = ({EngineResult result, ReceiptCheck? check}) Function(
+  T value,
+);
 
 /// One settings family's native transaction: admission, callback receipt,
 /// uncertainty and recovery. The family supplies only its native command and

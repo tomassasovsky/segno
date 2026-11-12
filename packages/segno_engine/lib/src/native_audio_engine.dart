@@ -3528,8 +3528,9 @@ class _NativePluginSlotHandle implements PluginSlotHandle {
 
 /// How [NativeAudioEngine.offIsolate] runs a computation: [Isolate.run]'s
 /// shape.
-typedef OffIsolateRunner =
-    Future<R> Function<R>(FutureOr<R> Function() computation);
+typedef OffIsolateRunner = Future<R> Function<R>(
+  FutureOr<R> Function() computation,
+);
 
 /// Runs [_decodeAudition] through [run]. A top-level function, so the
 /// closure sent to the isolate captures only these values and never the

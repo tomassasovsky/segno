@@ -22,12 +22,11 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 /// returns true. A failure to open or read the SOURCE is thrown as a
 /// [SourceReadFailure], so it is never blamed on the destination. The default
 /// is [StorageRepository.copyChunks]; tests inject failures through it.
-typedef CopyBytes =
-    Future<void> Function(
-      File source,
-      File part,
-      bool Function() shouldAbort,
-    );
+typedef CopyBytes = Future<void> Function(
+  File source,
+  File part,
+  bool Function() shouldAbort,
+);
 
 /// The source of a copy could not be opened or read. Nothing about the
 /// destination is implied: the copy reports it as `StorageFailure.io` at

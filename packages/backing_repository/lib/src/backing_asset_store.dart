@@ -10,11 +10,10 @@ import 'package:segno_engine/segno_engine.dart';
 /// the path written: `StorageRepository.copyFile` to Internal in production
 /// (`.part`, fsync, rename; nothing left behind on failure). Throws on any
 /// failure.
-typedef BackingCopier =
-    Future<String> Function(
-      String sourcePath,
-      String relativePath,
-    );
+typedef BackingCopier = Future<String> Function(
+  String sourcePath,
+  String relativePath,
+);
 
 /// The SHA-256 of the file at a path as 64 lower-case hex digits, or null
 /// when it cannot be read (`StorageIo.digestFile`).

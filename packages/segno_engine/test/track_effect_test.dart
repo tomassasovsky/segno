@@ -358,9 +358,10 @@ void main() {
     });
 
     test('a part-4 entry without paramValues decodes to an empty map', () {
-      final decoded =
-          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
-              as PluginEffect;
+      final decoded = TrackEffect.fromJson({
+        'type': kPluginFxCode,
+        'plugin': ref.toJson(),
+      }) as PluginEffect;
       expect(decoded.paramValues, isEmpty);
     });
 
@@ -386,9 +387,10 @@ void main() {
     });
 
     test('a pre-state entry decodes to an empty state', () {
-      final decoded =
-          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
-              as PluginEffect;
+      final decoded = TrackEffect.fromJson({
+        'type': kPluginFxCode,
+        'plugin': ref.toJson(),
+      }) as PluginEffect;
       expect(decoded.state, isEmpty);
     });
 

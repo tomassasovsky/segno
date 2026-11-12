@@ -1378,8 +1378,11 @@ class _ActionsPanel extends StatelessWidget {
 
 /// Opens the action picker for the gesture named [gesture], which carries
 /// [current] now.
-typedef _PickAction =
-    void Function(String gesture, ControlAction? current, _ActionSlot slot);
+typedef _PickAction = void Function(
+  String gesture,
+  ControlAction? current,
+  _ActionSlot slot,
+);
 
 /// Whether the button is momentary or latching.
 class _HardwareChoice extends StatelessWidget {

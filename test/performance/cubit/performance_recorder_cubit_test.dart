@@ -227,14 +227,12 @@ void main() {
           Directory('${tempDir.path}/exports/perf-crashed').existsSync(),
           isFalse,
         );
-        final manifest =
-            jsonDecode(
-                  File(
-                    '${tempDir.path}/exports/recovered/perf-crashed/'
-                    'performance.json',
-                  ).readAsStringSync(),
-                )
-                as Map<String, dynamic>;
+        final manifest = jsonDecode(
+          File(
+            '${tempDir.path}/exports/recovered/perf-crashed/'
+            'performance.json',
+          ).readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(manifest['finalized'], isTrue);
       },
     );
@@ -474,13 +472,11 @@ void main() {
       await cubit.toggleArm();
       await pumpEventQueue();
 
-      final snapshot =
-          jsonDecode(
-                File(
-                  '${performance.armedDirectory}/arm-snapshot.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, dynamic>;
+      final snapshot = jsonDecode(
+        File(
+          '${performance.armedDirectory}/arm-snapshot.json',
+        ).readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(snapshot['limiterOn'], isTrue);
       expect(snapshot['limiterCeiling'], 0.8);
       expect(snapshot['monitors'], hasLength(1));
@@ -1964,9 +1960,9 @@ void main() {
         expect(dir.existsSync(), isFalse);
         final recovered =
             '${tempDir.path}/exports/recovered/perf-20260706-140000';
-        final manifest =
-            jsonDecode(File('$recovered/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
+        final manifest = jsonDecode(
+          File('$recovered/performance.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(manifest['finalized'], isTrue);
         expect(
           engine.lastRenderCaptureDir,

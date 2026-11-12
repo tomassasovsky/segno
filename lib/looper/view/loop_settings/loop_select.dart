@@ -27,8 +27,10 @@ class LoopSelectItem<T> {
 
 /// Builds the control that opens a [LoopMenu]: toggle the menu, and read
 /// whether it is showing, through [controller].
-typedef LoopMenuAnchorBuilder =
-    Widget Function(BuildContext context, MenuController controller);
+typedef LoopMenuAnchorBuilder = Widget Function(
+  BuildContext context,
+  MenuController controller,
+);
 
 /// The app's one pick-one menu: Flutter's [MenuAnchor] drawn in the surface
 /// tokens, anchored below whatever [builder] draws.

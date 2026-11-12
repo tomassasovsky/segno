@@ -600,11 +600,9 @@ void main() {
           if (entry.key.endsWith(Session.manifestName)) continue;
           expect(File(entry.key).readAsBytesSync(), entry.value);
         }
-        final json =
-            jsonDecode(
-                  File('$dir/${Session.manifestName}').readAsStringSync(),
-                )
-                as Map<String, dynamic>;
+        final json = jsonDecode(
+          File('$dir/${Session.manifestName}').readAsStringSync(),
+        ) as Map<String, dynamic>;
         expect(json['name'], 'New name');
         expect(json['version'], Session.formatVersion);
         expect((await repo().listSessions()).single.name, 'New name');
@@ -980,9 +978,9 @@ void main() {
 
       final listed = (await repo().listSessions()).single;
       expect((listed.id, listed.name), ('s-old', 'Old gig'));
-      final json =
-          jsonDecode(File('$dir/${Session.manifestName}').readAsStringSync())
-              as Map<String, dynamic>;
+      final json = jsonDecode(
+        File('$dir/${Session.manifestName}').readAsStringSync(),
+      ) as Map<String, dynamic>;
       // Only the name changed: the manifest stays schema 7, converted on the
       // next read as before.
       expect(json['version'], 7);

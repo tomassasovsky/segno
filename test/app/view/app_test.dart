@@ -5792,9 +5792,11 @@ List<Notice> _retries(WidgetTester tester) {
     );
   return [
     for (final shown in ranked)
-      if (shown.notice.action?.key case ValueKey<String>(
-        :final value,
-      ) when value.endsWith('_${AppNoticeId.retry}'))
+      if (shown.notice.action?.key
+          case ValueKey<String>(
+            :final value,
+          )
+          when value.endsWith('_${AppNoticeId.retry}'))
         shown.notice,
   ];
 }

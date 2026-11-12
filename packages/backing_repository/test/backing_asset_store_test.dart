@@ -59,13 +59,11 @@ void main() {
       expect(decoder.probes, 1);
       expect(decoder.mock.live, 0);
       // info.json renamed into place, the asset and the store synced.
-      final info =
-          jsonDecode(
-                File(
-                  '${storeDir().path}/${asset.id}/info.json',
-                ).readAsStringSync(),
-              )
-              as Map<String, Object?>;
+      final info = jsonDecode(
+        File(
+          '${storeDir().path}/${asset.id}/info.json',
+        ).readAsStringSync(),
+      ) as Map<String, Object?>;
       expect(info['digest'], asset.digest);
       expect(info['sourceFrames'], 4800);
       expect(

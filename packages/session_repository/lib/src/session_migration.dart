@@ -55,11 +55,10 @@ class SessionMigrationContext {
 
 /// One schema bump: rewrites a decoded `vN` manifest in place into `vN+1`,
 /// except for the `version` key, which the driver advances.
-typedef SessionMigrationStep =
-    void Function(
-      Map<String, dynamic> manifest,
-      SessionMigrationContext context,
-    );
+typedef SessionMigrationStep = void Function(
+  Map<String, dynamic> manifest,
+  SessionMigrationContext context,
+);
 
 /// One step per schema bump, keyed by the version it reads. Each later bump
 /// adds its own entry here; the chain from [oldestConvertibleSessionVersion]

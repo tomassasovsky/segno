@@ -11144,15 +11144,18 @@ final class le_midi_info extends ffi.Struct {
   external int is_default;
 }
 
-typedef le_midi_event_cbFunction =
-    ffi.Void Function(
-      ffi.Uint8 status,
-      ffi.Uint8 data1,
-      ffi.Uint8 data2,
-      ffi.Uint64 ts_us,
-    );
-typedef Dartle_midi_event_cbFunction =
-    void Function(int status, int data1, int data2, int ts_us);
+typedef le_midi_event_cbFunction = ffi.Void Function(
+  ffi.Uint8 status,
+  ffi.Uint8 data1,
+  ffi.Uint8 data2,
+  ffi.Uint64 ts_us,
+);
+typedef Dartle_midi_event_cbFunction = void Function(
+  int status,
+  int data1,
+  int data2,
+  int ts_us,
+);
 
 /// Raw MIDI input callback: one Note On/Off or Control Change message.
 /// `status` carries the message type in its high nibble and the channel in its
