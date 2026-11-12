@@ -20,6 +20,10 @@ on:
       - "pubspec.lock"
       - ".github/workflows/license_check.yaml"
 
+# Restore caches, never save them (#1787): this runs only for master, whose
+# PRs would each save a Flutter SDK copy (1.7 GB) under their own ref.
+cache-mode: read
+
 jobs:
   license_check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/license_check.yml@v2
