@@ -85,8 +85,35 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
+| #1791 | Exported Live sets open in Ableton Live 12: generated from a set Live saved, reference sets as fixtures | in-review | merge-gate | `claude/als-live-open-1791` |
 
 ---
+
+## November 2026 Exported Live sets open in Live (#1791)
+
+- Ableton Live 12.2.7 refused every `project.als` Segno exported: "corrupt
+  and cannot be loaded (Not all list members have Ids)", because automation
+  events carried no `Id`. The XML had been written from public knowledge of
+  the format and never opened in Live.
+- `buildAls` now generates from a set Live saved
+  (`packages/daw_export/lib/src/live_set_template.dart`, generated from
+  `test/corpus/automation.als` by `tool/generate_live_set_template.dart`):
+  its audio track is copied once per channel with fresh pointee ids, and its
+  clip and envelope are the prototypes for every clip and envelope. The
+  corpus (`test/corpus/README.md`) holds six sets saved by Live 12.2.7
+  (empty, clips, automation, tempo, a looping warped Session clip, a VST3
+  effect), and the tests compare the generated XML with them.
+- Fixed with it: clip lengths (unwarped clips' loop markers are seconds,
+  not beats; lengths and rates come from the WAV headers, and a lane loop is
+  as long as its file instead of the whole capture), `FileRef` type 2,
+  looping Session clips (warped in Re-Pitch at the set's tempo), volume as
+  the track gain times lane 0's level, envelopes that start from the arm-time
+  values, no set for a capture with no tracks (Live refuses one), and the set
+  opening in the Arrangement zoomed to the capture with automation lanes
+  shown.
+- Checked by opening exports of console captures in Live (screenshots in the
+  PR). Envelopes are still written only over a dry stem, since the wet render
+  already applies them (#1622).
 
 ## November 2026 Flutter 3.50 and Dart 3.14 (#1777)
 

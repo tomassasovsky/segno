@@ -3,60 +3,38 @@ import 'package:meta/meta.dart';
 /// A DAW project ready to be rendered to an Ableton Live 12 `.als` set
 /// (`buildAls`, `als_builder.dart`).
 ///
-/// This is `daw_export`'s own input model — it is built either directly by a
-/// test fixture or by `DawManifestReader` (`manifest_reader.dart`) from a
-/// finalized performance-recording capture's `performance.json`
-/// (`docs/formats/performance-manifest-format.md`), never by importing
-/// `performance_repository` or `segno_engine` (this package has no
-/// dependency on either, so it can run standalone against just the
-/// documented file formats).
+/// This is `daw_export`'s own input model. A test fixture builds it directly,
+/// or `DawManifestReader` (`manifest_reader.dart`) builds it from a finished
+/// capture's `performance.json`
+/// (`docs/formats/performance-manifest-format.md`). The package depends on
+/// neither `performance_repository` nor `segno_engine`, so it runs against
+/// the documented file formats alone.
 @immutable
 class DawProject {
   /// Creates a [DawProject].
   ///
-  /// [tempoBpm] is normalized at construction: a non-positive value (`<= 0`,
-  /// including the default-free-looper "unset" sentinel a v4 session manifest
-  /// reports — `Session.tempoBpm`, `session_repository`'s "0 = unset") falls
-  /// back to [kFallbackTempoBpm] rather than being stored verbatim, so this
-  /// model can never carry a tempo that would make `als_builder.dart`'s
-  /// beat-time math (`secondsToBeats`) degenerate. Every construction path —
-  /// a direct fixture, or `DawManifestReader.read` — goes through this same
-  /// normalization.
+  /// A non-positive [tempoBpm] (a session manifest's "0 = unset") becomes
+  /// [kFallbackTempoBpm], so the beat arithmetic in `als_builder.dart`
+  /// never divides by or multiplies with zero.
   const new({required this.tracks, double tempoBpm = kFallbackTempoBpm})
     : tempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
 
-  /// One entry per non-empty Segno track or live-input stem. An empty track
-  /// (nothing recorded) is never represented here — the caller building this
-  /// project (a fixture, or `DawManifestReader`) already excludes it, so
-  /// `buildAls` never needs to re-derive "empty."
+  /// One entry per recorded channel. A channel with nothing recorded is left
+  /// out by whoever builds the project.
   final List<DawTrack> tracks;
 
-  /// Project tempo in BPM, applied uniformly to every clip/automation's
-  /// beat-time math in `als_builder.dart` (D-TEMPO: a captured performance
-  /// still renders at one fixed tempo start-to-finish — Segno has no
-  /// mid-performance tempo changes to represent).
-  ///
-  /// This is the session's REAL tempo once the caller has one to supply
-  /// (`DawManifestReader.read`'s `tempoBpm` argument, threaded from the v4
-  /// session manifest's `Session.tempoBpm`) — no longer hardcoded to 120 for
-  /// every export. [kFallbackTempoBpm] (120 BPM, this feature's original
-  /// fixed assumption) remains the compatible fallback for a legacy v3
-  /// session or grid-off (`TempoSource.none`) content, where there is no real
-  /// tempo to export — see the constructor doc.
+  /// The set's tempo in BPM. A capture plays at one tempo from start to
+  /// finish, so the set has no tempo changes.
   final double tempoBpm;
 }
 
-/// The fallback project tempo in BPM: this feature's original fixed-tempo
-/// assumption (D-TEMPO), now used specifically for the "no real tempo known"
-/// case — a legacy v3 session, or v4 grid-off content, both of which report
-/// `Session.tempoBpm == 0` ("unset").
+/// The tempo used when a capture has none: a session without a tempo, or
+/// content recorded with the grid off.
 const double kFallbackTempoBpm = 120;
 
-/// One Ableton audio track: an optional arrangement-view clip (the full
-/// bounced performance, placed at capture t=0), zero or more session-view
-/// clips (one per recordable lane's settled loop content), and zero or more
-/// automation lanes reconstructed from the captured performance's logged
-/// gestures (part 10).
+/// One Live audio track: the channel's full-length stem in the Arrangement,
+/// one Session clip per lane loop, and the automation reconstructed from the
+/// capture's logged gestures.
 @immutable
 class DawTrack {
   /// Creates a [DawTrack].
@@ -67,61 +45,74 @@ class DawTrack {
     this.automationLanes = const [],
   });
 
-  /// The track's display name in Ableton (e.g. `Track 0` or `Input 1`).
+  /// The track's name in Live (for example `Track 0`).
   final String name;
 
-  /// The full-length, capture-t=0 arrangement clip for this track, or `null`
-  /// if this track has no arrangement-worthy content (e.g. a live-input stem
-  /// that was never actually captured to a bounce, only its per-lane loop
-  /// content exists in [sessionClips]).
+  /// The channel's stem in the Arrangement, or `null` when the channel has
+  /// no stem and only its lane loops exist.
   final DawClip? arrangementClip;
 
-  /// One session-view loop clip per recordable lane this track owns.
+  /// One Session clip per lane that exported a loop.
   final List<DawSessionClip> sessionClips;
 
-  /// Automation reconstructed from the captured performance's logged
-  /// gestures — a volume ride becomes a [AutomationTarget.volume] envelope,
-  /// a mute/unmute becomes a [AutomationTarget.activator] envelope (Ableton
-  /// has no native "mute automation"; the mixer's activator on/off parameter
-  /// preserves the gesture instead of baking it into clip splits — D-MUTE).
-  /// At most one lane per [AutomationTarget] — a caller building this by
-  /// hand should not emit two lanes for the same target on the same track.
+  /// At most one lane per [AutomationTarget].
   final List<AutomationLane> automationLanes;
 }
 
-/// Which Ableton mixer parameter an [AutomationLane] targets.
+/// A WAV file a clip plays, as the set references it.
+@immutable
+class DawAudioFile {
+  /// Creates a [DawAudioFile].
+  const new({
+    required this.fileRef,
+    required this.sampleRate,
+    required this.frames,
+  });
+
+  /// The file's path relative to the `.als` file's own directory. Never
+  /// absolute, so moving the capture folder keeps every reference working.
+  final String fileRef;
+
+  /// The file's sample rate in Hz.
+  final int sampleRate;
+
+  /// The file's length in sample frames.
+  final int frames;
+
+  /// The file's length in seconds.
+  double get seconds => frames / sampleRate;
+}
+
+/// Which Live mixer parameter an [AutomationLane] drives.
 enum AutomationTarget {
-  /// The track's mixer volume fader — a continuous 0..1 gain ramp, emitted
-  /// as `FloatEvent`s (D-MUTE's counterpart for the continuous case: a
-  /// volume ride is already a native Ableton automation concept, no
-  /// workaround needed).
+  /// The track's volume, a linear gain: one breakpoint per logged change,
+  /// with Live ramping between them.
   volume,
 
-  /// The track's mixer "Activator" (on/off) — Ableton's nearest equivalent
-  /// to a mute toggle, since Ableton itself has no per-track mute automation
-  /// parameter (D-MUTE). Step-shaped: emitted as `BoolEvent`s, never
-  /// interpolated between 0 and 1.
+  /// The track's activator (Live's track on/off switch), which is how a
+  /// mute or a solo elsewhere shows: 1 is audible, 0 is silent. Each
+  /// breakpoint holds until the next one.
   activator,
 }
 
-/// One automation envelope for a track's [AutomationTarget] parameter: an
-/// ordered, already-thinned (see `automation_thinning.dart`) list of
-/// breakpoints. [AutomationTarget.volume] breakpoints are continuous ramp
-/// points (linear interpolation between them is expected to stay within the
-/// thinning epsilon of the original captured curve);
-/// [AutomationTarget.activator] breakpoints are step edges — each one holds
-/// until the next, never interpolated.
+/// One automation envelope for a track's [AutomationTarget].
 @immutable
 class AutomationLane {
   /// Creates an [AutomationLane].
-  const new({required this.target, required this.breakpoints});
+  const new({
+    required this.target,
+    required this.initialValue,
+    required this.breakpoints,
+  });
 
   /// Which mixer parameter this envelope drives.
   final AutomationTarget target;
 
-  /// Ordered by [AutomationBreakpoint.beat], ascending. Never empty for a
-  /// lane that exists at all — an [AutomationLane] with nothing to say
-  /// simply isn't constructed.
+  /// The parameter's value when the capture starts, before the first
+  /// breakpoint.
+  final double initialValue;
+
+  /// Ordered by [AutomationBreakpoint.beat], ascending. Never empty.
   final List<AutomationBreakpoint> breakpoints;
 }
 
@@ -131,65 +122,38 @@ class AutomationBreakpoint {
   /// Creates an [AutomationBreakpoint].
   const new({required this.beat, required this.value});
 
-  /// Position on the arrangement timeline, in Ableton beat units (see
-  /// `als_builder.dart`'s `secondsToBeats`).
+  /// Position on the Arrangement timeline, in beats.
   final double beat;
 
-  /// The parameter's value at [beat]: `0..1` gain for
-  /// [AutomationTarget.volume], or exactly `0.0`/`1.0` (off/on) for
-  /// [AutomationTarget.activator].
+  /// The parameter's value at [beat]: a linear gain for
+  /// [AutomationTarget.volume], `0` or `1` for [AutomationTarget.activator].
   final double value;
 }
 
-/// One arrangement-view audio clip: placed at [startSeconds] for
-/// [lengthSeconds], referencing [fileRef] (always a path relative to the
-/// `.als` file's own directory — D-ALS, so moving the whole bundle keeps
-/// every reference resolving). Warp is always off (D-TEMPO): a captured
-/// performance is not meant to stretch to the project tempo, since re-warping
-/// would defeat the point of an already sample-accurate export.
+/// An Arrangement clip: [audio] placed at [startSeconds], playing its whole
+/// length unwarped, so it sounds exactly as captured at any set tempo.
 @immutable
 class DawClip {
   /// Creates a [DawClip].
-  const new({
-    required this.fileRef,
-    required this.startSeconds,
-    required this.lengthSeconds,
-  });
+  const new({required this.audio, required this.startSeconds});
 
-  /// Path to the referenced audio file, relative to the `.als` file's own
-  /// directory. Never absolute (D-ALS) — `als_builder.dart`'s own tests
-  /// fail the suite on an absolute path in any fixture output.
-  final String fileRef;
+  /// The file the clip plays.
+  final DawAudioFile audio;
 
-  /// Clip start position on the arrangement timeline, in seconds.
+  /// The clip's start on the Arrangement timeline, in seconds.
   final double startSeconds;
-
-  /// Clip length in seconds.
-  final double lengthSeconds;
 }
 
-/// One session-view loop clip: a single recordable lane's settled loop
-/// content, placed in that lane's own clip slot (index [laneIndex]) so it can
-/// be triggered/looped independently of the arrangement-view bounce. Warp is
-/// always off, same rationale as [DawClip].
+/// A Session clip: one lane's loop, in the clip slot of scene [laneIndex].
 @immutable
 class DawSessionClip {
   /// Creates a [DawSessionClip].
-  const new({
-    required this.laneIndex,
-    required this.fileRef,
-    required this.lengthSeconds,
-  });
+  const new({required this.laneIndex, required this.audio});
 
-  /// The lane this clip slot belongs to (0-based, matching the owning
-  /// track's lane indices).
+  /// The lane the loop belongs to (0-based), which is also the scene its
+  /// clip sits in.
   final int laneIndex;
 
-  /// Path to the referenced audio file, relative to the `.als` file's own
-  /// directory. Never absolute (D-ALS).
-  final String fileRef;
-
-  /// Clip length in seconds (a session clip's own loop length — this is the
-  /// lane's settled content, not the full capture).
-  final double lengthSeconds;
+  /// The loop's file. The clip loops over the whole file.
+  final DawAudioFile audio;
 }

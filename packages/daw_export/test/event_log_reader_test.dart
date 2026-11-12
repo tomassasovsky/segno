@@ -90,8 +90,8 @@ void main() {
       );
     });
 
-    test('extracts lane-0 volume events from both the generic (track-level) '
-        'and explicit-lane commands, ignoring a non-zero explicit lane', () {
+    test("volume is the track gain times lane 0's level, from both the "
+        'generic (track-level) and lane commands, ignoring other lanes', () {
       const codeSetVolume = 7;
       const codeSetLaneVolume = 28;
       _writeLog('${dir.path}/events.log', 48000, [
@@ -107,9 +107,11 @@ void main() {
         48000,
         120,
       );
+      // The renderer applies track gain times lane 0's level.
       expect(result.volume, hasLength(2));
       expect(result.volume[0].value, closeTo(0.5, 1e-6));
-      expect(result.volume[1].value, closeTo(0.7, 1e-6));
+      expect(result.volume[1].value, closeTo(0.5 * 0.7, 1e-6));
+      expect(result.initialVolume, 1);
     });
 
     test('extracts mute events inverted to Ableton activator semantics '
@@ -188,11 +190,9 @@ void main() {
           120,
           initiallyMuted: true,
         );
-        // Silent from arm: the activator starts off at the beginning.
-        expect(result.mute, hasLength(2));
-        expect(result.mute.first.beat, 0);
-        expect(result.mute.first.value, 0);
-        expect(result.mute.last.value, 1.0);
+        // Silent from arm: the activator starts off.
+        expect(result.initialAudible, 0);
+        expect(result.mute.single.value, 1.0);
       });
 
       test('the soloed track itself stays 1', () {
@@ -226,11 +226,9 @@ void main() {
           initiallySoloed: {1},
         );
         // Silenced from arm: off at the start, on when the last solo clears.
-        expect(result.mute, hasLength(2));
-        expect(result.mute.first.beat, 0);
-        expect(result.mute.first.value, 0);
-        expect(result.mute.last.beat, closeTo(300 / 48000 * 2, 1e-9));
-        expect(result.mute.last.value, 1.0);
+        expect(result.initialAudible, 0);
+        expect(result.mute.single.beat, closeTo(300 / 48000 * 2, 1e-9));
+        expect(result.mute.single.value, 1.0);
       });
 
       test('does not emit duplicate breakpoints for redundant gestures', () {
@@ -252,6 +250,31 @@ void main() {
         expect(result.mute.map((b) => b.value).toList(), [0.0, 1.0]);
         expect(result.mute[1].beat, closeTo(400 / 48000 * 2, 1e-9));
       });
+    });
+
+    test('starts from the arm-time gains and multiplies each change into '
+        'them', () {
+      const codeSetVolume = 7;
+      const codeSetLaneVolume = 28;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (100, codeSetLaneVolume, _lanef(0, 0, 0.5)),
+        (200, codeSetVolume, _generic(0, 1.5)),
+      ]);
+      final result = EventLogReader.readChannelAutomation(
+        EventLogReader.readAll(dir.path)!,
+        0,
+        48000,
+        120,
+        initialTrackGain: 0.8,
+        initialLaneVolume: 0.25,
+      );
+      expect(result.initialVolume, closeTo(0.2, 1e-9));
+      expect(result.volume.map((b) => b.value), [
+        closeTo(0.8 * 0.5, 1e-6),
+        closeTo(1.5 * 0.5, 1e-6),
+      ]);
+      expect(result.initialAudible, 1);
+      expect(result.mute, isEmpty);
     });
 
     test('converts frame to beat correctly at a given tempo', () {

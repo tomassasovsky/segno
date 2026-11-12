@@ -1197,9 +1197,19 @@ void main() {
       GZipCodec().decode(File('$dir/project.als').readAsBytesSync()),
     );
 
+    /// The set's tempo: the main track mixer's `Tempo/Manual`, the first
+    /// `Tempo` element in the set that holds a `Manual` value.
+    double tempoOf(String dir) => double.parse(
+      RegExp(r'<Tempo>\s*<LomId Value="0"\s*/>\s*<Manual Value="([^"]+)"')
+          .firstMatch(readAls(dir))!
+          .group(1)!,
+    );
+
     /// A minimal running-engine snapshot reporting [bpm] — what the
     /// repository reads at arm AND at disarm, so a test scripts the tempo
-    /// each of those passes sees by swapping this between them.
+    /// each of those passes sees by swapping this between them. It holds
+    /// [_settledLaneSnapshot]'s one track, since a take with no track gets
+    /// no Live set.
     EngineSnapshot snapshotWithTempo(double bpm) => EngineSnapshot(
       isRunning: true,
       sampleRate: 48000,
@@ -1213,6 +1223,7 @@ void main() {
       latencyState: LatencyState.idle,
       measuredLatencyMs: -1,
       tempoBpm: bpm,
+      tracks: _settledLaneSnapshot.tracks,
     );
 
     test("the capture's own persisted tempo reaches the exported .als "
@@ -1224,7 +1235,8 @@ void main() {
         ..renderStatuses = const [
           PerformanceRenderTrackStatus(channel: 0, succeeded: true),
         ]
-        ..nextSnapshot = snapshotWithTempo(96);
+        ..nextSnapshot = snapshotWithTempo(96)
+        ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3]);
       final cubit = build();
       addTearDown(cubit.close);
       final dir = await armWithLog(performance);
@@ -1233,7 +1245,7 @@ void main() {
 
       await cubit.toggleArm();
       await waitForCompleted(cubit);
-      expect(readAls(dir), contains('<Manual Value="96.0"/>'));
+      expect(tempoOf(dir), 96);
 
       // Written again long after (Library > Audio's DAW project):
       // whatever the live transport reads now is irrelevant — the
@@ -1241,7 +1253,7 @@ void main() {
       engine.nextSnapshot = snapshotWithTempo(150);
       await writeDawProject(dir);
 
-      expect(readAls(dir), contains('<Manual Value="96.0"/>'));
+      expect(tempoOf(dir), 96);
     });
 
     test(
@@ -1253,7 +1265,8 @@ void main() {
           ..renderStatuses = const [
             PerformanceRenderTrackStatus(channel: 0, succeeded: true),
           ]
-          ..nextSnapshot = snapshotWithTempo(96);
+          ..nextSnapshot = snapshotWithTempo(96)
+          ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3]);
         final cubit = build();
         addTearDown(cubit.close);
         final dir = await armWithLog(performance);
@@ -1267,17 +1280,21 @@ void main() {
         await cubit.toggleArm();
         await waitForCompleted(cubit);
 
-        expect(readAls(dir), contains('<Manual Value="132.0"/>'));
+        expect(tempoOf(dir), 132);
       },
     );
 
     test('a capture with no tempo set (the default snapshot, 0-as-unset) still '
         "exports — at daw_export's own fixed 120 BPM fallback, the same "
         'outcome a legacy pre-#281 bundle resolves to', () async {
-      engine.renderStatuses = const [
-        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-      ];
-      final cubit = build(); // EngineSnapshot.initial(): tempoBpm 0
+      engine
+        ..renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ]
+        // 0 is "unset".
+        ..nextSnapshot = snapshotWithTempo(0)
+        ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3]);
+      final cubit = build();
       addTearDown(cubit.close);
       final dir = await armWithLog(performance);
       await pumpEventQueue();
@@ -1286,7 +1303,7 @@ void main() {
       await cubit.toggleArm();
       await waitForCompleted(cubit);
 
-      expect(readAls(dir), contains('<Manual Value="120.0"/>'));
+      expect(tempoOf(dir), 120);
     });
   });
 

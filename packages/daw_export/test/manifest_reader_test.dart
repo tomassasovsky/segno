@@ -35,6 +35,29 @@ void _writeLog(
   File(path).writeAsBytesSync(out.toBytes());
 }
 
+/// A mono 32-bit float WAV of [frames] silent frames at [sampleRate], as
+/// `engine_wav.c` writes stems and loops.
+Uint8List _wav(int frames, {int sampleRate = 48000}) {
+  final header = ByteData(44)
+    ..setUint32(0, 0x46464952, Endian.little) // RIFF
+    ..setUint32(4, 36 + frames * 4, Endian.little)
+    ..setUint32(8, 0x45564157, Endian.little) // WAVE
+    ..setUint32(12, 0x20746d66, Endian.little) // fmt
+    ..setUint32(16, 16, Endian.little)
+    ..setUint16(20, 3, Endian.little)
+    ..setUint16(22, 1, Endian.little)
+    ..setUint32(24, sampleRate, Endian.little)
+    ..setUint32(28, sampleRate * 4, Endian.little)
+    ..setUint16(32, 4, Endian.little)
+    ..setUint16(34, 32, Endian.little)
+    ..setUint32(36, 0x61746164, Endian.little) // data
+    ..setUint32(40, frames * 4, Endian.little);
+  return (BytesBuilder()
+        ..add(header.buffer.asUint8List())
+        ..add(Uint8List(frames * 4)))
+      .toBytes();
+}
+
 List<int> _generic(int argI, double argF) {
   final b = ByteData(16)
     ..setInt32(0, argI, Endian.little)
@@ -69,8 +92,8 @@ void main() {
       () {
         Directory('${dir.path}/stems/wet').createSync(recursive: true);
         Directory('${dir.path}/stems/dry').createSync(recursive: true);
-        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
-        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync(_wav(48000));
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
             'sample_rate': 48000,
@@ -94,16 +117,16 @@ void main() {
         expect(project, isNotNull);
         expect(project!.tracks, hasLength(1));
         expect(
-          project.tracks.single.arrangementClip!.fileRef,
+          project.tracks.single.arrangementClip!.audio.fileRef,
           'stems/wet/track0.wav',
         );
-        expect(project.tracks.single.arrangementClip!.lengthSeconds, 1.0);
+        expect(project.tracks.single.arrangementClip!.audio.seconds, 1.0);
       },
     );
 
     test('falls back to a dry stem when no wet stem exists', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
-      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -120,7 +143,7 @@ void main() {
 
       final project = DawManifestReader.read(dir.path);
       expect(
-        project!.tracks.single.arrangementClip!.fileRef,
+        project!.tracks.single.arrangementClip!.audio.fileRef,
         'stems/dry/track0.wav',
       );
     });
@@ -128,8 +151,8 @@ void main() {
     test('includes one session clip per lane that has a loop export, and no '
         'arrangement clip when no channel-level stem exists', () {
       Directory('${dir.path}/loops').createSync(recursive: true);
-      File('${dir.path}/loops/track0-lane0.wav').writeAsBytesSync([0]);
-      File('${dir.path}/loops/track0-lane1.wav').writeAsBytesSync([0]);
+      File('${dir.path}/loops/track0-lane0.wav').writeAsBytesSync(_wav(48000));
+      File('${dir.path}/loops/track0-lane1.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -166,19 +189,127 @@ void main() {
       // arrangement clip — asserted explicitly rather than left to
       // whatever `sessionClips` happens to check.
       expect(track.arrangementClip, isNull);
-      // Pins the documented placeholder: a session clip's length is the
-      // full capture length until part 11 threads the lane's own settled
-      // length through (see the comment at the call site in
-      // manifest_reader.dart) — a future change to this value should be a
-      // deliberate, reviewed edit to this test, not a silent side effect.
-      expect(track.sessionClips.first.lengthSeconds, 1.0);
+      // A loop is as long as its own file.
+      expect(track.sessionClips.first.audio.seconds, 1.0);
+    });
+
+    group('clip lengths', () {
+      void manifest(List<Map<String, dynamic>> lanes) =>
+          File('${dir.path}/performance.json').writeAsStringSync(
+            jsonEncode({
+              'sample_rate': 48000,
+              'capture_frames': 48000 * 4,
+              'armSnapshot': {
+                'tracks': [
+                  {'channel': 0, 'lanes': lanes},
+                ],
+              },
+              'disarmSnapshot': {'tracks': <dynamic>[]},
+              'layers': <dynamic>[],
+            }),
+          );
+
+      Map<String, dynamic> lane(int index, String ref, [int? lenFrames]) => {
+        'lane': index,
+        'deferred': false,
+        'pcmRef': ref,
+        'lenFrames': ?lenFrames,
+      };
+
+      setUp(() {
+        Directory('${dir.path}/loops').createSync();
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+      });
+
+      test('a stem and a loop take their rate and length from their own '
+          'WAV headers', () {
+        File('${dir.path}/stems/wet/track0.wav')
+            .writeAsBytesSync(_wav(96000 * 3, sampleRate: 96000));
+        File('${dir.path}/loops/a.wav')
+            .writeAsBytesSync(_wav(96000, sampleRate: 96000));
+        manifest([lane(0, 'loops/a.wav', 12345)]);
+
+        final track = DawManifestReader.read(dir.path)!.tracks.single;
+        final stem = track.arrangementClip!.audio;
+        expect((stem.sampleRate, stem.frames), (96000, 96000 * 3));
+        expect(track.arrangementClip!.startSeconds, 0);
+        final loop = track.sessionClips.single.audio;
+        expect((loop.sampleRate, loop.frames), (96000, 96000));
+      });
+
+      test('a file whose header does not read falls back to the manifest: '
+          "the capture's length for a stem, the lane's for a loop", () {
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([1, 2]);
+        File('${dir.path}/loops/a.wav').writeAsBytesSync([1, 2]);
+        manifest([lane(0, 'loops/a.wav', 24000)]);
+
+        final track = DawManifestReader.read(dir.path)!.tracks.single;
+        expect(track.arrangementClip!.audio.frames, 48000 * 4);
+        expect(track.arrangementClip!.audio.sampleRate, 48000);
+        expect(track.sessionClips.single.audio.frames, 24000);
+      });
+
+      test('a loop that does not read and has no lane length is left out', () {
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync(_wav(10));
+        File('${dir.path}/loops/a.wav').writeAsBytesSync([1, 2]);
+        manifest([lane(0, 'loops/a.wav')]);
+
+        final track = DawManifestReader.read(dir.path)!.tracks.single;
+        expect(track.sessionClips, isEmpty);
+        expect(track.arrangementClip, isNotNull);
+      });
+    });
+
+    test("a dry clip's volume lane starts from the arm-time track gain "
+        "times lane 0's level, and lane 0's mute silences it from the "
+        'start', () {
+      Directory('${dir.path}/stems/dry').createSync(recursive: true);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'volume': 0.5,
+                'lanes': [
+                  {'lane': 0, 'volume': 0.8, 'muted': true, 'deferred': false},
+                  {'lane': 1, 'volume': 0.1},
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+      const codeSetVolume = 7;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (24000, codeSetVolume, _generic(0, 1)),
+      ]);
+
+      final lanes = DawManifestReader.read(dir.path)!
+          .tracks
+          .single
+          .automationLanes;
+      final volume = lanes.firstWhere(
+        (l) => l.target == AutomationTarget.volume,
+      );
+      expect(volume.initialValue, closeTo(0.4, 1e-9));
+      expect(volume.breakpoints.single.value, closeTo(0.8, 1e-6));
+      final activator = lanes.firstWhere(
+        (l) => l.target == AutomationTarget.activator,
+      );
+      expect(activator.initialValue, 0);
     });
 
     test('reads a lane pcmRef verbatim rather than reconstructing a '
         'conventional filename', () {
       Directory('${dir.path}/captured').createSync(recursive: true);
       File('${dir.path}/captured/unconventional-name.wav')
-          .writeAsBytesSync([0]);
+          .writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -204,7 +335,7 @@ void main() {
 
       final project = DawManifestReader.read(dir.path);
       expect(
-        project!.tracks.single.sessionClips.single.fileRef,
+        project!.tracks.single.sessionClips.single.audio.fileRef,
         'captured/unconventional-name.wav',
       );
     });
@@ -218,7 +349,7 @@ void main() {
           'track0-lane0-heard',
           'track1-lane0',
         ]) {
-          File('${dir.path}/loops/$name.wav').writeAsBytesSync([0]);
+          File('${dir.path}/loops/$name.wav').writeAsBytesSync(_wav(48000));
         }
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
@@ -256,7 +387,7 @@ void main() {
 
         final project = DawManifestReader.read(dir.path)!;
         expect(
-          [for (final t in project.tracks) t.sessionClips.single.fileRef],
+          [for (final t in project.tracks) t.sessionClips.single.audio.fileRef],
           ['loops/track0-lane0-heard.wav', 'loops/track1-lane0.wav'],
         );
       },
@@ -268,10 +399,11 @@ void main() {
     ]) {
       test('$name keeps its clean loop as its session clip (#1713)', () {
         Directory('${dir.path}/loops').createSync(recursive: true);
-        File('${dir.path}/loops/track0-lane0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/loops/track0-lane0.wav')
+            .writeAsBytesSync(_wav(48000));
         if (heardOnDisk) {
           File('${dir.path}/loops/track0-lane0-heard.wav')
-              .writeAsBytesSync([0]);
+              .writeAsBytesSync(_wav(48000));
         }
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
@@ -304,6 +436,7 @@ void main() {
               .single
               .sessionClips
               .single
+              .audio
               .fileRef,
           'loops/track0-lane0.wav',
         );
@@ -314,8 +447,8 @@ void main() {
       'prefers a disarm-time pcmRef over an arm-time one for the same lane',
       () {
         Directory('${dir.path}/loops').createSync(recursive: true);
-        File('${dir.path}/loops/stale.wav').writeAsBytesSync([0]);
-        File('${dir.path}/loops/fresh.wav').writeAsBytesSync([0]);
+        File('${dir.path}/loops/stale.wav').writeAsBytesSync(_wav(48000));
+        File('${dir.path}/loops/fresh.wav').writeAsBytesSync(_wav(48000));
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
             'sample_rate': 48000,
@@ -346,7 +479,7 @@ void main() {
 
         final project = DawManifestReader.read(dir.path);
         expect(
-          project!.tracks.single.sessionClips.single.fileRef,
+          project!.tracks.single.sessionClips.single.audio.fileRef,
           'loops/fresh.wav',
         );
       },
@@ -379,7 +512,7 @@ void main() {
     test('builds a volume automation lane from events.log for a track that '
         'also has an arrangement clip', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
-      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -420,7 +553,7 @@ void main() {
     test('builds an activator (mute) automation lane from events.log, '
         'independent of whether a volume lane exists', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
-      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -463,7 +596,8 @@ void main() {
         'track soloed at arm silences the rest until that solo clears', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
       for (final channel in [0, 1, 2]) {
-        File('${dir.path}/stems/dry/track$channel.wav').writeAsBytesSync([0]);
+        File('${dir.path}/stems/dry/track$channel.wav')
+            .writeAsBytesSync(_wav(48000));
       }
       Map<String, dynamic> track(
         int channel, {
@@ -505,14 +639,13 @@ void main() {
       // audible once it clears.
       final lane0 = tracks[0].automationLanes.single;
       expect(lane0.target, AutomationTarget.activator);
-      expect(lane0.breakpoints, hasLength(2));
-      expect(lane0.breakpoints.first.beat, 0);
-      expect(lane0.breakpoints.first.value, 0);
-      expect(lane0.breakpoints.last.beat, 2.0);
-      expect(lane0.breakpoints.last.value, 1.0);
+      expect(lane0.initialValue, 0);
+      expect(lane0.breakpoints.single.beat, 2.0);
+      expect(lane0.breakpoints.single.value, 1.0);
       // Track 1: muted at arm, off from the start; the solo clear changes
-      // nothing.
+      // nothing, so its one breakpoint holds it off.
       final lane1 = tracks[1].automationLanes.single;
+      expect(lane1.initialValue, 0);
       expect(lane1.breakpoints.single.beat, 0);
       expect(lane1.breakpoints.single.value, 0);
       // Track 2: the soloed track itself was audible throughout.
@@ -522,7 +655,7 @@ void main() {
     test('a wet arrangement clip gets no volume or activator automation: the '
         'wet render already applies those gestures', () {
       Directory('${dir.path}/stems/wet').createSync(recursive: true);
-      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -552,7 +685,7 @@ void main() {
       ]);
 
       final track = DawManifestReader.read(dir.path)!.tracks.single;
-      expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+      expect(track.arrangementClip!.audio.fileRef, 'stems/wet/track0.wav');
       expect(track.automationLanes, isEmpty);
     });
 
@@ -560,8 +693,8 @@ void main() {
         'effects reach Live only as audio', () {
       Directory('${dir.path}/stems/wet').createSync(recursive: true);
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
-      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
-      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync(_wav(48000));
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -593,13 +726,13 @@ void main() {
 
       final project = DawManifestReader.read(dir.path);
       final track = project!.tracks.single;
-      expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+      expect(track.arrangementClip!.audio.fileRef, 'stems/wet/track0.wav');
     });
 
     test('threads a real, explicit tempoBpm through to the returned DawProject '
         '(and into beat-unit automation conversion)', () {
       Directory('${dir.path}/stems/dry').createSync(recursive: true);
-      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,
@@ -718,7 +851,7 @@ void main() {
 
     test('a track with no logged gestures gets no automation lanes', () {
       Directory('${dir.path}/stems/wet').createSync(recursive: true);
-      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync(_wav(48000));
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
           'sample_rate': 48000,

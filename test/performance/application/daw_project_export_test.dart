@@ -59,6 +59,15 @@ void main() {
     expect(stem.lastModifiedSync(), stamp);
   });
 
+  test('writes no project.als for a take with no tracks, since Live cannot '
+      'open one', () async {
+    writeManifest();
+
+    expect(await writeDawProject(dir.path), isEmpty);
+    expect(File('${dir.path}/project.als').existsSync(), isFalse);
+    expect(File('${dir.path}/fx-chains.txt').existsSync(), isTrue);
+  });
+
   test('reads the manifest afresh on every call', () async {
     writeManifest();
     expect(await writeDawProject(dir.path), isEmpty);
