@@ -151,6 +151,11 @@ enum LibraryAudioError {
   /// The drive is mounted read-only.
   readOnly,
 
+  /// A file of the export is larger than the drive's filesystem holds: a
+  /// FAT32 drive holds no file of 4 GiB or more (#1794). Nothing was
+  /// written.
+  tooLargeForDrive,
+
   /// The export failed for another reason; the drive was left as it was.
   exportFailed,
 

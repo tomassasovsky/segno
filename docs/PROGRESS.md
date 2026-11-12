@@ -116,6 +116,34 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   PR). Envelopes are still written only over a dry stem, since the wet render
   already applies them (#1622).
 
+## November 2026 Exports to a FAT32 stick (#1794)
+
+- FAT32 holds no file of 4 GiB or more, and most sticks come formatted
+  with it. The longest take (3 h, #1767) was held to what a WAV's RIFF size
+  allows, which is 8 bytes past FAT32's limit with the header: a stereo
+  master at 88.2 or 96 kHz that ran to its cap rendered at 4 GiB + 4 bytes.
+  `le_wav_max_frames` now counts the 44-byte header against FAT32's
+  largest file (`LE_WAV_MAX_FILE_BYTES`), one frame less; the drain takes
+  the longest take from `le_perf_longest_take_frames`. 3 h at 48 kHz and
+  93 min for a stereo master at 96 kHz are unchanged. The render still
+  writes a master up to what `le_wav_seal` accepts
+  (`le_wav_sealable_frames`), so re-rendering a take an earlier build
+  stopped at the RIFF limit keeps its master.
+  `test_perf_longest_take_fits_one_fat32_file` renders a take with a mono
+  and a stereo master, reads every stem's header, and fails if any could
+  pass 4 GiB less one byte at the longest take, for any cap and rate.
+- Before an export or a backup touches the drive, `AudioExporter` checks
+  every file against the largest file the drive's filesystem holds
+  (`StorageRepository.checkFileSizes`, `RemovableVolume.maxFileBytes`:
+  4 GiB less one byte on `vfat`, no limit on exFAT, NTFS or ext4) and
+  refuses with `StorageFileTooLarge`; `copyFile` checks its source the same
+  way. The Library's card line, and the backup's interrupted dialog, say
+  "FAT32 drives can't hold files over 4 GB. Use an exFAT drive." A take
+  this build records renders no file that reaches the limit (recording
+  parts are 2 GB, session files are loops of 10 minutes at most); the check
+  covers a master rendered at 4 GiB + 4 bytes for a take an earlier build
+  stopped at the RIFF limit, and any later writer.
+
 ## November 2026 The Library writes to USB through the storage repository (#1790)
 
 - Export to USB, Back up to USB and the Library's USB location never saw a

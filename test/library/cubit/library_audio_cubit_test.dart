@@ -683,6 +683,29 @@ void main() {
       expect(File('${capture.path}/master-003.wav').readAsBytesSync(), [3, 3]);
     });
 
+    test('a file of 4 GiB for a FAT32 drive is refused before anything is '
+        'written, and says so (#1794)', () async {
+      await drive.close();
+      drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+      final capture = take('Evening loop');
+      // Sparse: 4 GiB long, nothing written.
+      final stem = File('${capture.path}/stems/wet/master.wav')
+        ..createSync(recursive: true);
+      stem.openSync(mode: FileMode.write)
+        ..truncateSync(1 << 32)
+        ..closeSync();
+      when(() => performance.dawPackageFiles(any()))
+          .thenAnswer((_) => ['master-001.wav', 'stems/wet/master.wav']);
+      final cubit = await withRecording(capture);
+
+      await cubit.export(LibraryAudioExportKind.dawPackage, purpose: 'p');
+
+      expect(drive.copies, isEmpty);
+      expect(drive.files, isEmpty);
+      expect(cubit.state.error, LibraryAudioError.tooLargeForDrive);
+      expect(cubit.state.export, isNull);
+    });
+
     test(
       'a drive lost part-way leaves no package and asks for the drive',
       () async {

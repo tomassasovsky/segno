@@ -2477,6 +2477,14 @@ static void le_pd_close_all(le_perf_drain* d) {
   }
 }
 
+uint64_t le_perf_longest_take_frames(int32_t max_seconds, uint64_t rate,
+                                     int32_t master_channels) {
+  if (max_seconds <= 0) return LE_PD_NO_LIMIT;
+  const uint64_t frames = (uint64_t)max_seconds * rate;
+  const uint64_t fits = le_wav_max_frames(master_channels);
+  return frames < fits ? frames : fits;
+}
+
 le_perf_drain* le_perf_drain_start(le_engine* engine,
                                    const le_perf_target* target,
                                    int32_t ring_seconds) {
@@ -2518,9 +2526,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
   d->stop_reason = LE_PERF_STOP_NONE;
   d->stop_frame = LE_PD_NO_LIMIT;
   d->reserve_bytes = target->reserve_bytes;
-  /* #1767: the idle stop and the longest take, in frames. The longest is
-   * also never past what the rendered master stem can hold in a 32-bit WAV
-   * (a stereo master at 48 kHz: 3 h 6 min). */
+  /* #1767: the idle stop and the longest take, in frames. */
   /* le_perf_arm's own fallback for an engine with no rate yet. */
   const uint64_t rate =
       engine->sample_rate > 0 ? (uint64_t)engine->sample_rate : 48000;
@@ -2529,13 +2535,8 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
                        : 0;
   const int32_t master_channels =
       engine->perf.master_channels > 0 ? engine->perf.master_channels : 1;
-  d->max_frames = LE_PD_NO_LIMIT;
-  if (target->max_seconds > 0) {
-    d->max_frames = (uint64_t)target->max_seconds * rate;
-    if (le_wav_max_frames(master_channels) < d->max_frames) {
-      d->max_frames = le_wav_max_frames(master_channels);
-    }
-  }
+  d->max_frames =
+      le_perf_longest_take_frames(target->max_seconds, rate, master_channels);
   d->last_activity = 0;
   d->late_first = LE_PD_NO_LIMIT;
   d->late_last = 0;

@@ -325,6 +325,30 @@ void main() {
       expect(drive.copies, isEmpty);
     });
 
+    test('a file of 4 GiB for a FAT32 drive is refused before any copy, and '
+        'says so (#1794)', () async {
+      await drive.close();
+      drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+      // Sparse: 4 GiB long, nothing written.
+      File('$bundle/${files.last}').openSync(mode: FileMode.write)
+        ..truncateSync(1 << 32)
+        ..closeSync();
+      final cubit = await selected();
+
+      await backUp(cubit);
+
+      expect(
+        cubit.state.backup,
+        isA<LibraryBackupInterrupted>().having(
+          (b) => b.problem,
+          'problem',
+          LibraryBackupProblem.tooLargeForDrive,
+        ),
+      );
+      expect(drive.copies, isEmpty);
+      expect(drive.files, isEmpty);
+    });
+
     test('the guard table refuses it during a shutdown, naming it', () async {
       final restart = guards.enter(
         GuardKind.restart,

@@ -2701,6 +2701,7 @@
     "libraryAudioTryAgain": "Reintentar",
     "libraryAudioNotEnoughSpace": "No hay espacio suficiente. Libera espacio e inténtalo de nuevo.",
     "libraryAudioReadOnly": "Esta unidad USB es de solo lectura. No se escribió nada.",
+    "libraryAudioTooLargeForDrive": "FAT32 no admite archivos de más de 4 GB. Usa una unidad exFAT.",
     "libraryAudioExportFailed": "No se pudo exportar. No quedó nada en la unidad.",
     "libraryAudioDawProjectFailed": "No se pudo escribir el proyecto DAW.",
     "libraryAudioDeleteBusy": "No mientras se graba o procesa una actuación.",

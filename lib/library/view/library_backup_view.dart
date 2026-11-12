@@ -122,6 +122,8 @@ Future<void> showLibraryBackupQuestion(
             LibraryBackupProblem.driveLost => l10n.libraryBackupDriveLost,
             LibraryBackupProblem.full => l10n.libraryBackupFull,
             LibraryBackupProblem.readOnly => l10n.libraryBackupReadOnly,
+            LibraryBackupProblem.tooLargeForDrive =>
+              l10n.libraryAudioTooLargeForDrive,
             LibraryBackupProblem.busy => l10n.operationBusy(
               blockedBy?.name ?? 'other',
             ),

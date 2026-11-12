@@ -46,8 +46,10 @@ static int64_t render_memory_now(void) {
 
 /* A capture of `frames` frames at 48 kHz: track 0 plays a clean take of 0.5
  * with a heard image of (0.3, 0.1), track 1 a clean take of 0.25, both a
- * 0.1 s loop from the arm, and an events.log holding only the arm fact. */
-static const char* render_memory_fixture(const char* name, uint64_t frames) {
+ * 0.1 s loop from the arm, and an events.log holding only the arm fact. The
+ * master is the output pair's sides in [capture_mask] (1: mono, 3: stereo). */
+static const char* render_fixture_masked(const char* name, uint64_t frames,
+                                         int capture_mask) {
   test_render_mkdir(perf_test_dir());
   const char* dir = render_test_dir(name);
   char loops[700];
@@ -70,14 +72,14 @@ static const char* render_memory_fixture(const char* name, uint64_t frames) {
   char manifest[2048];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
-           "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": 1, "
+           "\"armSnapshot\": {\"followOutput\": false, \"captureMask\": %d, "
            "\"tracks\": [{\"channel\": 0, \"lanes\": [{\"lane\": 0, "
            "\"deferred\": false, \"pcmRef\": \"loops/clean0.wav\", "
            "\"heardPcmRef\": \"loops/heard0.wav\"}]}, "
            "{\"channel\": 1, \"lanes\": [{\"lane\": 0, \"deferred\": false, "
            "\"pcmRef\": \"loops/clean1.wav\"}]}]}, "
            "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
-           RM_SR, (unsigned long long)frames);
+           RM_SR, (unsigned long long)frames, capture_mask);
   test_write_manifest(dir, manifest);
   snprintf(path, sizeof(path), "%s/events.log", dir);
   FILE* lf = fopen(path, "wb");
@@ -92,6 +94,11 @@ static const char* render_memory_fixture(const char* name, uint64_t frames) {
     fclose(lf);
   }
   return dir;
+}
+
+/* The fixture above with a mono master. */
+static const char* render_memory_fixture(const char* name, uint64_t frames) {
+  return render_fixture_masked(name, frames, 1);
 }
 
 /* The stem at `rel` under [dir]: its frame count from the header (-1 when

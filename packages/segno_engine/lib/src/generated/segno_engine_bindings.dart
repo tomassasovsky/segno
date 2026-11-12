@@ -6076,7 +6076,7 @@ final class le_perf_target extends ffi.Struct {
 
   /// The longest the take runs before it stops on its own
   /// (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and then never past the frames
-  /// the rendered master stem can hold in a 32-bit WAV. 0 sets no limit.
+  /// the rendered master stem can hold in one file on FAT32. 0 sets no limit.
   @ffi.Int32()
   external int max_seconds;
 }

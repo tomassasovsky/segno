@@ -100,6 +100,19 @@ class RemovableVolume extends Equatable {
   /// mount's first stderr line for a failed or read-only-fallback mount.
   final String? failureReason;
 
+  /// FAT32's largest file: 4 GiB less one byte (#1794).
+  static const int fat32MaxFileBytes = 0xFFFFFFFF;
+
+  /// The largest file a filesystem of [fsType] holds, or null when it has
+  /// no limit a file the console writes comes near. Of the filesystems the
+  /// helper mounts, only FAT (`vfat`) has one: exFAT, NTFS and ext4 hold
+  /// files of terabytes.
+  static int? maxFileBytesOf(String fsType) =>
+      fsType == 'vfat' ? fat32MaxFileBytes : null;
+
+  /// The largest file its filesystem holds ([maxFileBytesOf]).
+  int? get maxFileBytes => maxFileBytesOf(fsType);
+
   /// Whether its files can be read right now: mounted, read-write or
   /// read-only.
   bool get readable =>

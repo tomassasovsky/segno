@@ -443,6 +443,7 @@ class LibraryAudioCubit extends Cubit<LibraryAudioState> {
             error: switch (e) {
               StorageFull() => LibraryAudioError.notEnoughSpace,
               StorageReadOnly() => LibraryAudioError.readOnly,
+              StorageFileTooLarge() => LibraryAudioError.tooLargeForDrive,
               StorageBusy() || GuardRefused() => LibraryAudioError.exportBusy,
               _ => LibraryAudioError.exportFailed,
             },

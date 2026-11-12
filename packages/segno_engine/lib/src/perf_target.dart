@@ -108,6 +108,7 @@ class PerfTarget {
 
   /// The longest the take runs, in seconds, before it stops on its own
   /// (`PerfStopReason.lengthLimit`); never past what the rendered master
-  /// stem can hold. 0 sets no limit beyond that one.
+  /// stem can hold in one file on FAT32 (4 GiB less one byte, header
+  /// included). 0 sets no limit.
   final int maxSeconds;
 }

@@ -39623,6 +39623,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_heard_perf.h"
 #include "test_engine_perf_autostop.h"
 #include "test_engine_perf_render_memory.h"
+#include "test_engine_perf_file_limit.h"
 #include "test_engine_heard_tail.h"
 #include "test_engine_heard_post.h"
 #include "test_engine_trk_jobs.h"
@@ -40368,6 +40369,7 @@ int main(void) {
   SHARD(test_perf_render_progress_and_cancel);
   SHARD(test_perf_render_memory_is_bounded);
   SHARD(test_perf_render_cancel_leaves_no_partial_stem);
+  SHARD(test_perf_longest_take_fits_one_fat32_file);
   SHARD(test_perf_render_runs_through_reconfigure);
   SHARD(test_perf_render_rerender_leaves_only_its_own_stems);
   SHARD(test_perf_render_concurrent_with_live_engine);

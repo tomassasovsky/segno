@@ -253,6 +253,21 @@ void main() {
     await shot('full');
   }, skip: !rendersScreenshots);
 
+  testWidgets('20/11 a file a FAT32 drive cannot hold (#1794)', (tester) async {
+    await drive.close();
+    drive = FakeDrive('${temp.path}/usb', fsType: 'vfat');
+    await pump(tester);
+    // Sparse: 4 GiB long, nothing written.
+    File('${temp.path}/exports/Evening loop - Take 1/master-001.wav')
+        .openSync(mode: FileMode.write)
+      ..truncateSync(1 << 32)
+      ..closeSync();
+    await exportFirst(tester);
+    await tester.tap(find.byKey(const Key('library_export_choose_recording')));
+    await tester.pumpAndSettle();
+    await shot('too_large');
+  }, skip: !rendersScreenshots);
+
   testWidgets('20/12 exported', (tester) async {
     await pump(tester);
     await exportFirst(tester);

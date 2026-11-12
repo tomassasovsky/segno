@@ -82,9 +82,34 @@ void main() {
     expect(volume(RemovableVolumeStatus.mounted, at: null).readable, isFalse);
   });
 
+  test('only FAT32 limits the size of one file (#1794)', () {
+    RemovableVolume volume(String fsType) => RemovableVolume(
+      generation: 1,
+      fingerprint: 'f',
+      label: 'L',
+      fsType: fsType,
+      sizeBytes: 1,
+      status: RemovableVolumeStatus.mounted,
+    );
+    expect(volume('vfat').maxFileBytes, 0xFFFFFFFF);
+    for (final fsType in ['exfat', 'ntfs', 'ext4']) {
+      expect(volume(fsType).maxFileBytes, isNull, reason: fsType);
+    }
+  });
+
   test('failures and conflicts say what happened, in the words the Library '
       'prints', () {
     expect('${const StorageFailure.full()}', 'the destination is full');
+    const tooLarge = StorageFailure.fileTooLarge(
+      fsType: 'vfat',
+      maxFileBytes: 4294967295,
+      fileBytes: 4294967296,
+    );
+    expect(
+      '$tooLarge',
+      'a file of 4294967296 bytes is larger than vfat holds '
+          '(4294967295 bytes)',
+    );
     expect(
       '${const StorageFailure.readOnly()}',
       'the destination is read-only',
