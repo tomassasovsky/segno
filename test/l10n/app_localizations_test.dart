@@ -54,7 +54,7 @@ void main() {
     ) async {
       // material_ui's widgets read material_ui's MaterialLocalizations. The
       // flutter_localizations delegates gen-l10n lists supply the SDK's type
-      // instead, under which these would fall back to English.
+      // instead, and under es MaterialLocalizations.of then finds none.
       late MaterialLocalizations material;
       await tester.pumpWidget(
         MaterialApp(
@@ -80,12 +80,17 @@ void main() {
           for (final file in Directory(dir).listSync(recursive: true))
             if (file is File &&
                 file.path.endsWith('.dart') &&
-                !file.path.startsWith('lib/l10n/') &&
-                file.readAsStringSync().contains(
-                  // Split so this file does not match itself.
-                  'AppLocalizations.'
-                  'localizationsDelegates',
-                ))
+                !file.path.startsWith('lib/l10n/gen/') &&
+                file
+                    .readAsLinesSync()
+                    .where((line) => !line.trimLeft().startsWith('//'))
+                    .any(
+                      // Split so this file does not match itself.
+                      (line) => line.contains(
+                        'AppLocalizations.'
+                        'localizationsDelegates',
+                      ),
+                    ))
               file.path,
       ];
       expect(offenders, isEmpty, reason: 'use appLocalizationsDelegates');

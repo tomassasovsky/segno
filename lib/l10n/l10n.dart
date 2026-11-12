@@ -10,7 +10,8 @@ export 'package:segno/l10n/localized.dart';
 /// Use this, not `AppLocalizations.localizationsDelegates`: gen-l10n still
 /// lists flutter_localizations' delegates there, which supply the SDK's
 /// deprecated `MaterialLocalizations` type rather than the one material_ui's
-/// widgets look up, so those widgets would fall back to English.
+/// widgets look up. Under any locale but `en`, `MaterialLocalizations.of`
+/// then finds none: an assertion in debug, a null error in release.
 const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
   AppLocalizations.delegate,
   ...GlobalMaterialLocalizations.delegates,

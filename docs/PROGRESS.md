@@ -93,9 +93,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - CI, the app and every package build on Flutter 3.50.0 (Dart 3.14.0):
   `flutter_version: "3.50.x"`, `sdk: ^3.14.0`, `flutter: ^3.50.0`. Locally
   the 3.50 SDK is `/Users/Tomas/development/flutter-3.50` until the shared
-  `/Users/Tomas/development/flutter` moves to it (How to build / test). The appliance's engine
-  (`flutter-engine-version.inc`) moves in part 2; the bundle's AOT snapshot
-  loads only on its own engine, so the two parts land together.
+  `/Users/Tomas/development/flutter` moves to it (How to build / test). The
+  appliance's engine (`flutter-engine-version.inc`) moves in part 2; the
+  bundle's AOT snapshot loads only on its own engine, so the two parts land
+  together.
 - Material comes from `package:material_ui` (the SDK's
   `package:flutter/material.dart` is deprecated in 3.50). Import
   `package:material_ui/material_ui.dart`, never the SDK library. Use
@@ -2257,8 +2258,8 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   env (exit 69, machine-output parser vs Flutter 3.44). Use the Flutter 3.50
   SDK: `/Users/Tomas/development/flutter-3.50/bin/flutter test`
   (`/Users/Tomas/development/flutter` is still 3.47, which cannot resolve
-  `sdk: ^3.14.0`; once it moves to 3.50 this path goes back). Codex does not install
-  the former Claude hook that blocked bare CLI test commands.
+  `sdk: ^3.14.0`; once it moves to 3.50 this path goes back). Codex does not
+  install the former Claude hook that blocked bare CLI test commands.
 - **Screenshot suites** (`test/screenshots/`, tag `screenshots`): no goldens
   are committed. They render only with `--update-goldens`, into
   `test/screenshots/goldens/` (ignored), using the SDK's Roboto and every font
@@ -2349,7 +2350,7 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   rewritten in another shape can make clang split them (#1755), and GCC
   fuses the other product of `b x - a y` in vector code (`LE_ROUNDED`,
   `engine_fx_simd.h`).
-- **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
+- **Regenerate FFI bindings** after touching `src/core/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine
   dart run tool/ffigen.dart
