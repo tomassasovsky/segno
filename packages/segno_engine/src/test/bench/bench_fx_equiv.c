@@ -78,6 +78,7 @@ typedef struct {
   int32_t (*width)(int32_t type);
   int32_t (*params)(void);
   void (*defaults)(int32_t type, float* out);
+  void* dl;
 } eqv_lib;
 
 static void* need(void* dl, const char* path, const char* sym) {
@@ -96,6 +97,7 @@ static eqv_lib load(const char* path) {
     exit(2);
   }
   eqv_lib l;
+  l.dl = dl;
   *(void**)&l.make = need(dl, path, "eqv_new");
   *(void**)&l.block = need(dl, path, "eqv_block");
   *(void**)&l.drop = need(dl, path, "eqv_free");
@@ -152,7 +154,9 @@ static const char* const k_reordered[] = {
 #define LE_EQV_DRUM_ROOM_DB (-45.0)
 
 /* The working tree's le_rv_room_is_drum_for_test: whether a Room reverb's
- * room setting picks a Drum room, as the engine picks it. */
+ * room setting picks a Drum room, as the engine picks it; resolved on
+ * load, NULL for a library without it (a tree before #1761), which only a
+ * Room reverb render needs. */
 static int (*g_room_is_drum)(float v);
 
 /* The ceiling of a render's residual: LE_EQV_LIMIT_DB, but for a Room
@@ -161,8 +165,12 @@ static int (*g_room_is_drum)(float v);
  * themselves are checked to a float sum's rounding by the native tests
  * (test_room_verb_taps_are_the_rooms). */
 static double eqv_limit_db(int32_t type, const float* p, int sweeps) {
-  if (type == LE_FX_ROOM_VERB && (sweeps || g_room_is_drum(p[2]))) {
-    return LE_EQV_DRUM_ROOM_DB;
+  if (type == LE_FX_ROOM_VERB) {
+    if (g_room_is_drum == NULL) {
+      fprintf(stderr, "the new library has no le_rv_room_is_drum_for_test\n");
+      exit(2);
+    }
+    if (sweeps || g_room_is_drum(p[2])) return LE_EQV_DRUM_ROOM_DB;
   }
   return LE_EQV_LIMIT_DB;
 }
@@ -604,10 +612,7 @@ int main(int argc, char** argv) {
   }
   g_ref = load(argv[1]);
   g_new = load(argv[2]);
-  {
-    void* dl = dlopen(argv[2], RTLD_NOW | RTLD_LOCAL);
-    *(void**)&g_room_is_drum = need(dl, argv[2], "le_rv_room_is_drum_for_test");
-  }
+  *(void**)&g_room_is_drum = dlsym(g_new.dl, "le_rv_room_is_drum_for_test");
   int32_t only = -1;
   int jobs = 0, detail = 0;
   for (int i = 3; i < argc; ++i) {

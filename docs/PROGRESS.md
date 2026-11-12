@@ -82,6 +82,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
+| #1755 | Cheaper effects, same sound: reverbs, delays and filters (#1762) and pitch (#1764) merged; drives and amp (#1759) in review | in-review | auto | `claude/fx-opt-*-1755` |
 | #1761 | The Room reverb's early taps in four lanes (owner-approved rounding change, about -49 dBFS at worst on the Drum rooms, as the trunk's own -O2/-O3) | in-review | auto | `claude/room-taps-1761` |
 
 ---
@@ -128,8 +129,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   compilers decide per loop shape whether to fuse each tap's multiply-add
   (clang -O3 interleaves the trunk's loop and splits them), and a Drum
   room's low cut, a float biquad at 8 to 65 Hz, carries a one-ulp change
-  to about -62 dBFS: the trunk's own clang -O2 and -O3 builds differ by
-  that. So any non-identical change ahead of it fails the -120 dBFS rule;
+  to as much as -49 dBFS (Wet+Tight): the trunk's own clang -O2 and -O3
+  builds differ by -48.8 there. So any non-identical change ahead of it fails the -120 dBFS rule;
   conditioning that filter is an owner's call (#1761). The
   dynamics, the Spring, the LPF and the modulation kinds spend their time
   in serial filter chains and per-sample `tanhf`, `log2f`, `exp2f` and
