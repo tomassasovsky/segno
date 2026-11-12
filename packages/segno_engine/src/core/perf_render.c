@@ -2922,6 +2922,14 @@ static void le_pr_worker_main(void* arg) {
     char wet_dir[LE_PR_FULL_PATH_MAX];
     snprintf(wet_dir, sizeof(wet_dir), "%s/stems/wet", r->capture_dir);
     le_pr_mkdir_recursive(wet_dir);
+    /* A new directory's entry is durable once its parent is synced: on a
+     * vfat stick it is otherwise written back about 30 s later, and a stick
+     * pulled before that loses the stems with it (#1801). Each stem's own
+     * publication syncs dry/ or wet/. */
+    char stems_dir[LE_PR_FULL_PATH_MAX];
+    snprintf(stems_dir, sizeof(stems_dir), "%s/stems", r->capture_dir);
+    le_fs_sync_dir(stems_dir);
+    le_fs_sync_dir(r->capture_dir);
 
     for (int i = 0; i < channel_count; ++i) {
       le_pr_channel_open(&runs[i], r->capture_dir, dry_dir, wet_dir, &manifest,

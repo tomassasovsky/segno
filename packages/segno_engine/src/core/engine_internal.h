@@ -466,6 +466,17 @@ int le_perf_checkpoint_now_for_test(struct le_engine* engine);
  * surface. */
 void le_perf_checkpoint_fail_slot_writes_for_test(int count);
 
+/* Starts (1) or stops (0) recording the paths le_fs_sync_dir and
+ * le_fs_sync_file_errno sync, clearing what an earlier trace recorded
+ * (engine_digest.c, #1801). Process-global, off by default; a test turns it
+ * off before the next test runs. Not part of the FFI surface. */
+void le_fs_trace_syncs_for_test(int enabled);
+
+/* The 1-based position of the first successful sync of `path` in the trace,
+ * 0 when it was not synced: the order of two syncs is the order of their
+ * positions. Read it once the syncing thread is done. */
+int le_fs_synced_for_test(const char* path);
+
 /* ---- perf-render test seams (perf_render.c; part 8) ---- */
 
 /* Forces the offline render worker's dry-stem write (only) to fail for a

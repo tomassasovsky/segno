@@ -128,6 +128,9 @@ class FakeStorageIo implements engine.StorageIo {
   }
 
   @override
+  void syncFile(String path) => throw UnimplementedError();
+
+  @override
   engine.RenameOutcome renameWithoutReplacing(String from, String to) {
     final taken =
         FileSystemEntity.typeSync(to, followLinks: false) !=

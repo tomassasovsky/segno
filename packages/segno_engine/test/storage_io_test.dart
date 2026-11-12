@@ -135,6 +135,22 @@ void main() {
       expect(() => io.syncDirectory(''), throwsA(isA<FileSystemException>()));
     });
 
+    test('syncFile syncs an existing file and throws otherwise', () {
+      final file = File('${dir.path}/take.json')..writeAsStringSync('{}');
+      final io = const NativeStorageIo()..syncFile(file.path);
+      expect(
+        () => io.syncFile('${dir.path}/missing.json'),
+        throwsA(
+          isA<FileSystemException>().having(
+            (e) => e.osError?.errorCode,
+            'errno, so a pulled drive can be told apart',
+            2,
+          ),
+        ),
+      );
+      expect(() => io.syncFile(''), throwsA(isA<FileSystemException>()));
+    });
+
     test('renameWithoutReplacing moves to a free name and refuses a taken '
         'one, leaving both files', () {
       const io = NativeStorageIo();

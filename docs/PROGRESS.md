@@ -43,6 +43,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1760 | A rack card names the controls bound to the rack itself; a switch's press and hold on one target read as one control | in-review | auto | `claude/rack-card-assignment-1760` |
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
+| #1801 | A take on a FAT stick keeps its renamed files: each publish syncs the renamed file, then its directory | in-review | blocked-verify | `claude/usb-rename-durable-1801` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
 | #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
@@ -88,6 +89,35 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 
 ---
+
+## November 2026 A take on a FAT stick keeps its renamed files (#1801)
+
+- On vfat a rename writes the new directory entry with size 0 and first
+  cluster 0 (`vfat_rename`, then `vfat_build_slots`); when it replaces a
+  file, the entry it reuses still holds the old file's. Only the renamed
+  file's inode, written back about 30 s later, fills it in, and a sync of
+  the directory does not write it. A take recorded to a stick (#1198) and
+  pulled within that window kept 0-byte stems, `performance.json` and
+  `project.als`; a renamed take's folder read as empty.
+- A sync of the file itself writes that inode at the entry's new place
+  (`fat_file_fsync`), so every publish by rename into a take now syncs the
+  file under its new name, then its directory: `le_wav_publish` (stems, the
+  master reconstruction, a file render) through the new
+  `le_fs_sync_file_errno`, and in Dart `StorageIo.syncFile` for
+  `performance.json`, the arm snapshot and the DAW project
+  (`PerformanceRepository.writeTakeFile`, which `writeDawProject` now writes
+  through). A renamed or salvaged take's folder is synced under its new name
+  and in its parent, and the render syncs `stems/` and the take folder once
+  it creates the stem folders. No volume sync: nothing here needs a
+  volume-wide flush, and none of it runs on the audio thread.
+- Not changed: the checkpoint slots are written in place and fsynced, which
+  already writes their entries; the drain's live `performance.json` is
+  rewritten four times a second while capturing and finalize replaces it,
+  so it stays unsynced.
+- Tests: an engine seam records what `le_fs_sync_dir` and
+  `le_fs_sync_file_errno` synced, in order (`le_fs_trace_syncs_for_test`);
+  the repository's `FakeStorageIo` records file and directory syncs in
+  order.
 
 ## November 2026 Exported Live sets open in Live (#1791)
 

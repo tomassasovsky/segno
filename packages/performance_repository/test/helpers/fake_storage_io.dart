@@ -4,10 +4,11 @@ import 'dart:typed_data';
 import 'package:segno_engine/segno_engine.dart';
 
 /// A [StorageIo] without the native library: a stand-in digest (see
-/// [fakeDigest]) and a directory sync that records what it synced. The
-/// real SHA-256 is the engine's, tested there.
+/// [fakeDigest]) and directory and file syncs that record what they synced,
+/// in order. The real SHA-256 is the engine's, tested there.
 class FakeStorageIo implements StorageIo {
-  /// Every directory [syncDirectory] synced, on the isolate that asked.
+  /// Every directory [syncDirectory] and every file [syncFile] synced, in
+  /// order, on the isolate that asked.
   static final List<String> synced = [];
 
   @override
@@ -25,6 +26,16 @@ class FakeStorageIo implements StorageIo {
 
   @override
   void syncDirectory(String path) => synced.add(path);
+
+  /// Records [path] only when a file is there: a sync of a name the rename
+  /// has not reached yet syncs nothing.
+  @override
+  void syncFile(String path) {
+    if (!File(path).existsSync()) {
+      throw FileSystemException('could not sync the file', path);
+    }
+    synced.add(path);
+  }
 
   @override
   RenameOutcome renameWithoutReplacing(String from, String to) =>

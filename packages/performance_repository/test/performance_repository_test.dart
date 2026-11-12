@@ -190,6 +190,83 @@ void main() {
     });
   });
 
+  group('a take on a FAT stick keeps its renamed files (#1801)', () {
+    // On vfat a rename writes the new entry with size 0, and only the file's
+    // own sync fills it in: each renamed file is synced under its new name
+    // before its directory.
+    void expectSyncedBeforeDirectory(String file, String dir) {
+      final synced = FakeStorageIo.synced;
+      final at = synced.lastIndexOf(file);
+      expect(at, isNonNegative, reason: '$file is synced');
+      expect(
+        synced.sublist(at + 1),
+        contains(dir),
+        reason: 'then its directory',
+      );
+    }
+
+    setUp(FakeStorageIo.synced.clear);
+
+    test('the arm snapshot and the finalized performance.json', () async {
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+      expectSyncedBeforeDirectory('$dir/arm-snapshot.json', dir);
+
+      FakeStorageIo.synced.clear();
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+      writeNativeSidecar(dir);
+      expect(await repo.disarm(), EngineResult.ok);
+
+      final sidecar = File('$dir/performance.json').readAsStringSync();
+      expect((jsonDecode(sidecar) as Map)['finalized'], isTrue);
+      expectSyncedBeforeDirectory('$dir/performance.json', dir);
+    });
+
+    test(
+      'writeTakeFile writes the file whole and syncs it, then the take',
+      () async {
+        final dir = Directory('${tempDir.path}/exports/perf-daw')
+          ..createSync(recursive: true);
+
+        await repo.writeTakeFile(dir.path, 'project.als', [1, 2, 3]);
+
+        expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
+        expect(File('${dir.path}/project.als.tmp').existsSync(), isFalse);
+        expectSyncedBeforeDirectory('${dir.path}/project.als', dir.path);
+      },
+    );
+
+    test('writeTakeFile cut short leaves the previous file whole', () async {
+      final dir = Directory('${tempDir.path}/exports/perf-daw')
+        ..createSync(recursive: true);
+      File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+      // The temporary file's place is taken: the write fails before the
+      // rename.
+      Directory('${dir.path}/project.als.tmp').createSync();
+
+      await expectLater(
+        repo.writeTakeFile(dir.path, 'project.als', [4, 5]),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
+      expect(FakeStorageIo.synced, isEmpty);
+    });
+
+    test(
+      'a renamed take is synced under its new name, then its folder',
+      () async {
+        final root = '${tempDir.path}/exports';
+        final dir = Directory('$root/perf-old')..createSync(recursive: true);
+
+        final renamed = await repo.renameCapture(dir.path, 'Encore');
+
+        expect(renamed, '$root/Encore');
+        expectSyncedBeforeDirectory(renamed, root);
+      },
+    );
+  });
+
   group('arm', () {
     test('passes the reserve to the engine, and none when not given '
         '(#1198)', () async {

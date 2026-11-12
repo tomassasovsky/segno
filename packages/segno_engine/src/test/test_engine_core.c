@@ -23953,6 +23953,58 @@ static void test_fs_sync_dir(void) {
   CHECK(le_fs_sync_dir_errno(NULL, &err) == LE_ERR_INVALID);
 }
 
+/* le_wav_publish syncs the file under its new name, then its directory: on
+ * vfat a rename writes the new entry with size 0, and only the file's own
+ * sync fills it in, so a stick pulled after a directory sync alone kept a
+ * 0-byte stem (#1801). */
+static void test_wav_publish_syncs_the_renamed_file(void) {
+  printf("test_wav_publish_syncs_the_renamed_file\n");
+  test_render_mkdir(perf_test_dir());
+  char part[700];
+  char path[700];
+  snprintf(part, sizeof(part), "%s/publish.wav.part", perf_test_dir());
+  snprintf(path, sizeof(path), "%s/publish.wav", perf_test_dir());
+  remove(path);
+  le_wav_writer w;
+  CHECK(le_wav_open(&w, part, 48000, 2, NULL, NULL, 0));
+  const float frames[4] = {0.25f, -0.25f, 0.5f, -0.5f};
+  CHECK(le_wav_append(&w, frames, 2));
+  CHECK(le_wav_seal(&w, 1));
+  le_fs_trace_syncs_for_test(1);
+  CHECK(le_wav_publish(part, path) == 1);
+  const int file_at = le_fs_synced_for_test(path);
+  const int dir_at = le_fs_synced_for_test(perf_test_dir());
+  le_fs_trace_syncs_for_test(0);
+  CHECK(file_at > 0);
+  CHECK(dir_at > 0);
+  CHECK(file_at < dir_at);
+  CHECK(le_fs_synced_for_test(part) == 0);
+  remove(path);
+}
+
+static void test_fs_sync_file(void) {
+  printf("test_fs_sync_file\n");
+  test_render_mkdir(perf_test_dir());
+  char file[600];
+  snprintf(file, sizeof(file), "%s/sync_file.bin", perf_test_dir());
+  FILE* f = fopen(file, "wb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    fputs("take", f);
+    fclose(f);
+    int32_t err = -1;
+    CHECK(le_fs_sync_file_errno(file, &err) == LE_OK);
+    CHECK(err == 0);
+    CHECK(le_fs_sync_file_errno(file, NULL) == LE_OK);
+    remove(file);
+  }
+  int32_t err = -1;
+  CHECK(le_fs_sync_file_errno(file, &err) == LE_ERR_DEVICE);
+  CHECK(err == ENOENT);
+  CHECK(le_fs_sync_file_errno(NULL, &err) == LE_ERR_INVALID);
+  CHECK(le_fs_sync_file_errno("", NULL) == LE_ERR_INVALID);
+}
+
 static void test_fs_rename_noreplace(void) {
   printf("test_fs_rename_noreplace\n");
   test_render_mkdir(perf_test_dir());
@@ -24746,6 +24798,7 @@ static void test_perf_render_partial_success(void) {
   }
 
   le_engine* e = le_engine_create();
+  le_fs_trace_syncs_for_test(1);
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
   test_wait_for_render(e, 2000);
 
@@ -24753,6 +24806,17 @@ static void test_perf_render_partial_success(void) {
   le_perf_render_poll(e, &done, NULL, &track_count);
   CHECK(done == 1);
   CHECK(track_count == 2);
+
+  /* The stem directories' entries are synced in their parents, and the
+   * published stem is synced under its own name (#1801). */
+  char stems_dir[700];
+  char stem_path[700];
+  snprintf(stems_dir, sizeof(stems_dir), "%s/stems", dir);
+  snprintf(stem_path, sizeof(stem_path), "%s/stems/dry/track0.wav", dir);
+  CHECK(le_fs_synced_for_test(dir) > 0);
+  CHECK(le_fs_synced_for_test(stems_dir) > 0);
+  CHECK(le_fs_synced_for_test(stem_path) > 0);
+  le_fs_trace_syncs_for_test(0);
 
   int good = 0, bad = 0;
   for (int i = 0; i < track_count; ++i) {
@@ -39941,6 +40005,8 @@ int main(void) {
   SHARD(test_sha256_known_answers);
   SHARD(test_digest_file_ranges);
   SHARD(test_fs_sync_dir);
+  SHARD(test_fs_sync_file);
+  SHARD(test_wav_publish_syncs_the_renamed_file);
   SHARD(test_fs_rename_noreplace);
   SHARD(test_perf_arm_requires_configure);
   SHARD(test_perf_reconfigure_while_armed_resets_cleanly);

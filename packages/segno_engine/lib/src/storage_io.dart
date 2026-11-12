@@ -91,6 +91,15 @@ abstract interface class StorageIo {
   /// a publication as durable when it is not.
   void syncDirectory(String path);
 
+  /// Makes the file at [path] durable, its size and place in its directory's
+  /// entry included.
+  ///
+  /// What a rename needs besides [syncDirectory] on a FAT volume: there the
+  /// rename writes the new entry with size 0, and only the file's own sync
+  /// fills it in (#1801). Throws a [FileSystemException], carrying the OS
+  /// error, when the file cannot be opened or the sync fails.
+  void syncFile(String path);
+
   /// Renames [from] to [to] only if nothing is at [to], as one atomic step.
   ///
   /// A copy publishes its part this way, so a name another writer took
@@ -201,6 +210,26 @@ class NativeStorageIo implements StorageIo {
         final errno = errorPtr.value;
         throw FileSystemException(
           'could not sync the directory',
+          path,
+          errno == 0 ? null : OSError('sync failed', errno),
+        );
+      }
+    } finally {
+      calloc.free(errorPtr);
+      malloc.free(pathPtr);
+    }
+  }
+
+  @override
+  void syncFile(String path) {
+    final pathPtr = path.toNativeUtf8();
+    final errorPtr = calloc<Int32>();
+    try {
+      final code = le_fs_sync_file_errno(pathPtr.cast(), errorPtr);
+      if (!EngineResult.fromCode(code).isOk) {
+        final errno = errorPtr.value;
+        throw FileSystemException(
+          'could not sync the file',
           path,
           errno == 0 ? null : OSError('sync failed', errno),
         );
