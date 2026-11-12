@@ -25,11 +25,13 @@
 #   - pin a mode the command line does not force and ivi-homescreen exits at
 #     start for want of it.
 #
-# The Pi 5 cmdline also turns off the NVMe drive's APST and the kernel's
-# PCIe ASPM (#1795). With either back on, the console's SN770 can drop off
+# The Pi 5 cmdline also turns off the NVMe drive's APST and PCIe ASPM on
+# every link (#1795). With either back on, the console's SN770 can drop off
 # the bus mid-recording, which looks like any other freeze until the
 # watchdog reboots. A second value for either argument is as bad as none:
-# the kernel takes the last one it parses.
+# the kernel takes the last one it parses. pcie_aspm=off next to the policy
+# is worse than nothing: the kernel then refuses the policy and leaves ASPM
+# as the firmware set it.
 #
 # So this asserts the kas cmdlines and homescreen.toml statically.
 set -uo pipefail
@@ -53,9 +55,9 @@ check() {
     fi
 }
 
-# The kiosk-console CMDLINE:append line (not comments).
+# Every CMDLINE:append line the Pi 5 image is built from (not comments).
 cmdline() {
-    grep -E '^[[:space:]]*CMDLINE:append' "$KAS"
+    grep -hE '^[[:space:]]*CMDLINE:append' "$KAS" "$KAS_RPI5"
 }
 
 echo "the kernel cmdline force-enables both HDMI connectors"
@@ -114,28 +116,25 @@ main_mode=${main_mode#video=HDMI-A-2:}
 check "HDMI-A-2's forced mode is larger than the 1024x768 fallback" yes \
     "$([ -n "$main_mode" ] && [ "$(area "$main_mode")" -gt $((1024 * 768)) ] && echo yes || echo no)"
 
-# Every CMDLINE:append line the Pi 5 image is built from (not comments).
-all_cmdlines() {
-    grep -hE '^[[:space:]]*CMDLINE:append' "$KAS" "$KAS_RPI5"
-}
-
-# How many times the Pi 5 cmdlines set the argument named $1, any value.
-arg_count() {
-    all_cmdlines | grep -oE "(^|[ \"])$1=[^ \"]*" | wc -l | tr -d ' '
+# Every value the cmdlines give the argument named $1 (a regex), one per
+# line, in order. Empty when no cmdline sets it.
+arg_values() {
+    cmdline | grep -oE "(^|[ \"])$1=[^ \"]*" | sed 's/^[ "]//; s/^[^=]*=//'
 }
 
 echo
-echo "the Pi 5 cmdline keeps the NVMe drive and its link out of power saving"
+echo "the Pi 5 cmdline keeps the NVMe drive and its links out of power saving"
 check "rpi5 kas file is where the test expects" yes \
     "$([ -f "$KAS_RPI5" ] && echo yes || echo no)"
-check "APST off: nvme_core.default_ps_max_latency_us=0" yes \
-    "$(all_cmdlines | grep -qE '(^|[ "])nvme_core\.default_ps_max_latency_us=0([ "]|$)' && echo yes || echo no)"
-check "one nvme_core.default_ps_max_latency_us=" 1 \
-    "$(arg_count 'nvme_core\.default_ps_max_latency_us')"
-check "ASPM off: pcie_aspm=off" yes \
-    "$(all_cmdlines | grep -qE '(^|[ "])pcie_aspm=off([ "]|$)' && echo yes || echo no)"
-check "one pcie_aspm=" 1 "$(arg_count 'pcie_aspm')"
-check "no pcie_aspm.policy= to re-enable it" 0 "$(arg_count 'pcie_aspm\.policy')"
+check "APST off: nvme_core.default_ps_max_latency_us is 0, set once" 0 \
+    "$(arg_values 'nvme_core\.default_ps_max_latency_us' | paste -sd, -)"
+check "ASPM off: pcie_aspm.policy is performance, set once" performance \
+    "$(arg_values 'pcie_aspm\.policy' | paste -sd, -)"
+check "no pcie_aspm= (off makes the kernel refuse the policy)" "" \
+    "$(arg_values 'pcie_aspm' | paste -sd, -)"
+check "no CMDLINE:remove or plain CMDLINE assignment in the image's config" 0 \
+    "$(grep -rhE '^[[:space:]]*CMDLINE(:remove|:prepend)?[[:space:]]*[?:+.]?=' \
+        "$KAS" "$KAS_RPI5" "$here/../meta-segno" | wc -l | tr -d ' ')"
 
 echo
 echo "kernel-cmdline: $pass passed, $fail failed"

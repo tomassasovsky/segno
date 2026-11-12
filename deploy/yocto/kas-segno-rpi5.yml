@@ -108,26 +108,32 @@ local_conf_header:
     #
     # Two mechanisms act on every idle gap, and a recording is full of them:
     #
-    #   - APST. The drive's own table drops it into the non-operational PS3
-    #     after 100 ms idle and into PS4 after 2 s. nvme_core's default
-    #     latency tolerance (100000 us) allows both. 0 turns APST off.
+    #   - APST. nvme_core builds the drive's APST table from the power states
+    #     the drive lists and its own apst_* timeouts. On this drive that table
+    #     drops it into the non-operational PS3 after 100 ms idle and into PS4
+    #     after 2 s, because the default latency tolerance (100000 us) allows
+    #     both. default_ps_max_latency_us=0 turns APST off.
     #   - ASPM L1 on the link, which the kernel enables under its default
-    #     powersave policy. pcie_aspm=off stops the kernel from enabling it,
-    #     so the links stay in L0.
+    #     powersave policy. pcie_aspm.policy=performance makes the kernel
+    #     clear ASPM on every link. The kernel warning suggests pcie_aspm=off,
+    #     but that only stops the kernel from touching ASPM, so whatever the
+    #     firmware set stays set, and it makes the kernel refuse any policy.
     #
-    # These are the arguments the kernel's warning names and the usual fix in
-    # SN770 and Pi 5 NVMe reports. The kernel has no quirk for this drive
-    # (15b7:5017). pcie_port_pm=off, the warning's third argument, is left out
-    # because the root port's runtime PM is already off on this board.
+    # Turning both off is what the kernel's warning suggests and the usual fix
+    # in SN770 and Pi 5 NVMe reports. The kernel has no quirk for this drive
+    # (15b7:5017). pcie_port_pm=off, the warning's third argument, is left out:
+    # the root port never runtime-suspends on this board (power/control "on",
+    # zero suspended time).
     #
     # The cost: the drive idles in PS0 at about 1 W instead of 15 mW in PS3 and
-    # runs a few degrees warmer, and pcie_aspm=off also keeps the RP1 link out
-    # of L1. The console always runs on mains power, so that is acceptable.
+    # runs a few degrees warmer, and the RP1 link also stays out of L1. The
+    # console always runs on mains power, so that is acceptable.
     #
     # The cmdline reaches both boot slots, in the .wic and through the bundle's
     # boot files; tryboot-cmdline and the install hook rewrite only root=.
-    # deploy/yocto/test/run_kernel_cmdline_tests.sh holds this line in place.
-    CMDLINE:append = " nvme_core.default_ps_max_latency_us=0 pcie_aspm=off"
+    # deploy/yocto/test/run_kernel_cmdline_tests.sh fails if either argument
+    # is missing, changes value or appears twice.
+    CMDLINE:append = " nvme_core.default_ps_max_latency_us=0 pcie_aspm.policy=performance"
 
   rpi5-rtc: |
     # Charge the coin cell on J5, so the RTC keeps time across a power cut and
