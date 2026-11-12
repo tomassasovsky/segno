@@ -97,7 +97,8 @@ CORE_SHARDS="${SEGNO_CORE_SHARDS:-16}"
 bare=$(awk '/^int main\(void\) \{/ { inmain = 1; next }
   inmain && /^}/ { exit }
   inmain && /_TESTS_ONLY"\)\) \{/ { skip = 1; next }
-  inmain && /^[ \t]+[a-z_0-9]+\(\);$/ { if (skip) { skip = 0; next } print }
+  inmain && /(^|[^A-Za-z0-9_])(test|run)_[a-z0-9_]+\(/ && !/SHARD\(/ {
+    if (skip) { skip = 0; next } print }
   { skip = 0 }' src/test/test_engine_core.c)
 if [ -n "$bare" ]; then
   echo "test_engine_core.c main() calls these without SHARD(...):" >&2
@@ -110,6 +111,9 @@ fi
 # names in $OUT.
 WORK="$(mktemp -d "$OUT/segno_native.XXXXXX")"
 OBJ="$WORK/obj"
+# Removed when the run passes; kept, with its logs, when it does not.
+keep_work() { [ "${1:-1}" = 0 ] && rm -rf "$WORK" || echo "objects and logs kept in $WORK" >&2; }
+trap 'keep_work $?' EXIT
 F0="$STD $EXTRA_CFLAGS"
 F1="$STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS"
 
@@ -290,7 +294,7 @@ run_test() {   # run_test NAME COMMAND — one test, its output to NAME.log
   # Wall and CPU seconds: CPU well under wall times the CPUs running means
   # the test waited, on a lock, a sleep or a busy machine.
   local TIMEFORMAT='%0R s, CPU %0U s user + %0S s system'
-  { time TMPDIR="$RUN_DIR/$name" bash -c "$cmd" >"$RUN_DIR/$name.log" 2>&1 || rc=$?; } 2>"$RUN_DIR/$name.time"
+  { time TMPDIR="$RUN_DIR/$name" $TEST_TIMEOUT bash -c "$cmd" >"$RUN_DIR/$name.log" 2>&1 || rc=$?; } 2>"$RUN_DIR/$name.time"
   times=$(cat "$RUN_DIR/$name.time")
   if [ "$rc" != 0 ]; then
     status=FAILED
@@ -298,8 +302,14 @@ run_test() {   # run_test NAME COMMAND — one test, its output to NAME.log
   fi
   echo "== $name $status in $times =="
 }
+# A test that hangs ends at SEGNO_TEST_TIMEOUT seconds (20 minutes) as a
+# failure, so its output still prints; `timeout` is coreutils', on Linux.
+TEST_TIMEOUT=""
+if command -v timeout >/dev/null 2>&1; then
+  TEST_TIMEOUT="timeout -k 10 ${SEGNO_TEST_TIMEOUT:-1200}"
+fi
 export -f run_test
-export RUN_DIR
+export RUN_DIR TEST_TIMEOUT
 echo "== running $((${#TESTS[@]} / 2)) tests, ${BUILD_JOBS} at a time =="
 printf '%s\0' "${TESTS[@]}" | xargs -0 -n 2 -P "$BUILD_JOBS" bash -c 'run_test "$0" "$1"'
 

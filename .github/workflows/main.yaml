@@ -14,9 +14,11 @@ jobs:
   # Which parts of the tree the change touches (#1771), so the jobs that only
   # test native code, the firmware or the appliance scripts skip on a PR that
   # changes none of it. A skipped job still reports its check (as skipped,
-  # which counts as passing), so the set of checks on a PR does not change.
-  # On a push every job runs. The workflow file is in every filter, so a CI
-  # change runs everything.
+  # which counts as passing), so a filtered job never leaves a check missing
+  # or pending. A skipped matrix job reports one check, under its unexpanded
+  # name ("native-tests-asan (${{ matrix.part }})"). On a push every job
+  # runs. The workflow file is in every filter, so a CI change runs
+  # everything.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -24,6 +26,7 @@ jobs:
       pull-requests: read
     outputs:
       native: ${{ github.event_name != 'pull_request' || steps.filter.outputs.native == 'true' }}
+      pedal_link: ${{ github.event_name != 'pull_request' || steps.filter.outputs.pedal_link == 'true' }}
       firmware: ${{ github.event_name != 'pull_request' || steps.filter.outputs.firmware == 'true' }}
       deploy: ${{ github.event_name != 'pull_request' || steps.filter.outputs.deploy == 'true' }}
     steps:
@@ -38,9 +41,13 @@ jobs:
               - 'packages/segno_engine/third_party/**'
               - 'packages/segno_engine/tool/**'
               - 'packages/segno_engine/macos/**'
+            # The console link contract test in native-tests
+            # (firmware/test/run_tests.sh): the firmware, the Dart codec's
+            # golden frames, and the ring updater it builds.
+            pedal_link:
+              - '.github/workflows/main.yaml'
               - 'firmware/**'
               - 'packages/pedal_repository/**'
-              # firmware/test/run_tests.sh builds the ring updater from here.
               - 'deploy/yocto/meta-segno/recipes-segno/segno-console-board/files/**'
             firmware:
               - '.github/workflows/main.yaml'
@@ -84,7 +91,7 @@ jobs:
   # for all of them where they were a Very Good workflow job each. The root
   # job already formats and analyzes every package. The floors, and which
   # packages run, are in tool/run_package_tests.sh. The two whole-app scans
-  # ride along, since they need the same resolved dependencies:
+  # also run in this job, since they need the same resolved dependencies:
   #   - no app code, and no package the app runs, may start a program through
   #     dart:io (#1367): Process.run and Process.start fork the app, which
   #     stalls the audio thread, and a dart:io child running beside
@@ -387,7 +394,7 @@ jobs:
   # that touches native code (the `changes` job above says which do).
   native-tests:
     needs: changes
-    if: needs.changes.outputs.native == 'true'
+    if: needs.changes.outputs.native == 'true' || needs.changes.outputs.pedal_link == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -513,7 +520,7 @@ jobs:
   # four vCPUs (two cores, two threads each) run at about half speed each,
   # so on one runner the suite took 14 minutes however it was spread. Each
   # part builds only what it runs; two take half the core suite's 16 shards
-  # each, the third the rest, and the race binaries ride with the second.
+  # each, the third the rest, and the second also runs the race binaries.
   native-tests-asan:
     name: native-tests-asan (${{ matrix.part }})
     needs: changes
