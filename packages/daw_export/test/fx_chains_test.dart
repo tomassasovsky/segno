@@ -163,6 +163,35 @@ void main() {
       );
     });
 
+    test('with details, gives each built-in effect its stored parameters, '
+        'and each plugin its version and the dry passthrough note, as '
+        'fx-chains.txt lists them', () {
+      final manifest = lane([
+        {
+          'type': 3,
+          'params': [0.35, 0.5],
+        },
+        {
+          'type': 8,
+          'plugin': {'format': 0, 'id': 'ABCD', 'version': 0x010203},
+        },
+        {
+          'type': 8,
+          'plugin': {'format': 0, 'id': 'EF'},
+        },
+      ]);
+      expect(
+        EffectText.track(manifest, 0, details: true),
+        'Lane 1: Delay (0.35, 0.50), '
+        'VST3 ABCD v1.2.3 [rendered as dry passthrough], '
+        'VST3 EF vunknown [rendered as dry passthrough]',
+      );
+      expect(
+        EffectText.track(manifest, 0),
+        'Lane 1: Delay, VST3 ABCD, VST3 EF',
+      );
+    });
+
     test('marks a chain switched off as a whole', () {
       expect(
         EffectText.track(lane([_effect(7)], chainEnabled: false), 0),

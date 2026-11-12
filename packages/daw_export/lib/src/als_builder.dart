@@ -205,7 +205,7 @@ class _TrackPrototype {
           id: 0,
           startBeats: 0,
           audio: session.audio,
-          name: '${source.name} / Lane ${session.laneIndex}',
+          name: '${source.name} / Lane ${session.laneIndex + 1}',
           tempoBpm: tempoBpm,
           loop: true,
         ),

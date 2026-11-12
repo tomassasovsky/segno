@@ -30,6 +30,20 @@ String trackNameOf(Map<String, dynamic> manifest, int channel) {
   return 'Track ${channel + 1}';
 }
 
+/// The hardware inputs a capture recorded (`channel_layout.captured_inputs`),
+/// in order.
+List<int> capturedInputsOf(Map<String, dynamic> manifest) {
+  final layout = manifest['channel_layout'];
+  final inputs = layout is Map<String, dynamic>
+      ? layout['captured_inputs']
+      : null;
+  if (inputs is! List) return const [];
+  return [
+    for (final i in inputs)
+      if (i is num) i.toInt(),
+  ]..sort();
+}
+
 /// What a capture calls hardware input [input]: the name recorded at arm
 /// (#1799), or `Input N` (1-based) for an input without one.
 String inputNameOf(Map<String, dynamic> manifest, int input) {

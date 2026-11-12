@@ -19,7 +19,6 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_notices.dart';
 import 'package:segno/app/application/app_runtime.dart';
-import 'package:segno/app/application/performance_names.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/segno_navigator.dart';
@@ -52,7 +51,6 @@ import 'package:segno/notices/notices.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
-import 'package:segno/session/session_mapping.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -844,15 +842,11 @@ class _AppState extends State<App> {
           BlocProvider(
             lazy: false,
             create: (context) {
-              final looper = context.read<LooperRepository>();
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
                 // The rig and names a take's arm records (#375, #1799).
-                currentChains: () => performanceChainsFromLooper(looper),
-                currentNames: () => performanceNames(
-                  tracks: _runtime.tracks.state.names,
-                  inputs: _runtime.inputs.state.names,
-                ),
+                currentChains: _runtime.currentChains,
+                currentNames: _runtime.currentNames,
                 // The runtime's lock, which also holds during an audio
                 // warm-up (#1533).
                 takeLocked: () => _runtime.takeLocked,

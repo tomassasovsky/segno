@@ -125,6 +125,7 @@ void main() {
         );
         expect(wet.arrangementClips.single.audio.seconds, 1.0);
         expect(dry.name, 'Track 1 dry');
+        expect((wet.kind, dry.kind), (DawTrackKind.loop, DawTrackKind.dry));
         expect(dry.active, isFalse);
         expect(
           dry.arrangementClips.single.audio.fileRef,
@@ -1007,6 +1008,12 @@ void _layoutTests() {
       });
 
       final tracks = DawManifestReader.read(dir.path)!.tracks;
+      expect(tracks.map((t) => t.kind), [
+        DawTrackKind.loop,
+        DawTrackKind.loop,
+        DawTrackKind.input,
+        DawTrackKind.input,
+      ]);
       expect(tracks.map((t) => t.name), [
         'Rhythm',
         'Track 3',
@@ -1072,6 +1079,26 @@ void _layoutTests() {
       final master = DawManifestReader.read(dir.path)!.tracks.single;
       expect(master.arrangementClips.single.audio.fileRef, 'master-002.wav');
       expect(master.arrangementClips.single.startSeconds, 2);
+    });
+
+    test('a missing part of unknown length ends its stream there, since '
+        'nothing after it could be placed', () {
+      write('master-001.wav', 48000);
+      write('master-003.wav', 48000);
+      manifest({
+        'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
+        'parts': [
+          {'stream': 0, 'index': 1, 'file': 'master-001.wav', 'frames': 48000},
+          {'stream': 0, 'index': 2, 'file': 'master-002.wav'},
+          {'stream': 0, 'index': 3, 'file': 'master-003.wav', 'frames': 48000},
+        ],
+      });
+
+      final master = DawManifestReader.read(dir.path)!.tracks.single;
+      expect(master.kind, DawTrackKind.master);
+      expect(master.arrangementClips.map((c) => c.audio.fileRef), [
+        'master-001.wav',
+      ]);
     });
 
     test('a take from before the parts format reads master.wav and '

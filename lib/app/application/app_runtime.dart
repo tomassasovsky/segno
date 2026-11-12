@@ -154,11 +154,8 @@ class AppRuntime {
       takeLocked: () => takeLocked,
       inputLocked: () => _closing || fxPersistence.sessionTransitionActive,
       // A pedal or MIDI arm records the same rig and names as the toolbar's.
-      currentChains: () => performanceChainsFromLooper(repository),
-      currentNames: () => performanceNames(
-        tracks: tracks.state.names,
-        inputs: inputs.state.names,
-      ),
+      currentChains: currentChains,
+      currentNames: currentNames,
     );
     // Loaded on its own, as the widget tree used to: a name that cannot be
     // read must not hold up the session baseline in [start].
@@ -261,6 +258,15 @@ class AppRuntime {
   /// What the player calls each hardware input. Owned here, beside [tracks],
   /// because a take's arm records both (#1799).
   late final InputsCubit inputs;
+
+  /// The rig's effect chains, as a take's arm records them: one source for
+  /// the toolbar's arm and the pedal's (#375).
+  PerformanceChains currentChains() => performanceChainsFromLooper(_looper);
+
+  /// What the player calls each track and input, as a take's arm records
+  /// them: one source for the toolbar's arm and the pedal's (#1799).
+  PerformanceNames currentNames() =>
+      performanceNames(tracks: tracks.state.names, inputs: inputs.state.names);
   late final PowerCubit power;
 
   /// Volumes, capacity, eject, and whether a transfer is in flight.

@@ -28,20 +28,14 @@ abstract final class FxChainsWriter {
         if (t['channel'] case final num c) c.toInt(),
     }.toList()..sort();
     for (final channel in channels) {
-      final text = EffectText.track(manifest, channel);
+      final text = EffectText.track(manifest, channel, details: true);
       if (text != null) sections.add((trackNameOf(manifest, channel), text));
     }
-    final layout = manifest['channel_layout'];
-    final inputs = [
-      if (layout is Map<String, dynamic> && layout['captured_inputs'] is List)
-        for (final i in layout['captured_inputs'] as List)
-          if (i is num) i.toInt(),
-    ]..sort();
-    for (final input in inputs) {
-      final text = EffectText.input(manifest, input);
+    for (final input in capturedInputsOf(manifest)) {
+      final text = EffectText.input(manifest, input, details: true);
       if (text != null) sections.add((inputNameOf(manifest, input), text));
     }
-    final output = EffectText.output(manifest);
+    final output = EffectText.output(manifest, details: true);
     if (output != null) sections.add((kMasterTrackName, output));
 
     final buffer = StringBuffer()

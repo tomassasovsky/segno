@@ -280,7 +280,7 @@ void main() {
       expect(_value(track, 'Name/UserName'), 'Track 3');
       expect(
         track.findAllElements('AudioClip').map((c) => _value(c, 'Name')),
-        unorderedEquals(['Track 3', 'Track 3 / Lane 0']),
+        unorderedEquals(['Track 3', 'Track 3 / Lane 1']),
       );
     });
 

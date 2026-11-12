@@ -46,22 +46,30 @@ const Map<int, String> _kPluginFormats = {0: 'VST3', 1: 'CLAP'};
 /// started. Changes made during the take are in `events.log`, not here.
 ///
 /// Every function reads the decoded `performance.json` and returns one line
-/// per chain that has entries, or `null` when there are none.
+/// per chain that has entries, or `null` when there are none. With
+/// `details`, each built-in effect carries its stored parameters (each
+/// `0..1` of its control's range) and each plugin its version and the note
+/// that the offline render passes it through dry, as `fx-chains.txt` lists
+/// them.
 abstract final class EffectText {
   /// Looper track [channel]'s chains: its Track stage, then each lane's.
-  static String? track(Map<String, dynamic> manifest, int channel) {
+  static String? track(
+    Map<String, dynamic> manifest,
+    int channel, {
+    bool details = false,
+  }) {
     final arm = manifest['armSnapshot'];
     final lines = <String>[];
     for (final chain in _list(arm, 'trackChains')) {
       if (_int(chain['channel']) != channel) continue;
-      final line = _chain(chain['effects'], chain['chainEnabled']);
+      final line = _chain(chain['effects'], chain['chainEnabled'], details);
       if (line != null) lines.add('Track: $line');
     }
     for (final t in tracksOf(arm)) {
       if (_int(t['channel']) != channel) continue;
       for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
         final json = lane as Map<String, dynamic>;
-        final line = _chain(json['effects'], json['chainEnabled']);
+        final line = _chain(json['effects'], json['chainEnabled'], details);
         if (line == null) continue;
         lines.add('Lane ${(_int(json['lane']) ?? 0) + 1}: $line');
       }
@@ -70,25 +78,29 @@ abstract final class EffectText {
   }
 
   /// Hardware input [input]'s monitor chain.
-  static String? input(Map<String, dynamic> manifest, int input) {
+  static String? input(
+    Map<String, dynamic> manifest,
+    int input, {
+    bool details = false,
+  }) {
     for (final monitor in _list(manifest['armSnapshot'], 'monitors')) {
       if (_int(monitor['input']) != input) continue;
-      return _chain(monitor['effects'], monitor['chainEnabled']);
+      return _chain(monitor['effects'], monitor['chainEnabled'], details);
     }
     return null;
   }
 
   /// The captured output's chain.
-  static String? output(Map<String, dynamic> manifest) {
+  static String? output(Map<String, dynamic> manifest, {bool details = false}) {
     final arm = manifest['armSnapshot'];
     if (arm is! Map<String, dynamic>) return null;
-    return _chain(arm['outputEffects'], arm['outputChainEnabled']);
+    return _chain(arm['outputEffects'], arm['outputChainEnabled'], details);
   }
 
   /// [effects] in order, consecutive entries of one rack grouped under its
   /// name, each switched-off entry or rack marked `off`; `null` when there
   /// are none.
-  static String? _chain(Object? effects, Object? chainEnabled) {
+  static String? _chain(Object? effects, Object? chainEnabled, bool details) {
     if (effects is! List) return null;
     final parts = <String>[];
     String? rackId;
@@ -112,14 +124,14 @@ abstract final class EffectText {
       };
       if (id != rackId) closeRack();
       if (id == null) {
-        parts.add(_entry(effect, type));
+        parts.add(_entry(effect, type, details));
         continue;
       }
       if (rackId == null) {
         rackId = id;
         rackLabel = label;
       }
-      inRack.add(_entry(effect, type));
+      inRack.add(_entry(effect, type, details));
     }
     closeRack();
     if (parts.isEmpty) return null;
@@ -127,17 +139,32 @@ abstract final class EffectText {
     return chainEnabled == false ? '$text (chain off)' : text;
   }
 
-  static String _entry(Map<String, dynamic> effect, int type) {
+  static String _entry(Map<String, dynamic> effect, int type, bool details) {
     final String name;
     if (type == _kPlugin) {
       final plugin = effect['plugin'] as Map<String, dynamic>?;
       final format = _kPluginFormats[_int(plugin?['format']) ?? 0] ?? 'plugin';
-      name = '$format ${plugin?['id'] ?? 'plugin'}';
+      final id = '$format ${plugin?['id'] ?? 'plugin'}';
+      name = details
+          ? '$id ${_version(_int(plugin?['version']) ?? 0)} '
+                '[rendered as dry passthrough]'
+          : id;
     } else {
-      name = effectTypeNames[type] ?? 'Effect $type';
+      final label = effectTypeNames[type] ?? 'Effect $type';
+      final params = effect['params'];
+      name = details && params is List && params.isNotEmpty
+          ? '$label (${params.map(_param).join(', ')})'
+          : label;
     }
     return effect['enabled'] == false ? '$name off' : name;
   }
+
+  static String _param(Object? p) => p is num ? p.toStringAsFixed(2) : '?';
+
+  /// A plugin's packed `major << 16 | minor << 8 | patch` version.
+  static String _version(int packed) => packed == 0
+      ? 'vunknown'
+      : 'v${(packed >> 16) & 0xFF}.${(packed >> 8) & 0xFF}.${packed & 0xFF}';
 
   static List<Map<String, dynamic>> _list(Object? json, String key) {
     if (json is! Map<String, dynamic>) return const [];

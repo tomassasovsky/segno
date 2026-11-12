@@ -32,6 +32,21 @@ class DawProject {
 /// content recorded with the grid off.
 const double kFallbackTempoBpm = 120;
 
+/// What a [DawTrack] holds.
+enum DawTrackKind {
+  /// A looper track as heard: its wet stem and its lane loops.
+  loop,
+
+  /// A looper track before its effects: its dry stem.
+  dry,
+
+  /// A captured input, as its monitor played it.
+  input,
+
+  /// The captured output.
+  master,
+}
+
 /// One Live audio track: what it plays in the Arrangement and the Session,
 /// whether it plays at all, its volume automation, and its info text.
 @immutable
@@ -39,6 +54,7 @@ class DawTrack {
   /// Creates a [DawTrack].
   const new({
     required this.name,
+    this.kind = DawTrackKind.loop,
     this.active = true,
     this.arrangementClips = const [],
     this.sessionClips = const [],
@@ -48,6 +64,9 @@ class DawTrack {
 
   /// The track's name in Live.
   final String name;
+
+  /// What the track holds.
+  final DawTrackKind kind;
 
   /// Whether the track's activator is on. A reference track (a dry stem, a
   /// raw input, the master as heard) is off, so the set does not play the

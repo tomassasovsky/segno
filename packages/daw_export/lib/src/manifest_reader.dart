@@ -206,6 +206,7 @@ abstract final class DawManifestReader {
           tracks.add(
             DawTrack(
               name: '$name dry',
+              kind: DawTrackKind.dry,
               active: false,
               arrangementClips: [dry],
               volume: volume,
@@ -231,18 +232,13 @@ abstract final class DawManifestReader {
     // silent while its monitor is off), so it plays beside the loops. Then
     // the captured output, which holds both: a reference, off.
     final parts = _partsByStream(captureDir, manifest, sampleRate);
-    final layout = manifest['channel_layout'];
-    final inputs = [
-      if (layout is Map<String, dynamic> && layout['captured_inputs'] is List)
-        for (final i in layout['captured_inputs'] as List)
-          if (i is num) i.toInt(),
-    ]..sort();
-    for (final input in inputs) {
+    for (final input in capturedInputsOf(manifest)) {
       final clips = parts[1 + input];
       if (clips == null) continue;
       tracks.add(
         DawTrack(
           name: inputNameOf(manifest, input),
+          kind: DawTrackKind.input,
           arrangementClips: clips,
           info:
               'The input as heard: after its effects, volume and pan.\n'
@@ -255,6 +251,7 @@ abstract final class DawManifestReader {
       tracks.add(
         DawTrack(
           name: kMasterTrackName,
+          kind: DawTrackKind.master,
           active: false,
           arrangementClips: master,
           info: _info(EffectText.output(manifest)),
@@ -307,22 +304,6 @@ abstract final class DawManifestReader {
     final ride = raw.volume.isEmpty
         ? const <AutomationBreakpoint>[]
         : thinVolumeAutomation(raw: raw.volume, tempoBpm: tempoBpm);
-    // The ride's value at [beat], as Live interpolates it.
-    double gainAt(double beat) {
-      var before = raw.initialVolume;
-      var beforeBeat = 0.0;
-      for (final point in ride) {
-        if (point.beat >= beat) {
-          if (point.beat == beforeBeat) return point.value;
-          final t = (beat - beforeBeat) / (point.beat - beforeBeat);
-          return before + (point.value - before) * t;
-        }
-        before = point.value;
-        beforeBeat = point.beat;
-      }
-      return before;
-    }
-
     final breakpoints = <AutomationBreakpoint>[];
     var audible = raw.initialAudible;
     var ri = 0;
@@ -336,8 +317,18 @@ abstract final class DawManifestReader {
         );
         continue;
       }
+      // The ride's value at the toggle, as Live interpolates it: between
+      // the ride point before it (or the value at arm) and the next one.
       final toggle = raw.mute[mi++];
-      final gain = gainAt(toggle.beat);
+      final (fromBeat, from) = ri == 0
+          ? (0.0, raw.initialVolume)
+          : (ride[ri - 1].beat, ride[ri - 1].value);
+      final gain = ri == ride.length || ride[ri].beat == fromBeat
+          ? (ri == ride.length ? from : ride[ri].value)
+          : from +
+                (ride[ri].value - from) *
+                    (toggle.beat - fromBeat) /
+                    (ride[ri].beat - fromBeat);
       breakpoints.add(
         AutomationBreakpoint(beat: toggle.beat, value: gain * audible),
       );
@@ -376,14 +367,8 @@ abstract final class DawManifestReader {
     } else {
       final frames = (manifest['capture_frames'] as num?)?.toInt() ?? 0;
       byStream[0] = [(1, 'master.wav', frames)];
-      final layout = manifest['channel_layout'];
-      if (layout is Map<String, dynamic> && layout['captured_inputs'] is List) {
-        for (final input in layout['captured_inputs'] as List) {
-          if (input is! num) continue;
-          byStream[1 + input.toInt()] = [
-            (1, 'live-input-${input.toInt()}.wav', frames),
-          ];
-        }
+      for (final input in capturedInputsOf(manifest)) {
+        byStream[1 + input] = [(1, 'live-input-$input.wav', frames)];
       }
     }
     final clips = <int, List<DawClip>>{};
@@ -398,7 +383,10 @@ abstract final class DawManifestReader {
           sampleRate: sampleRate,
           fallbackFrames: frames,
         );
-        // A missing part leaves a gap rather than shifting what follows.
+        // A missing part leaves a gap rather than shifting what follows; one
+        // whose length is unknown too ends the stream there, since nothing
+        // after it could be placed.
+        if (audio == null && frames <= 0) break;
         if (audio != null) list.add(DawClip(audio: audio, startSeconds: start));
         start += (audio?.frames ?? frames) / (audio?.sampleRate ?? sampleRate);
       }
