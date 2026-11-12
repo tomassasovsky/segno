@@ -496,11 +496,11 @@ jobs:
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
       # ci-caches.yaml saves it on the trunk under the same key, so a PR finds
-      # it there (#1771); this job only restores it (cache-mode above): change
-      # the two keys together.
-      - name: Cache the Arduino core and libraries
+      # it there (#1771); this job only restores it (#1787): change the two
+      # keys together.
+      - name: Restore the Arduino core and libraries
         id: arduino-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.arduino15

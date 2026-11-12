@@ -368,8 +368,8 @@ jobs:
             exit 1
           fi
 
-      # Saved only on the trunk (the save step after the build, #1787): from
-      # any other ref the entry could be read only by that ref.
+      # Saved only on the trunk, by the step after the firmware check (#1787):
+      # an entry saved on any other ref could be read only by that ref.
       - name: Restore Yocto sstate + downloads (GitHub-hosted only)
         id: sstate-cache
         if: inputs.runner != 'self-hosted'
@@ -398,18 +398,6 @@ jobs:
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
             ./kas-container shell ${{ needs.determine-meta.outputs.kas }} \
             -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle segno-kiosk-image"
-
-      - name: Save Yocto sstate + downloads (GitHub-hosted, trunk only)
-        if: >-
-          inputs.runner != 'self-hosted'
-          && github.ref == 'refs/heads/claude/segno-integration'
-          && steps.sstate-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ${{ env.YOCTO_WORK_DIR }}/sstate-cache
-            ${{ env.YOCTO_WORK_DIR }}/downloads
-          key: ${{ steps.sstate-cache.outputs.cache-primary-key }}
 
       # Make growth visible in the run log, so it is noticed here rather than
       # by a hypervisor falling over.
@@ -457,6 +445,20 @@ jobs:
             exit 1
           fi
           echo "image firmware matches this run's artifact"
+
+      # After the firmware check, so shared state that handed back a stale
+      # package is not saved for later builds to restore.
+      - name: Save Yocto sstate + downloads (GitHub-hosted, trunk only)
+        if: >-
+          inputs.runner != 'self-hosted'
+          && github.ref == 'refs/heads/claude/segno-integration'
+          && steps.sstate-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.YOCTO_WORK_DIR }}/sstate-cache
+            ${{ env.YOCTO_WORK_DIR }}/downloads
+          key: ${{ steps.sstate-cache.outputs.cache-primary-key }}
 
       - name: Report disk consumed
         if: always()
