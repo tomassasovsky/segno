@@ -97,7 +97,10 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `le_wav_max_frames` now counts the 44-byte header against FAT32's
   largest file (`LE_WAV_MAX_FILE_BYTES`), one frame less; the drain takes
   the longest take from `le_perf_longest_take_frames`. 3 h at 48 kHz and
-  93 min for a stereo master at 96 kHz are unchanged.
+  93 min for a stereo master at 96 kHz are unchanged. The render still
+  writes a master up to what `le_wav_seal` accepts
+  (`le_wav_sealable_frames`), so re-rendering a take an earlier build
+  stopped at the RIFF limit keeps its master.
   `test_perf_longest_take_fits_one_fat32_file` renders a take with a mono
   and a stereo master, reads every stem's header, and fails if any could
   pass 4 GiB less one byte at the longest take, for any cap and rate.
@@ -106,8 +109,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   (`StorageRepository.checkFileSizes`, `RemovableVolume.maxFileBytes`:
   4 GiB less one byte on `vfat`, no limit on exFAT, NTFS or ext4) and
   refuses with `StorageFileTooLarge`; `copyFile` checks its source the same
-  way. The Library's card line says "FAT32 drives can't hold files over
-  4 GB. Use an exFAT drive." With the cap above, nothing this build writes
+  way. The Library's card line, and the backup's interrupted dialog, say
+  "FAT32 drives can't hold files over 4 GB. Use an exFAT drive." With the cap above, nothing this build writes
   reaches the limit (recording parts are 2 GB, session files are loops of
   10 minutes at most); the check covers a master an earlier build rendered
   at 4 GiB + 4 bytes, and any later writer.

@@ -87,4 +87,13 @@ static inline uint64_t le_wav_max_frames(int32_t channels) {
   return ((uint64_t)LE_WAV_MAX_FILE_BYTES - LE_WAV_PLAIN_HEADER_BYTES) / width;
 }
 
+/* The most frames le_wav_seal accepts in a file with no extra chunk at
+ * `channels` wide: its RIFF size (36 + data) within 32 bits. Past
+ * le_wav_max_frames by a frame at most; what a take an earlier build
+ * captured to the RIFF limit renders to (#1794). */
+static inline uint64_t le_wav_sealable_frames(int32_t channels) {
+  const uint64_t width = (uint64_t)(channels > 0 ? channels : 1) * 4u;
+  return (UINT32_MAX - 36u) / width;
+}
+
 #endif /* SEGNO_ENGINE_WAV_H */

@@ -839,7 +839,6 @@ class StorageRepository implements ActiveOperationSource {
     }
   }
 
-  /// Whether anything (a file, a directory, a link) is at [path].
   /// [path]'s length, or 0 when it cannot be read (the copy then reports
   /// the source as unreadable).
   static int _lengthOf(String path) {
@@ -850,6 +849,7 @@ class StorageRepository implements ActiveOperationSource {
     }
   }
 
+  /// Whether anything (a file, a directory, a link) is at [path].
   static bool _taken(String path) =>
       FileSystemEntity.typeSync(path, followLinks: false) !=
       FileSystemEntityType.notFound;

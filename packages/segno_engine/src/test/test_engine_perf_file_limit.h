@@ -55,6 +55,24 @@ static int file_limit_layout(const char* dir, const char* rel,
   return ok && found && *frame_bytes > 0;
 }
 
+/* What le_wav_seal accepts, which a render checks before it writes a
+ * master: a take an earlier build stopped at the RIFF limit, one frame past
+ * today's longest, still renders its master. The frames are credited, not
+ * written (the sealed file is sparse). */
+static void file_limit_check_sealable(void) {
+  char path[760];
+  snprintf(path, sizeof(path), "%s/sealable.wav", perf_test_dir());
+  test_render_mkdir(perf_test_dir());
+  CHECK(le_wav_sealable_frames(2) == le_wav_max_frames(2) + 1);
+  for (int over = 0; over < 2; ++over) {
+    le_wav_writer w;
+    CHECK(le_wav_open(&w, path, 96000, 2, NULL, NULL, 0));
+    le_wav_note_frames(&w, le_wav_sealable_frames(2) + (uint64_t)over);
+    CHECK(le_wav_seal(&w, 0) == !over);
+    remove(path);
+  }
+}
+
 static void test_perf_longest_take_fits_one_fat32_file(void) {
   printf("test_perf_longest_take_fits_one_fat32_file\n");
   static const char* const rels[] = {"stems/dry/track0.wav",
@@ -110,4 +128,5 @@ static void test_perf_longest_take_fits_one_fat32_file(void) {
   CHECK(le_perf_longest_take_frames(3 * 60 * 60, 96000, 2) / 96000 / 60 ==
         93);
   CHECK(le_perf_longest_take_frames(0, 48000, 2) == UINT64_MAX);
+  file_limit_check_sealable();
 }
