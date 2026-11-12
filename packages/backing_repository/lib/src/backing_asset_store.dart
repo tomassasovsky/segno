@@ -32,7 +32,7 @@ typedef BackingDirSync = void Function(String path);
 /// checks against the bytes before a load.
 class BackingAssetStore {
   /// Creates a [BackingAssetStore] under [_root] (the exports root).
-  BackingAssetStore({
+  new({
     required this._root,
     required this._decoder,
     required this._copier,

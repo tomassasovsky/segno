@@ -25,7 +25,7 @@ import 'package:session_repository/session_repository.dart';
 /// [SessionCubit.open].
 class LibraryPreviewCard extends StatelessWidget {
   /// Creates the preview card.
-  const LibraryPreviewCard({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -89,7 +89,7 @@ class LibraryPreviewCard extends StatelessWidget {
 /// moved or deleted.
 class LibraryPreviewHeading extends StatelessWidget {
   /// Creates the heading for the session [id].
-  const LibraryPreviewHeading({required this.id, super.key});
+  const new({required this.id, super.key});
 
   /// The selected session.
   final SessionId id;
@@ -145,23 +145,20 @@ enum _PreviewNoticeKind {
 
 /// The card's single line when there is nothing to preview.
 class _PreviewNotice extends StatelessWidget {
-  const _PreviewNotice(this.kind);
+  const new(this.kind);
 
   final _PreviewNoticeKind kind;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return LibraryPreviewNotice(
-      switch (kind) {
-        _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
-        _PreviewNoticeKind.unsupportedVersion =>
-          l10n.sessionErrorUnsupportedVersion,
-        _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
-        _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
-      },
-      textKey: Key('library_preview_${kind.name}'),
-    );
+    return LibraryPreviewNotice(switch (kind) {
+      _PreviewNoticeKind.nothingSelected => l10n.libraryNoSelection,
+      _PreviewNoticeKind.unsupportedVersion =>
+        l10n.sessionErrorUnsupportedVersion,
+      _PreviewNoticeKind.unconvertible => l10n.sessionErrorUnconvertible,
+      _PreviewNoticeKind.unreadable => l10n.libraryPreviewUnreadable,
+    }, textKey: Key('library_preview_${kind.name}'));
   }
 }
 
@@ -169,7 +166,7 @@ class _PreviewNotice extends StatelessWidget {
 /// centred in the card. The Sessions and Audio cards both use it.
 class LibraryPreviewNotice extends StatelessWidget {
   /// Creates the notice saying [text].
-  const LibraryPreviewNotice(this.text, {this.textKey, super.key});
+  const new(this.text, {this.textKey, super.key});
 
   /// What the card says.
   final String text;
@@ -195,7 +192,7 @@ class LibraryPreviewNotice extends StatelessWidget {
 /// A read preview under the heading: musical facts, track lanes and footer.
 class LibraryPreviewBody extends StatelessWidget {
   /// Creates the body for [preview].
-  const LibraryPreviewBody({required this.preview, super.key});
+  const new({required this.preview, super.key});
 
   /// The selected session's facts.
   final SessionPreview preview;
@@ -258,7 +255,7 @@ class LibraryPreviewBody extends StatelessWidget {
 /// concerns this session, or a line when the session holds no audio.
 class LibraryPreviewTracks extends StatelessWidget {
   /// Creates the lanes for [preview].
-  const LibraryPreviewTracks({required this.preview, super.key});
+  const new({required this.preview, super.key});
 
   /// The selected session's facts.
   final SessionPreview preview;
@@ -393,7 +390,7 @@ class LibraryPreviewTracks extends StatelessWidget {
 /// and its length only when they were not (plan D11).
 class LibraryPreviewTrackRow extends StatelessWidget {
   /// Creates the row for [track].
-  const LibraryPreviewTrackRow({
+  const new({
     required this.track,
     required this.first,
     required this.share,
@@ -474,7 +471,7 @@ class LibraryPreviewTrackRow extends StatelessWidget {
 
 /// A figure and its unit: `2 bars`.
 class _TrackFact extends StatelessWidget {
-  const _TrackFact({required this.value, required this.unit});
+  const new({required this.value, required this.unit});
 
   final String value;
   final String unit;
@@ -510,7 +507,7 @@ class _TrackFact extends StatelessWidget {
 
 /// The track's effect count, outlined: `FX 3`.
 class _FxChip extends StatelessWidget {
-  const _FxChip({required this.count});
+  const new({required this.count});
 
   final int count;
 
@@ -540,7 +537,7 @@ class _FxChip extends StatelessWidget {
 /// The 74-tall lane with the track's clip at its length share, and the
 /// clip's waveform when its peaks were read.
 class _Lane extends StatelessWidget {
-  const _Lane({required this.share, required this.peaks});
+  const new({required this.share, required this.peaks});
 
   final double share;
   final List<double>? peaks;
@@ -583,7 +580,7 @@ class _Lane extends StatelessWidget {
 /// tracks` on the current session or `Open session` on any other.
 class LibraryPreviewFooter extends StatelessWidget {
   /// Creates the footer for [preview].
-  const LibraryPreviewFooter({required this.preview, super.key});
+  const new({required this.preview, super.key});
 
   /// The selected session's facts.
   final SessionPreview preview;
@@ -642,10 +639,8 @@ class LibraryPreviewFooter extends StatelessWidget {
                   width: 235,
                   tone: LoopButtonTone.accent,
                   label: l10n.libraryReturnToTracks,
-                  onTap: () => Navigator.popUntil(
-                    context,
-                    (route) => route.isFirst,
-                  ),
+                  onTap: () =>
+                      Navigator.popUntil(context, (route) => route.isFirst),
                 )
               : Opacity(
                   // Inert while another session action runs, and drawn so.
@@ -704,7 +699,7 @@ Future<void> openWithConfirm(
 /// `Stop` while its preview plays, with how far it has played beside it.
 class LibraryListenControl extends StatelessWidget {
   /// Creates the control for [preview].
-  const LibraryListenControl({required this.preview, super.key});
+  const new({required this.preview, super.key});
 
   /// The selected session's facts.
   final SessionPreview preview;
@@ -758,7 +753,7 @@ class LibraryListenControl extends StatelessWidget {
 /// filled in [color] (pen `Recorded audio waveform`).
 class LibraryPeaksPainter extends CustomPainter {
   /// Creates the painter for [peaks] (0..1) in [color].
-  const LibraryPeaksPainter({required this.peaks, required this.color});
+  const new({required this.peaks, required this.color});
 
   /// Absolute peaks across the clip, left to right.
   final List<double> peaks;

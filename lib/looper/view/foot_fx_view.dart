@@ -20,7 +20,7 @@ import 'package:segno/theme/theme.dart';
 /// here and are drawn dimmed.
 class FootFxView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootFxView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +87,7 @@ class FootFxView extends StatelessWidget {
 }
 
 class _FootFxPedal extends StatelessWidget {
-  const _FootFxPedal({required this.pedal});
+  const new({required this.pedal});
 
   final FootFxPedal pedal;
 

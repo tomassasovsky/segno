@@ -39,7 +39,7 @@ import 'package:segno/theme/theme.dart';
 /// device paused while it is open, and the Learn in progress.
 class MidiControlsPage extends StatefulWidget {
   /// Creates a [MidiControlsPage].
-  const MidiControlsPage({this.onStage, super.key});
+  const new({this.onStage, super.key});
 
   /// Returns to the hosting Stage when supplied by its route.
   final VoidCallback? onStage;
@@ -946,7 +946,7 @@ class _MidiControlsPageState extends State<MidiControlsPage> {
 /// it cannot run), Add mapping, and a retry when the controller choice may not
 /// have been saved.
 class _ListActions extends StatelessWidget {
-  const _ListActions({
+  const new({
     required this.state,
     required this.connection,
     required this.onReset,
@@ -1038,7 +1038,7 @@ class _ListActions extends StatelessWidget {
 /// The selected controller's mappings, or why there are none, with the
 /// page's notices under them.
 class _MappingList extends StatelessWidget {
-  const _MappingList({
+  const new({
     required this.state,
     required this.connection,
     required this.rows,
@@ -1130,7 +1130,7 @@ class _MappingList extends StatelessWidget {
 
 /// The editor's actions: Delete for a saved mapping, Cancel and Save.
 class _EditorActions extends StatelessWidget {
-  const _EditorActions({
+  const new({
     required this.state,
     required this.draft,
     required this.saving,
@@ -1189,7 +1189,7 @@ class _EditorActions extends StatelessWidget {
 /// The destination picker's way to the performance actions, which only a
 /// format that carries a press can run.
 class _DestinationActions extends StatelessWidget {
-  const _DestinationActions({required this.carries, required this.onPick});
+  const new({required this.carries, required this.onPick});
 
   /// Whether the mapping's format carries a press to run an action on.
   final bool carries;
@@ -1213,7 +1213,7 @@ class _DestinationActions extends StatelessWidget {
 
 /// One line of the list's notices: what just happened, or what is in the way.
 class _Notice extends StatelessWidget {
-  const _Notice(this.text, {super.key});
+  const new(this.text, {super.key});
 
   final String text;
 

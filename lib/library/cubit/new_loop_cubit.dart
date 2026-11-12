@@ -11,10 +11,8 @@ class NewLoopCubit extends Cubit<NewLoopState> {
   /// Creates the sheet's state, with Empty tracks chosen. [_loadEdsSetup]
   /// reads Ed's setup's sounds (null when one is missing) and [_fits] checks
   /// a template against the effects budget on the live chains.
-  NewLoopCubit({
-    required this._loadEdsSetup,
-    required this._fits,
-  }) : super(const NewLoopState());
+  new({required this._loadEdsSetup, required this._fits})
+    : super(const NewLoopState());
 
   final Future<NewLoopTemplate?> Function() _loadEdsSetup;
   final bool Function(NewLoopTemplate template) _fits;

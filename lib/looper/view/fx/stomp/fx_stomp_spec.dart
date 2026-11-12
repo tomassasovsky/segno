@@ -18,7 +18,7 @@ enum FxStompFaceKind {
   /// A rubber rocker treadle, the name along its side, and no knobs.
   rocker(Size(450, 780), 0);
 
-  FxStompFaceKind(this.size, this.maxKnobs);
+  new(this.size, this.maxKnobs);
 
   /// The face's drawing space.
   final Size size;
@@ -169,7 +169,7 @@ enum FxStompDisplay {
 /// segno-design `docs/design/own-art/pedal_faces_v3.py`).
 class FxStompSpec {
   /// Creates an [FxStompSpec].
-  const FxStompSpec({
+  const new({
     required this.face,
     required this.name,
     required this.base,

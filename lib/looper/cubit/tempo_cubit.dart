@@ -8,7 +8,7 @@ import 'package:segno/looper/model/tempo_state.dart';
 /// Presents the application-owned tempo, Click, and recording-start settings.
 class TempoCubit extends Cubit<TempoState> {
   /// Borrows [settings]; closing the view never closes the transaction owner.
-  TempoCubit({required TempoSettings settings})
+  new({required TempoSettings settings})
     : _settings = settings,
       super(settings.state) {
     _subscription = settings.stream.listen(emit);

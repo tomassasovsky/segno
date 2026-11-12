@@ -10,7 +10,7 @@ import 'package:segno/theme/theme.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 void main() {
   late _MockPerformanceRecorderCubit cubit;
@@ -55,9 +55,7 @@ void main() {
     expect(find.text(strings.perfArmedElapsed('01:05')), findsOneWidget);
   });
 
-  testWidgets('names the USB drive a take records to (#1177)', (
-    tester,
-  ) async {
+  testWidgets('names the USB drive a take records to (#1177)', (tester) async {
     await pump(
       tester,
       const PerformanceRecorderArmed(
@@ -77,10 +75,7 @@ void main() {
         overrun: false,
       ),
     );
-    expect(
-      find.byKey(const Key('tracks_armedIndicator_volume')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('tracks_armedIndicator_volume')), findsNothing);
   });
 
   testWidgets('shows the overrun glitch icon when overrun is true', (
@@ -177,9 +172,7 @@ void main() {
     final surface = context.surface;
     final looper = Theme.of(context).extension<LooperTheme>()!;
 
-    final icon = tester.widget<Icon>(
-      find.byIcon(Icons.fiber_manual_record),
-    );
+    final icon = tester.widget<Icon>(find.byIcon(Icons.fiber_manual_record));
     expect(icon.color, surface.rec);
     expect(
       icon.color,

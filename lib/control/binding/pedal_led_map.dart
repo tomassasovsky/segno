@@ -119,11 +119,11 @@ typedef CustomLedSlot = ({PedalBindingKey key, PedalLedState state});
 /// is the removal of overrides.
 class PedalLedMap extends Equatable {
   /// The defaults, with nothing overridden.
-  const PedalLedMap()
+  const new()
     : modes = const <PedalLedSlot, PedalColor>{},
       custom = const <CustomLedSlot, PedalColor>{};
 
-  PedalLedMap._(
+  new _(
     Map<PedalLedSlot, PedalColor> modes,
     Map<CustomLedSlot, PedalColor> custom,
   ) : modes = Map.unmodifiable(modes),
@@ -131,7 +131,7 @@ class PedalLedMap extends Equatable {
 
   /// Builds a map from overrides, dropping any equal to its default. Rejects
   /// a slot the mode does not have and a Custom colour on MODE or Bank.
-  factory PedalLedMap.fromMaps({
+  factory fromMaps({
     Map<PedalLedSlot, PedalColor> modes = const {},
     Map<CustomLedSlot, PedalColor> custom = const {},
   }) {
@@ -155,7 +155,7 @@ class PedalLedMap extends Equatable {
   }
 
   /// Rebuilds a map from its [toJson] form, rejecting anything malformed.
-  factory PedalLedMap.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     if (json.keys.any((key) => key != 'modes' && key != 'custom')) {
       throw const FormatException('Unknown pedal LED field');
     }
@@ -308,10 +308,7 @@ class PedalLedMap extends Equatable {
         PedalLedGroup.recPlay: recPlay,
         PedalLedGroup.stop: {PedalLedState.engaged: ledWhite, ...pressed},
         PedalLedGroup.undo: {PedalLedState.engaged: ledWhite, ...pressed},
-        PedalLedGroup.clear: {
-          PedalLedState.engaged: ledRed,
-          ...clearPressed,
-        },
+        PedalLedGroup.clear: {PedalLedState.engaged: ledRed, ...clearPressed},
         PedalLedGroup.mode: modeLed,
         PedalLedGroup.bank: bank,
       },
@@ -408,13 +405,10 @@ class PedalLedMap extends Equatable {
 
   /// Returns a copy with [mode]'s colours back at their defaults. Custom
   /// pedal colours belong to their assignments and are kept.
-  PedalLedMap resetMode(InteractionMode mode) => PedalLedMap._(
-    {
-      for (final entry in modes.entries)
-        if (entry.key.mode != mode) entry.key: entry.value,
-    },
-    custom,
-  );
+  PedalLedMap resetMode(InteractionMode mode) => PedalLedMap._({
+    for (final entry in modes.entries)
+      if (entry.key.mode != mode) entry.key: entry.value,
+  }, custom);
 
   /// Whether [mode] has any colour edited away from its default.
   bool isEdited(InteractionMode mode) => modes.keys.any((k) => k.mode == mode);
@@ -452,13 +446,11 @@ class PedalLedMap extends Equatable {
       modes.keys.any((k) => k.mode == mode && k.group == group);
 
   List<PedalBindingKey> get _customKeys =>
-      {for (final slot in custom.keys) slot.key}.toList()..sort(
-        (a, b) {
-          final button = a.button.index.compareTo(b.button.index);
-          if (button != 0) return button;
-          return (a.bank ?? -1).compareTo(b.bank ?? -1);
-        },
-      );
+      {for (final slot in custom.keys) slot.key}.toList()..sort((a, b) {
+        final button = a.button.index.compareTo(b.button.index);
+        if (button != 0) return button;
+        return (a.bank ?? -1).compareTo(b.bank ?? -1);
+      });
 
   static T? _byName<T extends Enum>(List<T> values, String name) {
     for (final value in values) {

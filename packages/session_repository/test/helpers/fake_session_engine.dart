@@ -65,7 +65,7 @@ class _FakeTrack {
 /// and per-track PCM closely enough to exercise the session repository's
 /// save/load without the native engine.
 class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
-  FakeSessionEngine({this.channels = 1, this.sampleRate = 48000});
+  new({this.channels = 1, this.sampleRate = 48000});
 
   // The audition voice (#1178): records what it was asked to play.
 
@@ -1112,25 +1112,19 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorInputOutput({
-    required int input,
-    required int mask,
-  }) => EngineResult.ok;
+  EngineResult setMonitorInputOutput({required int input, required int mask}) =>
+      EngineResult.ok;
   @override
   EngineResult setMonitorInputVolume({
     required int input,
     required double volume,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorInputMute({
-    required int input,
-    required bool muted,
-  }) => EngineResult.ok;
+  EngineResult setMonitorInputMute({required int input, required bool muted}) =>
+      EngineResult.ok;
   @override
-  EngineResult setMonitorInputPan({
-    required int input,
-    required double pan,
-  }) => EngineResult.ok;
+  EngineResult setMonitorInputPan({required int input, required double pan}) =>
+      EngineResult.ok;
   @override
   EngineResult setMonitorInputFx({
     required int input,
@@ -1157,10 +1151,8 @@ class FakeSessionEngine with SimulatedInstruments implements AudioEngine {
   @override
   Map<(int, int), LaneCacheState> laneCacheStates() => const {};
   @override
-  EngineResult setOutputEnabled({
-    required int output,
-    required bool enabled,
-  }) => EngineResult.ok;
+  EngineResult setOutputEnabled({required int output, required bool enabled}) =>
+      EngineResult.ok;
   @override
   EngineResult perfArm(PerfTarget target) => EngineResult.ok;
   @override

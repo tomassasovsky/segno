@@ -62,9 +62,7 @@ void main() {
     expect(MixSettingsSnapshot.fromRig(rig).isValid, isTrue);
     expect(
       typesOf(decodeFxChain(opened.bundle.session.allTracksChain).entries),
-      [
-        TrackEffectType.filter,
-      ],
+      [TrackEffectType.filter],
     );
     expect(typesOf(rig.laneChains[(0, 0)]!.entries), [
       TrackEffectType.delay,
@@ -72,10 +70,7 @@ void main() {
     ]);
     expect(rig.laneChains[(0, 1)]!.chainEnabled, isFalse);
     expect(typesOf(rig.trackChains[1]!.entries), [TrackEffectType.tremolo]);
-    expect(rig.monitors.map((m) => m.mode), [
-      MonitorMode.auto,
-      MonitorMode.on,
-    ]);
+    expect(rig.monitors.map((m) => m.mode), [MonitorMode.auto, MonitorMode.on]);
     expect(typesOf(rig.monitors.first.effects), [TrackEffectType.echo]);
 
     // Both bindings survive; the one on the retired Master stage follows
@@ -84,10 +79,10 @@ void main() {
       opened.bundle.session.pedalBindings,
     );
     expect(bindings.length, 2);
-    expect(
-      bindings.bindings.map((b) => b.decodeTarget()?.address.stage),
-      [FxStage.loop, FxStage.allTracks],
-    );
+    expect(bindings.bindings.map((b) => b.decodeTarget()?.address.stage), [
+      FxStage.loop,
+      FxStage.allTracks,
+    ]);
   });
 
   for (final name in const [

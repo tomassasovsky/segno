@@ -9,7 +9,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _DelayedInputStore extends FakeKeyValueStore {
   Completer<void>? firstReadGate;

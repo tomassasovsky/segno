@@ -20,22 +20,21 @@ import 'package:segno/theme/theme.dart';
 /// Bars show gain settings; they never pretend to meter live audio.
 class FootMixerView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootMixerView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
     final repository = context.read<LooperRepository>();
     return StreamBuilder<int>(
       stream: repository.monitorChanges,
-      builder: (context, _) => _FootMixerContent(
-        monitors: repository.allMonitors(),
-      ),
+      builder: (context, _) =>
+          _FootMixerContent(monitors: repository.allMonitors()),
     );
   }
 }
 
 class _FootMixerContent extends StatelessWidget {
-  const _FootMixerContent({required this.monitors});
+  const new({required this.monitors});
 
   final Map<int, InputMonitor> monitors;
 
@@ -216,7 +215,7 @@ class _FootMixerContent extends StatelessWidget {
 }
 
 class _FootMixerPedal extends StatelessWidget {
-  const _FootMixerPedal({required this.button, required this.projection});
+  const new({required this.button, required this.projection});
 
   final PedalButton button;
   final FootMixerProjection projection;

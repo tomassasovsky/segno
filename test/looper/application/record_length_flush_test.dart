@@ -31,10 +31,7 @@ void main() {
     final store = _GatedLengthStore();
     final settings = SettingsRepository(store: store);
     await settings.saveLooperMode(LooperMode.free.code);
-    final owner = RecordSettings(
-      repository: repository,
-      settings: settings,
-    );
+    final owner = RecordSettings(repository: repository, settings: settings);
     await owner.load();
     addTearDown(() async {
       if (!store.release.isCompleted) store.release.complete();

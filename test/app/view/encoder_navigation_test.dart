@@ -13,7 +13,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/theme/theme.dart';
 
-class _MockControl extends MockCubit<ControlState> implements ControlCubit {}
+class _MockControl extends MockCubit<ControlState> implements ControlCubit;
 
 void main() {
   late FakePedalLink link;

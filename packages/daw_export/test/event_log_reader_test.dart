@@ -76,11 +76,9 @@ void main() {
 
     test('reads every entry back with its frame, code, and payload', () {
       const codeSetVolume = 7;
-      _writeLog(
-        '${dir.path}/events.log',
-        48000,
-        [(0, codeSetVolume, _generic(0, 0.8))],
-      );
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetVolume, _generic(0, 0.8)),
+      ]);
       final entries = EventLogReader.readAll(dir.path);
       expect(entries, hasLength(1));
       expect(entries!.single.frame, 0);
@@ -92,40 +90,58 @@ void main() {
       );
     });
 
-    test(
-      'extracts lane-0 volume events from both the generic (track-level) '
-      'and explicit-lane commands, ignoring a non-zero explicit lane',
-      () {
-        const codeSetVolume = 7;
-        const codeSetLaneVolume = 28;
-        _writeLog('${dir.path}/events.log', 48000, [
-          (0, codeSetVolume, _generic(0, 0.5)),
-          (100, codeSetLaneVolume, _lanef(0, 0, 0.7)),
-          (200, codeSetLaneVolume, _lanef(0, 1, 0.9)), // lane 1: ignored
-          (300, codeSetVolume, _generic(1, 0.3)), // channel 1: ignored
-        ]);
-        final entries = EventLogReader.readAll(dir.path)!;
-        final result = EventLogReader.readChannelAutomation(
-          entries,
-          0,
-          48000,
-          120,
-        );
-        expect(result.volume, hasLength(2));
-        expect(result.volume[0].value, closeTo(0.5, 1e-6));
-        expect(result.volume[1].value, closeTo(0.7, 1e-6));
-      },
-    );
+    test('extracts lane-0 volume events from both the generic (track-level) '
+        'and explicit-lane commands, ignoring a non-zero explicit lane', () {
+      const codeSetVolume = 7;
+      const codeSetLaneVolume = 28;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetVolume, _generic(0, 0.5)),
+        (100, codeSetLaneVolume, _lanef(0, 0, 0.7)),
+        (200, codeSetLaneVolume, _lanef(0, 1, 0.9)), // lane 1: ignored
+        (300, codeSetVolume, _generic(1, 0.3)), // channel 1: ignored
+      ]);
+      final entries = EventLogReader.readAll(dir.path)!;
+      final result = EventLogReader.readChannelAutomation(
+        entries,
+        0,
+        48000,
+        120,
+      );
+      expect(result.volume, hasLength(2));
+      expect(result.volume[0].value, closeTo(0.5, 1e-6));
+      expect(result.volume[1].value, closeTo(0.7, 1e-6));
+    });
 
-    test(
-      'extracts mute events inverted to Ableton activator semantics '
-      '(muted -> 0, unmuted -> 1)',
-      () {
-        const codeSetMute = 8;
-        const codeSetLaneMute = 29;
+    test('extracts mute events inverted to Ableton activator semantics '
+        '(muted -> 0, unmuted -> 1)', () {
+      const codeSetMute = 8;
+      const codeSetLaneMute = 29;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetMute, _generic(0, 1)), // muted
+        (100, codeSetLaneMute, _lanef(0, 0, 0)), // unmuted
+      ]);
+      final entries = EventLogReader.readAll(dir.path)!;
+      final result = EventLogReader.readChannelAutomation(
+        entries,
+        0,
+        48000,
+        120,
+      );
+      expect(result.mute, hasLength(2));
+      expect(result.mute[0].value, 0.0); // muted -> activator off
+      expect(result.mute[1].value, 1.0); // unmuted -> activator on
+    });
+
+    group('solo', () {
+      const codeSetMute = 8;
+      const codeSetLaneMute = 29;
+      const codeSetTrackSolo = 63;
+
+      test('a solo on another track drops this activator to 0 at that beat '
+          'and restores it to 1 when the solo clears', () {
         _writeLog('${dir.path}/events.log', 48000, [
-          (0, codeSetMute, _generic(0, 1)), // muted
-          (100, codeSetLaneMute, _lanef(0, 0, 0)), // unmuted
+          (48000, codeSetTrackSolo, _generic(1, 1)), // track 1 soloed
+          (96000, codeSetTrackSolo, _generic(1, 0)), // solo cleared
         ]);
         final entries = EventLogReader.readAll(dir.path)!;
         final result = EventLogReader.readChannelAutomation(
@@ -135,38 +151,11 @@ void main() {
           120,
         );
         expect(result.mute, hasLength(2));
-        expect(result.mute[0].value, 0.0); // muted -> activator off
-        expect(result.mute[1].value, 1.0); // unmuted -> activator on
-      },
-    );
-
-    group('solo', () {
-      const codeSetMute = 8;
-      const codeSetLaneMute = 29;
-      const codeSetTrackSolo = 63;
-
-      test(
-        'a solo on another track drops this activator to 0 at that beat '
-        'and restores it to 1 when the solo clears',
-        () {
-          _writeLog('${dir.path}/events.log', 48000, [
-            (48000, codeSetTrackSolo, _generic(1, 1)), // track 1 soloed
-            (96000, codeSetTrackSolo, _generic(1, 0)), // solo cleared
-          ]);
-          final entries = EventLogReader.readAll(dir.path)!;
-          final result = EventLogReader.readChannelAutomation(
-            entries,
-            0,
-            48000,
-            120,
-          );
-          expect(result.mute, hasLength(2));
-          expect(result.mute[0].beat, closeTo(2.0, 1e-9));
-          expect(result.mute[0].value, 0.0);
-          expect(result.mute[1].beat, closeTo(4.0, 1e-9));
-          expect(result.mute[1].value, 1.0);
-        },
-      );
+        expect(result.mute[0].beat, closeTo(2.0, 1e-9));
+        expect(result.mute[0].value, 0.0);
+        expect(result.mute[1].beat, closeTo(4.0, 1e-9));
+        expect(result.mute[1].value, 1.0);
+      });
 
       test('a muted track stays 0 through a solo on another track', () {
         _writeLog('${dir.path}/events.log', 48000, [
@@ -221,31 +210,28 @@ void main() {
         expect(result.mute, isEmpty);
       });
 
-      test(
-        'a solo seeded from the arm snapshot silences this track until '
-        'the last solo clears',
-        () {
-          _writeLog('${dir.path}/events.log', 48000, [
-            (100, codeSetTrackSolo, _generic(2, 1)), // second solo
-            (200, codeSetTrackSolo, _generic(1, 0)), // first cleared
-            (300, codeSetTrackSolo, _generic(2, 0)), // last cleared
-          ]);
-          final entries = EventLogReader.readAll(dir.path)!;
-          final result = EventLogReader.readChannelAutomation(
-            entries,
-            0,
-            48000,
-            120,
-            initiallySoloed: {1},
-          );
-          // Silenced from arm: off at the start, on when the last solo clears.
-          expect(result.mute, hasLength(2));
-          expect(result.mute.first.beat, 0);
-          expect(result.mute.first.value, 0);
-          expect(result.mute.last.beat, closeTo(300 / 48000 * 2, 1e-9));
-          expect(result.mute.last.value, 1.0);
-        },
-      );
+      test('a solo seeded from the arm snapshot silences this track until '
+          'the last solo clears', () {
+        _writeLog('${dir.path}/events.log', 48000, [
+          (100, codeSetTrackSolo, _generic(2, 1)), // second solo
+          (200, codeSetTrackSolo, _generic(1, 0)), // first cleared
+          (300, codeSetTrackSolo, _generic(2, 0)), // last cleared
+        ]);
+        final entries = EventLogReader.readAll(dir.path)!;
+        final result = EventLogReader.readChannelAutomation(
+          entries,
+          0,
+          48000,
+          120,
+          initiallySoloed: {1},
+        );
+        // Silenced from arm: off at the start, on when the last solo clears.
+        expect(result.mute, hasLength(2));
+        expect(result.mute.first.beat, 0);
+        expect(result.mute.first.value, 0);
+        expect(result.mute.last.beat, closeTo(300 / 48000 * 2, 1e-9));
+        expect(result.mute.last.value, 1.0);
+      });
 
       test('does not emit duplicate breakpoints for redundant gestures', () {
         _writeLog('${dir.path}/events.log', 48000, [

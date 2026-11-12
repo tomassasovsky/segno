@@ -24,7 +24,7 @@ class MidiOutClient {
   ///
   /// Throws a [MidiException] when the platform has no MIDI backend or the
   /// handle cannot be allocated.
-  MidiOutClient({SegnoEngineBindings? bindings})
+  new({SegnoEngineBindings? bindings})
     : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
     _handle = _bindings.le_midi_out_create();
     if (_handle == nullptr) {

@@ -178,10 +178,9 @@ void main() {
       tester,
     ) async {
       await openCalibration(tester, 'main');
-      expect(
-        harness.guards.active.map((op) => op.kind),
-        [GuardKind.touchCalibration],
-      );
+      expect(harness.guards.active.map((op) => op.kind), [
+        GuardKind.touchCalibration,
+      ]);
       await tester.tap(find.byKey(const Key('touch_calibration_cancel')));
       await tester.pumpAndSettle();
       expect(harness.guards.active, isEmpty);

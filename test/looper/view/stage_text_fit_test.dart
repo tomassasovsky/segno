@@ -29,26 +29,25 @@ import '../../helpers/helpers.dart';
 import '../../helpers/text_fit.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
-    implements TransportClockCubit {}
+    implements TransportClockCubit;
 
 class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
-    implements OutputLevelCubit {}
+    implements OutputLevelCubit;
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
-class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit {}
+class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit;
 
 /// Every text on the stage shows in full on the console's main screen, in
 /// the faces the app bundles (#1524). The test font's square glyphs would
@@ -69,13 +68,11 @@ void main() {
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.meters).thenReturn(const MeterLevels());
-    when(
-      () => repository.meterLevels,
-    ).thenAnswer((_) => const Stream<MeterLevels>.empty());
+    when(() => repository.meterLevels)
+        .thenAnswer((_) => const Stream<MeterLevels>.empty());
     when(() => repository.playhead).thenReturn(const Playhead());
-    when(
-      () => repository.playheads,
-    ).thenAnswer((_) => const Stream<Playhead>.empty());
+    when(() => repository.playheads)
+        .thenAnswer((_) => const Stream<Playhead>.empty());
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
     when(() => repository.laneCount(any())).thenReturn(1);
@@ -85,18 +82,14 @@ void main() {
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.state).thenReturn(const LooperState());
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
     when(() => repository.allMonitors()).thenReturn(const {});
     when(() => repository.monitorEffects(any())).thenReturn(const []);
     final pedal = PedalRepository(NoopPedalLink());
@@ -256,9 +249,7 @@ void main() {
     for (final view in StageView.values) {
       testWidgets(
         'the ${view.name} view shows every text in full ($language)',
-        (
-          tester,
-        ) async {
+        (tester) async {
           seedLongCounts();
           tracks.showView(view);
           await pump(tester, locale);

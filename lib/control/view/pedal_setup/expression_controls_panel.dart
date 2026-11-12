@@ -14,7 +14,7 @@ import 'package:segno/theme/theme.dart';
 /// How one mapping reads: what it points at, and whether the rig still has it.
 class ExpressionRow {
   /// Creates an [ExpressionRow].
-  const ExpressionRow({
+  const new({
     required this.mapping,
     required this.destination,
     required this.control,
@@ -47,7 +47,7 @@ class ExpressionRow {
 /// edited.
 class ExpressionControlsPanel extends StatelessWidget {
   /// Creates an [ExpressionControlsPanel].
-  const ExpressionControlsPanel({
+  const new({
     required this.rows,
     required this.selected,
     required this.position,
@@ -180,7 +180,7 @@ class ExpressionControlsPanel extends StatelessWidget {
 
 /// The mappings as rows, or the invitation to add one when there are none.
 class _ExpressionList extends StatelessWidget {
-  const _ExpressionList({
+  const new({
     required this.rows,
     required this.selected,
     required this.position,
@@ -209,9 +209,7 @@ class _ExpressionList extends StatelessWidget {
         ),
       );
     }
-    final openIndex = rows.indexWhere(
-      (row) => row.mapping.target == selected,
-    );
+    final openIndex = rows.indexWhere((row) => row.mapping.target == selected);
     final at = position;
     return ControlRowList(
       itemCount: rows.length,
@@ -248,7 +246,7 @@ class _ExpressionList extends StatelessWidget {
 
 /// The open row's range: its title, Change and Remove, and its two endpoints.
 class _ExpressionRange extends StatelessWidget {
-  const _ExpressionRange({
+  const new({
     required this.row,
     required this.onChange,
     required this.onRemove,
@@ -336,7 +334,7 @@ class _ExpressionRange extends StatelessWidget {
 /// One endpoint of the open row: its name, its value, and the control that
 /// moves it.
 class _ExpressionEndpoint extends StatelessWidget {
-  const _ExpressionEndpoint({
+  const new({
     required this.row,
     required this.isHeel,
     required this.onEndpoint,
@@ -411,9 +409,7 @@ class _ExpressionEndpoint extends StatelessWidget {
             )
           else if (row.mapping.target is OneShotValueTarget)
             PlaybackEndpointChoice(
-              key: Key(
-                'expression_endpoint_${endpointId}_$targetKey',
-              ),
+              key: Key('expression_endpoint_${endpointId}_$targetKey'),
               value: value,
               width: 625,
               enabled: row.available && row.disabledReason == null,
@@ -426,11 +422,8 @@ class _ExpressionEndpoint extends StatelessWidget {
               value: value,
               width: 625,
               semanticLabel: '${row.control} $name',
-              semanticValueBuilder: (normalized) => controlValueReadout(
-                l10n,
-                row.mapping.target,
-                normalized,
-              ),
+              semanticValueBuilder: (normalized) =>
+                  controlValueReadout(l10n, row.mapping.target, normalized),
               // A control the rig no longer has cannot be auditioned, so its
               // endpoints are shown and not movable: the row is there to be
               // repointed or removed, not tuned.

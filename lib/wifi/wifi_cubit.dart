@@ -18,12 +18,9 @@ class WifiCubit extends Cubit<WifiState> {
   /// backend/transient join failure — one entry per automatic retry.
   /// Injectable so tests do not sit through real seconds. [_clock] times the
   /// internet check's [connectivityInterval].
-  WifiCubit({
+  new({
     required this._repository,
-    this._retryDelays = const [
-      Duration(seconds: 2),
-      Duration(seconds: 5),
-    ],
+    this._retryDelays = const [Duration(seconds: 2), Duration(seconds: 5)],
     this._clock = DateTime.now,
   }) : super(const WifiState());
 
@@ -109,13 +106,7 @@ class WifiCubit extends Cubit<WifiState> {
         ..sort((a, b) => b.signal.compareTo(a.signal));
       final status = await _repository.status();
       if (isClosed) return;
-      emit(
-        state.copyWith(
-          networks: sorted,
-          status: status,
-          scanning: false,
-        ),
-      );
+      emit(state.copyWith(networks: sorted, status: status, scanning: false));
     } on Object catch (e) {
       if (isClosed) return;
       emit(state.copyWith(scanning: false, errorMessage: '$e'));
@@ -385,11 +376,7 @@ class WifiCubit extends Cubit<WifiState> {
     } on Object catch (e) {
       if (isClosed) return;
       emit(
-        state.copyWith(
-          busy: false,
-          disconnecting: false,
-          errorMessage: '$e',
-        ),
+        state.copyWith(busy: false, disconnecting: false, errorMessage: '$e'),
       );
     }
   }
@@ -428,11 +415,7 @@ class WifiCubit extends Cubit<WifiState> {
     } on Object catch (e) {
       if (isClosed) return;
       emit(
-        state.copyWith(
-          busy: false,
-          disconnecting: false,
-          errorMessage: '$e',
-        ),
+        state.copyWith(busy: false, disconnecting: false, errorMessage: '$e'),
       );
     }
   }
@@ -456,11 +439,7 @@ class WifiCubit extends Cubit<WifiState> {
       final status = await _repository.status();
       if (isClosed) return;
       emit(
-        state.copyWith(
-          status: status,
-          busy: false,
-          leftSsid: _last(status),
-        ),
+        state.copyWith(status: status, busy: false, leftSsid: _last(status)),
       );
     } on Object catch (e) {
       if (isClosed) return;

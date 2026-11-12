@@ -122,9 +122,8 @@ void main() {
         'unreadable sidecars and loose files', () async {
       take('perf-20261006-201500', finalized: false);
       final stranded = take('perf-20261006-201600');
-      File(
-        '$stranded/${PerformanceRepository.recoveryMarkerName}',
-      ).writeAsStringSync('');
+      File('$stranded/${PerformanceRepository.recoveryMarkerName}')
+          .writeAsStringSync('');
       Directory('$root/broken').createSync();
       File('$root/broken/performance.json').writeAsStringSync('{');
       Directory('$root/empty').createSync();
@@ -317,14 +316,12 @@ void main() {
       // A finished take, but not one of this repository's.
       final foreign = '${outside.path}/perf-20261006-201500';
       Directory(foreign).createSync();
-      File(
-        '$root/perf-20261006-201500/performance.json',
-      ).copySync('$foreign/performance.json');
+      File('$root/perf-20261006-201500/performance.json')
+          .copySync('$foreign/performance.json');
       File('$foreign/performance.json').writeAsStringSync(
-        File('$foreign/performance.json').readAsStringSync().replaceFirst(
-          '"finalized":false',
-          '"finalized":true',
-        ),
+        File('$foreign/performance.json')
+            .readAsStringSync()
+            .replaceFirst('"finalized":false', '"finalized":true'),
       );
       CaptureSummary at(String path) => CaptureSummary(
         path: path,
@@ -439,10 +436,9 @@ void main() {
         '$root/recovered/.perf-x${PerformanceRepository.deletingSuffix}',
       )..createSync(recursive: true);
 
-      expect(
-        (await repo.listCaptures()).map((c) => c.name),
-        ['perf-20261006-201600'],
-      );
+      expect((await repo.listCaptures()).map((c) => c.name), [
+        'perf-20261006-201600',
+      ]);
 
       await repo.runBootRecovery();
 
@@ -533,10 +529,7 @@ void main() {
     test('no waveform when a part does not read or there is none', () async {
       take(
         'perf-20261006-201500',
-        parts: [
-          part(0, 1, 'master-001.wav'),
-          part(0, 2, 'master-002.wav'),
-        ],
+        parts: [part(0, 1, 'master-001.wav'), part(0, 2, 'master-002.wav')],
         files: {'master-001.wav': 10},
       );
       take('perf-20261006-201600', parts: <Object>[]);

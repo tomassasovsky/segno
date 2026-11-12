@@ -6,7 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/cubit/output_level_cubit.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// -6.0 dBFS and -12.0 dBFS as absolute sample peaks.
 const _minus6 = 0.501187;

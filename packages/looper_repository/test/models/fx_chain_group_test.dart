@@ -236,10 +236,7 @@ void main() {
     test('a rename keeps the switch', () {
       final off = fxWithRackEnabled(chain(), 'r1', enabled: false)!;
 
-      expect(
-        fxRenameRack(off, 'r1', 'Wah').first.rack?.bypassed,
-        isTrue,
-      );
+      expect(fxRenameRack(off, 'r1', 'Wah').first.rack?.bypassed, isTrue);
     });
   });
 
@@ -375,10 +372,9 @@ void main() {
         ).keys,
         [0],
       );
-      expect(
-        fxGroupChannelWrites(group, const FxChannels(level: 0.5)).keys,
-        [2],
-      );
+      expect(fxGroupChannelWrites(group, const FxChannels(level: 0.5)).keys, [
+        2,
+      ]);
     });
 
     test('applying fxGroupChannelWrites matches fxSetGroupChannels on a rack '
@@ -419,10 +415,7 @@ void main() {
         placement: 0.75,
         level: 0.4,
       );
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       final written = fxSetGroupChannels(chain, 0, 2, channels);
 
@@ -432,11 +425,7 @@ void main() {
 
   group('fxOrderGroups', () {
     test('puts the groups in the order the ids name', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-        _fx('c'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1'), _fx('c')];
 
       expect(_slots(fxOrderGroups(chain, ['c', 'r1'])), ['c', 'a', 'b']);
     });
@@ -453,10 +442,7 @@ void main() {
 
     test('refuses an order that would carry a group across the stage '
         'boundary', () {
-      final chain = [
-        _fx('a', placement: FxPlacement.pre),
-        _fx('b'),
-      ];
+      final chain = [_fx('a', placement: FxPlacement.pre), _fx('b')];
 
       expect(fxOrderGroups(chain, ['b', 'a']), same(chain));
     });
@@ -472,17 +458,17 @@ void main() {
         _fx('z'),
       ];
 
-      expect(
-        _slots(fxOrderRackModules(chain, 'r1', ['c', 'a', 'b'])),
-        ['x', 'c', 'a', 'b', 'z'],
-      );
+      expect(_slots(fxOrderRackModules(chain, 'r1', ['c', 'a', 'b'])), [
+        'x',
+        'c',
+        'a',
+        'b',
+        'z',
+      ]);
     });
 
     test("refuses a list that does not name exactly that rack's modules", () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       expect(fxOrderRackModules(chain, 'r1', ['a']), same(chain));
       expect(fxOrderRackModules(chain, 'r1', ['a', 'z']), same(chain));
@@ -501,10 +487,7 @@ void main() {
 
   group('fxRenameRack', () {
     test('renames every module of the rack and leaves its id alone', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       final renamed = fxRenameRack(chain, 'r1', 'Verse');
 
@@ -562,11 +545,7 @@ void main() {
 
   group('fxMoveGroup', () {
     test('moves a whole rack, modules and all', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-        _fx('c'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1'), _fx('c')];
 
       expect(_slots(fxMoveGroup(chain, 0, 1)), ['c', 'a', 'b']);
     });
@@ -575,10 +554,7 @@ void main() {
       // The accepted design says reorder moves an effect within its stage and
       // the explicit switch is what moves it between them. A reorder that
       // silently re-staged an effect would change whether it is recorded.
-      final chain = [
-        _fx('a', placement: FxPlacement.pre),
-        _fx('b'),
-      ];
+      final chain = [_fx('a', placement: FxPlacement.pre), _fx('b')];
 
       expect(fxMoveGroup(chain, 0, 1), same(chain));
     });
@@ -636,9 +612,8 @@ void main() {
       // Doubler, Dub delay, Dub reverb, Ambience, Compressor, Parametric EQ.
       final preset = FxPreset.tryParse(
         'Dub Rack',
-        File(
-          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
-        ).readAsStringSync(),
+        File('../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset')
+            .readAsStringSync(),
       )!;
       final chain = [
         for (final (i, e) in fxRackEntries(preset).indexed)
@@ -675,9 +650,8 @@ void main() {
     test('a Dub Rack added into a Dub Rack joins its paths', () {
       final preset = FxPreset.tryParse(
         'Dub Rack',
-        File(
-          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
-        ).readAsStringSync(),
+        File('../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset')
+            .readAsStringSync(),
       )!;
       List<BuiltInEffect> rack(String prefix) => [
         for (final (i, e) in fxRackEntries(preset).indexed)
@@ -692,10 +666,12 @@ void main() {
         'a4', 'a5', 'b4', 'b5',
       ]);
       // The joined rack still reorders: its Compressor and EQ swap.
-      expect(
-        _slots(fxMoveWithinRack(joined, 'dub', 8, 9)).sublist(8),
-        ['a5', 'a4', 'b4', 'b5'],
-      );
+      expect(_slots(fxMoveWithinRack(joined, 'dub', 8, 9)).sublist(8), [
+        'a5',
+        'a4',
+        'b4',
+        'b5',
+      ]);
     });
   });
 
@@ -703,17 +679,11 @@ void main() {
     test('moves every module of the rack, never half of it', () {
       // Half a rack on either side of the loop player is not a state any
       // accepted surface can draw, let alone one the player asked for.
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1')];
 
       final moved = fxSetGroupPlacement(chain, 0, 2, FxPlacement.pre);
 
-      expect(
-        moved.every((fx) => fx.placement == FxPlacement.pre),
-        isTrue,
-      );
+      expect(moved.every((fx) => fx.placement == FxPlacement.pre), isTrue);
     });
 
     test('lands the moved rack at the END of its new stage, not where it '
@@ -753,11 +723,7 @@ void main() {
 
   group('persistence', () {
     test('a rack survives encode and decode', () {
-      final chain = [
-        _fx('a', rackId: 'r1'),
-        _fx('b', rackId: 'r1'),
-        _fx('c'),
-      ];
+      final chain = [_fx('a', rackId: 'r1'), _fx('b', rackId: 'r1'), _fx('c')];
 
       final back = decodeTrackEffects(encodeTrackEffects(chain));
 

@@ -46,7 +46,7 @@ enum MidiEdge {
 ///
 /// Keys are opaque here. The app resolves stable action and parameter keys.
 sealed class MidiControl extends Equatable {
-  MidiControl({required this.key}) {
+  new({required this.key}) {
     if (key.isEmpty) throw const FormatException('Invalid MIDI control key');
   }
 
@@ -89,11 +89,7 @@ sealed class MidiControl extends Equatable {
 /// A parameter with independent low/high values; reversed ranges are valid.
 final class MidiParameterControl extends MidiControl {
   /// Creates a parameter control with finite normalized endpoints.
-  MidiParameterControl({
-    required super.key,
-    required this.low,
-    required this.high,
-  }) {
+  new({required super.key, required this.low, required this.high}) {
     if (!_unit(low) || !_unit(high)) {
       throw const FormatException('Invalid MIDI parameter range');
     }
@@ -130,7 +126,7 @@ final class MidiParameterControl extends MidiControl {
 /// An action on an explicit button edge.
 final class MidiActionControl extends MidiControl {
   /// Creates an action control.
-  MidiActionControl({required super.key, this.trigger = MidiEdge.press});
+  new({required super.key, this.trigger = MidiEdge.press});
 
   /// The edge that runs it.
   final MidiEdge trigger;
@@ -164,7 +160,7 @@ enum MidiMappingProblem {
 /// One stable MIDI source and its ordered controls.
 class MidiMapping extends Equatable {
   /// Creates a detached, complete, valid mapping.
-  factory MidiMapping({
+  factory({
     required String id,
     required MidiSource source,
     required MidiBehavior behavior,
@@ -189,16 +185,10 @@ class MidiMapping extends Equatable {
     );
   }
 
-  const MidiMapping._(
-    this.id,
-    this.source,
-    this.behavior,
-    this.controls,
-    this.enabled,
-  );
+  const new _(this.id, this.source, this.behavior, this.controls, this.enabled);
 
   /// Decodes a complete mapping, rejecting malformed explicit fields.
-  factory MidiMapping.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     final id = json['id'];
     final rawSource = json['source'];
     final behavior = MidiBehavior.tryParse(json['behavior']);
@@ -318,7 +308,7 @@ class MidiMapping extends Equatable {
 /// The immutable, ordered mapping set for the rig.
 class MidiMappingSet extends Equatable {
   /// Creates a detached set, rejecting duplicate IDs and overlapping sources.
-  factory MidiMappingSet({List<MidiMapping> mappings = const []}) {
+  factory({List<MidiMapping> mappings = const []}) {
     for (final (index, mapping) in mappings.indexed) {
       if (mappings
           .take(index)
@@ -332,10 +322,10 @@ class MidiMappingSet extends Equatable {
     return MidiMappingSet._(List.unmodifiable(mappings));
   }
 
-  const MidiMappingSet._(this.mappings);
+  const new _(this.mappings);
 
   /// Decodes a present payload strictly; absence is handled by Settings.
-  factory MidiMappingSet.fromJson(Object? json) {
+  factory fromJson(Object? json) {
     if (json is! List) throw const FormatException('Invalid MIDI mappings');
     return MidiMappingSet(
       mappings: [

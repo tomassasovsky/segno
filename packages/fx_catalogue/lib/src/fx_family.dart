@@ -4,11 +4,7 @@ import 'package:fx_catalogue/src/fx_preset.dart';
 /// presets filed under it.
 class FxFamily {
   /// Creates an [FxFamily].
-  const FxFamily({
-    required this.name,
-    required this.slug,
-    required this.presets,
-  });
+  const new({required this.name, required this.slug, required this.presets});
 
   /// The family's name, which is the folder the presets are filed under.
   final String name;

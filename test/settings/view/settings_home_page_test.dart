@@ -21,15 +21,14 @@ import 'package:storage_repository/storage_repository.dart';
 
 import 'destination_harness.dart';
 
-class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit {}
+class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit;
 
-class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+class _MockSessionCubit extends MockCubit<SessionState> implements SessionCubit;
 
-class _MockStorageRepository extends Mock implements StorageRepository {}
+class _MockStorageRepository extends Mock implements StorageRepository;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 /// Takes every route off the navigator the moment it is pushed, before its
 /// page builds, and keeps its name: the test is about WHICH page a tile
@@ -273,10 +272,7 @@ void main() {
       const surface = SurfaceTheme.dark;
       expect(pixel(edge(SettingsDestination.loop, 0)), surface.encoderFocus);
       expect(pixel(edge(SettingsDestination.loop, 2)), surface.encoderFocus);
-      expect(
-        pixel(edge(SettingsDestination.effects, 0)),
-        surface.menuArtLine,
-      );
+      expect(pixel(edge(SettingsDestination.effects, 0)), surface.menuArtLine);
       expect(
         pixel(edge(SettingsDestination.effects, 2)),
         surface.menuArtGround,

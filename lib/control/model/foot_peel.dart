@@ -42,7 +42,7 @@ enum FootPeelRefusal {
 /// mode has no holds.
 class FootPeelPedal {
   /// Creates one static role in the accepted ten-pedal layout.
-  const FootPeelPedal(this.press, {this.slot});
+  const new(this.press, {this.slot});
 
   /// The action at contact.
   final FootPeelAction press;
@@ -54,7 +54,7 @@ class FootPeelPedal {
 /// One track's published layers.
 class FootPeelTrack extends Equatable {
   /// Creates a read of current repository facts.
-  const FootPeelTrack({
+  const new({
     required this.channel,
     required this.hasContent,
     required this.layers,
@@ -95,7 +95,7 @@ class FootPeelTrack extends Equatable {
 /// Shared semantic read model for captions, touch and physical feedback.
 class FootPeelProjection extends Equatable {
   /// Creates a complete projection.
-  const FootPeelProjection({required this.bank, required this.tracks});
+  const new({required this.bank, required this.tracks});
 
   /// Shared rig bank (0 = tracks 1–4, 1 = tracks 5–8).
   final int bank;

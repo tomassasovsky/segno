@@ -22,13 +22,13 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockBackingCubit extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+    implements BackingCubit;
 
 const _playing = LooperState(tracks: [Track(state: TrackState.playing)]);
 

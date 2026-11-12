@@ -40,7 +40,7 @@ import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _ControlledStore extends FakeKeyValueStore {
   Completer<void>? pending;
@@ -77,9 +77,8 @@ void main() {
     when(() => looper.laneCount(any())).thenReturn(1);
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -96,9 +95,8 @@ void main() {
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
     when(() => looper.lengthRestartIntent).thenAnswer(
       (_) => (
@@ -107,9 +105,8 @@ void main() {
         mode: LooperMode.multi,
       ),
     );
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordTimingCaptureLocked).thenReturn(false);
     when(() => looper.recordTimingSettingsSettled).thenReturn(true);
     when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
@@ -122,9 +119,8 @@ void main() {
         trackOverrides: const <int, RecordTiming>{},
       ),
     );
-    when(() => looper.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -149,9 +145,8 @@ void main() {
         quantizeDiv: rememberedDivision,
       ),
     );
-    when(() => looper.settleLengthSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
@@ -172,12 +167,10 @@ void main() {
       confirmedLength = call.positionalArguments.single as int;
       return EngineResult.ok;
     });
-    when(
-      () => looper.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
+    when(() => looper.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
   });
 
   setUpAll(() {
@@ -356,9 +349,11 @@ void main() {
       await tap(tester, 'external_pick_$key');
       expect(saved(PedalCtrlJack.ctrl1).single.controls.parameters, isEmpty);
       await tap(tester, 'external_save');
-      final parameter = saved(
-        PedalCtrlJack.ctrl1,
-      ).single.controls.parameters.single;
+      final parameter = saved(PedalCtrlJack.ctrl1)
+          .single
+          .controls
+          .parameters
+          .single;
       expect(parameter.target, const DefaultRecordTimingTarget());
       expect((parameter.active, parameter.inactive), (2 / 6, 2 / 6));
       expect(timing.state.defaultTiming, RecordTiming.bar);
@@ -383,15 +378,14 @@ void main() {
       await tap(tester, 'expression_kind_loopControls');
       await tap(tester, 'expression_destination_loop:defaults');
       final key = externalControlKey(const DefaultRecordLengthTarget());
-      await tap(
-        tester,
-        'external_pick_$key',
-      );
+      await tap(tester, 'external_pick_$key');
       expect(saved(PedalCtrlJack.ctrl1).single.controls.parameters, isEmpty);
       await tap(tester, 'external_save');
-      final parameter = saved(
-        PedalCtrlJack.ctrl1,
-      ).single.controls.parameters.single;
+      final parameter = saved(PedalCtrlJack.ctrl1)
+          .single
+          .controls
+          .parameters
+          .single;
       expect(parameter.target, const DefaultRecordLengthTarget());
       expect((parameter.active, parameter.inactive), (4 / 64, 4 / 64));
       verifyNever(
@@ -518,9 +512,7 @@ void main() {
       await pump(tester);
       expect(
         tester
-            .widget<LoopOutlinedButton>(
-              find.byKey(const Key('external_save')),
-            )
+            .widget<LoopOutlinedButton>(find.byKey(const Key('external_save')))
             .onTap,
         isNull,
         reason: 'nothing to save yet',
@@ -630,9 +622,7 @@ void main() {
       expect(tester.widget<PopScope>(find.byType(PopScope)).canPop, isFalse);
       expect(
         tester
-            .widget<LoopOutlinedButton>(
-              find.byKey(const Key('external_save')),
-            )
+            .widget<LoopOutlinedButton>(find.byKey(const Key('external_save')))
             .onTap,
         isNull,
       );
@@ -662,9 +652,7 @@ void main() {
       expect(find.byKey(const Key('external_save_failed')), findsOneWidget);
       expect(
         tester
-            .widget<LoopOutlinedButton>(
-              find.byKey(const Key('external_save')),
-            )
+            .widget<LoopOutlinedButton>(find.byKey(const Key('external_save')))
             .onTap,
         isNotNull,
       );
@@ -722,9 +710,7 @@ void main() {
       );
       expect(
         tester
-            .widget<LoopOutlinedButton>(
-              find.byKey(const Key('external_save')),
-            )
+            .widget<LoopOutlinedButton>(find.byKey(const Key('external_save')))
             .onTap,
         isNull,
       );

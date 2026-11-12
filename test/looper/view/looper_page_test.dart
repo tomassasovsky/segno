@@ -32,10 +32,10 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
+class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit;
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
 void main() {
   group('LooperPage', () {

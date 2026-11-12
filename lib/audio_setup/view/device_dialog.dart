@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// two thirds of the size of everything around it.
 class DeviceDialog extends StatelessWidget {
   /// Creates a [DeviceDialog].
-  const DeviceDialog({
+  const new({
     required this.title,
     required this.actions,
     this.body,

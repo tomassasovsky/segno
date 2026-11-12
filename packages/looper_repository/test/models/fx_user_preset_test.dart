@@ -26,18 +26,8 @@ void main() {
     final chain = encodeTrackEffects([effect]);
     final saved = FxUserPreset.decodeAll(
       jsonEncode([
-        {
-          'id': 'rack',
-          'name': 'Rack',
-          'chain': chain,
-          'isRack': true,
-        },
-        {
-          'id': 'single',
-          'name': 'Single',
-          'chain': chain,
-          'isRack': false,
-        },
+        {'id': 'rack', 'name': 'Rack', 'chain': chain, 'isRack': true},
+        {'id': 'single', 'name': 'Single', 'chain': chain, 'isRack': false},
       ]),
     );
 

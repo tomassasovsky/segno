@@ -11,7 +11,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 @immutable
 class EngineConfig {
   /// Creates an [EngineConfig].
-  const EngineConfig({
+  const new({
     this.sampleRate = 0,
     this.bufferFrames = 0,
     this.inputChannels = 0,

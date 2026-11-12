@@ -9,7 +9,7 @@ import 'package:looper_repository/src/models/engine_reopened.dart';
 /// Device + engine health, projected from the engine snapshot.
 class EngineStatus extends Equatable {
   /// Creates an [EngineStatus].
-  const EngineStatus({
+  const new({
     this.deviceName = '',
     this.sampleRate = 0,
     this.bufferFrames = 0,

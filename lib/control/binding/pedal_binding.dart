@@ -23,7 +23,7 @@ export 'package:segno/control/binding/binding_scope.dart' show BindingScope;
 /// remappable no matter what a persisted blob claims.
 class PedalBindingKey extends Equatable {
   /// Creates a key on [button], within [bank] for a track button.
-  const PedalBindingKey({required this.button, this.bank});
+  const new({required this.button, this.bank});
 
   /// Rebuilds a key from its [toJson] map, or `null` when the map does not
   /// describe a bindable control (unknown button, or a bank coordinate that
@@ -135,7 +135,7 @@ class PedalBindingKey extends Equatable {
 class PedalBinding extends Equatable {
   /// Creates a binding of [key] to [target], optionally with a [holdTarget]
   /// on the same switch.
-  factory PedalBinding({
+  factory({
     required PedalBindingKey key,
     required String target,
     BindingBehavior behavior = BindingBehavior.toggle,
@@ -167,7 +167,7 @@ class PedalBinding extends Equatable {
     );
   }
 
-  const PedalBinding._({
+  const new _({
     required this.key,
     required this.target,
     required this.behavior,

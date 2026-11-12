@@ -10,7 +10,7 @@ import 'package:pub_semver/pub_semver.dart';
 @immutable
 class UpdateRecovery {
   /// Creates an [UpdateRecovery].
-  const UpdateRecovery({this.rolledBack, this.interrupted});
+  const new({this.rolledBack, this.interrupted});
 
   /// The staged version that was booted into and did not start, so the
   /// console went back to the running one; `null` when none.

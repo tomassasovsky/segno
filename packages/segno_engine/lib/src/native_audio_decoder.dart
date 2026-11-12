@@ -23,7 +23,7 @@ class NativeAudioDecoder implements AudioDecoder {
   /// Creates a [NativeAudioDecoder]. [runner] is where the work runs (a test
   /// seam: it defaults to [Isolate.run]); [bindings] are this isolate's, for
   /// copying, peaking and freeing a result.
-  NativeAudioDecoder({DecodeRunner? runner, SegnoEngineBindings? bindings})
+  new({DecodeRunner? runner, SegnoEngineBindings? bindings})
     : _runner = runner ?? _isolateRun,
       _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary());
 
@@ -161,7 +161,7 @@ _Probed _probeHere(String path, int buckets) {
 @internal
 class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
   /// Wraps [buffer], read and freed through [_bindings].
-  NativeDecodedAudioPayload(this._bindings, this.buffer) {
+  new(this._bindings, this.buffer) {
     if (buffer != nullptr) {
       _finalizer.attach(this, buffer.cast(), detach: this);
       _attached = true;

@@ -32,7 +32,7 @@ final class EvdevPowerKeySource implements PowerKeySource {
   ///
   /// [devicePath] overrides the by-path / name scan — tests that point at a
   /// fake node pass it; production leaves it null.
-  EvdevPowerKeySource({this.devicePath}) {
+  new({this.devicePath}) {
     _port = ReceivePort();
     _subscription = _port.listen(_onIsolateMessage);
     unawaited(_start());
@@ -86,7 +86,7 @@ final class EvdevPowerKeySource implements PowerKeySource {
 const _pressToken = 'press';
 
 final class _IsolateArgs {
-  const _IsolateArgs(this.sendPort, this.devicePath);
+  const new(this.sendPort, this.devicePath);
 
   final SendPort sendPort;
   final String? devicePath;

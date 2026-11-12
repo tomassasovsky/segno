@@ -29,7 +29,7 @@ enum SessionConversionChange {
 /// every field it filled in, moved or changed.
 class SessionMigrationContext {
   /// Creates a context that fills formerly global settings from [live].
-  SessionMigrationContext({this.live = const SessionSettings()});
+  new({this.live = const SessionSettings()});
 
   /// The player's settings at the moment of opening. A schema-7 session never
   /// carried the settings that master kept as global preferences (sync, rec
@@ -97,7 +97,7 @@ const Map<int, SessionMigrationStep> sessionMigrationSteps = {
 @immutable
 class SessionConversion {
   /// Creates a [SessionConversion].
-  const SessionConversion({
+  const new({
     required this.fromVersion,
     required this.original,
     required this.manifest,

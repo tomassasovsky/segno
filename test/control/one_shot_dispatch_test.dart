@@ -47,10 +47,10 @@ class _Engine extends FakeAudioEngine {
   }
 }
 
-class _Store extends FakeKeyValueStore {}
+class _Store extends FakeKeyValueStore;
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('once-test', 1);
@@ -76,7 +76,7 @@ class _Midi extends MidiDeviceRepository {
 }
 
 class _Rig {
-  _Rig(this.clock, this.engine, this.looper) {
+  new(this.clock, this.engine, this.looper) {
     store.values['pedal.setup'] = const PedalSetup()
         .copyWith(
           external: ExternalPedalSetup(
@@ -279,61 +279,52 @@ void main() {
       });
     });
     for (final external in [false, true]) {
-      check(
-        '${external ? 'External' : 'MIDI'} stores explicit '
-        'authored Released choice',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          expect(r.live, !external);
-          expect(r.durable, external);
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          expect(r.live, external);
-          expect(r.owner.oneShotControl.oneShotSnapshot!.trackOverrides, {
-            0: external,
-          });
-        },
-      );
-      check(
-        '${external ? 'External' : 'MIDI'} Use default '
-        'retires older cleanup only',
-        (r) {
-          r.bind();
-          if (external) {
-            r.external(high: true);
-          } else {
-            r.note(127);
-          }
-          r.ordinary(value: null);
-          unawaited(
-            r.owner.oneShotControl.setOneShot(
-              const OneShotAddress.defaults(),
-              oneShot: true,
-            ),
-          );
-          r.pump();
-          if (external) {
-            r.external(high: false);
-          } else {
-            r.note(0);
-          }
-          r.retire();
-          expect(r.live, isTrue);
-          expect(
-            r.owner.oneShotControl.oneShotSnapshot!.trackOverrides,
-            isEmpty,
-          );
-          expect(r.store.values.containsKey('track_one_shot.0'), isFalse);
-        },
-      );
+      check('${external ? 'External' : 'MIDI'} stores explicit '
+          'authored Released choice', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        expect(r.live, !external);
+        expect(r.durable, external);
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        expect(r.live, external);
+        expect(r.owner.oneShotControl.oneShotSnapshot!.trackOverrides, {
+          0: external,
+        });
+      });
+      check('${external ? 'External' : 'MIDI'} Use default '
+          'retires older cleanup only', (r) {
+        r.bind();
+        if (external) {
+          r.external(high: true);
+        } else {
+          r.note(127);
+        }
+        r.ordinary(value: null);
+        unawaited(
+          r.owner.oneShotControl.setOneShot(
+            const OneShotAddress.defaults(),
+            oneShot: true,
+          ),
+        );
+        r.pump();
+        if (external) {
+          r.external(high: false);
+        } else {
+          r.note(0);
+        }
+        r.retire();
+        expect(r.live, isTrue);
+        expect(r.owner.oneShotControl.oneShotSnapshot!.trackOverrides, isEmpty);
+        expect(r.store.values.containsKey('track_one_shot.0'), isFalse);
+      });
     }
     check('latest accepted source wins including false and survivor Released', (
       r,

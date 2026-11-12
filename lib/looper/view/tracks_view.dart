@@ -45,7 +45,7 @@ import 'package:segno/tuner/view/foot_tuner_view.dart';
 /// view is just the layout that wires them together.
 class TracksView extends StatefulWidget {
   /// Creates a [TracksView].
-  const TracksView({super.key});
+  const new({super.key});
 
   @override
   State<TracksView> createState() => _TracksViewState();
@@ -530,7 +530,7 @@ class _TracksViewState extends State<TracksView> {
 /// whenever the bank changed for no benefit. It is compared element-wise, so a
 /// fresh list of equal channels is still equal.
 class _ChromeState extends Equatable {
-  const _ChromeState({
+  const new({
     required this.channels,
     required this.bars,
     required this.beats,
@@ -539,7 +539,7 @@ class _ChromeState extends Equatable {
     required this.recDub,
   });
 
-  factory _ChromeState.of(LooperState state) {
+  factory of(LooperState state) {
     return _ChromeState(
       channels: [for (final track in state.tracks) track.channel],
       bars: [
@@ -597,7 +597,7 @@ class _ChromeState extends Equatable {
 /// lines of tile with its l10n lookups, theme-extension reads and FX stage
 /// label.
 class _TrackSlot extends StatelessWidget {
-  const _TrackSlot({
+  const new({
     required this.channel,
     required this.name,
     required this.selected,
@@ -662,7 +662,7 @@ class _TrackSlot extends StatelessWidget {
 /// the same per-channel subscription. The strip's meter and playhead
 /// follow their own live values one level down.
 class _MixerSlot extends StatelessWidget {
-  const _MixerSlot({
+  const new({
     required this.channel,
     required this.name,
     required this.selected,
@@ -711,7 +711,7 @@ class _MixerSlot extends StatelessWidget {
 /// [_TrackSlot]'s twin for the Wave view: one [WaveTrackRow] per channel, on
 /// the same per-channel subscription.
 class _WaveSlot extends StatelessWidget {
-  const _WaveSlot({
+  const new({
     required this.channel,
     required this.name,
     required this.selected,

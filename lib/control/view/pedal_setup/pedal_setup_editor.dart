@@ -11,7 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// explicit that a fixed control shows what it does rather than hiding it.
 class PedalSetupField extends StatelessWidget {
   /// Creates a [PedalSetupField].
-  const PedalSetupField({
+  const new({
     required this.label,
     required this.value,
     required this.onTap,
@@ -128,7 +128,7 @@ class PedalSetupField extends StatelessWidget {
 /// nothing under the map should move when the context changes.
 class PedalSetupEditorFrame extends StatelessWidget {
   /// Creates a [PedalSetupEditorFrame].
-  const PedalSetupEditorFrame({
+  const new({
     required this.title,
     required this.top,
     required this.child,
@@ -184,7 +184,7 @@ class PedalSetupEditorFrame extends StatelessWidget {
 /// The selected control's name and its two gesture fields.
 class PedalSetupEditor extends StatelessWidget {
   /// Creates a [PedalSetupEditor].
-  const PedalSetupEditor({
+  const new({
     required this.title,
     required this.press,
     required this.hold,

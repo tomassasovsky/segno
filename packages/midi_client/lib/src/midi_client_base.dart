@@ -10,7 +10,7 @@ import 'package:segno_engine/segno_engine_ffi.dart';
 /// Thrown when the native MIDI handle cannot be allocated.
 class MidiException implements Exception {
   /// Creates a [MidiException].
-  const MidiException(this.message);
+  const new(this.message);
 
   /// A human-readable description.
   final String message;
@@ -33,7 +33,7 @@ class MidiClient {
   ///
   /// Throws a [MidiException] when the platform has no MIDI backend or the
   /// handle cannot be allocated.
-  MidiClient({SegnoEngineBindings? bindings})
+  new({SegnoEngineBindings? bindings})
     : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
     _handle = _bindings.le_midi_create();
     if (_handle == nullptr) {

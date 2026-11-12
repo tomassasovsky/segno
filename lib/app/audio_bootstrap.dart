@@ -14,10 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// device reappears (the in-repo supervisor only arms after a good start).
 /// `recoveryConfig` is null when the engine started, on first run, or for the
 /// system default (which is never auto-recovered).
-typedef AutoStartResult = ({
-  bool started,
-  EngineConfig? recoveryConfig,
-});
+typedef AutoStartResult = ({bool started, EngineConfig? recoveryConfig});
 
 /// Loads the last-used audio configuration and starts the engine — from the
 /// saved config when one exists, otherwise from a sensible first-run default
@@ -80,10 +77,7 @@ Future<AutoStartResult> tryAutoStartEngine({
   } on FormatException catch (error) {
     AppLog.error('audio auto-start: invalid saved configuration: $error');
     repository.stopEngine();
-    return (
-      started: false,
-      recoveryConfig: null,
-    );
+    return (started: false, recoveryConfig: null);
   }
 });
 
@@ -217,10 +211,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
     // console heal) so recovery can reopen it when the interface returns.
     final attemptedPin =
         config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
-    return (
-      started: false,
-      recoveryConfig: attemptedPin ? config : null,
-    );
+    return (started: false, recoveryConfig: attemptedPin ? config : null);
   }
   // A successful enqueue is not a callback confirmation. Finish the engine's
   // initial mode/length replay before applying saved choices.
@@ -366,10 +357,7 @@ Future<AutoStartResult> _tryAutoStartEngine({
             lane: lane,
           ),
         )) {
-          return (
-            started: false,
-            recoveryConfig: null,
-          );
+          return (started: false, recoveryConfig: null);
         }
       }
       final chain = decodeFxChain(

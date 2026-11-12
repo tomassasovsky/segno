@@ -50,9 +50,9 @@ import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooper extends Mock implements LooperRepository {}
+class _MockLooper extends Mock implements LooperRepository;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
 class _Store extends FakeKeyValueStore {
   Completer<void>? gate;
@@ -131,9 +131,8 @@ void main() {
     when(() => looper.mixGeneration).thenReturn(0);
     when(() => looper.mixSettingsSettled).thenReturn(true);
     when(() => looper.mixRecoveryRequired).thenReturn(false);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
     when(() => looper.laneCount(any())).thenReturn(1);
     when(() => looper.inputSetup).thenReturn(const InputSetup.empty());
@@ -148,13 +147,11 @@ void main() {
     when(() => looper.allTracksChainEnabled).thenReturn(true);
     when(() => looper.trackChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
-    when(() => looper.lengthSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.lengthSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordLengthCaptureLocked).thenReturn(false);
-    when(() => looper.recordTimingFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => looper.recordTimingFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => looper.recordTimingCaptureLocked).thenReturn(false);
     when(() => looper.recordTimingSettingsSettled).thenReturn(true);
     when(() => looper.recordTimingRecoveryRequired).thenReturn(false);
@@ -167,9 +164,8 @@ void main() {
         trackOverrides: const <int, RecordTiming>{},
       ),
     );
-    when(() => looper.settleRecordTimingSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleRecordTimingSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setRecordTimingSettings(
         defaultTiming: any(named: 'defaultTiming'),
@@ -193,9 +189,8 @@ void main() {
         quantizeDiv: rememberedDivision,
       ),
     );
-    when(() => looper.settleLengthSettings()).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(() => looper.settleLengthSettings())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => looper.setLengthSettings(
         defaultBars: any(named: 'defaultBars'),
@@ -204,16 +199,13 @@ void main() {
         mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setRecDub(enabled: any(named: 'enabled')),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => looper.setDefaultMultiple(multiple: any(named: 'multiple')),
-    ).thenReturn(EngineResult.ok);
+    when(() => looper.setRecDub(enabled: any(named: 'enabled')))
+        .thenReturn(EngineResult.ok);
+    when(() => looper.setDefaultMultiple(multiple: any(named: 'multiple')))
+        .thenReturn(EngineResult.ok);
     when(() => devices.connection).thenReturn(_connection);
-    when(
-      () => devices.sessions,
-    ).thenReturn(const {'usb': MidiInputSession('usb', 1)});
+    when(() => devices.sessions)
+        .thenReturn(const {'usb': MidiInputSession('usb', 1)});
     when(() => devices.connections).thenAnswer((_) => connections.stream);
     when(() => devices.messages).thenAnswer((_) => messages.stream);
     when(() => devices.activity).thenAnswer((_) => const Stream<void>.empty());
@@ -1339,13 +1331,9 @@ void main() {
   ]) {
     testWidgets(
       '$status retains missing controller mappings and disables Learn',
-      (
-        tester,
-      ) async {
+      (tester) async {
         final unavailable = MidiConnection(
-          openErrors: {
-            if (status == MidiConnectionStatus.error) 'usb': '5',
-          },
+          openErrors: {if (status == MidiConnectionStatus.error) 'usb': '5'},
           selectedId: 'usb',
           selectedName: 'USB controller',
         );
@@ -1396,9 +1384,8 @@ void main() {
 
   testWidgets('unrelated successful control change does not hide device '
       'save failure', (tester) async {
-    when(() => devices.connection).thenReturn(
-      const MidiConnection(pinUncertain: true),
-    );
+    when(() => devices.connection)
+        .thenReturn(const MidiConnection(pinUncertain: true));
     await pump(tester);
     expect(find.byKey(const Key('midi_device_save_failed')), findsOneWidget);
 
@@ -1440,9 +1427,7 @@ void main() {
     expect(find.text('Could not save MIDI device setting'), findsOneWidget);
 
     when(() => devices.select('pads')).thenAnswer((_) async {
-      connections.add(
-        failed.copyWith(pinUncertain: false, clearError: true),
-      );
+      connections.add(failed.copyWith(pinUncertain: false, clearError: true));
     });
     await tap(tester, 'midi_retry_device');
     verify(() => devices.select('pads')).called(2);
@@ -1562,9 +1547,7 @@ void main() {
     Navigator.of(
       tester.element(find.byKey(const Key('pedal_choice_picker'))),
     ).pop(
-      PedalChoiceResult<ControlAction?>(
-        ControlAction.tryParse('command:undo'),
-      ),
+      PedalChoiceResult<ControlAction?>(ControlAction.tryParse('command:undo')),
     );
     await tester.pumpAndSettle();
     expect(
@@ -1595,17 +1578,13 @@ void main() {
     Navigator.of(
       tester.element(find.byKey(const Key('pedal_choice_picker'))),
     ).pop(
-      PedalChoiceResult<ControlAction?>(
-        ControlAction.tryParse('command:undo'),
-      ),
+      PedalChoiceResult<ControlAction?>(ControlAction.tryParse('command:undo')),
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('midi_control_command:undo')), findsOneWidget);
     expect(
       tester
-          .widget<MidiSegmented<MidiEdge>>(
-            find.byType(MidiSegmented<MidiEdge>),
-          )
+          .widget<MidiSegmented<MidiEdge>>(find.byType(MidiSegmented<MidiEdge>))
           .selected,
       MidiEdge.release,
     );
@@ -1680,11 +1659,7 @@ void main() {
       behavior: MidiBehavior.continuous,
       controls: [
         // A stored top between unity and full travel plays as before.
-        MidiParameterControl(
-          key: track.canonicalString(),
-          low: 0,
-          high: 0.95,
-        ),
+        MidiParameterControl(key: track.canonicalString(), low: 0, high: 0.95),
         MidiParameterControl(key: lane.canonicalString(), low: 0, high: 0.95),
         MidiParameterControl(key: master.canonicalString(), low: 0, high: 0.5),
       ],
@@ -1739,12 +1714,7 @@ void main() {
     );
     Focus.of(
       tester.element(
-        find
-            .descendant(
-              of: low,
-              matching: find.byType(GestureDetector),
-            )
-            .first,
+        find.descendant(of: low, matching: find.byType(GestureDetector)).first,
       ),
     ).requestFocus();
     await tester.pump();
@@ -1758,12 +1728,7 @@ void main() {
 
     Focus.of(
       tester.element(
-        find
-            .descendant(
-              of: high,
-              matching: find.byType(GestureDetector),
-            )
-            .first,
+        find.descendant(of: high, matching: find.byType(GestureDetector)).first,
       ),
     ).requestFocus();
     await tester.pump();
@@ -1903,9 +1868,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('midi_add_control')));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const Key('expression_kind_recordedTrack')),
-    );
+    await tester.tap(find.byKey(const Key('expression_kind_recordedTrack')));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.byKey(const Key('expression_destination_allTracks')),
@@ -1921,9 +1884,7 @@ void main() {
       find.byKey(const Key('expression_destination_allTracks')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const Key('expression_destination_allTracks')),
-    );
+    await tester.tap(find.byKey(const Key('expression_destination_allTracks')));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.byKey(Key('external_pick_${externalControlKey(activation)}')),

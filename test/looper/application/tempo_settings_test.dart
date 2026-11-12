@@ -9,7 +9,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 TransportState _updated(
   TransportState prior, {
@@ -44,12 +44,10 @@ void main() {
       final store = FakeKeyValueStore()..values['tempo.bpm'] = 'broken';
       final modeFailures = StreamController<EngineResult>.broadcast();
       final startFailures = StreamController<EngineResult>.broadcast();
-      when(
-        () => repository.clickModeFailures,
-      ).thenAnswer((_) => modeFailures.stream);
-      when(
-        () => repository.recordStartSettingsFailures,
-      ).thenAnswer((_) => startFailures.stream);
+      when(() => repository.clickModeFailures)
+          .thenAnswer((_) => modeFailures.stream);
+      when(() => repository.recordStartSettingsFailures)
+          .thenAnswer((_) => startFailures.stream);
       final owner = TempoSettings(
         repository: repository,
         settings: SettingsRepository(store: store),
@@ -91,37 +89,31 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     accepted = const TransportState();
-    when(
-      () => repository.clickModeFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.clickModeFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.clickModeSettled).thenReturn(true);
     when(() => repository.clickModeRecoveryRequired).thenReturn(false);
     when(() => repository.clickModeCaptureLocked).thenReturn(false);
-    when(
-      () => repository.clickModeRestartIntent,
-    ).thenAnswer((_) => accepted.clickMode);
-    when(
-      () => repository.settleClickMode(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.clickModeRestartIntent)
+        .thenAnswer((_) => accepted.clickMode);
+    when(() => repository.settleClickMode())
+        .thenAnswer((_) async => EngineResult.ok);
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.mixGeneration).thenReturn(0);
     when(() => repository.clickVolumeSettled).thenReturn(true);
     when(() => repository.clickVolumeRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.clickVolumeFailures,
-    ).thenAnswer((_) => const Stream.empty());
-    when(
-      () => repository.clickVolumeRestartIntent,
-    ).thenAnswer((_) => accepted.clickVolume);
+    when(() => repository.clickVolumeFailures)
+        .thenAnswer((_) => const Stream.empty());
+    when(() => repository.clickVolumeRestartIntent)
+        .thenAnswer((_) => accepted.clickVolume);
     when(
       () => repository.settleClickVolume(
         pollInterval: any(named: 'pollInterval'),
         attempts: any(named: 'attempts'),
       ),
     ).thenAnswer((_) async => EngineResult.ok);
-    when(() => repository.recordStartSettingsFailures).thenAnswer(
-      (_) => const Stream<EngineResult>.empty(),
-    );
+    when(() => repository.recordStartSettingsFailures)
+        .thenAnswer((_) => const Stream<EngineResult>.empty());
     when(() => repository.recordStartSettingsSettled).thenReturn(true);
     when(() => repository.recordStartRecoveryRequired).thenReturn(false);
     when(() => repository.recordStartCaptureLocked).thenReturn(false);
@@ -133,9 +125,8 @@ void main() {
       (_) =>
           (countInBars: accepted.countInBars, soundStart: accepted.autoRecord),
     );
-    when(repository.settleRecordStartSettings).thenAnswer(
-      (_) async => EngineResult.ok,
-    );
+    when(repository.settleRecordStartSettings)
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.setRecordStartSettings(
         countInBars: any(named: 'countInBars'),
@@ -152,33 +143,27 @@ void main() {
       return EngineResult.ok;
     });
     looperStates = StreamController<LooperState>.broadcast();
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => looperStates.stream);
-    when(
-      () => repository.sessionTransport,
-    ).thenAnswer((_) => accepted);
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
+    when(() => repository.sessionTransport).thenAnswer((_) => accepted);
     for (final stub in <void Function()>[
       () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setTimeSignature(any(), any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickMode(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickOutput(any()),
-      ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setClickVolume(any()),
-      ).thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setTimeSignature(any(), any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setClickMode(any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setClickOutput(any()))
+              .thenReturn(EngineResult.ok),
+      () =>
+          when(() => repository.setClickVolume(any()))
+              .thenReturn(EngineResult.ok),
       () => when(repository.tapTempo).thenReturn(EngineResult.ok),
     ]) {
       stub();
     }
-    when(
-      () => repository.setClickMode(any()),
-    ).thenAnswer((call) {
+    when(() => repository.setClickMode(any())).thenAnswer((call) {
       accepted = _updated(
         accepted,
         clickMode: call.positionalArguments[0] as ClickMode,
@@ -207,9 +192,7 @@ void main() {
       );
       return EngineResult.ok;
     });
-    when(
-      () => repository.setClickVolume(any()),
-    ).thenAnswer((call) {
+    when(() => repository.setClickVolume(any())).thenAnswer((call) {
       accepted = _updated(
         accepted,
         clickVolume: call.positionalArguments[0] as double,
@@ -300,9 +283,9 @@ void main() {
         })(owner);
         await Future<void>.delayed(Duration.zero);
         await owner.close();
-        ((TempoSettings _) => verify(
-          () => repository.setTimeSignature(any(), any()),
-        ).called(1))(owner);
+        ((TempoSettings _) =>
+            verify(() => repository.setTimeSignature(any(), any()))
+                .called(1))(owner);
       },
     );
 
@@ -314,21 +297,15 @@ void main() {
             countInBars: 0,
             soundStart: true,
           );
-          when(
-            () => repository.setTempo(96),
-          ).thenReturn(EngineResult.invalid);
-          when(
-            () => repository.setTimeSignature(5, 8),
-          ).thenReturn(EngineResult.invalid);
-          when(
-            () => repository.setClickMode(ClickMode.rec),
-          ).thenReturn(EngineResult.invalid);
-          when(
-            () => repository.setClickOutput(1),
-          ).thenReturn(EngineResult.invalid);
-          when(
-            () => repository.setClickVolume(0.5),
-          ).thenReturn(EngineResult.invalid);
+          when(() => repository.setTempo(96)).thenReturn(EngineResult.invalid);
+          when(() => repository.setTimeSignature(5, 8))
+              .thenReturn(EngineResult.invalid);
+          when(() => repository.setClickMode(ClickMode.rec))
+              .thenReturn(EngineResult.invalid);
+          when(() => repository.setClickOutput(1))
+              .thenReturn(EngineResult.invalid);
+          when(() => repository.setClickVolume(0.5))
+              .thenReturn(EngineResult.invalid);
           when(
             () => repository.setRecordStartSettings(
               countInBars: 2,
@@ -382,10 +359,10 @@ void main() {
           expect(await settings.readClickModeCheckpoint(), isNull);
           expect(await settings.loadClickOutputMask(), 0);
           expect(await settings.readClickVolumeCheckpoint(), isNull);
-          expect(
-            await settings.readRecordStartCheckpoint(),
-            (countInBars: 0, soundStart: true),
-          );
+          expect(await settings.readRecordStartCheckpoint(), (
+            countInBars: 0,
+            soundStart: true,
+          ));
         })(owner);
       },
     );
@@ -444,9 +421,9 @@ void main() {
       })(owner);
       await Future<void>.delayed(Duration.zero);
       await owner.close();
-      ((TempoSettings _) => verify(
-        () => repository.setClickMode(ClickMode.rec),
-      ).called(1))(owner);
+      ((TempoSettings _) =>
+          verify(() => repository.setClickMode(ClickMode.rec))
+              .called(1))(owner);
     });
 
     test(
@@ -483,10 +460,7 @@ void main() {
       expect(
         states,
         (() => [
-          const TempoState(
-            clickMode: ClickMode.recFirst,
-            clickModeReady: true,
-          ),
+          const TempoState(clickMode: ClickMode.recFirst, clickModeReady: true),
           const TempoState(clickMode: ClickMode.rec, clickModeReady: true),
         ])(),
       );
@@ -522,9 +496,8 @@ void main() {
         final states = <TempoState>[];
         final subscription = owner.stream.listen(states.add);
         addTearDown(subscription.cancel);
-        await ((TempoSettings cubit) => cubit.clickVolumeOwner.set(0.75))(
-          owner,
-        );
+        await ((TempoSettings cubit) =>
+            cubit.clickVolumeOwner.set(0.75))(owner);
         await Future<void>.delayed(Duration.zero);
         await owner.close();
         expect(
@@ -555,10 +528,10 @@ void main() {
         await ((TempoSettings _) async {
           expect(accepted.countInBars, 2);
           expect(accepted.autoRecord, isFalse);
-          expect(
-            await settings.readRecordStartCheckpoint(),
-            (countInBars: 2, soundStart: false),
-          );
+          expect(await settings.readRecordStartCheckpoint(), (
+            countInBars: 2,
+            soundStart: false,
+          ));
           verify(
             () => repository.setRecordStartSettings(
               countInBars: 2,
@@ -582,10 +555,10 @@ void main() {
         await Future<void>.delayed(Duration.zero);
         await owner.close();
         await ((TempoSettings _) async {
-          expect(
-            await settings.readRecordStartCheckpoint(),
-            (countInBars: null, soundStart: null),
-          );
+          expect(await settings.readRecordStartCheckpoint(), (
+            countInBars: null,
+            soundStart: null,
+          ));
           verifyNever(
             () => repository.setRecordStartSettings(
               countInBars: -3,
@@ -650,10 +623,8 @@ void main() {
   test(
     'setting a count-in clears Sound in the confirmed and saved pair',
     () async {
-      await (() => settings.saveRecordStartSettings(
-        countInBars: 0,
-        soundStart: true,
-      ))();
+      await (() =>
+          settings.saveRecordStartSettings(countInBars: 0, soundStart: true))();
       final owner = (() =>
           TempoSettings(repository: repository, settings: settings))();
       addTearDown(owner.close);
@@ -667,10 +638,10 @@ void main() {
           cubit.recordStartControl.confirmedRecordStart?.soundStart,
           isFalse,
         );
-        expect(
-          await settings.readRecordStartCheckpoint(),
-          (countInBars: 2, soundStart: false),
-        );
+        expect(await settings.readRecordStartCheckpoint(), (
+          countInBars: 2,
+          soundStart: false,
+        ));
       })(owner);
     },
   );
@@ -751,10 +722,7 @@ void main() {
             recordStartReady: true,
           ),
         );
-        accepted = _updated(
-          const TransportState(),
-          countInBars: 1,
-        );
+        accepted = _updated(const TransportState(), countInBars: 1);
         when(() => repository.sessionTransport).thenReturn(accepted);
         looperStates.add(const LooperState());
         await Future<void>.delayed(Duration.zero);
@@ -773,14 +741,11 @@ void main() {
       await owner.close();
       await ((TempoSettings _) async {
         expect(await settings.loadTempoBpm(), 0);
-        expect(
-          (await settings.readRecordTimingCheckpoint()).division,
-          isNull,
-        );
-        expect(
-          await settings.readRecordStartCheckpoint(),
-          (countInBars: null, soundStart: null),
-        );
+        expect((await settings.readRecordTimingCheckpoint()).division, isNull);
+        expect(await settings.readRecordStartCheckpoint(), (
+          countInBars: null,
+          soundStart: null,
+        ));
         verify(
           () => repository.setRecordStartSettings(
             countInBars: 1,

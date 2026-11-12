@@ -55,11 +55,10 @@ void main() {
 
   test('the study and the app measure the same pedals', () {
     final measured = studyArtwork();
-    expect(
-      measured.keys.toSet(),
-      {'single', 'dual'},
-      reason: 'a pedal added to the study needs one here too',
-    );
+    expect(measured.keys.toSet(), {
+      'single',
+      'dual',
+    }, reason: 'a pedal added to the study needs one here too');
   }, skip: studySkip);
 
   test('every switch and indicator sits where the study measured it', () {

@@ -9,7 +9,7 @@ part 'pedal_state.dart';
 /// Read-only link, physical samples and the canonical published LED frame.
 /// External configuration and calibration belong to the ControlCubit setup.
 class PedalCubit extends Cubit<PedalState> {
-  PedalCubit({required PedalRepository pedal})
+  new({required PedalRepository pedal})
     : _pedal = pedal,
       super(
         PedalState(

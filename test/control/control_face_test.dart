@@ -34,9 +34,9 @@ import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
 TrackEffect _fx(String slotId, TrackEffectType type) =>
     BuiltInEffect(type: type, slotId: slotId);
@@ -75,9 +75,8 @@ void main() {
       _fx('slot-reverb', TrackEffectType.reverb),
     ];
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
-    when(
-      () => looper.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => looper.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => looper.state).thenReturn(
       LooperState(
         tracks: [for (var i = 0; i < 8; i++) Track(channel: i)],
@@ -93,9 +92,8 @@ void main() {
     when(() => looper.allTracksEffects).thenReturn(const []);
     when(() => looper.outputChainEnabled(any())).thenReturn(true);
     when(() => looper.allTracksChainEnabled).thenReturn(true);
-    when(
-      () => looper.outputChainEnvelope(0),
-    ).thenReturn(const FxChainEnvelope());
+    when(() => looper.outputChainEnvelope(0))
+        .thenReturn(const FxChainEnvelope());
     when(() => looper.outputChainEnabled(any())).thenReturn(true);
     when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
 
@@ -195,11 +193,7 @@ void main() {
               BlocProvider.value(value: tracks),
               // The tray asks the link whether a CTRL pedal could deliver: a
               // rig with no MIDI is still bindable from the console.
-              BlocProvider(
-                create: (_) => PedalCubit(
-                  pedal: pedal,
-                ),
-              ),
+              BlocProvider(create: (_) => PedalCubit(pedal: pedal)),
             ],
             child: const FxPedalAssignmentsPage(),
           ),
@@ -420,10 +414,7 @@ void main() {
       // unassigned rather than inheriting bank A's binding.
       await tester.tap(find.text('B'));
       await tester.pumpAndSettle();
-      expect(
-        find.text(l10nOf(tester).controlUnassigned),
-        findsWidgets,
-      );
+      expect(find.text(l10nOf(tester).controlUnassigned), findsWidgets);
     });
 
     testWidgets('a binding whose target is gone takes the warning tone', (

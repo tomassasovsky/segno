@@ -130,27 +130,18 @@ void main() {
         },
       );
 
-      test(
-        'the highest scanned input (kMaxChannels-1) is migrated',
-        () async {
-          await settings.saveMonitorInput(
-            kMaxChannels - 1,
-            enabled: true,
-            outputMask: 0x1,
-          );
+      test('the highest scanned input (kMaxChannels-1) is migrated', () async {
+        await settings.saveMonitorInput(
+          kMaxChannels - 1,
+          enabled: true,
+          outputMask: 0x1,
+        );
 
-          await runMonitorMigration(settings);
+        await runMonitorMigration(settings);
 
-          expect(
-            await settings.loadMonitorInputMode(kMaxChannels - 1),
-            'on',
-          );
-          expect(
-            await settings.loadMonitorOutput(kMaxChannels - 1),
-            0x1,
-          );
-        },
-      );
+        expect(await settings.loadMonitorInputMode(kMaxChannels - 1), 'on');
+        expect(await settings.loadMonitorOutput(kMaxChannels - 1), 0x1);
+      });
     });
 
     group('v3 (multi-lane → single chain)', () {
@@ -173,10 +164,7 @@ void main() {
             await settings.saveMonitorLaneVolume(input, lane, vol![lane]!);
           }
           if (mute?[lane] ?? false) {
-            await store.setBool(
-              'monitor_lane_mute.$input.$lane',
-              value: true,
-            );
+            await store.setBool('monitor_lane_mute.$input.$lane', value: true);
           }
           if (fx?[lane] != null) {
             await settings.saveMonitorLaneEffects(
@@ -211,9 +199,7 @@ void main() {
         // Lane 1 carries an envelope-encoded chain (not a bare array).
         final envelope = looper.encodeFxChain(
           looper.FxChainEnvelope(
-            entries: [
-              looper.BuiltInEffect(type: looper.TrackEffectType.delay),
-            ],
+            entries: [looper.BuiltInEffect(type: looper.TrackEffectType.delay)],
           ),
         );
         await settings.saveMonitorLaneEffects(0, 1, envelope);
@@ -236,9 +222,7 @@ void main() {
         await settings.saveMonitorLaneEffects(0, 0, dry);
         final wet = looper.encodeFxChain(
           looper.FxChainEnvelope(
-            entries: [
-              looper.BuiltInEffect(type: looper.TrackEffectType.delay),
-            ],
+            entries: [looper.BuiltInEffect(type: looper.TrackEffectType.delay)],
           ),
         );
         await settings.saveMonitorLaneEffects(0, 1, wet);
@@ -287,12 +271,7 @@ void main() {
       });
 
       test('lane 0 volume and mute carry over', () async {
-        await seedLanes(
-          0,
-          count: 2,
-          vol: {0: 0.3},
-          mute: {0: true},
-        );
+        await seedLanes(0, count: 2, vol: {0: 0.3}, mute: {0: true});
 
         await runMonitorMigration(settings);
 

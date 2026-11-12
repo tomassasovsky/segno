@@ -7,7 +7,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// The idle period and whether it has run out.
 class IdleDimState extends Equatable {
   /// Creates an [IdleDimState].
-  const IdleDimState({this.seconds = 0, this.dimmed = false});
+  const new({this.seconds = 0, this.dimmed = false});
 
   /// The idle period before both panels dim; `0` never dims.
   final int seconds;
@@ -29,7 +29,7 @@ class IdleDimState extends Equatable {
 /// music stops. Never is the default, as the console has always been.
 class IdleDimCubit extends Cubit<IdleDimState> {
   /// Creates an [IdleDimCubit].
-  IdleDimCubit({required this._settings}) : super(const IdleDimState());
+  new({required this._settings}) : super(const IdleDimState());
 
   final SettingsRepository _settings;
   Timer? _timer;

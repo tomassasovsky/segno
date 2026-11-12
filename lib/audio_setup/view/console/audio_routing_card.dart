@@ -23,7 +23,7 @@ import 'package:segno/looper/cubit/tempo_cubit.dart';
 /// audible, so its level stays on the tab that owns the rig's outputs.
 class AudioRoutingCard extends StatelessWidget {
   /// Creates an [AudioRoutingCard].
-  const AudioRoutingCard({super.key});
+  const new({super.key});
 
   /// What the volume bar is inset by inside the card.
   static const EdgeInsets _barInset = EdgeInsets.all(18);

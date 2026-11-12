@@ -242,10 +242,7 @@ void _flames(Canvas canvas, double x, double y, double w, double h) {
         ..add(Offset(px, tip));
     }
     points.add(Offset(x + w, y + h));
-    canvas.drawPath(
-      _poly(points, close: true),
-      fxStompFill(colour, opacity),
-    );
+    canvas.drawPath(_poly(points, close: true), fxStompFill(colour, opacity));
   }
 }
 
@@ -305,11 +302,7 @@ void _ripples(Canvas canvas, double x, double y, double w, double h, Color c) {
   for (var r = 20; r < 420; r += 34) {
     canvas.drawOval(
       Rect.fromCenter(center: centre, width: r * 2.0, height: r * .84),
-      fxStompStroke(
-        c,
-        math.max(1.5, 7 - r / 40),
-        math.max(.08, .6 - r / 500),
-      ),
+      fxStompStroke(c, math.max(1.5, 7 - r / 40), math.max(.08, .6 - r / 500)),
     );
   }
 }
@@ -376,11 +369,7 @@ void _octaves(Canvas canvas, double x, double y, double w, double h) {
   ];
   final centre = Offset(x + w / 2, y + h);
   for (final (i, colour) in bands.indexed) {
-    canvas.drawCircle(
-      centre,
-      w * .75 - i * w * .13,
-      fxStompFill(colour, .85),
-    );
+    canvas.drawCircle(centre, w * .75 - i * w * .13, fxStompFill(colour, .85));
   }
 }
 
@@ -515,11 +504,7 @@ void _tuner(Canvas canvas, double x, double y, double w, double h, Color c) {
     canvas.drawLine(
       _polar(centre, r * .82, a),
       _polar(centre, r, a),
-      fxStompStroke(
-        inTune ? const Color(0xFF18A558) : c,
-        inTune ? 6 : 3,
-        .8,
-      ),
+      fxStompStroke(inTune ? const Color(0xFF18A558) : c, inTune ? 6 : 3, .8),
     );
   }
   canvas.drawLine(

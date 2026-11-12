@@ -19,18 +19,12 @@ void main() {
     currentSessionName: 'set',
     sessionHasContent: false,
   );
-  const inFlight = PowerSnapshot(
-    takeInFlight: true,
-    currentSessionName: 'set',
-  );
+  const inFlight = PowerSnapshot(takeInFlight: true, currentSessionName: 'set');
   const transfer = PowerSnapshot(
     transferInFlight: true,
     currentSessionName: 'set',
   );
-  const update = PowerSnapshot(
-    updateInFlight: true,
-    currentSessionName: 'set',
-  );
+  const update = PowerSnapshot(updateInFlight: true, currentSessionName: 'set');
 
   group(PowerCubit, () {
     late List<String> log;
@@ -150,10 +144,7 @@ void main() {
       act: (cubit) => cubit
         ..press(named)
         ..dismiss(),
-      expect: () => const [
-        PowerState(phase: PowerPhase.options),
-        PowerState(),
-      ],
+      expect: () => const [PowerState(phase: PowerPhase.options), PowerState()],
       verify: (_) => expect(log, isEmpty),
     );
 
@@ -549,16 +540,14 @@ void main() {
       test('Retry repeats the save with the repairing flush', () async {
         final attempts = <bool>[];
         var fail = true;
-        final cubit =
-            build(
-              flush: ({required retry}) => attempts.add(retry),
-            )..restart(
-              named,
-              save: () async {
-                log.add('save');
-                if (fail) throw StateError('disk full');
-              },
-            );
+        final cubit = build(flush: ({required retry}) => attempts.add(retry))
+          ..restart(
+            named,
+            save: () async {
+              log.add('save');
+              if (fail) throw StateError('disk full');
+            },
+          );
         await pumpEventQueue();
         expect(cubit.state.phase, PowerPhase.saveFailed);
         fail = false;
@@ -917,16 +906,13 @@ void main() {
         'start', () async {
       final cubit = build()..restart(named, save: save);
       await pumpEventQueue();
-      expect(
-        guards.blockers(GuardKind.capture, const GuardScope.internal()),
-        [
-          isA<ActiveOperation>().having(
-            (op) => op.kind,
-            'kind',
-            GuardKind.restart,
-          ),
-        ],
-      );
+      expect(guards.blockers(GuardKind.capture, const GuardScope.internal()), [
+        isA<ActiveOperation>().having(
+          (op) => op.kind,
+          'kind',
+          GuardKind.restart,
+        ),
+      ]);
       await cubit.close();
       expect(guards.active, isEmpty);
     });
@@ -970,14 +956,8 @@ void main() {
 
     group("RAUC's own install (#1498)", () {
       for (final (name, commit) in [
-        (
-          'Restart',
-          (PowerCubit cubit) => cubit.restart(named, save: save),
-        ),
-        (
-          'Shut down',
-          (PowerCubit cubit) => cubit.shutDown(named, save: save),
-        ),
+        ('Restart', (PowerCubit cubit) => cubit.restart(named, save: save)),
+        ('Shut down', (PowerCubit cubit) => cubit.shutDown(named, save: save)),
       ]) {
         test('$name: an install found after the save refuses before the '
             'goodbye face, and releases the restart guard', () async {

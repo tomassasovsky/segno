@@ -77,9 +77,8 @@ void main() {
 
   test('changePassword delegates to client', () async {
     final client = _FakeClient();
-    await WifiRepository(
-      client: client,
-    ).changePassword('The Studio', 'n3w-s3cret');
+    await WifiRepository(client: client)
+        .changePassword('The Studio', 'n3w-s3cret');
     expect(client.passwords, {'The Studio': 'n3w-s3cret'});
   });
 

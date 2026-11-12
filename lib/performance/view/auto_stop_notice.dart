@@ -17,7 +17,7 @@ import 'package:segno/performance/view/performance_completion_sheet.dart';
 /// so this is the one message. A new capture forgets it.
 class PerformanceAutoStopNotice extends StatefulWidget {
   /// Creates a [PerformanceAutoStopNotice] around [child].
-  const PerformanceAutoStopNotice({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The app.
   final Widget child;

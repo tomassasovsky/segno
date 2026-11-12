@@ -103,10 +103,8 @@ void main() {
       // Another writer grows the file past the rotation threshold. A write
       // path that asked the filesystem for the length would rotate here; one
       // that counts its own bytes does not.
-      File('${dir.path}/segno.log').writeAsStringSync(
-        'x' * AppLog.maxBytes,
-        mode: FileMode.append,
-      );
+      File('${dir.path}/segno.log')
+          .writeAsStringSync('x' * AppLog.maxBytes, mode: FileMode.append);
 
       AppLog.info('still the same file');
 

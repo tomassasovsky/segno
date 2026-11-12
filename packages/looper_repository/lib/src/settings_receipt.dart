@@ -35,7 +35,7 @@ typedef ReceiptSend<T> = ({EngineResult result, ReceiptCheck? check}) Function(
 /// lands after any late one), and a fresh engine lifetime replays it.
 final class SettingsReceipt<T extends Object> {
   /// Creates a receipt whose accepted and restart values start at [initial].
-  SettingsReceipt(
+  new(
     T initial, {
     required this._send,
     required this._running,
@@ -208,7 +208,7 @@ final class SettingsReceipt<T extends Object> {
 }
 
 final class _Pending<T> {
-  _Pending(this.value, this.restart, this.check, {required this.startup});
+  new(this.value, this.restart, this.check, {required this.startup});
   final T value;
   final T restart;
   final ReceiptCheck check;

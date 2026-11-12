@@ -75,123 +75,115 @@ void main() {
     skip: skip,
   );
 
-  test(
-    'a rack edge crosses FFI: the rack level lands after a passthrough last '
-    'entry, and an all-off rack is dry',
-    () {
-      final engine = PumpedNativeEngine();
-      addTearDown(engine.dispose);
-      engine
-        ..start(
-          const EngineConfig(
-            inputChannels: 1,
-            outputChannels: 2,
-            maxLoopFrames: 1000,
-          ),
-        )
-        ..setMonitorInputEnabled(input: 0, enabled: true)
-        ..setMonitorInputOutput(input: 0, mask: 3)
-        ..pump(frames: 0);
-      FxRecipe rack({required bool on}) => FxRecipe(
-        slots: [
-          FxRecipeSlot(
-            type: TrackEffectType.drive,
-            params: [0, 1],
-            enabled: on,
-            rack: FxRackEdge.first,
-          ),
-          FxRecipeSlot(
-            type: TrackEffectType.none,
-            enabled: on,
-            channels: const FxChannels(level: .5),
-            rack: FxRackEdge.last,
-          ),
-        ],
-      );
-      expect(
-        engine.setFxRecipe(
-          owner: FxOwner.monitor,
-          recipe: rack(on: true),
-          revision: 8,
+  test('a rack edge crosses FFI: the rack level lands after a passthrough last '
+      'entry, and an all-off rack is dry', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine
+      ..start(
+        const EngineConfig(
+          inputChannels: 1,
+          outputChannels: 2,
+          maxLoopFrames: 1000,
         ),
-        EngineResult.ok,
-      );
-      engine.pump(frames: 2048, input: .2);
-      // tanh(.2) * .5: the level rides an entry with no effect of its own.
-      expect(engine.snapshot().outputPeaks[0], closeTo(.0986876601, 1e-6));
-      expect(
-        engine.setFxRecipe(
-          owner: FxOwner.monitor,
-          recipe: rack(on: false),
-          revision: 9,
+      )
+      ..setMonitorInputEnabled(input: 0, enabled: true)
+      ..setMonitorInputOutput(input: 0, mask: 3)
+      ..pump(frames: 0);
+    FxRecipe rack({required bool on}) => FxRecipe(
+      slots: [
+        FxRecipeSlot(
+          type: TrackEffectType.drive,
+          params: [0, 1],
+          enabled: on,
+          rack: FxRackEdge.first,
         ),
-        EngineResult.ok,
-      );
-      engine
-        ..pump(frames: 2048, input: .2)
-        ..pump(frames: 64, input: .2);
-      expect(engine.snapshot().outputPeaks[0], closeTo(.2, 1e-7));
-    },
-    skip: skip,
-  );
+        FxRecipeSlot(
+          type: TrackEffectType.none,
+          enabled: on,
+          channels: const FxChannels(level: .5),
+          rack: FxRackEdge.last,
+        ),
+      ],
+    );
+    expect(
+      engine.setFxRecipe(
+        owner: FxOwner.monitor,
+        recipe: rack(on: true),
+        revision: 8,
+      ),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 2048, input: .2);
+    // tanh(.2) * .5: the level rides an entry with no effect of its own.
+    expect(engine.snapshot().outputPeaks[0], closeTo(.0986876601, 1e-6));
+    expect(
+      engine.setFxRecipe(
+        owner: FxOwner.monitor,
+        recipe: rack(on: false),
+        revision: 9,
+      ),
+      EngineResult.ok,
+    );
+    engine
+      ..pump(frames: 2048, input: .2)
+      ..pump(frames: 64, input: .2);
+    expect(engine.snapshot().outputPeaks[0], closeTo(.2, 1e-7));
+  }, skip: skip);
 
-  test(
-    'record recipe and independent track gain cross FFI '
-    'without changing originals',
-    () {
-      final engine = PumpedNativeEngine();
-      addTearDown(engine.dispose);
-      engine
-        ..start(
-          const EngineConfig(
-            inputChannels: 1,
-            outputChannels: 1,
-            maxLoopFrames: 1000,
-          ),
-        )
-        ..pump(frames: 0);
-      expect(
-        engine.setMix(
-          EngineMixSettings(
-            revision: 1,
-            lanes: const {(0, 0): (gain: .25, pan: 0)},
-            trackLevels: const {0: .75},
-          ),
+  test('record recipe and independent track gain cross FFI '
+      'without changing originals', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine
+      ..start(
+        const EngineConfig(
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 1000,
         ),
-        EngineResult.ok,
-      );
-      engine.pump(frames: 0);
-      expect(
-        engine.recordWithImage(
-          RecordImage(
-            revision: 9,
-            lanes: const {0: (gain: 1, pan: 0)},
-            laneFx: {
-              0: FxRecipe(
-                preCount: 1,
-                slots: [
-                  FxRecipeSlot(type: TrackEffectType.drive, params: [0, .5]),
-                ],
-              ),
-            },
-          ),
+      )
+      ..pump(frames: 0);
+    expect(
+      engine.setMix(
+        EngineMixSettings(
+          revision: 1,
+          lanes: const {(0, 0): (gain: .25, pan: 0)},
+          trackLevels: const {0: .75},
         ),
-        EngineResult.ok,
-      );
-      engine.pump(frames: 64, input: .2);
-      expect(engine.snapshot().tracks[0].imageRevision, 9);
-      expect(engine.record(), EngineResult.ok);
-      engine
-        ..pump()
-        ..pump(frames: 64);
-      // tanh(.2 * .25) * .5 * .75; the track fader is outside part Pre.
-      expect(engine.snapshot().outputPeaks[0], closeTo(.0187343906, 1e-6));
-      expect(engine.snapshot().tracks[0].volume, .75);
-      expect(engine.snapshot().tracks[0].lanes[0].volume, .25);
-      expect(engine.exportTrack(0), everyElement(closeTo(.2, 1e-6)));
-    },
-    skip: skip,
-  );
+      ),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 0);
+    expect(
+      engine.recordWithImage(
+        RecordImage(
+          revision: 9,
+          lanes: const {0: (gain: 1, pan: 0)},
+          laneFx: {
+            0: FxRecipe(
+              preCount: 1,
+              slots: [
+                FxRecipeSlot(type: TrackEffectType.drive, params: [0, .5]),
+              ],
+            ),
+          },
+        ),
+      ),
+      EngineResult.ok,
+    );
+    engine.pump(frames: 64, input: .2);
+    expect(engine.snapshot().tracks[0].imageRevision, 9);
+    expect(engine.record(), EngineResult.ok);
+    engine
+      ..pump()
+      ..pump(frames: 64);
+    // tanh(.2 * .25) * .5 * .75; the track fader is outside part Pre.
+    expect(engine.snapshot().outputPeaks[0], closeTo(.0187343906, 1e-6));
+    expect(engine.snapshot().tracks[0].volume, .75);
+    expect(engine.snapshot().tracks[0].lanes[0].volume, .25);
+    expect(engine.exportTrack(0), everyElement(closeTo(.2, 1e-6)));
+  }, skip: skip);
 
   test('bounded preset vectors cross FFI and publish only accepted values', () {
     final engine = PumpedNativeEngine();
@@ -790,10 +782,7 @@ void main() {
       engine.setLaneSource(channel: 0, lane: 0, source: LaneSource.clean),
       EngineResult.ok,
     );
-    expect(
-      engine.snapshot().tracks.first.lanes.first.source,
-      LaneSource.clean,
-    );
+    expect(engine.snapshot().tracks.first.lanes.first.source, LaneSource.clean);
 
     // Rebuild the take with a heard image of its own beside the clean one.
     final clean = engine.exportLayer(0, 0, 0);
@@ -896,9 +885,8 @@ void main() {
       expect(s.perfStopReason, PerfStopReason.disarm);
       expect(s.perfOvers, 0);
 
-      final sidecar = File(
-        '${captureDir.path}/live/performance.json',
-      ).readAsStringSync();
+      final sidecar = File('${captureDir.path}/live/performance.json')
+          .readAsStringSync();
       expect(
         sidecar,
         contains('"take_id": "000102030405060708090a0b0c0d0e0f"'),
@@ -915,67 +903,57 @@ void main() {
       );
       expect(engine.snapshot().perfFailedCheckpoints, 0);
       expect(engine.snapshot().perfRingSeconds, 3);
-      expect(
-        File('${captureDir.path}/performance.json').existsSync(),
-        isFalse,
-      );
+      expect(File('${captureDir.path}/performance.json').existsSync(), isFalse);
       // 256 frames in parts of at most 100 frames: 100, 100, 56.
-      final header = File(
-        '${captureDir.path}/master-003.wav',
-      ).readAsBytesSync().sublist(0, 84);
+      final header = File('${captureDir.path}/master-003.wav')
+          .readAsBytesSync()
+          .sublist(0, 84);
       expect(header.sublist(44, 60), takeId);
       expect(header[62], 3); // part index
-      expect(
-        File('${captureDir.path}/master-004.wav').existsSync(),
-        isFalse,
-      );
+      expect(File('${captureDir.path}/master-004.wav').existsSync(), isFalse);
     },
     skip: skip,
   );
 
-  test(
-    'a reserve larger than the volume stops the take at once, as '
-    'reserve_reached (#1198)',
-    () {
-      final engine = PumpedNativeEngine();
-      addTearDown(engine.dispose);
-      engine.start(
-        const EngineConfig(
-          sampleRate: 48000,
-          inputChannels: 1,
-          outputChannels: 1,
-          maxLoopFrames: 48000,
-        ),
-      );
-      final captureDir = Directory.systemTemp.createTempSync(
-        'segno_perf_reserve_test_',
-      );
-      addTearDown(() => captureDir.deleteSync(recursive: true));
+  test('a reserve larger than the volume stops the take at once, as '
+      'reserve_reached (#1198)', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+    engine.start(
+      const EngineConfig(
+        sampleRate: 48000,
+        inputChannels: 1,
+        outputChannels: 1,
+        maxLoopFrames: 48000,
+      ),
+    );
+    final captureDir = Directory.systemTemp.createTempSync(
+      'segno_perf_reserve_test_',
+    );
+    addTearDown(() => captureDir.deleteSync(recursive: true));
 
-      expect(
-        engine.perfArm(
-          PerfTarget(
-            captureDir: captureDir.path,
-            takeId: Uint8List(16),
-            reserveBytes: 1 << 62, // more than any volume holds
-          ),
+    expect(
+      engine.perfArm(
+        PerfTarget(
+          captureDir: captureDir.path,
+          takeId: Uint8List(16),
+          reserveBytes: 1 << 62, // more than any volume holds
         ),
-        EngineResult.ok,
-      );
-      engine
-        ..pump(frames: 0)
-        ..pump(frames: 256);
-      expect(engine.perfDisarm(), EngineResult.ok);
+      ),
+      EngineResult.ok,
+    );
+    engine
+      ..pump(frames: 0)
+      ..pump(frames: 256);
+    expect(engine.perfDisarm(), EngineResult.ok);
 
-      expect(engine.snapshot().perfStopReason, PerfStopReason.reserveReached);
-      expect(
-        File('${captureDir.path}/performance.json').readAsStringSync(),
-        contains('"stopped_early": "reserve_reached"'),
-      );
-      expect(File('${captureDir.path}/master-001.wav').lengthSync(), 84);
-    },
-    skip: skip,
-  );
+    expect(engine.snapshot().perfStopReason, PerfStopReason.reserveReached);
+    expect(
+      File('${captureDir.path}/performance.json').readAsStringSync(),
+      contains('"stopped_early": "reserve_reached"'),
+    );
+    expect(File('${captureDir.path}/master-001.wav').lengthSync(), 84);
+  }, skip: skip);
 
   group('TempoControl (real FFI)', () {
     late PumpedNativeEngine engine;
@@ -1052,32 +1030,29 @@ void main() {
       expect(s.tempoBpm, closeTo(30, 1e-3));
     });
 
-    test(
-      'setTimeSignature accepts every valid signature and rejects an '
-      'invalid one',
-      () {
-        expect(engine.setTimeSignature(7, 4), EngineResult.ok);
-        engine.pump(frames: 0);
-        var s = engine.snapshot();
-        expect(s.tsNum, 7);
-        expect(s.tsDen, 4);
+    test('setTimeSignature accepts every valid signature and rejects an '
+        'invalid one', () {
+      expect(engine.setTimeSignature(7, 4), EngineResult.ok);
+      engine.pump(frames: 0);
+      var s = engine.snapshot();
+      expect(s.tsNum, 7);
+      expect(s.tsDen, 4);
 
-        expect(engine.setTimeSignature(15, 8), EngineResult.ok);
-        engine.pump(frames: 0);
-        s = engine.snapshot();
-        expect(s.tsNum, 15);
-        expect(s.tsDen, 8);
+      expect(engine.setTimeSignature(15, 8), EngineResult.ok);
+      engine.pump(frames: 0);
+      s = engine.snapshot();
+      expect(s.tsNum, 15);
+      expect(s.tsDen, 8);
 
-        // 2/8 and 8/4 are outside the 17 Sheeran-verified signatures — the
-        // exported wrapper rejects them before ever posting to the ring.
-        expect(engine.setTimeSignature(2, 8), EngineResult.invalid);
-        expect(engine.setTimeSignature(8, 4), EngineResult.invalid);
-        engine.pump(frames: 0);
-        // Rejected calls leave the published signature untouched.
-        expect(engine.snapshot().tsNum, 15);
-        expect(engine.snapshot().tsDen, 8);
-      },
-    );
+      // 2/8 and 8/4 are outside the 17 Sheeran-verified signatures — the
+      // exported wrapper rejects them before ever posting to the ring.
+      expect(engine.setTimeSignature(2, 8), EngineResult.invalid);
+      expect(engine.setTimeSignature(8, 4), EngineResult.invalid);
+      engine.pump(frames: 0);
+      // Rejected calls leave the published signature untouched.
+      expect(engine.snapshot().tsNum, 15);
+      expect(engine.snapshot().tsDen, 8);
+    });
 
     test('tapTempo requires two taps in range to set the tempo', () {
       // A lone first tap sets nothing.
@@ -1365,10 +1340,7 @@ void main() {
           EngineResult.modeMismatch,
         );
       }
-      expect(
-        engine.historyModeGate(channels: 3, redo: false),
-        EngineResult.ok,
-      );
+      expect(engine.historyModeGate(channels: 3, redo: false), EngineResult.ok);
       engine.pump(frames: 0);
       final after = engine.snapshot();
       expect(after.tracks[0], before.tracks[0]);
@@ -1388,10 +1360,7 @@ void main() {
       // Refusal retained the take: after moving to Free the same redo works.
       expect(engine.setLooperMode(LooperMode.free), EngineResult.ok);
       engine.pump(frames: 0);
-      expect(
-        engine.historyModeGate(channels: 2, redo: true),
-        EngineResult.ok,
-      );
+      expect(engine.historyModeGate(channels: 2, redo: true), EngineResult.ok);
       expect(engine.redo(channel: 1), EngineResult.ok);
       engine.pump(frames: 0);
       expect(engine.snapshot().tracks[1].lengthFrames, 750);
@@ -1454,10 +1423,7 @@ void main() {
       expect(engine.snapshot().looperMode, LooperMode.free);
       engine.pump(frames: 0);
       expect(engine.snapshot().looperMode, LooperMode.song);
-      expect(
-        engine.historyModeGate(channels: 2, redo: false),
-        EngineResult.ok,
-      );
+      expect(engine.historyModeGate(channels: 2, redo: false), EngineResult.ok);
       expect(engine.undo(channel: 1), EngineResult.ok);
       engine.pump(frames: 0);
       expect(engine.snapshot().tracks[1].lengthFrames, 750);
@@ -1546,20 +1512,17 @@ void main() {
       expect(engine.laneFxFingerprint(channel: 0, lane: 0), isNot(enabled));
     });
 
-    test(
-      'an EMPTY chain keeps the offset basis even with the chain disabled '
-      '(D-FPEMPTY)',
-      () {
-        expect(
-          engine.setLaneFxChainEnabled(channel: 0, lane: 0, enabled: false),
-          EngineResult.ok,
-        );
-        expect(
-          engine.laneFxFingerprint(channel: 0, lane: 0),
-          FxFingerprint.offset,
-        );
-      },
-    );
+    test('an EMPTY chain keeps the offset basis even with the chain disabled '
+        '(D-FPEMPTY)', () {
+      expect(
+        engine.setLaneFxChainEnabled(channel: 0, lane: 0, enabled: false),
+        EngineResult.ok,
+      );
+      expect(
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+        FxFingerprint.offset,
+      );
+    });
 
     test('monitor fingerprint reacts to its enable flags (twin)', () {
       engine

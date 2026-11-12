@@ -27,7 +27,7 @@ import 'package:segno/visualizer/widgets/waveform_view.dart';
 /// meter, and the selection outline is the same white ring.
 class WaveTrackRow extends StatelessWidget {
   /// Creates a [WaveTrackRow].
-  const WaveTrackRow({
+  const new({
     required this.track,
     required this.name,
     required this.selected,
@@ -321,7 +321,7 @@ class WaveTrackRow extends StatelessWidget {
 /// costs a lookup, not a copy across the engine boundary.
 class TrackWaveform extends StatelessWidget {
   /// Creates a [TrackWaveform].
-  const TrackWaveform({
+  const new({
     required this.channel,
     required this.state,
     required this.hasContent,

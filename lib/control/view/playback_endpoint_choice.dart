@@ -10,7 +10,7 @@ import 'package:segno/theme/theme.dart';
 /// editing this endpoint began, just as the numeric endpoint slider does.
 class PlaybackEndpointChoice extends StatefulWidget {
   /// Creates a compact Loop/Once endpoint choice.
-  const PlaybackEndpointChoice({
+  const new({
     required this.value,
     required this.width,
     required this.enabled,

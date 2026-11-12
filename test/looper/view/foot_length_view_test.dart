@@ -15,12 +15,11 @@ import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 /// Two bars over 48000 frames: 24000 frames a bar.
 const _rig = LooperState(
@@ -51,11 +50,8 @@ const _rig = LooperState(
 );
 
 /// [_rig] with its tracks replaced.
-LooperState _withTracks(List<Track> tracks) => LooperState(
-  transport: _rig.transport,
-  status: _rig.status,
-  tracks: tracks,
-);
+LooperState _withTracks(List<Track> tracks) =>
+    LooperState(transport: _rig.transport, status: _rig.status, tracks: tracks);
 
 void main() {
   late _Control control;
@@ -75,11 +71,7 @@ void main() {
         contacts[button] = call.positionalArguments[1] as Object;
       });
     }
-    whenListen(
-      looper,
-      const Stream<LooperState>.empty(),
-      initialState: _rig,
-    );
+    whenListen(looper, const Stream<LooperState>.empty(), initialState: _rig);
     whenListen(
       tracks,
       const Stream<TracksState>.empty(),
@@ -127,9 +119,7 @@ void main() {
       .firstWhere((semantics) => semantics.properties.button ?? false);
 
   testWidgets('Multiply (pen 16 01): Clear doubles, Rec/Play and Undo keep '
-      'their Tracks roles, the panel reads the selected track', (
-    tester,
-  ) async {
+      'their Tracks roles, the panel reads the selected track', (tester) async {
     given(const ControlState(mode: InteractionMode.multiply));
     await pump(tester);
     expect(find.byType(PedalHardwareFace), findsNWidgets(10));
@@ -184,17 +174,15 @@ void main() {
     whenListen(
       looper,
       const Stream<LooperState>.empty(),
-      initialState: _withTracks(
-        [
-          const Track(
-            state: TrackState.playing,
-            lengthFrames: 96000,
-            multiple: 2,
-            undoDepth: 1,
-          ),
-          ..._rig.tracks.skip(1),
-        ],
-      ),
+      initialState: _withTracks([
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 96000,
+          multiple: 2,
+          undoDepth: 1,
+        ),
+        ..._rig.tracks.skip(1),
+      ]),
     );
     given(
       const ControlState(
@@ -343,16 +331,14 @@ void main() {
     whenListen(
       looper,
       const Stream<LooperState>.empty(),
-      initialState: _withTracks(
-        [
-          const Track(
-            state: TrackState.playing,
-            lengthFrames: 24000,
-            undoDepth: 1,
-          ),
-          ..._rig.tracks.skip(1),
-        ],
-      ),
+      initialState: _withTracks([
+        const Track(
+          state: TrackState.playing,
+          lengthFrames: 24000,
+          undoDepth: 1,
+        ),
+        ..._rig.tracks.skip(1),
+      ]),
     );
     given(
       const ControlState(
@@ -406,9 +392,9 @@ void main() {
     whenListen(
       looper,
       const Stream<LooperState>.empty(),
-      initialState: _withTracks(
-        [for (var i = 0; i < 4; i++) Track(channel: i)],
-      ),
+      initialState: _withTracks([
+        for (var i = 0; i < 4; i++) Track(channel: i),
+      ]),
     );
     given(const ControlState(mode: InteractionMode.divide));
     await pump(tester);
@@ -450,12 +436,10 @@ void main() {
     whenListen(
       looper,
       const Stream<LooperState>.empty(),
-      initialState: _withTracks(
-        [
-          const Track(state: TrackState.overdubbing, lengthFrames: 48000),
-          ..._rig.tracks.skip(1),
-        ],
-      ),
+      initialState: _withTracks([
+        const Track(state: TrackState.overdubbing, lengthFrames: 48000),
+        ..._rig.tracks.skip(1),
+      ]),
     );
     given(const ControlState(mode: InteractionMode.divide));
     await pump(tester);
@@ -471,9 +455,7 @@ void main() {
     );
     await tester.tap(pedal(PedalButton.clear));
     await tester.pump();
-    verify(
-      () => control.footLengthPressed(PedalButton.clear, any()),
-    ).called(1);
+    verify(() => control.footLengthPressed(PedalButton.clear, any())).called(1);
   });
 
   testWidgets('a contact is admitted, then completed by its own token', (

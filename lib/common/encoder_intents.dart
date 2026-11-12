@@ -8,7 +8,7 @@ import 'package:flutter/widgets.dart';
 /// controls register an [EncoderDraftAction] that is enabled only mid-draft.
 class EncoderTurnIntent extends Intent {
   /// Creates an [EncoderTurnIntent].
-  const EncoderTurnIntent(this.delta);
+  const new(this.delta);
 
   /// Signed detents; positive is clockwise.
   final int delta;
@@ -17,7 +17,7 @@ class EncoderTurnIntent extends Intent {
 /// Handles [EncoderTurnIntent] while [isDrafting] says a draft is open.
 class EncoderDraftAction extends Action<EncoderTurnIntent> {
   /// Creates an [EncoderDraftAction].
-  EncoderDraftAction({required this.isDrafting, required this.onTurn});
+  new({required this.isDrafting, required this.onTurn});
 
   /// Whether the control currently holds a draft the turn should adjust.
   final bool Function() isDrafting;

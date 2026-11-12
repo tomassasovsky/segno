@@ -12,7 +12,7 @@ import 'package:segno/update/usb/usb_update_package.dart';
 /// installed. Nothing while the list is closed.
 class UpdatesUsbPanel extends StatelessWidget {
   /// Creates an [UpdatesUsbPanel]; [onClosed] runs when the list closes.
-  const UpdatesUsbPanel({required this.onClosed, super.key});
+  const new({required this.onClosed, super.key});
 
   /// Called once the list is closed: by Cancel, or by a package staged.
   final VoidCallback onClosed;
@@ -139,7 +139,7 @@ class UpdatesUsbPanel extends StatelessWidget {
 int _megabytes(int bytes) => (bytes + (1 << 20) - 1) >> 20;
 
 class _PackageRow extends StatelessWidget {
-  const _PackageRow({
+  const new({
     required this.package,
     required this.onTap,
     this.autofocus = false,

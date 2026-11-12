@@ -15,12 +15,11 @@ import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+class _Looper extends MockBloc<LooperEvent, LooperState> implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 void main() {
   late _Control control;
@@ -169,9 +168,7 @@ void main() {
   });
 
   testWidgets('Undo, Clear and empty tracks admit no contact; recorded '
-      'tracks do', (
-    tester,
-  ) async {
+      'tracks do', (tester) async {
     given(const ControlState(mode: InteractionMode.peel));
     await pump(tester);
     for (final button in [PedalButton.undo, PedalButton.clear]) {

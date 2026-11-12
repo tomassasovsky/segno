@@ -10,7 +10,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 /// decides WHEN to make one.
 class MidiMappingDraft extends Equatable {
   /// Creates a [MidiMappingDraft] for a new mapping on [device].
-  factory MidiMappingDraft({
+  factory({
     required String device,
     String? id,
     MidiSource? source,
@@ -24,7 +24,7 @@ class MidiMappingDraft extends Equatable {
     controls: List.unmodifiable(controls.map(_settled)),
   );
 
-  const MidiMappingDraft._({
+  const new _({
     required this.device,
     required this.behavior,
     required this.controls,
@@ -33,7 +33,7 @@ class MidiMappingDraft extends Equatable {
   });
 
   /// A draft of the saved [mapping].
-  factory MidiMappingDraft.of(MidiMapping mapping) => MidiMappingDraft(
+  factory of(MidiMapping mapping) => MidiMappingDraft(
     device: mapping.source.device,
     id: mapping.id,
     source: mapping.source,

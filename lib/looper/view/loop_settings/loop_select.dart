@@ -5,7 +5,7 @@ import 'package:segno/theme/theme.dart';
 /// One choice in a [LoopSelect] or [LoopMenu].
 class LoopSelectItem<T> {
   /// Creates a choice. [key] lands on the menu row so tests can tap it.
-  const LoopSelectItem({
+  const new({
     required this.value,
     required this.label,
     this.enabled = true,
@@ -41,7 +41,7 @@ typedef LoopMenuAnchorBuilder = Widget Function(
 /// chooses and Escape closes — the traversal the physical encoder will drive.
 class LoopMenu<T> extends StatefulWidget {
   /// Creates a menu anchored on [builder].
-  const LoopMenu({
+  const new({
     required this.value,
     required this.items,
     required this.onSelected,
@@ -119,7 +119,7 @@ class _LoopMenuState<T> extends State<LoopMenu<T>> {
 /// One row of a [LoopMenu]: [item]'s label, filled and checked when it is
 /// the current choice.
 class _LoopMenuRow<T> extends StatelessWidget {
-  const _LoopMenuRow({
+  const new({
     required this.item,
     required this.selected,
     required this.onSelected,
@@ -193,7 +193,7 @@ class _LoopMenuRow<T> extends StatelessWidget {
 /// chevron, opening a [LoopMenu] of the choices below itself.
 class LoopSelect<T> extends StatefulWidget {
   /// Creates a select showing [value]'s label.
-  const LoopSelect({
+  const new({
     required this.value,
     required this.items,
     required this.onSelected,

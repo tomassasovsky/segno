@@ -205,11 +205,7 @@ Future<void> _move(BuildContext context, SessionSummary summary) async {
         enabled: summary.folder != null,
       ),
       for (final folder in session.state.folders)
-        FxOption(
-          id: folder,
-          label: folder,
-          enabled: folder != summary.folder,
-        ),
+        FxOption(id: folder, label: folder, enabled: folder != summary.folder),
       FxOption(id: create, label: l10n.libraryNewFolderOption),
     ],
   );

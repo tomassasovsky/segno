@@ -14,11 +14,9 @@ part 'console_facts_state.dart';
 /// open, because a USB stick may have arrived since.
 class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// Creates a [ConsoleFactsCubit].
-  ConsoleFactsCubit({
-    required ConsoleFactsClient client,
-    required this._settings,
-  }) : _client = client,
-       super(ConsoleFactsState(supported: client.isSupported));
+  new({required ConsoleFactsClient client, required this._settings})
+    : _client = client,
+      super(ConsoleFactsState(supported: client.isSupported));
 
   final ConsoleFactsClient _client;
   final SettingsRepository _settings;
@@ -30,10 +28,7 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// cannot read the disk says so, and there is nothing above it to catch.
   Future<void> load() async {
     emit(
-      state.copyWith(
-        status: ConsoleFactsStatus.loading,
-        actionFailed: false,
-      ),
+      state.copyWith(status: ConsoleFactsStatus.loading, actionFailed: false),
     );
     try {
       final storage = await _client.storage();

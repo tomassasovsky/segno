@@ -51,7 +51,7 @@ enum UpdateFailure {
 /// Immutable state of the update feature.
 class UpdateState extends Equatable {
   /// Creates an [UpdateState].
-  const UpdateState({
+  const new({
     this.phase = UpdatePhase.idle,
     this.supported = false,
     this.channel = '',

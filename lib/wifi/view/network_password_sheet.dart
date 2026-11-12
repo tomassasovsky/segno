@@ -35,7 +35,7 @@ Future<String?> showNetworkPasswordSheet(
 );
 
 class _PasswordSheet extends StatefulWidget {
-  const _PasswordSheet({required this.ssid, this.error});
+  const new({required this.ssid, this.error});
 
   final String ssid;
   final String? error;

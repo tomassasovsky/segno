@@ -27,7 +27,7 @@ import 'package:looper_repository/looper_repository.dart';
 /// know (its additive-only contract) — the same map decodes as an address
 /// there and as a slot target here.
 sealed class FxBindingTarget extends Equatable {
-  const FxBindingTarget();
+  const new();
 
   /// Valid target coordinates, independent of current effect availability.
   bool get isStructurallyValid => switch (this) {
@@ -97,7 +97,7 @@ sealed class FxBindingTarget extends Equatable {
 /// "disabled == dry through the bus" (R15).
 final class FxChainTarget extends FxBindingTarget {
   /// Creates a chain-level target on [address].
-  const FxChainTarget(this.address);
+  const new(this.address);
 
   @override
   final FxAddress address;
@@ -119,7 +119,7 @@ final class FxChainTarget extends FxBindingTarget {
 /// slot.
 final class FxSlotTarget extends FxBindingTarget {
   /// Creates an effect-level target on [slotId] within [address]'s chain.
-  const FxSlotTarget({required this.address, required this.slotId});
+  const new({required this.address, required this.slotId});
 
   @override
   final FxAddress address;
@@ -147,7 +147,7 @@ final class FxSlotTarget extends FxBindingTarget {
 /// another rack.
 final class FxRackTarget extends FxBindingTarget {
   /// Creates a rack-level target on [rackId] within [address]'s chain.
-  const FxRackTarget({required this.address, required this.rackId});
+  const new({required this.address, required this.rackId});
 
   @override
   final FxAddress address;

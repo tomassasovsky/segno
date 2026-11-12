@@ -30,7 +30,7 @@ enum ExpressionDestinationKind {
 /// One control a destination offers.
 class ExpressionControl extends Equatable {
   /// Creates an [ExpressionControl].
-  const ExpressionControl({
+  const new({
     required this.target,
     required this.label,
     this.art,
@@ -58,7 +58,7 @@ class ExpressionControl extends Equatable {
 /// destination's own.
 class ExpressionControlGroup extends Equatable {
   /// Creates an [ExpressionControlGroup].
-  const ExpressionControlGroup({required this.label, required this.controls});
+  const new({required this.label, required this.controls});
 
   /// The heading.
   final String label;
@@ -73,11 +73,7 @@ class ExpressionControlGroup extends Equatable {
 /// One effect a destination offers to turn on and off.
 class ExpressionActivation extends Equatable {
   /// Creates an [ExpressionActivation].
-  const ExpressionActivation({
-    required this.target,
-    required this.label,
-    this.art,
-  });
+  const new({required this.target, required this.label, this.art});
 
   /// The chain, the rack or the effect.
   final FxBindingTarget target;
@@ -95,7 +91,7 @@ class ExpressionActivation extends Equatable {
 /// One place a pedal can reach, and everything it offers there.
 class ExpressionDestination extends Equatable {
   /// Creates an [ExpressionDestination].
-  const ExpressionDestination({
+  const new({
     required this.id,
     required this.kind,
     required this.label,
@@ -337,15 +333,12 @@ List<ExpressionDestination> expressionDestinations(
   final drafts = <String, _Draft>{};
   // One picture per pedal, however many of its parameters are listed.
   final arts = <Object, FxArt?>{};
-  FxArt? artOf(Object target) => arts.putIfAbsent(
-    switch (target) {
-      FxParamTarget(:final address, :final slotId) ||
-      FxSlotTarget(:final address, :final slotId) => (address, slotId),
-      FxRackTarget(:final address, :final rackId) => (address, #rack, rackId),
-      _ => target,
-    },
-    () => expressionTargetArt(looper, target),
-  );
+  FxArt? artOf(Object target) => arts.putIfAbsent(switch (target) {
+    FxParamTarget(:final address, :final slotId) ||
+    FxSlotTarget(:final address, :final slotId) => (address, slotId),
+    FxRackTarget(:final address, :final rackId) => (address, #rack, rackId),
+    _ => target,
+  }, () => expressionTargetArt(looper, target));
   _Draft draftFor(
     ({String id, ExpressionDestinationKind kind, int order}) place,
     String label,
@@ -593,7 +586,7 @@ const int _loopControlsOrder = 400000;
 /// One destination under construction: a map keyed by heading, so groups keep
 /// the order their first control arrived in.
 class _Draft {
-  _Draft({
+  new({
     required this.id,
     required this.kind,
     required this.order,

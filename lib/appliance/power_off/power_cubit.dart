@@ -39,7 +39,7 @@ part 'power_state.dart';
 /// that flag; there is no shared latch.
 class PowerCubit extends Cubit<PowerState> {
   /// Creates a [PowerCubit].
-  PowerCubit({
+  new({
     required this._stopTransport,
     required this._flush,
     required this._storageSettled,
@@ -135,10 +135,7 @@ class PowerCubit extends Cubit<PowerState> {
   /// from [snapshot], so a session that gained content or a name since then
   /// is saved: Save As when unnamed, [save] when named. A session write
   /// already chosen (named, or the Save As name) is kept.
-  void retry(
-    PowerSnapshot snapshot, {
-    required Future<void> Function() save,
-  }) {
+  void retry(PowerSnapshot snapshot, {required Future<void> Function() save}) {
     if (state.phase != PowerPhase.saveFailed || _save == null) return;
     if (_refused(snapshot)) return;
     final action = state.action!;

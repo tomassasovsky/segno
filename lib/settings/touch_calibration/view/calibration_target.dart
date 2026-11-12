@@ -6,7 +6,7 @@ import 'package:segno/theme/theme.dart';
 /// place it with its centre on the point a tap is aimed at.
 class CalibrationTarget extends StatelessWidget {
   /// Creates a [CalibrationTarget].
-  const CalibrationTarget({super.key});
+  const new({super.key});
 
   /// The crosshair's span, which is the widget's size.
   static const double span = 110;
@@ -27,7 +27,7 @@ class CalibrationTarget extends StatelessWidget {
 }
 
 class _TargetPainter extends CustomPainter {
-  const _TargetPainter({required this.ring, required this.line});
+  const new({required this.ring, required this.line});
 
   final Color ring;
   final Color line;
@@ -63,11 +63,7 @@ class _TargetPainter extends CustomPainter {
 /// coordinates, inside a box of that [area]'s size.
 class PositionedCalibrationTarget extends StatelessWidget {
   /// Creates a [PositionedCalibrationTarget].
-  const PositionedCalibrationTarget({
-    required this.target,
-    required this.area,
-    super.key,
-  });
+  const new({required this.target, required this.area, super.key});
 
   /// Where the target sits, `(0, 0)` top-left to `(1, 1)` bottom-right.
   final ({double x, double y}) target;

@@ -14,7 +14,7 @@ typedef PluginFileStat = ({int mtimeMs, int sizeBytes});
 /// triple, so any change re-scans that file.
 class PluginCacheKey extends Equatable {
   /// Creates a [PluginCacheKey].
-  const PluginCacheKey({
+  const new({
     required this.path,
     required this.mtimeMs,
     required this.sizeBytes,
@@ -39,16 +39,14 @@ class PluginCacheKey extends Equatable {
 /// [PluginCatalog] holds and validates.
 class PluginCatalogCache extends Equatable {
   /// Creates a [PluginCatalogCache].
-  const PluginCatalogCache({
+  const new({
     required this.appVersion,
     required this.descriptors,
     required this.keys,
   });
 
   /// An empty cache for [appVersion].
-  const PluginCatalogCache.empty(this.appVersion)
-    : descriptors = const [],
-      keys = const [];
+  const new empty(this.appVersion) : descriptors = const [], keys = const [];
 
   /// The app version that produced this cache.
   final String appVersion;
@@ -89,7 +87,7 @@ class PluginCatalog {
   /// [_pollInterval] is how often the running scan is polled. [statFile] reads
   /// a file's (mtime, size) for cache keying; the default stats the real
   /// filesystem and returns `null` for a missing file (injected in tests).
-  PluginCatalog({
+  new({
     required this._engine,
     required this._appVersion,
     this._pollInterval = const Duration(milliseconds: 100),

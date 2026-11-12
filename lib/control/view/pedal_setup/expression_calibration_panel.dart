@@ -12,7 +12,7 @@ import 'package:segno/theme/theme.dart';
 /// working one.
 class ExpressionCalibrationPanel extends StatelessWidget {
   /// Creates an [ExpressionCalibrationPanel].
-  const ExpressionCalibrationPanel({
+  const new({
     required this.heel,
     required this.toe,
     required this.connected,
@@ -142,7 +142,7 @@ class ExpressionCalibrationPanel extends StatelessWidget {
 /// One end of the travel: its step number, what to do, and its capture
 /// button.
 class _CaptureEnd extends StatelessWidget {
-  const _CaptureEnd({
+  const new({
     required this.isHeel,
     required this.value,
     required this.connected,

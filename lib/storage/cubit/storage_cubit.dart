@@ -19,7 +19,7 @@ export 'storage_state.dart';
 class StorageCubit extends Cubit<StorageState> {
   /// Creates a [StorageCubit]. [_sampleRate] reads the applied engine rate the
   /// recording estimate is made at.
-  StorageCubit({
+  new({
     required StorageRepository repository,
     required this._sampleRate,
     this._refreshInterval = const Duration(seconds: 5),

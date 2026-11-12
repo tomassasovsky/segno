@@ -8,7 +8,7 @@ import 'package:update_repository/src/update_recovery.dart';
 /// backends stay dumb and the presentation layer stays platform-agnostic.
 class UpdateRepository {
   /// Creates an [UpdateRepository] over [_backend].
-  const UpdateRepository({required this._backend});
+  const new({required this._backend});
 
   final PlatformUpdateBackend _backend;
 

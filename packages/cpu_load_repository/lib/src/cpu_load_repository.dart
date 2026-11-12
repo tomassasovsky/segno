@@ -15,20 +15,20 @@ typedef ProcStatReader = Future<String> Function();
 /// reports nothing.
 class CpuLoadRepository {
   /// Creates a [CpuLoadRepository] reading through [_readStat].
-  const CpuLoadRepository({
+  const new({
     required ProcStatReader this._readStat,
     this.interval = const Duration(seconds: 1),
   }) : isSupported = true;
 
   /// A repository for a build that cannot measure the load.
-  const CpuLoadRepository.unsupported()
+  const new unsupported()
     : _readStat = null,
       interval = const Duration(seconds: 1),
       isSupported = false;
 
   /// The repository for this machine: `/proc/stat` where the kernel has it,
   /// [CpuLoadRepository.unsupported] where it does not.
-  factory CpuLoadRepository.system({String path = '/proc/stat'}) {
+  factory system({String path = '/proc/stat'}) {
     final file = File(path);
     if (!file.existsSync()) return const CpuLoadRepository.unsupported();
     return CpuLoadRepository(readStat: file.readAsString);

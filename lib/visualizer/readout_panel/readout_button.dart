@@ -23,7 +23,7 @@ enum ReadoutButtonStyle {
 /// console button, and shows a lock by dimming rather than by hiding.
 class ReadoutButton extends StatelessWidget {
   /// Creates a [ReadoutButton].
-  const ReadoutButton({
+  const new({
     required this.onPressed,
     this.label,
     this.icon,
@@ -87,7 +87,7 @@ class ReadoutButton extends StatelessWidget {
 /// tempo steps, which with [repeat] keep stepping while held.
 class ReadoutPressButton extends StatefulWidget {
   /// Creates a [ReadoutPressButton].
-  const ReadoutPressButton({
+  const new({
     required this.label,
     required this.onPressed,
     this.semanticLabel,
@@ -157,9 +157,7 @@ class _ReadoutPressButtonState extends State<ReadoutPressButton> {
   void _leave(PointerMoveEvent event) {
     final box = context.findRenderObject();
     if (box is RenderBox &&
-        !(Offset.zero & box.size).contains(
-          event.localPosition,
-        )) {
+        !(Offset.zero & box.size).contains(event.localPosition)) {
       _release();
     }
   }
@@ -211,7 +209,7 @@ class _ReadoutPressButtonState extends State<ReadoutPressButton> {
 /// its own (a [ReadoutPressButton] takes its touches itself).
 class ReadoutButtonFace extends StatelessWidget {
   /// Creates a [ReadoutButtonFace].
-  const ReadoutButtonFace({
+  const new({
     required this.selected,
     required this.enabled,
     required this.style,

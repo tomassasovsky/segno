@@ -22,7 +22,7 @@ class DawProject {
   /// beat-time math (`secondsToBeats`) degenerate. Every construction path —
   /// a direct fixture, or `DawManifestReader.read` — goes through this same
   /// normalization.
-  const DawProject({required this.tracks, double tempoBpm = kFallbackTempoBpm})
+  const new({required this.tracks, double tempoBpm = kFallbackTempoBpm})
     : tempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
 
   /// One entry per non-empty Segno track or live-input stem. An empty track
@@ -60,7 +60,7 @@ const double kFallbackTempoBpm = 120;
 @immutable
 class DawTrack {
   /// Creates a [DawTrack].
-  const DawTrack({
+  const new({
     required this.name,
     this.arrangementClip,
     this.sessionClips = const [],
@@ -114,7 +114,7 @@ enum AutomationTarget {
 @immutable
 class AutomationLane {
   /// Creates an [AutomationLane].
-  const AutomationLane({required this.target, required this.breakpoints});
+  const new({required this.target, required this.breakpoints});
 
   /// Which mixer parameter this envelope drives.
   final AutomationTarget target;
@@ -129,7 +129,7 @@ class AutomationLane {
 @immutable
 class AutomationBreakpoint {
   /// Creates an [AutomationBreakpoint].
-  const AutomationBreakpoint({required this.beat, required this.value});
+  const new({required this.beat, required this.value});
 
   /// Position on the arrangement timeline, in Ableton beat units (see
   /// `als_builder.dart`'s `secondsToBeats`).
@@ -150,7 +150,7 @@ class AutomationBreakpoint {
 @immutable
 class DawClip {
   /// Creates a [DawClip].
-  const DawClip({
+  const new({
     required this.fileRef,
     required this.startSeconds,
     required this.lengthSeconds,
@@ -175,7 +175,7 @@ class DawClip {
 @immutable
 class DawSessionClip {
   /// Creates a [DawSessionClip].
-  const DawSessionClip({
+  const new({
     required this.laneIndex,
     required this.fileRef,
     required this.lengthSeconds,

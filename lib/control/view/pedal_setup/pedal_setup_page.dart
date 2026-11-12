@@ -48,7 +48,7 @@ enum PedalSetupContext {
 /// the cubit.
 class PedalSetupPage extends StatefulWidget {
   /// Creates a [PedalSetupPage].
-  const PedalSetupPage({this.onStage, super.key});
+  const new({this.onStage, super.key});
 
   /// Closes the calling setup tray before returning to performance.
   final VoidCallback? onStage;
@@ -163,10 +163,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
               child: Scaffold(
                 body: LoopSettingsFrame(
                   key: const Key('pedal_setup_page'),
-                  tabs: _ContextTabs(
-                    selected: _context,
-                    onOpen: _openContext,
-                  ),
+                  tabs: _ContextTabs(selected: _context, onOpen: _openContext),
                   title: l10n.pedalSetupTitle,
                   onBack: () => Navigator.of(context).maybePop(),
                   onStage: _stage,
@@ -419,9 +416,8 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
     // assign take a colour.
     PedalSetupContext.leds => {
       for (final button in PedalButton.values)
-        if (PedalLedMap.schema(
-          _ledMode,
-        ).containsKey(PedalLedMap.groupOf(button)))
+        if (PedalLedMap.schema(_ledMode)
+            .containsKey(PedalLedMap.groupOf(button)))
           button,
     },
     PedalSetupContext.custom => {
@@ -699,7 +695,7 @@ class _PedalSetupPageState extends State<PedalSetupPage> {
 /// The titlebar's actions: the context's own buttons, External pedals, and
 /// Cancel and Save for the draft.
 class _SetupActions extends StatelessWidget {
-  const _SetupActions({
+  const new({
     required this.setupContext,
     required this.dirty,
     required this.saving,
@@ -828,7 +824,7 @@ class _SetupActions extends StatelessWidget {
 /// The selected switch's Press and Hold, in Track controls or Custom
 /// controls.
 class _GestureEditor extends StatelessWidget {
-  const _GestureEditor({
+  const new({
     required this.title,
     required this.custom,
     required this.selected,
@@ -995,7 +991,7 @@ Future<bool> showPedalClearDialog(BuildContext context) async {
 }
 
 class _PedalClearDialog extends StatelessWidget {
-  const _PedalClearDialog();
+  const new();
 
   static const double _panelWidth = 1040;
   static const double _pad = 40;
@@ -1083,7 +1079,7 @@ class _PedalClearDialog extends StatelessWidget {
 /// While the setup loads they are drawn but not [enabled], so the top bar
 /// does not change when the page arrives.
 class _ContextTabs extends StatelessWidget {
-  const _ContextTabs({
+  const new({
     required this.selected,
     required this.onOpen,
     this.enabled = true,
@@ -1129,7 +1125,7 @@ class _ContextTabs extends StatelessWidget {
 /// LED colors' modes, one tab each across the content box, every mode with
 /// a colour map of its own.
 class _LedModeTabs extends StatelessWidget {
-  const _LedModeTabs({
+  const new({
     required this.selected,
     required this.onShow,
     required this.height,

@@ -32,14 +32,13 @@ Future<double?> showTempoEntrySheet(
     isScrollControlled: true,
     // Full size it is about 690 high: on a window shorter than that (a
     // desktop build) it scrolls rather than overflowing.
-    builder: (_) => SingleChildScrollView(
-      child: _TempoEntrySheet(current: current),
-    ),
+    builder: (_) =>
+        SingleChildScrollView(child: _TempoEntrySheet(current: current)),
   );
 }
 
 class _TempoEntrySheet extends StatefulWidget {
-  const _TempoEntrySheet({required this.current});
+  const new({required this.current});
 
   final double current;
 

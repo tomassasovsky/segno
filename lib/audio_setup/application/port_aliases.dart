@@ -24,7 +24,7 @@ typedef PortAliasSnapshot = ({
 /// The publication callback only adapts confirmed state into presentation.
 class PortAliases {
   /// Follows the currently opened device and loads its persisted names.
-  PortAliases({
+  new({
     required this._settings,
     required this._repository,
     required this._kind,

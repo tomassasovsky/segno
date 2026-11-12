@@ -42,7 +42,7 @@ enum InputAir {
 /// One input's switches; null where the interface has none.
 class InterfaceInput extends Equatable {
   /// Creates an [InterfaceInput].
-  const InterfaceInput({
+  const new({
     this.level,
     this.pad,
     this.air,
@@ -82,7 +82,7 @@ class InterfaceInput extends Equatable {
 /// that powers two inputs is one control: turning it on powers both.
 class PhantomSwitch extends Equatable {
   /// Creates a [PhantomSwitch].
-  const PhantomSwitch({
+  const new({
     required this.firstInput,
     required this.lastInput,
     required this.on,
@@ -109,7 +109,7 @@ class PhantomSwitch extends Equatable {
 /// its front-panel buttons change the same values.
 class InterfaceInputs extends Equatable {
   /// Creates an [InterfaceInputs].
-  const InterfaceInputs({
+  const new({
     required this.status,
     this.inputs = const [],
     this.phantomSwitches = const [],

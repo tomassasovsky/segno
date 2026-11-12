@@ -23,7 +23,7 @@ enum HistoryKind {
   /// one is malformed.
   bounce(5);
 
-  HistoryKind(this.code);
+  new(this.code);
 
   /// The engine's `le_hist_kind` value. Explicit so the engine's numbering,
   /// not declaration order, is the wire: 3 was the loop-close restoration
@@ -43,7 +43,7 @@ enum HistoryKind {
 @immutable
 class HistoryEntry {
   /// Creates a [HistoryEntry].
-  const HistoryEntry(this.kind, {this.skipped = 0, this.start = 0});
+  const new(this.kind, {this.skipped = 0, this.start = 0});
 
   /// What the entry represents.
   final HistoryKind kind;
@@ -82,7 +82,7 @@ class HistoryEntry {
 class TrackHistory {
   /// Creates a [TrackHistory] whose first [undoCount] [entries] are the Undo
   /// side.
-  const TrackHistory(this.entries, {required this.undoCount});
+  const new(this.entries, {required this.undoCount});
 
   /// A track with no history: its live image only.
   static const TrackHistory none = TrackHistory([], undoCount: 0);

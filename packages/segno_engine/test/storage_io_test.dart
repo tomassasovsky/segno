@@ -117,9 +117,8 @@ void main() {
 
     test('digestFile runs in a background isolate', () async {
       final path = '${dir.path}/big.bin';
-      File(path).writeAsBytesSync(
-        Uint8List(1000000)..fillRange(0, 1000000, 0x61),
-      );
+      File(path)
+          .writeAsBytesSync(Uint8List(1000000)..fillRange(0, 1000000, 0x61));
       final digest = await Isolate.run(
         () => NativeStorageIo().digestFile(path),
       );

@@ -23,7 +23,7 @@ import 'package:segno/visualizer/readout_command.dart';
 class ReadoutCommands {
   /// Creates a [ReadoutCommands] over the running rig's settings owners.
   /// [_dimmed] says whether the console is idle-dimmed.
-  ReadoutCommands({
+  new({
     required this._repository,
     required this._tempo,
     required this._record,

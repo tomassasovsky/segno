@@ -16,7 +16,7 @@ import 'package:flutter/widgets.dart';
 /// so it too is the same for every value.
 class SlotRow extends StatelessWidget {
   /// Creates a [SlotRow].
-  const SlotRow({
+  const new({
     required this.slots,
     this.minWidth = 0,
     this.spacing = 0,
@@ -74,7 +74,7 @@ class SlotRow extends StatelessWidget {
 /// and is clipped to it.
 class RowSlot extends StatelessWidget {
   /// Creates a [RowSlot].
-  const RowSlot({
+  const new({
     required this.child,
     this.width,
     this.flex = 1,

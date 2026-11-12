@@ -4,10 +4,7 @@ import 'package:meta/meta.dart';
 @immutable
 class PerformanceRenderTrackStatus {
   /// Creates a [PerformanceRenderTrackStatus].
-  const PerformanceRenderTrackStatus({
-    required this.channel,
-    required this.succeeded,
-  });
+  const new({required this.channel, required this.succeeded});
 
   /// Track channel index.
   final int channel;
@@ -38,7 +35,7 @@ class PerformanceRenderTrackStatus {
 @immutable
 class PerformanceRenderProgress {
   /// Creates a [PerformanceRenderProgress].
-  const PerformanceRenderProgress({
+  const new({
     required this.done,
     required this.progressPercent,
     this.failed = false,

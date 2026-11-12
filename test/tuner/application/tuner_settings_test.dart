@@ -38,10 +38,7 @@ void main() {
       ..['tuner.reference_hz'] = 432
       ..['tuner.input'] = 2;
     await settings.load();
-    expect(
-      settings.live,
-      const TunerPreferences(referenceHz: 432, input: 2),
-    );
+    expect(settings.live, const TunerPreferences(referenceHz: 432, input: 2));
   });
 
   test('the reference clamps to 420-460 Hz and resets to 440', () async {

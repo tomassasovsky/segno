@@ -33,7 +33,7 @@ class MidiDeviceRepository {
   ///
   /// [pollInterval] is the hotplug re-enumeration cadence; pass [Duration.zero]
   /// to disable the timer (tests drive [refresh] directly).
-  MidiDeviceRepository({
+  new({
     required MidiControllerSource Function()? captures,
     required this._settings,
     Duration pollInterval = const Duration(seconds: 2),
@@ -136,9 +136,7 @@ class MidiDeviceRepository {
       return;
     }
     if (_scanner == null) return;
-    _emit(
-      _connection.copyWith(selectedId: saved.id, selectedName: saved.name),
-    );
+    _emit(_connection.copyWith(selectedId: saved.id, selectedName: saved.name));
   }
 
   /// Shows the device [id] on the MIDI page and persists the choice. Capture

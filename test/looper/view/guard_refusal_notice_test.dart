@@ -36,9 +36,7 @@ void main() {
     return captured;
   }
 
-  testWidgets('a refused arm says what it waits for', (
-    tester,
-  ) async {
+  testWidgets('a refused arm says what it waits for', (tester) async {
     final context = await pumpHost(tester);
     onPerformanceRecorderState(
       context,

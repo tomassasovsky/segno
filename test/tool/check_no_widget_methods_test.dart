@@ -14,13 +14,7 @@ final String _root = Directory.current.path;
 /// analyzer finds its SDK next to the running executable, which here is
 /// flutter_tester (`bin/cache/artifacts/engine/<platform>/flutter_tester`).
 final String _sdkPath = p.normalize(
-  p.join(
-    p.dirname(Platform.resolvedExecutable),
-    '..',
-    '..',
-    '..',
-    'dart-sdk',
-  ),
+  p.join(p.dirname(Platform.resolvedExecutable), '..', '..', '..', 'dart-sdk'),
 );
 
 const _imports = '''
@@ -267,12 +261,9 @@ void main() {
       ]);
     });
 
-    test(
-      'flags a declaration without a return type that returns a widget',
-      () {
-        expect(_flagged('untyped'), ['untyped', 'Holder.label', 'Holder.row']);
-      },
-    );
+    test('flags a declaration without a return type that returns a widget', () {
+      expect(_flagged('untyped'), ['untyped', 'Holder.label', 'Holder.row']);
+    });
 
     test('does not flag framework overrides', () {
       expect(_flagged('overrides'), isEmpty);
@@ -282,12 +273,9 @@ void main() {
       expect(_flagged('app_override'), ['Cell.face', 'Square.face']);
     });
 
-    test(
-      'does not flag closures, constructors, setters or other types',
-      () {
-        expect(_flagged('not_flagged'), isEmpty);
-      },
-    );
+    test('does not flag closures, constructors, setters or other types', () {
+      expect(_flagged('not_flagged'), isEmpty);
+    });
 
     test('reports the path, line and type', () {
       const path = 'test/tool/_fixture_report.dart';

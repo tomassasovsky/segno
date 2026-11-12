@@ -11,7 +11,7 @@ import 'package:segno/l10n/l10n.dart';
 @immutable
 class AudioInterface {
   /// Creates an [AudioInterface].
-  const AudioInterface({
+  const new({
     required this.name,
     this.playbackId = '',
     this.captureId = '',

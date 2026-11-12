@@ -5,7 +5,7 @@
 /// and to log.
 class WifiHelperException implements Exception {
   /// Creates a [WifiHelperException].
-  const WifiHelperException(this.message, {this.restored});
+  const new(this.message, {this.restored});
 
   /// What the helper said went wrong.
   final String message;

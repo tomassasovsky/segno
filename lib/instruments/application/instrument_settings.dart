@@ -21,7 +21,7 @@ enum RemoveRefusal {
 class InstrumentSettings {
   /// Builds the owner over [looper]'s lifetime, [instruments] and
   /// [settings]' record. [_mintId] gives each new instrument its identity.
-  InstrumentSettings({
+  new({
     required LooperRepository looper,
     required InstrumentRepository instruments,
     required SettingsRepository settings,

@@ -510,7 +510,7 @@ void main() {
 
 /// A readout whose acknowledgements the test sends, so pushes can overlap.
 class _ScriptedReadout {
-  _ScriptedReadout(this._directory) {
+  new(this._directory) {
     _inbox.listen(_onMessage);
     _directory.publish(screenLinkReadoutPort, _inbox.sendPort);
   }

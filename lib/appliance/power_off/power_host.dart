@@ -77,7 +77,7 @@ String? _stagedUpdate(BuildContext context) {
 /// either is missing (widget tests that pump the page without the cubit).
 class PowerHost extends StatefulWidget {
   /// Creates a [PowerHost] wrapping [child].
-  const PowerHost({required this.child, super.key});
+  const new({required this.child, super.key});
 
   /// The rest of the looper page.
   final Widget child;

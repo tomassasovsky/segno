@@ -41,10 +41,9 @@ void main() {
 
       expect(byPackage.keys, unorderedEquals(_expected.keys));
       for (final MapEntry(key: package, value: path) in _expected.entries) {
-        final onDisk = LicenseEntryWithLineBreaks(
-          [package],
-          File(path).readAsStringSync(),
-        );
+        final onDisk = LicenseEntryWithLineBreaks([
+          package,
+        ], File(path).readAsStringSync());
         expect(
           _paragraphs(byPackage[package]!),
           _paragraphs(onDisk),
@@ -58,9 +57,8 @@ void main() {
     });
 
     test("miniaudio's LICENSE is the license block of the vendored header", () {
-      final header = File(
-        '$_engine/src/miniaudio/miniaudio.h',
-      ).readAsStringSync();
+      final header = File('$_engine/src/miniaudio/miniaudio.h')
+          .readAsStringSync();
       final license = File(_expected['miniaudio']!).readAsStringSync();
       expect(header, contains(license.trimRight()));
     });
@@ -69,9 +67,8 @@ void main() {
       final shown = File(_expected['vst3sdk']!).readAsStringSync();
       for (final subtree in ['pluginterfaces', 'public.sdk']) {
         expect(
-          File(
-            '$_engine/third_party/vst3sdk/$subtree/LICENSE.txt',
-          ).readAsStringSync(),
+          File('$_engine/third_party/vst3sdk/$subtree/LICENSE.txt')
+              .readAsStringSync(),
           shown,
         );
       }
@@ -114,10 +111,7 @@ void main() {
         r'^    - family: (.+)$',
         multiLine: true,
       ).allMatches(pubspec).map((m) => m.group(1)!.trim()).toSet();
-      expect(
-        bundledFontLicenses.map((entry) => entry.$1).toSet(),
-        families,
-      );
+      expect(bundledFontLicenses.map((entry) => entry.$1).toSet(), families);
       for (final (font, path) in bundledFontLicenses) {
         final text = File(path).readAsStringSync();
         // The notice the licence asks every copy to carry: its copyright

@@ -23,12 +23,8 @@ class SegnoEngineBindings {
     ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
   ) : _lookup = lookup;
 
-  int le_backing_buffer_frames(
-    ffi.Pointer<le_backing_buffer> buffer,
-  ) {
-    return _le_backing_buffer_frames(
-      buffer,
-    );
+  int le_backing_buffer_frames(ffi.Pointer<le_backing_buffer> buffer) {
+    return _le_backing_buffer_frames(buffer);
   }
 
   late final _le_backing_buffer_framesPtr =
@@ -39,12 +35,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_backing_buffer>)>();
 
   /// Frees a buffer the caller still owns. NULL is a no-op.
-  void le_backing_buffer_free(
-    ffi.Pointer<le_backing_buffer> buffer,
-  ) {
-    return _le_backing_buffer_free(
-      buffer,
-    );
+  void le_backing_buffer_free(ffi.Pointer<le_backing_buffer> buffer) {
+    return _le_backing_buffer_free(buffer);
   }
 
   late final _le_backing_buffer_freePtr =
@@ -104,9 +96,7 @@ class SegnoEngineBindings {
   ffi.Pointer<ffi.Float> le_backing_buffer_pcm(
     ffi.Pointer<le_backing_buffer> buffer,
   ) {
-    return _le_backing_buffer_pcm(
-      buffer,
-    );
+    return _le_backing_buffer_pcm(buffer);
   }
 
   late final _le_backing_buffer_pcmPtr =
@@ -127,11 +117,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> out,
     int buckets,
   ) {
-    return _le_backing_buffer_peaks(
-      buffer,
-      out,
-      buckets,
-    );
+    return _le_backing_buffer_peaks(buffer, out, buckets);
   }
 
   late final _le_backing_buffer_peaksPtr =
@@ -153,12 +139,8 @@ class SegnoEngineBindings {
         )
       >();
 
-  int le_backing_buffer_rate(
-    ffi.Pointer<le_backing_buffer> buffer,
-  ) {
-    return _le_backing_buffer_rate(
-      buffer,
-    );
+  int le_backing_buffer_rate(ffi.Pointer<le_backing_buffer> buffer) {
+    return _le_backing_buffer_rate(buffer);
   }
 
   late final _le_backing_buffer_ratePtr =
@@ -243,12 +225,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> peaks,
     int buckets,
   ) {
-    return _le_backing_probe_file(
-      path,
-      info,
-      peaks,
-      buckets,
-    );
+    return _le_backing_probe_file(path, info, peaks, buckets);
   }
 
   late final _le_backing_probe_filePtr =
@@ -276,12 +253,8 @@ class SegnoEngineBindings {
   /// driver / backend built-in loopback) by enumerating capture devices. Fills
   /// *out and returns LE_OK, or LE_ERR_INVALID for a null argument / enumeration
   /// failure.
-  int le_detect_loopback(
-    ffi.Pointer<le_loopback_info> out,
-  ) {
-    return _le_detect_loopback(
-      out,
-    );
+  int le_detect_loopback(ffi.Pointer<le_loopback_info> out) {
+    return _le_detect_loopback(out);
   }
 
   late final _le_detect_loopbackPtr =
@@ -291,14 +264,8 @@ class SegnoEngineBindings {
   late final _le_detect_loopback = _le_detect_loopbackPtr
       .asFunction<int Function(ffi.Pointer<le_loopback_info>)>();
 
-  int le_digest_begin(
-    ffi.Pointer<ffi.Void> state,
-    int state_bytes,
-  ) {
-    return _le_digest_begin(
-      state,
-      state_bytes,
-    );
+  int le_digest_begin(ffi.Pointer<ffi.Void> state, int state_bytes) {
+    return _le_digest_begin(state, state_bytes);
   }
 
   late final _le_digest_beginPtr =
@@ -318,11 +285,7 @@ class SegnoEngineBindings {
     int length,
     ffi.Pointer<ffi.Uint8> out,
   ) {
-    return _le_digest_bytes(
-      data,
-      length,
-      out,
-    );
+    return _le_digest_bytes(data, length, out);
   }
 
   late final _le_digest_bytesPtr =
@@ -340,14 +303,8 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Uint8>)
       >();
 
-  int le_digest_end(
-    ffi.Pointer<ffi.Void> state,
-    ffi.Pointer<ffi.Uint8> out,
-  ) {
-    return _le_digest_end(
-      state,
-      out,
-    );
+  int le_digest_end(ffi.Pointer<ffi.Void> state, ffi.Pointer<ffi.Uint8> out) {
+    return _le_digest_end(state, out);
   }
 
   late final _le_digest_endPtr =
@@ -377,12 +334,7 @@ class SegnoEngineBindings {
     int length,
     ffi.Pointer<ffi.Uint8> out,
   ) {
-    return _le_digest_file(
-      path,
-      offset,
-      length,
-      out,
-    );
+    return _le_digest_file(path, offset, length, out);
   }
 
   late final _le_digest_filePtr =
@@ -406,11 +358,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Void> data,
     int length,
   ) {
-    return _le_digest_update(
-      state,
-      data,
-      length,
-    );
+    return _le_digest_update(state, data, length);
   }
 
   late final _le_digest_updatePtr =
@@ -437,11 +385,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_midi> m,
     int port,
   ) {
-    return _le_engine_attach_midi_input(
-      engine,
-      m,
-      port,
-    );
+    return _le_engine_attach_midi_input(engine, m, port);
   }
 
   late final _le_engine_attach_midi_inputPtr =
@@ -473,10 +417,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_backing_buffer> buffer,
   ) {
-    return _le_engine_audition_start(
-      engine,
-      buffer,
-    );
+    return _le_engine_audition_start(engine, buffer);
   }
 
   late final _le_engine_audition_startPtr =
@@ -500,10 +441,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_audition_state> out,
   ) {
-    return _le_engine_audition_state(
-      engine,
-      out,
-    );
+    return _le_engine_audition_state(engine, out);
   }
 
   late final _le_engine_audition_statePtr =
@@ -522,12 +460,8 @@ class SegnoEngineBindings {
 
   /// Silences the preview at the next block (no fade). A no-op when none
   /// plays.
-  int le_engine_audition_stop(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_audition_stop(
-      engine,
-    );
+  int le_engine_audition_stop(ffi.Pointer<le_engine> engine) {
+    return _le_engine_audition_stop(engine);
   }
 
   late final _le_engine_audition_stopPtr =
@@ -538,12 +472,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
   /// Unloads the loaded and staged buffers (fading out a sounding one).
-  int le_engine_backing_clear(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_backing_clear(
-      engine,
-    );
+  int le_engine_backing_clear(ffi.Pointer<le_engine> engine) {
+    return _le_engine_backing_clear(engine);
   }
 
   late final _le_engine_backing_clearPtr =
@@ -567,12 +497,7 @@ class SegnoEngineBindings {
     int item,
     int play,
   ) {
-    return _le_engine_backing_load(
-      engine,
-      buffer,
-      item,
-      play,
-    );
+    return _le_engine_backing_load(engine, buffer, item, play);
   }
 
   late final _le_engine_backing_loadPtr =
@@ -598,14 +523,8 @@ class SegnoEngineBindings {
 
   /// Moves the loaded buffer's position to [frame], clamped to its length;
   /// playing or paused is kept. A no-op with nothing loaded.
-  int le_engine_backing_seek(
-    ffi.Pointer<le_engine> engine,
-    int frame,
-  ) {
-    return _le_engine_backing_seek(
-      engine,
-      frame,
-    );
+  int le_engine_backing_seek(ffi.Pointer<le_engine> engine, int frame) {
+    return _le_engine_backing_seek(engine, frame);
   }
 
   late final _le_engine_backing_seekPtr =
@@ -618,14 +537,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// le_backing_end; LE_ERR_INVALID outside the enum. Direct store.
-  int le_engine_backing_set_end(
-    ffi.Pointer<le_engine> engine,
-    int mode,
-  ) {
-    return _le_engine_backing_set_end(
-      engine,
-      mode,
-    );
+  int le_engine_backing_set_end(ffi.Pointer<le_engine> engine, int mode) {
+    return _le_engine_backing_set_end(engine, mode);
   }
 
   late final _le_engine_backing_set_endPtr =
@@ -638,14 +551,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Gain, clamped to 0..LE_MAX_GAIN (default 1); NaN refused. Direct store.
-  int le_engine_backing_set_level(
-    ffi.Pointer<le_engine> engine,
-    double gain,
-  ) {
-    return _le_engine_backing_set_level(
-      engine,
-      gain,
-    );
+  int le_engine_backing_set_level(ffi.Pointer<le_engine> engine, double gain) {
+    return _le_engine_backing_set_level(engine, gain);
   }
 
   late final _le_engine_backing_set_levelPtr =
@@ -659,14 +566,8 @@ class SegnoEngineBindings {
 
   /// Output channel bitmask (bit c = hardware output c), default 0 = unrouted.
   /// Direct store.
-  int le_engine_backing_set_output(
-    ffi.Pointer<le_engine> engine,
-    int mask,
-  ) {
-    return _le_engine_backing_set_output(
-      engine,
-      mask,
-    );
+  int le_engine_backing_set_output(ffi.Pointer<le_engine> engine, int mask) {
+    return _le_engine_backing_set_output(engine, mask);
   }
 
   late final _le_engine_backing_set_outputPtr =
@@ -680,14 +581,8 @@ class SegnoEngineBindings {
 
   /// Balance, clamped to -1..1 (default 0) with the unity-centre law; NaN
   /// refused. Direct store.
-  int le_engine_backing_set_pan(
-    ffi.Pointer<le_engine> engine,
-    double pan,
-  ) {
-    return _le_engine_backing_set_pan(
-      engine,
-      pan,
-    );
+  int le_engine_backing_set_pan(ffi.Pointer<le_engine> engine, double pan) {
+    return _le_engine_backing_set_pan(engine, pan);
   }
 
   late final _le_engine_backing_set_panPtr =
@@ -706,11 +601,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_backing_buffer> buffer,
     int item,
   ) {
-    return _le_engine_backing_stage_next(
-      engine,
-      buffer,
-      item,
-    );
+    return _le_engine_backing_stage_next(engine, buffer, item);
   }
 
   late final _le_engine_backing_stage_nextPtr =
@@ -739,10 +630,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_backing_state> out,
   ) {
-    return _le_engine_backing_state(
-      engine,
-      out,
-    );
+    return _le_engine_backing_state(engine, out);
   }
 
   late final _le_engine_backing_statePtr =
@@ -760,14 +648,8 @@ class SegnoEngineBindings {
       >();
 
   /// le_backing_transport_op; a no-op with nothing loaded.
-  int le_engine_backing_transport(
-    ffi.Pointer<le_engine> engine,
-    int op,
-  ) {
-    return _le_engine_backing_transport(
-      engine,
-      op,
-    );
+  int le_engine_backing_transport(ffi.Pointer<le_engine> engine, int op) {
+    return _le_engine_backing_transport(engine, op);
   }
 
   late final _le_engine_backing_transportPtr =
@@ -793,11 +675,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_bounce_request> request,
     ffi.Pointer<ffi.Uint64> receipt,
   ) {
-    return _le_engine_bounce(
-      engine,
-      request,
-      receipt,
-    );
+    return _le_engine_bounce(engine, request, receipt);
   }
 
   late final _le_engine_bouncePtr =
@@ -829,11 +707,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_bounce_recover_request> request,
     ffi.Pointer<ffi.Uint64> receipt,
   ) {
-    return _le_engine_bounce_recover(
-      engine,
-      request,
-      receipt,
-    );
+    return _le_engine_bounce_recover(engine, request, receipt);
   }
 
   late final _le_engine_bounce_recoverPtr =
@@ -855,14 +729,8 @@ class SegnoEngineBindings {
         )
       >();
 
-  int le_engine_cancel_arm(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_cancel_arm(
-      engine,
-      channel,
-    );
+  int le_engine_cancel_arm(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_cancel_arm(engine, channel);
   }
 
   late final _le_engine_cancel_armPtr =
@@ -874,12 +742,8 @@ class SegnoEngineBindings {
   late final _le_engine_cancel_arm = _le_engine_cancel_armPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  int le_engine_cancel_count_in(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_cancel_count_in(
-      engine,
-    );
+  int le_engine_cancel_count_in(ffi.Pointer<le_engine> engine) {
+    return _le_engine_cancel_count_in(engine);
   }
 
   late final _le_engine_cancel_count_inPtr =
@@ -892,14 +756,8 @@ class SegnoEngineBindings {
   /// Cancels the measurement `request` started: it publishes CANCELLED and the
   /// output falls silent. A cancel for another request is ignored. Returns LE_OK
   /// or LE_ERR_NOT_RUNNING / LE_ERR_INVALID as a post does.
-  int le_engine_cancel_latency(
-    ffi.Pointer<le_engine> engine,
-    int request,
-  ) {
-    return _le_engine_cancel_latency(
-      engine,
-      request,
-    );
+  int le_engine_cancel_latency(ffi.Pointer<le_engine> engine, int request) {
+    return _le_engine_cancel_latency(engine, request);
   }
 
   late final _le_engine_cancel_latencyPtr =
@@ -911,14 +769,8 @@ class SegnoEngineBindings {
   late final _le_engine_cancel_latency = _le_engine_cancel_latencyPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  int le_engine_clear(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_clear(
-      engine,
-      channel,
-    );
+  int le_engine_clear(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_clear(engine, channel);
   }
 
   late final _le_engine_clearPtr =
@@ -941,12 +793,7 @@ class SegnoEngineBindings {
     int lane,
     int index,
   ) {
-    return _le_engine_clear_lane_plugin(
-      engine,
-      channel,
-      lane,
-      index,
-    );
+    return _le_engine_clear_lane_plugin(engine, channel, lane, index);
   }
 
   late final _le_engine_clear_lane_pluginPtr =
@@ -968,11 +815,7 @@ class SegnoEngineBindings {
     int input,
     int index,
   ) {
-    return _le_engine_clear_monitor_plugin(
-      engine,
-      input,
-      index,
-    );
+    return _le_engine_clear_monitor_plugin(engine, input, index);
   }
 
   late final _le_engine_clear_monitor_pluginPtr =
@@ -995,10 +838,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     int channel,
   ) {
-    return _le_engine_clear_restore_pending(
-      engine,
-      channel,
-    );
+    return _le_engine_clear_restore_pending(engine, channel);
   }
 
   late final _le_engine_clear_restore_pendingPtr =
@@ -1020,12 +860,8 @@ class SegnoEngineBindings {
   /// LE_ERR_INVALID for a null handle. The callback rechecks the lock before
   /// applying. Not perf-logged: the effect chains' musical time picks up the
   /// change through their own anchor (LE_PLOG_FX_TEMPO).
-  int le_engine_clear_tempo(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_clear_tempo(
-      engine,
-    );
+  int le_engine_clear_tempo(ffi.Pointer<le_engine> engine) {
+    return _le_engine_clear_tempo(engine);
   }
 
   late final _le_engine_clear_tempoPtr =
@@ -1050,14 +886,8 @@ class SegnoEngineBindings {
   /// track has nothing to restore (already empty / zero length), when a fresh
   /// recording on this track overwrites the live slot it names, or when the pool
   /// runs out of room for it. `undo` is never a promise, only an offer.
-  int le_engine_clear_undoable(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_clear_undoable(
-      engine,
-      channel,
-    );
+  int le_engine_clear_undoable(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_clear_undoable(engine, channel);
   }
 
   late final _le_engine_clear_undoablePtr =
@@ -1075,12 +905,8 @@ class SegnoEngineBindings {
   /// null. Acquire this before taking the snapshot for a running-session save.
   /// Does not wait or drain. Direct atomic setters need no command settlement;
   /// active capture and pending overdub layers still require their own checks.
-  int le_engine_commands_settled(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_commands_settled(
-      engine,
-    );
+  int le_engine_commands_settled(ffi.Pointer<le_engine> engine) {
+    return _le_engine_commands_settled(engine);
   }
 
   late final _le_engine_commands_settledPtr =
@@ -1107,11 +933,7 @@ class SegnoEngineBindings {
     int base_frames,
     int loop_beats,
   ) {
-    return _le_engine_commit_session(
-      engine,
-      base_frames,
-      loop_beats,
-    );
+    return _le_engine_commit_session(engine, base_frames, loop_beats);
   }
 
   late final _le_engine_commit_sessionPtr =
@@ -1174,14 +996,8 @@ class SegnoEngineBindings {
   /// Sync/Band. There is no "un-crown" call: the engine crowns the first
   /// completed take on its own and clears the crown when the session empties
   /// (LE_CMD_CROWN_PRIMARY's doc).
-  int le_engine_crown_primary(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_crown_primary(
-      engine,
-      channel,
-    );
+  int le_engine_crown_primary(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_crown_primary(engine, channel);
   }
 
   late final _le_engine_crown_primaryPtr =
@@ -1202,12 +1018,8 @@ class SegnoEngineBindings {
   /// to the rings actually allocated (one is sample_rate floats per channel),
   /// paid once on a deliberate press. A hosted plugin has no reset seam, so
   /// its own tail is not cut.
-  int le_engine_cut_sound(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_cut_sound(
-      engine,
-    );
+  int le_engine_cut_sound(ffi.Pointer<le_engine> engine) {
+    return _le_engine_cut_sound(engine);
   }
 
   late final _le_engine_cut_soundPtr =
@@ -1218,12 +1030,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
   /// Stops (if running) and frees the engine. Safe to call with NULL.
-  void le_engine_destroy(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_destroy(
-      engine,
-    );
+  void le_engine_destroy(ffi.Pointer<le_engine> engine) {
+    return _le_engine_destroy(engine);
   }
 
   late final _le_engine_destroyPtr =
@@ -1235,14 +1043,8 @@ class SegnoEngineBindings {
 
   /// Detaches whatever capture is on `port`. Returns LE_OK (also when nothing
   /// was attached) or LE_ERR_INVALID for a null engine or a port out of range.
-  int le_engine_detach_midi_input(
-    ffi.Pointer<le_engine> engine,
-    int port,
-  ) {
-    return _le_engine_detach_midi_input(
-      engine,
-      port,
-    );
+  int le_engine_detach_midi_input(ffi.Pointer<le_engine> engine, int port) {
+    return _le_engine_detach_midi_input(engine, port);
   }
 
   late final _le_engine_detach_midi_inputPtr =
@@ -1256,12 +1058,8 @@ class SegnoEngineBindings {
 
   /// Name of the active duplex/playback device, or "" if not running. The returned
   /// pointer is owned by the engine and valid until the next start/stop.
-  ffi.Pointer<ffi.Char> le_engine_device_name(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_device_name(
-      engine,
-    );
+  ffi.Pointer<ffi.Char> le_engine_device_name(ffi.Pointer<le_engine> engine) {
+    return _le_engine_device_name(engine);
   }
 
   late final _le_engine_device_namePtr =
@@ -1277,10 +1075,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_plugin_slot> slot,
   ) {
-    return _le_engine_discard_prepared_plugin(
-      engine,
-      slot,
-    );
+    return _le_engine_discard_prepared_plugin(engine, slot);
   }
 
   late final _le_engine_discard_prepared_pluginPtr =
@@ -1326,12 +1121,7 @@ class SegnoEngineBindings {
     int edit,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_edit_length(
-      engine,
-      channel,
-      edit,
-      request,
-    );
+    return _le_engine_edit_length(engine, channel, edit, request);
   }
 
   late final _le_engine_edit_lengthPtr =
@@ -1525,12 +1315,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> out,
     int max_frames,
   ) {
-    return _le_engine_export_track(
-      engine,
-      channel,
-      out,
-      max_frames,
-    );
+    return _le_engine_export_track(engine, channel, out, max_frames);
   }
 
   late final _le_engine_export_trackPtr =
@@ -1567,13 +1352,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> out,
     int max_frames,
   ) {
-    return _le_engine_export_track_lane(
-      engine,
-      channel,
-      lane,
-      out,
-      max_frames,
-    );
+    return _le_engine_export_track_lane(engine, channel, lane, out, max_frames);
   }
 
   late final _le_engine_export_track_lanePtr =
@@ -1747,14 +1526,8 @@ class SegnoEngineBindings {
   /// Like cancel_arm, LE_OK means the command actually reached the ring; the
   /// audio thread re-checks the RECORDING/non-defining precondition on apply,
   /// so a state change racing the post degrades to a no-op, never to a start.
-  int le_engine_finalize_take(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_finalize_take(
-      engine,
-      channel,
-    );
+  int le_engine_finalize_take(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_finalize_take(engine, channel);
   }
 
   late final _le_engine_finalize_takePtr =
@@ -1768,12 +1541,8 @@ class SegnoEngineBindings {
 
   /// Current wet-cache memory accounting in bytes (entries + in-flight copies).
   /// Log/test-only telemetry.
-  int le_engine_fx_cache_used_bytes(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_fx_cache_used_bytes(
-      engine,
-    );
+  int le_engine_fx_cache_used_bytes(ffi.Pointer<le_engine> engine) {
+    return _le_engine_fx_cache_used_bytes(engine);
   }
 
   late final _le_engine_fx_cache_used_bytesPtr =
@@ -1789,12 +1558,7 @@ class SegnoEngineBindings {
     int channel,
     int lane,
   ) {
-    return _le_engine_fx_recipe_revision(
-      engine,
-      owner,
-      channel,
-      lane,
-    );
+    return _le_engine_fx_recipe_revision(engine, owner, channel, lane);
   }
 
   late final _le_engine_fx_recipe_revisionPtr =
@@ -1825,11 +1589,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_lane_cache_info> out,
     int capacity,
   ) {
-    return _le_engine_get_all_lane_caches(
-      engine,
-      out,
-      capacity,
-    );
+    return _le_engine_get_all_lane_caches(engine, out, capacity);
   }
 
   late final _le_engine_get_all_lane_cachesPtr =
@@ -1866,10 +1626,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_callback_telemetry> out,
   ) {
-    return _le_engine_get_callback_telemetry(
-      engine,
-      out,
-    );
+    return _le_engine_get_callback_telemetry(engine, out);
   }
 
   late final _le_engine_get_callback_telemetryPtr =
@@ -1896,10 +1653,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_fx_workers_telemetry> out,
   ) {
-    return _le_engine_get_fx_workers_telemetry(
-      engine,
-      out,
-    );
+    return _le_engine_get_fx_workers_telemetry(engine, out);
   }
 
   late final _le_engine_get_fx_workers_telemetryPtr =
@@ -1928,12 +1682,7 @@ class SegnoEngineBindings {
     int lane,
     ffi.Pointer<le_lane_snapshot> out,
   ) {
-    return _le_engine_get_lane(
-      engine,
-      channel,
-      lane,
-      out,
-    );
+    return _le_engine_get_lane(engine, channel, lane, out);
   }
 
   late final _le_engine_get_lanePtr =
@@ -1963,12 +1712,7 @@ class SegnoEngineBindings {
     int lane,
     ffi.Pointer<le_lane_cache_info> out,
   ) {
-    return _le_engine_get_lane_cache(
-      engine,
-      channel,
-      lane,
-      out,
-    );
+    return _le_engine_get_lane_cache(engine, channel, lane, out);
   }
 
   late final _le_engine_get_lane_cachePtr =
@@ -2004,11 +1748,7 @@ class SegnoEngineBindings {
     int bus,
     ffi.Pointer<le_output_fx_snapshot> out,
   ) {
-    return _le_engine_get_output_fx_snapshot(
-      engine,
-      bus,
-      out,
-    );
+    return _le_engine_get_output_fx_snapshot(engine, bus, out);
   }
 
   late final _le_engine_get_output_fx_snapshotPtr =
@@ -2036,10 +1776,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_snapshot> out,
   ) {
-    return _le_engine_get_snapshot(
-      engine,
-      out,
-    );
+    return _le_engine_get_snapshot(engine, out);
   }
 
   late final _le_engine_get_snapshotPtr =
@@ -2060,11 +1797,7 @@ class SegnoEngineBindings {
     int channel,
     ffi.Pointer<le_track_snapshot> out,
   ) {
-    return _le_engine_get_track(
-      engine,
-      channel,
-      out,
-    );
+    return _le_engine_get_track(engine, channel, out);
   }
 
   late final _le_engine_get_trackPtr =
@@ -2100,11 +1833,7 @@ class SegnoEngineBindings {
     int channel,
     ffi.Pointer<le_lane_cache_info> out,
   ) {
-    return _le_engine_get_track_cache(
-      engine,
-      channel,
-      out,
-    );
+    return _le_engine_get_track_cache(engine, channel, out);
   }
 
   late final _le_engine_get_track_cachePtr =
@@ -2134,11 +1863,7 @@ class SegnoEngineBindings {
     int channel,
     ffi.Pointer<le_lane_cache_info> out,
   ) {
-    return _le_engine_get_transpose_cache(
-      engine,
-      channel,
-      out,
-    );
+    return _le_engine_get_transpose_cache(engine, channel, out);
   }
 
   late final _le_engine_get_transpose_cachePtr =
@@ -2173,11 +1898,7 @@ class SegnoEngineBindings {
     int channel,
     int lane,
   ) {
-    return _le_engine_heard_attach(
-      engine,
-      channel,
-      lane,
-    );
+    return _le_engine_heard_attach(engine, channel, lane);
   }
 
   late final _le_engine_heard_attachPtr =
@@ -2206,11 +1927,7 @@ class SegnoEngineBindings {
     int channels,
     int redo,
   ) {
-    return _le_engine_history_mode_gate(
-      engine,
-      channels,
-      redo,
-    );
+    return _le_engine_history_mode_gate(engine, channels, redo);
   }
 
   late final _le_engine_history_mode_gatePtr =
@@ -2234,11 +1951,7 @@ class SegnoEngineBindings {
     int channel,
     int anchor_lap,
   ) {
-    return _le_engine_import_anchor(
-      engine,
-      channel,
-      anchor_lap,
-    );
+    return _le_engine_import_anchor(engine, channel, anchor_lap);
   }
 
   late final _le_engine_import_anchorPtr =
@@ -2265,14 +1978,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> pcm,
     int frames,
   ) {
-    return _le_engine_import_layer(
-      engine,
-      channel,
-      lane,
-      ordinal,
-      pcm,
-      frames,
-    );
+    return _le_engine_import_layer(engine, channel, lane, ordinal, pcm, frames);
   }
 
   late final _le_engine_import_layerPtr =
@@ -2367,11 +2073,7 @@ class SegnoEngineBindings {
     int channel,
     int span_frames,
   ) {
-    return _le_engine_import_span(
-      engine,
-      channel,
-      span_frames,
-    );
+    return _le_engine_import_span(engine, channel, span_frames);
   }
 
   late final _le_engine_import_spanPtr =
@@ -2394,12 +2096,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> pcm,
     int frames,
   ) {
-    return _le_engine_import_track(
-      engine,
-      channel,
-      pcm,
-      frames,
-    );
+    return _le_engine_import_track(engine, channel, pcm, frames);
   }
 
   late final _le_engine_import_trackPtr =
@@ -2434,13 +2131,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> pcm,
     int frames,
   ) {
-    return _le_engine_import_track_lane(
-      engine,
-      channel,
-      lane,
-      pcm,
-      frames,
-    );
+    return _le_engine_import_track_lane(engine, channel, lane, pcm, frames);
   }
 
   late final _le_engine_import_track_lanePtr =
@@ -2472,12 +2163,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_fade_image> image,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_install_fade(
-      engine,
-      channel,
-      image,
-      request,
-    );
+    return _le_engine_install_fade(engine, channel, image, request);
   }
 
   late final _le_engine_install_fadePtr =
@@ -2507,12 +2193,7 @@ class SegnoEngineBindings {
     int reversed,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_install_reverse(
-      engine,
-      channel,
-      reversed,
-      request,
-    );
+    return _le_engine_install_reverse(engine, channel, reversed, request);
   }
 
   late final _le_engine_install_reversePtr =
@@ -2537,12 +2218,7 @@ class SegnoEngineBindings {
     int semitones,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_install_transpose(
-      engine,
-      channel,
-      semitones,
-      request,
-    );
+    return _le_engine_install_transpose(engine, channel, semitones, request);
   }
 
   late final _le_engine_install_transposePtr =
@@ -2607,14 +2283,8 @@ class SegnoEngineBindings {
   /// Releases every voice started for `origin`, on every instrument. Rides the
   /// reserved release lane. Returns LE_OK, LE_ERR_CAPACITY (the release lane is
   /// full: the caller must retry, never drop it) or LE_ERR_NOT_RUNNING.
-  int le_engine_instrument_note_off(
-    ffi.Pointer<le_engine> engine,
-    int origin,
-  ) {
-    return _le_engine_instrument_note_off(
-      engine,
-      origin,
-    );
+  int le_engine_instrument_note_off(ffi.Pointer<le_engine> engine, int origin) {
+    return _le_engine_instrument_note_off(engine, origin);
   }
 
   late final _le_engine_instrument_note_offPtr =
@@ -2639,13 +2309,7 @@ class SegnoEngineBindings {
     int note,
     int velocity,
   ) {
-    return _le_engine_instrument_note_on(
-      engine,
-      slot,
-      origin,
-      note,
-      velocity,
-    );
+    return _le_engine_instrument_note_on(engine, slot, origin, note, velocity);
   }
 
   late final _le_engine_instrument_note_onPtr =
@@ -2677,12 +2341,7 @@ class SegnoEngineBindings {
     int origin,
     int on,
   ) {
-    return _le_engine_instrument_sustain(
-      engine,
-      slot,
-      origin,
-      on,
-    );
+    return _le_engine_instrument_sustain(engine, slot, origin, on);
   }
 
   late final _le_engine_instrument_sustainPtr =
@@ -2716,11 +2375,7 @@ class SegnoEngineBindings {
     int channel,
     int lane,
   ) {
-    return _le_engine_lane_fx_fingerprint(
-      engine,
-      channel,
-      lane,
-    );
+    return _le_engine_lane_fx_fingerprint(engine, channel, lane);
   }
 
   late final _le_engine_lane_fx_fingerprintPtr =
@@ -2738,14 +2393,8 @@ class SegnoEngineBindings {
   /// is always LE_MODE_GATE_OPEN (a no-op). Ask before offering the choice: an
   /// LE_MODE_GATE_PLAYING answer is what a "stop loops and switch"
   /// confirmation stands for.
-  int le_engine_looper_mode_gate(
-    ffi.Pointer<le_engine> engine,
-    int mode,
-  ) {
-    return _le_engine_looper_mode_gate(
-      engine,
-      mode,
-    );
+  int le_engine_looper_mode_gate(ffi.Pointer<le_engine> engine, int mode) {
+    return _le_engine_looper_mode_gate(engine, mode);
   }
 
   late final _le_engine_looper_mode_gatePtr =
@@ -2761,12 +2410,8 @@ class SegnoEngineBindings {
   /// running — what the backend's device-lost notification does — so a host
   /// driving the device-free pump can rehearse its reconnect path (a stop,
   /// then le_engine_reopen_configured) without a device to unplug.
-  void le_engine_mark_device_lost(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_mark_device_lost(
-      engine,
-    );
+  void le_engine_mark_device_lost(ffi.Pointer<le_engine> engine) {
+    return _le_engine_mark_device_lost(engine);
   }
 
   late final _le_engine_mark_device_lostPtr =
@@ -2837,10 +2482,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     int input,
   ) {
-    return _le_engine_monitor_fx_fingerprint(
-      engine,
-      input,
-    );
+    return _le_engine_monitor_fx_fingerprint(engine, input);
   }
 
   late final _le_engine_monitor_fx_fingerprintPtr =
@@ -2865,14 +2507,8 @@ class SegnoEngineBindings {
   /// is empty or cleared, or the newest edit is not an overdub); LE_ERR_NOT_READY
   /// while the track captures, drains a layer, or has a pending state command,
   /// cancel, Clear report or Count-in launch — never queued, nothing mutated.
-  int le_engine_peel(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_peel(
-      engine,
-      channel,
-    );
+  int le_engine_peel(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_peel(engine, channel);
   }
 
   late final _le_engine_peelPtr =
@@ -2903,14 +2539,8 @@ class SegnoEngineBindings {
   /// the handoff. A second Record on it cancels;
   /// a Record on a section waiting to play turns that request into a Record.
   /// Overdub and finish on the sounding section stay immediate.
-  int le_engine_play(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_play(
-      engine,
-      channel,
-    );
+  int le_engine_play(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_play(engine, channel);
   }
 
   late final _le_engine_playPtr =
@@ -2930,12 +2560,7 @@ class SegnoEngineBindings {
     int arg_i,
     double arg_f,
   ) {
-    return _le_engine_post_command(
-      engine,
-      code,
-      arg_i,
-      arg_f,
-    );
+    return _le_engine_post_command(engine, code, arg_i, arg_f);
   }
 
   late final _le_engine_post_commandPtr =
@@ -2957,11 +2582,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Char> plugin_id,
     ffi.Pointer<ffi.Pointer<le_plugin_slot>> out_slot,
   ) {
-    return _le_engine_prepare_plugin(
-      engine,
-      plugin_id,
-      out_slot,
-    );
+    return _le_engine_prepare_plugin(engine, plugin_id, out_slot);
   }
 
   late final _le_engine_prepare_pluginPtr =
@@ -2989,12 +2610,7 @@ class SegnoEngineBindings {
     int param_id,
     double value,
   ) {
-    return _le_engine_prepare_plugin_param(
-      engine,
-      slot,
-      param_id,
-      value,
-    );
+    return _le_engine_prepare_plugin_param(engine, slot, param_id, value);
   }
 
   late final _le_engine_prepare_plugin_paramPtr =
@@ -3030,12 +2646,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> input,
     int frames,
   ) {
-    return _le_engine_process(
-      engine,
-      output,
-      input,
-      frames,
-    );
+    return _le_engine_process(engine, output, input, frames);
   }
 
   late final _le_engine_processPtr =
@@ -3067,11 +2678,7 @@ class SegnoEngineBindings {
     int request,
     ffi.Pointer<ffi.Int32> result,
   ) {
-    return _le_engine_read_request_result(
-      engine,
-      request,
-      result,
-    );
+    return _le_engine_read_request_result(engine, request, result);
   }
 
   late final _le_engine_read_request_resultPtr =
@@ -3099,12 +2706,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> out,
     int max_points,
   ) {
-    return _le_engine_read_track_visual(
-      engine,
-      channel,
-      out,
-      max_points,
-    );
+    return _le_engine_read_track_visual(engine, channel, out, max_points);
   }
 
   late final _le_engine_read_track_visualPtr =
@@ -3133,11 +2735,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> out,
     int max_points,
   ) {
-    return _le_engine_read_visual(
-      engine,
-      out,
-      max_points,
-    );
+    return _le_engine_read_visual(engine, out, max_points);
   }
 
   late final _le_engine_read_visualPtr =
@@ -3161,14 +2759,8 @@ class SegnoEngineBindings {
   /// thread when it begins an overdub (the track is read-only on the audio thread
   /// at that moment), so the audio callback only performs an O(1) buffer swap to
   /// undo — never a copy.
-  int le_engine_record(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_record(
-      engine,
-      channel,
-    );
+  int le_engine_record(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_record(engine, channel);
   }
 
   late final _le_engine_recordPtr =
@@ -3185,11 +2777,7 @@ class SegnoEngineBindings {
     int channel,
     ffi.Pointer<le_record_image> image,
   ) {
-    return _le_engine_record_with_image(
-      engine,
-      channel,
-      image,
-    );
+    return _le_engine_record_with_image(engine, channel, image);
   }
 
   late final _le_engine_record_with_imagePtr =
@@ -3207,14 +2795,8 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<le_record_image>)
       >();
 
-  int le_engine_redo(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_redo(
-      engine,
-      channel,
-    );
+  int le_engine_redo(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_redo(engine, channel);
   }
 
   late final _le_engine_redoPtr =
@@ -3230,14 +2812,8 @@ class SegnoEngineBindings {
   /// undo took back (1) rather than re-stacking an overdub layer or
   /// resurrecting an undone-to-empty track (0). The redo twin of
   /// le_engine_undo_restores_clear, for the same host bookkeeping.
-  int le_engine_redo_reclears(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_redo_reclears(
-      engine,
-      channel,
-    );
+  int le_engine_redo_reclears(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_redo_reclears(engine, channel);
   }
 
   late final _le_engine_redo_reclearsPtr =
@@ -3259,11 +2835,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_render_request> request,
     ffi.Pointer<ffi.Uint32> job,
   ) {
-    return _le_engine_render_begin(
-      engine,
-      request,
-      job,
-    );
+    return _le_engine_render_begin(engine, request, job);
   }
 
   late final _le_engine_render_beginPtr =
@@ -3287,14 +2859,8 @@ class SegnoEngineBindings {
 
   /// Cancels and releases job `job` (any state). A file target leaves no
   /// partial file. Returns LE_OK or LE_ERR_INVALID for an unknown job.
-  int le_engine_render_cancel(
-    ffi.Pointer<le_engine> engine,
-    int job,
-  ) {
-    return _le_engine_render_cancel(
-      engine,
-      job,
-    );
+  int le_engine_render_cancel(ffi.Pointer<le_engine> engine, int job) {
+    return _le_engine_render_cancel(engine, job);
   }
 
   late final _le_engine_render_cancelPtr =
@@ -3314,12 +2880,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Float> out,
     int max_frames,
   ) {
-    return _le_engine_render_copy(
-      engine,
-      job,
-      out,
-      max_frames,
-    );
+    return _le_engine_render_copy(engine, job, out, max_frames);
   }
 
   late final _le_engine_render_copyPtr =
@@ -3349,11 +2910,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_render_request> request,
     ffi.Pointer<le_render_plan> plan,
   ) {
-    return _le_engine_render_measure(
-      engine,
-      request,
-      plan,
-    );
+    return _le_engine_render_measure(engine, request, plan);
   }
 
   late final _le_engine_render_measurePtr =
@@ -3390,13 +2947,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Int32> permille,
     ffi.Pointer<ffi.Int32> result,
   ) {
-    return _le_engine_render_poll(
-      engine,
-      job,
-      state,
-      permille,
-      result,
-    );
+    return _le_engine_render_poll(engine, job, state, permille, result);
   }
 
   late final _le_engine_render_pollPtr =
@@ -3553,14 +3104,8 @@ class SegnoEngineBindings {
 
   /// Fades every voice of `slot` out (its definition was removed). Returns
   /// LE_OK, LE_ERR_INVALID or LE_ERR_NOT_RUNNING.
-  int le_engine_reset_instrument(
-    ffi.Pointer<le_engine> engine,
-    int slot,
-  ) {
-    return _le_engine_reset_instrument(
-      engine,
-      slot,
-    );
+  int le_engine_reset_instrument(ffi.Pointer<le_engine> engine, int slot) {
+    return _le_engine_reset_instrument(engine, slot);
   }
 
   late final _le_engine_reset_instrumentPtr =
@@ -3585,11 +3130,7 @@ class SegnoEngineBindings {
     double bpm,
     int source,
   ) {
-    return _le_engine_restore_tempo(
-      engine,
-      bpm,
-      source,
-    );
+    return _le_engine_restore_tempo(engine, bpm, source);
   }
 
   late final _le_engine_restore_tempoPtr =
@@ -3635,11 +3176,7 @@ class SegnoEngineBindings {
     int index,
     int type,
   ) {
-    return _le_engine_set_all_tracks_fx(
-      engine,
-      index,
-      type,
-    );
+    return _le_engine_set_all_tracks_fx(engine, index, type);
   }
 
   late final _le_engine_set_all_tracks_fxPtr =
@@ -3655,10 +3192,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     int enabled,
   ) {
-    return _le_engine_set_all_tracks_fx_chain_enabled(
-      engine,
-      enabled,
-    );
+    return _le_engine_set_all_tracks_fx_chain_enabled(engine, enabled);
   }
 
   late final _le_engine_set_all_tracks_fx_chain_enabledPtr =
@@ -3712,10 +3246,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     int count,
   ) {
-    return _le_engine_set_all_tracks_fx_count(
-      engine,
-      count,
-    );
+    return _le_engine_set_all_tracks_fx_count(engine, count);
   }
 
   late final _le_engine_set_all_tracks_fx_countPtr =
@@ -3733,11 +3264,7 @@ class SegnoEngineBindings {
     int index,
     int enabled,
   ) {
-    return _le_engine_set_all_tracks_fx_enabled(
-      engine,
-      index,
-      enabled,
-    );
+    return _le_engine_set_all_tracks_fx_enabled(engine, index, enabled);
   }
 
   late final _le_engine_set_all_tracks_fx_enabledPtr =
@@ -3756,12 +3283,7 @@ class SegnoEngineBindings {
     int param,
     double value,
   ) {
-    return _le_engine_set_all_tracks_fx_param(
-      engine,
-      index,
-      param,
-      value,
-    );
+    return _le_engine_set_all_tracks_fx_param(engine, index, param, value);
   }
 
   late final _le_engine_set_all_tracks_fx_paramPtr =
@@ -3784,14 +3306,8 @@ class SegnoEngineBindings {
   /// Raw LE_CMD_SET_CLICK_MODE posts are invalid. Sets mode (le_click_mode, 0..3).
   /// Values outside the
   /// enum return LE_ERR_INVALID. Default off.
-  int le_engine_set_click_mode(
-    ffi.Pointer<le_engine> engine,
-    int mode,
-  ) {
-    return _le_engine_set_click_mode(
-      engine,
-      mode,
-    );
+  int le_engine_set_click_mode(ffi.Pointer<le_engine> engine, int mode) {
+    return _le_engine_set_click_mode(engine, mode);
   }
 
   late final _le_engine_set_click_modePtr =
@@ -3806,14 +3322,8 @@ class SegnoEngineBindings {
   /// Routes the click to the output channels set in [mask] (bit c => hardware
   /// output channel c; bits beyond the negotiated range are ignored). Default 0:
   /// the click sounds on no outputs until explicitly routed.
-  int le_engine_set_click_output(
-    ffi.Pointer<le_engine> engine,
-    int mask,
-  ) {
-    return _le_engine_set_click_output(
-      engine,
-      mask,
-    );
+  int le_engine_set_click_output(ffi.Pointer<le_engine> engine, int mask) {
+    return _le_engine_set_click_output(engine, mask);
   }
 
   late final _le_engine_set_click_outputPtr =
@@ -3831,14 +3341,8 @@ class SegnoEngineBindings {
   /// channels get the pair's mid, as every routed source does. Centre is
   /// bit-identical to an unpanned click. A direct store: works while stopped,
   /// persists across configure like the other click settings. NaN is refused.
-  int le_engine_set_click_pan(
-    ffi.Pointer<le_engine> engine,
-    double pan,
-  ) {
-    return _le_engine_set_click_pan(
-      engine,
-      pan,
-    );
+  int le_engine_set_click_pan(ffi.Pointer<le_engine> engine, double pan) {
+    return _le_engine_set_click_pan(engine, pan);
   }
 
   late final _le_engine_set_click_panPtr =
@@ -3852,14 +3356,8 @@ class SegnoEngineBindings {
 
   /// Sets the click volume, clamped to 0..LE_MAX_GAIN (default 1.0). This is the
   /// click's only gain stage — master gain and the limiter never touch it.
-  int le_engine_set_click_volume(
-    ffi.Pointer<le_engine> engine,
-    double volume,
-  ) {
-    return _le_engine_set_click_volume(
-      engine,
-      volume,
-    );
+  int le_engine_set_click_volume(ffi.Pointer<le_engine> engine, double volume) {
+    return _le_engine_set_click_volume(engine, volume);
   }
 
   late final _le_engine_set_click_volumePtr =
@@ -3873,14 +3371,8 @@ class SegnoEngineBindings {
 
   /// Turns clock send on (1) or off (0). Returns LE_ERR_INVALID for any other
   /// value or a null engine. The setting persists across configure.
-  int le_engine_set_clock_send(
-    ffi.Pointer<le_engine> engine,
-    int enabled,
-  ) {
-    return _le_engine_set_clock_send(
-      engine,
-      enabled,
-    );
+  int le_engine_set_clock_send(ffi.Pointer<le_engine> engine, int enabled) {
+    return _le_engine_set_clock_send(engine, enabled);
   }
 
   late final _le_engine_set_clock_sendPtr =
@@ -3937,10 +3429,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     int multiple,
   ) {
-    return _le_engine_set_default_multiple(
-      engine,
-      multiple,
-    );
+    return _le_engine_set_default_multiple(engine, multiple);
   }
 
   late final _le_engine_set_default_multiplePtr =
@@ -3972,12 +3461,7 @@ class SegnoEngineBindings {
     int value,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_set_follow_tempo(
-      engine,
-      channel,
-      value,
-      request,
-    );
+    return _le_engine_set_follow_tempo(engine, channel, value, request);
   }
 
   late final _le_engine_set_follow_tempoPtr =
@@ -3996,14 +3480,8 @@ class SegnoEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, ffi.Pointer<ffi.Uint64>)
       >();
 
-  int le_engine_set_fx_cache_cap(
-    ffi.Pointer<le_engine> engine,
-    int bytes,
-  ) {
-    return _le_engine_set_fx_cache_cap(
-      engine,
-      bytes,
-    );
+  int le_engine_set_fx_cache_cap(ffi.Pointer<le_engine> engine, int bytes) {
+    return _le_engine_set_fx_cache_cap(engine, bytes);
   }
 
   late final _le_engine_set_fx_cache_capPtr =
@@ -4077,11 +3555,7 @@ class SegnoEngineBindings {
     int count,
     ffi.Pointer<ffi.Int32> cores,
   ) {
-    return _le_engine_set_fx_workers(
-      engine,
-      count,
-      cores,
-    );
+    return _le_engine_set_fx_workers(engine, count, cores);
   }
 
   late final _le_engine_set_fx_workersPtr =
@@ -4108,11 +3582,7 @@ class SegnoEngineBindings {
     int channel,
     int mask,
   ) {
-    return _le_engine_set_input_mask(
-      engine,
-      channel,
-      mask,
-    );
+    return _le_engine_set_input_mask(engine, channel, mask);
   }
 
   late final _le_engine_set_input_maskPtr =
@@ -4136,11 +3606,7 @@ class SegnoEngineBindings {
     int input,
     double gain,
   ) {
-    return _le_engine_set_input_trim(
-      engine,
-      input,
-      gain,
-    );
+    return _le_engine_set_input_trim(engine, input, gain);
   }
 
   late final _le_engine_set_input_trimPtr =
@@ -4164,12 +3630,7 @@ class SegnoEngineBindings {
     int patch,
     ffi.Pointer<ffi.Float> params,
   ) {
-    return _le_engine_set_instrument(
-      engine,
-      slot,
-      patch,
-      params,
-    );
+    return _le_engine_set_instrument(engine, slot, patch, params);
   }
 
   late final _le_engine_set_instrumentPtr =
@@ -4197,12 +3658,7 @@ class SegnoEngineBindings {
     int param,
     double value,
   ) {
-    return _le_engine_set_instrument_param(
-      engine,
-      slot,
-      param,
-      value,
-    );
+    return _le_engine_set_instrument_param(engine, slot, param, value);
   }
 
   late final _le_engine_set_instrument_paramPtr =
@@ -4231,10 +3687,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_inst_routes> routes,
   ) {
-    return _le_engine_set_instrument_routes(
-      engine,
-      routes,
-    );
+    return _le_engine_set_instrument_routes(engine, routes);
   }
 
   late final _le_engine_set_instrument_routesPtr =
@@ -4264,11 +3717,7 @@ class SegnoEngineBindings {
     int channel,
     int count,
   ) {
-    return _le_engine_set_lane_count(
-      engine,
-      channel,
-      count,
-    );
+    return _le_engine_set_lane_count(engine, channel, count);
   }
 
   late final _le_engine_set_lane_countPtr =
@@ -4293,13 +3742,7 @@ class SegnoEngineBindings {
     int index,
     int type,
   ) {
-    return _le_engine_set_lane_fx(
-      engine,
-      channel,
-      lane,
-      index,
-      type,
-    );
+    return _le_engine_set_lane_fx(engine, channel, lane, index, type);
   }
 
   late final _le_engine_set_lane_fxPtr =
@@ -4329,12 +3772,7 @@ class SegnoEngineBindings {
     int lane,
     int enabled,
   ) {
-    return _le_engine_set_lane_fx_chain_enabled(
-      engine,
-      channel,
-      lane,
-      enabled,
-    );
+    return _le_engine_set_lane_fx_chain_enabled(engine, channel, lane, enabled);
   }
 
   late final _le_engine_set_lane_fx_chain_enabledPtr =
@@ -4567,12 +4005,7 @@ class SegnoEngineBindings {
     int lane,
     int input_channel,
   ) {
-    return _le_engine_set_lane_input(
-      engine,
-      channel,
-      lane,
-      input_channel,
-    );
+    return _le_engine_set_lane_input(engine, channel, lane, input_channel);
   }
 
   late final _le_engine_set_lane_inputPtr =
@@ -4596,12 +4029,7 @@ class SegnoEngineBindings {
     int lane,
     int muted,
   ) {
-    return _le_engine_set_lane_mute(
-      engine,
-      channel,
-      lane,
-      muted,
-    );
+    return _le_engine_set_lane_mute(engine, channel, lane, muted);
   }
 
   late final _le_engine_set_lane_mutePtr =
@@ -4627,12 +4055,7 @@ class SegnoEngineBindings {
     int lane,
     int mask,
   ) {
-    return _le_engine_set_lane_output(
-      engine,
-      channel,
-      lane,
-      mask,
-    );
+    return _le_engine_set_lane_output(engine, channel, lane, mask);
   }
 
   late final _le_engine_set_lane_outputPtr =
@@ -4668,12 +4091,7 @@ class SegnoEngineBindings {
     int lane,
     double pan,
   ) {
-    return _le_engine_set_lane_pan(
-      engine,
-      channel,
-      lane,
-      pan,
-    );
+    return _le_engine_set_lane_pan(engine, channel, lane, pan);
   }
 
   late final _le_engine_set_lane_panPtr =
@@ -4752,12 +4170,7 @@ class SegnoEngineBindings {
     int lane,
     int source,
   ) {
-    return _le_engine_set_lane_source(
-      engine,
-      channel,
-      lane,
-      source,
-    );
+    return _le_engine_set_lane_source(engine, channel, lane, source);
   }
 
   late final _le_engine_set_lane_sourcePtr =
@@ -4782,12 +4195,7 @@ class SegnoEngineBindings {
     int lane,
     double volume,
   ) {
-    return _le_engine_set_lane_volume(
-      engine,
-      channel,
-      lane,
-      volume,
-    );
+    return _le_engine_set_lane_volume(engine, channel, lane, volume);
   }
 
   late final _le_engine_set_lane_volumePtr =
@@ -4814,11 +4222,7 @@ class SegnoEngineBindings {
     int enabled,
     double ceiling,
   ) {
-    return _le_engine_set_limiter(
-      engine,
-      enabled,
-      ceiling,
-    );
+    return _le_engine_set_limiter(engine, enabled, ceiling);
   }
 
   late final _le_engine_set_limiterPtr =
@@ -4840,14 +4244,8 @@ class SegnoEngineBindings {
   /// SYNC/BAND (or goes dormant for SONG/FREE, whose tracks run their own clocks), and each take's multiple or division
   /// is re-derived from its unchanged length. Content, layers, history, mutes
   /// and lane settings are untouched.
-  int le_engine_set_looper_mode(
-    ffi.Pointer<le_engine> engine,
-    int mode,
-  ) {
-    return _le_engine_set_looper_mode(
-      engine,
-      mode,
-    );
+  int le_engine_set_looper_mode(ffi.Pointer<le_engine> engine, int mode) {
+    return _le_engine_set_looper_mode(engine, mode);
   }
 
   late final _le_engine_set_looper_modePtr =
@@ -4871,12 +4269,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Int32> bars,
     int count,
   ) {
-    return _le_engine_set_looper_mode_with_presets(
-      engine,
-      mode,
-      bars,
-      count,
-    );
+    return _le_engine_set_looper_mode_with_presets(engine, mode, bars, count);
   }
 
   late final _le_engine_set_looper_mode_with_presetsPtr =
@@ -4904,14 +4297,8 @@ class SegnoEngineBindings {
   /// Sets the global master output gain (clamped to 0..1), applied post-mix to the
   /// final output after all tracks/lanes/monitors have summed in. Unity (1.0) by
   /// default and after every fresh configure; published in le_snapshot.master_gain.
-  int le_engine_set_master_gain(
-    ffi.Pointer<le_engine> engine,
-    double gain,
-  ) {
-    return _le_engine_set_master_gain(
-      engine,
-      gain,
-    );
+  int le_engine_set_master_gain(ffi.Pointer<le_engine> engine, double gain) {
+    return _le_engine_set_master_gain(engine, gain);
   }
 
   late final _le_engine_set_master_gainPtr =
@@ -4928,10 +4315,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_mix_settings> settings,
   ) {
-    return _le_engine_set_mix(
-      engine,
-      settings,
-    );
+    return _le_engine_set_mix(engine, settings);
   }
 
   late final _le_engine_set_mixPtr =
@@ -4956,11 +4340,7 @@ class SegnoEngineBindings {
     int input,
     int enabled,
   ) {
-    return _le_engine_set_monitor_input(
-      engine,
-      input,
-      enabled,
-    );
+    return _le_engine_set_monitor_input(engine, input, enabled);
   }
 
   late final _le_engine_set_monitor_inputPtr =
@@ -4983,12 +4363,7 @@ class SegnoEngineBindings {
     int index,
     int type,
   ) {
-    return _le_engine_set_monitor_input_fx(
-      engine,
-      input,
-      index,
-      type,
-    );
+    return _le_engine_set_monitor_input_fx(engine, input, index, type);
   }
 
   late final _le_engine_set_monitor_input_fxPtr =
@@ -5086,11 +4461,7 @@ class SegnoEngineBindings {
     int input,
     int count,
   ) {
-    return _le_engine_set_monitor_input_fx_count(
-      engine,
-      input,
-      count,
-    );
+    return _le_engine_set_monitor_input_fx_count(engine, input, count);
   }
 
   late final _le_engine_set_monitor_input_fx_countPtr =
@@ -5181,11 +4552,7 @@ class SegnoEngineBindings {
     int input,
     int muted,
   ) {
-    return _le_engine_set_monitor_input_mute(
-      engine,
-      input,
-      muted,
-    );
+    return _le_engine_set_monitor_input_mute(engine, input, muted);
   }
 
   late final _le_engine_set_monitor_input_mutePtr =
@@ -5205,11 +4572,7 @@ class SegnoEngineBindings {
     int input,
     int mask,
   ) {
-    return _le_engine_set_monitor_input_output(
-      engine,
-      input,
-      mask,
-    );
+    return _le_engine_set_monitor_input_output(engine, input, mask);
   }
 
   late final _le_engine_set_monitor_input_outputPtr =
@@ -5230,11 +4593,7 @@ class SegnoEngineBindings {
     int input,
     double pan,
   ) {
-    return _le_engine_set_monitor_input_pan(
-      engine,
-      input,
-      pan,
-    );
+    return _le_engine_set_monitor_input_pan(engine, input, pan);
   }
 
   late final _le_engine_set_monitor_input_panPtr =
@@ -5255,11 +4614,7 @@ class SegnoEngineBindings {
     int input,
     double volume,
   ) {
-    return _le_engine_set_monitor_input_volume(
-      engine,
-      input,
-      volume,
-    );
+    return _le_engine_set_monitor_input_volume(engine, input, volume);
   }
 
   late final _le_engine_set_monitor_input_volumePtr =
@@ -5326,11 +4681,7 @@ class SegnoEngineBindings {
     int channel,
     int enabled,
   ) {
-    return _le_engine_set_one_shot(
-      engine,
-      channel,
-      enabled,
-    );
+    return _le_engine_set_one_shot(engine, channel, enabled);
   }
 
   late final _le_engine_set_one_shotPtr =
@@ -5352,11 +4703,7 @@ class SegnoEngineBindings {
     int channels,
     int enabled,
   ) {
-    return _le_engine_set_one_shot_mask(
-      engine,
-      channels,
-      enabled,
-    );
+    return _le_engine_set_one_shot_mask(engine, channels, enabled);
   }
 
   late final _le_engine_set_one_shot_maskPtr =
@@ -5373,11 +4720,7 @@ class SegnoEngineBindings {
     int bus,
     double balance,
   ) {
-    return _le_engine_set_output_balance(
-      engine,
-      bus,
-      balance,
-    );
+    return _le_engine_set_output_balance(engine, bus, balance);
   }
 
   late final _le_engine_set_output_balancePtr =
@@ -5402,11 +4745,7 @@ class SegnoEngineBindings {
     int output,
     int enabled,
   ) {
-    return _le_engine_set_output_enabled(
-      engine,
-      output,
-      enabled,
-    );
+    return _le_engine_set_output_enabled(engine, output, enabled);
   }
 
   late final _le_engine_set_output_enabledPtr =
@@ -5424,12 +4763,7 @@ class SegnoEngineBindings {
     int index,
     int type,
   ) {
-    return _le_engine_set_output_fx(
-      engine,
-      bus,
-      index,
-      type,
-    );
+    return _le_engine_set_output_fx(engine, bus, index, type);
   }
 
   late final _le_engine_set_output_fxPtr =
@@ -5451,11 +4785,7 @@ class SegnoEngineBindings {
     int bus,
     int enabled,
   ) {
-    return _le_engine_set_output_fx_chain_enabled(
-      engine,
-      bus,
-      enabled,
-    );
+    return _le_engine_set_output_fx_chain_enabled(engine, bus, enabled);
   }
 
   late final _le_engine_set_output_fx_chain_enabledPtr =
@@ -5521,11 +4851,7 @@ class SegnoEngineBindings {
     int bus,
     int count,
   ) {
-    return _le_engine_set_output_fx_count(
-      engine,
-      bus,
-      count,
-    );
+    return _le_engine_set_output_fx_count(engine, bus, count);
   }
 
   late final _le_engine_set_output_fx_countPtr =
@@ -5543,12 +4869,7 @@ class SegnoEngineBindings {
     int index,
     int enabled,
   ) {
-    return _le_engine_set_output_fx_enabled(
-      engine,
-      bus,
-      index,
-      enabled,
-    );
+    return _le_engine_set_output_fx_enabled(engine, bus, index, enabled);
   }
 
   late final _le_engine_set_output_fx_enabledPtr =
@@ -5573,13 +4894,7 @@ class SegnoEngineBindings {
     int param,
     double value,
   ) {
-    return _le_engine_set_output_fx_param(
-      engine,
-      bus,
-      index,
-      param,
-      value,
-    );
+    return _le_engine_set_output_fx_param(engine, bus, index, param, value);
   }
 
   late final _le_engine_set_output_fx_paramPtr =
@@ -5614,11 +4929,7 @@ class SegnoEngineBindings {
     int bus,
     double level,
   ) {
-    return _le_engine_set_output_level(
-      engine,
-      bus,
-      level,
-    );
+    return _le_engine_set_output_level(engine, bus, level);
   }
 
   late final _le_engine_set_output_levelPtr =
@@ -5638,11 +4949,7 @@ class SegnoEngineBindings {
     int channel,
     int mask,
   ) {
-    return _le_engine_set_output_mask(
-      engine,
-      channel,
-      mask,
-    );
+    return _le_engine_set_output_mask(engine, channel, mask);
   }
 
   late final _le_engine_set_output_maskPtr =
@@ -5659,11 +4966,7 @@ class SegnoEngineBindings {
     int bus,
     int mono,
   ) {
-    return _le_engine_set_output_mono(
-      engine,
-      bus,
-      mono,
-    );
+    return _le_engine_set_output_mono(engine, bus, mono);
   }
 
   late final _le_engine_set_output_monoPtr =
@@ -5680,11 +4983,7 @@ class SegnoEngineBindings {
     int bus,
     int muted,
   ) {
-    return _le_engine_set_output_mute(
-      engine,
-      bus,
-      muted,
-    );
+    return _le_engine_set_output_mute(engine, bus, muted);
   }
 
   late final _le_engine_set_output_mutePtr =
@@ -5706,10 +5005,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     double feedback,
   ) {
-    return _le_engine_set_overdub_feedback(
-      engine,
-      feedback,
-    );
+    return _le_engine_set_overdub_feedback(engine, feedback);
   }
 
   late final _le_engine_set_overdub_feedbackPtr =
@@ -5742,12 +5038,7 @@ class SegnoEngineBindings {
     int value,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_set_pitch_mode(
-      engine,
-      channel,
-      value,
-      request,
-    );
+    return _le_engine_set_pitch_mode(engine, channel, value, request);
   }
 
   late final _le_engine_set_pitch_modePtr =
@@ -5772,14 +5063,8 @@ class SegnoEngineBindings {
   /// over an existing master that auto-finishes (reaches its loop length with no
   /// press) always continues into overdub, so layering stays live rather than
   /// auto-stopping to playback the moment the loop completes.
-  int le_engine_set_rec_dub(
-    ffi.Pointer<le_engine> engine,
-    int enabled,
-  ) {
-    return _le_engine_set_rec_dub(
-      engine,
-      enabled,
-    );
+  int le_engine_set_rec_dub(ffi.Pointer<le_engine> engine, int enabled) {
+    return _le_engine_set_rec_dub(engine, enabled);
   }
 
   late final _le_engine_set_rec_dubPtr =
@@ -5792,14 +5077,8 @@ class SegnoEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Sets the record-offset latency compensation in frames (clamped >= 0).
-  int le_engine_set_record_offset(
-    ffi.Pointer<le_engine> engine,
-    int frames,
-  ) {
-    return _le_engine_set_record_offset(
-      engine,
-      frames,
-    );
+  int le_engine_set_record_offset(ffi.Pointer<le_engine> engine, int frames) {
+    return _le_engine_set_record_offset(engine, frames);
   }
 
   late final _le_engine_set_record_offsetPtr =
@@ -5825,12 +5104,7 @@ class SegnoEngineBindings {
     int sound_start,
     int edit_kind,
   ) {
-    return _le_engine_set_record_start(
-      engine,
-      bars,
-      sound_start,
-      edit_kind,
-    );
+    return _le_engine_set_record_start(engine, bars, sound_start, edit_kind);
   }
 
   late final _le_engine_set_record_startPtr =
@@ -5853,10 +5127,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_record_timing_settings> settings,
   ) {
-    return _le_engine_set_record_timing_settings(
-      engine,
-      settings,
-    );
+    return _le_engine_set_record_timing_settings(engine, settings);
   }
 
   late final _le_engine_set_record_timing_settingsPtr =
@@ -5901,12 +5172,7 @@ class SegnoEngineBindings {
     int denom,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_set_speed(
-      engine,
-      numer,
-      denom,
-      request,
-    );
+    return _le_engine_set_speed(engine, numer, denom, request);
   }
 
   late final _le_engine_set_speedPtr =
@@ -5933,14 +5199,8 @@ class SegnoEngineBindings {
   /// signature, BPM in 30..300, nearest 120) and tempo_source becomes derived.
   /// The loop's AUDIO length is never altered either way. When off, the loop
   /// stays free-form (loop_bars 0, tempo untouched) — the tempo-free behavior.
-  int le_engine_set_sync_tempo(
-    ffi.Pointer<le_engine> engine,
-    int on,
-  ) {
-    return _le_engine_set_sync_tempo(
-      engine,
-      on,
-    );
+  int le_engine_set_sync_tempo(ffi.Pointer<le_engine> engine, int on) {
+    return _le_engine_set_sync_tempo(engine, on);
   }
 
   late final _le_engine_set_sync_tempoPtr =
@@ -5954,14 +5214,8 @@ class SegnoEngineBindings {
 
   /// Sets the tempo in denominator-note beats per minute, clamped to 30..300.
   /// Sets tempo_source = manual; ignored while the tempo is locked.
-  int le_engine_set_tempo(
-    ffi.Pointer<le_engine> engine,
-    double bpm,
-  ) {
-    return _le_engine_set_tempo(
-      engine,
-      bpm,
-    );
+  int le_engine_set_tempo(ffi.Pointer<le_engine> engine, double bpm) {
+    return _le_engine_set_tempo(engine, bpm);
   }
 
   late final _le_engine_set_tempoPtr =
@@ -5981,11 +5235,7 @@ class SegnoEngineBindings {
     int num,
     int den,
   ) {
-    return _le_engine_set_time_signature(
-      engine,
-      num,
-      den,
-    );
+    return _le_engine_set_time_signature(engine, num, den);
   }
 
   late final _le_engine_set_time_signaturePtr =
@@ -6008,12 +5258,7 @@ class SegnoEngineBindings {
     int index,
     int type,
   ) {
-    return _le_engine_set_track_fx(
-      engine,
-      channel,
-      index,
-      type,
-    );
+    return _le_engine_set_track_fx(engine, channel, index, type);
   }
 
   late final _le_engine_set_track_fxPtr =
@@ -6040,11 +5285,7 @@ class SegnoEngineBindings {
     int channel,
     int enabled,
   ) {
-    return _le_engine_set_track_fx_chain_enabled(
-      engine,
-      channel,
-      enabled,
-    );
+    return _le_engine_set_track_fx_chain_enabled(engine, channel, enabled);
   }
 
   late final _le_engine_set_track_fx_chain_enabledPtr =
@@ -6127,12 +5368,7 @@ class SegnoEngineBindings {
     int count,
     int pre_count,
   ) {
-    return _le_engine_set_track_fx_count(
-      engine,
-      channel,
-      count,
-      pre_count,
-    );
+    return _le_engine_set_track_fx_count(engine, channel, count, pre_count);
   }
 
   late final _le_engine_set_track_fx_countPtr =
@@ -6162,12 +5398,7 @@ class SegnoEngineBindings {
     int index,
     int enabled,
   ) {
-    return _le_engine_set_track_fx_enabled(
-      engine,
-      channel,
-      index,
-      enabled,
-    );
+    return _le_engine_set_track_fx_enabled(engine, channel, index, enabled);
   }
 
   late final _le_engine_set_track_fx_enabledPtr =
@@ -6195,13 +5426,7 @@ class SegnoEngineBindings {
     int param,
     double value,
   ) {
-    return _le_engine_set_track_fx_param(
-      engine,
-      channel,
-      index,
-      param,
-      value,
-    );
+    return _le_engine_set_track_fx_param(engine, channel, index, param, value);
   }
 
   late final _le_engine_set_track_fx_paramPtr =
@@ -6241,11 +5466,7 @@ class SegnoEngineBindings {
     int channel,
     int bars,
   ) {
-    return _le_engine_set_track_length_preset(
-      engine,
-      channel,
-      bars,
-    );
+    return _le_engine_set_track_length_preset(engine, channel, bars);
   }
 
   late final _le_engine_set_track_length_presetPtr =
@@ -6269,11 +5490,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Int32> bars,
     int count,
   ) {
-    return _le_engine_set_track_length_presets(
-      engine,
-      bars,
-      count,
-    );
+    return _le_engine_set_track_length_presets(engine, bars, count);
   }
 
   late final _le_engine_set_track_length_presetsPtr =
@@ -6300,11 +5517,7 @@ class SegnoEngineBindings {
     int channel,
     int multiple,
   ) {
-    return _le_engine_set_track_multiple(
-      engine,
-      channel,
-      multiple,
-    );
+    return _le_engine_set_track_multiple(engine, channel, multiple);
   }
 
   late final _le_engine_set_track_multiplePtr =
@@ -6321,11 +5534,7 @@ class SegnoEngineBindings {
     int channel,
     int muted,
   ) {
-    return _le_engine_set_track_mute(
-      engine,
-      channel,
-      muted,
-    );
+    return _le_engine_set_track_mute(engine, channel, muted);
   }
 
   late final _le_engine_set_track_mutePtr =
@@ -6349,11 +5558,7 @@ class SegnoEngineBindings {
     int channel,
     double feedback,
   ) {
-    return _le_engine_set_track_overdub_feedback(
-      engine,
-      channel,
-      feedback,
-    );
+    return _le_engine_set_track_overdub_feedback(engine, channel, feedback);
   }
 
   late final _le_engine_set_track_overdub_feedbackPtr =
@@ -6378,11 +5583,7 @@ class SegnoEngineBindings {
     int channel,
     int solo,
   ) {
-    return _le_engine_set_track_solo(
-      engine,
-      channel,
-      solo,
-    );
+    return _le_engine_set_track_solo(engine, channel, solo);
   }
 
   late final _le_engine_set_track_soloPtr =
@@ -6399,11 +5600,7 @@ class SegnoEngineBindings {
     int channel,
     double volume,
   ) {
-    return _le_engine_set_track_volume(
-      engine,
-      channel,
-      volume,
-    );
+    return _le_engine_set_track_volume(engine, channel, volume);
   }
 
   late final _le_engine_set_track_volumePtr =
@@ -6422,11 +5619,7 @@ class SegnoEngineBindings {
     int on,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_set_transpose_bypass(
-      engine,
-      on,
-      request,
-    );
+    return _le_engine_set_transpose_bypass(engine, on, request);
   }
 
   late final _le_engine_set_transpose_bypassPtr =
@@ -6455,14 +5648,8 @@ class SegnoEngineBindings {
   /// Results ride the snapshot as `tuner_hz` / `tuner_confidence` /
   /// `tuner_input`. Detection is gated on the arm, so disarming (or never arming)
   /// costs nothing.
-  int le_engine_set_tuner_input(
-    ffi.Pointer<le_engine> engine,
-    int input,
-  ) {
-    return _le_engine_set_tuner_input(
-      engine,
-      input,
-    );
+  int le_engine_set_tuner_input(ffi.Pointer<le_engine> engine, int input) {
+    return _le_engine_set_tuner_input(engine, input);
   }
 
   late final _le_engine_set_tuner_inputPtr =
@@ -6489,14 +5676,8 @@ class SegnoEngineBindings {
   /// still hears it (it taps before any monitor), and the mask is not
   /// perf-logged; a captured monitor stem holds the silence that was heard.
   /// Results ride the snapshot as `tuner_mute_mask`.
-  int le_engine_set_tuner_mute(
-    ffi.Pointer<le_engine> engine,
-    int input_mask,
-  ) {
-    return _le_engine_set_tuner_mute(
-      engine,
-      input_mask,
-    );
+  int le_engine_set_tuner_mute(ffi.Pointer<le_engine> engine, int input_mask) {
+    return _le_engine_set_tuner_mute(engine, input_mask);
   }
 
   late final _le_engine_set_tuner_mutePtr =
@@ -6512,14 +5693,8 @@ class SegnoEngineBindings {
   /// (1..LE_INST_MAX_VOICES): lowering it fades the excess, the overload
   /// control. The default after configure is 32. Returns LE_OK, LE_ERR_INVALID
   /// or LE_ERR_NOT_RUNNING.
-  int le_engine_set_voice_limit(
-    ffi.Pointer<le_engine> engine,
-    int limit,
-  ) {
-    return _le_engine_set_voice_limit(
-      engine,
-      limit,
-    );
+  int le_engine_set_voice_limit(ffi.Pointer<le_engine> engine, int limit) {
+    return _le_engine_set_voice_limit(engine, limit);
   }
 
   late final _le_engine_set_voice_limitPtr =
@@ -6552,11 +5727,7 @@ class SegnoEngineBindings {
     int channel,
     int following,
   ) {
-    return _le_engine_spare_tail(
-      engine,
-      channel,
-      following,
-    );
+    return _le_engine_spare_tail(engine, channel, following);
   }
 
   late final _le_engine_spare_tailPtr =
@@ -6575,10 +5746,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_config> config,
   ) {
-    return _le_engine_start(
-      engine,
-      config,
-    );
+    return _le_engine_start(engine, config);
   }
 
   late final _le_engine_startPtr =
@@ -6593,12 +5761,8 @@ class SegnoEngineBindings {
       >();
 
   /// Stops and closes the device. Returns LE_OK or an le_result error.
-  int le_engine_stop(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_stop(
-      engine,
-    );
+  int le_engine_stop(ffi.Pointer<le_engine> engine) {
+    return _le_engine_stop(engine);
   }
 
   late final _le_engine_stopPtr =
@@ -6635,10 +5799,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     int channel,
   ) {
-    return _le_engine_stop_record_control(
-      engine,
-      channel,
-    );
+    return _le_engine_stop_record_control(engine, channel);
   }
 
   late final _le_engine_stop_record_controlPtr =
@@ -6650,14 +5811,8 @@ class SegnoEngineBindings {
   late final _le_engine_stop_record_control = _le_engine_stop_record_controlPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  int le_engine_stop_track(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_stop_track(
-      engine,
-      channel,
-    );
+  int le_engine_stop_track(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_stop_track(engine, channel);
   }
 
   late final _le_engine_stop_trackPtr =
@@ -6673,12 +5828,8 @@ class SegnoEngineBindings {
   /// outside the 30..300 BPM window are ignored, so a stale first tap never
   /// yields an absurd tempo). Sets tempo_source = tapped on success; taps are
   /// ignored entirely while the tempo is locked.
-  int le_engine_tap_tempo(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_tap_tempo(
-      engine,
-    );
+  int le_engine_tap_tempo(ffi.Pointer<le_engine> engine) {
+    return _le_engine_tap_tempo(engine);
   }
 
   late final _le_engine_tap_tempoPtr =
@@ -6698,12 +5849,7 @@ class SegnoEngineBindings {
     double seconds,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_toggle_fade(
-      engine,
-      channel,
-      seconds,
-      request,
-    );
+    return _le_engine_toggle_fade(engine, channel, seconds, request);
   }
 
   late final _le_engine_toggle_fadePtr =
@@ -6746,11 +5892,7 @@ class SegnoEngineBindings {
     int channel,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_toggle_reverse(
-      engine,
-      channel,
-      request,
-    );
+    return _le_engine_toggle_reverse(engine, channel, request);
   }
 
   late final _le_engine_toggle_reversePtr =
@@ -6779,14 +5921,8 @@ class SegnoEngineBindings {
   /// the primary track itself, or for a still-EMPTY track (nothing to
   /// start/stop — a section reaches this only after its own defining,
   /// sync-quantized recording has finalized).
-  int le_engine_toggle_section(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_toggle_section(
-      engine,
-      channel,
-    );
+  int le_engine_toggle_section(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_toggle_section(engine, channel);
   }
 
   late final _le_engine_toggle_sectionPtr =
@@ -6801,14 +5937,8 @@ class SegnoEngineBindings {
   /// Track [channel]'s current content revision (a_audio_rev [R1]) — exposed so
   /// the bump-site audit tests can assert every content mutation bumps. Returns
   /// 0 for an out-of-range channel.
-  int le_engine_track_audio_rev(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_track_audio_rev(
-      engine,
-      channel,
-    );
+  int le_engine_track_audio_rev(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_track_audio_rev(engine, channel);
   }
 
   late final _le_engine_track_audio_revPtr =
@@ -6839,12 +5969,7 @@ class SegnoEngineBindings {
     int delta,
     ffi.Pointer<ffi.Uint64> request,
   ) {
-    return _le_engine_transpose_step(
-      engine,
-      channel,
-      delta,
-      request,
-    );
+    return _le_engine_transpose_step(engine, channel, delta, request);
   }
 
   late final _le_engine_transpose_stepPtr =
@@ -6883,14 +6008,8 @@ class SegnoEngineBindings {
   /// or preceding clock changes are pending. Neither refusal changes history,
   /// audio, mutes, or transport; retry after an explicit compatible mode choice
   /// or after pending work settles.
-  int le_engine_undo(
-    ffi.Pointer<le_engine> engine,
-    int channel,
-  ) {
-    return _le_engine_undo(
-      engine,
-      channel,
-    );
+  int le_engine_undo(ffi.Pointer<le_engine> engine, int channel) {
+    return _le_engine_undo(engine, channel);
   }
 
   late final _le_engine_undoPtr =
@@ -6916,10 +6035,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     int channel,
   ) {
-    return _le_engine_undo_restores_clear(
-      engine,
-      channel,
-    );
+    return _le_engine_undo_restores_clear(engine, channel);
   }
 
   late final _le_engine_undo_restores_clearPtr =
@@ -6937,11 +6053,7 @@ class SegnoEngineBindings {
     int max,
     ffi.Pointer<ffi.Int32> count,
   ) {
-    return _le_enumerate_capture_devices(
-      out,
-      max,
-      count,
-    );
+    return _le_enumerate_capture_devices(out, max, count);
   }
 
   late final _le_enumerate_capture_devicesPtr =
@@ -6969,11 +6081,7 @@ class SegnoEngineBindings {
     int max,
     ffi.Pointer<ffi.Int32> count,
   ) {
-    return _le_enumerate_playback_devices(
-      out,
-      max,
-      count,
-    );
+    return _le_enumerate_playback_devices(out, max, count);
   }
 
   late final _le_enumerate_playback_devicesPtr =
@@ -7007,11 +6115,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Char> to,
     ffi.Pointer<ffi.Int32> out_errno,
   ) {
-    return _le_fs_rename_noreplace(
-      from,
-      to,
-      out_errno,
-    );
+    return _le_fs_rename_noreplace(from, to, out_errno);
   }
 
   late final _le_fs_rename_noreplacePtr =
@@ -7041,12 +6145,8 @@ class SegnoEngineBindings {
   /// whether the directory exists. Returns LE_OK; LE_ERR_INVALID for a NULL or
   /// empty `path`; LE_ERR_DEVICE when the directory cannot be opened or the sync
   /// fails.
-  int le_fs_sync_dir(
-    ffi.Pointer<ffi.Char> path,
-  ) {
-    return _le_fs_sync_dir(
-      path,
-    );
+  int le_fs_sync_dir(ffi.Pointer<ffi.Char> path) {
+    return _le_fs_sync_dir(path);
   }
 
   late final _le_fs_sync_dirPtr =
@@ -7065,10 +6165,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Char> path,
     ffi.Pointer<ffi.Int32> out_errno,
   ) {
-    return _le_fs_sync_dir_errno(
-      path,
-      out_errno,
-    );
+    return _le_fs_sync_dir_errno(path, out_errno);
   }
 
   late final _le_fs_sync_dir_errnoPtr =
@@ -7085,12 +6182,8 @@ class SegnoEngineBindings {
   /// The number of parameters built-in [type] uses (0 for LE_FX_NONE and
   /// LE_FX_PLUGIN, whose parameters come from le_plugin_param_info_at), or
   /// LE_ERR_INVALID for an unknown type.
-  int le_fx_param_count(
-    int type,
-  ) {
-    return _le_fx_param_count(
-      type,
-    );
+  int le_fx_param_count(int type) {
+    return _le_fx_param_count(type);
   }
 
   late final _le_fx_param_countPtr =
@@ -7103,16 +6196,8 @@ class SegnoEngineBindings {
   /// Fills *out with parameter [param] (0..count-1) of built-in [type]. Returns
   /// LE_OK, or LE_ERR_INVALID for a NULL `out`, an unknown type or a parameter
   /// out of range.
-  int le_fx_param_info(
-    int type,
-    int param,
-    ffi.Pointer<le_fx_param_desc> out,
-  ) {
-    return _le_fx_param_info(
-      type,
-      param,
-      out,
-    );
+  int le_fx_param_info(int type, int param, ffi.Pointer<le_fx_param_desc> out) {
+    return _le_fx_param_info(type, param, out);
   }
 
   late final _le_fx_param_infoPtr =
@@ -7141,12 +6226,7 @@ class SegnoEngineBindings {
     int index,
     int value,
   ) {
-    return _le_interface_input_set(
-      uid,
-      control,
-      index,
-      value,
-    );
+    return _le_interface_input_set(uid, control, index, value);
   }
 
   late final _le_interface_input_setPtr =
@@ -7170,10 +6250,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Char> uid,
     ffi.Pointer<le_interface_inputs> out,
   ) {
-    return _le_interface_inputs_read(
-      uid,
-      out,
-    );
+    return _le_interface_inputs_read(uid, out);
   }
 
   late final _le_interface_inputs_readPtr =
@@ -7197,12 +6274,8 @@ class SegnoEngineBindings {
   /// detached first: the port's generation advances and it reads lost. Because
   /// le_midi_open closes the current port before opening another, re-opening also
   /// detaches; attach again after opening.
-  int le_midi_close(
-    ffi.Pointer<le_midi> m,
-  ) {
-    return _le_midi_close(
-      m,
-    );
+  int le_midi_close(ffi.Pointer<le_midi> m) {
+    return _le_midi_close(m);
   }
 
   late final _le_midi_closePtr =
@@ -7227,12 +6300,8 @@ class SegnoEngineBindings {
       .asFunction<ffi.Pointer<le_midi> Function()>();
 
   /// Closes any open port and frees the handle. Safe to call with NULL.
-  void le_midi_destroy(
-    ffi.Pointer<le_midi> m,
-  ) {
-    return _le_midi_destroy(
-      m,
-    );
+  void le_midi_destroy(ffi.Pointer<le_midi> m) {
+    return _le_midi_destroy(m);
   }
 
   late final _le_midi_destroyPtr =
@@ -7252,11 +6321,7 @@ class SegnoEngineBindings {
     int max,
     ffi.Pointer<ffi.Int32> count,
   ) {
-    return _le_midi_enumerate(
-      out,
-      max,
-      count,
-    );
+    return _le_midi_enumerate(out, max, count);
   }
 
   late final _le_midi_enumeratePtr =
@@ -7284,11 +6349,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Char> id,
     le_midi_event_cb cb,
   ) {
-    return _le_midi_open(
-      m,
-      id,
-      cb,
-    );
+    return _le_midi_open(m, id, cb);
   }
 
   late final _le_midi_openPtr =
@@ -7312,12 +6373,8 @@ class SegnoEngineBindings {
 
   /// Closes the open output port. Idempotent (a no-op when nothing is open).
   /// Returns LE_OK or LE_ERR_INVALID (null handle).
-  int le_midi_out_close(
-    ffi.Pointer<le_midi_out> m,
-  ) {
-    return _le_midi_out_close(
-      m,
-    );
+  int le_midi_out_close(ffi.Pointer<le_midi_out> m) {
+    return _le_midi_out_close(m);
   }
 
   late final _le_midi_out_closePtr =
@@ -7342,12 +6399,8 @@ class SegnoEngineBindings {
       .asFunction<ffi.Pointer<le_midi_out> Function()>();
 
   /// Closes any open port and frees the handle. Safe to call with NULL.
-  void le_midi_out_destroy(
-    ffi.Pointer<le_midi_out> m,
-  ) {
-    return _le_midi_out_destroy(
-      m,
-    );
+  void le_midi_out_destroy(ffi.Pointer<le_midi_out> m) {
+    return _le_midi_out_destroy(m);
   }
 
   late final _le_midi_out_destroyPtr =
@@ -7369,11 +6422,7 @@ class SegnoEngineBindings {
     int max,
     ffi.Pointer<ffi.Int32> count,
   ) {
-    return _le_midi_out_enumerate(
-      out,
-      max,
-      count,
-    );
+    return _le_midi_out_enumerate(out, max, count);
   }
 
   late final _le_midi_out_enumeratePtr =
@@ -7395,14 +6444,8 @@ class SegnoEngineBindings {
   /// Re-opening switches the device (the previous port is closed first), so this is
   /// idempotent for re-selection. Returns LE_OK, LE_ERR_INVALID (null handle),
   /// LE_ERR_DEVICE (port not found or could not be opened).
-  int le_midi_out_open(
-    ffi.Pointer<le_midi_out> m,
-    ffi.Pointer<ffi.Char> id,
-  ) {
-    return _le_midi_out_open(
-      m,
-      id,
-    );
+  int le_midi_out_open(ffi.Pointer<le_midi_out> m, ffi.Pointer<ffi.Char> id) {
+    return _le_midi_out_open(m, id);
   }
 
   late final _le_midi_out_openPtr =
@@ -7427,11 +6470,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Uint8> data,
     int len,
   ) {
-    return _le_midi_out_send(
-      m,
-      data,
-      len,
-    );
+    return _le_midi_out_send(m, data, len);
   }
 
   late final _le_midi_out_sendPtr =
@@ -7452,12 +6491,8 @@ class SegnoEngineBindings {
   /// Whether the capture's backend thread runs at real-time priority (#1228):
   /// 1 granted, -1 refused by the OS (no RTPRIO), 0 not applicable (no port
   /// open, or a backend whose OS owns the thread, as CoreMIDI does).
-  int le_midi_priority_state(
-    ffi.Pointer<le_midi> m,
-  ) {
-    return _le_midi_priority_state(
-      m,
-    );
+  int le_midi_priority_state(ffi.Pointer<le_midi> m) {
+    return _le_midi_priority_state(m);
   }
 
   late final _le_midi_priority_statePtr =
@@ -7485,10 +6520,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<le_perf_target> target,
   ) {
-    return _le_perf_arm(
-      engine,
-      target,
-    );
+    return _le_perf_arm(engine, target);
   }
 
   late final _le_perf_armPtr =
@@ -7515,12 +6547,8 @@ class SegnoEngineBindings {
   /// quiescent (a stalled device; the rings and drain thread are left
   /// retracted-but-running and are reclaimed by a later retry or at
   /// le_engine_destroy).
-  int le_perf_disarm(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_perf_disarm(
-      engine,
-    );
+  int le_perf_disarm(ffi.Pointer<le_engine> engine) {
+    return _le_perf_disarm(engine);
   }
 
   late final _le_perf_disarmPtr =
@@ -7543,10 +6571,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<ffi.Char> capture_dir,
   ) {
-    return _le_perf_render_begin(
-      engine,
-      capture_dir,
-    );
+    return _le_perf_render_begin(engine, capture_dir);
   }
 
   late final _le_perf_render_beginPtr =
@@ -7565,12 +6590,8 @@ class SegnoEngineBindings {
   /// (#1747), so this returns once the worker has stopped, a block later at
   /// most, and removes the stems it had begun: no partial stem file stays.
   /// Returns LE_OK, or LE_ERR_INVALID for a null engine.
-  int le_perf_render_cancel(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_perf_render_cancel(
-      engine,
-    );
+  int le_perf_render_cancel(ffi.Pointer<le_engine> engine) {
+    return _le_perf_render_cancel(engine);
   }
 
   late final _le_perf_render_cancelPtr =
@@ -7598,12 +6619,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Int32> progress_pct,
     ffi.Pointer<ffi.Int32> track_count,
   ) {
-    return _le_perf_render_poll(
-      engine,
-      done,
-      progress_pct,
-      track_count,
-    );
+    return _le_perf_render_poll(engine, done, progress_pct, track_count);
   }
 
   late final _le_perf_render_pollPtr =
@@ -7641,12 +6657,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Int32> channel,
     ffi.Pointer<ffi.Int32> succeeded,
   ) {
-    return _le_perf_render_track_status(
-      engine,
-      index,
-      channel,
-      succeeded,
-    );
+    return _le_perf_render_track_status(engine, index, channel, succeeded);
   }
 
   late final _le_perf_render_track_statusPtr =
@@ -7680,14 +6691,8 @@ class SegnoEngineBindings {
   /// PREFERENCE, not device state: unlike the mix settings it is NOT reset by
   /// (re)configure, so a device change or reconnect leaves it as the player
   /// set it.
-  int le_perf_set_follow_output(
-    ffi.Pointer<le_engine> engine,
-    int follow,
-  ) {
-    return _le_perf_set_follow_output(
-      engine,
-      follow,
-    );
+  int le_perf_set_follow_output(ffi.Pointer<le_engine> engine, int follow) {
+    return _le_perf_set_follow_output(engine, follow);
   }
 
   late final _le_perf_set_follow_outputPtr =
@@ -7702,12 +6707,8 @@ class SegnoEngineBindings {
   /// Force-closes the editor window and detaches the plugin view (D-WIN teardown).
   /// Idempotent: closing an already-closed editor is a no-op success. Returns
   /// LE_OK, or LE_ERR_INVALID for a null slot.
-  int le_plugin_editor_close(
-    ffi.Pointer<le_plugin_slot> slot,
-  ) {
-    return _le_plugin_editor_close(
-      slot,
-    );
+  int le_plugin_editor_close(ffi.Pointer<le_plugin_slot> slot) {
+    return _le_plugin_editor_close(slot);
   }
 
   late final _le_plugin_editor_closePtr =
@@ -7723,10 +6724,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_plugin_slot> slot,
     ffi.Pointer<ffi.Int32> open,
   ) {
-    return _le_plugin_editor_is_open(
-      slot,
-      open,
-    );
+    return _le_plugin_editor_is_open(slot, open);
   }
 
   late final _le_plugin_editor_is_openPtr =
@@ -7748,12 +6746,8 @@ class SegnoEngineBindings {
   /// the editor is already open is a no-op success. Returns LE_OK, LE_ERR_INVALID
   /// for a null slot, or LE_ERR_UNSUPPORTED when the plugin has no editor / the
   /// platform view type is unsupported (or on a non-macOS build).
-  int le_plugin_editor_open(
-    ffi.Pointer<le_plugin_slot> slot,
-  ) {
-    return _le_plugin_editor_open(
-      slot,
-    );
+  int le_plugin_editor_open(ffi.Pointer<le_plugin_slot> slot) {
+    return _le_plugin_editor_open(slot);
   }
 
   late final _le_plugin_editor_openPtr =
@@ -7769,10 +6763,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_plugin_slot> slot,
     ffi.Pointer<ffi.Int32> count,
   ) {
-    return _le_plugin_param_count(
-      slot,
-      count,
-    );
+    return _le_plugin_param_count(slot, count);
   }
 
   late final _le_plugin_param_countPtr =
@@ -7796,11 +6787,7 @@ class SegnoEngineBindings {
     int id,
     ffi.Pointer<ffi.Double> plain,
   ) {
-    return _le_plugin_param_get(
-      slot,
-      id,
-      plain,
-    );
+    return _le_plugin_param_get(slot, id, plain);
   }
 
   late final _le_plugin_param_getPtr =
@@ -7825,11 +6812,7 @@ class SegnoEngineBindings {
     int index,
     ffi.Pointer<le_plugin_param_info> out,
   ) {
-    return _le_plugin_param_info_at(
-      slot,
-      index,
-      out,
-    );
+    return _le_plugin_param_info_at(slot, index, out);
   }
 
   late final _le_plugin_param_info_atPtr =
@@ -7861,11 +6844,7 @@ class SegnoEngineBindings {
     int id,
     double value,
   ) {
-    return _le_plugin_param_set(
-      slot,
-      id,
-      value,
-    );
+    return _le_plugin_param_set(slot, id, value);
   }
 
   late final _le_plugin_param_setPtr =
@@ -7893,13 +6872,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Char> out,
     int out_size,
   ) {
-    return _le_plugin_param_value_text(
-      slot,
-      id,
-      value,
-      out,
-      out_size,
-    );
+    return _le_plugin_param_value_text(slot, id, value, out, out_size);
   }
 
   late final _le_plugin_param_value_textPtr =
@@ -7928,14 +6901,8 @@ class SegnoEngineBindings {
   /// Starts an async scan. Returns LE_OK once the scan thread is launched, or
   /// LE_ERR_INVALID for a null engine, LE_ERR_ALREADY_RUNNING if a scan is already
   /// in progress.
-  int le_plugin_scan_begin(
-    ffi.Pointer<le_engine> engine,
-    int rescan,
-  ) {
-    return _le_plugin_scan_begin(
-      engine,
-      rescan,
-    );
+  int le_plugin_scan_begin(ffi.Pointer<le_engine> engine, int rescan) {
+    return _le_plugin_scan_begin(engine, rescan);
   }
 
   late final _le_plugin_scan_beginPtr =
@@ -7950,12 +6917,8 @@ class SegnoEngineBindings {
   /// Requests cancellation and joins the scan thread (blocks briefly until the
   /// in-flight candidate finishes). Idempotent; safe when no scan is running.
   /// Returns LE_OK, or LE_ERR_INVALID for a null engine.
-  int le_plugin_scan_cancel(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_plugin_scan_cancel(
-      engine,
-    );
+  int le_plugin_scan_cancel(ffi.Pointer<le_engine> engine) {
+    return _le_plugin_scan_cancel(engine);
   }
 
   late final _le_plugin_scan_cancelPtr =
@@ -7973,11 +6936,7 @@ class SegnoEngineBindings {
     int index,
     ffi.Pointer<le_plugin_desc> out,
   ) {
-    return _le_plugin_scan_get(
-      engine,
-      index,
-      out,
-    );
+    return _le_plugin_scan_get(engine, index, out);
   }
 
   late final _le_plugin_scan_getPtr =
@@ -8007,13 +6966,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Int32> scanned,
     ffi.Pointer<ffi.Int32> total,
   ) {
-    return _le_plugin_scan_poll(
-      engine,
-      done,
-      found,
-      scanned,
-      total,
-    );
+    return _le_plugin_scan_poll(engine, done, found, scanned, total);
   }
 
   late final _le_plugin_scan_pollPtr =
@@ -8050,12 +7003,7 @@ class SegnoEngineBindings {
     int cap,
     ffi.Pointer<ffi.Int32> written,
   ) {
-    return _le_plugin_state_get(
-      slot,
-      buf,
-      cap,
-      written,
-    );
+    return _le_plugin_state_get(slot, buf, cap, written);
   }
 
   late final _le_plugin_state_getPtr =
@@ -8087,11 +7035,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Uint8> buf,
     int bytes,
   ) {
-    return _le_plugin_state_set(
-      slot,
-      buf,
-      bytes,
-    );
+    return _le_plugin_state_set(slot, buf, bytes);
   }
 
   late final _le_plugin_state_setPtr =
@@ -8116,10 +7060,7 @@ class SegnoEngineBindings {
     ffi.Pointer<le_plugin_slot> slot,
     ffi.Pointer<ffi.Int32> bytes,
   ) {
-    return _le_plugin_state_size(
-      slot,
-      bytes,
-    );
+    return _le_plugin_state_size(slot, bytes);
   }
 
   late final _le_plugin_state_sizePtr =
@@ -8144,11 +7085,7 @@ class SegnoEngineBindings {
     int param,
     ffi.Pointer<le_synth_param_desc> out,
   ) {
-    return _le_synth_param_info(
-      family,
-      param,
-      out,
-    );
+    return _le_synth_param_info(family, param, out);
   }
 
   late final _le_synth_param_infoPtr =
@@ -8176,14 +7113,8 @@ class SegnoEngineBindings {
 
   /// Fills *out with patch `index` (0..count-1). Returns LE_OK, or
   /// LE_ERR_INVALID for a NULL `out` or an index out of range.
-  int le_synth_patch_info(
-    int index,
-    ffi.Pointer<le_synth_patch_desc> out,
-  ) {
-    return _le_synth_patch_info(
-      index,
-      out,
-    );
+  int le_synth_patch_info(int index, ffi.Pointer<le_synth_patch_desc> out) {
+    return _le_synth_patch_info(index, out);
   }
 
   late final _le_synth_patch_infoPtr =
@@ -8240,11 +7171,7 @@ class SegnoEngineBindings {
     ffi.Pointer<ffi.Uint64> out_total_bytes,
     ffi.Pointer<ffi.Uint64> out_free_bytes,
   ) {
-    return _le_volume_space(
-      path,
-      out_total_bytes,
-      out_free_bytes,
-    );
+    return _le_volume_space(path, out_total_bytes, out_free_bytes);
   }
 
   late final _le_volume_spacePtr =
@@ -8282,11 +7209,7 @@ class SegnoEngineBindings {
     int max_frames,
     ffi.Pointer<ffi.Uint64> kept,
   ) {
-    return _le_wav_patch_sizes(
-      path,
-      max_frames,
-      kept,
-    );
+    return _le_wav_patch_sizes(path, max_frames, kept);
   }
 
   late final _le_wav_patch_sizesPtr =

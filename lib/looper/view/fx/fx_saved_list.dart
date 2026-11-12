@@ -22,7 +22,7 @@ import 'package:segno/theme/theme.dart';
 /// to keep a name in step with.
 class FxSavedList extends StatelessWidget {
   /// Creates an [FxSavedList].
-  const FxSavedList({
+  const new({
     required this.freeSlots,
     required this.fitsRoom,
     required this.onChoose,
@@ -83,7 +83,7 @@ class FxSavedList extends StatelessWidget {
 
 /// One saved sound: the card that recalls it, and the row that manages it.
 class _SavedPreset extends StatelessWidget {
-  const _SavedPreset({
+  const new({
     required this.preset,
     required this.fits,
     required this.roomy,

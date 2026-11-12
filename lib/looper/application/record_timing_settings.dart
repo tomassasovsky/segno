@@ -11,7 +11,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// and the [RecordTimingState] projection. The transaction is the owner's.
 class RecordTimingSettings implements RecordTimingControl {
   /// Builds the owner over [repository] and [settings].
-  RecordTimingSettings({
+  new({
     required LooperRepository repository,
     required SettingsRepository settings,
   }) : owner = SettingsOwner(

@@ -267,10 +267,7 @@ void main() {
   test('flush preserves malformed startup recovery blocker', () async {
     store.values['track_record_timing.7'] = 7;
     await owner.load();
-    expect(
-      (await owner.owner.flush()).status,
-      SettingStatus.recoveryRequired,
-    );
+    expect((await owner.owner.flush()).status, SettingStatus.recoveryRequired);
     expect(owner.recordTimingSnapshot, isNull);
     expect(store.values['track_record_timing.7'], 7);
   });

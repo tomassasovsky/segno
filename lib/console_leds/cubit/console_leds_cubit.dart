@@ -19,11 +19,9 @@ part 'console_leds_state.dart';
 /// brightness; over a gap in the link it holds what it last knew.
 class ConsoleLedsCubit extends Cubit<ConsoleLedsState> {
   /// Creates a [ConsoleLedsCubit].
-  ConsoleLedsCubit({
-    required this._settings,
-    required PedalRepository pedal,
-  }) : _pedal = pedal,
-       super(const ConsoleLedsState().withLight(pedal.ambientLight)) {
+  new({required this._settings, required PedalRepository pedal})
+    : _pedal = pedal,
+      super(const ConsoleLedsState().withLight(pedal.ambientLight)) {
     _lightSub = pedal.ambientLightChanges.listen(_onLight);
   }
 

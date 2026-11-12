@@ -29,12 +29,10 @@ void stubScreenshotSettings(LooperRepository repository) {
     (_) => repository.state.tracks.any((track) => track.isCapturing),
   );
   when(() => repository.defaultRecordTiming).thenAnswer((_) => timing);
-  when(() => repository.trackRecordTimingOverrides).thenAnswer(
-    (_) => Map.unmodifiable(overrides),
-  );
-  when(() => repository.settleRecordTimingSettings()).thenAnswer(
-    (_) async => EngineResult.ok,
-  );
+  when(() => repository.trackRecordTimingOverrides)
+      .thenAnswer((_) => Map.unmodifiable(overrides));
+  when(() => repository.settleRecordTimingSettings())
+      .thenAnswer((_) async => EngineResult.ok);
   when(
     () => repository.setRecordTimingSettings(
       defaultTiming: any(named: 'defaultTiming'),
@@ -56,15 +54,12 @@ void stubScreenshotSettings(LooperRepository repository) {
   when(() => repository.recordStartCaptureLocked).thenAnswer(
     (_) => repository.state.tracks.any((track) => track.isCapturing),
   );
-  when(() => repository.recordStartSettings).thenAnswer(
-    (_) => (countInBars: countIn, soundStart: soundStart),
-  );
-  when(() => repository.recordStartRestartIntent).thenAnswer(
-    (_) => (countInBars: countIn, soundStart: soundStart),
-  );
-  when(() => repository.settleRecordStartSettings()).thenAnswer(
-    (_) async => EngineResult.ok,
-  );
+  when(() => repository.recordStartSettings)
+      .thenAnswer((_) => (countInBars: countIn, soundStart: soundStart));
+  when(() => repository.recordStartRestartIntent)
+      .thenAnswer((_) => (countInBars: countIn, soundStart: soundStart));
+  when(() => repository.settleRecordStartSettings())
+      .thenAnswer((_) async => EngineResult.ok);
   when(
     () => repository.setRecordStartSettings(
       countInBars: any(named: 'countInBars'),

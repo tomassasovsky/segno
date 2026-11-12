@@ -5,7 +5,7 @@ import 'package:segno/theme/theme.dart';
 @immutable
 class PillTab<T> {
   /// Creates a [PillTab].
-  const PillTab({required this.value, required this.label, this.tooltip});
+  const new({required this.value, required this.label, this.tooltip});
 
   /// The value reported when this tab is chosen.
   final T value;
@@ -31,7 +31,7 @@ class PillTab<T> {
 /// including harnesses that pump it under a bare `MaterialApp`.
 class PillTabs<T> extends StatelessWidget {
   /// Creates a [PillTabs].
-  const PillTabs({
+  const new({
     required this.tabs,
     required this.selected,
     required this.onChanged,
@@ -72,7 +72,7 @@ class PillTabs<T> extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({
+  const new({
     required this.label,
     required this.tooltip,
     required this.selected,

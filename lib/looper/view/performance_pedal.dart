@@ -13,7 +13,7 @@ import 'package:segno/theme/theme.dart';
 /// Semantic activation runs the role directly for assistive technology.
 class PerformancePedal extends StatefulWidget {
   /// Creates one pedal; [keyPrefix] keys its contact target per surface.
-  const PerformancePedal({
+  const new({
     required this.keyPrefix,
     required this.button,
     required this.label,
@@ -326,11 +326,7 @@ class _PerformancePedalState extends State<PerformancePedal>
 /// [SurfaceTheme.holdProgress] fill at [progress], invisible while no hold
 /// is pending.
 class _HoldProgress extends StatelessWidget {
-  const _HoldProgress({
-    required this.pending,
-    required this.progress,
-    super.key,
-  });
+  const new({required this.pending, required this.progress, super.key});
 
   /// Pedal face width; the bar spans it.
   static const double width = 156;
@@ -370,11 +366,7 @@ class _HoldProgress extends StatelessWidget {
 
 /// The pedal's state line, with its optional leading glyph.
 class _PedalDetail extends StatelessWidget {
-  const _PedalDetail({
-    required this.text,
-    required this.icon,
-    required this.color,
-  });
+  const new({required this.text, required this.icon, required this.color});
 
   final String text;
   final IconData? icon;

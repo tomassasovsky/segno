@@ -49,10 +49,7 @@ void main() {
         const StorageDestination.removable(2),
         isNot(const StorageDestination.removable(3)),
       );
-      expect(
-        const StorageDestination.internal(),
-        const InternalDestination(),
-      );
+      expect(const StorageDestination.internal(), const InternalDestination());
     });
 
     test('a lease carries its target and purpose', () {

@@ -28,7 +28,7 @@ typedef OutputMix = ({double level, bool muted, bool mono, double balance});
 /// Bounded compound live mix edit.
 class EngineMixSettings {
   /// Creates an immutable edit.
-  EngineMixSettings({
+  new({
     required this.revision,
     Map<(int, int), StereoMix> lanes = const {},
     Map<(int, int), StereoMix> images = const {},
@@ -168,7 +168,7 @@ bool _validMix(StereoMix mix) =>
 /// actual capture start, and discarded if that request is cancelled.
 class RecordImage {
   /// Creates a copied image.
-  RecordImage({
+  new({
     required this.revision,
     required Map<int, StereoMix> lanes,
     Map<int, FxRecipe> laneFx = const {},

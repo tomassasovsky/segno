@@ -11,9 +11,9 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockBackingRepository extends Mock implements BackingRepository {}
+class _MockBackingRepository extends Mock implements BackingRepository;
 
 /// Counts the integer writes, so a test can tell an offset saved once.
 class _CountingStore extends FakeKeyValueStore {
@@ -49,16 +49,14 @@ void main() {
     store = FakeKeyValueStore();
     settings = SettingsRepository(store: store);
     stateController = StreamController<LooperState>.broadcast();
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => stateController.stream);
+    when(() => repository.looperState)
+        .thenAnswer((_) => stateController.stream);
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.lastEngineConfig).thenReturn(null);
     when(() => repository.applyAudioConfig(any())).thenReturn(_applied);
     when(() => repository.fxRoomAt(any(), any())).thenReturn(1 << 30);
-    when(
-      () => repository.stopTrack(channel: any(named: 'channel')),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.stopTrack(channel: any(named: 'channel')))
+        .thenReturn(EngineResult.ok);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
     when(repository.devices).thenReturn(const []);
@@ -96,12 +94,8 @@ void main() {
         ),
       ),
     );
-    when(() => repository.lastEngineConfig).thenReturn(
-      const EngineConfig(
-        sampleRate: 96000,
-        bufferFrames: 256,
-      ),
-    );
+    when(() => repository.lastEngineConfig)
+        .thenReturn(const EngineConfig(sampleRate: 96000, bufferFrames: 256));
 
     final cubit = buildCubit();
     addTearDown(cubit.close);
@@ -120,10 +114,7 @@ void main() {
       isConnected: true,
       devicePresent: true,
     );
-    const playing = Track(
-      state: TrackState.playing,
-      lengthFrames: 48000,
-    );
+    const playing = Track(state: TrackState.playing, lengthFrames: 48000);
     const recorded = Track(
       channel: 1,
       state: TrackState.stopped,
@@ -146,14 +137,12 @@ void main() {
       // The device opens what it is asked for: the snapshot follows.
       when(() => repository.applyAudioConfig(any())).thenAnswer((invocation) {
         final config = invocation.positionalArguments.single as EngineConfig;
-        when(
-          () => repository.state,
-        ).thenReturn(looper(config.sampleRate, config.bufferFrames));
+        when(() => repository.state)
+            .thenReturn(looper(config.sampleRate, config.bufferFrames));
         return _applied;
       });
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(sampleRate: 48000, bufferFrames: 128));
     }
 
     test('a buffer change while stopped applies once and saves it', () async {
@@ -166,9 +155,9 @@ void main() {
         ..applyDraft();
 
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(asked.bufferFrames, 256);
       verifyNever(() => repository.startEngine(any()));
@@ -606,9 +595,9 @@ void main() {
       addTearDown(cubit.close);
 
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(asked.maxLoopFrames, 14399999);
     });
@@ -631,9 +620,9 @@ void main() {
         ..applyDraft();
 
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       // Five minutes at 96 kHz, not the 48 kHz frame count.
       expect(asked.maxLoopFrames, 5 * 60 * 96000);
@@ -656,9 +645,9 @@ void main() {
       addTearDown(cubit.close);
 
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(asked.maxLoopFrames, 28800000);
     });
@@ -968,9 +957,8 @@ void main() {
         stateController.add(live);
         return EngineResult.ok;
       });
-      when(
-        () => repository.measureLoopbackLatency(),
-      ).thenAnswer((_) => measurement.future);
+      when(() => repository.measureLoopbackLatency())
+          .thenAnswer((_) => measurement.future);
     });
 
     Future<AudioSetupCubit> owe(LooperState next) async {
@@ -1082,9 +1070,8 @@ void main() {
         const LatencyResult.done(offsetFrames: 292, latencyMs: 6.08),
         const LatencyResult.done(offsetFrames: 324, latencyMs: 6.75),
       ];
-      when(
-        () => repository.measureLoopbackLatency(),
-      ).thenAnswer((_) async => runs.removeAt(0));
+      when(() => repository.measureLoopbackLatency())
+          .thenAnswer((_) async => runs.removeAt(0));
 
       final cubit = await owe(scarlett());
 
@@ -1378,9 +1365,8 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
       when(() => repository.applyAudioConfig(any())).thenAnswer((_) {
-        when(
-          () => repository.state,
-        ).thenReturn(looper(warmingUp: false, buffer: 64));
+        when(() => repository.state)
+            .thenReturn(looper(warmingUp: false, buffer: 64));
         return _applied;
       });
 
@@ -1592,9 +1578,9 @@ void main() {
       verifyNever(repository.stopEngine);
       verifyNever(() => repository.startEngine(any()));
       final captured =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(captured.playbackDeviceId, 'out-1');
     });
@@ -1658,9 +1644,8 @@ void main() {
 
     test('the awaited interface coming up ends the wait without a '
         'reconnected notice', () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       final cubit = buildCubit()..setWaitingForDevice(waiting: true);
       addTearDown(cubit.close);
 
@@ -1680,9 +1665,8 @@ void main() {
 
     test('neither config opening leaves the previous one supervised: the '
         'stage says lost, and the return clears it (D17)', () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       final cubit = buildCubit();
       addTearDown(cubit.close);
       stateController.add(
@@ -1752,40 +1736,35 @@ void main() {
       sampleRate: 44100,
     );
 
-    test(
-      'a return that kept every loop is the plain restored event, even with '
-      'a retained verdict on the status (#1140)',
-      () async {
-        when(() => repository.lastEngineConfig).thenReturn(
-          const EngineConfig(playbackDeviceId: 'out-1'),
-        );
-        final cubit = buildCubit();
-        addTearDown(cubit.close);
-        stateController.add(present(devicePresent: true));
-        await Future<void>.delayed(Duration.zero);
-        stateController.add(present(devicePresent: false, name: ''));
-        await Future<void>.delayed(Duration.zero);
-        stateController.add(
-          present(
-            devicePresent: true,
-            reopen: const EngineReopened(
-              outcome: ReopenOutcome.retained,
-              droppedTracks: 0,
-              previousSampleRate: 48000,
-              sampleRate: 48000,
-            ),
+    test('a return that kept every loop is the plain restored event, even with '
+        'a retained verdict on the status (#1140)', () async {
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(
+        present(
+          devicePresent: true,
+          reopen: const EngineReopened(
+            outcome: ReopenOutcome.retained,
+            droppedTracks: 0,
+            previousSampleRate: 48000,
+            sampleRate: 48000,
           ),
-        );
-        await Future<void>.delayed(Duration.zero);
-        expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
-      },
-    );
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
+    });
 
     test('a lost interface is named as the host lists it, not by the '
         "engine's generic ALSA name (#1562)", () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       when(repository.devices).thenReturn(const [
         AudioDevice(
           id: 'out-1',
@@ -1808,9 +1787,8 @@ void main() {
 
     test('a switch to another interface is named after the new one '
         '(#1562)', () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       when(repository.devices).thenReturn(const [
         AudioDevice(id: 'out-1', name: 'A', isDefault: false, isInput: false),
         AudioDevice(id: 'out-2', name: 'B', isDefault: false, isInput: false),
@@ -1836,9 +1814,8 @@ void main() {
 
     test('an interface plugged in after boot is named from a fresh catalog '
         '(#1562)', () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       final cubit = buildCubit();
       addTearDown(cubit.close);
       // Booted without it: the catalog the cubit holds has no entry.
@@ -1865,9 +1842,8 @@ void main() {
       'a return that dropped some tracks is the partial variant — one notice, '
       'not restored plus another (#1140)',
       () async {
-        when(() => repository.lastEngineConfig).thenReturn(
-          const EngineConfig(playbackDeviceId: 'out-1'),
-        );
+        when(() => repository.lastEngineConfig)
+            .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
         final cubit = buildCubit();
         addTearDown(cubit.close);
         final seen = <DeviceConnectivity>[];
@@ -1890,106 +1866,93 @@ void main() {
       },
     );
 
-    test(
-      'a return at another rate is the standing cleared notice, until the '
-      'user acts on it (#1140)',
-      () async {
-        when(() => repository.lastEngineConfig).thenReturn(
-          const EngineConfig(playbackDeviceId: 'out-1'),
-        );
-        final cubit = buildCubit();
-        addTearDown(cubit.close);
-        stateController.add(present(devicePresent: true));
-        await Future<void>.delayed(Duration.zero);
-        stateController.add(present(devicePresent: false, name: ''));
-        await Future<void>.delayed(Duration.zero);
-        stateController.add(present(devicePresent: true, reopen: cleared));
-        await Future<void>.delayed(Duration.zero);
-        expect(
-          cubit.state.deviceConnectivity,
-          DeviceConnectivity.restoredCleared,
-        );
-        // Further present ticks are not transitions: the notice stands.
-        stateController.add(present(devicePresent: true, reopen: cleared));
-        await Future<void>.delayed(Duration.zero);
-        expect(
-          cubit.state.deviceConnectivity,
-          DeviceConnectivity.restoredCleared,
-        );
-        cubit.dismissReopenNotice();
-        expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
-      },
-    );
+    test('a return at another rate is the standing cleared notice, until the '
+        'user acts on it (#1140)', () async {
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: true, reopen: cleared));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        cubit.state.deviceConnectivity,
+        DeviceConnectivity.restoredCleared,
+      );
+      // Further present ticks are not transitions: the notice stands.
+      stateController.add(present(devicePresent: true, reopen: cleared));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        cubit.state.deviceConnectivity,
+        DeviceConnectivity.restoredCleared,
+      );
+      cubit.dismissReopenNotice();
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+    });
 
-    test(
-      'a later return without a verdict is the plain restored event, even '
-      'after an earlier partial reconnect (#1167)',
-      () async {
-        when(() => repository.lastEngineConfig).thenReturn(
-          const EngineConfig(playbackDeviceId: 'out-1'),
-        );
-        final cubit = buildCubit();
-        addTearDown(cubit.close);
-        stateController.add(present(devicePresent: true));
-        await Future<void>.delayed(Duration.zero);
-        stateController.add(present(devicePresent: false, name: ''));
-        await Future<void>.delayed(Duration.zero);
-        stateController.add(present(devicePresent: true, reopen: partial));
-        await Future<void>.delayed(Duration.zero);
-        expect(
-          cubit.state.deviceConnectivity,
-          DeviceConnectivity.restoredPartial,
-        );
-        // The repository forgets the verdict at the next loss; the return the
-        // backend handled on its own must not re-raise it.
-        stateController.add(present(devicePresent: false, name: ''));
-        await Future<void>.delayed(Duration.zero);
-        expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
-        stateController.add(present(devicePresent: true));
-        await Future<void>.delayed(Duration.zero);
-        expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
-      },
-    );
+    test('a later return without a verdict is the plain restored event, even '
+        'after an earlier partial reconnect (#1167)', () async {
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: true, reopen: partial));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        cubit.state.deviceConnectivity,
+        DeviceConnectivity.restoredPartial,
+      );
+      // The repository forgets the verdict at the next loss; the return the
+      // backend handled on its own must not re-raise it.
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
+    });
 
-    test(
-      'a re-apply that opens the rig after a rolled-back reopen raises the '
-      'carried verdict instead of nothing (#1167)',
-      () async {
-        when(() => repository.lastEngineConfig).thenReturn(
-          const EngineConfig(playbackDeviceId: 'out-1'),
-        );
-        when(() => repository.state).thenReturn(
-          const LooperState(
-            status: EngineStatus(
-              deviceName: 'Scarlett',
-              isConnected: true,
-              devicePresent: true,
-              sampleRate: 44100,
-              bufferFrames: 128,
-              reopen: cleared,
-            ),
+    test('a re-apply that opens the rig after a rolled-back reopen raises the '
+        'carried verdict instead of nothing (#1167)', () async {
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            isConnected: true,
+            devicePresent: true,
+            sampleRate: 44100,
+            bufferFrames: 128,
+            reopen: cleared,
           ),
-        );
-        final cubit = buildCubit();
-        addTearDown(cubit.close);
-        // A different rate than the hydrated one, so this is a real re-apply.
-        cubit
-          ..editRate(96000)
-          ..applyDraft();
-        verify(() => repository.applyAudioConfig(any())).called(1);
-        expect(cubit.state.status, AudioSetupStatus.running);
-        expect(
-          cubit.state.deviceConnectivity,
-          DeviceConnectivity.restoredCleared,
-        );
-        expect(cubit.state.connectivityDeviceName, 'Scarlett');
-      },
-    );
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      // A different rate than the hydrated one, so this is a real re-apply.
+      cubit
+        ..editRate(96000)
+        ..applyDraft();
+      verify(() => repository.applyAudioConfig(any())).called(1);
+      expect(cubit.state.status, AudioSetupStatus.running);
+      expect(
+        cubit.state.deviceConnectivity,
+        DeviceConnectivity.restoredCleared,
+      );
+      expect(cubit.state.connectivityDeviceName, 'Scarlett');
+    });
 
     test('an ordinary re-apply raises no notice', () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       when(() => repository.state).thenReturn(
         const LooperState(
           status: EngineStatus(
@@ -2012,9 +1975,8 @@ void main() {
     });
 
     test('dismissing the notice touches nothing else', () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       final cubit = buildCubit();
       addTearDown(cubit.close);
       stateController.add(present(devicePresent: true));
@@ -2027,9 +1989,8 @@ void main() {
     });
 
     test('raises lost then restored for a pinned device', () async {
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(playbackDeviceId: 'out-1'),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
@@ -2060,47 +2021,42 @@ void main() {
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
     });
 
-    test(
-      'resolving a lost device by picking the system default clears the '
-      'standing condition for good (#453)',
-      () async {
-        when(() => repository.lastEngineConfig).thenReturn(
-          const EngineConfig(playbackDeviceId: 'out-1'),
-        );
-        final cubit = buildCubit();
-        addTearDown(cubit.close);
+    test('resolving a lost device by picking the system default clears the '
+        'standing condition for good (#453)', () async {
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
 
-        stateController.add(present(devicePresent: true));
-        await Future<void>.delayed(Duration.zero);
-        stateController.add(present(devicePresent: false, name: ''));
-        await Future<void>.delayed(Duration.zero);
-        expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
 
-        // The banner's action ends it: un-pinning to the system default IS a
-        // resolution — and after it the pinned guard would never clear the
-        // enum again, so the apply itself must.
-        cubit
-          ..editDevice(
-            playbackDeviceId: '',
-            captureDeviceId: cubit.state.captureDeviceId,
-          )
-          ..applyDraft();
-        expect(cubit.state.playbackDeviceId, isEmpty);
-        expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+      // The banner's action ends it: un-pinning to the system default IS a
+      // resolution — and after it the pinned guard would never clear the
+      // enum again, so the apply itself must.
+      cubit
+        ..editDevice(
+          playbackDeviceId: '',
+          captureDeviceId: cubit.state.captureDeviceId,
+        )
+        ..applyDraft();
+      expect(cubit.state.playbackDeviceId, isEmpty);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
 
-        // Un-pinned ticks with the old interface still absent stay quiet.
-        stateController.add(present(devicePresent: false, name: ''));
-        await Future<void>.delayed(Duration.zero);
-        expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
-      },
-    );
+      // Un-pinned ticks with the old interface still absent stay quiet.
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+    });
 
     test(
       "the app's own reopen being refused does not read as an unplug (#453)",
       () async {
-        when(() => repository.lastEngineConfig).thenReturn(
-          const EngineConfig(playbackDeviceId: 'out-1'),
-        );
+        when(() => repository.lastEngineConfig)
+            .thenReturn(const EngineConfig(playbackDeviceId: 'out-1'));
         final cubit = buildCubit();
         addTearDown(cubit.close);
 
@@ -2158,9 +2114,8 @@ void main() {
           transport: TransportState(countingIn: countingIn),
         ),
       );
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(sampleRate: 48000, bufferFrames: 128));
     }
 
     Completer<LatencyResult> measuring() {
@@ -2403,9 +2358,8 @@ void main() {
           tracks: tracks,
         ),
       );
-      when(() => repository.lastEngineConfig).thenReturn(
-        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
-      );
+      when(() => repository.lastEngineConfig)
+          .thenReturn(const EngineConfig(sampleRate: 48000, bufferFrames: 128));
     }
 
     test('editing calls nothing, and Cancel shows what runs again', () {
@@ -2438,9 +2392,9 @@ void main() {
         ..applyDraft();
       addTearDown(cubit.close);
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(asked.sampleRate, 96000);
       expect(asked.bufferFrames, 256);
@@ -2532,9 +2486,9 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       cubit.confirmApply();
       final asked =
-          verify(
-                () => repository.applyAudioConfig(captureAny()),
-              ).captured.single
+          verify(() => repository.applyAudioConfig(captureAny()))
+                  .captured
+                  .single
               as EngineConfig;
       expect(asked.sampleRate, 48000);
       expect(asked.bufferFrames, 256);

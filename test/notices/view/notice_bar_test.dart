@@ -16,7 +16,7 @@ const double _interCapHeight = 1490 / 2048;
 
 /// A top bar built the way the stage's is: two side groups and the centre.
 class _Bar extends StatelessWidget {
-  const _Bar({this.trackCards});
+  const new({this.trackCards});
 
   final bool Function(int channel)? trackCards;
 
@@ -127,9 +127,7 @@ void main() {
   }
 
   group(NoticeBarMessage, () {
-    testWidgets('shows the session name while nothing is said', (
-      tester,
-    ) async {
+    testWidgets('shows the session name while nothing is said', (tester) async {
       await pumpBar(tester);
       expect(find.byKey(const Key('session')), findsOneWidget);
       expect(find.byKey(const Key('notice_bar_time_left')), findsNothing);

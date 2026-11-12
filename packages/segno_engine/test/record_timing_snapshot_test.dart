@@ -10,7 +10,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 /// Runs a real callback between the full snapshot and its first track read.
 class _InterleavedBindings extends SegnoEngineBindings {
-  _InterleavedBindings(super.dynamicLibrary);
+  new(super.dynamicLibrary);
 
   void Function()? betweenReads;
 

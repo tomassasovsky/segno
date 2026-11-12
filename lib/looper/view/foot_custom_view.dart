@@ -66,7 +66,7 @@ String footCustomActionLabel(
 /// LEDs light. Driven by the shared Control owner.
 class FootCustomView extends StatelessWidget {
   /// Creates the surface within the real Tracks hierarchy.
-  const FootCustomView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -130,7 +130,7 @@ class FootCustomView extends StatelessWidget {
 /// The elapsed time of a running performance recording, as the stage top
 /// bar shows it; nothing while none runs.
 class _RecordingPill extends StatelessWidget {
-  const _RecordingPill();
+  const new();
 
   @override
   Widget build(BuildContext context) {
@@ -172,7 +172,7 @@ class _RecordingPill extends StatelessWidget {
 }
 
 class _FootCustomPedal extends StatelessWidget {
-  const _FootCustomPedal({required this.pedal, required this.bank});
+  const new({required this.pedal, required this.bank});
 
   final FootCustomPedal pedal;
   final int bank;

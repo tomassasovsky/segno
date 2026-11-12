@@ -13,7 +13,7 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 /// Recovery tells a missing recording from a damaged one by this, not by a
 /// separate existence check the file could change under.
 sealed class FileDigest {
-  const FileDigest();
+  const new();
 }
 
 /// The range was read whole: [sha256] is its digest, 64 lower-case hex
@@ -21,7 +21,7 @@ sealed class FileDigest {
 @immutable
 final class FileDigested extends FileDigest {
   /// Creates a [FileDigested].
-  const FileDigested(this.sha256);
+  const new(this.sha256);
 
   /// The digest.
   final String sha256;
@@ -40,20 +40,20 @@ final class FileDigested extends FileDigest {
 /// Nothing exists at the path (or a directory on it is missing).
 final class FileMissing extends FileDigest {
   /// Creates a [FileMissing].
-  const FileMissing();
+  const new();
 }
 
 /// The file exists but is shorter than the range it must hold: damaged.
 final class FileTruncated extends FileDigest {
   /// Creates a [FileTruncated].
-  const FileTruncated();
+  const new();
 }
 
 /// The file could not be read: not a regular file, no permission, or an I/O
 /// error (a failing drive).
 final class FileUnreadable extends FileDigest {
   /// Creates a [FileUnreadable].
-  const FileUnreadable();
+  const new();
 }
 
 /// Recorded-audio identity and durable publication, without an engine.
@@ -119,7 +119,7 @@ enum RenameOutcome {
 class NativeStorageIo implements StorageIo {
   /// Creates a [NativeStorageIo], opening the native library in the current
   /// isolate unless [bindings] are injected.
-  NativeStorageIo({SegnoEngineBindings? bindings})
+  new({SegnoEngineBindings? bindings})
     : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary());
 
   final SegnoEngineBindings _bindings;

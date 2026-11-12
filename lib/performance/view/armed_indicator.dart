@@ -11,7 +11,7 @@ import 'package:segno/theme/theme.dart';
 /// it.
 class ArmedIndicator extends StatelessWidget {
   /// Creates an [ArmedIndicator].
-  const ArmedIndicator({super.key});
+  const new({super.key});
 
   static String _format(Duration elapsed) {
     final minutes = elapsed.inMinutes.toString().padLeft(2, '0');

@@ -34,7 +34,7 @@ abstract interface class TouchCalibrationClient {
 /// No touch calibration: the macOS dev host.
 class UnsupportedTouchCalibrationClient implements TouchCalibrationClient {
   /// Creates an [UnsupportedTouchCalibrationClient].
-  const UnsupportedTouchCalibrationClient();
+  const new();
 
   @override
   Future<bool> isSupported() async => false;

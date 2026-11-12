@@ -76,7 +76,7 @@ List<FxModulePath?> fxEntryPaths(List<TrackEffect> chain) {
 /// preset's own controls have nowhere to go.
 class FxModuleBuild {
   /// Creates an [FxModuleBuild].
-  const FxModuleBuild({
+  const new({
     required this.type,
     this.params = const [],
     this.unmapped = const [],
@@ -88,7 +88,7 @@ class FxModuleBuild {
   });
 
   /// A module this engine cannot build at all.
-  const FxModuleBuild.unavailable() : this(type: null);
+  const new unavailable() : this(type: null);
 
   /// The engine effect this module becomes, or `null` when there is none.
   final TrackEffectType? type;
@@ -155,18 +155,18 @@ class FxModuleBuild {
 /// [FxModuleBuild.scales]).
 class FxSourceScale {
   /// `min * (max / min) ^ v`: the engine's exponential curve.
-  const FxSourceScale.log(this.min, this.max)
+  const new log(this.min, this.max)
     : curve = FxParamCurve.exponential,
       points = const [];
 
   /// `min + (max - min) * v`: the engine's linear curve.
-  const FxSourceScale.linear(this.min, this.max)
+  const new linear(this.min, this.max)
     : curve = FxParamCurve.linear,
       points = const [];
 
   /// Straight lines through measured `(setting, value)` [points], in
   /// setting order from 0 to 1.
-  const FxSourceScale.table(this.points) : min = 0, max = 0, curve = null;
+  const new table(this.points) : min = 0, max = 0, curve = null;
 
   /// The value at 0, unless [points] is set.
   final double min;

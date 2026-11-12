@@ -18,7 +18,7 @@ import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 /// no pointer, reported disabled).
 class FocusableTapTarget extends StatefulWidget {
   /// Creates an accessible tap target.
-  const FocusableTapTarget({
+  const new({
     required this.onTap,
     required this.child,
     this.onLongPress,

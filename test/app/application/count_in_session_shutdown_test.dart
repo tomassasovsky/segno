@@ -185,9 +185,8 @@ void main() {
         engine.pump();
         expect(engine.snapshot().tracks.first.state, TrackState.playing);
         expect(
-          (await runtime.tempo.recordStartControl.setSoundStart(
-            enabled: true,
-          )).isOk,
+          (await runtime.tempo.recordStartControl.setSoundStart(enabled: true))
+              .isOk,
           isTrue,
         );
       }

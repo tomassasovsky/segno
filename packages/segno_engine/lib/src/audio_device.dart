@@ -7,7 +7,7 @@ import 'package:meta/meta.dart';
 @immutable
 class AudioDevice {
   /// Creates an [AudioDevice].
-  const AudioDevice({
+  const new({
     required this.id,
     required this.name,
     required this.isDefault,
@@ -49,14 +49,8 @@ class AudioDevice {
           outputChannels == other.outputChannels;
 
   @override
-  int get hashCode => Object.hash(
-    id,
-    name,
-    isDefault,
-    isInput,
-    inputChannels,
-    outputChannels,
-  );
+  int get hashCode =>
+      Object.hash(id, name, isDefault, isInput, inputChannels, outputChannels);
 
   @override
   String toString() =>

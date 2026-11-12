@@ -10,11 +10,7 @@ void main() {
   group('ControlAction keys', () {
     test('every catalogue entry round-trips through its own key', () {
       for (final action in controlActionCatalogue()) {
-        expect(
-          ControlAction.tryParse(action.key),
-          action,
-          reason: action.key,
-        );
+        expect(ControlAction.tryParse(action.key), action, reason: action.key);
       }
     });
 
@@ -138,10 +134,7 @@ void main() {
       for (final group in controlActionGroups()) {
         final listed = controlActionsIn(group);
         expect(listed, isNotEmpty);
-        expect(
-          listed,
-          catalogue.where((a) => a.group == group).toList(),
-        );
+        expect(listed, catalogue.where((a) => a.group == group).toList());
       }
     });
   });

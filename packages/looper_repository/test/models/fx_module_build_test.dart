@@ -64,12 +64,7 @@ void main() {
       expect(drum.fixed, {3: 12 / 13});
       final mode = fxModuleBuild(_module('Delay'), family: 'Guitar Rack');
       expect(mode.readiness, FxModuleReadiness.full);
-      expect(mode.params, [
-        'Del Time',
-        'Del Feedback',
-        'Del Mix',
-        'Del Mode',
-      ]);
+      expect(mode.params, ['Del Time', 'Del Feedback', 'Del Mix', 'Del Mode']);
     });
 
     test("the Dub Rack's delay builds from its own power key and keys", () {
@@ -382,9 +377,10 @@ void main() {
 
     test('Master Vol 0.5 is unity, and a level above +6 dB plays as set', () {
       expect(
-        fxRackEntries(
-          _preset(const {'Delay': 1, 'Master Vol': 0.5}),
-        ).single.channels.level,
+        fxRackEntries(_preset(const {'Delay': 1, 'Master Vol': 0.5}))
+            .single
+            .channels
+            .level,
         1,
       );
       // Guitar Rack / Rhythm Atmos: +10.6 dB, past the old ceiling of x2.
@@ -396,12 +392,14 @@ void main() {
     });
 
     test('a Master Vol outside 0..1 is clamped to -12 and +12 dB', () {
-      final low = fxRackEntries(
-        _preset(const {'Delay': 1, 'Master Vol': -0.2}),
-      ).single.channels.level;
-      final high = fxRackEntries(
-        _preset(const {'Delay': 1, 'Master Vol': 1.3}),
-      ).single.channels.level;
+      final low = fxRackEntries(_preset(const {'Delay': 1, 'Master Vol': -0.2}))
+          .single
+          .channels
+          .level;
+      final high = fxRackEntries(_preset(const {'Delay': 1, 'Master Vol': 1.3}))
+          .single
+          .channels
+          .level;
 
       expect(fxRackLevelDb(low), -12);
       expect(low, closeTo(0.2512, 1e-4));
@@ -537,10 +535,7 @@ void main() {
     double hz(BuiltInEffect e, int i) => e.type.params[i].valueAt(e.params[i]);
 
     test("Ed's 4-band EQ copies every control as the value it applies", () {
-      final build = fxModuleBuild(
-        _module('Four-band EQ'),
-        family: "Ed's Rack",
-      );
+      final build = fxModuleBuild(_module('Four-band EQ'), family: "Ed's Rack");
       expect(build.type, TrackEffectType.eq);
       expect(build.readiness, FxModuleReadiness.full);
       expect(build.exposed, List<int>.generate(14, (i) => i));
@@ -1069,11 +1064,7 @@ void main() {
       for (final family in ["Ed's Rack", 'Guitar Rack']) {
         final e = fxModuleEntry(
           _module('Overdrive'),
-          preset(family, const {
-            'OvDrive': 1,
-            'OD Drive': 0.3,
-            'OD Tone': 0.6,
-          }),
+          preset(family, const {'OvDrive': 1, 'OD Drive': 0.3, 'OD Tone': 0.6}),
         );
         expect(e.type, TrackEffectType.overdrive, reason: family);
         expect(e.params.take(2), [0.3, 0.6]);
@@ -1101,10 +1092,7 @@ void main() {
       expect(
         math.pow(
           10,
-          TrackEffectType.overdrive.params[2].valueAt(
-                lofi.params[2],
-              ) /
-              20,
+          TrackEffectType.overdrive.params[2].valueAt(lofi.params[2]) / 20,
         ),
         closeTo(1.6, 1e-6),
       );
@@ -1314,9 +1302,8 @@ void main() {
         'pedals on the other, every other module on none', () {
       final preset = FxPreset.tryParse(
         'Dub Rack',
-        File(
-          '../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset',
-        ).readAsStringSync(),
+        File('../fx_catalogue/assets/presets/Dub Rack/Dub FX 1.fxpreset')
+            .readAsStringSync(),
       )!;
       const rack = FxRack(id: 'r', name: 'Dub FX 1');
       final entries = [
@@ -1338,9 +1325,8 @@ void main() {
       );
       // Outside a rack an entry runs on no path, and so does a Dub path
       // module in a rack without the Amb-Verb that mixes the paths.
-      final verb = fxRackEntries(preset).firstWhere(
-        (e) => e.module == 'Dub reverb',
-      );
+      final verb = fxRackEntries(preset)
+          .firstWhere((e) => e.module == 'Dub reverb');
       expect(fxEntryPaths([verb]), [null]);
       expect(
         fxEntryPaths([
@@ -1388,14 +1374,7 @@ void main() {
       final engine = trackEffectsToEngine(entries);
       expect(
         [for (final e in engine) e.toJson()['rackPath']],
-        [
-          'dub',
-          'dub',
-          'dub',
-          'amb',
-          null,
-          null,
-        ],
+        ['dub', 'dub', 'dub', 'amb', null, null],
       );
     });
 
@@ -1743,9 +1722,8 @@ void main() {
   group("the Guitar Rack's gate (#1644, segno's)", () {
     FxPreset guitar(String name) => FxPreset.tryParse(
       'Guitar Rack',
-      File(
-        '../fx_catalogue/assets/presets/Guitar Rack/$name.fxpreset',
-      ).readAsStringSync(),
+      File('../fx_catalogue/assets/presets/Guitar Rack/$name.fxpreset')
+          .readAsStringSync(),
     )!;
     test('opens every Guitar Rack preset, on in the drive presets and off '
         'in the rest, timed for a guitar', () {
@@ -1805,9 +1783,8 @@ void main() {
           '../fx_catalogue/assets/presets/Vocal Rack/Compression Only.fxpreset',
         ).readAsStringSync(),
       )!;
-      final gate = fxRackEntries(
-        vocal,
-      ).firstWhere((e) => e.module == 'High-pass gate');
+      final gate = fxRackEntries(vocal)
+          .firstWhere((e) => e.module == 'High-pass gate');
       expect(gate.variant, 'Vocal Rack');
       expect(gate.params.sublist(2, 4), [0.0, 0.0]);
     });

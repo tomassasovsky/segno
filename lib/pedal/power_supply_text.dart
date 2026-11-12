@@ -22,10 +22,7 @@ String _thousandths(int milli) {
   final rest = (milli % 1000)
       .toString()
       .padLeft(3, '0')
-      .replaceAll(
-        RegExp(r'0+$'),
-        '',
-      );
+      .replaceAll(RegExp(r'0+$'), '');
   return rest.isEmpty ? '$whole' : '$whole.$rest';
 }
 

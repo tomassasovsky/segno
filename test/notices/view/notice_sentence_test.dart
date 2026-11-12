@@ -29,10 +29,7 @@ void main() {
       find.byKey(const Key('notice_sentence_source')),
     );
     expect(source.width, lessThanOrEqualTo(200));
-    expect(
-      find.byKey(const Key('notice_sentence_title')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('notice_sentence_title')), findsOneWidget);
   });
 
   testWidgets('a short track name is drawn whole', (tester) async {

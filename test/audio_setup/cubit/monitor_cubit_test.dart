@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// Counts the monitor FX envelope writes the debounce is meant to collapse.
 class _CountingStore extends FakeKeyValueStore {
@@ -194,9 +194,8 @@ void main() {
       (_) => const Stream<({int mixGeneration, int sessionRevision})>.empty(),
     );
     when(() => repository.fxRecipesSettled).thenReturn(true);
-    when(
-      () => repository.settleFxRecipes(),
-    ).thenAnswer((_) async => EngineResult.ok);
+    when(() => repository.settleFxRecipes())
+        .thenAnswer((_) async => EngineResult.ok);
     when(
       () => repository.settleFxRecipes(
         waitForCallback: true,
@@ -205,14 +204,12 @@ void main() {
     ).thenAnswer((_) async => EngineResult.ok);
     when(() => repository.mixSettingsSettled).thenReturn(true);
     when(() => repository.mixRecoveryRequired).thenReturn(false);
-    when(
-      () => repository.mixSettingsFailures,
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => repository.mixSettingsFailures)
+        .thenAnswer((_) => const Stream.empty());
     when(() => repository.state).thenReturn(const LooperState());
     when(() => repository.mixSettingsSnapshot).thenAnswer((_) => currentMix);
-    when(
-      () => repository.validateMixSettings(any()),
-    ).thenReturn(EngineResult.ok);
+    when(() => repository.validateMixSettings(any()))
+        .thenReturn(EngineResult.ok);
     when(() => repository.applyMixSettings(any())).thenAnswer((call) {
       pendingMix = call.positionalArguments.first as MixSettingsSnapshot;
       return EngineResult.ok;
@@ -220,9 +217,9 @@ void main() {
     when(() => repository.sessionRevision).thenReturn(0);
     when(() => repository.trackPans).thenReturn(const {});
     when(() => repository.inputSetup).thenReturn(const InputSetup.empty());
-    when(() => repository.monitorVolume(any())).thenAnswer(
-      (call) => monitorVolumes[call.positionalArguments.first] ?? 1,
-    );
+    when(
+      () => repository.monitorVolume(any()),
+    ).thenAnswer((call) => monitorVolumes[call.positionalArguments.first] ?? 1);
     when(
       () => repository.setMixSettings(
         trackPans: any(named: 'trackPans'),
@@ -230,9 +227,7 @@ void main() {
         monitorLevels: any(named: 'monitorLevels'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.settleMixSettings(),
-    ).thenAnswer((_) async {
+    when(() => repository.settleMixSettings()).thenAnswer((_) async {
       if (pendingMix case final accepted?) {
         currentMix = accepted;
         monitorVolumes.addAll(accepted.monitorLevels);
@@ -252,12 +247,10 @@ void main() {
     when(() => repository.pluginCatalog).thenReturn(catalog);
     // And it follows the repository's own monitor writes, so a change that
     // did not come through this cubit still reaches the console.
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
     when(
       () => repository.setMonitorInputMode(
         input: any(named: 'input'),
@@ -691,9 +684,7 @@ void main() {
           0,
           encodeFxChain(
             FxChainEnvelope(
-              entries: [
-                BuiltInEffect(type: TrackEffectType.drive),
-              ],
+              entries: [BuiltInEffect(type: TrackEffectType.drive)],
             ),
           ),
         );
@@ -884,12 +875,10 @@ void main() {
       when(() => repository.monitorMode(any())).thenAnswer(
         (call) => modes[call.positionalArguments.first] ?? MonitorMode.off,
       );
-      when(() => repository.monitorOutput(any())).thenAnswer(
-        (call) => masks[call.positionalArguments.first] ?? 0x3,
-      );
-      when(() => repository.monitorVolume(any())).thenAnswer(
-        (call) => volumes[call.positionalArguments.first] ?? 1.0,
-      );
+      when(() => repository.monitorOutput(any()))
+          .thenAnswer((call) => masks[call.positionalArguments.first] ?? 0x3);
+      when(() => repository.monitorVolume(any()))
+          .thenAnswer((call) => volumes[call.positionalArguments.first] ?? 1.0);
       when(
         () => repository.setMixSettings(
           trackPans: any(named: 'trackPans'),
@@ -897,14 +886,11 @@ void main() {
           monitorLevels: any(named: 'monitorLevels'),
         ),
       ).thenAnswer((call) {
-        volumes.addAll(
-          call.namedArguments[#monitorLevels] as Map<int, double>,
-        );
+        volumes.addAll(call.namedArguments[#monitorLevels] as Map<int, double>);
         return EngineResult.ok;
       });
-      when(() => repository.monitorMuted(any())).thenAnswer(
-        (call) => mutes[call.positionalArguments.first] ?? false,
-      );
+      when(() => repository.monitorMuted(any()))
+          .thenAnswer((call) => mutes[call.positionalArguments.first] ?? false);
       when(() => repository.monitorChainEnabled(any())).thenReturn(true);
       when(
         () => repository.setMonitorInputMode(
@@ -1040,18 +1026,16 @@ void main() {
         when(() => repository.monitorMode(0)).thenReturn(MonitorMode.on);
         changes.add(0); // unrelated mode change while FX remains pending
         await Future<void>.delayed(Duration.zero);
-        expect(
-          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
-          [oldFx],
-        );
+        expect(decodeFxChain(await settings.loadMonitorEffects(0)).entries, [
+          oldFx,
+        ]);
 
         settled = true;
         applied.complete(EngineResult.ok);
         await pumpEventQueue();
-        expect(
-          decodeFxChain(await settings.loadMonitorEffects(0)).entries,
-          [newFx],
-        );
+        expect(decodeFxChain(await settings.loadMonitorEffects(0)).entries, [
+          newFx,
+        ]);
       },
     );
 
@@ -1089,9 +1073,8 @@ void main() {
         when(() => repository.monitorVolume(1)).thenReturn(0.25);
         when(() => repository.monitorOutput(1)).thenReturn(0x2);
         when(() => repository.monitorMode(1)).thenReturn(MonitorMode.auto);
-        when(
-          () => repository.monitorEffects(1),
-        ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
+        when(() => repository.monitorEffects(1))
+            .thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
         changes.add(1);
         await Future<void>.delayed(Duration.zero);
       },
@@ -1192,9 +1175,8 @@ void main() {
     setUp(() {
       params = StreamController<int>.broadcast();
       addTearDown(params.close);
-      when(
-        () => repository.monitorParamChanges,
-      ).thenAnswer((_) => params.stream);
+      when(() => repository.monitorParamChanges)
+          .thenAnswer((_) => params.stream);
       when(() => repository.monitorMode(any())).thenReturn(MonitorMode.off);
       when(() => repository.monitorOutput(any())).thenReturn(0x3);
       when(() => repository.monitorVolume(any())).thenReturn(1);
@@ -1212,10 +1194,7 @@ void main() {
         // straight to the repository at controller rate, and the repository
         // announces on the throttled param stream — never the structural one.
         when(() => repository.monitorEffects(0)).thenReturn([
-          BuiltInEffect(
-            type: TrackEffectType.drive,
-            params: const [0.7, 0.5],
-          ),
+          BuiltInEffect(type: TrackEffectType.drive, params: const [0.7, 0.5]),
         ]);
         params.add(0);
         await Future<void>.delayed(Duration.zero);
@@ -1235,10 +1214,7 @@ void main() {
       act: (cubit) async {
         await cubit.load();
         when(() => repository.monitorEffects(0)).thenReturn([
-          BuiltInEffect(
-            type: TrackEffectType.drive,
-            params: const [0.7, 0.5],
-          ),
+          BuiltInEffect(type: TrackEffectType.drive, params: const [0.7, 0.5]),
         ]);
         params.add(0);
         // Long enough for a persist to have landed, were one issued.
@@ -1357,9 +1333,8 @@ void main() {
       },
       verify: (cubit) async {
         expect(cubit.state.forInput(1).outputMask, 0x2);
-        verify(
-          () => repository.setMonitorOutput(input: 1, mask: 0x2),
-        ).called(1);
+        verify(() => repository.setMonitorOutput(input: 1, mask: 0x2))
+            .called(1);
         expect(await settings.loadMonitorOutput(1), 0x2);
       },
     );
@@ -1381,9 +1356,8 @@ void main() {
     blocTest<MonitorCubit, MonitorState>(
       'a refused monitor volume leaves state and storage at the prior gain',
       setUp: () {
-        when(
-          () => repository.applyMixSettings(any()),
-        ).thenReturn(EngineResult.notReady);
+        when(() => repository.applyMixSettings(any()))
+            .thenReturn(EngineResult.notReady);
       },
       build: build,
       act: (cubit) async {
@@ -1400,9 +1374,8 @@ void main() {
     blocTest<MonitorCubit, MonitorState>(
       'a failed monitor publication leaves state and storage unchanged',
       setUp: () {
-        when(
-          () => repository.settleMixSettings(),
-        ).thenAnswer((_) async => EngineResult.invalid);
+        when(() => repository.settleMixSettings())
+            .thenAnswer((_) async => EngineResult.invalid);
       },
       build: build,
       act: (cubit) async {
@@ -1424,9 +1397,8 @@ void main() {
       },
       verify: (cubit) async {
         expect(cubit.state.forInput(0).muted, isTrue);
-        verify(
-          () => repository.setMonitorMute(input: 0, muted: true),
-        ).called(1);
+        verify(() => repository.setMonitorMute(input: 0, muted: true))
+            .called(1);
         expect(await settings.loadMonitorMute(0), isTrue);
       },
     );
@@ -1523,10 +1495,7 @@ void main() {
       verify: (cubit) async {
         final decoded = decodeFxChain(await settings.loadMonitorEffects(0));
         expect(decoded.chainEnabled, isFalse);
-        expect(
-          ((decoded.entries.single) as BuiltInEffect).params.first,
-          0.9,
-        );
+        expect(((decoded.entries.single) as BuiltInEffect).params.first, 0.9);
       },
     );
 
@@ -1557,9 +1526,8 @@ void main() {
         verify(
           () => repository.setMonitorInputMode(input: 0, mode: MonitorMode.on),
         ).called(1);
-        verify(
-          () => repository.setMonitorOutput(input: 0, mask: 0x2),
-        ).called(1);
+        verify(() => repository.setMonitorOutput(input: 0, mask: 0x2))
+            .called(1);
         verify(
           () => repository.setMixSettings(
             trackPans: const {},
@@ -1567,9 +1535,8 @@ void main() {
             monitorLevels: const {0: 0.4},
           ),
         ).called(1);
-        verify(
-          () => repository.setMonitorMute(input: 0, muted: true),
-        ).called(1);
+        verify(() => repository.setMonitorMute(input: 0, muted: true))
+            .called(1);
         verify(
           () => repository.setMonitorEffects(
             input: 0,
@@ -1693,9 +1660,9 @@ void main() {
         build: build,
         // Seed input 5 into state so it counts as "previously present".
         act: (cubit) {
-          when(repository.allMonitors).thenReturn(const {
-            5: InputMonitor(input: 5, mode: MonitorMode.on),
-          });
+          when(
+            repository.allMonitors,
+          ).thenReturn(const {5: InputMonitor(input: 5, mode: MonitorMode.on)});
           cubit.projectFromRepository();
           // The freshly loaded session defines no monitors.
           when(repository.allMonitors).thenReturn(const {});
@@ -1823,9 +1790,8 @@ void main() {
         final store = _DeferredMonitorFxStore();
         settings = SettingsRepository(store: store);
         var sessionRevision = 0;
-        when(
-          () => repository.sessionRevision,
-        ).thenAnswer((_) => sessionRevision);
+        when(() => repository.sessionRevision)
+            .thenAnswer((_) => sessionRevision);
         final cubit = build();
         addTearDown(cubit.close);
         cubit.addEffect(0);
@@ -2075,9 +2041,8 @@ void main() {
         act: (cubit) => cubit.openPluginEditor(0, 0),
         wait: const Duration(milliseconds: 250),
         verify: (_) {
-          verify(
-            () => repository.openMonitorPluginEditor(input: 0, index: 0),
-          ).called(1);
+          verify(() => repository.openMonitorPluginEditor(input: 0, index: 0))
+              .called(1);
           verify(
             () => repository.refreshMonitorPluginParams(input: 0, index: 0),
           ).called(greaterThanOrEqualTo(1));
@@ -2100,9 +2065,8 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 150));
         expect(refreshCount, greaterThanOrEqualTo(1));
         cubit.closePluginEditor(0, 0);
-        verify(
-          () => repository.closeMonitorPluginEditor(input: 0, index: 0),
-        ).called(1);
+        verify(() => repository.closeMonitorPluginEditor(input: 0, index: 0))
+            .called(1);
         // The poll stops climbing once the editor closes.
         final after = refreshCount;
         await Future<void>.delayed(const Duration(milliseconds: 250));

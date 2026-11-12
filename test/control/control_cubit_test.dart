@@ -23,7 +23,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _PedalSetupStore extends FakeKeyValueStore {
   bool refuseSetup = false;
@@ -68,11 +68,8 @@ class _PedalSetupStore extends FakeKeyValueStore {
 /// ordering (persist-before-clear) without mocking file I/O, since the
 /// repository itself is not mock-friendly (real disk access).
 class _RecordingPerformanceRepository extends PerformanceRepository {
-  _RecordingPerformanceRepository({
-    required this.log,
-    required super.engine,
-    required super.exportsRoot,
-  }) : super(guards: GuardRegistry(), storageIo: fakeStorageIo);
+  new({required this.log, required super.engine, required super.exportsRoot})
+    : super(guards: GuardRegistry(), storageIo: fakeStorageIo);
 
   final List<String> log;
 
@@ -91,7 +88,7 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
 
 /// One connected MIDI input whose CC messages a test pushes by hand.
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
 
   final inputs = StreamController<MidiInputMessage>.broadcast();
@@ -259,21 +256,18 @@ void main() {
       );
       when(() => looper.laneEffects(any(), any())).thenReturn(const []);
       when(() => looper.laneChainEnabled(any(), any())).thenReturn(true);
-      when(
-        () => looper.laneChainInheritedFrom(any(), any()),
-      ).thenReturn(const []);
+      when(() => looper.laneChainInheritedFrom(any(), any()))
+          .thenReturn(const []);
 
       when(() => looper.mixSettingsSettled).thenReturn(true);
 
       when(() => looper.mixRecoveryRequired).thenReturn(false);
 
-      when(
-        () => looper.mixSettingsFailures,
-      ).thenAnswer((_) => const Stream.empty());
+      when(() => looper.mixSettingsFailures)
+          .thenAnswer((_) => const Stream.empty());
       when(() => looper.fxRecipesSettled).thenReturn(true);
-      when(
-        () => looper.fxReplayConfirmed,
-      ).thenAnswer((_) => const Stream.empty());
+      when(() => looper.fxReplayConfirmed)
+          .thenAnswer((_) => const Stream.empty());
       when(() => looper.lengthSettingsSettled).thenReturn(true);
       when(() => looper.recordLengthCaptureLocked).thenAnswer(
         (_) => looper.state.tracks.any((track) => track.isCapturing),
@@ -290,9 +284,8 @@ void main() {
         (_) => looper.state.tracks.any((track) => track.isCapturing),
       );
       when(() => looper.clickModeSettled).thenReturn(true);
-      when(() => looper.sessionTransport).thenAnswer(
-        (_) => looper.state.transport,
-      );
+      when(() => looper.sessionTransport)
+          .thenAnswer((_) => looper.state.transport);
       when(() => looper.mixSettingsSnapshot).thenReturn(MixSettingsSnapshot());
       when(
         () => looper.settleFxRecipes(
@@ -342,12 +335,10 @@ void main() {
         return looper.state.tracks[channel].muted;
       });
       when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
-      when(
-        () => looper.cancelArm(channel: any(named: 'channel')),
-      ).thenReturn(EngineResult.ok);
-      when(
-        () => looper.finalizeTake(channel: any(named: 'channel')),
-      ).thenReturn(EngineResult.ok);
+      when(() => looper.cancelArm(channel: any(named: 'channel')))
+          .thenReturn(EngineResult.ok);
+      when(() => looper.finalizeTake(channel: any(named: 'channel')))
+          .thenReturn(EngineResult.ok);
 
       chainEnabled = <int, bool>{};
       when(() => looper.trackChainEnabled(any())).thenAnswer(
@@ -541,9 +532,7 @@ void main() {
           (await settings.loadMidiConfiguration())!,
         ) as Map<String, dynamic>;
         expect(midi['mappings'], isEmpty);
-        final setup = PedalSetup.decode(
-          (await settings.loadPedalSetup())!,
-        );
+        final setup = PedalSetup.decode((await settings.loadPedalSetup())!);
         expect(
           setup.external.forJack(PedalCtrlJack.ctrl2).expression.mappings,
           isEmpty,
@@ -598,9 +587,7 @@ void main() {
 
       test('entering Mute leaves a live capture recording (the mode toggle '
           'is a view change, not a transport action)', () {
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         cubit.toggleMode();
         // No finalize: the take keeps recording until the user ends it
         // explicitly (back in Rec mode, Rec/Play — or Stop).
@@ -640,16 +627,12 @@ void main() {
       // An install that was set up before this build: a stored pedal setup,
       // bindings or boot default.
       final upgrades = <String, Future<void> Function()>{
-        'pedal setup': () => settings.savePedalSetup(
-          const PedalSetup().encode(),
-        ),
-        'bindings': () => settings.savePedalBindings(
-          PedalBindingSet(const []).encode(),
-        ),
-        'boot default': () => setupStore.setString(
-          'looper.default_mode',
-          'record',
-        ),
+        'pedal setup': () =>
+            settings.savePedalSetup(const PedalSetup().encode()),
+        'bindings': () =>
+            settings.savePedalBindings(PedalBindingSet(const []).encode()),
+        'boot default': () =>
+            setupStore.setString('looper.default_mode', 'record'),
       };
       for (final MapEntry(key: what, value: store) in upgrades.entries) {
         test(
@@ -680,9 +663,8 @@ void main() {
           PedalBindingSet([
             PedalBinding(
               key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
-              target: const FxChainTarget(
-                FxAddress(stage: FxStage.track),
-              ).canonicalString(),
+              target: const FxChainTarget(FxAddress(stage: FxStage.track))
+                  .canonicalString(),
             ),
           ]),
         ),
@@ -721,9 +703,7 @@ void main() {
       test('entering FX mode FINALIZES a live capture at the entry gesture '
           'via the immediate-finalize primitive, never a record press '
           '(#405)', () {
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         cubit.setMode(InteractionMode.fx);
         // The primitive, not record(): a record press under quantize ARMS a
         // loop-top finalize instead of ending the take — the withdrawn A5
@@ -737,16 +717,13 @@ void main() {
 
       test('a DEFINING take survives FX entry: the engine refusal is the '
           'fallback, silently accepted (#405)', () {
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         // The engine refuses the defining take (finalizing it would let a
         // mode switch set the session's bar length). The cubit asks — it
         // cannot know which take defines the grid — and accepts the refusal
         // as "the capture survives", entering FX regardless.
-        when(
-          () => looper.finalizeTake(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.invalid);
+        when(() => looper.finalizeTake(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.invalid);
         cubit.setMode(InteractionMode.fx);
         verify(() => looper.finalizeTake(channel: 0)).called(1);
         expect(cubit.state.mode, InteractionMode.fx);
@@ -804,9 +781,8 @@ void main() {
       test(
         'FX entry stays on transport controls when cancellation is refused',
         () {
-          when(
-            () => looper.cancelArm(channel: 6),
-          ).thenReturn(EngineResult.invalid);
+          when(() => looper.cancelArm(channel: 6))
+              .thenReturn(EngineResult.invalid);
           cubit.setMode(InteractionMode.fx);
           expect(cubit.state.mode, InteractionMode.record);
           verifyNever(
@@ -836,9 +812,7 @@ void main() {
       test(
         'entering FX mode CANCELS a pending arm rather than recording it',
         () {
-          setEngine(
-            _tracksWith(const [Track(pending: true)]),
-          );
+          setEngine(_tracksWith(const [Track(pending: true)]));
           // The arm has not fired, so nothing is "capturing" — but leaving it
           // would start a take seconds later with every FX-mode control inert.
           cubit.setMode(InteractionMode.fx);
@@ -939,11 +913,10 @@ void main() {
           ..toggleMode(); // -> fx
         await pumpEventQueue();
 
-        expect(
-          seen.map((e) => e.$1),
-          [InteractionMode.mute, InteractionMode.fx],
-          reason: 'each tap lands exactly one mode',
-        );
+        expect(seen.map((e) => e.$1), [
+          InteractionMode.mute,
+          InteractionMode.fx,
+        ], reason: 'each tap lands exactly one mode');
         expect(seen.first.$2, {0}, reason: 'mute landed, so mute latched');
         expect(seen.last.$2, isEmpty, reason: 'fx landed, so fx cleared');
 
@@ -1348,23 +1321,20 @@ void main() {
           await pumpEventQueue();
         });
 
-        test(
-          'a release after the pause, before it fires, ends it and clears '
-          'nothing',
-          () async {
-            transport.press(PedalButton.track1, down: true);
-            await pumpEventQueue();
-            await Future<void>.delayed(const Duration(milliseconds: 600));
-            expect(fills().last.button, PedalButton.track1);
-            transport.press(PedalButton.track1, down: false);
-            await pumpEventQueue();
-            expect(fills().last, const ClearHoldMessage());
-            final settled = fills().length;
-            await Future<void>.delayed(const Duration(milliseconds: 700));
-            expect(fills(), hasLength(settled));
-            verifyNever(() => looper.clear(channel: any(named: 'channel')));
-          },
-        );
+        test('a release after the pause, before it fires, ends it and clears '
+            'nothing', () async {
+          transport.press(PedalButton.track1, down: true);
+          await pumpEventQueue();
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          expect(fills().last.button, PedalButton.track1);
+          transport.press(PedalButton.track1, down: false);
+          await pumpEventQueue();
+          expect(fills().last, const ClearHoldMessage());
+          final settled = fills().length;
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+          expect(fills(), hasLength(settled));
+          verifyNever(() => looper.clear(channel: any(named: 'channel')));
+        });
 
         test('a mode change ends it', () async {
           transport.press(PedalButton.track2, down: true);
@@ -1434,9 +1404,8 @@ void main() {
         });
 
         test('a refused clear fills but sends no confirmation', () async {
-          when(
-            () => looper.clear(channel: any(named: 'channel')),
-          ).thenReturn(EngineResult.notReady);
+          when(() => looper.clear(channel: any(named: 'channel')))
+              .thenReturn(EngineResult.notReady);
           transport.press(PedalButton.track3, down: true);
           await pumpEventQueue();
           await Future<void>.delayed(const Duration(milliseconds: 1200));
@@ -1528,16 +1497,15 @@ void main() {
           clears = [];
           anyMute = false;
           anyStop = false;
-          when(
-            () => looper.clear(channel: any(named: 'channel')),
-          ).thenAnswer((call) {
-            clears.add((
-              channel: call.namedArguments[#channel] as int,
-              mutedBefore: anyMute,
-              stoppedBefore: anyStop,
-            ));
-            return EngineResult.ok;
-          });
+          when(() => looper.clear(channel: any(named: 'channel')))
+              .thenAnswer((call) {
+                clears.add((
+                  channel: call.namedArguments[#channel] as int,
+                  mutedBefore: anyMute,
+                  stoppedBefore: anyStop,
+                ));
+                return EngineResult.ok;
+              });
           when(
             () => looper.setMute(
               muted: any(named: 'muted'),
@@ -1547,12 +1515,11 @@ void main() {
             anyMute = true;
             return EngineResult.ok;
           });
-          when(
-            () => looper.stopTrack(channel: any(named: 'channel')),
-          ).thenAnswer((_) {
-            anyStop = true;
-            return EngineResult.ok;
-          });
+          when(() => looper.stopTrack(channel: any(named: 'channel')))
+              .thenAnswer((_) {
+                anyStop = true;
+                return EngineResult.ok;
+              });
           // Track 3 (channel 2) is the only one playing: the last audible.
           setEngine(
             _tracksWith(const [
@@ -1747,9 +1714,7 @@ void main() {
 
         test('Song: a section that is capturing is not cleared', () async {
           setEngine(
-            _tracksWith(const [
-              Track(channel: 2, state: TrackState.recording),
-            ]),
+            _tracksWith(const [Track(channel: 2, state: TrackState.recording)]),
             looperMode: LooperMode.song,
           );
           await setUpHold(TrackHold.clearTrack);
@@ -1945,36 +1910,33 @@ void main() {
         },
       );
 
-      test(
-        'failed checkpoint restore remains visible until same-value Save '
-        'repairs storage',
-        () async {
-          final prior = cubit.state.pedalSetup;
-          await settings.savePedalSetup(prior.encode());
-          setupStore
-            ..failAfterSetupWrite = true
-            ..refuseSetupValue = prior.encode();
+      test('failed checkpoint restore remains visible until same-value Save '
+          'repairs storage', () async {
+        final prior = cubit.state.pedalSetup;
+        await settings.savePedalSetup(prior.encode());
+        setupStore
+          ..failAfterSetupWrite = true
+          ..refuseSetupValue = prior.encode();
 
-          await expectLater(
-            cubit.setPedalSetup(prior.copyWith(modePress: InteractionMode.fx)),
-            throwsA(
-              isA<PedalSetupSaveException>().having(
-                (error) => error.checkpointRestored,
-                'checkpoint restored',
-                isFalse,
-              ),
+        await expectLater(
+          cubit.setPedalSetup(prior.copyWith(modePress: InteractionMode.fx)),
+          throwsA(
+            isA<PedalSetupSaveException>().having(
+              (error) => error.checkpointRestored,
+              'checkpoint restored',
+              isFalse,
             ),
-          );
-          expect(cubit.state.pedalSetup, prior);
-          expect(cubit.state.pedalSetupPersistenceUncertain, isTrue);
-          expect(await settings.loadPedalSetup(), isNot(prior.encode()));
+          ),
+        );
+        expect(cubit.state.pedalSetup, prior);
+        expect(cubit.state.pedalSetupPersistenceUncertain, isTrue);
+        expect(await settings.loadPedalSetup(), isNot(prior.encode()));
 
-          setupStore.refuseSetupValue = null;
-          await cubit.setPedalSetup(prior);
-          expect(cubit.state.pedalSetupPersistenceUncertain, isFalse);
-          expect(await settings.loadPedalSetup(), prior.encode());
-        },
-      );
+        setupStore.refuseSetupValue = null;
+        await cubit.setPedalSetup(prior);
+        expect(cubit.state.pedalSetupPersistenceUncertain, isFalse);
+        expect(await settings.loadPedalSetup(), prior.encode());
+      });
 
       test(
         'an explicitly malformed saved action is inert until deliberate Save',
@@ -2303,16 +2265,13 @@ void main() {
             press: CommandAction(ControlCommand.recordPlay),
           ),
         );
-        when(
-          () => looper.record(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.notReady);
+        when(() => looper.record(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.notReady);
 
         transport.press(PedalButton.stop, down: true);
         await pumpEventQueue();
 
-        verify(
-          () => looper.record(channel: any(named: 'channel')),
-        ).called(1);
+        verify(() => looper.record(channel: any(named: 'channel'))).called(1);
         // Every press lights at once, refused or not; release darkens it.
         expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
@@ -2397,14 +2356,12 @@ void main() {
           ]),
         );
         cubit.setMode(InteractionMode.mute);
-        when(
-          () => looper.stopTrack(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.notReady);
+        when(() => looper.stopTrack(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.notReady);
         transport.press(PedalButton.stop, down: true);
         await pumpEventQueue();
-        verify(
-          () => looper.stopTrack(channel: any(named: 'channel')),
-        ).called(1);
+        verify(() => looper.stopTrack(channel: any(named: 'channel')))
+            .called(1);
         expect(transport.lastFrame?.isLit(PedalButton.stop), isTrue);
         transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
@@ -2554,22 +2511,19 @@ void main() {
 
       test('a track stomp toggles that track Track-stage chain', () async {
         await stomp(PedalButton.track1);
-        verify(
-          () => looper.setTrackChainEnabled(channel: 0, enabled: false),
-        ).called(1);
+        verify(() => looper.setTrackChainEnabled(channel: 0, enabled: false))
+            .called(1);
 
         await stomp(PedalButton.track1);
-        verify(
-          () => looper.setTrackChainEnabled(channel: 0, enabled: true),
-        ).called(1);
+        verify(() => looper.setTrackChainEnabled(channel: 0, enabled: true))
+            .called(1);
       });
 
       test('track stomps are bank-aware (A3): bank B stomps 4..7', () async {
         cubit.browseBank(1);
         await stomp(PedalButton.track2);
-        verify(
-          () => looper.setTrackChainEnabled(channel: 5, enabled: false),
-        ).called(1);
+        verify(() => looper.setTrackChainEnabled(channel: 5, enabled: false))
+            .called(1);
         verifyNever(
           () => looper.setTrackChainEnabled(channel: 1, enabled: false),
         );
@@ -2760,9 +2714,8 @@ void main() {
           cubit.setMode(InteractionMode.custom);
           await stomp(PedalButton.stop);
           await stomp(PedalButton.stop);
-          verify(
-            () => looper.setTrackChainEnabled(channel: 1, enabled: false),
-          ).called(1);
+          verify(() => looper.setTrackChainEnabled(channel: 1, enabled: false))
+              .called(1);
         },
       );
     });
@@ -2816,9 +2769,8 @@ void main() {
         // #1146: the engine refuses a fresh capture for one callback block
         // after an emptying; the repository owes the press one retry, so the
         // contact stays accepted (lit) while it resolves.
-        when(
-          () => looper.record(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.notReady);
+        when(() => looper.record(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.notReady);
         when(() => looper.recordRetryPending(0)).thenReturn(true);
 
         transport.press(PedalButton.recPlay, down: true);
@@ -2833,9 +2785,8 @@ void main() {
       test(
         'a refused Record press with no retry owed lights only while held',
         () async {
-          when(
-            () => looper.record(channel: any(named: 'channel')),
-          ).thenReturn(EngineResult.notReady);
+          when(() => looper.record(channel: any(named: 'channel')))
+              .thenReturn(EngineResult.notReady);
 
           transport.press(PedalButton.recPlay, down: true);
           await pumpEventQueue();
@@ -3046,11 +2997,10 @@ void main() {
             Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
           ]),
         );
-        expect(
-          cubit.state.parkedResume,
-          {0, 1},
-          reason: 'parked with the latch',
-        );
+        expect(cubit.state.parkedResume, {
+          0,
+          1,
+        }, reason: 'parked with the latch');
       });
 
       test('a second Rec/Play during a deferred launch keeps the deselected '
@@ -3102,9 +3052,8 @@ void main() {
           ..toggleMode()
           ..trackPressed(1);
         expect(cubit.state.parkedResume, {0});
-        when(
-          () => looper.setMute(muted: true, channel: 1),
-        ).thenReturn(EngineResult.invalid);
+        when(() => looper.setMute(muted: true, channel: 1))
+            .thenReturn(EngineResult.invalid);
         cubit.recPlay();
         verifyNever(() => looper.play(channel: any(named: 'channel')));
         expect(cubit.state.parkedResume, {0});
@@ -3135,18 +3084,16 @@ void main() {
             );
             cubit.toggleMode();
             final before = cubit.state.parkedResume;
-            when(
-              () => looper.setMute(muted: false, channel: 1),
-            ).thenReturn(EngineResult.invalid);
+            when(() => looper.setMute(muted: false, channel: 1))
+                .thenReturn(EngineResult.invalid);
             cubit.recPlay();
             verifyNever(() => looper.play(channel: any(named: 'channel')));
             verify(() => looper.setMute(muted: false, channel: 2)).called(1);
             expect(cubit.state.parkedResume, before);
             await pumpEventQueue();
             expect(await settings.loadLaneMute(0, 0), isFalse);
-            when(
-              () => looper.setMute(muted: false, channel: 1),
-            ).thenReturn(EngineResult.ok);
+            when(() => looper.setMute(muted: false, channel: 1))
+                .thenReturn(EngineResult.ok);
             cubit.recPlay();
             for (var channel = 0; channel < 3; channel++) {
               verify(() => looper.play(channel: channel)).called(1);
@@ -3208,9 +3155,8 @@ void main() {
       );
 
       test('refused Rec Stop leaves mute and playback unchanged', () {
-        when(
-          () => looper.stopRecordControl(channel: 0),
-        ).thenReturn(EngineResult.notReady);
+        when(() => looper.stopRecordControl(channel: 0))
+            .thenReturn(EngineResult.notReady);
         cubit.stop();
         verifyNever(
           () => looper.setMute(
@@ -3272,9 +3218,7 @@ void main() {
       });
 
       test('Rec mode: finalizes a capture before muting', () {
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         cubit.stop();
         verify(() => looper.stopRecordControl(channel: 0)).called(1);
         verify(() => looper.setMute(muted: true)).called(1);
@@ -3300,12 +3244,11 @@ void main() {
           );
           return EngineResult.ok;
         });
-        when(
-          () => looper.stopTrack(channel: any(named: 'channel')),
-        ).thenAnswer((i) {
-          sent.add('stop ${i.namedArguments[#channel]}');
-          return EngineResult.ok;
-        });
+        when(() => looper.stopTrack(channel: any(named: 'channel')))
+            .thenAnswer((i) {
+              sent.add('stop ${i.namedArguments[#channel]}');
+              return EngineResult.ok;
+            });
         when(
           () => looper.setMute(
             muted: any(named: 'muted'),
@@ -3412,17 +3355,13 @@ void main() {
       });
 
       test('finishes the loop when the capturing track is pressed', () {
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         cubit.trackPressed(0);
         verify(() => looper.record()).called(1);
       });
 
       test('hands off a live recording to the pressed track', () {
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         cubit.trackPressed(2);
         verify(() => looper.record()).called(1); // finalize
         verify(() => looper.record(channel: 2)).called(1); // start pressed
@@ -3489,9 +3428,8 @@ void main() {
             Track(state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
-        when(
-          () => looper.setMute(muted: true),
-        ).thenReturn(EngineResult.invalid);
+        when(() => looper.setMute(muted: true))
+            .thenReturn(EngineResult.invalid);
         cubit
           ..toggleMode()
           ..trackPressed(0);
@@ -3510,9 +3448,8 @@ void main() {
               ),
             ]),
           );
-          when(
-            () => looper.setMute(muted: false),
-          ).thenReturn(EngineResult.invalid);
+          when(() => looper.setMute(muted: false))
+              .thenReturn(EngineResult.invalid);
           cubit.toggleMode();
           final before = cubit.state.parkedResume;
           cubit.recPlay();
@@ -3724,11 +3661,7 @@ void main() {
         clearInteractions(looper);
         setEngine(
           _tracksWith(const [
-            Track(
-              state: TrackState.playing,
-              lengthFrames: 48000,
-              muted: true,
-            ),
+            Track(state: TrackState.playing, lengthFrames: 48000, muted: true),
             Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
             Track(channel: 2, state: TrackState.playing, lengthFrames: 48000),
           ]),
@@ -3961,10 +3894,7 @@ void main() {
         verify(() => looper.setMute(muted: true)).called(1);
         cubit.trackPressed(2); // empty: nothing to mute
         verifyNever(
-          () => looper.setMute(
-            muted: any(named: 'muted'),
-            channel: 2,
-          ),
+          () => looper.setMute(muted: any(named: 'muted'), channel: 2),
         );
         verifyNever(() => looper.play(channel: any(named: 'channel')));
         verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
@@ -4018,11 +3948,7 @@ void main() {
           _stateWith(
             _tracksWith(const [
               Track(state: TrackState.stopped, lengthFrames: 48000),
-              Track(
-                channel: 5,
-                state: TrackState.playing,
-                lengthFrames: 48000,
-              ),
+              Track(channel: 5, state: TrackState.playing, lengthFrames: 48000),
             ]),
             looperMode: LooperMode.song,
           ),
@@ -4042,16 +3968,8 @@ void main() {
           _stateWith(
             _tracksWith(const [
               Track(state: TrackState.stopped, lengthFrames: 48000),
-              Track(
-                channel: 1,
-                state: TrackState.playing,
-                lengthFrames: 48000,
-              ),
-              Track(
-                channel: 5,
-                state: TrackState.stopped,
-                lengthFrames: 48000,
-              ),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+              Track(channel: 5, state: TrackState.stopped, lengthFrames: 48000),
             ]),
             looperMode: LooperMode.song,
           ),
@@ -4420,22 +4338,19 @@ void main() {
         verifyNever(() => looper.undo());
       });
 
-      test(
-        'does not re-home the overlay (unlike clearAll)',
-        () {
-          setEngine(_tracksWith(const [Track(channel: 2, clearRestore: true)]));
-          cubit
-            ..toggleMode() // leave record mode
-            ..selectTrack(5); // move the cursor off home
-          final before = cubit.state;
+      test('does not re-home the overlay (unlike clearAll)', () {
+        setEngine(_tracksWith(const [Track(channel: 2, clearRestore: true)]));
+        cubit
+          ..toggleMode() // leave record mode
+          ..selectTrack(5); // move the cursor off home
+        final before = cubit.state;
 
-          cubit.undoClearAll();
+        cubit.undoClearAll();
 
-          // Recovery restores the rig the user had — cursor and mode included.
-          expect(cubit.state.mode, before.mode);
-          expect(cubit.state.cursor, before.cursor);
-        },
-      );
+        // Recovery restores the rig the user had — cursor and mode included.
+        expect(cubit.state.mode, before.mode);
+        expect(cubit.state.cursor, before.cursor);
+      });
 
       test(
         'clearAll bumps clearAllPulse when a content track is cleared',
@@ -4570,36 +4485,30 @@ void main() {
     });
 
     group('performance recording (D-PEDAL)', () {
-      test(
-        'togglePerformanceRecord arms the repository when unarmed, then '
-        'disarms it on a second call',
-        () async {
-          expect(performance.armedDirectory, isNull);
+      test('togglePerformanceRecord arms the repository when unarmed, then '
+          'disarms it on a second call', () async {
+        expect(performance.armedDirectory, isNull);
 
-          final armed = awaitStatus(
-            performance,
-            PerformanceCaptureStatus.armed,
-          );
-          cubit.togglePerformanceRecord();
-          await armed;
-          expect(performance.armedDirectory, isNotNull);
+        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
+        cubit.togglePerformanceRecord();
+        await armed;
+        expect(performance.armedDirectory, isNotNull);
 
-          // Past disarm's double-press guard window (D-GUARD) — this test
-          // proves the toggle mechanic, not the guard itself.
-          clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+        // Past disarm's double-press guard window (D-GUARD) — this test
+        // proves the toggle mechanic, not the guard itself.
+        clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
 
-          // `done`, not merely "no longer armed": disarm passes through
-          // `finalizing` and only clears the directory at the end of it, so a
-          // wait that stops at the first non-armed status reads it too early.
-          final disarmed = awaitStatus(
-            performance,
-            PerformanceCaptureStatus.done,
-          );
-          cubit.togglePerformanceRecord();
-          await disarmed;
-          expect(performance.armedDirectory, isNull);
-        },
-      );
+        // `done`, not merely "no longer armed": disarm passes through
+        // `finalizing` and only clears the directory at the end of it, so a
+        // wait that stops at the first non-armed status reads it too early.
+        final disarmed = awaitStatus(
+          performance,
+          PerformanceCaptureStatus.done,
+        );
+        cubit.togglePerformanceRecord();
+        await disarmed;
+        expect(performance.armedDirectory, isNull);
+      });
 
       test(
         'the pedal arm stamps the provider chains into the snapshot',
@@ -4652,9 +4561,8 @@ void main() {
           await armed;
 
           final snapshot = jsonDecode(
-            File(
-              '${performance.armedDirectory}/arm-snapshot.json',
-            ).readAsStringSync(),
+            File('${performance.armedDirectory}/arm-snapshot.json')
+                .readAsStringSync(),
           ) as Map<String, dynamic>;
           expect(snapshot['limiterOn'], isTrue);
           expect(snapshot['limiterCeiling'], 0.8);
@@ -4702,15 +4610,13 @@ void main() {
 
       test('encoderTurned accumulates the master gain and clamps at 0', () {
         cubit.encoderTurned(-8); // 1.0 - 8/64
-        final captured = verify(
-          () => looper.setMasterGain(captureAny()),
-        ).captured;
+        final captured = verify(() => looper.setMasterGain(captureAny()))
+            .captured;
         expect(captured.single, closeTo(1 - 8 / 64, 1e-9));
 
         cubit.encoderTurned(-64); // clamps at 0
-        final clamped = verify(
-          () => looper.setMasterGain(captureAny()),
-        ).captured;
+        final clamped = verify(() => looper.setMasterGain(captureAny()))
+            .captured;
         expect(clamped.single, 0.0);
       });
     });
@@ -4743,14 +4649,10 @@ void main() {
       });
 
       test('keeps capturing tracks in the stored sets', () {
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         cubit.toggleMode(); // capture survives; parkedResume = {0}
         expect(cubit.state.parkedResume, {0});
-        setEngine(
-          _tracksWith(const [Track(state: TrackState.recording)]),
-        );
+        setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
         expect(cubit.state.parkedResume, {0}); // finishing a loop: kept
       });
 
@@ -4996,19 +4898,14 @@ void main() {
       });
 
       group('Press and Hold assignment', () {
-        const chain0 = FxChainTarget(
-          FxAddress(stage: FxStage.track),
-        );
+        const chain0 = FxChainTarget(FxAddress(stage: FxStage.track));
 
         Future<void> assign({BindingScope scope = BindingScope.fixed}) async {
           trackChains[0] = [BuiltInEffect(type: TrackEffectType.drive)];
           await cubit.setGlobalBindings(
             PedalBindingSet([
               PedalBinding(
-                key: const PedalBindingKey(
-                  button: PedalButton.track1,
-                  bank: 0,
-                ),
+                key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
                 target: chain3.canonicalString(),
                 holdTarget: chain0.canonicalString(),
                 holdScope: scope,
@@ -5032,21 +4929,18 @@ void main() {
           expect(chainEnabled[3], isFalse, reason: 'no second Press');
         });
 
-        test(
-          'selected Hold follows cursor before firing',
-          () async {
-            await assign(scope: BindingScope.selected);
-            chainEnabled[0] = false;
-            chainEnabled[3] = true;
-            cubit.selectTrack(0);
-            await press(PedalButton.track1);
-            cubit.selectTrack(3);
-            await Future<void>.delayed(const Duration(milliseconds: 850));
-            expect(chainEnabled[3], isFalse, reason: 'cursor at fire time');
-            expect(chainEnabled[0], isFalse, reason: 'old selection untouched');
-            await release(PedalButton.track1);
-          },
-        );
+        test('selected Hold follows cursor before firing', () async {
+          await assign(scope: BindingScope.selected);
+          chainEnabled[0] = false;
+          chainEnabled[3] = true;
+          cubit.selectTrack(0);
+          await press(PedalButton.track1);
+          cubit.selectTrack(3);
+          await Future<void>.delayed(const Duration(milliseconds: 850));
+          expect(chainEnabled[3], isFalse, reason: 'cursor at fire time');
+          expect(chainEnabled[0], isFalse, reason: 'old selection untouched');
+          await release(PedalButton.track1);
+        });
 
         test('while Held, LED follows fired Hold instead of Press', () async {
           await assign(scope: BindingScope.selected);
@@ -5069,18 +4963,12 @@ void main() {
           await cubit.setGlobalBindings(
             PedalBindingSet([
               PedalBinding(
-                key: const PedalBindingKey(
-                  button: PedalButton.track1,
-                  bank: 0,
-                ),
+                key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
                 target: chain0.canonicalString(),
                 holdTarget: chain3.canonicalString(),
               ),
               PedalBinding(
-                key: const PedalBindingKey(
-                  button: PedalButton.track1,
-                  bank: 1,
-                ),
+                key: const PedalBindingKey(button: PedalButton.track1, bank: 1),
                 target: chain0.canonicalString(),
               ),
             ]),
@@ -5271,10 +5159,7 @@ void main() {
             await press(PedalButton.track1);
             expect(trackChains[3]!.single.enabled, isTrue);
             trackChains[3] = [
-              BuiltInEffect(
-                type: TrackEffectType.reverb,
-                slotId: 'new',
-              ),
+              BuiltInEffect(type: TrackEffectType.reverb, slotId: 'new'),
             ];
             await release(PedalButton.track1);
             await cubit.setGlobalBindings(
@@ -5336,10 +5221,7 @@ void main() {
           // R25: a binding that names nothing writes nothing and lights
           // nothing. Falling back to the channel's own chain would light for
           // a chain the switch does not drive.
-          expect(
-            transport.lastFrame?.trackLeds[0],
-            PedalTrackLed.off,
-          );
+          expect(transport.lastFrame?.trackLeds[0], PedalTrackLed.off);
         });
       });
 
@@ -5501,20 +5383,20 @@ void main() {
           expect(transport.lastFrame?.isLit(PedalButton.clear), isTrue);
           expect(transport.lastFrame?.isLit(PedalButton.stop), isFalse);
           expect(transport.lastFrame?.isLit(PedalButton.undo), isFalse);
-          expect(
-            cubit.state.fxSwitches[PedalButton.recPlay],
-            (lit: true, stale: false),
-          );
+          expect(cubit.state.fxSwitches[PedalButton.recPlay], (
+            lit: true,
+            stale: false,
+          ));
 
           await stomp(PedalButton.recPlay);
           expect(chainEnabled[3], isFalse);
           await pumpEventQueue();
           expect(transport.lastFrame?.isLit(PedalButton.recPlay), isFalse);
           expect(transport.lastFrame?.isLit(PedalButton.clear), isFalse);
-          expect(
-            cubit.state.fxSwitches[PedalButton.clear],
-            (lit: false, stale: false),
-          );
+          expect(cubit.state.fxSwitches[PedalButton.clear], (
+            lit: false,
+            stale: false,
+          ));
         });
 
         test('a stale binding is refused with one notice and lights '
@@ -5530,10 +5412,10 @@ void main() {
             ]),
           );
           await pumpEventQueue();
-          expect(
-            cubit.state.fxSwitches[PedalButton.undo],
-            (lit: false, stale: true),
-          );
+          expect(cubit.state.fxSwitches[PedalButton.undo], (
+            lit: false,
+            stale: true,
+          ));
           final before = cubit.state.footFxFailure;
           await stomp(PedalButton.undo);
           expect(cubit.state.footFxFailure, before + 1);
@@ -5576,17 +5458,17 @@ void main() {
           cubit.footFxPressed(PedalButton.clear, held);
           await pumpEventQueue();
           expect(chainEnabled[3], isTrue, reason: 'held on');
-          expect(
-            cubit.state.fxSwitches[PedalButton.clear],
-            (lit: true, stale: false),
-          );
+          expect(cubit.state.fxSwitches[PedalButton.clear], (
+            lit: true,
+            stale: false,
+          ));
           cubit.footFxCancelled(PedalButton.clear, held);
           await pumpEventQueue();
           expect(chainEnabled[3], isFalse, reason: 'restored, never stranded');
-          expect(
-            cubit.state.fxSwitches[PedalButton.clear],
-            (lit: false, stale: false),
-          );
+          expect(cubit.state.fxSwitches[PedalButton.clear], (
+            lit: false,
+            stale: false,
+          ));
         });
 
         test('accessible activation toggles, skips a momentary, pages Bank '
@@ -5753,20 +5635,17 @@ void main() {
             expect(chainEnabled[3], isFalse);
           });
 
-          test(
-            'a pedal disconnect — the release never arrives',
-            () async {
-              transport.hello();
-              await pumpEventQueue();
-              expect(chainEnabled[3], isTrue, reason: 'still held');
-              // Releasing the link reports it disconnected at once — the same
-              // status a board that went quiet reports after helloTimeout
-              // (pinned in the package's own tests), without a real-time wait.
-              await pedal.dispose();
-              await pumpEventQueue();
-              expect(chainEnabled[3], isFalse);
-            },
-          );
+          test('a pedal disconnect — the release never arrives', () async {
+            transport.hello();
+            await pumpEventQueue();
+            expect(chainEnabled[3], isTrue, reason: 'still held');
+            // Releasing the link reports it disconnected at once — the same
+            // status a board that went quiet reports after helloTimeout
+            // (pinned in the package's own tests), without a real-time wait.
+            await pedal.dispose();
+            await pumpEventQueue();
+            expect(chainEnabled[3], isFalse);
+          });
 
           test('a session load replacing the binding set', () async {
             cubit.applySessionBindings(
@@ -6178,18 +6057,12 @@ void main() {
         // Press: the Clear LED bit is set.
         transport.press(PedalButton.clear, down: true);
         await pumpEventQueue();
-        expect(
-          transport.lastFrame?.clearFadeActive,
-          isTrue,
-        );
+        expect(transport.lastFrame?.clearFadeActive, isTrue);
 
         // Release (note-off): the bit clears again.
         transport.press(PedalButton.clear, down: false);
         await pumpEventQueue();
-        expect(
-          transport.lastFrame?.clearFadeActive,
-          isFalse,
-        );
+        expect(transport.lastFrame?.clearFadeActive, isFalse);
       });
 
       test(
@@ -6211,9 +6084,7 @@ void main() {
         'global_color carries the ring activity color (recording = red)',
         () async {
           transport.sent.clear();
-          setEngine(
-            _tracksWith(const [Track(state: TrackState.recording)]),
-          );
+          setEngine(_tracksWith(const [Track(state: TrackState.recording)]));
           await pumpEventQueue();
 
           final frame = transport.lastFrame;
@@ -6221,31 +6092,25 @@ void main() {
         },
       );
 
-      test(
-        'the pushed frame carries the per-track LED projection',
-        () async {
-          transport.sent.clear();
-          setEngine(
-            _tracksWith(const [
-              Track(), // ch0 cursor by default -> red
-              Track(channel: 1, state: TrackState.recording),
-            ]),
-          );
-          await pumpEventQueue();
+      test('the pushed frame carries the per-track LED projection', () async {
+        transport.sent.clear();
+        setEngine(
+          _tracksWith(const [
+            Track(), // ch0 cursor by default -> red
+            Track(channel: 1, state: TrackState.recording),
+          ]),
+        );
+        await pumpEventQueue();
 
-          final leds = transport.lastFrame?.trackLeds;
-          expect(leds?[0], PedalTrackLed.red);
-          expect(leds?[1], PedalTrackLed.red);
-          expect(leds?[2], PedalTrackLed.off);
+        final leds = transport.lastFrame?.trackLeds;
+        expect(leds?[0], PedalTrackLed.red);
+        expect(leds?[1], PedalTrackLed.red);
+        expect(leds?[2], PedalTrackLed.off);
 
-          cubit.selectTrack(2);
-          await pumpEventQueue();
-          expect(
-            transport.lastFrame?.trackLeds[2],
-            PedalTrackLed.red,
-          );
-        },
-      );
+        cubit.selectTrack(2);
+        await pumpEventQueue();
+        expect(transport.lastFrame?.trackLeds[2], PedalTrackLed.red);
+      });
     });
   });
 }

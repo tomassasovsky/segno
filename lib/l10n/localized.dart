@@ -532,11 +532,7 @@ extension EngineLocalizations on AppLocalizations {
   ///
   /// An unnamed destination falls back to its full jack label (`Outputs 1–2`
   /// or `Output 5` for an odd final jack).
-  String outputName(
-    Map<int, String> names,
-    int bus, {
-    required int channels,
-  }) {
+  String outputName(Map<int, String> names, int bus, {required int channels}) {
     final given = names[bus] ?? '';
     if (given.isNotEmpty) return given;
     return outputBusLabel(bus, channels: channels);

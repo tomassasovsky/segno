@@ -195,13 +195,8 @@ void main() {
       expect(find.text('FX · Bank B'), findsOneWidget);
     });
 
-    testWidgets('shows — for the tempo on the tempo-free path', (
-      tester,
-    ) async {
-      await pump(
-        tester,
-        readout: const PerformanceReadout(selected: selected),
-      );
+    testWidgets('shows — for the tempo on the tempo-free path', (tester) async {
+      await pump(tester, readout: const PerformanceReadout(selected: selected));
       expect(find.text('—'), findsOneWidget);
     });
 
@@ -282,10 +277,7 @@ void main() {
           tester.getRect(find.byKey(const Key('console_readout_function'))),
           footer,
         );
-        expect(
-          find.text(lost.title, findRichText: true),
-          findsOneWidget,
-        );
+        expect(find.text(lost.title, findRichText: true), findsOneWidget);
       });
 
       testWidgets('a sentence too long for one line is said whole, the band '

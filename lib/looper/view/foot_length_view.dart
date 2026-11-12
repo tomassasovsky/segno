@@ -21,7 +21,7 @@ import 'package:segno/theme/theme.dart';
 /// track's length and the outcome of the latest edit.
 class FootLengthView extends StatelessWidget {
   /// Creates the performance surface within the real Tracks hierarchy.
-  const FootLengthView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +116,7 @@ class FootLengthView extends StatelessWidget {
 /// line. With no recorded track selected it reads "Loop length" and says
 /// what to do.
 class _LengthPanel extends StatelessWidget {
-  const _LengthPanel({
+  const new({
     required this.divide,
     required this.projection,
     required this.outcome,
@@ -238,7 +238,7 @@ List<_Cell> _cells(
 }
 
 class _LengthCell extends StatelessWidget {
-  const _LengthCell({required this.cell, super.key});
+  const new({required this.cell, super.key});
 
   final _Cell cell;
 
@@ -374,7 +374,7 @@ String _outcomeWord(
 }
 
 class _FootLengthPedal extends StatelessWidget {
-  const _FootLengthPedal({
+  const new({
     required this.button,
     required this.mode,
     required this.projection,

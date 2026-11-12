@@ -19,7 +19,7 @@ double decimalGigabytes(int bytes) => bytes / 1000000000;
 /// pen's proportions (title column, capacity, actions) kept.
 class StorageVolumeCard extends StatelessWidget {
   /// Creates a [StorageVolumeCard].
-  const StorageVolumeCard({
+  const new({
     required this.title,
     required this.subtitle,
     required this.body,
@@ -136,7 +136,7 @@ class StorageVolumeCard extends StatelessWidget {
 /// used. [low] draws the bar in the warning tone (pen `Low internal space`).
 class StorageCapacity extends StatelessWidget {
   /// Creates a [StorageCapacity].
-  const StorageCapacity({
+  const new({
     required this.free,
     required this.total,
     required this.usedFraction,
@@ -216,11 +216,7 @@ class StorageCapacity extends StatelessWidget {
 /// `Safe to remove` with a check, `No USB drive` with a dash).
 class StorageCardMessage extends StatelessWidget {
   /// Creates a [StorageCardMessage].
-  const StorageCardMessage({
-    required this.icon,
-    required this.message,
-    super.key,
-  });
+  const new({required this.icon, required this.message, super.key});
 
   /// The mark before the sentence.
   final IconData icon;
@@ -262,7 +258,7 @@ class StorageCardMessage extends StatelessWidget {
 /// (Eject while something writes to the drive).
 class StorageCardButton extends StatelessWidget {
   /// Creates a [StorageCardButton].
-  const StorageCardButton({
+  const new({
     required this.label,
     required this.onPressed,
     this.tone = ConsoleDialogTone.neutral,

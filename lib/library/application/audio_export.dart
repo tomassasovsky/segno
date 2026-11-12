@@ -19,7 +19,7 @@ abstract final class AudioExportFolders {
 /// suffixes).
 class AudioExportFile {
   /// Creates an [AudioExportFile].
-  const AudioExportFile(this.source, this.target);
+  const new(this.source, this.target);
 
   /// The file on internal storage.
   final String source;
@@ -34,7 +34,7 @@ class AudioExportFile {
 /// true).
 class AudioExportPlan {
   /// Creates an [AudioExportPlan].
-  const AudioExportPlan({
+  const new({
     required this.name,
     required this.folder,
     required this.files,
@@ -64,7 +64,7 @@ class AudioExportPlan {
 /// An export the player cancelled; whatever it had placed is removed.
 class AudioExportCancelled implements Exception {
   /// Creates an [AudioExportCancelled].
-  const AudioExportCancelled();
+  const new();
 
   @override
   String toString() => 'the export was cancelled';
@@ -95,7 +95,7 @@ class AudioExportCancelled implements Exception {
 /// one name across its parts. Internal storage is only ever read.
 class AudioExporter {
   /// Creates an [AudioExporter] over the port it copies through.
-  const AudioExporter(this._volumes);
+  const new(this._volumes);
 
   final RemovableVolumes _volumes;
 
@@ -243,10 +243,8 @@ class AudioExporter {
     try {
       if (aside.existsSync()) aside.deleteSync(recursive: true);
       aside.createSync(recursive: true);
-      File('${aside.path}/$targetsName').writeAsStringSync(
-        entries.join('\n'),
-        flush: true,
-      );
+      File('${aside.path}/$targetsName')
+          .writeAsStringSync(entries.join('\n'), flush: true);
       for (final entry in moving) {
         final path = '${folder.path}/$entry';
         if (FileSystemEntity.typeSync(path) != FileSystemEntityType.notFound) {

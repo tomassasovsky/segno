@@ -27,7 +27,7 @@ String footTunerRefusalText(AppLocalizations l10n, FootTunerRefusal refusal) =>
 /// the reading comes from the app-wide [TunerCubit].
 class FootTunerView extends StatelessWidget {
   /// Creates the surface within the real Tracks hierarchy.
-  const FootTunerView({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +107,7 @@ class FootTunerView extends StatelessWidget {
 
 /// `A4 reference`, then the value and its unit.
 class _ReferenceBlock extends StatelessWidget {
-  const _ReferenceBlock({required this.hz});
+  const new({required this.hz});
 
   final int hz;
 
@@ -148,7 +148,7 @@ class _ReferenceBlock extends StatelessWidget {
 
 /// The tuned input, the note with its direction and cents, and the meter.
 class _ReadingBlock extends StatelessWidget {
-  const _ReadingBlock({required this.projection});
+  const new({required this.projection});
 
   final FootTunerProjection projection;
 
@@ -295,7 +295,7 @@ class _ReadingBlock extends StatelessWidget {
 /// The −50..+50 cents scale: 21 ticks, a centre box, and the needle when
 /// there is a reading.
 class _CentsMeter extends StatelessWidget {
-  const _CentsMeter({required this.cents});
+  const new({required this.cents});
 
   final double? cents;
 
@@ -344,7 +344,7 @@ class _CentsMeter extends StatelessWidget {
 }
 
 class _FootTunerPedal extends StatelessWidget {
-  const _FootTunerPedal({required this.projection, required this.button});
+  const new({required this.projection, required this.button});
 
   final FootTunerProjection projection;
   final PedalButton button;

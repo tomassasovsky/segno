@@ -22,7 +22,7 @@ class FakeConsoleFactsClient implements ConsoleFactsClient {
   /// schedules a timer, and a `testWidgets` body that awaits one without
   /// pumping waits for it forever. A fake that is configurable but still
   /// schedules is not fixed.
-  FakeConsoleFactsClient({
+  new({
     this.latency = const Duration(milliseconds: 220),
     this.bluetoothPairings = 0,
   });

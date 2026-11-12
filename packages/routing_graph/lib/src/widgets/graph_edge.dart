@@ -7,7 +7,7 @@ import 'package:material_ui/material_ui.dart';
 @immutable
 class GraphEdge {
   /// Creates a wire between two points.
-  const GraphEdge(
+  const new(
     this.from,
     this.to, {
     required this.color,

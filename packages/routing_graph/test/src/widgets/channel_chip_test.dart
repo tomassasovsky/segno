@@ -81,11 +81,7 @@ void main() {
       );
       expect(
         tester.getSemantics(find.byType(ChannelChip)),
-        isSemantics(
-          label: 'In 1, routed',
-          isButton: true,
-          isSelected: true,
-        ),
+        isSemantics(label: 'In 1, routed', isButton: true, isSelected: true),
       );
     });
 

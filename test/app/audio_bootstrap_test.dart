@@ -103,7 +103,7 @@ class _TimingBootStore extends FakeKeyValueStore {
 }
 
 class _RecordStartBootStore extends FakeKeyValueStore {
-  _RecordStartBootStore(this.blockedKey);
+  new(this.blockedKey);
 
   final String blockedKey;
   final entered = Completer<void>();
@@ -266,10 +266,7 @@ void main() {
         () async {
           if (configured) {
             await settings.saveAudioConfig(
-              const StoredAudioConfig(
-                sampleRate: 48000,
-                bufferFrames: 256,
-              ),
+              const StoredAudioConfig(sampleRate: 48000, bufferFrames: 256),
             );
           }
           const badMix = '{"monitorLevels":{"0":0.5,"1":2.5}}';
@@ -382,32 +379,29 @@ void main() {
         {'looper.auto_record': 'true'},
         {'tempo.count_in_bars': 2, 'looper.auto_record': true},
       ]) {
-        test(
-          'invalid start pair stays intact and audio starts with no wait: '
-          '$raw',
-          () async {
-            store.values.addAll(raw);
-            final before = Map<String, Object>.of(store.values);
-            final result = await tryAutoStartEngine(
-              repository: repository,
-              settings: settings,
-              mixSettings: testMixSettings(repository, settings: settings),
-            );
-            // Only Count-in is unavailable; its owner's Retry repairs it.
-            expect(result.started, isTrue);
-            expect(engine.startCalls, 1);
-            expect(engine.stopCalls, 0);
-            expect(
-              engine.recordStartRequests.map(
-                (r) => (r.countInBars, r.soundStart),
-              ),
-              [(0, false)],
-            );
-            for (final key in ['tempo.count_in_bars', 'looper.auto_record']) {
-              expect(store.values[key], before[key]);
-            }
-          },
-        );
+        test('invalid start pair stays intact and audio starts with no wait: '
+            '$raw', () async {
+          store.values.addAll(raw);
+          final before = Map<String, Object>.of(store.values);
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            mixSettings: testMixSettings(repository, settings: settings),
+          );
+          // Only Count-in is unavailable; its owner's Retry repairs it.
+          expect(result.started, isTrue);
+          expect(engine.startCalls, 1);
+          expect(engine.stopCalls, 0);
+          expect(
+            engine.recordStartRequests.map(
+              (r) => (r.countInBars, r.soundStart),
+            ),
+            [(0, false)],
+          );
+          for (final key in ['tempo.count_in_bars', 'looper.auto_record']) {
+            expect(store.values[key], before[key]);
+          }
+        });
       }
 
       for (final key in ['tempo.count_in_bars', 'looper.auto_record']) {
@@ -627,36 +621,33 @@ void main() {
       }
 
       for (final bad in <Object>['invalid', 1.5, -1, 7]) {
-        test(
-          'invalid final timing scalar $bad prevents partial startup, '
-          'and audio still opens',
-          () async {
-            repository.setRecordTimingSettings(
-              defaultTiming: RecordTiming.half,
-              rememberedDivision: GridDivision.half,
-              trackOverrides: {1: RecordTiming.immediately},
-            );
-            store.values.addAll({
-              'looper.quantize': true,
-              'tempo.quantize_div': 3,
-              'track_record_timing.7': bad,
-            });
-            final result = await tryAutoStartEngine(
-              repository: repository,
-              settings: settings,
-              mixSettings: testMixSettings(repository, settings: settings),
-            );
-            // Only Record timing is unavailable; its owner's Retry repairs it.
-            expect(result.started, isTrue);
-            expect(engine.startCalls, 1);
-            expect(engine.stopCalls, 0);
-            expect(repository.defaultRecordTiming, RecordTiming.half);
-            expect(repository.trackRecordTimingOverrides, {
-              1: RecordTiming.immediately,
-            });
-            expect(store.values['track_record_timing.7'], bad);
-          },
-        );
+        test('invalid final timing scalar $bad prevents partial startup, '
+            'and audio still opens', () async {
+          repository.setRecordTimingSettings(
+            defaultTiming: RecordTiming.half,
+            rememberedDivision: GridDivision.half,
+            trackOverrides: {1: RecordTiming.immediately},
+          );
+          store.values.addAll({
+            'looper.quantize': true,
+            'tempo.quantize_div': 3,
+            'track_record_timing.7': bad,
+          });
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            mixSettings: testMixSettings(repository, settings: settings),
+          );
+          // Only Record timing is unavailable; its owner's Retry repairs it.
+          expect(result.started, isTrue);
+          expect(engine.startCalls, 1);
+          expect(engine.stopCalls, 0);
+          expect(repository.defaultRecordTiming, RecordTiming.half);
+          expect(repository.trackRecordTimingOverrides, {
+            1: RecordTiming.immediately,
+          });
+          expect(store.values['track_record_timing.7'], bad);
+        });
       }
 
       test('the final timing read completes before opening audio', () async {
@@ -877,32 +868,29 @@ void main() {
         });
       }
 
-      test(
-        'an invalid last slot prevents every saved decay write, '
-        'and audio still opens',
-        () async {
-          repository
-            ..setOverdubDecay(10)
-            ..setTrackOverdubDecay(channel: 7, percent: 20);
-          store.values.addAll({
-            'looper.overdub_decay': 80,
-            'track_overdub_decay.0': 60,
-            'track_overdub_decay.7': 101,
-          });
-          final result = await tryAutoStartEngine(
-            mixSettings: testMixSettings(repository, settings: settings),
-            repository: repository,
-            settings: settings,
-          );
-          // Decay's failed restore reports unavailable instead of stopping.
-          expect(result.started, isTrue);
-          expect(engine.startCalls, 1);
-          expect(engine.stopCalls, 0);
-          expect(repository.defaultOverdubDecay, 10);
-          expect(repository.trackOverdubDecayOverrides, {7: 20});
-          expect(store.values['track_overdub_decay.7'], 101);
-        },
-      );
+      test('an invalid last slot prevents every saved decay write, '
+          'and audio still opens', () async {
+        repository
+          ..setOverdubDecay(10)
+          ..setTrackOverdubDecay(channel: 7, percent: 20);
+        store.values.addAll({
+          'looper.overdub_decay': 80,
+          'track_overdub_decay.0': 60,
+          'track_overdub_decay.7': 101,
+        });
+        final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
+        // Decay's failed restore reports unavailable instead of stopping.
+        expect(result.started, isTrue);
+        expect(engine.startCalls, 1);
+        expect(engine.stopCalls, 0);
+        expect(repository.defaultOverdubDecay, 10);
+        expect(repository.trackOverdubDecayOverrides, {7: 20});
+        expect(store.values['track_overdub_decay.7'], 101);
+      });
 
       for (final refuseDefault in [false, true]) {
         test('native decay refusal leaves startup stopped: default '
@@ -1049,48 +1037,45 @@ void main() {
         },
       );
 
-      test(
-        'console first-run keeps the pin at its own rate and period when it '
-        'refuses 48 kHz / 32 (#1529)',
-        () async {
-          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-          engine
-            ..devices = const [
-              le.AudioDevice(
-                id: 'scarlett',
-                name: 'Scarlett 4i4',
-                isDefault: false,
-                isInput: false,
-              ),
-              le.AudioDevice(
-                id: 'scarlett',
-                name: 'Scarlett 4i4',
-                isDefault: false,
-                isInput: true,
-              ),
-            ]
-            ..startResults = [EngineResult.device, EngineResult.ok];
-
-          final result = await tryAutoStartEngine(
-            mixSettings: testMixSettings(repository, settings: settings),
-            repository: repository,
-            settings: settings,
-          );
-
-          expect(result.started, isTrue);
-          expect(engine.startCalls, 2);
-          expect(
-            engine.lastConfig,
-            const le.EngineConfig(
-              playbackDeviceId: 'scarlett',
-              captureDeviceId: 'scarlett',
+      test('console first-run keeps the pin at its own rate and period when it '
+          'refuses 48 kHz / 32 (#1529)', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+        engine
+          ..devices = const [
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: false,
             ),
-          );
-          final saved = await settings.loadAudioConfig();
-          expect(saved?.playbackDeviceId, 'scarlett');
-          expect(saved?.captureDeviceId, 'scarlett');
-        },
-      );
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: true,
+            ),
+          ]
+          ..startResults = [EngineResult.device, EngineResult.ok];
+
+        final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isTrue);
+        expect(engine.startCalls, 2);
+        expect(
+          engine.lastConfig,
+          const le.EngineConfig(
+            playbackDeviceId: 'scarlett',
+            captureDeviceId: 'scarlett',
+          ),
+        );
+        final saved = await settings.loadAudioConfig();
+        expect(saved?.playbackDeviceId, 'scarlett');
+        expect(saved?.captureDeviceId, 'scarlett');
+      });
 
       test('macOS/Linux retries the system default at its own rate and '
           'period when it refuses 48 kHz / 32 (#1529)', () async {
@@ -1162,46 +1147,43 @@ void main() {
         },
       );
 
-      test(
-        'falls back to system default when heal pin open fails',
-        () async {
-          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-          engine
-            ..devices = const [
-              le.AudioDevice(
-                id: 'scarlett',
-                name: 'Scarlett 4i4',
-                isDefault: false,
-                isInput: false,
-              ),
-              le.AudioDevice(
-                id: 'scarlett',
-                name: 'Scarlett 4i4',
-                isDefault: false,
-                isInput: true,
-              ),
-            ]
-            ..startResults = [EngineResult.device, EngineResult.ok];
-          await settings.saveAudioConfig(
-            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
-          );
+      test('falls back to system default when heal pin open fails', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+        engine
+          ..devices = const [
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: false,
+            ),
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: true,
+            ),
+          ]
+          ..startResults = [EngineResult.device, EngineResult.ok];
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+        );
 
-          final result = await tryAutoStartEngine(
-            mixSettings: testMixSettings(repository, settings: settings),
-            repository: repository,
-            settings: settings,
-          );
+        final result = await tryAutoStartEngine(
+          mixSettings: testMixSettings(repository, settings: settings),
+          repository: repository,
+          settings: settings,
+        );
 
-          expect(result.started, isTrue);
-          expect(result.recoveryConfig, isNull);
-          expect(engine.startCalls, 2);
-          expect(engine.lastConfig?.playbackDeviceId, '');
-          expect(engine.lastConfig?.captureDeviceId, '');
-          final saved = await settings.loadAudioConfig();
-          expect(saved?.playbackDeviceId, '');
-          expect(saved?.captureDeviceId, '');
-        },
-      );
+        expect(result.started, isTrue);
+        expect(result.recoveryConfig, isNull);
+        expect(engine.startCalls, 2);
+        expect(engine.lastConfig?.playbackDeviceId, '');
+        expect(engine.lastConfig?.captureDeviceId, '');
+        final saved = await settings.loadAudioConfig();
+        expect(saved?.playbackDeviceId, '');
+        expect(saved?.captureDeviceId, '');
+      });
 
       test(
         'healed pin skips loopback auto-measure even when loopback is routable',
@@ -1246,10 +1228,7 @@ void main() {
 
     test('restores saved per-track routing on launch', () async {
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
       // Save lane-0 routing for channel 1 only; channel 0 has none (exercises
       // the null-guard skip in the restore loop).
@@ -1360,31 +1339,28 @@ void main() {
       for (var channel = 0; channel < 8; channel++)
         'tempo.length_preset.$channel',
     ]) {
-      test(
-        'invalid saved $key stages no length and never rewrites intent; '
-        'audio still opens',
-        () async {
-          store.values['looper.default_length_bars'] = 4;
-          store.values[key] = key == 'looper.mode' ? 5 : 65;
-          final before = Map<String, Object>.of(store.values);
-          final result = await tryAutoStartEngine(
-            repository: repository,
-            settings: settings,
-            mixSettings: testMixSettings(repository, settings: settings),
-          );
-          // Only Record length is unavailable; its owner's Retry repairs it.
-          expect(result.started, isTrue);
-          expect(engine.startCalls, 1);
-          expect(engine.stopCalls, 0);
-          expect(repository.sessionTransport.defaultLengthPresetBars, 0);
-          expect(repository.trackLengthPresetOverrides, isEmpty);
-          // The stored length keys are untouched; a started first run saves
-          // its audio configuration beside them.
-          for (final entry in before.entries) {
-            expect(store.values[entry.key], entry.value);
-          }
-        },
-      );
+      test('invalid saved $key stages no length and never rewrites intent; '
+          'audio still opens', () async {
+        store.values['looper.default_length_bars'] = 4;
+        store.values[key] = key == 'looper.mode' ? 5 : 65;
+        final before = Map<String, Object>.of(store.values);
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+          mixSettings: testMixSettings(repository, settings: settings),
+        );
+        // Only Record length is unavailable; its owner's Retry repairs it.
+        expect(result.started, isTrue);
+        expect(engine.startCalls, 1);
+        expect(engine.stopCalls, 0);
+        expect(repository.sessionTransport.defaultLengthPresetBars, 0);
+        expect(repository.trackLengthPresetOverrides, isEmpty);
+        // The stored length keys are untouched; a started first run saves
+        // its audio configuration beside them.
+        for (final entry in before.entries) {
+          expect(store.values[entry.key], entry.value);
+        }
+      });
     }
 
     test('startup waits for the eighth fixed-track length read', () async {
@@ -1545,10 +1521,7 @@ void main() {
 
     test('restores saved per-lane effects on launch', () async {
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
       // Track 0 lane 0 = a two-effect chain (filter, then delay with a feedback
       // override); track 1 has no saved chain (exercises the empty skip).
@@ -1596,10 +1569,7 @@ void main() {
     test('a LEGACY restored chain persists its freshly-minted slot ids back '
         '(mint-once, A9)', () async {
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
       // Pre-FX-v3 payload: bare array, no slot ids anywhere.
       await settings.saveLaneEffects(
@@ -1639,10 +1609,7 @@ void main() {
     test('restores an ENVELOPE lane chain — flag + inheritance meta ride the '
         'one key (R15) — plus the track/master chains', () async {
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
       await settings.saveLaneEffects(
         0,
@@ -1744,10 +1711,7 @@ void main() {
 
     test('restores a saved multi-lane setup on launch', () async {
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
       // Track 0 has two lanes; lane 1 carries its own input, output, mix, and
       // effect chain that must be restored alongside lane 0.
@@ -1793,10 +1757,7 @@ void main() {
 
     test('starts the engine with the saved config', () async {
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 96000,
-          bufferFrames: 256,
-        ),
+        const StoredAudioConfig(sampleRate: 96000, bufferFrames: 256),
       );
 
       final started = await tryAutoStartEngine(
@@ -1989,10 +1950,7 @@ void main() {
     test('leaves the record offset to the switch out of the warm-up '
         '(#1533)', () async {
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
       // Saved under the profile the running engine reports (the fake's default
       // snapshot has sample rate / buffer 0, device 'Fake Device').
@@ -2023,10 +1981,7 @@ void main() {
           deviceName: 'BlackHole',
         );
         await settings.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-          ),
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
         );
         // No saved latency offset for this profile.
 
@@ -2041,36 +1996,33 @@ void main() {
       },
     );
 
-    test(
-      'a saved capture device wins over loopback auto-routing',
-      () async {
-        // A routable loopback exists (as on any PipeWire host), but the saved
-        // config pins a real input device: capture must not be auto-routed to
-        // the loopback.
-        engine.loopback = const le.LoopbackInfo(
-          available: true,
-          kind: le.LoopbackKind.virtualDevice,
-          deviceName: 'BlackHole',
-        );
-        await settings.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-            captureDeviceId: 'clarett-in',
-          ),
-        );
+    test('a saved capture device wins over loopback auto-routing', () async {
+      // A routable loopback exists (as on any PipeWire host), but the saved
+      // config pins a real input device: capture must not be auto-routed to
+      // the loopback.
+      engine.loopback = const le.LoopbackInfo(
+        available: true,
+        kind: le.LoopbackKind.virtualDevice,
+        deviceName: 'BlackHole',
+      );
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          captureDeviceId: 'clarett-in',
+        ),
+      );
 
-        await tryAutoStartEngine(
-          mixSettings: testMixSettings(repository, settings: settings),
-          repository: repository,
-          settings: settings,
-        );
+      await tryAutoStartEngine(
+        mixSettings: testMixSettings(repository, settings: settings),
+        repository: repository,
+        settings: settings,
+      );
 
-        expect(engine.lastConfig?.useLoopbackCapture, isFalse);
-        expect(engine.lastConfig?.captureDeviceId, 'clarett-in');
-        expect(engine.measureLatencyCalls, 0);
-      },
-    );
+      expect(engine.lastConfig?.useLoopbackCapture, isFalse);
+      expect(engine.lastConfig?.captureDeviceId, 'clarett-in');
+      expect(engine.measureLatencyCalls, 0);
+    });
 
     test(
       'never measures by itself on an interface with loopback channels (Q2)',
@@ -2092,10 +2044,7 @@ void main() {
           tracks: _emptyTrackSlots,
         );
         await settings.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-          ),
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
         );
 
         await tryAutoStartEngine(
@@ -2111,10 +2060,7 @@ void main() {
     test('returns false when the engine fails to start', () async {
       engine.startResult = EngineResult.device;
       await settings.saveAudioConfig(
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
 
       final started = await tryAutoStartEngine(
@@ -2328,9 +2274,8 @@ void main() {
       );
       // SessionCubit durably writes the landed rig as one canonical mix. This
       // direct domain load bypasses that cubit, so perform its storage step.
-      await SettingsMixPersistence(
-        settings,
-      ).write('Fake Device', repository.mixSettingsSnapshot);
+      await SettingsMixPersistence(settings)
+          .write('Fake Device', repository.mixSettingsSnapshot);
       await persistLoadedRig();
 
       final rebooted = await coldBoot();
@@ -2344,10 +2289,7 @@ void main() {
       // write-back re-persisted `lane_count.0` too — the boot restore bounds
       // its lane loop by that key, so a stale count would drop this chain
       // even though it was written correctly.
-      expect(
-        (await settings.loadMixSettings('Fake Device')).laneCounts[0],
-        2,
-      );
+      expect((await settings.loadMixSettings('Fake Device')).laneCounts[0], 2);
       expect(
         rebooted.fxRecipes[(FxOwner.lane, 0, 1)]!.slots.single.type.code,
         TrackEffectType.echo.code,

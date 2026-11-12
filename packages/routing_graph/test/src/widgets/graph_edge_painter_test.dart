@@ -18,9 +18,9 @@ void main() {
 
     test('repaints when the edge list differs', () {
       final a = GraphEdgePainter(const [edge]);
-      final b = GraphEdgePainter(
-        const [GraphEdge(Offset.zero, Offset(20, 20), color: _wet)],
-      );
+      final b = GraphEdgePainter(const [
+        GraphEdge(Offset.zero, Offset(20, 20), color: _wet),
+      ]);
       expect(a.shouldRepaint(b), isTrue);
     });
 

@@ -270,37 +270,34 @@ void main() {
       },
     );
 
-    test(
-      'never cancels a Count-in the player started between the poll and the '
-      'retry',
-      () async {
-        final repo = start();
-        engine.recordResult = EngineResult.notReady;
+    test('never cancels a Count-in the player started between the poll and the '
+        'retry', () async {
+      final repo = start();
+      engine.recordResult = EngineResult.notReady;
 
-        expect(repo.record(), EngineResult.notReady);
-        // The player's own second press was deferred into a count-in by the
-        // callback after the poll's snapshot and before record()'s.
-        final before = engine.snapshotCalls;
-        engine
-          ..recordResult = EngineResult.ok
-          ..afterSnapshot = () {
-            if (engine.snapshotCalls == before + 1) {
-              engine.nextSnapshot = _rig(
-                2,
-                framesProcessed: 128,
-                countInCancelGrace: true,
-              );
-            }
-          };
-        await poll();
-        engine.afterSnapshot = null;
+      expect(repo.record(), EngineResult.notReady);
+      // The player's own second press was deferred into a count-in by the
+      // callback after the poll's snapshot and before record()'s.
+      final before = engine.snapshotCalls;
+      engine
+        ..recordResult = EngineResult.ok
+        ..afterSnapshot = () {
+          if (engine.snapshotCalls == before + 1) {
+            engine.nextSnapshot = _rig(
+              2,
+              framesProcessed: 128,
+              countInCancelGrace: true,
+            );
+          }
+        };
+      await poll();
+      engine.afterSnapshot = null;
 
-        expect(engine.cancelledArms, isEmpty, reason: 'that is their press');
-        expect(recordCalls(), 1);
-        expect(refusals, isEmpty);
-        expect(repo.recordRetryPending(0), isFalse);
-      },
-    );
+      expect(engine.cancelledArms, isEmpty, reason: 'that is their press');
+      expect(recordCalls(), 1);
+      expect(refusals, isEmpty);
+      expect(repo.recordRetryPending(0), isFalse);
+    });
 
     test('a refusal that is not a fresh capture is neither retried nor '
         'reported', () async {

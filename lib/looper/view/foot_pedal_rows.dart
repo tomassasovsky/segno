@@ -10,7 +10,7 @@ import 'package:segno/control/view/console_pedal_layout.dart';
 /// Fills the foot view's frame; `pedal` builds each pedal's face and caption.
 class FootPedalRows extends StatelessWidget {
   /// Creates a [FootPedalRows].
-  const FootPedalRows({required this.pedal, super.key});
+  const new({required this.pedal, super.key});
 
   /// Builds the pedal drawn for a button.
   final Widget Function(PedalButton button) pedal;

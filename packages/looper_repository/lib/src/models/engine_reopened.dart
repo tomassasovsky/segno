@@ -13,7 +13,7 @@ import 'package:segno_engine/segno_engine.dart' show ReopenOutcome;
 /// cleared — the saved Session is the way back.
 class EngineReopened extends Equatable {
   /// Creates an [EngineReopened].
-  const EngineReopened({
+  const new({
     required this.outcome,
     required this.droppedTracks,
     required this.previousSampleRate,

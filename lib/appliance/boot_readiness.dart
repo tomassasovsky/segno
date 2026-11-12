@@ -72,7 +72,7 @@ BootAudio bootAudioOf({
 /// samples counted it, and `audio` was not `refused` or `stalled` in both.
 class BootReadiness {
   /// Creates a [BootReadiness]; nothing is sent until [start].
-  BootReadiness({
+  new({
     required this._notify,
     required this._firstFrame,
     required this._audio,

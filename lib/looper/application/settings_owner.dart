@@ -111,7 +111,7 @@ Future<Map<Object?, C>> _readAll<V extends Object, C>(
 /// Retry re-requests and a restart replays. Nothing here stops audio.
 class SettingsOwner<V extends Object, C> {
   /// Owns [family] over [repository]'s session and device lifetime.
-  SettingsOwner({
+  new({
     required LooperRepository repository,
     required SettingsFamily<V, C> family,
   }) : _repository = repository,
@@ -419,10 +419,7 @@ class SettingsOwner<V extends Object, C> {
 
   Future<T> _queue<T>(Future<T> Function() operation) {
     final result = _tail.then((_) => operation());
-    _tail = result.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    );
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
 
@@ -549,9 +546,7 @@ class SettingsOwner<V extends Object, C> {
       } on Object catch (error) {
         // A read that fails after the lifetime moved on reports nothing.
         if (!current()) return const SettingOutcome(SettingStatus.superseded);
-        return _report(
-          SettingOutcome(SettingStatus.rejected, error: error),
-        );
+        return _report(SettingOutcome(SettingStatus.rejected, error: error));
       }
       if (!current()) return const SettingOutcome(SettingStatus.superseded);
       try {
@@ -816,7 +811,7 @@ class SettingsOwner<V extends Object, C> {
 }
 
 final class _Write<V> {
-  _Write(
+  new(
     this.change, {
     required this.lifetime,
     this.address,
@@ -838,6 +833,6 @@ final class _Write<V> {
 /// A queued write not yet started; a write to the same address with the same
 /// edit replaces its content.
 final class _Slot<V> {
-  _Slot(this.write);
+  new(this.write);
   _Write<V> write;
 }

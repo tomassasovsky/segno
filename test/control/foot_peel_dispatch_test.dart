@@ -26,7 +26,7 @@ import '../helpers/helpers.dart';
 
 /// Peels layers and publishes the depths like the engine does.
 class _Engine extends FakeAudioEngine {
-  _Engine(this.layers);
+  new(this.layers);
 
   /// Peelable overdub layers per recorded channel; absent = empty track.
   final Map<int, int> layers;
@@ -88,7 +88,7 @@ class _Engine extends FakeAudioEngine {
 }
 
 class _Midi extends MidiDeviceRepository {
-  _Midi(SettingsRepository settings)
+  new(SettingsRepository settings)
     : super(captures: null, settings: settings, pollInterval: Duration.zero);
   final inputs = StreamController<MidiInputMessage>.broadcast();
   MidiInputSession get session => const MidiInputSession('test-midi', 1);
@@ -118,7 +118,7 @@ class _Midi extends MidiDeviceRepository {
 Map<int, int> _defaultLayers() => {0: 2, 1: 1, 3: 0, 4: 1};
 
 class _Rig {
-  _Rig({Map<int, int>? layers, ExternalJackSetup? jack})
+  new({Map<int, int>? layers, ExternalJackSetup? jack})
     : engine = _Engine(layers ?? _defaultLayers()) {
     engine.publish();
     if (jack != null) {

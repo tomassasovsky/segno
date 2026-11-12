@@ -15,7 +15,7 @@ import '../../helpers/helpers.dart';
 import '../../storage/helpers/storage_rig.dart';
 
 class _MockRecorder extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 void main() {
   group(RecordingSaveTo, () {

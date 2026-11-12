@@ -11,13 +11,13 @@ import 'package:segno/looper/model/tempo_state.dart';
 import 'package:segno/visualizer/application/readout_commands.dart';
 import 'package:segno/visualizer/readout_command.dart';
 
-class _Looper extends Mock implements LooperRepository {}
+class _Looper extends Mock implements LooperRepository;
 
-class _Tempo extends Mock implements TempoSettings {}
+class _Tempo extends Mock implements TempoSettings;
 
-class _Record extends Mock implements RecordSettings {}
+class _Record extends Mock implements RecordSettings;
 
-class _Timing extends Mock implements RecordTimingSettings {}
+class _Timing extends Mock implements RecordTimingSettings;
 
 void main() {
   late _Looper repository;
