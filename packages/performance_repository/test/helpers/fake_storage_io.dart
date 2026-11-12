@@ -27,6 +27,9 @@ class FakeStorageIo implements StorageIo {
   void syncDirectory(String path) => synced.add(path);
 
   @override
+  void syncVolume(String path) => throw UnimplementedError();
+
+  @override
   RenameOutcome renameWithoutReplacing(String from, String to) =>
       throw UnimplementedError();
 }

@@ -140,14 +140,22 @@ class FakeDrive extends Fake implements StorageRepository {
     return target;
   }
 
-  /// Every directory synced, relative to the drive's root, in order.
-  final List<String> synced = [];
+  /// The drive's files at each volume sync, in order.
+  final List<List<String>> volumeSyncs = [];
+
+  /// When set, every volume sync waits for it after it records the drive:
+  /// an export held at its last step.
+  Completer<void>? syncHold;
+
+  /// When set, every volume sync fails with it after it records the drive.
+  StorageFailure? failOnSync;
 
   @override
-  Future<void> syncDirectory(
-    StorageDestination destination,
-    String relativePath,
-  ) async => synced.add(relativePath);
+  Future<void> syncVolume(StorageDestination destination) async {
+    volumeSyncs.add(files);
+    if (syncHold case final hold?) await hold.future;
+    if (failOnSync case final failure?) throw failure;
+  }
 
   /// Every file on the drive, relative to its root, sorted.
   List<String> get files {

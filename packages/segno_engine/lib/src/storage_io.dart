@@ -91,6 +91,18 @@ abstract interface class StorageIo {
   /// a publication as durable when it is not.
   void syncDirectory(String path);
 
+  /// Makes everything written to the volume that holds the directory at
+  /// [path] durable, and flushes the device's cache (`syncfs(2)` and fsync
+  /// on Linux).
+  ///
+  /// What a removable FAT volume needs before a write is reported done: a
+  /// rename there writes the new entry with size 0, and the file's size
+  /// reaches it only when its inode is written back, which [syncDirectory]
+  /// does not do (#1797). Throws a [FileSystemException], carrying the OS
+  /// error, when the directory cannot be opened or the sync fails, a write
+  /// the device lost earlier included.
+  void syncVolume(String path);
+
   /// Renames [from] to [to] only if nothing is at [to], as one atomic step.
   ///
   /// A copy publishes its part this way, so a name another writer took
@@ -201,6 +213,26 @@ class NativeStorageIo implements StorageIo {
         final errno = errorPtr.value;
         throw FileSystemException(
           'could not sync the directory',
+          path,
+          errno == 0 ? null : OSError('sync failed', errno),
+        );
+      }
+    } finally {
+      calloc.free(errorPtr);
+      malloc.free(pathPtr);
+    }
+  }
+
+  @override
+  void syncVolume(String path) {
+    final pathPtr = path.toNativeUtf8();
+    final errorPtr = calloc<Int32>();
+    try {
+      final code = le_fs_sync_volume_errno(pathPtr.cast(), errorPtr);
+      if (!EngineResult.fromCode(code).isOk) {
+        final errno = errorPtr.value;
+        throw FileSystemException(
+          'could not sync the volume',
           path,
           errno == 0 ? null : OSError('sync failed', errno),
         );

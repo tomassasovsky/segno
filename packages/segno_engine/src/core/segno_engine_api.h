@@ -4296,6 +4296,19 @@ LE_EXPORT int32_t le_fs_sync_dir(const char* path);
  * LE_OK. */
 LE_EXPORT int32_t le_fs_sync_dir_errno(const char* path, int32_t* out_errno);
 
+/* Makes everything written to the volume that holds `path` durable, then
+ * flushes the device's cache: syncfs(2) and fsync of `path` on Linux,
+ * F_FULLFSYNC on macOS, fsync elsewhere on POSIX; on Windows, as
+ * le_fs_sync_dir. A directory sync is not enough on vfat, where a rename
+ * writes the new entry with size 0 and the file's inode fills it in only
+ * when written back (#1797). `path` must be a directory on that volume.
+ * Returns LE_OK; LE_ERR_INVALID for a NULL or empty `path`; LE_ERR_DEVICE
+ * when it cannot be opened or the sync fails (an earlier write the device
+ * lost included), with *out_errno (when not NULL) the OS error, 0 on
+ * LE_OK. */
+LE_EXPORT int32_t le_fs_sync_volume_errno(const char* path,
+                                          int32_t* out_errno);
+
 /* Renames `from` to `to` (both UTF-8) only if nothing is at `to`, as one
  * atomic step: renameat2(RENAME_NOREPLACE) on Linux, renamex_np(RENAME_EXCL)
  * on macOS, MoveFileExW without MOVEFILE_REPLACE_EXISTING on Windows. A copy
