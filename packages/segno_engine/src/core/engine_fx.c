@@ -603,6 +603,7 @@ static void le_pv_reset_runtime(le_fx_state* fx, int slot, int chan,
     le_psola_pass* ps = le_ps(o);
     ps->phase = 0;
     ps->credit = 0;
+    le_oa(o)->cached = 0; /* the ratio and the dip's gain: none yet */
   }
   o->frame_ratio = 1.0f;
   o->frame_formants_move = 0;
@@ -831,9 +832,10 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
    * is its own). */
   const float reach = ratio > 1.0f ? (float)LE_PV_BINS / ratio : (float)LE_PV_BINS;
   const int split = (int)(0.4f * reach);
-  int np = o->shift_np;
-  int start = o->shift_start;
-  int r = o->shift_r;
+  le_oct_aux* aux = le_oa(o);
+  int np = aux->shift_np;
+  int start = aux->shift_start;
+  int r = aux->shift_r;
   if (part == 0) {
     for (int k = 0; k < LE_PV_BINS; ++k) {
       syn_mag[k] = 0.0f;
@@ -947,9 +949,9 @@ static void le_pv_shift_into(le_octaver_state* o, float ratio, float* sum_phase,
     }
     start = end;
   }
-  o->shift_np = np;
-  o->shift_r = r;
-  o->shift_start = start;
+  aux->shift_np = np;
+  aux->shift_r = r;
+  aux->shift_start = start;
   if (part == 0) return;
   for (int b = 0; b < LE_PV_BINS; ++b) {
     if (by_owner) syn_mag[b] *= syn_keep[b];
@@ -1208,7 +1210,8 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
  *
  * The three steps below ARE le_psola_detect_band, split at the two points a
  * caller can pause at: before the difference function and after it. The
- * tuner and the PSOLA octaver run le_yin_step a slice at a time across
+ * tuner (le_yin_step) and the PSOLA octaver and the Dual Octaver's band
+ * (le_yin_step_lanes, the same loop) run it a slice at a time across
  * callbacks. The
  * arithmetic is byte-identical either way, which is the whole point of the
  * split — there is no second copy of the detector to keep in step. */
@@ -1309,8 +1312,6 @@ int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
   p->dp = dp;
   p->tau = 1;
   p->cum = 0.0;
-  p->group_lo = 0;
-  p->group_n = 0; /* a new window: nothing worked out ahead */
   p->minlag = 0;
   p->maxlag = 0;
   p->integ = 0;
@@ -1338,23 +1339,35 @@ int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
 }
 
 int le_yin_step(le_yin_pass* p, long budget) {
+  return le_yin_step_lanes(p, budget, NULL);
+}
+
+int le_yin_step_lanes(le_yin_pass* p, long budget, double* sums) {
   /* Difference function d(tau), then its cumulative-mean normalization d'(tau).
    * One whole lag always runs, however small the budget: a caller whose budget
    * is under one integration length must still make progress, or the pass
    * stalls forever. One lag is bounded by n/2 inner iterations. */
   while (p->tau <= p->maxlag) {
     const int tau = p->tau;
-    if (tau < p->group_lo || tau >= p->group_lo + p->group_n) {
-      /* The next lags, worked out together (le_lag_sums); the pass still
-       * takes them one at a time below, so its budget and its results are
-       * the one-lag pass's. */
-      int g = p->maxlag - tau + 1;
-      if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
-      le_lag_sums(p->x, p->integ, tau, g, p->group);
-      p->group_lo = tau;
-      p->group_n = g;
+    double one;
+    double* group = &one;
+    int at = 0;
+    if (sums == NULL) {
+      le_lag_sums(p->x, p->integ, tau, 1, &one);
+    } else {
+      /* The lags in groups from 1 (every pass starts there and takes them
+       * in order), each group worked out together (le_lag_sums) when the
+       * pass reaches its first lag; the pass still takes them one at a
+       * time below, so its budget and its results are the one-lag pass's. */
+      at = (tau - 1) % LE_YIN_GROUP;
+      if (at == 0) {
+        int g = p->maxlag - tau + 1;
+        if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
+        le_lag_sums(p->x, p->integ, tau, g, sums);
+      }
+      group = sums;
     }
-    const double sum = p->group[tau - p->group_lo];
+    const double sum = group[at];
     p->cum += sum;
     p->dp[tau] = p->cum > 0.0 ? (float)(sum * (double)tau / p->cum) : 1.0f;
     ++p->tau;
@@ -1435,7 +1448,6 @@ int le_refine_begin(le_lag_refine* r, float coarse, int span, int n) {
   r->integ = n - hi;
   r->tau = lo;
   r->best = 0;
-  r->ready = 0;
   return 1;
 }
 
@@ -1443,14 +1455,15 @@ int le_refine_step(le_lag_refine* r, const float* x, long budget) {
   while (r->tau <= r->hi) {
     const int tau = r->tau;
     const int k = tau - r->lo;
-    if (k >= r->ready) {
-      /* The next lags' sums together (le_lag_sums), each as one lag's. */
+    if (k % LE_YIN_GROUP == 0) {
+      /* The lags in groups from lo, each worked out together (le_lag_sums)
+       * when the pass reaches its first lag, each sum as one lag's, kept
+       * in d[] until its step below takes it. */
       double s[LE_YIN_GROUP];
       int g = r->hi - tau + 1;
       if (g > LE_YIN_GROUP) g = LE_YIN_GROUP;
       le_lag_sums(x, r->integ, tau, g, s);
       for (int j = 0; j < g; ++j) r->d[k + j] = (float)s[j];
-      r->ready = k + g;
     }
     if (tau == r->lo || r->d[k] < r->d[r->best]) r->best = k;
     ++r->tau;
@@ -1483,7 +1496,8 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
    * the answer now. A negative budget always completes, so the check can only
    * ever pass -- it is here so the one-shot path states the precondition
    * le_yin_finish relies on rather than assuming it. */
-  if (!le_yin_step(&p, -1)) return 0;
+  double sums[LE_YIN_GROUP];
+  if (!le_yin_step_lanes(&p, -1, sums)) return 0;
   return le_yin_finish(&p, out_period, out_voiced);
 }
 
@@ -1605,7 +1619,7 @@ static void le_psola_pass_tick(le_octaver_state* o, const float* fifo, int end,
   while (ps->credit > 0 && ps->phase != 0) {
     if (ps->phase == 1) {
       const int32_t was = ps->yin.tau;
-      const int done = le_yin_step(&ps->yin, ps->credit);
+      const int done = le_yin_step_lanes(&ps->yin, ps->credit, ps->yin_sums);
       ps->credit -= (ps->yin.tau - was) * ps->yin.integ;
       if (done) le_psola_coarse_done(o, fifo, cap);
       continue;
@@ -1943,7 +1957,7 @@ static void le_low_detect(le_oct_low* L, int analysis) {
   if (L->credit > L->work) L->credit = L->work; /* no banking while idle */
   while (L->credit > 0 && L->busy) {
     const int32_t was = L->yin.tau;
-    const int done = le_yin_step(&L->yin, L->credit);
+    const int done = le_yin_step_lanes(&L->yin, L->credit, L->yin_sums);
     L->credit -= (L->yin.tau - was) * L->yin.integ;
     if (done) {
       float period = 0.0f;
@@ -2186,16 +2200,17 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   /* The ratio and the dip's gain, worked out again only when the shift or
    * the dip moves (#1755): the same calls on the same values give the same
    * results, and held, each was two library calls a sample. */
-  if (!o->cached || o->ratio_shift != o->sm_shift) {
-    o->ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
-    o->ratio_shift = o->sm_shift;
+  le_oct_aux* aux = le_oa(o);
+  if (!aux->cached || aux->ratio_shift != o->sm_shift) {
+    aux->ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+    aux->ratio_shift = o->sm_shift;
   }
-  if (!o->cached || o->dip_xfade != o->xfade) {
-    o->dip_g = sinf(o->xfade * 0.5f * LE_PI);
-    o->dip_xfade = o->xfade;
+  if (!aux->cached || aux->dip_xfade != o->xfade) {
+    aux->dip_g = sinf(o->xfade * 0.5f * LE_PI);
+    aux->dip_xfade = o->xfade;
   }
-  o->cached = 1;
-  const float ratio = o->ratio;
+  aux->cached = 1;
+  const float ratio = aux->ratio;
   /* The Dual Octaver's Octave 2 (p7, its level; #1464) is Octave 1 squared,
    * two octaves where Octave 1 is one, so it switches with Octave 1's
    * latched shift in the dip, its trim with it. */
@@ -2245,7 +2260,7 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   const float dry = buf[dry_idx];
 
   /* Equal-power gain-dip envelope on the wet leg (g == 1 when steady). */
-  const float g = o->dip_g;
+  const float g = aux->dip_g;
   const float mix = o->sm_mix;
   /* The phase vocoder applies the voices' levels in its synthesis (two
    * voices share one accumulator); PSOLA's one voice takes it here. */
@@ -2337,7 +2352,6 @@ void le_fx_entry_reset(le_fx_state* fx, int slot, int32_t type) {
     o->cur_mode = 0;  /* phase vocoder, until the settings say otherwise */
     o->fresh = LE_PV_LATENCY;
     o->xfade = 1.0f;  /* steady (no gain dip) */
-    o->cached = 0;    /* the ratio and the dip's gain: none worked out yet */
     if (!hops) continue;
     le_pv_reset_runtime(fx, slot, chan, le_oct_seeded_ticks(fx, slot));
     /* A retyped slot's band starts with nothing heard: it heard nothing
