@@ -844,7 +844,8 @@ void main() {
     // #1724's limit run (#1729). With #1755's pitch kernels it ran 7 and 8
     // tracks with none (120 s each, the callback's worst service 441 and
     // 432 us of 666). With the drives and the amp cheaper too (#1755),
-    // the rule admits 9.
+    // 8 tracks ran with none again (418 and 394 us); the rule admits 9,
+    // past the bench's 8-track rig.
     test("at 48 kHz / 32 with two workers, nine of Ed's Racks fit on "
         'tracks and ten do not; four on inputs leave room for six on '
         'tracks, not seven (#1729, #1755)', () {
