@@ -131,7 +131,7 @@ check "config.txt loads the ramoops overlay with a console copy" yes \
     "$(grep -F 'RPI_EXTRA_CONFIG:append' "$KAS_RPI5" | grep -F 'dtoverlay=ramoops,' | grep -q 'console-size=0x[0-9a-f]*[1-9a-f]' && echo yes || echo no)"
 
 echo "kernel errors reach the pstore console copy"
-cmdline=$(grep -E '^[[:space:]]*CMDLINE:append' "$KAS_COMMON")
+cmdline=$(grep -hE '^[[:space:]]*CMDLINE:append' "$KAS_COMMON" "$KAS_RPI5")
 check "loglevel=4 (errors and worse reach the consoles)" yes \
     "$(printf '%s\n' "$cmdline" | grep -qE '(^| |")loglevel=4( |"|$)' && echo yes || echo no)"
 check "exactly one loglevel=" 1 \
