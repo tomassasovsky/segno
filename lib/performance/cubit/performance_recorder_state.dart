@@ -26,6 +26,16 @@ enum PerformanceStopReason {
   /// The USB drive the take was recording to went away (pulled, or failed)
   /// while it recorded (#1177). The loops keep playing.
   volumeLost,
+
+  /// Nothing happened for [PerformanceRepository.idleStopAfter]: no
+  /// press, no transport change, no edit, no input above the playing level
+  /// (#1767). Everything recorded is kept.
+  idle,
+
+  /// The take reached its longest length
+  /// ([PerformanceRepository.longestTake], #1767). Everything recorded
+  /// is kept.
+  lengthLimit,
 }
 
 /// Why a stopped take ended on idle instead of Completed (#1639).
@@ -240,6 +250,7 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
     this.name,
     this.refusal = 0,
     this.refusedWith,
+    this.stoppedOnItsOwn = false,
   });
 
   /// Render completion, `0..100`.
@@ -259,8 +270,19 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// engine's render ends, when the guard table may be what refused it.
   final PerformanceArmRefusal? refusedWith;
 
+  /// The take stopped on its own, with nobody playing or at its longest
+  /// length (#1767): nobody is there to watch it render, so the capture
+  /// dialog does not open for it; the player is told when they come back.
+  final bool stoppedOnItsOwn;
+
   @override
-  List<Object?> get props => [percent, name, refusal, refusedWith];
+  List<Object?> get props => [
+    percent,
+    name,
+    refusal,
+    refusedWith,
+    stoppedOnItsOwn,
+  ];
 }
 
 /// The capture is fully finished: bundle finalized, render (and `.als`

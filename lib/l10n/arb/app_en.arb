@@ -7954,6 +7954,23 @@
     "@perfStoppedSlowStorage": {
         "description": "Completion banner when a capture stopped because the storage fell behind and a capture buffer overflowed."
     },
+    "perfStoppedIdle": "{minutes, plural, =1{Capture stopped after 1 idle minute.} other{Capture stopped after {minutes} idle minutes.}}",
+    "@perfStoppedIdle": {
+        "description": "A capture stopped on its own because nothing happened for that long (no press, no input above the playing level, #1767). Said on the completion banner and, when the player comes back, as a passing notice; perfStoppedKept follows it.",
+        "placeholders": {
+            "minutes": {
+                "type": "int"
+            }
+        }
+    },
+    "perfStoppedLengthLimit": "Capture reached its longest length.",
+    "@perfStoppedLengthLimit": {
+        "description": "A capture stopped on its own at its longest length (3 hours, #1767). Said like perfStoppedIdle; perfStoppedKept follows it."
+    },
+    "perfStoppedKept": "Everything recorded is kept.",
+    "@perfStoppedKept": {
+        "description": "The sentence after perfStoppedIdle and perfStoppedLengthLimit."
+    },
     "perfTakesNotRecovered": "{count, plural, =1{This take could not be recovered.} other{{count} takes could not be recovered.}}",
     "@perfTakesNotRecovered": {
         "description": "Shown once at startup when the boot salvage could not recover one or more crashed captures; their files stay where they are (perfTakesNotRecoveredBody). Its action, Try again (consoleTryAgain), salvages them again.",

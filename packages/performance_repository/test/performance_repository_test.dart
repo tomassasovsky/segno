@@ -211,6 +211,15 @@ void main() {
       expect(engine.lastPerfTarget!.reserveBytes, 1000000000);
     });
 
+    test(
+      'a take stops on its own after 20 idle minutes and at 3 hours (#1767)',
+      () async {
+        await repo.arm();
+        expect(engine.lastPerfTarget!.idleStopSeconds, 20 * 60);
+        expect(engine.lastPerfTarget!.maxSeconds, 3 * 60 * 60);
+      },
+    );
+
     test('a take on a USB drive keeps no reserve there (#1177)', () async {
       final reserved = PerformanceRepository(
         storageIo: fakeStorageIo,
@@ -3484,6 +3493,34 @@ void main() {
           expect(engine.lastRenderCaptureDir, dir);
         },
       );
+
+      test(
+        'a bundle whose marks cannot be written or read neither throws nor '
+        'is lost: still counted, its files kept',
+        () async {
+          final dir = seedCrashed('perf-crashed');
+          interrupted(dir, count: 2);
+          Process.runSync('chmod', ['555', dir]);
+          addTearDown(() => Process.runSync('chmod', ['755', dir]));
+
+          await bootRepo.runBootRecovery();
+          expect(bootRepo.unrecoveredTakes, [dir]);
+
+          await bootRepo.retryUnrecovered();
+          expect(Directory(dir).existsSync(), isTrue);
+          expect(File('$dir/master-001.wav').existsSync(), isTrue);
+        },
+      );
+
+      test('an attempt record that does not read counts as one', () async {
+        final dir = seedCrashed('perf-crashed');
+        interrupted(dir, count: 1);
+        final record = '$dir/${PerformanceRepository.recoveryAttemptName}';
+        Process.runSync('chmod', ['000', record]);
+        addTearDown(() => Process.runSync('chmod', ['644', record]));
+
+        expect(await bootRepo.hasBootRecoveryWork(), isTrue);
+      });
 
       test(
         'retryUnrecovered while a render still runs salvages nothing, and '

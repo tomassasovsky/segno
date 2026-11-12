@@ -633,14 +633,19 @@ void onPerformanceRecorderState(
   // Completed opens it for a capture the operator hid (or one whose render
   // was instant). While it is already up it morphs in place — the show
   // function refuses to stack a second copy.
+  // A take that stopped on its own (#1767) stopped with nobody there: no
+  // dialog waits for them; PerformanceAutoStopNotice tells them when they
+  // come back.
   if (state is PerformanceRecorderRendering) {
-    unawaited(showPerformanceCompletionSheet(context));
+    if (!state.stoppedOnItsOwn) {
+      unawaited(showPerformanceCompletionSheet(context));
+    }
     return;
   }
   if (state is PerformanceRecorderCompleted) {
     if (state.discarded) {
       say((l10n) => l10n.perfDiscarded, tone: NoticeTone.neutral);
-    } else {
+    } else if (!perfStoppedOnItsOwn(state.result)) {
       unawaited(showPerformanceCompletionSheet(context));
     }
   }

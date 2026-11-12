@@ -11067,6 +11067,21 @@ final class le_perf_target extends ffi.Struct {
   /// a real take); 0 checkpoints only when the take stops.
   @ffi.Int32()
   external int checkpoint_ms;
+
+  /// The take stops on its own (LE_PERF_STOP_IDLE, #1767) once this many
+  /// seconds have passed with nothing happening: no logged event (every
+  /// press, transport change and edit is one) and no captured input above
+  /// LE_PERF_ACTIVITY_DBFS through the sound trigger's high-pass, so hum does
+  /// not count. Everything recorded is kept. 0 never stops it.
+  @ffi.Int32()
+  external int idle_stop_seconds;
+
+  /// The longest the take runs before it stops on its own
+  /// (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and never past the frames the
+  /// rendered master stem can hold in a 32-bit WAV. 0 sets no limit beyond
+  /// that one.
+  @ffi.Int32()
+  external int max_seconds;
 }
 
 /// Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
@@ -11087,7 +11102,13 @@ enum le_perf_stop_reason {
   LE_PERF_STOP_RESERVE_REACHED(4),
 
   /// a capture ring overflowed
-  LE_PERF_STOP_SLOW_STORAGE(5);
+  LE_PERF_STOP_SLOW_STORAGE(5),
+
+  /// nothing happened for idle_stop_seconds
+  LE_PERF_STOP_IDLE(6),
+
+  /// the take reached its longest length
+  LE_PERF_STOP_LENGTH_LIMIT(7);
 
   final int value;
   const le_perf_stop_reason(this.value);
@@ -11099,6 +11120,8 @@ enum le_perf_stop_reason {
     3 => LE_PERF_STOP_WRITE_FAILED,
     4 => LE_PERF_STOP_RESERVE_REACHED,
     5 => LE_PERF_STOP_SLOW_STORAGE,
+    6 => LE_PERF_STOP_IDLE,
+    7 => LE_PERF_STOP_LENGTH_LIMIT,
     _ => throw ArgumentError('Unknown value for le_perf_stop_reason: $value'),
   };
 }
@@ -11502,6 +11525,8 @@ const int LE_PERF_RING_SECONDS_MAX = 8;
 const int LE_PERF_RING_BYTES_MAX = 67108864;
 
 const int LE_PERF_ALLOWANCE_BYTES = 1048576;
+
+const double LE_PERF_ACTIVITY_DBFS = -40.0;
 
 const int LE_DIGEST_STATE_BYTES = 128;
 

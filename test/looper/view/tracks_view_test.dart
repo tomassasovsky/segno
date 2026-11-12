@@ -3841,6 +3841,29 @@ void main() {
       expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
     });
 
+    testWidgets('a take that stopped on its own opens no dialog while it '
+        'renders or once it is done: nobody is there (#1767)', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderRendering(percent: 10, stoppedOnItsOwn: true),
+          PerformanceRecorderCompleted(
+            PerformanceRecordStoppedEarly(
+              '/tmp/perf-1',
+              PerformanceStopReason.idle,
+            ),
+          ),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(ConsoleDialogShell), findsNothing);
+    });
+
     testWidgets(
       'a short-capture auto-discard is said in the top bar, not the '
       'completion sheet',

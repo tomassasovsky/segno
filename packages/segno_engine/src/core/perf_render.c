@@ -2936,8 +2936,7 @@ static void le_pr_worker_main(void* arg) {
     /* A master past the 32-bit WAV sizes (a stereo master over 3 h 6 min at
      * 48 kHz) cannot be sealed: it is not rendered, rather than rendered for
      * hours and thrown away, and the stems stand as they are. */
-    const int master_fits =
-        total <= (UINT32_MAX - 36u) / (sizeof(float) * (uint64_t)master_channels);
+    const int master_fits = total <= le_wav_max_frames(master_channels);
     le_pr_master_run* master =
         le_pr_master_open(&manifest, log, log_count);
     le_pr_stem_file master_file = {0};
