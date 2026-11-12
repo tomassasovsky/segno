@@ -4112,6 +4112,17 @@ typedef struct le_perf_target {
   /* How often the checkpoint thread makes the take durable, in ms (5000 for
    * a real take); 0 checkpoints only when the take stops. */
   int32_t checkpoint_ms;
+  /* The take stops on its own (LE_PERF_STOP_IDLE, #1767) once this many
+   * seconds have passed with nothing happening: no logged event (every
+   * press, transport change and edit is one) and no captured input above
+   * LE_PERF_ACTIVITY_DBFS through the sound trigger's high-pass, so hum does
+   * not count. Everything recorded is kept. 0 never stops it. */
+  int32_t idle_stop_seconds;
+  /* The longest the take runs before it stops on its own
+   * (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and never past the frames the
+   * rendered master stem can hold in a 32-bit WAV. 0 sets no limit beyond
+   * that one. */
+  int32_t max_seconds;
 } le_perf_target;
 
 /* 2,000,000,000 bytes: under FAT32's 4 GiB file limit, RIFF's 32-bit size
@@ -4124,6 +4135,11 @@ typedef struct le_perf_target {
 /* Room kept above `reserve_bytes` for the files rewritten in place while a
  * take runs (the sidecar), which the budget does not count write by write. */
 #define LE_PERF_ALLOWANCE_BYTES 1048576
+/* The captured input level that counts as playing for idle_stop_seconds
+ * (#1767), in dBFS after the sound trigger's 100 Hz high-pass: 6 dB under
+ * the trigger's own threshold, and above the floor of a console left with
+ * nobody playing (a peak of -46 dBFS over 18 idle minutes, #1747). */
+#define LE_PERF_ACTIVITY_DBFS (-40.0)
 
 /* Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
  * a take runs; the first reason to happen is kept until the next arm. */
@@ -4134,6 +4150,8 @@ typedef enum le_perf_stop_reason {
   LE_PERF_STOP_WRITE_FAILED = 3,    /* a write failed; sidecar `disk_full` */
   LE_PERF_STOP_RESERVE_REACHED = 4, /* the destination reached its reserve */
   LE_PERF_STOP_SLOW_STORAGE = 5,    /* a capture ring overflowed */
+  LE_PERF_STOP_IDLE = 6,            /* nothing happened for idle_stop_seconds */
+  LE_PERF_STOP_LENGTH_LIMIT = 7,    /* the take reached its longest length */
 } le_perf_stop_reason;
 
 /* Arms performance-recording capture: allocates the master + per-monitor

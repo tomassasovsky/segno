@@ -211,6 +211,30 @@ void main() {
       expect(engine.lastPerfTarget!.reserveBytes, 1000000000);
     });
 
+    test(
+      'a take stops on its own after 20 idle minutes and at 3 hours (#1767)',
+      () async {
+        await repo.arm();
+        expect(engine.lastPerfTarget!.idleStopSeconds, 20 * 60);
+        expect(engine.lastPerfTarget!.maxSeconds, 3 * 60 * 60);
+        await repo.disarm();
+
+        final quick = PerformanceRepository(
+          storageIo: fakeStorageIo,
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          now: () => clock.add(const Duration(minutes: 1)),
+          guards: GuardRegistry(),
+          idleStopAfter: const Duration(seconds: 5),
+          longestTake: const Duration(minutes: 2),
+        );
+        addTearDown(quick.dispose);
+        await quick.arm();
+        expect(engine.lastPerfTarget!.idleStopSeconds, 5);
+        expect(engine.lastPerfTarget!.maxSeconds, 120);
+      },
+    );
+
     test('a take on a USB drive keeps no reserve there (#1177)', () async {
       final reserved = PerformanceRepository(
         storageIo: fakeStorageIo,

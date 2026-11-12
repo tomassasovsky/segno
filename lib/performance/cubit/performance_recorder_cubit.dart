@@ -685,6 +685,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       PerfStopReason.slowStorage => PerformanceStopReason.slowStorage,
       PerfStopReason.deviceChanged => PerformanceStopReason.deviceChanged,
       PerfStopReason.writeFailed => PerformanceStopReason.diskFull,
+      PerfStopReason.idle => PerformanceStopReason.idle,
+      PerfStopReason.lengthLimit => PerformanceStopReason.lengthLimit,
       // No reason published: the sidecar's `stopped_early` decides.
       PerfStopReason.none || PerfStopReason.disarm => null,
     },
@@ -930,6 +932,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         'device_changed' => PerformanceStopReason.deviceChanged,
         'reserve_reached' => PerformanceStopReason.reserveReached,
         'slow_storage' => PerformanceStopReason.slowStorage,
+        'idle' => PerformanceStopReason.idle,
+        'length_limit' => PerformanceStopReason.lengthLimit,
         _ => null,
       };
 

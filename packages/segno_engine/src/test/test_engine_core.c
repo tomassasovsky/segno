@@ -39594,6 +39594,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_interface_inputs.h"
 #include "test_engine_heard_edits.h"
 #include "test_engine_heard_perf.h"
+#include "test_engine_perf_autostop.h"
 #include "test_engine_perf_render_memory.h"
 #include "test_engine_heard_tail.h"
 #include "test_engine_heard_post.h"
@@ -39930,6 +39931,11 @@ int main(void) {
   test_perf_live_sidecar_elsewhere();
   test_perf_arm_rejects_bad_target();
   test_perf_reserve_stops_at_whole_frames();
+  test_perf_autostop_idle_take_stops();
+  test_perf_autostop_playing_never_stops();
+  test_perf_autostop_hum_does_not_count();
+  test_perf_autostop_event_restarts_the_period();
+  test_perf_autostop_length_limit();
   test_perf_reserve_stops_every_stream_together();
   test_perf_reserve_counts_the_next_part_header();
   test_perf_no_budget_never_stops_on_space();

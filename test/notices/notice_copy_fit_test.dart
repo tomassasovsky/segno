@@ -303,6 +303,16 @@ final _messages = <_Copy>[
   ),
   _copy('recovered', (l) => l.perfTakesRecovered(3), tone: NoticeTone.success),
   _copy('discarded', (l) => l.perfDiscarded, tone: NoticeTone.neutral),
+  _copy(
+    'stopped idle',
+    (l) => l.perfStoppedIdle(20),
+    body: (l) => l.perfStoppedKept,
+  ),
+  _copy(
+    'stopped at the longest length',
+    (l) => l.perfStoppedLengthLimit,
+    body: (l) => l.perfStoppedKept,
+  ),
   for (final gate in [
     LooperModeGate.capturing,
     LooperModeGate.queued,

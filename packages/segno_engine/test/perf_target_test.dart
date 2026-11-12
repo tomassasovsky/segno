@@ -51,6 +51,24 @@ void main() {
       );
     });
 
+    test('never stops on its own unless asked, and refuses negative stop '
+        'times (#1767)', () {
+      final target = PerfTarget(captureDir: '/take', takeId: Uint8List(16));
+      expect(target.idleStopSeconds, 0);
+      expect(target.maxSeconds, 0);
+      for (final (idle, max) in [(-1, 0), (0, -1)]) {
+        expect(
+          () => PerfTarget(
+            captureDir: '/take',
+            takeId: Uint8List(16),
+            idleStopSeconds: idle,
+            maxSeconds: max,
+          ),
+          throwsArgumentError,
+        );
+      }
+    });
+
     test('refuses a negative part size', () {
       expect(
         () => PerfTarget(

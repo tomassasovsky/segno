@@ -136,6 +136,21 @@ void main() {
         unawaited(cubit.close());
       });
     });
+
+    test('says every activity, for what waits for the player (#1767)', () {
+      fakeAsync((async) {
+        final cubit = loaded(async);
+        var heard = 0;
+        final sub = cubit.activities.listen((_) => heard++);
+        cubit
+          ..activity()
+          ..activity();
+        async.flushMicrotasks();
+        expect(heard, 2);
+        unawaited(sub.cancel());
+        unawaited(cubit.close());
+      });
+    });
   });
 
   group('idleKeepsAwake', () {

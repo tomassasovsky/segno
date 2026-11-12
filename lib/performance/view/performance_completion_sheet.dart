@@ -21,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// draws this as a 744 panel in the console's own `Dialog` idiom, over the
 /// stage. The sheet this replaces rose from the bottom edge in Material's
 /// idiom, which nothing else on the console uses.
+
 Future<void> showPerformanceCompletionSheet(BuildContext context) async {
   // One at a time. The listener fires on entering Rendering AND on entering
   // Completed; when the render outlives the operator's patience they Hide the
@@ -283,8 +284,13 @@ class _Face extends StatelessWidget {
           PerformanceStopReason.volumeLost => l10n.perfStoppedVolumeLost,
           PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
           PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
+          PerformanceStopReason.idle || PerformanceStopReason.lengthLimit =>
+            '${perfAutoStopTitle(l10n, reason)!} ${l10n.perfStoppedKept}',
         },
-        ConsoleBannerTone.failure,
+        // Stopped on its own (#1767): nothing failed.
+        perfAutoStopTitle(l10n, reason) != null
+            ? ConsoleBannerTone.warning
+            : ConsoleBannerTone.failure,
       ),
       PerformanceRecordPartial() => (
         l10n.perfPartial,
@@ -427,3 +433,18 @@ class _DialogTitle extends StatelessWidget {
     ),
   );
 }
+
+/// What a take that stopped on its own (#1767) says, idle or at its longest
+/// length; null for any other [reason]. The completion banner and the
+/// notice said when the player comes back follow it with
+/// `perfStoppedKept`.
+String? perfAutoStopTitle(
+  AppLocalizations l10n,
+  PerformanceStopReason reason,
+) => switch (reason) {
+  PerformanceStopReason.idle => l10n.perfStoppedIdle(
+    PerformanceRepository.defaultIdleStopAfter.inMinutes,
+  ),
+  PerformanceStopReason.lengthLimit => l10n.perfStoppedLengthLimit,
+  _ => null,
+};

@@ -49,6 +49,10 @@ class PerformanceRepository {
   /// take from before #1198 is converted into (tests pass small sizes).
   /// [bootId] reads this boot's kernel id, which decides how far recovery
   /// trusts a take's files ([readBootId]).
+  ///
+  /// [idleStopAfter] and [longestTake] are when a take stops on its own
+  /// (#1767): after that long with nothing happening, and at that length
+  /// (defaults [defaultIdleStopAfter], [defaultLongestTake]).
   PerformanceRepository({
     required AudioEngine engine,
     required Future<String> Function() exportsRoot,
@@ -60,7 +64,11 @@ class PerformanceRepository {
     StorageIo Function() storageIo = NativeStorageIo.new,
     int partBytes = RecordedPartWriter.defaultPartBytes,
     String Function() bootId = readBootId,
+    Duration idleStopAfter = defaultIdleStopAfter,
+    Duration longestTake = defaultLongestTake,
   }) : _engine = engine,
+       _idleStopAfter = idleStopAfter,
+       _longestTake = longestTake,
        _guards = guards,
        _exportsRoot = exportsRoot,
        _reserveBytes = reserveBytes,
@@ -80,6 +88,19 @@ class PerformanceRepository {
   late final StorageIo _io = _storageIo();
   final int _partBytes;
   final String Function() _bootId;
+  final Duration _idleStopAfter;
+  final Duration _longestTake;
+
+  /// How long a take runs with nothing happening (no press, no transport
+  /// change, no edit, no input above the playing level) before it stops on
+  /// its own, keeping everything recorded (#1767, owner's call). A take left
+  /// running with nobody at the console recorded 4.5 GB an hour (#1747).
+  static const Duration defaultIdleStopAfter = Duration(minutes: 20);
+
+  /// The longest a take runs (#1767): the rendered stereo master at 48 kHz
+  /// fills a 32-bit WAV at 3 h 6 min (#1747), and the engine never lets a
+  /// take run past what that stem can hold, whatever the rate.
+  static const Duration defaultLongestTake = Duration(hours: 3);
 
   /// The app's one guard table (accepted behaviour 6.12). A take holds a
   /// `capture` guard from the commit of [arm] until it is finalized or its
@@ -553,6 +574,8 @@ class PerformanceRepository {
         captureDir: dir,
         takeId: takeId,
         reserveBytes: root == null ? _reserveBytes : null,
+        idleStopSeconds: _idleStopAfter.inSeconds,
+        maxSeconds: _longestTake.inSeconds,
       ),
     );
     if (!result.isOk) {

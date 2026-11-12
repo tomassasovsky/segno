@@ -19,6 +19,8 @@ class PerfTarget {
     this.reserveBytes,
     this.mirrorDir,
     this.checkpointMs = defaultCheckpointMs,
+    this.idleStopSeconds = 0,
+    this.maxSeconds = 0,
   }) : takeId = Uint8List.fromList(takeId) {
     if (takeId.length != takeIdBytes) {
       throw ArgumentError.value(takeId, 'takeId', 'must be 16 bytes');
@@ -32,6 +34,12 @@ class PerfTarget {
     }
     if (checkpointMs < 0 || checkpointMs > 0x7fffffff) {
       throw ArgumentError.value(checkpointMs, 'checkpointMs');
+    }
+    if (idleStopSeconds < 0 || idleStopSeconds > 0x7fffffff) {
+      throw ArgumentError.value(idleStopSeconds, 'idleStopSeconds');
+    }
+    if (maxSeconds < 0 || maxSeconds > 0x7fffffff) {
+      throw ArgumentError.value(maxSeconds, 'maxSeconds');
     }
   }
 
@@ -91,4 +99,15 @@ class PerfTarget {
   /// How often the engine makes the take durable, in ms; 0 checkpoints only
   /// when the take stops.
   final int checkpointMs;
+
+  /// Seconds with nothing happening after which the take stops on its own
+  /// (`PerfStopReason.idle`, #1767): no logged event (a press, a transport
+  /// change, an edit) and no captured input over the playing level. 0 never
+  /// stops it.
+  final int idleStopSeconds;
+
+  /// The longest the take runs, in seconds, before it stops on its own
+  /// (`PerfStopReason.lengthLimit`); never past what the rendered master
+  /// stem can hold. 0 sets no limit beyond that one.
+  final int maxSeconds;
 }

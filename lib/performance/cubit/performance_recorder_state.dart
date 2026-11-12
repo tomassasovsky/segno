@@ -26,6 +26,16 @@ enum PerformanceStopReason {
   /// The USB drive the take was recording to went away (pulled, or failed)
   /// while it recorded (#1177). The loops keep playing.
   volumeLost,
+
+  /// Nothing happened for [PerformanceRepository.defaultIdleStopAfter]: no
+  /// press, no transport change, no edit, no input above the playing level
+  /// (#1767). Everything recorded is kept.
+  idle,
+
+  /// The take reached its longest length
+  /// ([PerformanceRepository.defaultLongestTake], #1767). Everything recorded
+  /// is kept.
+  lengthLimit,
 }
 
 /// Why a stopped take ended on idle instead of Completed (#1639).

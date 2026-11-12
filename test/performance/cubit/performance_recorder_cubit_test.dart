@@ -1177,6 +1177,8 @@ void main() {
     for (final (field, reason) in const [
       ('reserve_reached', PerformanceStopReason.reserveReached),
       ('slow_storage', PerformanceStopReason.slowStorage),
+      ('idle', PerformanceStopReason.idle),
+      ('length_limit', PerformanceStopReason.lengthLimit),
     ]) {
       test('PerformanceRecordStoppedEarly reports $reason for $field '
           '(#1198)', () async {
@@ -1698,6 +1700,8 @@ void main() {
       (PerfStopReason.reserveReached, PerformanceStopReason.reserveReached),
       (PerfStopReason.slowStorage, PerformanceStopReason.slowStorage),
       (PerfStopReason.writeFailed, PerformanceStopReason.diskFull),
+      (PerfStopReason.idle, PerformanceStopReason.idle),
+      (PerfStopReason.lengthLimit, PerformanceStopReason.lengthLimit),
     ]) {
       test('a take the engine stopped for $engineReason finalizes as '
           'stopped early for $reason (#1198)', () async {

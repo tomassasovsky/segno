@@ -85,6 +85,26 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A capture left running stops on its own (#1767)
+
+- The owner's call on the #1747 recommendation. The drain (`perf_drain.c`)
+  ends a take, keeping everything recorded, once 20 minutes pass with
+  nothing happening (`LE_PERF_STOP_IDLE`, sidecar `stopped_early: "idle"`),
+  and at 3 hours (`LE_PERF_STOP_LENGTH_LIMIT`, `"length_limit"`), never past
+  what a 32-bit WAV of the rendered master holds (a stereo master at
+  96 kHz: 93 minutes). The times come from the repository
+  (`PerformanceRepository.defaultIdleStopAfter`, `defaultLongestTake`) on
+  `le_perf_target.idle_stop_seconds` and `max_seconds`.
+- Something happening is a logged event (a press, a transport change, an
+  edit) or a captured input sample over the engine's activity level (-40 dBFS)
+  through the sound trigger's 100 Hz high-pass, measured in the drain, not
+  the callback. The paused #1747 capture's idle 18 minutes peaked at
+  -46 dBFS. An input whose noise stays over the level keeps the take going
+  until the 3-hour stop.
+- The completion banner says it as a warning, and `PerformanceAutoStopNotice`
+  says it as a passing warning at the player's next touch, key, encoder,
+  pedal or MIDI message (`IdleDimCubit.activities`).
+
 ## November 2026 Cheaper effects, the same sound: reverbs, delays, filters (#1755)
 
 <!-- cspell:words Freeverb ulp tanhf exp2f log2f NEON equiv diffusers -->
