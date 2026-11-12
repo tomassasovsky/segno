@@ -11,7 +11,7 @@ import 'package:segno/update/usb/usb_update_cubit.dart';
 import 'package:segno/update/usb/usb_update_package.dart';
 import 'package:update_repository/update_repository.dart';
 
-class _MockUsb extends MockCubit<UsbUpdateState> implements UsbUpdateCubit {}
+class _MockUsb extends MockCubit<UsbUpdateState> implements UsbUpdateCubit;
 
 /// Load from USB's panel (#1270 Part 8): each state says what it is.
 void main() {

@@ -10,7 +10,7 @@ import 'package:touch_calibration_client/touch_calibration_client.dart';
 
 import '../../settings/touch_calibration/fake_touch_calibration_client.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 const _target = EngineConfig(
   sampleRate: 48000,

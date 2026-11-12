@@ -24,7 +24,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The accepted Pedals setup, drawn at the console's own size.
 void main() {

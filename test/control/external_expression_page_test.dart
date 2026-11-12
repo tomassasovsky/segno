@@ -44,7 +44,7 @@ import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The accepted expression half of External pedals: what the pedal is doing,
 /// what it was taught, and what it sweeps.

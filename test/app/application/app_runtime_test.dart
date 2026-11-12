@@ -28,7 +28,7 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Sessions extends Mock implements SessionRepository {}
+class _Sessions extends Mock implements SessionRepository;
 
 class _ReadGateStore extends FakeKeyValueStore {
   Completer<String?>? midiRead;

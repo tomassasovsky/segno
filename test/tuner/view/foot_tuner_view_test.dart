@@ -19,14 +19,14 @@ import 'package:segno/tuner/view/foot_tuner_view.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
 class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _Tuner extends MockCubit<TunerState> implements TunerCubit {}
+class _Tuner extends MockCubit<TunerState> implements TunerCubit;
 
-class _Inputs extends MockCubit<InputsState> implements InputsCubit {}
+class _Inputs extends MockCubit<InputsState> implements InputsCubit;
 
 /// The foot Tuner face (pen 23/x, #1229).
 void main() {

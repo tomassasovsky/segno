@@ -17,14 +17,14 @@ import 'package:segno/looper/view/performance_pedal.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
 class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
-class _Repository extends Mock implements LooperRepository {}
+class _Repository extends Mock implements LooperRepository;
 
 /// The FX face (pen 10/03 `noDGu`, `ri60q`; #1229, #884, #873).
 void main() {

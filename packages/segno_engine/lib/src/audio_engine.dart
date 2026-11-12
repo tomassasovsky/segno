@@ -2012,4 +2012,4 @@ abstract interface class AudioEngine
         EngineSelectedRender,
         SessionIo,
         BackingControl,
-        InterfaceInputControl {}
+        InterfaceInputControl;

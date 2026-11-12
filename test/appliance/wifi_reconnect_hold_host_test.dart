@@ -15,15 +15,15 @@ import 'package:segno/performance/performance.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
-class _MockWifiRepository extends Mock implements WifiRepository {}
+class _MockWifiRepository extends Mock implements WifiRepository;
 
 class _MockBackingCubit extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+    implements BackingCubit;
 
 const _playing = LooperState(tracks: [Track(state: TrackState.playing)]);
 const _noBacking = BackingCubitState(backing: BackingState());

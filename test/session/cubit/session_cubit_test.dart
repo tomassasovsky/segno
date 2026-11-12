@@ -36,12 +36,12 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/backing_fixture.dart';
 import '../../helpers/fake_key_value_store.dart';
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockPerformanceRepository extends Mock
-    implements PerformanceRepository {}
+    implements PerformanceRepository;
 
 class _WriteThenThrowPersistence implements MixSettingsPersistence {
   String? durable = 'previous mix';

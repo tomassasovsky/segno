@@ -11,7 +11,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_key_value_store.dart';
 
-class _Looper extends Mock implements LooperRepository {}
+class _Looper extends Mock implements LooperRepository;
 
 class _ControlledStore extends FakeKeyValueStore {
   bool refuse = false;

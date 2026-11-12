@@ -11,7 +11,7 @@ import 'package:segno/theme/theme.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 void main() {
   late _MockPerformanceRecorderCubit cubit;

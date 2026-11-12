@@ -24,9 +24,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// Three playing takes at 120 BPM in Sync mode, Multi's shared length off.
 const _rig = LooperState(

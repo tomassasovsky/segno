@@ -8,7 +8,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The ONE Track-stage chain-envelope writer, shared by `LooperBloc` (the
 /// on-screen FX dock and keyboard) and `ControlCubit` (the pedal's FX-mode

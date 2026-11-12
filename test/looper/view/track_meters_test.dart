@@ -11,9 +11,9 @@ import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/theme/theme.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 void main() {
   late LooperBloc bloc;

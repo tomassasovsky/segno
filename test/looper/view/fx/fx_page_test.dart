@@ -39,12 +39,12 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockControlCubit extends MockCubit<ControlState>
-    implements ControlCubit {}
+    implements ControlCubit;
 
 BuiltInEffect _fx(
   String slot,

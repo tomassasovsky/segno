@@ -38,7 +38,7 @@ import '../helpers/fake_record_timing_control.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _ControlledStore extends FakeKeyValueStore {
   Completer<void>? pending;

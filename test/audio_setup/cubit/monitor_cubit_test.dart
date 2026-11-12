@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// Counts the monitor FX envelope writes the debounce is meant to collapse.
 class _CountingStore extends FakeKeyValueStore {

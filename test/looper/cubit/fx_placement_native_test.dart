@@ -15,9 +15,9 @@ import 'package:segno_engine/segno_engine.dart'
     show LaneSource, PumpedNativeEngine;
 import 'package:settings_repository/settings_repository.dart';
 
-class _Settings extends Mock implements SettingsRepository {}
+class _Settings extends Mock implements SettingsRepository;
 
-class _Persistence extends Mock implements FxChainPersistence {}
+class _Persistence extends Mock implements FxChainPersistence;
 
 /// The Effects page's Pre/Post switch on the real engine (#1741).
 void main() {

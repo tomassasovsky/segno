@@ -53,14 +53,14 @@ import '../helpers/helpers.dart';
 import '../settings/touch_calibration/fake_touch_calibration_client.dart';
 import 'screenshot_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 /// What the appliance reports about its own build. A real [UpdateCubit] over
 /// the unsupported backend knows neither its version nor its channel, and the

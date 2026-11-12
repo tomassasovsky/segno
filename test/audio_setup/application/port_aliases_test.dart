@@ -9,7 +9,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Repository extends Mock implements LooperRepository {}
+class _Repository extends Mock implements LooperRepository;
 
 class _Store extends FakeKeyValueStore {
   String? blockedKey;

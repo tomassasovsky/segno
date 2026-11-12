@@ -14,13 +14,13 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockRecordLengthControl extends Mock implements RecordLengthControl {}
+class _MockRecordLengthControl extends Mock implements RecordLengthControl;
 
-class _MockRecordTimingControl extends Mock implements RecordTimingControl {}
+class _MockRecordTimingControl extends Mock implements RecordTimingControl;
 
-class _MockSettingsRepository extends Mock implements SettingsRepository {}
+class _MockSettingsRepository extends Mock implements SettingsRepository;
 
 const _playingState = LooperState(
   transport: TransportState(deviceRunning: true, masterLengthFrames: 48000),

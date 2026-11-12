@@ -5,7 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/looper.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 LooperState _state({required bool connected}) =>
     LooperState(status: EngineStatus(isConnected: connected));

@@ -52,24 +52,24 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
-    implements TransportClockCubit {}
+    implements TransportClockCubit;
 
 class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
-    implements OutputLevelCubit {}
+    implements OutputLevelCubit;
 
 class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+    implements SessionCubit;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
 /// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
 /// creates unconditionally, in console and desktop layouts alike.

@@ -12,9 +12,9 @@ import 'package:session_repository/session_repository.dart';
 
 import '../helpers/fake_drive.dart';
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
 /// Sessions > USB (#1178 Part 8, pen section 34): Back up to USB through
 /// the port and the guard table, and Restore to Library.

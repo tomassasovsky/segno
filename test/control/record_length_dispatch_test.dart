@@ -43,7 +43,7 @@ class _Engine extends FakeAudioEngine {
       refuse ? EngineResult.notReady : super.setTrackLengthPresets(bars);
 }
 
-class _Store extends FakeKeyValueStore {}
+class _Store extends FakeKeyValueStore;
 
 class _Midi extends MidiDeviceRepository {
   new(SettingsRepository settings)

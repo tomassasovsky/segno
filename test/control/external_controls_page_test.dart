@@ -46,7 +46,7 @@ import '../helpers/mock_decay_playback_settings.dart';
 import '../helpers/test_fade_settings.dart';
 import '../helpers/test_mix_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// A button's Controls panel: the effects and parameters it drives beside its
 /// actions.

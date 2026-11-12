@@ -21,18 +21,18 @@ import 'package:segno/looper/model/tempo_state.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockTempo extends MockCubit<TempoState> implements TempoCubit {}
+class _MockTempo extends MockCubit<TempoState> implements TempoCubit;
 
 class _MockPlayback extends MockCubit<PlaybackOptions>
-    implements PlaybackOptionsCubit {}
+    implements PlaybackOptionsCubit;
 
 class _MockRecord extends MockCubit<RecordOptionsViewState>
-    implements RecordOptionsCubit {}
+    implements RecordOptionsCubit;
 
 class _MockTiming extends MockCubit<RecordTimingState>
-    implements RecordTimingCubit {}
+    implements RecordTimingCubit;
 
-class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit {}
+class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit;
 
 void main() {
   late LooperRepository looper;

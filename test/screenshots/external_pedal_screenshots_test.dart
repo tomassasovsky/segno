@@ -46,7 +46,7 @@ import '../helpers/helpers.dart';
 import '../helpers/mock_click_tempo_settings.dart';
 import '../helpers/mock_decay_playback_settings.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The accepted External pedals screen, drawn at the console's own size.
 void main() {

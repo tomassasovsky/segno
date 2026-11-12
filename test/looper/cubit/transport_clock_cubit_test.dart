@@ -9,7 +9,7 @@ import 'package:segno_engine/segno_engine.dart' as engine;
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// A hand-driven [Stopwatch]: `fake_async` fakes `Timer`, not the monotonic
 /// tick source, so the cubit's watch is injected and advanced in lockstep

@@ -15,12 +15,12 @@ import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
 class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 /// Two bars over 48000 frames: 24000 frames a bar.
 const _rig = LooperState(

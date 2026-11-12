@@ -14,12 +14,12 @@ import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 class _Recorder extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 const _fade = TrackOperationAction(
   operation: TrackOperation.fade,

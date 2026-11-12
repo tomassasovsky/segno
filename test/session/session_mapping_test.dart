@@ -33,7 +33,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_audio_engine.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 void main() {
   test(

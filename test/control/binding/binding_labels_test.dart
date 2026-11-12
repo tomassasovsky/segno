@@ -7,7 +7,7 @@ import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/l10n/l10n.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 BuiltInEffect _drive(String slotId) =>
     BuiltInEffect(type: TrackEffectType.drive, slotId: slotId);

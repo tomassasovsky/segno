@@ -10,7 +10,7 @@ import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/readout_command.dart';
 import 'package:segno/visualizer/waveform_window_service.dart';
 
-class _Looper extends Mock implements LooperRepository {}
+class _Looper extends Mock implements LooperRepository;
 
 class _Window implements WaveformWindowService {
   Completer<bool>? opening;

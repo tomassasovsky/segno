@@ -17,16 +17,16 @@ import 'package:segno/looper/view/foot_mixer_view.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
 class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _Repository extends Mock implements LooperRepository {}
+class _Repository extends Mock implements LooperRepository;
 
-class _Inputs extends MockCubit<InputsState> implements InputsCubit {}
+class _Inputs extends MockCubit<InputsState> implements InputsCubit;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 void main() {
   late _Control control;

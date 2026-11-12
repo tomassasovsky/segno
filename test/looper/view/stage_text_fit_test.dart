@@ -29,26 +29,26 @@ import '../../helpers/helpers.dart';
 import '../../helpers/text_fit.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+    implements SessionCubit;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
-    implements TransportClockCubit {}
+    implements TransportClockCubit;
 
 class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
-    implements OutputLevelCubit {}
+    implements OutputLevelCubit;
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
-class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit {}
+class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit;
 
 /// Every text on the stage shows in full on the console's main screen, in
 /// the faces the app bundles (#1524). The test font's square glyphs would

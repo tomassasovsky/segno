@@ -16,13 +16,13 @@ import 'package:segno/performance/performance.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockPerformanceCompletionCubit
     extends MockCubit<PerformanceCompletionStatus>
-    implements PerformanceCompletionCubit {}
+    implements PerformanceCompletionCubit;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 /// Types [name] into the console rename sheet and confirms with Enter.
 ///

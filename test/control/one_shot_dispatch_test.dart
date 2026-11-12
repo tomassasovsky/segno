@@ -47,7 +47,7 @@ class _Engine extends FakeAudioEngine {
   }
 }
 
-class _Store extends FakeKeyValueStore {}
+class _Store extends FakeKeyValueStore;
 
 class _Midi extends MidiDeviceRepository {
   new(SettingsRepository settings)

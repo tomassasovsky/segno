@@ -23,16 +23,16 @@ import '../../helpers/helpers.dart';
 import '../helpers/fake_drive.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+    implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 void main() {
   late AppLocalizations l10n;

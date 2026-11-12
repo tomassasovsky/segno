@@ -26,9 +26,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// A four-in, four-out rig with two tracks recording, as the pen's examples
 /// draw: track 0 takes inputs 1 and 2, track 1 takes input 3.

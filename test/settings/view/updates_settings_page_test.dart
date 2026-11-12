@@ -20,18 +20,18 @@ import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:update_repository/update_repository.dart';
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
-class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit {}
+class _MockPowerCubit extends MockCubit<PowerState> implements PowerCubit;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 class _MockRecorder extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+    implements SessionCubit;
 
 /// What the console knows about itself once `UpdateCubit.load` has run.
 final _running = UpdateState(

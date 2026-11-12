@@ -14,7 +14,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 void main() {
   group('PerformanceAutoStopNotice (#1767)', () {

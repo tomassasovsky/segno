@@ -23,9 +23,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The host's own list: a Scarlett reported in both directions with its real
 /// channel counts, the built-in pair, and a playback-only device.

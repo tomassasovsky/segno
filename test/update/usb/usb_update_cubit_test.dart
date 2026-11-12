@@ -9,9 +9,9 @@ import 'package:segno/update/usb/usb_update_package.dart';
 import 'package:storage_repository/storage_repository.dart';
 import 'package:update_repository/update_repository.dart';
 
-class _MockStorage extends Mock implements StorageRepository {}
+class _MockStorage extends Mock implements StorageRepository;
 
-class _MockUpdates extends Mock implements UpdateRepository {}
+class _MockUpdates extends Mock implements UpdateRepository;
 
 void main() {
   late Directory root;

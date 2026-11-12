@@ -32,9 +32,9 @@ import 'package:usb_storage_client/usb_storage_client.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 /// The fake, except that the housekeeping write is refused.
 class _FailingDeleteFactsClient implements ConsoleFactsClient {

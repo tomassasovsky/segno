@@ -29,24 +29,24 @@ import '../../helpers/helpers.dart';
 import 'fake_power_key_source.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+    implements SessionCubit;
 
 class _MockRecorder extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
-class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit {}
+class _MockUpdateCubit extends MockCubit<UpdateState> implements UpdateCubit;
 
 class _MockBackingCubit extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+    implements BackingCubit;
 
-class _MockUpdateRepository extends Mock implements UpdateRepository {}
+class _MockUpdateRepository extends Mock implements UpdateRepository;
 
-class _MockSettingsRepository extends Mock implements SettingsRepository {}
+class _MockSettingsRepository extends Mock implements SettingsRepository;
 
 const _loops = LooperState(
   tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],

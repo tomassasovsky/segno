@@ -9,7 +9,7 @@ import 'package:segno/looper/model/record_length.dart';
 import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 
-class _Looper extends Mock implements LooperRepository {}
+class _Looper extends Mock implements LooperRepository;
 
 void main() {
   late _Looper looper;

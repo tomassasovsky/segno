@@ -12,11 +12,11 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Repository extends Mock implements LooperRepository {}
+class _Repository extends Mock implements LooperRepository;
 
-class _Settings extends Mock implements SettingsRepository {}
+class _Settings extends Mock implements SettingsRepository;
 
-class _Persistence extends Mock implements FxChainPersistence {}
+class _Persistence extends Mock implements FxChainPersistence;
 
 BuiltInEffect _effect(String id, {bool enabled = true}) => BuiltInEffect(
   type: TrackEffectType.filter,

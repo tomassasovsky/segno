@@ -10,7 +10,7 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// The reading owner (#1229): it follows the stored input and reference and
 /// never arms the engine; the foot Tuner does.

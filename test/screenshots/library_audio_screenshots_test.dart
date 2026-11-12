@@ -25,16 +25,16 @@ import '../helpers/helpers.dart';
 import '../library/helpers/fake_drive.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+    implements SessionCubit;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 /// Images of Library > Audio to compare with pen 18/01 and 20/07 to 20/12.
 /// CI renders them into the `screenshots` artifact; nothing compares pixels.

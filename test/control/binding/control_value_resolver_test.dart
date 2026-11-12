@@ -13,7 +13,7 @@ import 'package:segno/looper/model/record_start.dart';
 import 'package:segno/looper/model/record_timing.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 BuiltInEffect _drive(String slotId, {List<double>? params}) => BuiltInEffect(
   type: TrackEffectType.drive,

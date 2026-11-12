@@ -19,12 +19,12 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _Control extends MockCubit<ControlState> implements ControlCubit {}
+class _Control extends MockCubit<ControlState> implements ControlCubit;
 
 class _Looper extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _Tracks extends MockCubit<TracksState> implements TracksCubit {}
+class _Tracks extends MockCubit<TracksState> implements TracksCubit;
 
 const _playing = Track(state: TrackState.playing, lengthFrames: 48000);
 

@@ -43,9 +43,9 @@ import '../helpers/helpers.dart';
 import '../helpers/mock_click_tempo_settings.dart';
 import '../helpers/mock_decay_playback_settings.dart';
 
-class _MockLooper extends Mock implements LooperRepository {}
+class _MockLooper extends Mock implements LooperRepository;
 
-class _MockMidiDevices extends Mock implements MidiDeviceRepository {}
+class _MockMidiDevices extends Mock implements MidiDeviceRepository;
 
 class _Store extends FakeKeyValueStore {
   Completer<void>? gate;

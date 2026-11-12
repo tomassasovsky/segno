@@ -4,7 +4,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/binding/fx_binding_resolver.dart';
 import 'package:segno/control/binding/fx_binding_target.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 TrackEffect _fx(String slotId, {bool enabled = true, FxRack? rack}) =>
     BuiltInEffect(

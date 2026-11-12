@@ -10,7 +10,7 @@ import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
 void main() {
   late _MockLooperBloc bloc;

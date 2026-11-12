@@ -7,7 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/cubit/interface_inputs_cubit.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 const _scarlett = LooperState(
   status: EngineStatus(

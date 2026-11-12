@@ -29,17 +29,17 @@ import '../../helpers/helpers.dart';
 import '../../helpers/text_fit.dart';
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit {}
+class _MockTracksCubit extends MockCubit<TracksState> implements TracksCubit;
 
-class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
+class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit;
 
 class _MockOutputsCubit extends MockCubit<OutputsState>
-    implements OutputsCubit {}
+    implements OutputsCubit;
 
 /// The console's standing conditions as must-act messages (#1562): raised
 /// while they hold, cleared the moment they are over, on whatever screen is

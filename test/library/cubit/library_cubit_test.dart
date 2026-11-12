@@ -11,9 +11,9 @@ import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:session_repository/session_repository.dart';
 
-class _MockPedalRepository extends Mock implements PedalRepository {}
+class _MockPedalRepository extends Mock implements PedalRepository;
 
-class _MockSessionRepository extends Mock implements SessionRepository {}
+class _MockSessionRepository extends Mock implements SessionRepository;
 
 class _FakeVolumes implements RemovableVolumes {
   final controller = StreamController<List<RemovableVolume>>.broadcast();

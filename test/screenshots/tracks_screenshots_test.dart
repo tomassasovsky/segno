@@ -37,21 +37,21 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 class _MockSessionCubit extends MockCubit<SessionState>
-    implements SessionCubit {}
+    implements SessionCubit;
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
-    implements PerformanceRecorderCubit {}
+    implements PerformanceRecorderCubit;
 
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
-    implements TransportClockCubit {}
+    implements TransportClockCubit;
 
 class _MockOutputLevelCubit extends MockCubit<OutputLevelState>
-    implements OutputLevelCubit {}
+    implements OutputLevelCubit;
 
 /// A performance repository whose capture status a scene sets, so the
 /// Control owner's armed LED follows the recorder the scene shows.
@@ -73,11 +73,11 @@ class _ScenePerformance extends PerformanceRepository {
 }
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
-    implements AudioSetupCubit {}
+    implements AudioSetupCubit;
 
-class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit {}
+class _MockTunerCubit extends MockCubit<TunerState> implements TunerCubit;
 
-class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit {}
+class _MockInputsCubit extends MockCubit<InputsState> implements InputsCubit;
 
 /// Manual generator for the console main-window decal (the artwork on the 16"
 /// panel in the Fusion "Segno console (populated)" doc). Renders [TracksView]

@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 /// Returned by `AudioEngine.setLanePlugin` / `setMonitorPlugin`, it is a token
 /// the caller holds to address that slot in later operations (parameters,
 /// editor window — added in later slices). It carries no public surface here.
-abstract interface class PluginSlotHandle {}
+abstract interface class PluginSlotHandle;
 
 /// One hosted-plugin parameter's metadata, unified across VST3 and CLAP into
 /// plain-valued fields. Mirrors the native `le_plugin_param_info`.

@@ -13,9 +13,9 @@ import 'package:session_repository/session_repository.dart';
 
 import '../helpers/fake_drive.dart';
 
-class _MockPerformance extends Mock implements PerformanceRepository {}
+class _MockPerformance extends Mock implements PerformanceRepository;
 
-class _MockSessions extends Mock implements SessionRepository {}
+class _MockSessions extends Mock implements SessionRepository;
 
 const _mixdown = SessionMixdown(frames: 48000, sampleRate: 48000, bytes: 4);
 

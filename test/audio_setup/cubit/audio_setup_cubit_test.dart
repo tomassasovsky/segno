@@ -11,9 +11,9 @@ import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
-class _MockBackingRepository extends Mock implements BackingRepository {}
+class _MockBackingRepository extends Mock implements BackingRepository;
 
 /// Counts the integer writes, so a test can tell an offset saved once.
 class _CountingStore extends FakeKeyValueStore {

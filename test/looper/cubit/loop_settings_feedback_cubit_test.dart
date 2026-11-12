@@ -6,7 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/looper/cubit/loop_settings_feedback_cubit.dart';
 
-class _MockRepository extends Mock implements LooperRepository {}
+class _MockRepository extends Mock implements LooperRepository;
 
 void main() {
   late _MockRepository repository;

@@ -30,9 +30,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// A four-in, four-out rig with nothing recorded: the state the Input setup
 /// tab draws from.
@@ -1521,4 +1521,4 @@ extension on LooperState {
 }
 
 class _MockBackingMix extends MockCubit<BackingMixState>
-    implements BackingMixCubit {}
+    implements BackingMixCubit;

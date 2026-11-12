@@ -25,9 +25,9 @@ import '../helpers/helpers.dart';
 import '../helpers/mock_decay_playback_settings.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 /// Three takes in Song mode at 120 BPM, track 1 with its own timing and
 /// decay, as the pen's per-track examples draw.

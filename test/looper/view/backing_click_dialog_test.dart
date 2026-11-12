@@ -18,11 +18,11 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import '../../helpers/helpers.dart';
 
 class _MockBacking extends MockCubit<BackingCubitState>
-    implements BackingCubit {}
+    implements BackingCubit;
 
-class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit {}
+class _MockMix extends MockCubit<BackingMixState> implements BackingMixCubit;
 
-class _MockTempo extends MockCubit<TempoState> implements TempoCubit {}
+class _MockTempo extends MockCubit<TempoState> implements TempoCubit;
 
 void main() {
   late _MockBacking backing;

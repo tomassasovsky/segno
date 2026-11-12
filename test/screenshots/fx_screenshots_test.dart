@@ -36,9 +36,9 @@ import '../helpers/helpers.dart';
 import '../looper/view/fx/stomp/factory_pedals.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 BuiltInEffect _fx(
   String slot,
@@ -238,7 +238,7 @@ const _library = FxCatalogue(
 );
 
 class _MockControlCubit extends MockCubit<ControlState>
-    implements ControlCubit {}
+    implements ControlCubit;
 
 /// The console's second track switch on the reverb, and CTRL 1 on it too:
 /// the Recorded track card names both (#1757).

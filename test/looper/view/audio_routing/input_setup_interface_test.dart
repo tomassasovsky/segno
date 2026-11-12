@@ -21,9 +21,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../../helpers/helpers.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
-    implements LooperBloc {}
+    implements LooperBloc;
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
+class _MockLooperRepository extends Mock implements LooperRepository;
 
 const _rig = LooperState(
   tracks: [Track(), Track(channel: 1)],
