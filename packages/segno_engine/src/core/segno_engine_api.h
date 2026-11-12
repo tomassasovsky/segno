@@ -4119,9 +4119,8 @@ typedef struct le_perf_target {
    * not count. Everything recorded is kept. 0 never stops it. */
   int32_t idle_stop_seconds;
   /* The longest the take runs before it stops on its own
-   * (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and never past the frames the
-   * rendered master stem can hold in a 32-bit WAV. 0 sets no limit beyond
-   * that one. */
+   * (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and then never past the frames
+   * the rendered master stem can hold in a 32-bit WAV. 0 sets no limit. */
   int32_t max_seconds;
 } le_perf_target;
 

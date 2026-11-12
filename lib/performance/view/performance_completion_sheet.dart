@@ -97,9 +97,6 @@ class PerformanceCompletionSheet extends StatefulWidget {
   /// [showPerformanceCompletionSheet]'s double-open refusal.
   static bool _open = false;
 
-  /// Whether the capture dialog is up: what it says is on screen.
-  static bool get isOpen => _open;
-
   @override
   State<PerformanceCompletionSheet> createState() =>
       _PerformanceCompletionSheetState();
@@ -287,7 +284,7 @@ class _Face extends StatelessWidget {
           PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
           PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
           PerformanceStopReason.idle || PerformanceStopReason.lengthLimit =>
-            '${perfAutoStopTitle(l10n, reason, _idleStopAfter(context))!} '
+            '${perfAutoStopTitle(l10n, reason)!} '
                 '${l10n.perfStoppedKept}',
         },
         // Stopped on its own (#1767): nothing failed.
@@ -445,13 +442,10 @@ class _DialogTitle extends StatelessWidget {
 String? perfAutoStopTitle(
   AppLocalizations l10n,
   PerformanceStopReason reason,
-  Duration idleStopAfter,
 ) => switch (reason) {
-  PerformanceStopReason.idle => l10n.perfStoppedIdle(idleStopAfter.inMinutes),
+  PerformanceStopReason.idle => l10n.perfStoppedIdle(
+    PerformanceRepository.idleStopAfter.inMinutes,
+  ),
   PerformanceStopReason.lengthLimit => l10n.perfStoppedLengthLimit,
   _ => null,
 };
-
-/// The idle period the recorder's takes stop after (#1767).
-Duration _idleStopAfter(BuildContext context) =>
-    context.read<PerformanceRecorderCubit>().idleStopAfter;

@@ -876,13 +876,6 @@ typedef struct le_fx_state {
   struct le_fx_kinds *_Atomic kinds;
 } le_fx_state;
 
-/* The unity-centre pan/balance law (accepted design, slice 3; documented on
- * le_engine_set_lane_pan): the near side stays at unity and the far side falls
- * on a quarter-sine. Centre is bit-identical to no pan.
- *
- * In the header because both threads need it: the audio thread's ring handlers
- * store a lane's pan gains with it, and the control thread precomputes an FX
- * entry's channel gains with it (slice 3e). */
 /* [x] through the sound trigger's detector high-pass (#1623): the two
  * sections [c] (le_engine.trig_hp_c) with their states [z], transposed
  * direct form II. A non-finite result (a driver glitch) would stay in the
@@ -907,6 +900,13 @@ static inline float le_trigger_hp_step(float c[2][5], float z[2][2],
   return x;
 }
 
+/* The unity-centre pan/balance law (accepted design, slice 3; documented on
+ * le_engine_set_lane_pan): the near side stays at unity and the far side falls
+ * on a quarter-sine. Centre is bit-identical to no pan.
+ *
+ * In the header because both threads need it: the audio thread's ring handlers
+ * store a lane's pan gains with it, and the control thread precomputes an FX
+ * entry's channel gains with it (slice 3e). */
 static inline void le_pan_gains(float pan, float* gl, float* gr) {
   if (pan > 1.0f) pan = 1.0f;
   if (pan < -1.0f) pan = -1.0f;

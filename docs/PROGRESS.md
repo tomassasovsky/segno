@@ -100,13 +100,19 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   own, such as a loop top's tempo anchor or an overdub pass retiring) or a
   captured input sample over the engine's activity level (-40 dBFS)
   through the sound trigger's 100 Hz high-pass, measured in the drain, not
-  the callback. The paused #1747 capture's idle 18 minutes peaked at
+  the callback, or the device's own input meter over that level once a
+  drain cycle (before any fader: a player on the interface's direct
+  monitoring with the console's monitor muted is playing). Entries the
+  engine logs past the idle end wait for the cycle's decision, so the log
+  ends where the take does (#1549). The paused #1747 capture's idle 18 minutes peaked at
   -46 dBFS. An input whose noise stays over the level keeps the take going
   until the 3-hour stop.
-- The completion banner says it as a warning, and `PerformanceAutoStopNotice`
+- Nobody is there, so the capture dialog does not open for such a take
+  (`PerformanceRecorderRendering.stoppedOnItsOwn`); `PerformanceAutoStopNotice`
   says it as a passing warning at the player's next touch, key, encoder,
-  pedal or MIDI message (`IdleDimCubit.activities`), unless the capture
-  dialog, which says it too, is up.
+  pedal or MIDI message (`IdleDimCubit.activities`). A stem that failed to
+  render is the news instead: the take completes as partial and the dialog
+  opens.
 
 ## November 2026 Cheaper effects, the same sound: reverbs, delays, filters (#1755)
 

@@ -171,6 +171,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Why this capture stopped, when the cubit itself stopped it. Preferred
   /// over the manifest's marker, which only the engine's own self-stop writes.
   PerformanceStopReason? _stopReason;
+
+  /// Whether the take this cubit is delivering stopped on its own (#1767).
+  bool get _stoppedOnItsOwn =>
+      _stopReason == PerformanceStopReason.idle ||
+      _stopReason == PerformanceStopReason.lengthLimit;
   bool _loaded = false;
 
   /// Refused arms so far; see [PerformanceRecorderIdle.refusal].
@@ -225,10 +230,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       );
     }
   }
-
-  /// How long a take runs with nothing happening before it stops on its
-  /// own ([PerformanceStopReason.idle], #1767), for what says so.
-  Duration get idleStopAfter => _performance.idleStopAfter;
 
   /// Salvages again the takes the last recovery could not recover, the
   /// player's Try again on the notice that says so (#1747). Recovery the app
@@ -529,13 +530,18 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
             refusedWith: refusal,
           ),
         );
-      case PerformanceRecorderRendering(:final percent, :final name):
+      case PerformanceRecorderRendering(
+        :final percent,
+        :final name,
+        :final stoppedOnItsOwn,
+      ):
         _emit(
           PerformanceRecorderRendering(
             percent: percent,
             name: name,
             refusal: ++_refusals,
             refusedWith: refusal,
+            stoppedOnItsOwn: stoppedOnItsOwn,
           ),
         );
       case PerformanceRecorderArmed():
@@ -812,6 +818,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         percent: 0,
         name: _basename(dir),
         refusal: _refusals,
+        stoppedOnItsOwn: _stoppedOnItsOwn,
       ),
     );
     final completer = Completer<void>();
@@ -846,6 +853,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         refusedWith: current is PerformanceRecorderRendering
             ? current.refusedWith
             : null,
+        stoppedOnItsOwn: _stoppedOnItsOwn,
       ),
     );
     if (!progress.done) return;
@@ -894,8 +902,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // The sidecar is the durable record of what the drain actually wrote, so
     // a take whose silence only survives there still finalizes honestly.
     if ((manifest?.zeroFilledFrames ?? 0) > 0) _sawOverrun = true;
+    // A take that stopped on its own (#1767) did not fail; a stem that did
+    // is the news.
+    final onItsOwn =
+        stoppedEarly == PerformanceStopReason.idle ||
+        stoppedEarly == PerformanceStopReason.lengthLimit;
     final PerformanceRecordResult result;
-    if (stoppedEarly != null) {
+    if (stoppedEarly != null && !(onItsOwn && anyFailed)) {
       result = PerformanceRecordStoppedEarly(dir, stoppedEarly);
     } else if (anyFailed) {
       result = PerformanceRecordPartial(dir);

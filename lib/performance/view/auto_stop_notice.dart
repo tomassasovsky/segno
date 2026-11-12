@@ -12,9 +12,9 @@ import 'package:segno/performance/view/performance_completion_sheet.dart';
 /// (#1767): nothing was played for the idle period, or it reached its
 /// longest length. A capture stops this way when nobody is at the console,
 /// so the passing warning waits for the player's next touch, key, encoder,
-/// pedal or MIDI message ([IdleDimCubit.activities]) and is said then,
-/// unless the capture dialog, which says it too, is up then. A new capture
-/// forgets it.
+/// pedal or MIDI message ([IdleDimCubit.activities]) and is said then. The
+/// capture dialog does not open for such a take (onPerformanceRecorderState),
+/// so this is the one message. A new capture forgets it.
 class PerformanceAutoStopNotice extends StatefulWidget {
   /// Creates a [PerformanceAutoStopNotice] around [child].
   const PerformanceAutoStopNotice({required this.child, super.key});
@@ -39,19 +39,14 @@ class _PerformanceAutoStopNoticeState extends State<PerformanceAutoStopNotice> {
   void _sayWhenBack(PerformanceStopReason reason) {
     unawaited(_back?.cancel());
     final notices = context.read<NoticesCubit>();
-    final idleStopAfter = context
-        .read<PerformanceRecorderCubit>()
-        .idleStopAfter;
     _back = context.read<IdleDimCubit>().activities.listen((_) {
       unawaited(_back?.cancel());
       _back = null;
-      // The capture dialog says it already: one cause, one message.
-      if (PerformanceCompletionSheet.isOpen) return;
       notices.show(
         Notice(
           id: AppNoticeId.performance,
           tone: NoticeTone.warning,
-          title: (l10n) => perfAutoStopTitle(l10n, reason, idleStopAfter)!,
+          title: (l10n) => perfAutoStopTitle(l10n, reason)!,
           body: (l10n) => l10n.perfStoppedKept,
           explains: true,
         ),
@@ -69,8 +64,7 @@ class _PerformanceAutoStopNoticeState extends State<PerformanceAutoStopNotice> {
             case PerformanceRecorderCompleted(
                   result: PerformanceRecordStoppedEarly(:final reason),
                 )
-                when reason == PerformanceStopReason.idle ||
-                    reason == PerformanceStopReason.lengthLimit:
+                when perfStoppedOnItsOwn(state.result):
               _sayWhenBack(reason);
             case PerformanceRecorderArmed():
               unawaited(_back?.cancel());
@@ -82,3 +76,9 @@ class _PerformanceAutoStopNoticeState extends State<PerformanceAutoStopNotice> {
         child: widget.child,
       );
 }
+
+/// Whether [result] is a take that stopped on its own (#1767).
+bool perfStoppedOnItsOwn(PerformanceRecordResult? result) =>
+    result is PerformanceRecordStoppedEarly &&
+    (result.reason == PerformanceStopReason.idle ||
+        result.reason == PerformanceStopReason.lengthLimit);

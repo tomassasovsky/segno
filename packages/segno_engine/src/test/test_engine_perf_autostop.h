@@ -198,3 +198,47 @@ static void test_perf_autostop_refuses_negative_times(void) {
   }
   le_engine_destroy(e);
 }
+
+/* Playing the console hears only through the interface (its monitor muted,
+ * the player on the interface's direct monitoring) is still playing: the
+ * device's own input level counts, before any fader (#1767). Pumped in
+ * steps the drain thread runs between, since it reads the meters live. */
+static void test_perf_autostop_muted_monitor_still_playing(void) {
+  printf("test_perf_autostop_muted_monitor_still_playing\n");
+  le_engine* e = autostop_arm(2, 0);
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
+  drain(e);
+  for (uint64_t f = 0; f < 4 * 48000; f += 12000) {
+    autostop_pump(e, f, f + 12000, autostop_playing);
+    test_sleep_ms(300); /* a drain cycle */
+  }
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(!perf_sidecar_contains("\"stopped_early\""));
+  CHECK(perf_sidecar_contains("\"capture_frames\": 192000,"));
+  le_engine_destroy(e);
+}
+
+/* A take that stops for idle or at its longest length logs nothing past the
+ * frame it ends at (#1549), whatever the engine logged after it before the
+ * drain ran: here a loop's tempo anchors at every loop top. */
+static void test_perf_autostop_log_ends_with_the_take(void) {
+  printf("test_perf_autostop_log_ends_with_the_take\n");
+  autostop_unattended_loop(0);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  unsigned char header[12];
+  CHECK(fread(header, 1, sizeof(header), f) == sizeof(header));
+  unsigned char entry[28];
+  int count = 0;
+  while (fread(entry, 1, sizeof(entry), f) == sizeof(entry)) {
+    uint64_t frame;
+    memcpy(&frame, entry, 8);
+    CHECK(frame <= 48000);
+    ++count;
+  }
+  fclose(f);
+  CHECK(count > 0);
+}

@@ -755,6 +755,10 @@ typedef struct le_pd_file {
 /* A sealed part, for the sidecar's `parts` list and the checkpoints. */
 typedef le_perf_sealed_part le_pd_sealed_part;
 
+/* Log entries a cycle may hold past the idle end (#1767); more are written
+ * at once. */
+#define LE_PD_MAX_HELD 256
+
 struct le_perf_drain {
   le_engine* engine;
   le_pd_thread_t thread;
@@ -799,6 +803,11 @@ struct le_perf_drain {
    * move the idle end by itself. */
   uint64_t late_first;
   uint64_t late_last;
+  /* Entries logged past the idle end as it stood when drained: written once
+   * the cycle knows the take goes on, dropped past the frame it stopped at
+   * (#1549: the log ends where the take does). A cycle's worth at most. */
+  le_perf_log_entry held[LE_PD_MAX_HELD];
+  int held_count;
   float activity_level;
   float hp_z[LE_MAX_MONITORED_INPUTS][2][2][2];
 
@@ -1065,12 +1074,15 @@ static int le_pd_write_log_entry(FILE* f, const le_perf_log_entry* entry) {
   return le_pd_write(f, buf, sizeof(buf));
 }
 
-/* Drains a perf-log ring (either log_ring or log_ctrl_ring) into events.log,
- * one entry at a time — these rings carry one event per pop, unlike the
- * bulk-sample le_audio_ring above. An entry past `ready` stays in the ring for
- * a later cycle: it may follow a drop this cycle has not seen. An entry past
- * `end`, the take's end, is consumed and never written, like the audio past
- * it (#1549). */
+/* Writes one entry to events.log and counts its bytes. */
+static int le_pd_append_log_entry(le_perf_drain* d,
+                                  const le_perf_log_entry* entry) {
+  if (!le_pd_write_log_entry(d->events_file, entry)) return 0;
+  le_pd_count_bytes(d, LE_PD_EVENTS_ENTRY_BYTES);
+  d->events_bytes += LE_PD_EVENTS_ENTRY_BYTES;
+  return 1;
+}
+
 /* Something happened at capture frame [frame] (#1767): the idle period
  * starts over from it, unless it is past the idle end as it stands, which
  * it then waits behind (late_first, late_last). */
@@ -1126,6 +1138,12 @@ static int le_pd_player_event(int32_t code) {
   }
 }
 
+/* Drains a perf-log ring (either log_ring or log_ctrl_ring) into events.log,
+ * one entry at a time — these rings carry one event per pop, unlike the
+ * bulk-sample le_audio_ring above. An entry past `ready` stays in the ring for
+ * a later cycle: it may follow a drop this cycle has not seen. An entry past
+ * `end`, the take's end, is consumed and never written, like the audio past
+ * it (#1549). */
 static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring,
                                 uint64_t ready, uint64_t end) {
   le_perf_log_entry entry;
@@ -1134,12 +1152,30 @@ static int le_pd_drain_log_ring(le_perf_drain* d, le_perf_log_ring* ring,
     if (le_pd_player_event(entry.cmd.code)) {
       le_pd_note_activity(d, entry.frame);
     }
-    if (entry.frame > end) continue;
-    if (!le_pd_write_log_entry(d->events_file, &entry)) return 0;
-    le_pd_count_bytes(d, LE_PD_EVENTS_ENTRY_BYTES);
-    d->events_bytes += LE_PD_EVENTS_ENTRY_BYTES;
+    if (entry.frame > end || entry.frame > d->max_frames) continue;
+    /* Past the idle end as it stands: the take may stop before it (#1767),
+     * so it waits for this cycle's decision (le_pd_settle_held). */
+    if (d->idle_frames > 0 &&
+        entry.frame > d->last_activity + d->idle_frames &&
+        d->held_count < LE_PD_MAX_HELD) {
+      d->held[d->held_count++] = entry;
+      continue;
+    }
+    if (!le_pd_append_log_entry(d, &entry)) return 0;
   }
   return 1;
+}
+
+/* Writes the entries this cycle held past the idle end that the take
+ * reaches (it went on, or stopped after them) and drops the rest. */
+static int le_pd_settle_held(le_perf_drain* d) {
+  int ok = 1;
+  for (int i = 0; i < d->held_count; ++i) {
+    if (d->held[i].frame > d->stop_frame) continue;
+    if (ok && !le_pd_append_log_entry(d, &d->held[i])) ok = 0;
+  }
+  d->held_count = 0;
+  return ok;
 }
 
 /* Writes one retired layer's PCM to its own file, interleaving lanes the same
@@ -1483,14 +1519,16 @@ static void le_pd_note_input(le_perf_drain* d, const le_pd_file* pf,
   }
   const int channels = pf->channels < 2 ? pf->channels : 2;
   const float level = d->activity_level;
+  size_t loud = frames; /* none */
   for (size_t f = 0; f < frames; ++f) {
     for (int ch = 0; ch < channels; ++ch) {
       const float y = le_trigger_hp_step(
           d->engine->trig_hp_c, d->hp_z[input][ch],
           samples[f * (size_t)pf->channels + (size_t)ch]);
-      if (fabsf(y) > level) le_pd_note_activity(d, at + f);
+      if (fabsf(y) > level) loud = f;
     }
   }
+  if (loud < frames) le_pd_note_activity(d, at + loud);
 }
 
 /* Drains everything currently available from `ring` into `pf`'s parts,
@@ -2142,6 +2180,22 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
   const uint64_t first_drop = atomic_load_explicit(
       &e->a_perf_first_drop_frame, memory_order_relaxed);
 
+  /* What the device hears now, before any monitor's fader, mute or effects
+   * (#1767): the meters' last block peak of every real input. A player
+   * heard only through the interface's own direct monitoring, with the
+   * console's monitor muted, is still playing. One block a cycle, so it
+   * catches playing, not a single short note. */
+  if (d->idle_frames > 0 && !final) {
+    const int32_t inputs =
+        atomic_load_explicit(&e->a_in_channels, memory_order_relaxed);
+    for (int32_t c = 0; c < inputs && c < LE_MAX_CHANNELS; ++c) {
+      if (load_f32(&e->a_in_peak_ch_bits[c]) > d->activity_level) {
+        le_pd_note_activity(d, elapsed);
+        break;
+      }
+    }
+  }
+
   const int sample_every =
       atomic_load_explicit(&g_pd_free_sample_cycles, memory_order_relaxed);
   if (!final && ++d->cycles_since_sample >=
@@ -2288,6 +2342,7 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
     d->stop_reason = cap_reason;
     d->stop_frame = cap;
   }
+  if (!le_pd_settle_held(d)) ok = 0;
 
   /* The PCM files stay open for the whole capture session (never closed
    * until disarm), so without an explicit flush here their buffered writes
@@ -2481,16 +2536,20 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
   /* #1767: the idle stop and the longest take, in frames. The longest is
    * also never past what the rendered master stem can hold in a 32-bit WAV
    * (a stereo master at 48 kHz: 3 h 6 min). */
-  const uint64_t rate = engine->sample_rate > 0 ? (uint64_t)engine->sample_rate : 1;
+  /* le_perf_arm's own fallback for an engine with no rate yet. */
+  const uint64_t rate =
+      engine->sample_rate > 0 ? (uint64_t)engine->sample_rate : 48000;
   d->idle_frames = target->idle_stop_seconds > 0
                        ? (uint64_t)target->idle_stop_seconds * rate
                        : 0;
   const int32_t master_channels =
       engine->perf.master_channels > 0 ? engine->perf.master_channels : 1;
-  d->max_frames = le_wav_max_frames(master_channels);
-  if (target->max_seconds > 0 &&
-      (uint64_t)target->max_seconds * rate < d->max_frames) {
+  d->max_frames = LE_PD_NO_LIMIT;
+  if (target->max_seconds > 0) {
     d->max_frames = (uint64_t)target->max_seconds * rate;
+    if (le_wav_max_frames(master_channels) < d->max_frames) {
+      d->max_frames = le_wav_max_frames(master_channels);
+    }
   }
   d->last_activity = 0;
   d->late_first = LE_PD_NO_LIMIT;
