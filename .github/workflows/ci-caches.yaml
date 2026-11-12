@@ -13,7 +13,7 @@ name: ci-caches
 # trunk, and a job that finds its cache saves nothing.
 #
 # The keys must be the ones the PR jobs compute: subosito/flutter-action's
-# defaults (the packages and design jobs), the Very Good workflows' key
+# defaults (the packages, design and fuzz jobs), the Very Good workflows' key
 # (flutter_package.yml adds the hash of every pubspec.lock), and the console
 # firmware job's Arduino key, and the native jobs' apt packages.
 
@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

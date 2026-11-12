@@ -38,7 +38,10 @@ queue_compile() {
   local n=$#
   local src=${!n}
   mkdir -p "$(dirname "$obj")"
-  BUILD_QUEUE+=("$CCACHE ${*:1:n-1} -c $src -o $obj")
+  # Each word quoted, so run_commands' eval hands the compiler exactly the
+  # words it was given here.
+  # shellcheck disable=SC2086
+  BUILD_QUEUE+=("$(printf '%q ' $CCACHE "${@:1:n-1}" -c "$src" -o "$obj")")
 }
 
 # engine_objects VAR DIR COMPILER FLAGS...: queues each TU of ENGINE_SRC,
@@ -72,8 +75,9 @@ run_queue() {
   BUILD_QUEUE=()
 }
 
-# run_commands: runs the NUL-separated shell commands on stdin, BUILD_JOBS at
-# a time; fails if any of them fails. Their output goes straight through.
+# run_commands: runs the NUL-separated shell commands on stdin (each word
+# already quoted for the shell), BUILD_JOBS at a time; fails if any of them
+# fails. Their output goes straight through.
 run_commands() {
   xargs -0 -n 1 -P "$BUILD_JOBS" bash -c 'eval "$0"'
 }

@@ -39637,6 +39637,7 @@ static void test_platform_names_the_calling_thread(void) {
  * process runs everything, as it always has. */
 static int g_shard_total = 1;
 static int g_shard_index = 0;
+static int g_sharded = 0; /* the variables were given */
 static int g_shard_position = 0;
 static int g_shard_ran = 0;
 #define SHARD(fn)                                                \
@@ -39652,6 +39653,7 @@ static int shard_init(void) {
   const char* total = getenv("SEGNO_TEST_TOTAL_SHARDS");
   const char* index = getenv("SEGNO_TEST_SHARD_INDEX");
   if (total == NULL && index == NULL) return 0;
+  g_sharded = 1;
   g_shard_total = total != NULL ? atoi(total) : 0;
   g_shard_index = index != NULL ? atoi(index) : -1;
   if (g_shard_total < 1 || g_shard_index < 0 ||
@@ -40676,7 +40678,7 @@ int main(void) {
   SHARD(test_stretch_offline_cyclic_seam);
   SHARD(test_stretch_loop_fold_holds_level);
 
-  if (g_shard_total > 1) {
+  if (g_sharded) {
     printf("shard %d of %d: %d of %d entries\n", g_shard_index, g_shard_total,
            g_shard_ran, g_shard_position);
   }

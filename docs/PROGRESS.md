@@ -2266,13 +2266,17 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   through `ccache` when installed, then runs the test binaries side by side,
   each in a `TMPDIR` of its own, and prints each one's output when all are
   done (the failed ones last). `BUILD_JOBS` sets how many run at once (one
-  per CPU). The core suite runs as `SEGNO_CORE_SHARDS` processes (twice
-  `BUILD_JOBS`): each takes every n-th entry of `test_engine_core.c`'s
+  per CPU). The core suite runs as `SEGNO_CORE_SHARDS` processes (16, on
+  every machine, so every run splits it the same way): each takes every
+  n-th entry of `test_engine_core.c`'s
   `main` (`SEGNO_TEST_TOTAL_SHARDS`, `SEGNO_TEST_SHARD_INDEX`), so every
   entry there goes through `SHARD(...)` (the script refuses a bare call)
   and every test must pass without the ones before it. The engine source
   list for this script, the benches, the pitch oracle and the test library
-  is `ENGINE_SRC` in `src/test/engine_build.sh`.
+  is `ENGINE_SRC` in `src/test/engine_build.sh`. `NATIVE_TESTS_ONLY` takes
+  a comma-separated list of `races`, `core` and `rest`, and
+  `SEGNO_CORE_PART=k/n` a share of the core shards; CI's ASan job runs as
+  three such parts.
 
   CI runs the same script in **two more configurations**, both of which must
   stay green and both of which are worth running locally after touching the

@@ -40,12 +40,20 @@ jobs:
               - 'packages/segno_engine/macos/**'
               - 'firmware/**'
               - 'packages/pedal_repository/**'
+              # firmware/test/run_tests.sh builds the ring updater from here.
+              - 'deploy/yocto/meta-segno/recipes-segno/segno-console-board/files/**'
             firmware:
               - '.github/workflows/main.yaml'
               - 'firmware/**'
+            # The appliance shell suites also build the console and ring
+            # firmware's link code, read the engine's real-time priorities,
+            # and compare exit codes with the app's appliance_env.dart.
             deploy:
               - '.github/workflows/main.yaml'
               - 'deploy/**'
+              - 'firmware/**'
+              - 'packages/segno_engine/src/**'
+              - 'lib/update/appliance/**'
 
   semantic-pull-request:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v2
@@ -220,7 +228,7 @@ jobs:
           key: ${{ github.job }}
           install: binary
           append-timestamp: false
-          max-size: 300M
+          max-size: 100M
       - name: Build + run the pitch/time bench (arm64 proxy thresholds)
         # `shell: bash` runs the step as `bash -eo pipefail`. The default shell
         # has no pipefail, so the pipeline would exit with tee's status and a
@@ -408,7 +416,7 @@ jobs:
           key: ${{ github.job }}
           install: binary
           append-timestamp: false
-          max-size: 300M
+          max-size: 100M
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
       # The #1179 pitch/time bench (src/test/bench/bench_pitch_time.{c,sh}) is
@@ -505,8 +513,7 @@ jobs:
   # four vCPUs (two cores, two threads each) run at about half speed each,
   # so on one runner the suite took 14 minutes however it was spread. Each
   # part builds only what it runs; two take half the core suite's 16 shards
-  # each (the count is fixed here so both parts agree on it), the third the
-  # rest, and the race binaries ride with the second.
+  # each, the third the rest, and the race binaries ride with the second.
   native-tests-asan:
     name: native-tests-asan (${{ matrix.part }})
     needs: changes
@@ -552,7 +559,7 @@ jobs:
           key: ${{ github.job }}-${{ strategy.job-index }}
           install: binary
           append-timestamp: false
-          max-size: 300M
+          max-size: 100M
       - name: Build + run native tests under AddressSanitizer
         # The decoder fuzz driver also runs under UBSan, for longer (#1200).
         run: >
@@ -560,7 +567,6 @@ jobs:
           FUZZ_CFLAGS="-fsanitize=undefined -fno-sanitize-recover=undefined"
           SEGNO_FUZZ_ITERATIONS=20000
           NATIVE_TESTS_ONLY="${{ matrix.only }}"
-          SEGNO_CORE_SHARDS=16
           SEGNO_CORE_PART="${{ matrix.core_part }}"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
@@ -605,7 +611,7 @@ jobs:
           key: ${{ github.job }}
           install: binary
           append-timestamp: false
-          max-size: 300M
+          max-size: 100M
       - name: Build + run native tests with LE_CALLBACK_TELEMETRY=0
         run: >
           EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0"
@@ -645,7 +651,7 @@ jobs:
           key: ${{ github.job }}
           install: binary
           append-timestamp: false
-          max-size: 300M
+          max-size: 100M
       - name: Build + run the telemetry race tests under ThreadSanitizer
         run: >
           NATIVE_TESTS_ONLY=races
@@ -676,11 +682,12 @@ jobs:
           key: ${{ github.job }}
           install: binary
           append-timestamp: false
-          max-size: 300M
+          max-size: 100M
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.47.x"
           channel: stable
+          cache: true
       - name: Build the engine test library
         run: |
           set -eu

@@ -86,7 +86,10 @@ if ! [ "$CORE_PART_N" -ge 1 ] 2>/dev/null || ! [ "$CORE_PART_K" -ge 0 ] 2>/dev/n
 fi
 WINDOWS=0
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) WINDOWS=1 ;; esac
-CORE_SHARDS="${SEGNO_CORE_SHARDS:-$((BUILD_JOBS * 2 * CORE_PART_N))}"
+# A fixed count, not one per CPU, so every machine and every CI job splits
+# the suite the same way and a test that leans on an earlier one fails
+# everywhere or nowhere.
+CORE_SHARDS="${SEGNO_CORE_SHARDS:-16}"
 
 # Every entry of the core suite's main must go through SHARD, or the shards
 # would each run it (a bare call is not lost, but runs once per shard). The
@@ -102,7 +105,11 @@ if [ -n "$bare" ]; then
   exit 1
 fi
 
-OBJ="$OUT/segno_native_obj"
+# Objects and logs go in a directory of this run's own, so two runs sharing
+# a TMPDIR (two worktrees) never mix them; the binaries keep their fixed
+# names in $OUT.
+WORK="$(mktemp -d "$OUT/segno_native.XXXXXX")"
+OBJ="$WORK/obj"
 F0="$STD $EXTRA_CFLAGS"
 F1="$STD $EXTRA_CFLAGS -DLE_NATIVE_TESTS"
 
@@ -167,7 +174,7 @@ run_queue
 
 echo "== linking =="
 L=()
-lnk() { local exe=$1; shift; L+=("$CC $* -o $OUT/$exe"); }
+lnk() { local exe=$1; shift; L+=("$(printf '%q ' $CC "$@" -o "$OUT/$exe")"); }
 if [ "$WANT_RACES" = 1 ]; then
   # The telemetry race tests (#739) build from the header-only telemetry alone.
   lnk segno_race_tests.exe $F0 "$OBJ/test_engine_races.o" -lpthread -lm
@@ -222,8 +229,7 @@ printf '%s\0' "${L[@]}" | run_commands
 # --- Run ---------------------------------------------------------------------
 # Each test gets a TMPDIR of its own, so two processes never share a scratch
 # file. Longest first, so the slowest one starts at once.
-RUN_DIR="$OUT/segno_native_runs"
-rm -rf "$RUN_DIR"
+RUN_DIR="$WORK/runs"
 mkdir -p "$RUN_DIR"
 TESTS=()
 add_test() { TESTS+=("$1" "$2"); }
@@ -316,14 +322,21 @@ done
 # of main: entry p belongs to shard p mod CORE_SHARDS. With every part, that
 # is every entry, each once.
 if [ "$WANT_CORE" = 1 ]; then
-  ran=$(cat "$RUN_DIR"/core-*.log | sed -n 's/^shard [0-9]* of [0-9]*: \([0-9]*\) of \([0-9]*\) entries$/\1 \2/p' |
-    awk '{ ran += $1; total = $2; n++ } END { print n, ran, total }')
-  read -r shards_seen entries_ran entries_total <<<"$ran"
-  expected=0
-  for i in "${CORE_RUN[@]}"; do
+  shards_seen=0 entries_ran=0 entries_total=0 expected=0
+  for i in ${CORE_RUN[@]+"${CORE_RUN[@]}"}; do
+    line=$(sed -n 's/^shard [0-9]* of [0-9]*: \([0-9]*\) of \([0-9]*\) entries$/\1 \2/p' \
+      "$RUN_DIR/core-$i-of-$CORE_SHARDS.log")
+    [ -n "$line" ] || continue
+    read -r shard_ran shard_total <<<"$line"
+    shards_seen=$((shards_seen + 1))
+    entries_ran=$((entries_ran + shard_ran))
+    entries_total=$shard_total
+  done
+  for i in ${CORE_RUN[@]+"${CORE_RUN[@]}"}; do
     expected=$((expected + (entries_total - i + CORE_SHARDS - 1) / CORE_SHARDS))
   done
-  if [ "$shards_seen" != "${#CORE_RUN[@]}" ] || [ "$entries_ran" != "$expected" ]; then
+  if [ "${#CORE_RUN[@]}" = 0 ] || [ "$shards_seen" != "${#CORE_RUN[@]}" ] ||
+      [ "$entries_ran" != "$expected" ]; then
     echo "core shards: $shards_seen of ${#CORE_RUN[@]} reported, $entries_ran of their $expected entries ran" >&2
     failed="$failed core-shard-coverage"
   fi
