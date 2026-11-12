@@ -18,6 +18,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/backing_click_dialog.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -542,12 +543,21 @@ class _CpuLoadBar extends StatelessWidget {
 
   /// The bar's size: as wide as the figure's slot, and twice as tall as the
   /// stage meters' clip cap, to read at a glance.
-  static const Size size = Size(_CpuLoad.slotWidth, 8);
+  static const Size size = Size(
+    _CpuLoad.slotWidth,
+    PeakMeterBar.clipCapHeight * 2,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final surface = context.surface;
     final load = this.load;
+    // Nothing before the first reading, under `CPU —`: an empty groove would
+    // read as a measured 0%.
+    if (load == null) {
+      return SizedBox.fromSize(key: const Key('stage_cpu_bar'), size: size);
+    }
+    final surface = context.surface;
+    final share = load.clamp(0, 100);
     return SizedBox.fromSize(
       key: const Key('stage_cpu_bar'),
       size: size,
@@ -557,10 +567,10 @@ class _CpuLoadBar extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: FractionallySizedBox(
             key: const Key('stage_cpu_bar_fill'),
-            widthFactor: load == null ? 0 : load.clamp(0, 100) / 100,
+            widthFactor: share / 100,
             heightFactor: 1,
             child: ColoredBox(
-              color: switch (load ?? 0) {
+              color: switch (share) {
                 >= kCpuLoadDanger => surface.rec,
                 >= kCpuLoadWarning => surface.warning,
                 _ => surface.accent,

@@ -3624,7 +3624,13 @@ void main() {
           )
           .color;
       final colours = <int, Color>{};
-      for (final load in const [49, 50, 74, 75, 100]) {
+      for (final load in const [
+        kCpuLoadWarning - 1,
+        kCpuLoadWarning,
+        kCpuLoadDanger - 1,
+        kCpuLoadDanger,
+        100,
+      ]) {
         cpuLoad = FixedCpuLoadRepository(load);
         seed(const LooperState(tracks: [Track()]));
         await tester.pumpWidget(const SizedBox());
@@ -3634,10 +3640,10 @@ void main() {
       }
       const surface = SurfaceTheme.dark;
       expect(colours, {
-        49: surface.accent,
-        50: surface.warning,
-        74: surface.warning,
-        75: surface.rec,
+        kCpuLoadWarning - 1: surface.accent,
+        kCpuLoadWarning: surface.warning,
+        kCpuLoadDanger - 1: surface.warning,
+        kCpuLoadDanger: surface.rec,
         100: surface.rec,
       });
     });
@@ -3661,6 +3667,20 @@ void main() {
       await pump(tester);
       await tester.pump();
       expect(find.text('CPU —'), findsOneWidget);
+      // No bar yet, which an empty groove would misread as 0% (#1774); its
+      // place is kept, so the first reading moves nothing.
+      expect(find.byKey(const Key('stage_cpu_bar_fill')), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const Key('stage_cpu_bar'))).height,
+        greaterThan(0),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('stage_cpu_bar')),
+          matching: find.byType(ColoredBox),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('is absent where the load cannot be measured', (
