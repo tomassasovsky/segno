@@ -530,10 +530,10 @@ class _CpuLoad extends StatelessWidget {
   }
 }
 
-/// The CPU load as a bar (#1774): the level meters' recessed groove, filled
-/// from the left to the load's share in the meters' accent, amber from
-/// [kCpuLoadWarning] and red from [kCpuLoadDanger]. Empty until the first
-/// reading.
+/// The CPU load as a bar (#1774): the level meters' recessed groove with a
+/// visible edge, filled from the left to the load's share in the meters'
+/// accent, amber from [kCpuLoadWarning] and red from [kCpuLoadDanger].
+/// Nothing until the first reading.
 class _CpuLoadBar extends StatelessWidget {
   const _CpuLoadBar({required this.load});
 
@@ -561,20 +561,32 @@ class _CpuLoadBar extends StatelessWidget {
     return SizedBox.fromSize(
       key: const Key('stage_cpu_bar'),
       size: size,
-      child: ColoredBox(
-        color: surface.meterTrack,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: FractionallySizedBox(
-            key: const Key('stage_cpu_bar_fill'),
-            widthFactor: share / 100,
-            heightFactor: 1,
-            child: ColoredBox(
-              color: switch (share) {
-                >= kCpuLoadDanger => surface.rec,
-                >= kCpuLoadWarning => surface.warning,
-                _ => surface.accent,
-              },
+      // The groove's edge in the muted text colour, as the console's meters
+      // draw a still meter's edge: about 3.8:1 against the top bar's
+      // near-black in the dark theme (#6B6B73 on #060607), where the
+      // borders the cards use (#3A3A40) reach only 1.8:1 and the empty part
+      // of the bar would not show.
+      child: DecoratedBox(
+        key: const Key('stage_cpu_bar_groove'),
+        decoration: BoxDecoration(
+          color: surface.meterTrack,
+          border: Border.all(color: surface.textMuted),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(1),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              key: const Key('stage_cpu_bar_fill'),
+              widthFactor: share / 100,
+              heightFactor: 1,
+              child: ColoredBox(
+                color: switch (share) {
+                  >= kCpuLoadDanger => surface.rec,
+                  >= kCpuLoadWarning => surface.warning,
+                  _ => surface.accent,
+                },
+              ),
             ),
           ),
         ),

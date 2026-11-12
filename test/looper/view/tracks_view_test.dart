@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:cpu_load_repository/cpu_load_repository.dart';
@@ -3608,9 +3609,28 @@ void main() {
       expect(bar.left, figure.left);
       expect(bar.width, figure.width);
       expect(bar.top, greaterThan(figure.bottom));
-      expect(fill.left, bar.left);
-      expect(fill.width, closeTo(bar.width * 0.23, 0.01));
-      expect(fill.height, bar.height);
+      // Inside the groove's 1 px edge.
+      expect(fill.left, bar.left + 1);
+      expect(fill.width, closeTo((bar.width - 2) * 0.23, 0.01));
+      expect(fill.height, bar.height - 2);
+    });
+
+    test("the groove's edge stands out from the stage at 3:1 or more, so "
+        'the empty part of the bar shows (#1774)', () {
+      double contrast(Color a, Color b) {
+        final (la, lb) = (a.computeLuminance(), b.computeLuminance());
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05);
+      }
+
+      for (final surface in const [
+        SurfaceTheme.dark,
+        SurfaceTheme.highContrast,
+      ]) {
+        // Against both the page and the top bar's chrome.
+        for (final ground in [surface.background, surface.chromeBar]) {
+          expect(contrast(surface.textMuted, ground), greaterThanOrEqualTo(3));
+        }
+      }
     });
 
     testWidgets('the bar turns amber at half the machine and red at three '
