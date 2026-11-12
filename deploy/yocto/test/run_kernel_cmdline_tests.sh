@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Wiring tests for the kernel's HDMI force-on (#821, #1318, #1591).
+# Wiring tests for the kernel cmdline: the HDMI force-on (#821, #1318, #1591)
+# and the NVMe power-saving switches (#1795).
 #
 # The `D` in `video=HDMI-A-*:...D` keeps both connectors enabled whatever the
 # hotplug line says. A panel that drops HPD for a moment (a sleeping TV, a
@@ -24,11 +25,18 @@
 #   - pin a mode the command line does not force and ivi-homescreen exits at
 #     start for want of it.
 #
-# So this asserts the kas cmdline and homescreen.toml statically.
+# The Pi 5 cmdline also turns off the NVMe drive's APST and the kernel's
+# PCIe ASPM (#1795). With either back on, the console's SN770 can drop off
+# the bus mid-recording, which looks like any other freeze until the
+# watchdog reboots. A second value for either argument is as bad as none:
+# the kernel takes the last one it parses.
+#
+# So this asserts the kas cmdlines and homescreen.toml statically.
 set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 KAS="$here/../kas-segno-common.yml"
+KAS_RPI5="$here/../kas-segno-rpi5.yml"
 TOML="$here/../meta-segno/recipes-segno/segno-bundle/files/homescreen.toml"
 
 pass=0
@@ -105,6 +113,29 @@ main_mode=$(cmdline | grep -oE 'video=HDMI-A-2:[0-9]+x[0-9]+' | head -1)
 main_mode=${main_mode#video=HDMI-A-2:}
 check "HDMI-A-2's forced mode is larger than the 1024x768 fallback" yes \
     "$([ -n "$main_mode" ] && [ "$(area "$main_mode")" -gt $((1024 * 768)) ] && echo yes || echo no)"
+
+# Every CMDLINE:append line the Pi 5 image is built from (not comments).
+all_cmdlines() {
+    grep -hE '^[[:space:]]*CMDLINE:append' "$KAS" "$KAS_RPI5"
+}
+
+# How many times the Pi 5 cmdlines set the argument named $1, any value.
+arg_count() {
+    all_cmdlines | grep -oE "(^|[ \"])$1=[^ \"]*" | wc -l | tr -d ' '
+}
+
+echo
+echo "the Pi 5 cmdline keeps the NVMe drive and its link out of power saving"
+check "rpi5 kas file is where the test expects" yes \
+    "$([ -f "$KAS_RPI5" ] && echo yes || echo no)"
+check "APST off: nvme_core.default_ps_max_latency_us=0" yes \
+    "$(all_cmdlines | grep -qE '(^|[ "])nvme_core\.default_ps_max_latency_us=0([ "]|$)' && echo yes || echo no)"
+check "one nvme_core.default_ps_max_latency_us=" 1 \
+    "$(arg_count 'nvme_core\.default_ps_max_latency_us')"
+check "ASPM off: pcie_aspm=off" yes \
+    "$(all_cmdlines | grep -qE '(^|[ "])pcie_aspm=off([ "]|$)' && echo yes || echo no)"
+check "one pcie_aspm=" 1 "$(arg_count 'pcie_aspm')"
+check "no pcie_aspm.policy= to re-enable it" 0 "$(arg_count 'pcie_aspm\.policy')"
 
 echo
 echo "kernel-cmdline: $pass passed, $fail failed"

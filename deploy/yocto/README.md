@@ -1,3 +1,4 @@
+<!-- cspell:words APST -->
 # Segno appliance — Yocto image
 
 The image the floor console boots: a lean Yocto build running the **prebuilt**
@@ -150,7 +151,11 @@ The image side of the same two concerns is already baked into
 `kas-segno-rpi5.yml`: `usb_max_current_enable=1` (stops the firmware capping USB
 when it can't identify the supply — the EEPROM value above is the stronger half)
 and `dtparam=pciex1`, without which the kernel never enumerates the NVMe
-controller even though the firmware booted from it.
+controller even though the firmware booted from it. Its kernel cmdline also
+turns off the drive's APST and the kernel's PCIe ASPM
+(`nvme_core.default_ps_max_latency_us=0 pcie_aspm=off`), after the console's
+SN770 dropped off the bus mid-recording
+([#1795](https://github.com/tomassasovsky/segno/issues/1795)).
 
 One mechanical trap while you're in there: the M.2 carrier's PCIe ribbon latches
 at **both** ends, and a half-seated one enumerates intermittently rather than
