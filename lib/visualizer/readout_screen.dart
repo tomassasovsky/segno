@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/appliance/screen_capture.dart';
 import 'package:segno/settings/touch_calibration/view/calibration_target.dart';
 import 'package:segno/theme/theme.dart';

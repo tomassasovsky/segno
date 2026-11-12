@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Paints a mirrored, centered loop waveform from peak [samples] (index 0 =

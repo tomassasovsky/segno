@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/surface_theme.dart';
 
 /// The sizes and type ramp of the app's notices (#1562): the message in the

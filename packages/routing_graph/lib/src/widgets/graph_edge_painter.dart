@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/src/widgets/graph_edge.dart';
 
 /// Paints a list of [GraphEdge]s as wires.

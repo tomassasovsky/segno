@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/looper/model/fx_art.dart';
 import 'package:segno/looper/view/fx/fx_art_view.dart';

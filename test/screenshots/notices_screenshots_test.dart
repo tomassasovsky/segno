@@ -1,7 +1,7 @@
 @Tags(['screenshots'])
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -49,7 +49,7 @@ void main() {
       MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: AppTheme.neon,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) => MultiBlocProvider(
           providers: [
@@ -153,7 +153,7 @@ void main() {
           MaterialApp(
             debugShowCheckedModeBanner: false,
             theme: AppTheme.readout,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            localizationsDelegates: appLocalizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             home: Scaffold(
               body: ConsoleReadoutView(

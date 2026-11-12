@@ -1,5 +1,5 @@
 import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/control/binding/midi_labels.dart';
 import 'package:segno/control/binding/midi_learn.dart';
 import 'package:segno/control/binding/midi_mapping_draft.dart';

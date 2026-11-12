@@ -7,7 +7,7 @@ import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:cpu_load_repository/cpu_load_repository.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:instrument_repository/instrument_repository.dart';
@@ -1562,7 +1562,7 @@ class _AppViewState extends State<_AppView> {
           ? AppTheme.highContrast
           : AppTheme.neon,
       highContrastTheme: AppTheme.highContrast,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      localizationsDelegates: appLocalizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: const LooperPage(),
       debugShowCheckedModeBanner: false,

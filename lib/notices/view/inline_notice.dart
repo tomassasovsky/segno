@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/notices/model/notice.dart';
 import 'package:segno/notices/view/notice_palette.dart';
 import 'package:segno/theme/theme.dart';

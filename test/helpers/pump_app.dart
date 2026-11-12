@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -40,7 +40,7 @@ extension PumpApp on WidgetTester {
         // The real app theme, so widgets resolving design tokens from
         // `Theme.of(context)` (LooperTheme, SurfaceTheme) work under test.
         theme: next,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) {
           final app = AppTextDefaults(child: child ?? const SizedBox.shrink());

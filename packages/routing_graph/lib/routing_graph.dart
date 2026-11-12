@@ -8,7 +8,7 @@
 /// parameters.
 library;
 
-export 'package:flutter/material.dart';
+export 'package:material_ui/material_ui.dart';
 
 export 'src/theme/routing_graph_theme.dart';
 export 'src/widgets/channel_chip.dart';

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/looper/view/live_meter.dart';
 import 'package:segno/looper/view/live_playhead.dart';

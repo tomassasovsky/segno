@@ -26,7 +26,7 @@ final String _sdkPath = p.normalize(
 const _imports = '''
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 ''';
 
 const _fixtures = <String, String>{

@@ -70,6 +70,7 @@ dependencies:
     path: packages/usb_storage_client
   wifi_repository:
     path: packages/wifi_repository
+  material_ui: ^1.11.0
 
 dev_dependencies:
   # tool/check_no_widget_methods.dart resolves the app with it.

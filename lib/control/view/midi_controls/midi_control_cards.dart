@@ -1,5 +1,5 @@
 import 'package:controller_repository/controller_repository.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/control/binding/control_value_target.dart';
 import 'package:segno/control/view/control_value_readout.dart';

@@ -1,5 +1,5 @@
 include:
-  - package:very_good_analysis/analysis_options.yaml
+  - analysis_options.base.yaml
   - package:bloc_lint/recommended.yaml
 analyzer:
   exclude:
@@ -10,8 +10,3 @@ analyzer:
 linter:
   rules:
     public_member_api_docs: false
-
-# very_good_analysis 11 switched trailing commas to automate; the code is
-# written with them preserved, as 10.x formatted it.
-formatter:
-  trailing_commas: preserve

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 import 'package:routing_graph/src/widgets/focusable_tap_target.dart';
 

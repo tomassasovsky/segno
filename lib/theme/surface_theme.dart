@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 
 /// The neutral "setup surface" design tokens (onboarding, settings, and the

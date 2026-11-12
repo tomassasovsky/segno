@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/audio_setup/view/device_page.dart';

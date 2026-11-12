@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/l10n/l10n.dart';

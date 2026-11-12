@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
@@ -61,7 +61,7 @@ void main() {
     }) => tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.neon,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) => OnScreenKeyboardHost(
           enabled: enabled,
@@ -636,7 +636,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.neon,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) => OnScreenKeyboardHost(
             child: Builder(

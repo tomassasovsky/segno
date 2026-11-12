@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The smallest side of anything pressable on the readout (#1654): the 7"

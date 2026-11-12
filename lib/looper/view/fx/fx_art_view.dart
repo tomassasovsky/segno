@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fx_catalogue/fx_catalogue.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/model/fx_art.dart';

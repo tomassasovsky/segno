@@ -1,4 +1,4 @@
-include: package:very_good_analysis/analysis_options.yaml
+include: ../../analysis_options.base.yaml
 
 analyzer:
   exclude:
@@ -9,8 +9,3 @@ analyzer:
   errors:
     # The generated bindings use C-style names; the typed API wraps them.
     non_constant_identifier_names: ignore
-
-# very_good_analysis 11 switched trailing commas to automate; the code is
-# written with them preserved, as 10.x formatted it.
-formatter:
-  trailing_commas: preserve
