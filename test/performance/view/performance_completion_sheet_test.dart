@@ -196,6 +196,33 @@ void main() {
     expect(strings.perfStoppedReserve, isNot(strings.perfStoppedSlowStorage));
   });
 
+  for (final (reason, text) in const [
+    (
+      PerformanceStopReason.idle,
+      'Capture stopped after 20 idle minutes. Everything recorded is kept.',
+    ),
+    (
+      PerformanceStopReason.lengthLimit,
+      'Capture reached its longest length. Everything recorded is kept.',
+    ),
+  ]) {
+    testWidgets('a take that stopped on its own ($reason) says why, as a '
+        'warning: nothing failed (#1767)', (tester) async {
+      await pump(
+        tester,
+        PerformanceRecorderCompleted(
+          PerformanceRecordStoppedEarly('/exports/perf-5', reason),
+        ),
+      );
+
+      expect(find.text(text), findsOneWidget);
+      expect(
+        tester.widget<ConsoleBanner>(find.byType(ConsoleBanner)).tone,
+        ConsoleBannerTone.warning,
+      );
+    });
+  }
+
   testWidgets('a take the storage could not keep up with says so (#1198)', (
     tester,
   ) async {

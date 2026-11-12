@@ -1177,6 +1177,8 @@ void main() {
     for (final (field, reason) in const [
       ('reserve_reached', PerformanceStopReason.reserveReached),
       ('slow_storage', PerformanceStopReason.slowStorage),
+      ('idle', PerformanceStopReason.idle),
+      ('length_limit', PerformanceStopReason.lengthLimit),
     ]) {
       test('PerformanceRecordStoppedEarly reports $reason for $field '
           '(#1198)', () async {
@@ -1698,6 +1700,8 @@ void main() {
       (PerfStopReason.reserveReached, PerformanceStopReason.reserveReached),
       (PerfStopReason.slowStorage, PerformanceStopReason.slowStorage),
       (PerfStopReason.writeFailed, PerformanceStopReason.diskFull),
+      (PerfStopReason.idle, PerformanceStopReason.idle),
+      (PerfStopReason.lengthLimit, PerformanceStopReason.lengthLimit),
     ]) {
       test('a take the engine stopped for $engineReason finalizes as '
           'stopped early for $reason (#1198)', () async {
@@ -1722,6 +1726,56 @@ void main() {
         expect(performance.armedDirectory, isNull);
       });
     }
+
+    for (final engineReason in const [
+      PerfStopReason.idle,
+      PerfStopReason.lengthLimit,
+    ]) {
+      test('a take that stopped on its own ($engineReason) renders without '
+          'the dialog, and a stem that fails is the news (#1767)', () async {
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: false),
+        ];
+        final cubit = build();
+        addTearDown(cubit.close);
+        await armWithLog(performance);
+        await pumpEventQueue();
+        final states = <PerformanceRecorderState>[];
+        final sub = cubit.stream.listen(states.add);
+
+        engine
+          ..perfStopReason = engineReason
+          ..perfStopped = true;
+        final completed = await waitForCompleted(cubit);
+        await sub.cancel();
+
+        final rendering = states.whereType<PerformanceRecorderRendering>();
+        expect(rendering, isNotEmpty);
+        expect(rendering.every((s) => s.stoppedOnItsOwn), isTrue);
+        expect(completed.result, isA<PerformanceRecordPartial>());
+      });
+    }
+
+    test('a take the player stops renders with the dialog', () async {
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      final cubit = build();
+      addTearDown(cubit.close);
+      await armWithLog(performance);
+      await pumpEventQueue();
+      final states = <PerformanceRecorderState>[];
+      final sub = cubit.stream.listen(states.add);
+      clock = clock.add(const Duration(seconds: 5));
+
+      await cubit.toggleArm();
+      await waitForCompleted(cubit);
+      await sub.cancel();
+
+      final rendering = states.whereType<PerformanceRecorderRendering>();
+      expect(rendering, isNotEmpty);
+      expect(rendering.any((s) => s.stoppedOnItsOwn), isFalse);
+    });
 
     test(
       'a full disk during the .als export still completes the capture',

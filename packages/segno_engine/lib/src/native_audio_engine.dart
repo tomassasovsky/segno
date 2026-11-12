@@ -2769,7 +2769,9 @@ class NativeAudioEngine implements AudioEngine {
         // UINT64_MAX (all ones) is the native "no budget".
         ..reserve_bytes = target.reserveBytes ?? -1
         ..mirror_dir = mirrorPtr.cast()
-        ..checkpoint_ms = target.checkpointMs;
+        ..checkpoint_ms = target.checkpointMs
+        ..idle_stop_seconds = target.idleStopSeconds
+        ..max_seconds = target.maxSeconds;
       for (var i = 0; i < PerfTarget.takeIdBytes; i++) {
         native.ref.take_id[i] = target.takeId[i];
       }

@@ -1585,7 +1585,9 @@ class _AppViewState extends State<_AppView> {
             final dimmed = SoftwareBrightness(
               brightness: brightness.softwareOf(DisplayRole.main),
               child: IdleDimHost(
-                child: WifiReconnectHoldHost(child: typed),
+                child: PerformanceAutoStopNotice(
+                  child: WifiReconnectHoldHost(child: typed),
+                ),
               ),
             );
             return BlocBuilder<PowerCubit, PowerState>(

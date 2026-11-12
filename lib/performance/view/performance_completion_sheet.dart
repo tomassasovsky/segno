@@ -283,8 +283,15 @@ class _Face extends StatelessWidget {
           PerformanceStopReason.volumeLost => l10n.perfStoppedVolumeLost,
           PerformanceStopReason.reserveReached => l10n.perfStoppedReserve,
           PerformanceStopReason.slowStorage => l10n.perfStoppedSlowStorage,
+          PerformanceStopReason.idle || PerformanceStopReason.lengthLimit =>
+            '${perfAutoStopTitle(l10n, reason)!} '
+                '${l10n.perfStoppedKept}',
         },
-        ConsoleBannerTone.failure,
+        // Stopped on its own (#1767): nothing failed.
+        reason == PerformanceStopReason.idle ||
+                reason == PerformanceStopReason.lengthLimit
+            ? ConsoleBannerTone.warning
+            : ConsoleBannerTone.failure,
       ),
       PerformanceRecordPartial() => (
         l10n.perfPartial,
@@ -427,3 +434,18 @@ class _DialogTitle extends StatelessWidget {
     ),
   );
 }
+
+/// What a take that stopped on its own (#1767) says, idle or at its longest
+/// length; null for any other [reason]. The completion banner and the
+/// notice said when the player comes back follow it with
+/// `perfStoppedKept`.
+String? perfAutoStopTitle(
+  AppLocalizations l10n,
+  PerformanceStopReason reason,
+) => switch (reason) {
+  PerformanceStopReason.idle => l10n.perfStoppedIdle(
+    PerformanceRepository.idleStopAfter.inMinutes,
+  ),
+  PerformanceStopReason.lengthLimit => l10n.perfStoppedLengthLimit,
+  _ => null,
+};

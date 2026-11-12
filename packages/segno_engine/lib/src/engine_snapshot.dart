@@ -1197,7 +1197,16 @@ enum PerfStopReason {
 
   /// A capture ring overflowed because the storage fell behind; the take ends
   /// at the first frame it could not keep.
-  slowStorage;
+  slowStorage,
+
+  /// Nothing happened for `PerfTarget.idleStopSeconds` (#1767): no logged
+  /// event and no input over the playing level. Everything recorded is
+  /// kept.
+  idle,
+
+  /// The take reached its longest length (`PerfTarget.maxSeconds`, or what
+  /// the rendered master stem can hold), and every stream ends there.
+  lengthLimit;
 
   /// The reason for the native value [value], [none] for one this build
   /// does not know.
