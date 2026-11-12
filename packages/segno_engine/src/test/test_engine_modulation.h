@@ -432,6 +432,10 @@ static void test_mod_change_during_a_fade_lands(void) {
  * phase, even after a Depth that swept has glided down to 0 %. */
 static void test_mod_free_running_rule(void) {
   printf("test_mod_free_running_rule\n");
+  /* The chain runs as the callback runs it, denormals flushed; without this
+   * the two impulse responses below differ in their denormal tails when no
+   * earlier test has left the thread flushing (a shard, #1771). */
+  le_flush_denormals();
   float p[LE_FX_PARAMS];
   const float modes[3] = {MOD_CHORUS, MOD_PHASER, MOD_FLANGER};
   for (int m = 0; m < 3; ++m) {
