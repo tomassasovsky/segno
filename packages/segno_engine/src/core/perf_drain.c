@@ -2180,22 +2180,6 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
   const uint64_t first_drop = atomic_load_explicit(
       &e->a_perf_first_drop_frame, memory_order_relaxed);
 
-  /* What the device hears now, before any monitor's fader, mute or effects
-   * (#1767): the meters' last block peak of every real input. A player
-   * heard only through the interface's own direct monitoring, with the
-   * console's monitor muted, is still playing. One block a cycle, so it
-   * catches playing, not a single short note. */
-  if (d->idle_frames > 0 && !final) {
-    const int32_t inputs =
-        atomic_load_explicit(&e->a_in_channels, memory_order_relaxed);
-    for (int32_t c = 0; c < inputs && c < LE_MAX_CHANNELS; ++c) {
-      if (load_f32(&e->a_in_peak_ch_bits[c]) > d->activity_level) {
-        le_pd_note_activity(d, elapsed);
-        break;
-      }
-    }
-  }
-
   const int sample_every =
       atomic_load_explicit(&g_pd_free_sample_cycles, memory_order_relaxed);
   if (!final && ++d->cycles_since_sample >=

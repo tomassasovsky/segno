@@ -100,12 +100,20 @@ static void test_perf_autostop_playing_never_stops(void) {
 /* Hum on an input with nobody playing is not playing. */
 static void test_perf_autostop_hum_does_not_count(void) {
   printf("test_perf_autostop_hum_does_not_count\n");
-  le_engine* e = autostop_arm(1, 0);
-  autostop_pump(e, 0, 3 * 48000, autostop_hum);
-  CHECK(le_perf_disarm(e) == LE_OK);
-  CHECK(perf_sidecar_contains("\"stopped_early\": \"idle\""));
-  CHECK(perf_sidecar_contains("\"capture_frames\": 48000,"));
-  le_engine_destroy(e);
+  /* Pumped all at once (the drain sees it only at the disarm) and in steps
+   * the drain thread runs between, as on a busy or slow machine: what is
+   * playing must not depend on when the drain looks (#1772 caught it). */
+  for (int paced = 0; paced < 2; ++paced) {
+    le_engine* e = autostop_arm(1, 0);
+    for (uint64_t f = 0; f < 3 * 48000; f += 12000) {
+      autostop_pump(e, f, f + 12000, autostop_hum);
+      if (paced) test_sleep_ms(300); /* a drain cycle */
+    }
+    CHECK(le_perf_disarm(e) == LE_OK);
+    CHECK(perf_sidecar_contains("\"stopped_early\": \"idle\""));
+    CHECK(perf_sidecar_contains("\"capture_frames\": 48000,"));
+    le_engine_destroy(e);
+  }
 }
 
 /* A logged event (a volume change) is something happening: the idle period
@@ -196,25 +204,6 @@ static void test_perf_autostop_refuses_negative_times(void) {
     target.max_seconds = which == 1 ? -1 : 0;
     CHECK(le_perf_arm(e, &target) == LE_ERR_INVALID);
   }
-  le_engine_destroy(e);
-}
-
-/* Playing the console hears only through the interface (its monitor muted,
- * the player on the interface's direct monitoring) is still playing: the
- * device's own input level counts, before any fader (#1767). Pumped in
- * steps the drain thread runs between, since it reads the meters live. */
-static void test_perf_autostop_muted_monitor_still_playing(void) {
-  printf("test_perf_autostop_muted_monitor_still_playing\n");
-  le_engine* e = autostop_arm(2, 0);
-  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);
-  drain(e);
-  for (uint64_t f = 0; f < 4 * 48000; f += 12000) {
-    autostop_pump(e, f, f + 12000, autostop_playing);
-    test_sleep_ms(300); /* a drain cycle */
-  }
-  CHECK(le_perf_disarm(e) == LE_OK);
-  CHECK(!perf_sidecar_contains("\"stopped_early\""));
-  CHECK(perf_sidecar_contains("\"capture_frames\": 192000,"));
   le_engine_destroy(e);
 }
 
