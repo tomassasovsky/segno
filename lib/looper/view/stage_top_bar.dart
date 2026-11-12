@@ -18,6 +18,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/backing_click_dialog.dart';
 import 'package:segno/looper/view/loop_settings/loop_select.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
+import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/notices/notices.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -487,8 +488,23 @@ class _RecordLight extends StatelessWidget {
   }
 }
 
+/// The load from which the CPU bar turns amber (#1774), as a share of the
+/// whole machine.
+///
+/// Looping with effects is light on the machine: playback measured about 10%
+/// and the effects-heavy stress run about 26%. Half the machine is twice the
+/// heaviest load the console was measured under, so a reading there is
+/// unusual and worth a look, though nothing is failing yet.
+const int kCpuLoadWarning = 50;
+
+/// The load from which the CPU bar turns red (#1774): three of the four
+/// cores busy, so the audio, effects and screen threads are left competing
+/// for the last one and dropouts or a slow screen become likely.
+const int kCpuLoadDanger = 75;
+
 /// The console's CPU load, right of the record light (#1307): `CPU 23%`, the
-/// share of the whole machine with every core counted as 100%.
+/// share of the whole machine with every core counted as 100%, and under it
+/// a bar filled to the same share (#1774).
 ///
 /// Absent on a build that cannot measure it (no `/proc/stat`, the macOS
 /// desktop). Owns its [CpuLoadCubit], so the load is sampled only while the
@@ -514,6 +530,69 @@ class _CpuLoad extends StatelessWidget {
   }
 }
 
+/// The CPU load as a bar (#1774): the level meters' recessed groove with a
+/// visible edge, filled from the left to the load's share in the meters'
+/// accent, amber from [kCpuLoadWarning] and red from [kCpuLoadDanger].
+/// Nothing until the first reading.
+class _CpuLoadBar extends StatelessWidget {
+  const _CpuLoadBar({required this.load});
+
+  /// The load in percent of the whole machine, or `null` before the first
+  /// reading.
+  final int? load;
+
+  /// The bar's size: as wide as the figure's slot, and twice as tall as the
+  /// stage meters' clip cap, to read at a glance.
+  static const Size size = Size(
+    _CpuLoad.slotWidth,
+    PeakMeterBar.clipCapHeight * 2,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final load = this.load;
+    // Nothing before the first reading, under `CPU —`: an empty groove would
+    // read as a measured 0%.
+    if (load == null) {
+      return SizedBox.fromSize(key: const Key('stage_cpu_bar'), size: size);
+    }
+    final surface = context.surface;
+    final share = load.clamp(0, 100);
+    final edge = Border.all(color: surface.textMuted);
+    return SizedBox.fromSize(
+      key: const Key('stage_cpu_bar'),
+      size: size,
+      // The groove's edge in the muted text colour, the colour the console's
+      // meters give a still meter's leading edge: about 3.7:1 on the dark
+      // page (#6B6B73 on #0B0B0C), where the borders the cards use
+      // (#3A3A40) reach only 1.8:1 and the empty part of the bar would not
+      // show.
+      child: DecoratedBox(
+        key: const Key('stage_cpu_bar_groove'),
+        decoration: BoxDecoration(color: surface.meterTrack, border: edge),
+        child: Padding(
+          padding: edge.dimensions,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              key: const Key('stage_cpu_bar_fill'),
+              widthFactor: share / 100,
+              heightFactor: 1,
+              child: ColoredBox(
+                color: switch (share) {
+                  >= kCpuLoadDanger => surface.rec,
+                  >= kCpuLoadWarning => surface.warning,
+                  _ => surface.accent,
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CpuLoadFigure extends StatelessWidget {
   const _CpuLoadFigure();
 
@@ -527,23 +606,38 @@ class _CpuLoadFigure extends StatelessWidget {
           ? l10n.a11yStageCpuLoadPending
           : l10n.a11yStageCpuLoad(load),
       child: ExcludeSemantics(
-        child: SizedBox(
-          key: const Key('stage_cpu_load_slot'),
-          width: _CpuLoad.slotWidth,
-          child: AppText(
-            load == null ? l10n.stageCpuLoadPending : l10n.stageCpuLoad(load),
-            key: const Key('stage_cpu_load'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: surface.textSecondary,
-              fontFamily: SurfaceTheme.monoFont,
-              fontSize: 16,
-              fontFeatures: const [FontFeature.tabularFigures()],
-              height: 1.15,
-              leadingDistribution: TextLeadingDistribution.even,
+        // The bar under the figure, and the same space above it, so the
+        // figure stays level with the record light and the readout grows
+        // no wider: on the 7 inch screen the leading row has no width to
+        // spare before the centred session name.
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: _CpuLoadBar.size.height + context.spacing.xs),
+            SizedBox(
+              key: const Key('stage_cpu_load_slot'),
+              width: _CpuLoad.slotWidth,
+              child: AppText(
+                load == null
+                    ? l10n.stageCpuLoadPending
+                    : l10n.stageCpuLoad(load),
+                key: const Key('stage_cpu_load'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.textSecondary,
+                  fontFamily: SurfaceTheme.monoFont,
+                  fontSize: 16,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  height: 1.15,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+              ),
             ),
-          ),
+            SizedBox(height: context.spacing.xs),
+            _CpuLoadBar(load: load),
+          ],
         ),
       ),
     );

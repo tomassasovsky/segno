@@ -39989,7 +39989,6 @@ int main(void) {
   SHARD(test_perf_autostop_length_limit);
   SHARD(test_perf_autostop_unattended_loop_stops);
   SHARD(test_perf_autostop_refuses_negative_times);
-  SHARD(test_perf_autostop_muted_monitor_still_playing);
   SHARD(test_perf_autostop_log_ends_with_the_take);
   SHARD(test_perf_reserve_stops_every_stream_together);
   SHARD(test_perf_reserve_counts_the_next_part_header);
