@@ -79,6 +79,7 @@
 #include "engine_digest.h"   /* le_sha256_ctx (each part's payload digest) */
 #include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_wav.h"      /* le_wav_writer (the one float WAV writer) */
+#include "engine_core.h"     /* LE_AUTO_RECORD_THRESHOLD (the idle stop, #1767) */
 #include "engine_private.h"  /* le_engine, le_perf_capture,
                               * LE_MAX_MONITORED_INPUTS */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
@@ -2179,6 +2180,26 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    * add). A drop in a later block may or may not be; either is handled. */
   const uint64_t first_drop = atomic_load_explicit(
       &e->a_perf_first_drop_frame, memory_order_relaxed);
+
+  /* What the device itself hears, before any monitor's fader, mute or
+   * effects (#1767): every real input's meter, the last block's raw peak,
+   * which the engine already publishes. It catches playing the captured
+   * streams do not carry (a monitor turned down or muted, the player on the
+   * interface's direct monitoring, an input not monitored at arm). It is
+   * not high-passed, so it counts only at the level that starts a
+   * sound-triggered take (LE_AUTO_RECORD_THRESHOLD, -34 dBFS), over any
+   * hum a console left alone has shown (-46 dBFS, #1747): read once a
+   * cycle, a signal under it never counts, however the cycles fall. */
+  if (d->idle_frames > 0 && !final) {
+    const int32_t inputs =
+        atomic_load_explicit(&e->a_in_channels, memory_order_relaxed);
+    for (int32_t c = 0; c < inputs && c < LE_MAX_CHANNELS; ++c) {
+      if (load_f32(&e->a_in_peak_ch_bits[c]) > LE_AUTO_RECORD_THRESHOLD) {
+        le_pd_note_activity(d, elapsed);
+        break;
+      }
+    }
+  }
 
   const int sample_every =
       atomic_load_explicit(&g_pd_free_sample_cycles, memory_order_relaxed);

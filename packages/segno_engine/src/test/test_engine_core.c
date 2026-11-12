@@ -39934,6 +39934,7 @@ int main(void) {
   test_perf_autostop_idle_take_stops();
   test_perf_autostop_playing_never_stops();
   test_perf_autostop_hum_does_not_count();
+  test_perf_autostop_playing_counts_mid_take();
   test_perf_autostop_event_restarts_the_period();
   test_perf_autostop_length_limit();
   test_perf_autostop_unattended_loop_stops();

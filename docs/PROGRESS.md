@@ -95,7 +95,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   and at 3 hours (`LE_PERF_STOP_LENGTH_LIMIT`, `"length_limit"`), never past
   what a 32-bit WAV of the rendered master holds (a stereo master at
   96 kHz: 93 minutes). The times come from the repository
-  (`PerformanceRepository.defaultIdleStopAfter`, `defaultLongestTake`) on
+  (`PerformanceRepository.idleStopAfter`, `longestTake`) on
   `le_perf_target.idle_stop_seconds` and `max_seconds`.
 - Something happening is a logged event a player's action leaves (a
   press, a transport change, an edit; not the facts the engine logs on its
@@ -106,12 +106,16 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   cycle's decision, so the log ends where the take does (#1549). The paused
   #1747 capture's idle 18 minutes peaked at -46 dBFS. An input whose noise
   stays over the level keeps the take going until the 3-hour stop.
-- The device's raw input meter no longer counts (#1772 caught it): it is
-  not high-passed, so hum over the level counted whenever a drain cycle
+- The device's own input meter (the last block's raw peak, which the
+  engine already publishes) also counts, once a drain cycle, for playing the
+  captured streams do not carry: a monitor turned down or muted, the player
+  on the interface's direct monitoring, an input not monitored at arm. It is
+  not high-passed, so it counts only at the level that starts a
+  sound-triggered take (`LE_AUTO_RECORD_THRESHOLD`, -34 dBFS). At -40 dBFS,
+  as first shipped, hum between the two levels counted whenever a cycle
   happened to read it mid-take, and a take's end depended on the drain's
-  pacing. Playing that the capture does not hear (its monitor muted, the
-  player on the interface's direct monitoring) does not keep a take going;
-  high-passing the meter would need work in the callback.
+  pacing (#1772 caught it). Hum louder than -34 dBFS on the raw input keeps
+  a take going until the 3-hour stop.
 - Nobody is there, so the capture dialog does not open for such a take
   (`PerformanceRecorderRendering.stoppedOnItsOwn`); `PerformanceAutoStopNotice`
   says it as a passing warning at the player's next touch, key, encoder,
