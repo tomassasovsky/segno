@@ -208,10 +208,31 @@ static inline int32_t le_fx_all_tracks_hop_seed(int32_t bus) {
 /* Where PSOLA's detection state starts in the octaver scratch (16-byte
  * aligned, after the frame arrays), and the scratch's whole length. */
 #define LE_PS_STATE_OFF ((LE_PV_SCRATCH + 3) & ~3)
+/* What fx_octaver keeps between samples and the phase vocoder between a
+ * frame's steps (#1755), after PSOLA's state in the scratch (heap), so the
+ * octaver's state in le_fx_state keeps the size the mixer's structs embed:
+ * the shift's ratio for the smoothed shift ratio_shift and the gain dip's
+ * gain for its position dip_xfade (cached: 0 until the first), and the
+ * shift's peaks, the region it is at and that region's first bin. */
+typedef struct le_oct_aux {
+  int32_t cached;
+  float ratio_shift;
+  float ratio;
+  float dip_xfade;
+  float dip_g;
+  int32_t shift_np;
+  int32_t shift_r;
+  int32_t shift_start;
+} le_oct_aux;
+#define LE_OCT_AUX_OFF \
+  ((LE_PS_STATE_OFF + (int)((sizeof(le_psola_pass) + 3) / 4) + 1) & ~1)
 #define LE_PV_SCRATCH_ALLOC \
-  (LE_PS_STATE_OFF + (int)((sizeof(le_psola_pass) + 3) / 4))
+  (LE_OCT_AUX_OFF + (int)((sizeof(le_oct_aux) + 3) / 4))
 static inline le_psola_pass* le_ps(le_octaver_state* o) {
   return (le_psola_pass*)(void*)(o->scratch + LE_PS_STATE_OFF);
+}
+static inline le_oct_aux* le_oa(le_octaver_state* o) {
+  return (le_oct_aux*)(void*)(o->scratch + LE_OCT_AUX_OFF);
 }
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
 /* Grain half-width cap. A grain is laid around LE_PV_N / 2 ahead of the read
@@ -621,6 +642,14 @@ int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
  * under one integration length still makes progress. Returns 1 once every lag
  * is in (and le_yin_finish may be called), else 0. */
 int le_yin_step(le_yin_pass* p, long budget);
+
+/* le_yin_step, its lags worked out LE_YIN_GROUP at a time ahead of their
+ * charge (le_lag_sums, engine_fx.c) into the caller's [sums], kept with the
+ * pass for its life: the same budget and the same results, for a fraction
+ * of a lag alone's cost each (#1755). The PSOLA octaver's and the Dual
+ * Octaver's passes run it; the tuner keeps le_yin_step, so the callback's
+ * le_engine_process, which inlines its slice, is the code it was. */
+int le_yin_step_lanes(le_yin_pass* p, long budget, double* sums);
 
 /* Peak-picks a COMPLETED pass: writes the parabolic-interpolated period in
  * samples to *out_period and the voicing confidence in [0,1] to *out_voiced,
