@@ -11069,17 +11069,17 @@ final class le_perf_target extends ffi.Struct {
   external int checkpoint_ms;
 
   /// The take stops on its own (LE_PERF_STOP_IDLE, #1767) once this many
-  /// seconds have passed with nothing happening: no logged event (every
-  /// press, transport change and edit is one) and no captured input above
-  /// LE_PERF_ACTIVITY_DBFS through the sound trigger's high-pass, so hum does
-  /// not count. Everything recorded is kept. 0 never stops it.
+  /// seconds have passed with nothing happening: no logged event a player's
+  /// action leaves, no captured input above LE_PERF_ACTIVITY_DBFS through
+  /// the sound trigger's high-pass (hum at that level does not count), and no
+  /// device input meter above LE_PERF_METER_ACTIVITY_DBFS (raw, so hum above
+  /// it does). Everything recorded is kept. 0 never stops it.
   @ffi.Int32()
   external int idle_stop_seconds;
 
   /// The longest the take runs before it stops on its own
-  /// (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and never past the frames the
-  /// rendered master stem can hold in a 32-bit WAV. 0 sets no limit beyond
-  /// that one.
+  /// (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and then never past the frames
+  /// the rendered master stem can hold in a 32-bit WAV. 0 sets no limit.
   @ffi.Int32()
   external int max_seconds;
 }
@@ -11527,6 +11527,8 @@ const int LE_PERF_RING_BYTES_MAX = 67108864;
 const int LE_PERF_ALLOWANCE_BYTES = 1048576;
 
 const double LE_PERF_ACTIVITY_DBFS = -40.0;
+
+const double LE_PERF_METER_ACTIVITY_DBFS = -34.0;
 
 const int LE_DIGEST_STATE_BYTES = 128;
 

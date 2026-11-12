@@ -115,7 +115,7 @@ static void test_perf_autostop_playing_never_stops(void) {
 /* Hum on an input with nobody playing is not playing. */
 static void test_perf_autostop_hum_does_not_count(void) {
   printf("test_perf_autostop_hum_does_not_count\n");
-  /* All at once (the drain sees the take only at the disarm), then with the
+  /* Pumped at once (the drain may or may not run mid-take), then with the
    * drain running mid-take, as on a busy machine (#1772): a cycle reads the
    * meters inside the idle window, after a block that ends on the hum's
    * crest (20400 frames: a 50-frame block, a 960-frame period), and the

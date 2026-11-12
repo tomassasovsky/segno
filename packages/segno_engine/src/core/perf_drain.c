@@ -79,7 +79,6 @@
 #include "engine_digest.h"   /* le_sha256_ctx (each part's payload digest) */
 #include "engine_platform.h" /* le_platform_name_thread */
 #include "engine_wav.h"      /* le_wav_writer (the one float WAV writer) */
-#include "engine_core.h"     /* LE_AUTO_RECORD_THRESHOLD (the idle stop, #1767) */
 #include "engine_private.h"  /* le_engine, le_perf_capture,
                               * LE_MAX_MONITORED_INPUTS */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
@@ -790,9 +789,11 @@ struct le_perf_drain {
   /* Stopping a take nobody is playing (#1767). `idle_frames` is the
    * target's idle_stop_seconds in frames (0: never), `max_frames` the
    * longest take; `last_activity` the latest capture frame at which
-   * something happened: a logged event, or a captured input sample over
-   * `activity_level` through the sound trigger's high-pass, whose section
-   * states per input stream and side are `hp_z`. Drain-thread only. */
+   * something happened: a logged event a player's action leaves, a
+   * captured input sample over `activity_level` through the sound trigger's
+   * high-pass (its section states per input stream and side are `hp_z`), or
+   * a device input meter over `meter_level` when a cycle reads it.
+   * Drain-thread only. */
   uint64_t idle_frames;
   uint64_t max_frames;
   uint64_t last_activity;
@@ -810,6 +811,7 @@ struct le_perf_drain {
   le_perf_log_entry held[LE_PD_MAX_HELD];
   int held_count;
   float activity_level;
+  float meter_level; /* LE_PERF_METER_ACTIVITY_DBFS, raw: the device meter's */
   float hp_z[LE_MAX_MONITORED_INPUTS][2][2][2];
 
   char capture_dir[LE_PD_PATH_MAX];
@@ -2186,15 +2188,15 @@ static int le_pd_drain_cycle(le_perf_drain* d, int final) {
    * which the engine already publishes. It catches playing the captured
    * streams do not carry (a monitor turned down or muted, the player on the
    * interface's direct monitoring, an input not monitored at arm). It is
-   * not high-passed, so it counts only at the level that starts a
-   * sound-triggered take (LE_AUTO_RECORD_THRESHOLD, -34 dBFS), over any
-   * hum a console left alone has shown (-46 dBFS, #1747): read once a
-   * cycle, a signal under it never counts, however the cycles fall. */
+   * not high-passed, so it counts only at LE_PERF_METER_ACTIVITY_DBFS
+   * (-34 dBFS), over any hum a console left alone has shown (-46 dBFS,
+   * #1747): read once a cycle, a signal under it never counts, however the
+   * cycles fall. */
   if (d->idle_frames > 0 && !final) {
     const int32_t inputs =
         atomic_load_explicit(&e->a_in_channels, memory_order_relaxed);
     for (int32_t c = 0; c < inputs && c < LE_MAX_CHANNELS; ++c) {
-      if (load_f32(&e->a_in_peak_ch_bits[c]) > LE_AUTO_RECORD_THRESHOLD) {
+      if (load_f32(&e->a_in_peak_ch_bits[c]) > d->meter_level) {
         le_pd_note_activity(d, elapsed);
         break;
       }
@@ -2560,6 +2562,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
   d->late_first = LE_PD_NO_LIMIT;
   d->late_last = 0;
   d->activity_level = (float)pow(10.0, LE_PERF_ACTIVITY_DBFS / 20.0);
+  d->meter_level = (float)pow(10.0, LE_PERF_METER_ACTIVITY_DBFS / 20.0);
   /* Read before the first header is written, so the budget counts every
    * byte the take puts on the volume. */
   le_pd_sample_free(d);

@@ -4113,10 +4113,11 @@ typedef struct le_perf_target {
    * a real take); 0 checkpoints only when the take stops. */
   int32_t checkpoint_ms;
   /* The take stops on its own (LE_PERF_STOP_IDLE, #1767) once this many
-   * seconds have passed with nothing happening: no logged event (every
-   * press, transport change and edit is one) and no captured input above
-   * LE_PERF_ACTIVITY_DBFS through the sound trigger's high-pass, so hum does
-   * not count. Everything recorded is kept. 0 never stops it. */
+   * seconds have passed with nothing happening: no logged event a player's
+   * action leaves, no captured input above LE_PERF_ACTIVITY_DBFS through
+   * the sound trigger's high-pass (hum at that level does not count), and no
+   * device input meter above LE_PERF_METER_ACTIVITY_DBFS (raw, so hum above
+   * it does). Everything recorded is kept. 0 never stops it. */
   int32_t idle_stop_seconds;
   /* The longest the take runs before it stops on its own
    * (LE_PERF_STOP_LENGTH_LIMIT), in seconds, and then never past the frames
@@ -4139,6 +4140,13 @@ typedef struct le_perf_target {
  * the trigger's own threshold, and above the floor of a console left with
  * nobody playing (a peak of -46 dBFS over 18 idle minutes, #1747). */
 #define LE_PERF_ACTIVITY_DBFS (-40.0)
+/* The device input meter level that counts as playing (#1767), in raw dBFS:
+ * the meter is read once a drain cycle for playing the captured streams do
+ * not carry (a monitor turned down or muted, direct monitoring, an input not
+ * monitored at arm). It is not high-passed, so it sits where hum on a
+ * console left alone does not reach (#1747: -46 dBFS), at the level the
+ * sound trigger starts a take at; hum above it keeps a take going. */
+#define LE_PERF_METER_ACTIVITY_DBFS (-34.0)
 
 /* Why the most recent take stopped (le_snapshot.perf_stop_reason). NONE while
  * a take runs; the first reason to happen is kept until the next arm. */
