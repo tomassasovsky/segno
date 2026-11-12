@@ -702,6 +702,42 @@ class StorageRepository implements ActiveOperationSource {
     }
   }
 
+  /// Makes the entries of the directory at [relativePath] under
+  /// [destination]'s root durable, as [copyFile] does after its own rename.
+  /// For a writer that renames what it copied into place itself (the
+  /// Library's export swap), so it reports nothing as written before the
+  /// renames would survive a pulled drive. Call it under a lease on
+  /// [destination].
+  ///
+  /// Throws [StorageFailure.volumeLost] when the volume is no longer
+  /// mounted, and [StorageFailure.io] when the device refuses the sync.
+  /// [relativePath] follows [copyFile]'s rule.
+  Future<void> syncDirectory(
+    StorageDestination destination,
+    String relativePath,
+  ) async {
+    if (relativePath
+        .split('/')
+        .any((s) => s.isEmpty || s == '.' || s == '..')) {
+      throw ArgumentError.value(
+        relativePath,
+        'relativePath',
+        'must be a relative path inside the destination',
+      );
+    }
+    final root = switch (destination) {
+      InternalDestination() => await _exportsRoot(),
+      RemovableDestination(:final generation) =>
+        _mountedPath(generation) ??
+            (throw StorageFailure.volumeLost(generation)),
+    };
+    try {
+      _io.syncDirectory('$root/$relativePath');
+    } on FileSystemException catch (e) {
+      throw StorageFailure.io(e.osError?.message ?? e.message);
+    }
+  }
+
   /// Copies the update package at [sourcePath], on removable volume
   /// [generation], into [stagingDirectory] on Internal, and returns the path
   /// written (#1270 Part 8).

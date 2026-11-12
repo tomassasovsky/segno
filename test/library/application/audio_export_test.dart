@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -119,6 +120,8 @@ void main() {
         for (var i = 1; i <= 3; i++) '$perf/Evening loop · Part 00$i.wav',
       ]);
       expect(progress.last, 1);
+      // The swap's renames are synced before the export is reported.
+      expect(drive.synced, [perf]);
     });
 
     test(
@@ -323,6 +326,7 @@ void main() {
         ('$staging/Evening loop/stems/wet/track0.wav', ConflictPolicy.replace),
         ('$staging/Evening loop/project.als', ConflictPolicy.replace),
       ]);
+      expect(drive.synced, [perf, '$perf/Evening loop']);
     });
 
     test('ask reports the directory already there before writing', () async {
@@ -401,6 +405,48 @@ void main() {
       );
 
       expect(driveBytes(), before);
+    });
+  });
+
+  group('two exports into one folder at once', () {
+    test("the second one's recovery leaves the first one's staging alone, so "
+        'both land whole', () async {
+      final hold = Completer<void>();
+      // The first export stops on its second file, its first one staged.
+      drive.beforeCopy = (copy) {
+        if (copy == 2) drive.hold = hold;
+      };
+      final first = run(package());
+      while (drive.copies.length < 2) {
+        await pumpEventQueue();
+      }
+      final second = run(
+        AudioExportPlan(
+          name: 'Acoustic set',
+          folder: perf,
+          files: [
+            AudioExportFile(
+              source('other/master-001.wav', fill: 2),
+              '{name}.wav',
+            ),
+          ],
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(
+        File('${drive.mount}/$staging/Evening loop/master-001.wav')
+            .existsSync(),
+        isTrue,
+      );
+      hold.complete();
+      await Future.wait([first, second]);
+      expect(drive.files, [
+        '$perf/Acoustic set.wav',
+        '$perf/Evening loop/master-001.wav',
+        '$perf/Evening loop/project.als',
+        '$perf/Evening loop/stems/wet/track0.wav',
+      ]);
     });
   });
 

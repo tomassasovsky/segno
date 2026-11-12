@@ -3992,8 +3992,8 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('the Library reads the drives the storage repository '
-        'reports, so Export to USB finds the stick (#1790)', (tester) async {
+    testWidgets('the Library opened from the stage reads the drives the '
+        "app's storage repository reports (#1790)", (tester) async {
       final sessionsRoot = Directory.systemTemp.createTempSync(
         'segno-app-sessions-',
       );
@@ -4024,7 +4024,11 @@ void main() {
         exportsRoot: () async => '/segno-app-test/exports',
         volumeSpace: (_) => null,
       );
-      addTearDown(() => unawaited(storage.dispose()));
+      // Not awaited: a cancel awaited inside testWidgets never completes.
+      addTearDown(() {
+        unawaited(storage.dispose());
+        unawaited(usb.dispose());
+      });
       await pumpApp(tester, NoopWaveformWindowService(), storage: storage);
 
       await tester.tap(find.byKey(const Key('stage_library')));

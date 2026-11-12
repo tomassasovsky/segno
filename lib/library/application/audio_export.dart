@@ -107,6 +107,12 @@ class AudioExporter {
   /// not reached its commit point.
   static const String targetsName = '.targets';
 
+  /// The staging directories of the exports running now, by absolute path,
+  /// across every exporter: [recoverFolder] leaves them and their asides
+  /// alone, so a backup and an export into one folder at once do not
+  /// delete each other's work.
+  static final Set<String> _inFlight = {};
+
   /// Called at each step of a swap (`aside <entry>` before each move aside,
   /// `aside` once they are all aside, `placed <entry>` per entry, then
   /// `committed`), so a test can fail one or see the disk at that moment.
@@ -146,6 +152,11 @@ class AudioExporter {
           : [for (final f in plan.files) f.target.replaceAll('{name}', name)];
       final staging = '${plan.folder}/$stagingPrefix$name';
       final stagingDir = Directory('$mount/$staging');
+      // Ours from here: another export or backup into this folder recovers
+      // it around this staging and its aside, never through them. Taken
+      // after this export's own recovery, which must still put back an
+      // aside an interrupted export of the same name left.
+      _inFlight.add(stagingDir.path);
       var done = 0;
       try {
         if (stagingDir.existsSync()) stagingDir.deleteSync(recursive: true);
@@ -168,12 +179,21 @@ class AudioExporter {
           entries: entries,
           earlier: policy == ConflictPolicy.replace ? plan.earlier : null,
         );
+        // The swap's renames are plain renames: sync them before the export
+        // is reported, as the copy syncs its own (a moved package directory
+        // keeps its `..` entry in its own clusters, so it is synced too).
+        await _storage.syncDirectory(destination, plan.folder);
+        if (plan.package) {
+          await _storage.syncDirectory(destination, '${plan.folder}/$name');
+        }
       } on FileSystemException catch (e) {
         _bestEffort(() => stagingDir.deleteSync(recursive: true));
         throw StorageFailure.io(e.osError?.message ?? e.message);
       } on Object {
         _bestEffort(() => stagingDir.deleteSync(recursive: true));
         rethrow;
+      } finally {
+        _inFlight.remove(stagingDir.path);
       }
       return '${plan.folder}/${entries.first}';
     });
@@ -309,7 +329,8 @@ class AudioExporter {
   /// its commit point is put back ([_rollBack]), a swap cut after it only
   /// loses its aside, and a staging directory with no swap is removed.
   /// Runs before every export; an export of this build's predecessor named
-  /// its staging `.segno-export`, which goes too.
+  /// its staging `.segno-export`, which goes too. The staging and aside of
+  /// an export still running are not leftovers and stay.
   static void recoverFolder(Directory folder) {
     if (!folder.existsSync()) return;
     final entries = folder.listSync();
@@ -320,6 +341,7 @@ class AudioExporter {
       final staging = Directory(
         '${folder.path}/${entry.substring(0, entry.length - 4)}',
       );
+      if (_inFlight.contains(staging.path)) continue;
       if (File('${e.path}/$targetsName').existsSync()) {
         _rollBack(folder: folder, staging: staging, aside: e);
       } else {
@@ -328,10 +350,17 @@ class AudioExporter {
     }
     for (final e in folder.listSync()) {
       final entry = _lastSegment(e.path);
-      if (e is Directory &&
-          (entry.startsWith(stagingPrefix) || entry == '.segno-export')) {
+      if (e is! Directory) continue;
+      if (entry == '.segno-export') {
         e.deleteSync(recursive: true);
+        continue;
       }
+      if (!entry.startsWith(stagingPrefix)) continue;
+      final staging = entry.endsWith('.old')
+          ? '${folder.path}/${entry.substring(0, entry.length - 4)}'
+          : e.path;
+      if (_inFlight.contains(staging)) continue;
+      e.deleteSync(recursive: true);
     }
   }
 

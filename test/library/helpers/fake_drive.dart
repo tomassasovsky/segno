@@ -140,6 +140,15 @@ class FakeDrive extends Fake implements StorageRepository {
     return target;
   }
 
+  /// Every directory synced, relative to the drive's root, in order.
+  final List<String> synced = [];
+
+  @override
+  Future<void> syncDirectory(
+    StorageDestination destination,
+    String relativePath,
+  ) async => synced.add(relativePath);
+
   /// Every file on the drive, relative to its root, sorted.
   List<String> get files {
     final root = Directory(mount);
