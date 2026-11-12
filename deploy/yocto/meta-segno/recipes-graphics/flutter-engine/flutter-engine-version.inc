@@ -21,4 +21,5 @@ FLUTTER_ENGINE_COMMIT = "371f77202a73e8dff57a8b3bff75bca55c090aee"
 # (deploy/rpi/profile-on-device.sh). Not in the image: `segno-build --profile`
 # fetches it into the profile bundle, checked against this digest. Bump it with
 # the commit.
+# PROVISIONAL, like the release digest in the prebuilt recipe (PR #1781).
 FLUTTER_ENGINE_PROFILE_SHA256 = "924e4351d1584f3aec755e2d6c2af6f47c3e6750e21c8b388a523132148f99f6"

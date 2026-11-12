@@ -122,6 +122,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `MakeRenderTargetFromBackingStoreImpeller` is unchanged, so ivi-homescreen
   stays at its pinned revision and its three patches apply as they are,
   the MSAA framebuffer (#1687) included.
+- Until meta-flutter publishes the 371f772 engine (their build was queued,
+  runners offline, on 2026-11-12), both engine digests on the branch are
+  from a build of meta-flutter's own workflow on our runner, and only the
+  self-hosted image build can fetch it (the tarball is in its Yocto
+  downloads directory). Swapping in meta-flutter's digests gates the merge
+  of PR #1781.
 - 3.50 adds `--impeller-use-sdfs`: rects, rounded rects, circles, ovals and
   lines drawn from signed distance fields and anti-aliased in the shader.
   Flutter's GTK, macOS and Windows embedders always pass it; the embedder API
