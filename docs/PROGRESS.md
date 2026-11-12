@@ -93,7 +93,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - CI, the app and every package build on Flutter 3.50.0 (Dart 3.14.0):
   `flutter_version: "3.50.x"`, `sdk: ^3.14.0`, `flutter: ^3.50.0`. Locally
   the 3.50 SDK is `/Users/Tomas/development/flutter-3.50` until the shared
-  `/Users/Tomas/development/flutter` moves to it. The appliance's engine
+  `/Users/Tomas/development/flutter` moves to it (How to build / test). The appliance's engine
   (`flutter-engine-version.inc`) moves in part 2; the bundle's AOT snapshot
   loads only on its own engine, so the two parts land together.
 - Material comes from `package:material_ui` (the SDK's
@@ -102,7 +102,11 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `appLocalizationsDelegates` (`lib/l10n/l10n.dart`), not
   `AppLocalizations.localizationsDelegates`: gen-l10n still lists
   flutter_localizations' delegates there, whose `MaterialLocalizations` type
-  is not the one material_ui reads, so its widgets would fall back to English.
+  is not the one material_ui reads: under `es`, `MaterialLocalizations.of`
+  finds none. `test/l10n/app_localizations_test.dart` checks both, and
+  `test/tool/bloc_imports_test.dart` keeps material_ui and cupertino_ui out
+  of blocs and cubits (bloc_lint's `avoid_flutter_imports` sees only
+  `package:flutter/`).
 - One lint set: `analysis_options.base.yaml` (very_good_analysis 11 with
   trailing commas preserved, and its two spelling-only rules,
   `unnecessary_type_name_in_constructor` and `empty_container_bodies`,
@@ -2250,8 +2254,10 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
 ## How to build / test (environment gotchas — read first)
 
 - **Dart/Flutter tests:** the very_good_cli MCP `test` tool is broken in this
-  env (exit 69, machine-output parser vs Flutter 3.44). Use the working SDK:
-  `/Users/Tomas/development/flutter/bin/flutter test`. Codex does not install
+  env (exit 69, machine-output parser vs Flutter 3.44). Use the Flutter 3.50
+  SDK: `/Users/Tomas/development/flutter-3.50/bin/flutter test`
+  (`/Users/Tomas/development/flutter` is still 3.47, which cannot resolve
+  `sdk: ^3.14.0`; once it moves to 3.50 this path goes back). Codex does not install
   the former Claude hook that blocked bare CLI test commands.
 - **Screenshot suites** (`test/screenshots/`, tag `screenshots`): no goldens
   are committed. They render only with `--update-goldens`, into
@@ -2325,7 +2331,7 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   listed one that now passes. The settings come from
   `src/test/bench/fx_factory_settings.inc`, generated from the catalogue;
   after a catalogue or module-build change, regenerate it with
-  `/Users/Tomas/development/flutter/bin/flutter test
+  `/Users/Tomas/development/flutter-3.50/bin/flutter test
   tool/generate_fx_factory_settings.dart` in `packages/looper_repository`
   (its test fails until then).
 - **Effects against the reference engine (#1755):**

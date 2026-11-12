@@ -44,7 +44,7 @@ In a widget, read the tokens with `context.routingGraph`, for example
 
 ## Notes
 
-- The barrel re-exports `package:flutter/material.dart`.
+- The barrel re-exports `package:material_ui/material_ui.dart`.
 - Only neutral colors are in the theme. Semantic colors, such as a lane color
   or a wet or dry send, are constructor parameters on each widget.
 - `FocusableTapTarget` is keyboard focusable, activates on Enter and Space,

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -45,6 +47,48 @@ void main() {
       expect(l10n.trackStatePlaying, 'reproduciendo');
       expect(l10n.defaultTrackName(1), 'PISTA 1');
       expect(l10n.startEngine, 'Iniciar motor');
+    });
+
+    testWidgets("Material's own strings are Spanish for es locale", (
+      tester,
+    ) async {
+      // material_ui's widgets read material_ui's MaterialLocalizations. The
+      // flutter_localizations delegates gen-l10n lists supply the SDK's type
+      // instead, under which these would fall back to English.
+      late MaterialLocalizations material;
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('es'),
+          localizationsDelegates: appLocalizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Builder(
+            builder: (context) {
+              material = MaterialLocalizations.of(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+
+      expect(material.okButtonLabel, 'ACEPTAR');
+      expect(material.cancelButtonLabel, 'Cancelar');
+    });
+
+    test('nothing uses the delegate list gen-l10n writes', () {
+      final offenders = [
+        for (final dir in ['lib', 'test', 'integration_test'])
+          for (final file in Directory(dir).listSync(recursive: true))
+            if (file is File &&
+                file.path.endsWith('.dart') &&
+                !file.path.startsWith('lib/l10n/') &&
+                file.readAsStringSync().contains(
+                  // Split so this file does not match itself.
+                  'AppLocalizations.'
+                  'localizationsDelegates',
+                ))
+              file.path,
+      ];
+      expect(offenders, isEmpty, reason: 'use appLocalizationsDelegates');
     });
   });
 

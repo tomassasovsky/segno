@@ -39,6 +39,12 @@ dependencies:
   instrument_repository:
     path: packages/instrument_repository
   intl: ^0.20.2
+  # Not used directly. path_provider_android and shared_preferences_android
+  # pull it in, and from 1.0.1 it depends on jni_util, whose JDK lookup calls
+  # Process.runSync: tool/check_no_dart_process.sh refuses any runtime
+  # package that can start a process through dart:io (#1367). Held at the
+  # last version without it until that changes upstream.
+  jni: 1.0.0
   looper_repository:
     path: packages/looper_repository
   lucide_icons_flutter: ^4.0.1
