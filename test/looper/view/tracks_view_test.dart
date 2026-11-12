@@ -3594,6 +3594,70 @@ void main() {
       });
     }
 
+    testWidgets('a bar under the figure fills to the load (#1774)', (
+      tester,
+    ) async {
+      cpuLoad = const FixedCpuLoadRepository(23);
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      final figure = rectOf(tester, 'stage_cpu_load_slot');
+      final bar = rectOf(tester, 'stage_cpu_bar');
+      final fill = rectOf(tester, 'stage_cpu_bar_fill');
+      // As wide as the figure's slot, under it.
+      expect(bar.left, figure.left);
+      expect(bar.width, figure.width);
+      expect(bar.top, greaterThan(figure.bottom));
+      // The groove's edge in the muted text colour, which stands out from
+      // the stage (the theme suite holds it at 3:1), and the fill inside it.
+      final groove =
+          tester
+                  .widget<DecoratedBox>(
+                    find.byKey(const Key('stage_cpu_bar_groove')),
+                  )
+                  .decoration
+              as BoxDecoration;
+      expect((groove.border! as Border).top.color, SurfaceTheme.dark.textMuted);
+      expect(fill.left, bar.left + 1);
+      expect(fill.width, closeTo((bar.width - 2) * 0.23, 0.01));
+      expect(fill.height, bar.height - 2);
+    });
+
+    testWidgets('the bar turns amber at half the machine and red at three '
+        'quarters (#1774)', (tester) async {
+      Color fillAt(WidgetTester tester) => tester
+          .widget<ColoredBox>(
+            find.descendant(
+              of: find.byKey(const Key('stage_cpu_bar_fill')),
+              matching: find.byType(ColoredBox),
+            ),
+          )
+          .color;
+      final colours = <int, Color>{};
+      for (final load in const [
+        kCpuLoadWarning - 1,
+        kCpuLoadWarning,
+        kCpuLoadDanger - 1,
+        kCpuLoadDanger,
+        100,
+      ]) {
+        cpuLoad = FixedCpuLoadRepository(load);
+        seed(const LooperState(tracks: [Track()]));
+        await tester.pumpWidget(const SizedBox());
+        await pump(tester);
+        await tester.pump();
+        colours[load] = fillAt(tester);
+      }
+      const surface = SurfaceTheme.dark;
+      expect(colours, {
+        kCpuLoadWarning - 1: surface.accent,
+        kCpuLoadWarning: surface.warning,
+        kCpuLoadDanger - 1: surface.warning,
+        kCpuLoadDanger: surface.rec,
+        100: surface.rec,
+      });
+    });
+
     testWidgets('reads as a load for a screen reader', (tester) async {
       final handle = tester.ensureSemantics();
       cpuLoad = const FixedCpuLoadRepository(64);
@@ -3613,6 +3677,21 @@ void main() {
       await pump(tester);
       await tester.pump();
       expect(find.text('CPU —'), findsOneWidget);
+      // No bar yet, which an empty groove would misread as 0% (#1774); its
+      // place is kept, so the first reading moves nothing.
+      expect(find.byKey(const Key('stage_cpu_bar_fill')), findsNothing);
+      expect(find.byKey(const Key('stage_cpu_bar_groove')), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const Key('stage_cpu_bar'))).height,
+        greaterThan(0),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('stage_cpu_bar')),
+          matching: find.byType(ColoredBox),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('is absent where the load cannot be measured', (
@@ -3629,6 +3708,7 @@ void main() {
       const keys = [
         'stage_record_slot',
         'stage_cpu_load',
+        'stage_cpu_bar',
         'stage_session_name',
         'stage_bank_button',
       ];
