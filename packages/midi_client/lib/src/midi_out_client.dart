@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
+import 'package:midi_client/src/midi_bindings.dart';
 import 'package:midi_client/src/midi_client_base.dart' show MidiException;
 import 'package:midi_client/src/midi_device.dart';
-import 'package:midi_client/src/native_library.dart';
 import 'package:segno_engine/segno_engine_ffi.dart';
 
 /// A thin, typed wrapper over the native `le_midi_out_*` output seam.
@@ -13,9 +13,8 @@ import 'package:segno_engine/segno_engine_ffi.dart';
 /// The send-side counterpart of `MidiClient`: owns a single native MIDI output
 /// handle (`le_midi_out`) and pushes raw bytes (short messages or complete
 /// SysEx) to one open destination. It has no callback and no ring — [send]
-/// hands the bytes straight to the OS. `bindings` may be injected (e.g. a
-/// `FakeSegnoEngineBindings`); when omitted the platform shared library is
-/// opened, exactly like `MidiClient`.
+/// hands the bytes straight to the OS. `bindings` may be injected (a fake
+/// [MidiBindings]); the default calls the engine library.
 ///
 /// The pedal used to ride on this (its LED frames went out as SysEx); the
 /// console board now talks over its own UART, so this is for DIN MIDI OUT.
@@ -24,8 +23,7 @@ class MidiOutClient {
   ///
   /// Throws a [MidiException] when the platform has no MIDI backend or the
   /// handle cannot be allocated.
-  new({SegnoEngineBindings? bindings})
-    : _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary()) {
+  new({this._bindings = const MidiBindings()}) {
     _handle = _bindings.le_midi_out_create();
     if (_handle == nullptr) {
       throw const MidiException('failed to allocate native MIDI output handle');
@@ -35,7 +33,7 @@ class MidiOutClient {
   /// Capacity of the enumeration buffer; ports beyond this are not reported.
   static const int _maxDevices = 64;
 
-  final SegnoEngineBindings _bindings;
+  final MidiBindings _bindings;
   late final Pointer<le_midi_out> _handle;
   bool _disposed = false;
 

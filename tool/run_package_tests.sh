@@ -26,8 +26,8 @@
 #   spawn_process: its macOS branches and the libc failures a test cannot
 #     provoke; the tests force the EPIPE and ECHILD paths (#1457), so the
 #     figure is 89.3% on every run.
-# Native-library tests (fuzz-tagged) self-skip here; the `fuzz` job runs them
-# against the engine it builds.
+# The native-backed suites (fuzz-tagged) run here too: segno_engine's build
+# hook builds the engine for each package's test run (#1783).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

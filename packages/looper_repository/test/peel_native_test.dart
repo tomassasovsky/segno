@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -13,10 +12,6 @@ import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 /// the fixture of fade_native_test plus one overdub pass, so the track holds
 /// an original (0.5) and one layer (0.75).
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -107,7 +102,7 @@ void main() {
     expect(engine.exportTrack(0), everyElement(closeTo(.5, 1e-6)));
     ticks.add(null);
     expect(repository.state.tracks[0].layers, 1);
-  }, skip: skip);
+  });
 
   test(
     'an undone peel survives save and stopped recall: Redo re-peels and Undo '
@@ -201,7 +196,6 @@ void main() {
       expect(recalled.peelDepth, 1);
       expect(recalled.redoDepth, 1);
     },
-    skip: skip,
   );
 
   test('peel is refused while the track overdubs and while a Session is '
@@ -247,5 +241,5 @@ void main() {
     }
     // The loaded session has one layer and no history to peel.
     expect(repository.peel(), EngineResult.invalid);
-  }, skip: skip);
+  });
 }

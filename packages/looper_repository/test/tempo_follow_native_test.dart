@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -15,10 +14,6 @@ const _rate = 8000;
 const _bar = 16000;
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -135,7 +130,6 @@ void main() {
       expect(repository.state.tracks[0].pitchModeOverride, isNull);
       expect(repository.state.recordedTempoBpm, 120);
     },
-    skip: skip,
   );
 
   test('a Session recall of a retimed rig (#1179 Part 4b) commits the takes on '
@@ -212,5 +206,5 @@ void main() {
     await step();
     expect(engine.snapshot().tracks[0].headRate, closeTo(0.75, 1e-3));
     expect(engine.snapshot().tracks[1].headRate, 1);
-  }, skip: skip);
+  });
 }

@@ -30,14 +30,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Save-capture and load-apply go through the SAME bloc-layer mapping the
 /// SessionCubit uses (session_mapping.dart).
 ///
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
-///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
-      : null;
-
   late PumpedNativeEngine engine;
   late LooperRepository looper;
   late SessionRepository session;
@@ -225,7 +218,6 @@ void main() {
       engine.pump(frames: 0);
       expect(engine.snapshot().tracks.first.undoDepth, 1);
     },
-    skip: skip,
   );
 
   test('a take of several loops keeps the lap it was played on through save '
@@ -249,7 +241,7 @@ void main() {
     final after = engine.snapshot().tracks[1];
     expect(after.multiple, before.multiple);
     expect(after.anchorLap, 1);
-  }, skip: skip);
+  });
 
   test('a take keeps the input it was captured from through save and load, '
       "apart from its lane's input setting (#1678)", () async {
@@ -272,7 +264,7 @@ void main() {
     expect(lane.hasContent, isTrue);
     expect(lane.recordedInput, 0);
     expect(looper.state.laneInputs[(0, 0)], -1);
-  }, skip: skip);
+  });
 
   test(
     'fuzz: random overdub/undo histories all round-trip identically',
@@ -333,7 +325,6 @@ void main() {
         }
       }
     },
-    skip: skip,
   );
   test(
     'the session fingerprint follows every audio write on the real engine',
@@ -358,6 +349,5 @@ void main() {
       engine.pump(frames: 0);
       expect(fingerprint(), isNot(overdubbed), reason: 'an undo is a write');
     },
-    skip: skip,
   );
 }

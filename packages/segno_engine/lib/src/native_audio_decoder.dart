@@ -6,7 +6,6 @@ import 'package:ffi/ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/audio_engine.dart';
 import 'package:segno_engine/src/backing.dart';
-import 'package:segno_engine/src/engine_library.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 
 /// Runs [work] off the calling isolate; the default is [Isolate.run].
@@ -15,21 +14,16 @@ typedef DecodeRunner = Future<R> Function<R>(R Function() work);
 /// The [AudioDecoder] backed by the native engine library
 /// (`le_backing_decode_file`, `le_backing_probe_file`).
 ///
-/// Each call opens the library inside a background isolate and decodes
-/// there, so the calling isolate never decodes. The decoded samples are a
+/// Each call decodes in a background isolate, so the calling isolate never
+/// decodes. The decoded samples are a
 /// native heap buffer; its address crosses back to the caller, who owns it
 /// (see [DecodedAudio]).
 class NativeAudioDecoder implements AudioDecoder {
   /// Creates a [NativeAudioDecoder]. [runner] is where the work runs (a test
-  /// seam: it defaults to [Isolate.run]); [bindings] are this isolate's, for
-  /// copying, peaking and freeing a result.
-  new({DecodeRunner? runner, SegnoEngineBindings? bindings})
-    : _runner = runner ?? _isolateRun,
-      _bindings = bindings ?? SegnoEngineBindings(openSegnoEngineLibrary());
+  /// seam: it defaults to [Isolate.run]).
+  new({DecodeRunner? runner}) : _runner = runner ?? _isolateRun;
 
   final DecodeRunner _runner;
-  final SegnoEngineBindings _bindings;
-
   static Future<R> _isolateRun<R>(R Function() work) => Isolate.run(work);
 
   @override
@@ -54,7 +48,6 @@ class NativeAudioDecoder implements AudioDecoder {
         truncated: r.truncated,
       ),
       payload: NativeDecodedAudioPayload(
-        _bindings,
         Pointer<le_backing_buffer>.fromAddress(r.address),
       ),
     );
@@ -96,12 +89,11 @@ typedef _Probed = ({
 
 /// The decode, in whatever isolate calls it (a background one).
 _Decoded _decodeHere(String path, int rate, int start, int max) {
-  final b = SegnoEngineBindings(openSegnoEngineLibrary());
   final pathPtr = path.toNativeUtf8();
   final out = calloc<Pointer<le_backing_buffer>>();
   final info = calloc<le_backing_decode_info>();
   try {
-    final code = b.le_backing_decode_file(
+    final code = le_backing_decode_file(
       pathPtr.cast(),
       rate,
       start,
@@ -112,7 +104,7 @@ _Decoded _decodeHere(String path, int rate, int start, int max) {
     return (
       code: code,
       address: out.value.address,
-      frames: out.value == nullptr ? 0 : b.le_backing_buffer_frames(out.value),
+      frames: out.value == nullptr ? 0 : le_backing_buffer_frames(out.value),
       sourceRate: info.ref.source_rate,
       sourceChannels: info.ref.source_channels,
       sourceFrames: info.ref.source_frames,
@@ -128,13 +120,12 @@ _Decoded _decodeHere(String path, int rate, int start, int max) {
 
 /// The probe, in whatever isolate calls it.
 _Probed _probeHere(String path, int buckets) {
-  final b = SegnoEngineBindings(openSegnoEngineLibrary());
   final pathPtr = path.toNativeUtf8();
   final info = calloc<le_backing_decode_info>();
   final n = buckets < 0 ? 0 : buckets;
   final peaks = calloc<Float>(n == 0 ? 1 : n);
   try {
-    final code = b.le_backing_probe_file(pathPtr.cast(), info, peaks, n);
+    final code = le_backing_probe_file(pathPtr.cast(), info, peaks, n);
     return (
       code: code,
       sourceRate: info.ref.source_rate,
@@ -160,8 +151,8 @@ _Probed _probeHere(String path, int buckets) {
 /// engine takes the buffer and when [free] runs.
 @internal
 class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
-  /// Wraps [buffer], read and freed through [_bindings].
-  new(this._bindings, this.buffer) {
+  /// Wraps [buffer].
+  new(this.buffer) {
     if (buffer != nullptr) {
       _finalizer.attach(this, buffer.cast(), detach: this);
       _attached = true;
@@ -171,9 +162,9 @@ class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
   /// One finalizer for the process: `le_backing_buffer_free` from the
   /// engine library.
   static final NativeFinalizer _finalizer = NativeFinalizer(
-    openSegnoEngineLibrary().lookup<NativeFinalizerFunction>(
-      'le_backing_buffer_free',
-    ),
+    Native.addressOf<NativeFunction<Void Function(Pointer<le_backing_buffer>)>>(
+      le_backing_buffer_free,
+    ).cast(),
   );
 
   bool _attached = false;
@@ -182,14 +173,12 @@ class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
   @visibleForTesting
   bool get finalizerAttached => _attached;
 
-  final SegnoEngineBindings _bindings;
-
   /// The engine-ready buffer.
   final Pointer<le_backing_buffer> buffer;
 
   @override
   Float32List copySamples(int frames) => Float32List.fromList(
-    _bindings.le_backing_buffer_pcm(buffer).asTypedList(frames * 2),
+    le_backing_buffer_pcm(buffer).asTypedList(frames * 2),
   );
 
   @override
@@ -197,7 +186,7 @@ class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
     if (buckets <= 0) return Float32List(0);
     final out = calloc<Float>(buckets);
     try {
-      _bindings.le_backing_buffer_peaks(buffer, out, buckets);
+      le_backing_buffer_peaks(buffer, out, buckets);
       return Float32List.fromList(out.asTypedList(buckets));
     } finally {
       calloc.free(out);
@@ -207,7 +196,7 @@ class NativeDecodedAudioPayload implements DecodedAudioPayload, Finalizable {
   @override
   void free() {
     detach();
-    _bindings.le_backing_buffer_free(buffer);
+    le_backing_buffer_free(buffer);
   }
 
   @override

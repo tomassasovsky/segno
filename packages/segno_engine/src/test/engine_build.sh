@@ -1,6 +1,6 @@
 # engine_build.sh — sourced, not run: the portable engine's source list and a
 # parallel, cached compile for the scripts that build it outside CMake
-# (run_native_tests.sh, run_pitch_oracle.sh, the benches, the test library).
+# (run_native_tests.sh, run_pitch_oracle.sh, the benches).
 # The caller has already changed into packages/segno_engine. (#1771)
 #
 # ENGINE_SRC is the one copy of the engine's C sources these scripts link:

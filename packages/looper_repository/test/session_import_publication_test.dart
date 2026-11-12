@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -681,5 +680,5 @@ void main() {
       expect(engine.stops, 0);
       states.forEach(_coherent);
     });
-  }, skip: !Platform.environment.containsKey('SEGNO_ENGINE_LIB'));
+  });
 }

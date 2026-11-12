@@ -6,15 +6,13 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:midi_client/midi_client.dart';
+import 'package:midi_client/src/midi_bindings.dart';
 import 'package:segno_engine/segno_engine_ffi.dart';
 
-/// A hardware-free stand-in for [SegnoEngineBindings] covering just the
-/// `le_midi_*` surface that [MidiClient] uses.
-///
-/// Implements the full generated interface via [noSuchMethod] (the audio
-/// methods are never called from MIDI code) and overrides only the five MIDI
-/// entry points. Records call order in [calls] so dispose-ordering is testable.
-class FakeSegnoEngineBindings implements SegnoEngineBindings {
+/// A hardware-free stand-in for [MidiBindings], the `le_midi_*` surface that
+/// [MidiClient] and [MidiOutClient] use. Records call order in [calls] so
+/// dispose-ordering is testable.
+class FakeMidiBindings implements MidiBindings {
   new({
     List<MidiDevice> devices = const [],
     this.createReturnsNull = false,
@@ -160,7 +158,4 @@ class FakeSegnoEngineBindings implements SegnoEngineBindings {
     sent.add(Uint8List.fromList(data.asTypedList(len)));
     return sendResult;
   }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

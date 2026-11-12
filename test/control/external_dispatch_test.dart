@@ -327,9 +327,6 @@ class _Rig {
 }
 
 void main() {
-  final skip = Platform.environment['SEGNO_ENGINE_LIB'] == null
-      ? 'Requires the native pump library'
-      : null;
   late _RefusingEngine engine;
   late LooperRepository looper;
   setUp(() async {
@@ -384,7 +381,7 @@ void main() {
           rig.close();
         }
       });
-    }, skip: skip);
+    });
   }
 
   ExternalJackSetup button(

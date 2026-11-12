@@ -2,21 +2,13 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:instrument_repository/instrument_repository.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 /// The repository against the REAL engine through the device-free pump.
-/// Self-skips when `SEGNO_ENGINE_LIB` is unset; build it first:
-///   export SEGNO_ENGINE_LIB="$(bash ../segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run segno_engine/tool/build_test_lib.sh'
-      : null;
-
   test(
     'plays a note through the repository and sees it on the snapshot',
     () async {
@@ -67,6 +59,5 @@ void main() {
       await tick();
       expect(repository.state.voices, {'keys': 0});
     },
-    skip: skip,
   );
 }

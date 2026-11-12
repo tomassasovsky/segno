@@ -401,7 +401,6 @@ void main() {
       });
     },
     tags: ['fuzz'],
-    skip: Platform.environment['SEGNO_ENGINE_LIB'] == null,
   );
   for (final external in [false, true]) {
     void press(_Rig r, {required bool high}) {

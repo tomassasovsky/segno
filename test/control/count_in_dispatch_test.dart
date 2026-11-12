@@ -639,44 +639,39 @@ void main() {
     )
     body,
   ) {
-    test(
-      name,
-      () {
-        fakeAsync((clock) {
-          final engine = PumpedNativeEngine();
-          final looper = LooperRepository(
-            engine: engine,
-            ticker: const Stream.empty(),
-          );
-          expect(
-            looper.startEngine(
-              const EngineConfig(
-                sampleRate: 8000,
-                inputChannels: 1,
-                outputChannels: 1,
-                maxLoopFrames: 32000,
-              ),
+    test(name, () {
+      fakeAsync((clock) {
+        final engine = PumpedNativeEngine();
+        final looper = LooperRepository(
+          engine: engine,
+          ticker: const Stream.empty(),
+        );
+        expect(
+          looper.startEngine(
+            const EngineConfig(
+              sampleRate: 8000,
+              inputChannels: 1,
+              outputChannels: 1,
+              maxLoopFrames: 32000,
             ),
-            EngineResult.ok,
-          );
-          var pumping = true;
-          final callback = Timer.periodic(const Duration(milliseconds: 5), (_) {
-            if (pumping) engine.pump(frames: 0);
-          });
-          final r = _Rig(clock, engine, looper);
-          try {
-            body(r, engine, ({required enabled}) => pumping = enabled);
-          } finally {
-            r.close();
-            callback.cancel();
-            unawaited(looper.dispose());
-            clock.flushMicrotasks();
-          }
+          ),
+          EngineResult.ok,
+        );
+        var pumping = true;
+        final callback = Timer.periodic(const Duration(milliseconds: 5), (_) {
+          if (pumping) engine.pump(frames: 0);
         });
-      },
-      tags: ['fuzz'],
-      skip: Platform.environment['SEGNO_ENGINE_LIB'] == null,
-    );
+        final r = _Rig(clock, engine, looper);
+        try {
+          body(r, engine, ({required enabled}) => pumping = enabled);
+        } finally {
+          r.close();
+          callback.cancel();
+          unawaited(looper.dispose());
+          clock.flushMicrotasks();
+        }
+      });
+    }, tags: ['fuzz']);
   }
 
   nativeCheck(

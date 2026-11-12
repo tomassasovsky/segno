@@ -27,8 +27,7 @@ import '../helpers/fake_key_value_store.dart';
 /// real engine, with the real fingerprint: nothing stubbed between the
 /// press and the bundle on disk (Part 4 review, findings 1 to 3).
 void main() {
-  final nativeAvailable = Platform.environment.containsKey('SEGNO_ENGINE_LIB');
-  group('Open on the real engine', skip: !nativeAvailable, () {
+  group('Open on the real engine', () {
     late PumpedNativeEngine engine;
     late GuardRegistry guards;
     late LooperRepository looper;

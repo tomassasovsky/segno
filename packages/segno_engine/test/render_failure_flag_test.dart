@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
   group('actual native render failure flag', () {
     late PumpedNativeEngine engine;
     late Directory dir;
@@ -44,5 +43,5 @@ void main() {
       );
       expect(finish().failed, isFalse);
     });
-  }, skip: library == null ? 'SEGNO_ENGINE_LIB is required' : false);
+  });
 }

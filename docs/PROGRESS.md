@@ -2313,14 +2313,27 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   blobless), at the commit in `.github/segno-design.sha`. Compare the PNGs
   against the Penpot file.
 - **Scaffolding:** prefer the Very Good CLI templates for normal packages.
-  The Very Good MCP `create` tool only makes federated method-channel plugins. The
-  FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
-  podspec). Native engine lives **inside** the plugin at
-  `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
-  out-of-package native paths dangle).
-- **macOS FFI loading:** the podspec sets `MACH_O_TYPE => mh_dylib` and uses
-  `Classes/` forwarder TUs that `#include` `../src`; `DynamicLibrary.process()`
-  on Apple (SPM static-links into the Runner). Don't revert these.
+  The Very Good MCP `create` tool only makes federated method-channel plugins.
+- **The engine is a code asset (#1783).** `segno_engine` is a plain package
+  with a build hook, not a Flutter FFI plugin. `packages/segno_engine/hook/build.dart`
+  runs CMake on `src/CMakeLists.txt` (the one description of the shipped
+  library) whenever Dart code that uses the package is built: `flutter run`,
+  `flutter build`, `flutter test` in the app or any package that depends on
+  it, and the appliance's `flutter assemble`. The bindings are `@Native`
+  externals (`tool/ffigen.dart`), so nothing opens the library, in any
+  isolate. Building needs CMake, clang (or Xcode's compiler) and, on Linux,
+  `libasound2-dev`. The hook sees only the environment variables
+  `hooks_runner` passes (PATH, HOME, TMPDIR, `CCACHE_*` and a few others):
+  `CC`, `CXX`, `CFLAGS` and `SEGNO_ENABLE_PLUGINS` do not reach CMake, so the
+  hook names the compiler and the plugin option itself. The build tree is
+  under `.dart_tool/hooks_runner/shared/segno_engine/build/`.
+  - **macOS:** plugin hosting on; Flutter bundles the library as
+    `segno_engine.framework`.
+  - **Appliance:** plugin hosting off, clang, `Release`; the manifest
+    (`flutter_assets/NativeAssetsManifest.json`) names the library
+    `libsegno_engine.so`, which the Flutter engine `dlopen`s through the
+    loader's path, so `segno-kiosk-launch` puts `/opt/segno/lib` on
+    `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):
   ```sh
@@ -2416,8 +2429,8 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   is deprecated since ffigen 23). ffigen formats the file with the package's
   own formatter settings, so a regen needs no `dart format` pass and its diff
   is only what the header changed. Declarations come out sorted by name.
-- **FFI symbol parity — the skew a clean build will not catch.** Dart reaches
-  the engine only through `dlsym`, which resolves at *first call*. A bundle
+- **FFI symbol parity — the skew a clean build will not catch.** The `@Native`
+  bindings resolve through `dlsym` at *first call*. A bundle
   whose bindings name an entry point its `libsegno_engine.so` does not export
   therefore compiles, packages, installs and launches — then throws
   `Failed to lookup symbol '...'` on the device, on whatever path reaches it
@@ -3108,9 +3121,9 @@ remains open — see "On-hardware validations" below.
   mappings learned from it (#1040). Hardware-gated only for a live DIN-MIDI
   smoke test and a two-controller check.
 - **VST3/CLAP plugin hosting on Linux.** Hosting is on by default only on
-  macOS; the Linux CMake build leaves `SEGNO_ENABLE_PLUGINS` off unless the
-  environment overrides it, since third-party plugins rarely ship for aarch64
-  Linux.
+  macOS; the build hook (`packages/segno_engine/hook/build.dart`) passes
+  `SEGNO_ENABLE_PLUGINS=OFF` for Linux, since third-party plugins rarely ship
+  for aarch64 Linux. Turning it on is a change to the hook.
 - **Readout screen** — the console's 7″ runs as the second Flutter engine under
   ivi-homescreen, fed over the screen link (`lib/visualizer/screen_link.dart`,
   #1318, #1330); the on-device check is in `docs/HARDWARE_VALIDATION.md`.

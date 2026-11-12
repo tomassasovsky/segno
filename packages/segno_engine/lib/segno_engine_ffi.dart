@@ -4,8 +4,8 @@
 /// value objects instead. This secondary entrypoint deliberately exposes the
 /// generated bindings and the native fixed-size string helpers for the few
 /// sibling packages that drive a native seam directly — currently
-/// `midi_client`, which opens the MIDI capture surface (`le_midi_*`) over the
-/// generated `SegnoEngineBindings`.
+/// `midi_client`, which calls the MIDI capture surface (`le_midi_*`) through
+/// the generated `@Native` bindings.
 ///
 /// Importing this from another package is intentional and avoids reaching into
 /// `segno_engine/src` (which would trip the `implementation_imports` lint).

@@ -8,8 +8,7 @@
 # configured here: that would also block an explicit `--tags screenshots` run.
 tags:
   screenshots:
-  # The control-sequence fuzzer (test/fuzz/): drives the REAL native engine
-  # through the device-free pump. Self-skips in-test when SEGNO_ENGINE_LIB is
-  # unset -- build it first:
-  #   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
+  # The control-sequence fuzzer (test/fuzz/): drives the REAL native engine,
+  # which segno_engine's build hook builds for every test run, through the
+  # device-free pump.
   fuzz:

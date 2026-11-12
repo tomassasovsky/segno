@@ -123,17 +123,11 @@ void main() {
   }
 
   group('on the native engine', () {
-    final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-    final skip = lib == null || lib.isEmpty
-        ? 'SEGNO_ENGINE_LIB not set — run '
-              'packages/segno_engine/tool/build_test_lib.sh'
-        : null;
     late PumpedNativeEngine native;
     late LooperRepository nativeLooper;
     Timer? pumpDriver;
 
     setUp(() async {
-      if (skip != null) return;
       native = PumpedNativeEngine();
       nativeLooper = LooperRepository(engine: native)
         ..startEngine(
@@ -153,7 +147,6 @@ void main() {
     });
 
     tearDown(() async {
-      if (skip != null) return;
       pumpDriver?.cancel();
       await nativeLooper.dispose();
     });
@@ -183,7 +176,7 @@ void main() {
         TrackEffectType.reverb,
       ]);
       expect(nativeLooper.monitorMode(0), MonitorMode.auto);
-    }, skip: skip);
+    });
 
     test('a schema-19 bundle applies with its heard images (#1713)', () async {
       // The fixture's count-in with Sound start, its 4-bar length preset and
@@ -220,7 +213,7 @@ void main() {
       expect(native.exportTrackLaneHeard(0, 0), heard[2]);
       // A take restored without one plays clean through its chain.
       expect(native.snapshot().tracks[1].lanes[0].heard, isFalse);
-    }, skip: skip);
+    });
 
     for (final (name, lengths) in const [
       ('v1_loopy_8547affe7', [2400, 4800]),
@@ -244,7 +237,7 @@ void main() {
           lengths,
         );
         expect(snapshot.tempoBpm, opened.bundle.session.tempoBpm);
-      }, skip: skip);
+      });
     }
   });
 }

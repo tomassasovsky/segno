@@ -20,11 +20,6 @@ const _millionA =
     'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0';
 
 void main() {
-  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = lib == null || lib.isEmpty
-      ? 'SEGNO_ENGINE_LIB not set — run tool/build_test_lib.sh'
-      : null;
-
   late Directory dir;
   setUp(() => dir = Directory.systemTemp.createTempSync('storage_io_test'));
   tearDown(() => dir.deleteSync(recursive: true));
@@ -33,7 +28,7 @@ void main() {
 
   group('NativeStorageIo', () {
     test('digestBytes matches the NIST vectors', () {
-      final io = NativeStorageIo();
+      const io = NativeStorageIo();
       expect(io.digestBytes(Uint8List(0)), _empty);
       expect(io.digestBytes(ascii('abc')), _abc);
       expect(
@@ -46,10 +41,10 @@ void main() {
         io.digestBytes(Uint8List(1000000)..fillRange(0, 1000000, 0x61)),
         _millionA,
       );
-    }, skip: skip);
+    });
 
     test('digestFile reads exactly the requested range', () {
-      final io = NativeStorageIo();
+      const io = NativeStorageIo();
       final file = File('${dir.path}/range.bin')
         ..writeAsBytesSync(ascii('xyzabcdef'));
       expect(
@@ -68,10 +63,10 @@ void main() {
         io.digestFile(file.path, offset: 9, length: 0),
         const FileDigested(_empty),
       );
-    }, skip: skip);
+    });
 
     test('digestFile tells missing from damaged from unreadable', () {
-      final io = NativeStorageIo();
+      const io = NativeStorageIo();
       final file = File('${dir.path}/short.bin')
         ..writeAsBytesSync(ascii('xyzabcdef'));
       expect(
@@ -88,11 +83,11 @@ void main() {
       expect(() => io.digestFile(''), throwsArgumentError);
       expect(() => io.digestFile(file.path, offset: -1), throwsArgumentError);
       expect(() => io.digestFile(file.path, length: -1), throwsArgumentError);
-    }, skip: skip);
+    });
 
     test('digestBytes crosses its native window without changing the '
         'digest', () {
-      final io = NativeStorageIo();
+      const io = NativeStorageIo();
       // Two and a half windows of a byte pattern, against the digest of the
       // same bytes read from a file (one native pass, no window).
       const n = NativeStorageIo.windowBytes * 5 ~/ 2;
@@ -113,20 +108,20 @@ void main() {
         FileDigested(io.digestBytes(exact)),
         io.digestFile('${dir.path}/exact.bin'),
       );
-    }, skip: skip);
+    });
 
     test('digestFile runs in a background isolate', () async {
       final path = '${dir.path}/big.bin';
       File(path)
           .writeAsBytesSync(Uint8List(1000000)..fillRange(0, 1000000, 0x61));
       final digest = await Isolate.run(
-        () => NativeStorageIo().digestFile(path),
+        () => const NativeStorageIo().digestFile(path),
       );
       expect(digest, const FileDigested(_millionA));
-    }, skip: skip);
+    });
 
     test('syncDirectory syncs an existing directory and throws otherwise', () {
-      final io = NativeStorageIo()..syncDirectory(dir.path);
+      final io = const NativeStorageIo()..syncDirectory(dir.path);
       expect(
         () => io.syncDirectory('${dir.path}/missing'),
         throwsA(
@@ -138,11 +133,11 @@ void main() {
         ),
       );
       expect(() => io.syncDirectory(''), throwsA(isA<FileSystemException>()));
-    }, skip: skip);
+    });
 
     test('renameWithoutReplacing moves to a free name and refuses a taken '
         'one, leaving both files', () {
-      final io = NativeStorageIo();
+      const io = NativeStorageIo();
       final from = File('${dir.path}/from')..writeAsStringSync('new');
       final to = '${dir.path}/to';
 
@@ -172,6 +167,6 @@ void main() {
         () => io.renameWithoutReplacing('', to),
         throwsA(isA<FileSystemException>()),
       );
-    }, skip: skip);
+    });
   });
 }

@@ -2,7 +2,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,10 +9,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno_engine/segno_engine.dart' show PumpedNativeEngine;
 
 void main() {
-  final library = Platform.environment['SEGNO_ENGINE_LIB'];
-  final skip = library == null || library.isEmpty
-      ? 'Build packages/segno_engine/tool/build_test_lib.sh and set SEGNO_ENGINE_LIB'
-      : null;
   late PumpedNativeEngine engine;
   late LooperRepository repository;
   late StreamController<void> ticks;
@@ -84,7 +79,7 @@ void main() {
     expect(repository.record(), EngineResult.ok);
     engine.pump(frames: 1);
     expect(engine.snapshot().tracks[0].state, TrackState.overdubbing);
-  }, skip: skip);
+  });
 
   Future<void> reverseTrack0() async {
     final result = repository.toggleReverse(channel: 0);
@@ -125,7 +120,7 @@ void main() {
     }
     expect(track0().hasContent, isTrue);
     expect(track0().reversed, isFalse);
-  }, skip: skip);
+  });
 
   test(
     'a Session recall installs direction before the stopped commit: Play '
@@ -185,6 +180,5 @@ void main() {
         );
       }
     },
-    skip: skip,
   );
 }

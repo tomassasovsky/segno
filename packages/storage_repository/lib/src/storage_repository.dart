@@ -117,7 +117,7 @@ class StorageRepository implements ActiveOperationSource {
   final Future<String> Function() _exportsRoot;
   final VolumeSpace? Function(String path) _volumeSpace;
   engine.StorageIo? _storageIo;
-  engine.StorageIo get _io => _storageIo ??= engine.NativeStorageIo();
+  engine.StorageIo get _io => _storageIo ??= const engine.NativeStorageIo();
   final GuardRegistry _guards;
   final CopyBytes _copyBytes;
 
