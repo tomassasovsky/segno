@@ -3594,6 +3594,54 @@ void main() {
       });
     }
 
+    testWidgets('a bar under the figure fills to the load (#1774)', (
+      tester,
+    ) async {
+      cpuLoad = const FixedCpuLoadRepository(23);
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+      final figure = rectOf(tester, 'stage_cpu_load_slot');
+      final bar = rectOf(tester, 'stage_cpu_bar');
+      final fill = rectOf(tester, 'stage_cpu_bar_fill');
+      // As wide as the figure's slot, under it.
+      expect(bar.left, figure.left);
+      expect(bar.width, figure.width);
+      expect(bar.top, greaterThan(figure.bottom));
+      expect(fill.left, bar.left);
+      expect(fill.width, closeTo(bar.width * 0.23, 0.01));
+      expect(fill.height, bar.height);
+    });
+
+    testWidgets('the bar turns amber at half the machine and red at three '
+        'quarters (#1774)', (tester) async {
+      Color fillAt(WidgetTester tester) => tester
+          .widget<ColoredBox>(
+            find.descendant(
+              of: find.byKey(const Key('stage_cpu_bar_fill')),
+              matching: find.byType(ColoredBox),
+            ),
+          )
+          .color;
+      final colours = <int, Color>{};
+      for (final load in const [49, 50, 74, 75, 100]) {
+        cpuLoad = FixedCpuLoadRepository(load);
+        seed(const LooperState(tracks: [Track()]));
+        await tester.pumpWidget(const SizedBox());
+        await pump(tester);
+        await tester.pump();
+        colours[load] = fillAt(tester);
+      }
+      const surface = SurfaceTheme.dark;
+      expect(colours, {
+        49: surface.accent,
+        50: surface.warning,
+        74: surface.warning,
+        75: surface.rec,
+        100: surface.rec,
+      });
+    });
+
     testWidgets('reads as a load for a screen reader', (tester) async {
       final handle = tester.ensureSemantics();
       cpuLoad = const FixedCpuLoadRepository(64);
@@ -3629,6 +3677,7 @@ void main() {
       const keys = [
         'stage_record_slot',
         'stage_cpu_load',
+        'stage_cpu_bar',
         'stage_session_name',
         'stage_bank_button',
       ];
