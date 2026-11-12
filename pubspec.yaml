@@ -5,8 +5,8 @@ publish_to: none
 license: GPL-3.0-or-later
 
 environment:
-  sdk: ^3.11.0
-  flutter: ^3.41.0
+  sdk: ^3.14.0
+  flutter: ^3.50.0
 
 dependencies:
   bloc: ^9.2.1
@@ -27,7 +27,7 @@ dependencies:
   cupertino_icons: ^2.0.0
   daw_export:
     path: packages/daw_export
-  equatable: ^2.1.0
+  equatable: ^3.0.0
   ffi: ^2.1.3
   flutter:
     sdk: flutter
@@ -73,7 +73,7 @@ dependencies:
 
 dev_dependencies:
   # tool/check_no_widget_methods.dart resolves the app with it.
-  analyzer: ^12.1.0
+  analyzer: ^14.4.0
   bloc_lint: ^0.4.1
   bloc_test: ^10.0.0
   bloc_tools: ^0.1.0-dev.25
@@ -94,7 +94,7 @@ dev_dependencies:
   path: ^1.9.1
   segno_engine:
     path: packages/segno_engine
-  very_good_analysis: ^10.3.0
+  very_good_analysis: ^11.0.0
   wifi_client:
     path: packages/wifi_client
 

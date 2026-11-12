@@ -2,3 +2,8 @@ analyzer:
   exclude:
     - build/**
 include: package:very_good_analysis/analysis_options.yaml
+
+# very_good_analysis 11 switched trailing commas to automate; the code is
+# written with them preserved, as 10.x formatted it.
+formatter:
+  trailing_commas: preserve
