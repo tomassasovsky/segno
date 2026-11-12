@@ -405,6 +405,88 @@ void main() {
       expect(h.filesUnder(h.root.path), ['take.wav']);
       expect(repo.leases, isEmpty);
     });
+
+    test('a source larger than the filesystem of the drive holds (4 GiB '
+        'on FAT32): nothing is created on the drive', () async {
+      // Sparse: 4 GiB long, no data written.
+      final source = File('${h.root.path}/long.wav')..createSync();
+      source.openSync(mode: FileMode.write)
+        ..truncateSync(1 << 32)
+        ..closeSync();
+      repo = h.build(initial: [h.record(1, fsType: 'vfat')]);
+      await pumpEventQueue();
+
+      await expectLater(
+        repo.copyFile(
+          source.path,
+          usb1,
+          'Segno/Performances/long.wav',
+          onConflict: ConflictPolicy.ask,
+        ),
+        throwsA(
+          const StorageFailure.fileTooLarge(
+            fsType: 'vfat',
+            maxFileBytes: 0xFFFFFFFF,
+            fileBytes: 1 << 32,
+          ),
+        ),
+      );
+      expect(Directory(h.mountPoint(1)).listSync(), isEmpty);
+      expect(repo.leases, isEmpty);
+    });
+  });
+
+  group('checkFileSizes (#1794)', () {
+    test('FAT32 refuses a file of 4 GiB and names the largest', () async {
+      repo = h.build(initial: [h.record(1, fsType: 'vfat')]);
+      await pumpEventQueue();
+
+      expect(
+        () => repo.checkFileSizes(usb1, [10, 1 << 32, (1 << 32) + 1, 20]),
+        throwsA(
+          const StorageFailure.fileTooLarge(
+            fsType: 'vfat',
+            maxFileBytes: 0xFFFFFFFF,
+            fileBytes: (1 << 32) + 1,
+          ),
+        ),
+      );
+    });
+
+    test('FAT32 takes a file one byte under 4 GiB', () async {
+      repo = h.build(initial: [h.record(1, fsType: 'vfat')]);
+      await pumpEventQueue();
+
+      expect(
+        () => repo.checkFileSizes(usb1, [0xFFFFFFFF, 10]),
+        returnsNormally,
+      );
+    });
+
+    test('exFAT, NTFS and ext4 take files over 4 GiB, and so does '
+        'Internal', () async {
+      repo = h.build(
+        initial: [
+          h.record(1),
+          h.record(2, fsType: 'ntfs'),
+          h.record(3, fsType: 'ext4'),
+        ],
+      );
+      await pumpEventQueue();
+
+      for (final destination in const [
+        usb1,
+        StorageDestination.removable(2),
+        StorageDestination.removable(3),
+        internal,
+      ]) {
+        expect(
+          () => repo.checkFileSizes(destination, [1 << 34]),
+          returnsNormally,
+          reason: '$destination',
+        );
+      }
+    });
   });
 
   for (final noReplace in [true, false]) {

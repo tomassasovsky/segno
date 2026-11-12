@@ -27,6 +27,15 @@ sealed class StorageFailure extends Equatable implements Exception {
   /// in flight on that destination (a take on the drive, a shutdown).
   const factory busy(GuardKind kind) = StorageBusy;
 
+  /// A file of [fileBytes] is larger than the destination's filesystem
+  /// ([fsType]) holds, [maxFileBytes] at most: refused before anything was
+  /// written (#1794).
+  const factory fileTooLarge({
+    required String fsType,
+    required int maxFileBytes,
+    required int fileBytes,
+  }) = StorageFileTooLarge;
+
   /// Any other I/O failure, with the OS's own words.
   const factory io(String reason, {String? writtenTo}) = StorageIo;
 
@@ -89,6 +98,33 @@ final class StorageBusy extends StorageFailure {
 
   @override
   String toString() => 'busy: ${kind.name} is in flight';
+}
+
+/// A file is larger than the destination's filesystem holds.
+final class StorageFileTooLarge extends StorageFailure {
+  /// Creates a [StorageFileTooLarge].
+  const new({
+    required this.fsType,
+    required this.maxFileBytes,
+    required this.fileBytes,
+  });
+
+  /// The destination's filesystem, as the volume record names it (`vfat`).
+  final String fsType;
+
+  /// The largest file it holds.
+  final int maxFileBytes;
+
+  /// The size of the largest file that was to be written.
+  final int fileBytes;
+
+  @override
+  List<Object?> get props => [fsType, maxFileBytes, fileBytes];
+
+  @override
+  String toString() =>
+      'a file of $fileBytes bytes is larger than $fsType holds '
+      '($maxFileBytes bytes)';
 }
 
 /// Any other I/O failure.

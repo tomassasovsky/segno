@@ -26,6 +26,7 @@ export 'src/models/storage_failure.dart'
     show
         StorageBusy,
         StorageFailure,
+        StorageFileTooLarge,
         StorageFull,
         StorageIo,
         StorageReadOnly,

@@ -80,8 +80,11 @@ class PerformanceRepository {
   static const Duration idleStopAfter = Duration(minutes: 20);
 
   /// The longest a take runs (#1767): the rendered stereo master at 48 kHz
-  /// fills a 32-bit WAV at 3 h 6 min (#1747), and the engine never lets a
-  /// take run past what that stem can hold, whatever the rate.
+  /// fills one file on a FAT32 stick (4 GiB less one byte, header included)
+  /// at 3 h 6 min (#1747, #1794), and the engine never lets a take run past
+  /// what that stem can hold in one, whatever the rate: a stereo take at
+  /// 96 kHz stops at 93 min. `test_perf_longest_take_fits_one_fat32_file`
+  /// (the engine's native tests) checks every file a take renders.
   static const Duration longestTake = Duration(hours: 3);
 
   /// The app's one guard table (accepted behaviour 6.12). A take holds a

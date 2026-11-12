@@ -69,12 +69,22 @@ int le_wav_publish(const char* part_path, const char* final_path);
 /* le_wav_patch_sizes, the repair of a part that was never sealed, is
  * exported: see segno_engine_api.h. */
 
+/* The largest file one WAV may be (#1794): FAT32's largest file, 4 GiB less
+ * one byte, which most USB sticks are formatted with. It also keeps the RIFF
+ * size (the file less 8 bytes) within 32 bits. */
+#define LE_WAV_MAX_FILE_BYTES UINT32_MAX
+
+/* The header of a file this writer seals with no extra chunk: RIFF, `fmt `
+ * and the `data` chunk's id and size. */
+#define LE_WAV_PLAIN_HEADER_BYTES 44u
+
 /* The most frames a file this writer seals with no extra chunk can hold at
- * `channels` wide: its RIFF size (36 + data) must fit 32 bits. The rendered
- * stems' limit, which a performance take never runs past (#1747, #1767). */
+ * `channels` wide, header included, within LE_WAV_MAX_FILE_BYTES. The
+ * rendered stems' limit, which a performance take never runs past (#1747,
+ * #1767, #1794). */
 static inline uint64_t le_wav_max_frames(int32_t channels) {
   const uint64_t width = (uint64_t)(channels > 0 ? channels : 1) * 4u;
-  return (UINT32_MAX - 36u) / width;
+  return ((uint64_t)LE_WAV_MAX_FILE_BYTES - LE_WAV_PLAIN_HEADER_BYTES) / width;
 }
 
 #endif /* SEGNO_ENGINE_WAV_H */

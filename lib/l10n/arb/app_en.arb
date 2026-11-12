@@ -7716,6 +7716,10 @@
     "@libraryAudioReadOnly": {
         "description": "The drive refuses writes."
     },
+    "libraryAudioTooLargeForDrive": "FAT32 drives can't hold files over 4 GB. Use an exFAT drive.",
+    "@libraryAudioTooLargeForDrive": {
+        "description": "A file of the export is 4 GiB or more and the drive is FAT32; nothing was written (#1794)."
+    },
     "libraryAudioExportFailed": "Could not export. Nothing was left on the drive.",
     "@libraryAudioExportFailed": {
         "description": "An export failed and was removed from the drive."

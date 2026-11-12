@@ -2933,9 +2933,10 @@ static void le_pr_worker_main(void* arg) {
         (manifest.capture_mask >> (2 * manifest.arm_capture_bus)) & 3u;
     const int master_channels = pair_mask == 3 ? 2 : 1;
     const int side = pair_mask == 2 ? 1 : 0;
-    /* A master past the 32-bit WAV sizes (a stereo master over 3 h 6 min at
-     * 48 kHz) cannot be sealed: it is not rendered, rather than rendered for
-     * hours and thrown away, and the stems stand as they are. */
+    /* A master past what one file may hold (le_wav_max_frames: a stereo
+     * master over 3 h 6 min at 48 kHz) cannot be sealed: it is not rendered,
+     * rather than rendered for hours and thrown away, and the stems stand as
+     * they are. Only a take armed with no longest length gets here. */
     const int master_fits = total <= le_wav_max_frames(master_channels);
     le_pr_master_run* master =
         le_pr_master_open(&manifest, log, log_count);

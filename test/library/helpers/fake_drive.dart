@@ -25,6 +25,7 @@ class FakeDrive extends Fake implements StorageRepository {
     this.mount, {
     this.generation = 3,
     this.status = RemovableVolumeStatus.mounted,
+    this.fsType = 'exfat',
   });
 
   /// Where the drive is mounted.
@@ -35,6 +36,9 @@ class FakeDrive extends Fake implements StorageRepository {
 
   /// Its state.
   RemovableVolumeStatus status;
+
+  /// Its filesystem, which sets the largest file it holds.
+  final String fsType;
 
   /// Whether it is plugged in at all.
   bool present = true;
@@ -72,7 +76,7 @@ class FakeDrive extends Fake implements StorageRepository {
     generation: generation,
     fingerprint: 'fake-$generation',
     label: 'USB',
-    fsType: 'exfat',
+    fsType: fsType,
     sizeBytes: 1 << 30,
     status: status,
     mountPoint: mount,
@@ -87,6 +91,22 @@ class FakeDrive extends Fake implements StorageRepository {
   @override
   Future<VolumeSpace?> space(StorageDestination destination) async =>
       spaceAnswer;
+
+  /// Follows the repository: a file larger than [fsType] holds refuses the
+  /// write.
+  @override
+  void checkFileSizes(StorageDestination destination, Iterable<int> fileBytes) {
+    final limit = volume.maxFileBytes;
+    if (limit == null) return;
+    final largest = fileBytes.fold<int>(0, (a, b) => a > b ? a : b);
+    if (largest > limit) {
+      throw StorageFailure.fileTooLarge(
+        fsType: fsType,
+        maxFileBytes: limit,
+        fileBytes: largest,
+      );
+    }
+  }
 
   @override
   Future<T> withWriteLease<T>(

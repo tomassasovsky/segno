@@ -583,6 +583,29 @@ class StorageRepository implements ActiveOperationSource {
   static bool isLowInternalSpace(VolumeSpace? internal) =>
       internal != null && internal.freeBytes < internalReserveBytes;
 
+  /// Refuses a write to [destination] of files of [fileBytes] when one is
+  /// larger than its filesystem holds (#1794): a FAT32 stick holds no file
+  /// of 4 GiB or more ([RemovableVolume.maxFileBytes]). Throws
+  /// [StorageFileTooLarge] naming the largest such file, so a writer that
+  /// calls it before its first write refuses with nothing written. Internal
+  /// has no such limit, and a volume that is not listed is left to the
+  /// write's own checks.
+  void checkFileSizes(StorageDestination destination, Iterable<int> fileBytes) {
+    if (destination is! RemovableDestination) return;
+    final record = _records[destination.generation];
+    if (record == null) return;
+    final limit = RemovableVolume.maxFileBytesOf(record.fsType);
+    if (limit == null) return;
+    final largest = fileBytes.fold<int>(0, max);
+    if (largest > limit) {
+      throw StorageFailure.fileTooLarge(
+        fsType: record.fsType,
+        maxFileBytes: limit,
+        fileBytes: largest,
+      );
+    }
+  }
+
   String? _mountedPath(int generation) {
     final record = _records[generation];
     return switch (record?.status) {
@@ -633,8 +656,10 @@ class StorageRepository implements ActiveOperationSource {
   ///
   /// Failures are typed [StorageFailure]s: `full` (ENOSPC), `readOnly` (EROFS,
   /// or a read-only volume), `volumeLost` when the volume goes away before or
-  /// during the copy, `unsupported` for a volume that cannot be written, `io`
-  /// for the rest, a source that cannot be read included. A lease with
+  /// during the copy, `unsupported` for a volume that cannot be written,
+  /// `fileTooLarge` before anything is written for a source larger than the
+  /// destination's filesystem holds ([checkFileSizes]), `io` for the rest, a
+  /// source that cannot be read included. A lease with
   /// purpose `copy` is held throughout, so eject and shutdown wait for it.
   ///
   /// [relativePath] must stay inside the root: not empty, not absolute, and
@@ -648,6 +673,7 @@ class StorageRepository implements ActiveOperationSource {
     final segments = _insideRoot(relativePath);
     final held = acquire(destination, WritePurpose.copy);
     try {
+      checkFileSizes(destination, [_lengthOf(sourcePath)]);
       final wanted = '${await _writeRoot(destination)}/$relativePath';
       if (onConflict == ConflictPolicy.ask && _taken(wanted)) {
         throw NameConflict(wanted);
@@ -814,6 +840,16 @@ class StorageRepository implements ActiveOperationSource {
   }
 
   /// Whether anything (a file, a directory, a link) is at [path].
+  /// [path]'s length, or 0 when it cannot be read (the copy then reports
+  /// the source as unreadable).
+  static int _lengthOf(String path) {
+    try {
+      return File(path).lengthSync();
+    } on FileSystemException {
+      return 0;
+    }
+  }
+
   static bool _taken(String path) =>
       FileSystemEntity.typeSync(path, followLinks: false) !=
       FileSystemEntityType.notFound;

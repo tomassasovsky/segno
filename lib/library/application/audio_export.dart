@@ -74,7 +74,9 @@ class AudioExportCancelled implements Exception {
 /// Runs the Library's exports and backups to a removable drive through the
 /// [StorageRepository] (#1178 Part 7, #1177): every byte goes through its
 /// `copyFile` (`.part`, fsync, rename), under a write lease that names what
-/// the write is for, after a space check against the export's total.
+/// the write is for, after a check of every file against the largest file
+/// the drive's filesystem holds and a space check against the export's
+/// total.
 ///
 /// An export is all or nothing on the drive, whatever stops it:
 /// - Every file is first copied into a hidden staging directory named after
@@ -129,7 +131,9 @@ class AudioExporter {
   /// directory, or the first file.
   ///
   /// Throws [NameConflict] (only under [ConflictPolicy.ask]), a
-  /// [StorageFailure], or [AudioExportCancelled].
+  /// [StorageFailure], or [AudioExportCancelled]. A file larger than the
+  /// drive's filesystem holds is refused ([StorageFileTooLarge]) before
+  /// anything on the drive is touched.
   Future<String> run(
     AudioExportPlan plan, {
     required int generation,
@@ -181,9 +185,12 @@ class AudioExporter {
     void Function(double fraction)? onProgress,
     bool Function()? cancelled,
   }) async {
+    final sizes = [for (final f in plan.files) _sizeOf(f.source)];
+    // Before anything touches the drive: a file its filesystem cannot hold
+    // (4 GiB or more on FAT32) refuses the whole export (#1794).
+    _storage.checkFileSizes(destination, sizes);
     final folder = Directory('$mount/${plan.folder}');
     _guardIo(() => recoverFolder(folder));
-    final sizes = [for (final f in plan.files) _sizeOf(f.source)];
     final total = sizes.fold<int>(0, (a, b) => a + b);
     final space = await _storage.space(destination);
     if (space != null && space.freeBytes < total) {

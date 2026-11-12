@@ -310,6 +310,83 @@ void main() {
     });
   });
 
+  group('a file larger than the drive holds (#1794)', () {
+    /// An internal file [bytes] long, sparse: nothing is written to it.
+    String sparse(String relative, int bytes) {
+      final file = File('$internal/$relative')
+        ..parent.createSync(recursive: true)
+        ..createSync();
+      file.openSync(mode: FileMode.write)
+        ..truncateSync(bytes)
+        ..closeSync();
+      return file.path;
+    }
+
+    Future<void> driveOf(String fsType) async {
+      await drive.close();
+      drive = FakeDrive('${temp.path}/usb', fsType: fsType);
+      exporter = AudioExporter(drive);
+    }
+
+    AudioExportPlan withLongStem(int bytes) => AudioExportPlan(
+      name: 'Evening loop',
+      folder: perf,
+      package: true,
+      files: [
+        AudioExportFile(source('take/project.als'), 'project.als'),
+        AudioExportFile(
+          sparse('take/stems/wet/master.wav', bytes),
+          'stems/wet/master.wav',
+        ),
+      ],
+    );
+
+    test('a FAT32 drive refuses a file of 4 GiB before anything on it is '
+        'touched', () async {
+      await driveOf('vfat');
+      // An earlier export's leftovers stay as they are too.
+      onDrive('$staging/project.als');
+
+      await expectLater(
+        run(withLongStem(1 << 32)),
+        throwsA(
+          const StorageFailure.fileTooLarge(
+            fsType: 'vfat',
+            maxFileBytes: 0xFFFFFFFF,
+            fileBytes: 1 << 32,
+          ),
+        ),
+      );
+      expect(drive.copies, isEmpty);
+      expect(drive.files, ['$staging/project.als']);
+    });
+
+    test('a FAT32 drive takes a file one byte under 4 GiB', () async {
+      await driveOf('vfat');
+      // Stops at the long file's copy: it got past the check.
+      drive
+        ..failOnCopy = 2
+        ..failure = const StorageFailure.io('stopped here');
+
+      await expectLater(
+        run(withLongStem(0xFFFFFFFF)),
+        throwsA(isA<StorageIo>()),
+      );
+      expect(drive.copies, hasLength(2));
+      expect(drive.copies.last.relativePath, endsWith('stems/wet/master.wav'));
+    });
+
+    test('an exFAT drive takes a file of 4 GiB', () async {
+      await driveOf('exfat');
+      drive
+        ..failOnCopy = 2
+        ..failure = const StorageFailure.io('stopped here');
+
+      await expectLater(run(withLongStem(1 << 32)), throwsA(isA<StorageIo>()));
+      expect(drive.copies, hasLength(2));
+    });
+  });
+
   group('a package', () {
     test('appears as one directory once every file is in it, its paths '
         'kept', () async {

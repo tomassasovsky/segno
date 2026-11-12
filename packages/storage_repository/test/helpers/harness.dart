@@ -36,6 +36,7 @@ class Harness {
     int generation, {
     RemovableVolumeRecordStatus status = RemovableVolumeRecordStatus.mounted,
     bool mounted = true,
+    String fsType = 'exfat',
     EjectOutcomeRecord? eject,
   }) {
     if (mounted) Directory(mountPoint(generation)).createSync(recursive: true);
@@ -44,7 +45,7 @@ class Harness {
       kname: 'sda1',
       fingerprint: 'SanDisk_Ultra_4C530001-1A2B-3C4D',
       label: 'SEGNO USB',
-      fsType: 'exfat',
+      fsType: fsType,
       mountPoint: mounted ? mountPoint(generation) : null,
       sizeBytes: 32 * gib,
       status: status,
