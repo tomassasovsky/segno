@@ -537,10 +537,7 @@ class StorageRepository implements ActiveOperationSource {
   ///
   /// `freeBytes` is the filesystem's available figure, with NO reserve taken
   /// off: the Internal reserve ([internalReserveBytes]) applies only to
-  /// [recordingTimeRemaining] and [lowInternalSpace]. (The Library's
-  /// `RemovableVolumes` port documents free as "after any reserve the
-  /// service keeps"; for a removable volume that is the same figure, and the
-  /// port never asks about Internal.)
+  /// [recordingTimeRemaining] and [lowInternalSpace].
   Future<VolumeSpace?> space(StorageDestination destination) async {
     final path = switch (destination) {
       InternalDestination() => _nearestExisting(await _exportsRoot()),

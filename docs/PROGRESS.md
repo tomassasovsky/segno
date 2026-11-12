@@ -88,6 +88,26 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 The Library writes to USB through the storage repository (#1790)
+
+- Export to USB, Back up to USB and the Library's USB location never saw a
+  drive on the appliance. The Library read drives through its own
+  `RemovableVolumes` port, and the app never replaced its no-drive default
+  (`InternalOnlyVolumes`) with #1177's `StorageRepository` once that landed,
+  so every export asked for a drive with a stick mounted.
+- The port, its copies of the storage models and `InternalOnlyVolumes` are
+  gone. `LibraryCubit`, `LibraryAudioCubit` and `AudioExporter` take the
+  app's `StorageRepository`, as the Storage page and the recorder do. The
+  drive's lease names `WritePurpose.export` or `WritePurpose.backup`; the
+  translated purpose stays on the guards, where a take's disabled Delete
+  shows it. A `StorageBusy` from the lease reads as busy, like a
+  `GuardRefused`.
+- Tests fake the repository (`FakeDrive`, `NoDrive` in
+  `test/library/helpers/fake_drive.dart`). One cubit test exports through a
+  real `StorageRepository` over the console's own records (an `iso9660`
+  whole-disk record the helper refused beside the mounted FAT partition),
+  and one app test opens the Library and reads the repository's drive.
+
 ## November 2026 Flutter 3.50 and Dart 3.14 (#1777)
 
 - CI, the app and every package build on Flutter 3.50.0 (Dart 3.14.0):

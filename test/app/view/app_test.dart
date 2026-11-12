@@ -31,6 +31,7 @@ import 'package:segno/audio_setup/view/device_page.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/control/model/foot_mixer.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/application/playback_settings.dart';
 import 'package:segno/looper/application/record_settings.dart';
@@ -3988,6 +3989,54 @@ void main() {
         const StorageDestination.internal(),
       );
       noticesOf(tester).clear(AppNoticeId.saveToFellBack);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the Library reads the drives the storage repository '
+        'reports, so Export to USB finds the stick (#1790)', (tester) async {
+      final sessionsRoot = Directory.systemTemp.createTempSync(
+        'segno-app-sessions-',
+      );
+      addTearDown(() => sessionsRoot.delete(recursive: true));
+      sessionRepository = SessionRepository(
+        guards: GuardRegistry(),
+        engine: FakeAudioEngine(),
+        sessionsRoot: () async => sessionsRoot.path,
+      );
+      final usb = FakeUsbStorageClient(
+        initial: [
+          const RemovableVolumeRecord(
+            generation: 3,
+            kname: 'sda1',
+            fingerprint: 'SanDisk_Cruzer_Glide-B2B4-BBAC',
+            label: 'SANDISK',
+            fsType: 'vfat',
+            mountPoint: '/run/media/segno/3-SANDISK',
+            sizeBytes: 15667822592,
+            status: RemovableVolumeRecordStatus.mounted,
+            readOnly: false,
+          ),
+        ],
+      );
+      final storage = StorageRepository(
+        guards: GuardRegistry(),
+        client: usb,
+        exportsRoot: () async => '/segno-app-test/exports',
+        volumeSpace: (_) => null,
+      );
+      addTearDown(() => unawaited(storage.dispose()));
+      await pumpApp(tester, NoopWaveformWindowService(), storage: storage);
+
+      await tester.tap(find.byKey(const Key('stage_library')));
+      await tester.pumpAndSettle();
+      final library = tester.element(find.byKey(const Key('library_page')));
+
+      expect(
+        library.read<LibraryCubit>().state.volumes.map((v) => v.generation),
+        [3],
+      );
+
+      segnoNavigatorKey.currentState!.pop();
       await tester.pumpAndSettle();
     });
 

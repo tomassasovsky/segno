@@ -6,11 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
+import 'package:usb_storage_client/usb_storage_client.dart';
 
+import '../../helpers/fake_storage_io.dart';
 import '../helpers/fake_drive.dart';
 
 class _MockPerformance extends Mock implements PerformanceRepository;
@@ -69,7 +71,7 @@ void main() {
   LibraryAudioCubit build({DawProjectWriter? dawProject}) => LibraryAudioCubit(
     performance: performance,
     sessions: sessions,
-    volumes: drive,
+    storage: drive,
     guards: guards,
     previewPoll: const Duration(milliseconds: 1),
     dawProject:
@@ -328,6 +330,85 @@ void main() {
   });
 
   group('Export to USB', () {
+    test('reaches the drive the USB helper mounted, through the storage '
+        'repository, past an unsupported whole-disk record (#1790)', () async {
+      // The console's own stick: an ISO image's whole-disk signature on sda
+      // that the helper refuses, and the FAT partition it mounts.
+      final mount = '${temp.path}/3-SANDISK';
+      Directory(mount).createSync();
+      RemovableVolumeRecord record(
+        int generation,
+        String kname,
+        String fsType,
+        RemovableVolumeRecordStatus status, {
+        String? mountPoint,
+      }) => RemovableVolumeRecord(
+        generation: generation,
+        kname: kname,
+        fingerprint: 'SanDisk_Cruzer_Glide-$kname',
+        label: kname == 'sda' ? 'ISOIMAGE' : 'SANDISK',
+        fsType: fsType,
+        mountPoint: mountPoint,
+        sizeBytes: 15669919744,
+        status: status,
+        readOnly: false,
+      );
+      final client = FakeUsbStorageClient(
+        initial: [
+          record(2, 'sda', 'iso9660', RemovableVolumeRecordStatus.unsupported),
+          record(
+            3,
+            'sda1',
+            'vfat',
+            RemovableVolumeRecordStatus.mounted,
+            mountPoint: mount,
+          ),
+        ],
+      );
+      final storage = StorageRepository(
+        client: client,
+        exportsRoot: () async => exports,
+        volumeSpace: (_) => null,
+        guards: guards,
+        storageIo: FakeStorageIo(),
+      );
+      addTearDown(() async {
+        await storage.dispose();
+        await client.dispose();
+      });
+      await storage.volumes.firstWhere((v) => v.isNotEmpty);
+      final capture = take('Evening loop');
+      when(() => performance.listCaptures()).thenAnswer((_) async => [capture]);
+      final cubit = LibraryAudioCubit(
+        performance: performance,
+        sessions: sessions,
+        storage: storage,
+        guards: guards,
+      );
+      addTearDown(cubit.close);
+      await cubit.load();
+      cubit.openFolder(LibraryAudioFolder.performances);
+      await cubit.select(cubit.state.items.single);
+
+      await cubit.export(
+        LibraryAudioExportKind.recording,
+        purpose: 'Exporting Evening loop',
+      );
+
+      expect(
+        cubit.state.export,
+        const LibraryExportDone(
+          name: 'Evening loop.wav',
+          folder: LibraryAudioFolder.performances,
+        ),
+      );
+      expect(
+        File('$mount/Segno/Performances/Evening loop.wav').readAsBytesSync(),
+        [1, 1],
+      );
+      expect(storage.leases, isEmpty);
+    });
+
     test('a one-part recording lands as one WAV, through one copy under a '
         'named lease', () async {
       final cubit = await withRecording(take('Evening loop'));
@@ -337,7 +418,7 @@ void main() {
         purpose: 'Exporting Evening loop',
       );
 
-      expect(drive.leases, ['Exporting Evening loop']);
+      expect(drive.leasePurposes, [WritePurpose.export]);
       // Staged copies overwrite only the export's own staging.
       expect(drive.copies.single.policy, ConflictPolicy.replace);
       expect(drive.files, ['Segno/Performances/Evening loop.wav']);
@@ -457,6 +538,17 @@ void main() {
       await cubit.export(LibraryAudioExportKind.recording, purpose: 'p');
 
       expect(cubit.state.error, LibraryAudioError.readOnly);
+      expect(cubit.state.export, isNull);
+      expect(drive.copies, isEmpty);
+    });
+
+    test('a lease the storage repository refuses reads as busy', () async {
+      final cubit = await withRecording(take('Evening loop'));
+      drive.leaseRefusal = const StorageFailure.busy(GuardKind.capture);
+
+      await cubit.export(LibraryAudioExportKind.recording, purpose: 'p');
+
+      expect(cubit.state.error, LibraryAudioError.exportBusy);
       expect(cubit.state.export, isNull);
       expect(drive.copies, isEmpty);
     });

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/library/application/audio_export.dart';
-import 'package:segno/library/application/removable_volumes.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/fake_drive.dart';
 
@@ -88,7 +88,7 @@ void main() {
     plan,
     generation: drive.generation,
     policy: policy,
-    purpose: 'Exporting Evening loop',
+    purpose: WritePurpose.export,
     cancelled: cancelled,
     onProgress: onProgress,
   );
@@ -110,7 +110,7 @@ void main() {
       final at = await run(parts(3), onProgress: progress.add);
 
       expect(at, '$perf/Evening loop · Part 001.wav');
-      expect(drive.leases, ['Exporting Evening loop']);
+      expect(drive.leasePurposes, [WritePurpose.export]);
       expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
         for (var i = 1; i <= 3; i++)
           ('$staging/Evening loop · Part 00$i.wav', ConflictPolicy.replace),
@@ -475,7 +475,7 @@ void main() {
           parts(1),
           generation: drive.generation + 1,
           policy: ConflictPolicy.ask,
-          purpose: 'Exporting',
+          purpose: WritePurpose.export,
         ),
         throwsA(isA<StorageVolumeLost>()),
       );

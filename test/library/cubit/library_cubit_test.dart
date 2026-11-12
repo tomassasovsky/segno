@@ -7,15 +7,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 class _MockPedalRepository extends Mock implements PedalRepository;
 
 class _MockSessionRepository extends Mock implements SessionRepository;
 
-class _FakeVolumes implements RemovableVolumes {
+class _FakeVolumes extends Fake implements StorageRepository {
   final controller = StreamController<List<RemovableVolume>>.broadcast();
 
   @override
@@ -23,24 +23,6 @@ class _FakeVolumes implements RemovableVolumes {
 
   @override
   Stream<List<RemovableVolume>> get volumes => controller.stream;
-
-  @override
-  Future<VolumeSpace?> space(StorageDestination destination) async => null;
-
-  @override
-  Future<T> withWriteLease<T>(
-    StorageDestination target,
-    String purpose,
-    Future<T> Function(String mountPoint) body,
-  ) => throw UnimplementedError();
-
-  @override
-  Future<String> copyFile(
-    String sourcePath,
-    StorageDestination destination,
-    String relativePath, {
-    required ConflictPolicy onConflict,
-  }) => throw UnimplementedError();
 }
 
 const _usb = RemovableVolume(
@@ -88,7 +70,7 @@ void main() {
 
     LibraryCubit build() => LibraryCubit(
       sessions: sessions,
-      volumes: volumes,
+      storage: volumes,
       pedal: pedal,
       guards: GuardRegistry(),
     );
@@ -326,7 +308,7 @@ void main() {
 
       LibraryCubit fast() => LibraryCubit(
         sessions: sessions,
-        volumes: volumes,
+        storage: volumes,
         pedal: pedal,
         guards: GuardRegistry(),
         listenPoll: const Duration(milliseconds: 1),

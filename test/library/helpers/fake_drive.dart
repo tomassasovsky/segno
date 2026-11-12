@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:segno/library/application/removable_volumes.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// One `copyFile` call a [FakeDrive] received.
 typedef DriveCopy = ({
@@ -10,15 +11,15 @@ typedef DriveCopy = ({
   ConflictPolicy policy,
 });
 
-/// A [RemovableVolumes] with one drive mounted at a real temporary
+/// A [StorageRepository] with one drive mounted at a real temporary
 /// directory, so an export's files land where a test can read them.
 ///
-/// `copyFile` follows the port's contract (`ask` throws [NameConflict]
+/// `copyFile` follows the repository's contract (`ask` throws [NameConflict]
 /// before writing, `keepBoth` suffixes ` (2)`, `replace` overwrites), and
 /// records every call. [failOnCopy] makes the copy with that 1-based number
-/// throw [failure] instead, before it writes anything, as the port's part
-/// protocol does.
-class FakeDrive implements RemovableVolumes {
+/// throw [failure] instead, before it writes anything, as the repository's
+/// part protocol does.
+class FakeDrive extends Fake implements StorageRepository {
   /// Creates a drive of [generation] mounted at [mount].
   new(
     this.mount, {
@@ -50,6 +51,10 @@ class FakeDrive implements RemovableVolumes {
   /// Runs before each copy (1-based number), for a test that acts mid-way.
   void Function(int copy)? beforeCopy;
 
+  /// When set, every lease is refused with it, as the repository refuses
+  /// one the guard table forbids at its commit.
+  StorageFailure? leaseRefusal;
+
   /// When set, every copy waits for it first: an export held mid-way.
   Completer<void>? hold;
 
@@ -57,12 +62,12 @@ class FakeDrive implements RemovableVolumes {
   final List<DriveCopy> copies = [];
 
   /// Every lease's purpose, in order.
-  final List<String> leases = [];
+  final List<WritePurpose> leasePurposes = [];
 
   final StreamController<List<RemovableVolume>> _changes =
       StreamController<List<RemovableVolume>>.broadcast();
 
-  /// The drive as the port reports it.
+  /// The drive as the repository reports it.
   RemovableVolume get volume => RemovableVolume(
     generation: generation,
     fingerprint: 'fake-$generation',
@@ -86,10 +91,11 @@ class FakeDrive implements RemovableVolumes {
   @override
   Future<T> withWriteLease<T>(
     StorageDestination target,
-    String purpose,
-    Future<T> Function(String mountPoint) body,
+    WritePurpose purpose,
+    Future<T> Function(String root) body,
   ) async {
-    leases.add(purpose);
+    leasePurposes.add(purpose);
+    if (leaseRefusal case final refusal?) throw refusal;
     if (target != StorageDestination.removable(generation)) {
       throw StorageFailure.volumeLost(generation);
     }
@@ -149,4 +155,13 @@ class FakeDrive implements RemovableVolumes {
 
   /// Closes the change stream.
   Future<void> close() => _changes.close();
+}
+
+/// The storage of a console with no drive plugged in.
+class NoDrive extends Fake implements StorageRepository {
+  @override
+  List<RemovableVolume> get current => const [];
+
+  @override
+  Stream<List<RemovableVolume>> get volumes => const Stream.empty();
 }

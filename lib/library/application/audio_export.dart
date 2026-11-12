@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:segno/library/application/removable_volumes.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// Where the Library's audio exports land on a drive (plan section 4.3).
 abstract final class AudioExportFolders {
@@ -71,9 +71,9 @@ class AudioExportCancelled implements Exception {
 }
 
 /// Runs the Library's exports and backups to a removable drive through the
-/// [RemovableVolumes] port (#1178 Part 7): every byte goes through the port's
-/// `copyFile` (`.part`, fsync, rename), under a write lease that names the
-/// export, after a space check against the export's total.
+/// [StorageRepository] (#1178 Part 7, #1177): every byte goes through its
+/// `copyFile` (`.part`, fsync, rename), under a write lease that names what
+/// the write is for, after a space check against the export's total.
 ///
 /// An export is all or nothing on the drive, whatever stops it:
 /// - Every file is first copied into a hidden staging directory named after
@@ -94,10 +94,10 @@ class AudioExportCancelled implements Exception {
 /// free `<name> (n)` for every file at once, so a multi-part recording keeps
 /// one name across its parts. Internal storage is only ever read.
 class AudioExporter {
-  /// Creates an [AudioExporter] over the port it copies through.
-  const new(this._volumes);
+  /// Creates an [AudioExporter] over the repository it copies through.
+  const new(this._storage);
 
-  final RemovableVolumes _volumes;
+  final StorageRepository _storage;
 
   /// The prefix of every hidden entry an export keeps in a folder: its
   /// staging directory `<prefix><name>` and its aside `<prefix><name>.old`.
@@ -113,11 +113,12 @@ class AudioExporter {
   @visibleForTesting
   static void Function(String step)? debugOnSwap;
 
-  /// Exports [plan] to the drive [generation] under [policy], naming it
-  /// [purpose] for the Storage page. [onProgress] gets the share of bytes
-  /// copied after every file; [cancelled] is asked before every file and
-  /// before the swap. Returns the export's path on the drive, relative to
-  /// its root: the package directory, or the first file.
+  /// Exports [plan] to the drive [generation] under [policy], under a lease
+  /// whose [purpose] the Storage page names beside a disabled Eject.
+  /// [onProgress] gets the share of bytes copied after every file;
+  /// [cancelled] is asked before every file and before the swap. Returns the
+  /// export's path on the drive, relative to its root: the package
+  /// directory, or the first file.
   ///
   /// Throws [NameConflict] (only under [ConflictPolicy.ask]), a
   /// [StorageFailure], or [AudioExportCancelled].
@@ -125,17 +126,17 @@ class AudioExporter {
     AudioExportPlan plan, {
     required int generation,
     required ConflictPolicy policy,
-    required String purpose,
+    required WritePurpose purpose,
     void Function(double fraction)? onProgress,
     bool Function()? cancelled,
   }) {
     final destination = StorageDestination.removable(generation);
-    return _volumes.withWriteLease(destination, purpose, (mount) async {
+    return _storage.withWriteLease(destination, purpose, (mount) async {
       final folder = Directory('$mount/${plan.folder}');
       _guardIo(() => recoverFolder(folder));
       final sizes = [for (final f in plan.files) _sizeOf(f.source)];
       final total = sizes.fold<int>(0, (a, b) => a + b);
-      final space = await _volumes.space(destination);
+      final space = await _storage.space(destination);
       if (space != null && space.freeBytes < total) {
         throw const StorageFailure.full();
       }
@@ -151,7 +152,7 @@ class AudioExporter {
         for (var i = 0; i < plan.files.length; i++) {
           if (cancelled?.call() ?? false) throw const AudioExportCancelled();
           final target = plan.files[i].target.replaceAll('{name}', name);
-          await _volumes.copyFile(
+          await _storage.copyFile(
             plan.files[i].source,
             destination,
             plan.package ? '$staging/$name/$target' : '$staging/$target',

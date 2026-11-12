@@ -12,12 +12,12 @@ import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/view/library_page.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../../helpers/helpers.dart';
 import '../helpers/fake_drive.dart';
@@ -134,7 +134,7 @@ void main() {
   /// section.
   Future<void> openAudio(
     WidgetTester tester, {
-    RemovableVolumes? volumes,
+    StorageRepository? volumes,
     Stream<LooperState> looperStates = const Stream.empty(),
     GuardRegistry? guards,
   }) async {
@@ -154,7 +154,7 @@ void main() {
           RepositoryProvider<GuardRegistry>.value(
             value: guards ?? GuardRegistry(),
           ),
-          RepositoryProvider<RemovableVolumes>.value(value: volumes ?? drive),
+          RepositoryProvider<StorageRepository>.value(value: volumes ?? drive),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -336,7 +336,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(drive.files, ['Segno/Performances/Evening loop.wav']);
-    expect(drive.leases, [l10n.libraryAudioPurpose('Evening loop')]);
+    expect(drive.leasePurposes, [WritePurpose.export]);
     expect(find.text(l10n.libraryAudioExported), findsOneWidget);
     expect(find.text('Evening loop.wav'), findsOneWidget);
     expect(
@@ -422,7 +422,7 @@ void main() {
   testWidgets('without a drive, 20/10 asks for one and Cancel closes it', (
     tester,
   ) async {
-    await openAudio(tester, volumes: const InternalOnlyVolumes());
+    await openAudio(tester, volumes: NoDrive());
     await openPerformances(tester);
     await tester.tap(row(single.path));
     await tester.pumpAndSettle();

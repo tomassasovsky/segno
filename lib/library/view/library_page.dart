@@ -7,7 +7,6 @@ import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_audio_cubit.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:segno/library/view/library_audio_tab.dart';
@@ -20,6 +19,7 @@ import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 /// The full-screen Library (pen `01 CURRENT UX` 19/01): saved sessions with
 /// search, folders and a preview that never loads, and the Audio section
@@ -41,7 +41,7 @@ class LibraryPage extends StatelessWidget {
           unawaited(session.refreshSessions());
           final cubit = LibraryCubit(
             sessions: context.read<SessionRepository>(),
-            volumes: context.read<RemovableVolumes>(),
+            storage: context.read<StorageRepository>(),
             pedal: context.read<PedalRepository>(),
             guards: context.read<GuardRegistry>(),
           );
@@ -55,7 +55,7 @@ class LibraryPage extends StatelessWidget {
         create: (context) => LibraryAudioCubit(
           performance: context.read<PerformanceRepository>(),
           sessions: context.read<SessionRepository>(),
-          volumes: context.read<RemovableVolumes>(),
+          storage: context.read<StorageRepository>(),
           guards: context.read<GuardRegistry>(),
         ),
       ),

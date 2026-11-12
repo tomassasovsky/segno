@@ -6,9 +6,9 @@ import 'package:mocktail/mocktail.dart';
 import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/library/application/audio_export.dart';
-import 'package:segno/library/application/removable_volumes.dart';
 import 'package:segno/library/cubit/library_cubit.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:storage_repository/storage_repository.dart';
 
 import '../helpers/fake_drive.dart';
 
@@ -72,7 +72,7 @@ void main() {
   Future<LibraryCubit> selected() async {
     final cubit = LibraryCubit(
       sessions: sessions,
-      volumes: drive,
+      storage: drive,
       pedal: pedal,
       guards: guards,
     );
@@ -111,7 +111,7 @@ void main() {
 
       await backUp(cubit);
 
-      expect(drive.leases, ['Backing up Evening loop']);
+      expect(drive.leasePurposes, [WritePurpose.backup]);
       expect(drive.copies.map((c) => (c.relativePath, c.policy)), [
         for (final f in files)
           (
@@ -349,6 +349,25 @@ void main() {
       expect(guards.active, [restart.operation]);
     });
 
+    test('the storage repository refuses its lease, naming what holds the '
+        'drive', () async {
+      final cubit = await selected();
+      drive.leaseRefusal = const StorageFailure.busy(GuardKind.capture);
+
+      await backUp(cubit);
+
+      expect(
+        cubit.state.backup,
+        const LibraryBackupInterrupted(
+          id: id,
+          name: 'Evening loop',
+          problem: LibraryBackupProblem.busy,
+          blockedBy: GuardKind.capture,
+        ),
+      );
+      expect(drive.copies, isEmpty);
+    });
+
     test('a second press while it runs is ignored', () async {
       final cubit = await selected();
       final hold = Completer<void>();
@@ -360,7 +379,7 @@ void main() {
       hold.complete();
       await first;
 
-      expect(drive.leases, hasLength(1));
+      expect(drive.leasePurposes, hasLength(1));
     });
   });
 
