@@ -137,12 +137,12 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   the V3D render queue was 27% busy without SDF and 63-66% with it (7.8 ms a
   render job against 3.1), the profile build drew about 10% fewer frames on
   the main screen, and the readout's raster time went from 5.9 to 10.4 ms
-  (p50). Paths (the pen icons, the waveform, the stomp art) still alias
+  (p50). Paths (the pen icons and the stomp art) still alias
   without MSAA, so SDF cannot replace it.
 - Against build 243 (3.47.5), 3.50 without SDF is level: app CPU 11.4% of the
   machine on the stage against 11.8-11.9%, GPU 26% against 27%, build p50
   0.2-0.4 ms on both screens in profile mode.
-- Scanout comparisons (kmsgrab) of every combination: MSAA 4x / 2x / off,
+- Scanout dumps read through KMS for every combination: MSAA 4x / 2x / off,
   with and without SDF, against build 243, are in the PR.
 
 ## November 2026 A capture left running stops on its own (#1767)
