@@ -450,6 +450,35 @@ void main() {
     });
   });
 
+  group('two exports of one name at once', () {
+    test('Keep both gives the second the next free name, as it would one '
+        'after the other', () async {
+      final hold = Completer<void>();
+      drive.beforeCopy = (copy) {
+        if (copy == 2) drive.hold = hold;
+      };
+      final first = run(package(), policy: ConflictPolicy.keepBoth);
+      while (drive.copies.length < 2) {
+        await pumpEventQueue();
+      }
+      final second = run(package(), policy: ConflictPolicy.keepBoth);
+      await pumpEventQueue();
+      // The second waits for the first's turn in the folder.
+      expect(drive.copies, hasLength(2));
+
+      hold.complete();
+      expect(await first, '$perf/Evening loop');
+      expect(await second, '$perf/Evening loop (2)');
+      expect(drive.files, [
+        for (final name in ['Evening loop (2)', 'Evening loop']) ...[
+          '$perf/$name/master-001.wav',
+          '$perf/$name/project.als',
+          '$perf/$name/stems/wet/track0.wav',
+        ],
+      ]);
+    });
+  });
+
   group('after a cut', () {
     /// What a power cut between the two renames of a package Replace leaves:
     /// the old package aside with its target list, the new one staged, no

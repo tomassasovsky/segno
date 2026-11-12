@@ -899,6 +899,22 @@ void main() {
       );
       expect(() => repo.syncDirectory(usb1, '../Segno'), throwsArgumentError);
       expect(h.synced, isEmpty);
+      expect(repo.leases, isEmpty);
     });
+
+    test(
+      'a sync that fails because the drive was pulled is a lost volume',
+      () async {
+        repo = h.build(initial: [h.record(1)]);
+        await pumpEventQueue();
+        h.io.failingSyncs.add('${h.mountPoint(1)}/Segno');
+        h.io.onSyncFailure = () => h.client.detach(1);
+
+        await expectLater(
+          repo.syncDirectory(usb1, 'Segno'),
+          throwsA(const StorageFailure.volumeLost(1)),
+        );
+      },
+    );
   });
 }

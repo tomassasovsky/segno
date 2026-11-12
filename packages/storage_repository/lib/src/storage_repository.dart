@@ -645,14 +645,7 @@ class StorageRepository implements ActiveOperationSource {
     String relativePath, {
     required ConflictPolicy onConflict,
   }) async {
-    final segments = relativePath.split('/');
-    if (segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
-      throw ArgumentError.value(
-        relativePath,
-        'relativePath',
-        'must be a relative path inside the destination',
-      );
-    }
+    final segments = _insideRoot(relativePath);
     final held = acquire(destination, WritePurpose.copy);
     try {
       final wanted = '${await _writeRoot(destination)}/$relativePath';
@@ -706,36 +699,43 @@ class StorageRepository implements ActiveOperationSource {
   /// [destination]'s root durable, as [copyFile] does after its own rename.
   /// For a writer that renames what it copied into place itself (the
   /// Library's export swap), so it reports nothing as written before the
-  /// renames would survive a pulled drive. Call it under a lease on
-  /// [destination].
+  /// renames would survive a pulled drive. A `copy` lease is held for the
+  /// sync, as for a copy.
   ///
-  /// Throws [StorageFailure.volumeLost] when the volume is no longer
-  /// mounted, and [StorageFailure.io] when the device refuses the sync.
-  /// [relativePath] follows [copyFile]'s rule.
+  /// Fails as [copyFile] does: `volumeLost` when the volume is gone or goes
+  /// with the sync, `readOnly` or `unsupported` for a volume that cannot be
+  /// written, `io` when the device refuses the sync. [relativePath] follows
+  /// [copyFile]'s rule.
   Future<void> syncDirectory(
     StorageDestination destination,
     String relativePath,
   ) async {
-    if (relativePath
-        .split('/')
-        .any((s) => s.isEmpty || s == '.' || s == '..')) {
+    _insideRoot(relativePath);
+    final held = acquire(destination, WritePurpose.copy);
+    try {
+      final path = '${await _writeRoot(destination)}/$relativePath';
+      try {
+        _io.syncDirectory(path);
+      } on FileSystemException catch (e) {
+        throw await _classify(e, destination, held);
+      }
+    } finally {
+      held.release();
+    }
+  }
+
+  /// [relativePath]'s segments, or an [ArgumentError] when it is empty,
+  /// absolute, or has an empty, `.` or `..` segment.
+  static List<String> _insideRoot(String relativePath) {
+    final segments = relativePath.split('/');
+    if (segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
       throw ArgumentError.value(
         relativePath,
         'relativePath',
         'must be a relative path inside the destination',
       );
     }
-    final root = switch (destination) {
-      InternalDestination() => await _exportsRoot(),
-      RemovableDestination(:final generation) =>
-        _mountedPath(generation) ??
-            (throw StorageFailure.volumeLost(generation)),
-    };
-    try {
-      _io.syncDirectory('$root/$relativePath');
-    } on FileSystemException catch (e) {
-      throw StorageFailure.io(e.osError?.message ?? e.message);
-    }
+    return segments;
   }
 
   /// Copies the update package at [sourcePath], on removable volume

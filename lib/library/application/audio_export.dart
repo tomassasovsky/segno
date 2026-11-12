@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -107,11 +108,12 @@ class AudioExporter {
   /// not reached its commit point.
   static const String targetsName = '.targets';
 
-  /// The staging directories of the exports running now, by absolute path,
-  /// across every exporter: [recoverFolder] leaves them and their asides
-  /// alone, so a backup and an export into one folder at once do not
-  /// delete each other's work.
-  static final Set<String> _inFlight = {};
+  /// The last export into each folder, by its absolute path, across every
+  /// exporter. Exports into one folder run one after the other: each starts
+  /// with [recoverFolder], which removes every staging directory and aside
+  /// it finds there, so one running beside another (a backup and a mixdown
+  /// export both write `Segno/Sessions`) would delete the other's work.
+  static final Map<String, Future<void>> _folderTurns = {};
 
   /// Called at each step of a swap (`aside <entry>` before each move aside,
   /// `aside` once they are all aside, `placed <entry>` per entry, then
@@ -137,66 +139,99 @@ class AudioExporter {
     bool Function()? cancelled,
   }) {
     final destination = StorageDestination.removable(generation);
-    return _storage.withWriteLease(destination, purpose, (mount) async {
-      final folder = Directory('$mount/${plan.folder}');
-      _guardIo(() => recoverFolder(folder));
-      final sizes = [for (final f in plan.files) _sizeOf(f.source)];
-      final total = sizes.fold<int>(0, (a, b) => a + b);
-      final space = await _storage.space(destination);
-      if (space != null && space.freeBytes < total) {
-        throw const StorageFailure.full();
+    return _storage.withWriteLease(
+      destination,
+      purpose,
+      (mount) => _inTurn(
+        '$mount/${plan.folder}',
+        () => _export(
+          plan,
+          destination: destination,
+          mount: mount,
+          policy: policy,
+          onProgress: onProgress,
+          cancelled: cancelled,
+        ),
+      ),
+    );
+  }
+
+  /// Runs [body] once every export into [folder] started before it ended.
+  static Future<T> _inTurn<T>(String folder, Future<T> Function() body) async {
+    final previous = _folderTurns[folder];
+    final turn = Completer<void>();
+    _folderTurns[folder] = turn.future;
+    try {
+      await previous;
+      return await body();
+    } finally {
+      turn.complete();
+      if (identical(_folderTurns[folder], turn.future)) {
+        unawaited(_folderTurns.remove(folder));
       }
-      final name = _nameFor(plan, mount, policy);
-      final entries = plan.package
-          ? [name]
-          : [for (final f in plan.files) f.target.replaceAll('{name}', name)];
-      final staging = '${plan.folder}/$stagingPrefix$name';
-      final stagingDir = Directory('$mount/$staging');
-      // Ours from here: another export or backup into this folder recovers
-      // it around this staging and its aside, never through them. Taken
-      // after this export's own recovery, which must still put back an
-      // aside an interrupted export of the same name left.
-      _inFlight.add(stagingDir.path);
-      var done = 0;
-      try {
-        if (stagingDir.existsSync()) stagingDir.deleteSync(recursive: true);
-        for (var i = 0; i < plan.files.length; i++) {
-          if (cancelled?.call() ?? false) throw const AudioExportCancelled();
-          final target = plan.files[i].target.replaceAll('{name}', name);
-          await _storage.copyFile(
-            plan.files[i].source,
-            destination,
-            plan.package ? '$staging/$name/$target' : '$staging/$target',
-            onConflict: ConflictPolicy.replace,
-          );
-          done += sizes[i];
-          onProgress?.call(total == 0 ? 1 : done / total);
-        }
+    }
+  }
+
+  /// [run]'s work, in its folder's turn, under the lease on [mount].
+  Future<String> _export(
+    AudioExportPlan plan, {
+    required StorageDestination destination,
+    required String mount,
+    required ConflictPolicy policy,
+    void Function(double fraction)? onProgress,
+    bool Function()? cancelled,
+  }) async {
+    final folder = Directory('$mount/${plan.folder}');
+    _guardIo(() => recoverFolder(folder));
+    final sizes = [for (final f in plan.files) _sizeOf(f.source)];
+    final total = sizes.fold<int>(0, (a, b) => a + b);
+    final space = await _storage.space(destination);
+    if (space != null && space.freeBytes < total) {
+      throw const StorageFailure.full();
+    }
+    final name = _nameFor(plan, mount, policy);
+    final entries = plan.package
+        ? [name]
+        : [for (final f in plan.files) f.target.replaceAll('{name}', name)];
+    final staging = '${plan.folder}/$stagingPrefix$name';
+    final stagingDir = Directory('$mount/$staging');
+    var done = 0;
+    try {
+      if (stagingDir.existsSync()) stagingDir.deleteSync(recursive: true);
+      for (var i = 0; i < plan.files.length; i++) {
         if (cancelled?.call() ?? false) throw const AudioExportCancelled();
-        _swap(
-          folder: folder,
-          name: name,
-          entries: entries,
-          earlier: policy == ConflictPolicy.replace ? plan.earlier : null,
+        final target = plan.files[i].target.replaceAll('{name}', name);
+        await _storage.copyFile(
+          plan.files[i].source,
+          destination,
+          plan.package ? '$staging/$name/$target' : '$staging/$target',
+          onConflict: ConflictPolicy.replace,
         );
-        // The swap's renames are plain renames: sync them before the export
-        // is reported, as the copy syncs its own (a moved package directory
-        // keeps its `..` entry in its own clusters, so it is synced too).
-        await _storage.syncDirectory(destination, plan.folder);
-        if (plan.package) {
-          await _storage.syncDirectory(destination, '${plan.folder}/$name');
-        }
-      } on FileSystemException catch (e) {
-        _bestEffort(() => stagingDir.deleteSync(recursive: true));
-        throw StorageFailure.io(e.osError?.message ?? e.message);
-      } on Object {
-        _bestEffort(() => stagingDir.deleteSync(recursive: true));
-        rethrow;
-      } finally {
-        _inFlight.remove(stagingDir.path);
+        done += sizes[i];
+        onProgress?.call(total == 0 ? 1 : done / total);
       }
-      return '${plan.folder}/${entries.first}';
-    });
+      if (cancelled?.call() ?? false) throw const AudioExportCancelled();
+      _swap(
+        folder: folder,
+        name: name,
+        entries: entries,
+        earlier: policy == ConflictPolicy.replace ? plan.earlier : null,
+      );
+      // The swap's renames are plain renames: sync them before the export
+      // is reported, as the copy syncs its own (a moved package directory
+      // keeps its `..` entry in its own clusters, so it is synced too).
+      await _storage.syncDirectory(destination, plan.folder);
+      if (plan.package) {
+        await _storage.syncDirectory(destination, '${plan.folder}/$name');
+      }
+    } on FileSystemException catch (e) {
+      _bestEffort(() => stagingDir.deleteSync(recursive: true));
+      throw StorageFailure.io(e.osError?.message ?? e.message);
+    } on Object {
+      _bestEffort(() => stagingDir.deleteSync(recursive: true));
+      rethrow;
+    }
+    return '${plan.folder}/${entries.first}';
   }
 
   /// The paths [plan] takes on the drive under [name], relative to its root.
@@ -329,8 +364,7 @@ class AudioExporter {
   /// its commit point is put back ([_rollBack]), a swap cut after it only
   /// loses its aside, and a staging directory with no swap is removed.
   /// Runs before every export; an export of this build's predecessor named
-  /// its staging `.segno-export`, which goes too. The staging and aside of
-  /// an export still running are not leftovers and stay.
+  /// its staging `.segno-export`, which goes too.
   static void recoverFolder(Directory folder) {
     if (!folder.existsSync()) return;
     final entries = folder.listSync();
@@ -341,7 +375,6 @@ class AudioExporter {
       final staging = Directory(
         '${folder.path}/${entry.substring(0, entry.length - 4)}',
       );
-      if (_inFlight.contains(staging.path)) continue;
       if (File('${e.path}/$targetsName').existsSync()) {
         _rollBack(folder: folder, staging: staging, aside: e);
       } else {
@@ -350,17 +383,10 @@ class AudioExporter {
     }
     for (final e in folder.listSync()) {
       final entry = _lastSegment(e.path);
-      if (e is! Directory) continue;
-      if (entry == '.segno-export') {
+      if (e is Directory &&
+          (entry.startsWith(stagingPrefix) || entry == '.segno-export')) {
         e.deleteSync(recursive: true);
-        continue;
       }
-      if (!entry.startsWith(stagingPrefix)) continue;
-      final staging = entry.endsWith('.old')
-          ? '${folder.path}/${entry.substring(0, entry.length - 4)}'
-          : e.path;
-      if (_inFlight.contains(staging)) continue;
-      e.deleteSync(recursive: true);
     }
   }
 

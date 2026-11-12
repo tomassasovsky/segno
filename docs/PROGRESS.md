@@ -106,7 +106,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `AudioExporter`: an export's recovery of its folder deleted every
   `.segno-export-*` directory there, including the staging of a backup or
   export still running into the same folder (a backup and a mixdown export
-  both write `Segno/Sessions`); exports in flight are now left alone. And
+  both write `Segno/Sessions`); exports into one folder now run one after
+  the other, across the Library's exporters. And
   the swap's renames were never synced, so "Exported to USB" could show
   before a pulled stick would keep the export; the exporter now syncs the
   folder (and a package's own directory) through the new
