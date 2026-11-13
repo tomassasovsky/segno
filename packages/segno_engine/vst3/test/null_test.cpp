@@ -36,6 +36,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -228,7 +229,7 @@ bool renderEngine(const std::string& dir, int32_t type, const Case& c,
 bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
                   const segno_vst3::FxKind& kind, const Case& c,
                   const std::vector<float>& input, int block,
-                  std::vector<float>& out, std::string& why) {
+                  std::vector<float>& out, int& latency, std::string& why) {
   const uint32_t* p = kind.processor;
   TUID tuid = INLINE_UID(p[0], p[1], p[2], p[3]);
   const VST3::UID uid = VST3::UID::fromTUID(tuid);
@@ -282,6 +283,7 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
   processor->setupProcessing(setup);
   component->setActive(true);
   processor->setProcessing(true);
+  latency = (int)processor->getLatencySamples();
 
   std::vector<float> inL(block), inR(block), outL(block), outR(block);
   float* ins[2] = {inL.data(), inR.data()};
@@ -406,6 +408,13 @@ int main(int argc, char** argv) {
   char tmpl[] = "/tmp/segno-null-XXXXXX";
   const std::string root = keep.empty() ? std::string(mkdtemp(tmpl)) : keep;
   mkdir(root.c_str(), 0755);
+  /* The captures (about 300 MB) go when the test ends, unless kept. */
+  struct Cleanup {
+    std::string dir;
+    ~Cleanup() {
+      if (!dir.empty()) std::filesystem::remove_all(dir);
+    }
+  } cleanup{keep.empty() ? root : std::string()};
   const std::vector<float> input = testSignal();
   int failures = 0;
   std::printf("%-22s %-9s %10s %10s %10s %8s\n", "kind", "case", "residual",
@@ -422,14 +431,33 @@ int main(int argc, char** argv) {
         continue;
       }
       std::string why;
-      if (!renderPlugin(module, kind, c, dry, block, plugin, why)) {
+      int reported = 0;
+      if (!renderPlugin(module, kind, c, dry, block, plugin, reported, why)) {
         std::printf("%-22s %-9s plugin failed: %s\n", kind.name, c.name, why.c_str());
         ++failures;
         continue;
       }
+      int latency = 0;
+      {
+        segno_fx_slot_config probe{};
+        probe.type = kind.type;
+        probe.slot = c.state.slot;
+        probe.sr = kRate;
+        probe.level = 1.0f;
+        probe.enabled = 1;
+        segno_fx_slot* slot = segno_fx_slot_new(&probe);
+        latency = segno_fx_slot_latency(slot);
+        segno_fx_slot_free(slot);
+      }
+      /* A kind that delays its output switches in the plugin, to its input
+       * delayed as much (processor.cpp), where the engine switches to it
+       * undelayed: the two agree up to the switch, and while it is off the
+       * plugin plays the input delayed by its latency. */
+      const bool ownSwitch = c.switched && latency > 0;
+      const size_t until = ownSwitch ? (size_t)kOffAt : wet.size();
       float worst = 0.0f, peak = 0.0f, effect = 0.0f;
       size_t at = 0;
-      for (size_t i = 0; i < wet.size(); ++i) {
+      for (size_t i = 0; i < until; ++i) {
         const float d = std::fabs(plugin[i] - wet[i]);
         if (d > worst) {
           worst = d;
@@ -438,27 +466,25 @@ int main(int argc, char** argv) {
         peak = std::fmax(peak, std::fabs(wet[i]));
         effect = std::fmax(effect, std::fabs(wet[i] - dry[i]));
       }
+      float bypassed = 0.0f;
+      if (ownSwitch) {
+        const size_t settled = (size_t)kOffAt + (size_t)(kRate / 200) + 1;
+        for (size_t i = settled; i < (size_t)kOnAt; ++i) {
+          bypassed = std::fmax(bypassed, std::fabs(plugin[i] - dry[i - latency]));
+        }
+      }
       char residual[32];
       if (worst == 0.0f) {
         std::snprintf(residual, sizeof(residual), "exact");
       } else {
         std::snprintf(residual, sizeof(residual), "%.1f dB", 20.0 * std::log10(worst));
       }
-      int latency = 0;
-      {
-        segno_fx_slot_config probe{};
-        probe.type = kind.type;
-        probe.sr = kRate;
-        probe.level = 1.0f;
-        probe.enabled = 1;
-        segno_fx_slot* slot = segno_fx_slot_new(&probe);
-        latency = segno_fx_slot_latency(slot);
-        segno_fx_slot_free(slot);
-      }
       std::printf("%-22s %-9s %10s %7.1f dB %7.1f dB %8d", kind.name, c.name,
                   residual, 20.0 * std::log10(std::fmax(peak, 1e-12f)),
                   20.0 * std::log10(std::fmax(effect, 1e-12f)), latency);
-      if (worst > kFail) {
+      if (ownSwitch) std::printf("  to the switch; off: %s", bypassed == 0.0f ? "the delayed input" : "WRONG");
+      if (worst > kFail || bypassed != 0.0f || reported != latency) {
+        if (reported != latency) std::printf("  reports latency %d", reported);
         std::printf("  FAIL (first at frame %zu)", at);
         ++failures;
       }

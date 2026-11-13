@@ -27,6 +27,7 @@
 #include <cstdint>
 
 #include "pluginterfaces/vst/vsttypes.h"
+#include "segno_engine_api.h" /* LE_FX_LEVEL_MAX */
 
 namespace segno_vst3 {
 
@@ -38,7 +39,7 @@ enum : Steinberg::Vst::ParamID {
   kBypassId = 1100,
 };
 
-constexpr float kLevelMax = 4.0f; /* LE_FX_LEVEL_MAX */
+constexpr float kLevelMax = LE_FX_LEVEL_MAX;
 
 inline int32_t inputFromNormalized(double v) {
   const long k = std::lround(v * 3.0);

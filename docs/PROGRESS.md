@@ -113,8 +113,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Parameter ids are the engine's parameter indexes (id p is `params[p]`,
   the normalized value is the engine's 0..1 setting); the channel handling
   is 1000 to 1003 and the bypass (the engine's enable bit) 1100
-  (`params.h`). A host's bypass runs the engine's switch: delays and reverbs
-  drain, the rest crossfade.
+  (`params.h`). A host's bypass runs the engine's switch (delays and reverbs
+  drain, the rest crossfade), except for a kind that delays its output (the
+  octaver family, 1216 frames; the oversampled drives and the vinyl, 3 or
+  4): it reports that latency on and off, and its bypass crossfades to its
+  input delayed as much, so a host's delay compensation holds either way.
+  The engine's settled bypass passes such a kind's input undelayed, so the
+  two agree while it is on and differ by the latency while it is off.
 - The null test (`vst3/test/null_test.cpp`) writes a one-track capture per
   kind and case (defaults; other settings with a mono output, balance and
   level on chain slot 5; a setting change, a switch off and on again

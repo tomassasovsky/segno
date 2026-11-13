@@ -63,12 +63,4 @@ constexpr FxKind kFxKinds[] = {
 
 constexpr int kFxKindCount = sizeof(kFxKinds) / sizeof(kFxKinds[0]);
 
-/* The kind [type], or nullptr. */
-inline const FxKind* fxKind(int32_t type) {
-  for (const FxKind& k : kFxKinds) {
-    if (k.type == type) return &k;
-  }
-  return nullptr;
-}
-
 }  // namespace segno_vst3

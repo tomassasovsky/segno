@@ -20,10 +20,6 @@ class Controller : public Steinberg::Vst::EditController {
 
   Steinberg::tresult PLUGIN_API initialize(Steinberg::FUnknown* context) SMTG_OVERRIDE;
   Steinberg::tresult PLUGIN_API setComponentState(Steinberg::IBStream* state) SMTG_OVERRIDE;
-  /* A bypass change moves the plugin's latency (processor.cpp), so the
-   * host is asked to read it again. */
-  Steinberg::tresult PLUGIN_API setParamNormalized(
-      Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue value) SMTG_OVERRIDE;
 
  private:
   const FxKind* kind_;

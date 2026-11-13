@@ -19,6 +19,7 @@
 #pragma once
 
 #include <mutex>
+#include <vector>
 
 #include "fx_slot.h"
 #include "public.sdk/source/vst/vstaudioeffect.h"
@@ -77,6 +78,14 @@ class Processor : public Steinberg::Vst::AudioEffect {
   std::mutex pendingLock_;
 
   segno_fx_slot* slot_ = nullptr;
+  /* Frames the kind delays its output by at this rate. */
+  int32_t latency_ = 0;
+  /* For such a kind, the plugin's own bypass: how far it has crossfaded
+   * to the delayed input (1 bypassed), and the input delayed by
+   * latency_. */
+  float bypassMix_ = 0.0f;
+  std::vector<float> dryLine_[2];
+  int32_t dryPos_ = 0;
   /* The slot's tempo: quarter notes a frame and the time signature. */
   float qpf_ = 0.0f;
   int32_t num_ = 4;

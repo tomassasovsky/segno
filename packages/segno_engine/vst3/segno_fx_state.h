@@ -35,19 +35,21 @@
  *  56  f32[n]  the kind's settings, each 0..1 (the engine's params)
  *
  * A state with fewer settings than the kind reads keeps the defaults for
- * the rest; extra ones are ignored.
+ * the rest; extra ones are ignored. At most LE_FX_PARAMS settings.
  */
 #pragma once
 
 #include <cstdint>
 #include <cstring>
 
+#include "segno_engine_api.h" /* LE_FX_MAX, LE_FX_PARAMS */
+
 namespace segno_vst3 {
 
 constexpr uint32_t kStateVersion = 1;
 constexpr int kStateHeaderBytes = 56;
-constexpr int kStateMaxSlot = 63; /* LE_FX_MAX - 1 */
-constexpr int kStateMaxParams = 32; /* LE_FX_PARAMS */
+constexpr int kStateMaxSlot = LE_FX_MAX - 1;
+constexpr int kStateMaxParams = LE_FX_PARAMS;
 
 struct FxPluginState {
   int32_t kind = 0;
@@ -112,15 +114,23 @@ inline int encodeState(const FxPluginState& s, uint8_t* out) {
   return kStateHeaderBytes + 4 * n;
 }
 
-/* Reads [len] bytes of [in] into [s]: the header, then up to
- * kStateMaxParams settings. Returns false for a state that is not one
- * (wrong magic or version, short). [s].params past the count are left as
- * the caller set them. */
+/* The number of settings the header [in] (kStateHeaderBytes) announces, or
+ * -1 when it is not a state's header (wrong magic or version, a count out
+ * of range). */
+inline int32_t stateParamCount(const uint8_t* in) {
+  if (std::memcmp(in, "SGFX", 4) != 0 || getU32(in + 4) != kStateVersion) return -1;
+  const int32_t n = (int32_t)getU32(in + 52);
+  return n >= 0 && n <= kStateMaxParams ? n : -1;
+}
+
+/* Reads [len] bytes of [in] into [s]: the header, then its settings.
+ * Returns false for a state that is not one (wrong magic or version, a
+ * count past kStateMaxParams, short). [s].params past the count are left
+ * as the caller set them. */
 inline bool decodeState(const uint8_t* in, int len, FxPluginState& s) {
-  if (len < kStateHeaderBytes || std::memcmp(in, "SGFX", 4) != 0 ||
-      getU32(in + 4) != kStateVersion) {
-    return false;
-  }
+  if (len < kStateHeaderBytes) return false;
+  const int32_t n = stateParamCount(in);
+  if (n < 0 || len < kStateHeaderBytes + 4 * n) return false;
   s.kind = (int32_t)getU32(in + 8);
   s.slot = (int32_t)getU32(in + 12);
   if (s.slot < 0 || s.slot > kStateMaxSlot) return false;
@@ -134,13 +144,25 @@ inline bool decodeState(const uint8_t* in, int len, FxPluginState& s) {
   s.placement = getF32(in + 40);
   s.level = getF32(in + 44);
   s.enabled = (int32_t)getU32(in + 48);
-  const int32_t n = (int32_t)getU32(in + 52);
-  if (n < 0 || len < kStateHeaderBytes + 4 * n) return false;
-  s.paramCount = n > kStateMaxParams ? kStateMaxParams : n;
+  s.paramCount = n;
   for (int i = 0; i < s.paramCount; ++i) {
     s.params[i] = getF32(in + kStateHeaderBytes + 4 * i);
   }
   return true;
+}
+
+/* Reads a whole state from [read], a function that reads up to [size]
+ * bytes into [into] and returns how many it read: the header first, then
+ * exactly the settings it announces, so a host's stream is never asked for
+ * more than the state holds. */
+template <typename Read>
+inline bool readState(Read read, FxPluginState& s) {
+  uint8_t bytes[kStateHeaderBytes + 4 * kStateMaxParams];
+  if (read(bytes, kStateHeaderBytes) != kStateHeaderBytes) return false;
+  const int32_t n = stateParamCount(bytes);
+  if (n < 0) return false;
+  if (n > 0 && read(bytes + kStateHeaderBytes, 4 * n) != 4 * n) return false;
+  return decodeState(bytes, kStateHeaderBytes + 4 * n, s);
 }
 
 }  // namespace segno_vst3

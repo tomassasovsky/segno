@@ -72,9 +72,16 @@ void segno_fx_defaults(int32_t type, float* out);
 int32_t segno_fx_drains(int32_t type);
 int32_t segno_fx_lane_hop_seed(int32_t track, int32_t lane);
 
+/* Frames [type] delays its output by at [sr] (le_fx_added_latency), from a
+ * slot made for the question. Allocates. */
+int32_t segno_fx_latency(int32_t type, int32_t sr);
+
 /* Flushes denormals on the calling thread, as the engine's threads do
- * before a chain runs (le_flush_denormals). */
-void segno_fx_flush_denormals(void);
+ * before a chain runs (le_flush_denormals), and returns the floating-point
+ * mode it found, which segno_fx_restore_fp_mode puts back: a plugin shares
+ * the host's thread, so it leaves the mode as it found it. */
+uint64_t segno_fx_flush_denormals(void);
+void segno_fx_restore_fp_mode(uint64_t mode);
 
 #ifdef __cplusplus
 }

@@ -79,6 +79,7 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
   if (result != kResultOk) return result;
   sr_ = (int32_t)std::lround(setup.sampleRate);
   if (sr_ <= 0) sr_ = 48000;
+  latency_ = segno_fx_latency(kind_->type, sr_);
   return kResultOk;
 }
 
@@ -108,10 +109,15 @@ bool Processor::build() {
   c.output = state_.output;
   c.placement = state_.placement;
   c.level = state_.level;
-  c.enabled = state_.enabled;
+  /* A kind that delays its output switches in the plugin (process()), so
+   * its slot always runs. */
+  c.enabled = latency_ > 0 ? 1 : state_.enabled;
   c.params = state_.params;
   c.count = width_;
   slot_ = segno_fx_slot_new(&c);
+  bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
+  for (auto& line : dryLine_) line.assign((size_t)(latency_ > 0 ? latency_ : 1), 0.0f);
+  dryPos_ = 0;
   return slot_ != nullptr;
 }
 
@@ -137,11 +143,9 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
 }
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
-  /* A bypassed entry passes its input through undelayed, as the engine's
-   * settled bypass does, so it delays nothing; the controller asks the
-   * host to read this again when the bypass changes. */
-  if (slot_ == nullptr || state_.enabled == 0) return 0;
-  return (uint32)segno_fx_slot_latency(slot_);
+  /* The same whether the entry is on or bypassed: bypassed, a kind that
+   * delays its output passes its input delayed as much (process()). */
+  return (uint32)latency_;
 }
 
 uint32 PLUGIN_API Processor::getTailSamples() {
@@ -173,7 +177,7 @@ void Processor::applyParam(ParamID id, double value) {
       return;
     case kBypassId:
       state_.enabled = value < 0.5 ? 1 : 0;
-      segno_fx_slot_set_enabled(slot_, state_.enabled);
+      if (latency_ == 0) segno_fx_slot_set_enabled(slot_, state_.enabled);
       return;
     default:
       if (id < (ParamID)width_) {
@@ -242,7 +246,7 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
   }
   if (slot_ == nullptr) return kResultOk;
 
-  segno_fx_flush_denormals();
+  const uint64_t fpMode = segno_fx_flush_denormals();
   const int32 n = data.numSamples;
   const ProcessContext* ctx = data.processContext;
   const bool playing = ctx != nullptr && (ctx->state & ProcessContext::kPlaying);
@@ -297,7 +301,34 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
     if (outL == nullptr) continue;
     float l = inL[i];
     float r = inR[i];
-    segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
+    if (latency_ > 0) {
+      /* A kind that delays its output: its slot always runs, and its
+       * bypass crossfades, over the engine's ramp, to the input delayed as
+       * much, so the host's delay compensation holds either way. */
+      float& dl = dryLine_[0][(size_t)dryPos_];
+      float& dr = dryLine_[1][(size_t)dryPos_];
+      const float delayedL = dl;
+      const float delayedR = dr;
+      dl = l;
+      dr = r;
+      if (++dryPos_ == latency_) dryPos_ = 0;
+      segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
+      const float target = state_.enabled ? 0.0f : 1.0f;
+      if (bypassMix_ != target) {
+        const float step = 1000.0f / (5.0f * (float)sr_); /* LE_FX_ENABLE_RAMP_MS */
+        bypassMix_ = target > bypassMix_ ? std::fmin(target, bypassMix_ + step)
+                                         : std::fmax(target, bypassMix_ - step);
+      }
+      if (bypassMix_ >= 1.0f) {
+        l = delayedL;
+        r = delayedR;
+      } else if (bypassMix_ > 0.0f) {
+        l += (delayedL - l) * bypassMix_;
+        r += (delayedR - r) * bypassMix_;
+      }
+    } else {
+      segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
+    }
     if (outR != nullptr) {
       outL[i] = l;
       outR[i] = r;
@@ -314,17 +345,19 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
     data.outputs[0].silenceFlags = 0;
   }
   nextClock_ = base + (uint32_t)(n > 0 ? n : 0);
+  segno_fx_restore_fp_mode(fpMode);
   return kResultOk;
 }
 
 tresult PLUGIN_API Processor::setState(IBStream* stream) {
   if (stream == nullptr) return kInvalidArgument;
-  uint8_t bytes[kStateHeaderBytes + 4 * kStateMaxParams];
-  int32 read = 0;
-  if (stream->read(bytes, (int32)sizeof(bytes), &read) != kResultOk) return kResultFalse;
   FxPluginState s;
   segno_fx_defaults(kind_->type, s.params);
-  if (!decodeState(bytes, read, s) || s.kind != kind_->type) return kResultFalse;
+  const auto read = [stream](uint8_t* into, int32 size) {
+    int32 got = 0;
+    return stream->read(into, size, &got) == kResultOk ? got : -1;
+  };
+  if (!readState(read, s) || s.kind != kind_->type) return kResultFalse;
   s.paramCount = width_;
   std::lock_guard<std::mutex> lock(pendingLock_);
   if (slot_ == nullptr) {

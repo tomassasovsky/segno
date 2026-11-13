@@ -202,26 +202,19 @@ tresult PLUGIN_API Controller::initialize(FUnknown* context) {
   return kResultOk;
 }
 
-tresult PLUGIN_API Controller::setParamNormalized(ParamID tag, ParamValue value) {
-  const bool moved = tag == kBypassId && getParamNormalized(tag) != value;
-  const tresult result = EditController::setParamNormalized(tag, value);
-  if (moved && componentHandler != nullptr) {
-    componentHandler->restartComponent(kLatencyChanged);
-  }
-  return result;
-}
-
 tresult PLUGIN_API Controller::setComponentState(IBStream* stream) {
   if (stream == nullptr) return kInvalidArgument;
-  uint8_t bytes[kStateHeaderBytes + 4 * kStateMaxParams];
-  int32 read = 0;
-  if (stream->read(bytes, (int32)sizeof(bytes), &read) != kResultOk) return kResultFalse;
   FxPluginState s;
-  if (!decodeState(bytes, read, s) || s.kind != kind_->type) return kResultFalse;
+  // Settings the state leaves out are the kind's defaults, as the
+  // processor runs them.
+  segno_fx_defaults(kind_->type, s.params);
+  const auto read = [stream](uint8_t* into, int32 size) {
+    int32 got = 0;
+    return stream->read(into, size, &got) == kResultOk ? got : -1;
+  };
+  if (!readState(read, s) || s.kind != kind_->type) return kResultFalse;
   const int32_t n = segno_fx_width(kind_->type);
-  for (int32_t p = 0; p < n && p < s.paramCount; ++p) {
-    setParamNormalized((ParamID)p, s.params[p]);
-  }
+  for (int32_t p = 0; p < n; ++p) setParamNormalized((ParamID)p, s.params[p]);
   setParamNormalized(kInputId, inputToNormalized(s.input));
   setParamNormalized(kOutputId, outputToNormalized(s.output));
   setParamNormalized(kPlacementId, placementToNormalized(s.placement));

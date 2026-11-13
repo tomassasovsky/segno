@@ -155,4 +155,34 @@ int32_t segno_fx_lane_hop_seed(int32_t track, int32_t lane) {
   return le_fx_lane_hop_seed(track, lane);
 }
 
-void segno_fx_flush_denormals(void) { le_flush_denormals(); }
+int32_t segno_fx_latency(int32_t type, int32_t sr) {
+  const segno_fx_slot_config c = {.type = type, .sr = sr, .level = 1.0f, .enabled = 1};
+  segno_fx_slot* s = segno_fx_slot_new(&c);
+  if (s == NULL) return 0;
+  const int32_t latency = segno_fx_slot_latency(s);
+  segno_fx_slot_free(s);
+  return latency;
+}
+
+uint64_t segno_fx_flush_denormals(void) {
+  uint64_t mode = 0;
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+  mode = _mm_getcsr();
+#elif defined(__aarch64__)
+  __asm__ __volatile__("mrs %0, fpcr" : "=r"(mode));
+#endif
+  le_flush_denormals();
+  return mode;
+}
+
+void segno_fx_restore_fp_mode(uint64_t mode) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+  _mm_setcsr((unsigned int)mode);
+#elif defined(__aarch64__)
+  __asm__ __volatile__("msr fpcr, %0" : : "r"(mode));
+#else
+  (void)mode;
+#endif
+}
