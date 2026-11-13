@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:daw_export/src/automation_thinning.dart';
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/device_chain.dart';
 import 'package:daw_export/src/effect_text.dart';
 import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/manifest_json.dart';
@@ -84,6 +85,9 @@ abstract final class DawManifestReader {
     // track that was already settled at arm keeps its arm-time entry unless
     // disarm captured something newer for the same lane).
     final pcmRefsByChannel = <int, Map<int, String>>{};
+    // channel -> (lane -> pcmRef): the clean loops, which a track that plays
+    // its take through the effects as plugins carries (#1804).
+    final cleanRefsByChannel = <int, Map<int, String>>{};
     final laneFramesByChannel = <int, Map<int, int>>{};
     for (final t in [...armTracks, ...disarmTracks]) {
       final channel = (t['channel'] as num?)?.toInt();
@@ -104,6 +108,11 @@ abstract final class DawManifestReader {
             : laneJson['pcmRef'] as String?;
         if (laneIndex == null || pcmRef == null) continue;
         laneMap[laneIndex] = pcmRef;
+        final cleanRef = laneJson['pcmRef'];
+        if (cleanRef is String) {
+          cleanRefsByChannel.putIfAbsent(channel, () => {})[laneIndex] =
+              cleanRef;
+        }
         final lenFrames = (laneJson['lenFrames'] as num?)?.toInt();
         if (lenFrames != null && lenFrames > 0) {
           laneFramesByChannel.putIfAbsent(channel, () => {})[laneIndex] =
@@ -139,22 +148,24 @@ abstract final class DawManifestReader {
     }
 
     final logEntries = EventLogReader.readAll(captureDir);
+    final armTime = logEntries == null
+        ? (clock: 0, beat: 0.0)
+        : EventLogReader.readArmTime(logEntries);
 
     final tracks = <DawTrack>[];
     for (final channel in pcmRefsByChannel.keys.toList()..sort()) {
-      final sessionClips = <DawSessionClip>[];
-      final lanes = pcmRefsByChannel[channel]!;
-      for (final lane in lanes.keys.toList()..sort()) {
-        final pcmRef = lanes[lane]!;
-        final audio = _audioFile(
-          captureDir,
-          pcmRef,
-          sampleRate: sampleRate,
-          fallbackFrames: laneFramesByChannel[channel]?[lane],
-        );
-        if (audio == null) continue;
-        sessionClips.add(DawSessionClip(laneIndex: lane, audio: audio));
-      }
+      List<DawSessionClip> loops(Map<int, String>? lanes) => [
+        for (final lane in (lanes?.keys.toList() ?? <int>[])..sort())
+          if (_audioFile(
+                captureDir,
+                lanes![lane]!,
+                sampleRate: sampleRate,
+                fallbackFrames: laneFramesByChannel[channel]?[lane],
+              )
+              case final audio?)
+            DawSessionClip(laneIndex: lane, audio: audio),
+      ];
+      final sessionClips = loops(pcmRefsByChannel[channel]);
 
       DawClip? stem(String kind) {
         final audio = _audioFile(
@@ -191,7 +202,42 @@ abstract final class DawManifestReader {
             );
       final name = trackNameOf(manifest, channel);
       final info = _info(EffectText.track(manifest, channel));
-      if (wet != null) {
+      // The chains the take started with, as Segno's plugins: lane 0's,
+      // which the wet stem renders, then the track's own (its Track
+      // stage).
+      final devices = dry == null
+          ? const <DawDevice>[]
+          : _trackDevices(armTracks, manifest, channel, armTime);
+      if (devices.isNotEmpty) {
+        // The dry stem through the plugins is the track: it plays, under
+        // the track's name, and can be edited in Live. The wet stem stays
+        // as the reference it is checked against, off.
+        // Its Session clips are the clean loops, which the plugins process
+        // as they process the stem; the heard ones stay on the reference.
+        tracks.add(
+          DawTrack(
+            name: name,
+            // The looper track itself when no wet stem stands for it.
+            kind: wet == null ? DawTrackKind.loop : DawTrackKind.dry,
+            arrangementClips: [?dry],
+            sessionClips: loops(cleanRefsByChannel[channel]),
+            volume: volume,
+            devices: devices,
+            info: info,
+          ),
+        );
+        if (wet != null) {
+          tracks.add(
+            DawTrack(
+              name: '$name (as heard)',
+              active: false,
+              arrangementClips: [wet],
+              sessionClips: sessionClips,
+              info: info,
+            ),
+          );
+        }
+      } else if (wet != null) {
         tracks.add(
           DawTrack(
             name: name,
@@ -260,6 +306,56 @@ abstract final class DawManifestReader {
     }
 
     return DawProject(tracks: tracks, tempoBpm: effectiveTempoBpm);
+  }
+
+  /// Looper track [channel]'s chains at arm as Live devices: its lane 0
+  /// chain, then its Track stage chain, each plugin placed in time by
+  /// [armTime].
+  static List<DawDevice> _trackDevices(
+    List<Map<String, dynamic>> armTracks,
+    Map<String, dynamic> manifest,
+    int channel,
+    ({int clock, double beat}) armTime,
+  ) {
+    final devices = <DawDevice>[];
+    for (final t in armTracks) {
+      final lanes = t['lanes'];
+      if (t['channel'] != channel || lanes is! List) continue;
+      for (final lane in lanes) {
+        if (lane is! Map<String, dynamic> || lane['lane'] != 0) continue;
+        devices.addAll(
+          devicesOfChain(
+            lane['effects'],
+            chainEnabled: lane['chainEnabled'] != false,
+            origin: ChainOrigin.lane(
+              channel,
+              0,
+              clockOffset: armTime.clock,
+              beatOffset: armTime.beat,
+            ),
+          ),
+        );
+      }
+    }
+    final arm = manifest['armSnapshot'];
+    final chains = arm is Map<String, dynamic> ? arm['trackChains'] : null;
+    for (final chain in chains is List ? chains : const []) {
+      if (chain is! Map<String, dynamic> || chain['channel'] != channel) {
+        continue;
+      }
+      devices.addAll(
+        devicesOfChain(
+          chain['effects'],
+          chainEnabled: chain['chainEnabled'] != false,
+          origin: ChainOrigin.bus(
+            channel,
+            clockOffset: armTime.clock,
+            beatOffset: armTime.beat,
+          ),
+        ),
+      );
+    }
+    return devices;
   }
 
   /// The `tempoBpm` a snapshot map carries, or `null` when [snapshot] is

@@ -1,3 +1,4 @@
+import 'package:daw_export/src/device_chain.dart';
 import 'package:meta/meta.dart';
 
 /// A DAW project ready to be rendered to an Ableton Live 12 `.als` set
@@ -34,10 +35,12 @@ const double kFallbackTempoBpm = 120;
 
 /// What a [DawTrack] holds.
 enum DawTrackKind {
-  /// A looper track as heard: its wet stem and its lane loops.
+  /// A looper track: its wet stem and its lane loops, or its dry stem when
+  /// no wet stem stands for it. One per recorded looper track.
   loop,
 
-  /// A looper track before its effects: its dry stem.
+  /// A looper track before its effects: its dry stem, played through the
+  /// effects as plugins when the take recorded them.
   dry,
 
   /// A captured input, as its monitor played it.
@@ -59,6 +62,7 @@ class DawTrack {
     this.arrangementClips = const [],
     this.sessionClips = const [],
     this.volume,
+    this.devices = const [],
     this.info = '',
   });
 
@@ -82,6 +86,9 @@ class DawTrack {
 
   /// The track's volume automation, or `null` when it has none.
   final AutomationLane? volume;
+
+  /// The track's devices, in order: Segno's plugins and racks of them.
+  final List<DawDevice> devices;
 
   /// The track's info text in Live (the Info View), for example the effect
   /// chains the take was played through. Empty for none.

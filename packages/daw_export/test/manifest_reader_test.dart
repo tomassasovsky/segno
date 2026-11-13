@@ -764,49 +764,172 @@ void main() {
       expect(track.volume, isNull);
     });
 
-    test('a channel with an effects chain still exports the wet stem: the '
-        'effects reach Live only as audio', () {
-      Directory('${dir.path}/stems/wet').createSync(recursive: true);
-      Directory('${dir.path}/stems/dry').createSync(recursive: true);
-      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync(_wav(48000));
-      File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
-      File('${dir.path}/performance.json').writeAsStringSync(
-        jsonEncode({
-          'sample_rate': 48000,
-          'capture_frames': 48000,
-          'armSnapshot': {
-            'tracks': [
-              {
-                'channel': 0,
-                'lanes': [
-                  {
-                    'lane': 0,
-                    'deferred': false,
-                    'pcmRef': 'stems/wet/track0.wav',
-                    'effects': [
-                      {
-                        'type': 3,
-                        'params': [0.35, 0.35, 0.35, 0.0],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          'disarmSnapshot': {'tracks': <dynamic>[]},
-          'layers': <dynamic>[],
-        }),
-      );
+    group('a take with effect chains (#1804)', () {
+      void writeCapture({
+        bool wet = true,
+        List<Object?>? effects,
+        List<Object?>? trackEffects,
+      }) {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        if (wet) {
+          File('${dir.path}/stems/wet/track0.wav')
+              .writeAsBytesSync(_wav(48000));
+        }
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
+        Directory('${dir.path}/loops').createSync();
+        File('${dir.path}/loops/clean.wav').writeAsBytesSync(_wav(4800));
+        File('${dir.path}/loops/heard.wav').writeAsBytesSync(_wav(4800));
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 1,
+                  'name': 'Bass',
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'loops/clean.wav',
+                      'heardPcmRef': 'loops/heard.wav',
+                      'effects':
+                          effects ??
+                          [
+                            {
+                              'type': 3,
+                              'params': [0.35, 0.35, 0.35],
+                            },
+                          ],
+                    },
+                  ],
+                },
+              ],
+              'trackChains': [
+                {
+                  'channel': 1,
+                  'effects':
+                      trackEffects ??
+                      [
+                        {
+                          'type': 7,
+                          'params': [0.5, 0.5, 0.35],
+                        },
+                      ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+      }
 
-      final project = DawManifestReader.read(dir.path);
-      final [wet, dry] = project!.tracks;
-      expect(wet.arrangementClips.single.audio.fileRef, 'stems/wet/track0.wav');
-      expect(wet.active, isTrue);
-      expect(dry.active, isFalse);
-      // The chain is told in each track's info text.
-      expect(wet.info, 'Effects when the take started:\nLane 1: Delay');
-      expect(dry.info, wet.info);
+      void moveStems() {
+        for (final kind in ['wet', 'dry']) {
+          final file = File('${dir.path}/stems/$kind/track0.wav');
+          if (file.existsSync()) {
+            file.renameSync('${dir.path}/stems/$kind/track1.wav');
+          }
+        }
+      }
+
+      test('plays the dry stem through the chains as plugins, under the '
+          'track name, with the wet stem off as "(as heard)"', () {
+        writeCapture();
+        moveStems();
+        // The take's arm: FX clock 1234567 and beat 37.25 at frame 0.
+        final armed = ByteData(16)..setUint32(12, 1234567, Endian.little);
+        final tempo = ByteData(16)
+          ..setFloat64(0, 37.25, Endian.little)
+          ..setFloat32(8, 120 / 60 / 48000, Endian.little);
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, 315, armed.buffer.asUint8List()),
+          (0, 332, tempo.buffer.asUint8List()),
+        ]);
+
+        final project = DawManifestReader.read(dir.path);
+        final [played, heard] = project!.tracks;
+        expect(played.name, 'Bass');
+        expect(played.kind, DawTrackKind.dry);
+        expect(played.active, isTrue);
+        expect(
+          played.arrangementClips.single.audio.fileRef,
+          'stems/dry/track1.wav',
+        );
+        final [delay, reverb] = [
+          for (final d in played.devices) d as DawPluginDevice,
+        ];
+        expect(delay.plugin.name, 'Segno Delay');
+        expect(delay.state.params, [0.35, 0.35, 0.35]);
+        // Lane 0 of track 1, and track 1's bus.
+        expect(delay.state.hopSeed, 64);
+        expect(reverb.plugin.name, 'Segno Reverb');
+        expect(reverb.state.hopSeed, 192);
+        for (final p in [delay, reverb]) {
+          expect(p.state.clockOffset, 1234567);
+          expect(p.state.beatOffset, 37.25);
+        }
+
+        expect(heard.name, 'Bass (as heard)');
+        expect(heard.kind, DawTrackKind.loop);
+        expect(heard.active, isFalse);
+        expect(
+          heard.arrangementClips.single.audio.fileRef,
+          'stems/wet/track1.wav',
+        );
+        expect(heard.devices, isEmpty);
+        // The plugins process the clean loops; the heard ones stay on the
+        // reference.
+        expect(played.sessionClips.single.audio.fileRef, 'loops/clean.wav');
+        expect(heard.sessionClips.single.audio.fileRef, 'loops/heard.wav');
+        expect(
+          heard.info,
+          'Effects when the take started:\nTrack: Reverb\nLane 1: Delay',
+        );
+        expect(played.info, heard.info);
+      });
+
+      test('with no wet stem, the dry track with plugins is the only one', () {
+        writeCapture(wet: false);
+        moveStems();
+        final project = DawManifestReader.read(dir.path);
+        final track = project!.tracks.single;
+        expect(track.name, 'Bass');
+        expect(track.kind, DawTrackKind.loop);
+        expect(track.devices, hasLength(2));
+        expect(track.sessionClips.single.audio.fileRef, 'loops/clean.wav');
+      });
+
+      test('a take whose chains hold nothing Segno runs keeps the wet stem '
+          'and the dry track off', () {
+        const hosted = {
+          'type': 8,
+          'plugin': {'format': 0, 'id': 'abc', 'version': 0},
+        };
+        writeCapture(effects: [hosted], trackEffects: [hosted]);
+        moveStems();
+        final project = DawManifestReader.read(dir.path);
+        final [wet, dry] = project!.tracks;
+        expect(wet.name, 'Bass');
+        expect(wet.active, isTrue);
+        expect(wet.devices, isEmpty);
+        expect(dry.name, 'Bass dry');
+        expect(dry.active, isFalse);
+        expect(dry.devices, isEmpty);
+      });
+
+      test('a capture with no events.log puts the plugins at clock and beat '
+          '0', () {
+        writeCapture();
+        moveStems();
+        final project = DawManifestReader.read(dir.path);
+        final delay = project!.tracks.first.devices.first as DawPluginDevice;
+        expect(delay.state.clockOffset, 0);
+        expect(delay.state.beatOffset, 0);
+      });
     });
 
     test('threads a real, explicit tempoBpm through to the returned DawProject '

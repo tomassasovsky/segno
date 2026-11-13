@@ -13,8 +13,9 @@ with all of them (#1791).
 | `automation.als` | `audio_clips.als` plus a volume envelope (1 at beat 0, 0.25 at beat 4, 0.708 at beat 8) and an activator envelope (off at beat 2, on at beat 6). The template: `lib/src/live_set_template.dart` is this file, decompressed. |
 | `tempo.als` | `audio_clips.als` at 93.5 BPM. |
 | `session_loop_warped.als` | `audio_clips.als` with the Session clip warped and looping, the form `buildAls` gives lane loops. |
-| `vst3.als` | One audio track with a VST3 effect (TAL-Filter-2 3.1.2) as Live stores it: a `PluginDevice` whose `Vst3PluginInfo` names the plugin's class id as four signed 32-bit `Uid` fields, with the plugin's own state in a `Vst3Preset`. Nothing generates devices today (#1587); this is the shape a device chain would need. |
+| `vst3.als` | One audio track with a VST3 effect (TAL-Filter-2 3.1.2) as Live stores it: a `PluginDevice` whose `Vst3PluginInfo` names the plugin's class id as four signed 32-bit `Uid` fields, with the plugin's own state in a `Vst3Preset`. Live's shape for a VST3 effect, kept beside `segno_vst3.als`. |
 | `reference_tracks.als` | `automation.als` with the track switched off, a three-line info text, a second Arrangement clip right after the first, and a volume envelope that steps to silence at beat 2 and back at beat 6 (two events at each of those beats). The shapes `buildAls` gives a reference track (#1799). |
+| `segno_vst3.als` | One audio track with Segno Delay (a setting changed in Live), then an Audio Effect Rack holding Segno Drive and Segno Reverb in one chain and Segno Dub reverb in a second at a lower volume (#1804). `lib/src/live_device_template.dart` takes its first plugin device and its rack from it. |
 | `tone.wav` | 2400 frames of a 440 Hz sine, 48 kHz, 16-bit mono (4.8 KB), which the sets reference. |
 
 ## How they were made

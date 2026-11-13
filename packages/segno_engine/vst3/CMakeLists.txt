@@ -162,3 +162,9 @@ else()
     "${VST3_SDK}/public.sdk/source/vst/hosting/module_linux.cpp")
 endif()
 add_dependencies(segno_vst3_null_test segno_vst3)
+
+# A capture's stems rendered here as the console renders them
+# (test/render_capture.c), for checking exports.
+add_executable(segno_render_capture test/render_capture.c)
+target_link_libraries(segno_render_capture PRIVATE segno_engine)
+target_include_directories(segno_render_capture PRIVATE "${ENGINE_SRC}/core")
