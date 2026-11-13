@@ -24299,14 +24299,15 @@ static void test_perf_render_scripted_log_boundaries(void) {
 /* Shared body for the overdub-pass stitching contract, parameterized by loop
  * length (#227 runs it beyond one quantum) and the arm-time loop phase
  * (`clock_frame`, the PERF_ARMED fact's position — #255 runs it nonzero). Track
- * settled at arm with a base RAMP image; one retired-layer ramp (offset by
- * +2) activates at `retire_frame` — not one loop cycle earlier: a punch-out
- * mid-cycle retires via an async, chunked drain that can land arbitrarily
- * later than "punch-in + one cycle", so the logged retire frame itself is
- * the only value this capture can trust. Frames before it play the pre-pass
- * image; frames from it onward play the retired layer — both PHASE-LOCKED
- * (#255): a layer image is loop-position-indexed and the loop phase is one
- * continuous counter across the capture, so every frame plays
+ * settled at arm with a base RAMP image; one complete overdub pass retires at
+ * `retire_frame`. A pass retires the loop as it was BEFORE it (the shadow its
+ * writes backed the old values up into, #1808), so the layer file holds the
+ * pre-pass ramp, and the pass's result is the disarm snapshot's image (a
+ * ramp offset by +2). With no record offset the pass's last write lands on
+ * the retire frame and is read back a loop later, so frames up to the retire
+ * play the pre-pass image and frames after it the pass's result — both
+ * PHASE-LOCKED (#255): a layer image is loop-position-indexed and the loop
+ * phase is one continuous counter across the capture, so every frame plays
  * image[(clock_frame + f) % loop_len], exactly what the performer heard.
  * Ramps (not constants) so a renderer that indexes an image modulo the
  * wrong length (e.g. one quantum) or from the wrong phase (segment-relative
@@ -24345,11 +24346,14 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
   test_write_wav_mono(wav_path, pre, loop_len, sr);
 
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-settled.wav", loops_dir);
+  test_write_wav_mono(wav_path, post, loop_len, sr);
+
   char layer_name[64];
   snprintf(layer_name, sizeof(layer_name), "layer-%s.pcm", name);
   char layer_path[700];
   snprintf(layer_path, sizeof(layer_path), "%s/%s", dir, layer_name);
-  test_write_raw_pcm_mono(layer_path, post, loop_len);
+  test_write_raw_pcm_mono(layer_path, pre, loop_len);
 
   /* The arm phase now comes from the PERF_ARMED fact in events.log, not
    * armSnapshot.clockFrame (deleted, #262) — so the manifest no longer carries
@@ -24361,7 +24365,9 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
            "[{\"channel\": 0, \"lanes\": "
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"loops/track0-lane0.wav\"}]}]}, "
-           "\"disarmSnapshot\": {\"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": 1, \"pcmRef\": "
+           "\"loops/track0-settled.wav\"}]}]}, "
            "\"layers\": [{\"channel\": 0, \"slot\": 1, \"generation\": 0, "
            "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
            "\"filename\": \"%s\"}]}",
@@ -24400,22 +24406,22 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   /* Phase-locked segment semantics (#255, le_pr_append_segment / the stitch
    * loop in perf_render.c): every segment plays its loop-position-indexed
    * image from the phase live playback had actually reached — the arm image
-   * from `clock_frame` at capture frame 0, and the retired layer from the
-   * phase the loop was at when the retire activated — so every frame is
+   * from `clock_frame` at capture frame 0, and the pass's result from the
+   * phase the loop was at when it was first read back — so every frame is
    * image[(clock_frame + f) % loop_len], exactly what the performer heard.
    * The pre-#255 renderer instead restarted each segment at its own index 0
-   * (`pos = (f - start) % image_len`), rotating every mid-cycle retire by
-   * the retire phase; the ramp fill fails loudly on both that rotation and
-   * a modulo-one-quantum indexing wrap. */
+   * (`pos = (f - start) % image_len`), rotating every mid-cycle switch by
+   * its phase; the ramp fill fails loudly on both that rotation and a
+   * modulo-one-quantum indexing wrap. */
   int bad = 0;
-  for (uint64_t f = 0; f < retire_frame && f < capture_frames; ++f) {
+  for (uint64_t f = 0; f <= retire_frame && f < capture_frames; ++f) {
     if (stem[f] != pre[(clock_frame + f) % (uint64_t)loop_len]) {
       bad++; /* pre-pass image, phase-locked to the arm clock */
     }
   }
-  for (uint64_t f = retire_frame; f < capture_frames; ++f) {
+  for (uint64_t f = retire_frame + 1; f < capture_frames; ++f) {
     if (stem[f] != post[(clock_frame + f) % (uint64_t)loop_len]) {
-      bad++; /* retired layer, phase-locked continuation */
+      bad++; /* the pass's result, phase-locked continuation */
     }
   }
   CHECK(bad == 0);
@@ -24428,17 +24434,18 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
 
 static void test_perf_render_overdub_stitching(void) {
   printf("test_perf_render_overdub_stitching\n");
-  /* retire_frame 10 is deliberately mid-cycle (10 % 4 == 2, phase 2): a
-   * boundary retire (phase 0) could not tell phase-locked stitching from
-   * the pre-#255 segment-relative rotation. Armed at phase 0. */
+  /* The switch after retire_frame 10 is deliberately mid-cycle (11 % 4 ==
+   * 3, phase 3): a switch on the boundary (phase 0) could not tell
+   * phase-locked stitching from the pre-#255 segment-relative rotation.
+   * Armed at phase 0. */
   run_perf_render_stitching_case("stitch", 4800, 4, 16, 10, 0, 2000);
 }
 
 /* The same contract at a loop longer than one quantum (#227): the pre-pass
- * image, the retired layer, and the stem writer all size and index by the
+ * image, the pass's result, and the stem writer all size and index by the
  * real loop length — a one-quantum image buffer would truncate (loud under
  * ASAN), and the ramp fill catches a modulo-one-quantum indexing wrap that
- * stays in bounds. The retire lands mid-cycle (phase 1234), so this also
+ * stays in bounds. The switch lands mid-cycle (phase 1235), so this also
  * exercises the #255 phase lock beyond one quantum. */
 static void test_perf_render_stitching_long_loop(void) {
   printf("test_perf_render_stitching_long_loop\n");
@@ -24451,11 +24458,12 @@ static void test_perf_render_stitching_long_loop(void) {
 /* The #255 sibling gap: a capture armed MID-LOOP against an already-playing
  * track (PERF_ARMED position != 0). The arm image must play from that logged
  * position at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
- * the mid-cycle retire at frame 9 must inherit the chained phase
- * ((6 + 9) % 4 == 3), locking the whole stem to the live phase counter. */
+ * the mid-cycle switch after the retire at frame 8 must inherit the chained
+ * phase ((6 + 9) % 4 == 3), locking the whole stem to the live phase
+ * counter. */
 static void test_perf_render_stitching_mid_loop_arm(void) {
   printf("test_perf_render_stitching_mid_loop_arm\n");
-  run_perf_render_stitching_case("stitch_armphase", 4800, 4, 16, 9, 6, 2000);
+  run_perf_render_stitching_case("stitch_armphase", 4800, 4, 16, 8, 6, 2000);
 }
 
 /* A logged retire whose layer a full manifest dropped must fail the stem,
@@ -39625,6 +39633,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_fade.h"
 #include "test_engine_reopen.h"
 #include "test_engine_history_replay.h"
+#include "test_engine_overdub_replay.h"
 #include "test_engine_read_head.h"
 #include "test_engine_stretch.h"
 #include "test_engine_reverse.h"
@@ -39679,6 +39688,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_heard_post.h"
 #include "test_engine_trk_jobs.h"
 #include "test_engine_post_tail_stopped.h"
+#include "test_engine_overdub_stop_park.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -39765,6 +39775,7 @@ int main(void) {
   SHARD(run_fx_workers_tests);
   SHARD(run_trk_jobs_tests);
   SHARD(run_post_tail_stopped_tests);
+  SHARD(run_overdub_stop_park_tests);
   if (getenv("SEGNO_FX_WORKERS_TESTS_ONLY")) return g_failures ? 1 : 0;
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
     test_fade_restore_staging_and_manifest_capacity();
@@ -39833,6 +39844,7 @@ int main(void) {
   SHARD(test_fade_grouped_muted_restore_stems);
   SHARD(test_fade_restore_overdub_source_end);
   SHARD(run_history_replay_tests);
+  SHARD(run_overdub_replay_tests);
   if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   SHARD(run_peel_tests);
   SHARD(run_history_seq_tests);

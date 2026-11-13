@@ -99,6 +99,7 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   int recordCalls = 0;
   int stopRecordControlCalls = 0;
   int? lastStopRecordControlChannel;
+  int stopRecordParkCalls = 0;
   int cancelCountInCalls = 0;
   int stopTrackCalls = 0;
   int playCalls = 0;
@@ -275,6 +276,13 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult stopRecordControl({required int channel}) {
     stopRecordControlCalls++;
     lastStopRecordControlChannel = channel;
+    _clearCountIn();
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) {
+    stopRecordParkCalls++;
     _clearCountIn();
     return EngineResult.ok;
   }

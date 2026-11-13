@@ -193,6 +193,19 @@ are **not** copied into `loops/` — they exist for the offline renderer (parts
 7-8) to reconstruct overdub-pass-by-pass audibility, not as a directly
 playable deliverable of this part.
 
+A layer is the loop as it was **before** the pass that retired it: an overdub
+writes the live buffer in place and backs the old values up into the slot it
+retires. So the first pass's layer is the take, each later pass's layer is
+the previous pass's result, and the last pass's result is the disarm image
+(#1808). The renderer plays pass j's result from `a_j + L - d`, where `a_j` is
+the frame of the pass's first write, `L` the loop length and `d` the
+`armSnapshot`'s `latencyOffsetFrames`: the write head trails the read head by
+the record offset, so a pass is first heard `L - d` frames after it starts.
+A complete pass's first write is `L - 1` frames before its retire; a pass cut
+short starts on the frame after the previous pass of its session ended, or on
+the press or finalize that began the session. A quantized punch-in is not logged,
+so a session started by one is taken to begin with a complete pass.
+
 A layer whose lanes hold heard images (#1713: what the player heard, the input
 chain's output recorded with the take) also carries `"heard_mask"`, the lanes
 that have one, and its file holds them after the clean lanes: `frame_count`
@@ -240,7 +253,7 @@ incomplete arm must not leave plausible but incorrect recovery metadata. The mas
 |---|---|
 | `masterGain` | Master output gain at arm time. |
 | `limiterOn` / `limiterCeiling` | Master peak limiter state at arm time. |
-| `latencyOffsetFrames` | The active device profile's record-offset latency compensation. |
+| `latencyOffsetFrames` | The active device profile's record-offset latency compensation. The offline renderer reads it as the distance an overdub's write head trails its read head by (see `layers[]` below); a change of the offset during the take is not logged. |
 | `followOutput` | Required capture policy, frozen at arm. Both policies capture after the selected destination FX. Default excludes final output controls. Follow applies that destination’s current level and mute; arm values seed replay and later events change them. Neither policy applies destination Mono/Balance, final hardware master gain or limiter. |
 | `captureBus` | The destination actually captured: the first with an enabled channel at successful arm, not a pre-I/O guess. It remains fixed for the take. Its selected output chain is captured at the same boundary. Omission means bus 0; a provided value must be an integer from 0 through 15. |
 | `captureMask` | Required nonzero unsigned 32-bit mask confined to the selected pair, frozen at arm. Missing/disabled jacks are not invented as routes. Invalid or absent identity is refused before reconstruction. |

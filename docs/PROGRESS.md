@@ -1,4 +1,4 @@
-<!-- cspell:words heatsinks Omron lofi -->
+<!-- cspell:words heatsinks Omron lofi powf -->
 # Segno — Progress & Roadmap
 
 <!-- cspell:words hashlib manufacturability unassembled Axicom Mbps raucs multicore -->
@@ -85,6 +85,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
+| #1804 | Segno's effects as VST3 plugins in Live: part 1 (Segno.vst3, local build and install, null test) in review; part 2 (the export puts the chains on the dry tracks) next | in-review | auto | `claude/vst3-plugins-1804-p1` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 
@@ -119,6 +120,45 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   from before #1805 keeps one input track as heard, switched on. The raw
   track is where a later layer of #1806 puts the monitor chain as plugins
   and the monitor volume, pan and mute as automation.
+
+## November 2026 Segno's effects as VST3 plugins (#1804 part 1)
+
+- The owner's call of 2026-11-12 reverses Q13 (#940): the effects come back
+  as VST3 plugins, built and installed on the owner's Mac only (no signing,
+  no installer), so an exported performance can be edited in Live with the
+  effects the console ran.
+- `packages/segno_engine/vst3/` builds one bundle, `Segno.vst3`, with one
+  class per built-in kind (31: every `le_fx_type` but none and plugin),
+  named as the console names them ("Segno Delay", "Segno Room reverb").
+  The class ids in `segno_fx_kinds.h` are new (the seven removed plugins'
+  ids are not reused) and never change.
+- Each plugin runs the engine's effects island (`engine_fx.c`, with the
+  console's `tanhf` and `powf`) on one chain slot (`fx_slot.c`), set up and
+  clocked as the offline render (`perf_render.c`) sets up a slot that holds
+  an effect at arm. Its state (`segno_fx_state.h`) carries the settings, the
+  entry's channel handling and enable bit, the chain slot it held, and the
+  take's hop seed, FX clock and beat at the host's sample 0. The plugin runs
+  the kind on that slot, so clock LFOs, octaver hops, update cadences, noise
+  seeds and beat-locked kinds fall where the console's did.
+- Parameter ids are the engine's parameter indexes (id p is `params[p]`,
+  the normalized value is the engine's 0..1 setting); the channel handling
+  is 1000 to 1003 and the bypass (the engine's enable bit) 1100
+  (`params.h`). A host's bypass runs the engine's switch (delays and reverbs
+  drain, the rest crossfade), except for a kind that delays its output (the
+  octaver family, 1216 frames; the oversampled drives and the vinyl, 3 or
+  4): it reports that latency on and off, and its bypass crossfades to its
+  input delayed as much, so a host's delay compensation holds either way.
+  The engine's settled bypass passes such a kind's input without the
+  delay, so the two agree while it is on and differ by the latency while it
+  is off.
+- The null test (`vst3/test/null_test.cpp`) writes a one-track capture per
+  kind and case (defaults; other settings with a mono output, balance and
+  level on chain slot 5; a setting change, a switch off and on again
+  mid-take), has the
+  engine's `le_perf_render_begin` render its wet stem, plays the dry stem
+  through the plugin loaded from the built bundle, and compares: every kind
+  and case is bit-identical, at 128-, 37- and 512-frame blocks, on macOS and
+  Linux. CI builds the bundle and runs the test in `native-tests`.
 
 ## November 2026 The Live set carries the whole capture (#1799)
 
@@ -2481,6 +2521,15 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
     `libsegno_engine.so`, which the Flutter engine `dlopen`s through the
     loader's path, so `segno-kiosk-launch` puts `/opt/segno/lib` on
     `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
+- **Segno.vst3** (#1804), the effects as VST3 plugins for a DAW on the dev
+  Mac: `bash packages/segno_engine/vst3/install.sh` builds it (Release, into
+  `packages/segno_engine/build/vst3`) and installs it in
+  `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test against
+  the installed bundle. Live finds it on its next plugin scan (start, or
+  Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Not signed, not
+  shipped. `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a
+  separate tree and runs the null test, as CI does on Linux (clang, CMake,
+  `libasound2-dev`).
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):
   ```sh

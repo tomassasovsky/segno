@@ -1938,6 +1938,12 @@ class FakeAudioEngine with SimulatedInstruments implements AudioEngine {
   }
 
   @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) {
+    calls.add('stopRecordPark');
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult cancelCountIn() {
     calls.add('cancelCountIn');
     return EngineResult.ok;

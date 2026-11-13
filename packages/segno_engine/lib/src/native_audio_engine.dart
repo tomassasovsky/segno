@@ -1562,6 +1562,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      le_engine_stop_record_park(_engine, channel, following),
+    );
+  }
+
+  @override
   EngineResult cancelCountIn() {
     _checkAlive();
     return EngineResult.fromCode(le_engine_cancel_count_in(_engine));
