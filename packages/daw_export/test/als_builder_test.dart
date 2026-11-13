@@ -77,30 +77,26 @@ const _loop = DawAudioFile(
 );
 
 /// A track with everything a capture can give it, as the template's track
-/// holds it: an Arrangement clip, a Session clip and both envelopes.
+/// holds it: an Arrangement clip, a Session clip and a volume envelope.
 DawTrack _fullTrack(String name) => DawTrack(
   name: name,
-  arrangementClip: const DawClip(audio: _stem, startSeconds: 0),
+  arrangementClips: const [DawClip(audio: _stem, startSeconds: 0)],
   sessionClips: const [DawSessionClip(laneIndex: 0, audio: _loop)],
-  automationLanes: const [
-    AutomationLane(
-      target: AutomationTarget.volume,
-      initialValue: 1,
-      breakpoints: [
-        AutomationBreakpoint(beat: 0, value: 1),
-        AutomationBreakpoint(beat: 4, value: 0.25),
-      ],
-    ),
-    AutomationLane(
-      target: AutomationTarget.activator,
-      initialValue: 1,
-      breakpoints: [
-        AutomationBreakpoint(beat: 2, value: 0),
-        AutomationBreakpoint(beat: 6, value: 1),
-      ],
-    ),
-  ],
+  volume: const AutomationLane(
+    initialValue: 1,
+    breakpoints: [
+      AutomationBreakpoint(beat: 2, value: 1),
+      AutomationBreakpoint(beat: 4, value: 0.25),
+    ],
+  ),
 );
+
+/// [shape] without the activator envelope's events: the template track has
+/// one, and the builder writes no activator automation.
+Set<String> _withoutActivatorEvents(Set<String> shape) => {
+  for (final path in shape)
+    if (!path.contains('/BoolEvent[')) path,
+};
 
 XmlDocument _build(DawProject project) => _decode(buildAls(project));
 
@@ -125,6 +121,7 @@ void main() {
         'tempo',
         'session_loop_warped',
         'vst3',
+        'reference_tracks',
       ]) {
         final root = _corpus(name).rootElement;
         for (final attribute in ['MajorVersion', 'MinorVersion', 'Creator']) {
@@ -162,7 +159,7 @@ void main() {
         _build(DawProject(tracks: [_fullTrack('Track 0')])),
       ).single;
       final reference = _audioTracks(_corpus('automation')).single;
-      expect(_shape(track), _shape(reference));
+      expect(_shape(track), _withoutActivatorEvents(_shape(reference)));
     });
 
     test('clips and envelopes have the shapes Live wrote', () {
@@ -173,13 +170,12 @@ void main() {
       Set<String> shapes(XmlElement t, String name) => {
         for (final e in t.findAllElements(name)) ..._shape(e),
       };
-      for (final name in [
-        'AudioClip',
-        'AutomationEnvelope',
-        'FloatEvent',
-        'BoolEvent',
-      ]) {
-        expect(shapes(track, name), shapes(reference, name), reason: name);
+      for (final name in ['AudioClip', 'AutomationEnvelope', 'FloatEvent']) {
+        expect(
+          shapes(track, name),
+          _withoutActivatorEvents(shapes(reference, name)),
+          reason: name,
+        );
         expect(shapes(track, name), isNotEmpty, reason: name);
       }
     });
@@ -191,7 +187,13 @@ void main() {
       String key(XmlElement e) =>
           '${e.parentElement?.name.local}/${e.name.local}';
       final withIds = <String>{};
-      for (final name in ['empty', 'audio_clips', 'automation', 'tempo']) {
+      for (final name in [
+        'empty',
+        'audio_clips',
+        'automation',
+        'tempo',
+        'reference_tracks',
+      ]) {
         for (final e in _corpus(name).descendantElements) {
           if (e.getAttribute('Id') != null) withIds.add(key(e));
         }
@@ -256,7 +258,7 @@ void main() {
       }
     });
 
-    test("each envelope targets its own track's Volume or Speaker", () {
+    test("each envelope targets its own track's Volume", () {
       final tracks = _audioTracks(
         _build(
           DawProject(tracks: [_fullTrack('Track 0'), _fullTrack('Track 1')]),
@@ -272,9 +274,8 @@ void main() {
         ).findElements('AutomationEnvelope').toList();
         expect(envelopes.map((e) => _value(e, 'EnvelopeTarget/PointeeId')), [
           target('Volume'),
-          target('Speaker'),
         ]);
-        expect(envelopes.map((e) => e.getAttribute('Id')), ['0', '1']);
+        expect(envelopes.map((e) => e.getAttribute('Id')), ['0']);
       }
     });
 
@@ -286,7 +287,7 @@ void main() {
       expect(_value(track, 'Name/UserName'), 'Track 3');
       expect(
         track.findAllElements('AudioClip').map((c) => _value(c, 'Name')),
-        unorderedEquals(['Track 3', 'Track 3 / Lane 0']),
+        unorderedEquals(['Track 3', 'Track 3 / Lane 1']),
       );
     });
 
@@ -333,7 +334,7 @@ void main() {
                 tracks: [
                   DawTrack(
                     name: 'Track 0',
-                    arrangementClip: DawClip(audio: _stem, startSeconds: 2),
+                    arrangementClips: [DawClip(audio: _stem, startSeconds: 2)],
                   ),
                 ],
               ),
@@ -390,14 +391,16 @@ void main() {
                 tracks: [
                   DawTrack(
                     name: 'Track 0',
-                    arrangementClip: DawClip(
-                      audio: DawAudioFile(
-                        fileRef: path,
-                        sampleRate: 48000,
-                        frames: 48000,
+                    arrangementClips: [
+                      DawClip(
+                        audio: DawAudioFile(
+                          fileRef: path,
+                          sampleRate: 48000,
+                          frames: 48000,
+                        ),
+                        startSeconds: 0,
                       ),
-                      startSeconds: 0,
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -616,39 +619,30 @@ void main() {
         final track = _audioTracks(
           _build(DawProject(tracks: [_fullTrack('Track 0')])),
         ).single;
+        // Its first breakpoint is after the start: an event at 0 holds the
+        // value at arm until then, since Live ramps between events.
         final volume = events(track, 0);
         expect(volume.map((e) => e.name.local), everyElement('FloatEvent'));
         expect(volume.map((e) => e.getAttribute('Time')), [
           '-63072000',
           '0',
+          '2',
           '4',
         ]);
-        expect(volume.map((e) => e.getAttribute('Value')), ['1', '1', '0.25']);
-        expect(volume.map((e) => e.getAttribute('Id')), ['0', '1', '2']);
-
-        // Its first breakpoint is after the start: an event at 0 holds the
-        // value at arm until then, since Live ramps between events.
-        final activator = events(track, 1);
-        expect(activator.map((e) => e.name.local), everyElement('BoolEvent'));
-        expect(activator.map((e) => e.getAttribute('Time')), [
-          '-63072000',
-          '0',
-          '2',
-          '6',
+        expect(volume.map((e) => e.getAttribute('Value')), [
+          '1',
+          '1',
+          '1',
+          '0.25',
         ]);
-        expect(activator.map((e) => e.getAttribute('Value')), [
-          'true',
-          'true',
-          'false',
-          'true',
-        ]);
+        expect(volume.map((e) => e.getAttribute('Id')), ['0', '1', '2', '3']);
 
         final reference = _audioTracks(_corpus('automation')).single;
         expect(events(reference, 0).first.getAttribute('Time'), '-63072000');
       });
 
-      test('shows a lane per envelope, Mixer volume or activator, with '
-          'Automation Mode on', () {
+      test('shows the Mixer volume lane of a track with volume automation, '
+          'with Automation Mode on', () {
         final document = _build(
           DawProject(
             tracks: [
@@ -666,8 +660,7 @@ void main() {
           ).findElements('AutomationLane'))
             (_value(lane, 'SelectedDevice'), _value(lane, 'SelectedEnvelope')),
         ];
-        // The activator lane first, as AutomationTarget lists them.
-        expect(lanes(tracks[0]), [('1', '2'), ('1', '0')]);
+        expect(lanes(tracks[0]), [('1', '2')]);
         // A track without automation keeps the template's lane.
         final template = _audioTracks(XmlDocument.parse(liveSetTemplate))
             .single;
@@ -688,13 +681,10 @@ void main() {
               tracks: [
                 DawTrack(
                   name: 'Track 0',
-                  automationLanes: [
-                    AutomationLane(
-                      target: AutomationTarget.volume,
-                      initialValue: 0,
-                      breakpoints: [AutomationBreakpoint(beat: 1, value: 2)],
-                    ),
-                  ],
+                  volume: AutomationLane(
+                    initialValue: 0,
+                    breakpoints: [AutomationBreakpoint(beat: 1, value: 2)],
+                  ),
                 ),
               ],
             ),
@@ -720,32 +710,154 @@ void main() {
           isEmpty,
         );
       });
+    });
 
-      test('two lanes for one target throw', () {
+    group('reference tracks (#1799)', () {
+      const second = DawAudioFile(
+        fileRef: 'master-002.wav',
+        sampleRate: 48000,
+        frames: 48000 * 4,
+      );
+      XmlElement build(DawTrack track) =>
+          _audioTracks(_build(DawProject(tracks: [track]))).single;
+
+      final reference = _audioTracks(_corpus('reference_tracks')).single;
+
+      test("matches the set Live saved: the activator's Manual, the info "
+          'text with its line breaks, and two clips on one track', () {
+        expect(_value(reference, 'DeviceChain/Mixer/Speaker/Manual'), 'false');
+        expect(_value(reference, 'Name/Annotation'), contains('\n'));
+        final track = build(
+          const DawTrack(
+            name: 'Ref',
+            active: false,
+            info: 'Effects when the take started:\nTrack: Overdrive',
+            arrangementClips: [
+              DawClip(audio: _stem, startSeconds: 0),
+              DawClip(audio: second, startSeconds: 10),
+            ],
+          ),
+        );
         expect(
-          () => buildAls(
-            const DawProject(
-              tracks: [
-                DawTrack(
-                  name: 'Track 0',
-                  automationLanes: [
-                    AutomationLane(
-                      target: AutomationTarget.volume,
-                      initialValue: 1,
-                      breakpoints: [AutomationBreakpoint(beat: 0, value: 1)],
-                    ),
-                    AutomationLane(
-                      target: AutomationTarget.volume,
-                      initialValue: 1,
-                      breakpoints: [AutomationBreakpoint(beat: 1, value: 1)],
-                    ),
-                  ],
-                ),
+          _value(track, 'DeviceChain/Mixer/Speaker/Manual'),
+          _value(reference, 'DeviceChain/Mixer/Speaker/Manual'),
+        );
+        expect(
+          _value(track, 'Name/Annotation'),
+          'Effects when the take started:\nTrack: Overdrive',
+        );
+        Set<String> clipShapes(XmlElement t) => {
+          for (final c in _at(
+            t,
+            'DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events',
+          ).findElements('AudioClip'))
+            ..._shape(c),
+        };
+        expect(clipShapes(track), clipShapes(reference));
+        expect(
+          _at(
+            reference,
+            'DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events',
+          ).findElements('AudioClip'),
+          hasLength(2),
+        );
+      });
+
+      test('Live keeps two volume events at one beat, in order: a step', () {
+        final volumeTarget = _at(
+          reference,
+          'DeviceChain/Mixer/Volume/AutomationTarget',
+        ).getAttribute('Id');
+        final events = _at(reference, 'AutomationEnvelopes/Envelopes')
+            .findElements('AutomationEnvelope')
+            .singleWhere(
+              (e) => _value(e, 'EnvelopeTarget/PointeeId') == volumeTarget,
+            )
+            .findAllElements('FloatEvent')
+            .map((e) => (e.getAttribute('Time'), e.getAttribute('Value')))
+            .toList();
+        expect(events, [
+          ('-63072000', '1'),
+          ('0', '1'),
+          ('2', '1'),
+          ('2', '0.0003162277571'),
+          ('6', '0.0003162277571'),
+          ('6', '1'),
+        ]);
+      });
+
+      test('a switched-off track has its activator off; a track is on by '
+          'default', () {
+        String activator(XmlElement t) =>
+            _value(t, 'DeviceChain/Mixer/Speaker/Manual');
+        expect(
+          activator(build(const DawTrack(name: 'Ref', active: false))),
+          'false',
+        );
+        expect(activator(build(const DawTrack(name: 'Main'))), 'true');
+      });
+
+      test("writes the info text into the track's Annotation", () {
+        const info = 'Effects when the take started:\nLane 1: Reverb';
+        final track = build(const DawTrack(name: 'Main', info: info));
+        expect(_value(track, 'Name/Annotation'), info);
+      });
+
+      test('places each Arrangement clip where it starts, numbered in its '
+          'list, and fits the zoom to the last one', () {
+        final document = _build(
+          const DawProject(
+            tracks: [
+              DawTrack(
+                name: 'Master (as heard)',
+                arrangementClips: [
+                  DawClip(audio: _stem, startSeconds: 0),
+                  DawClip(audio: second, startSeconds: 10),
+                ],
+              ),
+            ],
+          ),
+        );
+        final clips = _at(
+          _audioTracks(document).single,
+          'DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events',
+        ).findElements('AudioClip').toList();
+        expect(clips.map((c) => c.getAttribute('Id')), ['0', '1']);
+        expect(clips.map((c) => c.getAttribute('Time')), ['0', '20']);
+        expect(clips.map((c) => _value(c, 'CurrentEnd')), ['20', '28']);
+        expect(
+          _number(
+            _liveSet(document),
+            'SequencerNavigator/BeatTimeHelper/CurrentZoom',
+          ),
+          closeTo(28 / 500, 1e-12),
+        );
+      });
+
+      test('a step in the volume is two events at one beat', () {
+        final track = build(
+          const DawTrack(
+            name: 'Main dry',
+            volume: AutomationLane(
+              initialValue: 1,
+              breakpoints: [
+                AutomationBreakpoint(beat: 0, value: 1),
+                AutomationBreakpoint(beat: 2, value: 1),
+                AutomationBreakpoint(beat: 2, value: 0),
               ],
             ),
           ),
-          throwsArgumentError,
         );
+        final events = track
+            .findAllElements('FloatEvent')
+            .map((e) => (e.getAttribute('Time'), e.getAttribute('Id')))
+            .toList();
+        expect(events, [
+          ('-63072000', '0'),
+          ('0', '1'),
+          ('2', '2'),
+          ('2', '3'),
+        ]);
       });
     });
 

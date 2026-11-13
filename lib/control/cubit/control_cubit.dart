@@ -210,7 +210,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// toolbar path, so both arm gestures record the same rig. It is injected
   /// rather than mapped here: the mapping lives in the session feature, and a
   /// feature never imports another feature. Defaults to the empty snapshot
-  /// (what this call site passed before it was wired).
+  /// (what this call site passed before it was wired). [_currentNames]
+  /// resolves what the player calls each track and input, injected the same
+  /// way (#1799).
   /// [controller] is the external-MIDI seam (part 7): its resolved binding
   /// events land at the same dispatch point the pedal's do, so a discrete CC
   /// stomps exactly like a footswitch. [midiDevices] supplies every captured
@@ -240,6 +242,7 @@ class ControlCubit extends Cubit<ControlState> {
     this._midiClock,
     this._learnTimeout = const Duration(seconds: 15),
     this._currentChains = _noChains,
+    this._currentNames = _noNames,
     this._takeLocked = _neverLocked,
     this._inputLocked = _neverLocked,
     Future<int?> Function(String path)? freeSpaceBytes,
@@ -1102,6 +1105,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
 
+  /// The default `currentNames`: nothing named.
+  static PerformanceNames _noNames() => const PerformanceNames();
+
   static bool _neverLocked() => false;
 
   final LooperRepository _looper;
@@ -1112,6 +1118,7 @@ class ControlCubit extends Cubit<ControlState> {
   final FxChainPersistence _fxPersistence;
   final Duration _learnTimeout;
   final PerformanceChains Function() _currentChains;
+  final PerformanceNames Function() _currentNames;
   final bool Function() _takeLocked;
 
   /// Holds continuous writes (expression, External values, MIDI values)
@@ -3735,7 +3742,10 @@ class ControlCubit extends Cubit<ControlState> {
         return (result: EngineResult.device, announced: true);
       }
     }
-    final result = await _performance.arm(chains: _currentChains());
+    final result = await _performance.arm(
+      chains: _currentChains(),
+      names: _currentNames(),
+    );
     return (result: result, announced: result == EngineResult.notReady);
   }
 

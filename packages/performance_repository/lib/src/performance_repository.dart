@@ -12,6 +12,7 @@ import 'package:performance_repository/src/models/arm_refusal.dart';
 import 'package:performance_repository/src/models/capture_summary.dart';
 import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
+import 'package:performance_repository/src/models/performance_names.dart';
 import 'package:performance_repository/src/models/recording_format.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
 import 'package:performance_repository/src/performance_capture_status.dart';
@@ -418,7 +419,9 @@ class PerformanceRepository {
   /// arm overlapping one still in flight is a no-op success too: it is the
   /// same press arriving twice. [chains]
   /// supplies the lane/monitor effect chains and master-limiter state the
-  /// engine snapshot alone cannot read back (see [PerformanceChains]).
+  /// engine snapshot alone cannot read back (see [PerformanceChains]), and
+  /// [names] what the player calls each track and input
+  /// ([PerformanceNames]).
   ///
   /// Refused with [EngineResult.notReady] while a take finalizes or
   /// recovers, or a render is in flight (#671), and when the guard table
@@ -437,6 +440,7 @@ class PerformanceRepository {
   /// with that volume's scope.
   Future<EngineResult> arm({
     PerformanceChains chains = const PerformanceChains(),
+    PerformanceNames names = const PerformanceNames(),
     String? root,
     GuardScope scope = const GuardScope.internal(),
   }) async {
@@ -455,7 +459,7 @@ class PerformanceRepository {
     final finished = Completer<void>();
     _armFinished = finished;
     try {
-      return await _armGated(chains, root: root, scope: scope);
+      return await _armGated(chains, names, root: root, scope: scope);
     } finally {
       _armInFlight = false;
       _armFinished = null;
@@ -471,7 +475,8 @@ class PerformanceRepository {
 
   /// The body of [arm] past its entry gate; runs with [_armInFlight] held.
   Future<EngineResult> _armGated(
-    PerformanceChains chains, {
+    PerformanceChains chains,
+    PerformanceNames names, {
     required String? root,
     required GuardScope scope,
   }) async {
@@ -488,7 +493,12 @@ class PerformanceRepository {
     await Directory(dir).create(recursive: true);
 
     final snapshot = _engine.snapshot();
-    final tracks = _captureSettledLanes(dir, chains: chains, writeChains: true);
+    final tracks = _captureSettledLanes(
+      dir,
+      chains: chains,
+      writeChains: true,
+      names: names.tracks,
+    );
     final armSnapshot = PerformanceArmSnapshot(
       // The master loop phase at arm is no longer recorded here: it was
       // sampled on the control thread BEFORE lane export and manifest I/O, an
@@ -509,6 +519,10 @@ class PerformanceRepository {
       // D6's tempo lock may not even have engaged yet this early (#281).
       tempoBpm: snapshot.tempoBpm,
       tracks: tracks,
+      inputNames: {
+        for (final MapEntry(:key, :value) in names.inputs.entries)
+          if (value.trim().isNotEmpty) key: value.trim(),
+      },
       monitors: _monitorsJson(chains),
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
       // whole four-stage rig, bypass state included.
@@ -1427,17 +1441,18 @@ class PerformanceRepository {
   }
 
   /// The files of [capture]'s DAW package, relative to its directory, that
-  /// exist on disk: every audio part in order, the rendered stems the Live
-  /// Set points at (`stems/dry/`, `stems/wet/`), then the [dawProjectFiles].
-  /// The Library copies them keeping these paths, so the Live Set opens on
-  /// the drive.
+  /// exist on disk: every audio part in order, the rendered stems and lane
+  /// loops the Live Set points at (`stems/dry/`, `stems/wet/`, `loops/`),
+  /// then the [dawProjectFiles]. The Library copies them keeping these
+  /// paths, so the Live Set opens on the drive with none of its media
+  /// missing (#1799).
   List<String> dawPackageFiles(CaptureSummary capture) {
     final dir = capture.path;
     final stems = <String>[];
-    for (final kind in const ['dry', 'wet']) {
+    for (final folder in const ['stems/dry', 'stems/wet', 'loops']) {
       final List<FileSystemEntity> entries;
       try {
-        entries = Directory('$dir/stems/$kind').listSync();
+        entries = Directory('$dir/$folder').listSync();
       } on FileSystemException {
         continue;
       }
@@ -1445,7 +1460,7 @@ class PerformanceRepository {
         [
           for (final e in entries)
             if (e is File && e.path.toLowerCase().endsWith('.wav'))
-              'stems/$kind/${_basename(e.path)}',
+              '$folder/${_basename(e.path)}',
         ]..sort(),
       );
     }
@@ -1734,6 +1749,7 @@ class PerformanceRepository {
     required PerformanceChains chains,
     required bool writeChains,
     bool stampTakeId = false,
+    Map<int, String> names = const {},
   }) {
     final snapshot = _engine.snapshot();
     final tracks = <PerformanceTrackSnapshot>[];
@@ -1833,10 +1849,17 @@ class PerformanceRepository {
           multiple: track.multiple,
           anchorLap: track.anchorLap,
           lanes: lanes,
+          name: _givenName(names[channel]),
         ),
       );
     }
     return tracks;
+  }
+
+  /// [name] trimmed, or `null` when there is none to keep.
+  static String? _givenName(String? name) {
+    final trimmed = name?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   /// Lane [lane] of [channel]'s chain among [chains], or `null` when the rig

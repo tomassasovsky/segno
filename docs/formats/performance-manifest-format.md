@@ -94,7 +94,7 @@ What a standalone tool should conclude from each combination:
 | `slug` | string | The bundle directory's own name (D-NAME); redundant with the path but kept so the file is self-describing if moved. |
 | `sample_rate` | int | Negotiated device sample rate at arm time. Every PCM file in the bundle shares this rate (D-RATE — no resampling). |
 | `channel_layout.master_channels` | int | Channel count of the master parts (D-MASTER: stereo, or mono on a mono device). |
-| `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has its own `input-<n>-NNN.wav` parts, stereo. |
+| `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has its own `input-<n>-NNN.wav` parts, stereo. An input is recorded as its monitor plays it, after its chain, volume and pan (`mix_monitors_frame`), and as silence while its monitor is off or muted. |
 | `capture_frames` | int | Total frames elapsed since arm, regardless of any ring drop. In a MID-CAPTURE sidecar this is elapsed *as of that cycle's start*, not as of the moment the file was written (the cycle samples the frame count before it drains a single ring — see #710 — so audio produced while the cycle was writing is counted next cycle instead). The final sidecar is unaffected, since no audio is produced after it; only a crash-recovered bundle, whose newest sidecar is a mid-capture one, ever sees the difference. |
 | `overrun_count` | int | Capture-ring overruns (frames the audio thread could not enqueue) since arm. Not the whole story — see `zero_filled_frames`. |
 | `zero_filled_frames` | int | Frames of digital silence the drain actually wrote into the capture files since arm, summed over every file it writes. Since #1198 a dropped frame is never silence-filled: it ends the take (`slow_storage`). What is filled is audio counted but never tapped, which is how #710's takes carried audible silence while `overrun_count` read `0`. Counts bytes that reached disk, so a pad the disk refused (a `disk_full` stop mid-pad) is excluded even though `overrun_gaps` may still name the span. Absent from any sidecar written before #710. |
@@ -245,6 +245,7 @@ incomplete arm must not leave plausible but incorrect recovery metadata. The mas
 | `tempoBpm` | The engine tempo at the arm instant, verbatim (`0` = unset, the same sentinel `session.json`'s `tempoBpm` uses; absent = written before the field existed — both read as "no tempo evidence"). The **crash-salvage fallback** for a DAW export's tempo, not the authoritative value: D6's tempo lock only engages once grid content exists, so a tempo dialed in (or derived by the first loop) after an arm-over-empty-grid is only knowable at disarm — see `disarmSnapshot.tempoBpm`. |
 | `fxStagesVersion` | FX-stage schema revision (FX v3, R20): `1` = the four-stage model below. **Absent = a legacy snapshot** written before those fields existed; see "FX stages" below. |
 | `tracks` | One entry per **non-empty** track (empty tracks are omitted); carries the **Loop** stage, per lane. |
+| `inputs` | #1799: what the player calls each hardware input, `[{ "input": 0, "name": "Guitar" }]`, in input order. Only named inputs are listed; omitted when none is. A DAW export uses these names and falls back to `Input 1`, `Input 2` for the rest. |
 | `monitors` | The **Input** stage: one entry per hardware input the caller supplied chain/routing state for. Each entry's `chainEnabled` is that monitor chain's bypass flag, written only when `false` (absent = engaged, or legacy — see the marker below); `enabled` beside it is the input's own monitor gate, not an FX flag. |
 | `trackChains` | The **Track** stage: one entry per track channel with bus FX or a non-default chain flag. Omitted when there are none. |
 | `outputEffects` / `outputChainEnabled` | The actual captured destination’s output chain and bypass flag, captured by the engine at arm. The chain is applied once by reconstruction to audio before that stage; the already captured top-level master audio is never processed a second time. Empty effects and an engaged chain use the writer’s default omission rule. |
@@ -278,6 +279,10 @@ field by field, matching the session manifest's own migration style.
 
 `state` is one of the native `le_track_state` names: `empty`, `recording`,
 `overdubbing`, `playing`, `stopped`.
+
+`name` (#1799) is the name the player gave the track, written on the arm
+pass only and only when the track has one. A DAW export uses it and falls back
+to `Track 1`, `Track 2` (the channel, 1-based) for an unnamed track.
 
 `anchorLap` (#854) is the lap the take was played on
 (`le_track_snapshot.anchor_lap`), written only when nonzero. The offline

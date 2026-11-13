@@ -9,10 +9,12 @@ import 'package:operation_guards/operation_guards.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/application/owned_value_port.dart';
+import 'package:segno/app/application/performance_names.dart';
 import 'package:segno/app/fx_chain_persistence.dart';
 import 'package:segno/app/mix_settings_coordinator.dart';
 import 'package:segno/app/settings_mix_persistence.dart';
 import 'package:segno/appliance/power_off/power_cubit.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/backing/application/backing_player.dart';
 import 'package:segno/backing/application/session_backing.dart';
 import 'package:segno/backing/cubit/backing_cubit.dart';
@@ -30,6 +32,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/session/application/session_settings_coordinator.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/session/session_mapping.dart';
 import 'package:segno/storage/cubit/storage_cubit.dart';
 import 'package:segno/tuner/application/tuner_settings.dart';
 import 'package:session_repository/session_repository.dart';
@@ -150,11 +153,17 @@ class AppRuntime {
       midiDevices: midiDevices,
       takeLocked: () => takeLocked,
       inputLocked: () => _closing || fxPersistence.sessionTransitionActive,
+      // A pedal or MIDI arm records the same rig and names as the toolbar's.
+      currentChains: currentChains,
+      currentNames: currentNames,
     );
     // Loaded on its own, as the widget tree used to: a name that cannot be
     // read must not hold up the session baseline in [start].
     tracks = TracksCubit(settings: settings);
     unawaited(tracks.load());
+    // Created with the runtime, so it listens before the engine reports the
+    // boot device (the names key off the open device).
+    inputs = InputsCubit(settings: settings, repository: repository);
     session = SessionCubit(
       repository: sessions,
       looper: repository,
@@ -245,6 +254,19 @@ class AppRuntime {
   /// The track names and stage view. Owned here rather than by the widget
   /// tree because a New loop template writes track names (#1513).
   late final TracksCubit tracks;
+
+  /// What the player calls each hardware input. Owned here, beside [tracks],
+  /// because a take's arm records both (#1799).
+  late final InputsCubit inputs;
+
+  /// The rig's effect chains, as a take's arm records them: one source for
+  /// the toolbar's arm and the pedal's (#375).
+  PerformanceChains currentChains() => performanceChainsFromLooper(_looper);
+
+  /// What the player calls each track and input, as a take's arm records
+  /// them: one source for the toolbar's arm and the pedal's (#1799).
+  PerformanceNames currentNames() =>
+      performanceNames(tracks: tracks.state.names, inputs: inputs.state.names);
   late final PowerCubit power;
 
   /// Volumes, capacity, eject, and whether a transfer is in flight.
@@ -340,6 +362,7 @@ class AppRuntime {
       control.close,
       looper.close,
       tracks.close,
+      inputs.close,
       storage.close,
       // UI teardown starts debounced saves; confirm them while their owners
       // and the repository still live. A failure must not skip disposal.

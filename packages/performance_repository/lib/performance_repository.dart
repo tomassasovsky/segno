@@ -10,6 +10,7 @@ export 'src/models/arm_refusal.dart';
 export 'src/models/capture_summary.dart';
 export 'src/models/performance_chains.dart';
 export 'src/models/performance_manifest.dart';
+export 'src/models/performance_names.dart';
 export 'src/models/recording_format.dart';
 export 'src/models/unfinalized_capture.dart';
 export 'src/performance_capture_status.dart';

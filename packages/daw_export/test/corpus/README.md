@@ -14,6 +14,7 @@ with all of them (#1791).
 | `tempo.als` | `audio_clips.als` at 93.5 BPM. |
 | `session_loop_warped.als` | `audio_clips.als` with the Session clip warped and looping, the form `buildAls` gives lane loops. |
 | `vst3.als` | One audio track with a VST3 effect (TAL-Filter-2 3.1.2) as Live stores it: a `PluginDevice` whose `Vst3PluginInfo` names the plugin's class id as four signed 32-bit `Uid` fields, with the plugin's own state in a `Vst3Preset`. Nothing generates devices today (#1587); this is the shape a device chain would need. |
+| `reference_tracks.als` | `automation.als` with the track switched off, a three-line info text, a second Arrangement clip right after the first, and a volume envelope that steps to silence at beat 2 and back at beat 6 (two events at each of those beats). The shapes `buildAls` gives a reference track (#1799). |
 | `tone.wav` | 2400 frames of a 440 Hz sine, 48 kHz, 16-bit mono (4.8 KB), which the sets reference. |
 
 ## How they were made
@@ -55,6 +56,11 @@ Found by opening generated sets in Live 12.2.7:
 - A `FileRef` with `RelativePathType` 1 resolves its `RelativePath` against
   the set's folder when its `Path` does not exist, so a capture folder can be
   moved anywhere.
+- A switched-off track is its mixer's `Speaker/Manual` set to `false`. With
+  no activator envelope, switching it on in Live just plays it.
+- A track's info text is its `Name/Annotation`; line breaks are kept.
+- Two `FloatEvent`s at the same `Time` are a step: Live keeps both, in
+  order, and draws a vertical edge.
 - In the Arrangement lane chooser of an audio track with no devices or sends,
   `SelectedDevice` 1 is the Mixer, and its `SelectedEnvelope` 0 is the
   activator ("Speaker On") and 2 the volume.

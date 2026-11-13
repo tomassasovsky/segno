@@ -654,17 +654,10 @@ class _AppState extends State<App> {
           // what the player calls it on every surface that shows one — the
           // Audio face's input list, the Tracks routing summary, and the
           // per-track lane list — so the names load once, here.
-          // Eager: the names key off the OPEN DEVICE, so the cubit has to be
-          // listening before the engine reports one — created lazily it would
-          // miss the boot device entirely and show ordinals until the next
-          // reopen.
-          BlocProvider(
-            lazy: false,
-            create: (context) => InputsCubit(
-              settings: context.read<SettingsRepository>(),
-              repository: context.read<LooperRepository>(),
-            ),
-          ),
+          // The runtime creates it, eagerly: the names key off the OPEN
+          // DEVICE, so the cubit has to be listening before the engine
+          // reports one, and a take's arm records them (#1799).
+          BlocProvider<InputsCubit>.value(value: _runtime.inputs),
           // Destination names, the output-side twin of the inputs above and
           // eager for the same reason: they key off the OPEN DEVICE.
           BlocProvider(
@@ -851,6 +844,9 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                // The rig and names a take's arm records (#375, #1799).
+                currentChains: _runtime.currentChains,
+                currentNames: _runtime.currentNames,
                 // The runtime's lock, which also holds during an audio
                 // warm-up (#1533).
                 takeLocked: () => _runtime.takeLocked,

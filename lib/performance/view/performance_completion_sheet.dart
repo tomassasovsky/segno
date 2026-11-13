@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:daw_export/daw_export.dart' show DawTrackKind;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -262,11 +263,16 @@ class _Face extends StatelessWidget {
     // stopped flowing through this sheet (#679) no live path produces null,
     // but the sheet must not gamble on that).
     final duration = state.duration;
+    // The looper tracks recorded: the Live set's dry stems, inputs and
+    // master are not counted (#1799).
+    final recorded = state.tracks
+        .where((t) => t.kind == DawTrackKind.loop)
+        .length;
     final subtitle = duration == null
         ? l10n.perfSavedSubtitlePlain(name)
-        : state.tracks.isEmpty
+        : recorded == 0
         ? l10n.perfSavedSubtitleTimed(name, _mmss(duration))
-        : l10n.perfSavedSubtitle(name, state.tracks.length, _mmss(duration));
+        : l10n.perfSavedSubtitle(name, recorded, _mmss(duration));
     // What went wrong on the way, if anything — the pen draws each as a
     // banner between the subtitle and the action row. Stopped-early outranks
     // a glitch: a capture that ended early with dropped frames has the
