@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:daw_export/src/automation_thinning.dart';
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/device_chain.dart';
 import 'package:daw_export/src/effect_text.dart';
 import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/manifest_json.dart';
@@ -139,6 +140,9 @@ abstract final class DawManifestReader {
     }
 
     final logEntries = EventLogReader.readAll(captureDir);
+    final armTime = logEntries == null
+        ? (clock: 0, beat: 0.0)
+        : EventLogReader.readArmTime(logEntries);
 
     final tracks = <DawTrack>[];
     for (final channel in pcmRefsByChannel.keys.toList()..sort()) {
@@ -191,7 +195,39 @@ abstract final class DawManifestReader {
             );
       final name = trackNameOf(manifest, channel);
       final info = _info(EffectText.track(manifest, channel));
-      if (wet != null) {
+      // The chains the take started with, as Segno's plugins: lane 0's,
+      // which the wet stem renders, then the track's own (its Track
+      // stage).
+      final devices = dry == null
+          ? const <DawDevice>[]
+          : _trackDevices(armTracks, manifest, channel, armTime);
+      if (devices.isNotEmpty) {
+        // The dry stem through the plugins is the track: it plays, under
+        // the track's name, and can be edited in Live. The wet stem stays
+        // as the reference it is checked against, off.
+        tracks.add(
+          DawTrack(
+            name: name,
+            // The looper track itself when no wet stem stands for it.
+            kind: wet == null ? DawTrackKind.loop : DawTrackKind.dry,
+            arrangementClips: [?dry],
+            volume: volume,
+            devices: devices,
+            info: info,
+          ),
+        );
+        if (wet != null) {
+          tracks.add(
+            DawTrack(
+              name: '$name (as heard)',
+              active: false,
+              arrangementClips: [wet],
+              sessionClips: sessionClips,
+              info: info,
+            ),
+          );
+        }
+      } else if (wet != null) {
         tracks.add(
           DawTrack(
             name: name,
@@ -260,6 +296,55 @@ abstract final class DawManifestReader {
     }
 
     return DawProject(tracks: tracks, tempoBpm: effectiveTempoBpm);
+  }
+
+  /// Looper track [channel]'s chains at arm as Live devices: its lane 0
+  /// chain, then its Track stage chain, each plugin placed in time by
+  /// [armTime].
+  static List<DawDevice> _trackDevices(
+    List<Map<String, dynamic>> armTracks,
+    Map<String, dynamic> manifest,
+    int channel,
+    ({int clock, double beat}) armTime,
+  ) {
+    final devices = <DawDevice>[];
+    for (final t in armTracks) {
+      if ((t['channel'] as num?)?.toInt() != channel) continue;
+      for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
+        final json = lane as Map<String, dynamic>;
+        if ((json['lane'] as num?)?.toInt() != 0) continue;
+        devices.addAll(
+          devicesOfChain(
+            json['effects'],
+            chainEnabled: json['chainEnabled'] != false,
+            origin: ChainOrigin.lane(
+              channel,
+              0,
+              clockOffset: armTime.clock,
+              beatOffset: armTime.beat,
+            ),
+          ),
+        );
+      }
+    }
+    final arm = manifest['armSnapshot'];
+    final chains = arm is Map<String, dynamic> ? arm['trackChains'] : null;
+    for (final chain in chains is List ? chains : const []) {
+      if (chain is! Map<String, dynamic>) continue;
+      if ((chain['channel'] as num?)?.toInt() != channel) continue;
+      devices.addAll(
+        devicesOfChain(
+          chain['effects'],
+          chainEnabled: chain['chainEnabled'] != false,
+          origin: ChainOrigin.bus(
+            channel,
+            clockOffset: armTime.clock,
+            beatOffset: armTime.beat,
+          ),
+        ),
+      );
+    }
+    return devices;
   }
 
   /// The `tempoBpm` a snapshot map carries, or `null` when [snapshot] is

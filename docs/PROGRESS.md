@@ -85,11 +85,45 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1515 | Effects on more than one core: plan merged (#1517); part 1 merged (#1521); effects that do not fit switch off at record and when the rig comes up (owner's R1, R2) in review; part 2 (track and lane chains) is #1729 | build | plan-gate | `claude/fx-multicore-1515-p1b` |
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
-| #1804 | Segno's effects as VST3 plugins in Live: part 1 (Segno.vst3, local build and install, null test) in review; part 2 (the export puts the chains on the dry tracks) next | in-review | auto | `claude/vst3-plugins-1804-p1` |
+| #1804 | Segno's effects as VST3 plugins in Live: part 1 (Segno.vst3, local build and install, null test, PR #1810) and part 2 (the export plays the dry stem through the chains as plugins) in review | in-review | auto | `claude/vst3-plugins-1804-p1`, `claude/vst3-export-1804-p2` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 
 ---
+
+## November 2026 The Live set plays the take through Segno's plugins (#1804 part 2)
+
+- A looper track whose take recorded its chains (#1803 on) exports as its
+  dry stem through those chains as Segno's plugins, under the track's
+  name, and the wet stem beside it as `<name> (as heard)`, off, with the
+  lane loops. Takes without chains, or whose chains hold nothing Segno runs
+  (only hosted plugins), keep the earlier layout.
+- `devicesOfChain` (`packages/daw_export/lib/src/device_chain.dart`): lane
+  0's chain, which the wet stem renders, then the track's Track stage. Each
+  built-in effect becomes its plugin with the plugin's own state
+  (`SegnoPluginState`, the bytes `segno_fx_state.h` reads): settings,
+  channel handling, enable bit (the entry's, and off with its chain), chain
+  slot, the owner's hop seed (`le_fx_lane_hop_seed`, `le_fx_bus_hop_seed`),
+  and the take's PERF_ARMED FX clock and arm beat from `events.log`. A rack
+  becomes an Audio Effect Rack named as the rack, off when it was; a Dub
+  Rack's parallel Amb and Dub paths become a rack of two chains at the
+  gains `fx_path_targets` gives the section's Amb-Dub Mix. Hosted plugins
+  are left out, as the offline render passes them dry.
+- The devices are copied from a set Live saved with Segno's plugins
+  (`test/corpus/segno_vst3.als`, through
+  `lib/src/live_device_template.dart`): a plugin device and a rack with one
+  chain.
+- Inputs get no plugins yet: today's input recording already has its
+  monitor chain in it. When the raw inputs land (#1805), the monitor chain
+  goes on the raw input track.
+- Not reproduced: the lane volume, which the engine applies before the
+  chain and Live after it (the same at unity); a rack's input choice and
+  output side when its first or last entry is off or on a parallel path
+  (each plugin carries its own); the Track stage, which the offline render
+  does not apply, so a take with one differs from its "as heard" stem by
+  it. Switching during the take is the control-events layer of #1806.
+- `packages/segno_engine/vst3/test/render_capture.c` renders a capture's
+  stems on the Mac as the console does, for checking an export.
 
 ## November 2026 Segno's effects as VST3 plugins (#1804 part 1)
 

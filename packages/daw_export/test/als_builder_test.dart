@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:daw_export/daw_export.dart';
+import 'package:daw_export/src/live_device_template.dart';
 import 'package:daw_export/src/live_set_template.dart';
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
@@ -78,18 +79,20 @@ const _loop = DawAudioFile(
 
 /// A track with everything a capture can give it, as the template's track
 /// holds it: an Arrangement clip, a Session clip and a volume envelope.
-DawTrack _fullTrack(String name) => DawTrack(
-  name: name,
-  arrangementClips: const [DawClip(audio: _stem, startSeconds: 0)],
-  sessionClips: const [DawSessionClip(laneIndex: 0, audio: _loop)],
-  volume: const AutomationLane(
-    initialValue: 1,
-    breakpoints: [
-      AutomationBreakpoint(beat: 2, value: 1),
-      AutomationBreakpoint(beat: 4, value: 0.25),
-    ],
-  ),
-);
+DawTrack _fullTrack(String name, {List<DawDevice> devices = const []}) =>
+    DawTrack(
+      name: name,
+      devices: devices,
+      arrangementClips: const [DawClip(audio: _stem, startSeconds: 0)],
+      sessionClips: const [DawSessionClip(laneIndex: 0, audio: _loop)],
+      volume: const AutomationLane(
+        initialValue: 1,
+        breakpoints: [
+          AutomationBreakpoint(beat: 2, value: 1),
+          AutomationBreakpoint(beat: 4, value: 0.25),
+        ],
+      ),
+    );
 
 /// [shape] without the activator envelope's events: the template track has
 /// one, and the builder writes no activator automation.
@@ -99,6 +102,63 @@ Set<String> _withoutActivatorEvents(Set<String> shape) => {
 };
 
 XmlDocument _build(DawProject project) => _decode(buildAls(project));
+
+/// A Segno plugin of [type] with [params].
+DawPluginDevice _segno(int type, List<double> params, {int slot = 0}) =>
+    DawPluginDevice(
+      plugin: segnoPlugins[type]!,
+      state: SegnoPluginState(type: type, params: params, slot: slot),
+    );
+
+/// A chain as the export makes one: a Delay, then a Dub Rack whose Amb and
+/// Dub paths are a rack of their own.
+final List<DawDevice> _chain = [
+  _segno(3, [0.35, 0.35, 0.35]),
+  DawRackDevice(
+    name: 'Dub Rack',
+    chains: [
+      DawRackChain(
+        name: 'Dub Rack',
+        devices: [
+          _segno(2, [0.5, 0.2], slot: 1),
+          DawRackDevice(
+            name: 'Amb / Dub',
+            chains: [
+              DawRackChain(
+                name: 'Amb',
+                devices: [
+                  _segno(23, [0.2, 0.4, 0.75], slot: 2),
+                ],
+                volume: 0.75,
+              ),
+              DawRackChain(
+                name: 'Dub',
+                devices: [
+                  _segno(22, [0.7, 0.2], slot: 3),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+    on: false,
+  ),
+];
+
+/// The devices on [track], in order.
+List<XmlElement> _devices(XmlElement track) =>
+    _at(track, 'DeviceChain/DeviceChain/Devices').childElements.toList();
+
+/// The devices in [rack]'s chain [i].
+List<XmlElement> _chainDevices(XmlElement rack, int i) => _at(
+  rack.getElement('Branches')!.childElements.elementAt(i),
+  'DeviceChain/AudioToAudioDeviceChain/Devices',
+).childElements.toList();
+
+/// The first `<name>` in the reference set Live saved with Segno's plugins.
+XmlElement _savedDevice(String name) =>
+    _corpus('segno_vst3').findAllElements(name).first;
 
 void main() {
   group('the reference sets', () {
@@ -122,6 +182,7 @@ void main() {
         'session_loop_warped',
         'vst3',
         'reference_tracks',
+        'segno_vst3',
       ]) {
         final root = _corpus(name).rootElement;
         for (final attribute in ['MajorVersion', 'MinorVersion', 'Creator']) {
@@ -234,11 +295,30 @@ void main() {
       expect(ids.every((id) => id < next), isTrue);
     });
 
+    test('pointee ids stay unique with devices on the tracks', () {
+      final document = _build(
+        DawProject(
+          tracks: [
+            for (var i = 0; i < 3; i++) _fullTrack('Track $i', devices: _chain),
+          ],
+        ),
+      );
+      final ids = [
+        for (final e in document.descendantElements)
+          if (_isPointee(e.name.local)) int.parse(e.getAttribute('Id')!),
+      ];
+      expect(ids.toSet(), hasLength(ids.length));
+      final next = int.parse(_value(_liveSet(document), 'NextPointeeId'));
+      expect(ids.every((id) => id < next), isTrue);
+    });
+
     test('list-local ids are unique within their list, and track ids '
         'across the tracks', () {
       final document = _build(
         DawProject(
-          tracks: [for (var i = 0; i < 3; i++) _fullTrack('Track $i')],
+          tracks: [
+            for (var i = 0; i < 3; i++) _fullTrack('Track $i', devices: _chain),
+          ],
         ),
       );
       for (final parent in document.descendantElements) {
@@ -858,6 +938,112 @@ void main() {
           ('2', '2'),
           ('2', '3'),
         ]);
+      });
+    });
+
+    group('devices (#1804)', () {
+      test('the device templates are the reference set Live saved', () {
+        final plugin = _savedDevice('PluginDevice');
+        expect(livePluginDeviceTemplate, plugin.toXmlString());
+        expect(
+          XmlDocument.parse(liveRackDeviceTemplate).rootElement
+              .getElement('UserName')!
+              .getAttribute('Value'),
+          _savedDevice('AudioEffectGroupDevice')
+              .getElement('UserName')!
+              .getAttribute('Value'),
+          reason: 'run `dart run tool/generate_live_set_template.dart`',
+        );
+      });
+
+      test('a track with no devices has none', () {
+        final track = _audioTracks(
+          _build(DawProject(tracks: [_fullTrack('Track 0')])),
+        ).single;
+        expect(_devices(track), isEmpty);
+      });
+
+      test('a Segno plugin has the shape Live saved, its class id and its '
+          'state', () {
+        final track = _audioTracks(
+          _build(DawProject(tracks: [_fullTrack('Track 0', devices: _chain)])),
+        ).single;
+        final plugin = _devices(track).first;
+        expect(plugin.name.local, 'PluginDevice');
+        expect(_shape(plugin), _shape(_savedDevice('PluginDevice')));
+        final info = _at(plugin, 'PluginDesc/Vst3PluginInfo');
+        expect(_value(info, 'Name'), 'Segno Delay');
+        final fields = segnoPlugins[3]!.liveUidFields;
+        for (final uid in [
+          _at(info, 'Uid'),
+          _at(info, 'Preset/Vst3Preset/Uid'),
+        ]) {
+          for (var i = 0; i < 4; i++) {
+            expect(_number(uid, 'Fields.$i'), fields[i]);
+          }
+        }
+        expect(_value(plugin, 'On/Manual'), 'true');
+        final hex = _at(
+          info,
+          'Preset/Vst3Preset/ProcessorState',
+        ).innerText.replaceAll(RegExp(r'\s'), '');
+        final expected = const SegnoPluginState(
+          type: 3,
+          params: [0.35, 0.35, 0.35],
+        ).encode();
+        expect(
+          hex,
+          [
+            for (final b in expected)
+              b.toRadixString(16).padLeft(2, '0').toUpperCase(),
+          ].join(),
+        );
+      });
+
+      test('a rack holds its chains, named, at their volumes, with their '
+          'devices; a rack that was off is off', () {
+        final track = _audioTracks(
+          _build(DawProject(tracks: [_fullTrack('Track 0', devices: _chain)])),
+        ).single;
+        final rack = _devices(track)[1];
+        expect(rack.name.local, 'AudioEffectGroupDevice');
+        expect(_value(rack, 'UserName'), 'Dub Rack');
+        expect(_value(rack, 'On/Manual'), 'false');
+        final [filter, paths] = _chainDevices(rack, 0);
+        expect(
+          _value(filter, 'PluginDesc/Vst3PluginInfo/Name'),
+          'Segno Filter',
+        );
+        expect(paths.name.local, 'AudioEffectGroupDevice');
+        expect(_value(paths, 'On/Manual'), 'true');
+        final branches = paths.getElement('Branches')!.childElements.toList();
+        expect(branches.map((b) => _value(b, 'Name/UserName')), ['Amb', 'Dub']);
+        expect(branches.map((b) => b.getAttribute('Id')), ['0', '1']);
+        expect(_number(branches[0], 'MixerDevice/Volume/Manual'), 0.75);
+        expect(_number(branches[1], 'MixerDevice/Volume/Manual'), 1);
+        expect(
+          _value(
+            _chainDevices(paths, 0).single,
+            'PluginDesc/Vst3PluginInfo/Name',
+          ),
+          'Segno Ambience',
+        );
+        final saved = _shape(_savedDevice('AudioEffectGroupDevice'));
+        // Every element the builder writes in a rack is one Live wrote in
+        // the rack it saved (the saved one holds more devices).
+        for (final path in _shape(paths)) {
+          expect(
+            saved.contains(path) ||
+                path.contains('/PluginDevice') ||
+                path.contains(
+                  'AudioEffectGroupDevice/Branches/'
+                  'AudioEffectBranch/DeviceChain/AudioToAudioDeviceChain/'
+                  'Devices/AudioEffectGroupDevice',
+                ),
+            isTrue,
+            reason: path,
+          );
+        }
       });
     });
 
