@@ -1375,11 +1375,16 @@ static float* le_pr_load_layer(const char* dir, const le_pr_manifest* m,
  * the disarm image, when the take it was laid on is the one the disarm
  * snapshot holds. A complete pass retires on its last write
  * (le_dub_boundary), so its a_j is r - L + 1 and the next pass of the same
- * session starts on r + 1. A pass that a punch-out cut short retires once
- * its remainder has drained, at no fixed distance from its start, which is
- * then the session's start: the press that punched in (LE_CMD_RECORD), or
- * the finalize the take went on from (RECORD_END, the record/dub toggle).
- * A quantized punch-in fires unlogged; its pass is taken to be complete.
+ * session starts on r + 1, or whole loops later when a boundary with no
+ * spare shadow merged passes. A pass that a punch-out cut short retires
+ * once its remainder has drained, at no fixed distance from its start: it
+ * starts where its session's previous pass ended, or on what began the
+ * session, the press that punched in (LE_CMD_RECORD, logged as it applies,
+ * so the one a later press punched out) or the finalize the take went on
+ * from (RECORD_END, the record/dub toggle). A quantized punch-in fires
+ * unlogged; its pass is taken to be complete. A track the arm found
+ * overdubbing (a deferred arm lane) plays its first retired image from
+ * frame 0.
  *
  * le_pr_plan_dubs reads a channel's log once and lists these switches, so
  * the segment walk can place each one at its frame, which may come before
@@ -1403,29 +1408,60 @@ typedef struct le_pr_dub_plan {
   int failed; /* an unlisted retire in a capture that dropped images */
 } le_pr_dub_plan;
 
+#define LE_PR_DUB_PRESSES 8 /* the presses a pass's start is read from */
+
 typedef struct le_pr_dub_walk {
   /* The take the passes are laid on: open from a RECORD_END (take_log, its
-   * log index) or the arm image (take_log -1), closed by anything that
+   * log index) or from the arm (take_log -1), closed by anything that
    * replaces the material. */
   int open, take_log, settled;
-  int retires;   /* passes retired on it so far */
-  int last_edge; /* the edge whose image the next retire names */
+  int retires;    /* passes retired on it so far */
+  int first_edge; /* its first switch, an index into the plan's edges */
+  int last_edge;  /* the switch whose image the next retire names */
   /* Where the next pass starts: in a session after a complete pass (start),
-   * after the take's finalize (take_frame, take_lock), or idle. */
+   * after the take's finalize (take_frame, cont), or idle. */
   enum { LE_PR_DUB_IDLE, LE_PR_DUB_TAKE, LE_PR_DUB_SESSION } state;
-  uint64_t start, take_frame;
-  int take_lock;
-  /* Record and Stop presses on the channel since the last retire. */
+  int64_t start, take_frame, cont;
+  /* The Record and Stop presses on the channel since the last retire, the
+   * latest LE_PR_DUB_PRESSES of them. Every press is logged as it applies,
+   * one that starts nothing included. */
   int presses;
-  int first_is_stop;
-  uint64_t first_record, last_record;
-  int records;
+  int64_t press_frame[LE_PR_DUB_PRESSES];
+  uint8_t press_record[LE_PR_DUB_PRESSES];
 } le_pr_dub_walk;
 
-static void le_pr_dub_presses_clear(le_pr_dub_walk* w) {
-  w->presses = 0;
-  w->first_is_stop = 0;
-  w->records = 0;
+static void le_pr_dub_press(le_pr_dub_walk* w, uint64_t frame, int record) {
+  if (w->presses == LE_PR_DUB_PRESSES) {
+    memmove(w->press_frame, w->press_frame + 1,
+            (LE_PR_DUB_PRESSES - 1) * sizeof(w->press_frame[0]));
+    memmove(w->press_record, w->press_record + 1,
+            (LE_PR_DUB_PRESSES - 1) * sizeof(w->press_record[0]));
+    w->presses--;
+  }
+  w->press_frame[w->presses] = (int64_t)frame;
+  w->press_record[w->presses] = (uint8_t)record;
+  w->presses++;
+}
+
+/* Whether a Record press applied on `frame`. */
+static int le_pr_dub_record_at(const le_pr_dub_walk* w, int64_t frame) {
+  for (int k = 0; k < w->presses; ++k) {
+    if (w->press_record[k] && w->press_frame[k] == frame) return 1;
+  }
+  return 0;
+}
+
+/* The latest Record press, or, when a press follows one, the latest one a
+ * press follows: the punch-in of a session a press punched out. -1 when
+ * there is none. */
+static int64_t le_pr_dub_punch_in(const le_pr_dub_walk* w) {
+  int64_t latest = -1;
+  for (int k = w->presses - 1; k >= 0; --k) {
+    if (!w->press_record[k]) continue;
+    if (k < w->presses - 1) return w->press_frame[k];
+    if (latest < 0) latest = w->press_frame[k];
+  }
+  return latest;
 }
 
 /* Ends the take's run of passes at `frame`: its last pass's result is the
@@ -1448,34 +1484,38 @@ static void le_pr_dub_close(le_pr_dub_plan* p, le_pr_dub_walk* w,
   w->open = 0;
   w->last_edge = -1;
   w->state = LE_PR_DUB_IDLE;
-  le_pr_dub_presses_clear(w);
+  w->presses = 0;
 }
 
 /* The frame of the first write of the pass that retired at `r`, `len` frames
- * long (see the section comment). */
-static uint64_t le_pr_dub_pass_start(const le_pr_dub_walk* w, uint64_t r,
-                                     int32_t len) {
-  const uint64_t full = r + 1 >= (uint64_t)len ? r + 1 - (uint64_t)len : 0;
+ * long; before the capture (negative) for a pass the arm found running. A
+ * complete pass started `len - 1` frames before its retire, so a press on
+ * that frame began it. Otherwise (see the section comment): */
+static int64_t le_pr_dub_pass_start(const le_pr_dub_walk* w, uint64_t r,
+                                    int32_t len) {
+  const int64_t full = (int64_t)r + 1 - len;
   if (w->state == LE_PR_DUB_SESSION) {
-    /* A session that ended on its boundary and a new one punched in. */
-    if (w->records >= 2 && w->last_record == full) return w->last_record;
+    /* The session went on: this pass starts where the last one ended, or,
+     * after passes that retired nothing (a boundary with no spare shadow
+     * merges them), a whole number of loops later. */
+    if (full >= w->start && (full - w->start) % len == 0) return full;
+    if (le_pr_dub_record_at(w, full)) return full;
     return w->start;
   }
+  if (le_pr_dub_record_at(w, full)) return full;
   if (w->state == LE_PR_DUB_TAKE) {
-    /* A dub that goes on from a finalize starts on its frame, or on the
-     * next one when the finalize ran after the frame's mix (a defining
-     * take's deferred seam crossfade, which locks the loop there). */
-    const uint64_t cont = w->take_frame + (uint64_t)w->take_lock;
-    if (w->records > 0 && w->first_record == full) return w->first_record;
-    if (w->presses == 0) return full > cont ? full : cont;
-    /* One press inside the first lap punched the dub out. */
-    if (w->first_is_stop ||
-        (w->presses == 1 && w->first_record < cont + (uint64_t)len)) {
-      return cont;
+    /* A punch-in after the finalize, punched out by a later press. */
+    for (int k = 0; k + 1 < w->presses; ++k) {
+      if (w->press_record[k]) return le_pr_dub_punch_in(w);
     }
-    return w->first_record;
+    /* The dub went on from the finalize: a complete first pass, or one a
+     * press (or an unlogged quantized punch-out) cut short. */
+    if (full == w->take_frame || full == w->cont) return full;
+    if (w->presses > 0 || full < w->take_frame) return w->cont;
+    return full; /* an unlogged punch-in, taken to start a complete pass */
   }
-  return w->records > 0 ? w->first_record : full;
+  const int64_t in = le_pr_dub_punch_in(w);
+  return in >= 0 ? in : full;
 }
 
 static void le_pr_dub_plan_free(le_pr_dub_plan* p) {
@@ -1483,14 +1523,16 @@ static void le_pr_dub_plan_free(le_pr_dub_plan* p) {
   free(p->take_image);
 }
 
-/* Lists [channel]'s overdub switches (see the section comment). Returns 0
- * when the plan cannot be allocated. */
+/* Lists [channel]'s overdub switches (see the section comment). [arm] is 1
+ * when an arm image plays from frame 0, 2 when the arm found the track
+ * capturing (a deferred lane: its first retire names what it played).
+ * Returns 0 when the plan cannot be allocated. */
 static int le_pr_plan_dubs(const le_pr_manifest* m, const le_pr_log_entry* log,
                            int log_count, int32_t channel,
-                           int32_t disarm_take_id, int arm_take,
-                           le_pr_dub_plan* p) {
+                           int32_t disarm_take_id, int arm, le_pr_dub_plan* p) {
   memset(p, 0, sizeof(*p));
-  const size_t n = log_count > 0 ? (size_t)log_count : 1;
+  /* One switch per retire, and the deferred arm's. */
+  const size_t n = (size_t)(log_count > 0 ? log_count : 0) + 1;
   p->edges = (le_pr_dub_edge*)malloc(n * sizeof(le_pr_dub_edge));
   p->take_image = (int32_t*)malloc(n * sizeof(int32_t));
   if (p->edges == NULL || p->take_image == NULL) {
@@ -1517,8 +1559,15 @@ static int le_pr_plan_dubs(const le_pr_manifest* m, const le_pr_log_entry* log,
   w.last_edge = -1;
   w.take_log = -1;
   w.state = LE_PR_DUB_IDLE;
-  w.open = arm_take;
-  w.settled = arm_take && !recorded && !settled_recorded && disarm_take_id != 0;
+  w.open = arm != 0;
+  w.settled = w.open && !recorded && !settled_recorded && disarm_take_id != 0;
+  if (arm == 2) {
+    /* Nothing names what a deferred lane plays at frame 0 but its first
+     * retire, the loop before the pass the arm found running. */
+    p->edges[0] = (le_pr_dub_edge){.frame = 0, .image = LE_PR_DUB_NONE};
+    p->edge_count = 1;
+    w.last_edge = 0;
+  }
 
   for (int i = 0; i < log_count; ++i) {
     const le_pr_log_entry* e = &log[i];
@@ -1532,30 +1581,26 @@ static int le_pr_plan_dubs(const le_pr_manifest* m, const le_pr_log_entry* log,
       w.settled =
           disarm_take_id != 0 && e->cmd.take.take_id == disarm_take_id;
       w.retires = 0;
+      w.first_edge = p->edge_count;
       w.state = LE_PR_DUB_TAKE;
-      w.take_frame = e->frame;
-      w.take_lock = 0;
-      le_pr_dub_presses_clear(&w);
-      for (int j = i - 1; j >= 0 && log[j].frame == e->frame; --j) {
-        if (log[j].cmd.code == LE_PLOG_LOOP_LENGTH_LOCKED) w.take_lock = 1;
-      }
-      for (int j = i + 1; j < log_count && log[j].frame == e->frame; ++j) {
-        if (log[j].cmd.code == LE_PLOG_LOOP_LENGTH_LOCKED) w.take_lock = 1;
-      }
+      w.take_frame = (int64_t)e->frame;
+      /* A dub that goes on from a finalize starts on its frame, or on the
+       * next one after a defining take's deferred seam crossfade, which
+       * finalizes after the frame's mix and logs the loop's lock just
+       * before its RECORD_END. */
+      const int locked = i > 0 && log[i - 1].frame == e->frame &&
+                         log[i - 1].ordinal + 1 == e->ordinal &&
+                         log[i - 1].cmd.code == LE_PLOG_LOOP_LENGTH_LOCKED;
+      w.cont = w.take_frame + locked;
     } else if ((code == LE_CMD_RECORD || code == LE_CMD_STOP) &&
                e->cmd.arg_i == channel) {
-      if (!w.open) continue;
-      if (w.presses == 0) w.first_is_stop = code == LE_CMD_STOP;
-      w.presses++;
-      if (code == LE_CMD_RECORD) {
-        if (w.records == 0) w.first_record = e->frame;
-        w.last_record = e->frame;
-        w.records++;
-      }
+      if (w.open) le_pr_dub_press(&w, e->frame, code == LE_CMD_RECORD);
     } else if (((code == LE_CMD_CLEAR || code == LE_CMD_UNDO_TO_EMPTY) &&
                 e->cmd.arg_i == channel) ||
                (code == LE_PLOG_SOURCE_APPLIED &&
                 e->cmd.restore_log.channel == channel)) {
+      /* Material from a 322 is never overdubbed in a stem: the callback
+       * logs 323/0 at the first write over it, which fails the stem. */
       le_pr_dub_close(p, &w, e->frame);
     } else if (code == LE_PLOG_LAYER_RETIRED &&
                e->cmd.evt.channel == channel) {
@@ -1577,37 +1622,39 @@ static int le_pr_plan_dubs(const le_pr_manifest* m, const le_pr_log_entry* log,
                            0)
                      : 0;
       /* This pass's pre-pass image is what the previous switch plays. */
-      const int32_t image = layer >= 0 ? layer : LE_PR_DUB_NONE;
       if (w.last_edge >= 0) {
-        p->edges[w.last_edge].image = image;
+        p->edges[w.last_edge].image = layer >= 0 ? layer : LE_PR_DUB_NONE;
       } else if (w.retires == 0 && w.take_log >= 0) {
         p->take_image[w.take_log] =
-            layer >= 0 ? layer : (w.settled ? LE_PR_DUB_DISARM
-                                             : LE_PR_DUB_NONE);
+            layer >= 0 ? layer
+                       : (w.settled ? LE_PR_DUB_DISARM : LE_PR_DUB_NONE);
       }
       w.retires++;
       w.last_edge = -1;
       if (len <= 0) { /* no length to place this pass by */
         w.state = LE_PR_DUB_IDLE;
-        le_pr_dub_presses_clear(&w);
+        w.presses = 0;
         continue;
       }
-      const uint64_t a = le_pr_dub_pass_start(&w, e->frame, len);
-      const uint64_t heard =
-          a + (uint64_t)len - (uint64_t)(m->latency_offset % len);
-      if (p->edge_count == 0 ||
-          heard > p->edges[p->edge_count - 1].frame) {
-        p->edges[p->edge_count] =
-            (le_pr_dub_edge){.frame = heard, .image = LE_PR_DUB_NONE};
+      const int64_t a = le_pr_dub_pass_start(&w, e->frame, len);
+      int64_t heard = a + len - m->latency_offset % len;
+      if (heard < 0) heard = 0;
+      /* A switch on or before the take's last one supersedes it. */
+      if (p->edge_count > w.first_edge &&
+          (uint64_t)heard <= p->edges[p->edge_count - 1].frame) {
+        w.last_edge = p->edge_count - 1;
+      } else {
+        p->edges[p->edge_count] = (le_pr_dub_edge){
+            .frame = (uint64_t)heard, .image = LE_PR_DUB_NONE};
         w.last_edge = p->edge_count++;
       }
-      if (e->frame == a + (uint64_t)len - 1) {
+      if ((int64_t)e->frame == a + len - 1) {
         w.state = LE_PR_DUB_SESSION; /* the next pass goes on from here */
-        w.start = e->frame + 1;
+        w.start = (int64_t)e->frame + 1;
       } else {
         w.state = LE_PR_DUB_IDLE; /* cut short: the session ended */
       }
-      le_pr_dub_presses_clear(&w);
+      w.presses = 0;
     }
   }
   le_pr_dub_close(p, &w, UINT64_MAX);
@@ -1624,37 +1671,78 @@ static void le_pr_track_close(le_pr_track_build* build) {
   free(build);
 }
 
+/* The loop phase [arm_track]'s image of `frames` frames plays from at
+ * capture frame 0 (see le_pr_track_open's arm segment). */
+static uint64_t le_pr_arm_phase(const le_pr_manifest* m,
+                                const le_json_value* arm_track,
+                                int32_t frames) {
+  if (!m->perf_arm_present) return 0;
+  const int64_t anchor =
+      arm_track != NULL
+          ? (int64_t)le_json_number(le_json_get(arm_track, "anchorLap"), 0)
+          : 0;
+  const int64_t multiple =
+      arm_track != NULL
+          ? (int64_t)le_json_number(le_json_get(arm_track, "multiple"), 1)
+          : 1;
+  /* The anchor's laps in the image's own segments (a take laid down at
+   * another tempo is not multiple * master frames long), taken off modulo
+   * the image so the phase stays non-negative (le_pr_append_segment reduces
+   * it). */
+  const uint64_t anchor_frames =
+      frames > 0 && anchor > 0 && multiple > 1
+          ? (uint64_t)(anchor % multiple) * (uint64_t)(frames / multiple)
+          : 0;
+  return (uint64_t)m->perf_arm_iteration * (uint64_t)m->perf_arm_master_len +
+         (uint64_t)m->perf_arm_position +
+         (anchor_frames > 0 ? (uint64_t)frames - anchor_frames : 0);
+}
+
+/* The image a plan names (a `layers` index or LE_PR_DUB_DISARM) for
+ * [plane], as le_pr_snapshot_image returns one: *present 0 when nothing is
+ * named, NULL with *present 1 when it cannot be read. */
+static float* le_pr_dub_image(const char* dir, const le_pr_manifest* m,
+                              const le_json_value* disarm_lane, int32_t image,
+                              int plane, int32_t* frames, int* heard,
+                              int* present) {
+  *frames = 0;
+  *heard = 0;
+  *present = 0;
+  if (image == LE_PR_DUB_DISARM) {
+    return disarm_lane != NULL
+               ? le_pr_snapshot_image(dir, disarm_lane, plane, frames, heard,
+                                      present)
+               : NULL;
+  }
+  if (image < 0) return NULL;
+  return le_pr_load_layer(dir, m, image, plane, frames, heard, present);
+}
+
 /* Places an overdub switch (#1808): the track plays [edge]'s image from its
  * frame on, from the loop phase it has reached (#255): a layer image is
  * loop-position-indexed, and live playback kept its position running while
- * the buffer changed under it. Returns 1 when it appended a segment; a
- * named image that cannot be read fails the stem. */
+ * the buffer changed under it. A track the arm found capturing has no phase
+ * yet: its first image plays from the arm's. Returns 1 when it appended a
+ * segment; a named image that cannot be read fails the stem. */
 static int le_pr_apply_dub(le_pr_track_build* b, const char* dir,
                            const le_pr_manifest* m,
+                           const le_json_value* arm_track,
                            const le_json_value* disarm_lane, int plane,
                            const le_pr_dub_edge* edge) {
-  if (edge->image == LE_PR_DUB_NONE) return 0;
-  int32_t frames = 0;
-  int heard = 0;
-  float* image;
-  if (edge->image == LE_PR_DUB_DISARM) {
-    int present = 0;
-    if (disarm_lane == NULL) return 0;
-    image = le_pr_snapshot_image(dir, disarm_lane, plane, &frames, &heard,
-                                 &present);
-    if (!present) return 0;
-  } else {
-    int named = 0;
-    image =
-        le_pr_load_layer(dir, m, edge->image, plane, &frames, &heard, &named);
-    if (!named) return 0;
-  }
+  int32_t frames;
+  int heard, present;
+  float* image = le_pr_dub_image(dir, m, disarm_lane, edge->image, plane,
+                                 &frames, &heard, &present);
+  if (!present) return 0;
   if (image == NULL) {
     b->load_failed = 1;
     return 0;
   }
-  le_pr_append_segment(b, edge->frame, le_pr_build_phase_at(b, edge->frame),
-                       image, frames);
+  const le_pr_segment* last = &b->segments[b->segment_count - 1];
+  const double phase = last->image != NULL
+                           ? le_pr_build_phase_at(b, edge->frame)
+                           : (double)le_pr_arm_phase(m, arm_track, frames);
+  le_pr_append_segment(b, edge->frame, phase, image, frames);
   le_pr_mark_heard(b, heard);
   return !b->load_failed;
 }
@@ -1712,18 +1800,14 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
    * multiple k played from lap `anchorLap` (the arm snapshot's, absent = 0)
    * reads segment (iteration - anchorLap) mod k, as the callback does. */
   const le_json_value* arm_track = le_pr_find_track(m->arm_tracks, channel);
-  const int64_t arm_anchor =
-      arm_track != NULL
-          ? (int64_t)le_json_number(le_json_get(arm_track, "anchorLap"), 0)
-          : 0;
-  const int64_t arm_multiple =
-      arm_track != NULL
-          ? (int64_t)le_json_number(le_json_get(arm_track, "multiple"), 1)
-          : 1;
   const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
-  int arm_take = 0; /* an arm image plays from frame 0 */
+  /* 1: an arm image plays from frame 0; 2: the arm found the track
+   * capturing (le_pr_plan_dubs). */
+  int arm_take = 0;
   if (arm_lane != NULL &&
-      le_json_bool(le_json_get(arm_lane, "deferred"), 0) == 0) {
+      le_json_bool(le_json_get(arm_lane, "deferred"), 0) != 0) {
+    arm_take = 2;
+  } else if (arm_lane != NULL) {
     int32_t frames = 0;
     int arm_heard = 0;
     int present = 0;
@@ -1731,24 +1815,8 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
         le_pr_snapshot_image(dir, arm_lane, plane, &frames, &arm_heard, &present);
     if (present) {
       if (image != NULL) {
-        /* The anchor's laps in the image's own segments (a take laid
-         * down at another tempo is not multiple * master frames long),
-         * taken off modulo the image so the phase stays non-negative
-         * (le_pr_append_segment reduces it). */
-        const uint64_t anchor_frames =
-            frames > 0 && arm_anchor > 0 && arm_multiple > 1
-                ? (uint64_t)(arm_anchor % arm_multiple) *
-                      (uint64_t)(frames / arm_multiple)
-                : 0;
-        const uint64_t arm_phase =
-            m->perf_arm_present
-                ? (uint64_t)m->perf_arm_iteration *
-                          (uint64_t)m->perf_arm_master_len +
-                      (uint64_t)m->perf_arm_position +
-                      (anchor_frames > 0 ? (uint64_t)frames - anchor_frames
-                                         : 0)
-                : 0;
-        le_pr_append_segment(build, 0, arm_phase, image, frames);
+        le_pr_append_segment(build, 0, le_pr_arm_phase(m, arm_track, frames),
+                             image, frames);
         le_pr_mark_heard(build, arm_heard);
         arm_take = 1;
       } else {
@@ -1807,7 +1875,7 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
     /* A pass's switch lands before anything logged on its frame. */
     while (next_dub < dubs.edge_count &&
            dubs.edges[next_dub].frame <= e->frame && !build->load_failed) {
-      if (le_pr_apply_dub(build, dir, m, disarm_lane, plane,
+      if (le_pr_apply_dub(build, dir, m, arm_track, disarm_lane, plane,
                           &dubs.edges[next_dub])) {
         restore_id = 0;
       }
@@ -1853,17 +1921,10 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
        * retired, the loop as it was before that pass (#1808), or, never
        * overdubbed, the disarm image when it is the settled take. */
       restore_id = 0;
-      int32_t frames = 0;
-      int heard = 0;
-      int present = 1;
-      float* image;
-      if (dubs.take_image[i] == LE_PR_DUB_DISARM) {
-        image = le_pr_snapshot_image(dir, disarm_lane, plane, &frames, &heard,
-                                     &present);
-      } else {
-        image = le_pr_load_layer(dir, m, dubs.take_image[i], plane, &frames,
-                                 &heard, &present);
-      }
+      int32_t frames;
+      int heard, present;
+      float* image = le_pr_dub_image(dir, m, disarm_lane, dubs.take_image[i],
+                                     plane, &frames, &heard, &present);
       if (present) {
         if (image != NULL) {
           /* The segment anchors at the TRACK's epoch — the master
@@ -1931,7 +1992,8 @@ static le_pr_track_build* le_pr_track_open(const char* dir,
   }
   /* The switches after the last logged fact: the last pass's, typically. */
   while (next_dub < dubs.edge_count && !build->load_failed) {
-    le_pr_apply_dub(build, dir, m, disarm_lane, plane, &dubs.edges[next_dub]);
+    le_pr_apply_dub(build, dir, m, arm_track, disarm_lane, plane,
+                    &dubs.edges[next_dub]);
     next_dub++;
   }
   le_pr_dub_plan_free(&dubs);

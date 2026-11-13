@@ -24,7 +24,9 @@ typedef struct odr_case {
   int32_t offset;  /* the record offset */
   int passes;      /* 2, or 1 punched out inside its first lap */
   float feedback;  /* 1 adds each pass, 0 replaces */
-  int before_arm;  /* 1: the take is recorded before the capture arms */
+  /* 1: the take is recorded before the capture arms; 2: and its first
+   * pass is running when it arms (the arm snapshot's lane is deferred) */
+  int before_arm;
 } odr_case;
 
 /* Pumps `frames` of `sig` (silence when amp is 0) in ODR_BLOCK blocks,
@@ -96,11 +98,15 @@ static int odr_finalize_manifest(const char* dir, int32_t channel,
               ",\"armSnapshot\":{\"followOutput\":false,\"captureMask\":1,"
               "\"latencyOffsetFrames\":%d,\"tracks\":[",
               offset);
-      if (arm_image) {
+      if (arm_image == 1) {
         fprintf(f,
                 "{\"channel\":%d,\"lanes\":[{\"lane\":0,\"deferred\":false,"
                 "\"pcmRef\":\"track%d-arm.wav\"}]}",
                 channel, channel);
+      } else if (arm_image == 2) {
+        fprintf(f,
+                "{\"channel\":%d,\"lanes\":[{\"lane\":0,\"deferred\":true}]}",
+                channel);
       }
       fprintf(f, "]},\"disarmSnapshot\":{\"tracks\":[");
       /* Track 0 too when the take is on another track: it defines the
@@ -276,11 +282,16 @@ static void run_overdub_replay_case(const odr_case* c) {
     CHECK(le_engine_export_track_lane(e, ch, 0, arm, ODR_LEN) == ODR_LEN);
     snprintf(path, sizeof(path), "%s/track%d-arm.wav", dir, ch);
     test_write_wav_mono(path, arm, ODR_LEN, sr);
+    if (c->before_arm == 2) {
+      CHECK(le_engine_record(e, ch) == LE_OK); /* punch in */
+      odr_pump(e, &pass1, ODR_LEN / 3);
+    }
   }
   CHECK(perf_arm_dir_long(e, dir) == LE_OK);
   drain(e);
 
-  odr_pump(e, &quiet, 300); /* the capture runs before the take starts */
+  /* The capture runs before the take starts (or the pass goes on). */
+  odr_pump(e, c->before_arm == 2 ? &pass1 : &quiet, 300);
   if (ch != 0) {
     /* Track 0 defines the loop; the master is the two stems' sum. The
      * take on [ch] starts on the loop top, so it is one loop long. */
@@ -299,13 +310,17 @@ static void run_overdub_replay_case(const odr_case* c) {
     odr_pump(e, &take, ODR_LEN);
     CHECK(le_engine_record(e, ch) == LE_OK); /* finalize */
   }
-  if (!c->rec_dub) {
-    odr_pump(e, &take, sr / 100); /* the seam crossfade's continuation */
-    odr_pump(e, &quiet, ODR_LEN + 700);
-    CHECK(le_engine_record(e, ch) == LE_OK); /* punch in mid-cycle */
+  if (c->before_arm == 2) {
+    odr_pump(e, &pass1, ODR_LEN - ODR_LEN / 3 - 300); /* pass 1's rest */
+  } else {
+    if (!c->rec_dub) {
+      odr_pump(e, &take, sr / 100); /* the seam crossfade's continuation */
+      odr_pump(e, &quiet, ODR_LEN + 700);
+      CHECK(le_engine_record(e, ch) == LE_OK); /* punch in mid-cycle */
+    }
+    /* With rec/dub the dub goes on from the take: pass 1 starts there. */
+    odr_pump(e, &pass1, c->passes == 2 ? ODR_LEN : ODR_LEN / 2);
   }
-  /* With rec/dub the dub goes on from the take: pass 1 starts there. */
-  odr_pump(e, &pass1, c->passes == 2 ? ODR_LEN : ODR_LEN / 2);
   if (c->passes == 2) odr_pump(e, &pass2, ODR_LEN / 2);
   CHECK(le_engine_record(e, ch) == LE_OK); /* punch out mid-cycle */
   odr_pump(e, last, sr / 100);            /* the punch-out fade */
@@ -456,7 +471,8 @@ static void run_overdub_replay_case(const odr_case* c) {
  * punched in by a press or going on from the take (the record/dub toggle),
  * cut short in its first lap or after a complete pass, with and without a
  * record offset, adding or replacing, on the defining take, on a take
- * recorded over it and on a take recorded before the capture. */
+ * recorded over it, on a take recorded before the capture and on one whose
+ * first pass runs when the capture arms. */
 static void test_overdub_replay_matches_live(void) {
   printf("test_overdub_replay_matches_live\n");
   static const odr_case cases[] = {
@@ -469,6 +485,7 @@ static void test_overdub_replay_matches_live(void) {
       {"odr-second-track-full", 1, 1, 100, 2, 1.0f},
       {"odr-second-track-punch", 1, 0, 100, 2, 1.0f},
       {"odr-before-arm", 0, 0, 100, 2, 1.0f, 1},
+      {"odr-armed-mid-pass", 0, 0, 100, 2, 1.0f, 2},
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     run_overdub_replay_case(&cases[i]);
