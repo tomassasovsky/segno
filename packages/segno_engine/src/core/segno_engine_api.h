@@ -2835,10 +2835,12 @@ LE_EXPORT int32_t le_engine_stop_record_control(le_engine* engine, int32_t chann
  * A playing track parks at once: every track stops, as le_engine_stop_track
  * on each would stop it. So does an overdubbing track whose overdub ends at
  * once; the stop ends the pass. An overdubbing track whose Record timing arms
- * the end for the grid keeps overdubbing to that boundary and parks there.
- * Until then a mute of its lanes waits for the park instead of punching the
- * pass out, and a second call keeps the arm. Whatever drops the arm (a Record
- * press, a Clear, another track's capture) drops the park with it. In any
+ * the end for the grid keeps overdubbing to that boundary and parks there,
+ * after any other arm that boundary fires. Until then the next mute of each
+ * of its lanes waits for the park instead of punching the pass out (a later
+ * one punches out as usual), and a second call keeps the arm. Whatever drops
+ * the arm (a Record press, a Clear, another track's capture) drops the park
+ * with it. A live Count-in is cancelled first, and the park follows. In any
  * other state the call does what le_engine_stop_record_control does.
  *
  * `following` is how many commands the caller posts right after it (the

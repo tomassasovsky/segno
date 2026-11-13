@@ -4161,9 +4161,11 @@ static int32_t le_stop_record(le_engine* engine, int32_t channel, int park,
   /* A Stop that saw a countdown (or its launch grace) means "cancel the
    * cohort", never "finish a capture": post the cancel itself, so one that
    * lands after the commit and grace is a no-op instead of finalizing the
-   * just-started defining take into a tiny master. */
-  if (cohort) return le_engine_cancel_count_in(engine);
-  if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) {
+   * just-started defining take into a tiny master. The park still parks
+   * after that cancel, finishing nothing (action 0). */
+  if (cohort && !park) return le_engine_cancel_count_in(engine);
+  if (!cohort &&
+      (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING)) {
     const int quantized = le_effective_quantize(engine, channel) &&
         le_rig_effective_master_len(engine) > 0 && le_transport_active(engine);
     const int pending = engine->armed[channel] && load_i32(&t->a_pending);

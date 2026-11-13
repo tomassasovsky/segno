@@ -207,6 +207,80 @@ static void test_overdub_stop_park_dropped_by_record(void) {
   le_engine_destroy(e);
 }
 
+/* Only the Stop's own mute waits: a later mute of the lane (a Mute-mode
+ * press during the wait) punches the pass out at once and drops the park,
+ * so the loop plays on, muted, past the top. */
+static void test_overdub_stop_park_later_mute_punches_out(void) {
+  printf("test_overdub_stop_park_later_mute_punches_out\n");
+  static float base[PTS_TAKE];
+  le_engine* e = ods_overdubbing(0, 1, base);
+  ods_rec_stop(e);
+  drain(e);
+  ods_check_waiting(e);
+  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].muted == 1);
+  CHECK(s.tracks[0].pending == 0);
+  ods_feed(e, 0.25f, ods_to_top(e) + 100, 64, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
+/* Another track's arm that fires on the same top fires before the park, so
+ * it cannot restart the transport the park holds: a take armed to start
+ * there ends with the park. */
+static void test_overdub_stop_park_lands_after_the_tops_arms(void) {
+  printf("test_overdub_stop_park_lands_after_the_tops_arms\n");
+  static float base[PTS_TAKE];
+  le_engine* e = ods_overdubbing(0, 1, base);
+  ods_rec_stop(e);
+  drain(e);
+  CHECK(le_engine_record(e, 2) == LE_OK); /* a take armed for the top */
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].pending == 1);
+  ods_feed(e, 0.25f, ods_to_top(e), 64, NULL);
+  ods_feed(e, 0.25f, 2400, 64, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].pending == 0);
+  for (int c = 0; c < LE_MAX_TRACKS; ++c) {
+    CHECK(s.tracks[c].state != LE_TRACK_PLAYING);
+    CHECK(s.tracks[c].state != LE_TRACK_OVERDUBBING);
+    CHECK(s.tracks[c].state != LE_TRACK_RECORDING);
+  }
+  CHECK(s.master_position_frames == 0); /* held at the top */
+  le_engine_destroy(e);
+}
+
+/* An unmute during the wait takes the Stop's mute back: the park leaves
+ * the track unmuted, and spares nothing, so a later Mute of the parked
+ * track gates its tail as any other mute does. */
+static void test_overdub_stop_park_unmuted_during_the_wait(void) {
+  printf("test_overdub_stop_park_unmuted_during_the_wait\n");
+  static float base[PTS_TAKE];
+  static float out[2 * PTS_WIN];
+  le_engine* e = ods_overdubbing(0, 1, base);
+  ods_rec_stop(e);
+  CHECK(le_engine_set_track_mute(e, 0, 0) == LE_OK);
+  drain(e);
+  ods_check_waiting(e);
+  ods_feed(e, 0.25f, ods_to_top(e), 64, NULL);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].muted == 0);
+  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+  heard_silence(e, 2400, 37, NULL); /* the fades */
+  heard_silence(e, PTS_WIN, 37, out);
+  CHECK(pts_peak(out, PTS_WIN) == 0.0f);
+  le_engine_destroy(e);
+}
+
 /* The park reserves room for the mutes that follow it, as the spare does,
  * and refuses with nothing posted when they would not fit; bad arguments are
  * refused. */
@@ -236,5 +310,8 @@ static void test_overdub_stop_park_reserves_and_validates(void) {
 static void run_overdub_stop_park_tests(void) {
   test_overdub_stop_parks();
   test_overdub_stop_park_dropped_by_record();
+  test_overdub_stop_park_later_mute_punches_out();
+  test_overdub_stop_park_lands_after_the_tops_arms();
+  test_overdub_stop_park_unmuted_during_the_wait();
   test_overdub_stop_park_reserves_and_validates();
 }
