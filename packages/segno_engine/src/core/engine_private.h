@@ -2086,6 +2086,12 @@ typedef struct le_track {
   /* Enabling Once during existing playback ends the current pass, even when
    * that pass began less than a full lap ago. */
   int once_current_pass;
+  /* Audio-thread-local (#1782): the overdub's armed grid end (pending_record,
+   * trigger 0) parks the transport when it fires, and until then a mute of
+   * the track's lanes waits for it (le_engine_stop_record_park). Read only
+   * with that arm live; every new arm and every disarm clears it. In the
+   * struct's tail padding, so le_track keeps its size. */
+  int park_at_finish;
 } le_track;
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
  * segno_engine_api.h). Rings are allocated CONTROL-side at arm and freed

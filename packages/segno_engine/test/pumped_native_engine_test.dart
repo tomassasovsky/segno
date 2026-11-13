@@ -1254,6 +1254,69 @@ void main() {
     });
   });
 
+  group('Rec-mode Stop park (real FFI, #1782)', () {
+    late PumpedNativeEngine engine;
+
+    setUp(() {
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 48000,
+          ),
+        );
+      // A 4800-frame loop, then Record timing at the loop top.
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 4800, input: 0.5);
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 960);
+      expect(
+        engine.setRecordTimingSettings(
+          defaultTiming: RecordTiming.loopStart,
+          rememberedDivision: GridDivision.off,
+          trackOverrides: const {},
+          editMask: 1,
+        ),
+        EngineResult.ok,
+      );
+      engine.pump(frames: 0);
+    });
+    tearDown(() => engine.dispose());
+
+    int toTop() {
+      final s = engine.snapshot();
+      return s.masterLengthFrames - s.masterPositionFrames;
+    }
+
+    test('an overdub with a quantized end runs to the loop top and parks '
+        'there, muted', () {
+      expect(engine.record(), EngineResult.ok); // the punch-in, at the top
+      engine.pump(frames: toTop(), input: 0.25);
+      expect(engine.snapshot().tracks.first.state, TrackState.overdubbing);
+      engine.pump(frames: 1200, input: 0.25);
+      expect(engine.stopRecordPark(channel: 0, following: 1), EngineResult.ok);
+      expect(engine.setLaneMute(muted: true), EngineResult.ok);
+      engine.pump(frames: toTop() - 1, input: 0.25);
+      var track = engine.snapshot().tracks.first;
+      expect(track.state, TrackState.overdubbing);
+      expect(track.pending, isTrue);
+      engine.pump(frames: 1, input: 0.25);
+      track = engine.snapshot().tracks.first;
+      expect(track.state, TrackState.stopped);
+      expect(track.muted, isTrue);
+      expect(track.pending, isFalse);
+    });
+
+    test('refuses a negative following count', () {
+      expect(
+        engine.stopRecordPark(channel: 0, following: -1),
+        EngineResult.invalid,
+      );
+    });
+  });
+
   group('history mode gate (real FFI)', () {
     late PumpedNativeEngine engine;
 

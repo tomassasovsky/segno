@@ -51,6 +51,12 @@ void main() {
       expect(engine.spareTail(channel: 2, following: 3), EngineResult.ok);
     });
 
+    test('stopRecordPark needs a running engine (#1782)', () {
+      expect(engine.stopRecordPark(channel: 0), EngineResult.notRunning);
+      expect(engine.start(engine.defaultConfig), EngineResult.ok);
+      expect(engine.stopRecordPark(channel: 2, following: 3), EngineResult.ok);
+    });
+
     test(
       'speed needs material the mock never holds, so capture stays open',
       () {

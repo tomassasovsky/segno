@@ -4140,8 +4140,12 @@ int32_t le_engine_cancel_count_in(le_engine* engine) {
   return rc;
 }
 
-int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
-  if (!engine || channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+/* Rec Stop (le_engine_stop_record_control), and with [park] the Rec-mode
+ * Stop of the only audible loop (le_engine_stop_record_park, #1782). */
+static int32_t le_stop_record(le_engine* engine, int32_t channel, int park,
+                              int32_t following) {
+  if (!engine || channel < 0 || channel >= engine->track_count || following < 0)
+    return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire))
     return LE_ERR_NOT_RUNNING;
   le_engine_drain_events(engine);
@@ -4166,20 +4170,40 @@ int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
     if (pending && (quantized ? engine->armed_trigger[channel] != 0
                               : engine->armed_trigger[channel] == 2))
       return LE_ERR_INVALID;
-    if (quantized) action = pending ? 2 : 1;
+    /* A second Stop drops the armed end, unless it parks: then it keeps the
+     * arm, so the pass still ends, and parks, on the grid. */
+    if (quantized) action = pending && !park ? 2 : 1;
   }
-  const int result = le_push(engine, LE_CMD_STOP_RECORD_CONTROL, channel, (float)action);
+  if (park && !le_record_capacity(engine, 1 + (size_t)following))
+    return LE_ERR_NOT_READY;
+  const int result = le_push(engine, LE_CMD_STOP_RECORD_CONTROL, channel,
+                             (float)(action + (park ? 4 : 0)));
   if (result == LE_OK && action) {
     engine->armed[channel] = action == 1;
     engine->armed_trigger[channel] = 0;
   }
   if (result == LE_OK) {
     /* Either half can empty a track: the count-in cancellation sweeps every
-     * grace take, the finish may close a void take on this channel. */
+     * grace take, the finish may close a void take on this channel, and a
+     * park stops every track, as le_engine_stop_track does. */
     le_ticket_grace_cohort(engine);
-    le_ticket_emptying(engine, channel);
+    if (park) {
+      for (int32_t c = 0; c < engine->track_count; ++c)
+        le_ticket_emptying(engine, c);
+    } else {
+      le_ticket_emptying(engine, channel);
+    }
   }
   return result;
+}
+
+int32_t le_engine_stop_record_control(le_engine* engine, int32_t channel) {
+  return le_stop_record(engine, channel, 0, 0);
+}
+
+int32_t le_engine_stop_record_park(le_engine* engine, int32_t channel,
+                                   int32_t following) {
+  return le_stop_record(engine, channel, 1, following);
 }
 
 int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {

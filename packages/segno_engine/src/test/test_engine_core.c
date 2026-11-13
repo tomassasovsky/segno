@@ -39628,6 +39628,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_heard_post.h"
 #include "test_engine_trk_jobs.h"
 #include "test_engine_post_tail_stopped.h"
+#include "test_engine_overdub_stop_park.h"
 
 /* le_platform_name_thread names the thread that calls it (#1563): per-thread
  * tools on the console read these names, and an unnamed engine thread reads
@@ -39714,6 +39715,7 @@ int main(void) {
   SHARD(run_fx_workers_tests);
   SHARD(run_trk_jobs_tests);
   SHARD(run_post_tail_stopped_tests);
+  SHARD(run_overdub_stop_park_tests);
   if (getenv("SEGNO_FX_WORKERS_TESTS_ONLY")) return g_failures ? 1 : 0;
   if (getenv("SEGNO_FADE_STAGING_TESTS_ONLY")) {
     test_fade_restore_staging_and_manifest_capacity();
