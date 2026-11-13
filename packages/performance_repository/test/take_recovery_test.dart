@@ -514,6 +514,29 @@ void main() {
   });
 
   group('recovery, refused', () {
+    for (final (name, captured, raw) in [
+      ('names an input it did not capture', const [0], const [1]),
+      ('names an input twice', const [0], const [0, 0]),
+      ('names a captured input twice', const [0, 0], const [0]),
+    ]) {
+      test('a sidecar whose raw_inputs (#1805) $name is left as it is, '
+          'reported', () async {
+        final dir = seed('perf-raw-layout');
+        writeOpenPart('$dir/master-001.wav', stereo(4));
+        writeNativeSidecar(
+          dir,
+          capturedInputs: captured,
+          rawInputs: raw,
+          captureFrames: 4,
+        );
+
+        await repo.runBootRecovery();
+
+        expect(repo.unrecoveredTakes, [dir]);
+        expect(partSizes('$dir/master-001.wav'), (0, 0));
+      });
+    }
+
     test('a part sealed with frames that never reached it ends its stream; '
         'a later part is not joined on early', () async {
       final dir = seed('perf-short-middle');

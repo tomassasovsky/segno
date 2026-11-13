@@ -90,7 +90,7 @@ final class AppModelTests: XCTestCase {
   func testATakeRecordedInPartsSelectsEveryMainPart() async throws {
     let (model, repository) = fixture()
     repository.catalogJSON =
-      #"{"recordings":[{"id":"parts","name":"Set","timestamp":"20261006120000","modified":0,"duration":60,"files":[{"path":"master-001.wav","bytes":100,"version":"a"},{"path":"master-002.wav","bytes":40,"version":"b"},{"path":"input-0-001.wav","bytes":70,"version":"c"}]}],"unavailable":0}"#
+      #"{"recordings":[{"id":"parts","name":"Set","timestamp":"20261006120000","modified":0,"duration":60,"files":[{"path":"master-001.wav","bytes":100,"version":"a"},{"path":"master-002.wav","bytes":40,"version":"b"},{"path":"input-0-001.wav","bytes":70,"version":"c"},{"path":"input-raw-0-001.wav","bytes":35,"version":"d"}]}],"unavailable":0}"#
     model.connect()
     try await waitUntilIdle(model)
     XCTAssertEqual(model.selection.map(\.1.path), ["master-001.wav", "master-002.wav"])
@@ -98,10 +98,16 @@ final class AppModelTests: XCTestCase {
     let recording = try XCTUnwrap(model.recordings.first)
     XCTAssertEqual(
       recording.files.map(\.role),
-      ["Main recording · Part 1", "Main recording · Part 2", "Live input 0 · Part 1"])
+      [
+        "Main recording · Part 1", "Main recording · Part 2", "Live input 0 · Part 1",
+        "Raw input 0 · Part 1",
+      ])
     XCTAssertEqual(
       recording.files.map { $0.suggestedName(recording: recording) },
-      ["Set · Part 001.wav", "Set · Part 002.wav", "Set — input-0-001.wav"])
+      [
+        "Set · Part 001.wav", "Set · Part 002.wav", "Set — input-0-001.wav",
+        "Set — input-raw-0-001.wav",
+      ])
   }
 
   func testOlderAppliancesStillListTheirSingleMainRecording() throws {
@@ -117,6 +123,9 @@ final class AppModelTests: XCTestCase {
       XCTAssertNil(try recorded(path).mainPart, path)
     }
     XCTAssertNil(try recorded("input-x-001.wav").inputPart)
+    XCTAssertNil(try recorded("input-raw-0-001.wav").inputPart)
+    XCTAssertNil(try recorded("input-0-001.wav").rawInputPart)
+    XCTAssertNil(try recorded("input-raw-x-001.wav").rawInputPart)
   }
 
   func testChangingApplianceClearsCatalogAndSelection() async throws {

@@ -327,14 +327,22 @@ List<({int stream, int channels})>? streamsOf(Map<String, dynamic> native) {
     return null;
   }
   final streams = [(stream: 0, channels: master)];
+  final captured = <int>{};
   for (final input in inputs) {
-    if (input is! int || input < 0 || 1 + input >= PerfTarget.rawStreamBase) {
+    if (input is! int ||
+        input < 0 ||
+        1 + input >= PerfTarget.rawStreamBase ||
+        !captured.add(input)) {
       return null;
     }
     streams.add((stream: 1 + input, channels: 2));
   }
+  // An input is recorded raw only beside its recording as heard.
+  final recordedRaw = <int>{};
   for (final input in raw) {
-    if (input is! int || input < 0) return null;
+    if (input is! int || !captured.contains(input) || !recordedRaw.add(input)) {
+      return null;
+    }
     streams.add((stream: PerfTarget.rawStreamBase + input, channels: 1));
   }
   return streams;
