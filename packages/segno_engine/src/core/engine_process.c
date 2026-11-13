@@ -6909,8 +6909,14 @@ __declspec(noinline)
 #else
 __attribute__((noinline, cold))
 #endif
-static void perf_tap_raw_block(le_engine* e, const float* in, int ch_in,
-                               uint32_t frames, uint64_t perf_frame_base) {
+static void perf_tap_raw_block(le_engine* e, uint32_t frames) {
+  /* The block's input as le_engine_process left it in fx_par, and its first
+   * capture frame (the frames are counted after this), read here rather
+   * than passed, so the caller keeps nothing live past its frame loops. */
+  const float* in = e->fx_par.in;
+  const int ch_in = e->fx_par.ch_in;
+  const uint64_t perf_frame_base =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
   const uint64_t mask = e->perf_raw_mask;
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!(mask & (UINT64_C(1) << c))) continue;
@@ -11886,7 +11892,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
    * synchronize-with this add, so everything sequenced before it — every
    * tail store — is visible to the pops that follow. */
   if (e->perf.armed) {
-    perf_tap_raw_block(e, in, ch_in, frames, perf_frame_base);
+    perf_tap_raw_block(e, frames);
     atomic_fetch_add_explicit(&e->a_perf_frames, (uint64_t)frames,
                               memory_order_release);
   }
