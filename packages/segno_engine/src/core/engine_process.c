@@ -6805,11 +6805,11 @@ static inline LE_AUDIO_HOT_AT(4) void master_bus_frame(le_engine* e, float* out,
 }
 
 /* Performance-recording capture taps (le_perf_arm/disarm, segno_engine_api.h):
- * copy the post-limiter master output and each captured monitor input's
- * post-FX signal into their pre-published rings. Both are no-ops when not
- * armed (`e->perf.armed`, the audio-thread-local mirror of a_perf_armed);
- * neither ever blocks or allocates — a full ring just drops the frame and
- * bumps the shared overrun atomic. */
+ * copy the post-limiter master output, each captured monitor input's
+ * post-FX signal and each captured input's raw sample into their
+ * pre-published rings. All are no-ops when not armed (`e->perf.armed`, the
+ * audio-thread-local mirror of a_perf_armed); none ever blocks or allocates
+ * — a full ring just drops the frame and bumps the shared overrun atomic. */
 
 /* Tap for the master bus: [master_out_ch] selects the first enabled output
  * pair frozen at arm (mono when only one channel was captured). */
@@ -6817,6 +6817,13 @@ static inline void perf_tap_monitor_frame(le_engine* e, int input, float l,
                                           float r) {
   const float s[2] = {l, r};
   if (!le_audio_ring_push_frame(&e->perf.monitor_ring[input], s, 2)) {
+    perf_note_drop(e);
+  }
+}
+
+/* Tap for an input's raw recording (#1805): its clean mono sample. */
+static inline void perf_tap_raw_frame(le_engine* e, int input, float x) {
+  if (!le_audio_ring_push_frame(&e->perf_raw_ring[input], &x, 1)) {
     perf_note_drop(e);
   }
 }
@@ -8484,7 +8491,10 @@ static inline int process_input_frame(le_engine* e, const float* in,
  * the block before this loop, as jobs (le_fx_monitor_job), so a chain's
  * output for block frame [i] is read from le_fx_par. [out_enabled] is the
  * structural output gate, intersected with the mask so a disabled output is
- * never a target. Live and independent of every track; never recorded. */
+ * never a target. Live and independent of every track, and never recorded
+ * into a loop. A performance capture taps each captured input here twice:
+ * raw, before the monitor gate (#1805), and as heard, after its volume and
+ * pan. */
 static inline void mix_monitors_frame(
     le_engine* e, const float* in, float* out, uint32_t f, uint32_t i,
     int ch_in, int ch_out, uint32_t out_enabled, const int* mon_on,
@@ -8499,6 +8509,13 @@ static inline void mix_monitors_frame(
     if (!instrument && (in == NULL || c >= ch_in)) continue;
     const int captured =
         e->perf.armed && (e->perf.input_mask & (UINT64_C(1) << c)) != 0;
+    /* The raw recording (#1805): the clean sample, before the gate below,
+     * the chain, the volume and the pan, every frame. */
+    if (captured) {
+      perf_tap_raw_frame(e, c,
+                         instrument ? le_instrument_source_sample(e, c, f)
+                                    : in[f * ch_in + c]);
+    }
     if (!mon_on[c] || mon_mut[c]) {
       if (captured) perf_tap_monitor_frame(e, c, 0.0f, 0.0f);
       continue;

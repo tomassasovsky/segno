@@ -11904,7 +11904,7 @@ static void test_perf_sidecar_bytes_are_exact(void) {
           "  \"slug\": \"%s\",\n"
           "  \"sample_rate\": 48000,\n"
           "  \"channel_layout\": {\"master_channels\": 1, "
-          "\"captured_inputs\": []},\n" /* no input monitored in this fixture */
+          "\"captured_inputs\": [], \"raw_inputs\": []},\n" /* no input monitored in this fixture */
           "  \"capture_frames\": %d,\n"
           "  \"overrun_count\": 0,\n"
           "  \"zero_filled_frames\": 0,\n"
@@ -12297,9 +12297,10 @@ static void test_perf_input_stream_parts(void) {
   le_engine_destroy(e);
 }
 
-/* The ring seconds an arm grants: 8 requested with the master and 8 stereo
- * inputs at 96 kHz is 9 rings of next_pow2(96000 * 2 * s) samples; s = 8, 7
- * and 6 each round to 2^21 samples (72 MiB in all), s = 5 to 2^20 (36 MiB),
+/* The ring seconds an arm grants: 8 requested with the master and 8
+ * inputs at 96 kHz is 9 stereo rings of next_pow2(96000 * 2 * s) samples
+ * and 8 raw mono rings (#1805) of half that; s = 8, 7 and 6 each round to
+ * 2^21 and 2^20 samples (104 MiB in all), s = 5 to 2^20 and 2^19 (52 MiB),
  * so 5 is granted. With 32 inputs even 2 s is over the cap; the default is
  * the floor. */
 static void test_perf_ring_seconds_are_capped(void) {
@@ -12319,6 +12320,7 @@ static void test_perf_ring_seconds_are_capped(void) {
                         << (granted[k] == 5 ? 20 : 19); /* samples per ring */
     CHECK(e->perf.master_ring.capacity == want);
     CHECK(e->perf.monitor_ring[0].capacity == want);
+    CHECK(e->perf_raw_ring[0].capacity == want / 2);
     CHECK(le_perf_disarm(e) == LE_OK);
     char json[16384];
     char path[700];
@@ -12428,6 +12430,9 @@ static void perf_clear_test_dir(void) {
       snprintf(path, sizeof(path), "%s/input-%d-%03d.wav", perf_test_dir(), c,
                p);
       remove(path);
+      snprintf(path, sizeof(path), "%s/input-raw-%d-%03d.wav", perf_test_dir(),
+               c, p);
+      remove(path);
     }
   }
   snprintf(path, sizeof(path), "%s/performance.json", perf_test_dir());
@@ -12533,8 +12538,9 @@ static void test_perf_reserve_stops_at_whole_frames(void) {
   le_engine_destroy(e);
 }
 
-/* Every stream ends at the same frame: a mono master (4 bytes a frame) and a
- * stereo input (8) share the budget 12 bytes a frame. */
+/* Every stream ends at the same frame: a mono master (4 bytes a frame), a
+ * stereo input as heard (8) and its raw recording (4, #1805) share the
+ * budget 16 bytes a frame. */
 static void test_perf_reserve_stops_every_stream_together(void) {
   printf("test_perf_reserve_stops_every_stream_together\n");
   static float out[1000];
@@ -12542,12 +12548,13 @@ static void test_perf_reserve_stops_every_stream_together(void) {
   const long events = perf_events_bytes_for(1, 0, 1000, out);
   le_perf_drain_set_volume_free_for_test(
       (int64_t)(reserve + LE_PERF_ALLOWANCE_BYTES + (uint64_t)events + 84 +
-                84 + 12 * 500));
+                84 + 84 + 16 * 500));
   le_engine* e = perf_reserve_take(1, 0, reserve, 1000, out);
   le_perf_drain_set_volume_free_for_test(-1);
 
   CHECK(perf_part_holds("master-001.wav", out, 500, 1));
   CHECK(perf_test_file_size("input-0-001.wav") == 84 + 500 * 8);
+  CHECK(perf_test_file_size("input-raw-0-001.wav") == 84 + 500 * 4);
   CHECK(perf_sidecar_contains("\"stopped_early\": \"reserve_reached\""));
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
@@ -39622,6 +39629,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_heard_edits.h"
 #include "test_engine_heard_perf.h"
 #include "test_engine_perf_autostop.h"
+#include "test_engine_perf_raw.h"
 #include "test_engine_perf_render_memory.h"
 #include "test_engine_perf_file_limit.h"
 #include "test_engine_heard_tail.h"
@@ -40370,6 +40378,10 @@ int main(void) {
   SHARD(test_perf_render_memory_is_bounded);
   SHARD(test_perf_render_cancel_leaves_no_partial_stem);
   SHARD(test_perf_longest_take_fits_one_fat32_file);
+  SHARD(test_perf_raw_tap_is_the_clean_input);
+  SHARD(test_perf_raw_ring_overflow_counts);
+  SHARD(test_perf_raw_drain_writes_mono_parts);
+  SHARD(test_perf_raw_input_counts_as_playing);
   SHARD(test_perf_render_runs_through_reconfigure);
   SHARD(test_perf_render_rerender_leaves_only_its_own_stems);
   SHARD(test_perf_render_concurrent_with_live_engine);

@@ -5903,20 +5903,21 @@ static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate,
 /* The ring seconds an arm grants (#1198): the requested seconds (at most
  * LE_PERF_RING_SECONDS_MAX, checked by the caller), lowered one at a time —
  * never below LE_PERF_RING_SECONDS_DEFAULT — until every ring of
- * the take together fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
+ * the take together (the master, and each input's stereo ring as heard and
+ * mono raw ring) fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
  * asks for more than the default to ride out flash stalls; with many captured
  * inputs at a high rate the cap keeps arm from allocating (and prefaulting)
  * hundreds of megabytes. */
 static int32_t le_perf_ring_seconds_granted(int32_t requested,
                                             int32_t master_channels,
-                                            int32_t stereo_inputs,
+                                            int32_t inputs,
                                             int32_t sample_rate) {
   int32_t seconds = requested;
   while (seconds > LE_PERF_RING_SECONDS_DEFAULT) {
     const size_t samples =
         le_perf_ring_capacity(master_channels, sample_rate, seconds) +
-        (size_t)stereo_inputs *
-            le_perf_ring_capacity(2, sample_rate, seconds);
+        (size_t)inputs * (le_perf_ring_capacity(2, sample_rate, seconds) +
+                          le_perf_ring_capacity(1, sample_rate, seconds));
     if (samples * sizeof(float) <= (size_t)LE_PERF_RING_BYTES_MAX) break;
     seconds--;
   }
@@ -5961,6 +5962,7 @@ static void le_perf_free_unpublished(le_engine* e, uint64_t monitors_done) {
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (monitors_done & (UINT64_C(1) << c)) {
       le_audio_ring_release(&e->perf.monitor_ring[c]);
+      le_audio_ring_release(&e->perf_raw_ring[c]);
     }
   }
 }
@@ -6003,7 +6005,9 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   /* The monitor capture set is frozen at arm: whichever inputs are enabled
    * right now, and no others — an input enabled later is logged, not tapped
    * (umbrella scope for this part). Every captured monitor ring is stereo
-   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r).
+   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r), and
+   * each captured input also gets a mono raw ring (#1805,
+   * engine->perf_raw_ring) for its clean sample.
    *
    * Clamped to the DEVICE's input count, not just LE_MAX_MONITORED_INPUTS
    * (#710). le_engine_set_monitor_input validates only against the array
@@ -6052,9 +6056,15 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
 
   uint64_t input_mask = 0;
   const size_t monitor_cap = le_perf_ring_capacity(2, sr, ring_seconds);
+  const size_t raw_cap = le_perf_ring_capacity(1, sr, ring_seconds);
   for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
     if (!(wanted_inputs & (UINT64_C(1) << c))) continue;
     if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
+      le_perf_free_unpublished(engine, input_mask);
+      return LE_ERR_INVALID;
+    }
+    if (!le_audio_ring_alloc(&engine->perf_raw_ring[c], raw_cap)) {
+      le_audio_ring_release(&engine->perf.monitor_ring[c]);
       le_perf_free_unpublished(engine, input_mask);
       return LE_ERR_INVALID;
     }
@@ -6266,6 +6276,7 @@ int32_t le_perf_disarm(le_engine* engine) {
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (engine->perf.input_mask & (UINT64_C(1) << c)) {
       le_audio_ring_release(&engine->perf.monitor_ring[c]);
+      le_audio_ring_release(&engine->perf_raw_ring[c]);
     }
   }
   engine->perf.input_mask = 0;
@@ -6301,6 +6312,15 @@ int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
   const size_t popped = le_audio_ring_pop(&engine->perf.monitor_ring[input],
                                           out, (size_t)max_frames * 2);
   return (int32_t)(popped / 2);
+}
+
+int32_t le_engine_perf_raw_pop_for_test(le_engine* engine, int32_t input,
+                                        float* out, int32_t max_frames) {
+  if (engine == NULL || out == NULL || max_frames <= 0) return 0;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
+  if (!(engine->perf.input_mask & (UINT64_C(1) << input))) return 0;
+  return (int32_t)le_audio_ring_pop(&engine->perf_raw_ring[input], out,
+                                    (size_t)max_frames);
 }
 
 /* ---- Bounce (#1202, Part 4a) ---- */

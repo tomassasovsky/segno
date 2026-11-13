@@ -636,7 +636,18 @@ static void test_source_perf_tap(void) {
   for (int32_t i = 0; i < got; ++i) same &= captured[2 * i] == out[2 * (n - got + i)];
   CHECK(same);
   CHECK(syn_peak(out, 2 * n) > 0.01f);
+  /* Its raw recording (#1805) is the source's own sample, before the
+   * monitor's volume and pan: the same frames, at unity. */
+  float raw[960];
+  CHECK(le_engine_perf_raw_pop_for_test(e, 33, raw, n) == got);
+  const float gl = load_f32(&e->monitors[33].a_pan_gl_bits);
+  int raw_same = 1;
+  for (int32_t i = 0; i < got; ++i) {
+    raw_same &= fabsf(raw[i] * 0.5f * gl - captured[2 * i]) < 1e-6f;
+  }
+  CHECK(raw_same);
   CHECK(le_engine_perf_monitor_pop_for_test(e, 34, captured, n) == 0);
+  CHECK(le_engine_perf_raw_pop_for_test(e, 34, raw, n) == 0);
   le_perf_disarm(e);
   le_engine_destroy(e);
   free(out);

@@ -550,8 +550,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       frame_bytes = (uint32_t)engine->perf.master_channels * 4u;
       for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
         if (engine->perf.input_mask & (UINT64_C(1) << c)) {
-          streams++;
-          frame_bytes += 8u;
+          streams += 2;      /* as heard and raw (#1805) */
+          frame_bytes += 12u; /* a stereo and a mono float frame */
         }
       }
     } else {
@@ -574,8 +574,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
             continue;
           }
           if (load_i32(&engine->monitors[c].a_enabled)) {
-            streams++;
-            frame_bytes += 8u;
+            streams += 2;
+            frame_bytes += 12u;
           }
         }
       }

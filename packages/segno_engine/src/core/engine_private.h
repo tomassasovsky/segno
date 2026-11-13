@@ -2111,7 +2111,7 @@ typedef struct le_perf_capture {
 
   /* One stereo ring per hardware input, valid iff its bit is set in
    * input_mask (frozen at arm: inputs enabled later are not retroactively
-   * captured). */
+   * captured). Each input's raw ring beside it is le_engine.perf_raw_ring. */
   le_audio_ring monitor_ring[LE_MAX_MONITORED_INPUTS];
   uint64_t input_mask; /* bit s: source s, instruments included (#1197) */
 
@@ -3640,6 +3640,13 @@ struct le_engine {
   int32_t trk_job_tc;
   int32_t trk_job_at_tev;
   le_fx_time at_time;
+  /* Each captured input's raw recording (#1805): one mono ring per input
+   * in perf.input_mask, the clean sample before its monitor chain, gate,
+   * volume and pan, pushed every frame while armed (mix_monitors_frame).
+   * Allocated, published and freed with perf.monitor_ring, under the same
+   * rules (le_perf_capture). Kept here at the end, outside `perf`, so no
+   * field the mixer reads moves. */
+  le_audio_ring perf_raw_ring[LE_MAX_MONITORED_INPUTS];
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in
