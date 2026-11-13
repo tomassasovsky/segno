@@ -1383,6 +1383,14 @@ typedef struct le_output_bus {
  * for one). Returns the channel count (0: nothing enabled). */
 int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]);
 
+/* The sources a performance capture records, as le_perf_arm would freeze
+ * them now (engine_commands.c, #1805): `heard`, each one recorded as its
+ * monitor plays it (monitored, on the device or an instrument with a patch,
+ * not a loopback channel); `raw`, each one recorded raw (every device input
+ * channel that is not loopback, and every instrument with a patch, whatever
+ * the monitor). */
+void le_perf_capture_sets(le_engine* e, uint64_t* heard, uint64_t* raw);
+
 /* What one history entry represents. */
 typedef enum {
   LE_HIST_LAYER = 0, /* a retired overdub pass, named by its pool slot */
@@ -3644,9 +3652,12 @@ struct le_engine {
    * in perf.input_mask, the clean sample before its monitor chain, gate,
    * volume and pan, pushed every frame while armed (mix_monitors_frame).
    * Allocated, published and freed with perf.monitor_ring, under the same
-   * rules (le_perf_capture). Kept here at the end, outside `perf`, so no
-   * field the mixer reads moves. */
+   * rules (le_perf_capture), for the sources in perf_raw_mask (frozen at
+   * arm, le_perf_capture_sets): every device input and active instrument,
+   * monitored or not. Kept here at the end, outside `perf`, so no field the
+   * mixer reads moves. */
   le_audio_ring perf_raw_ring[LE_MAX_MONITORED_INPUTS];
+  uint64_t perf_raw_mask;
 };
 
 /* Points every chain owner at its rows of fx_param_store and fx_slot_meta, in

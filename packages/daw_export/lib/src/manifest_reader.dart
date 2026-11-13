@@ -227,15 +227,17 @@ abstract final class DawManifestReader {
       }
     }
 
-    // Each captured input, beside the loops. Since #1805 the engine records
-    // it twice: raw (its clean sample, before its monitor chain, gate,
-    // volume and pan), which plays, and as heard (after them, silent while
-    // its monitor is off), a reference, off. A take from before it has only
-    // the input as heard, which plays. Then the captured output, which holds
-    // both loops and inputs: a reference, off.
+    // Each input, beside the loops. Since #1805 the engine records every
+    // input raw (its clean sample, before its monitor chain, gate, volume
+    // and pan), which plays, and each monitored one also as heard (after
+    // them, silent while its monitor is off), a reference, off. A take from
+    // before it has only the inputs as heard, which play. Then the captured
+    // output, which holds both loops and inputs: a reference, off.
     final parts = _partsByStream(captureDir, manifest, sampleRate);
     final recordedRaw = rawInputsOf(manifest).toSet();
-    for (final input in capturedInputsOf(manifest)) {
+    final inputs = {...capturedInputsOf(manifest), ...recordedRaw}.toList()
+      ..sort();
+    for (final input in inputs) {
       final name = inputNameOf(manifest, input);
       final effects = _info(EffectText.input(manifest, input));
       final heard = parts[1 + input];

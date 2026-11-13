@@ -495,6 +495,7 @@ static void le_engine_quiesce_workers(le_engine* engine) {
    * ring — free them before the struct zero below loses the pointers. */
   le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
   engine->perf = (le_perf_capture){0};
+  engine->perf_raw_mask = 0;
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);

@@ -21,6 +21,10 @@ static le_engine* autostop_arm(int32_t idle_seconds, int32_t max_seconds) {
   target.reserve_bytes = UINT64_MAX;
   target.idle_stop_seconds = idle_seconds;
   target.max_seconds = max_seconds;
+  /* The tests pump seconds of audio faster than real time: the largest ring,
+   * so a drain thread starved by a loaded machine never sees one overflow
+   * (a slow_storage stop is not what these tests are about). */
+  target.ring_seconds = LE_PERF_RING_SECONDS_MAX;
   CHECK(le_perf_arm(e, &target) == LE_OK);
   drain(e);
   return e;

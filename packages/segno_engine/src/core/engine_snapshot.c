@@ -543,43 +543,34 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->perf_overs =
       atomic_load_explicit(&engine->a_perf_overs, memory_order_relaxed);
   {
+    /* What the armed take captures, or the next arm would
+     * (le_perf_capture_sets): the master, each input as heard (stereo) and
+     * raw (mono, #1805). */
     int32_t streams = 0;
     uint32_t frame_bytes = 0;
+    int32_t master = 0;
+    uint64_t heard = 0;
+    uint64_t raw = 0;
     if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
-      streams = 1;
-      frame_bytes = (uint32_t)engine->perf.master_channels * 4u;
-      for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-        if (engine->perf.input_mask & (UINT64_C(1) << c)) {
-          streams += 2;      /* as heard and raw (#1805) */
-          frame_bytes += 12u; /* a stereo and a mono float frame */
-        }
-      }
+      master = engine->perf.master_channels;
+      heard = engine->perf.input_mask;
+      raw = engine->perf_raw_mask;
     } else {
       int32_t out_ch[2];
-      const int found = le_perf_first_enabled_pair(engine, out_ch);
-      if (found > 0) {
-        streams = 1;
-        frame_bytes = (uint32_t)found * 4u;
-        /* The sources le_perf_arm would capture: monitored, and present on
-         * the device and not loopback, or an instrument slot with a patch
-         * (#1197). */
-        const int32_t in_ch = load_i32(&engine->a_in_channels);
-        const int32_t limit = in_ch > 0 && in_ch < LE_MAX_CHANNELS
-                                  ? in_ch
-                                  : LE_MAX_CHANNELS;
-        const uint32_t excluded = atomic_load_explicit(
-            &engine->a_excluded_input_mask, memory_order_relaxed);
-        for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
-          if (c < LE_INSTRUMENT_SOURCE_BASE
-                  ? c >= limit || (excluded & (1u << c)) != 0
-                  : engine->inst_patch_requested
-                            [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
-            continue;
-          }
-          if (load_i32(&engine->monitors[c].a_enabled)) {
-            streams += 2;
-            frame_bytes += 12u;
-          }
+      master = le_perf_first_enabled_pair(engine, out_ch);
+      if (master > 0) le_perf_capture_sets(engine, &heard, &raw);
+    }
+    if (master > 0) {
+      streams = 1;
+      frame_bytes = (uint32_t)master * 4u;
+      for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+        if (heard & (UINT64_C(1) << c)) {
+          streams++;
+          frame_bytes += 8u;
+        }
+        if (raw & (UINT64_C(1) << c)) {
+          streams++;
+          frame_bytes += 4u;
         }
       }
     }

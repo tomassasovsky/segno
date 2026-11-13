@@ -5903,21 +5903,22 @@ static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate,
 /* The ring seconds an arm grants (#1198): the requested seconds (at most
  * LE_PERF_RING_SECONDS_MAX, checked by the caller), lowered one at a time —
  * never below LE_PERF_RING_SECONDS_DEFAULT — until every ring of
- * the take together (the master, and each input's stereo ring as heard and
- * mono raw ring) fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
+ * the take together (the master, each monitored input's stereo ring as
+ * heard and each input's mono raw ring) fits LE_PERF_RING_BYTES_MAX. A take on a removable volume
  * asks for more than the default to ride out flash stalls; with many captured
  * inputs at a high rate the cap keeps arm from allocating (and prefaulting)
  * hundreds of megabytes. */
 static int32_t le_perf_ring_seconds_granted(int32_t requested,
                                             int32_t master_channels,
-                                            int32_t inputs,
+                                            int32_t heard_inputs,
+                                            int32_t raw_inputs,
                                             int32_t sample_rate) {
   int32_t seconds = requested;
   while (seconds > LE_PERF_RING_SECONDS_DEFAULT) {
     const size_t samples =
         le_perf_ring_capacity(master_channels, sample_rate, seconds) +
-        (size_t)inputs * (le_perf_ring_capacity(2, sample_rate, seconds) +
-                          le_perf_ring_capacity(1, sample_rate, seconds));
+        (size_t)heard_inputs * le_perf_ring_capacity(2, sample_rate, seconds) +
+        (size_t)raw_inputs * le_perf_ring_capacity(1, sample_rate, seconds);
     if (samples * sizeof(float) <= (size_t)LE_PERF_RING_BYTES_MAX) break;
     seconds--;
   }
@@ -5957,14 +5958,55 @@ int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
 /* Frees every ring allocated by an arm attempt that never reached the audio
  * thread (the command was never pushed, or push failed) — plain control-thread
  * cleanup, not a quiescent teardown, since nothing was published. */
-static void le_perf_free_unpublished(le_engine* e, uint64_t monitors_done) {
+static void le_perf_free_unpublished(le_engine* e) {
   le_audio_ring_release(&e->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (monitors_done & (UINT64_C(1) << c)) {
-      le_audio_ring_release(&e->perf.monitor_ring[c]);
-      le_audio_ring_release(&e->perf_raw_ring[c]);
-    }
+    le_audio_ring_release(&e->perf.monitor_ring[c]);
+    le_audio_ring_release(&e->perf_raw_ring[c]);
   }
+  e->perf.input_mask = 0;
+  e->perf_raw_mask = 0;
+}
+
+/* Clamped to the DEVICE's input count, not just LE_MAX_MONITORED_INPUTS
+ * (#710). le_engine_set_monitor_input validates only against the array
+ * bound, so a session saved on an 8-in interface and reloaded on a 2-in one
+ * leaves monitors 2..7 enabled. Capturing them would open a stem the audio
+ * thread can never fill (it taps only c < ch_in), so the drain would
+ * silence-fill that file for the entire take and light the capture's glitch
+ * flag. An input that does not exist is not a captured input.
+ *
+ * A loopback channel (#1805 review) carries the device's own output, not a
+ * player: it is never monitored (so as heard it was only ever silence), and
+ * recording it raw would put the playback in the take as an input. A
+ * monitor enabled before a reopen onto a device that marks the channel
+ * loopback still reads enabled, so it is skipped here.
+ *
+ * Instrument sources (#1197) whose slot has a patch are filled by the audio
+ * thread every block, so they are captured like inputs. */
+void le_perf_capture_sets(le_engine* e, uint64_t* heard, uint64_t* raw) {
+  const uint32_t excluded =
+      atomic_load_explicit(&e->a_excluded_input_mask, memory_order_relaxed);
+  const int32_t in_ch = load_i32(&e->a_in_channels);
+  const int32_t limit =
+      in_ch > 0 && in_ch < LE_MAX_CHANNELS ? in_ch : LE_MAX_CHANNELS;
+  *heard = 0;
+  *raw = 0;
+  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
+    if (c < LE_INSTRUMENT_SOURCE_BASE
+            ? c >= limit || (excluded & (1u << c)) != 0
+            : e->inst_patch_requested[c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
+      continue;
+    }
+    *raw |= UINT64_C(1) << c;
+    if (load_i32(&e->monitors[c].a_enabled)) *heard |= UINT64_C(1) << c;
+  }
+}
+
+static int32_t le_perf_mask_count(uint64_t mask) {
+  int32_t n = 0;
+  for (; mask != 0; mask &= mask - 1) n++;
+  return n;
 }
 
 int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
@@ -6002,51 +6044,20 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
 
   const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
 
-  /* The monitor capture set is frozen at arm: whichever inputs are enabled
-   * right now, and no others — an input enabled later is logged, not tapped
-   * (umbrella scope for this part). Every captured monitor ring is stereo
-   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r), and
-   * each captured input also gets a mono raw ring (#1805,
-   * engine->perf_raw_ring) for its clean sample.
-   *
-   * Clamped to the DEVICE's input count, not just LE_MAX_MONITORED_INPUTS
-   * (#710). le_engine_set_monitor_input validates only against the array
-   * bound, so a session saved on an 8-in interface and reloaded on a 2-in one
-   * leaves monitors 2..7 enabled. Capturing them would open a stem the audio
-   * thread can never fill — mix_monitors_frame taps only c < ch_in — so the
-   * drain would silence-fill that file for the entire take. Harmless while
-   * nothing counted the padding; now that a zero-fill raises the capture's
-   * glitch flag, it would light the warning on every single capture and drown
-   * the real signal. An input that does not exist is not a captured input. */
-  /* Instrument sources (#1197) are captured like inputs when monitored and
-   * their slot has a patch: the audio thread fills them every block. */
-  /* A loopback-excluded channel (#1805 review) carries the device's own
-   * output, not a player: it is never monitored (so as heard it was only
-   * ever silence), and recording it raw would put the playback in the take
-   * as an input. A monitor enabled before a reopen onto a device that marks
-   * the channel loopback still reads enabled, so it is skipped here. */
-  const uint32_t excluded =
-      atomic_load_explicit(&engine->a_excluded_input_mask, memory_order_relaxed);
-  uint64_t wanted_inputs = 0;
-  int32_t input_count = 0;
-  const int32_t monitor_ch_limit =
-      (engine->in_channels > 0 && engine->in_channels < LE_MAX_CHANNELS)
-          ? engine->in_channels
-          : LE_MAX_CHANNELS;
-  for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
-    if (c < LE_INSTRUMENT_SOURCE_BASE
-            ? c >= monitor_ch_limit || (excluded & (1u << c)) != 0
-            : engine->inst_patch_requested[c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
-      continue;
-    }
-    if (!load_i32(&engine->monitors[c].a_enabled)) continue;
-    wanted_inputs |= (UINT64_C(1) << c);
-    input_count++;
-  }
+  /* The capture sets are frozen at arm (le_perf_capture_sets): an input
+   * enabled later is logged, not tapped (umbrella scope for this part).
+   * Each monitored input is recorded as heard, in a stereo ring (the
+   * monitor's own chain, e.g. a reverb, may decorrelate l/r); every device
+   * input and active instrument, monitored or not, is recorded raw in a
+   * mono ring (#1805, engine->perf_raw_ring). */
+  uint64_t heard_inputs = 0;
+  uint64_t raw_inputs = 0;
+  le_perf_capture_sets(engine, &heard_inputs, &raw_inputs);
   const int32_t ring_seconds = le_perf_ring_seconds_granted(
       target->ring_seconds > 0 ? target->ring_seconds
                                : LE_PERF_RING_SECONDS_DEFAULT,
-      found, input_count, sr);
+      found, le_perf_mask_count(heard_inputs), le_perf_mask_count(raw_inputs),
+      sr);
   atomic_store_explicit(&engine->a_perf_ring_seconds, ring_seconds,
                         memory_order_relaxed);
 
@@ -6061,23 +6072,20 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
    * stands at arm, read by the audio thread through this plain field. */
   engine->perf.follow_output = load_i32(&engine->a_perf_follow_output);
 
-  uint64_t input_mask = 0;
   const size_t monitor_cap = le_perf_ring_capacity(2, sr, ring_seconds);
   const size_t raw_cap = le_perf_ring_capacity(1, sr, ring_seconds);
   for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
-    if (!(wanted_inputs & (UINT64_C(1) << c))) continue;
-    if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
-      le_perf_free_unpublished(engine, input_mask);
+    const uint64_t bit = UINT64_C(1) << c;
+    if (((heard_inputs & bit) &&
+         !le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) ||
+        ((raw_inputs & bit) &&
+         !le_audio_ring_alloc(&engine->perf_raw_ring[c], raw_cap))) {
+      le_perf_free_unpublished(engine);
       return LE_ERR_INVALID;
     }
-    if (!le_audio_ring_alloc(&engine->perf_raw_ring[c], raw_cap)) {
-      le_audio_ring_release(&engine->perf.monitor_ring[c]);
-      le_perf_free_unpublished(engine, input_mask);
-      return LE_ERR_INVALID;
-    }
-    input_mask |= (UINT64_C(1) << c);
   }
-  engine->perf.input_mask = input_mask;
+  engine->perf.input_mask = heard_inputs;
+  engine->perf_raw_mask = raw_inputs;
 
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
@@ -6136,8 +6144,7 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
    * failure here aborts the whole arm. */
   engine->perf.drain = le_perf_drain_start(engine, target, ring_seconds);
   if (engine->perf.drain == NULL) {
-    le_perf_free_unpublished(engine, input_mask);
-    engine->perf.input_mask = 0;
+    le_perf_free_unpublished(engine);
     return LE_ERR_DEVICE;
   }
 
@@ -6149,8 +6156,7 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
   if (rc != LE_OK) {
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
     engine->perf.drain = NULL;
-    le_perf_free_unpublished(engine, input_mask);
-    engine->perf.input_mask = 0;
+    le_perf_free_unpublished(engine);
     return rc;
   }
   return LE_OK;
@@ -6281,12 +6287,11 @@ int32_t le_perf_disarm(le_engine* engine) {
 
   le_audio_ring_release(&engine->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    if (engine->perf.input_mask & (UINT64_C(1) << c)) {
-      le_audio_ring_release(&engine->perf.monitor_ring[c]);
-      le_audio_ring_release(&engine->perf_raw_ring[c]);
-    }
+    le_audio_ring_release(&engine->perf.monitor_ring[c]);
+    le_audio_ring_release(&engine->perf_raw_ring[c]);
   }
   engine->perf.input_mask = 0;
+  engine->perf_raw_mask = 0;
   le_perf_log_callback_telemetry(engine, /*stalled=*/0);
   return LE_OK;
 }
@@ -6325,7 +6330,7 @@ int32_t le_engine_perf_raw_pop_for_test(le_engine* engine, int32_t input,
                                         float* out, int32_t max_frames) {
   if (engine == NULL || out == NULL || max_frames <= 0) return 0;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
-  if (!(engine->perf.input_mask & (UINT64_C(1) << input))) return 0;
+  if (!(engine->perf_raw_mask & (UINT64_C(1) << input))) return 0;
   return (int32_t)le_audio_ring_pop(&engine->perf_raw_ring[input], out,
                                     (size_t)max_frames);
 }

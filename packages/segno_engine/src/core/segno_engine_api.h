@@ -1908,8 +1908,8 @@ typedef struct le_snapshot {
   /* Samples above full scale (|x| > 1.0) across every stream so far. */
   uint64_t perf_overs;
   /* The streams the armed take captures (or the next arm would: the first
-   * enabled output pair plus every monitored input the device has, each as
-   * heard and raw), and the
+   * enabled output pair, every monitored input as heard, and every input
+   * the device has and every instrument with a patch raw), and the
    * bytes one frame of all of them takes, so the app can tell whether a
    * volume holds a minimum take of every stream before it arms. 0 when
    * nothing could be captured. */
@@ -4046,11 +4046,13 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  * While armed, the audio thread copies two kinds of streams into pre-published
  * lock-free rings: the master capture (the first enabled output pair, tapped
  * BEFORE the master gain and limiter; mono when only one channel of it is
- * enabled), and each hardware input actively monitored AT ARM (frozen for the
- * whole arm session — an input enabled later is not retroactively captured)
- * twice: as heard (stereo, post-monitor-FX, volume and pan, silent while its
- * monitor is off or muted) and raw (#1805: mono, the clean sample before any
- * of that, every frame). Rings are allocated control-side at arm and
+ * enabled), each hardware input actively monitored AT ARM as heard (stereo,
+ * post-monitor-FX, volume and pan, silent while its monitor is off or
+ * muted), and every input the device has (loopback channels aside) and every
+ * instrument with a patch raw (#1805: mono, the clean sample before any of
+ * that, every frame, whatever the monitor). Both sets are frozen at arm: an
+ * input enabled or added later is not retroactively captured. Rings are
+ * allocated control-side at arm and
  * published to the audio thread with LE_CMD_PERF_ARM; on overflow the audio
  * thread drops the frame and increments the overrun atomic — it never blocks
  * or allocates. Status (armed / frames / overruns) is exposed only via
@@ -4121,9 +4123,9 @@ typedef struct le_perf_target {
   /* Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
    * 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
    * nor below the request) so that every ring together stays within
-   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 inputs at
-   * 96 kHz take 33 stereo rings of 2^19 samples and 32 raw mono rings of
-   * 2^18, 98 MiB. The sidecar's
+   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 monitored
+   * inputs at 96 kHz take 33 stereo rings of 2^19 samples and 32 raw mono
+   * rings of 2^18, 98 MiB. The sidecar's
    * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
    * granted. */
   int32_t ring_seconds;

@@ -613,18 +613,23 @@ static void test_source_mix_transaction(void) {
   le_engine_destroy(e);
 }
 
-/* The performance capture taps a monitored instrument source like an input. */
+/* The performance capture taps a monitored instrument source like an input,
+ * and records every instrument with a patch raw, monitored or not (#1805). */
 static void test_source_perf_tap(void) {
   printf("test_source_perf_tap\n");
   const int32_t n = 960;
   le_engine* e = ins_engine(INS_SR);
   CHECK(le_engine_set_instrument(e, 1, syn_patch("sub"), NULL) == LE_OK);
+  CHECK(le_engine_set_instrument(e, 3, syn_patch("sub"), NULL) == LE_OK);
   CHECK(le_engine_set_monitor_input(e, 33, 1) == LE_OK);
   CHECK(le_engine_set_monitor_input(e, 34, 1) == LE_OK); /* empty slot: not captured */
   CHECK(le_engine_set_monitor_input_volume(e, 33, 0.5f) == LE_OK);
   ins_pump(e, 64, 64, NULL);
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   CHECK(e->perf.input_mask == (UINT64_C(1) << 33));
+  /* Raw: the device's inputs and both instruments with a patch. */
+  CHECK((e->perf_raw_mask >> LE_INSTRUMENT_SOURCE_BASE) ==
+        ((UINT64_C(1) << 1) | (UINT64_C(1) << 3)));
   ins_drain(e);
   CHECK(le_engine_instrument_note_on(e, 1, 1, 52, 80) == LE_OK);
   float* out = (float*)calloc((size_t)2 * n, sizeof(float));

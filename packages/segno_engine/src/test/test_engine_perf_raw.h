@@ -5,8 +5,8 @@
  * perf reserve and autostop tests (shares their helpers). */
 
 /* The raw ring holds the input as it arrived, whatever the monitor does to
- * it: at its volume and pan, muted, and switched off. An input that is not
- * captured has no raw ring. */
+ * it: at its volume and pan, muted, and switched off. An input that was
+ * never monitored is recorded raw too, and not as heard. */
 static void test_perf_raw_tap_is_the_clean_input(void) {
   printf("test_perf_raw_tap_is_the_clean_input\n");
   le_engine* e = le_engine_create();
@@ -28,12 +28,14 @@ static void test_perf_raw_tap_is_the_clean_input(void) {
     float scratch[2 * 4096];
     while (le_engine_perf_raw_pop_for_test(e, 0, scratch, 4096) > 0) {
     }
+    while (le_engine_perf_raw_pop_for_test(e, 1, scratch, 4096) > 0) {
+    }
     while (le_engine_perf_monitor_pop_for_test(e, 0, scratch, 2048) > 0) {
     }
     float in[2 * N], out[2 * N];
     for (int i = 0; i < N; ++i) {
       in[2 * i] = perf_indexed_sample(step * N + i) - 0.25f;
-      in[2 * i + 1] = 0.75f; /* input 1: never captured */
+      in[2 * i + 1] = 0.75f; /* input 1: never monitored */
     }
     le_engine_process(e, out, in, N);
     float raw[N];
@@ -50,9 +52,16 @@ static void test_perf_raw_tap_is_the_clean_input(void) {
       as_heard &= fabsf(heard[2 * i] - want) < 1e-6f;
     }
     CHECK(as_heard);
+    float other[N];
+    CHECK(le_engine_perf_raw_pop_for_test(e, 1, other, N) == N);
+    int raw_other = 1;
+    for (int i = 0; i < N; ++i) raw_other &= other[i] == 0.75f;
+    CHECK(raw_other);
   }
-  float none[N];
-  CHECK(le_engine_perf_raw_pop_for_test(e, 1, none, N) == 0);
+  CHECK(e->perf.input_mask == UINT64_C(1));
+  CHECK(e->perf_raw_mask == UINT64_C(3));
+  float none[2 * N];
+  CHECK(le_engine_perf_monitor_pop_for_test(e, 1, none, N) == 0);
   CHECK(le_perf_disarm(e) == LE_OK);
   le_engine_destroy(e);
 }

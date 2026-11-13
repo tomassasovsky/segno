@@ -844,8 +844,8 @@ struct le_perf_drain {
   int sealed_count;
 
   le_pd_file master_file;
-  /* valid iff the matching input_mask bit is set: each input as heard
-   * (stereo) and raw (mono, #1805) */
+  /* valid iff the matching bit is set: each input as heard (stereo,
+   * perf.input_mask) and raw (mono, #1805, perf_raw_mask) */
   le_pd_file monitor_file[LE_MAX_MONITORED_INPUTS];
   le_pd_file raw_file[LE_MAX_MONITORED_INPUTS];
 
@@ -1455,8 +1455,11 @@ static int le_pd_seal_part(le_perf_drain* d, le_pd_file* pf) {
 static le_pd_file* le_pd_stream(le_perf_drain* d, int32_t k) {
   if (k < 0) return &d->master_file;
   const int32_t c = k % LE_MAX_MONITORED_INPUTS;
-  if (!(d->engine->perf.input_mask & (UINT64_C(1) << c))) return NULL;
-  return k < LE_MAX_MONITORED_INPUTS ? &d->monitor_file[c] : &d->raw_file[c];
+  const int raw = k >= LE_MAX_MONITORED_INPUTS;
+  const uint64_t mask =
+      raw ? d->engine->perf_raw_mask : d->engine->perf.input_mask;
+  if (!(mask & (UINT64_C(1) << c))) return NULL;
+  return raw ? &d->raw_file[c] : &d->monitor_file[c];
 }
 
 /* The ring stream k is drained from (k as for le_pd_stream). */
@@ -1764,17 +1767,18 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
                      d->engine->perf.master_channels);
   if (off < 0) goto done;
 
-  /* Every captured input is written as heard and raw (#1805), so the two
-   * lists are the same; `raw_inputs` tells a reader the raw streams exist,
-   * which a capture from before them lacks. */
+  /* The inputs recorded as heard (monitored at arm), then those recorded
+   * raw (#1805: every device input and active instrument). */
   for (int list = 0; list < 2; ++list) {
     if (list == 1) {
       off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                       "], \"raw_inputs\": [");
     }
+    const uint64_t mask =
+        list == 0 ? d->engine->perf.input_mask : d->engine->perf_raw_mask;
     int first = 1;
     for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-      if (!(d->engine->perf.input_mask & (UINT64_C(1) << c))) continue;
+      if (!(mask & (UINT64_C(1) << c))) continue;
       off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "%s%d",
                       first ? "" : ", ", c);
       first = 0;
@@ -2595,7 +2599,9 @@ le_perf_drain* le_perf_drain_start(le_engine* engine,
     d->monitor_file[c].stream = 1 + c;
     d->monitor_file[c].channels = 2;
     ok = le_pd_open_part(d, &d->monitor_file[c]);
-    if (!ok) break;
+  }
+  for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (!(engine->perf_raw_mask & (UINT64_C(1) << c))) continue;
     d->raw_file[c].stream = LE_PERF_RAW_STREAM_BASE + c;
     d->raw_file[c].channels = 1;
     ok = le_pd_open_part(d, &d->raw_file[c]);

@@ -304,6 +304,28 @@ void main() {
       expect(manifestOf(dir)['finalized'], isTrue);
     });
 
+    test('an input recorded raw only, never monitored (#1805), is kept with '
+        'the rest', () async {
+      const raw = PerfTarget.rawStreamBase;
+      final dir = seed('perf-raw-only');
+      writeOpenPart('$dir/master-001.wav', stereo(5));
+      writeOpenPart(
+        '$dir/input-raw-1-001.wav',
+        Float32List(5),
+        channels: 1,
+        stream: raw + 1,
+      );
+      writeNativeSidecar(dir, rawInputs: const [1], captureFrames: 5);
+
+      await repo.recoverCapture(dir);
+
+      expect(
+        [for (final p in partsOf(dir)) (p.stream, p.file, p.frames)],
+        [(0, 'master-001.wav', 5), (raw + 1, 'input-raw-1-001.wav', 5)],
+      );
+      expect(manifestOf(dir)['finalized'], isTrue);
+    });
+
     test('a take whose sidecar was lost keeps its raw inputs (#1805), from '
         'its checkpoint', () async {
       const raw = PerfTarget.rawStreamBase;
@@ -515,11 +537,11 @@ void main() {
 
   group('recovery, refused', () {
     for (final (name, captured, raw) in [
-      ('names an input it did not capture', const [0], const [1]),
       ('names an input twice', const [0], const [0, 0]),
-      ('names a captured input twice', const [0, 0], const [0]),
+      ('names a negative input', const [0], const [-1]),
+      ('lists a captured input twice', const [0, 0], const [0]),
     ]) {
-      test('a sidecar whose raw_inputs (#1805) $name is left as it is, '
+      test('a sidecar whose layout (#1805) $name is left as it is, '
           'reported', () async {
         final dir = seed('perf-raw-layout');
         writeOpenPart('$dir/master-001.wav', stereo(4));

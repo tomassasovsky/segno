@@ -309,10 +309,11 @@ int countOvers(String path, int dataBytes) {
 }
 
 /// The streams a take wrote, from its sidecar's `channel_layout`: the
-/// master (stream 0, 1 or 2 channels), each captured input `n` as heard
-/// (stream `1 + n`, stereo) and, for a take since #1805, raw (stream
-/// [PerfTarget.rawStreamBase] `+ n`, mono, listed in `raw_inputs`). Null
-/// when the layout does not read, which nothing may guess at.
+/// master (stream 0, 1 or 2 channels), each input `n` recorded as heard
+/// (`captured_inputs`, stream `1 + n`, stereo) and, for a take since #1805,
+/// each input recorded raw (`raw_inputs`, stream [PerfTarget.rawStreamBase]
+/// `+ n`, mono; every input the device has, monitored or not). Null when the
+/// layout does not read, which nothing may guess at.
 List<({int stream, int channels})>? streamsOf(Map<String, dynamic> native) {
   final layout = native['channel_layout'] ?? const <String, dynamic>{};
   if (layout is! Map<String, dynamic>) return null;
@@ -337,10 +338,12 @@ List<({int stream, int channels})>? streamsOf(Map<String, dynamic> native) {
     }
     streams.add((stream: 1 + input, channels: 2));
   }
-  // An input is recorded raw only beside its recording as heard.
   final recordedRaw = <int>{};
   for (final input in raw) {
-    if (input is! int || !captured.contains(input) || !recordedRaw.add(input)) {
+    if (input is! int ||
+        input < 0 ||
+        PerfTarget.rawStreamBase + input > 0xFFFF ||
+        !recordedRaw.add(input)) {
       return null;
     }
     streams.add((stream: PerfTarget.rawStreamBase + input, channels: 1));

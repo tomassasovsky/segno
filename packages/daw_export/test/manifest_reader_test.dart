@@ -1182,6 +1182,27 @@ void _layoutTests() {
       expect(input.arrangementClips.single.audio.fileRef, 'input-0-001.wav');
     });
 
+    test('an input recorded raw only, never monitored, gets its raw track '
+        'alone', () {
+      write('input-raw-1-001.wav', 48000);
+      manifest({
+        'channel_layout': {
+          'master_channels': 2,
+          'captured_inputs': <int>[],
+          'raw_inputs': [1],
+        },
+        'parts': [
+          {'stream': 101, 'index': 1, 'file': 'input-raw-1-001.wav'},
+        ],
+      });
+
+      final input = DawManifestReader.read(dir.path)!.tracks.single;
+      expect(
+        (input.name, input.kind, input.active),
+        ('Input 2 raw', DawTrackKind.input, true),
+      );
+    });
+
     test('an input whose parts as heard are missing keeps its raw track '
         'alone', () {
       write('input-raw-0-001.wav', 48000);

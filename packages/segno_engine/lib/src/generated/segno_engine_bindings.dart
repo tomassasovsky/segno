@@ -6044,9 +6044,9 @@ final class le_perf_target extends ffi.Struct {
   /// Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
   /// 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
   /// nor below the request) so that every ring together stays within
-  /// LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 inputs at
-  /// 96 kHz take 33 stereo rings of 2^19 samples and 32 raw mono rings of
-  /// 2^18, 98 MiB. The sidecar's
+  /// LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 monitored
+  /// inputs at 96 kHz take 33 stereo rings of 2^19 samples and 32 raw mono
+  /// rings of 2^18, 98 MiB. The sidecar's
   /// `ring_seconds` and le_snapshot.perf_ring_seconds report what was
   /// granted.
   @ffi.Int32()
@@ -7003,8 +7003,8 @@ final class le_snapshot extends ffi.Struct {
   external int perf_overs;
 
   /// The streams the armed take captures (or the next arm would: the first
-  /// enabled output pair plus every monitored input the device has, each as
-  /// heard and raw), and the
+  /// enabled output pair, every monitored input as heard, and every input
+  /// the device has and every instrument with a patch raw), and the
   /// bytes one frame of all of them takes, so the app can tell whether a
   /// volume holds a minimum take of every stream before it arms. 0 when
   /// nothing could be captured.
