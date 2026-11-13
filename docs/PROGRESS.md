@@ -90,6 +90,34 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A take records each input raw (#1805)
+
+- A performance take recorded each input only as its monitor played it
+  (`mix_monitors_frame`): after its effects, volume and pan, and as silence
+  while monitoring was off or muted, so an input played with monitoring
+  off came out silent. Each captured input is now also recorded raw: its
+  clean sample (the device's, or an instrument source's), taken in
+  `mix_monitors_frame` before the monitor gate, every frame while armed,
+  into a mono ring of its own (`le_engine.perf_raw_ring`, at the end of
+  the struct so no field the mixer reads moves). A full ring drops the
+  frame and counts an overrun, as the other taps do.
+- The drain writes it as `input-raw-<n>-NNN.wav` parts, mono float,
+  stream `100 + n` (`LE_PERF_RAW_STREAM_BASE`, a format constant). The
+  sidecar lists the inputs under `channel_layout.raw_inputs` and the parts
+  in `parts`; the checkpoint lists the stream. Recovery, the Library's
+  parts, the DAW package and the FAT32 cap test (`input-raw-0-001.wav`
+  among the parts it reads) cover them. The as-heard `input-<n>-NNN.wav`
+  stays as it was. A captured input's raw samples count as playing for
+  the idle stop (#1767), so a take is not stopped while someone plays with
+  monitoring off.
+- The rings take 12 bytes a frame per input instead of 8, and
+  `le_snapshot.perf_capture_frame_bytes` counts it.
+- The Live set gives each input `<name> raw`, switched on, holding the raw
+  parts, and `<name> (as heard)` beside it, switched off. A take from before
+  #1805 keeps one input track as heard, switched on. The raw track is where
+  a later layer of #1806 puts the monitor chain as plugins and the monitor
+  volume, pan and mute as automation.
+
 ## November 2026 The Live set carries the whole capture (#1799)
 
 - A take's arm records the rig again: the app had stopped handing

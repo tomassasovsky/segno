@@ -71,7 +71,7 @@ What a standalone tool should conclude from each combination:
 {
   "slug": "perf-20260706-143015",
   "sample_rate": 48000,
-  "channel_layout": { "master_channels": 2, "captured_inputs": [0, 1] },
+  "channel_layout": { "master_channels": 2, "captured_inputs": [0, 1], "raw_inputs": [0, 1] },
   "capture_frames": 4800000,
   "overrun_count": 0,
   "overrun_gaps": [ { "frame": 12000, "duration_frames": 64 } ],
@@ -95,6 +95,7 @@ What a standalone tool should conclude from each combination:
 | `sample_rate` | int | Negotiated device sample rate at arm time. Every PCM file in the bundle shares this rate (D-RATE — no resampling). |
 | `channel_layout.master_channels` | int | Channel count of the master parts (D-MASTER: stereo, or mono on a mono device). |
 | `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has its own `input-<n>-NNN.wav` parts, stereo. An input is recorded as its monitor plays it, after its chain, volume and pan (`mix_monitors_frame`), and as silence while its monitor is off or muted. |
+| `channel_layout.raw_inputs` | int[] | The inputs also recorded raw (#1805), each in its own `input-raw-<n>-NNN.wav` parts, mono: the clean sample (the device's, or an instrument source's), before the monitor's chain, on/off and mute, volume and pan, every frame of the take. Since #1805 every captured input is, so the list is `captured_inputs`; absent from a capture written before it, which has no raw streams. |
 | `capture_frames` | int | Total frames elapsed since arm, regardless of any ring drop. In a MID-CAPTURE sidecar this is elapsed *as of that cycle's start*, not as of the moment the file was written (the cycle samples the frame count before it drains a single ring — see #710 — so audio produced while the cycle was writing is counted next cycle instead). The final sidecar is unaffected, since no audio is produced after it; only a crash-recovered bundle, whose newest sidecar is a mid-capture one, ever sees the difference. |
 | `overrun_count` | int | Capture-ring overruns (frames the audio thread could not enqueue) since arm. Not the whole story — see `zero_filled_frames`. |
 | `zero_filled_frames` | int | Frames of digital silence the drain actually wrote into the capture files since arm, summed over every file it writes. Since #1198 a dropped frame is never silence-filled: it ends the take (`slow_storage`). What is filled is audio counted but never tapped, which is how #710's takes carried audible silence while `overrun_count` read `0`. Counts bytes that reached disk, so a pad the disk refused (a `disk_full` stop mid-pad) is excluded even though `overrun_gaps` may still name the span. Absent from any sidecar written before #710. |
@@ -114,8 +115,11 @@ What a standalone tool should conclude from each combination:
 ## Audio parts (#1198)
 
 The drain writes each captured stream straight into ordered 32-bit float WAV
-parts: `master-NNN.wav` (stream 0) and `input-<n>-NNN.wav` (stream `1 + n`),
-`NNN` counting from `001`. A part holds at most 2,000,000,000 bytes including
+parts: `master-NNN.wav` (stream 0), `input-<n>-NNN.wav` (stream `1 + n`, the
+input as heard) and `input-raw-<n>-NNN.wav` (stream `100 + n`, the input raw,
+#1805), `NNN` counting from `001`. 100 is a format constant
+(`LE_PERF_RAW_STREAM_BASE`), not the input count, so a stream number keeps
+its meaning if the engine takes more inputs. A part holds at most 2,000,000,000 bytes including
 its header; the next part continues the stream with no gap. Nothing converts
 them at finalize: a sealed part is the delivered audio.
 
@@ -133,7 +137,7 @@ part still open when the process died keeps 0 there, and finalize seals it
 
 | Field | Type | Notes |
 |---|---|---|
-| `stream` | int | 0 for master, `1 + n` for captured input `n`. |
+| `stream` | int | 0 for master, `1 + n` for captured input `n` as heard, `100 + n` for its raw recording. |
 | `index` | int | The part's position in its stream, from 1. |
 | `file` | string | The part's file name in the bundle directory. |
 | `frames` | int | Frames in the part, as of this sidecar. |
@@ -460,7 +464,7 @@ writes `finalized: true`, on a background isolate:
   its header reads as this take's (`take_id`, stream, index, format); the
   first one that does not ends its stream, and it is never touched.
 - **Every stream ends together**, at the fewest frames any stream with a
-  part holds. A stream with no part of the take is left out rather than
+  part holds, the raw inputs' included. A stream with no part of the take is left out rather than
   shortening the others to nothing.
 - **Sealing.** Parts past that frame are deleted. The last kept part of each
   stream is truncated to its share, its RIFF and data sizes patched, and its

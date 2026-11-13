@@ -269,6 +269,95 @@ void main() {
       expect(manifestOf(dir)['capture_frames'], 7);
     });
 
+    test("ends every stream at the frame the shortest one holds, an input's "
+        'raw recording (#1805) included', () async {
+      const raw = PerfTarget.rawStreamBase;
+      final dir = seed('perf-uneven-raw');
+      writeOpenPart('$dir/master-001.wav', stereo(10));
+      writeOpenPart('$dir/input-0-001.wav', stereo(9), stream: 1);
+      final mono = Float32List.fromList([for (var i = 0; i < 7; i++) -i / 64]);
+      writeOpenPart('$dir/input-raw-0-001.wav', mono, channels: 1, stream: raw);
+      writeNativeSidecar(
+        dir,
+        capturedInputs: const [0],
+        rawInputs: const [0],
+        captureFrames: 10,
+      );
+
+      await repo.recoverCapture(dir);
+
+      expect(
+        [for (final p in partsOf(dir)) (p.stream, p.file, p.frames, p.bytes)],
+        [
+          (0, 'master-001.wav', 7, 84 + 7 * 8),
+          (1, 'input-0-001.wav', 7, 84 + 7 * 8),
+          (raw, 'input-raw-0-001.wav', 7, 84 + 7 * 4),
+        ],
+      );
+      expect(partSizes('$dir/input-raw-0-001.wav'), (84 - 8 + 28, 28));
+      expect(payload('$dir/input-raw-0-001.wav'), mono);
+      expect(
+        partsOf(dir).last.sha256,
+        fakeDigest(payloadBytes('$dir/input-raw-0-001.wav')),
+      );
+      expect(manifestOf(dir)['capture_frames'], 7);
+      expect(manifestOf(dir)['finalized'], isTrue);
+    });
+
+    test('a take whose sidecar was lost keeps its raw inputs (#1805), from '
+        'its checkpoint', () async {
+      const raw = PerfTarget.rawStreamBase;
+      final dir = seed('perf-no-sidecar-raw');
+      writeOpenPart('$dir/master-001.wav', stereo(6));
+      writeOpenPart('$dir/input-1-001.wav', stereo(6), stream: 2);
+      writeOpenPart(
+        '$dir/input-raw-1-001.wav',
+        Float32List(6),
+        channels: 1,
+        stream: raw + 1,
+      );
+      Map<String, dynamic> entry(String file, int channels) => {
+        'index': 1,
+        'file': file,
+        'frames': 4,
+        'bytes': 84 + 4 * 4 * channels,
+        'overs': 0,
+      };
+      writeCheckpointSlot(
+        dir,
+        digest: fakeDigest,
+        streams: [
+          (stream: 0, channels: 2, parts: [openEntry(1, 4)]),
+          (stream: 2, channels: 2, parts: [entry('input-1-001.wav', 2)]),
+          (
+            stream: raw + 1,
+            channels: 1,
+            parts: [entry('input-raw-1-001.wav', 1)],
+          ),
+        ],
+      );
+      bootId = 'boot-b';
+
+      await repo.recoverCapture(dir);
+
+      final manifest = manifestOf(dir);
+      expect(manifest['finalized'], isTrue);
+      expect(manifest['channel_layout'], {
+        'master_channels': 2,
+        'captured_inputs': [1],
+        'raw_inputs': [1],
+      });
+      expect(
+        [for (final p in partsOf(dir)) (p.file, p.frames)],
+        [
+          ('master-001.wav', 4),
+          ('input-1-001.wav', 4),
+          ('input-raw-1-001.wav', 4),
+        ],
+      );
+      expect(partSizes('$dir/input-raw-1-001.wav'), (84 - 8 + 16, 16));
+    });
+
     test('cuts the event log and the layers back to the checkpoint when it '
         'trusts only that', () async {
       final dir = seed('perf-log');
@@ -343,6 +432,7 @@ void main() {
       expect(manifest['channel_layout'], {
         'master_channels': 2,
         'captured_inputs': <int>[],
+        'raw_inputs': <int>[],
       });
       expect(manifest['capture_frames'], 4);
       expect(manifest['take_id'], zeroTakeId);

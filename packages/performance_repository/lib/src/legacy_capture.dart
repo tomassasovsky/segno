@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:performance_repository/src/models/recording_format.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:wav_codec/wav_codec.dart';
 
 /// The most a legacy conversion reads at once: 1 MiB, rounded down to whole
@@ -14,11 +15,18 @@ String legacyPcmName(int stream) =>
     stream == 0 ? 'master.pcm' : 'input-${stream - 1}.pcm';
 
 /// The part file name the drain gives part [index] of [stream]:
-/// `master-001.wav`, `input-3-002.wav`.
-String partFileName(int stream, int index) {
-  final number = index.toString().padLeft(3, '0');
-  return stream == 0 ? 'master-$number.wav' : 'input-${stream - 1}-$number.wav';
-}
+/// `master-001.wav`, `input-3-002.wav` (input 3 as heard), and
+/// `input-raw-3-002.wav` (input 3 raw, #1805).
+String partFileName(int stream, int index) =>
+    '${partFilePrefix(stream)}${index.toString().padLeft(3, '0')}.wav';
+
+/// What every part file of [stream] starts with: `master-`, `input-3-` or
+/// `input-raw-3-`.
+String partFilePrefix(int stream) => stream == 0
+    ? 'master-'
+    : stream >= PerfTarget.rawStreamBase
+    ? 'input-raw-${stream - PerfTarget.rawStreamBase}-'
+    : 'input-${stream - 1}-';
 
 /// Converts the raw native-endian float32 stream at [pcmPath] into ordered
 /// float WAV parts in [dir], the format the drain has written since #1198,

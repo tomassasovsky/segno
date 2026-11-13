@@ -309,21 +309,33 @@ int countOvers(String path, int dataBytes) {
 }
 
 /// The streams a take wrote, from its sidecar's `channel_layout`: the
-/// master (stream 0, 1 or 2 channels) and each captured input `n` (stream
-/// `1 + n`, stereo). Null when the layout does not read, which nothing may
-/// guess at.
+/// master (stream 0, 1 or 2 channels), each captured input `n` as heard
+/// (stream `1 + n`, stereo) and, for a take since #1805, raw (stream
+/// [PerfTarget.rawStreamBase] `+ n`, mono, listed in `raw_inputs`). Null
+/// when the layout does not read, which nothing may guess at.
 List<({int stream, int channels})>? streamsOf(Map<String, dynamic> native) {
   final layout = native['channel_layout'] ?? const <String, dynamic>{};
   if (layout is! Map<String, dynamic>) return null;
   final master = layout['master_channels'] ?? 1;
   final inputs = layout['captured_inputs'] ?? const <dynamic>[];
-  if (master is! int || master < 1 || master > 2 || inputs is! List) {
+  final raw = layout['raw_inputs'] ?? const <dynamic>[];
+  if (master is! int ||
+      master < 1 ||
+      master > 2 ||
+      inputs is! List ||
+      raw is! List) {
     return null;
   }
   final streams = [(stream: 0, channels: master)];
   for (final input in inputs) {
-    if (input is! int || input < 0) return null;
+    if (input is! int || input < 0 || 1 + input >= PerfTarget.rawStreamBase) {
+      return null;
+    }
     streams.add((stream: 1 + input, channels: 2));
+  }
+  for (final input in raw) {
+    if (input is! int || input < 0) return null;
+    streams.add((stream: PerfTarget.rawStreamBase + input, channels: 1));
   }
   return streams;
 }
