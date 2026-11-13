@@ -2626,6 +2626,7 @@ void main() {
         ..startEngine(const EngineConfig(sampleRate: 48000))
         ..record()
         ..spareTail(following: 2)
+        ..stopRecordPark(channel: 0, following: 1)
         ..stopTrack()
         ..play()
         ..undo()
@@ -2641,6 +2642,7 @@ void main() {
           'start',
           'record',
           'spareTail',
+          'stopRecordPark',
           'stopTrack',
           'play',
           // undo asks what the tap would do before making it, so it knows
@@ -2663,6 +2665,11 @@ void main() {
     test('spareTail before the engine starts sends nothing (#1773)', () {
       expect(buildRepo().spareTail(), EngineResult.ok);
       expect(engine.calls, isNot(contains('spareTail')));
+    });
+
+    test('stopRecordPark before the engine starts sends nothing (#1782)', () {
+      expect(buildRepo().stopRecordPark(channel: 0), EngineResult.ok);
+      expect(engine.calls, isNot(contains('stopRecordPark')));
     });
 
     test('startEngine stores the last successful config', () {

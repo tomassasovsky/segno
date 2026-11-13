@@ -580,7 +580,17 @@ static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
     t->lanes[l].pending_mute = 0;
     any = 1;
     if (!apply) continue;
-    le_lane_store_muted(t, l, 1);
+    /* A mute that waited for the Rec-mode Stop's park (#1782) lands on the
+     * stopped track as le_apply_mute_cmd's spared mute does. */
+    const uint32_t bit = 1u << l;
+    if ((t->tail_spare_next & bit) && end_state == LE_TRACK_STOPPED &&
+        !load_i32(&t->lanes[l].a_muted)) {
+      store_i32(&t->lanes[l].a_muted, 1);
+      t->gate_spared = 1;
+    } else {
+      le_lane_store_muted(t, l, 1);
+    }
+    t->tail_spare_next &= ~bit;
     le_plog_push(e, frame,
                  (le_command){.code = LE_CMD_SET_LANE_MUTE,
                               .lanef = {ch, l, 1.0f}});
@@ -2630,6 +2640,10 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
       }
     } else if (st == LE_TRACK_OVERDUBBING) {
       store_i32(&tr->a_state, LE_TRACK_PLAYING);
+      /* Its end: land any mute deferred during the dub, the one a Rec-mode
+       * Stop's park was waiting with included (#1782). */
+      tr->park = 0;
+      le_consume_pending_mutes(e, tr, LE_TRACK_PLAYING, 1, frame);
     }
   }
 }
@@ -2878,6 +2892,21 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
     store_i32(&t->a_state, LE_TRACK_STOPPED);
     /* Stopping an overdub ends its capture: land any deferred mute. */
     le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
+  }
+}
+
+static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame);
+
+/* The Rec-mode Stop's park (#1782, le_engine_stop_record_park): every track
+ * stops through a Stop command, so an overdub on [ch] ends here. The mutes
+ * of [ch]'s lanes in [spare] spare its Post tail as they land: the ones that
+ * waited for the park, or the ones posted after it (le_apply_mute_cmd). */
+static void le_park(le_engine* e, int32_t ch, uint32_t spare, uint64_t frame) {
+  e->tracks[ch].tail_spare_next = spare;
+  e->tracks[ch].park = 0;
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const le_command stop = {.code = LE_CMD_STOP, .arg_i = c};
+    apply_command(e, &stop, frame);
   }
 }
 
@@ -3346,6 +3375,7 @@ static void le_handoff_disarm(le_engine* e, int32_t ch) {
   t->pending_capture_shadow = 0;
   t->pending_record = 0;
   t->pending_trigger = 0;
+  t->park = 0;
   store_i32(&t->a_pending, 0);
 }
 
@@ -3515,6 +3545,7 @@ static void handle_section_play(le_engine* e, int32_t ch, uint64_t frame) {
 static void le_handoff_set_arm(le_track* t, int32_t trigger) {
   t->pending_record = 1;
   t->pending_trigger = trigger;
+  t->park = 0;
   store_i32(&t->a_pending_trigger, trigger);
   atomic_store_explicit(&t->a_pending, 1, memory_order_release);
 }
@@ -3740,6 +3771,16 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
       (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING)) {
     ln->pending_mute = 1;
     t->tail_spare_next &= ~(1u << lane);
+    /* The Rec-mode Stop's own mute while its park waits for the overdub's
+     * grid end (#1782): the pass runs to that end, and the mute lands with
+     * the park. Any later mute of the lane punches out as usual. */
+    const uint32_t own = LE_PARK_ARMED | (1u << lane);
+    if ((t->park & own) == own && t->pending_record &&
+        t->pending_trigger == 0) {
+      t->park &= ~(1u << lane);
+      return;
+    }
+    t->park = 0;
     /* The punch-out supersedes any armed (quantized) action on this track —
      * exactly as apply_command's LE_CMD_RECORD case clears it for a real
      * press. A stale arm would re-fire at the next loop top on the now-
@@ -4939,16 +4980,47 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       break;
     case LE_CMD_STOP_RECORD_CONTROL: {
       if (!valid_channel(e, cmd->arg_i)) break;
-      if (le_cancel_count_in(e, frame)) break;
+      /* arg_f: the finish (0 now, 1 at the grid end, 2 drop the armed end),
+       * plus 4 for the park (#1782), which follows a Count-in cancel. */
+      const int park = cmd->arg_f >= 4.0f;
+      const float action = park ? cmd->arg_f - 4.0f : cmd->arg_f;
+      if (park && action != 0.0f && action != 1.0f) break;
+      const int cancelled = le_cancel_count_in(e, frame);
+      if (cancelled && !park) break;
       le_track* t = &e->tracks[cmd->arg_i];
       const int state = load_i32(&t->a_state);
+      /* The park: a playing loop, or an overdub that ends at once, parks
+       * now. An overdub whose end waits for the grid keeps its arm (a second
+       * Stop's included), and parks when it fires; the mute of each lane
+       * that follows waits for it. */
+      if (park && (state == LE_TRACK_PLAYING ||
+                   (state == LE_TRACK_OVERDUBBING && action == 0.0f))) {
+        if (state == LE_TRACK_OVERDUBBING) {
+          /* As the finish it replaces (LE_CMD_RECORD) does. */
+          t->pending_record = 0;
+          store_i32(&t->a_pending, 0);
+        }
+        le_park(e, cmd->arg_i, ~0u, frame);
+        break;
+      }
+      if (park && state == LE_TRACK_OVERDUBBING) {
+        if (!t->pending_record || t->pending_trigger != 0) {
+          const le_command arm = {.code = LE_CMD_ARM, .arg_i = cmd->arg_i};
+          apply_command(e, &arm, frame);
+        }
+        if (t->pending_record && t->pending_trigger == 0)
+          t->park = LE_PARK_ARMED | ((1u << LE_MAX_LANES) - 1u);
+        break;
+      }
+      /* A Stop that cancelled a countdown never finishes a capture. */
+      if (cancelled) break;
       if (state != LE_TRACK_RECORDING && state != LE_TRACK_OVERDUBBING) break;
       /* Reuse the existing grid-end rounding/arming body, not a new scheduler.
        * Refused/stale end intents cannot turn a completed capture into a start. */
       le_command finish = {.code = LE_CMD_RECORD, .arg_i = cmd->arg_i};
-      if (cmd->arg_f == 1.0f) finish.code = LE_CMD_ARM;
-      else if (cmd->arg_f == 2.0f) finish.code = LE_CMD_DISARM;
-      else if (cmd->arg_f != 0.0f) break;
+      if (action == 1.0f) finish.code = LE_CMD_ARM;
+      else if (action == 2.0f) finish.code = LE_CMD_DISARM;
+      else if (action != 0.0f) break;
       apply_command(e, &finish, frame);
       break;
     }
@@ -7389,6 +7461,7 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
       /* Which tracks' grid arms fire on this tick: read by the Once check
        * below, which runs after the arms so it sees what they did. */
       uint8_t fired[LE_MAX_TRACKS] = {0};
+      uint32_t parks = 0; /* #1782: tracks whose fired end parks */
       /* Grid-armed fire check. The loop top (wrap) is every division's
        * boundary AND the layer boundary, so it fires everything — the exact
        * pre-A3 behavior, and the whole behavior when the quantize division is
@@ -7444,7 +7517,13 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
           }
           pt->pending_record = 0;
           store_i32(&pt->a_pending, 0);
-          handle_record(e, qt, frame);
+          /* The Rec-mode Stop's park waited for this end (#1782): it lands
+           * below, after every arm this boundary fires. */
+          if (pt->park & LE_PARK_ARMED) {
+            parks |= 1u << qt;
+          } else {
+            handle_record(e, qt, frame);
+          }
           fired[qt] = 1;
         }
       }
@@ -7469,6 +7548,18 @@ static inline LE_AUDIO_HOT_AT(1) void advance_transport_frame(le_engine* e, int 
       /* Band's one-section handoff (#1323): on the primary's top after the
        * sounding section's lap end. */
       le_band_handoff_tick(e, wrapped, frame);
+      /* The parks armed ends wait for (#1782), after the arms above, so none
+       * of them restarts the parked transport. The mutes that waited spare
+       * the tail. */
+      for (int qt = 0; parks && qt < tc; ++qt) {
+        if (!(parks & (1u << qt))) continue;
+        le_track* pt = &e->tracks[qt];
+        uint32_t waited = 0;
+        for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+          if (pt->lanes[l].pending_mute) waited |= 1u << l;
+        }
+        le_park(e, qt, waited, frame);
+      }
       /* Once (slice 2b): a one-shot track whose own lap ended on this tick
        * stops here, after the arms above have done what they were queued
        * for. */
