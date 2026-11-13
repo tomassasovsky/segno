@@ -187,3 +187,27 @@ static void test_perf_raw_input_counts_as_playing(void) {
   CHECK(autostop_reason(e) == LE_PERF_STOP_DISARM);
   le_engine_destroy(e);
 }
+
+/* A loopback channel (#1805 review) carries the device's own output: a
+ * monitor left enabled on it (from before a reopen that marked it) is not
+ * captured, raw or as heard, and the capture estimate leaves it out. */
+static void test_perf_arm_skips_loopback_inputs(void) {
+  printf("test_perf_arm_skips_loopback_inputs\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 1, 1000);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
+  drain(e);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_capture_streams == 3);     /* master, input 0 heard and raw */
+  CHECK(s.perf_capture_frame_bytes == 16); /* 4 + 8 + 4 */
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(e->perf.input_mask == UINT64_C(1));
+  float scratch[64];
+  CHECK(le_engine_perf_raw_pop_for_test(e, 1, scratch, 64) == 0);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}

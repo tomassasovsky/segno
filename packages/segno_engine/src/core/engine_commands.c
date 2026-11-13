@@ -6020,6 +6020,13 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
    * the real signal. An input that does not exist is not a captured input. */
   /* Instrument sources (#1197) are captured like inputs when monitored and
    * their slot has a patch: the audio thread fills them every block. */
+  /* A loopback-excluded channel (#1805 review) carries the device's own
+   * output, not a player: it is never monitored (so as heard it was only
+   * ever silence), and recording it raw would put the playback in the take
+   * as an input. A monitor enabled before a reopen onto a device that marks
+   * the channel loopback still reads enabled, so it is skipped here. */
+  const uint32_t excluded =
+      atomic_load_explicit(&engine->a_excluded_input_mask, memory_order_relaxed);
   uint64_t wanted_inputs = 0;
   int32_t input_count = 0;
   const int32_t monitor_ch_limit =
@@ -6027,9 +6034,9 @@ int32_t le_perf_arm(le_engine* engine, const le_perf_target* target) {
           ? engine->in_channels
           : LE_MAX_CHANNELS;
   for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
-    if (c < LE_INSTRUMENT_SOURCE_BASE ? c >= monitor_ch_limit
-                                      : engine->inst_patch_requested
-                                                [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
+    if (c < LE_INSTRUMENT_SOURCE_BASE
+            ? c >= monitor_ch_limit || (excluded & (1u << c)) != 0
+            : engine->inst_patch_requested[c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
       continue;
     }
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;

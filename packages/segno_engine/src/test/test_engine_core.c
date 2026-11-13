@@ -40382,6 +40382,7 @@ int main(void) {
   SHARD(test_perf_raw_ring_overflow_counts);
   SHARD(test_perf_raw_drain_writes_mono_parts);
   SHARD(test_perf_raw_input_counts_as_playing);
+  SHARD(test_perf_arm_skips_loopback_inputs);
   SHARD(test_perf_render_runs_through_reconfigure);
   SHARD(test_perf_render_rerender_leaves_only_its_own_stems);
   SHARD(test_perf_render_concurrent_with_live_engine);

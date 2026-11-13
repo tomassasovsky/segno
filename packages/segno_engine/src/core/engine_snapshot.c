@@ -561,14 +561,17 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
         streams = 1;
         frame_bytes = (uint32_t)found * 4u;
         /* The sources le_perf_arm would capture: monitored, and present on
-         * the device, or an instrument slot with a patch (#1197). */
+         * the device and not loopback, or an instrument slot with a patch
+         * (#1197). */
         const int32_t in_ch = load_i32(&engine->a_in_channels);
         const int32_t limit = in_ch > 0 && in_ch < LE_MAX_CHANNELS
                                   ? in_ch
                                   : LE_MAX_CHANNELS;
+        const uint32_t excluded = atomic_load_explicit(
+            &engine->a_excluded_input_mask, memory_order_relaxed);
         for (int32_t c = 0; c < LE_MAX_SOURCES; ++c) {
           if (c < LE_INSTRUMENT_SOURCE_BASE
-                  ? c >= limit
+                  ? c >= limit || (excluded & (1u << c)) != 0
                   : engine->inst_patch_requested
                             [c - LE_INSTRUMENT_SOURCE_BASE] < 0) {
             continue;
