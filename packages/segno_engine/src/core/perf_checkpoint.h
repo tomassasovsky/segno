@@ -23,7 +23,8 @@
 extern "C" {
 #endif
 
-#define LE_PCP_MAX_STREAMS (1 + LE_MAX_MONITORED_INPUTS)
+/* The master, and each captured input as heard and raw (#1805). */
+#define LE_PCP_MAX_STREAMS (1 + 2 * LE_MAX_MONITORED_INPUTS)
 #define LE_PCP_PATH_MAX 1024
 
 /* A sealed part, in the order the drain sealed it. The drain appends these
@@ -81,7 +82,9 @@ typedef struct le_pcp_writer {
   size_t cap;
 } le_pcp_writer;
 
-/* `master-NNN.wav` for stream 0, `input-<n>-NNN.wav` for stream 1 + n. */
+/* `master-NNN.wav` for stream 0, `input-<n>-NNN.wav` for stream 1 + n (the
+ * input as heard), `input-raw-<n>-NNN.wav` for stream
+ * LE_PERF_RAW_STREAM_BASE + n (the input raw, #1805). */
 void le_perf_part_filename(int32_t stream, int32_t index, char* out,
                            size_t cap);
 

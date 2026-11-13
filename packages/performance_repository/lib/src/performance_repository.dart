@@ -1912,7 +1912,13 @@ class PerformanceRepository {
             'channel_layout': {
               'master_channels': reconciled.streams.first.channels,
               'captured_inputs': [
-                for (final s in reconciled.streams.skip(1)) s.stream - 1,
+                for (final s in reconciled.streams.skip(1))
+                  if (s.stream < PerfTarget.rawStreamBase) s.stream - 1,
+              ],
+              'raw_inputs': [
+                for (final s in reconciled.streams)
+                  if (s.stream >= PerfTarget.rawStreamBase)
+                    s.stream - PerfTarget.rawStreamBase,
               ],
             },
             // Overwritten below by what the parts hold, when there are any.
@@ -2115,7 +2121,7 @@ class PerformanceRepository {
   /// Deletes every part file of [stream] in [dir]: what a conversion cut
   /// short left before it could list them.
   void _deleteStrayParts(String dir, int stream) {
-    final prefix = stream == 0 ? 'master-' : 'input-${stream - 1}-';
+    final prefix = partFilePrefix(stream);
     for (final entity in Directory(dir).listSync()) {
       final name = _basename(entity.path);
       if (entity is File &&
@@ -2206,8 +2212,11 @@ class PerformanceRepository {
     _captureGuard = null;
   }
 
-  /// A part file the drain names: `master-001.wav`, `input-3-002.wav`.
-  static final _partFile = RegExp(r'^(master|input-\d+)-\d{3}\.wav$');
+  /// A part file the drain names: `master-001.wav`, `input-3-002.wav`,
+  /// `input-raw-3-002.wav`.
+  static final _partFile = RegExp(
+    r'^(master|input-\d+|input-raw-\d+)-\d{3}\.wav$',
+  );
 
   String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;

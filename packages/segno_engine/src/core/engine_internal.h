@@ -374,6 +374,11 @@ int32_t le_engine_perf_master_channels_for_test(le_engine* engine);
 int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
                                             float* out, int32_t max_frames);
 
+/* Pops up to `max_frames` MONO frames from input [input]'s raw capture ring
+ * (#1805) into `out`, returning the number popped; 0 as above. */
+int32_t le_engine_perf_raw_pop_for_test(le_engine* engine, int32_t input,
+                                        float* out, int32_t max_frames);
+
 /* ---- perf-drain test seams (perf_drain.h; part 2) ---- */
 
 struct le_perf_drain; /* opaque; full definition in perf_drain.c */

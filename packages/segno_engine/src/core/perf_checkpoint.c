@@ -23,6 +23,10 @@
 #endif
 #endif
 
+/* The raw streams' numbers start past every as-heard input's (#1805). */
+_Static_assert(1 + LE_MAX_MONITORED_INPUTS <= LE_PERF_RAW_STREAM_BASE,
+               "raw input streams overlap the as-heard ones");
+
 /* Big enough for every part a take can list (LE_PD_MAX_PARTS, about 200
  * bytes each) and a few thousand layer names. */
 #define LE_PCP_BUF_BYTES (1024 * 1024)
@@ -39,6 +43,9 @@ void le_perf_part_filename(int32_t stream, int32_t index, char* out,
                            size_t cap) {
   if (stream == 0) {
     snprintf(out, cap, "master-%03d.wav", index);
+  } else if (stream >= LE_PERF_RAW_STREAM_BASE) {
+    snprintf(out, cap, "input-raw-%d-%03d.wav",
+             stream - LE_PERF_RAW_STREAM_BASE, index);
   } else {
     snprintf(out, cap, "input-%d-%03d.wav", stream - 1, index);
   }

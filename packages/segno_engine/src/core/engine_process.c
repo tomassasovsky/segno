@@ -6877,11 +6877,11 @@ static inline LE_AUDIO_HOT_AT(4) void master_bus_frame(le_engine* e, float* out,
 }
 
 /* Performance-recording capture taps (le_perf_arm/disarm, segno_engine_api.h):
- * copy the post-limiter master output and each captured monitor input's
- * post-FX signal into their pre-published rings. Both are no-ops when not
- * armed (`e->perf.armed`, the audio-thread-local mirror of a_perf_armed);
- * neither ever blocks or allocates — a full ring just drops the frame and
- * bumps the shared overrun atomic. */
+ * copy the post-limiter master output, each captured monitor input's
+ * post-FX signal and each captured input's raw sample into their
+ * pre-published rings. All are no-ops when not armed (`e->perf.armed`, the
+ * audio-thread-local mirror of a_perf_armed); none ever blocks or allocates
+ * — a full ring just drops the frame and bumps the shared overrun atomic. */
 
 /* Tap for the master bus: [master_out_ch] selects the first enabled output
  * pair frozen at arm (mono when only one channel was captured). */
@@ -6890,6 +6890,49 @@ static inline void perf_tap_monitor_frame(le_engine* e, int input, float l,
   const float s[2] = {l, r};
   if (!le_audio_ring_push_frame(&e->perf.monitor_ring[input], s, 2)) {
     perf_note_drop(e);
+  }
+}
+
+/* Tap for each input's raw recording (#1805): every device input and active
+ * instrument frozen in perf_raw_mask at arm, monitored or not. Its clean
+ * mono sample (the device's, or an instrument source's), before the monitor's
+ * gate, chain, volume and pan, for every frame of the block. Once per block
+ * at its end, before the frames are counted, rather than in the frame loop:
+ * out of line and cold, so the mixer's hot code is the same with or without
+ * it (#1719), and nothing runs while not armed. Frames the latency harness
+ * took are recorded too: the raw input is the input whatever played. A
+ * block the device delivers no input buffer for records silence, which is
+ * what came in; a frame is never left out, so the drain's zero-fill (a
+ * glitch, #710) still means only a frame the ring could not take. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#else
+__attribute__((noinline, cold))
+#endif
+static void perf_tap_raw_block(le_engine* e, uint32_t frames) {
+  /* The block's input as le_engine_process left it in fx_par, and its first
+   * capture frame (the frames are counted after this), read here rather
+   * than passed, so the caller keeps nothing live past its frame loops. */
+  const float* in = e->fx_par.in;
+  const int ch_in = e->fx_par.ch_in;
+  const uint64_t perf_frame_base =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  const uint64_t mask = e->perf_raw_mask;
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (!(mask & (UINT64_C(1) << c))) continue;
+    const int instrument = c >= LE_INSTRUMENT_SOURCE_BASE;
+    /* le_perf_capture_sets holds device inputs to the configured count. */
+    const int device = !instrument && in != NULL && c < ch_in;
+    le_audio_ring* ring = &e->perf_raw_ring[c];
+    for (uint32_t f = 0; f < frames; ++f) {
+      const float x = instrument ? le_instrument_source_sample(e, c, f)
+                      : device   ? in[(size_t)f * (size_t)ch_in + (size_t)c]
+                                 : 0.0f;
+      if (!le_audio_ring_push_frame(ring, &x, 1)) {
+        e->perf.tap_frame = perf_frame_base + f;
+        perf_note_drop(e);
+      }
+    }
   }
 }
 
@@ -8575,7 +8618,10 @@ static inline int process_input_frame(le_engine* e, const float* in,
  * the block before this loop, as jobs (le_fx_monitor_job), so a chain's
  * output for block frame [i] is read from le_fx_par. [out_enabled] is the
  * structural output gate, intersected with the mask so a disabled output is
- * never a target. Live and independent of every track; never recorded. */
+ * never a target. Live and independent of every track, and never recorded
+ * into a loop. A performance capture taps each captured input here as
+ * heard, after its volume and pan; its raw recording (#1805) is taken once
+ * per block (perf_tap_raw_block). */
 static inline void mix_monitors_frame(
     le_engine* e, const float* in, float* out, uint32_t f, uint32_t i,
     int ch_in, int ch_out, uint32_t out_enabled, const int* mon_on,
@@ -11846,6 +11892,7 @@ LE_AUDIO_HOT_AT(0) void le_engine_process(le_engine* e, float* output, const flo
    * synchronize-with this add, so everything sequenced before it — every
    * tail store — is visible to the pops that follow. */
   if (e->perf.armed) {
+    perf_tap_raw_block(e, frames);
     atomic_fetch_add_explicit(&e->a_perf_frames, (uint64_t)frames,
                               memory_order_release);
   }

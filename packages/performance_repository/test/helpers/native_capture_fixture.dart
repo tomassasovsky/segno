@@ -13,6 +13,9 @@ void writeNativeSidecar(
   int sampleRate = 48000,
   int masterChannels = 2,
   List<int> capturedInputs = const [],
+  // The `raw_inputs` of a take since #1805; null leaves it out, as a take
+  // from before it did.
+  List<int>? rawInputs,
   int captureFrames = 0,
   int overrunCount = 0,
   int zeroFilledFrames = 0,
@@ -26,6 +29,7 @@ void writeNativeSidecar(
     'channel_layout': {
       'master_channels': masterChannels,
       'captured_inputs': capturedInputs,
+      'raw_inputs': ?rawInputs,
     },
     'capture_frames': captureFrames,
     'overrun_count': overrunCount,

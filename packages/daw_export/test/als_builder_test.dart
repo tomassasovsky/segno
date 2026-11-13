@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:daw_export/daw_export.dart';
 import 'package:daw_export/src/live_set_template.dart';
@@ -858,6 +859,119 @@ void main() {
           ('2', '2'),
           ('2', '3'),
         ]);
+      });
+    });
+
+    group('a capture with raw inputs (#1805)', () {
+      late Directory dir;
+
+      setUp(() => dir = Directory.systemTemp.createTempSync('daw_raw_'));
+      tearDown(() => dir.deleteSync(recursive: true));
+
+      /// A float WAV of [frames] silent frames, [channels] wide, as the
+      /// drain's parts hold them (the header without the `sgno` chunk).
+      void wav(String file, int frames, int channels) {
+        final data = frames * channels * 4;
+        final header = ByteData(44)
+          ..setUint32(0, 0x46464952, Endian.little)
+          ..setUint32(4, 36 + data, Endian.little)
+          ..setUint32(8, 0x45564157, Endian.little)
+          ..setUint32(12, 0x20746d66, Endian.little)
+          ..setUint32(16, 16, Endian.little)
+          ..setUint16(20, 3, Endian.little)
+          ..setUint16(22, channels, Endian.little)
+          ..setUint32(24, 48000, Endian.little)
+          ..setUint32(28, 48000 * channels * 4, Endian.little)
+          ..setUint16(32, channels * 4, Endian.little)
+          ..setUint16(34, 32, Endian.little)
+          ..setUint32(36, 0x61746164, Endian.little)
+          ..setUint32(40, data, Endian.little);
+        File('${dir.path}/$file').writeAsBytesSync([
+          ...header.buffer.asUint8List(),
+          ...Uint8List(data),
+        ]);
+      }
+
+      /// The audio tracks of the set the reader builds from a take with one
+      /// input, recorded raw and as heard, and its master.
+      List<XmlElement> exported() {
+        wav('master-001.wav', 48000 * 4, 2);
+        wav('input-0-001.wav', 48000 * 4, 2);
+        wav('input-raw-0-001.wav', 48000 * 4, 1);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000 * 4,
+            'channel_layout': {
+              'master_channels': 2,
+              'captured_inputs': [0],
+              'raw_inputs': [0],
+            },
+            'armSnapshot': {
+              'inputs': [
+                {'input': 0, 'name': 'Guitar'},
+              ],
+            },
+            'parts': [
+              for (final (stream, file) in [
+                (0, 'master-001.wav'),
+                (1, 'input-0-001.wav'),
+                (100, 'input-raw-0-001.wav'),
+              ])
+                {
+                  'stream': stream,
+                  'index': 1,
+                  'file': file,
+                  'frames': 48000 * 4,
+                },
+            ],
+          }),
+        );
+        return _audioTracks(_build(DawManifestReader.read(dir.path)!));
+      }
+
+      test('the raw track plays and the input as heard is switched off, '
+          'each as the tracks Live saved hold it', () {
+        final [raw, heard, master] = exported();
+        final playing = _audioTracks(_corpus('audio_clips')).single;
+        final reference = _audioTracks(_corpus('reference_tracks')).single;
+        String activator(XmlElement t) =>
+            _value(t, 'DeviceChain/Mixer/Speaker/Manual');
+        expect(_value(raw, 'Name/EffectiveName'), 'Guitar raw');
+        expect(_value(heard, 'Name/EffectiveName'), 'Guitar (as heard)');
+        expect(_value(master, 'Name/EffectiveName'), 'Master (as heard)');
+        expect(activator(raw), activator(playing));
+        expect(activator(heard), activator(reference));
+        expect(activator(master), activator(reference));
+        expect(
+          _value(raw, 'Name/Annotation'),
+          startsWith('The input as played: before its effects'),
+        );
+      });
+
+      test("each input track's clip has the shape of the clips Live saved, "
+          'and names its own file', () {
+        final [raw, heard, _] = exported();
+        XmlElement clip(XmlElement t) => _at(
+          t,
+          'DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events',
+        ).findElements('AudioClip').single;
+        final reference = _audioTracks(_corpus('reference_tracks')).single;
+        final referenceShape = {
+          for (final c in _at(
+            reference,
+            'DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events',
+          ).findElements('AudioClip'))
+            ..._shape(c),
+        };
+        for (final (track, file) in [
+          (raw, 'input-raw-0-001.wav'),
+          (heard, 'input-0-001.wav'),
+        ]) {
+          expect(_shape(clip(track)), referenceShape);
+          expect(_value(clip(track), 'SampleRef/FileRef/RelativePath'), file);
+          expect(_value(clip(track), 'SampleRef/DefaultDuration'), '192000');
+        }
       });
     });
 

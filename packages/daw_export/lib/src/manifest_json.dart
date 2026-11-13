@@ -30,8 +30,8 @@ String trackNameOf(Map<String, dynamic> manifest, int channel) {
   return 'Track ${channel + 1}';
 }
 
-/// The hardware inputs a capture recorded (`channel_layout.captured_inputs`),
-/// in order.
+/// The hardware inputs a capture recorded as heard
+/// (`channel_layout.captured_inputs`: those monitored at arm), in order.
 List<int> capturedInputsOf(Map<String, dynamic> manifest) {
   final layout = manifest['channel_layout'];
   final inputs = layout is Map<String, dynamic>
@@ -43,6 +43,24 @@ List<int> capturedInputsOf(Map<String, dynamic> manifest) {
       if (i is num) i.toInt(),
   ]..sort();
 }
+
+/// The inputs a capture recorded raw (`channel_layout.raw_inputs`, #1805:
+/// every input the device had, monitored or not), in order; empty for a
+/// capture from before it.
+List<int> rawInputsOf(Map<String, dynamic> manifest) {
+  final layout = manifest['channel_layout'];
+  final inputs = layout is Map<String, dynamic> ? layout['raw_inputs'] : null;
+  if (inputs is! List) return const [];
+  return [
+    for (final i in inputs)
+      if (i is num) i.toInt(),
+  ]..sort();
+}
+
+/// The stream number of input `n`'s raw recording is this plus `n`
+/// (docs/formats/performance-manifest-format.md); as heard, input `n` is
+/// stream `1 + n`.
+const int kRawStreamBase = 100;
 
 /// What a capture calls hardware input [input]: the name recorded at arm
 /// (#1799), or `Input N` (1-based) for an input without one.

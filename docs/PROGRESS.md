@@ -91,6 +91,36 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 A take records each input raw (#1805)
+
+- A performance take recorded only the inputs monitored at arm, and only as
+  their monitor played them (`mix_monitors_frame`): after its effects,
+  volume and pan, and as silence while monitoring was off or muted, so an
+  input played with monitoring off came out silent or not at all. Now every
+  input the interface has (loopback channels aside) and every instrument
+  with a patch at arm is also recorded raw, monitored or not: its clean
+  sample, before the monitor's gate, chain, volume and pan, every frame
+  while armed. The monitored inputs are still recorded as heard too.
+- The audio thread pushes the raw samples once per block, out of the frame
+  loop, in a cold function (`perf_tap_raw_block`), into one mono ring per
+  input (`le_engine.perf_raw_ring`, `perf_raw_mask`, at the end of the
+  struct so no field the mixer reads moves). A full ring drops the frame and
+  counts an overrun, as the other taps do. A block with no input buffer
+  records silence.
+- The drain writes them as `input-raw-<n>-NNN.wav` parts, mono float,
+  stream `100 + n` (`LE_PERF_RAW_STREAM_BASE`, a format constant). The
+  sidecar lists them under `channel_layout.raw_inputs`, the parts in
+  `parts`; the checkpoint lists the streams. Recovery, the Library's parts,
+  the DAW package, Segno Transfer and the FAT32 cap test cover them. A raw
+  input over the activity level counts as playing for the idle stop
+  (#1767). `le_snapshot.perf_capture_frame_bytes` counts 4 bytes a frame
+  per raw input. A monitor left on a loopback channel is not captured.
+- The Live set gives each input `<name> raw`, switched on, and, when the
+  input was monitored, `<name> (as heard)` beside it, switched off. A take
+  from before #1805 keeps one input track as heard, switched on. The raw
+  track is where a later layer of #1806 puts the monitor chain as plugins
+  and the monitor volume, pan and mute as automation.
+
 ## November 2026 Segno's effects as VST3 plugins (#1804 part 1)
 
 - The owner's call of 2026-11-12 reverses Q13 (#940): the effects come back

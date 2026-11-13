@@ -1911,7 +1911,8 @@ typedef struct le_snapshot {
   /* Samples above full scale (|x| > 1.0) across every stream so far. */
   uint64_t perf_overs;
   /* The streams the armed take captures (or the next arm would: the first
-   * enabled output pair plus every monitored input the device has), and the
+   * enabled output pair, every monitored input as heard, and every input
+   * the device has and every instrument with a patch raw), and the
    * bytes one frame of all of them takes, so the app can tell whether a
    * volume holds a minimum take of every stream before it arms. 0 when
    * nothing could be captured. */
@@ -4071,9 +4072,13 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  * While armed, the audio thread copies two kinds of streams into pre-published
  * lock-free rings: the master capture (the first enabled output pair, tapped
  * BEFORE the master gain and limiter; mono when only one channel of it is
- * enabled), and each hardware input actively monitored AT ARM (post-monitor-
- * FX, pre-route; frozen for the whole arm session — an input enabled later is
- * not retroactively captured). Rings are allocated control-side at arm and
+ * enabled), each hardware input actively monitored AT ARM as heard (stereo,
+ * post-monitor-FX, volume and pan, silent while its monitor is off or
+ * muted), and every input the device has (loopback channels aside) and every
+ * instrument with a patch raw (#1805: mono, the clean sample before any of
+ * that, every frame, whatever the monitor). Both sets are frozen at arm: an
+ * input enabled or added later is not retroactively captured. Rings are
+ * allocated control-side at arm and
  * published to the audio thread with LE_CMD_PERF_ARM; on overflow the audio
  * thread drops the frame and increments the overrun atomic — it never blocks
  * or allocates. Status (armed / frames / overruns) is exposed only via
@@ -4081,11 +4086,12 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  *
  * A dedicated background drain thread (perf_drain.h; spawned by le_perf_arm,
  * joined by le_perf_disarm) writes each stream as ORDERED 32-bit float WAV
- * PARTS (#1198): `master-001.wav`, `master-002.wav`, … and
- * `input-<n>-001.wav`, each at most `part_bytes` long, header included. Every
- * part starts with the same 84-byte header — RIFF/WAVE, a 16-byte `fmt `
- * chunk (IEEE float, tag 3, 32 bits), a 32-byte `sgno` chunk (the take id,
- * the stream: 0 master, 1 + n input n, and the part index from 1), then
+ * PARTS (#1198): `master-001.wav`, `master-002.wav`, …,
+ * `input-<n>-001.wav` and `input-raw-<n>-001.wav`, each at most `part_bytes`
+ * long, header included. Every part starts with the same 84-byte header —
+ * RIFF/WAVE, a 16-byte `fmt ` chunk (IEEE float, tag 3, 32 bits), a 32-byte
+ * `sgno` chunk (the take id, the stream: 0 master, 1 + n input n as heard,
+ * LE_PERF_RAW_STREAM_BASE + n input n raw, and the part index from 1), then
  * `data` — written with zero sizes and patched when the part is SEALED (full,
  * or at the end of the take), at which point its SHA-256 over the payload is
  * recorded. Samples are written as captured, never clamped; samples whose
@@ -4143,8 +4149,9 @@ typedef struct le_perf_target {
   /* Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
    * 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
    * nor below the request) so that every ring together stays within
-   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 stereo inputs
-   * at 96 kHz take 33 rings of 2^19 samples, 66 MiB. The sidecar's
+   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 monitored
+   * inputs at 96 kHz take 33 stereo rings of 2^19 samples and 32 raw mono
+   * rings of 2^18, 98 MiB. The sidecar's
    * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
    * granted. */
   int32_t ring_seconds;
@@ -4176,6 +4183,10 @@ typedef struct le_perf_target {
  * fields, and 2^31 for readers that keep RIFF sizes in a signed int. */
 #define LE_PERF_PART_BYTES 2000000000ULL
 #define LE_PERF_PART_HEADER_BYTES 84
+/* The stream number of input n's raw recording (#1805) is this plus n; as
+ * heard, input n is stream 1 + n. A file-format constant, independent of
+ * LE_MAX_MONITORED_INPUTS so a capture keeps its meaning if that grows. */
+#define LE_PERF_RAW_STREAM_BASE 100
 #define LE_PERF_RING_SECONDS_DEFAULT 2
 #define LE_PERF_RING_SECONDS_MAX 8
 #define LE_PERF_RING_BYTES_MAX (64u * 1024u * 1024u)
