@@ -385,6 +385,15 @@ static void run_overdub_replay_case(const odr_case* c) {
     }
   }
   images[layers] = disarm;
+  /* The passes changed the loop: the result differs from the take. */
+  if (images[0] != NULL) {
+    float moved = 0.0f;
+    for (int i = 0; i < ODR_LEN; ++i) {
+      const float d = fabsf(disarm[i] - images[0][i]);
+      if (d > moved) moved = d;
+    }
+    CHECK(moved > 0.1f);
+  }
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
   test_wait_for_render(e, 20000);
@@ -448,7 +457,7 @@ static void run_overdub_replay_case(const odr_case* c) {
       if (d > 1e-5f && first_bad == UINT64_MAX) first_bad = f;
       if (fabsf(live[f]) > peak) peak = fabsf(live[f]);
     }
-    CHECK(peak > 0.25f); /* the passes are in the master */
+    CHECK(peak > 0.25f); /* the take is in the master */
     if (worst >= 1e-5f) {
       printf("    stem vs master: max diff %.6f, first at frame %llu\n",
              (double)worst, (unsigned long long)first_bad);

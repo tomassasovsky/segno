@@ -1497,9 +1497,13 @@ static int64_t le_pr_dub_pass_start(const le_pr_dub_walk* w, uint64_t r,
   if (w->state == LE_PR_DUB_SESSION) {
     /* The session went on: this pass starts where the last one ended, or,
      * after passes that retired nothing (a boundary with no spare shadow
-     * merges them), a whole number of loops later. */
+     * merges them), a whole number of loops later. A punch-in a later press
+     * punched out began a new session after one that ended on a boundary. */
     if (full >= w->start && (full - w->start) % len == 0) return full;
     if (le_pr_dub_record_at(w, full)) return full;
+    for (int k = 0; k + 1 < w->presses; ++k) {
+      if (w->press_record[k]) return le_pr_dub_punch_in(w);
+    }
     return w->start;
   }
   if (le_pr_dub_record_at(w, full)) return full;
@@ -1584,14 +1588,17 @@ static int le_pr_plan_dubs(const le_pr_manifest* m, const le_pr_log_entry* log,
       w.first_edge = p->edge_count;
       w.state = LE_PR_DUB_TAKE;
       w.take_frame = (int64_t)e->frame;
-      /* A dub that goes on from a finalize starts on its frame, or on the
-       * next one after a defining take's deferred seam crossfade, which
-       * finalizes after the frame's mix and logs the loop's lock just
-       * before its RECORD_END. */
-      const int locked = i > 0 && log[i - 1].frame == e->frame &&
-                         log[i - 1].ordinal + 1 == e->ordinal &&
-                         log[i - 1].cmd.code == LE_PLOG_LOOP_LENGTH_LOCKED;
-      w.cont = w.take_frame + locked;
+      /* A dub that goes on from a finalize starts on its frame when a press
+       * applied it, before the frame's mix, and on the next frame when the
+       * frame loop did, after the mix: a defining take's deferred seam
+       * crossfade, an auto-finalize, a quantized finish. */
+      int pressed = 0;
+      for (int j = i - 1; j >= 0 && log[j].frame == e->frame; --j) {
+        if (log[j].cmd.code == LE_CMD_RECORD && log[j].cmd.arg_i == channel) {
+          pressed = 1;
+        }
+      }
+      w.cont = w.take_frame + !pressed;
     } else if ((code == LE_CMD_RECORD || code == LE_CMD_STOP) &&
                e->cmd.arg_i == channel) {
       if (w.open) le_pr_dub_press(&w, e->frame, code == LE_CMD_RECORD);
@@ -1638,7 +1645,10 @@ static int le_pr_plan_dubs(const le_pr_manifest* m, const le_pr_log_entry* log,
       }
       const int64_t a = le_pr_dub_pass_start(&w, e->frame, len);
       int64_t heard = a + len - m->latency_offset % len;
-      if (heard < 0) heard = 0;
+      /* Never before the take: a pass is first heard after its finalize
+       * (or at the arm, for a take the arm found). */
+      const int64_t floor_frame = w.take_log >= 0 ? w.take_frame + 1 : 0;
+      if (heard < floor_frame) heard = floor_frame;
       /* A switch on or before the take's last one supersedes it. */
       if (p->edge_count > w.first_edge &&
           (uint64_t)heard <= p->edges[p->edge_count - 1].frame) {
