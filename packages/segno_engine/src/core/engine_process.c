@@ -2640,6 +2640,10 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
       }
     } else if (st == LE_TRACK_OVERDUBBING) {
       store_i32(&tr->a_state, LE_TRACK_PLAYING);
+      /* Its end: land any mute deferred during the dub, the one a Rec-mode
+       * Stop's park was waiting with included (#1782). */
+      tr->park = 0;
+      le_consume_pending_mutes(e, tr, LE_TRACK_PLAYING, 1, frame);
     }
   }
 }
@@ -4981,7 +4985,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       const int park = cmd->arg_f >= 4.0f;
       const float action = park ? cmd->arg_f - 4.0f : cmd->arg_f;
       if (park && action != 0.0f && action != 1.0f) break;
-      if (le_cancel_count_in(e, frame) && !park) break;
+      const int cancelled = le_cancel_count_in(e, frame);
+      if (cancelled && !park) break;
       le_track* t = &e->tracks[cmd->arg_i];
       const int state = load_i32(&t->a_state);
       /* The park: a playing loop, or an overdub that ends at once, parks
@@ -5007,6 +5012,8 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
           t->park = LE_PARK_ARMED | ((1u << LE_MAX_LANES) - 1u);
         break;
       }
+      /* A Stop that cancelled a countdown never finishes a capture. */
+      if (cancelled) break;
       if (state != LE_TRACK_RECORDING && state != LE_TRACK_OVERDUBBING) break;
       /* Reuse the existing grid-end rounding/arming body, not a new scheduler.
        * Refused/stale end intents cannot turn a completed capture into a start. */

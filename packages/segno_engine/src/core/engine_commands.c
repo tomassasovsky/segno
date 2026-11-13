@@ -4162,19 +4162,19 @@ static int32_t le_stop_record(le_engine* engine, int32_t channel, int park,
    * cohort", never "finish a capture": post the cancel itself, so one that
    * lands after the commit and grace is a no-op instead of finalizing the
    * just-started defining take into a tiny master. The park still parks
-   * after that cancel, finishing nothing (action 0). */
+   * after that cancel, and finishes no capture there either. */
   if (cohort && !park) return le_engine_cancel_count_in(engine);
-  if (!cohort &&
-      (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING)) {
+  if (state == LE_TRACK_RECORDING || state == LE_TRACK_OVERDUBBING) {
     const int quantized = le_effective_quantize(engine, channel) &&
         le_rig_effective_master_len(engine) > 0 && le_transport_active(engine);
     const int pending = engine->armed[channel] && load_i32(&t->a_pending);
     if (pending && (quantized ? engine->armed_trigger[channel] != 0
                               : engine->armed_trigger[channel] == 2))
       return LE_ERR_INVALID;
-    /* A second Stop drops the armed end, unless it parks: then it keeps the
-     * arm, so the pass still ends, and parks, on the grid. */
-    if (quantized) action = pending && !park ? 2 : 1;
+    /* A second Stop drops the armed end, unless it parks an overdub: then
+     * it keeps the arm, so the pass still ends, and parks, on the grid. */
+    const int keep = park && state == LE_TRACK_OVERDUBBING;
+    if (quantized) action = pending && !keep ? 2 : 1;
   }
   if (park && !le_record_capacity(engine, 1 + (size_t)following))
     return LE_ERR_NOT_READY;

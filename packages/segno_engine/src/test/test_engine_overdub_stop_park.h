@@ -31,15 +31,18 @@ static int32_t ods_to_top(le_engine* e) {
 }
 
 /* Track 0's take through a Post delay, with quantize on (loop top) when
- * [quantized], then an overdub of constant input that runs from a loop top
- * for half a lap. Returns the engine; [base] gets lane 0's live buffer from
- * before the overdub. */
-static le_engine* ods_overdubbing(int mode, int quantized, float* base) {
+ * [quantized] (track 1 left recording at once with [track1_now]), then an
+ * overdub of constant input that runs from a loop top for half a lap.
+ * Returns the engine; [base] gets lane 0's live buffer from before the
+ * overdub. */
+static le_engine* ods_overdubbing_on(int mode, int quantized, int track1_now,
+                                     float* base) {
   le_engine* e = heard_engine(48000);
   pts_mode(e, mode);
   pts_lane_post(e, LE_FX_DELAY);
   pts_take(e);
   CHECK(timing_gate(e, quantized) == LE_OK);
+  if (track1_now) CHECK(timing_track_gate(e, 1, 0) == LE_OK);
   le_track* t = &e->tracks[0];
   const int32_t len = load_i32(&t->lanes[0].a_len);
   CHECK(len == PTS_TAKE);
@@ -62,6 +65,10 @@ static le_engine* ods_overdubbing(int mode, int quantized, float* base) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
   return e;
+}
+
+static le_engine* ods_overdubbing(int mode, int quantized, float* base) {
+  return ods_overdubbing_on(mode, quantized, 0, base);
 }
 
 /* The Rec-mode Stop as ControlCubit sends it for an overdubbing sole loop:
@@ -230,6 +237,30 @@ static void test_overdub_stop_park_later_mute_punches_out(void) {
   le_engine_destroy(e);
 }
 
+/* Another track's capture that starts during the wait ends the overdub
+ * there (one capturer) and drops the park: the Stop's mute lands with that
+ * end, and the loop plays on, muted, past the top. */
+static void test_overdub_stop_park_dropped_by_another_capture(void) {
+  printf("test_overdub_stop_park_dropped_by_another_capture\n");
+  static float base[PTS_TAKE];
+  le_engine* e = ods_overdubbing_on(0, 1, 1, base);
+  ods_rec_stop(e);
+  drain(e);
+  ods_check_waiting(e);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* at once */
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].muted == 1);
+  CHECK(s.tracks[0].pending == 0);
+  ods_feed(e, 0.25f, ods_to_top(e) + 100, 64, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  le_engine_destroy(e);
+}
+
 /* Another track's arm that fires on the same top fires before the park, so
  * it cannot restart the transport the park holds: a take armed to start
  * there ends with the park. */
@@ -311,6 +342,7 @@ static void run_overdub_stop_park_tests(void) {
   test_overdub_stop_parks();
   test_overdub_stop_park_dropped_by_record();
   test_overdub_stop_park_later_mute_punches_out();
+  test_overdub_stop_park_dropped_by_another_capture();
   test_overdub_stop_park_lands_after_the_tops_arms();
   test_overdub_stop_park_unmuted_during_the_wait();
   test_overdub_stop_park_reserves_and_validates();
