@@ -146,16 +146,18 @@ List<DawDevice> devicesOfChain(
     while (k < entries.length && _rackOf(entries[k].$2)?.id == rack.id) {
       members.add(entries[k++]);
     }
+    // A switched-off rack's modules are recorded off too (their effective
+    // bit, which the engine runs); their own switches are not recorded. So
+    // they are on in the rack, which is off, and switching the rack on in
+    // Live plays them.
+    final inside = _rackDevices(members, origin, chainEnabled, rack.bypassed);
+    // A rack with nothing Segno runs in it is nothing.
+    if (!_holdsPlugin(inside)) continue;
     devices.add(
       DawRackDevice(
         name: rack.name,
         on: !rack.bypassed,
-        chains: [
-          DawRackChain(
-            name: rack.name,
-            devices: _rackDevices(members, origin, chainEnabled),
-          ),
-        ],
+        chains: [DawRackChain(name: rack.name, devices: inside)],
       ),
     );
   }
@@ -168,12 +170,13 @@ List<DawDevice> _rackDevices(
   List<(int, Map<String, dynamic>)> members,
   ChainOrigin origin,
   bool chainEnabled,
+  bool bypassed,
 ) {
   final devices = <DawDevice>[];
   var k = 0;
   while (k < members.length) {
     if (_path(members[k].$2) == null) {
-      final plugin = _plugin(members[k], origin, chainEnabled);
+      final plugin = _plugin(members[k], origin, chainEnabled, on: bypassed);
       if (plugin != null) devices.add(plugin);
       k++;
       continue;
@@ -188,8 +191,11 @@ List<DawDevice> _rackDevices(
       final type = _int(entry.$2['type']);
       // A bypassed Amb-Verb's mix still sets the section's, as the engine
       // reads it (fx_section_enter).
-      if (type == _kAmbVerb && mix == null) mix = _params(entry.$2)[2];
-      final plugin = _plugin(entry, origin, chainEnabled);
+      final params = _params(entry.$2);
+      if (type == _kAmbVerb && mix == null && params.length > 2) {
+        mix = params[2];
+      }
+      final plugin = _plugin(entry, origin, chainEnabled, on: bypassed);
       if (plugin != null) (path == 'amb' ? amb : dub).add(plugin);
     }
     final (ambGain, dubGain) = pathGains(mix ?? _kAmbDubMixDefault);
@@ -215,11 +221,15 @@ List<DawDevice> _rackDevices(
   return (amb, dub);
 }
 
+/// [entry]'s plugin, or `null` for an entry Segno does not run. [on] puts
+/// the entry on whatever its recorded bit says (a module of a switched-off
+/// rack).
 DawPluginDevice? _plugin(
   (int, Map<String, dynamic>) entry,
   ChainOrigin origin,
-  bool chainEnabled,
-) {
+  bool chainEnabled, {
+  bool on = false,
+}) {
   final (slot, json) = entry;
   final type = _int(json['type']);
   final plugin = type == null ? null : segnoPlugins[type];
@@ -239,9 +249,9 @@ DawPluginDevice? _plugin(
       beatOffset: origin.beatOffset,
       input: _kInputs[ch['input']] ?? 0,
       output: _kOutputs[ch['output']] ?? 0,
-      placement: (ch['placement'] as num?)?.toDouble() ?? 0,
-      level: (ch['level'] as num?)?.toDouble() ?? 1,
-      enabled: chainEnabled && json['enabled'] != false,
+      placement: _double(ch['placement']) ?? 0,
+      level: _double(ch['level']) ?? 1,
+      enabled: chainEnabled && (on || json['enabled'] != false),
     ),
   );
 }
@@ -272,3 +282,13 @@ String? _path(Map<String, dynamic> e) => switch (e['rackPath']) {
 };
 
 int? _int(Object? value) => value is num ? value.toInt() : null;
+
+double? _double(Object? value) => value is num ? value.toDouble() : null;
+
+/// Whether [devices] hold a Segno plugin anywhere.
+bool _holdsPlugin(List<DawDevice> devices) => devices.any(
+  (d) => switch (d) {
+    DawPluginDevice() => true,
+    DawRackDevice(:final chains) => chains.any((c) => _holdsPlugin(c.devices)),
+  },
+);

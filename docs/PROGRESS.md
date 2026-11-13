@@ -95,8 +95,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 - A looper track whose take recorded its chains (#1803 on) exports as its
   dry stem through those chains as Segno's plugins, under the track's
-  name, and the wet stem beside it as `<name> (as heard)`, off, with the
-  lane loops. Takes without chains, or whose chains hold nothing Segno runs
+  name, with the clean lane loops as Session clips, and the wet stem beside
+  it as `<name> (as heard)`, off, with the heard ones. Takes without chains, or whose chains hold nothing Segno runs
   (only hosted plugins), keep the earlier layout.
 - `devicesOfChain` (`packages/daw_export/lib/src/device_chain.dart`): lane
   0's chain, which the wet stem renders, then the track's Track stage. Each
@@ -117,7 +117,11 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   monitor chain in it. When the raw inputs land (#1805), the monitor chain
   goes on the raw input track.
 - Not reproduced: the lane volume, which the engine applies before the
-  chain and Live after it (the same at unity); a rack's input choice and
+  lane chain, and the track gain, which it applies inside the Track stage
+  (after its Pre entries), where Live applies both after the devices (the
+  same at unity); a switched-off rack's modules' own switches, which the
+  arm snapshot does not record (they are exported on, in a rack that is
+  off); a rack's input choice and
   output side when its first or last entry is off or on a parallel path
   (each plugin carries its own); the Track stage, which the offline render
   does not apply, so a take with one differs from its "as heard" stem by

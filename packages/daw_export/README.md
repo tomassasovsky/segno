@@ -44,9 +44,9 @@ void exportCapture(String captureDir) {
   - a looper track whose take recorded effect chains (#1804): its dry stem
     (`stems/dry/`) through those chains as Segno's VST3 plugins
     (`packages/segno_engine/vst3`), named as the player named it at arm or
-    `Track N`; right after it, the wet stem (`stems/wet/`) on
-    `<name> (as heard)`, switched off, with the lane loops as Session
-    clips, as the reference the plugins are checked against;
+    `Track N`, with the clean lane loops as Session clips; right after it,
+    the wet stem (`stems/wet/`) on `<name> (as heard)`, switched off, with
+    the heard loops, as the reference the plugins are checked against;
   - any other looper track over its wet stem, named the same way, with its
     lane loops as Session clips, and right after it its dry stem on
     `<name> dry`, switched off so the set does not play the take twice. A

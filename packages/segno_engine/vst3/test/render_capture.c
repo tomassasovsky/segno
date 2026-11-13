@@ -21,17 +21,24 @@ int main(int argc, char** argv) {
     return 2;
   }
   le_engine* e = le_engine_create();
+  if (e == NULL) {
+    fprintf(stderr, "cannot create an engine\n");
+    return 1;
+  }
   if (le_perf_render_begin(e, argv[1]) != LE_OK) {
     fprintf(stderr, "cannot start the render of %s\n", argv[1]);
     le_engine_destroy(e);
     return 1;
   }
   int32_t done = 0, progress = 0, tracks = 0;
+  int32_t status = LE_OK;
   while (!done) {
-    le_perf_render_poll(e, &done, &progress, &tracks);
+    status = le_perf_render_poll(e, &done, &progress, &tracks);
     if (!done) usleep(20000);
   }
-  int failed = 0;
+  /* A manifest the render cannot use ends it with no track. */
+  int failed = status != LE_OK || tracks == 0;
+  if (failed) fprintf(stderr, "the render failed (%d)\n", status);
   for (int32_t i = 0; i < tracks; ++i) {
     int32_t channel = -1, ok = 0;
     le_perf_render_track_status(e, i, &channel, &ok);

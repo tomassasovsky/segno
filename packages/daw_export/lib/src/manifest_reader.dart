@@ -85,6 +85,9 @@ abstract final class DawManifestReader {
     // track that was already settled at arm keeps its arm-time entry unless
     // disarm captured something newer for the same lane).
     final pcmRefsByChannel = <int, Map<int, String>>{};
+    // channel -> (lane -> pcmRef): the clean loops, which a track that plays
+    // its take through the effects as plugins carries (#1804).
+    final cleanRefsByChannel = <int, Map<int, String>>{};
     final laneFramesByChannel = <int, Map<int, int>>{};
     for (final t in [...armTracks, ...disarmTracks]) {
       final channel = (t['channel'] as num?)?.toInt();
@@ -105,6 +108,11 @@ abstract final class DawManifestReader {
             : laneJson['pcmRef'] as String?;
         if (laneIndex == null || pcmRef == null) continue;
         laneMap[laneIndex] = pcmRef;
+        final cleanRef = laneJson['pcmRef'];
+        if (cleanRef is String) {
+          cleanRefsByChannel.putIfAbsent(channel, () => {})[laneIndex] =
+              cleanRef;
+        }
         final lenFrames = (laneJson['lenFrames'] as num?)?.toInt();
         if (lenFrames != null && lenFrames > 0) {
           laneFramesByChannel.putIfAbsent(channel, () => {})[laneIndex] =
@@ -146,19 +154,18 @@ abstract final class DawManifestReader {
 
     final tracks = <DawTrack>[];
     for (final channel in pcmRefsByChannel.keys.toList()..sort()) {
-      final sessionClips = <DawSessionClip>[];
-      final lanes = pcmRefsByChannel[channel]!;
-      for (final lane in lanes.keys.toList()..sort()) {
-        final pcmRef = lanes[lane]!;
-        final audio = _audioFile(
-          captureDir,
-          pcmRef,
-          sampleRate: sampleRate,
-          fallbackFrames: laneFramesByChannel[channel]?[lane],
-        );
-        if (audio == null) continue;
-        sessionClips.add(DawSessionClip(laneIndex: lane, audio: audio));
-      }
+      List<DawSessionClip> loops(Map<int, String>? lanes) => [
+        for (final lane in (lanes?.keys.toList() ?? <int>[])..sort())
+          if (_audioFile(
+                captureDir,
+                lanes![lane]!,
+                sampleRate: sampleRate,
+                fallbackFrames: laneFramesByChannel[channel]?[lane],
+              )
+              case final audio?)
+            DawSessionClip(laneIndex: lane, audio: audio),
+      ];
+      final sessionClips = loops(pcmRefsByChannel[channel]);
 
       DawClip? stem(String kind) {
         final audio = _audioFile(
@@ -205,12 +212,15 @@ abstract final class DawManifestReader {
         // The dry stem through the plugins is the track: it plays, under
         // the track's name, and can be edited in Live. The wet stem stays
         // as the reference it is checked against, off.
+        // Its Session clips are the clean loops, which the plugins process
+        // as they process the stem; the heard ones stay on the reference.
         tracks.add(
           DawTrack(
             name: name,
             // The looper track itself when no wet stem stands for it.
             kind: wet == null ? DawTrackKind.loop : DawTrackKind.dry,
             arrangementClips: [?dry],
+            sessionClips: loops(cleanRefsByChannel[channel]),
             volume: volume,
             devices: devices,
             info: info,
@@ -309,14 +319,14 @@ abstract final class DawManifestReader {
   ) {
     final devices = <DawDevice>[];
     for (final t in armTracks) {
-      if ((t['channel'] as num?)?.toInt() != channel) continue;
-      for (final lane in (t['lanes'] as List<dynamic>? ?? const [])) {
-        final json = lane as Map<String, dynamic>;
-        if ((json['lane'] as num?)?.toInt() != 0) continue;
+      final lanes = t['lanes'];
+      if (t['channel'] != channel || lanes is! List) continue;
+      for (final lane in lanes) {
+        if (lane is! Map<String, dynamic> || lane['lane'] != 0) continue;
         devices.addAll(
           devicesOfChain(
-            json['effects'],
-            chainEnabled: json['chainEnabled'] != false,
+            lane['effects'],
+            chainEnabled: lane['chainEnabled'] != false,
             origin: ChainOrigin.lane(
               channel,
               0,
@@ -330,8 +340,9 @@ abstract final class DawManifestReader {
     final arm = manifest['armSnapshot'];
     final chains = arm is Map<String, dynamic> ? arm['trackChains'] : null;
     for (final chain in chains is List ? chains : const []) {
-      if (chain is! Map<String, dynamic>) continue;
-      if ((chain['channel'] as num?)?.toInt() != channel) continue;
+      if (chain is! Map<String, dynamic> || chain['channel'] != channel) {
+        continue;
+      }
       devices.addAll(
         devicesOfChain(
           chain['effects'],

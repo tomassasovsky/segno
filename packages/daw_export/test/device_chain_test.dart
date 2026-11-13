@@ -110,6 +110,54 @@ void main() {
       expect(_plugin(echo.chains.single.devices.single).state.enabled, isTrue);
     });
 
+    test("puts a switched-off rack's modules on, since only their effective "
+        'bit is recorded, so switching the rack on in Live plays them', () {
+      final devices = devicesOfChain([
+        {
+          'type': 3,
+          'params': [0.35, 0.35, 0.35],
+          'enabled': false,
+          'rack': {'id': 'r2', 'name': 'Echo Rack', 'bypassed': true},
+        },
+      ], origin: origin);
+      final echo = _rack(devices.single);
+      expect(echo.on, isFalse);
+      expect(_plugin(echo.chains.single.devices.single).state.enabled, isTrue);
+    });
+
+    test('leaves out a rack with nothing Segno runs in it', () {
+      const rack = {'id': 'r1', 'name': 'Plugin Rack'};
+      expect(
+        devicesOfChain([
+          {
+            'type': 8,
+            'plugin': {'format': 0, 'id': 'x', 'version': 0},
+            'rack': rack,
+          },
+          {'type': 0, 'params': <double>[], 'rack': rack},
+        ], origin: origin),
+        isEmpty,
+      );
+    });
+
+    test('reads a malformed entry without throwing', () {
+      final devices = devicesOfChain([
+        {
+          'type': 23,
+          'params': [0.2],
+          'rack': {'id': 'd', 'name': 'Dub Rack'},
+          'rackPath': 'amb',
+          'channels': {'placement': 'centre', 'level': null},
+        },
+      ], origin: origin);
+      final paths = _rack(_rack(devices.single).chains.single.devices.single);
+      // No Amb-Dub Mix: the default, 0.4.
+      expect(paths.chains.map((c) => c.volume), [1.0, closeTo(0.64, 1e-9)]);
+      final ambience = _plugin(paths.chains.first.devices.single);
+      expect(ambience.state.placement, 0);
+      expect(ambience.state.level, 1);
+    });
+
     test('makes a parallel section a rack of an Amb and a Dub chain', () {
       const rack = {'id': 'd1', 'name': 'Dub Rack'};
       final devices = devicesOfChain([

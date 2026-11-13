@@ -55,7 +55,7 @@ Uint8List buildAls(DawProject project) {
   final prototype = _TrackPrototype.take(liveSet);
   final nextPointeeId = liveSet.getElement('NextPointeeId')!;
   final ids = _PointeeIds(_intValue(nextPointeeId));
-  final devices = _DevicePrototypes.parse(ids);
+  final devices = _DevicePrototypes(ids);
 
   var sceneCount = 1;
   for (final track in project.tracks) {
@@ -350,21 +350,24 @@ class _TrackPrototype {
 /// The device prototypes Live saved (`live_device_template.dart`): a Segno
 /// plugin, and an Audio Effect Rack with its chain held apart.
 class _DevicePrototypes {
-  new _(this.plugin, this.rack, this.branch, this.ids);
+  new(this.ids);
 
-  factory parse(_PointeeIds ids) {
-    final plugin = XmlDocument.parse(livePluginDeviceTemplate).rootElement;
-    final rack = XmlDocument.parse(liveRackDeviceTemplate).rootElement;
-    final branches = rack.getElement('Branches')!;
-    final branch = branches.childElements.single;
-    branches.children.clear();
-    return _DevicePrototypes._(plugin, rack, branch, ids);
-  }
-
-  final XmlElement plugin;
-  final XmlElement rack;
-  final XmlElement branch;
   final _PointeeIds ids;
+
+  /// Parsed on the first device a set holds: most takes have none.
+  late final XmlElement plugin = XmlDocument.parse(livePluginDeviceTemplate)
+      .rootElement;
+  late final (XmlElement, XmlElement) _rackParts = () {
+    final rack = XmlDocument.parse(liveRackDeviceTemplate).rootElement;
+    final branch = rack.getElement('Branches')!.childElements.single..remove();
+    return (rack, branch);
+  }();
+
+  /// The rack, with no chains.
+  XmlElement get rack => _rackParts.$1;
+
+  /// One chain of it.
+  XmlElement get branch => _rackParts.$2;
 
   /// [devices] as a device list's members, numbered in order.
   List<XmlElement> build(List<DawDevice> devices) => [

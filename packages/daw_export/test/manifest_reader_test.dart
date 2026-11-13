@@ -777,6 +777,9 @@ void main() {
               .writeAsBytesSync(_wav(48000));
         }
         File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync(_wav(48000));
+        Directory('${dir.path}/loops').createSync();
+        File('${dir.path}/loops/clean.wav').writeAsBytesSync(_wav(4800));
+        File('${dir.path}/loops/heard.wav').writeAsBytesSync(_wav(4800));
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
             'sample_rate': 48000,
@@ -790,7 +793,8 @@ void main() {
                     {
                       'lane': 0,
                       'deferred': false,
-                      'pcmRef': 'stems/wet/track0.wav',
+                      'pcmRef': 'loops/clean.wav',
+                      'heardPcmRef': 'loops/heard.wav',
                       'effects':
                           effects ??
                           [
@@ -877,6 +881,10 @@ void main() {
           'stems/wet/track1.wav',
         );
         expect(heard.devices, isEmpty);
+        // The plugins process the clean loops; the heard ones stay on the
+        // reference.
+        expect(played.sessionClips.single.audio.fileRef, 'loops/clean.wav');
+        expect(heard.sessionClips.single.audio.fileRef, 'loops/heard.wav');
         expect(
           heard.info,
           'Effects when the take started:\nTrack: Reverb\nLane 1: Delay',
@@ -892,6 +900,7 @@ void main() {
         expect(track.name, 'Bass');
         expect(track.kind, DawTrackKind.loop);
         expect(track.devices, hasLength(2));
+        expect(track.sessionClips.single.audio.fileRef, 'loops/clean.wav');
       });
 
       test('a take whose chains hold nothing Segno runs keeps the wet stem '
