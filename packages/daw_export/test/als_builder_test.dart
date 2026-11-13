@@ -121,6 +121,7 @@ void main() {
         'tempo',
         'session_loop_warped',
         'vst3',
+        'reference_tracks',
       ]) {
         final root = _corpus(name).rootElement;
         for (final attribute in ['MajorVersion', 'MinorVersion', 'Creator']) {
@@ -186,7 +187,13 @@ void main() {
       String key(XmlElement e) =>
           '${e.parentElement?.name.local}/${e.name.local}';
       final withIds = <String>{};
-      for (final name in ['empty', 'audio_clips', 'automation', 'tempo']) {
+      for (final name in [
+        'empty',
+        'audio_clips',
+        'automation',
+        'tempo',
+        'reference_tracks',
+      ]) {
         for (final e in _corpus(name).descendantElements) {
           if (e.getAttribute('Id') != null) withIds.add(key(e));
         }
@@ -713,6 +720,71 @@ void main() {
       );
       XmlElement build(DawTrack track) =>
           _audioTracks(_build(DawProject(tracks: [track]))).single;
+
+      final reference = _audioTracks(_corpus('reference_tracks')).single;
+
+      test("matches the set Live saved: the activator's Manual, the info "
+          'text with its line breaks, and two clips on one track', () {
+        expect(_value(reference, 'DeviceChain/Mixer/Speaker/Manual'), 'false');
+        expect(_value(reference, 'Name/Annotation'), contains('\n'));
+        final track = build(
+          const DawTrack(
+            name: 'Ref',
+            active: false,
+            info: 'Effects when the take started:\nTrack: Overdrive',
+            arrangementClips: [
+              DawClip(audio: _stem, startSeconds: 0),
+              DawClip(audio: second, startSeconds: 10),
+            ],
+          ),
+        );
+        expect(
+          _value(track, 'DeviceChain/Mixer/Speaker/Manual'),
+          _value(reference, 'DeviceChain/Mixer/Speaker/Manual'),
+        );
+        expect(
+          _value(track, 'Name/Annotation'),
+          'Effects when the take started:\nTrack: Overdrive',
+        );
+        Set<String> clipShapes(XmlElement t) => {
+          for (final c in _at(
+            t,
+            'DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events',
+          ).findElements('AudioClip'))
+            ..._shape(c),
+        };
+        expect(clipShapes(track), clipShapes(reference));
+        expect(
+          _at(
+            reference,
+            'DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events',
+          ).findElements('AudioClip'),
+          hasLength(2),
+        );
+      });
+
+      test('Live keeps two volume events at one beat, in order: a step', () {
+        final volumeTarget = _at(
+          reference,
+          'DeviceChain/Mixer/Volume/AutomationTarget',
+        ).getAttribute('Id');
+        final events = _at(reference, 'AutomationEnvelopes/Envelopes')
+            .findElements('AutomationEnvelope')
+            .singleWhere(
+              (e) => _value(e, 'EnvelopeTarget/PointeeId') == volumeTarget,
+            )
+            .findAllElements('FloatEvent')
+            .map((e) => (e.getAttribute('Time'), e.getAttribute('Value')))
+            .toList();
+        expect(events, [
+          ('-63072000', '1'),
+          ('0', '1'),
+          ('2', '1'),
+          ('2', '0.0003162277571'),
+          ('6', '0.0003162277571'),
+          ('6', '1'),
+        ]);
+      });
 
       test('a switched-off track has its activator off; a track is on by '
           'default', () {
