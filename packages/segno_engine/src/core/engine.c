@@ -488,12 +488,14 @@ static void le_engine_quiesce_workers(le_engine* engine) {
   le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
+    le_audio_ring_release(&engine->perf_raw_ring[c]);
   }
   /* Layers staged after the drain thread died (its self-stop on a write
    * failure precedes the final drain cycle) are still heap-owned by this
    * ring — free them before the struct zero below loses the pointers. */
   le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
   engine->perf = (le_perf_capture){0};
+  engine->perf_raw_mask = 0;
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
@@ -1622,6 +1624,7 @@ void le_engine_destroy(le_engine* engine) {
   le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
+    le_audio_ring_release(&engine->perf_raw_ring[c]);
   }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
   le_rt_free(engine);

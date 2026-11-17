@@ -40,8 +40,13 @@ enum DawTrackKind {
   /// A looper track before its effects: its dry stem.
   dry,
 
-  /// A captured input, as its monitor played it.
+  /// A captured input: its raw recording (#1805), or, for a take from
+  /// before it, the input as its monitor played it.
   input,
+
+  /// A captured input as its monitor played it, beside its raw recording: a
+  /// reference.
+  inputHeard,
 
   /// The captured output.
   master,
@@ -68,9 +73,10 @@ class DawTrack {
   /// What the track holds.
   final DawTrackKind kind;
 
-  /// Whether the track's activator is on. A reference track (a dry stem, a
-  /// raw input, the master as heard) is off, so the set does not play the
-  /// same audio twice; switching it on in Live plays it.
+  /// Whether the track's activator is on. A reference track (a dry stem, an
+  /// input as heard beside its raw recording, the master as heard) is off,
+  /// so the set does not play the same audio twice; switching it on in Live
+  /// plays it.
   final bool active;
 
   /// The track's clips in the Arrangement, in timeline order. A long

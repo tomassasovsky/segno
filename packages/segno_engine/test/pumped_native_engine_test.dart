@@ -820,9 +820,9 @@ void main() {
 
       expect(engine.snapshot().isPerfArmed, isFalse);
       // What the next arm would capture: the mono master (one enabled
-      // output), no monitored input.
-      expect(engine.snapshot().perfCaptureStreams, 1);
-      expect(engine.snapshot().perfCaptureFrameBytes, 4);
+      // output) and input 0 raw (#1805), no monitored input.
+      expect(engine.snapshot().perfCaptureStreams, 2);
+      expect(engine.snapshot().perfCaptureFrameBytes, 8);
 
       // A real capture dir: arm now spawns a real drain thread that writes
       // real files there (part 2), so this must be a scratch temp dir, never
