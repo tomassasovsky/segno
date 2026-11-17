@@ -82,7 +82,8 @@ void exportCapture(String captureDir) {
   and enable bit, the chain slot it held, the owner's hop seed and the
   take's FX clock and beat (`SegnoPluginState`, the plugin's own state
   format), so it renders what the console rendered. A rack is an Audio
-  Effect Rack named as the rack, off when the rack was; a Dub Rack's
+  Effect Rack named as the rack, always on: a switched-off rack's entries
+  are off by their own Enabled, as the engine runs them. A Dub Rack's
   parallel Amb and Dub paths are a rack of two chains at the gains the
   Amb-Dub Mix gives them. A hosted plugin is left out, as the offline render
   passes it through dry.

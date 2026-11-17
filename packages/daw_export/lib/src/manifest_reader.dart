@@ -269,8 +269,9 @@ abstract final class DawManifestReader {
           : null;
       if (raw != null) {
         // The raw recording plays through the monitor chain the take
-        // started with, as Segno's plugins (#1804); its volume, pan and
-        // switching are not replayed yet.
+        // started with, as Segno's plugins (#1804), with the chain's
+        // switching and setting changes as their automation (#1836). The
+        // monitor's own volume, pan and on/off are not replayed yet.
         final devices = _inputDevices(manifest, input, armTime, (
           entries: logEntries,
           sampleRate: sampleRate,

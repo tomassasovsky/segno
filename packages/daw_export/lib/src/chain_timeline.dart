@@ -207,21 +207,24 @@ class _Steps {
 
   /// The union of [all], 1 while any of them is not 0.
   factory any(List<_Steps> all) {
-    final frames = {
-      for (final s in all) ...s._changes.map((c) => c.$1),
-    }.toList()..sort();
-    bool at(_Steps s, int frame) {
-      var v = s.initial;
-      for (final (f, value) in s._changes) {
-        if (f > frame) break;
-        v = value;
+    // One sweep over every change in frame order, each member's value
+    // carried as it goes.
+    final values = [for (final s in all) s.initial];
+    final changes = [
+      for (var m = 0; m < all.length; m++)
+        for (final (frame, value) in all[m]._changes) (frame, m, value),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    final union = _Steps(values.any((v) => v != 0) ? 1 : 0);
+    var on = values.where((v) => v != 0).length;
+    var i = 0;
+    while (i < changes.length) {
+      final frame = changes[i].$1;
+      for (; i < changes.length && changes[i].$1 == frame; i++) {
+        final (_, m, value) = changes[i];
+        on += (value != 0 ? 1 : 0) - (values[m] != 0 ? 1 : 0);
+        values[m] = value;
       }
-      return v != 0;
-    }
-
-    final union = _Steps(all.any((s) => s.initial != 0) ? 1 : 0);
-    for (final f in frames) {
-      union.set(f, all.any((s) => at(s, f)) ? 1 : 0);
+      union.set(frame, on > 0 ? 1 : 0);
     }
     return union;
   }

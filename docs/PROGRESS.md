@@ -155,6 +155,14 @@ a take's chains, where it used to hold each effect as it stood at arm.
   paths' tails, and a change of its Amb-Dub Mix is not replayed in the
   chains' volumes; chains published by a recipe and the Track and All
   tracks stages are not logged yet (#1806 Part 2).
+- Timing of a kind that delays its output (the octavers, 1216 frames at
+  48 kHz): it still reports that latency (#1804 part 2) and Live
+  compensates it, so its lane plays that much earlier than on the console,
+  now whether it is on or off (it used to play on time while off, and
+  early while on). Within the lane the timing is the console's, so a null
+  against "as heard" holds at that one offset for the whole take. A slot
+  that held two such kinds is early by both. Reporting no latency would
+  make the lane play exactly as the console's; that is an owner call.
 
 ## November 2026 Each Segno plugin draws its pedal (#1815)
 
