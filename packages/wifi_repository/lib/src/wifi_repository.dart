@@ -17,6 +17,9 @@ class WifiRepository {
   /// Nearby networks from a scan.
   Future<List<WifiNetwork>> scan() => _client.scan();
 
+  /// One event per change to the Wi-Fi state (see [WifiClient.changes]).
+  Stream<void> changes() => _client.changes();
+
   /// Join [ssid]; [psk] null/empty for open networks.
   Future<void> connect(String ssid, {String? psk}) =>
       _client.connect(ssid, psk: psk);

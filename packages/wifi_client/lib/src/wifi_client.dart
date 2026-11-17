@@ -12,11 +12,22 @@ abstract class WifiClient {
   /// Nearby networks from a scan.
   Future<List<WifiNetwork>> scan();
 
+  /// One event for each change NetworkManager announces: the Wi-Fi device
+  /// connecting, connected or dropped, the radio going off, a saved network
+  /// added or removed. Carries no state; read [status] after a burst.
+  ///
+  /// Listening starts one long-lived helper process
+  /// (`segno-wifi-ctl monitor`), and cancelling stops it. The stream ends
+  /// when the helper does.
+  Stream<void> changes();
+
   /// Join [ssid]; [psk] null/empty for open networks.
   ///
-  /// A failed join throws a [WifiHelperException], and the helper has by
-  /// then brought back the network that was active before it started, when
-  /// there was one: [WifiHelperException.restored] names it.
+  /// A failed join throws a [WifiHelperException]: [WifiHelperException.join]
+  /// says why, and the helper has by then brought back the network that was
+  /// active before it started, when there was one:
+  /// [WifiHelperException.restored] names it. A failed join never deletes a
+  /// saved network; a profile made for a new one is removed.
   Future<void> connect(String ssid, {String? psk});
 
   /// Drop the current association.
