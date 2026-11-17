@@ -1,5 +1,6 @@
 #include "processor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -79,7 +80,8 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
   if (result != kResultOk) return result;
   sr_ = (int32_t)std::lround(setup.sampleRate);
   if (sr_ <= 0) sr_ = 48000;
-  latency_ = segno_fx_latency(kind_->type, sr_);
+  tail_ = std::max(segno_fx_largest_latency(kind_->type),
+                   segno_fx_latency(kind_->type, sr_));
   return kResultOk;
 }
 
@@ -139,9 +141,10 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
   /* None, for every kind (#1836): the console compensates no effect's
-   * latency, so a kind that delays its output (the octavers, Overdrive,
-   * Distortion, Amp) plays late by it while on and on time while off, and
-   * a host that compensated a reported latency would play the lane early.
+   * latency, so a kind that delays its output (the octaver family by about
+   * 25 ms, a few others by a few frames at some rates) plays late by it
+   * while on and on time while off, and a host that compensated a reported
+   * latency would play the lane early.
    * Unreported, a host plays the plugin as the console played the entry,
    * in both states, and a render nulls against the engine's at lag 0. */
   return 0;
@@ -153,7 +156,7 @@ uint32 PLUGIN_API Processor::getTailSamples() {
   if (segno_fx_drains(kind_->type)) {
     return kInfiniteTail;
   }
-  return (uint32)latency_;
+  return (uint32)tail_;
 }
 
 void Processor::applyParam(ParamID id, double value) {

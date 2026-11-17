@@ -1,5 +1,7 @@
 #include "fx_slot.h"
 
+#include <stdatomic.h>
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -169,6 +171,28 @@ int32_t segno_fx_latency(int32_t type, int32_t sr) {
   if (s == NULL) return 0;
   const int32_t latency = segno_fx_slot_latency(s);
   segno_fx_slot_free(s);
+  return latency;
+}
+
+int32_t segno_fx_largest_latency(int32_t type) {
+  /* -1 until worked out; a race works it out twice to the same value. */
+  static _Atomic int32_t known[LE_FX_WIDTHS];
+  static _Atomic int ready;
+  if (!atomic_load(&ready)) {
+    for (int t = 0; t < LE_FX_WIDTHS; ++t) atomic_store(&known[t], -1);
+    atomic_store(&ready, 1);
+  }
+  if (type <= LE_FX_NONE || type >= LE_FX_WIDTHS) return 0;
+  int32_t latency = atomic_load(&known[type]);
+  if (latency < 0) {
+    latency = 0;
+    static const int32_t rates[] = {44100, 48000, 88200, 96000};
+    for (size_t i = 0; i < sizeof(rates) / sizeof(rates[0]); ++i) {
+      const int32_t l = segno_fx_latency(type, rates[i]);
+      if (l > latency) latency = l;
+    }
+    atomic_store(&known[type], latency);
+  }
   return latency;
 }
 

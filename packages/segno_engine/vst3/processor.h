@@ -77,9 +77,12 @@ class Processor : public Steinberg::Vst::AudioEffect {
   std::mutex pendingLock_;
 
   segno_fx_slot* slot_ = nullptr;
-  /* Frames the kind delays its output by at this rate: its tail past
-   * its input. The plugin reports no latency (getLatencySamples). */
-  int32_t latency_ = 0;
+  /* How long the output goes on past the input (getTailSamples): the
+   * kind's delay at this rate, or more at another the engine runs at
+   * (segno_fx_largest_latency), since a host may not ask again when it
+   * renders at another rate. The plugin reports no latency
+   * (getLatencySamples). */
+  int32_t tail_ = 0;
   /* The slot's tempo: quarter notes a frame and the time signature. */
   float qpf_ = 0.0f;
   int32_t num_ = 4;

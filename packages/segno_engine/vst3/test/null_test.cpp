@@ -48,6 +48,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -556,6 +557,11 @@ int main(int argc, char** argv) {
     if (std::strcmp(argv[i], "--block") == 0) block = std::atoi(argv[i + 1]);
     if (std::strcmp(argv[i], "--keep") == 0) keep = argv[i + 1];
   }
+  if (onlyRate != 0 &&
+      std::find(std::begin(kRates), std::end(kRates), onlyRate) == std::end(kRates)) {
+    std::fprintf(stderr, "--rate must be one of 44100, 48000, 88200, 96000\n");
+    return 2;
+  }
   std::string error;
   auto module = VST3::Hosting::Module::create(argv[1], error);
   if (!module) {
@@ -609,9 +615,21 @@ int main(int argc, char** argv) {
           ++failures;
           continue;
         }
-        /* The frames the kind delays its output by, shown: the plugin
-         * plays that delay as the engine does, and reports none. */
-        const int32_t latency = segno_fx_latency(kind.type, rate);
+        /* The frames the kind delays its output by on the case's slot,
+         * shown: the plugin plays that delay as the engine does, and
+         * reports none. */
+        int32_t latency = 0;
+        {
+          segno_fx_slot_config probe{};
+          probe.type = kind.type;
+          probe.slot = c.state.slot;
+          probe.sr = rate;
+          probe.level = 1.0f;
+          probe.enabled = 1;
+          segno_fx_slot* slot = segno_fx_slot_new(&probe);
+          latency = segno_fx_slot_latency(slot);
+          segno_fx_slot_free(slot);
+        }
         float worst = 0.0f, peak = 0.0f, effect = 0.0f;
         size_t at = 0;
         for (size_t i = 0; i < wet.size(); ++i) {

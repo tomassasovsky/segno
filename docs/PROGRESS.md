@@ -128,19 +128,22 @@ a take's chains, where it used to hold each effect as it stood at arm.
   `test/corpus/plugin_automation.als`, Live 12.2.7). Enabled runs the
   engine's switch for every kind: the 5 ms ramp, a delay's or a reverb's
   drain, a fresh start on a re-enable from a settled switch-off, and for a
-  kind that delays its output (the octavers, Overdrive, Distortion, Amp)
-  its warm-up and, while off, its input without the delay. The plugin used
+  kind that delays its output its warm-up and, while off, its input
+  without the delay. The plugin used
   to switch such a kind to its input delayed by its latency. The pedal's
   footswitch and LED drive Enabled; an exported device stays on in Live.
 - Every plugin reports no latency (owner call, reversing #1804 part 2's
   reported latency and its padding to the largest at any rate). The console
-  compensates no effect's latency: a kind that delays its output (the
-  octavers, 1188 to 2568 frames from 44.1 to 96 kHz, about 25 ms; the
-  Overdrive, Distortion and Amp, a few frames) plays late by it while on
-  and on time while off. Unreported, Live plays each lane exactly as the console
+  compensates no effect's latency: a kind that delays its output plays
+  late by it while on and on time while off. The Octaver, Dual octaver,
+  Whammy and Smart Tune delay theirs by 1188 to 2568 frames from 44.1 to
+  96 kHz (about 25 ms); the Amp, Overdrive, Distortion, Vinyl, LPF and
+  Degrade by 2 to 27 frames at some rates (the null test prints each). Unreported, Live plays each lane exactly as the console
   did in both states, and a render nulls against "as heard" at offset 0
   for every chain. A plugin added by hand in Live behaves the same: the
-  octaver family sounds about 25 ms late while on, uncompensated.
+  octaver family sounds about 25 ms late while on, uncompensated. The
+  tail a plugin reports is still its delay, the largest at any of those
+  rates, since a host may not ask again when it renders at another.
 - When the host starts playing, the values it sets at the block's first
   frame land before the plugin starts again as at arm, so a plugin
   automated off at the start starts settled off.
@@ -148,8 +151,9 @@ a take's chains, where it used to hold each effect as it stood at arm.
   block boundary and inside a block, off and on again 1 ms apart (inside
   the ramp), and from an entry off at arm that the host turns on; at 44.1,
   48, 88.2 and 96 kHz, every kind is bit-identical to the engine's offline
-  render at lag 0, at 37-, 128- and 512-frame blocks, the latency-bearing
-  kinds included, and reports no latency.
+  render at lag 0, the latency-bearing kinds included, and reports no
+  latency: checked at 37-, 128- and 512-frame blocks here; CI runs
+  128-frame blocks.
 - `test/corpus/plugin_automation.als` is the reference Live saved (see the
   corpus README); `test/device_automation_test.dart` checks the writer
   against it and `test/fx_automation_end_to_end_test.dart` runs a synthetic
