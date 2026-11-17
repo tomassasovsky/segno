@@ -4,7 +4,7 @@
 /// `vst3_faces_render_test.dart` renders when the plugins are installed.
 ///
 /// An editor is the console's single-effect page reduced to what a plugin
-/// window holds: the effect's pedal ([FxStompPedal]) on the console's
+/// window holds: the effect's pedal ([FxStompPedal]) on the effect page's
 /// background and, beside it, the controls the face has no knob for and every
 /// choice, as the effect page draws them ([FxBuiltInParamControl]). The whole
 /// is laid out in the console's pixels and drawn at [kVst3Scale] points per
@@ -151,7 +151,7 @@ class Vst3Face {
   }
 }
 
-/// One editor's picture: the pedal of [effect] on the console's background,
+/// One editor's picture: the pedal of [effect] on the effect page's background,
 /// and the panel's controls beside it, in a box of [size] (the whole
 /// editor), or as large as they are when [size] is `null`.
 class Vst3FaceArt extends StatelessWidget {
@@ -177,7 +177,7 @@ class Vst3FaceArt extends StatelessWidget {
         // The page's Material, which sets the controls' text as the console
         // does.
         child: Material(
-          color: context.surface.background,
+          color: context.surface.frameBackground,
           child: SizedBox(
             width: size?.width,
             height: size?.height,
