@@ -398,8 +398,8 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/dropbear-segno.conf \
         ${D}${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf
 
-    # brcmfmac: roamoff=1 — without this, WPA2 associates then never completes
-    # the 4-way handshake on many APs (no EAPOL M1).
+    # brcmfmac: Raspberry Pi OS's options, roamoff=1 and
+    # feature_disable=0x282000. The file says why each one is set.
     install -d ${D}${sysconfdir}/modprobe.d
     install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
         ${D}${sysconfdir}/modprobe.d/brcmfmac.conf

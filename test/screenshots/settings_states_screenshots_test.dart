@@ -159,7 +159,8 @@ class _PreviewWifiClient implements WifiClient {
     this.connected = true,
     this.internet = true,
     this.holdJoins = false,
-    this.refuseKey = false,
+    this.refuse,
+    this.joining = false,
   });
 
   final bool enabled;
@@ -169,8 +170,11 @@ class _PreviewWifiClient implements WifiClient {
   /// A join never ends, so the Connecting dialog stays up.
   final bool holdJoins;
 
-  /// A join is refused as a wrong password.
-  final bool refuseKey;
+  /// Why every join fails, or null when joins succeed.
+  final WifiJoinError? refuse;
+
+  /// NetworkManager is bringing The Studio back by itself.
+  final bool joining;
 
   @override
   bool get isSupported => true;
@@ -182,7 +186,8 @@ class _PreviewWifiClient implements WifiClient {
       supported: true,
       enabled: enabled,
       connected: up,
-      ssid: up ? 'The Studio' : '',
+      connecting: enabled && !up && joining,
+      ssid: up || joining ? 'The Studio' : '',
       ip: up ? '192.168.1.42' : '',
       signal: -42,
       autoConnect: const {'The Studio': true, 'Venue backstage': false},
@@ -206,9 +211,19 @@ class _PreviewWifiClient implements WifiClient {
   ];
 
   @override
+  Stream<void> changes() => const Stream.empty();
+
+  @override
   Future<void> connect(String ssid, {String? psk}) async {
     if (holdJoins) await Completer<void>().future;
-    if (refuseKey) throw StateError('segno-wifi-ctl: authentication failed');
+    final reason = refuse;
+    if (reason != null) {
+      throw WifiHelperException(
+        'segno-wifi-ctl: join failed',
+        join: reason,
+        restored: 'The Studio',
+      );
+    }
   }
 
   @override
@@ -765,7 +780,10 @@ void main() {
   }, skip: !rendersScreenshots);
 
   testWidgets('Network page, 29/04 incorrect password', (tester) async {
-    await pumpNetwork(tester, _PreviewWifiClient(refuseKey: true));
+    await pumpNetwork(
+      tester,
+      _PreviewWifiClient(refuse: WifiJoinError.wrongPassword),
+    );
     await tester.tap(find.byKey(const Key('network_row_Rehearsal Room')));
     await tester.pumpAndSettle();
     await typePassword(tester, 'wrongkey');
@@ -775,6 +793,43 @@ void main() {
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/settings_network_wifi_incorrect.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Network page, a join that could not connect', (tester) async {
+    await pumpNetwork(
+      tester,
+      _PreviewWifiClient(refuse: WifiJoinError.noConnection),
+    );
+    await tester.tap(find.byKey(const Key('network_row_Rehearsal Room')));
+    await tester.pumpAndSettle();
+    await typePassword(tester, 'rehearse');
+    await tester.tap(find.widgetWithText(InkWell, 'Connect').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('network_retry')), findsOneWidget);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_network_wifi_failed.png'),
+    );
+  }, skip: !rendersScreenshots);
+
+  testWidgets('Network page, rejoining by itself', (tester) async {
+    await size(tester);
+    await pumpPage(
+      tester,
+      page: const NetworkSettingsPage(),
+      wifi: WifiRepository(
+        client: _PreviewWifiClient(connected: false, joining: true),
+      ),
+    );
+    // The progress bar sweeps for as long as the join runs: no settling.
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byKey(const Key('network_progress')), findsOneWidget);
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/settings_network_wifi_rejoining.png'),
     );
   }, skip: !rendersScreenshots);
 
