@@ -86,7 +86,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1804 | Segno's effects as VST3 plugins in Live: part 1 (Segno.vst3, local build and install, null test) in review; part 2 (the export puts the chains on the dry tracks) next | in-review | auto | `claude/vst3-plugins-1804-p1` |
-| #1815 | Each Segno plugin's editor draws its pedal as the console does, with working controls | build | auto | `claude/vst3-pedal-ui-1815` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 
