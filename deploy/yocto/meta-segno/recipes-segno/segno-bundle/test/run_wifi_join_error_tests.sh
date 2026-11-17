@@ -44,8 +44,9 @@ exit 0
 STUB
     chmod +x "$work/bin/nmcli"
     : > "$work/journal"
-    # The journal answers $work/journal, or $work/journal-late from the
-    # second read on when that exists: journald storing a line late.
+    # The journal answers $work/journal, or $work/journal-late from read
+    # number $LATE_FROM on (2 unless set) when that exists: journald storing
+    # a line late.
     cat > "$work/bin/journalctl" <<STUB
 #!/bin/sh
 case "\$*" in
@@ -55,13 +56,21 @@ case "\$*" in
         exit 0 ;;
 esac
 echo "\$@" >> "$work/journalctl-args"
-if [ -f "$work/journal-late" ] && [ "\$(wc -l < "$work/journalctl-args")" -gt 1 ]; then
+if [ -f "$work/journal-late" ] \
+    && [ "\$(wc -l < "$work/journalctl-args")" -ge "\${LATE_FROM:-2}" ]; then
     cat "$work/journal-late"
 else
     cat "$work/journal"
 fi
 STUB
     chmod +x "$work/bin/journalctl"
+    # The helper's waits for the journal, counted rather than slept.
+    : > "$work/sleeps"
+    cat > "$work/bin/sleep" <<STUB
+#!/bin/sh
+echo "\$1" >> "$work/sleeps"
+STUB
+    chmod +x "$work/bin/sleep"
 }
 
 teardown() { rm -rf "$work"; }
@@ -74,7 +83,7 @@ run_connect() {
     SEGNO_WIFI_IFACE=wlan0 \
     SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SEGNO_WIFI_NM_CONNECT_TIMEOUT=1 \
-    SEGNO_JOIN_EVIDENCE_WAIT=0 \
+    SEGNO_JOIN_EVIDENCE_WAIT="${WAIT-0}" LATE_FROM="${LATE_FROM:-2}" \
     LIST="${LIST:-}" UP_ERROR="${UP_ERROR:-}" \
     PATH="$work/bin:$PATH" \
         sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >"$work/stdout"
@@ -176,9 +185,30 @@ setup
 cat > "$work/journal-late" <<'LOG'
 4-Way handshake failed for ifindex: 3, reason: 15
 LOG
-run_connect
+WAIT= run_connect
 check "the journal is read again" 2 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "after one second" 1 "$(wc -l < "$work/sleeps" | tr -d ' ')"
 check "and the wrong key is found" wrong-password "$(code)"
+teardown
+
+echo "iwd's line reaches the journal two seconds late"
+setup
+cat > "$work/journal-late" <<'LOG'
+4-Way handshake failed for ifindex: 3, reason: 15
+event: connect-failed, reason: 15
+LOG
+WAIT= LATE_FROM=3 run_connect
+# The default wait is 3 s, read again once a second.
+check "read three times" 3 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "still a wrong password" wrong-password "$(code)"
+teardown
+
+echo "a failure iwd never logs waits 3 s at most"
+setup
+UP_ERROR='Error: Timeout expired (45 seconds)' WAIT= run_connect
+check "three waits of a second" 3 "$(wc -l < "$work/sleeps" | tr -d ' ')"
+check "four reads" 4 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "then no-connection" no-connection "$(code)"
 teardown
 
 echo "iwd's lines already there are read once"
@@ -188,6 +218,7 @@ event: connect-failed, status: 16
 LOG
 run_connect
 check "one read" 1 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "no wait" 0 "$(wc -l < "$work/sleeps" | tr -d ' ')"
 teardown
 
 echo "a journal with no cursor is read from the attempt's second"

@@ -157,9 +157,11 @@ next_autoconnect_priority() {
 # ---------- NetworkManager path ----------
 
 JOURNALCTL="${SEGNO_JOURNALCTL:-journalctl}"
-# How long join_failure waits for iwd's lines when the journal has none of
-# them yet: journald stores a line a moment after iwd writes it.
-JOIN_EVIDENCE_WAIT_SECS="${SEGNO_JOIN_EVIDENCE_WAIT:-1}"
+# How long join_failure waits, at most, for iwd's lines when the journal has
+# none of them yet: journald stores a line a moment after iwd writes it, and
+# a wrong key whose line comes late must not read as no-connection. Read
+# again once a second; only a failure iwd never logs pays the whole wait.
+JOIN_EVIDENCE_WAIT_SECS="${SEGNO_JOIN_EVIDENCE_WAIT:-3}"
 
 # The journal's position now: the cursor of its last entry, or empty.
 join_mark() {
@@ -207,10 +209,13 @@ join_failure() {
     # iwd logs a handshake failure before the connect failure that ends the
     # attempt, so either line means the journal has caught up; neither may
     # mean it has not yet, and a wrong key must not read as no-connection.
-    if ! printf '%s' "$evidence" | grep -qaiE '4-way handshake failed|connect-failed'; then
-        sleep "$JOIN_EVIDENCE_WAIT_SECS"
+    waited=0
+    while ! printf '%s' "$evidence" | grep -qaiE '4-way handshake failed|connect-failed' \
+        && [ "$waited" -lt "$JOIN_EVIDENCE_WAIT_SECS" ]; do
+        sleep 1
+        waited=$((waited + 1))
         evidence=$(join_evidence "$2" "$3")
-    fi
+    done
     iwd_said=$(printf '%s\n' "$evidence" \
         | grep -aoiE '4-way handshake failed.*|connect-failed, [a-z]+: [0-9]+' \
         | tail -n1)
