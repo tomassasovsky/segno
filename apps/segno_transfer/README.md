@@ -27,6 +27,31 @@ Settings → Privacy & Security → Open Anyway** for Segno Transfer and confirm
 4. Edit **Save as** for each selected file and choose a destination using **Change**.
 5. Click **Download**. **Show in Finder** reveals the verified copies.
 
+## Open in Ableton Live
+
+The console writes a Live set (`project.als`) for each take when the take
+finishes. **Open in Live** downloads that set and every file it uses (the main
+recording, inputs, loops and stems) into a folder named after the performance in
+the download folder, keeping the layout the set expects. Each file is verified
+with SHA-256 like any download. Then the set opens in Ableton Live. Progress and
+**Cancel** work as they do for **Download**. A cancelled or failed download
+opens nothing and leaves no folder behind.
+
+Clicking **Open in Live** again opens the copy already downloaded, without
+fetching it again, as long as the console's files have not changed, every file
+in the copy keeps the length and modification time it was verified with, and
+`project.als` still matches its SHA-256. A set saved over in Live
+no longer matches, so the next click downloads a fresh copy beside it with a
+numbered name.
+
+The button is disabled, with the reason beside it, when Ableton Live is not
+installed or the take has no Live set. A take whose set is missing (for example
+one recorded before the console wrote sets, or one whose set failed to write)
+gets one from **Library > Audio > Performances > DAW project** on the console.
+When the set uses Segno effects and `Segno.vst3` is in neither
+`~/Library/Audio/Plug-Ins/VST3` nor `/Library/Audio/Plug-Ins/VST3`, the app
+warns that the effects open as missing devices and opens the set anyway.
+
 Click the **Play** button beside any audio file to hear it before downloading.
 Playback streams small sections over the existing connection and starts before
 the whole file transfers. Use Play/Pause and the timeline to seek anywhere; the
@@ -43,7 +68,8 @@ The app remembers the connection and download folder on this Mac. Source files
 are never renamed or deleted. Existing download names receive a numbered suffix.
 Cancelled/failed files stay selected for retry; completed files are deselected.
 Only complete WAV containers in finalized captures are offered. Raw capture PCM,
-DAW project files and metadata are not standalone audio downloads.
+DAW project files and metadata are not standalone audio downloads; the Live set
+downloads through **Open in Live**.
 
 ## Connection
 
@@ -54,7 +80,9 @@ The helper uses Python 3, jq and sha256sum, all present on the current appliance
 It does not require Python's json or hashlib packages, which the minimal image
 does not ship.
 The read-only helper runs through SSH without installing a service or changing
-the appliance.
+the appliance. It serves complete WAVs and the take's own `project.als`, and
+only from inside the take's folder. The Mac reads the set itself (gzipped XML)
+to decide which files to fetch.
 
 The host must already be trusted by SSH. For a new Mac/appliance pairing, first
 connect using SSH to verify its identity and unlock the key if necessary.

@@ -102,6 +102,7 @@ struct ContentView: View {
 
   @ViewBuilder private var detail: some View {
     if let recording = model.focused {
+      let liveSetUnavailable = model.liveSetUnavailable(recording)
       VStack(alignment: .leading, spacing: 0) {
         VStack(alignment: .leading, spacing: 8) {
           Text(recording.date.formatted(date: .long, time: .shortened)).font(
@@ -117,7 +118,18 @@ struct ContentView: View {
               for file in recording.files { model.toggle(recording, file, selected: true) }
             }
             Spacer()
+            Button("Open in Live") { model.openInLive(recording) }
+              .disabled(!model.connected || liveSetUnavailable != nil)
+              .help(
+                liveSetUnavailable
+                  ?? "Download this take's Live set and the audio it uses, then open it in Ableton Live"
+              )
+              .accessibilityIdentifier("openInLive")
           }.padding(.top, 8).disabled(model.busy)
+          if let reason = liveSetUnavailable {
+            Text(reason).font(.caption).foregroundStyle(.secondary).frame(
+              maxWidth: .infinity, alignment: .trailing)
+          }
         }.padding(24)
         Divider()
         ScrollView {

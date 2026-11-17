@@ -31,15 +31,24 @@ final class AppModel: ObservableObject {
   @Published var downloaded: [URL] = []
   @Published var settingsPresented = false
   @Published private(set) var previewTitle: String?
+  /// The Live application sets open in: looked up at launch and on every
+  /// connect, not on every redraw.
+  @Published private(set) var liveApplication: URL?
   let previewPlayer = PreviewPlayer()
   private var preparingPreview = false
   private var token = CancellationToken()
   private let repository: RecordingRepository
   private let defaults: UserDefaults
+  private let live: AbletonLive
 
-  init(repository: RecordingRepository, defaults: UserDefaults = .standard) {
+  init(
+    repository: RecordingRepository, defaults: UserDefaults = .standard,
+    live: AbletonLive = .system
+  ) {
     self.repository = repository
     self.defaults = defaults
+    self.live = live
+    liveApplication = live.application()
     connection =
       defaults.data(forKey: "connection").flatMap {
         try? JSONDecoder().decode(Connection.self, from: $0)
@@ -95,6 +104,7 @@ final class AppModel: ObservableObject {
       self.error = error.localizedDescription
       return
     }
+    liveApplication = live.application()
     busy = true
     error = nil
     status = "Connecting…"
@@ -205,6 +215,74 @@ final class AppModel: ObservableObject {
         ? "Cancelled · \(downloaded.count) files downloaded and verified"
         : "\(downloaded.count) files downloaded and verified"
       if !failures.isEmpty { error = failures.joined(separator: "\n") }
+    }
+  }
+
+  /// Why `recording`'s Live set cannot be opened, or nil when it can.
+  func liveSetUnavailable(_ recording: Recording) -> String? {
+    if liveApplication == nil { return "Install Ableton Live to open this take's Live set." }
+    if recording.liveSet == nil { return LiveSet.missing }
+    return nil
+  }
+
+  /// Downloads `recording`'s Live set into the download folder, or finds the
+  /// verified copy already there, and opens it in Live. A cancelled or failed
+  /// download opens nothing.
+  func openInLive(_ recording: Recording) {
+    liveApplication = live.application()
+    guard !busy, connected, liveSetUnavailable(recording) == nil,
+      let application = liveApplication
+    else { return }
+    let settings = connection
+    let folder = destination
+    token = CancellationToken()
+    let cancellation = token
+    let repository = repository
+    let live = live
+    busy = true
+    error = nil
+    downloaded = []
+    progress = 0
+    progressTitle = "Preparing the Live set · \(recording.name)"
+    Task {
+      do {
+        let copy = try await Task.detached {
+          try repository.downloadLiveSet(
+            recording: recording, destination: folder, connection: settings, token: cancellation
+          ) { fraction, phase in
+            Task { @MainActor in
+              guard self.busy, self.token === cancellation else { return }
+              self.progress = fraction
+              self.progressTitle = phase
+            }
+          }
+        }.value
+        downloaded = [copy.folder]
+        // A cancel that arrives once the copy is verified and in place keeps
+        // the copy but does not open it.
+        if cancellation.isCancelled {
+          status = "Cancelled · the Live set is downloaded and verified but was not opened"
+          busy = false
+          progressTitle = ""
+          return
+        }
+        try await live.open(copy.project, application)
+        status =
+          copy.reused
+          ? "Opened the Live set downloaded earlier"
+          : "Live set downloaded, verified and opened"
+        if copy.usesPlugins && !live.pluginInstalled() {
+          error =
+            "The Segno plugins are not installed on this Mac, so the set's effects open as missing devices. Install Segno.vst3 in ~/Library/Audio/Plug-Ins/VST3 to hear them."
+        }
+      } catch {
+        if !cancellation.isCancelled { self.error = error.localizedDescription }
+        status =
+          cancellation.isCancelled
+          ? "Cancelled · the Live set was not opened" : "Could not open the Live set"
+      }
+      busy = false
+      progressTitle = ""
     }
   }
 
