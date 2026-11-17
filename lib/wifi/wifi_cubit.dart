@@ -112,7 +112,10 @@ class WifiCubit extends Cubit<WifiState> {
     if (state.status.enabled) await scan();
   }
 
-  void _watch() {
+  /// Listens to the monitor. [restarted]: an earlier one ended, and what
+  /// changed while none ran is read at once.
+  void _watch({bool restarted = false}) {
+    if (restarted) _changed();
     _changes = _repository.changes().listen(
       (_) => _changed(),
       onError: (Object _) {},
@@ -120,7 +123,7 @@ class WifiCubit extends Cubit<WifiState> {
         _changes = null;
         if (isClosed) return;
         _monitorRestart = Timer(monitorRestart, () {
-          if (!isClosed) _watch();
+          if (!isClosed) _watch(restarted: true);
         });
       },
     );
@@ -148,7 +151,10 @@ class WifiCubit extends Cubit<WifiState> {
     } on Object {
       return;
     }
-    if (isClosed || epoch != _statusEpoch) return;
+    if (isClosed) return;
+    // Another read landed while this one ran, and it may have started
+    // earlier: read again rather than trust either.
+    if (epoch != _statusEpoch) return _changed();
     final cameOn = !state.status.enabled && status.enabled;
     emit(state.copyWith(status: status));
     // Switched on from elsewhere: look for networks at once.
@@ -291,9 +297,10 @@ class WifiCubit extends Cubit<WifiState> {
     );
     // One helper join at a time. A join tapped while a cancelled one is
     // still running waits for it — and for it to put the console back —
-    // rather than racing it for the radio.
-    while (_join != null) {
-      await _join;
+    // rather than racing it for the radio. A scan in flight is waited for
+    // too: it holds the radio off-channel, and a join beside it fails.
+    while (_join != null || _scan != null) {
+      await (_join ?? _scan);
       if (abandoned()) return;
     }
     final before = state.status;

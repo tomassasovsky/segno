@@ -1012,7 +1012,7 @@
     "@networkTryAgain": {
         "description": "Joins the network whose join just failed again, with the same key (#1817)."
     },
-    "networkActionFailed": "El Wi-Fi no respondió. Intentá de nuevo.",
+    "networkActionFailed": "El Wi-Fi no respondió.",
     "@networkActionFailed": {
         "description": "A Wi-Fi action other than a join (scan, disconnect, forget, the radio switch) failed."
     },

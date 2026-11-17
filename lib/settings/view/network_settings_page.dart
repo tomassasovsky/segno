@@ -51,6 +51,11 @@ class _NetworkView extends StatefulWidget {
 class _NetworkViewState extends State<_NetworkView> {
   WifiCubit get _cubit => context.read<WifiCubit>();
 
+  /// The network whose new password failed to join for a reason other than
+  /// the key, so Try again stays a password change: a refusal on the retry
+  /// reopens the change sheet, not the join sheet.
+  String? _failedChange;
+
   @override
   void initState() {
     super.initState();
@@ -94,7 +99,8 @@ class _NetworkViewState extends State<_NetworkView> {
       );
 
   /// The card's Try again: the failed join of [ssid] again, with its key.
-  Future<void> _retry(String ssid) => _follow(ssid, (cubit) => cubit.retry());
+  Future<void> _retry(String ssid) =>
+      _follow(ssid, (cubit) => cubit.retry(), change: _failedChange == ssid);
 
   /// Starts the join of [ssid] that [start] makes and follows it to its end.
   Future<void> _follow(
@@ -117,6 +123,7 @@ class _NetworkViewState extends State<_NetworkView> {
     await join;
     if (!mounted) return;
     final state = cubit.state;
+    _failedChange = change && state.failedSsid == ssid ? ssid : null;
     if (state.failedSsid == ssid &&
         state.joinError == WifiJoinError.wrongPassword) {
       await _askPassword(

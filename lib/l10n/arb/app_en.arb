@@ -1783,7 +1783,7 @@
     "@networkTryAgain": {
         "description": "Joins the network whose join just failed again, with the same key (#1817)."
     },
-    "networkActionFailed": "Wi-Fi didn’t respond. Try again.",
+    "networkActionFailed": "Wi-Fi didn’t respond.",
     "@networkActionFailed": {
         "description": "A Wi-Fi action other than a join (scan, disconnect, forget, the radio switch) failed."
     },

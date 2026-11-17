@@ -1303,6 +1303,64 @@ void main() {
       });
     });
 
+    test('a join waits for the scan in flight', () {
+      final client = _FakeWifiClient(status: studio);
+      open(client, (async, cubit) {
+        client.scanGate = Completer<void>();
+        async.elapse(WifiCubit.scanInterval);
+        unawaited(cubit.connect('Rehearsal', psk: 'k3y'));
+        async.flushMicrotasks();
+        expect(cubit.state.connectingSsid, 'Rehearsal');
+        expect(client.connects, isEmpty, reason: 'the scan holds the radio');
+
+        client.scanGate!.complete();
+        async.flushMicrotasks();
+        expect(client.connects, [('Rehearsal', 'k3y')]);
+      });
+    });
+
+    test('a read that may be older than another is read again', () {
+      final client = _FakeWifiClient(status: studio);
+      open(client, (async, cubit) {
+        // A scan's status read starts while the link is up...
+        client
+          ..scanGate = Completer<void>()
+          ..statusGate = Completer<void>();
+        async.elapse(WifiCubit.scanInterval);
+        client.scanGate!.complete();
+        async.flushMicrotasks();
+        final scanRead = client.statusGate!;
+        // ...the link drops and the monitor's read starts after it...
+        client
+          ..statusValue = dropped
+          ..statusGate = Completer<void>();
+        client.monitor.add(null);
+        async.elapse(WifiCubit.changeSettle);
+        final followRead = client.statusGate!;
+        // ...but the scan's read, which saw the link up (at a weaker
+        // signal, so it is a change), lands first.
+        client
+          ..statusGate = null
+          ..statusValue = const WifiStatus(
+            supported: true,
+            enabled: true,
+            connected: true,
+            ssid: 'The Studio',
+            signal: -60,
+            autoConnect: {'The Studio': true},
+            lastSsid: 'The Studio',
+          );
+        scanRead.complete();
+        async.flushMicrotasks();
+        client.statusValue = dropped;
+        followRead.complete();
+        async
+          ..flushMicrotasks()
+          ..elapse(WifiCubit.changeSettle);
+        expect(cubit.state.status.connected, isFalse);
+      });
+    });
+
     test('checks the internet every 30 s', () {
       final client = _FakeWifiClient(status: studio);
       open(client, (async, cubit) {
@@ -1312,14 +1370,17 @@ void main() {
       });
     });
 
-    test('a monitor that ends is started again', () {
+    test('a monitor that ends is started again, and what changed is read', () {
       final client = _FakeWifiClient(status: studio);
       open(client, (async, cubit) {
         unawaited(client.monitor.close());
+        async.flushMicrotasks();
+        client.statusValue = dropped;
         async
-          ..flushMicrotasks()
-          ..elapse(WifiCubit.monitorRestart);
+          ..elapse(WifiCubit.monitorRestart)
+          ..elapse(WifiCubit.changeSettle);
         expect(client.monitors, 2);
+        expect(cubit.state.status.connected, isFalse);
       });
     });
 
