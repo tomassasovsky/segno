@@ -32,7 +32,7 @@ void main() {
                   {
                     'lane': 0,
                     'deferred': false,
-                    'pcmRef': 'stems/wet/track0.wav',
+                    'pcmRef': 'loops/track0-lane0.wav',
                   },
                 ],
               },
@@ -42,12 +42,27 @@ void main() {
     );
   }
 
+  /// The render's stem index, listing [lanes] (#1824).
+  void writeIndex(List<Map<String, Object>> lanes) =>
+      File('${dir.path}/stems/stems.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode({'lanes': lanes}));
+
+  /// A rendered lane stem holding [bytes], and the index that lists it
+  /// (#1824).
+  File writeStem(List<int> bytes) {
+    writeIndex(const [
+      {'channel': 0, 'lane': 0, 'dry': 'stems/dry/track0-lane0.wav'},
+    ]);
+    return File('${dir.path}/stems/dry/track0-lane0.wav')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(bytes);
+  }
+
   test('writes project.als and fx-chains.txt from the bundle and leaves its '
       'audio alone', () async {
     writeManifest(withTrack: true);
-    final stem = File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([1, 2, 3, 4]);
+    final stem = writeStem([1, 2, 3, 4]);
     final stamp = stem.lastModifiedSync();
 
     final tracks = await writeDawProject(dir.path);
@@ -71,19 +86,34 @@ void main() {
   test('removes a project.als an earlier version wrote for a take with no '
       'tracks, which Live refuses', () async {
     writeManifest();
+    writeIndex(const []);
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
 
     expect(await writeDawProject(dir.path), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
   });
 
+  test('never replaces a project with one that has no stems: a take with '
+      'no stem index leaves its project as it was (#1824)', () async {
+    writeManifest(withTrack: true);
+    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+
+    await expectLater(
+      writeDawProject(dir.path),
+      throwsA(isA<StemsNotRendered>()),
+    );
+    expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
+    expect(
+      const StemsNotRendered('/take').toString(),
+      'StemsNotRendered: /take has no stems/stems.json',
+    );
+  });
+
   test('reads the manifest afresh on every call', () async {
     writeManifest();
     expect(await writeDawProject(dir.path), isEmpty);
 
-    File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([0]);
+    writeStem([0]);
     writeManifest(withTrack: true);
 
     expect(await writeDawProject(dir.path), hasLength(1));
@@ -91,9 +121,7 @@ void main() {
 
   test('throws what the write throws, so the caller can report it', () async {
     writeManifest(withTrack: true);
-    File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([0]);
+    writeStem([0]);
     // A directory where the Live Set goes: the write fails for real.
     Directory('${dir.path}/project.als').createSync();
 
@@ -105,9 +133,7 @@ void main() {
 
   test('a write cut short leaves the previous project whole', () async {
     writeManifest(withTrack: true);
-    File('${dir.path}/stems/wet/track0.wav')
-      ..createSync(recursive: true)
-      ..writeAsBytesSync([0]);
+    writeStem([0]);
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
     // The temp file's place is taken: the write fails before the rename.
     Directory('${dir.path}/project.als.tmp').createSync();

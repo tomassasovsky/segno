@@ -3078,7 +3078,7 @@ int32_t le_engine_history_mode_gate(le_engine* engine, uint32_t channels,
  * checked via the published atomic (this runs on the control thread, not the
  * audio thread, so e->perf.armed — the audio-thread-local mirror — must not
  * be read here). */
-static void le_plog_push_ctrl(le_engine* engine, le_command cmd) {
+void le_plog_push_ctrl(le_engine* engine, le_command cmd) {
   if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
     return;
   }

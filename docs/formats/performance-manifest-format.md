@@ -211,8 +211,58 @@ chain's output recorded with the take) also carries `"heard_mask"`, the lanes
 that have one, and its file holds them after the clean lanes: `frame_count`
 frames of one (L, R) pair per lane in the mask, in lane order. A layer with no
 heard image has no `heard_mask` and its file is as before. The renderer plays
-lane 0's heard image in the wet stem where the lane played it (see
-`LE_PLOG_HEARD_SOURCE` in the event log format).
+each lane's heard image in the lane's wet stem where the lane played it
+(see `LE_PLOG_HEARD_SOURCE` in the event log format).
+
+`lane_count` is the lanes the track mixed when the layer retired. A lane
+past it (added later, or not mixed then) reads as silence of the layer's
+length where the layer is a take's image, and keeps what it played where the
+layer is a pass's result: the pass did not touch it.
+
+## Rendered stems (`stems/`, #1824)
+
+The offline renderer (`perf_render.c`) writes, beside the capture's own
+files, two stems for every lane of every looper track, each a mono 32-bit
+float WAV the length of the take:
+
+| File | What it holds |
+|---|---|
+| `stems/dry/track<c>-lane<l>.wav` | The lane's loop as it played, at unity: its own layers and images, with the overdub passes placed where they were heard (#1808), the Stop and Play fades, Reverse, Speed and Transpose. No volume, mute or effects. Silent wherever the track did not mix the lane (past its logged lane count). |
+| `stems/wet/track<c>-lane<l>.wav` | The same lane after its volume, its effect chain (or its heard image, #1713), its mute, the track's solo, gain and fade, and Cut: what the lane sent to the output, before its pan, folded to mono `(L + R) / 2`. |
+| `stems/wet/master.wav` | Every lane's routed contribution (after its pan and output routing) summed, then the captured destination's output chain, and under Follow output its level and mute. |
+| `stems/stems.json` | The index of the lane stems this render published. |
+
+```jsonc
+{ "version": 1, "lanes": [
+  { "channel": 0, "lane": 0, "dry": "stems/dry/track0-lane0.wav", "wet": "stems/wet/track0-lane0.wav" },
+  { "channel": 0, "lane": 1, "dry": "stems/dry/track0-lane1.wav" }
+] }
+```
+
+Each entry names a lane and the stems of it that rendered; a stem that
+failed is left out, and so is a lane with neither. A take with no looper
+track gets an index with no lanes, so a take with no index at all is one
+that was never rendered this way (it failed, or predates #1824): the DAW
+project and the DAW package render its stems before they write its set, and
+never replace its `project.als` with one that has no stems. A reader lists the lane
+stems from the index and never from the file names. A render writes the
+index once it has sealed its stems, under `stems/stems.json.part` and
+renamed into place, so an index on disk always describes one whole render.
+A render cancelled part way leaves the previous render's stems and index.
+
+The lanes a track renders run up to the last lane that holds material: a
+take in either snapshot (`pcmRef`) or a lane of a layer. A lane listed empty
+at the arm, or counted active but never recorded, gets no stems. If the index
+cannot be written, the render reports every track failed. The lanes share the
+track's transport, so every lane is rebuilt from the same facts with its own
+images: lane `l` of each layer and snapshot. A lane a snapshot does not list
+while lane 0 has a take reads as silence there, except for the last pass's
+result in the disarm snapshot: a lane added after the take keeps a length of
+0 (#1825), which the snapshot skips, so the renderer keeps what that lane
+played before its last pass (what that pass added to it is not in the
+capture). The
+Track stage chain the lanes sum into (`trackChains`) is not replayed; its
+commands are manifest-only.
 
 ## `armSnapshot`
 

@@ -92,6 +92,56 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Every lane of a track has its own stems (#1824)
+
+- The performance render rendered lane 0 of each looper track only: what
+  lanes 1 and up played during a take reached the Live set only as their
+  last loop, a Session clip, though the master held it. `perf_render.c` now
+  renders every lane to `stems/dry/track<c>-lane<l>.wav` and
+  `stems/wet/track<c>-lane<l>.wav`, and the master from all of them. The
+  track-level `track<c>.wav` stems are gone: the DAW export was their only
+  reader. `stems/stems.json` lists the lane stems a render published
+  (docs/formats/performance-manifest-format.md).
+- The lanes share the track's transport, so each lane is rebuilt from the
+  same facts (takes, overdub passes placed as #1813 places them, history
+  images, fades, Reverse, Speed, Transpose) with its own images: lane `l` of
+  each layer file and snapshot, silence where the lane held nothing of a
+  take. Each lane's wet stem runs its own volume, pan, mute, output routing,
+  chain, heard image and hop seed; the track gain, fade, solo and Cut apply
+  to every lane, and the track-addressed mute and output mask to lane 0, as
+  in the callback. The Track stage chain is still not replayed.
+- Lanes added or removed during a take: the engine logs the lane count
+  (`LE_CMD_SET_LANE_COUNT`, events.log version 17) for every track at the
+  arm and whenever it applies, on the command path, and the renderer
+  silences a lane at or past it. A version-16 capture has no count and
+  renders every lane as mixed throughout. The engine removes only a lane
+  that holds nothing, so the count matters for a lane's effect tail. A lane
+  added after its track's take keeps a length of 0, so no snapshot exports
+  it: the renderer keeps what it played before its last pass, and what that
+  pass added is not in the capture (#1825).
+- The Live set gives each looper track a Group track holding `<track> L<n>`
+  (the lane's dry stem and clean loop through the lane's chain as Segno's
+  plugins, playing, with its volume and mute as automation) and
+  `<track> L<n> (as heard)` (its wet stem and loop as it played, off) for
+  each lane. The Group carries the Track stage chain as plugins, where Live
+  sums the lanes as the callback's track bus does. Lane loops sit in the
+  first scene. Group tracks are copied from
+  `test/corpus/group.als`, built from `automation.als` and the Group track of
+  Live 12.2's own Podcast & Radio template; opening and saving it in Live is
+  owed (the corpus README says how).
+- A take with no stem index (rendered before this, or whose render failed)
+  renders its stems first when the Library writes its DAW project or DAW
+  package (`PerformanceRepository.renderStems`, with the export's progress
+  and cancel), and `writeDawProject` never replaces a `project.als` with a
+  set that has no stems: a failed render leaves it as it was. A lane whose
+  wet render failed keeps its `L<n>` track with its plugins, and the take's
+  render reports the track failed.
+- A live-engine golden test (`test_engine_lane_stems.h`) records one track
+  with four lanes, a delay and mute on one, two lanes added while it plays
+  and one removed, and four overdub passes, then plays the take again with
+  one input at a time: each lane's wet stem equals what that lane alone sent
+  to the master, and the rendered master the captured one, within 1e-5.
+
 ## November 2026 A take records each input raw (#1805)
 
 - A performance take recorded only the inputs monitored at arm, and only as

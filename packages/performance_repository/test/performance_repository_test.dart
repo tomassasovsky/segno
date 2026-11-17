@@ -3408,6 +3408,70 @@ void main() {
     });
   });
 
+  group('renderStems (#1824)', () {
+    late String dir;
+
+    setUp(() {
+      dir = '${tempDir.path}/exports/perf-old';
+      Directory(dir).createSync(recursive: true);
+    });
+
+    void writeIndex() => (File(
+      '$dir/stems/stems.json',
+    )..createSync(recursive: true)).writeAsStringSync('{"lanes":[]}');
+
+    test('renders a take with no stem index and waits for the render, '
+        'telling its progress', () async {
+      expect(repo.stemsRendered(dir), isFalse);
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 40,
+      );
+      final fractions = <double>[];
+      final rendered = await repo.renderStems(
+        dir,
+        poll: Duration.zero,
+        onProgress: (fraction) {
+          fractions.add(fraction);
+          writeIndex();
+          engine.renderProgress = PerformanceRenderProgress.empty;
+        },
+      );
+      expect(rendered, isTrue);
+      expect(repo.stemsRendered(dir), isTrue);
+      expect(engine.lastRenderCaptureDir, dir);
+      expect(fractions, [0.4]);
+    });
+
+    test('a render that wrote no index, or read no manifest, did not '
+        'render the stems', () async {
+      expect(await repo.renderStems(dir), isFalse);
+      writeIndex();
+      engine
+        ..renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: true,
+          progressPercent: 100,
+          failed: true,
+        )
+        ..renderCancel(); // the slot free for another begin
+      expect(await repo.renderStems(dir), isFalse);
+    });
+
+    test('a busy render slot renders nothing', () async {
+      engine.renderBeginResult = EngineResult.alreadyRunning;
+      expect(await repo.renderStems(dir), isFalse);
+    });
+
+    test('a cancel stops the render', () async {
+      engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 10,
+      );
+      expect(await repo.renderStems(dir, cancelled: () => true), isFalse);
+      expect(engine.renderCancelCalls, 1);
+    });
+  });
+
   group('captureProgress', () {
     test('reads zero/false when not armed', () {
       expect(repo.captureProgress, (

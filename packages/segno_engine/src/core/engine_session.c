@@ -120,6 +120,9 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
       le_lane_reset(&t->lanes[l], l);
     }
     atomic_store_explicit(&t->lane_count, lane + 1, memory_order_release);
+    /* The lanes the track mixes from here (#1824, events.log 17). */
+    le_plog_push_ctrl(engine, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+                                           .lanei = {channel, 0, lane + 1}});
   }
   le_lane* ln = &t->lanes[lane];
   const int live = load_i32(&ln->a_live);
@@ -464,6 +467,9 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
       le_lane_reset(&t->lanes[l], l);
     }
     atomic_store_explicit(&t->lane_count, lane + 1, memory_order_release);
+    /* The lanes the track mixes from here (#1824, events.log 17). */
+    le_plog_push_ctrl(engine, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+                                           .lanei = {channel, 0, lane + 1}});
   }
   /* A new take's first image: no span until le_engine_import_span (#1179). */
   if (lane == 0 && ordinal == 0) {

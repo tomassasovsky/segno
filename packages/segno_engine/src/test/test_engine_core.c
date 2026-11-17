@@ -10401,7 +10401,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
  * RECORD_END (every capture written before #264). See the format doc's "What
  * `version` means". */
-#define LE_TEST_EVENTS_VERSION 16
+#define LE_TEST_EVENTS_VERSION 17
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -24190,7 +24190,7 @@ static int32_t test_read_wav_fixed(const char* path, float* out, int32_t out_cap
 static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
                               int32_t out_cap) {
   char path[700];
-  snprintf(path, sizeof(path), "%s/stems/dry/track%d.wav", dir, channel);
+  snprintf(path, sizeof(path), "%s/stems/dry/track%d-lane0.wav", dir, channel);
   return test_read_wav_fixed(path, out, out_cap);
 }
 
@@ -24941,7 +24941,7 @@ static void test_perf_render_large_manifest_parses(void) {
 static int32_t test_read_wet_stem(const char* dir, int32_t channel, float* out,
                                   int32_t out_cap) {
   char path[700];
-  snprintf(path, sizeof(path), "%s/stems/wet/track%d.wav", dir, channel);
+  snprintf(path, sizeof(path), "%s/stems/wet/track%d-lane0.wav", dir, channel);
   return test_read_wav_fixed(path, out, out_cap);
 }
 
@@ -36640,10 +36640,10 @@ static void test_output_fx_logs_exact_edits_track_fx_stays_manifest_only(void) {
   static unsigned char buf[16384];
   const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
-  /* Arm + the chains' musical time + complete Fade images + five output
-   * facts: no track FX setter leaks. */
+  /* Arm + the chains' musical time + complete Fade images and lane counts
+   * (#1824) + five output facts: no track FX setter leaks. */
   const size_t entries = log_entry_count(n);
-  CHECK(entries == 7 + LE_MAX_TRACKS);
+  CHECK(entries == 7 + 2 * LE_MAX_TRACKS);
   const int codes[] = {LE_PLOG_PERF_ARMED, LE_CMD_SET_OUTPUT_FX,
     LE_CMD_SET_OUTPUT_FX_COUNT, LE_PLOG_SET_OUTPUT_FX_PARAM,
     LE_PLOG_SET_OUTPUT_FX_ENABLED, LE_PLOG_SET_OUTPUT_FX_CHAIN_ENABLED};
@@ -39680,6 +39680,7 @@ static void test_session_commit_stays_stopped_until_play(void) {
 #include "test_engine_interface_inputs.h"
 #include "test_engine_heard_edits.h"
 #include "test_engine_heard_perf.h"
+#include "test_engine_lane_stems.h"
 #include "test_engine_perf_autostop.h"
 #include "test_engine_perf_raw.h"
 #include "test_engine_perf_render_memory.h"
@@ -39845,6 +39846,7 @@ int main(void) {
   SHARD(test_fade_restore_overdub_source_end);
   SHARD(run_history_replay_tests);
   SHARD(run_overdub_replay_tests);
+  SHARD(run_lane_stems_tests);
   if (getenv("SEGNO_HISTORY_TESTS_ONLY")) return g_failures ? 1 : 0;
   SHARD(run_peel_tests);
   SHARD(run_history_seq_tests);

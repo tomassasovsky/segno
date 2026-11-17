@@ -1573,6 +1573,38 @@ class PerformanceRepository {
   /// finding 4); the take's own parts are final and may go.
   bool get rendering => !renderProgress.done;
 
+  /// Whether the take in [dir] has rendered stems: the render's index,
+  /// `stems/stems.json`, is there (#1824). A take rendered before the lanes
+  /// had their own stems has none, and renders again ([renderStems]).
+  bool stemsRendered(String dir) => File('$dir/stems/stems.json').existsSync();
+
+  /// Renders the stems of the finished take in [dir] in the engine's render
+  /// slot, as its finalize does, and waits for the render: polled every
+  /// [poll], [onProgress] told its fraction done, and stopped (the render
+  /// cancelled, removing what it had begun) as soon as [cancelled] says so.
+  /// Returns whether the take has its stems afterwards: false when the
+  /// render could not start (the slot is busy), read no manifest, was
+  /// cancelled, or wrote no index.
+  Future<bool> renderStems(
+    String dir, {
+    bool Function()? cancelled,
+    void Function(double fraction)? onProgress,
+    Duration poll = const Duration(milliseconds: 50),
+  }) async {
+    if (!_engine.renderBegin(dir).isOk) return false;
+    _renderDir = dir;
+    while (true) {
+      final progress = renderProgress;
+      if (progress.done) return !progress.failed && stemsRendered(dir);
+      if (cancelled?.call() ?? false) {
+        _engine.renderCancel();
+        return false;
+      }
+      onProgress?.call(progress.progressPercent / 100);
+      await Future<void>.delayed(poll);
+    }
+  }
+
   /// [buckets] absolute peaks over [capture]'s main output, streamed off the
   /// UI isolate through the engine's one decoder, the parts concatenated in
   /// proportion to their lengths; null when no part reads.

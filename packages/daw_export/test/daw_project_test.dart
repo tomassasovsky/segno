@@ -26,24 +26,31 @@ void main() {
     test('defaults to an active track with nothing in it', () {
       const track = DawTrack(name: 'Track 1');
       expect(track.active, isTrue);
+      expect(track.kind, DawTrackKind.lane);
+      expect(track.group, isNull);
       expect(track.arrangementClips, isEmpty);
-      expect(track.sessionClips, isEmpty);
+      expect(track.loop, isNull);
       expect(track.volume, isNull);
       expect(track.info, '');
     });
 
-    test('may have no Arrangement clip, only Session clips', () {
+    test('may have no Arrangement clip, only its loop', () {
       const loop = DawAudioFile(
         fileRef: 'loops/track0-lane0.wav',
         sampleRate: 48000,
         frames: 96000,
       );
-      const track = DawTrack(
-        name: 'Track 0',
-        sessionClips: [DawSessionClip(laneIndex: 0, audio: loop)],
-      );
+      const track = DawTrack(name: 'Track 0', loop: loop);
       expect(track.arrangementClips, isEmpty);
-      expect(track.sessionClips.single.audio, loop);
+      expect(track.loop, loop);
+    });
+
+    test('sits in the Group it names', () {
+      const group = DawGroup(name: 'Rhythm', info: 'Lane 1: Delay');
+      const track = DawTrack(name: 'Rhythm L1', group: group);
+      expect(track.group, same(group));
+      expect((group.name, group.info), ('Rhythm', 'Lane 1: Delay'));
+      expect(const DawGroup(name: 'Bass').info, '');
     });
   });
 
@@ -58,7 +65,7 @@ void main() {
     });
   });
 
-  group('DawClip and DawSessionClip', () {
+  group('DawClip', () {
     test('carry their file and placement verbatim', () {
       const audio = DawAudioFile(
         fileRef: 'stems/wet/track0.wav',
@@ -68,9 +75,6 @@ void main() {
       const clip = DawClip(audio: audio, startSeconds: 2);
       expect(clip.audio, audio);
       expect(clip.startSeconds, 2);
-      const session = DawSessionClip(laneIndex: 3, audio: audio);
-      expect(session.laneIndex, 3);
-      expect(session.audio, audio);
     });
   });
 

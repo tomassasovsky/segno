@@ -1703,13 +1703,17 @@ abstract interface class EnginePerformanceCapture {
   VolumeSpace? volumeSpace(String path);
 
   /// Starts an offline render of the finalized capture at [captureDir]: a
-  /// worker thread reconstructs each non-empty track's full-length DRY stem
-  /// (part 7 — wet stems are part 8) by replaying `events.log` against the
+  /// worker thread reconstructs every lane of each non-empty track as a
+  /// full-length dry and wet stem by replaying `events.log` against the
   /// capture's snapshots and retired-layer files, and writes
-  /// `stems/dry/track<channel>.wav`. Reads only from disk — no live-engine
-  /// dependency, so a render runs correctly whether or not this engine is
-  /// currently armed or looping. Returns [EngineResult.ok] once the worker
-  /// thread is launched (this call never blocks on the render itself),
+  /// `stems/dry/track<channel>-lane<lane>.wav`,
+  /// `stems/wet/track<channel>-lane<lane>.wav`, their index
+  /// `stems/stems.json` and the master `stems/wet/master.wav`
+  /// (docs/formats/performance-manifest-format.md, #1824). A track's status
+  /// below succeeds when all its lanes do. Reads only from disk — no
+  /// live-engine dependency, so a render runs correctly whether or not this
+  /// engine is currently armed or looping. Returns [EngineResult.ok] once the
+  /// worker thread is launched (this call never blocks on the render itself),
   /// [EngineResult.invalid] for an empty [captureDir], or
   /// [EngineResult.alreadyRunning] if a render is already active.
   EngineResult renderBegin(String captureDir);

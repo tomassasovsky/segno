@@ -115,10 +115,10 @@ static void file_limit_check_recorded_parts(void) {
 
 static void test_perf_longest_take_fits_one_fat32_file(void) {
   printf("test_perf_longest_take_fits_one_fat32_file\n");
-  static const char* const rels[] = {"stems/dry/track0.wav",
-                                     "stems/dry/track1.wav",
-                                     "stems/wet/track0.wav",
-                                     "stems/wet/track1.wav",
+  static const char* const rels[] = {"stems/dry/track0-lane0.wav",
+                                     "stems/dry/track1-lane0.wav",
+                                     "stems/wet/track0-lane0.wav",
+                                     "stems/wet/track1-lane0.wav",
                                      "stems/wet/master.wav"};
   static const uint64_t rates[] = {44100, 48000, 88200, 96000, 176400, 192000};
   /* The app's longest take (PerformanceRepository.longestTake, 3 h) and
