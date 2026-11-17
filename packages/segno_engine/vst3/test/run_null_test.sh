@@ -15,5 +15,6 @@ build="${VST3_TEST_OUT:-$here/../build/vst3-test}"
 CC="${CC:-clang}" CXX="${CXX:-clang++}" \
   cmake -S "$here" -B "$build" -DCMAKE_BUILD_TYPE=Release -DSEGNO_VST3_FACES= >/dev/null
 cmake --build "$build" --parallel
-"$build/segno_vst3_binding_test" "$build/Segno.vst3" "$here/faces/faces.json"
+"$build/segno_vst3_binding_test" "$build/Segno.vst3" "$here/faces/faces.json" \
+  "$here/test/value_texts.json"
 "$build/segno_vst3_null_test" "$build/Segno.vst3" "$@"

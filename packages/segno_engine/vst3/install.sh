@@ -38,5 +38,5 @@ echo "installed $dest/Segno.vst3"
 if [ "${1:-}" = "--test" ]; then
   "$build/segno_vst3_null_test" "$dest/Segno.vst3"
   "$build/segno_vst3_binding_test" "$dest/Segno.vst3" "$here/faces/faces.json" \
-    --editors
+    "$here/test/value_texts.json" --editors
 fi

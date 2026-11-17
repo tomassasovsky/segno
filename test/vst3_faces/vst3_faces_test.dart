@@ -4,29 +4,32 @@
 @Tags(['skip_very_good_optimization'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
 
 import '../helpers/helpers.dart';
 import 'vst3_faces.dart';
 
-/// The layout Segno.vst3's editors read (#1815): the committed
-/// [kVst3FacesManifest] is what the console's drawing code lays out now, and
-/// every control drives one of its plugin's parameters.
+/// The layout Segno.vst3's editors read (#1815) and the value texts its
+/// plugins print: the committed [kVst3FacesManifest] is what the console's
+/// drawing code lays out now, every parameter but the bypass has exactly
+/// one control, and [kVst3ValueTexts] is what the console prints for every
+/// parameter.
 ///
-/// `--update-goldens` rewrites the manifest; then reinstall the plugins
+/// `--update-goldens` rewrites both; then reinstall the plugins
 /// (`packages/segno_engine/vst3/install.sh`) to render their art.
 void main() {
   setUpAll(loadFxStompArt);
 
-  testWidgets('the committed manifest is what the faces lay out', (
-    tester,
-  ) async {
-    final text = encodeVst3Manifest(await vst3FacesManifest(tester));
-    final file = File('${repoRoot.path}/$kVst3FacesManifest');
+  /// Compares [text] with the committed [path], or rewrites it.
+  void expectCommitted(String path, String text) {
+    final file = File('${repoRoot.path}/$path');
     if (autoUpdateGoldenFiles) {
       file.writeAsStringSync(text);
       return;
@@ -35,30 +38,80 @@ void main() {
       file.readAsStringSync(),
       text,
       reason:
-          'the pedal faces changed: run this test with --update-goldens and '
-          'reinstall Segno.vst3',
+          '$path is stale: run this test with --update-goldens and reinstall '
+          'Segno.vst3',
+    );
+  }
+
+  testWidgets('the committed manifest is what the faces lay out', (
+    tester,
+  ) async {
+    final first = encodeVst3Manifest(await vst3FacesManifest(tester));
+    expectCommitted(kVst3FacesManifest, first);
+    // And it lays out the same every time.
+    expect(encodeVst3Manifest(await vst3FacesManifest(tester)), first);
+  });
+
+  testWidgets('the committed value texts are what the console prints', (
+    tester,
+  ) async {
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expectCommitted(
+      kVst3ValueTexts,
+      encodeVst3ValueTexts(vst3ValueTexts(l10n)),
     );
   });
 
-  testWidgets('the layout is the same every time', (tester) async {
-    final first = encodeVst3Manifest(await vst3FacesManifest(tester));
-    final second = encodeVst3Manifest(await vst3FacesManifest(tester));
-    expect(second, first);
+  test('every parameter but the bypass has exactly one control', () {
+    final manifest = jsonDecode(
+      File('${repoRoot.path}/$kVst3FacesManifest').readAsStringSync(),
+    ) as Map<String, Object?>;
+    final faces = manifest['faces']! as List<Object?>;
+    expect(faces, isNotEmpty);
+    for (final entry in faces.cast<Map<String, Object?>>()) {
+      final type = TrackEffectType.fromCode(entry['type']! as int);
+      final controls = (entry['controls']! as List<Object?>)
+          .cast<Map<String, Object?>>();
+      final ids = [
+        for (var p = 0; p < type.params.length; p++) p,
+        kVst3InputId,
+        kVst3OutputId,
+        kVst3PlacementId,
+        kVst3LevelId,
+      ];
+      final playing = [
+        for (final c in controls)
+          if (c['display'] != true) c['param']! as int,
+      ];
+      for (final id in ids) {
+        expect(
+          playing.where((p) => p == id),
+          hasLength(1),
+          reason: '${type.label}: parameter $id',
+        );
+      }
+      expect(
+        [
+          for (final c in controls)
+            if (c['control'] == 'footswitch') c['param'],
+        ],
+        [kVst3BypassId],
+        reason: '${type.label}: one footswitch, the bypass',
+      );
+      expect(
+        playing.toSet().difference({...ids, kVst3BypassId}),
+        isEmpty,
+        reason: '${type.label}: every control drives a parameter',
+      );
+    }
   });
 
-  testWidgets('every control drives a parameter of its plugin', (tester) async {
-    final ids = _paramsHeaderIds();
+  testWidgets('every control fits its parameter', (tester) async {
     for (final type in vst3Kinds) {
       final face = Vst3Face.of(type);
       if (face == null) continue;
       final layout = await layOutVst3Face(tester, face);
       final window = Offset.zero & layout.size;
-      final params = type.params;
-      expect(
-        layout.controls.where((c) => c.kind == Vst3ControlKind.footswitch),
-        hasLength(1),
-        reason: '${type.label} has one footswitch',
-      );
       for (final c in layout.controls) {
         final where = '${type.label} ${c.kind.name} ${c.param}';
         expect(window.contains(c.rect.topLeft), isTrue, reason: where);
@@ -67,45 +120,28 @@ void main() {
           isTrue,
           reason: where,
         );
-        if (c.kind == Vst3ControlKind.footswitch) {
-          expect(c.param, ids['kBypassId'], reason: where);
-          continue;
-        }
-        expect(c.param, inInclusiveRange(0, params.length - 1), reason: where);
-        final param = params[c.param];
+        if (c.kind == Vst3ControlKind.footswitch) continue;
+        final positions = vst3Positions(type, c.param);
+        final choice = c.param < type.params.length
+            ? fxParamIsChoice(type.params[c.param])
+            : positions > 1;
         switch (c.kind) {
           case Vst3ControlKind.buttons:
-            expect(fxParamIsChoice(param), isTrue, reason: where);
-            expect(c.buttons, hasLength(param.steps), reason: where);
+            expect(choice, isTrue, reason: where);
+            expect(c.buttons, hasLength(positions), reason: where);
           case Vst3ControlKind.select:
-            expect(fxParamIsChoice(param), isTrue, reason: where);
-            expect(c.names, hasLength(param.steps), reason: where);
-          case Vst3ControlKind.knob || Vst3ControlKind.slider:
-            expect(
-              c.frames,
-              param.steps > 1 ? param.steps : kVst3Frames,
-              reason: where,
-            );
+            expect(choice, isTrue, reason: where);
+            expect(c.names, hasLength(positions), reason: where);
+          case Vst3ControlKind.knob:
+            expect(c.display, choice, reason: where);
+            expect(c.frames, face.framesOf(c.param), reason: where);
+          case Vst3ControlKind.slider:
+            expect(choice, isFalse, reason: where);
+            expect(c.frames, face.framesOf(c.param), reason: where);
+            expect(c.readout, isNotNull, reason: where);
+            expect(c.rect.contains(c.readout!.rect.center), isTrue);
           case Vst3ControlKind.footswitch:
             break;
-        }
-      }
-      // Every setting is on the face or in the panel, and every choice has
-      // its selector.
-      for (var p = 0; p < params.length; p++) {
-        final kinds = layout.controls
-            .where((c) => c.param == p)
-            .map((c) => c.kind);
-        expect(kinds, isNotEmpty, reason: '${type.label} param $p');
-        if (fxParamIsChoice(params[p])) {
-          expect(
-            kinds.any(
-              (k) =>
-                  k == Vst3ControlKind.buttons || k == Vst3ControlKind.select,
-            ),
-            isTrue,
-            reason: '${type.label} choice $p',
-          );
         }
       }
       // The moving pictures never overlap, so drawing one never covers
@@ -132,14 +168,4 @@ void main() {
     expect(Vst3Face.of(TrackEffectType.distortion), isNull);
     expect(Vst3Face.of(TrackEffectType.delay), isNotNull);
   });
-}
-
-/// The fixed parameter ids in `params.h`, by name.
-Map<String, int> _paramsHeaderIds() {
-  final header = File('${repoRoot.path}/packages/segno_engine/vst3/params.h')
-      .readAsStringSync();
-  return {
-    for (final m in RegExp(r'(k\w+Id) = (\d+),').allMatches(header))
-      m[1]!: int.parse(m[2]!),
-  };
 }

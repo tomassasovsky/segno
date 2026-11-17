@@ -92,7 +92,8 @@ add_library(segno_vst3 MODULE
   "${SEGNO_MODULE_ENTRY}"
   factory.cpp
   processor.cpp
-  controller.cpp)
+  controller.cpp
+  value_text.cpp)
 target_link_libraries(segno_vst3 PRIVATE segno_vst3_sdk segno_fx_island)
 if(APPLE)
   # The pedal-face editor (editor.h); elsewhere a host shows its own
