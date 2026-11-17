@@ -62,8 +62,14 @@ List<int> rawInputsOf(Map<String, dynamic> manifest) {
 /// stream `1 + n`.
 const int kRawStreamBase = 100;
 
-/// What a capture calls hardware input [input]: the name recorded at arm
-/// (#1799), or `Input N` (1-based) for an input without one.
+/// The source index of instrument slot 0 (`LE_INSTRUMENT_SOURCE_BASE`): a
+/// captured source from here up is instrument `source - kInstrumentSourceBase`
+/// (#1197), below it a device input.
+const int kInstrumentSourceBase = 32;
+
+/// What a capture calls source [input]: the name recorded at arm (#1799), or
+/// `Input N` for a device input and `Instrument N` for an instrument (#1197,
+/// 1-based) without one.
 String inputNameOf(Map<String, dynamic> manifest, int input) {
   final arm = manifest['armSnapshot'];
   final inputs = arm is Map<String, dynamic> ? arm['inputs'] : null;
@@ -76,7 +82,9 @@ String inputNameOf(Map<String, dynamic> manifest, int input) {
       }
     }
   }
-  return 'Input ${input + 1}';
+  return input >= kInstrumentSourceBase
+      ? 'Instrument ${input - kInstrumentSourceBase + 1}'
+      : 'Input ${input + 1}';
 }
 
 /// The name of the reference track holding the captured output.

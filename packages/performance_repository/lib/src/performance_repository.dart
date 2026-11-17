@@ -144,8 +144,9 @@ class PerformanceRepository {
 
   /// Free bytes the exports volume needs before a take may start: the
   /// reserve, the engine's allowance, and [minimumTake] of every stream the
-  /// arm would capture (the master and each monitored input, as the engine
-  /// reports them) at the current sample rate, with one part header each.
+  /// arm would capture (the master, each monitored input as heard, and every
+  /// input and instrument raw, as the engine reports them) at the current
+  /// sample rate, with one part header each.
   /// Arming below this would start a take the reserve stops at once. When
   /// the engine reports nothing to capture, a stereo master is assumed.
   int get minimumFreeBytesToArm => minimumFreeBytesToArmAt();

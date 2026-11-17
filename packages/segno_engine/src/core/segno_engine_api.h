@@ -4149,9 +4149,9 @@ typedef struct le_perf_target {
   /* Seconds of audio each capture ring holds, 1 to LE_PERF_RING_SECONDS_MAX;
    * 0 means LE_PERF_RING_SECONDS_DEFAULT. Lowered (never below the default,
    * nor below the request) so that every ring together stays within
-   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 monitored
-   * inputs at 96 kHz take 33 stereo rings of 2^19 samples and 32 raw mono
-   * rings of 2^18, 98 MiB. The sidecar's
+   * LE_PERF_RING_BYTES_MAX. At the floor the cap gives way: 32 inputs and 8
+   * instruments, all monitored, at 96 kHz take 41 stereo rings of 2^19
+   * samples and 40 raw mono rings of 2^18, 122 MiB. The sidecar's
    * `ring_seconds` and le_snapshot.perf_ring_seconds report what was
    * granted. */
   int32_t ring_seconds;

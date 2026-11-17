@@ -1203,6 +1203,23 @@ void _layoutTests() {
       );
     });
 
+    test('an instrument recorded raw (#1805) is named as an instrument', () {
+      write('input-raw-33-001.wav', 48000);
+      manifest({
+        'channel_layout': {
+          'master_channels': 2,
+          'captured_inputs': <int>[],
+          'raw_inputs': [33],
+        },
+        'parts': [
+          {'stream': 133, 'index': 1, 'file': 'input-raw-33-001.wav'},
+        ],
+      });
+
+      final track = DawManifestReader.read(dir.path)!.tracks.single;
+      expect(track.name, 'Instrument 2 raw');
+    });
+
     test('an input whose parts as heard are missing keeps its raw track '
         'alone', () {
       write('input-raw-0-001.wav', 48000);
