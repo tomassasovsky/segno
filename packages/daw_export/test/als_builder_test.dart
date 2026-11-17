@@ -1123,6 +1123,7 @@ void main() {
         final branches = paths.getElement('Branches')!.childElements.toList();
         expect(branches.map((b) => _value(b, 'Name/UserName')), ['Amb', 'Dub']);
         expect(branches.map((b) => b.getAttribute('Id')), ['0', '1']);
+        expect(branches.map((b) => _value(b, 'IsSelected')), ['true', 'false']);
         expect(_number(branches[0], 'MixerDevice/Volume/Manual'), 0.75);
         expect(_number(branches[1], 'MixerDevice/Volume/Manual'), 1);
         expect(

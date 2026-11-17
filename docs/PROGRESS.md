@@ -187,6 +187,15 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   jumps (`segno_fx_slot_rearm`), so a render from the start of the set is
   the console's: without it, LFOs, noise and octaver hops run on while
   Live's transport stands.
+- A plugin reports one latency at every rate, its kind's largest at 44.1,
+  48, 88.2 and 96 kHz, and delays its output by the rest: Live asks for
+  the latency at its device's rate and not again when it exports at
+  another, so a rate-dependent latency (the octavers, the Amp) was
+  compensated wrongly.
+- Checked in Live 12.2.7: an export of `perf-20261112-130713` with a chain
+  written in (Compressor, a Dub Rack with its Amb and Dub paths, an Echo
+  Rack, an Octaver off) renders the dry track through the plugins within
+  -139.6 dBFS of its "as heard" stem over 150 s.
 - An input recorded raw (#1805) plays its raw recording through its
   monitor chain at arm, as plugins, on `<input> raw` (the hop seed is
   `le_fx_monitor_hop_seed`); the input as heard already has the chain in

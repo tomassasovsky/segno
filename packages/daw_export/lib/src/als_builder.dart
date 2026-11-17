@@ -494,7 +494,11 @@ class _DevicePrototypes {
     final branches = element.getElement('Branches')!;
     for (var i = 0; i < device.chains.length; i++) {
       final chain = device.chains[i];
+      // One chain selected, as Live has it for a rack it made, so the rack
+      // opens showing that chain's devices rather than "2 of 2 Chains
+      // Selected".
       final b = _copy(branch, i);
+      _setValue(b.getElement('IsSelected')!, '${i == 0}');
       final name = b.getElement('Name')!;
       _setValue(name.getElement('EffectiveName')!, chain.name);
       _setValue(name.getElement('UserName')!, chain.name);
