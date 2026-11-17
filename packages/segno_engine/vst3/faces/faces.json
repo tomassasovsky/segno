@@ -64,7 +64,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -73,7 +73,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -130,7 +130,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -139,7 +139,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -202,7 +202,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -211,7 +211,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -268,7 +268,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -277,7 +277,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -374,7 +374,7 @@
           "by": 1001,
           "track": [340, 459, 320, 37],
           "readout": [401, 434, 259, 18],
-          "baseline": 448
+          "baseline": 447.93
         },
         {
           "control": "slider",
@@ -383,7 +383,7 @@
           "frames": 128,
           "track": [340, 567, 320, 37],
           "readout": [382, 540, 278, 18],
-          "baseline": 554
+          "baseline": 553.93
         }
       ]
     },
@@ -446,7 +446,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -455,7 +455,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -518,7 +518,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -527,7 +527,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -585,7 +585,7 @@
           "frames": 128,
           "track": [340, 47, 320, 37],
           "readout": [407, 20, 253, 18],
-          "baseline": 34
+          "baseline": 33.93
         },
         {
           "control": "slider",
@@ -594,7 +594,7 @@
           "frames": 128,
           "track": [340, 138, 320, 37],
           "readout": [390, 111, 270, 18],
-          "baseline": 125
+          "baseline": 125.27
         },
         {
           "control": "slider",
@@ -603,7 +603,7 @@
           "frames": 128,
           "track": [340, 229, 320, 37],
           "readout": [426, 201, 234, 18],
-          "baseline": 215
+          "baseline": 215.27
         },
         {
           "control": "slider",
@@ -612,7 +612,7 @@
           "frames": 128,
           "track": [340, 319, 320, 37],
           "readout": [408, 293, 252, 18],
-          "baseline": 307
+          "baseline": 306.6
         },
         {
           "control": "slider",
@@ -621,7 +621,7 @@
           "frames": 128,
           "track": [340, 410, 320, 37],
           "readout": [423, 383, 237, 18],
-          "baseline": 397
+          "baseline": 396.6
         },
         {
           "control": "slider",
@@ -630,7 +630,7 @@
           "frames": 128,
           "track": [340, 501, 320, 37],
           "readout": [405, 474, 255, 18],
-          "baseline": 488
+          "baseline": 487.93
         },
         {
           "control": "slider",
@@ -639,7 +639,7 @@
           "frames": 128,
           "track": [340, 591, 320, 37],
           "readout": [411, 564, 249, 18],
-          "baseline": 578
+          "baseline": 577.93
         },
         {
           "control": "slider",
@@ -648,7 +648,7 @@
           "frames": 128,
           "track": [680, 47, 320, 37],
           "readout": [733, 21, 267, 18],
-          "baseline": 35
+          "baseline": 34.6
         },
         {
           "control": "buttons",
@@ -691,7 +691,7 @@
           "by": 1001,
           "track": [680, 453, 320, 37],
           "readout": [741, 429, 259, 18],
-          "baseline": 443
+          "baseline": 442.6
         },
         {
           "control": "slider",
@@ -700,7 +700,7 @@
           "frames": 128,
           "track": [680, 562, 320, 37],
           "readout": [722, 535, 278, 18],
-          "baseline": 549
+          "baseline": 548.6
         }
       ]
     },
@@ -775,7 +775,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -784,7 +784,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -847,7 +847,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -856,7 +856,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -925,7 +925,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -934,7 +934,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -991,7 +991,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1000,7 +1000,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1063,7 +1063,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1072,7 +1072,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1094,7 +1094,7 @@
           "frames": 128,
           "track": [340, 47, 320, 37],
           "readout": [384, 21, 276, 18],
-          "baseline": 35
+          "baseline": 34.6
         },
         {
           "control": "select",
@@ -1126,7 +1126,7 @@
           "by": 1001,
           "track": [340, 357, 320, 37],
           "readout": [401, 333, 259, 18],
-          "baseline": 347
+          "baseline": 346.6
         },
         {
           "control": "slider",
@@ -1135,7 +1135,7 @@
           "frames": 128,
           "track": [340, 466, 320, 37],
           "readout": [382, 439, 278, 18],
-          "baseline": 453
+          "baseline": 452.6
         }
       ]
     },
@@ -1198,7 +1198,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1207,7 +1207,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1276,7 +1276,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1285,7 +1285,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1348,7 +1348,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1357,7 +1357,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1451,7 +1451,7 @@
           "by": 1001,
           "track": [340, 363, 320, 37],
           "readout": [401, 338, 259, 18],
-          "baseline": 352
+          "baseline": 351.93
         },
         {
           "control": "slider",
@@ -1460,7 +1460,7 @@
           "frames": 128,
           "track": [340, 471, 320, 37],
           "readout": [382, 444, 278, 18],
-          "baseline": 458
+          "baseline": 457.93
         }
       ]
     },
@@ -1517,7 +1517,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1526,7 +1526,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1583,7 +1583,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1592,7 +1592,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1655,7 +1655,7 @@
           "by": 1001,
           "track": [340, 267, 320, 37],
           "readout": [401, 242, 259, 18],
-          "baseline": 256
+          "baseline": 255.93
         },
         {
           "control": "slider",
@@ -1664,7 +1664,7 @@
           "frames": 128,
           "track": [340, 375, 320, 37],
           "readout": [382, 348, 278, 18],
-          "baseline": 362
+          "baseline": 361.93
         }
       ]
     },
@@ -1686,7 +1686,7 @@
           "frames": 128,
           "track": [340, 47, 320, 37],
           "readout": [384, 21, 276, 18],
-          "baseline": 35
+          "baseline": 34.6
         },
         {
           "control": "buttons",
@@ -1728,7 +1728,7 @@
           "by": 1001,
           "track": [340, 453, 320, 37],
           "readout": [401, 429, 259, 18],
-          "baseline": 443
+          "baseline": 442.6
         },
         {
           "control": "slider",
@@ -1737,7 +1737,7 @@
           "frames": 128,
           "track": [340, 562, 320, 37],
           "readout": [382, 535, 278, 18],
-          "baseline": 549
+          "baseline": 548.6
         }
       ]
     },
@@ -1814,7 +1814,7 @@
           "by": 1001,
           "track": [340, 363, 320, 37],
           "readout": [401, 338, 259, 18],
-          "baseline": 352
+          "baseline": 351.93
         },
         {
           "control": "slider",
@@ -1823,7 +1823,7 @@
           "frames": 128,
           "track": [340, 471, 320, 37],
           "readout": [382, 444, 278, 18],
-          "baseline": 458
+          "baseline": 457.93
         }
       ]
     },
@@ -1930,7 +1930,7 @@
           "by": 1001,
           "track": [340, 459, 320, 37],
           "readout": [401, 434, 259, 18],
-          "baseline": 448
+          "baseline": 447.93
         },
         {
           "control": "slider",
@@ -1939,7 +1939,7 @@
           "frames": 128,
           "track": [340, 567, 320, 37],
           "readout": [382, 540, 278, 18],
-          "baseline": 554
+          "baseline": 553.93
         }
       ]
     },
@@ -2037,7 +2037,7 @@
           "frames": 128,
           "track": [340, 239, 320, 37],
           "readout": [420, 212, 240, 18],
-          "baseline": 226
+          "baseline": 225.93
         },
         {
           "control": "slider",
@@ -2046,7 +2046,7 @@
           "frames": 128,
           "track": [340, 330, 320, 37],
           "readout": [408, 303, 252, 18],
-          "baseline": 317
+          "baseline": 317.27
         },
         {
           "control": "slider",
@@ -2055,7 +2055,7 @@
           "frames": 128,
           "track": [340, 421, 320, 37],
           "readout": [404, 394, 256, 18],
-          "baseline": 408
+          "baseline": 407.93
         },
         {
           "control": "slider",
@@ -2064,7 +2064,7 @@
           "frames": 128,
           "track": [340, 511, 320, 37],
           "readout": [423, 485, 237, 18],
-          "baseline": 499
+          "baseline": 498.6
         },
         {
           "control": "slider",
@@ -2073,7 +2073,7 @@
           "frames": 128,
           "track": [680, 47, 320, 37],
           "readout": [839, 20, 161, 18],
-          "baseline": 34
+          "baseline": 33.93
         },
         {
           "control": "select",
@@ -2105,7 +2105,7 @@
           "by": 1001,
           "track": [680, 357, 320, 37],
           "readout": [741, 333, 259, 18],
-          "baseline": 347
+          "baseline": 346.6
         },
         {
           "control": "slider",
@@ -2114,7 +2114,7 @@
           "frames": 128,
           "track": [680, 466, 320, 37],
           "readout": [722, 439, 278, 18],
-          "baseline": 453
+          "baseline": 452.6
         }
       ]
     },
@@ -2194,7 +2194,7 @@
           "by": 1001,
           "track": [340, 363, 320, 37],
           "readout": [401, 338, 259, 18],
-          "baseline": 352
+          "baseline": 351.93
         },
         {
           "control": "slider",
@@ -2203,7 +2203,7 @@
           "frames": 128,
           "track": [340, 471, 320, 37],
           "readout": [382, 444, 278, 18],
-          "baseline": 458
+          "baseline": 457.93
         }
       ]
     },
@@ -2299,7 +2299,7 @@
           "by": 1001,
           "track": [340, 363, 320, 37],
           "readout": [401, 338, 259, 18],
-          "baseline": 352
+          "baseline": 351.93
         },
         {
           "control": "slider",
@@ -2308,7 +2308,7 @@
           "frames": 128,
           "track": [340, 471, 320, 37],
           "readout": [382, 444, 278, 18],
-          "baseline": 458
+          "baseline": 457.93
         }
       ]
     },
@@ -2390,7 +2390,7 @@
           "by": 1001,
           "track": [340, 363, 320, 37],
           "readout": [401, 338, 259, 18],
-          "baseline": 352
+          "baseline": 351.93
         },
         {
           "control": "slider",
@@ -2399,7 +2399,7 @@
           "frames": 128,
           "track": [340, 471, 320, 37],
           "readout": [382, 444, 278, 18],
-          "baseline": 458
+          "baseline": 457.93
         }
       ]
     },
@@ -2482,7 +2482,7 @@
           "frames": 128,
           "track": [340, 143, 320, 37],
           "readout": [398, 117, 262, 18],
-          "baseline": 131
+          "baseline": 130.6
         },
         {
           "control": "select",
@@ -2514,7 +2514,7 @@
           "by": 1001,
           "track": [340, 453, 320, 37],
           "readout": [401, 429, 259, 18],
-          "baseline": 443
+          "baseline": 442.6
         },
         {
           "control": "slider",
@@ -2523,7 +2523,7 @@
           "frames": 128,
           "track": [340, 562, 320, 37],
           "readout": [382, 535, 278, 18],
-          "baseline": 549
+          "baseline": 548.6
         }
       ]
     },
@@ -2636,7 +2636,7 @@
           "by": 1001,
           "track": [340, 459, 320, 37],
           "readout": [401, 434, 259, 18],
-          "baseline": 448
+          "baseline": 447.93
         },
         {
           "control": "slider",
@@ -2645,7 +2645,7 @@
           "frames": 128,
           "track": [340, 567, 320, 37],
           "readout": [382, 540, 278, 18],
-          "baseline": 554
+          "baseline": 553.93
         }
       ]
     }

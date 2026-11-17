@@ -36,6 +36,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -324,6 +325,7 @@ long positionOf(double v, long positions) {
   const FaceControl* _dragging;
   const FaceControl* _hovering; /* the knob under the pointer */
   double _dragStart;            /* the value the drag's travel is measured from */
+  double _dragValue;            /* where the drag is, before a stepped knob snaps */
   NSPoint _dragFrom;
   BOOL _dragFine;     /* whether Shift was down at _dragFrom */
   NSRect _bubbleRect; /* where the bubble was last drawn, or empty */
@@ -544,6 +546,7 @@ long positionOf(double v, long positions) {
       }
       _dragging = c;
       _dragStart = [self valueOf:c->param];
+      _dragValue = _dragStart;
       _dragFrom = p;
       _dragFine = (event.modifierFlags & NSEventModifierFlagShift) != 0;
       _controller->beginEdit(c->param);
@@ -566,9 +569,10 @@ long positionOf(double v, long positions) {
   } else {
     const BOOL fine = (event.modifierFlags & NSEventModifierFlagShift) != 0;
     if (fine != _dragFine) {
-      /* Shift pressed or let go: the drag goes on from where it is, at the
-       * new rate, rather than measuring what was already dragged anew. */
-      _dragStart = [self valueOf:c->param];
+      /* Shift pressed or let go: the drag goes on from where it is (short
+       * of a stepped knob's snapped position), at the new rate, rather than
+       * measuring what was already dragged anew. */
+      _dragStart = _dragValue;
       _dragFrom = p;
       _dragFine = fine;
     }
@@ -579,6 +583,7 @@ long positionOf(double v, long positions) {
       _dragStart = v;
       _dragFrom = p;
     }
+    _dragValue = v;
   }
   [self set:c->param to:[self snap:v control:*c]];
 }
@@ -644,10 +649,13 @@ class FaceEditor : public EditorView {
   ~FaceEditor() override { detach(); }
 
   tresult PLUGIN_API isPlatformTypeSupported(FIDString type) SMTG_OVERRIDE {
-    return std::string(type) == kPlatformTypeNSView ? kResultTrue : kResultFalse;
+    return type != nullptr && std::strcmp(type, kPlatformTypeNSView) == 0 ? kResultTrue
+                                                                           : kResultFalse;
   }
 
   void attachedToParent() SMTG_OVERRIDE {
+    // A host may attach again without removing first.
+    detach();
     view_ = [[SegnoFaceView alloc] initWithFace:face_ controller:getController()];
     [(__bridge NSView*)systemWindow addSubview:view_];
     EditorView::attachedToParent();

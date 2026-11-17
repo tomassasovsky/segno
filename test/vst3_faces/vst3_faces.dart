@@ -413,7 +413,8 @@ class Vst3Layout {
           if (c.track != null) 'track': _rectJson(c.track!),
           if (c.readout case final r?) ...{
             'readout': _rectJson(r.rect),
-            'baseline': _points(r.baseline),
+            // To a hundredth of a point, where the picture's name sits.
+            'baseline': (r.baseline * kVst3Scale * 100).round() / 100,
           },
           if (c.buttons.isNotEmpty)
             'buttons': [for (final b in c.buttons) _rectJson(b)],
