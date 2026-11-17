@@ -1,7 +1,7 @@
 ---
 title: Two fixes for ivi-homescreen
 date: 2026-11-17
-summary: Segno's two screens turned up two bugs in ivi-homescreen, the Flutter embedder Segno runs on. One ignored a screen's pixel ratio, the other crashed the app on most shutdowns. Both fixes are now open as pull requests upstream.
+summary: Segno's two screens turned up two bugs in ivi-homescreen, the Flutter embedder Segno runs on. One ignored a screen's pixel ratio, the other crashed the app on most shutdowns. Both fixes are now merged upstream.
 ---
 
 Segno's interface runs on [ivi-homescreen](https://github.com/toyota-connected/ivi-homescreen), the Flutter embedder that Toyota Connected maintains for embedded Linux. On the console it draws straight to DRM/KMS: no Wayland, no desktop. The console has two screens, a 15.6-inch main screen and a 7-inch readout, and each screen is its own `[[view]]` in the embedder's config with its own Flutter engine. Both engines live in one process and share one Dart VM.
@@ -48,3 +48,7 @@ The fix leaves the AOT data mapped and lets the process exit release it. After t
 Both branches build at ivi-homescreen v3.0 with gcc 14 and clang 19 and pass the project's 44 unit tests, its format, spelling and config-reference checks, and clang-tidy on the changed files. The on-device results above come from Segno's console: a Raspberry Pi 5 running `drm-kms-egl`, with both screens connected.
 
 Both pull requests are waiting for review. Until they're merged, Segno keeps applying the same two patches in its Yocto layer.
+
+## Update, 17 November 2026
+
+Both pull requests were merged upstream on 17 November 2026. Segno now builds ivi-homescreen from the upstream v3.0 branch with both fixes in it, and no longer carries either patch.
