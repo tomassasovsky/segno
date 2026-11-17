@@ -479,7 +479,7 @@ final class TransferTests: XCTestCase {
     XCTAssertThrowsError(try downloadLiveSet(try take())) { error in
       XCTAssertTrue(
         error.localizedDescription.contains(
-          "missing from the downloaded copy and from the appliance"),
+          "is no longer on the appliance"),
         error.localizedDescription)
     }
     XCTAssertEqual(try Data(contentsOf: copy.project), project)

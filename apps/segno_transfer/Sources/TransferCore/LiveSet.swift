@@ -171,7 +171,9 @@ public enum LiveSet {
     /// added, which the copy never recorded.
     var checked: [Record.Entry] {
       contents.references.compactMap { path in
-        record.files.first { $0.path == path && $0.path != LiveSet.fileName }
+        record.files.first {
+          $0.path == path && $0.path != LiveSet.fileName && LiveSet.isRelative($0.path)
+        }
       }
     }
   }

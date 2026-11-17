@@ -172,28 +172,36 @@ public final class TransferRepository: RecordingRepository {
       try token.check()
       done += entry.bytes
     }
-    for (index, path) in bad.enumerated() {
+    let files = try bad.map { path in
       guard let file = recording.files.first(where: { $0.path == path }) else {
         throw TransferError.message(
-          "The Live set uses \(path), which is missing from the downloaded copy and from the appliance."
+          "The Live set uses \(path), which is missing or changed in the downloaded copy and is no longer on the appliance."
         )
       }
-      let target = local.folder.appendingPathComponent(path)
+      return file
+    }
+    let again = max(1, files.reduce(0) { $0 + $1.bytes })
+    done = 0
+    for (index, file) in files.enumerated() {
+      let before = done
+      let target = local.folder.appendingPathComponent(file.path)
       try FileManager.default.createDirectory(
         at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-      let temporary = try TemporaryDownload(parent: local.folder)
+      // Beside the file it replaces, so the rename stays on one volume.
+      let temporary = try TemporaryDownload(parent: target.deletingLastPathComponent())
       defer { temporary.remove() }
       let hash = try fetch(
         recording: recording, file: file, to: temporary.file, connection: connection, token: token
       ) { bytes, phase in
         progress(
-          min(1, Double(bytes) / Double(max(1, file.bytes))),
-          "\(phase) again \(index + 1) of \(bad.count) · \(path)")
+          min(1, Double(before + bytes) / Double(again)),
+          "\(phase) again \(index + 1) of \(files.count) · \(file.path)")
       }
       try token.check()
       try temporary.replace(target)
       try local.record.add(file, at: target, sha256: hash)
       try local.record.write(in: local.folder)
+      done += file.bytes
     }
     try? LiveSet.makeProject(local.folder)
     return LiveSetCopy(
