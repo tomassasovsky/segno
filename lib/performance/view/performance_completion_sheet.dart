@@ -264,9 +264,7 @@ class _Face extends StatelessWidget {
     final duration = state.duration;
     // The looper tracks recorded, one Group of lanes each in the Live set
     // (#1824): its inputs and master are not counted (#1799).
-    final recorded = {
-      for (final t in state.tracks) ?t.group,
-    }.length;
+    final recorded = {for (final t in state.tracks) ?t.group}.length;
     final subtitle = duration == null
         ? l10n.perfSavedSubtitlePlain(name)
         : recorded == 0
