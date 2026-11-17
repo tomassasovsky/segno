@@ -4,7 +4,7 @@ import Foundation
 /// uses, in the layout the set expects.
 public struct LiveSetCopy: Equatable {
   public let folder: URL
-  /// Whether the set holds VST3 devices, the console's Segno effects.
+  /// Whether the set holds the console's Segno effects (VST3 devices).
   public let usesPlugins: Bool
   /// Whether this is the copy an earlier download left, which may hold the
   /// user's edits.
@@ -120,7 +120,13 @@ public enum LiveSet {
       {
         references.append(value)
       }
-      if name == "Vst3PluginInfo" { usesPlugins = true }
+      // A VST3 device's own name, as Live stores it: "Segno Delay" and the
+      // like. Other vendors' plugins the user added do not count.
+      if name == "Name", stack.last == "Vst3PluginInfo",
+        attributes["Value"]?.hasPrefix("Segno ") == true
+      {
+        usesPlugins = true
+      }
       stack.append(name)
     }
 
@@ -179,27 +185,32 @@ public enum LiveSet {
   }
 
   /// The copy of `recording`'s Live set in `destination` an earlier download
-  /// left, named `name` or a numbered name after it: the first whose record
-  /// names this take and whose `project.als` still reads. The set is the
-  /// user's once downloaded, so an edited one is found too.
+  /// left, named `name` or a numbered name after it, whose record names this
+  /// take and whose `project.als` still reads. The set is the user's once
+  /// downloaded, so an edited one is found too. Of several, the one whose set
+  /// was saved last: the copy the user works in.
   static func localCopy(
     of recording: Recording, in destination: URL, named name: String
   ) -> LocalCopy? {
     let names = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
-    let candidates = names.filter {
-      $0 == name || ($0.hasPrefix(name + " (") && $0.hasSuffix(")"))
-    }.sorted { $0.count == $1.count ? $0 < $1 : $0.count < $1.count }
-    for candidate in candidates {
+    var found: (copy: LocalCopy, saved: Date)?
+    for candidate in names
+    where candidate == name || (candidate.hasPrefix(name + " (") && candidate.hasSuffix(")")) {
       let folder = destination.appendingPathComponent(candidate, isDirectory: true)
+      let project = folder.appendingPathComponent(fileName)
       guard
         let data = try? Data(contentsOf: folder.appendingPathComponent(recordName)),
         let record = try? JSONDecoder().decode(Record.self, from: data),
         record.recording == recording.id,
-        let contents = try? parse(folder.appendingPathComponent(fileName))
+        let contents = try? parse(project),
+        let saved = try? FileManager.default.attributesOfItem(atPath: project.path)[
+          .modificationDate] as? Date
       else { continue }
-      return LocalCopy(folder: folder, record: record, contents: contents)
+      if found == nil || saved > found!.saved {
+        found = (LocalCopy(folder: folder, record: record, contents: contents), saved)
+      }
     }
-    return nil
+    return found?.copy
   }
 
   /// The length of the regular file at `url`, or nil when there is none:

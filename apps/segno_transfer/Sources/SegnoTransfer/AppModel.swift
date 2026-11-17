@@ -270,7 +270,10 @@ final class AppModel: ObservableObject {
         // A cancel that arrives once the copy is verified and in place keeps
         // the copy but does not open it.
         if cancellation.isCancelled {
-          status = "Cancelled · the Live set is downloaded and verified but was not opened"
+          status =
+            copy.reused
+            ? "Cancelled · the Live set downloaded earlier was checked but not opened"
+            : "Cancelled · the Live set is downloaded and verified but was not opened"
           busy = false
           progressTitle = ""
           return
@@ -280,7 +283,9 @@ final class AppModel: ObservableObject {
           // The user decides before the set opens (`installPlugins`,
           // `skipPlugins`).
           pluginOffer = PluginOffer(status: plugins, set: copy, application: application)
-          status = "Live set downloaded and verified"
+          status =
+            copy.reused
+            ? "Checked the Live set downloaded earlier" : "Live set downloaded and verified"
           busy = false
           progressTitle = ""
           return

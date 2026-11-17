@@ -148,7 +148,7 @@ public final class TransferRepository: RecordingRepository {
 
   /// Checks the recorded files `local`'s set uses against their SHA-256 and
   /// fetches each one that is missing or does not match again, replacing it
-  /// in place. `project.als` is never touched: it is the user's set. A copy
+  /// in place, when the appliance still has it. `project.als` is never touched: it is the user's set. A copy
   /// that cannot get its Live Project folder opens as it is.
   private func reopen(
     _ local: LiveSet.LocalCopy, recording: Recording, connection: Connection,
@@ -172,14 +172,9 @@ public final class TransferRepository: RecordingRepository {
       try token.check()
       done += entry.bytes
     }
-    let files = try bad.map { path in
-      guard let file = recording.files.first(where: { $0.path == path }) else {
-        throw TransferError.message(
-          "The Live set uses \(path), which is missing or changed in the downloaded copy and is no longer on the appliance."
-        )
-      }
-      return file
-    }
+    // A file the appliance no longer has stays as it is: the set still
+    // opens, and Live reports it as missing media.
+    let files = bad.compactMap { path in recording.files.first { $0.path == path } }
     let again = max(1, files.reduce(0) { $0 + $1.bytes })
     done = 0
     for (index, file) in files.enumerated() {
@@ -325,7 +320,9 @@ final class TemporaryDownload {
   /// Moves the downloaded file over `target`, replacing what is there.
   func replace(_ target: URL) throws {
     guard rename(file.path, target.path) == 0 else {
-      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+      throw TransferError.message(
+        "Could not put \(target.lastPathComponent) back in the downloaded Live set. Move what is in its place and try again."
+      )
     }
   }
 

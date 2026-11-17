@@ -290,7 +290,8 @@ final class TransferTests: XCTestCase {
     }
     let device =
       plugin
-      ? "<PluginDevice><PluginDesc><Vst3PluginInfo Id=\"0\" /></PluginDesc></PluginDevice>" : ""
+      ? "<PluginDevice><PluginDesc><Vst3PluginInfo Id=\"0\"><Name Value=\"Segno Delay\" /></Vst3PluginInfo></PluginDesc></PluginDevice>"
+      : "<PluginDevice><PluginDesc><Vst3PluginInfo Id=\"0\"><Name Value=\"Pro-Q 3\" /></Vst3PluginInfo></PluginDesc></PluginDevice>"
     let xml = root.appendingPathComponent("project.als")
     let head =
       #"<?xml version="1.0" encoding="UTF-8"?><Ableton><LiveSet><OriginalFileRef/><RelativePath Value="not-a-file-ref.wav" />"#
@@ -469,20 +470,52 @@ final class TransferTests: XCTestCase {
     XCTAssertEqual(downloads(log), ["master.wav", "stems/wet/track0.wav"])
   }
 
-  func testAFileMissingHereAndOnTheApplianceIsReported() throws {
+  func testAFileMissingHereAndOnTheApplianceLeavesTheSetToOpen() throws {
     try writeLiveSet()
     let copy = try downloadLiveSet(try take())
     for folder in [copy.folder, takeFolder] {
       try FileManager.default.removeItem(at: folder.appendingPathComponent("stems/wet/track0.wav"))
     }
+    try FileManager.default.removeItem(at: copy.folder.appendingPathComponent("master.wav"))
     let project = try Data(contentsOf: copy.project)
-    XCTAssertThrowsError(try downloadLiveSet(try take())) { error in
-      XCTAssertTrue(
-        error.localizedDescription.contains(
-          "is no longer on the appliance"),
-        error.localizedDescription)
-    }
+
+    let reopened = try downloadLiveSet(try take())
+
+    // The file the appliance still has comes back; Live reports the other.
+    XCTAssertEqual(reopened.folder, copy.folder)
+    XCTAssertEqual(
+      try Data(contentsOf: copy.folder.appendingPathComponent("master.wav")),
+      try Data(contentsOf: takeFolder.appendingPathComponent("master.wav")))
+    XCTAssertFalse(
+      FileManager.default.fileExists(
+        atPath: copy.folder.appendingPathComponent("stems/wet/track0.wav").path))
     XCTAssertEqual(try Data(contentsOf: copy.project), project)
+  }
+
+  func testOfSeveralCopiesTheOneSavedLastReopens() throws {
+    try writeLiveSet()
+    let first = try downloadLiveSet(try take())
+    let other = destination.appendingPathComponent("a 'quoted' take (2)", isDirectory: true)
+    try FileManager.default.copyItem(at: first.folder, to: other)
+    let project = other.appendingPathComponent("project.als")
+    for (newer, older) in [(project, first.project), (first.project, project)] {
+      try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSinceNow: -60)], ofItemAtPath: older.path)
+      try FileManager.default.setAttributes(
+        [.modificationDate: Date()], ofItemAtPath: newer.path)
+      XCTAssertEqual(
+        try downloadLiveSet(try take()).project.standardizedFileURL.path,
+        newer.standardizedFileURL.path)
+    }
+  }
+
+  func testOnlyTheSegnoEffectsCountAsTheSetsPlugins() throws {
+    try writeLiveSet()
+    let copy = try downloadLiveSet(try take())
+    XCTAssertTrue(copy.usesPlugins)
+    // Edited in Live: the Segno effect swapped for another vendor's VST3.
+    _ = try edit(copy, references: ["master.wav"])
+    XCTAssertFalse(try downloadLiveSet(try take()).usesPlugins)
   }
 
   func testWithNoLocalCopyAFreshOneIsDownloaded() throws {
