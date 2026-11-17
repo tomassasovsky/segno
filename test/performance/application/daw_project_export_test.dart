@@ -148,6 +148,21 @@ void main() {
     );
   });
 
+  test('a Live Project folder that cannot be made leaves the previous '
+      'project whole', () async {
+    writeManifest(withTrack: true);
+    writeStem([0]);
+    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+    File('${dir.path}/Ableton Project Info').writeAsBytesSync([0]);
+
+    await expectLater(
+      writeDawProject(dir.path),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
+  });
+
   test('a write cut short leaves the previous project whole', () async {
     writeManifest(withTrack: true);
     writeStem([0]);

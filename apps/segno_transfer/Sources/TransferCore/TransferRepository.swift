@@ -96,8 +96,9 @@ public final class TransferRepository: RecordingRepository {
     if let copy = try LiveSet.verifiedCopy(
       of: recording, in: destination, named: name, token: token)
     {
-      // A copy an earlier version of this app downloaded has none.
-      try LiveSet.makeProject(copy.folder)
+      // A copy an earlier version of this app downloaded has none. One that
+      // cannot get it still opens, only without saving in place.
+      try? LiveSet.makeProject(copy.folder)
       return copy
     }
     let temporary = try TemporaryDownload(parent: destination)

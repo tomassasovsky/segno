@@ -36,8 +36,9 @@ Future<List<DawTrack>> writeDawProject(String dir) async {
   // gets no project, and one an earlier version wrote for it is removed.
   final info = Directory('$dir/$liveProjectInfoFolder');
   if (project != null && project.tracks.isNotEmpty) {
-    await _replace('$dir/project.als', buildAls(project));
+    // The folder first: a create that fails leaves the project as it was.
     await info.create();
+    await _replace('$dir/project.als', buildAls(project));
   } else if (project != null) {
     final stale = File('$dir/project.als');
     if (stale.existsSync()) await stale.delete();
