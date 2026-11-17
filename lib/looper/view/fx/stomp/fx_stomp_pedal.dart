@@ -885,9 +885,6 @@ class _Enclosure {
   /// ([fxStompTitleSpot]), shrunk to the room it has.
   void _title() {
     final (:baseline, :room, :tilt) = fxStompTitleSpot(spec, knobs);
-    final x = baseline.dx;
-    final y = baseline.dy;
-    final turn = tilt;
     final style = TextStyle(
       fontFamily: spec.font,
       fontSize: spec.size,
@@ -895,9 +892,9 @@ class _Enclosure {
     );
     canvas
       ..save()
-      ..translate(x, y)
-      ..rotate(turn * math.pi / 180)
-      ..translate(-x, -y);
+      ..translate(baseline.dx, baseline.dy)
+      ..rotate(tilt * math.pi / 180)
+      ..translate(-baseline.dx, -baseline.dy);
     final printShadow = Shadow(
       offset: const Offset(0, 1.5),
       // Sigma 0.6, the design's stdDeviation.
@@ -909,7 +906,7 @@ class _Enclosure {
       fxStompPaintText(
         canvas,
         name,
-        Offset(x, y),
+        baseline,
         maxWidth: room,
         style.copyWith(
           foreground: Paint()
@@ -925,7 +922,7 @@ class _Enclosure {
     fxStompPaintText(
       canvas,
       name,
-      Offset(x, y),
+      baseline,
       maxWidth: room,
       style.copyWith(color: ink, shadows: [printShadow]),
     );

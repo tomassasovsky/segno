@@ -140,7 +140,12 @@ void main() {
             expect(c.frames, face.framesOf(c.param), reason: where);
             expect(c.readout, isNotNull, reason: where);
             expect(c.rect.contains(c.readout!.rect.center), isTrue);
-          case Vst3ControlKind.footswitch || Vst3ControlKind.readout:
+          case Vst3ControlKind.readout:
+            expect(choice, isFalse, reason: where);
+            expect(c.display, isTrue, reason: where);
+            expect(c.readout, isNotNull, reason: where);
+            expect(c.rect.contains(c.readout!.rect.center), isTrue);
+          case Vst3ControlKind.footswitch:
             break;
         }
       }
@@ -224,7 +229,13 @@ void main() {
           }
         }
         for (final c in controls) {
-          if (identical(c, owner) || c.kind == Vst3ControlKind.knob) continue;
+          if (identical(c, owner)) continue;
+          // A panel value sits beside no knob; a knob's chip clears every
+          // knob's pictures, which the editor draws over it.
+          if (c.kind == Vst3ControlKind.knob &&
+              owner.kind != Vst3ControlKind.knob) {
+            continue;
+          }
           if (c.kind == Vst3ControlKind.footswitch) continue;
           expect(
             rect.overlaps(c.rect),

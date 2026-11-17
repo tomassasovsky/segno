@@ -207,6 +207,7 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   NSDictionary* theme = manifest[@"theme"];
   if (![theme isKindOfClass:[NSDictionary class]]) return false;
   NSString* fontFile = [dir stringByAppendingPathComponent:theme[@"font"]];
+  if ([theme[@"size"] doubleValue] <= 0 || [theme[@"faceSize"] doubleValue] <= 0) return false;
   face.theme.font = fontFrom(fontFile, [theme[@"size"] doubleValue]);
   face.theme.faceFont = fontFrom(fontFile, [theme[@"faceSize"] doubleValue]);
   face.theme.background = colourFrom(theme[@"background"]);
@@ -382,7 +383,8 @@ long positionOf(double v, long positions) {
   if (param == segno_vst3::kBypassId) [self setNeedsDisplayInRect:_face.led];
   for (const FaceControl& c : _face.controls) {
     if (c.param == param || c.by == (int32)param) {
-      [self setNeedsDisplayInRect:c.rect];
+      // The footswitch draws nothing of its own: the LED shows it.
+      if (c.kind != ControlKind::footswitch) [self setNeedsDisplayInRect:c.rect];
       if (!NSIsEmptyRect(c.value)) [self setNeedsDisplayInRect:c.value];
     }
   }

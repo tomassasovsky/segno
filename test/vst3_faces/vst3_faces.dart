@@ -435,6 +435,8 @@ List<Rect> _faceObstacles(
   final count = labels.length;
   return [
     for (final knob in fxStompKnobBounds(kind, count)) knob.inflate(4),
+    // Where the editor draws each knob's pictures, over anything under it.
+    ...fxStompKnobTurnBounds(kind, count),
     ...fxStompLabelBounds(kind, labels),
     _titleBounds(spec, fxStompFace(l10n, art)!.name, count),
     fxStompLedBounds(kind),
@@ -619,7 +621,7 @@ class Vst3Layout {
     this.size,
     this.led,
     this.controls, {
-    this.obstacles = const [],
+    required this.obstacles,
   });
 
   final Vst3Face face;
