@@ -39,7 +39,7 @@ opens nothing and leaves no folder behind.
 
 Clicking **Open in Live** again opens the copy already downloaded, without
 fetching it again, as long as the console's files have not changed and every
-file in the copy is still there at its verified size. A set saved over in Live
+file in the copy still matches the SHA-256 it was verified with. A set saved over in Live
 no longer matches, so the next click downloads a fresh copy beside it with a
 numbered name.
 

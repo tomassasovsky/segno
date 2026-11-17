@@ -87,10 +87,15 @@ LIVE_SET = "project.als"
 
 
 def live_set(directory):
+    # A set that cannot be read (or is being rewritten) hides only the set,
+    # never the take's audio.
     path = directory / LIVE_SET
-    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+            return None
+        return {"bytes": path.stat().st_size, "version": version(path)}
+    except OSError:
         return None
-    return {"bytes": path.stat().st_size, "version": version(path)}
 
 
 def version(path):

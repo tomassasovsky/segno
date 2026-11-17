@@ -251,8 +251,15 @@ final class AppModel: ObservableObject {
             }
           }
         }.value
-        try cancellation.check()
         downloaded = [copy.folder]
+        // A cancel that arrives once the copy is verified and in place keeps
+        // the copy but does not open it.
+        if cancellation.isCancelled {
+          status = "Cancelled · the Live set is downloaded and verified but was not opened"
+          busy = false
+          progressTitle = ""
+          return
+        }
         try await live.open(copy.project, application)
         status =
           copy.reused

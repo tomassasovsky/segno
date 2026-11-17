@@ -111,18 +111,6 @@ public enum LiveSet {
     }
   }
 
-  /// Creates an empty file at `url` for a download to write into.
-  static func emptyFile(_ url: URL) throws -> URL {
-    guard
-      FileManager.default.createFile(
-        atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
-    else {
-      throw TransferError.message(
-        "Could not create a download in this folder. Choose another folder.")
-    }
-    return url
-  }
-
   /// What a verified copy holds: each file's appliance version, length and
   /// SHA-256 when it was downloaded.
   struct Record: Codable {
@@ -147,18 +135,21 @@ public enum LiveSet {
 
   /// The copy of `recording`'s Live set in `destination` that an earlier
   /// download verified, named `name` or a numbered name after it, when the
-  /// appliance's files have not changed since and every file is still there
-  /// at its verified length. A set saved over in Live no longer matches.
-  static func verifiedCopy(of recording: Recording, in destination: URL, named name: String)
-    -> LiveSetCopy?
-  {
+  /// appliance's files have not changed since and every file in the copy
+  /// still has its verified length and SHA-256. A set saved over in Live no
+  /// longer matches. Throws only when `token` is cancelled.
+  static func verifiedCopy(
+    of recording: Recording, in destination: URL, named name: String, token: CancellationToken
+  ) throws -> LiveSetCopy? {
     guard let set = recording.liveSet else { return nil }
     var current = [set.path: set.version]
     for file in recording.files { current[file.path] = file.version }
-    for index in 0..<10000 {
-      let folder = destination.appendingPathComponent(
-        TemporaryDownload.folderName(name, index: index), isDirectory: true)
-      guard FileManager.default.fileExists(atPath: folder.path) else { return nil }
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
+    let candidates = names.filter {
+      $0 == name || ($0.hasPrefix(name + " (") && $0.hasSuffix(")"))
+    }.sorted { $0.count == $1.count ? $0 < $1 : $0.count < $1.count }
+    for candidate in candidates {
+      let folder = destination.appendingPathComponent(candidate, isDirectory: true)
       guard
         let data = try? Data(contentsOf: folder.appendingPathComponent(recordName)),
         let record = try? JSONDecoder().decode(Record.self, from: data),
@@ -171,7 +162,16 @@ public enum LiveSet {
         let contents = try? read(folder.appendingPathComponent(fileName)),
         Set(contents.references).isSubset(of: record.files.map(\.path))
       else { continue }
-      return LiveSetCopy(folder: folder, usesPlugins: contents.usesPlugins, reused: true)
+      var intact = true
+      for entry in record.files where intact {
+        let hash = try? TransferRepository.sha256(
+          folder.appendingPathComponent(entry.path), token: token)
+        try token.check()
+        intact = hash == entry.sha256
+      }
+      if intact {
+        return LiveSetCopy(folder: folder, usesPlugins: contents.usesPlugins, reused: true)
+      }
     }
     return nil
   }

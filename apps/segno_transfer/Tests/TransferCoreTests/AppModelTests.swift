@@ -58,6 +58,7 @@ private final class FixtureRepository: RecordingRepository {
   var failLiveSet = false
   var liveSetUsesPlugins = false
   var liveSetStarted = false
+  var cancelAfterLiveSet = false
   func downloadLiveSet(
     recording: Recording, destination: URL, connection: Connection, token: CancellationToken,
     progress: @escaping (Double, String) -> Void
@@ -68,6 +69,7 @@ private final class FixtureRepository: RecordingRepository {
     startLock.unlock()
     while holdLiveSet && !token.isCancelled { Thread.sleep(forTimeInterval: 0.01) }
     try token.check()
+    if cancelAfterLiveSet { token.cancel() }
     if failLiveSet { throw TransferError.message("The copy did not match the original.") }
     progress(1, "Verifying")
     return LiveSetCopy(
@@ -366,5 +368,16 @@ final class AppModelTests: XCTestCase {
     XCTAssertTrue(model.downloaded.isEmpty)
     XCTAssertEqual(model.error, "The copy did not match the original.")
     XCTAssertEqual(model.status, "Could not open the Live set")
+  }
+
+  func testACancelAfterTheCopyIsVerifiedKeepsItButDoesNotOpen() async throws {
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.cancelAfterLiveSet = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertEqual(model.downloaded, [model.destination.appendingPathComponent("second")])
+    XCTAssertEqual(
+      model.status, "Cancelled · the Live set is downloaded and verified but was not opened")
   }
 }

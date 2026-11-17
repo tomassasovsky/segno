@@ -187,6 +187,19 @@ class ApplianceTests(unittest.TestCase):
         self.assertIsNone(recordings["no-set"]["liveSet"])
         self.assertEqual([f["path"] for f in recordings[self.take.name]["files"]], ["master.wav"])
 
+    def test_an_unreadable_live_set_hides_only_the_set(self):
+        (self.take / "project.als").write_bytes(b"set")
+        original = appliance.version
+        def failing(path):
+            if path.name == "project.als":
+                raise FileNotFoundError(path)
+            return original(path)
+        appliance.version = failing
+        self.addCleanup(setattr, appliance, "version", original)
+        recording = appliance.catalog(self.root)["recordings"][0]
+        self.assertIsNone(recording["live_set"])
+        self.assertEqual([f["path"] for f in recording["files"]], ["master.wav"])
+
     def test_live_set_downloads_and_hashes_but_does_not_stream(self):
         import hashlib
         source = self.take / "project.als"

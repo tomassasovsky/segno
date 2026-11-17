@@ -376,7 +376,16 @@ final class TransferTests: XCTestCase {
     let third = try downloadLiveSet(recording)
     XCTAssertEqual(third.folder.lastPathComponent, "a 'quoted' take (2)")
     XCTAssertFalse(third.reused)
+    // The numbered copy is found once the first one is gone.
+    try FileManager.default.removeItem(at: first.folder)
     XCTAssertEqual(try downloadLiveSet(recording).folder, third.folder)
+    // A file edited without changing its length is not reused either.
+    let loop = third.folder.appendingPathComponent("loops/track0-lane0.wav")
+    var bytes = try Data(contentsOf: loop)
+    bytes[bytes.count - 1] ^= 1
+    try bytes.write(to: loop)
+    XCTAssertEqual(
+      try downloadLiveSet(recording).folder.lastPathComponent, "a 'quoted' take")
   }
 
   func testAChangedSetOnTheApplianceDownloadsAgain() throws {

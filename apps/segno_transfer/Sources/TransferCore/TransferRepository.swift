@@ -87,8 +87,15 @@ public final class TransferRepository: RecordingRepository {
     progress: @escaping (Double, String) -> Void
   ) throws -> LiveSetCopy {
     guard let set = recording.liveSet else { throw TransferError.message(LiveSet.missing) }
-    let name = try DownloadName.folder(recording.name)
-    if let copy = LiveSet.verifiedCopy(of: recording, in: destination, named: name) {
+    guard let name = try? DownloadName.folder(recording.name) else {
+      throw TransferError.message(
+        "This performance's name cannot be used as a folder name on this Mac. Rename it on the console."
+      )
+    }
+    progress(0, "Checking for a downloaded copy")
+    if let copy = try LiveSet.verifiedCopy(
+      of: recording, in: destination, named: name, token: token)
+    {
       return copy
     }
     let temporary = try TemporaryDownload(parent: destination)
@@ -101,7 +108,8 @@ public final class TransferRepository: RecordingRepository {
     record.add(
       set,
       sha256: try fetch(
-        recording: recording, file: set, to: LiveSet.emptyFile(project), connection: connection,
+        recording: recording, file: set, to: TemporaryDownload.emptyFile(project),
+        connection: connection,
         token: token, progress: { _, _ in }))
     let contents = try LiveSet.read(project)
     let files = try contents.references.map { path in
@@ -121,7 +129,8 @@ public final class TransferRepository: RecordingRepository {
       record.add(
         file,
         sha256: try fetch(
-          recording: recording, file: file, to: LiveSet.emptyFile(target), connection: connection,
+          recording: recording, file: file, to: TemporaryDownload.emptyFile(target),
+          connection: connection,
           token: token
         ) { bytes, phase in
           progress(
@@ -198,14 +207,23 @@ final class TemporaryDownload {
     file = directory.appendingPathComponent("download.part")
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-    guard
-      FileManager.default.createFile(
-        atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600])
-    else {
+    do { _ = try Self.emptyFile(file) } catch {
       try? FileManager.default.removeItem(at: directory)
+      throw error
+    }
+  }
+
+  /// Creates `url` as a new, empty file for a download to write into. Fails
+  /// rather than reuse a file already there, such as one whose name differs
+  /// only in case on a case-insensitive volume.
+  static func emptyFile(_ url: URL) throws -> URL {
+    let descriptor = Darwin.open(url.path, O_CREAT | O_EXCL | O_WRONLY, 0o600)
+    guard descriptor >= 0 else {
       throw TransferError.message(
         "Could not create a download in this folder. Choose another folder.")
     }
+    close(descriptor)
+    return url
   }
 
   func publish(filename: String) throws -> URL {
