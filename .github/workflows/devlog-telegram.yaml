@@ -5,8 +5,9 @@ name: Devlog Telegram
 # the site (site.yaml) and posts to LinkedIn (devlog-linkedin.yaml). The
 # scripts are in tool/devlog; setup is in site/README.md, "Publishing".
 #
-# GitHub runs scheduled workflows only from the default branch, so the
-# 10-minute check starts once this file is on it.
+# GitHub runs scheduled workflows only from the default branch (master), so
+# a copy of this file lives there too and the 10-minute check runs from it.
+# The check always runs the trunk's scripts. Keep the two copies identical.
 
 on:
   pull_request:
@@ -49,6 +50,8 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: claude/segno-integration
       - name: Act on publish and skip replies
         run: python3 tool/devlog/telegram_approve.py
         env:

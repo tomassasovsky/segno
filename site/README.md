@@ -119,8 +119,9 @@ none of them.
   `gh secret set SEGNO_MERGE_TOKEN -R tomassasovsky/segno`. A merge made with
   the workflow's own token would not start the deploy and LinkedIn workflows.
 - **Default branch.** GitHub runs scheduled workflows only from the default
-  branch, so the 10-minute check runs once
-  `.github/workflows/devlog-telegram.yaml` is on it.
+  branch, `master`, so `.github/workflows/devlog-telegram.yaml` has an
+  identical copy there. The 10-minute check runs from that copy and checks out
+  the trunk's scripts. Change both copies together.
 
 Until the Telegram secrets are set, the Telegram steps say so and do nothing.
 Without the LinkedIn secrets, the post fails and names the missing secret.
