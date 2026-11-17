@@ -778,10 +778,11 @@ class _Enclosure {
       );
   }
 
-  void _led(Offset at) {
+  void _led() {
+    final at = fxStompLedCentre(spec.face);
     final colour = spec.led;
     if (led == FxStompLed.on) {
-      canvas.drawCircle(at, 15, _blur(colour, .55, 5));
+      canvas.drawCircle(at, _kLedGlow, _blur(colour, .55, _kLedBlur));
     }
     final lens = switch (led) {
       FxStompLed.on =>
@@ -832,11 +833,11 @@ class _Enclosure {
       ..restore();
   }
 
-  void _stompSwitch(Offset c, [double r = 34]) {
+  void _stompSwitch(Offset c, [double r = _kStompSwitch]) {
     final hex = Path();
     for (var i = 0; i < 6; i++) {
       final a = (30 + 60 * i) * math.pi / 180;
-      final p = c + Offset(math.cos(a), math.sin(a)) * (r + 14);
+      final p = c + Offset(math.cos(a), math.sin(a)) * (r + _kStompNut);
       if (i == 0) {
         hex.moveTo(p.dx, p.dy);
       } else {
@@ -849,7 +850,9 @@ class _Enclosure {
       ..drawPath(
         hex,
         Paint()
-          ..shader = fxStompMetal(Rect.fromCircle(center: c, radius: r + 14)),
+          ..shader = fxStompMetal(
+            Rect.fromCircle(center: c, radius: r + _kStompNut),
+          ),
       )
       ..drawPath(hex, fxStompStroke(Colors.black, 1, .35))
       ..drawCircle(
@@ -938,7 +941,7 @@ class _Enclosure {
       RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(r));
 
   void _treadle() {
-    const tread = Rect.fromLTWH(32, 298, 386, 334);
+    const tread = _kTread;
     final treadShape = RRect.fromRectAndRadius(
       tread,
       const Radius.circular(22),
@@ -959,7 +962,7 @@ class _Enclosure {
     );
     _screw(const Offset(52, 44));
     _screw(const Offset(398, 44));
-    _led(const Offset(225, 52));
+    _led();
     canvas
       ..drawRRect(_rounded(30, 292, 390, 8, 4), fxStompFill(Colors.black, .45))
       ..drawRRect(
@@ -1033,9 +1036,9 @@ class _Enclosure {
     const body = Rect.fromLTWH(30, 14, 390, 626);
     _body(body, 46, art: body);
     _logo(const Offset(225, 58), .7, ink, .9);
-    _led(const Offset(345, 58));
+    _led();
     _title(225, spec.titleY ?? (knobs > 3 ? 420 : 395));
-    _stompSwitch(const Offset(225, 548));
+    _stompSwitch(_kBoxSwitch);
   }
 
   void _window() {
@@ -1071,8 +1074,8 @@ class _Enclosure {
       ..drawRRect(panelShape, Paint()..shader = _sheen(panel, .7));
     _logo(const Offset(225, 80), .55, spec.panelInk, .7);
     _title(225, spec.titleY ?? 470);
-    _led(const Offset(225, 525));
-    _stompSwitch(const Offset(225, 632));
+    _led();
+    _stompSwitch(_kWindowSwitch);
   }
 
   void _module() {
@@ -1102,8 +1105,8 @@ class _Enclosure {
         );
       }
     }
-    _led(const Offset(225, 860));
-    _domeSwitch(const Offset(225, 912), 24, 19, 2);
+    _led();
+    _domeSwitch(_kModuleSwitch, _kModuleSwitchWell, 19, 2);
     _logo(const Offset(345, 905), .55, ink, .6);
   }
 
@@ -1143,8 +1146,8 @@ class _Enclosure {
       ..restore();
     _title(392, 330, tilt: -90);
     _logo(const Offset(372, 640), .9, ink, .85);
-    _led(const Offset(372, 700));
-    _domeSwitch(const Offset(188, 686), 34, 29, 2);
+    _led();
+    _domeSwitch(_kRockerSwitch, _kRockerSwitchWell, 29, 2);
   }
 }
 
@@ -1305,4 +1308,73 @@ List<Rect> fxStompLabelBounds(FxStompFaceKind kind, List<String> labels) {
 List<Rect> fxStompKnobBounds(FxStompFaceKind kind, int count) => [
   for (final spot in _KnobSpot.layout(kind, count))
     Rect.fromCircle(center: spot.centre, radius: spot.radius),
+];
+
+/// The treadle face's tread, which carries the name and is its footswitch.
+const Rect _kTread = Rect.fromLTWH(32, 298, 386, 334);
+
+/// The stomp switches' centres: a box's and a window's hex-nut switch, a
+/// module's and a rocker's dome.
+const Offset _kBoxSwitch = Offset(225, 548);
+const Offset _kWindowSwitch = Offset(225, 632);
+const Offset _kModuleSwitch = Offset(225, 912);
+const Offset _kRockerSwitch = Offset(188, 686);
+
+/// A hex-nut switch's dome radius, and how far its nut reaches past it.
+const double _kStompSwitch = 34;
+const double _kStompNut = 14;
+
+/// The dark wells the module's and the rocker's domes sit in.
+const double _kModuleSwitchWell = 24;
+const double _kRockerSwitchWell = 34;
+
+/// A lit LED's glow: its radius and its blur.
+const double _kLedGlow = 15;
+const double _kLedBlur = 5;
+
+/// Where a [kind] face's LED sits.
+Offset fxStompLedCentre(FxStompFaceKind kind) => switch (kind) {
+  FxStompFaceKind.treadle => const Offset(225, 52),
+  FxStompFaceKind.box => const Offset(345, 58),
+  FxStompFaceKind.window => const Offset(225, 525),
+  FxStompFaceKind.module => const Offset(225, 860),
+  FxStompFaceKind.rocker => const Offset(372, 700),
+};
+
+/// Everything a [kind] face's LED changes when it lights: its lens and the
+/// glow around it, which fades out within four blurs of its edge.
+Rect fxStompLedBounds(FxStompFaceKind kind) => Rect.fromCircle(
+  center: fxStompLedCentre(kind),
+  radius: _kLedGlow + 4 * _kLedBlur,
+);
+
+/// The part of a [kind] face a foot presses to switch the pedal: a
+/// treadle's tread, a box's or a window's stomp switch with its nut, a
+/// module's or a rocker's dome in its well.
+Rect fxStompSwitchBounds(FxStompFaceKind kind) => switch (kind) {
+  FxStompFaceKind.treadle => _kTread,
+  FxStompFaceKind.box => Rect.fromCircle(
+    center: _kBoxSwitch,
+    radius: _kStompSwitch + _kStompNut,
+  ),
+  FxStompFaceKind.window => Rect.fromCircle(
+    center: _kWindowSwitch,
+    radius: _kStompSwitch + _kStompNut,
+  ),
+  FxStompFaceKind.module => Rect.fromCircle(
+    center: _kModuleSwitch,
+    radius: _kModuleSwitchWell,
+  ),
+  FxStompFaceKind.rocker => Rect.fromCircle(
+    center: _kRockerSwitch,
+    radius: _kRockerSwitchWell,
+  ),
+};
+
+/// Everything a turning knob of a [kind] face holding [count] changes: its
+/// pointer, or a chicken head, whose tip reaches 1.05 times the knob's
+/// radius, with room for the line around it.
+List<Rect> fxStompKnobTurnBounds(FxStompFaceKind kind, int count) => [
+  for (final spot in _KnobSpot.layout(kind, count))
+    Rect.fromCircle(center: spot.centre, radius: spot.radius * 1.05 + 2),
 ];

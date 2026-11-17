@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "editor.h"
 #include "params.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
@@ -221,6 +222,23 @@ tresult PLUGIN_API Controller::setComponentState(IBStream* stream) {
   setParamNormalized(kLevelId, levelToNormalized(s.level));
   setParamNormalized(kBypassId, s.enabled != 0 ? 0.0 : 1.0);
   return kResultOk;
+}
+
+IPlugView* PLUGIN_API Controller::createView(FIDString name) {
+  if (name == nullptr || std::strcmp(name, ViewType::kEditor) != 0) return nullptr;
+#ifdef __APPLE__
+  return createFaceEditor(this, kind_->type);
+#else
+  return nullptr;
+#endif
+}
+
+tresult PLUGIN_API Controller::setParamNormalized(ParamID tag, ParamValue value) {
+  const tresult result = EditController::setParamNormalized(tag, value);
+#ifdef __APPLE__
+  if (editor_ != nullptr) refreshFaceEditor(editor_);
+#endif
+  return result;
 }
 
 }  // namespace segno_vst3
