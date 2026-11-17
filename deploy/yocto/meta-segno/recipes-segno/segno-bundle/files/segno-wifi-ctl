@@ -161,12 +161,25 @@ JOURNALCTL="${SEGNO_JOURNALCTL:-journalctl}"
 # them yet: journald stores a line a moment after iwd writes it.
 JOIN_EVIDENCE_WAIT_SECS="${SEGNO_JOIN_EVIDENCE_WAIT:-1}"
 
-# What iwd and NetworkManager logged since <epoch>, the start of this join:
-# never an earlier attempt's lines, which once made a failed join of an open
-# network read as a wrong password (#1817).
+# The journal's position now: the cursor of its last entry, or empty.
+join_mark() {
+    "$JOURNALCTL" -n 0 --show-cursor --no-pager 2>/dev/null \
+        | sed -n 's/^-- cursor: //p'
+}
+
+# What iwd and NetworkManager logged after <cursor>, the start of this join,
+# or since <epoch> when the journal gave no cursor: never an earlier
+# attempt's lines, which once made a failed join of an open network read as
+# a wrong password (#1817). A cursor rather than the second the join began,
+# which can hold the end of the attempt before it.
 join_evidence() {
-    "$JOURNALCTL" --since "@$1" --no-pager -o cat -t iwd -t NetworkManager \
-        2>/dev/null || true
+    if [ -n "$1" ]; then
+        "$JOURNALCTL" --after-cursor "$1" --no-pager -o cat -t iwd -t NetworkManager \
+            2>/dev/null || true
+    else
+        "$JOURNALCTL" --since "@$2" --no-pager -o cat -t iwd -t NetworkManager \
+            2>/dev/null || true
+    fi
 }
 
 # Why a join failed, as one code on stdout ({"error":<code>}) for the app to
@@ -190,13 +203,13 @@ join_evidence() {
 join_failure() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
-    evidence=$(join_evidence "$2")
+    evidence=$(join_evidence "$2" "$3")
     # iwd logs a handshake failure before the connect failure that ends the
     # attempt, so either line means the journal has caught up; neither may
     # mean it has not yet, and a wrong key must not read as no-connection.
     if ! printf '%s' "$evidence" | grep -qaiE '4-way handshake failed|connect-failed'; then
         sleep "$JOIN_EVIDENCE_WAIT_SECS"
-        evidence=$(join_evidence "$2")
+        evidence=$(join_evidence "$2" "$3")
     fi
     iwd_said=$(printf '%s\n' "$evidence" \
         | grep -aoiE '4-way handshake failed.*|connect-failed, [a-z]+: [0-9]+' \
@@ -568,6 +581,7 @@ do_connect_nm() {
     fi
     # The start of this attempt, so join_failure reads only its own evidence.
     since=$(date +%s)
+    mark=$(join_mark)
 
     # Rejoining the network that is up (a new password for it) falls back to
     # that same network: its old key stays stored until the new one works.
@@ -659,7 +673,7 @@ do_connect_nm() {
     set -e
     rm -f "$passf"
     if [ "$rc" -ne 0 ]; then
-        join_failure "$(cat "$errf")" "$since"
+        join_failure "$(cat "$errf")" "$mark" "$since"
         rm -f "$errf"
         # A failed attempt leaves nothing behind and takes nothing away. A
         # profile made for it is removed, so the list never shows a network

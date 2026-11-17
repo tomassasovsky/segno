@@ -48,6 +48,12 @@ STUB
     # second read on when that exists: journald storing a line late.
     cat > "$work/bin/journalctl" <<STUB
 #!/bin/sh
+case "\$*" in
+    *--show-cursor*)
+        echo '-- No entries --'
+        echo '-- cursor: s=1817;i=42'
+        exit 0 ;;
+esac
 echo "\$@" >> "$work/journalctl-args"
 if [ -f "$work/journal-late" ] && [ "\$(wc -l < "$work/journalctl-args")" -gt 1 ]; then
     cat "$work/journal-late"
@@ -160,7 +166,7 @@ run_connect
 # A window of the last 90 s once let another network's handshake failure
 # (the phone hotspot's, moments earlier) name this join a wrong password.
 check "the journal is read from the attempt's start" yes \
-    "$(grep -qE -- '--since @[0-9]+ ' "$work/journalctl-args" && echo yes || echo no)"
+    "$(grep -qF -- '--after-cursor s=1817;i=42 ' "$work/journalctl-args" && echo yes || echo no)"
 check "and only iwd and NetworkManager" yes \
     "$(grep -qF -- '-t iwd -t NetworkManager' "$work/journalctl-args" && echo yes || echo no)"
 teardown
@@ -182,6 +188,18 @@ event: connect-failed, status: 16
 LOG
 run_connect
 check "one read" 1 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+teardown
+
+echo "a journal with no cursor is read from the attempt's second"
+setup
+cat > "$work/bin/journalctl" <<STUB
+#!/bin/sh
+case "\$*" in *--show-cursor*) exit 0 ;; esac
+echo "\$@" >> "$work/journalctl-args"
+STUB
+run_connect
+check "since the second" yes \
+    "$(grep -qE -- '--since @[0-9]+ ' "$work/journalctl-args" && echo yes || echo no)"
 teardown
 
 echo "the join timed out"
