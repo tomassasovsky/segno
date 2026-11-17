@@ -8,34 +8,37 @@
     <lastBuildDate>Tue, 17 Nov 2026 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://segno.aquiles.dev/feed.xml" rel="self" type="application/rss+xml"/>
     <item>
-      <title>Sample entry: how the devlog is built</title>
-      <link>https://segno.aquiles.dev/log/sample-entry/</link>
-      <guid isPermaLink="true">https://segno.aquiles.dev/log/sample-entry/</guid>
+      <title>Two fixes for ivi-homescreen</title>
+      <link>https://segno.aquiles.dev/log/two-ivi-homescreen-fixes/</link>
+      <guid isPermaLink="true">https://segno.aquiles.dev/log/two-ivi-homescreen-fixes/</guid>
       <pubDate>Tue, 17 Nov 2026 00:00:00 +0000</pubDate>
-      <description>A sample entry for reviewing the devlog. It shows every piece of Markdown the generator supports, and it is deleted before the pull request merges.</description>
-      <content:encoded><![CDATA[<p><strong>This is a sample entry.</strong> It exists so the pull request that adds the devlog has something to show. Delete <code>site/log/2026-11-17-sample-entry.md</code> and run <code>python3 site/build_log.py</code> before merging.</p>
-<h2>Where entries come from</h2>
-<p>Each entry is a Markdown file in <a href="https://github.com/tomassasovsky/segno/tree/master/site/log"><code>site/log/</code></a>, named by date and slug. A short Python script turns the files into:</p>
+      <description>Segno's two screens turned up two bugs in ivi-homescreen, the Flutter embedder Segno runs on. One ignored a screen's pixel ratio, the other crashed the app on most shutdowns. Both fixes are now open as pull requests upstream.</description>
+      <content:encoded><![CDATA[<p>Segno's interface runs on <a href="https://github.com/toyota-connected/ivi-homescreen">ivi-homescreen</a>, the Flutter embedder that Toyota Connected maintains for embedded Linux. On the console it draws straight to DRM/KMS: no Wayland, no desktop. The console has two screens, a 15.6-inch main screen and a 7-inch readout, and each screen is its own <code>[[view]]</code> in the embedder's config with its own Flutter engine. Both engines live in one process and share one Dart VM.</p>
+<p>That setup turned up two bugs. I've been carrying a patch for each in Segno's Yocto layer, and this week I sent both upstream:</p>
 <ul>
-<li>one page per entry, under <code>/log/&lt;slug&gt;/</code></li>
-<li>the list of entries at <code>/log/</code>, newest first</li>
-<li>an RSS feed at <code>/feed.xml</code>, and the sitemap</li>
+<li><a href="https://github.com/toyota-connected/ivi-homescreen/pull/859">#859</a>: apply the configured pixel ratio to window metrics</li>
+<li><a href="https://github.com/toyota-connected/ivi-homescreen/pull/860">#860</a>: keep the AOT snapshot mapped after engine shutdown</li>
 </ul>
-<p>The generated pages are committed, so the server still serves plain files and the site keeps its rule of no JavaScript.</p>
-<h2>Adding an entry</h2>
-<ol>
-<li>Write <code>site/log/YYYY-MM-DD-slug.md</code> with a title, a date and a summary.</li>
-<li>Run the script.</li>
-<li>Commit the Markdown and the output together.</li>
-</ol>
-<pre><code class="language-bash">python3 site/build_log.py
-python3 site/build_log.py --check</code></pre>
-<h3>Pictures</h3>
-<p>A picture goes on a line of its own, with alt text and an optional caption. Label it for what it is, as the rest of the site does.</p>
-<figure><img src="https://segno.aquiles.dev/img/console-iso-1200.webp?v=d8154f14" alt="The Segno console seen from above at an angle, with ten footswitches and two screens." loading="lazy"><figcaption>Render of the console design from Autodesk Fusion. This is not a photo.</figcaption></figure>
-<blockquote>
-<p>A quote goes in a block like this one, and <em>emphasis</em> and links such as <a href="https://segno.aquiles.dev">https://segno.aquiles.dev</a> work inside it.</p>
-</blockquote>]]></content:encoded>
+<h2>Why two engines</h2>
+<p>Flutter can draw several views from one engine, and ivi-homescreen supports that mode. In ivi-homescreen v3.0, only the first view receives input. The readout is the console's only touchscreen, so as a second view of a shared engine it could never be touched. With one engine per view, each engine is bound to its own output by connector name (<code>HDMI-A-1</code>, <code>HDMI-A-2</code>), and touch reaches the right view by the input device's name.</p>
+<p>The two engines talk through the Dart VM they share. Each one publishes a <code>SendPort</code> in the <code>IsolateNameServer</code> under a fixed name and looks up the other's, with no plugin involved. The main screen owns the audio engine and all the state. The readout draws what it is sent and reports touches back.</p>
+<h2>Fix 1: the readout ignored its pixel ratio</h2>
+<p>The readout is a 1024x600 panel, and its view is configured with <code>pixel_ratio = 1.6</code>, so it should lay out at 640x375 logical pixels. It laid out at 1024x600 instead, with <code>devicePixelRatio</code> at 1.0, and everything on it was drawn too small.</p>
+<p>The configured ratio did reach the engine, but only as a display property (<code>View.of(context).display.devicePixelRatio</code> was 1.6). Flutter lays out with the view's ratio, which comes from the window metrics, and on the backends without a Wayland window (<code>drm-kms-egl</code>, <code>drm-kms-vulkan</code>, software) the first window metrics always carried 1.0. Only the Wayland window ever changed that value.</p>
+<p>The fix stores the configured ratio before the first window metrics are sent. Later resizes and the views added for extra DRM outputs read the same value, so they get it too. Touch input needed no change, because it is already delivered in physical pixels.</p>
+<h2>Fix 2: a crash on most shutdowns</h2>
+<p>Restarting Segno's service crashed the app on the way out. 12 of 16 stops left a core dump, all with the same crashing thread:</p>
+<pre><code>#0 stub CallNativeThroughSafepoint+0x58
+#2 _libcRead.#ffiClosure3+0x70
+#3 _readerMain+0xb8
+...
+#16 stub InvokeDartCode+0xd8</code></pre>
+<p><code>_readerMain</code> is the isolate that reads the console board's serial link. It spends most of its time blocked in an FFI <code>read()</code> with a 100 ms timeout.</p>
+<p>When an engine shuts down, ivi-homescreen called <code>FlutterEngineCollectAOTData</code> right after <code>FlutterEngineShutdown</code>. That unmaps the compiled Dart code. But shutting down an engine stops only its root isolate. Isolates the app started with <code>Isolate.spawn</code> keep running, the Dart VM keeps running (the other screen's engine is still on it), and the serial reader is usually sitting inside <code>read()</code>. When that call returns, it returns through a stub that is no longer mapped, and the process dies with SIGSEGV.</p>
+<p>The fix leaves the AOT data mapped and lets the process exit release it. After the change there were 0 core dumps in 226 stops, and a clean stop takes about 0.35 seconds. One stop on the first patched build hung until systemd killed it. It didn't happen again in the next 150, and I don't know yet whether it's related.</p>
+<h2>Testing</h2>
+<p>Both branches build at ivi-homescreen v3.0 with gcc 14 and clang 19 and pass the project's 44 unit tests, its format, spelling and config-reference checks, and clang-tidy on the changed files. The on-device results above come from Segno's console: a Raspberry Pi 5 running <code>drm-kms-egl</code>, with both screens connected.</p>
+<p>Both pull requests are waiting for review. Until they're merged, Segno keeps applying the same two patches in its Yocto layer.</p>]]></content:encoded>
     </item>
   </channel>
 </rss>
