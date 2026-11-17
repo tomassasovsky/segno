@@ -575,6 +575,18 @@ abstract interface class LooperTransport {
   /// capture using Record timing. Never starts a new capture from stale state.
   EngineResult stopRecordControl({required int channel});
 
+  /// The Rec-mode Stop of the only audible loop (#1782): [stopRecordControl],
+  /// then the transport parks and the mutes sent after it let track
+  /// [channel]'s Post tail ring out, as [spareTail] does. A playing track
+  /// parks now, and so does an overdub that ends at once. An overdub whose
+  /// end Record timing quantizes runs to that grid end and parks there; until
+  /// then its mute waits for the park, and a second call keeps the arm.
+  ///
+  /// Reserves command room for itself and the [following] commands sent
+  /// right after it (the lane mutes): [EngineResult.notReady], with nothing
+  /// sent, when they would not all fit.
+  EngineResult stopRecordPark({required int channel, int following = 0});
+
   /// Cancels only shared Count-in launches and their one-drain grace.
   /// Ordinary grid/Sound arms and older captures remain untouched.
   EngineResult cancelCountIn();

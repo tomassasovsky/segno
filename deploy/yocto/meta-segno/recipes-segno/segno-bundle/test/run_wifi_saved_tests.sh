@@ -45,6 +45,9 @@ case "\$*" in
     *"connection show"*)
         for n in \${SAVED:-}; do printf '%s:802-11-wireless\n' "\$n"; done
         ;;
+    # What connect's in-range check sees: the joins below are of Cafe, which
+    # the scan listing leaves out so that scan can show it out of range.
+    *"-f SSID device wifi list"*) printf 'Studio\nCafe\n' ;;
     *"device wifi list"*) printf 'Studio:70:WPA2\n' ;;
     *"connection up"*)
         exit \${UP_RC:-0} ;;
@@ -65,7 +68,7 @@ teardown() { rm -rf "$work"; }
 # The key, when a test passes one, goes on stdin the way the app sends it.
 run() { printf '%s' "${KEY:-}" | PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SAVED="${SAVED:-}" PRIORITIES="${PRIORITIES:-}" \
-    UP_RC="${UP_RC:-0}" STORED_PSK="${STORED_PSK:-}" \
+    UP_RC="${UP_RC:-0}" STORED_PSK="${STORED_PSK:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
     sh "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"; }
 
 check() {

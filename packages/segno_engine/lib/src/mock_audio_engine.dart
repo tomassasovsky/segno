@@ -1268,6 +1268,10 @@ class MockAudioEngine with SimulatedInstruments implements AudioEngine {
   EngineResult stopRecordControl({required int channel}) => _requireRunning();
 
   @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) =>
+      _requireRunning();
+
+  @override
   EngineResult cancelCountIn() => _requireRunning();
 
   @override

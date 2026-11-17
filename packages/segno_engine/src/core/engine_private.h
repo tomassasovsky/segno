@@ -1472,6 +1472,9 @@ static inline le_hist_entry le_hist_layer(int32_t slot) {
  * its own input clean); playback sums all active lanes. The undo span uses the
  * SAME pool slot indices across every lane in lockstep, so the track owns the
  * stacks and the lanes own only the buffers. */
+/* le_track::park's flag (#1782); its low LE_MAX_LANES bits are lanes. */
+#define LE_PARK_ARMED 0x80000000u
+
 typedef struct le_track {
   _Atomic uint32_t a_gain_bits; /* independent whole-track playback gain */
   le_fade fade; /* callback-owned; never changes saved Mixer gain */
@@ -2086,6 +2089,13 @@ typedef struct le_track {
   /* Enabling Once during existing playback ends the current pass, even when
    * that pass began less than a full lap ago. */
   int once_current_pass;
+  /* Audio-thread-local (#1782, le_engine_stop_record_park). LE_PARK_ARMED:
+   * the overdub's armed grid end (pending_record, trigger 0) parks the
+   * transport when it fires. Lane bits: the next mute of that lane is the
+   * Rec-mode Stop's own, and waits for the park instead of punching the pass
+   * out. Every new arm and every disarm clears it. In the struct's tail
+   * padding, so le_track keeps its size. */
+  uint32_t park;
 } le_track;
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
  * segno_engine_api.h). Rings are allocated CONTROL-side at arm and freed

@@ -3196,6 +3196,33 @@ external int le_engine_stop_record_control(
   int channel,
 );
 
+/// The Rec-mode Stop of the only audible loop (#1782): Stop as
+/// le_engine_stop_record_control resolves it, then the transport parks, and
+/// the mutes that follow spare the Post tail (le_engine_spare_tail's rule).
+///
+/// A playing track parks at once: every track stops, as le_engine_stop_track
+/// on each would stop it. So does an overdubbing track whose overdub ends at
+/// once; the stop ends the pass. An overdubbing track whose Record timing arms
+/// the end for the grid keeps overdubbing to that boundary and parks there,
+/// after any other arm that boundary fires. Until then the next mute of each
+/// of its lanes waits for the park instead of punching the pass out (a later
+/// one punches out as usual), and a second call keeps the arm. Whatever drops
+/// the arm (a Record press, a Clear, another track's capture) drops the park
+/// with it. A live Count-in is cancelled first, and the park follows. In any
+/// other state the call does what le_engine_stop_record_control does.
+///
+/// `following` is how many commands the caller posts right after it (the
+/// lane mutes): the call reserves room for them as le_engine_spare_tail does,
+/// and returns LE_ERR_NOT_READY with nothing posted when they would not fit.
+/// LE_ERR_INVALID for a bad channel, a negative `following`, or an arm
+/// le_engine_stop_record_control would refuse.
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)>()
+external int le_engine_stop_record_park(
+  ffi.Pointer<le_engine> engine,
+  int channel,
+  int following,
+);
+
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)>()
 external int le_engine_stop_track(ffi.Pointer<le_engine> engine, int channel);
 
@@ -4909,7 +4936,10 @@ enum le_command_code {
   /// one complete timing vector and receipt
   LE_CMD_SET_RECORD_TIMING(78),
 
-  /// cohort cancel or non-acquiring capture finish
+  /// cohort cancel or non-acquiring capture
+  /// finish. arg_f: 0 finish now, 1 arm the
+  /// grid end, 2 drop the arm; plus 4 for
+  /// le_engine_stop_record_park's park
   LE_CMD_STOP_RECORD_CONTROL(79),
 
   /// only the shared launch cohort/grace

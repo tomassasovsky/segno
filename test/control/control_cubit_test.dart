@@ -317,6 +317,10 @@ void main() {
           following: any(named: 'following'),
         ),
         () => looper.stopRecordControl(channel: any(named: 'channel')),
+        () => looper.stopRecordPark(
+          channel: any(named: 'channel'),
+          following: any(named: 'following'),
+        ),
       ]) {
         when(stub).thenReturn(EngineResult.ok);
       }
@@ -3214,6 +3218,12 @@ void main() {
           ),
         );
         // ch1 keeps sounding: no park.
+        verifyNever(
+          () => looper.stopRecordPark(
+            channel: any(named: 'channel'),
+            following: any(named: 'following'),
+          ),
+        );
         verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
       });
 
@@ -3224,24 +3234,33 @@ void main() {
         verify(() => looper.setMute(muted: true)).called(1);
       });
 
-      test('Rec mode: muting the sole audible track parks everything, and '
-          'the mute after the park spares its Post tails (#1773)', () {
-        setEngine(
-          _tracksWith(const [
-            Track(state: TrackState.playing, lengthFrames: 48000),
-          ]),
-        );
+      // Records what ControlCubit.stop sends, in order.
+      List<String> recordSent() {
         final sent = <String>[];
+        when(
+          () => looper.stopRecordPark(
+            channel: any(named: 'channel'),
+            following: any(named: 'following'),
+          ),
+        ).thenAnswer((i) {
+          sent.add(
+            'park ${i.namedArguments[#channel]} '
+            '${i.namedArguments[#following]}',
+          );
+          return EngineResult.ok;
+        });
+        when(() => looper.stopRecordControl(channel: any(named: 'channel')))
+            .thenAnswer((i) {
+              sent.add('stopRecordControl ${i.namedArguments[#channel]}');
+              return EngineResult.ok;
+            });
         when(
           () => looper.spareTail(
             channel: any(named: 'channel'),
             following: any(named: 'following'),
           ),
         ).thenAnswer((i) {
-          sent.add(
-            'spare ${i.namedArguments[#channel]} '
-            '${i.namedArguments[#following]}',
-          );
+          sent.add('spare ${i.namedArguments[#channel]}');
           return EngineResult.ok;
         });
         when(() => looper.stopTrack(channel: any(named: 'channel')))
@@ -3261,36 +3280,83 @@ void main() {
           );
           return EngineResult.ok;
         });
-        cubit.stop();
-        // The spare reserves room for the 8 stops and the 1 lane mute.
-        expect(sent, [
-          'spare 0 9',
-          for (var c = 0; c < 8; c++) 'stop $c',
-          'mute 0 true',
-        ]);
-      });
+        return sent;
+      }
 
-      test('Rec mode: a full command ring refuses the whole sole-loop Stop: '
-          'no stops, no mute (#1773)', () {
+      test('Rec mode: muting the sole audible track parks everything, and '
+          'the mute after the park spares its Post tails (#1773, #1782)', () {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
-        when(
-          () => looper.spareTail(
-            channel: any(named: 'channel'),
-            following: any(named: 'following'),
-          ),
-        ).thenReturn(EngineResult.notReady);
+        final sent = recordSent();
         cubit.stop();
-        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
-        verifyNever(
-          () => looper.setMute(
-            muted: any(named: 'muted'),
-            channel: any(named: 'channel'),
-          ),
+        // The engine parks; the park reserves room for the 1 lane mute.
+        expect(sent, ['park 0 1', 'mute 0 true']);
+      });
+
+      test('Rec mode: Stop on the sole loop while it overdubs ends the '
+          'overdub and parks in the engine, then mutes (#1782)', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.overdubbing, lengthFrames: 48000),
+          ]),
         );
+        final sent = recordSent();
+        cubit.stop();
+        // One command does the finish and the park, at the press or at the
+        // grid end the engine arms; nothing here stops a track early.
+        expect(sent, ['park 0 1', 'mute 0 true']);
+      });
+
+      test('Rec mode: a second Stop during the armed wait sends the park '
+          'again, never a stop that would cut the pass (#1782)', () {
+        // The engine keeps the armed end, so the track still overdubs.
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.overdubbing, lengthFrames: 48000),
+          ]),
+        );
+        final sent = recordSent();
+        cubit
+          ..stop()
+          ..stop();
+        expect(sent, ['park 0 1', 'mute 0 true', 'park 0 1', 'mute 0 true']);
+      });
+
+      test('Rec mode: Stop while overdubbing beside another playing loop '
+          'finishes and mutes without a park (#1782)', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.overdubbing, lengthFrames: 48000),
+            Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        final sent = recordSent();
+        cubit.stop();
+        expect(sent, ['stopRecordControl 0', 'mute 0 true']);
+      });
+
+      test('Rec mode: a full command ring refuses the whole sole-loop Stop: '
+          'no mute (#1773, #1782)', () {
+        for (final state in [TrackState.playing, TrackState.overdubbing]) {
+          setEngine(_tracksWith([Track(state: state, lengthFrames: 48000)]));
+          when(
+            () => looper.stopRecordPark(
+              channel: any(named: 'channel'),
+              following: any(named: 'following'),
+            ),
+          ).thenReturn(EngineResult.notReady);
+          cubit.stop();
+          verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+          verifyNever(
+            () => looper.setMute(
+              muted: any(named: 'muted'),
+              channel: any(named: 'channel'),
+            ),
+          );
+        }
       });
 
       test('Rec mode: Stop on a stopped track spares its tail, with no '
@@ -3305,6 +3371,12 @@ void main() {
         verify(() => looper.spareTail(following: 1)).called(1);
         verify(() => looper.setMute(muted: true)).called(1);
         verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        verifyNever(
+          () => looper.stopRecordPark(
+            channel: any(named: 'channel'),
+            following: any(named: 'following'),
+          ),
+        );
       });
 
       test(

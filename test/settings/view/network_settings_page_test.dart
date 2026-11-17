@@ -7,6 +7,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/loop_settings/loop_settings_widgets.dart';
 import 'package:segno/settings/view/network_settings_page.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// A radio with just enough behaviour to drive the page through pen 29's
@@ -21,6 +22,15 @@ class _PageWifiClient implements WifiClient {
   final bool supported;
   bool enabled;
   String connectedSsid;
+
+  /// The network NetworkManager is joining by itself, if any.
+  String joiningSsid = '';
+
+  /// What the helper's monitor announces.
+  final monitor = StreamController<void>.broadcast();
+
+  /// How many scans ran.
+  int scans = 0;
   String lastSsid = 'HomeNet';
   final autoConnect = <String, bool>{'HomeNet': true, 'Old Studio': true};
   List<WifiNetwork> networks = const [
@@ -58,11 +68,17 @@ class _PageWifiClient implements WifiClient {
   Future<WifiStatus> status() async {
     if (!supported) return WifiStatus.unsupported;
     final up = enabled && connectedSsid.isNotEmpty;
+    final joining = enabled && !up && joiningSsid.isNotEmpty;
     return WifiStatus(
       supported: true,
       enabled: enabled,
       connected: up,
-      ssid: up ? connectedSsid : '',
+      connecting: joining,
+      ssid: up
+          ? connectedSsid
+          : joining
+          ? joiningSsid
+          : '',
       ip: up ? '10.0.0.4' : '',
       signal: up ? -40 : 0,
       autoConnect: Map.of(autoConnect),
@@ -71,7 +87,13 @@ class _PageWifiClient implements WifiClient {
   }
 
   @override
-  Future<List<WifiNetwork>> scan() async => enabled ? networks : const [];
+  Future<List<WifiNetwork>> scan() async {
+    scans++;
+    return enabled ? networks : const [];
+  }
+
+  @override
+  Stream<void> changes() => monitor.stream;
 
   @override
   Future<void> connect(String ssid, {String? psk}) async {
@@ -309,14 +331,14 @@ void main() {
     });
 
     testWidgets(
-      'NM wanting secrets right after a typed key reads as a wrong password, '
-      'and the network that came back is not dropped again',
+      'a key the access point refused reopens the sheet, and the network '
+      'that came back is not dropped again',
       (tester) async {
         final client = _PageWifiClient()
           ..connectError = const WifiHelperException(
-            'segno-wifi-ctl: timed out waiting for association '
-            '(secrets were required)',
+            'segno-wifi-ctl: join failed: wrong-password',
             restored: 'HomeNet',
+            join: WifiJoinError.wrongPassword,
           );
         await pumpPage(tester, client: client);
 
@@ -362,7 +384,10 @@ void main() {
 
     testWidgets('a wrong password reopens the sheet saying so', (tester) async {
       final client = _PageWifiClient()
-        ..connectError = StateError('segno-wifi-ctl: authentication failed');
+        ..connectError = const WifiHelperException(
+          'segno-wifi-ctl: join failed: wrong-password',
+          join: WifiJoinError.wrongPassword,
+        );
       await pumpPage(tester, client: client);
 
       await tester.tap(row('Studio 5G'));
@@ -386,6 +411,122 @@ void main() {
       await submitPassword(tester);
       await tester.pumpAndSettle();
       expect(client.joined, [('Studio 5G', 'segno123')]);
+    });
+
+    // 2026-11-17: a WiFi 6 router timed out the 802.11 authentication and
+    // the page said "Incorrect password", so the owner forgot two good
+    // networks (#1817).
+    testWidgets('a failed connection after a typed key does not blame it', (
+      tester,
+    ) async {
+      const failed = WifiHelperException(
+        'segno-wifi-ctl: join failed: no-connection',
+        join: WifiJoinError.noConnection,
+        restored: 'HomeNet',
+      );
+      final client = _PageWifiClient()..connectError = failed;
+      await pumpPage(tester, client: client);
+
+      await tester.tap(row('Studio 5G'));
+      await tester.pumpAndSettle();
+      await type(tester, 'goodpass');
+      await submitPassword(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('network_password_sheet')), findsNothing);
+      expect(find.textContaining('password'), findsNothing);
+      expect(find.text('Couldn’t connect to Studio 5G.'), findsOneWidget);
+
+      // Try again joins with the key that was typed, with no sheet.
+      await tester.tap(find.byKey(const Key('network_retry')));
+      await tester.pumpAndSettle();
+      expect(client.joined, [('Studio 5G', 'goodpass')]);
+      expect(find.byKey(const Key('network_card_error')), findsNothing);
+      expect(find.byKey(const Key('network_retry')), findsNothing);
+    });
+
+    testWidgets('each failure says what happened, and only a wrong key is '
+        'about the password', (tester) async {
+      final client = _PageWifiClient();
+      await pumpPage(tester, client: client);
+      for (final (reason, text) in [
+        (
+          WifiJoinError.notFound,
+          'Couldn’t find Cafe Free. It may be out of range.',
+        ),
+        (WifiJoinError.noAddress, 'Cafe Free didn’t give Segno an IP address.'),
+        (WifiJoinError.noConnection, 'Couldn’t connect to Cafe Free.'),
+      ]) {
+        client.connectError = WifiHelperException(
+          'segno-wifi-ctl: x',
+          join: reason,
+          restored: 'HomeNet',
+        );
+        await tester.tap(row('Cafe Free'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('network_connect')));
+        await tester.pumpAndSettle();
+        expect(find.text(text), findsOneWidget, reason: '$reason');
+        expect(find.byKey(const Key('network_retry')), findsOneWidget);
+      }
+    });
+  });
+
+  group('live', () {
+    testWidgets('follows a drop and a rejoin NetworkManager made by itself', (
+      tester,
+    ) async {
+      final client = _PageWifiClient();
+      await pumpPage(tester, client: client);
+
+      client.connectedSsid = '';
+      client.monitor.add(null);
+      await tester.pump(WifiCubit.changeSettle);
+      await tester.pumpAndSettle();
+      expect(find.text('Connection lost'), findsOneWidget);
+
+      client.joiningSsid = 'HomeNet';
+      client.monitor.add(null);
+      await tester.pump(WifiCubit.changeSettle);
+      await tester.pump();
+      expect(find.text('Connecting…'), findsOneWidget);
+      expect(find.byKey(const Key('network_progress')), findsOneWidget);
+
+      client
+        ..joiningSsid = ''
+        ..connectedSsid = 'HomeNet';
+      client.monitor.add(null);
+      await tester.pump(WifiCubit.changeSettle);
+      await tester.pumpAndSettle();
+      expect(find.text('Connected'), findsOneWidget);
+      expect(find.text('IP 10.0.0.4'), findsOneWidget);
+    });
+
+    testWidgets('the list rescans on its own every 10 s', (tester) async {
+      final client = _PageWifiClient();
+      await pumpPage(tester, client: client);
+      expect(row('Rehearsal'), findsNothing);
+
+      client.networks = [
+        ...client.networks,
+        const WifiNetwork(ssid: 'Rehearsal', signal: -50, secured: true),
+      ];
+      await tester.pump(WifiCubit.scanInterval);
+      await tester.pumpAndSettle();
+      expect(row('Rehearsal'), findsOneWidget);
+      // The Scan button did not flicker for it.
+      expect(find.text('Scan'), findsOneWidget);
+    });
+
+    testWidgets('no scan runs once the page is closed', (tester) async {
+      final client = _PageWifiClient();
+      await pumpPage(tester, client: client);
+      await tester.pumpWidget(const SizedBox());
+      final scans = client.scans;
+
+      await tester.pump(WifiCubit.scanInterval * 3);
+      expect(client.scans, scans);
+      expect(client.monitor.hasListener, isFalse);
     });
   });
 
@@ -573,6 +714,18 @@ void main() {
         find.text('No networks found. Scan to try again.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('only the network the console is on says there are no others', (
+      tester,
+    ) async {
+      final client = _PageWifiClient()
+        ..networks = const [
+          WifiNetwork(ssid: 'HomeNet', signal: -40, secured: true, saved: true),
+        ];
+      await pumpPage(tester, client: client);
+
+      expect(find.text('No other networks found.'), findsOneWidget);
     });
 
     testWidgets('a build without the helper has no switch and no list', (

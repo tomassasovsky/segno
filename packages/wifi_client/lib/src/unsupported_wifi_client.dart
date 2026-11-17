@@ -16,6 +16,9 @@ class UnsupportedWifiClient implements WifiClient {
   Future<List<WifiNetwork>> scan() async => const [];
 
   @override
+  Stream<void> changes() => const Stream.empty();
+
+  @override
   Future<void> connect(String ssid, {String? psk}) async {}
 
   @override

@@ -1151,6 +1151,10 @@ class FakePerformanceEngine with SimulatedInstruments implements AudioEngine {
   EngineResult stopRecordControl({required int channel}) => EngineResult.ok;
 
   @override
+  EngineResult stopRecordPark({required int channel, int following = 0}) =>
+      EngineResult.ok;
+
+  @override
   EngineResult cancelCountIn() => EngineResult.ok;
 
   /// Channels passed to [finalizeTake], in call order.
