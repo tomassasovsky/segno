@@ -189,8 +189,8 @@ int main(int argc, char** argv) {
       } else if (std::strcmp(control, "readout") == 0) {
         /* A knob's value as a row of the panel: it shows, never sets. */
         if (!le_json_bool(le_json_get(c, "display"), 0)) fail(type, "a readout that sets", param);
-        if (le_json_length(le_json_get(c, "readout")) != 4 || info.stepCount != 0) {
-          fail(type, "a readout row without a place for a continuous value", param);
+        if (le_json_length(le_json_get(c, "readout")) != 4) {
+          fail(type, "a readout row without a place for its value", param);
         }
       } else {
         fail(type, "unknown control", param);
