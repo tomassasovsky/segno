@@ -1,5 +1,6 @@
 #include "processor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -37,6 +38,7 @@ Processor::Processor(const FxKind* kind) : kind_(kind) {
   segno_fx_defaults(kind->type, defaults);
   for (int32_t p = 0; p < width_; ++p) state_.params[p] = defaults[p];
   nextClock_ = state_.clockOffset;
+  reported_ = segno_fx_reported_latency(kind->type);
 }
 
 Processor::~Processor() { freeSlot(); }
@@ -80,6 +82,9 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
   sr_ = (int32_t)std::lround(setup.sampleRate);
   if (sr_ <= 0) sr_ = 48000;
   latency_ = segno_fx_latency(kind_->type, sr_);
+  /* A rate past the ones segno_fx_reported_latency covers can need more
+   * (a host is to read the latency again after setupProcessing). */
+  reported_ = std::max(segno_fx_reported_latency(kind_->type), latency_);
   return kResultOk;
 }
 
@@ -118,6 +123,9 @@ bool Processor::build() {
   bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
   for (auto& line : dryLine_) line.assign((size_t)(latency_ > 0 ? latency_ : 1), 0.0f);
   dryPos_ = 0;
+  const int32_t pad = reported_ - latency_;
+  for (auto& line : padLine_) line.assign((size_t)(pad > 0 ? pad : 1), 0.0f);
+  padPos_ = 0;
   return slot_ != nullptr;
 }
 
@@ -143,9 +151,10 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
 }
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
-  /* The same whether the entry is on or bypassed: bypassed, a kind that
-   * delays its output passes its input delayed as much (process()). */
-  return (uint32)latency_;
+  /* The same whether the entry is on or bypassed (bypassed, a kind that
+   * delays its output passes its input delayed as much, process()), and
+   * at every rate (reported_). */
+  return (uint32)reported_;
 }
 
 uint32 PLUGIN_API Processor::getTailSamples() {
@@ -253,7 +262,21 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
   const uint32_t base =
       playing ? state_.clockOffset + (uint32_t)(int64_t)ctx->projectTimeSamples
               : nextClock_;
-  followHost(ctx, base, base != nextClock_ || playing != wasPlaying_);
+  const bool moved = base != nextClock_;
+  followHost(ctx, base, moved || playing != wasPlaying_);
+  if (playing && !wasPlaying_) {
+    /* The host starts playing: the slot starts again as it stood at arm,
+     * so a render from the host's start is the console's render of the
+     * take (its tails, LFOs, hops and noise all from there), not shaped by
+     * whatever ran while the host was stopped. A jump while playing (a
+     * loop wrap) keeps the tails. */
+    segno_fx_slot_rearm(slot_, base);
+    for (auto& line : dryLine_) std::fill(line.begin(), line.end(), 0.0f);
+    dryPos_ = 0;
+    for (auto& line : padLine_) std::fill(line.begin(), line.end(), 0.0f);
+    padPos_ = 0;
+    bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
+  }
   wasPlaying_ = playing;
 
   ParamEvent events[kMaxEvents];
@@ -328,6 +351,17 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
       }
     } else {
       segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
+    }
+    if (reported_ > latency_) {
+      float& pl = padLine_[0][(size_t)padPos_];
+      float& pr = padLine_[1][(size_t)padPos_];
+      const float wl = l;
+      const float wr = r;
+      l = pl;
+      r = pr;
+      pl = wl;
+      pr = wr;
+      if (++padPos_ == reported_ - latency_) padPos_ = 0;
     }
     if (outR != nullptr) {
       outL[i] = l;

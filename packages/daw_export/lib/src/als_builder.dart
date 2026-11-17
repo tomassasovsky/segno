@@ -3,8 +3,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/device_chain.dart';
+import 'package:daw_export/src/live_device_template.dart';
 import 'package:daw_export/src/live_group_track_template.dart';
 import 'package:daw_export/src/live_set_template.dart';
+import 'package:daw_export/src/segno_vst3_plugins.dart';
 import 'package:xml/xml.dart';
 
 /// The time of the event Live writes first in every envelope: it holds the
@@ -12,11 +15,27 @@ import 'package:xml/xml.dart';
 const double _kBeforeSongTime = -63072000;
 
 /// Where Live's Arrangement lane chooser finds a track's volume envelope,
-/// as Live 12.2.7 numbers it for an audio track with no devices and no
-/// sends: device 1 is the Mixer, and its envelope 2 the volume (0 is the
+/// as Live 12.2.7 numbers it for an audio track with no sends: after
+/// "None" (0), every device in order, a rack followed by each chain's
+/// devices and the chain's mixer, then the track's Mixer
+/// ([_laneMixerDevice]), whose envelope 2 is the volume (0 is the
 /// activator, "Speaker On").
-const int _kLaneMixerDevice = 1;
 const int _kLaneMixerVolume = 2;
+
+/// The lane chooser's number for the Mixer of a track holding [devices].
+int _laneMixerDevice(List<DawDevice> devices) => 1 + _chooserEntries(devices);
+
+/// The entries [devices] take in the lane chooser.
+int _chooserEntries(List<DawDevice> devices) => devices.fold(
+  0,
+  (n, d) =>
+      n +
+      switch (d) {
+        DawPluginDevice() => 1,
+        DawRackDevice(:final chains) =>
+          1 + chains.fold(0, (m, c) => m + _chooserEntries(c.devices) + 1),
+      },
+);
 
 /// Live's `WarpMode` number for Re-Pitch, which at the clip's own tempo plays
 /// the file's samples unchanged.
@@ -58,6 +77,7 @@ Uint8List buildAls(DawProject project) {
   final prototype = _TrackPrototype.take(liveSet);
   final nextPointeeId = liveSet.getElement('NextPointeeId')!;
   final ids = _PointeeIds(_intValue(nextPointeeId));
+  final devices = _DevicePrototypes(ids);
 
   final tracks = liveSet.getElement('Tracks')!;
   var trackId = prototype.trackId;
@@ -77,7 +97,9 @@ Uint8List buildAls(DawProject project) {
           );
         }
         groupId = trackId++;
-        tracks.children.add(_groupTrack(group, trackId: groupId, ids: ids));
+        tracks.children.add(
+          _groupTrack(group, trackId: groupId, ids: ids, devices: devices),
+        );
       }
     }
     tracks.children.add(
@@ -87,6 +109,7 @@ Uint8List buildAls(DawProject project) {
         groupId: group == null ? -1 : groupId,
         tempoBpm: project.tempoBpm,
         ids: ids,
+        devices: devices,
       ),
     );
   }
@@ -103,13 +126,15 @@ Uint8List buildAls(DawProject project) {
   return Uint8List.fromList(GZipCodec().encode(utf8.encode(xml)));
 }
 
-/// A Group track named after [group], with fresh pointee ids. It has one
+/// A Group track named after [group], with fresh pointee ids and
+/// [group]'s devices. It has one
 /// slot per scene of the set's template, as the template's audio track has
 /// one clip slot per scene.
 XmlElement _groupTrack(
   DawGroup group, {
   required int trackId,
   required _PointeeIds ids,
+  required _DevicePrototypes devices,
 }) {
   final track = XmlDocument.parse(liveGroupTrackTemplate).rootElement.copy()
     ..setAttribute('Id', '$trackId');
@@ -122,6 +147,12 @@ XmlElement _groupTrack(
   _setValue(name.getElement('EffectiveName')!, group.name);
   _setValue(name.getElement('UserName')!, group.name);
   _setValue(name.getElement('Annotation')!, group.info);
+  track
+      .getElement('DeviceChain')!
+      .getElement('DeviceChain')!
+      .getElement('Devices')!
+      .children
+      .addAll(devices.build(group.devices));
   return track;
 }
 
@@ -179,13 +210,13 @@ class _TrackPrototype {
 
   /// Shows the volume lane of a track with volume automation, so it is
   /// visible when the set opens. A track without keeps the template's lane.
-  void _showVolumeLane(XmlElement track) {
+  void _showVolumeLane(XmlElement track, List<DawDevice> devices) {
     _automationLanes(track).children
       ..clear()
       ..add(
         (lane.copy()..setAttribute('Id', '0'))
           ..getElement('SelectedDevice')!
-              .setAttribute('Value', '$_kLaneMixerDevice')
+              .setAttribute('Value', '${_laneMixerDevice(devices)}')
           ..getElement('SelectedEnvelope')!
               .setAttribute('Value', '$_kLaneMixerVolume'),
       );
@@ -197,6 +228,7 @@ class _TrackPrototype {
     required int groupId,
     required double tempoBpm,
     required _PointeeIds ids,
+    required _DevicePrototypes devices,
   }) {
     final track = this.track.copy()..setAttribute('Id', '$trackId');
     for (final element in track.descendantElements) {
@@ -219,6 +251,11 @@ class _TrackPrototype {
       _setValue(output.getElement('UpperDisplayString')!, 'Group');
       _setValue(output.getElement('LowerDisplayString')!, '');
     }
+    deviceChain
+        .getElement('DeviceChain')!
+        .getElement('Devices')!
+        .children
+        .addAll(devices.build(source.devices));
     final clips = source.arrangementClips;
     _arrangerEvents(track).children.addAll([
       for (var i = 0; i < clips.length; i++)
@@ -263,7 +300,7 @@ class _TrackPrototype {
           range: _range(parameter),
         ),
       );
-      _showVolumeLane(track);
+      _showVolumeLane(track, source.devices);
     }
     return track;
   }
@@ -369,6 +406,187 @@ class _TrackPrototype {
       ..add(_warpMarker(1, seconds, beats));
     return clip;
   }
+}
+
+/// The device prototypes Live saved (`live_device_template.dart`): a Segno
+/// plugin, and an Audio Effect Rack with its chain held apart.
+class _DevicePrototypes {
+  new(this.ids);
+
+  final _PointeeIds ids;
+
+  /// Parsed on the first device a set holds: most takes have none.
+  late final XmlElement plugin = XmlDocument.parse(livePluginDeviceTemplate)
+      .rootElement;
+  late final (XmlElement, XmlElement) _rackParts = () {
+    final rack = XmlDocument.parse(liveRackDeviceTemplate).rootElement;
+    final branch = rack.getElement('Branches')!.childElements.single..remove();
+    return (rack, branch);
+  }();
+
+  /// The rack, with no chains.
+  XmlElement get rack => _rackParts.$1;
+
+  /// One chain of it.
+  XmlElement get branch => _rackParts.$2;
+
+  /// [devices] as a device list's members, numbered in order.
+  List<XmlElement> build(List<DawDevice> devices) => [
+    for (var i = 0; i < devices.length; i++)
+      switch (devices[i]) {
+        final DawPluginDevice d => _plugin(d, i),
+        final DawRackDevice r => _rack(r, i),
+      },
+  ];
+
+  /// A copy of [prototype] as member [id] of its list, with fresh pointee
+  /// ids.
+  XmlElement _copy(XmlElement prototype, int id) =>
+      _renumbered(prototype.copy()..setAttribute('Id', '$id'));
+
+  /// [element] with a fresh id on every pointee in it.
+  XmlElement _renumbered(XmlElement element) {
+    for (final e in [element, ...element.descendantElements]) {
+      if (_isPointee(e.name.local)) e.setAttribute('Id', '${ids.take()}');
+    }
+    return element;
+  }
+
+  XmlElement _plugin(DawPluginDevice device, int id) {
+    final element = _withParameters(_copy(plugin, id), device);
+    _setValue(element.getElement('On')!.getElement('Manual')!, '${device.on}');
+    final info = element
+        .getElement('PluginDesc')!
+        .getElement('Vst3PluginInfo')!;
+    _setValue(info.getElement('Name')!, device.plugin.name);
+    final preset = info.getElement('Preset')!.getElement('Vst3Preset')!;
+    for (final uid in [info.getElement('Uid')!, preset.getElement('Uid')!]) {
+      final fields = device.plugin.liveUidFields;
+      for (var i = 0; i < 4; i++) {
+        _setValue(uid.getElement('Fields.$i')!, '${fields[i]}');
+      }
+    }
+    preset.getElement('ProcessorState')!.innerText = _hex(
+      device.state.encode(),
+    );
+    preset.getElement('ControllerState')!.innerText = '';
+    return element;
+  }
+
+  /// [element] with its parameter list as Live writes it for [device]'s
+  /// plugin when it loads one fresh: the kind's settings, then the channel
+  /// handling, each in the slot of its place, at the state's values; the
+  /// rest of the 128 slots unassigned. Live shows these parameters on the
+  /// device and offers them for automation; a stepped one's value is in
+  /// steps.
+  XmlElement _withParameters(XmlElement element, DawPluginDevice device) {
+    final list = element.getElement('ParameterList')!;
+    final slots = list.childElements.toList();
+    // The template's plugin has its parameters in its first slots and the
+    // rest unassigned; one of each is the pattern for the others.
+    final assigned = slots.first;
+    final unassigned = slots.last;
+    final state = device.state;
+    final parameters = [
+      // Every setting the plugin has, at the state's value or, past what
+      // the state holds, at the default the plugin runs it at.
+      for (var p = 0; p < device.plugin.parameters.length; p++)
+        (
+          p,
+          device.plugin.parameters[p],
+          p < state.params.length
+              ? state.params[p]
+              : device.plugin.parameters[p].defaultValue,
+        ),
+      for (final MapEntry(key: pid, value: parameter)
+          in segnoChannelParameters.entries)
+        (
+          pid,
+          parameter,
+          switch (pid) {
+            1000 => state.input / 3,
+            1001 => state.output.toDouble(),
+            1002 => (state.placement + 1) / 2,
+            _ => state.level / 4,
+          },
+        ),
+    ];
+    list.children.clear();
+    for (var i = 0; i < slots.length; i++) {
+      if (i >= parameters.length) {
+        list.children.add(
+          _renumbered(unassigned.copy()..setAttribute('Id', '$i')),
+        );
+        continue;
+      }
+      final (pid, parameter, normalized) = parameters[i];
+      final steps = parameter.steps;
+      final max = steps > 0 ? steps : 1;
+      final value = steps > 0
+          ? (normalized.clamp(0.0, 1.0) * steps).roundToDouble()
+          : normalized;
+      final slot = _renumbered(assigned.copy()..setAttribute('Id', '$i'));
+      _setValue(slot.getElement('ParameterName')!, parameter.name);
+      _setValue(slot.getElement('ParameterId')!, '$pid');
+      _setValue(slot.getElement('VisualIndex')!, '$i');
+      final held = slot.getElement('ParameterValue')!;
+      _setValue(held.getElement('Manual')!, _number(value));
+      final range = held.getElement('MidiControllerRange')!;
+      _setValue(range.getElement('Min')!, '0');
+      _setValue(range.getElement('Max')!, '$max');
+      final user = slot.getElement('LastUserRange')!;
+      _setValue(user.getElement('First')!, '0');
+      _setValue(user.getElement('Last')!, '$max');
+      list.children.add(slot);
+    }
+    return element;
+  }
+
+  XmlElement _rack(DawRackDevice device, int id) {
+    final element = _copy(rack, id);
+    _setValue(element.getElement('On')!.getElement('Manual')!, '${device.on}');
+    _setValue(element.getElement('UserName')!, device.name);
+    final branches = element.getElement('Branches')!;
+    for (var i = 0; i < device.chains.length; i++) {
+      final chain = device.chains[i];
+      // One chain selected, as Live has it for a rack it made, so the rack
+      // opens showing that chain's devices rather than "2 of 2 Chains
+      // Selected".
+      final b = _copy(branch, i);
+      _setValue(b.getElement('IsSelected')!, '${i == 0}');
+      final name = b.getElement('Name')!;
+      _setValue(name.getElement('EffectiveName')!, chain.name);
+      _setValue(name.getElement('UserName')!, chain.name);
+      b
+          .getElement('DeviceChain')!
+          .getElement('AudioToAudioDeviceChain')!
+          .getElement('Devices')!
+          .children
+          .addAll(build(chain.devices));
+      final volume = b.getElement('MixerDevice')!.getElement('Volume')!;
+      final (min, max) = _range(volume);
+      final v = chain.volume;
+      _setValue(
+        volume.getElement('Manual')!,
+        _number(v < min ? min : (v > max ? max : v)),
+      );
+      branches.children.add(b);
+    }
+    return element;
+  }
+}
+
+/// [bytes] as Live writes a plugin's state: uppercase hex, 80 digits a
+/// line.
+String _hex(List<int> bytes) {
+  final digits = [
+    for (final b in bytes) b.toRadixString(16).padLeft(2, '0').toUpperCase(),
+  ].join();
+  final lines = [
+    for (var i = 0; i < digits.length; i += 80)
+      digits.substring(i, i + 80 > digits.length ? digits.length : i + 80),
+  ];
+  return '\n${lines.join('\n')}\n';
 }
 
 XmlElement _warpMarker(int id, double seconds, double beats) => _element(

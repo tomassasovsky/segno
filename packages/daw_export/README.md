@@ -38,23 +38,31 @@ void exportCapture(String captureDir) {
   one audio track is copied once per track, so every element and default is
   one Live wrote. Group tracks are copied from
   `lib/src/live_group_track_template.dart` (from `test/corpus/group.als`,
-  whose Live save is owed: see the corpus README). `test/corpus/README.md` lists the reference sets
-  and what Live checks when it opens a set.
+  whose Live save is owed: see the corpus README). Devices come from a set
+  Live saved with Segno's plugins in it (`lib/src/live_device_template.dart`,
+  from `test/corpus/segno_vst3.als`): a plugin device and an Audio Effect
+  Rack. `test/corpus/README.md` lists the reference sets and what Live
+  checks when it opens a set.
 - The set's tracks, in order (#1799, #1824):
   - each looper track as a Group track, named as the player named it at arm
-    or `Track N`, holding a pair of tracks for each lane `n` (from 1), read
-    from the render's index `stems/stems.json`:
-    - `<name> L<n>`: the lane's dry stem (`stems/dry/`), at unity and before
-      its effects, with the lane's clean loop as its Session clip. It plays.
+    or `Track N`, carrying the track's Track stage chain as Segno's plugins
+    (the chain the lanes sum into), and holding a pair of tracks for each
+    lane `n` (from 1), read from the render's index `stems/stems.json`:
+    - `<name> L<n>`: the lane's dry stem (`stems/dry/`), through the lane's
+      chain at arm as Segno's VST3 plugins (`packages/segno_engine/vst3`,
+      #1804), with the lane's clean loop as its Session clip. It plays.
     - `<name> L<n> (as heard)`: the lane's wet stem (`stems/wet/`), after its
       effects and mix, with the loop as it played. Switched off, so the set
-      does not play the lane twice; it plays when the lane has no dry stem.
+      does not play the lane twice: it is the reference the plugins are
+      checked against. It plays when the lane has no dry stem.
     A lane with loops but no rendered stems gets its `L<n>` track with the
-    loop alone. The lane tracks carry no devices yet: the lane's chain is
-    told in their info text, and placing it as Segno's plugins is #1804's;
-  - each captured input, named as the player named it or `Input N`. The
-    engine records an input after its monitor chain, volume and pan, so this
-    is the input as heard, and it plays beside the loops;
+    loop alone;
+  - each input, named as the player named it or `Input N`. One recorded
+    raw (#1805) plays its raw recording on `<name> raw`, through its
+    monitor chain at arm as Segno's plugins, with the input as heard
+    (after its monitor chain, volume and pan) on `<name> (as heard)`,
+    switched off. A take from before #1805 has only the input as heard,
+    which plays;
   - `Master (as heard)`: the captured output, which holds all of the above,
     switched off.
   An input or the master recorded in several part files has one clip per
@@ -68,9 +76,18 @@ void exportCapture(String captureDir) {
   automation (the track gain times the lane's level, silent while the lane
   is muted or under another track's solo), shown in Automation Mode. The wet
   render already applies them, so the as-heard track carries none.
+- The plugins hold the chains as the take started (`devicesOfChain`): each
+  lane's chain on its lane track, and the track's Track stage on its Group.
+  Each built-in effect is its plugin, with its settings, channel handling
+  and enable bit, the chain slot it held, the owner's hop seed and the
+  take's FX clock and beat (`SegnoPluginState`, the plugin's own state
+  format), so it renders what the console rendered. A rack is an Audio
+  Effect Rack named as the rack, off when the rack was; a Dub Rack's
+  parallel Amb and Dub paths are a rack of two chains at the gains the
+  Amb-Dub Mix gives them. A hosted plugin is left out, as the offline render
+  passes it through dry. Changes during the take are not replayed yet.
 - Each track's info text (Live's Info View) lists the effect chains it
-  started with; `fx-chains.txt` holds the same for the whole take. Effects
-  reach Live only as audio: the set carries no devices.
+  started with; `fx-chains.txt` holds the same for the whole take.
 - The tempo comes from the manifest; `kFallbackTempoBpm` (120) is used when
   it has none. A missing or corrupt manifest makes `read` and `render` return
   null instead of throwing. A capture with no recorded channel gets no set,

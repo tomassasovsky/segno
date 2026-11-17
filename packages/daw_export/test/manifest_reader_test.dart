@@ -663,6 +663,156 @@ void main() {
       expect(wet.volume, isNull);
     });
 
+    group('a take with effect chains (#1804)', () {
+      void writeCapture({
+        Set<String> kinds = const {'dry', 'wet'},
+        List<Object?>? effects,
+        List<Object?>? trackEffects,
+      }) {
+        _writeStems(dir.path, [(1, 0), (1, 1)], kinds: kinds);
+        Directory('${dir.path}/loops').createSync();
+        for (final name in ['clean', 'heard', 'clean1']) {
+          File('${dir.path}/loops/$name.wav').writeAsBytesSync(_wav(4800));
+        }
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 1,
+                  'name': 'Bass',
+                  'lanes': [
+                    {
+                      'lane': 1,
+                      'deferred': false,
+                      'pcmRef': 'loops/clean1.wav',
+                      'effects': [
+                        {'type': 14, 'params': <double>[]},
+                      ],
+                    },
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'loops/clean.wav',
+                      'heardPcmRef': 'loops/heard.wav',
+                      'effects':
+                          effects ??
+                          [
+                            {
+                              'type': 3,
+                              'params': [0.35, 0.35, 0.35],
+                            },
+                          ],
+                    },
+                  ],
+                },
+              ],
+              'trackChains': [
+                'not a chain',
+                {'channel': 0, 'effects': <Object?>[]},
+                {
+                  'channel': 1,
+                  'effects':
+                      trackEffects ??
+                      [
+                        {
+                          'type': 7,
+                          'params': [0.5, 0.5, 0.35],
+                        },
+                      ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+      }
+
+      test('each lane plays its dry stem through its own chain as plugins, '
+          "and the Group carries the track's Track stage", () {
+        writeCapture();
+        // The take's arm: FX clock 1234567 and beat 37.25 at frame 0.
+        final armed = ByteData(16)..setUint32(12, 1234567, Endian.little);
+        final tempo = ByteData(16)
+          ..setFloat64(0, 37.25, Endian.little)
+          ..setFloat32(8, 120 / 60 / 48000, Endian.little);
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, 315, armed.buffer.asUint8List()),
+          (0, 332, tempo.buffer.asUint8List()),
+        ]);
+
+        final tracks = DawManifestReader.read(dir.path)!.tracks;
+        expect(
+          [for (final t in tracks) (t.name, t.kind, t.active)],
+          [
+            ('Bass L1', DawTrackKind.lane, true),
+            ('Bass L1 (as heard)', DawTrackKind.laneHeard, false),
+            ('Bass L2', DawTrackKind.lane, true),
+            ('Bass L2 (as heard)', DawTrackKind.laneHeard, false),
+          ],
+        );
+        final [lane0, heard0, lane1, heard1] = tracks;
+        final delay = lane0.devices.single as DawPluginDevice;
+        expect(delay.plugin.name, 'Segno Delay');
+        expect(delay.state.params, [0.35, 0.35, 0.35]);
+        expect(delay.state.hopSeed, 64); // lane 0 of track 1
+        final chorus = lane1.devices.single as DawPluginDevice;
+        expect(chorus.plugin.name, 'Segno Chorus');
+        expect(chorus.state.hopSeed, 128); // lane 1 of track 1
+        final group = lane0.group!;
+        final reverb = group.devices.single as DawPluginDevice;
+        expect(reverb.plugin.name, 'Segno Reverb');
+        expect(reverb.state.hopSeed, 192); // track 1's bus
+        for (final p in [delay, chorus, reverb]) {
+          expect(p.state.clockOffset, 1234567);
+          expect(p.state.beatOffset, 37.25);
+        }
+        // The references hold the audio as heard, which needs no plugins.
+        expect(heard0.devices, isEmpty);
+        expect(heard1.devices, isEmpty);
+        // The plugins process the clean loops; the heard ones stay on the
+        // references.
+        expect(lane0.loop!.fileRef, 'loops/clean.wav');
+        expect(heard0.loop!.fileRef, 'loops/heard.wav');
+        expect(lane1.loop!.fileRef, 'loops/clean1.wav');
+        expect(group.info, 'Effects when the take started:\nReverb');
+        expect(lane0.info, 'Effects when the take started:\nDelay');
+      });
+
+      test('a lane with no dry stem plays its wet one with no plugins', () {
+        writeCapture(kinds: {'wet'});
+        final [heard0, heard1] = DawManifestReader.read(dir.path)!.tracks;
+        for (final t in [heard0, heard1]) {
+          expect((t.kind, t.active), (DawTrackKind.laneHeard, true));
+          expect(t.devices, isEmpty);
+        }
+      });
+
+      test('a chain that holds nothing Segno runs gives no plugins', () {
+        const hosted = {
+          'type': 8,
+          'plugin': {'format': 0, 'id': 'abc', 'version': 0},
+        };
+        writeCapture(effects: [hosted], trackEffects: [hosted]);
+        final [lane0, ...] = DawManifestReader.read(dir.path)!.tracks;
+        expect(lane0.devices, isEmpty);
+        expect(lane0.group!.devices, isEmpty);
+        expect(lane0.active, isTrue);
+      });
+
+      test('a capture with no events.log puts the plugins at clock and beat '
+          '0', () {
+        writeCapture();
+        final lane0 = DawManifestReader.read(dir.path)!.tracks.first;
+        final delay = lane0.devices.single as DawPluginDevice;
+        expect(delay.state.clockOffset, 0);
+        expect(delay.state.beatOffset, 0);
+      });
+    });
+
     test('threads a real, explicit tempoBpm through to the returned DawProject '
         '(and into beat-unit automation conversion)', () {
       _writeStems(dir.path, [(0, 0)], kinds: {'dry'});
@@ -909,6 +1059,12 @@ void _layoutTests() {
                 {'type': 14, 'params': <double>[]},
               ],
             },
+            {
+              'input': 7,
+              'effects': [
+                {'type': 3, 'params': <double>[]},
+              ],
+            },
           ],
         },
         'parts': [
@@ -940,6 +1096,20 @@ void _layoutTests() {
         ],
         [('input-raw-0-001.wav', 0.0), ('input-raw-0-002.wav', 2.0)],
       );
+      // The raw input plays through its monitor chain as plugins (#1804);
+      // the input as heard has it in its audio already.
+      final chorus = tracks[1].devices.single as DawPluginDevice;
+      expect(chorus.plugin.name, 'Segno Chorus');
+      expect(chorus.state.hopSeed, 64); // le_fx_monitor_hop_seed(0)
+      expect(tracks[2].devices, isEmpty);
+      expect(tracks[3].devices, isEmpty);
+      expect(
+        tracks[1].info,
+        startsWith(
+          'The input as played: before its effects, volume and pan. Its '
+          'effects play here as Segno plugins.',
+        ),
+      );
       expect(
         tracks[2].arrangementClips.single.audio.fileRef,
         'input-0-001.wav',
@@ -954,11 +1124,10 @@ void _layoutTests() {
       );
       expect(
         tracks[1].info,
-        [
-          'The input as played: before its effects, volume and pan.',
-          'Effects when the take started:',
-          'Chorus',
-        ].join('\n'),
+        'The input as played: before its effects, volume and pan. Its '
+        'effects play here as Segno plugins.\n'
+        'Effects when the take started:\n'
+        'Chorus',
       );
       expect(
         tracks[2].info,

@@ -1,3 +1,4 @@
+import 'package:daw_export/src/device_chain.dart';
 import 'package:meta/meta.dart';
 
 /// A DAW project ready to be rendered to an Ableton Live 12 `.als` set
@@ -36,7 +37,8 @@ const double kFallbackTempoBpm = 120;
 /// What a [DawTrack] holds.
 enum DawTrackKind {
   /// One lane of a looper track (#1824): its dry stem, at unity and before
-  /// its effects, and its clean loop.
+  /// its effects, and its clean loop, played through the lane's chain as
+  /// Segno's plugins when the take recorded one.
   lane,
 
   /// One lane of a looper track as heard: its wet stem, after its effects
@@ -59,13 +61,17 @@ enum DawTrackKind {
 @immutable
 class DawGroup {
   /// Creates a [DawGroup].
-  const new({required this.name, this.info = ''});
+  const new({required this.name, this.info = '', this.devices = const []});
 
   /// The group's name in Live: the looper track's.
   final String name;
 
   /// The group's info text in Live (the Info View). Empty for none.
   final String info;
+
+  /// The group's devices, in order: the looper track's Track stage chain,
+  /// which the callback runs on the sum of its lanes, as Segno's plugins.
+  final List<DawDevice> devices;
 }
 
 /// One Live audio track: what it plays in the Arrangement and the Session,
@@ -81,6 +87,7 @@ class DawTrack {
     this.arrangementClips = const [],
     this.loop,
     this.volume,
+    this.devices = const [],
     this.info = '',
   });
 
@@ -110,6 +117,9 @@ class DawTrack {
 
   /// The track's volume automation, or `null` when it has none.
   final AutomationLane? volume;
+
+  /// The track's devices, in order: Segno's plugins and racks of them.
+  final List<DawDevice> devices;
 
   /// The track's info text in Live (the Info View), for example the effect
   /// chains the take was played through. Empty for none.
