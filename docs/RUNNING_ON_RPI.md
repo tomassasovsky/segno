@@ -201,6 +201,48 @@ and confirm the panel dims). Bluetooth is retired (#1199): the image ships no
 BlueZ. If `supported` is false for brightness, the slider still persists but
 does not change the panel — note that for a gamma follow-up.
 
+### WiFi troubleshooting: the router rejects every join
+
+Symptom: the console cannot join a saved network it joined before, and every
+attempt fails the same way. `iw event` shows `failed to connect ..., status:
+16: Authentication rejected due to timeout waiting for next frame in
+sequence`, iwd logs `connect-failed, status: 16`, and NetworkManager reports
+the attempt as `no-secrets`, so the app shows it as a password problem. The
+same console still joins another access point, such as a phone hotspot, on the
+same channel. Do not forget the network and re-enter the password: the saved
+password is not the problem.
+
+On 2026-11-17 the console failed this way for an hour against an ASUS
+RT-AX89X, on both bands (#1816). Turning off **802.11ax / WiFi 6 mode** on the
+router's 2.4 GHz band fixed it at once. Later the same morning, WiFi 6 was
+turned back on and the console joined normally, through repeated reconnects
+and a reboot. Applying a wireless setting on that router restarts its radio,
+so the likeliest cause is a state in the router that the restart cleared, not
+the 802.11ax setting itself. The console's chip (CYW43455) has no 802.11ax
+and joins such a router as 802.11n.
+
+What to do, in order:
+
+1. Apply any setting on the router's wireless page, or reboot the router, so
+   its radio restarts. Then reconnect from Settings → Network.
+2. If it still fails, turn off 802.11ax / WiFi 6 mode on the band the console
+   uses.
+
+To check what the console sees, over Ethernet (WiFi changes do not cut that
+session):
+
+```bash
+iw event -t -f &                     # join attempts and their status codes
+nmcli con up '<saved network name>'  # retries with the saved password
+journalctl -b -u iwd | grep -E 'connect-failed|new: connected'
+```
+
+The console's WiFi firmware is the same as current Raspberry Pi OS (Bookworm
+and Trixie): `cyfmac43455-sdio-standard.bin` 7.45.265, with the same clm_blob
+and nvram. The image also sets the same `brcmfmac` options as Pi OS,
+`roamoff=1 feature_disable=0x282000` (`/etc/modprobe.d/brcmfmac.conf`), so
+switching to a Pi OS firmware or driver setting will not change this.
+
 ## Touchscreen calibration
 
 The app measures it: Settings → Displays → Calibrate touch, once per screen.

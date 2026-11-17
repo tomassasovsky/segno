@@ -88,6 +88,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1804 | Segno's effects as VST3 plugins in Live: part 1 (Segno.vst3, local build and install, null test) in review; part 2 (the export puts the chains on the dry tracks) next | in-review | auto | `claude/vst3-plugins-1804-p1` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
+| #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
 
