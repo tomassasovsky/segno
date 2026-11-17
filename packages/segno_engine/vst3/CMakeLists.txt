@@ -197,6 +197,16 @@ add_executable(segno_vst3_null_test test/null_test.cpp test/capture_log.c)
 target_link_libraries(segno_vst3_null_test PRIVATE segno_vst3_host segno_fx_island
   segno_engine)
 add_dependencies(segno_vst3_null_test segno_vst3)
+# The export's table of each plugin's parameters, which the test checks
+# every plugin against.
+target_compile_definitions(segno_vst3_null_test PRIVATE
+  SEGNO_DART_PLUGINS="${CMAKE_CURRENT_SOURCE_DIR}/../../daw_export/lib/src/segno_vst3_plugins.dart")
+
+# A capture's stems rendered here as the console renders them
+# (test/render_capture.c), for checking exports.
+add_executable(segno_render_capture test/render_capture.c)
+target_link_libraries(segno_render_capture PRIVATE segno_engine)
+target_include_directories(segno_render_capture PRIVATE "${ENGINE_SRC}/core")
 
 # --- the binding test (test/binding_test.cpp) ---------------------------------
 # Every control of the editors' layout (faces/faces.json) drives a parameter
