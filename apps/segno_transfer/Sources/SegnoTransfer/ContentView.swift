@@ -13,19 +13,12 @@ struct ContentView: View {
         detail.frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
       }
       if let error = model.error {
-        HStack(alignment: .top, spacing: 10) {
-          Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-          ScrollView {
-            Text(error).font(.callout).textSelection(.enabled).frame(
-              maxWidth: .infinity, alignment: .leading)
-          }
-          .frame(maxHeight: 72)
-          Button {
-            model.error = nil
-          } label: {
-            Image(systemName: "xmark")
-          }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
-        }.padding(14).background(Color.orange.opacity(0.08))
+        MessageBar(text: error, symbol: "exclamationmark.circle", tint: .orange) {
+          model.error = nil
+        }
+      }
+      if let notice = model.notice {
+        MessageBar(text: notice, symbol: "info.circle", tint: .accentColor) { model.notice = nil }
       }
       Divider()
       if let title = model.previewTitle {
@@ -35,6 +28,22 @@ struct ContentView: View {
       downloadBar
     }
     .sheet(isPresented: $model.settingsPresented) { connectionSettings }
+    .alert(
+      model.pluginOfferText?.title ?? "",
+      isPresented: Binding(
+        get: { model.pluginOffer != nil }, set: { if !$0 { model.dismissPluginOffer() } }),
+      presenting: model.pluginOfferText
+    ) { text in
+      Button(text.action) { model.installPlugins() }.keyboardShortcut(.defaultAction)
+      if model.pluginOffer?.set != nil {
+        Button(text.action == "Replace" ? "Open Without Updating" : "Open Without Plugins") {
+          model.skipPlugins()
+        }
+      }
+      Button("Cancel", role: .cancel) { model.dismissPluginOffer() }
+    } message: { text in
+      Text(text.message)
+    }
   }
 
   private var connectionBar: some View {
@@ -259,5 +268,27 @@ private struct AudioFileRow: View {
         }
       }
     }.padding(.vertical, 16)
+  }
+}
+
+/// A dismissible message above the download bar: an error or a notice.
+private struct MessageBar: View {
+  let text: String
+  let symbol: String
+  let tint: Color
+  let dismiss: () -> Void
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: symbol).foregroundStyle(tint)
+      ScrollView {
+        Text(text).font(.callout).textSelection(.enabled).frame(
+          maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(maxHeight: 72)
+      Button(action: dismiss) {
+        Image(systemName: "xmark")
+      }.buttonStyle(.plain).accessibilityLabel("Dismiss message")
+    }.padding(14).background(tint.opacity(0.08))
   }
 }

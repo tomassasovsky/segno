@@ -78,19 +78,17 @@ private final class FixtureRepository: RecordingRepository {
   }
 }
 
-/// Ableton Live as the tests see it: installed or not, with or without the
-/// Segno plugins, and every set it was asked to open.
+/// Ableton Live as the tests see it: installed or not, and every set it was
+/// asked to open.
 @MainActor
 private final class FakeLive {
   var installed = true
-  var pluginInstalled = true
   var opened: [URL] = []
   var live: AbletonLive {
     AbletonLive(
       application: { [unowned self] in
         self.installed ? URL(fileURLWithPath: "/Applications/Ableton Live 12 Suite.app") : nil
       },
-      pluginInstalled: { [unowned self] in self.pluginInstalled },
       open: { [unowned self] set, _ in self.opened.append(set) })
   }
 }
@@ -98,15 +96,48 @@ private final class FakeLive {
 @MainActor
 final class AppModelTests: XCTestCase {
   private let fakeLive = FakeLive()
+  /// A temporary home, VST3 folder for every user and app bundle.
+  private var pluginRoot: URL!
+  private var home: URL { pluginRoot.appendingPathComponent("home") }
+  private var userFolder: URL { home.appendingPathComponent("Library/Audio/Plug-Ins/VST3") }
+  private var allUsers: URL { pluginRoot.appendingPathComponent("all-users") }
+  /// Whether the app under test carries the plugins (build 3213).
+  private var bundlesPlugins = false
+
+  override func setUpWithError() throws {
+    pluginRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+  }
+
+  override func tearDownWithError() throws { try? FileManager.default.removeItem(at: pluginRoot) }
 
   private func fixture() -> (AppModel, FixtureRepository) {
     let repository = FixtureRepository()
     let suite = "segno-transfer-tests-" + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-    let model = AppModel(repository: repository, defaults: defaults, live: fakeLive.live)
+    let bundled =
+      bundlesPlugins
+      ? try! makePluginBundle(
+        in: pluginRoot.appendingPathComponent("app"), build: "3213", payload: "new")
+      : nil
+    let model = AppModel(
+      repository: repository, defaults: defaults, live: fakeLive.live,
+      plugins: SegnoPlugins(bundled: bundled, home: home, allUsersFolder: allUsers))
     model.connection.host = "appliance.example"
     return (model, repository)
+  }
+
+  private func waitUntil(_ condition: () -> Bool) async throws {
+    let start = Date()
+    while !condition() && Date().timeIntervalSince(start) < 3 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertTrue(condition())
+  }
+
+  private func installedBuild() -> String? {
+    PluginVersion(bundle: userFolder.appendingPathComponent("Segno.vst3"))?.build
   }
 
   private func waitUntilIdle(_ model: AppModel) async throws {
@@ -301,12 +332,12 @@ final class AppModelTests: XCTestCase {
   func testMissingPluginsWarnButTheSetStillOpens() async throws {
     let (model, repository, recording) = try await connectedWithSet()
     repository.liveSetUsesPlugins = true
-    fakeLive.pluginInstalled = false
     model.openInLive(recording)
     try await waitUntilIdle(model)
     XCTAssertEqual(fakeLive.opened.count, 1)
+    XCTAssertNil(model.pluginOffer)
     XCTAssertTrue(model.error?.contains("missing devices") == true)
-    fakeLive.pluginInstalled = true
+    try makePluginBundle(in: userFolder, build: "1", payload: "installed")
     model.openInLive(recording)
     try await waitUntilIdle(model)
     XCTAssertEqual(fakeLive.opened.count, 2)
@@ -314,12 +345,96 @@ final class AppModelTests: XCTestCase {
   }
 
   func testASetWithoutEffectsDoesNotAskForThePlugins() async throws {
+    bundlesPlugins = true
     let (model, _, recording) = try await connectedWithSet()
-    fakeLive.pluginInstalled = false
     model.openInLive(recording)
     try await waitUntilIdle(model)
     XCTAssertEqual(fakeLive.opened.count, 1)
+    XCTAssertNil(model.pluginOffer)
     XCTAssertNil(model.error)
+  }
+
+  func testMissingPluginsAreOfferedBeforeTheSetOpens() async throws {
+    bundlesPlugins = true
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.liveSetUsesPlugins = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertEqual(model.pluginOffer?.status, .missing)
+    XCTAssertEqual(model.pluginOfferText?.action, "Install")
+    XCTAssertNil(installedBuild())
+    model.installPlugins()
+    XCTAssertEqual(installedBuild(), "3213")
+    try await waitUntil { fakeLive.opened.count == 1 }
+    XCTAssertNil(model.pluginOffer)
+    XCTAssertTrue(model.notice?.contains("Rescan") == true)
+    XCTAssertNil(model.error)
+  }
+
+  func testAnOlderCopyIsReplacedOnlyWhenTheUserConfirms() async throws {
+    bundlesPlugins = true
+    try makePluginBundle(in: userFolder, build: "100", payload: "old")
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.liveSetUsesPlugins = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertEqual(model.pluginOfferText?.action, "Replace")
+    XCTAssertTrue(model.pluginOfferText?.message.contains("1.0.0 (build 100)") == true)
+    // Declined: the set opens with the copy the Mac has.
+    model.skipPlugins()
+    try await waitUntil { fakeLive.opened.count == 1 }
+    XCTAssertEqual(installedBuild(), "100")
+    XCTAssertNil(model.error)
+    // Confirmed: replaced, then opened.
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    model.installPlugins()
+    XCTAssertEqual(installedBuild(), "3213")
+    try await waitUntil { fakeLive.opened.count == 2 }
+  }
+
+  func testCancellingTheOfferOpensAndWritesNothing() async throws {
+    bundlesPlugins = true
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.liveSetUsesPlugins = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    model.dismissPluginOffer()
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertNil(installedBuild())
+    XCTAssertFalse(FileManager.default.fileExists(atPath: userFolder.path))
+  }
+
+  func testAnOlderCopyForEveryUserIsLeftAlone() async throws {
+    bundlesPlugins = true
+    try makePluginBundle(in: allUsers, build: "100", payload: "old")
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.liveSetUsesPlugins = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertNil(model.pluginOffer)
+    XCTAssertEqual(fakeLive.opened.count, 1)
+    XCTAssertTrue(model.error?.contains("/Library/Audio/Plug-Ins/VST3") == true)
+    XCTAssertNil(installedBuild())
+    XCTAssertEqual(
+      PluginVersion(bundle: allUsers.appendingPathComponent("Segno.vst3"))?.build, "100")
+  }
+
+  func testTheMenuOffersAnInstallOrSaysTheCopyIsCurrent() async throws {
+    bundlesPlugins = true
+    let (model, _) = fixture()
+    model.offerPlugins()
+    XCTAssertEqual(model.pluginOffer?.status, .missing)
+    XCTAssertNil(model.pluginOffer?.set)
+    model.installPlugins()
+    XCTAssertEqual(installedBuild(), "3213")
+    model.offerPlugins()
+    XCTAssertNil(model.pluginOffer)
+    XCTAssertEqual(model.notice, "The Segno plugins on this Mac are up to date.")
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(fakeLive.opened.isEmpty)
   }
 
   func testWithoutLiveTheActionSaysWhyAndDoesNothing() async throws {

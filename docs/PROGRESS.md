@@ -38,7 +38,6 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1829 | Segno Transfer: Open in Live downloads a take's Live set with every file it uses, verified, and opens it in Ableton Live (part 1); part 2 bundles and installs `Segno.vst3` | in-review | merge-gate | `claude/transfer-open-live-1829` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
@@ -2722,16 +2721,19 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
     `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
 - **Segno.vst3** (#1804), the effects as VST3 plugins for a DAW on the dev
   Mac: `FLUTTER=/Users/Tomas/development/flutter-3.50/bin/flutter bash
-  packages/segno_engine/vst3/install.sh` renders the editors' pedal faces
-  (#1815, about a minute), builds it (Release, into
-  `packages/segno_engine/build/vst3`) and installs it in
+  packages/segno_engine/vst3/install.sh` runs `build.sh`, which renders the
+  editors' pedal faces (#1815, about a minute) and builds it (Release, into
+  `packages/segno_engine/build/vst3`), then installs it in
   `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
-  binding test against the installed bundle. After a change to the pedal
+  binding test against the installed bundle (`test/run_bundle_tests.sh`).
+  Its `CFBundleVersion` is the checkout's commit count, which Segno
+  Transfer compares with the copy it carries (#1829). After a change to the pedal
   faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
   --update-goldens test/vst3_faces/vst3_faces_test.dart` rewrites the layout
   the editors read. Live finds it on its next plugin scan (start, or
-  Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Not signed, not
-  shipped. `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a
+  Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Signed ad hoc;
+  Segno Transfer's `build-app.sh` builds it the same way and ships it in
+  the app's `Contents/PlugIns`, to install on request (#1829). `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a
   separate tree and runs the null test, as CI does on Linux (clang, CMake,
   `libasound2-dev`).
 - **Native engine tests** (deterministic, no device — the real safety net since

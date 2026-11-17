@@ -13,7 +13,7 @@ tags:
   # device-free pump.
   fuzz:
   # The Segno.vst3 editors' art (test/vst3_faces/vst3_faces_render_test.dart):
-  # renders only into the directory packages/segno_engine/vst3/install.sh
+  # renders only into the directory packages/segno_engine/vst3/build.sh
   # names, so it skips everywhere else.
   vst3-faces:
   # A suite that registers fonts (test/vst3_faces) or other process-wide state

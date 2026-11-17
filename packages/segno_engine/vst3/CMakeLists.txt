@@ -2,8 +2,9 @@
 # plugins for a DAW on the dev Mac (#1804), one class per effect kind
 # (segno_fx_kinds.h), each running the engine's effects island.
 #
-# Built and installed on the Mac by install.sh; not signed, not shipped,
-# not part of the engine's code asset (src/CMakeLists.txt). It also builds
+# Built on the Mac by build.sh, which install.sh installs from and Segno
+# Transfer's build-app.sh bundles inside the app (#1829); signed ad hoc, not
+# part of the engine's code asset (src/CMakeLists.txt). It also builds
 # on Linux, where CI runs the null test so a change to the engine cannot
 # leave the plugins behind. The vendored VST3 SDK carries no CMake helpers,
 # so the bundle is assembled by hand below.
@@ -118,6 +119,21 @@ set_target_properties(segno_vst3 PROPERTIES
 
 set(SEGNO_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/Segno.vst3")
 if(APPLE)
+  # The bundle's build number (CFBundleVersion): the commits on the
+  # checkout's history, so a later build of the line it ships from has a
+  # higher number. Segno Transfer compares it to decide whether the copy a
+  # Mac has is older than the one it carries. 0 outside a git checkout.
+  execute_process(
+    COMMAND git rev-list --count HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE SEGNO_VST3_BUILD
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE git_result)
+  if(NOT git_result EQUAL 0 OR SEGNO_VST3_BUILD STREQUAL "")
+    set(SEGNO_VST3_BUILD 0)
+  endif()
+  configure_file(Info.plist.in "${CMAKE_CURRENT_BINARY_DIR}/Info.plist" @ONLY)
   target_link_options(segno_vst3 PRIVATE
     -exported_symbols_list "${VST3_SDK}/public.sdk/source/main/macexport.exp")
   add_custom_command(TARGET segno_vst3 POST_BUILD
@@ -125,28 +141,34 @@ if(APPLE)
     COMMAND ${CMAKE_COMMAND} -E make_directory "${SEGNO_BUNDLE}/Contents/MacOS"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:segno_vst3>"
       "${SEGNO_BUNDLE}/Contents/MacOS/Segno"
-    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
       "${SEGNO_BUNDLE}/Contents/Info.plist"
     COMMAND /bin/sh -c "printf 'BNDL????' > '${SEGNO_BUNDLE}/Contents/PkgInfo'"
-    # Ad hoc: a local build for this Mac, never distributed.
+    # Ad hoc, like Segno Transfer, which carries it (#1829).
     COMMAND codesign -f -s - "${SEGNO_BUNDLE}"
     COMMENT "Assembling Segno.vst3"
     VERBATIM)
-  # The editors' pictures and layout (editor.h), rendered by install.sh into
-  # SEGNO_VST3_FACES. Copied on every build, since the pictures change
-  # without the module relinking, and signed again after.
+  # The editors' pictures and layout (editor.h), rendered by build.sh into
+  # SEGNO_VST3_FACES, and the Info.plist with this configure's build number.
+  # Copied on every build, since either changes without the module
+  # relinking, and signed again after.
   set(SEGNO_VST3_FACES "" CACHE PATH
-    "Rendered pedal faces for the editors (install.sh renders them)")
+    "Rendered pedal faces for the editors (build.sh renders them)")
+  set(faces_commands)
   if(SEGNO_VST3_FACES)
-    add_custom_target(segno_vst3_faces ALL
-      COMMAND ${CMAKE_COMMAND} -E rm -rf "${SEGNO_BUNDLE}/Contents/Resources/faces"
+    set(faces_commands
       COMMAND ${CMAKE_COMMAND} -E copy_directory "${SEGNO_VST3_FACES}"
-        "${SEGNO_BUNDLE}/Contents/Resources/faces"
-      COMMAND codesign -f -s - "${SEGNO_BUNDLE}"
-      COMMENT "Bundling the pedal faces"
-      VERBATIM)
-    add_dependencies(segno_vst3_faces segno_vst3)
+        "${SEGNO_BUNDLE}/Contents/Resources/faces")
   endif()
+  add_custom_target(segno_vst3_bundle ALL
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
+      "${SEGNO_BUNDLE}/Contents/Info.plist"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${SEGNO_BUNDLE}/Contents/Resources/faces"
+    ${faces_commands}
+    COMMAND codesign -f -s - "${SEGNO_BUNDLE}"
+    COMMENT "Bundling the pedal faces and the build number"
+    VERBATIM)
+  add_dependencies(segno_vst3_bundle segno_vst3)
 else()
   # Segno.vst3/Contents/<machine>-linux/Segno.so, the VST3 bundle layout.
   set(SEGNO_ARCH "${CMAKE_SYSTEM_PROCESSOR}-linux")

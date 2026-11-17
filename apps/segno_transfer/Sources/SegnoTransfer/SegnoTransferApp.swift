@@ -30,7 +30,12 @@ struct SegnoTransferApp: App {
         }
     }
     .defaultSize(width: 1100, height: 730)
-    .commands { CommandGroup(replacing: .newItem) {} }
+    .commands {
+      CommandGroup(replacing: .newItem) {}
+      CommandMenu("Plug-ins") {
+        Button("Install Segno Plugins…") { model.offerPlugins() }
+      }
+    }
   }
 }
 

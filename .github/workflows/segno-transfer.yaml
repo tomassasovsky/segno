@@ -1,15 +1,21 @@
 name: Segno Transfer
 
+# The app carries Segno.vst3 (#1829), so a change to the plugin or to the
+# pedal faces it draws rebuilds the app too.
 on:
   pull_request:
     paths:
       - 'apps/segno_transfer/**'
+      - 'packages/segno_engine/vst3/**'
+      - 'test/vst3_faces/**'
       - '.github/workflows/segno-transfer.yaml'
   push:
     branches: [master]
     tags: ['transfer-v*']
     paths:
       - 'apps/segno_transfer/**'
+      - 'packages/segno_engine/vst3/**'
+      - 'test/vst3_faces/**'
       - '.github/workflows/segno-transfer.yaml'
 
 permissions:
@@ -20,6 +26,15 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Segno.vst3's build number is the history's commit count.
+          fetch-depth: 0
+      # Renders the plugins' pedal faces from the console's drawing code.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.50.x"
+          channel: stable
+          cache: true
       - name: Install appliance fixture tools
         run: |
           brew install jq coreutils
@@ -30,8 +45,13 @@ jobs:
         run: swift format lint --strict --recursive apps/segno_transfer/Sources apps/segno_transfer/Tests/TransferCoreTests apps/segno_transfer/Package.swift
       - name: Test transfer and app behavior
         run: swift test --package-path apps/segno_transfer
-      - name: Build the Mac app
+      - name: Build the Mac app, with Segno.vst3 inside
         run: bash apps/segno_transfer/build-app.sh
+      - name: Test the bundled Segno.vst3 (null test, binding test with editors)
+        run: |
+          bash packages/segno_engine/vst3/test/run_bundle_tests.sh \
+            packages/segno_engine/build/vst3 \
+            "apps/segno_transfer/dist/Segno Transfer.app/Contents/PlugIns/Segno.vst3"
       - name: Check release version
         if: startsWith(github.ref, 'refs/tags/transfer-v')
         env:
