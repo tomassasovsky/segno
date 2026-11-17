@@ -399,7 +399,7 @@ do_install() {
         ${D}${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf
 
     # brcmfmac: Raspberry Pi OS's options, roamoff=1 and
-    # feature_disable=0x282000. The file says what each one fixes.
+    # feature_disable=0x282000. The file says why each one is set.
     install -d ${D}${sysconfdir}/modprobe.d
     install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
         ${D}${sysconfdir}/modprobe.d/brcmfmac.conf
