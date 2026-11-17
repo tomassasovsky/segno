@@ -77,6 +77,16 @@ abstract final class EffectText {
     return lines.isEmpty ? null : lines.join('\n');
   }
 
+  /// Looper track [channel]'s Track stage chain: the one its lanes sum
+  /// into, which its Group track stands for (#1824).
+  static String? trackStage(Map<String, dynamic> manifest, int channel) {
+    for (final chain in _list(manifest['armSnapshot'], 'trackChains')) {
+      if (_int(chain['channel']) != channel) continue;
+      return _chain(chain['effects'], chain['chainEnabled'], false);
+    }
+    return null;
+  }
+
   /// Lane [lane] of looper track [channel]'s chain (#1824).
   static String? lane(Map<String, dynamic> manifest, int channel, int lane) {
     for (final t in tracksOf(manifest['armSnapshot'])) {

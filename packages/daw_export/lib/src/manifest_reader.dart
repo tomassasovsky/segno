@@ -153,7 +153,7 @@ abstract final class DawManifestReader {
       final name = trackNameOf(manifest, channel);
       final group = DawGroup(
         name: name,
-        info: _info(EffectText.track(manifest, channel)),
+        info: _info(EffectText.trackStage(manifest, channel)),
       );
       final loops = loopsByChannel[channel] ?? const {};
       final rendered = stems[channel] ?? const {};

@@ -103,18 +103,22 @@ void main() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
 
-    void manifest(Map<String, dynamic> armTrack, {int frames = 48000}) =>
-        File('${dir.path}/performance.json').writeAsStringSync(
-          jsonEncode({
-            'sample_rate': 48000,
-            'capture_frames': frames,
-            'armSnapshot': {
-              'tracks': [armTrack],
-            },
-            'disarmSnapshot': {'tracks': <dynamic>[]},
-            'layers': <dynamic>[],
-          }),
-        );
+    void manifest(
+      Map<String, dynamic> armTrack, {
+      int frames = 48000,
+      List<Map<String, dynamic>> trackChains = const [],
+    }) => File('${dir.path}/performance.json').writeAsStringSync(
+      jsonEncode({
+        'sample_rate': 48000,
+        'capture_frames': frames,
+        'armSnapshot': {
+          'trackChains': trackChains,
+          'tracks': [armTrack],
+        },
+        'disarmSnapshot': {'tracks': <dynamic>[]},
+        'layers': <dynamic>[],
+      }),
+    );
 
     test('returns null when performance.json is missing', () {
       expect(DawManifestReader.read(dir.path), isNull);
@@ -136,22 +140,38 @@ void main() {
       ]) {
         File('${dir.path}/loops/$name.wav').writeAsBytesSync(_wav(24000));
       }
-      manifest({
-        'channel': 0,
-        'name': 'Rhythm',
-        'lanes': [
-          {'lane': 0, 'deferred': false, 'pcmRef': 'loops/track0-lane0.wav'},
+      manifest(
+        {
+          'channel': 0,
+          'name': 'Rhythm',
+          'lanes': [
+            {'lane': 0, 'deferred': false, 'pcmRef': 'loops/track0-lane0.wav'},
+            {
+              'lane': 1,
+              'deferred': false,
+              'pcmRef': 'loops/track0-lane1.wav',
+              'heardPcmRef': 'loops/track0-lane1-heard.wav',
+              'effects': [
+                {'type': 3, 'params': <double>[]},
+              ],
+            },
+          ],
+        },
+        trackChains: [
           {
-            'lane': 1,
-            'deferred': false,
-            'pcmRef': 'loops/track0-lane1.wav',
-            'heardPcmRef': 'loops/track0-lane1-heard.wav',
+            'channel': 1,
             'effects': [
-              {'type': 3, 'params': <double>[]},
+              {'type': 7, 'params': <double>[]},
+            ],
+          },
+          {
+            'channel': 0,
+            'effects': [
+              {'type': 10, 'params': <double>[]},
             ],
           },
         ],
-      });
+      );
 
       final tracks = DawManifestReader.read(dir.path)!.tracks;
       expect(
@@ -166,7 +186,8 @@ void main() {
       final group = tracks.first.group!;
       expect(tracks.map((t) => t.group), everyElement(same(group)));
       expect(group.name, 'Rhythm');
-      expect(group.info, 'Effects when the take started:\nLane 2: Delay');
+      // The Group stands for the Track stage the lanes sum into.
+      expect(group.info, 'Effects when the take started:\nCompressor');
       expect(
         [for (final t in tracks) t.arrangementClips.single.audio.fileRef],
         [

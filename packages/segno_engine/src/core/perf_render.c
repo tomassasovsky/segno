@@ -1065,12 +1065,19 @@ static float* le_pr_snapshot_lane_image(const char* dir,
     return le_pr_snapshot_image(dir, own, plane, frames, heard, present);
   }
   if (lane == 0 || !silence) return NULL;
+  /* Lane 0's take's length, from its header. */
   const le_json_value* first = le_pr_find_lane(tracks, channel, 0);
-  if (first == NULL) return NULL;
-  float* image = le_pr_snapshot_image(dir, first, 0, frames, heard, present);
-  if (image != NULL) memset(image, 0, (size_t)*frames * sizeof(float));
-  *heard = 0;
-  return image;
+  const le_json_value* ref = le_json_get(first, "pcmRef");
+  char name[128];
+  if (ref == NULL) return NULL;
+  *present = 1;
+  if (!le_json_string(ref, name, sizeof(name))) return NULL;
+  char path[LE_PR_FULL_PATH_MAX];
+  snprintf(path, sizeof(path), "%s/%s", dir, name);
+  const int32_t len = le_pr_wav_frames(path);
+  if (len <= 0) return NULL;
+  *frames = len;
+  return (float*)calloc((size_t)len, sizeof(float));
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
@@ -2585,7 +2592,8 @@ static le_pr_wet_run* le_pr_wet_open(const le_pr_manifest* m,
       lane == 0 ? le_json_bool(le_json_get(arm_track, "muted"), 0) : 0);
   w->pan = (float)le_json_number(le_json_get(arm_lane, "pan"), 0);
   /* A lane the arm did not list starts as le_lane_reset leaves it: routed
-   * to the first pair. */
+   * to the first pair. (The snapshot writes every listed lane's mask; a
+   * listed lane without one reads output 0, as it always has.) */
   w->route = (uint32_t)le_json_number(le_json_get(arm_lane, "outputMask"),
                                       arm_lane != NULL ? 1 : 3);
   w->output_enabled = m->output_enabled_mask;

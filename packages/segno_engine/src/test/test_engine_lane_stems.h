@@ -424,7 +424,51 @@ static void test_lane_stems_without_logged_count(void) {
   le_engine_destroy(e);
 }
 
+/* Every lane count a track takes during a take is logged (events.log 17):
+ * the arm's, a count the callback applies, and one an import sets on the
+ * control thread. */
+static void test_lane_count_is_logged(void) {
+  printf("test_lane_count_is_logged\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_configure(e, 48000, 2, 1, 48000) == LE_OK);
+  float out[64];
+  CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(set_lane_count_and_publish(e, 0, 2) == LE_OK);
+  float pcm[256] = {0.25f};
+  CHECK(le_engine_import_track_lane(e, 1, 0, pcm, 256) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 1, 1, pcm, 256) == LE_OK);
+  process_const(e, 0.0f, 64, out);
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[1 << 16];
+  const size_t entries =
+      log_entry_count(read_binary_file_for_test(path, buf, sizeof(buf)));
+  int32_t counts[LE_MAX_TRACKS][4];
+  int seen[LE_MAX_TRACKS] = {0};
+  le_perf_log_entry entry;
+  for (int at = find_log_entry(buf, entries, 0, LE_CMD_SET_LANE_COUNT, &entry);
+       at >= 0;
+       at = find_log_entry(buf, entries, at + 1, LE_CMD_SET_LANE_COUNT, &entry)) {
+    const int32_t ch = entry.cmd.lanei.channel;
+    CHECK(ch >= 0 && ch < LE_MAX_TRACKS && entry.cmd.lanei.lane == 0);
+    if (ch < 0 || ch >= LE_MAX_TRACKS || seen[ch] >= 4) continue;
+    counts[ch][seen[ch]++] = entry.cmd.lanei.value;
+  }
+  /* Every track's count at the arm; track 0 then grows to 2 in the
+   * callback, track 1 to 2 by its import. */
+  for (int32_t t = 2; t < LE_MAX_TRACKS; ++t) {
+    CHECK(seen[t] == 1 && counts[t][0] == 1);
+  }
+  CHECK(seen[0] == 2 && counts[0][0] == 1 && counts[0][1] == 2);
+  CHECK(seen[1] == 2 && counts[1][0] == 1 && counts[1][1] == 2);
+  le_engine_destroy(e);
+}
+
 static void run_lane_stems_tests(void) {
   test_lane_stems_match_live();
   test_lane_stems_without_logged_count();
+  test_lane_count_is_logged();
 }
