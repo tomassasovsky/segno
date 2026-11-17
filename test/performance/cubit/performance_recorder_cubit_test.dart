@@ -1204,7 +1204,8 @@ void main() {
       final completed = await waitForCompleted(cubit);
 
       expect(completed.tracks, hasLength(1));
-      expect(completed.tracks.single.name, 'Track 1');
+      expect(completed.tracks.single.name, 'Track 1 L1');
+      expect(completed.tracks.single.group!.name, 'Track 1');
     });
   });
 
@@ -1271,6 +1272,11 @@ void main() {
       // whatever the live transport reads now is irrelevant — the
       // manifest is the only tempo source (#281).
       engine.nextSnapshot = snapshotWithTempo(150);
+      // Its stems rendered by then (the fake engine renders none): the
+      // write replaces only a project whose take has its stem index.
+      File('$dir/stems/stems.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{"lanes":[]}');
       await writeDawProject(dir);
 
       expect(tempoOf(dir), 96);

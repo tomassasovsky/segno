@@ -4209,8 +4209,12 @@ static int le_apply_routing(le_engine* e, const le_mix_settings* mix,
     }
   }
   for (int ch = 0; ch < e->track_count; ++ch)
-    if (mix->lane_count_mask & (1u << ch))
+    if (mix->lane_count_mask & (1u << ch)) {
       atomic_store_explicit(&e->tracks[ch].lane_count, mix->lane_count[ch], memory_order_release);
+      /* The lanes the track mixes from here (#1824, events.log 17). */
+      le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+        .lanei = {ch, 0, mix->lane_count[ch]}});
+    }
   return 1;
 }
 
@@ -6431,6 +6435,10 @@ static void apply_command_image(le_engine* e, const le_command* cmd,
       }
       for (int t = 0; t < e->track_count; ++t) {
         le_fade_log(e, t, frame);
+        /* The lanes the track mixes at capture frame 0 (#1824, events.log
+         * 17); every change logs again (le_apply_routing). */
+        le_plog_push(e, frame, (le_command){.code = LE_CMD_SET_LANE_COUNT,
+          .lanei = {t, 0, le_lanes_active(&e->tracks[t])}});
         /* A track already reversed at arm logs its direction and the index
          * capture frame 0 reads (#1162); forward is the renderer's default. */
         le_track* tr = &e->tracks[t];

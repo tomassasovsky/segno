@@ -302,8 +302,8 @@ bool renderEngine(const std::string& dir, int32_t type, const Case& c,
   le_perf_render_track_status(e, 0, &channel, &ok);
   le_engine_destroy(e);
   if (!done || !ok) return false;
-  dryOut = readWavMono(dir + "/stems/dry/track0.wav");
-  wetOut = readWavMono(dir + "/stems/wet/track0.wav");
+  dryOut = readWavMono(dir + "/stems/dry/track0-lane0.wav");
+  wetOut = readWavMono(dir + "/stems/wet/track0-lane0.wav");
   return !dryOut.empty() && dryOut.size() == wetOut.size();
 }
 

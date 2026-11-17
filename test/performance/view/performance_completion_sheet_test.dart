@@ -358,14 +358,21 @@ void main() {
   });
 
   testWidgets('the subtitle carries the looper track count and length, not '
-      "the set's dry stems, inputs or master", (tester) async {
+      "the set's lane tracks, inputs or master", (tester) async {
+    const group = DawGroup(name: 'Track 1');
     await pump(
       tester,
       const PerformanceRecorderCompleted(
         PerformanceRecordDone('/exports/perf-1'),
         tracks: [
-          DawTrack(name: 'Track 1'),
-          DawTrack(name: 'Track 1 dry', kind: DawTrackKind.dry, active: false),
+          DawTrack(name: 'Track 1 L1', group: group),
+          DawTrack(
+            name: 'Track 1 L1 (as heard)',
+            kind: DawTrackKind.laneHeard,
+            group: group,
+            active: false,
+          ),
+          DawTrack(name: 'Track 1 L2', group: group),
           DawTrack(name: 'Input 1', kind: DawTrackKind.input),
           DawTrack(
             name: 'Master (as heard)',

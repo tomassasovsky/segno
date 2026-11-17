@@ -1,9 +1,10 @@
 /*
  * perf_render.h — the offline performance-recording renderer (parts 7-8 of
  * the DAW-export stack): reconstructs, from a FINALIZED capture directory
- * (part 6), full-length per-track dry stems (`stems/dry/track<channel>.wav`,
- * part 7), per-track wet stems with the logged FX chain applied
- * (`stems/wet/track<channel>.wav`, part 8), and a reconstructed master bus
+ * (part 6), full-length per-lane dry stems (`stems/dry/track<channel>-
+ * lane<lane>.wav`, part 7, #1824), per-lane wet stems with the logged FX
+ * chain and mix applied (`stems/wet/track<channel>-lane<lane>.wav`, part 8),
+ * their index (`stems/stems.json`), and a reconstructed master bus
  * (`stems/wet/master.wav`, part 8: track sum + master gain + limiter) that
  * is this feature's golden-parity guardrail against the live-captured
  * master.
@@ -12,7 +13,7 @@
  * (sample rate, channel layout, arm/disarm snapshots including the master
  * gain/limiter and per-lane FX chain state, retired-layer manifest),
  * `events.log` (docs/formats/performance-event-log-format.md), `loops/
- * track<t>-lane0.wav` (settled lane exports, part 6), and `layer-<channel>-
+ * track<t>-lane<l>.wav` (settled lane exports, part 6), and `layer-<channel>-
  * <frame>-<slot>.pcm` (retired overdub layers, part 5) — never the live
  * engine. This is what lets a render run concurrently with live looping and
  * makes a crash-salvage render free (umbrella D-RENDER).
