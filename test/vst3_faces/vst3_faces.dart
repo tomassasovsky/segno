@@ -326,7 +326,7 @@ class _Vst3PanelControl extends StatelessWidget {
       );
     }
     return FxParamControl(
-      label: l10n.fxLevel,
+      label: kVst3OutputLevel,
       value: channels.level / kVst3LevelMax,
       valueText: vst3LevelText(l10n, channels.level),
       width: _kPanelWidth,
@@ -393,6 +393,11 @@ const double _kChipGap = 4;
 /// footswitch and the face's edge.
 const double _kChipClearance = 3;
 
+/// How far a chip may move down from under its label, and aside, when it
+/// does not clear the face there, nearest first.
+const List<double> _kChipNudgesDown = [0, 4, 8, 12];
+const List<double> _kChipNudgesAside = [0, -6, 6, -12, 12, -20, 20];
+
 /// The widest [type]'s parameter [p] prints, at a chip's size: over the
 /// texts the value texts sample, which hold its every position and the
 /// widest of its continuous ones within a character.
@@ -424,7 +429,7 @@ double _widestValue(AppLocalizations l10n, TrackEffectType type, int p) {
 
 /// What a value chip on a face of [art] carrying [labels] must stay
 /// clear of, in the face's space: every knob, every label, the title, the
-/// LED, the footswitch, and wherever the face paints its picture.
+/// LED and the footswitch. It may cover the face's painting.
 List<Rect> _faceObstacles(
   AppLocalizations l10n,
   FxPedalPicture art,
@@ -441,7 +446,6 @@ List<Rect> _faceObstacles(
     _titleBounds(spec, fxStompFace(l10n, art)!.name, count),
     fxStompLedBounds(kind),
     fxStompSwitchBounds(kind),
-    ?fxStompGraphicBounds(spec),
   ];
 }
 
@@ -492,10 +496,11 @@ Rect _titleBounds(FxStompSpec spec, String name, int knobs) {
 }
 
 /// Where a face of [art] prints each knob's value ([Vst3Face.chips]): a
-/// chip as wide as the knob's widest value, centred under its label, where
-/// it stays clear of every knob, label, the title, the LED, the footswitch,
-/// the face's edge and the other chips; none at all when one knob has no
-/// such room, as its values then are rows of the panel.
+/// chip as wide as the knob's widest value, under its label (nudged, or
+/// beside the label, where under it does not fit), clear of every knob,
+/// label, the title, the LED, the footswitch, the face's edge and the other
+/// chips; none at all when one knob has no such room, as its values then
+/// are rows of the panel.
 Map<int, Rect> _chipsOf(
   TrackEffectType type,
   FxPedalPicture art,
@@ -510,29 +515,42 @@ Map<int, Rect> _chipsOf(
   final knobBounds = fxStompKnobBounds(kind, knobs.length);
   final edge = (Offset.zero & kind.size).deflate(30);
   final chips = <int, Rect>{};
+  bool clears(Rect chip) {
+    final clear = chip.inflate(_kChipClearance);
+    return edge.contains(clear.topLeft) &&
+        edge.contains(clear.bottomRight) &&
+        !obstacles.any((o) => o.overlaps(clear)) &&
+        !chips.values.any((o) => o.overlaps(clear));
+  }
+
   for (final (i, p) in knobs.indexed) {
     if (fxParamIsChoice(type.params[p])) continue;
     final w = _widestValue(l10n, type, p) + 2 * _kChipPadX;
     const h = _kChipSize + 2 * _kChipPadY;
-    final chip = Rect.fromLTWH(
-      knobBounds[i].center.dx - w / 2,
-      labelBounds[i].bottom + _kChipGap,
-      w,
-      h,
-    );
-    final clear = chip.inflate(_kChipClearance);
-    final fits =
-        edge.contains(clear.topLeft) &&
-        edge.contains(clear.bottomRight) &&
-        !obstacles.any((o) => o.overlaps(clear)) &&
-        !chips.values.any((o) => o.overlaps(clear));
+    final label = labelBounds[i];
+    final x = knobBounds[i].center.dx;
+    // Under the label, centred on the knob; then nudged down or aside;
+    // then beside the label, after or before it.
+    final candidates = [
+      for (final dy in _kChipNudgesDown)
+        for (final dx in _kChipNudgesAside)
+          Rect.fromLTWH(x - w / 2 + dx, label.bottom + _kChipGap + dy, w, h),
+      Rect.fromLTWH(label.right + _kChipGap, label.center.dy - h / 2, w, h),
+      Rect.fromLTWH(label.left - _kChipGap - w, label.center.dy - h / 2, w, h),
+    ];
+    final chip = candidates.where(clears).firstOrNull;
     // A face prints all its knobs' values or none, so a value is never
     // looked for in two places.
-    if (!fits) return const {};
+    if (chip == null) return const {};
     chips[i] = chip;
   }
   return chips;
 }
+
+/// The entry's level's name in the editor and the host. The console calls
+/// it Level (`fxLevel`), the name of many effects' own level setting too,
+/// so the editor and Live would list two Levels.
+const String kVst3OutputLevel = 'Output level';
 
 /// How a control works, as the plugin reads it.
 enum Vst3ControlKind {

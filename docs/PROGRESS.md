@@ -126,9 +126,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   shows it. Every value is printed all the time, in the effect page's mono
   face and colours (the manifest's theme, the font bundled with the
   pictures): a slider's at its readout, at the exact value; a knob's in a
-  chip under its label where every knob of the face has room clear of the
-  knobs, labels, title, LED, footswitch and the face's picture, and
-  otherwise as read-only rows at the top of the panel. Selects and button
+  chip under its label (nudged, or beside the label, where under it does
+  not fit) where every knob of the face has room clear of the knobs,
+  labels, title, LED and footswitch (the chip may cover the face's
+  painting, the owner's call), and otherwise as read-only rows at the top
+  of the panel. The entry's level is "Output level" in the editor and the
+  host: the console's name for it, Level, is also many effects' own
+  setting. Selects and button
   rows show their position, the LED the bypass. Linux, and a bundle built
   without the pictures, open no editor.
 - Every plugin's parameter text is the console's (`value_text.cpp`, a

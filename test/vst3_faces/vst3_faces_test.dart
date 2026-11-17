@@ -223,7 +223,8 @@ void main() {
         }
         if (owner.kind == Vst3ControlKind.knob) {
           // A chip stays clear of every knob, label, the title, the LED and
-          // the footswitch, and of the panel's controls.
+          // the footswitch, and of the panel's controls; it may cover the
+          // face's painting.
           for (final o in layout.obstacles) {
             expect(rect.overlaps(o), isFalse, reason: '$where covers $o');
           }

@@ -1399,17 +1399,3 @@ const Rect _kTreadleGraphic = Rect.fromLTWH(32, 298, 386, 130);
 const Rect _kBoxBody = Rect.fromLTWH(30, 14, 390, 626);
 const Rect _kWindowPanel = Rect.fromLTWH(66, 50, 318, 300);
 const Rect _kRockerArt = Rect.fromLTWH(322, 14, 98, 744);
-
-/// Where a face of [spec] paints its picture, or `null` for a face with
-/// none (a module's is its screen, above its knobs).
-Rect? fxStompGraphicBounds(FxStompSpec spec) {
-  if (spec.graphic == FxStompGraphic.none) return null;
-  return switch (spec.face) {
-    FxStompFaceKind.treadle =>
-      fxStompGraphicOnTreadle(spec.graphic) ? _kTreadleGraphic : _kTreadleArt,
-    FxStompFaceKind.box => _kBoxBody,
-    FxStompFaceKind.window => _kWindowPanel,
-    FxStompFaceKind.module => null,
-    FxStompFaceKind.rocker => _kRockerArt,
-  };
-}
