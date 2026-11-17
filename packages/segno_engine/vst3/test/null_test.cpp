@@ -37,6 +37,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <map>
+#include <regex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -144,6 +148,85 @@ std::vector<float> readWavMono(const std::string& path) {
   }
   std::fclose(f);
   return out;
+}
+
+/* A parameter as packages/daw_export lists it for a Live set
+ * (segno_vst3_plugins.dart): its name and VST3 step count, by id. */
+struct DartParameter {
+  std::string name;
+  int steps;
+  double def;
+};
+using DartParameters = std::map<ParamID, DartParameter>;
+
+/* The Dart table of each kind's parameters, plus the channel parameters
+ * every plugin has, read from the file the export is generated with
+ * (SEGNO_DART_PLUGINS). The null test checks every plugin's controller
+ * against it, so an exported set names and steps the parameters the
+ * plugin has. */
+std::map<int, DartParameters> dartPlugins() {
+  std::ifstream in(SEGNO_DART_PLUGINS);
+  std::stringstream text;
+  text << in.rdbuf();
+  const std::string dart = text.str();
+  auto params = [&](const std::string& body, ParamID first, bool keyed) {
+    DartParameters out;
+    ParamID id = first;
+    const std::string tail =
+        R"(SegnoParameter\('([^']+)'(?:, steps: (\d+))?(?:, defaultValue: ([-0-9.e]+))?\))";
+    const std::regex entry(keyed ? R"((\d+): )" + tail : tail);
+    for (std::sregex_iterator i(body.begin(), body.end(), entry), end; i != end; ++i) {
+      const std::smatch& m = *i;
+      const int k = keyed ? 1 : 0;
+      const DartParameter p{m[k + 1], m[k + 2].matched ? std::stoi(m[k + 2]) : 0,
+                            m[k + 3].matched ? std::stod(m[k + 3]) : 0.0};
+      out[keyed ? (ParamID)std::stoi(m[1]) : id++] = p;
+    }
+    return out;
+  };
+  std::map<int, DartParameters> plugins;
+  std::smatch channels;
+  DartParameters channel;
+  if (std::regex_search(dart, channels,
+                        std::regex(R"(segnoChannelParameters = \{([\s\S]*?)\};)"))) {
+    channel = params(channels[1], 0, true);
+  }
+  const std::regex plugin(
+      R"((\d+): SegnoPlugin\([\s\S]*?parameters: \[([\s\S]*?)\],?\s*\))");
+  for (std::sregex_iterator i(dart.begin(), dart.end(), plugin), end; i != end; ++i) {
+    DartParameters p = params((*i)[2], 0, false);
+    p.insert(channel.begin(), channel.end());
+    plugins[std::stoi((*i)[1])] = p;
+  }
+  return plugins;
+}
+
+/* Whether [controller]'s parameters, bypass aside, are [expected]: same
+ * ids, names and step counts. */
+bool sameParameters(IEditController* controller, const DartParameters& expected,
+                    std::string& why) {
+  size_t seen = 0;
+  for (int32 i = 0; i < controller->getParameterCount(); ++i) {
+    ParameterInfo info{};
+    controller->getParameterInfo(i, info);
+    if (info.flags & ParameterInfo::kIsBypass) continue;
+    std::string title;
+    for (int k = 0; k < 128 && info.title[k] != 0; ++k) title += (char)info.title[k];
+    const auto it = expected.find(info.id);
+    if (it == expected.end() || it->second.name != title ||
+        it->second.steps != info.stepCount ||
+        std::fabs(it->second.def - info.defaultNormalizedValue) > 1e-6) {
+      why = "parameter " + std::to_string(info.id) + " (" + title +
+            ") differs from segno_vst3_plugins.dart";
+      return false;
+    }
+    ++seen;
+  }
+  if (seen != expected.size()) {
+    why = "segno_vst3_plugins.dart lists parameters the plugin does not have";
+    return false;
+  }
+  return true;
 }
 
 struct Case {
@@ -273,6 +356,13 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
       return false;
     }
   }
+  static const std::map<int, DartParameters> dart = dartPlugins();
+  const auto listed = dart.find(kind.type);
+  if (listed == dart.end()) {
+    why = "not in segno_vst3_plugins.dart";
+    return false;
+  }
+  if (!sameParameters(controller, listed->second, why)) return false;
   controller->terminate();
 
   SpeakerArrangement stereo = SpeakerArr::kStereo;
@@ -302,6 +392,30 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
   ctx.timeSigNumerator = 4;
   ctx.timeSigDenominator = 4;
 
+  /* A second of a stopped host first, with signal through it, as Live
+   * runs a plugin while its transport stands: the plugin starts again as
+   * at arm when the host plays, so this must not show in the render. */
+  {
+    ProcessContext stopped = ctx;
+    stopped.state = ProcessContext::kTempoValid | ProcessContext::kTimeSigValid;
+    uint32_t noise = 777;
+    for (int f0 = 0; f0 < kRate; f0 += block) {
+      for (int i = 0; i < block; ++i) {
+        noise = noise * 1664525u + 1013904223u;
+        inL[i] = inR[i] = 0.3f * ((int32_t)noise / 2147483648.0f);
+      }
+      ProcessData data{};
+      data.processMode = kRealtime;
+      data.symbolicSampleSize = kSample32;
+      data.numSamples = block;
+      data.numInputs = 1;
+      data.numOutputs = 1;
+      data.inputs = &inBus;
+      data.outputs = &outBus;
+      data.processContext = &stopped;
+      processor->process(data);
+    }
+  }
   out.assign(input.size(), 0.0f);
   for (size_t f0 = 0; f0 < input.size(); f0 += block) {
     const int len = (int)std::min<size_t>(block, input.size() - f0);
@@ -455,10 +569,13 @@ int main(int argc, char** argv) {
        * plugin plays the input delayed by its latency. */
       const bool ownSwitch = c.switched && latency > 0;
       const size_t until = ownSwitch ? (size_t)kOffAt : wet.size();
+      /* The plugin reports its latency at every rate, the kind's largest
+       * (processor.h), and delays its output by the rest. */
+      const size_t pad = reported >= latency ? (size_t)(reported - latency) : 0;
       float worst = 0.0f, peak = 0.0f, effect = 0.0f;
       size_t at = 0;
-      for (size_t i = 0; i < until; ++i) {
-        const float d = std::fabs(plugin[i] - wet[i]);
+      for (size_t i = 0; i + pad < until; ++i) {
+        const float d = std::fabs(plugin[i + pad] - wet[i]);
         if (d > worst) {
           worst = d;
           at = i;
@@ -468,9 +585,9 @@ int main(int argc, char** argv) {
       }
       float bypassed = 0.0f;
       if (ownSwitch) {
-        const size_t settled = (size_t)kOffAt + (size_t)(kRate / 200) + 1;
+        const size_t settled = (size_t)kOffAt + (size_t)(kRate / 200) + 1 + pad;
         for (size_t i = settled; i < (size_t)kOnAt; ++i) {
-          bypassed = std::fmax(bypassed, std::fabs(plugin[i] - dry[i - latency]));
+          bypassed = std::fmax(bypassed, std::fabs(plugin[i] - dry[i - reported]));
         }
       }
       char residual[32];
@@ -481,10 +598,11 @@ int main(int argc, char** argv) {
       }
       std::printf("%-22s %-9s %10s %7.1f dB %7.1f dB %8d", kind.name, c.name,
                   residual, 20.0 * std::log10(std::fmax(peak, 1e-12f)),
-                  20.0 * std::log10(std::fmax(effect, 1e-12f)), latency);
+                  20.0 * std::log10(std::fmax(effect, 1e-12f)), reported);
       if (ownSwitch) std::printf("  to the switch; off: %s", bypassed == 0.0f ? "the delayed input" : "WRONG");
-      if (worst > kFail || bypassed != 0.0f || reported != latency) {
-        if (reported != latency) std::printf("  reports latency %d", reported);
+      const int largest = std::max((int)segno_fx_reported_latency(kind.type), latency);
+      if (worst > kFail || bypassed != 0.0f || reported != largest) {
+        if (reported != largest) std::printf("  reports latency %d", reported);
         std::printf("  FAIL (first at frame %zu)", at);
         ++failures;
       }

@@ -60,6 +60,13 @@ double segno_fx_slot_beat_at(const segno_fx_slot* s, uint32_t clock);
  * runs). */
 void segno_fx_slot_reseed(segno_fx_slot* s, int32_t hop_seed);
 
+/* The slot as it stood at arm, at engine frame [clock]: its state cleared
+ * and seeded as segno_fx_slot_new seeds it, its enable ramp settled. What
+ * the plugin does when the host starts playing or moves, so a render from
+ * the host's start is the offline render's. Audio thread: allocates
+ * nothing. */
+void segno_fx_slot_rearm(segno_fx_slot* s, uint32_t clock);
+
 /* Frames the kind delays its output by at the slot's rate. */
 int32_t segno_fx_slot_latency(const segno_fx_slot* s);
 
@@ -75,6 +82,11 @@ int32_t segno_fx_lane_hop_seed(int32_t track, int32_t lane);
 /* Frames [type] delays its output by at [sr] (le_fx_added_latency), from a
  * slot made for the question. Allocates. */
 int32_t segno_fx_latency(int32_t type, int32_t sr);
+
+/* The latency a plugin of [type] reports at every rate: the kind's largest
+ * at the rates the engine runs its effects at (44.1 to 96 kHz, #1547).
+ * Worked out once per kind, any thread. */
+int32_t segno_fx_reported_latency(int32_t type);
 
 /* Flushes denormals on the calling thread, as the engine's threads do
  * before a chain runs (le_flush_denormals), and returns the floating-point

@@ -21,6 +21,8 @@ abstract final class EventLogReader {
   static const int _codeSetLaneVolume = 28;
   static const int _codeSetLaneMute = 29;
   static const int _codeSetTrackSolo = 63;
+  static const int _codePerfArmed = 315;
+  static const int _codeFxTempo = 332;
 
   /// Reads `<captureDir>/events.log` and returns every entry in file order
   /// (already frame-monotonic *within* each of the two producer streams,
@@ -55,6 +57,24 @@ abstract final class EventLogReader {
       offset += _entryBytes;
     }
     return entries;
+  }
+
+  /// Where the take starts in the engine's time: the engine frame of its
+  /// first frame (`LE_PLOG_PERF_ARMED`'s FX clock) and the beat the effects
+  /// were on there (the arm's `LE_PLOG_FX_TEMPO` anchor at frame 0). 0 for
+  /// either when [entries] does not carry it (a capture logged before
+  /// version 13 or 14), as the offline render reads them.
+  static ({int clock, double beat}) readArmTime(List<RawLogEntry> entries) {
+    int? clock;
+    double? beat;
+    for (final e in entries) {
+      if (e.code == _codePerfArmed && clock == null) {
+        clock = e.payload.getUint32(12, Endian.little);
+      } else if (e.code == _codeFxTempo && e.frame == 0) {
+        beat = e.payload.getFloat64(0, Endian.little);
+      }
+    }
+    return (clock: clock ?? 0, beat: beat ?? 0);
   }
 
   /// Extracts channel [channel]'s volume and audibility from [entries], as
