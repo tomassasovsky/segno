@@ -117,7 +117,18 @@ struct ContentView: View {
               for file in recording.files { model.toggle(recording, file, selected: true) }
             }
             Spacer()
+            Button("Open in Live") { model.openInLive(recording) }
+              .disabled(!model.connected || model.liveSetUnavailable(recording) != nil)
+              .help(
+                model.liveSetUnavailable(recording)
+                  ?? "Download this take's Live set and the audio it uses, then open it in Ableton Live"
+              )
+              .accessibilityIdentifier("openInLive")
           }.padding(.top, 8).disabled(model.busy)
+          if let reason = model.liveSetUnavailable(recording) {
+            Text(reason).font(.caption).foregroundStyle(.secondary).frame(
+              maxWidth: .infinity, alignment: .trailing)
+          }
         }.padding(24)
         Divider()
         ScrollView {

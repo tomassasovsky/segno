@@ -44,6 +44,8 @@ public struct Recording: Decodable, Identifiable {
   public let modified: Double
   public let duration: Double
   public let files: [RecordingFile]
+  /// The take's Ableton Live set (`project.als`), when the console wrote one.
+  public let liveSet: RecordingFile?
 
   public var date: Date {
     let formatter = DateFormatter()
@@ -166,14 +168,23 @@ public final class CancellationToken: @unchecked Sendable {
 
 public enum DownloadName {
   public static func validated(_ input: String) throws -> String {
-    var value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    var value = try folder(input)
+    if !value.lowercased().hasSuffix(".wav") { value += ".wav" }
+    guard value.utf8.count <= 240 else {
+      throw TransferError.message("This filename is too long. Use a shorter name.")
+    }
+    return value
+  }
+
+  /// `input` as the name of one file or folder in the download folder.
+  public static func folder(_ input: String) throws -> String {
+    let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty, value != ".", value != "..", !value.hasPrefix("."),
       !value.contains("/"), !value.contains(":"), !value.contains("\\"),
       !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
     else {
       throw TransferError.message("Use a filename without slashes, colons or control characters.")
     }
-    if !value.lowercased().hasSuffix(".wav") { value += ".wav" }
     guard value.utf8.count <= 240 else {
       throw TransferError.message("This filename is too long. Use a shorter name.")
     }

@@ -13,6 +13,13 @@ public protocol RecordingRepository {
     connection: Connection, token: CancellationToken,
     progress: @escaping (Int64, String) -> Void
   ) throws -> URL
+  /// Downloads `recording`'s Live set and every file it refers to into a
+  /// folder named after the take, or finds the verified copy an earlier call
+  /// left there. `progress` gets the fraction done and what is happening.
+  func downloadLiveSet(
+    recording: Recording, destination: URL, connection: Connection, token: CancellationToken,
+    progress: @escaping (Double, String) -> Void
+  ) throws -> LiveSetCopy
 }
 
 public final class TransferRepository: RecordingRepository {
@@ -66,27 +73,95 @@ public final class TransferRepository: RecordingRepository {
     progress: @escaping (Int64, String) -> Void
   ) throws -> URL {
     let filename = try DownloadName.validated(name)
-    guard file.bytes > 0 else {
-      throw TransferError.message("This file is empty. Refresh the recordings.")
+    let temporary = try TemporaryDownload(parent: destination)
+    defer { temporary.remove() }
+    _ = try fetch(
+      recording: recording, file: file, to: temporary.file, connection: connection, token: token,
+      progress: progress)
+    try token.check()
+    return try temporary.publish(filename: filename)
+  }
+
+  public func downloadLiveSet(
+    recording: Recording, destination: URL, connection: Connection, token: CancellationToken,
+    progress: @escaping (Double, String) -> Void
+  ) throws -> LiveSetCopy {
+    guard let set = recording.liveSet else { throw TransferError.message(LiveSet.missing) }
+    let name = try DownloadName.folder(recording.name)
+    if let copy = LiveSet.verifiedCopy(of: recording, in: destination, named: name) {
+      return copy
     }
     let temporary = try TemporaryDownload(parent: destination)
     defer { temporary.remove() }
+    let folder = temporary.directory.appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+    progress(0, "Downloading the Live set")
+    let project = folder.appendingPathComponent(LiveSet.fileName)
+    var record = LiveSet.Record(recording: recording.id, files: [])
+    record.add(
+      set,
+      sha256: try fetch(
+        recording: recording, file: set, to: LiveSet.emptyFile(project), connection: connection,
+        token: token, progress: { _, _ in }))
+    let contents = try LiveSet.read(project)
+    let files = try contents.references.map { path in
+      guard let file = recording.files.first(where: { $0.path == path }) else {
+        throw TransferError.message(
+          "The Live set uses \(path), which is missing or still being saved on the appliance.")
+      }
+      return file
+    }
+    let total = max(1, files.reduce(0) { $0 + $1.bytes })
+    var done: Int64 = 0
+    for (index, file) in files.enumerated() {
+      let before = done
+      let target = folder.appendingPathComponent(file.path)
+      try FileManager.default.createDirectory(
+        at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+      record.add(
+        file,
+        sha256: try fetch(
+          recording: recording, file: file, to: LiveSet.emptyFile(target), connection: connection,
+          token: token
+        ) { bytes, phase in
+          progress(
+            min(1, Double(before + bytes) / Double(total)),
+            "\(phase) \(index + 1) of \(files.count) · \(file.path)")
+        })
+      done += file.bytes
+    }
+    try record.write(in: folder)
+    try token.check()
+    let published = try temporary.publish(folder: folder, name: name)
+    return LiveSetCopy(
+      folder: URL(fileURLWithPath: published.path, isDirectory: true),
+      usesPlugins: contents.usesPlugins, reused: false)
+  }
+
+  /// Fetches `file` into the existing, empty `output` and checks its length
+  /// and SHA-256 against the appliance's copy. Returns the SHA-256.
+  private func fetch(
+    recording: Recording, file: RecordingFile, to output: URL, connection: Connection,
+    token: CancellationToken, progress: @escaping (Int64, String) -> Void
+  ) throws -> String {
+    guard file.bytes > 0 else {
+      throw TransferError.message("This file is empty. Refresh the recordings.")
+    }
     let request = [
       "action": "download", "root": connection.root, "recording": recording.id,
       "file": file.path, "version": file.version,
     ]
     try ssh.request(
-      request, connection: connection, to: temporary.file, token: token,
-      maximumBytes: file.bytes
+      request, connection: connection, to: output, token: token, maximumBytes: file.bytes
     ) { progress($0, "Downloading") }
     let size =
-      (try FileManager.default.attributesOfItem(atPath: temporary.file.path)[.size] as? NSNumber)?
+      (try FileManager.default.attributesOfItem(atPath: output.path)[.size] as? NSNumber)?
       .int64Value
     guard size == file.bytes else {
       throw TransferError.message("The download was incomplete. Try downloading this file again.")
     }
     progress(file.bytes, "Verifying")
-    let localHash = try Self.sha256(temporary.file, token: token)
+    let localHash = try Self.sha256(output, token: token)
     var hashRequest = request
     hashRequest["action"] = "hash"
     struct Hash: Decodable { let sha256: String }
@@ -96,8 +171,7 @@ public final class TransferRepository: RecordingRepository {
       throw TransferError.message(
         "The copy did not match the original. Try downloading this file again.")
     }
-    try token.check()
-    return try temporary.publish(filename: filename)
+    return localHash
   }
 
   public static func sha256(_ file: URL, token: CancellationToken) throws -> String {
@@ -137,12 +211,25 @@ final class TemporaryDownload {
   func publish(filename: String) throws -> URL {
     let stem = (filename as NSString).deletingPathExtension
     let ext = (filename as NSString).pathExtension
+    return try publish(file) { $0 == 0 ? filename : "\(stem) (\($0 + 1)).\(ext)" }
+  }
+
+  /// Publishes `folder`, a folder inside this download, as `name` or the
+  /// first free numbered name after it.
+  func publish(folder: URL, name: String) throws -> URL {
+    try publish(folder) { Self.folderName(name, index: $0) }
+  }
+
+  static func folderName(_ name: String, index: Int) -> String {
+    index == 0 ? name : "\(name) (\(index + 1))"
+  }
+
+  private func publish(_ item: URL, name: (Int) -> String) throws -> URL {
     for index in 0..<10000 {
-      let name = index == 0 ? filename : "\(stem) (\(index + 1)).\(ext)"
-      let target = parent.appendingPathComponent(name)
+      let target = parent.appendingPathComponent(name(index))
       // macOS's exclusive rename publishes atomically and cannot
       // overwrite another file, including one created concurrently.
-      guard renamex_np(file.path, target.path, UInt32(RENAME_EXCL)) == 0 else {
+      guard renamex_np(item.path, target.path, UInt32(RENAME_EXCL)) == 0 else {
         if errno == EEXIST { continue }
         throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
       }
