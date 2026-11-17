@@ -11,15 +11,15 @@ import 'package:segno/wifi/view/network_dialogs.dart';
 import 'package:segno/wifi/view/network_password_sheet.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:segno/wifi/wifi_error_message.dart';
-import 'package:segno/wifi/wifi_join_failure.dart';
 import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 /// Settings > Network (pen 29): the Wi-Fi switch in the title row, the
 /// connection card, and every network the console can see or has saved.
 ///
-/// Owns its [WifiCubit] for as long as it is open, so the radio is read, and
-/// the internet checked, only while the page is on screen.
+/// Owns its [WifiCubit] for as long as it is open, so the radio is followed
+/// and scanned, and the internet checked, only while the page is on screen
+/// (#1817).
 class NetworkSettingsPage extends StatelessWidget {
   /// Creates a [NetworkSettingsPage].
   ///
@@ -28,9 +28,6 @@ class NetworkSettingsPage extends StatelessWidget {
 
   /// Optional repository override.
   final WifiRepository? repository;
-
-  /// How often the open page re-reads the connection and the internet.
-  static const Duration refreshInterval = WifiCubit.connectivityInterval;
 
   /// The content's inset in the frame's content box: its full width,
   /// under the title row.
@@ -52,30 +49,14 @@ class _NetworkView extends StatefulWidget {
 }
 
 class _NetworkViewState extends State<_NetworkView> {
-  Timer? _refresh;
-
   WifiCubit get _cubit => context.read<WifiCubit>();
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final cubit = _cubit;
-      await cubit.load();
-      if (!mounted || !cubit.state.supported) return;
-      _refresh = Timer.periodic(
-        NetworkSettingsPage.refreshInterval,
-        (_) => unawaited(cubit.refresh()),
-      );
-      if (cubit.state.status.enabled) await cubit.scan();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_cubit.start());
     });
-  }
-
-  @override
-  void dispose() {
-    _refresh?.cancel();
-    super.dispose();
   }
 
   /// Switches the radio; switched on, it looks for networks at once.
@@ -103,13 +84,28 @@ class _NetworkViewState extends State<_NetworkView> {
 
   /// Joins [ssid], showing the Connecting dialog while it runs. A key the
   /// network refused goes back to the sheet that typed it (pen 29/04).
-  Future<void> _connect(String ssid, {String? psk, bool change = false}) async {
+  Future<void> _connect(String ssid, {String? psk, bool change = false}) =>
+      _follow(
+        ssid,
+        change && psk != null
+            ? (cubit) => cubit.changePassword(ssid, psk)
+            : (cubit) => cubit.connect(ssid, psk: psk),
+        change: change,
+      );
+
+  /// The card's Try again: the failed join of [ssid] again, with its key.
+  Future<void> _retry(String ssid) => _follow(ssid, (cubit) => cubit.retry());
+
+  /// Starts the join of [ssid] that [start] makes and follows it to its end.
+  Future<void> _follow(
+    String ssid,
+    Future<void> Function(WifiCubit cubit) start, {
+    bool change = false,
+  }) async {
     final cubit = _cubit;
     final status = cubit.state.status;
     final previous = status.connected ? status.ssid : null;
-    final join = change && psk != null
-        ? cubit.changePassword(ssid, psk)
-        : cubit.connect(ssid, psk: psk);
+    final join = start(cubit);
     if (cubit.state.connectingSsid == ssid) {
       await showNetworkConnectingDialog(
         context,
@@ -122,7 +118,7 @@ class _NetworkViewState extends State<_NetworkView> {
     if (!mounted) return;
     final state = cubit.state;
     if (state.failedSsid == ssid &&
-        state.errorKind == WifiJoinErrorKind.credentials) {
+        state.joinError == WifiJoinError.wrongPassword) {
       await _askPassword(
         ssid,
         change: change,
@@ -209,6 +205,7 @@ class _NetworkViewState extends State<_NetworkView> {
                       state: state,
                       onManage: (ssid) => unawaited(_details(ssid)),
                       onReconnect: (ssid) => unawaited(_connect(ssid)),
+                      onRetry: (ssid) => unawaited(_retry(ssid)),
                     ),
                     if (state.supported) ...[
                       const SizedBox(height: 28),
@@ -252,46 +249,42 @@ class _NetworkViewState extends State<_NetworkView> {
   }
 }
 
-/// The signal glyph for a reading that is dBm on some paths and a 0-100
-/// quality on others: three bars, two, or one.
-IconData _signalIcon(int signal) {
-  final bars = switch (signal) {
-    < 0 when signal >= -60 => 3,
-    < 0 when signal >= -72 => 2,
-    < 0 => 1,
-    >= 67 => 3,
-    >= 34 => 2,
-    _ => 1,
-  };
-  return switch (bars) {
-    3 => LucideIcons.wifi,
-    2 => LucideIcons.wifiHigh,
-    _ => LucideIcons.wifiLow,
-  };
-}
+/// The signal glyph for [signal]: three bars, two, or one.
+IconData _signalIcon(int signal) => switch (wifiSignalBars(signal)) {
+  3 => LucideIcons.wifi,
+  2 => LucideIcons.wifiHigh,
+  _ => LucideIcons.wifiLow,
+};
 
 /// The connection card: what the console is on, or why it is on nothing, and
-/// the one thing to do about it (Manage, Reconnect).
+/// the one thing to do about it (Manage, Reconnect), with a failed join's
+/// reason and Try again under it.
 class _ConnectionCard extends StatelessWidget {
   const new({
     required this.state,
     required this.onManage,
     required this.onReconnect,
+    required this.onRetry,
   });
 
   final WifiState state;
   final ValueChanged<String> onManage;
   final ValueChanged<String> onReconnect;
+  final ValueChanged<String> onRetry;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final status = state.status;
-    final joining = state.connectingSsid;
+    // The page's own join, or one NetworkManager started by itself (a
+    // saved network coming back, segno-wifi-retry), followed live.
+    final joining =
+        state.connectingSsid ??
+        (status.connecting && status.ssid.isNotEmpty ? status.ssid : null);
     final lost = state.lostSsid;
     final connected = status.connected && status.ssid.isNotEmpty;
-    final idle = !state.busy && joining == null;
+    final idle = !state.busy && state.connectingSsid == null;
 
     final (String title, String detail) = !state.supported
         ? (
@@ -317,8 +310,23 @@ class _ConnectionCard extends StatelessWidget {
 
     // A join's own failure is told on the card; the unsupported card already
     // says what went wrong in its line.
-    final error = state.supported && joining == null
-        ? state.errorMessage
+    final failedSsid = state.failedSsid;
+    final reason = state.joinError;
+    final error = !state.supported || joining != null
+        ? null
+        : reason != null && failedSsid != null
+        ? wifiJoinErrorMessage(l10n, reason, failedSsid)
+        : state.errorMessage != null
+        ? wifiErrorMessage(l10n, state.errorMessage)
+        : null;
+    // A wrong key goes back to the password sheet; every other failed join
+    // can be tried again from here, with the key it was given.
+    final retry =
+        error != null &&
+            failedSsid != null &&
+            reason != null &&
+            reason != WifiJoinError.wrongPassword
+        ? failedSsid
         : null;
 
     final action = !state.supported || !status.enabled
@@ -401,7 +409,7 @@ class _ConnectionCard extends StatelessWidget {
                     Semantics(
                       liveRegion: true,
                       child: AppText(
-                        wifiErrorMessage(l10n, error, kind: state.errorKind),
+                        error,
                         key: const Key('network_card_error'),
                         style: TextStyle(
                           color: surface.warning,
@@ -409,6 +417,16 @@ class _ConnectionCard extends StatelessWidget {
                           height: 1.4,
                         ),
                       ),
+                    ),
+                  ],
+                  if (retry != null) ...[
+                    const SizedBox(height: 16),
+                    LoopOutlinedButton(
+                      key: const Key('network_retry'),
+                      width: 200,
+                      tone: LoopButtonTone.accent,
+                      label: l10n.networkTryAgain,
+                      onTap: idle ? () => onRetry(retry) : null,
                     ),
                   ],
                 ],
@@ -422,8 +440,8 @@ class _ConnectionCard extends StatelessWidget {
   }
 }
 
-/// Every network but the one the console is on: saved first, then what the
-/// scan saw, each group strongest first.
+/// Every network but the one the console is on, in [visibleWifiNetworks]'
+/// order.
 class _NetworkList extends StatelessWidget {
   const new({required this.state, required this.onOpen});
 
@@ -434,12 +452,15 @@ class _NetworkList extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    if (!state.status.enabled || state.networks.isEmpty) {
+    final networks = visibleWifiNetworks(state);
+    if (!state.status.enabled || networks.isEmpty) {
       final message = !state.status.enabled
           ? l10n.networkListOff
           : state.scanning
           ? l10n.networkScanning
-          : l10n.networkListEmpty;
+          : state.networks.isEmpty
+          ? l10n.networkListEmpty
+          : l10n.networkListNoOthers;
       return Align(
         alignment: Alignment.topLeft,
         child: Padding(
@@ -452,11 +473,6 @@ class _NetworkList extends StatelessWidget {
         ),
       );
     }
-    final visible = visibleWifiNetworks(state);
-    final networks = [
-      ...visible.where((n) => n.saved),
-      ...visible.where((n) => !n.saved),
-    ];
     return ListView.builder(
       key: const Key('network_list'),
       itemCount: networks.length,

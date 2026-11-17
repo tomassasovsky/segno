@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:segno/wifi/wifi_join_failure.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 part 'wifi_state.dart';
@@ -11,18 +10,32 @@ part 'wifi_state.dart';
 /// Connect automatically, password changes and the internet check.
 ///
 /// Lives as long as the page does, so nothing here runs while it is shut.
+/// While it is open ([start]) it follows the console the way a phone's Wi-Fi
+/// settings do: the connection state live from the helper's monitor, a quiet
+/// scan every [scanInterval], and the internet every [connectivityInterval].
 class WifiCubit extends Cubit<WifiState> {
   /// Creates a [WifiCubit] over [_repository].
   ///
-  /// [_retryDelays] is the backoff schedule for re-activating after a
-  /// backend/transient join failure — one entry per automatic retry.
-  /// Injectable so tests do not sit through real seconds. [_clock] times the
-  /// internet check's [connectivityInterval].
+  /// [_retryDelays] is the backoff schedule for re-activating after a failed
+  /// connection — one entry per automatic retry. Injectable so tests do not
+  /// sit through real seconds. [_clock] times the internet check's
+  /// [connectivityInterval].
   new({
     required this._repository,
     this._retryDelays = const [Duration(seconds: 2), Duration(seconds: 5)],
     this._clock = DateTime.now,
   }) : super(const WifiState());
+
+  /// How often the open page scans, as Android's and iOS's Wi-Fi settings
+  /// do, so the list follows what is in range without a tap on Scan.
+  static const scanInterval = Duration(seconds: 10);
+
+  /// How long the state is left to settle after a change the monitor
+  /// reported before it is read: a join is a burst of device states.
+  static const changeSettle = Duration(milliseconds: 300);
+
+  /// How long a monitor that ended waits before it is started again.
+  static const monitorRestart = Duration(seconds: 5);
 
   /// How often the open page looks at the internet (#1270 D14): one HEAD
   /// request to the update host per period, for one connection.
@@ -61,6 +74,109 @@ class WifiCubit extends Cubit<WifiState> {
   /// Whether the join behind [_join] was cancelled while its call ran.
   bool _joinCancelled = false;
 
+  /// The last join that failed for a reason other than its key, with the key
+  /// it was given, for [retry]. A profile made for a new network is removed
+  /// when its join fails, so the key is kept here rather than in it. In
+  /// memory only, for as long as the page is open, and never in [state].
+  ({String ssid, String? psk})? _failedJoin;
+
+  /// The scan in flight, shared by [scan] and the periodic one.
+  Future<Object?>? _scan;
+
+  StreamSubscription<void>? _changes;
+  Timer? _settleTimer;
+  Timer? _monitorRestart;
+  Timer? _scanTimer;
+  Timer? _connectivityTimer;
+
+  /// Bumped by every emit that changes the status, so a read that started
+  /// before a fresher one landed is dropped rather than shown.
+  int _statusEpoch = 0;
+
+  /// A change the monitor reported while an action was busy; read once the
+  /// action ends.
+  bool _changedWhileBusy = false;
+
+  /// Loads the state, then follows it while the page is open: the monitor's
+  /// changes, a scan every [scanInterval] and the internet every
+  /// [connectivityInterval]. All of it stops when the cubit closes.
+  Future<void> start() async {
+    await load();
+    if (isClosed || !state.supported) return;
+    _watch();
+    _scanTimer = Timer.periodic(scanInterval, (_) => unawaited(_scanQuietly()));
+    _connectivityTimer = Timer.periodic(
+      connectivityInterval,
+      (_) => unawaited(checkConnectivity()),
+    );
+    if (state.status.enabled) await scan();
+  }
+
+  void _watch() {
+    _changes = _repository.changes().listen(
+      (_) => _changed(),
+      onError: (Object _) {},
+      onDone: () {
+        _changes = null;
+        if (isClosed) return;
+        _monitorRestart = Timer(monitorRestart, () {
+          if (!isClosed) _watch();
+        });
+      },
+    );
+  }
+
+  void _changed() {
+    _settleTimer?.cancel();
+    _settleTimer = Timer(changeSettle, () => unawaited(_follow()));
+  }
+
+  /// Reads the status after a change the monitor reported. Quiet: no busy
+  /// state, and a failed read keeps what is on screen. An action in flight
+  /// reads the status itself when it ends, and a change during it is read
+  /// after it, so this never races one.
+  Future<void> _follow() async {
+    if (isClosed || !state.supported) return;
+    if (state.busy) {
+      _changedWhileBusy = true;
+      return;
+    }
+    final epoch = _statusEpoch;
+    final WifiStatus status;
+    try {
+      status = await _repository.status();
+    } on Object {
+      return;
+    }
+    if (isClosed || epoch != _statusEpoch) return;
+    final cameOn = !state.status.enabled && status.enabled;
+    emit(state.copyWith(status: status));
+    // Switched on from elsewhere: look for networks at once.
+    if (cameOn) unawaited(_scanQuietly());
+  }
+
+  @override
+  void onChange(Change<WifiState> change) {
+    super.onChange(change);
+    if (change.currentState.status != change.nextState.status) _statusEpoch++;
+    if (_changedWhileBusy &&
+        change.currentState.busy &&
+        !change.nextState.busy) {
+      _changedWhileBusy = false;
+      _changed();
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    _settleTimer?.cancel();
+    _monitorRestart?.cancel();
+    _scanTimer?.cancel();
+    _connectivityTimer?.cancel();
+    await _changes?.cancel();
+    await super.close();
+  }
+
   /// Loads status (and whether the stack is supported).
   Future<void> load() async {
     emit(
@@ -87,43 +203,77 @@ class WifiCubit extends Cubit<WifiState> {
     }
   }
 
-  /// Scans for nearby networks.
+  /// Scans for nearby networks, showing that it is scanning. A scan already
+  /// in flight (the periodic one) is joined rather than doubled.
   Future<void> scan() async {
     if (!state.supported) return;
     emit(state.copyWith(scanning: true, clearError: true));
+    final error = await (_scan ??= _scanOnce());
+    if (isClosed) return;
+    emit(
+      state.copyWith(
+        scanning: false,
+        errorMessage: error == null ? null : '$error',
+      ),
+    );
+  }
+
+  /// The periodic scan: shows nothing while it runs and keeps any message on
+  /// screen. Skipped while the radio is off, while anything is joining (a
+  /// scan takes the radio off-channel mid-association) and while another
+  /// action or scan runs.
+  Future<void> _scanQuietly() async {
+    final status = state.status;
+    if (isClosed ||
+        !state.supported ||
+        !status.enabled ||
+        status.connecting ||
+        state.busy ||
+        state.connectingSsid != null ||
+        _scan != null) {
+      return;
+    }
+    await (_scan = _scanOnce());
+  }
+
+  /// One scan and the status after it; the error, or null.
+  Future<Object?> _scanOnce() async {
     try {
       final networks = await _repository.scan();
-      // Prefer stronger signal; drop empty SSIDs / de-dupe by name.
+      final epoch = _statusEpoch;
+      final status = await _repository.status();
+      if (isClosed) return null;
+      // One row per name, the strongest: the list keys its rows by name.
       final bySsid = <String, WifiNetwork>{};
       for (final n in networks) {
         if (n.ssid.isEmpty) continue;
-        final existing = bySsid[n.ssid];
-        if (existing == null || n.signal > existing.signal) {
-          bySsid[n.ssid] = n;
-        }
+        final seen = bySsid[n.ssid];
+        if (seen == null || n.signal > seen.signal) bySsid[n.ssid] = n;
       }
-      final sorted = bySsid.values.toList()
-        ..sort((a, b) => b.signal.compareTo(a.signal));
-      final status = await _repository.status();
-      if (isClosed) return;
-      emit(state.copyWith(networks: sorted, status: status, scanning: false));
+      emit(
+        state.copyWith(
+          networks: bySsid.values.toList(),
+          status: epoch == _statusEpoch ? status : null,
+        ),
+      );
+      return null;
     } on Object catch (e) {
-      if (isClosed) return;
-      emit(state.copyWith(scanning: false, errorMessage: '$e'));
+      return e;
+    } finally {
+      _scan = null;
     }
   }
 
   /// Joins [ssid] with optional [psk].
   ///
-  /// A backend/transient failure (see [classifyWifiJoinFailure]) is retried
-  /// here with backoff — bounded by the cubit's retry schedule, never forever
-  /// — because a #824-shaped race is fixed by a second activation, not by a
-  /// new password. Only a genuine credential rejection surfaces as one.
+  /// A failed connection ([WifiJoinError.noConnection]) is retried here with
+  /// backoff — bounded by the cubit's retry schedule, never forever — because
+  /// a #824-shaped race is fixed by a second activation, not by a new
+  /// password. The helper says why a join failed (#1817); only a key the
+  /// access point refused reads as a wrong password.
   Future<void> connect(String ssid, {String? psk}) async {
     if (!state.supported) return;
-    // A password typed moments ago is the context that makes a `no-secrets`
-    // failure plausibly about the password (#829).
-    final interactive = psk != null && psk.isNotEmpty;
+    _failedJoin = null;
     // This call owns the join until a newer connect (or a cancel) bumps the
     // generation. Every await below re-checks it: a stale loop must neither
     // re-activate nor emit — even for the same SSID, where the old
@@ -187,18 +337,14 @@ class WifiCubit extends Cubit<WifiState> {
         }
         return;
       }
-      final kind = classifyWifiJoinFailure(
-        raw: '$error',
-        interactive: interactive,
-      );
+      final kind = error is WifiHelperException
+          ? error.join ?? WifiJoinError.noConnection
+          : WifiJoinError.noConnection;
       // A failed join on a console that was on another network has brought
       // that network back (#1270 D13). Retrying would drop it again for a
-      // join that already failed once — for a wrong key, twice more.
+      // join that already failed once.
       final restored = error is WifiHelperException && error.restored != null;
-      final retryable =
-          !restored &&
-          (kind == WifiJoinErrorKind.transient ||
-              kind == WifiJoinErrorKind.timeout);
+      final retryable = !restored && kind == WifiJoinError.noConnection;
       if (retryable && attempt < _retryDelays.length) {
         emit(state.copyWith(retrying: true));
         await Future<void>.delayed(_retryDelays[attempt]);
@@ -218,6 +364,9 @@ class WifiCubit extends Cubit<WifiState> {
       // Guarded here: the refresh above is itself an await, so it re-opens
       // the race.
       if (abandoned()) return;
+      if (kind != WifiJoinError.wrongPassword) {
+        _failedJoin = (ssid: ssid, psk: psk);
+      }
       emit(
         state.copyWith(
           status: status,
@@ -225,12 +374,21 @@ class WifiCubit extends Cubit<WifiState> {
           clearConnectingSsid: true,
           disconnecting: false,
           errorMessage: '$error',
-          errorKind: kind,
+          joinError: kind,
           failedSsid: ssid,
         ),
       );
       return;
     }
+  }
+
+  /// Joins the network whose join failed last again, with the key it was
+  /// given: the card's Try again. A wrong password is not retried; it goes
+  /// back to the password sheet.
+  Future<void> retry() async {
+    final failed = _failedJoin;
+    if (failed == null || state.failedSsid != failed.ssid) return;
+    await connect(failed.ssid, psk: failed.psk);
   }
 
   /// One helper join for the [connect] of generation [gen]: the error it
@@ -466,8 +624,8 @@ class WifiCubit extends Cubit<WifiState> {
   ///
   /// A network the last scan saw is joined with the new key, so it is tested
   /// before it replaces the old one: the helper stores a key only once it
-  /// works, and a failure reads as "Incorrect password" and brings back the
-  /// previous connection. A network out of range cannot be tested, so the key
+  /// works, and a failure keeps the old key and brings back the previous
+  /// connection. A network out of range cannot be tested, so the key
   /// is only stored.
   Future<void> changePassword(String ssid, String psk) async {
     if (!state.supported) return;
@@ -483,21 +641,6 @@ class WifiCubit extends Cubit<WifiState> {
       if (isClosed) return;
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
-  }
-
-  /// Re-reads the association, then checks the internet — the page's
-  /// periodic look while it is open. Quiet: it shows no busy state, and a
-  /// failed read keeps what is on screen.
-  Future<void> refresh() async {
-    if (!state.supported || state.busy) return;
-    try {
-      final status = await _repository.status();
-      if (isClosed) return;
-      emit(state.copyWith(status: status));
-    } on Object {
-      return;
-    }
-    await checkConnectivity();
   }
 
   /// Asks whether the internet answers over the current connection, at most
