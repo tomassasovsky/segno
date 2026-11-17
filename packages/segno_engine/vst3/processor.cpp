@@ -85,6 +85,8 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
   sr_ = (int32_t)std::lround(setup.sampleRate);
   if (sr_ <= 0) sr_ = 48000;
   latency_ = segno_fx_latency(kind_->type, sr_);
+  /* A rate past the ones reported_ covers can need more. */
+  reported_ = std::max(reported_, latency_);
   return kResultOk;
 }
 
