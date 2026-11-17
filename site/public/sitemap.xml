@@ -3,4 +3,12 @@
   <url>
     <loc>https://segno.aquiles.dev/</loc>
   </url>
+  <url>
+    <loc>https://segno.aquiles.dev/log/</loc>
+    <lastmod>2026-11-17</lastmod>
+  </url>
+  <url>
+    <loc>https://segno.aquiles.dev/log/sample-entry/</loc>
+    <lastmod>2026-11-17</lastmod>
+  </url>
 </urlset>

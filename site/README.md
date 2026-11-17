@@ -2,25 +2,74 @@
 
 # Segno website
 
-The one-page site at <https://segno.aquiles.dev>. It is plain HTML and CSS with
-no build step and no JavaScript.
+The site at <https://segno.aquiles.dev>: one page and a devlog. It is plain
+HTML and CSS with no JavaScript, and the server serves the files in `public/`
+as they are committed.
 
 ```
 public/index.html   the page
 public/404.html     the not-found page
 public/styles.css   light and dark palettes, phone layout
-public/robots.txt   and sitemap.xml
+public/robots.txt   and sitemap.xml (written by build_log.py)
+public/log/         the devlog pages (written by build_log.py)
+public/feed.xml     the devlog's RSS feed (written by build_log.py)
 public/img/         console renders, UI captures, the board view (WebP)
 public/fonts/       Inter and JetBrains Mono, subset to Latin-1 (OFL)
+log/                the devlog entries, in Markdown
 nginx.conf          the server block inside the image
 Dockerfile          nginx:alpine with public/ baked in
 stamp.py            versions asset references by content hash
+build_log.py        builds the devlog pages, the feed and the sitemap
 ```
+
+## Devlog
+
+The devlog lives at `/log/`, with an RSS feed at `/feed.xml`. To add an entry,
+write `log/YYYY-MM-DD-slug.md`:
+
+```markdown
+---
+title: What changed this week
+date: 2026-11-24
+summary: One or two sentences. They show in the list, the feed and link previews.
+---
+
+The body, in Markdown.
+```
+
+Then build and commit the Markdown together with the output:
+
+```bash
+python3 site/build_log.py
+```
+
+The entry is published at `/log/<slug>/`, so the slug is permanent once the
+entry is live. The date in the front matter must match the file name. To
+remove an entry, delete its Markdown and run the script again; it deletes the
+page.
+
+The script supports a small part of Markdown: paragraphs, `##` to `####`
+headings (the title is the page's only `#`), lists, block quotes, fenced code,
+inline code, links, `<https://…>` links, `**bold**` and `*emphasis*`. A
+picture goes on a line of its own, with alt text and an optional caption, and
+follows the rules under [Pictures](#pictures):
+
+```markdown
+![What the picture shows.](/img/name-1200.webp "Render of the console design. This is not a photo.")
+```
+
+HTML in an entry is shown as text, not passed through. The header links and
+the footer are copied from `public/index.html`, so after changing either one,
+run the script.
+
+The Site workflow runs `python3 site/build_log.py --check` and fails when the
+committed output does not match the entries.
 
 ## Asset versions
 
 Every reference to a local asset carries `?v=<hash>`, and nginx caches assets
-for a year. After changing any file under `public/`, run:
+for a year. After changing any file under `public/`, run (it covers the devlog
+pages too):
 
 ```bash
 python3 site/stamp.py

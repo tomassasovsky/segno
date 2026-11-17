@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Segno devlog</title>
+    <link>https://segno.aquiles.dev/log/</link>
+    <description>Progress notes on Segno, an open-source live looping appliance: the console, the audio engine, the firmware and the Flutter interface.</description>
+    <language>en</language>
+    <lastBuildDate>Tue, 17 Nov 2026 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://segno.aquiles.dev/feed.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>Sample entry: how the devlog is built</title>
+      <link>https://segno.aquiles.dev/log/sample-entry/</link>
+      <guid isPermaLink="true">https://segno.aquiles.dev/log/sample-entry/</guid>
+      <pubDate>Tue, 17 Nov 2026 00:00:00 +0000</pubDate>
+      <description>A sample entry for reviewing the devlog. It shows every piece of Markdown the generator supports, and it is deleted before the pull request merges.</description>
+      <content:encoded><![CDATA[<p><strong>This is a sample entry.</strong> It exists so the pull request that adds the devlog has something to show. Delete <code>site/log/2026-11-17-sample-entry.md</code> and run <code>python3 site/build_log.py</code> before merging.</p>
+<h2>Where entries come from</h2>
+<p>Each entry is a Markdown file in <a href="https://github.com/tomassasovsky/segno/tree/master/site/log"><code>site/log/</code></a>, named by date and slug. A short Python script turns the files into:</p>
+<ul>
+<li>one page per entry, under <code>/log/&lt;slug&gt;/</code></li>
+<li>the list of entries at <code>/log/</code>, newest first</li>
+<li>an RSS feed at <code>/feed.xml</code>, and the sitemap</li>
+</ul>
+<p>The generated pages are committed, so the server still serves plain files and the site keeps its rule of no JavaScript.</p>
+<h2>Adding an entry</h2>
+<ol>
+<li>Write <code>site/log/YYYY-MM-DD-slug.md</code> with a title, a date and a summary.</li>
+<li>Run the script.</li>
+<li>Commit the Markdown and the output together.</li>
+</ol>
+<pre><code class="language-bash">python3 site/build_log.py
+python3 site/build_log.py --check</code></pre>
+<h3>Pictures</h3>
+<p>A picture goes on a line of its own, with alt text and an optional caption. Label it for what it is, as the rest of the site does.</p>
+<figure><img src="https://segno.aquiles.dev/img/console-iso-1200.webp?v=d8154f14" alt="The Segno console seen from above at an angle, with ten footswitches and two screens." loading="lazy"><figcaption>Render of the console design from Autodesk Fusion. This is not a photo.</figcaption></figure>
+<blockquote>
+<p>A quote goes in a block like this one, and <em>emphasis</em> and links such as <a href="https://segno.aquiles.dev">https://segno.aquiles.dev</a> work inside it.</p>
+</blockquote>]]></content:encoded>
+    </item>
+  </channel>
+</rss>
