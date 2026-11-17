@@ -1,6 +1,7 @@
 #include "fx_slot.h"
 
 #include <stdatomic.h>
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -173,7 +174,7 @@ int32_t segno_fx_latency(int32_t type, int32_t sr) {
   return latency;
 }
 
-int32_t segno_fx_reported_latency(int32_t type) {
+int32_t segno_fx_largest_latency(int32_t type) {
   /* -1 until worked out; a race works it out twice to the same value. */
   static _Atomic int32_t known[LE_FX_WIDTHS];
   static _Atomic int ready;

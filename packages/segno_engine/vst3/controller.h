@@ -1,6 +1,6 @@
 /*
  * controller.h — a Segno plugin's edit controller: the kind's settings,
- * the entry's channel handling and its bypass as host parameters
+ * the entry's channel handling and its switch (Enabled) as host parameters
  * (params.h), each value shown in the unit the console shows it in
  * (le_fx_param_info). Its editor is the kind's pedal (editor.h).
  */

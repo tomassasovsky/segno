@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:daw_export/src/automation_thinning.dart';
+import 'package:daw_export/src/chain_timeline.dart';
 import 'package:daw_export/src/daw_project.dart';
 import 'package:daw_export/src/device_chain.dart';
 import 'package:daw_export/src/effect_text.dart';
@@ -224,7 +225,11 @@ abstract final class DawManifestReader {
               volume: volume,
               devices: dry == null
                   ? const []
-                  : _laneDevices(armTracks, channel, lane, armTime),
+                  : _laneDevices(armTracks, channel, lane, armTime, (
+                      entries: logEntries,
+                      sampleRate: sampleRate,
+                      tempoBpm: effectiveTempoBpm,
+                    )),
               info: info,
             ),
           );
@@ -264,9 +269,14 @@ abstract final class DawManifestReader {
           : null;
       if (raw != null) {
         // The raw recording plays through the monitor chain the take
-        // started with, as Segno's plugins (#1804); its volume, pan and
-        // switching are not replayed yet.
-        final devices = _inputDevices(manifest, input, armTime);
+        // started with, as Segno's plugins (#1804), with the chain's
+        // switching and setting changes as their automation (#1836). The
+        // monitor's own volume, pan and on/off are not replayed yet.
+        final devices = _inputDevices(manifest, input, armTime, (
+          entries: logEntries,
+          sampleRate: sampleRate,
+          tempoBpm: effectiveTempoBpm,
+        ));
         tracks.add(
           DawTrack(
             name: '$name raw',
@@ -311,21 +321,37 @@ abstract final class DawManifestReader {
   }
 
   /// Lane [lane] of looper track [channel]'s chain at arm as Live devices,
-  /// each plugin placed in time by [armTime].
+  /// each plugin placed in time by [armTime], with its switching and
+  /// setting changes from [replay].
   static List<DawDevice> _laneDevices(
     List<Map<String, dynamic>> armTracks,
     int channel,
     int lane,
     ({int clock, double beat}) armTime,
+    _Replay replay,
   ) {
     for (final t in armTracks) {
       final lanes = t['lanes'];
       if (t['channel'] != channel || lanes is! List) continue;
       for (final entry in lanes) {
         if (entry is! Map<String, dynamic> || entry['lane'] != lane) continue;
+        final effects = entry['effects'];
+        final chainEnabled = entry['chainEnabled'] != false;
+        final log = replay.entries;
         return devicesOfChain(
-          entry['effects'],
-          chainEnabled: entry['chainEnabled'] != false,
+          effects,
+          chainEnabled: chainEnabled,
+          timeline: log == null
+              ? null
+              : ChainTimeline.lane(
+                  log,
+                  channel,
+                  lane,
+                  effects: effects,
+                  chainEnabled: chainEnabled,
+                  sampleRate: replay.sampleRate,
+                  tempoBpm: replay.tempoBpm,
+                ),
           origin: ChainOrigin.lane(
             channel,
             lane,
@@ -365,11 +391,12 @@ abstract final class DawManifestReader {
   }
 
   /// Input [input]'s monitor chain at arm as Live devices, placed in time
-  /// by [armTime].
+  /// by [armTime], with its switching and setting changes from [replay].
   static List<DawDevice> _inputDevices(
     Map<String, dynamic> manifest,
     int input,
     ({int clock, double beat}) armTime,
+    _Replay replay,
   ) {
     final arm = manifest['armSnapshot'];
     final monitors = arm is Map<String, dynamic> ? arm['monitors'] : null;
@@ -377,9 +404,22 @@ abstract final class DawManifestReader {
       if (monitor is! Map<String, dynamic> || monitor['input'] != input) {
         continue;
       }
+      final effects = monitor['effects'];
+      final chainEnabled = monitor['chainEnabled'] != false;
+      final log = replay.entries;
       return devicesOfChain(
-        monitor['effects'],
-        chainEnabled: monitor['chainEnabled'] != false,
+        effects,
+        chainEnabled: chainEnabled,
+        timeline: log == null
+            ? null
+            : ChainTimeline.monitor(
+                log,
+                input,
+                effects: effects,
+                chainEnabled: chainEnabled,
+                sampleRate: replay.sampleRate,
+                tempoBpm: replay.tempoBpm,
+              ),
         origin: ChainOrigin.monitor(
           input,
           clockOffset: armTime.clock,
@@ -583,3 +623,12 @@ abstract final class DawManifestReader {
 /// One lane's loops in `loops/`: its clean take, the loop as it played, and
 /// the manifest's length for them, if it has one.
 typedef _LaneLoops = ({String clean, String heard, int? frames});
+
+/// What a chain's changes are read from: the take's `events.log` entries,
+/// or `null` for a take without one, and the rate and tempo that place
+/// them in beats.
+typedef _Replay = ({
+  List<RawLogEntry>? entries,
+  int sampleRate,
+  double tempoBpm,
+});

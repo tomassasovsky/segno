@@ -18,7 +18,7 @@ import 'vst3_faces.dart';
 
 /// The layout Segno.vst3's editors read (#1815) and the value texts its
 /// plugins print: the committed [kVst3FacesManifest] is what the console's
-/// drawing code lays out now, every parameter but the bypass has exactly
+/// drawing code lays out now, every parameter but the switch has exactly
 /// one control, and [kVst3ValueTexts] is what the console prints for every
 /// parameter.
 ///
@@ -62,7 +62,7 @@ void main() {
     );
   });
 
-  test('every parameter but the bypass has exactly one control', () {
+  test('every parameter but the switch has exactly one control', () {
     final manifest = jsonDecode(
       File('${repoRoot.path}/$kVst3FacesManifest').readAsStringSync(),
     ) as Map<String, Object?>;
@@ -95,11 +95,11 @@ void main() {
           for (final c in controls)
             if (c['control'] == 'footswitch') c['param'],
         ],
-        [kVst3BypassId],
-        reason: '${type.label}: one footswitch, the bypass',
+        [kVst3EnabledId],
+        reason: '${type.label}: one footswitch, the switch',
       );
       expect(
-        playing.toSet().difference({...ids, kVst3BypassId}),
+        playing.toSet().difference({...ids, kVst3EnabledId}),
         isEmpty,
         reason: '${type.label}: every control drives a parameter',
       );
