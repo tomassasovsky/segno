@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
     if ((view != nullptr) != wanted) {
       fail(kind.type, wanted ? "no editor" : "an editor without a face", -1);
     }
-    if (view != nullptr) {
+    if (view != nullptr && face != faceOf.end()) {
       ViewRect r;
       view->getSize(&r);
       const le_json_value* size = le_json_get(face->second, "size");
@@ -167,8 +167,8 @@ int main(int argc, char** argv) {
           r.getHeight() != (int32)le_json_number(le_json_at(size, 1), 0)) {
         fail(kind.type, "editor size differs from the layout", -1);
       }
-      view->release();
     }
+    if (view != nullptr) view->release();
   }
 
   std::printf("%zu faces, %d controls, editors %s: %s\n", faceOf.size(), controls,

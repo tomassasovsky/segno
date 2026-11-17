@@ -29,7 +29,12 @@ namespace segno_vst3 {
 Steinberg::IPlugView* createFaceEditor(Steinberg::Vst::EditController* controller,
                                        int32_t type);
 
-/* Redraws [editor], one createFaceEditor made, after a parameter changed. */
-void refreshFaceEditor(Steinberg::Vst::EditorView* editor);
+/* Whether this is the thread an editor lives on (the main thread), where a
+ * host calls the controller (VST3) and the controller may touch it. */
+bool onEditorThread();
+
+/* Redraws what shows [param] in [editor], one createFaceEditor made. On the
+ * editor's thread only. */
+void refreshFaceEditor(Steinberg::Vst::EditorView* editor, Steinberg::Vst::ParamID param);
 
 }  // namespace segno_vst3

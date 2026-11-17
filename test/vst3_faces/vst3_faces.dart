@@ -78,10 +78,10 @@ List<TrackEffectType> get vst3Kinds => [
 ///
 /// A standalone built-in wears its [kFxBuiltInLooks] look and prints its own
 /// name, as the console's single effects do. Any other kind wears the look of
-/// the first catalogue module that runs on it (the console draws such an
-/// entry only in a rack, with that module's look), and shows its kind's own
-/// settings, as an entry built as no rack variant does: a plugin's
-/// parameters are its kind's.
+/// the first catalogue module with a pedal that runs on it (the console draws
+/// such an entry only in a rack, with that module's look), and shows its
+/// kind's own settings, as an entry built as no rack variant does: a
+/// plugin's parameters are its kind's.
 BuiltInEffect? vst3FaceEffect(TrackEffectType type, {List<double>? params}) {
   if (kFxBuiltInLooks.containsKey(type)) {
     return BuiltInEffect(type: type, params: params);
@@ -94,7 +94,7 @@ BuiltInEffect? vst3FaceEffect(TrackEffectType type, {List<double>? params}) {
         params: params,
         module: module.name,
       );
-      return fxEntryArt(entry, live: true) == null ? null : entry;
+      if (fxEntryArt(entry, live: true) != null) return entry;
     }
   }
   return null;

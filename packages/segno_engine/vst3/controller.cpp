@@ -236,7 +236,9 @@ IPlugView* PLUGIN_API Controller::createView(FIDString name) {
 tresult PLUGIN_API Controller::setParamNormalized(ParamID tag, ParamValue value) {
   const tresult result = EditController::setParamNormalized(tag, value);
 #ifdef __APPLE__
-  if (editor_ != nullptr) refreshFaceEditor(editor_);
+  // A host calls here from its UI thread, where the editor lives; a call
+  // from any other thread leaves the editor alone.
+  if (onEditorThread() && editor_ != nullptr) refreshFaceEditor(editor_, tag);
 #endif
   return result;
 }

@@ -42,6 +42,8 @@ struct FaceControl {
   ParamID param;
   NSRect rect;
   int frames = 0;
+  int32 steps = 0;     /* the parameter's step count: 0 when continuous */
+  double initial = 0;  /* its default, which a double click restores */
   NSRect track = NSZeroRect;
   std::vector<NSRect> buttons;
   NSArray<NSString*>* names = nil;
@@ -100,8 +102,21 @@ NSArray<NSImage*>* loadPictures(NSString* dir, NSString* name, NSSize size, int 
   return pictures;
 }
 
-/* The face of engine type [type] from the bundle's faces, or false. */
-bool loadFace(int32_t type, Face& face) {
+/* [param]'s info from [controller], or false when it has no such
+ * parameter. */
+bool infoOf(EditController* controller, ParamID param, ParameterInfo& info) {
+  const int32 n = controller->getParameterCount();
+  for (int32 i = 0; i < n; ++i) {
+    if (controller->getParameterInfo(i, info) == kResultOk && info.id == param) return true;
+  }
+  return false;
+}
+
+/* The face of engine type [type] from the bundle's faces, or false: also
+ * when a control names a parameter [controller] does not have, or its
+ * entry cannot be played (a selector with fewer than two positions, a
+ * slider without a track). */
+bool loadFace(EditController* controller, int32_t type, Face& face) {
   if (ghInst == nullptr) return false;
   CFURLRef resources = CFBundleCopyResourcesDirectoryURL(ghInst);
   if (resources == nullptr) return false;
@@ -152,6 +167,26 @@ bool loadFace(int32_t type, Face& face) {
     if (c[@"track"] != nil) control.track = rectFrom(c[@"track"]);
     for (id b in c[@"buttons"]) control.buttons.push_back(rectFrom(b));
     control.names = c[@"names"];
+    ParameterInfo info{};
+    if (!infoOf(controller, control.param, info)) return false;
+    control.steps = info.stepCount;
+    control.initial = info.defaultNormalizedValue;
+    const bool playable = [&] {
+      switch (control.kind) {
+        case ControlKind::knob:
+          return control.frames >= 2;
+        case ControlKind::slider:
+          return control.frames >= 2 && NSWidth(control.track) > 0;
+        case ControlKind::buttons:
+          return control.frames >= 2 && control.buttons.size() == (size_t)control.frames;
+        case ControlKind::select:
+          return control.frames >= 2 && control.names.count == (NSUInteger)control.frames;
+        case ControlKind::footswitch:
+          return true;
+      }
+      return false;
+    }();
+    if (!playable || NSIsEmptyRect(control.rect)) return false;
     if (control.frames > 0) {
       control.pictures =
           loadPictures(dir, [NSString stringWithFormat:@"%@_%d", stem, i], control.rect.size,
@@ -175,8 +210,9 @@ bool loadFace(int32_t type, Face& face) {
   Face _face;
   EditController* _controller; /* outlives the view: the editor holds it */
   const FaceControl* _dragging;
-  double _dragStart; /* the value when the drag began */
+  double _dragStart; /* the value where the drag's travel is measured from */
   NSPoint _dragFrom;
+  BOOL _dragFine; /* whether Shift was down at _dragFrom */
 }
 
 - (instancetype)initWithFace:(Face)face controller:(EditController*)controller {
@@ -208,7 +244,14 @@ bool loadFace(int32_t type, Face& face) {
   if (value == [self valueOf:param]) return;
   _controller->setParamNormalized(param, value);
   _controller->performEdit(param, value);
-  [self setNeedsDisplay:YES];
+}
+
+/* Redraws what shows [param]: its controls, and the LED for the bypass. */
+- (void)redraw:(ParamID)param {
+  if (param == segno_vst3::kBypassId) [self setNeedsDisplayInRect:_face.led];
+  for (const FaceControl& c : _face.controls) {
+    if (c.param == param && c.pictures != nil) [self setNeedsDisplayInRect:c.rect];
+  }
 }
 
 /* One edit, from a click. */
@@ -219,20 +262,11 @@ bool loadFace(int32_t type, Face& face) {
   _controller->endEdit(param);
 }
 
-/* [v] at the nearest of [param]'s positions, when it has any. */
-- (double)snap:(double)v param:(ParamID)param {
-  ParameterInfo info{};
-  if (![self infoOf:param into:info] || info.stepCount == 0) return v;
-  const double last = info.stepCount;
+/* [v] at the nearest of [c]'s parameter's positions, when it has any. */
+- (double)snap:(double)v control:(const FaceControl&)c {
+  if (c.steps == 0) return v;
+  const double last = c.steps;
   return std::round(std::clamp(v, 0.0, 1.0) * last) / last;
-}
-
-- (BOOL)infoOf:(ParamID)param into:(ParameterInfo&)info {
-  const int32 n = _controller->getParameterCount();
-  for (int32 i = 0; i < n; ++i) {
-    if (_controller->getParameterInfo(i, info) == kResultOk && info.id == param) return YES;
-  }
-  return NO;
 }
 
 - (void)drawRect:(NSRect)dirty {
@@ -284,17 +318,17 @@ bool loadFace(int32_t type, Face& face) {
       return;
     case ControlKind::knob:
     case ControlKind::slider: {
-      ParameterInfo info{};
-      if (event.clickCount == 2 && [self infoOf:c->param into:info]) {
-        [self edit:c->param to:info.defaultNormalizedValue];
+      if (event.clickCount == 2) {
+        [self edit:c->param to:c->initial];
         return;
       }
       _dragging = c;
       _dragStart = [self valueOf:c->param];
       _dragFrom = p;
+      _dragFine = (event.modifierFlags & NSEventModifierFlagShift) != 0;
       _controller->beginEdit(c->param);
       if (c->kind == ControlKind::slider) {
-        [self set:c->param to:[self snap:[self sliderValue:*c at:p] param:c->param]];
+        [self set:c->param to:[self snap:[self sliderValue:*c at:p] control:*c]];
       }
       return;
     }
@@ -309,9 +343,15 @@ bool loadFace(int32_t type, Face& face) {
   if (c->kind == ControlKind::slider) {
     v = [self sliderValue:*c at:p];
   } else {
-    const double travel =
-        (event.modifierFlags & NSEventModifierFlagShift) ? kKnobTravel * 5 : kKnobTravel;
-    v = _dragStart + (_dragFrom.y - p.y) / travel;
+    const BOOL fine = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+    if (fine != _dragFine) {
+      /* Shift pressed or let go: the drag goes on from where it is, at the
+       * new rate, rather than measuring what was already dragged anew. */
+      _dragStart = [self valueOf:c->param];
+      _dragFrom = p;
+      _dragFine = fine;
+    }
+    v = _dragStart + (_dragFrom.y - p.y) / (fine ? kKnobTravel * 5 : kKnobTravel);
     if (v < 0.0 || v > 1.0) {
       /* Past an end, the drag starts over from there. */
       v = std::clamp(v, 0.0, 1.0);
@@ -319,7 +359,7 @@ bool loadFace(int32_t type, Face& face) {
       _dragFrom = p;
     }
   }
-  [self set:c->param to:[self snap:v param:c->param]];
+  [self set:c->param to:[self snap:v control:*c]];
 }
 
 - (void)mouseUp:(NSEvent*)event {
@@ -386,17 +426,8 @@ class FaceEditor : public EditorView {
     EditorView::removedFromParent();
   }
 
-  void refresh() {
-    SegnoFaceView* view = view_;
-    if (view == nil) return;
-    if ([NSThread isMainThread]) {
-      [view setNeedsDisplay:YES];
-    } else {
-      dispatch_async(dispatch_get_main_queue(), ^{
-        [view setNeedsDisplay:YES];
-      });
-    }
-  }
+  /* On the main thread, where view_ is set and cleared. */
+  void refresh(ParamID param) { [view_ redraw:param]; }
 
  private:
   Face face_;
@@ -407,12 +438,14 @@ class FaceEditor : public EditorView {
 
 IPlugView* createFaceEditor(EditController* controller, int32_t type) {
   Face face;
-  if (!loadFace(type, face)) return nullptr;
+  if (!loadFace(controller, type, face)) return nullptr;
   return new FaceEditor(controller, std::move(face));
 }
 
-void refreshFaceEditor(EditorView* editor) {
-  static_cast<FaceEditor*>(editor)->refresh();
+bool onEditorThread() { return [NSThread isMainThread]; }
+
+void refreshFaceEditor(EditorView* editor, ParamID param) {
+  static_cast<FaceEditor*>(editor)->refresh(param);
 }
 
 }  // namespace segno_vst3

@@ -29,6 +29,9 @@ class Controller : public Steinberg::Vst::EditController {
   void editorRemoved(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE {
     if (editor_ == editor) editor_ = nullptr;
   }
+  void editorDestroyed(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE {
+    if (editor_ == editor) editor_ = nullptr;
+  }
 
  private:
   const FxKind* kind_;
