@@ -33,10 +33,17 @@
  * The capture's PERF_ARMED clock and its tempo anchor at frame 0 are not
  * zero, so the clock offset and beat offset of the state are exercised.
  *
+ * Every case runs at 44.1, 48, 88.2 and 96 kHz, and the plugin's output is
+ * compared with the wet stem at lag 0: a plugin reports no latency (#1836),
+ * so a host plays it as the console played the entry, a kind that delays
+ * its output late by it while on and on time while off.
+ *
  * Usage: segno_vst3_null_test <Segno.vst3> [--kind TYPE] [--block N]
- *        [--keep DIR]
- * Prints one line per kind and case: the peak difference in dBFS ("exact"
- * when bit-identical). Exits non-zero when a difference passes -120 dBFS.
+ *        [--rate HZ] [--keep DIR]
+ * Prints one line per rate, kind and case: the peak difference in dBFS
+ * ("exact" when bit-identical) and the frames the kind delays its output
+ * by. Exits non-zero when a difference passes -120 dBFS or a plugin
+ * reports a latency.
  */
 #include <sys/stat.h>
 #include <unistd.h>
@@ -75,8 +82,11 @@ using namespace Steinberg::Vst;
 
 namespace {
 
-constexpr int32_t kRate = 48000;
-constexpr int32_t kFrames = 6 * kRate;
+/* The rate the test runs at (main runs each of kRates in turn), and the
+ * take's length at it. */
+int32_t gRate = 48000;
+int32_t gFrames = 6 * gRate;
+constexpr int32_t kRates[] = {44100, 48000, 88200, 96000};
 constexpr uint32_t kArmClock = 1234567u;  /* the engine frame of capture frame 0 */
 constexpr double kArmBeat = 37.25;        /* the beat there */
 constexpr double kBpm = 120.0;
@@ -85,15 +95,15 @@ constexpr float kFail = 1e-6f;            /* -120 dBFS */
 /* A take to play through: plucked notes from 82 to 660 Hz with their
  * harmonics, a noise burst, and silence at the end for the tails. */
 std::vector<float> testSignal() {
-  std::vector<float> x(kFrames, 0.0f);
+  std::vector<float> x(gFrames, 0.0f);
   const double notes[] = {82.41, 110.0, 146.83, 196.0, 329.63, 659.26, 98.0, 220.0};
   uint32_t seed = 12345;
   for (int k = 0; k < 8; ++k) {
-    const int start = k * kRate / 2;
-    for (int i = 0; i < kRate; ++i) {
+    const int start = k * gRate / 2;
+    for (int i = 0; i < gRate; ++i) {
       const int f = start + i;
-      if (f >= 4 * kRate) break;
-      const double t = (double)i / kRate;
+      if (f >= 4 * gRate) break;
+      const double t = (double)i / gRate;
       const double env = std::exp(-3.0 * t) * (i < 48 ? i / 48.0 : 1.0);
       double s = 0;
       for (int h = 1; h <= 6; ++h) {
@@ -102,10 +112,10 @@ std::vector<float> testSignal() {
       x[f] += (float)(0.35 * env * s);
     }
   }
-  for (int i = 0; i < kRate / 10; ++i) {
+  for (int i = 0; i < gRate / 10; ++i) {
     seed = seed * 1664525u + 1013904223u;
     const float n = ((int32_t)seed / 2147483648.0f);
-    x[(size_t)(4.2 * kRate) + i] += 0.2f * n * (1.0f - (float)i / (kRate / 10));
+    x[(size_t)(4.2 * gRate) + i] += 0.2f * n * (1.0f - (float)i / (gRate / 10));
   }
   return x;
 }
@@ -119,7 +129,7 @@ void writeWavMono(const std::string& path, const std::vector<float>& x) {
   const uint32_t data = (uint32_t)(x.size() * 4);
   const uint32_t riff = 36 + data;
   const uint16_t fmt = 3, ch = 1, align = 4, bits = 32;
-  const uint32_t fmtLen = 16, rate = kRate, bytes = kRate * 4;
+  const uint32_t fmtLen = 16, rate = gRate, bytes = gRate * 4;
   std::fwrite("RIFF", 1, 4, f);
   std::fwrite(&riff, 4, 1, f);
   std::fwrite("WAVEfmt ", 1, 8, f);
@@ -289,7 +299,7 @@ bool renderEngine(const std::string& dir, int32_t type, const Case& c,
       "false, \"pcmRef\": \"loops/track0-lane0.wav\", \"effects\": [%s{\"type\": "
       "%d, \"params\": %s%s%s%s}]}]}]}, \"disarmSnapshot\": {\"tracks\": []}, "
       "\"layers\": []}",
-      kRate, kFrames, empties.c_str(), type, paramsJson(c.state).c_str(),
+      gRate, gFrames, empties.c_str(), type, paramsJson(c.state).c_str(),
       c.channelsJson[0] ? ", \"channels\": " : "", c.channelsJson,
       c.state.enabled ? "" : ", \"enabled\": false");
   FILE* mf = std::fopen((dir + "/performance.json").c_str(), "wb");
@@ -300,8 +310,8 @@ bool renderEngine(const std::string& dir, int32_t type, const Case& c,
   for (const Change& k : c.changes) {
     if (k.param < c.state.paramCount) changes.push_back({k.frame, k.param, k.value});
   }
-  if (!capture_log_write((dir + "/events.log").c_str(), kRate, kArmClock, kArmBeat,
-                         (float)(kBpm / 60.0 / kRate), changes.data(),
+  if (!capture_log_write((dir + "/events.log").c_str(), gRate, kArmClock, kArmBeat,
+                         (float)(kBpm / 60.0 / gRate), changes.data(),
                          (int)changes.size())) {
     return false;
   }
@@ -387,7 +397,7 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
   processor->setBusArrangements(&stereo, 1, &stereo, 1);
   component->activateBus(kAudio, kInput, 0, true);
   component->activateBus(kAudio, kOutput, 0, true);
-  ProcessSetup setup{kOffline, kSample32, 4096, (double)kRate};
+  ProcessSetup setup{kOffline, kSample32, 4096, (double)gRate};
   processor->setupProcessing(setup);
   component->setActive(true);
   processor->setProcessing(true);
@@ -405,7 +415,7 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
   ProcessContext ctx{};
   ctx.state = ProcessContext::kPlaying | ProcessContext::kTempoValid |
               ProcessContext::kProjectTimeMusicValid | ProcessContext::kTimeSigValid;
-  ctx.sampleRate = kRate;
+  ctx.sampleRate = gRate;
   ctx.tempo = kBpm;
   ctx.timeSigNumerator = 4;
   ctx.timeSigDenominator = 4;
@@ -417,7 +427,7 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
     ProcessContext stopped = ctx;
     stopped.state = ProcessContext::kTempoValid | ProcessContext::kTimeSigValid;
     uint32_t noise = 777;
-    for (int f0 = 0; f0 < kRate; f0 += block) {
+    for (int f0 = 0; f0 < gRate; f0 += block) {
       for (int i = 0; i < block; ++i) {
         noise = noise * 1664525u + 1013904223u;
         inL[i] = inR[i] = 0.3f * ((int32_t)noise / 2147483648.0f);
@@ -459,7 +469,7 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
       }
     }
     ctx.projectTimeSamples = (TSamples)f0;
-    ctx.projectTimeMusic = (double)f0 * kBpm / 60.0 / kRate;
+    ctx.projectTimeMusic = (double)f0 * kBpm / 60.0 / gRate;
     ProcessData data{};
     data.processMode = kOffline;
     data.symbolicSampleSize = kSample32;
@@ -506,7 +516,7 @@ std::vector<Case> casesFor(int32_t type, int32_t width, int32_t block) {
   /* A frame near [seconds] on a block boundary, or [into] frames into
    * that block. */
   const auto near = [block](double seconds, int32_t into) {
-    return (int32_t)(seconds * kRate) / block * block + into;
+    return (int32_t)(seconds * gRate) / block * block + into;
   };
   const int32_t inside = block / 2 > 0 ? block / 2 : 1;
   const int32_t offAgain = near(3.5, inside / 2 + 1);
@@ -523,7 +533,7 @@ std::vector<Case> casesFor(int32_t type, int32_t width, int32_t block) {
         {near(2.0, 0), -1, 0.0f},
         {near(3.0, inside), -1, 1.0f},
         {offAgain, -1, 0.0f},
-        {offAgain + kRate / 1000, -1, 1.0f}}},
+        {offAgain + gRate / 1000, -1, 1.0f}}},
       {"starts-off", off, "", {{near(1.0, inside), -1, 1.0f}}, true},
   };
 }
@@ -532,15 +542,17 @@ std::vector<Case> casesFor(int32_t type, int32_t width, int32_t block) {
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: %s <Segno.vst3> [--kind TYPE] [--block N] [--keep DIR]\n",
+    std::fprintf(stderr, "usage: %s <Segno.vst3> [--kind TYPE] [--block N] [--rate HZ] [--keep DIR]\n",
                  argv[0]);
     return 2;
   }
   int onlyKind = 0;
   int block = 128;
+  int onlyRate = 0;
   std::string keep;
   for (int i = 2; i + 1 < argc; i += 2) {
     if (std::strcmp(argv[i], "--kind") == 0) onlyKind = std::atoi(argv[i + 1]);
+    if (std::strcmp(argv[i], "--rate") == 0) onlyRate = std::atoi(argv[i + 1]);
     if (std::strcmp(argv[i], "--block") == 0) block = std::atoi(argv[i + 1]);
     if (std::strcmp(argv[i], "--keep") == 0) keep = argv[i + 1];
   }
@@ -570,71 +582,64 @@ int main(int argc, char** argv) {
       if (!dir.empty()) std::filesystem::remove_all(dir);
     }
   } cleanup{keep.empty() ? root : std::string()};
-  const std::vector<float> input = testSignal();
   int failures = 0;
-  std::printf("%-22s %-10s %10s %10s %10s %8s\n", "kind", "case", "residual",
-              "wet peak", "wet - dry", "latency");
-  for (const segno_vst3::FxKind& kind : segno_vst3::kFxKinds) {
-    if (onlyKind != 0 && kind.type != onlyKind) continue;
-    const int32_t width = segno_fx_width(kind.type);
-    for (const Case& c : casesFor(kind.type, width, block)) {
-      const std::string dir = root + "/" + std::to_string(kind.type) + "-" + c.name;
-      std::vector<float> dry, wet, plugin;
-      if (!renderEngine(dir, kind.type, c, input, dry, wet)) {
-        std::printf("%-22s %-10s engine render failed\n", kind.name, c.name);
-        ++failures;
-        continue;
-      }
-      std::string why;
-      int reported = 0;
-      if (!renderPlugin(module, kind, c, dry, block, plugin, reported, why)) {
-        std::printf("%-22s %-10s plugin failed: %s\n", kind.name, c.name, why.c_str());
-        ++failures;
-        continue;
-      }
-      int latency = 0;
-      {
-        segno_fx_slot_config probe{};
-        probe.type = kind.type;
-        probe.slot = c.state.slot;
-        probe.sr = kRate;
-        probe.level = 1.0f;
-        probe.enabled = 1;
-        segno_fx_slot* slot = segno_fx_slot_new(&probe);
-        latency = segno_fx_slot_latency(slot);
-        segno_fx_slot_free(slot);
-      }
-      /* The plugin reports its latency at every rate, the kind's largest
-       * (processor.h), and delays its output by the rest. */
-      const size_t pad = reported >= latency ? (size_t)(reported - latency) : 0;
-      float worst = 0.0f, peak = 0.0f, effect = 0.0f;
-      size_t at = 0;
-      for (size_t i = 0; i + pad < wet.size(); ++i) {
-        const float d = std::fabs(plugin[i + pad] - wet[i]);
-        if (d > worst) {
-          worst = d;
-          at = i;
+  for (const int32_t rate : kRates) {
+    if (onlyRate != 0 && rate != onlyRate) continue;
+    gRate = rate;
+    gFrames = 6 * rate;
+    const std::vector<float> input = testSignal();
+    std::printf("%-22s %-10s %10s %10s %10s %8s  at %d Hz\n", "kind", "case",
+                "residual", "wet peak", "wet - dry", "latency", rate);
+    for (const segno_vst3::FxKind& kind : segno_vst3::kFxKinds) {
+      if (onlyKind != 0 && kind.type != onlyKind) continue;
+      const int32_t width = segno_fx_width(kind.type);
+      for (const Case& c : casesFor(kind.type, width, block)) {
+        const std::string dir = root + "/" + std::to_string(rate) + "-" +
+                                std::to_string(kind.type) + "-" + c.name;
+        std::vector<float> dry, wet, plugin;
+        if (!renderEngine(dir, kind.type, c, input, dry, wet)) {
+          std::printf("%-22s %-10s engine render failed\n", kind.name, c.name);
+          ++failures;
+          continue;
         }
-        peak = std::fmax(peak, std::fabs(wet[i]));
-        effect = std::fmax(effect, std::fabs(wet[i] - dry[i]));
+        std::string why;
+        int reported = 0;
+        if (!renderPlugin(module, kind, c, dry, block, plugin, reported, why)) {
+          std::printf("%-22s %-10s plugin failed: %s\n", kind.name, c.name, why.c_str());
+          ++failures;
+          continue;
+        }
+        /* The frames the kind delays its output by, shown: the plugin
+         * plays that delay as the engine does, and reports none. */
+        const int32_t latency = segno_fx_latency(kind.type, rate);
+        float worst = 0.0f, peak = 0.0f, effect = 0.0f;
+        size_t at = 0;
+        for (size_t i = 0; i < wet.size(); ++i) {
+          const float d = std::fabs(plugin[i] - wet[i]);
+          if (d > worst) {
+            worst = d;
+            at = i;
+          }
+          peak = std::fmax(peak, std::fabs(wet[i]));
+          effect = std::fmax(effect, std::fabs(wet[i] - dry[i]));
+        }
+        char residual[32];
+        if (worst == 0.0f) {
+          std::snprintf(residual, sizeof(residual), "exact");
+        } else {
+          std::snprintf(residual, sizeof(residual), "%.1f dB", 20.0 * std::log10(worst));
+        }
+        std::printf("%-22s %-10s %10s %7.1f dB %7.1f dB %8d", kind.name, c.name,
+                    residual, 20.0 * std::log10(std::fmax(peak, 1e-12f)),
+                    20.0 * std::log10(std::fmax(effect, 1e-12f)), latency);
+        if (worst > kFail || reported != 0) {
+          if (reported != 0) std::printf("  reports latency %d", reported);
+          std::printf("  FAIL (first at frame %zu)", at);
+          ++failures;
+        }
+        std::printf("\n");
+        if (!keep.empty()) writeWavMono(dir + "/plugin.wav", plugin);
       }
-      char residual[32];
-      if (worst == 0.0f) {
-        std::snprintf(residual, sizeof(residual), "exact");
-      } else {
-        std::snprintf(residual, sizeof(residual), "%.1f dB", 20.0 * std::log10(worst));
-      }
-      std::printf("%-22s %-10s %10s %7.1f dB %7.1f dB %8d", kind.name, c.name,
-                  residual, 20.0 * std::log10(std::fmax(peak, 1e-12f)),
-                  20.0 * std::log10(std::fmax(effect, 1e-12f)), reported);
-      const int largest = std::max((int)segno_fx_reported_latency(kind.type), latency);
-      if (worst > kFail || reported != largest) {
-        if (reported != largest) std::printf("  reports latency %d", reported);
-        std::printf("  FAIL (first at frame %zu)", at);
-        ++failures;
-      }
-      std::printf("\n");
-      if (!keep.empty()) writeWavMono(dir + "/plugin.wav", plugin);
     }
   }
   std::printf(failures ? "%d FAILED\n" : "ALL PASSED\n", failures);

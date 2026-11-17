@@ -19,7 +19,6 @@
 #pragma once
 
 #include <mutex>
-#include <vector>
 
 #include "fx_slot.h"
 #include "public.sdk/source/vst/vstaudioeffect.h"
@@ -78,17 +77,9 @@ class Processor : public Steinberg::Vst::AudioEffect {
   std::mutex pendingLock_;
 
   segno_fx_slot* slot_ = nullptr;
-  /* Frames the kind delays its output by at this rate. */
+  /* Frames the kind delays its output by at this rate: its tail past
+   * its input. The plugin reports no latency (getLatencySamples). */
   int32_t latency_ = 0;
-  /* The latency the plugin reports: the kind's largest at any rate the
-   * engine runs at (segno_fx_reported_latency), the same whatever the
-   * rate, so a host
-   * that asked before the rate changed (Live asks at its device's rate and
-   * not again for an export at another) compensates it right. The output
-   * is delayed by the difference (padLine_). */
-  int32_t reported_ = 0;
-  std::vector<float> padLine_[2];
-  int32_t padPos_ = 0;
   /* The slot's tempo: quarter notes a frame and the time signature. */
   float qpf_ = 0.0f;
   int32_t num_ = 4;

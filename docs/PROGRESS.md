@@ -130,16 +130,26 @@ a take's chains, where it used to hold each effect as it stood at arm.
   drain, a fresh start on a re-enable from a settled switch-off, and for a
   kind that delays its output (the octavers, Overdrive, Distortion, Amp)
   its warm-up and, while off, its input without the delay. The plugin used
-  to switch such a kind to its input delayed by its latency. The pedal's footswitch
-  and LED drive Enabled; an exported device stays on in Live.
+  to switch such a kind to its input delayed by its latency. The pedal's
+  footswitch and LED drive Enabled; an exported device stays on in Live.
+- Every plugin reports no latency (owner call, reversing #1804 part 2's
+  reported latency and its padding to the largest at any rate). The console
+  compensates no effect's latency: a kind that delays its output (the
+  octavers, 1188 to 2568 frames from 44.1 to 96 kHz, about 25 ms; the
+  Overdrive, Distortion and Amp, a few frames) plays late by it while on
+  and on time while off. Unreported, Live plays each lane exactly as the console
+  did in both states, and a render nulls against "as heard" at offset 0
+  for every chain. A plugin added by hand in Live behaves the same: the
+  octaver family sounds about 25 ms late while on, uncompensated.
 - When the host starts playing, the values it sets at the block's first
   frame land before the plugin starts again as at arm, so a plugin
   automated off at the start starts settled off.
 - The null test (`vst3/test/null_test.cpp`) switches through Enabled on a
   block boundary and inside a block, off and on again 1 ms apart (inside
-  the ramp), and from an entry off at arm that the host turns on; every
-  kind is bit-identical to the engine's offline render at 37-, 128- and
-  512-frame blocks, the latency-bearing kinds included.
+  the ramp), and from an entry off at arm that the host turns on; at 44.1,
+  48, 88.2 and 96 kHz, every kind is bit-identical to the engine's offline
+  render at lag 0, at 37-, 128- and 512-frame blocks, the latency-bearing
+  kinds included, and reports no latency.
 - `test/corpus/plugin_automation.als` is the reference Live saved (see the
   corpus README); `test/device_automation_test.dart` checks the writer
   against it and `test/fx_automation_end_to_end_test.dart` runs a synthetic
@@ -158,14 +168,6 @@ a take's chains, where it used to hold each effect as it stood at arm.
   paths' tails, and a change of its Amb-Dub Mix is not replayed in the
   chains' volumes; chains published by a recipe and the Track and All
   tracks stages are not logged yet (#1806 Part 2).
-- Timing of a kind that delays its output (the octavers, 1216 frames at
-  48 kHz): it still reports that latency (#1804 part 2) and Live
-  compensates it, so its lane plays that much earlier than on the console,
-  now whether it is on or off (it used to play on time while off, and
-  early while on). Within the lane the timing is the console's, so a null
-  against "as heard" holds at that one offset for the whole take. A slot
-  that held two such kinds is early by both. Reporting no latency would
-  make the lane play exactly as the console's; that is an owner call.
 
 ## November 2026 Each Segno plugin draws its pedal (#1815)
 
@@ -373,7 +375,8 @@ a take's chains, where it used to hold each effect as it stood at arm.
   whose own is larger), and delays its output by the rest: Live asks for
   the latency at its device's rate and not again when it exports at
   another, so a rate-dependent latency (the octavers, the Amp) was
-  compensated wrongly.
+  compensated wrongly. Superseded by #1836: every plugin reports no
+  latency, so a lane plays as late as the console played it.
 - Checked in Live 12.2.7: an export of `perf-20261112-130713` with a chain
   written in (Compressor, a Dub Rack with its Amb and Dub paths, an Echo
   Rack, an Octaver off) renders the dry track through the plugins within
@@ -423,7 +426,8 @@ a take's chains, where it used to hold each effect as it stood at arm.
   input delayed as much, so a host's delay compensation holds either way.
   The engine's settled bypass passes such a kind's input without the
   delay, so the two agree while it is on and differ by the latency while it
-  is off.
+  is off. Superseded by #1836: 1100 is Enabled, the engine's switch for
+  every kind, and no plugin reports a latency.
 - The null test (`vst3/test/null_test.cpp`) writes a one-track capture per
   kind and case (defaults; other settings with a mono output, balance and
   level on chain slot 5; a setting change, a switch off and on again

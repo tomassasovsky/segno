@@ -1,6 +1,5 @@
 #include "processor.h"
 
-#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -38,7 +37,6 @@ Processor::Processor(const FxKind* kind) : kind_(kind) {
   segno_fx_defaults(kind->type, defaults);
   for (int32_t p = 0; p < width_; ++p) state_.params[p] = defaults[p];
   nextClock_ = state_.clockOffset;
-  reported_ = segno_fx_reported_latency(kind->type);
 }
 
 Processor::~Processor() { freeSlot(); }
@@ -82,9 +80,6 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
   sr_ = (int32_t)std::lround(setup.sampleRate);
   if (sr_ <= 0) sr_ = 48000;
   latency_ = segno_fx_latency(kind_->type, sr_);
-  /* A rate past the ones segno_fx_reported_latency covers can need more
-   * (a host is to read the latency again after setupProcessing). */
-  reported_ = std::max(segno_fx_reported_latency(kind_->type), latency_);
   return kResultOk;
 }
 
@@ -118,9 +113,6 @@ bool Processor::build() {
   c.params = state_.params;
   c.count = width_;
   slot_ = segno_fx_slot_new(&c);
-  const int32_t pad = reported_ - latency_;
-  for (auto& line : padLine_) line.assign((size_t)(pad > 0 ? pad : 1), 0.0f);
-  padPos_ = 0;
   return slot_ != nullptr;
 }
 
@@ -146,11 +138,13 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
 }
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
-  /* The same whether the entry is on or off, and at every rate
-   * (reported_). Off, a kind that delays its output passes its input
-   * undelayed, as the engine does, so a host compensating this latency
-   * plays it that much early: the console's timing. */
-  return (uint32)reported_;
+  /* None, for every kind (#1836): the console compensates no effect's
+   * latency, so a kind that delays its output (the octavers, Overdrive,
+   * Distortion, Amp) plays late by it while on and on time while off, and
+   * a host that compensated a reported latency would play the lane early.
+   * Unreported, a host plays the plugin as the console played the entry,
+   * in both states, and a render nulls against the engine's at lag 0. */
+  return 0;
 }
 
 uint32 PLUGIN_API Processor::getTailSamples() {
@@ -159,7 +153,7 @@ uint32 PLUGIN_API Processor::getTailSamples() {
   if (segno_fx_drains(kind_->type)) {
     return kInfiniteTail;
   }
-  return getLatencySamples();
+  return (uint32)latency_;
 }
 
 void Processor::applyParam(ParamID id, double value) {
@@ -299,8 +293,6 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
       ++next;
     }
     segno_fx_slot_rearm(slot_, base);
-    for (auto& line : padLine_) std::fill(line.begin(), line.end(), 0.0f);
-    padPos_ = 0;
   }
   wasPlaying_ = playing;
 
@@ -326,17 +318,6 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
     float l = inL[i];
     float r = inR[i];
     segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
-    if (reported_ > latency_) {
-      float& pl = padLine_[0][(size_t)padPos_];
-      float& pr = padLine_[1][(size_t)padPos_];
-      const float wl = l;
-      const float wr = r;
-      l = pl;
-      r = pr;
-      pl = wl;
-      pr = wr;
-      if (++padPos_ == reported_ - latency_) padPos_ = 0;
-    }
     if (outR != nullptr) {
       outL[i] = l;
       outR[i] = r;
