@@ -1,5 +1,6 @@
 #include "processor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -253,7 +254,18 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
   const uint32_t base =
       playing ? state_.clockOffset + (uint32_t)(int64_t)ctx->projectTimeSamples
               : nextClock_;
-  followHost(ctx, base, base != nextClock_ || playing != wasPlaying_);
+  const bool moved = base != nextClock_;
+  followHost(ctx, base, moved || playing != wasPlaying_);
+  if (playing && (!wasPlaying_ || moved)) {
+    /* The host starts playing, or jumps: the slot starts again as it stood
+     * at arm, so a render from the host's start is the console's render
+     * of the take (its tails, LFOs, hops and noise all from there), not
+     * shaped by whatever ran while the host was stopped. */
+    segno_fx_slot_rearm(slot_, base);
+    for (auto& line : dryLine_) std::fill(line.begin(), line.end(), 0.0f);
+    dryPos_ = 0;
+    bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
+  }
   wasPlaying_ = playing;
 
   ParamEvent events[kMaxEvents];

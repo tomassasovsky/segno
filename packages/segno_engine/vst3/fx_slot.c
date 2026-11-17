@@ -137,6 +137,14 @@ void segno_fx_slot_reseed(segno_fx_slot* s, int32_t hop_seed) {
   arm_slot(s);
 }
 
+void segno_fx_slot_rearm(segno_fx_slot* s, uint32_t clock) {
+  s->fx->clock = clock;
+  le_fx_entry_clear_rings(s->fx, s->at, s->sr, s->types[s->at]);
+  arm_slot(s);
+  le_fx_enable_seed_at(s->fx, s->at, s->enabled[s->at]);
+  s->fx->enable_clear_cooldown = 0;
+}
+
 int32_t segno_fx_slot_latency(const segno_fx_slot* s) {
   return le_fx_added_latency(s->fx, s->at, s->types[s->at], s->sr);
 }

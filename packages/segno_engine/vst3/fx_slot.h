@@ -60,6 +60,13 @@ double segno_fx_slot_beat_at(const segno_fx_slot* s, uint32_t clock);
  * runs). */
 void segno_fx_slot_reseed(segno_fx_slot* s, int32_t hop_seed);
 
+/* The slot as it stood at arm, at engine frame [clock]: its state cleared
+ * and seeded as segno_fx_slot_new seeds it, its enable ramp settled. What
+ * the plugin does when the host starts playing or moves, so a render from
+ * the host's start is the offline render's. Audio thread: allocates
+ * nothing. */
+void segno_fx_slot_rearm(segno_fx_slot* s, uint32_t clock);
+
 /* Frames the kind delays its output by at the slot's rate. */
 int32_t segno_fx_slot_latency(const segno_fx_slot* s);
 

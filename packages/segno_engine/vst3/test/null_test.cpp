@@ -37,6 +37,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <map>
+#include <regex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -144,6 +148,79 @@ std::vector<float> readWavMono(const std::string& path) {
   }
   std::fclose(f);
   return out;
+}
+
+/* A parameter as packages/daw_export lists it for a Live set
+ * (segno_vst3_plugins.dart): its name and VST3 step count, by id. */
+using DartParameters = std::map<ParamID, std::pair<std::string, int>>;
+
+/* The Dart table of each kind's parameters, plus the channel parameters
+ * every plugin has, read from the file the export is generated with
+ * (SEGNO_DART_PLUGINS). The null test checks every plugin's controller
+ * against it, so an exported set names and steps the parameters the
+ * plugin has. */
+std::map<int, DartParameters> dartPlugins() {
+  std::ifstream in(SEGNO_DART_PLUGINS);
+  std::stringstream text;
+  text << in.rdbuf();
+  const std::string dart = text.str();
+  auto params = [&](const std::string& body, ParamID first, bool keyed) {
+    DartParameters out;
+    ParamID id = first;
+    const std::regex entry(keyed ? R"((\d+): SegnoParameter\('([^']+)'(?:, steps: (\d+))?\))"
+                                 : R"(SegnoParameter\('([^']+)'(?:, steps: (\d+))?\))");
+    for (std::sregex_iterator i(body.begin(), body.end(), entry), end; i != end; ++i) {
+      const std::smatch& m = *i;
+      if (keyed) {
+        out[(ParamID)std::stoi(m[1])] = {m[2], m[3].matched ? std::stoi(m[3]) : 0};
+      } else {
+        out[id++] = {m[1], m[2].matched ? std::stoi(m[2]) : 0};
+      }
+    }
+    return out;
+  };
+  std::map<int, DartParameters> plugins;
+  std::smatch channels;
+  DartParameters channel;
+  if (std::regex_search(dart, channels,
+                        std::regex(R"(segnoChannelParameters = \{([\s\S]*?)\};)"))) {
+    channel = params(channels[1], 0, true);
+  }
+  const std::regex plugin(
+      R"((\d+): SegnoPlugin\([\s\S]*?parameters: \[([\s\S]*?)\],?\s*\))");
+  for (std::sregex_iterator i(dart.begin(), dart.end(), plugin), end; i != end; ++i) {
+    DartParameters p = params((*i)[2], 0, false);
+    p.insert(channel.begin(), channel.end());
+    plugins[std::stoi((*i)[1])] = p;
+  }
+  return plugins;
+}
+
+/* Whether [controller]'s parameters, bypass aside, are [expected]: same
+ * ids, names and step counts. */
+bool sameParameters(IEditController* controller, const DartParameters& expected,
+                    std::string& why) {
+  size_t seen = 0;
+  for (int32 i = 0; i < controller->getParameterCount(); ++i) {
+    ParameterInfo info{};
+    controller->getParameterInfo(i, info);
+    if (info.flags & ParameterInfo::kIsBypass) continue;
+    std::string title;
+    for (int k = 0; k < 128 && info.title[k] != 0; ++k) title += (char)info.title[k];
+    const auto it = expected.find(info.id);
+    if (it == expected.end() || it->second.first != title ||
+        it->second.second != info.stepCount) {
+      why = "parameter " + std::to_string(info.id) + " (" + title +
+            ") differs from segno_vst3_plugins.dart";
+      return false;
+    }
+    ++seen;
+  }
+  if (seen != expected.size()) {
+    why = "segno_vst3_plugins.dart lists parameters the plugin does not have";
+    return false;
+  }
+  return true;
 }
 
 struct Case {
@@ -273,6 +350,13 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
       return false;
     }
   }
+  static const std::map<int, DartParameters> dart = dartPlugins();
+  const auto listed = dart.find(kind.type);
+  if (listed == dart.end()) {
+    why = "not in segno_vst3_plugins.dart";
+    return false;
+  }
+  if (!sameParameters(controller, listed->second, why)) return false;
   controller->terminate();
 
   SpeakerArrangement stereo = SpeakerArr::kStereo;
@@ -302,6 +386,30 @@ bool renderPlugin(const VST3::Hosting::Module::Ptr& module,
   ctx.timeSigNumerator = 4;
   ctx.timeSigDenominator = 4;
 
+  /* A second of a stopped host first, with signal through it, as Live
+   * runs a plugin while its transport stands: the plugin starts again as
+   * at arm when the host plays, so this must not show in the render. */
+  {
+    ProcessContext stopped = ctx;
+    stopped.state = ProcessContext::kTempoValid | ProcessContext::kTimeSigValid;
+    uint32_t noise = 777;
+    for (int f0 = 0; f0 < kRate; f0 += block) {
+      for (int i = 0; i < block; ++i) {
+        noise = noise * 1664525u + 1013904223u;
+        inL[i] = inR[i] = 0.3f * ((int32_t)noise / 2147483648.0f);
+      }
+      ProcessData data{};
+      data.processMode = kRealtime;
+      data.symbolicSampleSize = kSample32;
+      data.numSamples = block;
+      data.numInputs = 1;
+      data.numOutputs = 1;
+      data.inputs = &inBus;
+      data.outputs = &outBus;
+      data.processContext = &stopped;
+      processor->process(data);
+    }
+  }
   out.assign(input.size(), 0.0f);
   for (size_t f0 = 0; f0 < input.size(); f0 += block) {
     const int len = (int)std::min<size_t>(block, input.size() - f0);
