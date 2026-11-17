@@ -48,6 +48,7 @@ The button is disabled, with the reason beside it, when Ableton Live is not
 installed or the take has no Live set. A take whose set is missing (for example
 one recorded before the console wrote sets, or one whose set failed to write)
 gets one from **Library > Audio > Performances > DAW project** on the console.
+
 ## Segno plugins
 
 The app carries the Segno plugins (`Segno.vst3`, the console's effects with
