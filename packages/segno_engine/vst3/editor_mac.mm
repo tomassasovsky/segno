@@ -211,7 +211,9 @@ bool loadFace(int32_t type, Face& face) {
   [self setNeedsDisplay:YES];
 }
 
+/* One edit, from a click. */
 - (void)edit:(ParamID)param to:(double)value {
+  if (std::clamp(value, 0.0, 1.0) == [self valueOf:param]) return;
   _controller->beginEdit(param);
   [self set:param to:value];
   _controller->endEdit(param);

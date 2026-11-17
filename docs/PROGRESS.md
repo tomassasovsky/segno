@@ -86,10 +86,42 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1564 | Automatic LED brightness from a light sensor on J22: board, firmware (console 2.7, ring 1.2, still protocol 12) and app parts in review; the enclosure part is a separate thread | in-review | merge-gate | `claude/ambient-light-1564-p*` |
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1804 | Segno's effects as VST3 plugins in Live: part 1 (Segno.vst3, local build and install, null test) in review; part 2 (the export puts the chains on the dry tracks) next | in-review | auto | `claude/vst3-plugins-1804-p1` |
+| #1815 | Each Segno plugin's editor draws its pedal as the console does, with working controls | build | auto | `claude/vst3-pedal-ui-1815` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
 
 ---
+
+## November 2026 Each Segno plugin draws its pedal (#1815)
+
+- Each plugin's editor is the console's single-effect page in a plugin
+  window: the pedal the Effects page draws for its kind, and beside it the
+  settings the face has no knob for and every choice, drawn as the effect
+  page draws them (sliders, a row of buttons, or a select). The kinds the
+  console runs only in racks wear the look of the first catalogue module
+  that runs on them; Distortion, which no factory rack builds, has no face
+  and keeps the host's own controls.
+- The art cannot drift from the console's: `test/vst3_faces` lays out and
+  renders the faces with the console's own widgets
+  (`lib/looper/view/fx/stomp`, `FxBuiltInParamControl`). The committed
+  layout, `packages/segno_engine/vst3/faces/faces.json`, says where each
+  control is, how it works and which parameter it drives;
+  `vst3_faces_test.dart` fails when it no longer matches the drawing code
+  (`--update-goldens` rewrites it). `install.sh` renders the pictures (a
+  background, the LED lit, and each control at each of its settings, at 1x
+  and 2x) with `vst3_faces_render_test.dart` and the build bundles them in
+  `Contents/Resources/faces`; the pictures are build output, not tracked.
+- The editor (`editor_mac.mm`) is an IPlugView holding an NSView, macOS
+  only: it draws the pictures at the parameters' values, edits through the
+  controller (beginEdit, performEdit, endEdit) so a host records
+  automation, and redraws when the host changes a value. Knobs drag up and
+  down (Shift for finer), sliders follow the pointer, a select opens a menu
+  of the console's position names, the footswitch is the bypass and the LED
+  shows it. Linux, and a bundle built without the pictures, open no editor.
+- `test/binding_test.cpp` loads the bundle and checks every control of the
+  layout against its plugin's parameters (CI, in `run_null_test.sh`), and
+  after an install that every plugin with a face opens an editor of the
+  layout's size.
 
 ## November 2026 Segno's effects as VST3 plugins (#1804 part 1)
 
@@ -2492,10 +2524,14 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
     loader's path, so `segno-kiosk-launch` puts `/opt/segno/lib` on
     `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
 - **Segno.vst3** (#1804), the effects as VST3 plugins for a DAW on the dev
-  Mac: `bash packages/segno_engine/vst3/install.sh` builds it (Release, into
+  Mac: `FLUTTER=/Users/Tomas/development/flutter-3.50/bin/flutter bash
+  packages/segno_engine/vst3/install.sh` renders the editors' pedal faces
+  (#1815, about a minute), builds it (Release, into
   `packages/segno_engine/build/vst3`) and installs it in
-  `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test against
-  the installed bundle. Live finds it on its next plugin scan (start, or
+  `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
+  binding test against the installed bundle. After a change to the pedal
+  faces, `flutter test --update-goldens test/vst3_faces/vst3_faces_test.dart`
+  rewrites the layout the editors read. Live finds it on its next plugin scan (start, or
   Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Not signed, not
   shipped. `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a
   separate tree and runs the null test, as CI does on Linux (clang, CMake,
