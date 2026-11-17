@@ -23,7 +23,7 @@ private final class FixtureRepository: RecordingRepository {
   }
   var names: [String] = []
   var catalogJSON =
-    #"{"recordings":[{"id":"first","name":"first","timestamp":"20260915120000","modified":0,"duration":60,"files":[{"path":"master.wav","bytes":100,"version":"one"},{"path":"loops/track1.wav","bytes":50,"version":"two"}]},{"id":"second","name":"second","timestamp":"20260915130000","modified":0,"duration":30,"files":[{"path":"master.wav","bytes":200,"version":"three"}]}],"unavailable":1}"#
+    #"{"recordings":[{"id":"first","name":"first","timestamp":"20260915120000","modified":0,"duration":60,"files":[{"path":"master.wav","bytes":100,"version":"one"},{"path":"loops/track1.wav","bytes":50,"version":"two"}]},{"id":"second","name":"second","timestamp":"20260915130000","modified":0,"duration":30,"liveSet":{"path":"project.als","bytes":10,"version":"set"},"files":[{"path":"master.wav","bytes":200,"version":"three"}]}],"unavailable":1}"#
   func read(
     recording: Recording, file: RecordingFile, offset: Int64, length: Int,
     connection: Connection, token: CancellationToken
@@ -54,16 +54,57 @@ private final class FixtureRepository: RecordingRepository {
     progress(file.bytes, "Verifying")
     return destination.appendingPathComponent(name)
   }
+  var holdLiveSet = false
+  var failLiveSet = false
+  var liveSetUsesPlugins = false
+  var liveSetStarted = false
+  var cancelAfterLiveSet = false
+  func downloadLiveSet(
+    recording: Recording, destination: URL, connection: Connection, token: CancellationToken,
+    progress: @escaping (Double, String) -> Void
+  ) throws -> LiveSetCopy {
+    startLock.lock()
+    liveSetStarted = true
+    starts += 1
+    startLock.unlock()
+    while holdLiveSet && !token.isCancelled { Thread.sleep(forTimeInterval: 0.01) }
+    try token.check()
+    if cancelAfterLiveSet { token.cancel() }
+    if failLiveSet { throw TransferError.message("The copy did not match the original.") }
+    progress(1, "Verifying")
+    return LiveSetCopy(
+      folder: destination.appendingPathComponent(recording.name), usesPlugins: liveSetUsesPlugins,
+      reused: false)
+  }
+}
+
+/// Ableton Live as the tests see it: installed or not, with or without the
+/// Segno plugins, and every set it was asked to open.
+@MainActor
+private final class FakeLive {
+  var installed = true
+  var pluginInstalled = true
+  var opened: [URL] = []
+  var live: AbletonLive {
+    AbletonLive(
+      application: { [unowned self] in
+        self.installed ? URL(fileURLWithPath: "/Applications/Ableton Live 12 Suite.app") : nil
+      },
+      pluginInstalled: { [unowned self] in self.pluginInstalled },
+      open: { [unowned self] set, _ in self.opened.append(set) })
+  }
 }
 
 @MainActor
 final class AppModelTests: XCTestCase {
+  private let fakeLive = FakeLive()
+
   private func fixture() -> (AppModel, FixtureRepository) {
     let repository = FixtureRepository()
     let suite = "segno-transfer-tests-" + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-    let model = AppModel(repository: repository, defaults: defaults)
+    let model = AppModel(repository: repository, defaults: defaults, live: fakeLive.live)
     model.connection.host = "appliance.example"
     return (model, repository)
   }
@@ -236,5 +277,109 @@ final class AppModelTests: XCTestCase {
     XCTAssertNil(model.previewTitle)
     XCTAssertNil(model.error)
     XCTAssertEqual(model.status, "Preview cancelled")
+  }
+
+  private func connectedWithSet() async throws -> (AppModel, FixtureRepository, Recording) {
+    let (model, repository) = fixture()
+    model.connect()
+    try await waitUntilIdle(model)
+    return (model, repository, try XCTUnwrap(model.recordings.first { $0.liveSet != nil }))
+  }
+
+  func testOpenInLiveOpensTheVerifiedSet() async throws {
+    let (model, _, recording) = try await connectedWithSet()
+    XCTAssertNil(model.liveSetUnavailable(recording))
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    let folder = model.destination.appendingPathComponent("second")
+    XCTAssertEqual(fakeLive.opened, [folder.appendingPathComponent("project.als")])
+    XCTAssertEqual(model.downloaded, [folder])
+    XCTAssertNil(model.error)
+    XCTAssertEqual(model.status, "Live set downloaded, verified and opened")
+  }
+
+  func testMissingPluginsWarnButTheSetStillOpens() async throws {
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.liveSetUsesPlugins = true
+    fakeLive.pluginInstalled = false
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertEqual(fakeLive.opened.count, 1)
+    XCTAssertTrue(model.error?.contains("missing devices") == true)
+    fakeLive.pluginInstalled = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertEqual(fakeLive.opened.count, 2)
+    XCTAssertNil(model.error)
+  }
+
+  func testASetWithoutEffectsDoesNotAskForThePlugins() async throws {
+    let (model, _, recording) = try await connectedWithSet()
+    fakeLive.pluginInstalled = false
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertEqual(fakeLive.opened.count, 1)
+    XCTAssertNil(model.error)
+  }
+
+  func testWithoutLiveTheActionSaysWhyAndDoesNothing() async throws {
+    let (model, repository, recording) = try await connectedWithSet()
+    fakeLive.installed = false
+    model.connect()
+    try await waitUntilIdle(model)
+    XCTAssertEqual(
+      model.liveSetUnavailable(recording), "Install Ableton Live to open this take's Live set.")
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertFalse(repository.liveSetStarted)
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+  }
+
+  func testATakeWithoutALiveSetSaysToWriteItOnTheConsole() async throws {
+    let (model, repository, _) = try await connectedWithSet()
+    let take = try XCTUnwrap(model.recordings.first { $0.liveSet == nil })
+    XCTAssertEqual(model.liveSetUnavailable(take), LiveSet.missing)
+    model.openInLive(take)
+    try await waitUntilIdle(model)
+    XCTAssertFalse(repository.liveSetStarted)
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+  }
+
+  func testACancelledLiveSetDownloadOpensNothing() async throws {
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.holdLiveSet = true
+    model.openInLive(recording)
+    let start = Date()
+    while !repository.liveSetStarted && Date().timeIntervalSince(start) < 3 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    model.cancel()
+    try await waitUntilIdle(model)
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertTrue(model.downloaded.isEmpty)
+    XCTAssertNil(model.error)
+    XCTAssertEqual(model.status, "Cancelled · the Live set was not opened")
+  }
+
+  func testAFailedLiveSetDownloadOpensNothing() async throws {
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.failLiveSet = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertTrue(model.downloaded.isEmpty)
+    XCTAssertEqual(model.error, "The copy did not match the original.")
+    XCTAssertEqual(model.status, "Could not open the Live set")
+  }
+
+  func testACancelAfterTheCopyIsVerifiedKeepsItButDoesNotOpen() async throws {
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.cancelAfterLiveSet = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertEqual(model.downloaded, [model.destination.appendingPathComponent("second")])
+    XCTAssertEqual(
+      model.status, "Cancelled · the Live set is downloaded and verified but was not opened")
   }
 }

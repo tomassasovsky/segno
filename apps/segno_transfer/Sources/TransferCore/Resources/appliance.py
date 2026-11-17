@@ -81,6 +81,26 @@ def is_main(path):
     return MAIN.fullmatch(path) is not None
 
 
+# The take's Ableton Live set, written by the console (#1803). Its FileRefs are
+# relative to the take, so the Mac reads it to know which files to fetch.
+LIVE_SET = "project.als"
+
+
+def live_set(directory):
+    # A set that cannot be read (or is being rewritten) hides only the set,
+    # never the take's audio.
+    path = directory / LIVE_SET
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        # One stat, so the length and version describe the same file.
+        current = version(path)
+        size = int(current.split(":")[2])
+        return {"bytes": size, "version": current} if size else None
+    except OSError:
+        return None
+
+
 def version(path):
     info = path.stat()
     return f"{info.st_dev}:{info.st_ino}:{info.st_size}:{info.st_mtime_ns}:{info.st_ctime_ns}"
@@ -128,7 +148,8 @@ def catalog(root):
             recordings.append({"id": directory.relative_to(root).as_posix(),
                                "name": directory.name, "timestamp": timestamp,
                                "modified": directory.stat().st_mtime,
-                               "duration": duration, "files": files})
+                               "duration": duration, "files": files,
+                               "live_set": live_set(directory)})
         except (OSError, ValueError, TypeError, OverflowError):
             unavailable += 1
     return {"recordings": recordings, "unavailable": unavailable}
@@ -138,10 +159,12 @@ def selected_file(root, request):
     directory = safe_path(root, request["recording"])
     read_manifest(directory)
     path = safe_path(directory, request["file"])
-    if path.suffix.lower() != ".wav" or not stat.S_ISREG(path.stat().st_mode):
+    # The Live set downloads whole; only audio streams as a preview.
+    is_set = request["file"] == LIVE_SET and request.get("action") != "read"
+    if not (is_set or path.suffix.lower() == ".wav") or not stat.S_ISREG(path.stat().st_mode):
         raise ValueError("Select an audio file from the recording list.")
-    if version(path) != request["version"] or not wav_complete(path):
-        raise ValueError("This audio file changed. Refresh the recordings and try again.")
+    if version(path) != request["version"] or not (is_set or wav_complete(path)):
+        raise ValueError("This file changed. Refresh the recordings and try again.")
     return path
 
 
@@ -183,16 +206,20 @@ def emit_catalog(result):
     # jq encodes raw fields so this helper needs no extra Python packages.
     fields = []
     for recording in result["recordings"]:
+        live = recording["live_set"] or {"bytes": "", "version": ""}
         for file in recording["files"]:
             fields.extend(str(v) for v in [recording["id"], recording["name"], recording["timestamp"],
-                recording["modified"], recording["duration"], file["path"], file["bytes"], file["version"]])
+                recording["modified"], recording["duration"], live["bytes"], live["version"],
+                file["path"], file["bytes"], file["version"]])
     payload = ("\0".join(fields) + ("\0" if fields else "")).encode("utf-8")
     program = 'split("\\u0000") | if .[-1] == "" then .[:-1] else . end | '
-    program += '[range(0; length; 8) as $i | .[$i:$i+8] | '
+    program += '[range(0; length; 10) as $i | .[$i:$i+10] | '
     program += '{id:.[0], name:.[1], timestamp:.[2], modified:(.[3]|tonumber), duration:(.[4]|tonumber), '
-    program += 'file:{path:.[5], bytes:(.[6]|tonumber), version:.[7]}}] | '
+    program += 'liveSet:(if .[5] == "" then null else {path:"project.als", bytes:(.[5]|tonumber), version:.[6]} end), '
+    program += 'file:{path:.[7], bytes:(.[8]|tonumber), version:.[9]}}] | '
     program += 'group_by(.id) | map(.[0] as $r | {id:$r.id, name:$r.name, timestamp:$r.timestamp, '
-    program += 'modified:$r.modified, duration:$r.duration, files:map(.file)}) | {recordings:., unavailable:$unavailable}'
+    program += 'modified:$r.modified, duration:$r.duration, liveSet:$r.liveSet, files:map(.file)}) | '
+    program += '{recordings:., unavailable:$unavailable}'
     subprocess.run(["jq", "-Rs", "--argjson", "unavailable", str(result["unavailable"]), program], input=payload, check=True)
 
 
