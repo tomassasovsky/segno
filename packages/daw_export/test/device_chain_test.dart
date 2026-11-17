@@ -213,6 +213,8 @@ void main() {
       expect(ChainOrigin.lane(5, 0).hopSeed, 64);
       expect(ChainOrigin.bus(0).hopSeed, 128);
       expect(ChainOrigin.bus(3).hopSeed, 64);
+      expect(ChainOrigin.monitor(0).hopSeed, 64);
+      expect(ChainOrigin.monitor(3).hopSeed, 0);
     });
   });
 }

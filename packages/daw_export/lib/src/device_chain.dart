@@ -82,6 +82,14 @@ class ChainOrigin {
         beatOffset: beatOffset,
       );
 
+  /// Input [source]'s monitor, its Input stage (`le_fx_monitor_hop_seed`).
+  factory monitor(int source, {int clockOffset = 0, double beatOffset = 0}) =>
+      ChainOrigin(
+        hopSeed: _quarter(source + 1),
+        clockOffset: clockOffset,
+        beatOffset: beatOffset,
+      );
+
   /// The chain owner's octaver hop quarter, in frames.
   final int hopSeed;
 

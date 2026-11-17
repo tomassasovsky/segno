@@ -273,22 +273,49 @@ abstract final class DawManifestReader {
       }
     }
 
-    // Each captured input as the player heard it: the engine records an
-    // input after its monitor chain, volume and pan (mix_monitors_frame,
-    // silent while its monitor is off), so it plays beside the loops. Then
-    // the captured output, which holds both: a reference, off.
+    // Each input, beside the loops. Since #1805 the engine records every
+    // input raw (its clean sample, before its monitor chain, gate, volume
+    // and pan), which plays, and each monitored one also as heard (after
+    // them, silent while its monitor is off), a reference, off. A take from
+    // before it has only the inputs as heard, which play. Then the captured
+    // output, which holds both loops and inputs: a reference, off.
     final parts = _partsByStream(captureDir, manifest, sampleRate);
-    for (final input in capturedInputsOf(manifest)) {
-      final clips = parts[1 + input];
-      if (clips == null) continue;
+    final recordedRaw = rawInputsOf(manifest).toSet();
+    final inputs = {...capturedInputsOf(manifest), ...recordedRaw}.toList()
+      ..sort();
+    for (final input in inputs) {
+      final name = inputNameOf(manifest, input);
+      final effects = _info(EffectText.input(manifest, input));
+      final heard = parts[1 + input];
+      final raw = recordedRaw.contains(input)
+          ? parts[kRawStreamBase + input]
+          : null;
+      if (raw != null) {
+        // The raw recording plays through the monitor chain the take
+        // started with, as Segno's plugins (#1804); its volume, pan and
+        // switching are not replayed yet.
+        tracks.add(
+          DawTrack(
+            name: '$name raw',
+            kind: DawTrackKind.input,
+            arrangementClips: raw,
+            devices: _inputDevices(manifest, input, armTime),
+            info:
+                'The input as played: before its effects, volume and pan.\n'
+                '$effects',
+          ),
+        );
+      }
+      if (heard == null) continue;
       tracks.add(
         DawTrack(
-          name: inputNameOf(manifest, input),
-          kind: DawTrackKind.input,
-          arrangementClips: clips,
+          name: raw == null ? name : '$name (as heard)',
+          kind: raw == null ? DawTrackKind.input : DawTrackKind.inputHeard,
+          active: raw == null,
+          arrangementClips: heard,
           info:
               'The input as heard: after its effects, volume and pan.\n'
-              '${_info(EffectText.input(manifest, input))}',
+              '$effects',
         ),
       );
     }
@@ -356,6 +383,32 @@ abstract final class DawManifestReader {
       );
     }
     return devices;
+  }
+
+  /// Input [input]'s monitor chain at arm as Live devices, placed in time
+  /// by [armTime].
+  static List<DawDevice> _inputDevices(
+    Map<String, dynamic> manifest,
+    int input,
+    ({int clock, double beat}) armTime,
+  ) {
+    final arm = manifest['armSnapshot'];
+    final monitors = arm is Map<String, dynamic> ? arm['monitors'] : null;
+    for (final monitor in monitors is List ? monitors : const []) {
+      if (monitor is! Map<String, dynamic> || monitor['input'] != input) {
+        continue;
+      }
+      return devicesOfChain(
+        monitor['effects'],
+        chainEnabled: monitor['chainEnabled'] != false,
+        origin: ChainOrigin.monitor(
+          input,
+          clockOffset: armTime.clock,
+          beatOffset: armTime.beat,
+        ),
+      );
+    }
+    return const [];
   }
 
   /// The `tempoBpm` a snapshot map carries, or `null` when [snapshot] is
@@ -438,9 +491,9 @@ abstract final class DawManifestReader {
 
   /// Each captured stream's audio as Arrangement clips, one per part file
   /// placed where the previous ones end: stream 0 is the master, `1 + n`
-  /// input `n`. Read from the sidecar's `parts` (#1198), or for a take
-  /// finalized before them, its single `master.wav` and
-  /// `live-input-<n>.wav`.
+  /// input `n` as heard, [kRawStreamBase] `+ n` input `n` raw. Read from
+  /// the sidecar's `parts` (#1198), or for a take finalized before them,
+  /// its single `master.wav` and `live-input-<n>.wav`.
   static Map<int, List<DawClip>> _partsByStream(
     String captureDir,
     Map<String, dynamic> manifest,

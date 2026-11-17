@@ -51,9 +51,12 @@ void exportCapture(String captureDir) {
     lane loops as Session clips, and right after it its dry stem on
     `<name> dry`, switched off so the set does not play the take twice. A
     track whose wet render is missing plays its dry stem on its own track;
-  - each captured input, named as the player named it or `Input N`. The
-    engine records an input after its monitor chain, volume and pan, so this
-    is the input as heard, and it plays beside the loops;
+  - each input, named as the player named it or `Input N`. One recorded
+    raw (#1805) plays its raw recording on `<name> raw`, through its
+    monitor chain at arm as Segno's plugins, with the input as heard
+    (after its monitor chain, volume and pan) on `<name> (as heard)`,
+    switched off. A take from before #1805 has only the input as heard,
+    which plays;
   - `Master (as heard)`: the captured output, which holds all of the above,
     switched off.
   An input or the master recorded in several part files has one clip per

@@ -1636,10 +1636,11 @@ abstract interface class EnginePluginHosting {
 
 /// Performance-recording capture (parts 1-2 of the DAW-export stack): arming
 /// and disarming the RT-safe audio-thread taps that copy the master capture
-/// (before the master gain and limiter) and each actively-monitored input
-/// into lock-free capture rings, and the background drain thread that writes
-/// each stream as ordered 32-bit float WAV parts (`master-001.wav`, …,
-/// `input-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
+/// (before the master gain and limiter), each actively-monitored input as
+/// heard, and every input and instrument raw (#1805) into lock-free capture
+/// rings, and the background drain thread that writes each stream as ordered
+/// 32-bit float WAV parts (`master-001.wav`, …, `input-<n>-001.wav`,
+/// `input-raw-<n>-001.wav`) plus a `performance.json` sidecar (#1198).
 ///
 /// Status is read back via [EngineSnapshot] ([EngineSnapshot.isPerfArmed] /
 /// [EngineSnapshot.perfFrames] / [EngineSnapshot.perfOverruns]), the same way

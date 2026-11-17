@@ -75,15 +75,23 @@ public struct RecordingFile: Decodable, Identifiable, Hashable {
     return Self.partNumber(path.dropFirst(7).prefix(3))
   }
 
-  /// The input and part number of a live-input part (`input-0-001.wav` is
-  /// input 0, part 1); nil for any other file.
-  public var inputPart: (input: Int, part: Int)? {
-    guard path.hasPrefix("input-"), path.hasSuffix(".wav"), !path.contains("/") else { return nil }
-    let fields = path.dropFirst(6).dropLast(4).split(
+  /// The input and part number of a live-input part as heard
+  /// (`input-0-001.wav` is input 0, part 1); nil for any other file.
+  public var inputPart: (input: Int, part: Int)? { Self.inputPart(path, prefix: "input-") }
+
+  /// The input and part number of an input's raw recording (#1805,
+  /// `input-raw-0-001.wav` is input 0, part 1); nil for any other file.
+  public var rawInputPart: (input: Int, part: Int)? {
+    Self.inputPart(path, prefix: "input-raw-")
+  }
+
+  private static func inputPart(_ path: String, prefix: String) -> (input: Int, part: Int)? {
+    guard path.hasPrefix(prefix), path.hasSuffix(".wav"), !path.contains("/") else { return nil }
+    let fields = path.dropFirst(prefix.count).dropLast(4).split(
       separator: "-", omittingEmptySubsequences: false)
     guard fields.count == 2, !fields[0].isEmpty,
       fields[0].allSatisfy({ $0.isASCII && $0.isNumber }), let input = Int(fields[0]),
-      let part = Self.partNumber(fields[1])
+      let part = partNumber(fields[1])
     else { return nil }
     return (input, part)
   }
@@ -102,6 +110,7 @@ public struct RecordingFile: Decodable, Identifiable, Hashable {
     if path == "master.wav" { return "Main recording" }
     if let part = mainPart { return "Main recording · Part \(part)" }
     if let input = inputPart { return "Live input \(input.input) · Part \(input.part)" }
+    if let input = rawInputPart { return "Raw input \(input.input) · Part \(input.part)" }
     if path.hasPrefix("live-input-") { return "Live input · " + baseName }
     if path.hasPrefix("stems/dry/") { return "Dry track · " + baseName }
     if path == "stems/wet/master.wav" { return "Rendered track mix" }
