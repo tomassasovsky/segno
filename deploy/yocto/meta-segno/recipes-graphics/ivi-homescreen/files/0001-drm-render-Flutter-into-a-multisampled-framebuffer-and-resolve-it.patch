@@ -1,4 +1,4 @@
-From 530373a2e5345f15343c7c5c6d7e92de7cd4f7c7 Mon Sep 17 00:00:00 2001
+From d8c56480829490fd2c60fa8e139f2eeeaf200487 Mon Sep 17 00:00:00 2001
 From: Segno <noreply@segno.invalid>
 Date: Thu, 5 Nov 2026 00:44:55 -0300
 Subject: [PATCH] drm: render Flutter into a multisampled framebuffer and
@@ -47,10 +47,10 @@ Upstream-Status: Pending
  3 files changed, 221 insertions(+), 1 deletion(-)
 
 diff --git a/shell/backend/drm_kms_egl/README.md b/shell/backend/drm_kms_egl/README.md
-index e101bee2..9c56f915 100644
+index e25c1590..a604d8af 100644
 --- a/shell/backend/drm_kms_egl/README.md
 +++ b/shell/backend/drm_kms_egl/README.md
-@@ -501,6 +501,7 @@ Pacing and scheduling are separate problems and both have to be right — see
+@@ -573,6 +573,7 @@ rotation = 90
  | `IVI_DRM_FLIP_TRACE` | (off) | `1` logs every PAGE_FLIP_EVENT (frame-cadence diagnostic) |
  | `IVI_DRM_PROFILE` | (off) | Anything non-empty enables per-frame composite profiling. Every 60 frames, `PresentFramed` / `PresentLayers` log a line: `framed/planes profile (n=60): wait=Xms compose=Yms commit=Zms total=Wms` with both per-stage mean and max. Useful for diagnosing where the per-frame budget goes. |
  | `IVI_DRM_NO_DIRECT_SCANOUT` | (off) | `1` forces GL composite even when REFLECT_Y is available. Diagnostic — bisects visual artifacts that may live on the direct-scanout path. |
@@ -59,7 +59,7 @@ index e101bee2..9c56f915 100644
  
  #### Real-time scheduling: capability setup
 diff --git a/shell/backend/drm_kms_egl/drm_compositor.cc b/shell/backend/drm_kms_egl/drm_compositor.cc
-index 20e1e78a..e6342a8d 100644
+index fbec50e3..52624b19 100644
 --- a/shell/backend/drm_kms_egl/drm_compositor.cc
 +++ b/shell/backend/drm_kms_egl/drm_compositor.cc
 @@ -53,6 +53,7 @@
@@ -102,7 +102,7 @@ index 20e1e78a..e6342a8d 100644
  // Map the ABI's container colorimetry (IhsColorSpace/IhsColorRange, carried on
  // the platform view's Dmabuf) to the drm-cxx plane CSC. DEFAULT -> nullopt lets
  // LayerScene write its own default (BT.709 / limited). Only meaningful for YUV
-@@ -1149,6 +1175,32 @@ void DrmCompositor::EnsureGlCapsProbed() {
+@@ -1182,6 +1208,32 @@ void DrmCompositor::EnsureGlCapsProbed() {
    }
    gl_caps_.Probe();
    gl_compositor_ = std::make_unique<GlCompositor>(&gl_caps_);
@@ -135,7 +135,7 @@ index 20e1e78a..e6342a8d 100644
    if (!InitEglExtensions()) {
      ihs::log::error("[DrmCompositor] missing EGL_KHR_image / GL_OES_EGL_image");
    }
-@@ -1405,8 +1457,140 @@ uint32_t DrmCompositor::ImportBoAsFb(gbm_bo* bo) const {
+@@ -1458,8 +1510,140 @@ uint32_t DrmCompositor::ImportBoAsFb(gbm_bo* bo) const {
    return fb_id;
  }
  
@@ -276,7 +276,7 @@ index 20e1e78a..e6342a8d 100644
    if (store.fbo != 0) {
      glDeleteFramebuffers(1, &store.fbo);
      store.fbo = 0;
-@@ -2709,6 +2893,8 @@ bool DrmCompositor::PresentLayersLocked(const FlutterLayer** layers,
+@@ -3256,6 +3440,8 @@ bool DrmCompositor::PresentLayersLocked(const FlutterLayer** layers,
  
    backend_->MaybeCaptureSnapshot();
    EnsureGlCapsProbed();
@@ -285,7 +285,7 @@ index 20e1e78a..e6342a8d 100644
    // The path this present takes is settled from here; a latch to the GL
    // fallback during it shows from the next.
    PublishLatchLead();
-@@ -4915,6 +5101,9 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
+@@ -5462,6 +5648,9 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
      if (!CreateGbmStore(*store, w, h, backing_format, pool_size)) {
        return false;
      }
@@ -295,7 +295,7 @@ index 20e1e78a..e6342a8d 100644
      ++store_pool_misses_;
    }
  
-@@ -4936,7 +5125,8 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
+@@ -5483,7 +5672,8 @@ bool DrmCompositor::CreateBackingStore(const FlutterBackingStoreConfig* config,
    out->open_gl.type = kFlutterOpenGLTargetTypeFramebuffer;
    out->open_gl.framebuffer.target =
        gl_caps_.has_rgb8_rgba8 ? GL_RGBA8_OES : GL_RGBA;
@@ -306,10 +306,10 @@ index 20e1e78a..e6342a8d 100644
    out->open_gl.framebuffer.destruction_callback = [](void*) {};
  
 diff --git a/shell/backend/drm_kms_egl/drm_compositor.h b/shell/backend/drm_kms_egl/drm_compositor.h
-index e99601cb..56d7cf65 100644
+index 8fdc9a3a..fda52c0b 100644
 --- a/shell/backend/drm_kms_egl/drm_compositor.h
 +++ b/shell/backend/drm_kms_egl/drm_compositor.h
-@@ -111,6 +111,13 @@ struct GbmBackingStore {
+@@ -115,6 +115,13 @@ struct GbmBackingStore {
    // each frame; need not be multi-buffered).
    GLuint fbo = 0;
    GLuint depth_stencil_rb = 0;
@@ -323,7 +323,7 @@ index e99601cb..56d7cf65 100644
    uint32_t width = 0;
    uint32_t height = 0;
    uint32_t format = 0;
-@@ -298,6 +305,14 @@ class DrmCompositor : public IFlipSink {
+@@ -341,6 +348,14 @@ class DrmCompositor : public IFlipSink {
    // only participate in GL composition never invoke this — no AddFB2
    // per frame on framed-mode / GL-fallback paths.
    bool EnsureDrmFbId(GbmBackingStore& store) const;
@@ -337,12 +337,11 @@ index e99601cb..56d7cf65 100644
 +  void ResolveMsaaStores(const FlutterLayer** layers, size_t layer_count) const;
  
    // Composite @p src_tex into @p target_fbo at the given destination rect.
-   // Pass @p src_fbo (the FBO that owns @p src_tex as its color attachment)
-@@ -508,6 +523,20 @@ class DrmCompositor : public IFlipSink {
- 
+   // Always a textured quad, never glBlitFramebuffer: a backing store here is
+@@ -601,6 +616,20 @@ class DrmCompositor : public IFlipSink {
    GlCaps gl_caps_{};
    bool gl_caps_probed_{false};
-+
+ 
 +  // Samples per pixel in the target Flutter renders into: IVI_DRM_MSAA_SAMPLES
 +  // (default 4), capped at GL_MAX_SAMPLES; 0 when MSAA is off. Impeller's
 +  // OpenGL ES backend anti-aliases geometry only through MSAA, and without
@@ -356,9 +355,7 @@ index e99601cb..56d7cf65 100644
 +                                                     GLsizei count,
 +                                                     const GLenum* attachments);
 +  InvalidateFramebufferFn invalidate_framebuffer_{nullptr};
-   std::unique_ptr<GlCompositor> gl_compositor_;
- 
-   std::unordered_map<StoreBaton*, std::unique_ptr<GbmBackingStore>> stores_;
--- 
-2.45.2
-
++
+   // Says once, at info, which modifier a platform-view buffer imported with.
+   // The producer allocates independently of the primary plane, so this is
+   // where a tiled buffer meets a display that can only scan out linear.
