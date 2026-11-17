@@ -105,7 +105,7 @@ BuiltInEffect? vst3FaceEffect(TrackEffectType type, {List<double>? params}) {
 
 /// What one editor shows: a pedal face and the panel beside it.
 class Vst3Face {
-  new _(this.type, this.look, this.knobs, this.panel);
+  new _(this.type, this.look, this.knobs, this.panel, this.chips);
 
   /// The face of a plugin of [type], or `null` when the console draws no
   /// pedal for it.
@@ -119,14 +119,24 @@ class Vst3Face {
         art.controls.params[i],
     ];
     final params = type.params;
+    final chips = _chipsOf(type, art, knobs);
     return Vst3Face._(type, art.look, knobs, [
+      // The knobs whose values have no room on the face, as read-only
+      // rows.
+      for (final (i, p) in knobs.indexed)
+        if (!fxParamIsChoice(params[p]) && !chips.containsKey(i))
+          (id: p, row: true),
       for (var p = 0; p < params.length; p++)
-        if (fxParamIsChoice(params[p]) || !knobs.contains(p)) p,
-      kVst3InputId,
-      kVst3OutputId,
-      kVst3PlacementId,
-      kVst3LevelId,
-    ]);
+        if (fxParamIsChoice(params[p]) || !knobs.contains(p))
+          (id: p, row: false),
+      for (final id in [
+        kVst3InputId,
+        kVst3OutputId,
+        kVst3PlacementId,
+        kVst3LevelId,
+      ])
+        (id: id, row: false),
+    ], chips);
   }
 
   /// The plugin's kind.
@@ -138,17 +148,24 @@ class Vst3Face {
   /// The setting each of the face's knobs shows, in the face's order.
   final List<int> knobs;
 
-  /// The parameters the panel lists, in order: every choice, every setting
-  /// the face has no knob for, then the entry's input, output, balance or
-  /// pan, and level.
-  final List<int> panel;
+  /// What the panel lists, in order: the value of each knob the face has no
+  /// room to print it under, as a read-only row; then every choice, every
+  /// setting the face has no knob for, and the entry's input, output,
+  /// balance or pan, and level.
+  final List<Vst3PanelItem> panel;
+
+  /// Where the face prints each knob's value (by its index in [knobs]), in
+  /// the face's own space: under the knob's label, when every knob has room
+  /// there. A choice's knob prints none (its selector names the position);
+  /// on a face without the room, every value is a row of the panel.
+  final Map<int, Rect> chips;
 
   /// The pedal's face kind.
   FxStompFaceKind get kind => kFxStompSpecs[look]!.face;
 
   /// The panel in columns: one, or as many as keep each to
   /// [_kColumnControls], filled evenly in order.
-  List<List<int>> get columns {
+  List<List<Vst3PanelItem>> get columns {
     final count = (panel.length / _kColumnControls).ceil();
     final per = (panel.length / count).ceil();
     return [
@@ -236,13 +253,20 @@ class Vst3FaceArt extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          for (final (i, id) in column.indexed) ...[
+                          for (final (i, item) in column.indexed) ...[
                             if (i > 0) const SizedBox(height: _kControlGap),
-                            _Vst3PanelControl(
-                              key: Key('vst3_param_$id'),
-                              id: id,
-                              effect: effect,
-                            ),
+                            if (item.row)
+                              _Vst3ValueRow(
+                                key: Key('vst3_value_${item.id}'),
+                                id: item.id,
+                                effect: effect,
+                              )
+                            else
+                              _Vst3PanelControl(
+                                key: Key('vst3_param_${item.id}'),
+                                id: item.id,
+                                effect: effect,
+                              ),
                           ],
                         ],
                       ),
@@ -311,6 +335,203 @@ class _Vst3PanelControl extends StatelessWidget {
   }
 }
 
+/// One of the panel's entries: parameter `id`'s control, or, for a `row`,
+/// its value only.
+typedef Vst3PanelItem = ({int id, bool row});
+
+/// A knob's value as a read-only row of the panel, its name and value as
+/// an effect page slider prints them.
+class _Vst3ValueRow extends StatelessWidget {
+  const new({required this.id, required this.effect, super.key});
+
+  final int id;
+  final BuiltInEffect effect;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final param = effect.type.params[id];
+    return Row(
+      children: [
+        Expanded(
+          child: AppText(
+            l10n.fxParamName(param),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: surface.textPrimary,
+              fontSize: 22,
+              height: 1,
+            ),
+          ),
+        ),
+        AppText(
+          l10n.fxParamValueText(param, effect.params[id]),
+          style: TextStyle(
+            color: surface.textSecondary,
+            fontFamily: SurfaceTheme.monoFont,
+            fontSize: _kReadoutSize,
+            height: 1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The value text's size on a face, a knob label's and a little more.
+const double _kChipSize = 16;
+
+/// The room around a chip's text, across and up and down, and its gap
+/// from the label above it.
+const double _kChipPadX = 9;
+const double _kChipPadY = 4;
+const double _kChipGap = 4;
+
+/// How far a chip keeps from a knob, a label, the title, the LED, the
+/// footswitch and the face's edge.
+const double _kChipClearance = 3;
+
+/// The widest [type]'s parameter [p] prints, at a chip's size: over the
+/// texts the value texts sample, which hold its every position and the
+/// widest of its continuous ones within a character.
+double _widestValue(AppLocalizations l10n, TrackEffectType type, int p) {
+  final n = vst3Positions(type, p);
+  final texts = {
+    for (var k = 0; k <= kVst3TextSamples; k++)
+      vst3ValueText(l10n, type, p, k / kVst3TextSamples),
+    for (var k = 0; k < n; k++) vst3ValueText(l10n, type, p, k / (n - 1)),
+  };
+  var widest = 0.0;
+  for (final text in texts) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          fontFamily: SurfaceTheme.monoFont,
+          fontSize: _kChipSize,
+          height: 1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    widest = math.max(widest, painter.width);
+    painter.dispose();
+  }
+  return widest;
+}
+
+/// What a value chip on a face of [art] carrying [labels] must stay
+/// clear of, in the face's space: every knob, every label, the title, the
+/// LED, the footswitch, and wherever the face paints its picture.
+List<Rect> _faceObstacles(
+  AppLocalizations l10n,
+  FxPedalPicture art,
+  List<String> labels,
+) {
+  final spec = kFxStompSpecs[art.look]!;
+  final kind = spec.face;
+  final count = labels.length;
+  return [
+    for (final knob in fxStompKnobBounds(kind, count)) knob.inflate(4),
+    ...fxStompLabelBounds(kind, labels),
+    _titleBounds(spec, fxStompFace(l10n, art)!.name, count),
+    fxStompLedBounds(kind),
+    fxStompSwitchBounds(kind),
+    ?fxStompGraphicBounds(spec),
+  ];
+}
+
+/// Where a face of [spec] holding [knobs] prints [name]: its box, turned as
+/// it is turned, with room for an outline.
+Rect _titleBounds(FxStompSpec spec, String name, int knobs) {
+  final (:baseline, :room, :tilt) = fxStompTitleSpot(spec, knobs);
+  final painter = TextPainter(
+    text: TextSpan(
+      text: name,
+      style: TextStyle(
+        fontFamily: spec.font,
+        fontSize: spec.size,
+        fontWeight: spec.bold ? FontWeight.w700 : FontWeight.w400,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  final scale = math.min(1, room / painter.width);
+  final ascent =
+      painter.computeDistanceToActualBaseline(TextBaseline.alphabetic) * scale;
+  final w = painter.width * scale;
+  final box = Rect.fromLTRB(
+    baseline.dx - w / 2,
+    baseline.dy - ascent,
+    baseline.dx + w / 2,
+    baseline.dy + painter.height * scale - ascent,
+  ).inflate(6);
+  painter.dispose();
+  // Turned about the baseline's centre: the box around its corners.
+  final a = tilt * math.pi / 180;
+  final corners = [box.topLeft, box.topRight, box.bottomLeft, box.bottomRight]
+      .map((c) {
+        final d = c - baseline;
+        return baseline +
+            Offset(
+              d.dx * math.cos(a) - d.dy * math.sin(a),
+              d.dx * math.sin(a) + d.dy * math.cos(a),
+            );
+      })
+      .toList();
+  return Rect.fromLTRB(
+    corners.map((c) => c.dx).reduce(math.min),
+    corners.map((c) => c.dy).reduce(math.min),
+    corners.map((c) => c.dx).reduce(math.max),
+    corners.map((c) => c.dy).reduce(math.max),
+  );
+}
+
+/// Where a face of [art] prints each knob's value ([Vst3Face.chips]): a
+/// chip as wide as the knob's widest value, centred under its label, where
+/// it stays clear of every knob, label, the title, the LED, the footswitch,
+/// the face's edge and the other chips; none at all when one knob has no
+/// such room, as its values then are rows of the panel.
+Map<int, Rect> _chipsOf(
+  TrackEffectType type,
+  FxPedalPicture art,
+  List<int> knobs,
+) {
+  final l10n = lookupAppLocalizations(const Locale('en'));
+  final face = fxStompFace(l10n, art)!;
+  final labels = [for (final knob in face.knobs) knob.label];
+  final kind = face.spec.face;
+  final obstacles = _faceObstacles(l10n, art, labels);
+  final labelBounds = fxStompLabelBounds(kind, labels);
+  final knobBounds = fxStompKnobBounds(kind, knobs.length);
+  final edge = (Offset.zero & kind.size).deflate(30);
+  final chips = <int, Rect>{};
+  for (final (i, p) in knobs.indexed) {
+    if (fxParamIsChoice(type.params[p])) continue;
+    final w = _widestValue(l10n, type, p) + 2 * _kChipPadX;
+    const h = _kChipSize + 2 * _kChipPadY;
+    final chip = Rect.fromLTWH(
+      knobBounds[i].center.dx - w / 2,
+      labelBounds[i].bottom + _kChipGap,
+      w,
+      h,
+    );
+    final clear = chip.inflate(_kChipClearance);
+    final fits =
+        edge.contains(clear.topLeft) &&
+        edge.contains(clear.bottomRight) &&
+        !obstacles.any((o) => o.overlaps(clear)) &&
+        !chips.values.any((o) => o.overlaps(clear));
+    // A face prints all its knobs' values or none, so a value is never
+    // looked for in two places.
+    if (!fits) return const {};
+    chips[i] = chip;
+  }
+  return chips;
+}
+
 /// How a control works, as the plugin reads it.
 enum Vst3ControlKind {
   /// A knob: dragged up and down, drawn from its pictures. A knob of a
@@ -330,6 +551,11 @@ enum Vst3ControlKind {
   /// The footswitch: switches the bypass. It has no pictures; the LED shows
   /// what it did.
   footswitch,
+
+  /// A knob's value as a read-only row of the panel, printed at its
+  /// [Vst3Control.readout]: it shows the value of a knob ([Vst3Control.
+  /// display]) with no room to print it on the face.
+  readout,
 }
 
 /// One of an editor's controls, in console pixels.
@@ -345,6 +571,7 @@ class Vst3Control {
     this.by,
     this.buttons = const [],
     this.names = const [],
+    this.value,
   });
 
   final Vst3ControlKind kind;
@@ -379,11 +606,21 @@ class Vst3Control {
 
   /// A select's position names, in order.
   final List<String> names;
+
+  /// Where a knob prints its value on the face, a chip, or `null` for none
+  /// (a choice's, or one whose value is a row of the panel).
+  final Rect? value;
 }
 
 /// An editor laid out: its size, its LED and its controls.
 class Vst3Layout {
-  const new(this.face, this.size, this.led, this.controls);
+  const new(
+    this.face,
+    this.size,
+    this.led,
+    this.controls, {
+    this.obstacles = const [],
+  });
 
   final Vst3Face face;
 
@@ -394,6 +631,10 @@ class Vst3Layout {
   final Rect led;
 
   final List<Vst3Control> controls;
+
+  /// What the face's value chips stay clear of, in the editor's space:
+  /// every knob, label, the title, the LED and the footswitch.
+  final List<Rect> obstacles;
 
   /// The layout as [kVst3FacesManifest] holds it, in points.
   Map<String, Object> toJson() => {
@@ -419,6 +660,7 @@ class Vst3Layout {
           if (c.buttons.isNotEmpty)
             'buttons': [for (final b in c.buttons) _rectJson(b)],
           if (c.names.isNotEmpty) 'names': c.names,
+          if (c.value case final v?) 'value': _rectJson(v),
         },
     ],
   };
@@ -465,7 +707,7 @@ Future<void> pumpVst3Face(
 
 /// The theme the editors print their own text in, from the console's: the
 /// value readouts as the effect page's (its mono face, size and colour) on
-/// the page's background, and a knob's value bubble as a card.
+/// the page's background, and a knob's value on the face in a card.
 Map<String, Object> vst3Theme() {
   final surface = AppTheme.neon.extension<SurfaceTheme>()!;
   String hex(Color c) =>
@@ -475,11 +717,13 @@ Map<String, Object> vst3Theme() {
     'font': kVst3Font,
     // To a hundredth of a point: 20 px is 13.33 points.
     'size': (_kReadoutSize * kVst3Scale * 100).round() / 100,
+    // A chip's on a face.
+    'faceSize': (_kChipSize * kVst3Scale * 100).round() / 100,
     'background': hex(surface.frameBackground),
     'readout': hex(surface.textSecondary),
-    'bubble': hex(surface.card),
-    'bubbleBorder': hex(surface.borderSubtle),
-    'bubbleText': hex(surface.textPrimary),
+    'chip': hex(surface.card),
+    'chipBorder': hex(surface.borderSubtle),
+    'chipText': hex(surface.textPrimary),
   };
 }
 
@@ -535,14 +779,32 @@ Future<Vst3Layout> layOutVst3Face(WidgetTester tester, Vst3Face face) async {
         frames: face.framesOf(p),
         // A choice's selector in the panel sets it.
         display: fxParamIsChoice(face.type.params[p]),
+        value: face.chips[i] == null
+            ? null
+            : _wholePoints(face.chips[i]!.shift(pedal)),
       ),
     Vst3Control(
       kind: Vst3ControlKind.footswitch,
       param: kVst3BypassId,
       rect: fxStompSwitchBounds(kind).shift(pedal),
     ),
-    for (final id in face.panel)
+    for (final (:id, :row) in face.panel)
       ...() {
+        if (row) {
+          final control = find.byKey(Key('vst3_value_$id'));
+          return [
+            Vst3Control(
+              kind: Vst3ControlKind.readout,
+              param: id,
+              rect: _wholePoints(at(control)),
+              display: true,
+              readout: readoutOf(
+                control,
+                vst3ValueText(l10n, face.type, id, defaults[id]!),
+              ),
+            ),
+          ];
+        }
         final control = find.byKey(Key('vst3_param_$id'));
         final rect = _wholePoints(at(control));
         final n = vst3Positions(face.type, id);
@@ -570,26 +832,33 @@ Future<Vst3Layout> layOutVst3Face(WidgetTester tester, Vst3Face face) async {
             vst3ValueText(l10n, face.type, id, k / (n - 1)),
         ];
         final buttons = within(control, find.byType(LoopChoiceButton));
-        final row = buttons.evaluate().length == n;
+        final inRow = buttons.evaluate().length == n;
         return [
           Vst3Control(
-            kind: row ? Vst3ControlKind.buttons : Vst3ControlKind.select,
+            kind: inRow ? Vst3ControlKind.buttons : Vst3ControlKind.select,
             param: id,
             rect: rect,
             frames: n,
-            buttons: row
+            buttons: inRow
                 ? [for (var k = 0; k < n; k++) at(buttons.at(k))]
                 : const [],
-            names: row ? const [] : names,
+            names: inRow ? const [] : names,
           ),
         ];
       }(),
   ];
+  final art = fxEntryArt(vst3FaceEffect(face.type)!, live: true)!;
   return Vst3Layout(
     face,
     size,
     _wholePoints(fxStompLedBounds(kind).shift(pedal)),
     controls,
+    obstacles: [
+      for (final o in _faceObstacles(l10n, art, [
+        for (final knob in fxStompFace(l10n, art)!.knobs) knob.label,
+      ]))
+        o.shift(pedal),
+    ],
   );
 }
 

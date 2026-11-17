@@ -186,6 +186,9 @@ int main(int argc, char** argv) {
             le_json_length(le_json_get(c, "names")) != positions) {
           fail(type, "menu does not match the parameter's positions", param);
         }
+      } else if (std::strcmp(control, "readout") == 0) {
+        /* A knob's value as a row of the panel: it shows, never sets. */
+        if (!le_json_bool(le_json_get(c, "display"), 0)) fail(type, "a readout that sets", param);
       } else {
         fail(type, "unknown control", param);
       }

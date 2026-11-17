@@ -21,11 +21,13 @@
  * a slider sets its default. A stepped parameter moves only to its
  * positions.
  *
- * Values are printed as the console prints them (the controller's text,
- * value_text.h): a slider's at its readout, over the picture's (drawn at one
- * of its settings), and a knob's in a bubble above it while the pointer is
- * over it or turning it, in the theme the manifest gives (the effect page's
- * mono face and colours).
+ * Every value is printed, always, as the console prints it (the
+ * controller's text, value_text.h), in the theme the manifest gives (the
+ * effect page's mono face and colours): a slider's at its readout, over the
+ * picture's (drawn at one of its settings); a knob's in a chip under its
+ * label, or, on a face without the room, at a read-only row of the panel.
+ * A select's and a button row's pictures show their position, and the LED
+ * the footswitch's.
  */
 #import <Cocoa/Cocoa.h>
 #import <CoreText/CoreText.h>
@@ -54,7 +56,7 @@ extern CFBundleRef ghInst; /* this module's bundle (macmain.cpp) */
 
 namespace {
 
-enum class ControlKind { knob, slider, buttons, select, footswitch };
+enum class ControlKind { knob, slider, buttons, select, footswitch, readout };
 
 struct FaceControl {
   ControlKind kind;
@@ -65,7 +67,8 @@ struct FaceControl {
   double initial = 0;   /* its default, which a double click restores */
   bool display = false; /* shows its parameter, which another control sets */
   NSRect track = NSZeroRect;
-  NSRect readout = NSZeroRect; /* where a slider's value text is */
+  NSRect readout = NSZeroRect; /* where a slider's or a row's value text is */
+  NSRect value = NSZeroRect;   /* where a knob prints its value, a chip */
   double baseline = 0;         /* the value text's baseline */
   int32 by = -1;               /* the parameter that picks its sheet, or -1 */
   int32 byPositions = 0;       /* how many positions [by] has */
@@ -75,15 +78,16 @@ struct FaceControl {
   NSArray<NSArray<NSImage*>*>* pictures = nil;
 };
 
-/* How the editor sets its own text: the effect page's value text and a
- * card for a knob's bubble. */
+/* How the editor sets its own text: the effect page's value text, and a
+ * knob's value in a card on the face. */
 struct Theme {
   NSFont* font = nil;
+  NSFont* faceFont = nil;
   NSColor* background = nil;
   NSColor* readout = nil;
-  NSColor* bubble = nil;
-  NSColor* bubbleBorder = nil;
-  NSColor* bubbleText = nil;
+  NSColor* chip = nil;
+  NSColor* chipBorder = nil;
+  NSColor* chipText = nil;
 };
 
 struct Face {
@@ -98,12 +102,8 @@ struct Face {
 /* Points of the drag that takes a knob from end to end. */
 constexpr double kKnobTravel = 200.0;
 
-/* A knob's bubble: the room around its text, its corners, and its gap from
- * the knob. */
-constexpr CGFloat kBubblePadX = 6;
-constexpr CGFloat kBubblePadY = 3;
-constexpr CGFloat kBubbleRadius = 5;
-constexpr CGFloat kBubbleGap = 2;
+/* A knob's value chip's corners. */
+constexpr CGFloat kChipRadius = 5;
 
 NSRect rectFrom(id json) {
   NSArray* a = json;
@@ -206,16 +206,18 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
 
   NSDictionary* theme = manifest[@"theme"];
   if (![theme isKindOfClass:[NSDictionary class]]) return false;
-  face.theme.font = fontFrom([dir stringByAppendingPathComponent:theme[@"font"]],
-                             [theme[@"size"] doubleValue]);
+  NSString* fontFile = [dir stringByAppendingPathComponent:theme[@"font"]];
+  face.theme.font = fontFrom(fontFile, [theme[@"size"] doubleValue]);
+  face.theme.faceFont = fontFrom(fontFile, [theme[@"faceSize"] doubleValue]);
   face.theme.background = colourFrom(theme[@"background"]);
   face.theme.readout = colourFrom(theme[@"readout"]);
-  face.theme.bubble = colourFrom(theme[@"bubble"]);
-  face.theme.bubbleBorder = colourFrom(theme[@"bubbleBorder"]);
-  face.theme.bubbleText = colourFrom(theme[@"bubbleText"]);
-  if (face.theme.font == nil || face.theme.background == nil || face.theme.readout == nil ||
-      face.theme.bubble == nil || face.theme.bubbleBorder == nil ||
-      face.theme.bubbleText == nil) {
+  face.theme.chip = colourFrom(theme[@"chip"]);
+  face.theme.chipBorder = colourFrom(theme[@"chipBorder"]);
+  face.theme.chipText = colourFrom(theme[@"chipText"]);
+  if (face.theme.font == nil || face.theme.faceFont == nil || face.theme.background == nil ||
+      face.theme.readout == nil ||
+      face.theme.chip == nil || face.theme.chipBorder == nil ||
+      face.theme.chipText == nil) {
     return false;
   }
 
@@ -243,6 +245,8 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
       control.kind = ControlKind::select;
     } else if ([kind isEqualToString:@"footswitch"]) {
       control.kind = ControlKind::footswitch;
+    } else if ([kind isEqualToString:@"readout"]) {
+      control.kind = ControlKind::readout;
     } else {
       return false;
     }
@@ -255,6 +259,7 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
       control.readout = rectFrom(c[@"readout"]);
       control.baseline = [c[@"baseline"] doubleValue];
     }
+    if (c[@"value"] != nil) control.value = rectFrom(c[@"value"]);
     for (id b in c[@"buttons"]) control.buttons.push_back(rectFrom(b));
     control.names = c[@"names"];
     ParameterInfo info{};
@@ -280,6 +285,8 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
           return control.frames >= 2 && control.names.count == (NSUInteger)control.frames;
         case ControlKind::footswitch:
           return true;
+        case ControlKind::readout:
+          return control.display && !NSIsEmptyRect(control.readout);
       }
       return false;
     }();
@@ -323,12 +330,10 @@ long positionOf(double v, long positions) {
    * editor goes. */
   IPtr<EditController> _controller;
   const FaceControl* _dragging;
-  const FaceControl* _hovering; /* the knob under the pointer */
   double _dragStart;            /* the value the drag's travel is measured from */
   double _dragValue;            /* where the drag is, before a stepped knob snaps */
   NSPoint _dragFrom;
-  BOOL _dragFine;     /* whether Shift was down at _dragFrom */
-  NSRect _bubbleRect; /* where the bubble was last drawn, or empty */
+  BOOL _dragFine; /* whether Shift was down at _dragFrom */
 }
 
 - (instancetype)initWithFace:(Face)face controller:(EditController*)controller {
@@ -337,14 +342,6 @@ long positionOf(double v, long positions) {
     _face = face;
     _controller = controller;
     _dragging = nullptr;
-    _hovering = nullptr;
-    _bubbleRect = NSZeroRect;
-    [self addTrackingArea:[[NSTrackingArea alloc]
-                              initWithRect:NSZeroRect
-                                   options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited |
-                                           NSTrackingActiveAlways | NSTrackingInVisibleRect
-                                     owner:self
-                                  userInfo:nil]];
   }
   return self;
 }
@@ -379,16 +376,16 @@ long positionOf(double v, long positions) {
   _controller->performEdit(param, value);
 }
 
-/* Redraws what shows [param]: its controls and the ones it picks the
- * pictures of, the LED for the bypass, and the bubble. */
+/* Redraws what shows [param]: its controls, their values, and the ones it
+ * picks the pictures of; the LED for the bypass. */
 - (void)redraw:(ParamID)param {
   if (param == segno_vst3::kBypassId) [self setNeedsDisplayInRect:_face.led];
   for (const FaceControl& c : _face.controls) {
-    if (c.pictures != nil && (c.param == param || c.by == (int32)param)) {
+    if (c.param == param || c.by == (int32)param) {
       [self setNeedsDisplayInRect:c.rect];
+      if (!NSIsEmptyRect(c.value)) [self setNeedsDisplayInRect:c.value];
     }
   }
-  [self updateBubble];
 }
 
 /* One edit, from a click. */
@@ -406,42 +403,6 @@ long positionOf(double v, long positions) {
   return std::round(std::clamp(v, 0.0, 1.0) * last) / last;
 }
 
-/* The knob whose value the bubble shows: the one turning, else the one
- * under the pointer. */
-- (const FaceControl*)bubbleKnob {
-  if (_dragging != nullptr && _dragging->kind == ControlKind::knob) return _dragging;
-  return _hovering;
-}
-
-/* The bubble's text attributes. */
-- (NSDictionary*)bubbleAttributes {
-  return @{NSFontAttributeName : _face.theme.font,
-           NSForegroundColorAttributeName : _face.theme.bubbleText};
-}
-
-/* Where [c]'s bubble goes for [text]: centred above it, or below it when
- * the window has no room above, and inside the window. */
-- (NSRect)bubbleRectFor:(const FaceControl&)c text:(NSString*)text {
-  const NSSize size = [text sizeWithAttributes:[self bubbleAttributes]];
-  const CGFloat w = std::ceil(size.width) + 2 * kBubblePadX;
-  const CGFloat h = std::ceil(size.height) + 2 * kBubblePadY;
-  CGFloat y = NSMinY(c.rect) - h - kBubbleGap;
-  if (y < 0) y = NSMaxY(c.rect) + kBubbleGap;
-  const CGFloat x = std::clamp(NSMidX(c.rect) - w / 2, (CGFloat)0, NSWidth(self.bounds) - w);
-  return NSMakeRect(x, y, w, h);
-}
-
-/* Moves the bubble to the knob it now shows, redrawing where it was and
- * where it goes. */
-- (void)updateBubble {
-  const FaceControl* knob = [self bubbleKnob];
-  const NSRect next =
-      knob == nullptr ? NSZeroRect : [self bubbleRectFor:*knob text:[self textOf:knob->param]];
-  if (!NSIsEmptyRect(_bubbleRect)) [self setNeedsDisplayInRect:_bubbleRect];
-  if (!NSIsEmptyRect(next)) [self setNeedsDisplayInRect:next];
-  _bubbleRect = next;
-}
-
 - (void)drawRect:(NSRect)dirty {
   auto draw = ^(NSImage* image, NSRect rect) {
     [image drawInRect:rect
@@ -455,12 +416,32 @@ long positionOf(double v, long positions) {
   if ([self valueOf:segno_vst3::kBypassId] < 0.5) draw(_face.ledImage, _face.led);
   NSDictionary* readout = @{NSFontAttributeName : _face.theme.font,
                             NSForegroundColorAttributeName : _face.theme.readout};
+  NSDictionary* chipText = @{NSFontAttributeName : _face.theme.faceFont,
+                             NSForegroundColorAttributeName : _face.theme.chipText};
   for (const FaceControl& c : _face.controls) {
-    if (c.pictures == nil || !NSIntersectsRect(c.rect, dirty)) continue;
-    const long sheet = c.by >= 0 ? positionOf([self valueOf:(ParamID)c.by], c.byPositions) : 0;
-    const long k = positionOf([self valueOf:c.param], c.frames);
-    draw(c.pictures[(NSUInteger)sheet][(NSUInteger)k], c.rect);
-    if (c.kind == ControlKind::slider) {
+    if (!NSIsEmptyRect(c.value) && NSIntersectsRect(c.value, dirty)) {
+      // A knob's value, in a card under its label.
+      NSBezierPath* card = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(c.value, 0.5, 0.5)
+                                                           xRadius:kChipRadius
+                                                           yRadius:kChipRadius];
+      [_face.theme.chip setFill];
+      [card fill];
+      [_face.theme.chipBorder setStroke];
+      [card stroke];
+      NSString* text = [self textOf:c.param];
+      const NSSize size = [text sizeWithAttributes:chipText];
+      [text drawAtPoint:NSMakePoint(NSMidX(c.value) - size.width / 2,
+                                    NSMidY(c.value) - size.height / 2)
+         withAttributes:chipText];
+    }
+    if (!NSIntersectsRect(c.rect, dirty)) continue;
+    if (c.pictures != nil) {
+      const long sheet =
+          c.by >= 0 ? positionOf([self valueOf:(ParamID)c.by], c.byPositions) : 0;
+      const long k = positionOf([self valueOf:c.param], c.frames);
+      draw(c.pictures[(NSUInteger)sheet][(NSUInteger)k], c.rect);
+    }
+    if (c.kind == ControlKind::slider || c.kind == ControlKind::readout) {
       // The exact value, where the picture prints the nearest of its
       // settings.
       [_face.theme.background setFill];
@@ -471,20 +452,6 @@ long positionOf(double v, long positions) {
                                     c.baseline - _face.theme.font.ascender)
          withAttributes:readout];
     }
-  }
-  const FaceControl* knob = [self bubbleKnob];
-  if (knob != nullptr && NSIntersectsRect(_bubbleRect, dirty)) {
-    NSBezierPath* card = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(_bubbleRect, 0.5, 0.5)
-                                                         xRadius:kBubbleRadius
-                                                         yRadius:kBubbleRadius];
-    [_face.theme.bubble setFill];
-    [card fill];
-    [_face.theme.bubbleBorder setStroke];
-    [card stroke];
-    [[self textOf:knob->param]
-           drawAtPoint:NSMakePoint(NSMinX(_bubbleRect) + kBubblePadX,
-                                   NSMinY(_bubbleRect) + kBubblePadY)
-        withAttributes:[self bubbleAttributes]];
   }
 }
 
@@ -497,21 +464,6 @@ long positionOf(double v, long positions) {
 
 - (double)sliderValue:(const FaceControl&)c at:(NSPoint)p {
   return (p.x - NSMinX(c.track)) / NSWidth(c.track);
-}
-
-- (void)mouseMoved:(NSEvent*)event {
-  const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
-  const FaceControl* c = [self controlAt:p];
-  const FaceControl* knob = c != nullptr && c->kind == ControlKind::knob ? c : nullptr;
-  if (knob == _hovering) return;
-  _hovering = knob;
-  [self updateBubble];
-}
-
-- (void)mouseExited:(NSEvent*)event {
-  if (_hovering == nullptr) return;
-  _hovering = nullptr;
-  [self updateBubble];
 }
 
 - (void)mouseDown:(NSEvent*)event {
@@ -553,9 +505,10 @@ long positionOf(double v, long positions) {
       if (c->kind == ControlKind::slider) {
         [self set:c->param to:[self snap:[self sliderValue:*c at:p] control:*c]];
       }
-      [self updateBubble];
       return;
     }
+    case ControlKind::readout:
+      return;
   }
 }
 
@@ -590,8 +543,6 @@ long positionOf(double v, long positions) {
 
 - (void)mouseUp:(NSEvent*)event {
   [self endDrag];
-  // The pointer may have left the knob while turning it.
-  [self mouseMoved:event];
 }
 
 /* Ends a drag's edit: at the mouse's release, or when the editor closes
@@ -600,7 +551,6 @@ long positionOf(double v, long positions) {
   if (_dragging == nullptr) return;
   _controller->endEdit(_dragging->param);
   _dragging = nullptr;
-  [self updateBubble];
 }
 
 /* A select's menu, its current position ticked, under the control. */

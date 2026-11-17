@@ -881,18 +881,13 @@ class _Enclosure {
       );
   }
 
-  /// The design's `title()`: the name centred on [x], its baseline on [y],
-  /// turned by [tilt] degrees (the spec's own when not given).
-  void _title(double x, double y, {double? tilt}) {
-    final turn = tilt ?? spec.tilt;
-    // The width the name has on its face: across the treadle, box, panel or
-    // module, or along the rocker's side band.
-    final room = switch (spec.face) {
-      FxStompFaceKind.treadle => kFxStompTreadleTitleRoom,
-      FxStompFaceKind.box || FxStompFaceKind.window => 350.0,
-      FxStompFaceKind.module => 330.0,
-      FxStompFaceKind.rocker => 560.0,
-    };
+  /// The design's `title()`: the name on its face's spot
+  /// ([fxStompTitleSpot]), shrunk to the room it has.
+  void _title() {
+    final (:baseline, :room, :tilt) = fxStompTitleSpot(spec, knobs);
+    final x = baseline.dx;
+    final y = baseline.dy;
+    final turn = tilt;
     final style = TextStyle(
       fontFamily: spec.font,
       fontSize: spec.size,
@@ -955,11 +950,7 @@ class _Enclosure {
         Paint()..shader = _metalV(jack),
       );
     }
-    _body(
-      const Rect.fromLTWH(24, 14, 402, 626),
-      30,
-      art: const Rect.fromLTWH(24, 14, 402, 284),
-    );
+    _body(const Rect.fromLTWH(24, 14, 402, 626), 30, art: _kTreadleArt);
     _screw(const Offset(52, 44));
     _screw(const Offset(398, 44));
     _led();
@@ -980,13 +971,7 @@ class _Enclosure {
       canvas
         ..save()
         ..clipRRect(treadShape);
-      paintFxStompGraphic(
-        canvas,
-        spec.graphic,
-        const Rect.fromLTWH(32, 298, 386, 130),
-        spec,
-        name,
-      );
+      paintFxStompGraphic(canvas, spec.graphic, _kTreadleGraphic, spec, name);
       canvas.restore();
     }
     canvas
@@ -995,7 +980,7 @@ class _Enclosure {
         _rounded(33, 299, 384, 332, 21),
         fxStompStroke(Colors.white, 2, .22),
       );
-    _title(225, spec.titleY ?? kFxStompTreadleTitleY);
+    _title();
     const pad = Rect.fromLTWH(62, 432, 326, 178);
     canvas
       ..drawRRect(
@@ -1033,16 +1018,15 @@ class _Enclosure {
   }
 
   void _box() {
-    const body = Rect.fromLTWH(30, 14, 390, 626);
-    _body(body, 46, art: body);
+    _body(_kBoxBody, 46, art: _kBoxBody);
     _logo(const Offset(225, 58), .7, ink, .9);
     _led();
-    _title(225, spec.titleY ?? (knobs > 3 ? 420 : 395));
+    _title();
     _stompSwitch(_kBoxSwitch);
   }
 
   void _window() {
-    const panel = Rect.fromLTWH(66, 50, 318, 300);
+    const panel = _kWindowPanel;
     final panelShape = RRect.fromRectAndRadius(
       panel,
       const Radius.circular(44),
@@ -1073,7 +1057,7 @@ class _Enclosure {
       )
       ..drawRRect(panelShape, Paint()..shader = _sheen(panel, .7));
     _logo(const Offset(225, 80), .55, spec.panelInk, .7);
-    _title(225, spec.titleY ?? 470);
+    _title();
     _led();
     _stompSwitch(_kWindowSwitch);
   }
@@ -1086,7 +1070,7 @@ class _Enclosure {
       Offset(72, 952),
       Offset(378, 952),
     ].forEach(_screw);
-    _title(225, 122, tilt: 0);
+    _title();
     paintFxStompScreen(
       canvas,
       const Rect.fromLTWH(80, 160, 290, 150),
@@ -1111,11 +1095,7 @@ class _Enclosure {
   }
 
   void _rocker() {
-    _body(
-      const Rect.fromLTWH(30, 14, 390, 744),
-      26,
-      art: const Rect.fromLTWH(322, 14, 98, 744),
-    );
+    _body(const Rect.fromLTWH(30, 14, 390, 744), 26, art: _kRockerArt);
     const rubber = Rect.fromLTWH(60, 38, 254, 552);
     canvas
       ..drawRRect(_rounded(58, 40, 262, 560, 20), _blur(Colors.black, .55, 4))
@@ -1144,7 +1124,7 @@ class _Enclosure {
         Paint()..shader = _metalV(bar),
       )
       ..restore();
-    _title(392, 330, tilt: -90);
+    _title();
     _logo(const Offset(372, 640), .9, ink, .85);
     _led();
     _domeSwitch(_kRockerSwitch, _kRockerSwitchWell, 29, 2);
@@ -1378,3 +1358,61 @@ List<Rect> fxStompKnobTurnBounds(FxStompFaceKind kind, int count) => [
   for (final spot in _KnobSpot.layout(kind, count))
     Rect.fromCircle(center: spot.centre, radius: spot.radius * 1.05 + 2),
 ];
+
+/// Where a face of [spec] holding [knobs] prints its name: the centre of
+/// the name's baseline, the width it may take (a longer name shrinks to
+/// it), and how far it is turned, in degrees. Across the treadle, box,
+/// panel or module, or along the rocker's side band.
+({Offset baseline, double room, double tilt}) fxStompTitleSpot(
+  FxStompSpec spec,
+  int knobs,
+) => switch (spec.face) {
+  FxStompFaceKind.treadle => (
+    baseline: Offset(225, spec.titleY ?? kFxStompTreadleTitleY),
+    room: kFxStompTreadleTitleRoom,
+    tilt: spec.tilt,
+  ),
+  FxStompFaceKind.box => (
+    baseline: Offset(225, spec.titleY ?? (knobs > 3 ? 420 : 395)),
+    room: 350,
+    tilt: spec.tilt,
+  ),
+  FxStompFaceKind.window => (
+    baseline: Offset(225, spec.titleY ?? 470),
+    room: 350,
+    tilt: spec.tilt,
+  ),
+  FxStompFaceKind.module => (
+    baseline: const Offset(225, 122),
+    room: 330,
+    tilt: 0,
+  ),
+  FxStompFaceKind.rocker => (
+    baseline: const Offset(392, 330),
+    room: 560,
+    tilt: -90,
+  ),
+};
+
+/// Where each face paints its picture ([FxStompSpec.graphic]): a treadle's
+/// upper body, or its tread for the pictures that sit on it; a box's whole
+/// body; a window's panel; a rocker's side band.
+const Rect _kTreadleArt = Rect.fromLTWH(24, 14, 402, 284);
+const Rect _kTreadleGraphic = Rect.fromLTWH(32, 298, 386, 130);
+const Rect _kBoxBody = Rect.fromLTWH(30, 14, 390, 626);
+const Rect _kWindowPanel = Rect.fromLTWH(66, 50, 318, 300);
+const Rect _kRockerArt = Rect.fromLTWH(322, 14, 98, 744);
+
+/// Where a face of [spec] paints its picture, or `null` for a face with
+/// none (a module's is its screen, above its knobs).
+Rect? fxStompGraphicBounds(FxStompSpec spec) {
+  if (spec.graphic == FxStompGraphic.none) return null;
+  return switch (spec.face) {
+    FxStompFaceKind.treadle =>
+      fxStompGraphicOnTreadle(spec.graphic) ? _kTreadleGraphic : _kTreadleArt,
+    FxStompFaceKind.box => _kBoxBody,
+    FxStompFaceKind.window => _kWindowPanel,
+    FxStompFaceKind.module => null,
+    FxStompFaceKind.rocker => _kRockerArt,
+  };
+}

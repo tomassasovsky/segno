@@ -4,17 +4,18 @@
   "theme": {
     "font": "JetBrainsMono-Regular.ttf",
     "size": 13.33,
+    "faceSize": 10.67,
     "background": "#111215ff",
     "readout": "#9a9aa2ff",
-    "bubble": "#161618ff",
-    "bubbleBorder": "#ffffff1f",
-    "bubbleText": "#f3f4f7ff"
+    "chip": "#161618ff",
+    "chipBorder": "#ffffff1f",
+    "chipText": "#f3f4f7ff"
   },
   "faces": [
     {
       "type": 1,
       "look": "Overdrive",
-      "size": [680, 482],
+      "size": [680, 521],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -35,9 +36,25 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [382, 20, 278, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [382, 65, 278, 18],
+          "baseline": 78.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 108, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -49,31 +66,31 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 212, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 247, 73, 43],
+            [418, 247, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 316, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 355, 320, 37],
+          "readout": [401, 330, 259, 18],
+          "baseline": 343.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 436, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 463, 320, 37],
+          "readout": [382, 436, 278, 18],
+          "baseline": 449.93
         }
       ]
     },
@@ -87,13 +104,15 @@
           "control": "knob",
           "param": 0,
           "rect": [82, 258, 56, 57],
-          "frames": 128
+          "frames": 128,
+          "value": [78, 346, 64, 17]
         },
         {
           "control": "knob",
           "param": 1,
           "rect": [202, 258, 56, 57],
-          "frames": 128
+          "frames": 128,
+          "value": [211, 346, 38, 17]
         },
         {
           "control": "footswitch",
@@ -153,19 +172,22 @@
           "control": "knob",
           "param": 0,
           "rect": [62, 84, 54, 54],
-          "frames": 128
+          "frames": 128,
+          "value": [60, 156, 58, 17]
         },
         {
           "control": "knob",
           "param": 1,
           "rect": [143, 84, 54, 54],
-          "frames": 128
+          "frames": 128,
+          "value": [154, 156, 32, 17]
         },
         {
           "control": "knob",
           "param": 2,
           "rect": [224, 84, 54, 54],
-          "frames": 128
+          "frames": 128,
+          "value": [231, 156, 39, 17]
         },
         {
           "control": "footswitch",
@@ -218,7 +240,7 @@
     {
       "type": 4,
       "look": "Tremolo",
-      "size": [680, 482],
+      "size": [680, 521],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -239,9 +261,25 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [376, 20, 284, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [387, 65, 273, 18],
+          "baseline": 78.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 108, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -253,38 +291,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 212, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 247, 73, 43],
+            [418, 247, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 316, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 355, 320, 37],
+          "readout": [401, 330, 259, 18],
+          "baseline": 343.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 436, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 463, 320, 37],
+          "readout": [382, 436, 278, 18],
+          "baseline": 449.93
         }
       ]
     },
     {
       "type": 5,
       "look": "Octaver",
-      "size": [680, 625],
+      "size": [1020, 482],
       "led": [226, 35, 48, 47],
       "controls": [
         {
@@ -325,29 +363,53 @@
           "rect": [138, 353, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [377, 20, 283, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [380, 65, 280, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [370, 109, 290, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "buttons",
           "param": 3,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 152, 320, 70],
           "frames": 2,
           "buttons": [
-            [340, 47, 157, 43],
-            [503, 47, 157, 43]
+            [340, 179, 157, 43],
+            [503, 179, 157, 43]
           ]
         },
         {
           "control": "buttons",
           "param": 4,
-          "rect": [340, 116, 320, 70],
+          "rect": [340, 248, 320, 70],
           "frames": 2,
           "buttons": [
-            [340, 143, 157, 43],
-            [503, 143, 157, 43]
+            [340, 275, 157, 43],
+            [503, 275, 157, 43]
           ]
         },
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 212, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -359,38 +421,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 316, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 351, 73, 43],
-            [418, 351, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 420, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 459, 320, 37],
-          "readout": [401, 434, 259, 18],
-          "baseline": 447.93
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
+          "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 540, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 567, 320, 37],
-          "readout": [382, 540, 278, 18],
-          "baseline": 553.93
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
+          "baseline": 361.93
         }
       ]
     },
     {
       "type": 6,
       "look": "Echo",
-      "size": [680, 482],
+      "size": [680, 565],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -417,9 +479,33 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [380, 20, 280, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [414, 65, 246, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [370, 109, 290, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 152, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -431,38 +517,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 256, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 291, 73, 43],
+            [418, 291, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 360, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 399, 320, 37],
+          "readout": [401, 374, 259, 18],
+          "baseline": 387.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 480, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 507, 320, 37],
+          "readout": [382, 480, 278, 18],
+          "baseline": 493.93
         }
       ]
     },
     {
       "type": 7,
       "look": "Reverb",
-      "size": [680, 482],
+      "size": [680, 565],
       "led": [226, 35, 48, 47],
       "controls": [
         {
@@ -489,9 +575,33 @@
           "rect": [138, 353, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [375, 21, 285, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [408, 65, 252, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [370, 109, 290, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 152, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -503,38 +613,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 256, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 291, 73, 43],
+            [418, 291, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 360, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 399, 320, 37],
+          "readout": [401, 374, 259, 18],
+          "baseline": 387.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 480, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 507, 320, 37],
+          "readout": [382, 480, 278, 18],
+          "baseline": 493.93
         }
       ]
     },
     {
       "type": 9,
       "look": "Four-band EQ",
-      "size": [1020, 707],
+      "size": [1360, 707],
       "led": [146, 570, 48, 47],
       "controls": [
         {
@@ -579,92 +689,140 @@
           "rect": [154, 612, 32, 32]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [401, 20, 259, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [374, 64, 286, 18],
+          "baseline": 77.93
+        },
+        {
+          "control": "readout",
+          "param": 4,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [392, 108, 268, 18],
+          "baseline": 121.93
+        },
+        {
+          "control": "readout",
+          "param": 7,
+          "rect": [340, 152, 320, 18],
+          "display": true,
+          "readout": [390, 152, 270, 18],
+          "baseline": 165.93
+        },
+        {
+          "control": "readout",
+          "param": 10,
+          "rect": [340, 196, 320, 18],
+          "display": true,
+          "readout": [378, 196, 282, 18],
+          "baseline": 209.93
+        },
+        {
+          "control": "readout",
+          "param": 13,
+          "rect": [340, 240, 320, 18],
+          "display": true,
+          "readout": [404, 240, 256, 18],
+          "baseline": 253.93
+        },
+        {
           "control": "slider",
           "param": 2,
-          "rect": [340, 20, 320, 65],
+          "rect": [340, 284, 320, 65],
           "frames": 128,
-          "track": [340, 47, 320, 37],
-          "readout": [407, 20, 253, 18],
-          "baseline": 33.93
+          "track": [340, 311, 320, 37],
+          "readout": [407, 284, 253, 18],
+          "baseline": 297.93
         },
         {
           "control": "slider",
           "param": 3,
-          "rect": [340, 110, 320, 66],
+          "rect": [680, 20, 320, 65],
           "frames": 128,
-          "track": [340, 138, 320, 37],
-          "readout": [390, 111, 270, 18],
-          "baseline": 125.27
+          "track": [680, 47, 320, 37],
+          "readout": [730, 21, 270, 18],
+          "baseline": 34.6
         },
         {
           "control": "slider",
           "param": 5,
-          "rect": [340, 201, 320, 65],
+          "rect": [680, 110, 320, 66],
           "frames": 128,
-          "track": [340, 229, 320, 37],
-          "readout": [426, 201, 234, 18],
-          "baseline": 215.27
+          "track": [680, 138, 320, 37],
+          "readout": [766, 111, 234, 18],
+          "baseline": 124.6
         },
         {
           "control": "slider",
           "param": 6,
-          "rect": [340, 292, 320, 65],
+          "rect": [680, 201, 320, 65],
           "frames": 128,
-          "track": [340, 319, 320, 37],
-          "readout": [408, 293, 252, 18],
-          "baseline": 306.6
+          "track": [680, 229, 320, 37],
+          "readout": [748, 202, 252, 18],
+          "baseline": 215.93
         },
         {
           "control": "slider",
           "param": 8,
-          "rect": [340, 382, 320, 66],
+          "rect": [680, 292, 320, 65],
           "frames": 128,
-          "track": [340, 410, 320, 37],
-          "readout": [423, 383, 237, 18],
-          "baseline": 396.6
+          "track": [680, 319, 320, 37],
+          "readout": [763, 292, 237, 18],
+          "baseline": 305.93
         },
         {
           "control": "slider",
           "param": 9,
-          "rect": [340, 473, 320, 65],
+          "rect": [680, 382, 320, 66],
           "frames": 128,
-          "track": [340, 501, 320, 37],
-          "readout": [405, 474, 255, 18],
-          "baseline": 487.93
+          "track": [680, 410, 320, 37],
+          "readout": [745, 383, 255, 18],
+          "baseline": 397.27
         },
         {
           "control": "slider",
           "param": 11,
-          "rect": [340, 564, 320, 65],
+          "rect": [680, 473, 320, 65],
           "frames": 128,
-          "track": [340, 591, 320, 37],
-          "readout": [411, 564, 249, 18],
-          "baseline": 577.93
+          "track": [680, 501, 320, 37],
+          "readout": [751, 473, 249, 18],
+          "baseline": 487.27
         },
         {
           "control": "slider",
           "param": 12,
-          "rect": [680, 20, 320, 65],
+          "rect": [680, 564, 320, 65],
           "frames": 128,
-          "track": [680, 47, 320, 37],
-          "readout": [733, 21, 267, 18],
-          "baseline": 34.6
+          "track": [680, 591, 320, 37],
+          "readout": [733, 565, 267, 18],
+          "baseline": 578.6
         },
         {
           "control": "buttons",
           "param": 14,
-          "rect": [680, 110, 320, 71],
+          "rect": [1020, 20, 320, 70],
           "frames": 3,
           "buttons": [
-            [680, 138, 103, 43],
-            [788, 138, 103, 43],
-            [897, 138, 103, 43]
+            [1020, 47, 103, 43],
+            [1128, 47, 103, 43],
+            [1237, 47, 103, 43]
           ]
         },
         {
           "control": "select",
           "param": 1000,
-          "rect": [680, 206, 140, 79],
+          "rect": [1020, 116, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -676,38 +834,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [680, 310, 144, 79],
+          "rect": [1020, 220, 144, 78],
           "frames": 2,
           "buttons": [
-            [680, 346, 73, 43],
-            [758, 346, 66, 43]
+            [1020, 255, 73, 43],
+            [1098, 255, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [680, 414, 320, 95],
+          "rect": [1020, 324, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [680, 453, 320, 37],
-          "readout": [741, 429, 259, 18],
-          "baseline": 442.6
+          "track": [1020, 363, 320, 37],
+          "readout": [1081, 338, 259, 18],
+          "baseline": 351.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [680, 534, 320, 66],
+          "rect": [1020, 444, 320, 65],
           "frames": 128,
-          "track": [680, 562, 320, 37],
-          "readout": [722, 535, 278, 18],
-          "baseline": 548.6
+          "track": [1020, 471, 320, 37],
+          "readout": [1062, 444, 278, 18],
+          "baseline": 457.93
         }
       ]
     },
     {
       "type": 10,
       "look": "Compressor",
-      "size": [680, 707],
+      "size": [1020, 707],
       "led": [146, 570, 48, 47],
       "controls": [
         {
@@ -746,9 +904,49 @@
           "rect": [154, 612, 32, 32]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [416, 20, 244, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [380, 65, 280, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [390, 108, 270, 18],
+          "baseline": 121.93
+        },
+        {
+          "control": "readout",
+          "param": 3,
+          "rect": [340, 152, 320, 18],
+          "display": true,
+          "readout": [401, 152, 259, 18],
+          "baseline": 165.93
+        },
+        {
+          "control": "readout",
+          "param": 4,
+          "rect": [340, 196, 320, 18],
+          "display": true,
+          "readout": [408, 196, 252, 18],
+          "baseline": 209.93
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -760,30 +958,30 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
           "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
           "baseline": 361.93
         }
       ]
@@ -791,7 +989,7 @@
     {
       "type": 11,
       "look": "Transient",
-      "size": [680, 547],
+      "size": [680, 565],
       "led": [146, 346, 48, 48],
       "controls": [
         {
@@ -818,9 +1016,33 @@
           "rect": [138, 409, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [390, 21, 270, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [439, 65, 221, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [397, 109, 263, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 152, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -832,38 +1054,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 256, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 291, 73, 43],
+            [418, 291, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 360, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 399, 320, 37],
+          "readout": [401, 374, 259, 18],
+          "baseline": 387.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 480, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 507, 320, 37],
+          "readout": [382, 480, 278, 18],
+          "baseline": 493.93
         }
       ]
     },
     {
       "type": 12,
       "look": "High-pass gate",
-      "size": [680, 482],
+      "size": [1020, 482],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -896,9 +1118,41 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [418, 20, 242, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [449, 64, 211, 18],
+          "baseline": 77.93
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [434, 108, 226, 18],
+          "baseline": 121.93
+        },
+        {
+          "control": "readout",
+          "param": 3,
+          "rect": [340, 152, 320, 18],
+          "display": true,
+          "readout": [442, 152, 218, 18],
+          "baseline": 165.93
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -910,30 +1164,30 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
           "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
           "baseline": 361.93
         }
       ]
@@ -962,9 +1216,25 @@
           "rect": [138, 409, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [370, 21, 290, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [421, 65, 239, 18],
+          "baseline": 78.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 108, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -976,38 +1246,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 212, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 247, 73, 43],
+            [418, 247, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 316, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 355, 320, 37],
+          "readout": [401, 330, 259, 18],
+          "baseline": 343.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 436, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 463, 320, 37],
+          "readout": [382, 436, 278, 18],
+          "baseline": 449.93
         }
       ]
     },
     {
       "type": 14,
       "look": "Chorus",
-      "size": [680, 482],
+      "size": [680, 565],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -1034,9 +1304,33 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [376, 21, 284, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [387, 65, 273, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [370, 109, 290, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 152, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1048,31 +1342,31 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 256, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 291, 73, 43],
+            [418, 291, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 360, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 399, 320, 37],
+          "readout": [401, 374, 259, 18],
+          "baseline": 387.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 480, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 507, 320, 37],
+          "readout": [382, 480, 278, 18],
+          "baseline": 493.93
         }
       ]
     },
@@ -1142,7 +1436,7 @@
     {
       "type": 16,
       "look": "Overdrive",
-      "size": [680, 482],
+      "size": [680, 565],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -1169,9 +1463,33 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [382, 21, 278, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [380, 65, 280, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [382, 108, 278, 18],
+          "baseline": 121.93
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 152, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1183,38 +1501,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 256, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 291, 73, 43],
+            [418, 291, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 360, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 399, 320, 37],
+          "readout": [401, 374, 259, 18],
+          "baseline": 387.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 480, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 507, 320, 37],
+          "readout": [382, 480, 278, 18],
+          "baseline": 493.93
         }
       ]
     },
     {
       "type": 18,
       "look": "Vinyl",
-      "size": [680, 707],
+      "size": [1020, 707],
       "led": [146, 570, 48, 47],
       "controls": [
         {
@@ -1247,9 +1565,41 @@
           "rect": [154, 612, 32, 32]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [382, 21, 278, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [420, 64, 240, 18],
+          "baseline": 77.93
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [385, 109, 275, 18],
+          "baseline": 122.6
+        },
+        {
+          "control": "readout",
+          "param": 3,
+          "rect": [340, 152, 320, 18],
+          "display": true,
+          "readout": [421, 153, 239, 18],
+          "baseline": 166.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1261,30 +1611,30 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
           "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
           "baseline": 361.93
         }
       ]
@@ -1319,9 +1669,33 @@
           "rect": [154, 612, 32, 32]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [420, 20, 240, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [381, 65, 279, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [370, 109, 290, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 152, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1333,38 +1707,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 256, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 291, 73, 43],
+            [418, 291, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 360, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 399, 320, 37],
+          "readout": [401, 374, 259, 18],
+          "baseline": 387.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 480, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 507, 320, 37],
+          "readout": [382, 480, 278, 18],
+          "baseline": 493.93
         }
       ]
     },
     {
       "type": 20,
       "look": "Low-pass filter",
-      "size": [680, 707],
+      "size": [1020, 707],
       "led": [146, 570, 48, 47],
       "controls": [
         {
@@ -1398,9 +1772,33 @@
           "rect": [154, 612, 32, 32]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [389, 20, 271, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [423, 65, 237, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [419, 109, 241, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 3,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 152, 320, 70],
           "frames": 16,
           "names": [
             "8/4",
@@ -1424,7 +1822,7 @@
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 116, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1436,31 +1834,31 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 220, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 255, 73, 43],
-            [418, 255, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 324, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 363, 320, 37],
-          "readout": [401, 338, 259, 18],
-          "baseline": 351.93
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
+          "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 444, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 471, 320, 37],
-          "readout": [382, 444, 278, 18],
-          "baseline": 457.93
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
+          "baseline": 361.93
         }
       ]
     },
@@ -1474,13 +1872,15 @@
           "control": "knob",
           "param": 0,
           "rect": [81, 79, 62, 63],
-          "frames": 128
+          "frames": 128,
+          "value": [83, 160, 58, 17]
         },
         {
           "control": "knob",
           "param": 1,
           "rect": [197, 79, 62, 63],
-          "frames": 128
+          "frames": 128,
+          "value": [209, 160, 38, 17]
         },
         {
           "control": "footswitch",
@@ -1540,13 +1940,15 @@
           "control": "knob",
           "param": 0,
           "rect": [99, 90, 59, 60],
-          "frames": 128
+          "frames": 128,
+          "value": [96, 168, 64, 17]
         },
         {
           "control": "knob",
           "param": 1,
           "rect": [182, 90, 59, 60],
-          "frames": 128
+          "frames": 128,
+          "value": [192, 168, 39, 17]
         },
         {
           "control": "footswitch",
@@ -1599,7 +2001,7 @@
     {
       "type": 23,
       "look": "Ambience",
-      "size": [680, 482],
+      "size": [680, 565],
       "led": [226, 35, 48, 47],
       "controls": [
         {
@@ -1626,9 +2028,33 @@
           "rect": [138, 353, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [390, 20, 270, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [398, 65, 262, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [442, 109, 218, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 1000,
-          "rect": [340, 20, 140, 78],
+          "rect": [340, 152, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1640,31 +2066,31 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 124, 144, 78],
+          "rect": [340, 256, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 159, 73, 43],
-            [418, 159, 66, 43]
+            [340, 291, 73, 43],
+            [418, 291, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 228, 320, 94],
+          "rect": [340, 360, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 267, 320, 37],
-          "readout": [401, 242, 259, 18],
-          "baseline": 255.93
+          "track": [340, 399, 320, 37],
+          "readout": [401, 374, 259, 18],
+          "baseline": 387.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 348, 320, 65],
+          "rect": [340, 480, 320, 65],
           "frames": 128,
-          "track": [340, 375, 320, 37],
-          "readout": [382, 348, 278, 18],
-          "baseline": 361.93
+          "track": [340, 507, 320, 37],
+          "readout": [382, 480, 278, 18],
+          "baseline": 493.93
         }
       ]
     },
@@ -1744,7 +2170,7 @@
     {
       "type": 25,
       "look": "Pumper",
-      "size": [680, 547],
+      "size": [680, 573],
       "led": [146, 346, 48, 48],
       "controls": [
         {
@@ -1766,9 +2192,17 @@
           "rect": [138, 409, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [387, 21, 273, 18],
+          "baseline": 34.6
+        },
+        {
           "control": "select",
           "param": 0,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 64, 320, 70],
           "frames": 11,
           "names": [
             "Bar",
@@ -1787,7 +2221,7 @@
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 116, 140, 78],
+          "rect": [340, 160, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1799,38 +2233,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 220, 144, 78],
+          "rect": [340, 264, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 255, 73, 43],
-            [418, 255, 66, 43]
+            [340, 299, 73, 43],
+            [418, 299, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 324, 320, 94],
+          "rect": [340, 368, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 363, 320, 37],
-          "readout": [401, 338, 259, 18],
-          "baseline": 351.93
+          "track": [340, 407, 320, 37],
+          "readout": [401, 382, 259, 18],
+          "baseline": 395.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 444, 320, 65],
+          "rect": [340, 488, 320, 65],
           "frames": 128,
-          "track": [340, 471, 320, 37],
-          "readout": [382, 444, 278, 18],
-          "baseline": 457.93
+          "track": [340, 515, 320, 37],
+          "readout": [382, 488, 278, 18],
+          "baseline": 501.93
         }
       ]
     },
     {
       "type": 26,
       "look": "Slicer",
-      "size": [680, 625],
+      "size": [680, 669],
       "led": [226, 35, 48, 47],
       "controls": [
         {
@@ -1859,9 +2293,17 @@
           "rect": [138, 353, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [370, 21, 290, 18],
+          "baseline": 34.6
+        },
+        {
           "control": "select",
           "param": 0,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 64, 320, 70],
           "frames": 17,
           "names": [
             "AABB",
@@ -1886,7 +2328,7 @@
         {
           "control": "select",
           "param": 1,
-          "rect": [340, 116, 320, 70],
+          "rect": [340, 160, 320, 70],
           "frames": 9,
           "names": [
             "1/4",
@@ -1903,7 +2345,7 @@
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 212, 140, 78],
+          "rect": [340, 256, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -1915,31 +2357,31 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 316, 144, 78],
+          "rect": [340, 360, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 351, 73, 43],
-            [418, 351, 66, 43]
+            [340, 395, 73, 43],
+            [418, 395, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 420, 320, 94],
+          "rect": [340, 464, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 459, 320, 37],
-          "readout": [401, 434, 259, 18],
-          "baseline": 447.93
+          "track": [340, 503, 320, 37],
+          "readout": [401, 478, 259, 18],
+          "baseline": 491.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 540, 320, 65],
+          "rect": [340, 584, 320, 65],
           "frames": 128,
-          "track": [340, 567, 320, 37],
-          "readout": [382, 540, 278, 18],
-          "baseline": 553.93
+          "track": [340, 611, 320, 37],
+          "readout": [382, 584, 278, 18],
+          "baseline": 597.93
         }
       ]
     },
@@ -1960,13 +2402,15 @@
           "control": "knob",
           "param": 1,
           "rect": [116, 87, 47, 47],
-          "frames": 128
+          "frames": 128,
+          "value": [120, 153, 39, 17]
         },
         {
           "control": "knob",
           "param": 2,
           "rect": [177, 87, 47, 47],
-          "frames": 128
+          "frames": 128,
+          "value": [181, 153, 39, 17]
         },
         {
           "control": "knob",
@@ -2121,7 +2565,7 @@
     {
       "type": 28,
       "look": "Octaver",
-      "size": [680, 529],
+      "size": [1020, 482],
       "led": [226, 35, 48, 47],
       "controls": [
         {
@@ -2155,19 +2599,43 @@
           "rect": [138, 353, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [442, 21, 218, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [370, 65, 290, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 3,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [445, 109, 215, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "buttons",
           "param": 0,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 152, 320, 70],
           "frames": 2,
           "buttons": [
-            [340, 47, 157, 43],
-            [503, 47, 157, 43]
+            [340, 179, 157, 43],
+            [503, 179, 157, 43]
           ]
         },
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 116, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -2179,38 +2647,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 220, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 255, 73, 43],
-            [418, 255, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 324, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 363, 320, 37],
-          "readout": [401, 338, 259, 18],
-          "baseline": 351.93
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
+          "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 444, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 471, 320, 37],
-          "readout": [382, 444, 278, 18],
-          "baseline": 457.93
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
+          "baseline": 361.93
         }
       ]
     },
     {
       "type": 29,
       "look": "Amp",
-      "size": [680, 529],
+      "size": [1020, 482],
       "led": [226, 35, 48, 47],
       "controls": [
         {
@@ -2250,9 +2718,41 @@
           "rect": [138, 353, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [382, 21, 278, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [379, 65, 281, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [389, 109, 271, 18],
+          "baseline": 122.6
+        },
+        {
+          "control": "readout",
+          "param": 3,
+          "rect": [340, 152, 320, 18],
+          "display": true,
+          "readout": [400, 153, 260, 18],
+          "baseline": 166.6
+        },
+        {
           "control": "select",
           "param": 4,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 196, 320, 70],
           "frames": 12,
           "names": [
             "D.I.",
@@ -2272,7 +2772,7 @@
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 116, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -2284,38 +2784,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 220, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 255, 73, 43],
-            [418, 255, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 324, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 363, 320, 37],
-          "readout": [401, 338, 259, 18],
-          "baseline": 351.93
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
+          "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 444, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 471, 320, 37],
-          "readout": [382, 444, 278, 18],
-          "baseline": 457.93
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
+          "baseline": 361.93
         }
       ]
     },
     {
       "type": 30,
       "look": "Modulation",
-      "size": [680, 529],
+      "size": [1020, 482],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -2349,9 +2849,33 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [376, 21, 284, 18],
+          "baseline": 34.6
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [387, 65, 273, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 2,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [370, 109, 290, 18],
+          "baseline": 122.6
+        },
+        {
           "control": "select",
           "param": 3,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 152, 320, 70],
           "frames": 4,
           "names": [
             "CHORUS",
@@ -2363,7 +2887,7 @@
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 116, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -2375,38 +2899,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 220, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 255, 73, 43],
-            [418, 255, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 324, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 363, 320, 37],
-          "readout": [401, 338, 259, 18],
-          "baseline": 351.93
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
+          "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 444, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 471, 320, 37],
-          "readout": [382, 444, 278, 18],
-          "baseline": 457.93
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
+          "baseline": 361.93
         }
       ]
     },
     {
       "type": 31,
       "look": "Reverb",
-      "size": [680, 620],
+      "size": [1020, 524],
       "led": [226, 35, 48, 47],
       "controls": [
         {
@@ -2452,9 +2976,49 @@
           "rect": [138, 353, 64, 64]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [394, 20, 266, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 1,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [370, 65, 290, 18],
+          "baseline": 78.6
+        },
+        {
+          "control": "readout",
+          "param": 3,
+          "rect": [340, 108, 320, 18],
+          "display": true,
+          "readout": [387, 109, 273, 18],
+          "baseline": 122.6
+        },
+        {
+          "control": "readout",
+          "param": 4,
+          "rect": [340, 152, 320, 18],
+          "display": true,
+          "readout": [382, 153, 278, 18],
+          "baseline": 166.6
+        },
+        {
+          "control": "readout",
+          "param": 5,
+          "rect": [340, 196, 320, 18],
+          "display": true,
+          "readout": [393, 197, 267, 18],
+          "baseline": 210.6
+        },
+        {
           "control": "select",
           "param": 2,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 240, 320, 70],
           "frames": 16,
           "names": [
             "HALL",
@@ -2478,16 +3042,16 @@
         {
           "control": "slider",
           "param": 6,
-          "rect": [340, 116, 320, 65],
+          "rect": [680, 20, 320, 65],
           "frames": 128,
-          "track": [340, 143, 320, 37],
-          "readout": [398, 117, 262, 18],
-          "baseline": 130.6
+          "track": [680, 47, 320, 37],
+          "readout": [738, 21, 262, 18],
+          "baseline": 34.6
         },
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 206, 140, 79],
+          "rect": [680, 110, 140, 79],
           "frames": 4,
           "names": [
             "Stereo",
@@ -2499,38 +3063,38 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 310, 144, 79],
+          "rect": [680, 214, 144, 79],
           "frames": 2,
           "buttons": [
-            [340, 346, 73, 43],
-            [418, 346, 66, 43]
+            [680, 250, 73, 43],
+            [758, 250, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 414, 320, 95],
+          "rect": [680, 318, 320, 95],
           "frames": 128,
           "by": 1001,
-          "track": [340, 453, 320, 37],
-          "readout": [401, 429, 259, 18],
-          "baseline": 442.6
+          "track": [680, 357, 320, 37],
+          "readout": [741, 333, 259, 18],
+          "baseline": 346.6
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 534, 320, 66],
+          "rect": [680, 438, 320, 66],
           "frames": 128,
-          "track": [340, 562, 320, 37],
-          "readout": [382, 535, 278, 18],
-          "baseline": 548.6
+          "track": [680, 466, 320, 37],
+          "readout": [722, 439, 278, 18],
+          "baseline": 452.6
         }
       ]
     },
     {
       "type": 32,
       "look": "Smart tune",
-      "size": [680, 625],
+      "size": [1020, 482],
       "led": [146, 31, 48, 47],
       "controls": [
         {
@@ -2565,9 +3129,25 @@
           "rect": [41, 219, 257, 223]
         },
         {
+          "control": "readout",
+          "param": 0,
+          "rect": [340, 20, 320, 18],
+          "display": true,
+          "readout": [390, 20, 270, 18],
+          "baseline": 33.93
+        },
+        {
+          "control": "readout",
+          "param": 3,
+          "rect": [340, 64, 320, 18],
+          "display": true,
+          "readout": [417, 64, 243, 18],
+          "baseline": 77.93
+        },
+        {
           "control": "select",
           "param": 1,
-          "rect": [340, 20, 320, 70],
+          "rect": [340, 108, 320, 70],
           "frames": 12,
           "names": [
             "C",
@@ -2587,7 +3167,7 @@
         {
           "control": "select",
           "param": 2,
-          "rect": [340, 116, 320, 70],
+          "rect": [340, 204, 320, 70],
           "frames": 14,
           "names": [
             "Major",
@@ -2609,7 +3189,7 @@
         {
           "control": "select",
           "param": 1000,
-          "rect": [340, 212, 140, 78],
+          "rect": [680, 20, 140, 78],
           "frames": 4,
           "names": [
             "Stereo",
@@ -2621,31 +3201,31 @@
         {
           "control": "buttons",
           "param": 1001,
-          "rect": [340, 316, 144, 78],
+          "rect": [680, 124, 144, 78],
           "frames": 2,
           "buttons": [
-            [340, 351, 73, 43],
-            [418, 351, 66, 43]
+            [680, 159, 73, 43],
+            [758, 159, 66, 43]
           ]
         },
         {
           "control": "slider",
           "param": 1002,
-          "rect": [340, 420, 320, 94],
+          "rect": [680, 228, 320, 94],
           "frames": 128,
           "by": 1001,
-          "track": [340, 459, 320, 37],
-          "readout": [401, 434, 259, 18],
-          "baseline": 447.93
+          "track": [680, 267, 320, 37],
+          "readout": [741, 242, 259, 18],
+          "baseline": 255.93
         },
         {
           "control": "slider",
           "param": 1003,
-          "rect": [340, 540, 320, 65],
+          "rect": [680, 348, 320, 65],
           "frames": 128,
-          "track": [340, 567, 320, 37],
-          "readout": [382, 540, 278, 18],
-          "baseline": 553.93
+          "track": [680, 375, 320, 37],
+          "readout": [722, 348, 278, 18],
+          "baseline": 361.93
         }
       ]
     }

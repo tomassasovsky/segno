@@ -140,7 +140,7 @@ void main() {
             expect(c.frames, face.framesOf(c.param), reason: where);
             expect(c.readout, isNotNull, reason: where);
             expect(c.rect.contains(c.readout!.rect.center), isTrue);
-          case Vst3ControlKind.footswitch:
+          case Vst3ControlKind.footswitch || Vst3ControlKind.readout:
             break;
         }
       }
@@ -159,6 +159,81 @@ void main() {
             isTrue,
             reason: '${type.label}: pictures $i and $j overlap',
           );
+        }
+      }
+    }
+  });
+
+  testWidgets('every control shows its value, and no value covers another '
+      'or a label or a control', (tester) async {
+    for (final type in vst3Kinds) {
+      final face = Vst3Face.of(type);
+      if (face == null) continue;
+      final layout = await layOutVst3Face(tester, face);
+      final controls = layout.controls;
+      bool any(bool Function(Vst3Control) test) => controls.any(test);
+      final values = <(Rect, Vst3Control)>[];
+      for (final c in controls) {
+        final where = '${type.label} ${c.kind.name} ${c.param}';
+        switch (c.kind) {
+          case Vst3ControlKind.knob when c.display:
+            // A choice's knob: its selector names the position.
+            expect(
+              any(
+                (o) =>
+                    o.param == c.param &&
+                    (o.kind == Vst3ControlKind.select ||
+                        o.kind == Vst3ControlKind.buttons),
+              ),
+              isTrue,
+              reason: where,
+            );
+          case Vst3ControlKind.knob:
+            // On the face, or as a row of the panel; not both.
+            final row = any(
+              (o) => o.param == c.param && o.kind == Vst3ControlKind.readout,
+            );
+            expect(c.value != null, !row, reason: where);
+            if (c.value case final v?) values.add((v, c));
+          case Vst3ControlKind.slider || Vst3ControlKind.readout:
+            expect(c.readout, isNotNull, reason: where);
+            values.add((c.readout!.rect, c));
+          case Vst3ControlKind.select || Vst3ControlKind.buttons:
+            // A picture of each position, which prints or lights it.
+            expect(c.frames, vst3Positions(type, c.param), reason: where);
+          case Vst3ControlKind.footswitch:
+            // The LED shows it.
+            expect(layout.led.isEmpty, isFalse, reason: where);
+        }
+      }
+      for (var i = 0; i < values.length; i++) {
+        final (rect, owner) = values[i];
+        final where = '${type.label}: the value of ${owner.param}';
+        for (var j = i + 1; j < values.length; j++) {
+          expect(
+            rect.overlaps(values[j].$1),
+            isFalse,
+            reason: '$where covers the value of ${values[j].$2.param}',
+          );
+        }
+        if (owner.kind == Vst3ControlKind.knob) {
+          // A chip stays clear of every knob, label, the title, the LED and
+          // the footswitch, and of the panel's controls.
+          for (final o in layout.obstacles) {
+            expect(rect.overlaps(o), isFalse, reason: '$where covers $o');
+          }
+        }
+        for (final c in controls) {
+          if (identical(c, owner) || c.kind == Vst3ControlKind.knob) continue;
+          if (c.kind == Vst3ControlKind.footswitch) continue;
+          expect(
+            rect.overlaps(c.rect),
+            isFalse,
+            reason: '$where covers ${c.kind.name} ${c.param}',
+          );
+        }
+        if (owner.track case final track?) {
+          expect(rect.overlaps(track), isFalse, reason: '$where on its track');
         }
       }
     }
