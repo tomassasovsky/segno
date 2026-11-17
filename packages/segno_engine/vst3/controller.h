@@ -6,6 +6,8 @@
  */
 #pragma once
 
+#include <vector>
+
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "segno_fx_kinds.h"
 
@@ -25,17 +27,17 @@ class Controller : public Steinberg::Vst::EditController {
   Steinberg::tresult PLUGIN_API setParamNormalized(Steinberg::Vst::ParamID tag,
                                                    Steinberg::Vst::ParamValue value)
       SMTG_OVERRIDE;
-  void editorAttached(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE { editor_ = editor; }
-  void editorRemoved(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE {
-    if (editor_ == editor) editor_ = nullptr;
-  }
-  void editorDestroyed(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE {
-    if (editor_ == editor) editor_ = nullptr;
-  }
+  void editorAttached(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE;
+  void editorRemoved(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE;
+  void editorDestroyed(Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE;
 
  private:
+  /* Redraws what shows [tag] in every open editor; on the editor thread. */
+  void refreshEditors(Steinberg::Vst::ParamID tag);
+
   const FxKind* kind_;
-  Steinberg::Vst::EditorView* editor_ = nullptr; /* the open editor, if any */
+  /* The open editors, touched only on the editor thread (editor.h). */
+  std::vector<Steinberg::Vst::EditorView*> editors_;
 };
 
 }  // namespace segno_vst3

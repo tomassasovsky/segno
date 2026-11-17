@@ -33,6 +33,13 @@ using namespace Steinberg::Vst;
 
 extern CFBundleRef ghInst; /* this module's bundle (macmain.cpp) */
 
+/* The view's Objective-C class is named for this build (CMake's
+ * SEGNO_VST3_BUILD_ID): the runtime keeps one class per name in a process,
+ * so two copies of the bundle loaded at once would otherwise share one. */
+#define SEGNO_CONCAT2(a, b) a##b
+#define SEGNO_CONCAT(a, b) SEGNO_CONCAT2(a, b)
+#define SegnoFaceView SEGNO_CONCAT(SegnoFaceView_, SEGNO_VST3_BUILD_ID)
+
 namespace {
 
 enum class ControlKind { knob, slider, buttons, select, footswitch };
@@ -105,11 +112,10 @@ NSArray<NSImage*>* loadPictures(NSString* dir, NSString* name, NSSize size, int 
 /* [param]'s info from [controller], or false when it has no such
  * parameter. */
 bool infoOf(EditController* controller, ParamID param, ParameterInfo& info) {
-  const int32 n = controller->getParameterCount();
-  for (int32 i = 0; i < n; ++i) {
-    if (controller->getParameterInfo(i, info) == kResultOk && info.id == param) return true;
-  }
-  return false;
+  Parameter* parameter = controller->getParameterObject(param);
+  if (parameter == nullptr) return false;
+  info = parameter->getInfo();
+  return true;
 }
 
 /* The face of engine type [type] from the bundle's faces, or false: also
@@ -204,6 +210,8 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
 /* The face, drawn and played. */
 @interface SegnoFaceView : NSView
 - (instancetype)initWithFace:(Face)face controller:(EditController*)controller;
+- (void)redraw:(ParamID)param;
+- (void)endDrag;
 @end
 
 @implementation SegnoFaceView {
@@ -318,6 +326,9 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
       return;
     case ControlKind::knob:
     case ControlKind::slider: {
+      // A slider takes input on its track, as the console's does; its label
+      // row only names it.
+      if (c->kind == ControlKind::slider && !NSPointInRect(p, c->track)) return;
       if (event.clickCount == 2) {
         [self edit:c->param to:c->initial];
         return;
@@ -363,6 +374,12 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
 }
 
 - (void)mouseUp:(NSEvent*)event {
+  [self endDrag];
+}
+
+/* Ends a drag's edit: at the mouse's release, or when the editor closes
+ * during one, so the host's gesture never stays open. */
+- (void)endDrag {
   if (_dragging == nullptr) return;
   _controller->endEdit(_dragging->param);
   _dragging = nullptr;
@@ -421,6 +438,7 @@ class FaceEditor : public EditorView {
   }
 
   void removedFromParent() SMTG_OVERRIDE {
+    [view_ endDrag];
     [view_ removeFromSuperview];
     view_ = nil;
     EditorView::removedFromParent();

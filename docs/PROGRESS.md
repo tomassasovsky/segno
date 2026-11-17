@@ -2529,8 +2529,9 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   `packages/segno_engine/build/vst3`) and installs it in
   `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
   binding test against the installed bundle. After a change to the pedal
-  faces, `flutter test --update-goldens test/vst3_faces/vst3_faces_test.dart`
-  rewrites the layout the editors read. Live finds it on its next plugin scan (start, or
+  faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
+  --update-goldens test/vst3_faces/vst3_faces_test.dart` rewrites the layout
+  the editors read. Live finds it on its next plugin scan (start, or
   Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Not signed, not
   shipped. `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a
   separate tree and runs the null test, as CI does on Linux (clang, CMake,

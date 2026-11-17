@@ -99,6 +99,11 @@ if(APPLE)
   # controls.
   target_sources(segno_vst3 PRIVATE editor_mac.mm)
   set_source_files_properties(editor_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  # Names the editor's Objective-C class for this build, so two copies of
+  # the bundle in one host process do not share it.
+  string(RANDOM LENGTH 12 ALPHABET "0123456789abcdef" SEGNO_VST3_BUILD_ID)
+  target_compile_definitions(segno_vst3 PRIVATE
+    "SEGNO_VST3_BUILD_ID=${SEGNO_VST3_BUILD_ID}")
   target_link_libraries(segno_vst3 PRIVATE "-framework Cocoa")
 endif()
 set_target_properties(segno_vst3 PROPERTIES

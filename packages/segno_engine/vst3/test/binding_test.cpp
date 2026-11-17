@@ -147,6 +147,7 @@ int main(int argc, char** argv) {
         fail(type, "unknown control", param);
       }
     }
+    controller->terminate();
   }
 
   /* Which plugins open an editor, and at what size. */
@@ -169,6 +170,7 @@ int main(int argc, char** argv) {
       }
     }
     if (view != nullptr) view->release();
+    controller->terminate();
   }
 
   std::printf("%zu faces, %d controls, editors %s: %s\n", faceOf.size(), controls,

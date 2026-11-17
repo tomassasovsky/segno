@@ -1,11 +1,15 @@
 #include "controller.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 
 #include "editor.h"
+#ifdef __APPLE__
+#include <dispatch/dispatch.h>
+#endif
 #include "params.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
@@ -236,11 +240,41 @@ IPlugView* PLUGIN_API Controller::createView(FIDString name) {
 tresult PLUGIN_API Controller::setParamNormalized(ParamID tag, ParamValue value) {
   const tresult result = EditController::setParamNormalized(tag, value);
 #ifdef __APPLE__
-  // A host calls here from its UI thread, where the editor lives; a call
-  // from any other thread leaves the editor alone.
-  if (onEditorThread() && editor_ != nullptr) refreshFaceEditor(editor_, tag);
+  if (onEditorThread()) {
+    refreshEditors(tag);
+  } else {
+    // A host that sets a value from another thread: the editors redraw on
+    // their own, the controller kept alive until then.
+    struct Pending {
+      Controller* controller;
+      ParamID tag;
+    };
+    addRef();
+    dispatch_async_f(dispatch_get_main_queue(), new Pending{this, tag}, [](void* context) {
+      auto* pending = static_cast<Pending*>(context);
+      pending->controller->refreshEditors(pending->tag);
+      pending->controller->release();
+      delete pending;
+    });
+  }
 #endif
   return result;
 }
+
+void Controller::refreshEditors(ParamID tag) {
+#ifdef __APPLE__
+  for (EditorView* editor : editors_) refreshFaceEditor(editor, tag);
+#else
+  (void)tag;
+#endif
+}
+
+void Controller::editorAttached(EditorView* editor) { editors_.push_back(editor); }
+
+void Controller::editorRemoved(EditorView* editor) {
+  editors_.erase(std::remove(editors_.begin(), editors_.end(), editor), editors_.end());
+}
+
+void Controller::editorDestroyed(EditorView* editor) { editorRemoved(editor); }
 
 }  // namespace segno_vst3
