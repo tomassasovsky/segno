@@ -81,7 +81,8 @@ class Processor : public Steinberg::Vst::AudioEffect {
   /* Frames the kind delays its output by at this rate. */
   int32_t latency_ = 0;
   /* The latency the plugin reports: the kind's largest at any rate the
-   * engine runs at (kLatencyRates), the same whatever the rate, so a host
+   * engine runs at (segno_fx_reported_latency), the same whatever the
+   * rate, so a host
    * that asked before the rate changed (Live asks at its device's rate and
    * not again for an export at another) compensates it right. The output
    * is delayed by the difference (padLine_). */

@@ -152,7 +152,12 @@ std::vector<float> readWavMono(const std::string& path) {
 
 /* A parameter as packages/daw_export lists it for a Live set
  * (segno_vst3_plugins.dart): its name and VST3 step count, by id. */
-using DartParameters = std::map<ParamID, std::pair<std::string, int>>;
+struct DartParameter {
+  std::string name;
+  int steps;
+  double def;
+};
+using DartParameters = std::map<ParamID, DartParameter>;
 
 /* The Dart table of each kind's parameters, plus the channel parameters
  * every plugin has, read from the file the export is generated with
@@ -167,15 +172,15 @@ std::map<int, DartParameters> dartPlugins() {
   auto params = [&](const std::string& body, ParamID first, bool keyed) {
     DartParameters out;
     ParamID id = first;
-    const std::regex entry(keyed ? R"((\d+): SegnoParameter\('([^']+)'(?:, steps: (\d+))?\))"
-                                 : R"(SegnoParameter\('([^']+)'(?:, steps: (\d+))?\))");
+    const std::string tail =
+        R"(SegnoParameter\('([^']+)'(?:, steps: (\d+))?(?:, defaultValue: ([-0-9.e]+))?\))";
+    const std::regex entry(keyed ? R"((\d+): )" + tail : tail);
     for (std::sregex_iterator i(body.begin(), body.end(), entry), end; i != end; ++i) {
       const std::smatch& m = *i;
-      if (keyed) {
-        out[(ParamID)std::stoi(m[1])] = {m[2], m[3].matched ? std::stoi(m[3]) : 0};
-      } else {
-        out[id++] = {m[1], m[2].matched ? std::stoi(m[2]) : 0};
-      }
+      const int k = keyed ? 1 : 0;
+      const DartParameter p{m[k + 1], m[k + 2].matched ? std::stoi(m[k + 2]) : 0,
+                            m[k + 3].matched ? std::stod(m[k + 3]) : 0.0};
+      out[keyed ? (ParamID)std::stoi(m[1]) : id++] = p;
     }
     return out;
   };
@@ -208,8 +213,9 @@ bool sameParameters(IEditController* controller, const DartParameters& expected,
     std::string title;
     for (int k = 0; k < 128 && info.title[k] != 0; ++k) title += (char)info.title[k];
     const auto it = expected.find(info.id);
-    if (it == expected.end() || it->second.first != title ||
-        it->second.second != info.stepCount) {
+    if (it == expected.end() || it->second.name != title ||
+        it->second.steps != info.stepCount ||
+        std::fabs(it->second.def - info.defaultNormalizedValue) > 1e-6) {
       why = "parameter " + std::to_string(info.id) + " (" + title +
             ") differs from segno_vst3_plugins.dart";
       return false;
@@ -594,10 +600,7 @@ int main(int argc, char** argv) {
                   residual, 20.0 * std::log10(std::fmax(peak, 1e-12f)),
                   20.0 * std::log10(std::fmax(effect, 1e-12f)), reported);
       if (ownSwitch) std::printf("  to the switch; off: %s", bypassed == 0.0f ? "the delayed input" : "WRONG");
-      int largest = 0;
-      for (const int32_t rate : {44100, 48000, 88200, 96000}) {
-        largest = std::max(largest, (int)segno_fx_latency(kind.type, rate));
-      }
+      const int largest = std::max((int)segno_fx_reported_latency(kind.type), latency);
       if (worst > kFail || bypassed != 0.0f || reported != largest) {
         if (reported != largest) std::printf("  reports latency %d", reported);
         std::printf("  FAIL (first at frame %zu)", at);

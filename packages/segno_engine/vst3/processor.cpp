@@ -38,10 +38,7 @@ Processor::Processor(const FxKind* kind) : kind_(kind) {
   segno_fx_defaults(kind->type, defaults);
   for (int32_t p = 0; p < width_; ++p) state_.params[p] = defaults[p];
   nextClock_ = state_.clockOffset;
-  /* The rates the engine runs its effects at (#1547). */
-  for (const int32_t rate : {44100, 48000, 88200, 96000}) {
-    reported_ = std::max(reported_, segno_fx_latency(kind->type, rate));
-  }
+  reported_ = segno_fx_reported_latency(kind->type);
 }
 
 Processor::~Processor() { freeSlot(); }
@@ -85,8 +82,9 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& setup) {
   sr_ = (int32_t)std::lround(setup.sampleRate);
   if (sr_ <= 0) sr_ = 48000;
   latency_ = segno_fx_latency(kind_->type, sr_);
-  /* A rate past the ones reported_ covers can need more. */
-  reported_ = std::max(reported_, latency_);
+  /* A rate past the ones segno_fx_reported_latency covers can need more
+   * (a host is to read the latency again after setupProcessing). */
+  reported_ = std::max(segno_fx_reported_latency(kind_->type), latency_);
   return kResultOk;
 }
 
@@ -266,11 +264,12 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
               : nextClock_;
   const bool moved = base != nextClock_;
   followHost(ctx, base, moved || playing != wasPlaying_);
-  if (playing && (!wasPlaying_ || moved)) {
-    /* The host starts playing, or jumps: the slot starts again as it stood
-     * at arm, so a render from the host's start is the console's render
-     * of the take (its tails, LFOs, hops and noise all from there), not
-     * shaped by whatever ran while the host was stopped. */
+  if (playing && !wasPlaying_) {
+    /* The host starts playing: the slot starts again as it stood at arm,
+     * so a render from the host's start is the console's render of the
+     * take (its tails, LFOs, hops and noise all from there), not shaped by
+     * whatever ran while the host was stopped. A jump while playing (a
+     * loop wrap) keeps the tails. */
     segno_fx_slot_rearm(slot_, base);
     for (auto& line : dryLine_) std::fill(line.begin(), line.end(), 0.0f);
     dryPos_ = 0;
