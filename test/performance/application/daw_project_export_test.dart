@@ -71,6 +71,10 @@ void main() {
     expect(File('${dir.path}/project.als').existsSync(), isTrue);
     expect(File('${dir.path}/fx-chains.txt').existsSync(), isTrue);
     expect(stem.readAsBytesSync(), [1, 2, 3, 4]);
+    // The bundle is a Live Project, so Live saves the set in place (#1837).
+    final info = Directory('${dir.path}/Ableton Project Info');
+    expect(info.existsSync(), isTrue);
+    expect(info.listSync(), isEmpty);
     expect(stem.lastModifiedSync(), stamp);
   });
 
@@ -80,6 +84,7 @@ void main() {
 
     expect(await writeDawProject(dir.path), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
+    expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isFalse);
     expect(File('${dir.path}/fx-chains.txt').existsSync(), isTrue);
   });
 
@@ -88,9 +93,11 @@ void main() {
     writeManifest();
     writeIndex(const []);
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+    Directory('${dir.path}/Ableton Project Info').createSync();
 
     expect(await writeDawProject(dir.path), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
+    expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isFalse);
   });
 
   test('never replaces a project with one that has no stems: a take with '
@@ -107,6 +114,16 @@ void main() {
       const StemsNotRendered('/take').toString(),
       'StemsNotRendered: /take has no stems/stems.json',
     );
+  });
+
+  test('writes the project again into a bundle that is already a Live '
+      'Project', () async {
+    writeManifest(withTrack: true);
+    writeStem([0]);
+    await writeDawProject(dir.path);
+
+    expect(await writeDawProject(dir.path), hasLength(1));
+    expect(Directory('${dir.path}/Ableton Project Info').existsSync(), isTrue);
   });
 
   test('reads the manifest afresh on every call', () async {

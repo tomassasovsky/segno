@@ -353,6 +353,26 @@ final class TransferTests: XCTestCase {
     XCTAssertEqual(
       try LiveSet.read(copy.project).references,
       ["master.wav", "loops/track0-lane0.wav", "stems/wet/track0.wav"])
+    // The folder is a Live Project, so Live saves the set in place (#1837).
+    XCTAssertEqual(try projectInfo(in: copy.folder), [])
+  }
+
+  /// What the `Ableton Project Info` folder in `folder` holds.
+  private func projectInfo(in folder: URL) throws -> [String] {
+    try FileManager.default.contentsOfDirectory(
+      atPath: folder.appendingPathComponent(LiveSet.projectInfoName).path)
+  }
+
+  func testAVerifiedCopyWithoutAProjectFolderGetsOne() throws {
+    try writeLiveSet(plugin: false)
+    let recording = try take()
+    let first = try downloadLiveSet(recording)
+    // As a copy downloaded before #1837 left it.
+    try FileManager.default.removeItem(
+      at: first.folder.appendingPathComponent(LiveSet.projectInfoName))
+    let second = try downloadLiveSet(recording)
+    XCTAssertEqual(second, LiveSetCopy(folder: first.folder, usesPlugins: false, reused: true))
+    XCTAssertEqual(try projectInfo(in: second.folder), [])
   }
 
   func testASecondOpenReusesTheVerifiedCopyUntilItChanges() throws {

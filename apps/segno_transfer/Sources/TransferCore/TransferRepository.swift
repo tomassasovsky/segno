@@ -96,6 +96,8 @@ public final class TransferRepository: RecordingRepository {
     if let copy = try LiveSet.verifiedCopy(
       of: recording, in: destination, named: name, token: token)
     {
+      // A copy an earlier version of this app downloaded has none.
+      try LiveSet.makeProject(copy.folder)
       return copy
     }
     let temporary = try TemporaryDownload(parent: destination)
@@ -104,6 +106,7 @@ public final class TransferRepository: RecordingRepository {
     let folder = temporary.directory.appendingPathComponent("set", isDirectory: true)
       .appendingPathComponent(name, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try LiveSet.makeProject(folder)
     progress(0, "Downloading the Live set")
     let project = folder.appendingPathComponent(LiveSet.fileName)
     var record = LiveSet.Record(recording: recording.id, files: [])

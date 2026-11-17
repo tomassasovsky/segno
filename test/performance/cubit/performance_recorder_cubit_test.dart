@@ -1267,6 +1267,9 @@ void main() {
       await cubit.toggleArm();
       await waitForCompleted(cubit);
       expect(tempoOf(dir), 96);
+      // The take's folder is a Live Project, so Live saves the set in
+      // place (#1837).
+      expect(Directory('$dir/Ableton Project Info').existsSync(), isTrue);
 
       // Written again long after (Library > Audio's DAW project):
       // whatever the live transport reads now is irrelevant — the

@@ -41,6 +41,11 @@ int _chooserEntries(List<DawDevice> devices) => devices.fold(
 /// the file's samples unchanged.
 const int _kWarpModeRePitch = 3;
 
+/// The folder beside a set that makes its folder a Live Project (#1837).
+/// Without it, Live refuses to save the set in place and asks for Save As.
+/// Live 12 creates it empty, so an empty folder is all a set needs.
+const String liveProjectInfoFolder = 'Ableton Project Info';
+
 /// Builds an Ableton Live 12 `.als` set (gzipped XML) from [project].
 ///
 /// The set is [liveSetTemplate], a set Live 12 saved, with its one audio
