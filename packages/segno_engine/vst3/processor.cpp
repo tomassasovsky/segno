@@ -38,6 +38,10 @@ Processor::Processor(const FxKind* kind) : kind_(kind) {
   segno_fx_defaults(kind->type, defaults);
   for (int32_t p = 0; p < width_; ++p) state_.params[p] = defaults[p];
   nextClock_ = state_.clockOffset;
+  /* The rates the engine runs its effects at (#1547). */
+  for (const int32_t rate : {44100, 48000, 88200, 96000}) {
+    reported_ = std::max(reported_, segno_fx_latency(kind->type, rate));
+  }
 }
 
 Processor::~Processor() { freeSlot(); }
@@ -119,6 +123,9 @@ bool Processor::build() {
   bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
   for (auto& line : dryLine_) line.assign((size_t)(latency_ > 0 ? latency_ : 1), 0.0f);
   dryPos_ = 0;
+  const int32_t pad = reported_ - latency_;
+  for (auto& line : padLine_) line.assign((size_t)(pad > 0 ? pad : 1), 0.0f);
+  padPos_ = 0;
   return slot_ != nullptr;
 }
 
@@ -144,9 +151,10 @@ tresult PLUGIN_API Processor::setActive(TBool state) {
 }
 
 uint32 PLUGIN_API Processor::getLatencySamples() {
-  /* The same whether the entry is on or bypassed: bypassed, a kind that
-   * delays its output passes its input delayed as much (process()). */
-  return (uint32)latency_;
+  /* The same whether the entry is on or bypassed (bypassed, a kind that
+   * delays its output passes its input delayed as much, process()), and
+   * at every rate (reported_). */
+  return (uint32)reported_;
 }
 
 uint32 PLUGIN_API Processor::getTailSamples() {
@@ -264,6 +272,8 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
     segno_fx_slot_rearm(slot_, base);
     for (auto& line : dryLine_) std::fill(line.begin(), line.end(), 0.0f);
     dryPos_ = 0;
+    for (auto& line : padLine_) std::fill(line.begin(), line.end(), 0.0f);
+    padPos_ = 0;
     bypassMix_ = latency_ > 0 && state_.enabled == 0 ? 1.0f : 0.0f;
   }
   wasPlaying_ = playing;
@@ -340,6 +350,17 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
       }
     } else {
       segno_fx_slot_frame(slot_, base + (uint32_t)i, &l, &r);
+    }
+    if (reported_ > latency_) {
+      float& pl = padLine_[0][(size_t)padPos_];
+      float& pr = padLine_[1][(size_t)padPos_];
+      const float wl = l;
+      const float wr = r;
+      l = pl;
+      r = pr;
+      pl = wl;
+      pr = wr;
+      if (++padPos_ == reported_ - latency_) padPos_ = 0;
     }
     if (outR != nullptr) {
       outL[i] = l;

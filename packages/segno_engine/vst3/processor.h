@@ -80,6 +80,14 @@ class Processor : public Steinberg::Vst::AudioEffect {
   segno_fx_slot* slot_ = nullptr;
   /* Frames the kind delays its output by at this rate. */
   int32_t latency_ = 0;
+  /* The latency the plugin reports: the kind's largest at any rate the
+   * engine runs at (kLatencyRates), the same whatever the rate, so a host
+   * that asked before the rate changed (Live asks at its device's rate and
+   * not again for an export at another) compensates it right. The output
+   * is delayed by the difference (padLine_). */
+  int32_t reported_ = 0;
+  std::vector<float> padLine_[2];
+  int32_t padPos_ = 0;
   /* For such a kind, the plugin's own bypass: how far it has crossfaded
    * to the delayed input (1 bypassed), and the input delayed by
    * latency_. */

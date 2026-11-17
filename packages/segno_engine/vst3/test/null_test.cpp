@@ -563,10 +563,13 @@ int main(int argc, char** argv) {
        * plugin plays the input delayed by its latency. */
       const bool ownSwitch = c.switched && latency > 0;
       const size_t until = ownSwitch ? (size_t)kOffAt : wet.size();
+      /* The plugin reports its latency at every rate, the kind's largest
+       * (processor.h), and delays its output by the rest. */
+      const size_t pad = reported >= latency ? (size_t)(reported - latency) : 0;
       float worst = 0.0f, peak = 0.0f, effect = 0.0f;
       size_t at = 0;
-      for (size_t i = 0; i < until; ++i) {
-        const float d = std::fabs(plugin[i] - wet[i]);
+      for (size_t i = 0; i + pad < until; ++i) {
+        const float d = std::fabs(plugin[i + pad] - wet[i]);
         if (d > worst) {
           worst = d;
           at = i;
@@ -576,9 +579,9 @@ int main(int argc, char** argv) {
       }
       float bypassed = 0.0f;
       if (ownSwitch) {
-        const size_t settled = (size_t)kOffAt + (size_t)(kRate / 200) + 1;
+        const size_t settled = (size_t)kOffAt + (size_t)(kRate / 200) + 1 + pad;
         for (size_t i = settled; i < (size_t)kOnAt; ++i) {
-          bypassed = std::fmax(bypassed, std::fabs(plugin[i] - dry[i - latency]));
+          bypassed = std::fmax(bypassed, std::fabs(plugin[i] - dry[i - reported]));
         }
       }
       char residual[32];
@@ -589,10 +592,14 @@ int main(int argc, char** argv) {
       }
       std::printf("%-22s %-9s %10s %7.1f dB %7.1f dB %8d", kind.name, c.name,
                   residual, 20.0 * std::log10(std::fmax(peak, 1e-12f)),
-                  20.0 * std::log10(std::fmax(effect, 1e-12f)), latency);
+                  20.0 * std::log10(std::fmax(effect, 1e-12f)), reported);
       if (ownSwitch) std::printf("  to the switch; off: %s", bypassed == 0.0f ? "the delayed input" : "WRONG");
-      if (worst > kFail || bypassed != 0.0f || reported != latency) {
-        if (reported != latency) std::printf("  reports latency %d", reported);
+      int largest = 0;
+      for (const int32_t rate : {44100, 48000, 88200, 96000}) {
+        largest = std::max(largest, (int)segno_fx_latency(kind.type, rate));
+      }
+      if (worst > kFail || bypassed != 0.0f || reported != largest) {
+        if (reported != largest) std::printf("  reports latency %d", reported);
         std::printf("  FAIL (first at frame %zu)", at);
         ++failures;
       }
