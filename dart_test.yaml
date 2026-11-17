@@ -16,3 +16,7 @@ tags:
   # renders only into the directory packages/segno_engine/vst3/install.sh
   # names, so it skips everywhere else.
   vst3-faces:
+  # A suite that registers fonts (test/vst3_faces) or other process-wide state
+  # later tests would inherit: `very_good test --optimization` (CI's build
+  # job) runs it in an isolate of its own instead of the shared bundle.
+  skip_very_good_optimization:

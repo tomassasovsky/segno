@@ -1,4 +1,4 @@
-@Tags(['vst3-faces'])
+@Tags(['vst3-faces', 'skip_very_good_optimization'])
 library;
 
 import 'dart:io';

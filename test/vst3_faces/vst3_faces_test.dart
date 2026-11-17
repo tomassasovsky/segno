@@ -1,3 +1,9 @@
+// It loads the app's fonts, which stay registered for every test after it in
+// the same isolate and change their text layout: Very Good's optimized run
+// keeps it in an isolate of its own.
+@Tags(['skip_very_good_optimization'])
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
