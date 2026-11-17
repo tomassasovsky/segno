@@ -164,7 +164,9 @@ List<DawDevice> devicesOfChain(
     // they are on in the rack, which is off, and switching the rack on in
     // Live plays them.
     final inside = _rackDevices(members, origin, chainEnabled, rack.bypassed);
-    // A rack with nothing Segno runs in it is nothing.
+    // A rack with nothing in it that sounds is nothing: no Segno plugin
+    // and no parallel section (whose paths sum their input at their gains
+    // even when every entry on them passes it through).
     if (!_holdsPlugin(inside)) continue;
     devices.add(
       DawRackDevice(
@@ -298,10 +300,11 @@ int? _int(Object? value) => value is num ? value.toInt() : null;
 
 double? _double(Object? value) => value is num ? value.toDouble() : null;
 
-/// Whether [devices] hold a Segno plugin anywhere.
+/// Whether [devices] hold a Segno plugin or a parallel section anywhere.
 bool _holdsPlugin(List<DawDevice> devices) => devices.any(
   (d) => switch (d) {
     DawPluginDevice() => true,
-    DawRackDevice(:final chains) => chains.any((c) => _holdsPlugin(c.devices)),
+    DawRackDevice(:final chains) =>
+      chains.length > 1 || chains.any((c) => _holdsPlugin(c.devices)),
   },
 );

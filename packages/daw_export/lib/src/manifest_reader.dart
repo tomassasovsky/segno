@@ -222,10 +222,7 @@ abstract final class DawManifestReader {
             // The looper track itself when no wet stem stands for it.
             kind: wet == null ? DawTrackKind.loop : DawTrackKind.dry,
             arrangementClips: [?dry],
-            sessionClips: [
-              for (final clip in loops(cleanRefsByChannel[channel]))
-                if (clip.laneIndex == 0) clip,
-            ],
+            sessionClips: loops({0: ?cleanRefsByChannel[channel]?[0]}),
             volume: volume,
             devices: devices,
             info: info,

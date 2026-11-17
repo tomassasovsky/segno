@@ -144,6 +144,23 @@ void main() {
       );
     });
 
+    test('keeps a rack whose parallel section holds only hosted plugins: '
+        'its paths still sum the input at their gains', () {
+      const rack = {'id': 'd1', 'name': 'Dub Rack'};
+      const hosted = {
+        'type': 8,
+        'plugin': {'format': 0, 'id': 'x', 'version': 0},
+        'rack': rack,
+      };
+      final devices = devicesOfChain([
+        {...hosted, 'rackPath': 'amb'},
+        {...hosted, 'rackPath': 'dub'},
+      ], origin: origin);
+      final paths = _rack(_rack(devices.single).chains.single.devices.single);
+      expect(paths.chains.map((c) => c.devices), [isEmpty, isEmpty]);
+      expect(paths.chains.map((c) => c.volume), [1.0, closeTo(0.64, 1e-9)]);
+    });
+
     test('reads a malformed entry without throwing', () {
       final devices = devicesOfChain([
         {

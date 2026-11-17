@@ -158,8 +158,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 - A looper track whose take recorded its chains (#1803 on) exports as its
   dry stem through those chains as Segno's plugins, under the track's
-  name, with the clean lane loops as Session clips, and the wet stem beside
-  it as `<name> (as heard)`, off, with the heard ones. Takes without
+  name, with lane 0's clean loop as a Session clip, and the wet stem beside
+  it as `<name> (as heard)`, off, with the heard loops and the other lanes'
+  loops (they ran other chains). Takes without
   chains, or whose chains hold nothing Segno runs (only hosted plugins),
   keep the earlier layout.
 - `devicesOfChain` (`packages/daw_export/lib/src/device_chain.dart`): lane
@@ -182,12 +183,14 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   entry that was off is the device switched off; the plugin's own switch
   stays on. A volume lane picks the Mixer after the devices and chain mixers
   in Live's lane chooser.
-- The plugins start again as at arm whenever the host starts playing or
-  jumps (`segno_fx_slot_rearm`), so a render from the start of the set is
+- The plugins start again as at arm whenever the host starts playing
+  (`segno_fx_slot_rearm`; a jump while playing, such as a loop wrap, keeps
+  the tails), so a render from the start of the set is
   the console's: without it, LFOs, noise and octaver hops run on while
   Live's transport stands.
 - A plugin reports one latency at every rate, its kind's largest at 44.1,
-  48, 88.2 and 96 kHz, and delays its output by the rest: Live asks for
+  48, 88.2 and 96 kHz (`segno_fx_reported_latency`; more at a host rate
+  whose own is larger), and delays its output by the rest: Live asks for
   the latency at its device's rate and not again when it exports at
   another, so a rate-dependent latency (the octavers, the Amp) was
   compensated wrongly.

@@ -397,8 +397,11 @@ class _DevicePrototypes {
 
   /// A copy of [prototype] as member [id] of its list, with fresh pointee
   /// ids.
-  XmlElement _copy(XmlElement prototype, int id) {
-    final element = prototype.copy()..setAttribute('Id', '$id');
+  XmlElement _copy(XmlElement prototype, int id) =>
+      _renumbered(prototype.copy()..setAttribute('Id', '$id'));
+
+  /// [element] with a fresh id on every pointee in it.
+  XmlElement _renumbered(XmlElement element) {
     for (final e in [element, ...element.descendantElements]) {
       if (_isPointee(e.name.local)) e.setAttribute('Id', '${ids.take()}');
     }
@@ -406,7 +409,7 @@ class _DevicePrototypes {
   }
 
   XmlElement _plugin(DawPluginDevice device, int id) {
-    final element = _copy(_withParameters(plugin, device), id);
+    final element = _withParameters(_copy(plugin, id), device);
     _setValue(element.getElement('On')!.getElement('Manual')!, '${device.on}');
     final info = element
         .getElement('PluginDesc')!
@@ -426,14 +429,13 @@ class _DevicePrototypes {
     return element;
   }
 
-  /// [prototype] with its parameter list as Live writes it for [device]'s
+  /// [element] with its parameter list as Live writes it for [device]'s
   /// plugin when it loads one fresh: the kind's settings, then the channel
   /// handling, each in the slot of its place, at the state's values; the
   /// rest of the 128 slots unassigned. Live shows these parameters on the
   /// device and offers them for automation; a stepped one's value is in
   /// steps.
-  XmlElement _withParameters(XmlElement prototype, DawPluginDevice device) {
-    final element = prototype.copy();
+  XmlElement _withParameters(XmlElement element, DawPluginDevice device) {
     final list = element.getElement('ParameterList')!;
     final slots = list.childElements.toList();
     // The template's plugin has its parameters in its first slots and the
@@ -442,9 +444,16 @@ class _DevicePrototypes {
     final unassigned = slots.last;
     final state = device.state;
     final parameters = [
-      for (var p = 0; p < state.params.length; p++)
-        if (p < device.plugin.parameters.length)
-          (p, device.plugin.parameters[p], state.params[p]),
+      // Every setting the plugin has, at the state's value or, past what
+      // the state holds, at the default the plugin runs it at.
+      for (var p = 0; p < device.plugin.parameters.length; p++)
+        (
+          p,
+          device.plugin.parameters[p],
+          p < state.params.length
+              ? state.params[p]
+              : device.plugin.parameters[p].defaultValue,
+        ),
       for (final MapEntry(key: pid, value: parameter)
           in segnoChannelParameters.entries)
         (
@@ -461,7 +470,9 @@ class _DevicePrototypes {
     list.children.clear();
     for (var i = 0; i < slots.length; i++) {
       if (i >= parameters.length) {
-        list.children.add(unassigned.copy()..setAttribute('Id', '$i'));
+        list.children.add(
+          _renumbered(unassigned.copy()..setAttribute('Id', '$i')),
+        );
         continue;
       }
       final (pid, parameter, normalized) = parameters[i];
@@ -470,7 +481,7 @@ class _DevicePrototypes {
       final value = steps > 0
           ? (normalized.clamp(0.0, 1.0) * steps).roundToDouble()
           : normalized;
-      final slot = assigned.copy()..setAttribute('Id', '$i');
+      final slot = _renumbered(assigned.copy()..setAttribute('Id', '$i'));
       _setValue(slot.getElement('ParameterName')!, parameter.name);
       _setValue(slot.getElement('ParameterId')!, '$pid');
       _setValue(slot.getElement('VisualIndex')!, '$i');

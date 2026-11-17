@@ -1293,12 +1293,10 @@ void _layoutTests() {
       );
       expect(
         tracks[1].info,
-        [
-          'The input as played: before its effects, volume and pan. Its '
-              'effects play here as Segno plugins.',
-          'Effects when the take started:',
-          'Chorus',
-        ].join('\n'),
+        'The input as played: before its effects, volume and pan. Its '
+        'effects play here as Segno plugins.\n'
+        'Effects when the take started:\n'
+        'Chorus',
       );
       expect(
         tracks[2].info,

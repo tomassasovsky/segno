@@ -1041,6 +1041,43 @@ void main() {
         expect(slot(saved[3]), ('Input', '1000', '0', '3'));
       });
 
+      test('a state with fewer settings than the plugin lists the rest at '
+          'their defaults, keeping every slot in place', () {
+        final track = _audioTracks(
+          _build(
+            DawProject(
+              tracks: [
+                _fullTrack(
+                  'Track 0',
+                  devices: [
+                    DawPluginDevice(
+                      plugin: segnoPlugins[3]!,
+                      state: const SegnoPluginState(type: 3, params: [0.5]),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ).single;
+        final slots = _at(
+          _devices(track).single,
+          'ParameterList',
+        ).childElements.toList();
+        expect(
+          [
+            for (final e in slots.take(4))
+              (_value(e, 'ParameterName'), _value(e, 'ParameterValue/Manual')),
+          ],
+          [
+            ('Time', '0.5'),
+            ('Feedback', '0.35'),
+            ('Mix', '0.35'),
+            ('Input', '0'),
+          ],
+        );
+      });
+
       test('a track with no devices has none', () {
         final track = _audioTracks(
           _build(DawProject(tracks: [_fullTrack('Track 0')])),
