@@ -973,6 +973,74 @@ void main() {
         expect(_value(lane, 'SelectedEnvelope'), '2');
       });
 
+      test('each plugin lists its own parameters as Live lists a plugin it '
+          'loads fresh: its settings, then its channel handling', () {
+        final track = _audioTracks(
+          _build(
+            DawProject(
+              tracks: [
+                _fullTrack(
+                  'Track 0',
+                  devices: [
+                    DawPluginDevice(
+                      plugin: segnoPlugins[5]!,
+                      state: const SegnoPluginState(
+                        type: 5,
+                        params: [0.25, 0.5, 0.75, 1, 0],
+                        input: 3,
+                        output: 1,
+                        placement: -0.5,
+                        level: 2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ).single;
+        final slots = _at(
+          _devices(track).single,
+          'ParameterList',
+        ).childElements.toList();
+        final saved = _at(
+          _savedDevice('PluginDevice'),
+          'ParameterList',
+        ).childElements.toList();
+        expect(slots, hasLength(saved.length));
+        (String, String, String, String) slot(XmlElement e) => (
+          _value(e, 'ParameterName'),
+          _value(e, 'ParameterId'),
+          _value(e, 'ParameterValue/Manual'),
+          _value(e, 'ParameterValue/MidiControllerRange/Max'),
+        );
+        expect(
+          [for (final e in slots.take(10)) slot(e)],
+          [
+            // A stepped setting holds its value in steps: Shift 0.25 of 48.
+            ('Shift', '0', '12', '48'),
+            ('Tone', '1', '0.5', '1'),
+            ('Mix', '2', '0.75', '1'),
+            ('Mode', '3', '1', '1'),
+            ('Formants', '4', '0', '1'),
+            ('Input', '1000', '3', '3'),
+            ('Output', '1001', '1', '1'),
+            ('Balance / Pan', '1002', '0.25', '1'),
+            ('Level', '1003', '0.5', '1'),
+            ('', '-1', '0.1234567687', '1'),
+          ],
+        );
+        expect(
+          [for (final e in slots.take(9)) _value(e, 'VisualIndex')],
+          [for (var i = 0; i < 9; i++) '$i'],
+        );
+        // As Live saved them: the Delay's channel slots, and an unassigned
+        // one.
+        expect(_shape(slots[5]), _shape(saved[3]));
+        expect(_shape(slots[9]), _shape(saved.last));
+        expect(slot(saved[3]), ('Input', '1000', '0', '3'));
+      });
+
       test('a track with no devices has none', () {
         final track = _audioTracks(
           _build(DawProject(tracks: [_fullTrack('Track 0')])),
@@ -1000,6 +1068,25 @@ void main() {
           }
         }
         expect(_value(plugin, 'On/Manual'), 'true');
+        final off = _audioTracks(
+          _build(
+            DawProject(
+              tracks: [
+                _fullTrack(
+                  'Track 0',
+                  devices: [
+                    DawPluginDevice(
+                      plugin: segnoPlugins[5]!,
+                      state: const SegnoPluginState(type: 5, params: []),
+                      on: false,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ).single;
+        expect(_value(_devices(off).single, 'On/Manual'), 'false');
         final hex = _at(
           info,
           'Preset/Vst3Preset/ProcessorState',

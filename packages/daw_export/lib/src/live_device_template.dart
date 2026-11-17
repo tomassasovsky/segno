@@ -5,15 +5,15 @@
 
 /// A Segno plugin device as Live 12 saved it: `buildAls` copies every
 /// plugin it writes from it.
-const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
+const String livePluginDeviceTemplate = r'''<PluginDevice Id="1">
 								<LomId Value="0"/>
 								<LomIdView Value="0"/>
-								<IsExpanded Value="false"/>
+								<IsExpanded Value="true"/>
 								<BreakoutIsExpanded Value="false"/>
 								<On>
 									<LomId Value="0"/>
 									<Manual Value="true"/>
-									<AutomationTarget Id="23284">
+									<AutomationTarget Id="22445">
 										<LockEnvelope Value="0"/>
 									</AutomationTarget>
 									<MidiCCOnOffThresholds>
@@ -23,9 +23,9 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 								</On>
 								<ModulationSourceCount Value="0"/>
 								<ParametersListWrapper LomId="0"/>
-								<Pointee Id="23285"/>
-								<LastSelectedTimeableIndex Value="0"/>
-								<LastSelectedClipEnvelopeIndex Value="0"/>
+								<Pointee Id="22446"/>
+								<LastSelectedTimeableIndex Value="1"/>
+								<LastSelectedClipEnvelopeIndex Value="1"/>
 								<LastPresetRef>
 									<Value/>
 								</LastPresetRef>
@@ -35,7 +35,15 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 								<UserName Value=""/>
 								<Annotation Value=""/>
 								<SourceContext>
-									<Value/>
+									<Value>
+										<BranchSourceContext Id="0">
+											<OriginalFileRef/>
+											<BrowserContentPath Value="view:X-Plugins#Segno%20Delay"/>
+											<LocalFiltersJson Value=""/>
+											<PresetRef/>
+											<BranchDeviceId Value="device:vst3:audiofx:6e698a08-1c54-45d5-b5c0-f9a1f2543803"/>
+										</BranchSourceContext>
+									</Value>
 								</SourceContext>
 								<MpePitchBendUsesTuning Value="true"/>
 								<PluginDesc>
@@ -74,7 +82,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 													<Fields.3 Value="-229361661"/>
 												</Uid>
 												<DeviceType Value="2"/>
-												<ProcessorState>53474658010000000300000000000000000000000000000000000000000000000000000000000000000000000000803F01000000030000003333B33E3333B33E3333B33E</ProcessorState>
+												<ProcessorState>
+													53474658010000000300000000000000000000000000000000000000000000000000000000000000
+													000000000000803F0100000003000000D0393E3F3333B33E3333B33E
+												</ProcessorState>
 												<ControllerState/>
 												<Name Value=""/>
 												<PresetRef/>
@@ -98,27 +109,27 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 								</MpeSettings>
 								<ParameterList>
 									<PluginFloatParameter Id="0">
-										<ParameterName Value=""/>
-										<ParameterId Value="-1"/>
+										<ParameterName Value="Time"/>
+										<ParameterId Value="0"/>
 										<ParameterIdFlankBool Value="false"/>
-										<VisualIndex Value="1073741823"/>
+										<VisualIndex Value="0"/>
 										<ParameterValue>
 											<LomId Value="0"/>
-											<Manual Value="0.1234567687"/>
+											<Manual Value="0.7430696487"/>
 											<MidiControllerRange>
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23286">
+											<AutomationTarget Id="22447">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23287">
+											<ModulationTarget Id="22448">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
 										<LastUserRange>
-											<First Value="Invalid"/>
-											<Last Value="Invalid"/>
+											<First Value="0"/>
+											<Last Value="1"/>
 										</LastUserRange>
 										<LastInternalRange>
 											<First Value="0"/>
@@ -126,27 +137,27 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 										</LastInternalRange>
 									</PluginFloatParameter>
 									<PluginFloatParameter Id="1">
-										<ParameterName Value=""/>
-										<ParameterId Value="-1"/>
+										<ParameterName Value="Feedback"/>
+										<ParameterId Value="1"/>
 										<ParameterIdFlankBool Value="false"/>
-										<VisualIndex Value="1073741823"/>
+										<VisualIndex Value="1"/>
 										<ParameterValue>
 											<LomId Value="0"/>
-											<Manual Value="0.1234567687"/>
+											<Manual Value="0.349999994"/>
 											<MidiControllerRange>
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23288">
+											<AutomationTarget Id="22449">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23289">
+											<ModulationTarget Id="22450">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
 										<LastUserRange>
-											<First Value="Invalid"/>
-											<Last Value="Invalid"/>
+											<First Value="0"/>
+											<Last Value="1"/>
 										</LastUserRange>
 										<LastInternalRange>
 											<First Value="0"/>
@@ -154,27 +165,27 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 										</LastInternalRange>
 									</PluginFloatParameter>
 									<PluginFloatParameter Id="2">
-										<ParameterName Value=""/>
-										<ParameterId Value="-1"/>
+										<ParameterName Value="Mix"/>
+										<ParameterId Value="2"/>
 										<ParameterIdFlankBool Value="false"/>
-										<VisualIndex Value="1073741823"/>
+										<VisualIndex Value="2"/>
 										<ParameterValue>
 											<LomId Value="0"/>
-											<Manual Value="0.1234567687"/>
+											<Manual Value="0.349999994"/>
 											<MidiControllerRange>
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23290">
+											<AutomationTarget Id="22451">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23291">
+											<ModulationTarget Id="22452">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
 										<LastUserRange>
-											<First Value="Invalid"/>
-											<Last Value="Invalid"/>
+											<First Value="0"/>
+											<Last Value="1"/>
 										</LastUserRange>
 										<LastInternalRange>
 											<First Value="0"/>
@@ -182,27 +193,27 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 										</LastInternalRange>
 									</PluginFloatParameter>
 									<PluginFloatParameter Id="3">
-										<ParameterName Value=""/>
-										<ParameterId Value="-1"/>
+										<ParameterName Value="Input"/>
+										<ParameterId Value="1000"/>
 										<ParameterIdFlankBool Value="false"/>
-										<VisualIndex Value="1073741823"/>
+										<VisualIndex Value="3"/>
 										<ParameterValue>
 											<LomId Value="0"/>
-											<Manual Value="0.1234567687"/>
+											<Manual Value="0"/>
 											<MidiControllerRange>
 												<Min Value="0"/>
-												<Max Value="1"/>
+												<Max Value="3"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23292">
+											<AutomationTarget Id="22453">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23293">
+											<ModulationTarget Id="22454">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
 										<LastUserRange>
-											<First Value="Invalid"/>
-											<Last Value="Invalid"/>
+											<First Value="0"/>
+											<Last Value="3"/>
 										</LastUserRange>
 										<LastInternalRange>
 											<First Value="0"/>
@@ -210,27 +221,27 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 										</LastInternalRange>
 									</PluginFloatParameter>
 									<PluginFloatParameter Id="4">
-										<ParameterName Value=""/>
-										<ParameterId Value="-1"/>
+										<ParameterName Value="Output"/>
+										<ParameterId Value="1001"/>
 										<ParameterIdFlankBool Value="false"/>
-										<VisualIndex Value="1073741823"/>
+										<VisualIndex Value="4"/>
 										<ParameterValue>
 											<LomId Value="0"/>
-											<Manual Value="0.1234567687"/>
+											<Manual Value="0"/>
 											<MidiControllerRange>
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23294">
+											<AutomationTarget Id="22455">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23295">
+											<ModulationTarget Id="22456">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
 										<LastUserRange>
-											<First Value="Invalid"/>
-											<Last Value="Invalid"/>
+											<First Value="0"/>
+											<Last Value="1"/>
 										</LastUserRange>
 										<LastInternalRange>
 											<First Value="0"/>
@@ -238,27 +249,27 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 										</LastInternalRange>
 									</PluginFloatParameter>
 									<PluginFloatParameter Id="5">
-										<ParameterName Value=""/>
-										<ParameterId Value="-1"/>
+										<ParameterName Value="Balance / Pan"/>
+										<ParameterId Value="1002"/>
 										<ParameterIdFlankBool Value="false"/>
-										<VisualIndex Value="1073741823"/>
+										<VisualIndex Value="5"/>
 										<ParameterValue>
 											<LomId Value="0"/>
-											<Manual Value="0.1234567687"/>
+											<Manual Value="0.5"/>
 											<MidiControllerRange>
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23296">
+											<AutomationTarget Id="22457">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23297">
+											<ModulationTarget Id="22458">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
 										<LastUserRange>
-											<First Value="Invalid"/>
-											<Last Value="Invalid"/>
+											<First Value="0"/>
+											<Last Value="1"/>
 										</LastUserRange>
 										<LastInternalRange>
 											<First Value="0"/>
@@ -266,27 +277,27 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 										</LastInternalRange>
 									</PluginFloatParameter>
 									<PluginFloatParameter Id="6">
-										<ParameterName Value=""/>
-										<ParameterId Value="-1"/>
+										<ParameterName Value="Level"/>
+										<ParameterId Value="1003"/>
 										<ParameterIdFlankBool Value="false"/>
-										<VisualIndex Value="1073741823"/>
+										<VisualIndex Value="6"/>
 										<ParameterValue>
 											<LomId Value="0"/>
-											<Manual Value="0.1234567687"/>
+											<Manual Value="0.25"/>
 											<MidiControllerRange>
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23298">
+											<AutomationTarget Id="22459">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23299">
+											<ModulationTarget Id="22460">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
 										<LastUserRange>
-											<First Value="Invalid"/>
-											<Last Value="Invalid"/>
+											<First Value="0"/>
+											<Last Value="1"/>
 										</LastUserRange>
 										<LastInternalRange>
 											<First Value="0"/>
@@ -305,10 +316,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23300">
+											<AutomationTarget Id="22461">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23301">
+											<ModulationTarget Id="22462">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -333,10 +344,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23302">
+											<AutomationTarget Id="22463">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23303">
+											<ModulationTarget Id="22464">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -361,10 +372,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23304">
+											<AutomationTarget Id="22465">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23305">
+											<ModulationTarget Id="22466">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -389,10 +400,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23306">
+											<AutomationTarget Id="22467">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23307">
+											<ModulationTarget Id="22468">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -417,10 +428,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23308">
+											<AutomationTarget Id="22469">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23309">
+											<ModulationTarget Id="22470">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -445,10 +456,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23310">
+											<AutomationTarget Id="22471">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23311">
+											<ModulationTarget Id="22472">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -473,10 +484,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23312">
+											<AutomationTarget Id="22473">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23313">
+											<ModulationTarget Id="22474">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -501,10 +512,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23314">
+											<AutomationTarget Id="22475">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23315">
+											<ModulationTarget Id="22476">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -529,10 +540,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23316">
+											<AutomationTarget Id="22477">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23317">
+											<ModulationTarget Id="22478">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -557,10 +568,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23318">
+											<AutomationTarget Id="22479">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23319">
+											<ModulationTarget Id="22480">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -585,10 +596,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23320">
+											<AutomationTarget Id="22481">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23321">
+											<ModulationTarget Id="22482">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -613,10 +624,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23322">
+											<AutomationTarget Id="22483">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23323">
+											<ModulationTarget Id="22484">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -641,10 +652,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23324">
+											<AutomationTarget Id="22485">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23325">
+											<ModulationTarget Id="22486">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -669,10 +680,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23326">
+											<AutomationTarget Id="22487">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23327">
+											<ModulationTarget Id="22488">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -697,10 +708,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23328">
+											<AutomationTarget Id="22489">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23329">
+											<ModulationTarget Id="22490">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -725,10 +736,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23330">
+											<AutomationTarget Id="22491">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23331">
+											<ModulationTarget Id="22492">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -753,10 +764,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23332">
+											<AutomationTarget Id="22493">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23333">
+											<ModulationTarget Id="22494">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -781,10 +792,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23334">
+											<AutomationTarget Id="22495">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23335">
+											<ModulationTarget Id="22496">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -809,10 +820,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23336">
+											<AutomationTarget Id="22497">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23337">
+											<ModulationTarget Id="22498">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -837,10 +848,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23338">
+											<AutomationTarget Id="22499">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23339">
+											<ModulationTarget Id="22500">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -865,10 +876,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23340">
+											<AutomationTarget Id="22501">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23341">
+											<ModulationTarget Id="22502">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -893,10 +904,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23342">
+											<AutomationTarget Id="22503">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23343">
+											<ModulationTarget Id="22504">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -921,10 +932,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23344">
+											<AutomationTarget Id="22505">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23345">
+											<ModulationTarget Id="22506">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -949,10 +960,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23346">
+											<AutomationTarget Id="22507">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23347">
+											<ModulationTarget Id="22508">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -977,10 +988,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23348">
+											<AutomationTarget Id="22509">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23349">
+											<ModulationTarget Id="22510">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1005,10 +1016,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23350">
+											<AutomationTarget Id="22511">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23351">
+											<ModulationTarget Id="22512">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1033,10 +1044,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23352">
+											<AutomationTarget Id="22513">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23353">
+											<ModulationTarget Id="22514">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1061,10 +1072,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23354">
+											<AutomationTarget Id="22515">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23355">
+											<ModulationTarget Id="22516">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1089,10 +1100,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23356">
+											<AutomationTarget Id="22517">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23357">
+											<ModulationTarget Id="22518">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1117,10 +1128,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23358">
+											<AutomationTarget Id="22519">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23359">
+											<ModulationTarget Id="22520">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1145,10 +1156,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23360">
+											<AutomationTarget Id="22521">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23361">
+											<ModulationTarget Id="22522">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1173,10 +1184,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23362">
+											<AutomationTarget Id="22523">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23363">
+											<ModulationTarget Id="22524">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1201,10 +1212,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23364">
+											<AutomationTarget Id="22525">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23365">
+											<ModulationTarget Id="22526">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1229,10 +1240,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23366">
+											<AutomationTarget Id="22527">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23367">
+											<ModulationTarget Id="22528">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1257,10 +1268,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23368">
+											<AutomationTarget Id="22529">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23369">
+											<ModulationTarget Id="22530">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1285,10 +1296,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23370">
+											<AutomationTarget Id="22531">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23371">
+											<ModulationTarget Id="22532">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1313,10 +1324,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23372">
+											<AutomationTarget Id="22533">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23373">
+											<ModulationTarget Id="22534">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1341,10 +1352,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23374">
+											<AutomationTarget Id="22535">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23375">
+											<ModulationTarget Id="22536">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1369,10 +1380,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23376">
+											<AutomationTarget Id="22537">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23377">
+											<ModulationTarget Id="22538">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1397,10 +1408,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23378">
+											<AutomationTarget Id="22539">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23379">
+											<ModulationTarget Id="22540">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1425,10 +1436,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23380">
+											<AutomationTarget Id="22541">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23381">
+											<ModulationTarget Id="22542">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1453,10 +1464,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23382">
+											<AutomationTarget Id="22543">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23383">
+											<ModulationTarget Id="22544">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1481,10 +1492,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23384">
+											<AutomationTarget Id="22545">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23385">
+											<ModulationTarget Id="22546">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1509,10 +1520,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23386">
+											<AutomationTarget Id="22547">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23387">
+											<ModulationTarget Id="22548">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1537,10 +1548,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23388">
+											<AutomationTarget Id="22549">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23389">
+											<ModulationTarget Id="22550">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1565,10 +1576,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23390">
+											<AutomationTarget Id="22551">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23391">
+											<ModulationTarget Id="22552">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1593,10 +1604,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23392">
+											<AutomationTarget Id="22553">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23393">
+											<ModulationTarget Id="22554">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1621,10 +1632,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23394">
+											<AutomationTarget Id="22555">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23395">
+											<ModulationTarget Id="22556">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1649,10 +1660,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23396">
+											<AutomationTarget Id="22557">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23397">
+											<ModulationTarget Id="22558">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1677,10 +1688,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23398">
+											<AutomationTarget Id="22559">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23399">
+											<ModulationTarget Id="22560">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1705,10 +1716,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23400">
+											<AutomationTarget Id="22561">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23401">
+											<ModulationTarget Id="22562">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1733,10 +1744,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23402">
+											<AutomationTarget Id="22563">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23403">
+											<ModulationTarget Id="22564">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1761,10 +1772,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23404">
+											<AutomationTarget Id="22565">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23405">
+											<ModulationTarget Id="22566">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1789,10 +1800,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23406">
+											<AutomationTarget Id="22567">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23407">
+											<ModulationTarget Id="22568">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1817,10 +1828,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23408">
+											<AutomationTarget Id="22569">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23409">
+											<ModulationTarget Id="22570">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1845,10 +1856,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23410">
+											<AutomationTarget Id="22571">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23411">
+											<ModulationTarget Id="22572">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1873,10 +1884,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23412">
+											<AutomationTarget Id="22573">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23413">
+											<ModulationTarget Id="22574">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1901,10 +1912,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23414">
+											<AutomationTarget Id="22575">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23415">
+											<ModulationTarget Id="22576">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1929,10 +1940,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23416">
+											<AutomationTarget Id="22577">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23417">
+											<ModulationTarget Id="22578">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1957,10 +1968,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23418">
+											<AutomationTarget Id="22579">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23419">
+											<ModulationTarget Id="22580">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -1985,10 +1996,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23420">
+											<AutomationTarget Id="22581">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23421">
+											<ModulationTarget Id="22582">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2013,10 +2024,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23422">
+											<AutomationTarget Id="22583">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23423">
+											<ModulationTarget Id="22584">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2041,10 +2052,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23424">
+											<AutomationTarget Id="22585">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23425">
+											<ModulationTarget Id="22586">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2069,10 +2080,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23426">
+											<AutomationTarget Id="22587">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23427">
+											<ModulationTarget Id="22588">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2097,10 +2108,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23428">
+											<AutomationTarget Id="22589">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23429">
+											<ModulationTarget Id="22590">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2125,10 +2136,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23430">
+											<AutomationTarget Id="22591">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23431">
+											<ModulationTarget Id="22592">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2153,10 +2164,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23432">
+											<AutomationTarget Id="22593">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23433">
+											<ModulationTarget Id="22594">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2181,10 +2192,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23434">
+											<AutomationTarget Id="22595">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23435">
+											<ModulationTarget Id="22596">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2209,10 +2220,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23436">
+											<AutomationTarget Id="22597">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23437">
+											<ModulationTarget Id="22598">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2237,10 +2248,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23438">
+											<AutomationTarget Id="22599">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23439">
+											<ModulationTarget Id="22600">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2265,10 +2276,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23440">
+											<AutomationTarget Id="22601">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23441">
+											<ModulationTarget Id="22602">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2293,10 +2304,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23442">
+											<AutomationTarget Id="22603">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23443">
+											<ModulationTarget Id="22604">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2321,10 +2332,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23444">
+											<AutomationTarget Id="22605">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23445">
+											<ModulationTarget Id="22606">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2349,10 +2360,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23446">
+											<AutomationTarget Id="22607">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23447">
+											<ModulationTarget Id="22608">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2377,10 +2388,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23448">
+											<AutomationTarget Id="22609">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23449">
+											<ModulationTarget Id="22610">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2405,10 +2416,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23450">
+											<AutomationTarget Id="22611">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23451">
+											<ModulationTarget Id="22612">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2433,10 +2444,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23452">
+											<AutomationTarget Id="22613">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23453">
+											<ModulationTarget Id="22614">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2461,10 +2472,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23454">
+											<AutomationTarget Id="22615">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23455">
+											<ModulationTarget Id="22616">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2489,10 +2500,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23456">
+											<AutomationTarget Id="22617">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23457">
+											<ModulationTarget Id="22618">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2517,10 +2528,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23458">
+											<AutomationTarget Id="22619">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23459">
+											<ModulationTarget Id="22620">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2545,10 +2556,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23460">
+											<AutomationTarget Id="22621">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23461">
+											<ModulationTarget Id="22622">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2573,10 +2584,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23462">
+											<AutomationTarget Id="22623">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23463">
+											<ModulationTarget Id="22624">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2601,10 +2612,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23464">
+											<AutomationTarget Id="22625">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23465">
+											<ModulationTarget Id="22626">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2629,10 +2640,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23466">
+											<AutomationTarget Id="22627">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23467">
+											<ModulationTarget Id="22628">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2657,10 +2668,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23468">
+											<AutomationTarget Id="22629">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23469">
+											<ModulationTarget Id="22630">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2685,10 +2696,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23470">
+											<AutomationTarget Id="22631">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23471">
+											<ModulationTarget Id="22632">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2713,10 +2724,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23472">
+											<AutomationTarget Id="22633">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23473">
+											<ModulationTarget Id="22634">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2741,10 +2752,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23474">
+											<AutomationTarget Id="22635">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23475">
+											<ModulationTarget Id="22636">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2769,10 +2780,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23476">
+											<AutomationTarget Id="22637">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23477">
+											<ModulationTarget Id="22638">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2797,10 +2808,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23478">
+											<AutomationTarget Id="22639">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23479">
+											<ModulationTarget Id="22640">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2825,10 +2836,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23480">
+											<AutomationTarget Id="22641">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23481">
+											<ModulationTarget Id="22642">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2853,10 +2864,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23482">
+											<AutomationTarget Id="22643">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23483">
+											<ModulationTarget Id="22644">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2881,10 +2892,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23484">
+											<AutomationTarget Id="22645">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23485">
+											<ModulationTarget Id="22646">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2909,10 +2920,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23486">
+											<AutomationTarget Id="22647">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23487">
+											<ModulationTarget Id="22648">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2937,10 +2948,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23488">
+											<AutomationTarget Id="22649">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23489">
+											<ModulationTarget Id="22650">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2965,10 +2976,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23490">
+											<AutomationTarget Id="22651">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23491">
+											<ModulationTarget Id="22652">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -2993,10 +3004,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23492">
+											<AutomationTarget Id="22653">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23493">
+											<ModulationTarget Id="22654">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3021,10 +3032,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23494">
+											<AutomationTarget Id="22655">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23495">
+											<ModulationTarget Id="22656">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3049,10 +3060,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23496">
+											<AutomationTarget Id="22657">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23497">
+											<ModulationTarget Id="22658">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3077,10 +3088,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23498">
+											<AutomationTarget Id="22659">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23499">
+											<ModulationTarget Id="22660">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3105,10 +3116,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23500">
+											<AutomationTarget Id="22661">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23501">
+											<ModulationTarget Id="22662">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3133,10 +3144,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23502">
+											<AutomationTarget Id="22663">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23503">
+											<ModulationTarget Id="22664">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3161,10 +3172,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23504">
+											<AutomationTarget Id="22665">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23505">
+											<ModulationTarget Id="22666">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3189,10 +3200,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23506">
+											<AutomationTarget Id="22667">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23507">
+											<ModulationTarget Id="22668">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3217,10 +3228,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23508">
+											<AutomationTarget Id="22669">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23509">
+											<ModulationTarget Id="22670">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3245,10 +3256,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23510">
+											<AutomationTarget Id="22671">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23511">
+											<ModulationTarget Id="22672">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3273,10 +3284,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23512">
+											<AutomationTarget Id="22673">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23513">
+											<ModulationTarget Id="22674">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3301,10 +3312,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23514">
+											<AutomationTarget Id="22675">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23515">
+											<ModulationTarget Id="22676">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3329,10 +3340,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23516">
+											<AutomationTarget Id="22677">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23517">
+											<ModulationTarget Id="22678">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3357,10 +3368,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23518">
+											<AutomationTarget Id="22679">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23519">
+											<ModulationTarget Id="22680">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3385,10 +3396,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23520">
+											<AutomationTarget Id="22681">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23521">
+											<ModulationTarget Id="22682">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3413,10 +3424,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23522">
+											<AutomationTarget Id="22683">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23523">
+											<ModulationTarget Id="22684">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3441,10 +3452,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23524">
+											<AutomationTarget Id="22685">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23525">
+											<ModulationTarget Id="22686">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3469,10 +3480,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23526">
+											<AutomationTarget Id="22687">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23527">
+											<ModulationTarget Id="22688">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3497,10 +3508,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23528">
+											<AutomationTarget Id="22689">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23529">
+											<ModulationTarget Id="22690">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3525,10 +3536,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23530">
+											<AutomationTarget Id="22691">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23531">
+											<ModulationTarget Id="22692">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3553,10 +3564,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23532">
+											<AutomationTarget Id="22693">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23533">
+											<ModulationTarget Id="22694">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3581,10 +3592,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23534">
+											<AutomationTarget Id="22695">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23535">
+											<ModulationTarget Id="22696">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3609,10 +3620,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23536">
+											<AutomationTarget Id="22697">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23537">
+											<ModulationTarget Id="22698">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3637,10 +3648,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23538">
+											<AutomationTarget Id="22699">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23539">
+											<ModulationTarget Id="22700">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3665,10 +3676,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0"/>
 												<Max Value="1"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23540">
+											<AutomationTarget Id="22701">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23541">
+											<ModulationTarget Id="22702">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</ParameterValue>
@@ -3688,7 +3699,7 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 									<OnOff>
 										<LomId Value="0"/>
 										<Manual Value="true"/>
-										<AutomationTarget Id="23542">
+										<AutomationTarget Id="22703">
 											<LockEnvelope Value="0"/>
 										</AutomationTarget>
 										<MidiCCOnOffThresholds>
@@ -3715,10 +3726,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 												<Min Value="0.0003162277571"/>
 												<Max Value="15.8489332"/>
 											</MidiControllerRange>
-											<AutomationTarget Id="23543">
+											<AutomationTarget Id="22704">
 												<LockEnvelope Value="0"/>
 											</AutomationTarget>
-											<ModulationTarget Id="23544">
+											<ModulationTarget Id="22705">
 												<LockEnvelope Value="0"/>
 											</ModulationTarget>
 										</Volume>
@@ -3730,10 +3741,10 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 											<Min Value="0"/>
 											<Max Value="1"/>
 										</MidiControllerRange>
-										<AutomationTarget Id="23545">
+										<AutomationTarget Id="22706">
 											<LockEnvelope Value="0"/>
 										</AutomationTarget>
-										<ModulationTarget Id="23546">
+										<ModulationTarget Id="22707">
 											<LockEnvelope Value="0"/>
 										</ModulationTarget>
 									</DryWet>
@@ -3743,7 +3754,7 @@ const String livePluginDeviceTemplate = r'''<PluginDevice Id="0">
 /// An Audio Effect Rack as Live 12 saved it, with one chain and no
 /// devices: `buildAls` copies every rack, and every chain of it, from
 /// it.
-const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
+const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="4">
 								<LomId Value="0"/>
 								<LomIdView Value="0"/>
 								<IsExpanded Value="true"/>
@@ -3751,7 +3762,7 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 								<On>
 									<LomId Value="0"/>
 									<Manual Value="true"/>
-									<AutomationTarget Id="22445">
+									<AutomationTarget Id="23234">
 										<LockEnvelope Value="0"/>
 									</AutomationTarget>
 									<MidiCCOnOffThresholds>
@@ -3761,40 +3772,27 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 								</On>
 								<ModulationSourceCount Value="0"/>
 								<ParametersListWrapper LomId="0"/>
-								<Pointee Id="22446"/>
-								<LastSelectedTimeableIndex Value="8"/>
+								<Pointee Id="23235"/>
+								<LastSelectedTimeableIndex Value="0"/>
 								<LastSelectedClipEnvelopeIndex Value="0"/>
 								<LastPresetRef>
-									<Value>
-										<FilePresetRef Id="0">
-											<FileRef>
-												<RelativePathType Value="1"/>
-												<RelativePath Value="../../../../../../../../../../../../Users/pma/Library/Preferences/Ableton/Library/Preferences/Ableton/Library/Preferences/Live8Library-Effects/Koritke/Audio Effects/Audio Effect Rack/Mastering &amp; Helper/Mastering Suite.adg"/>
-												<Path Value="/../../../../../../Users/pma/Library/Preferences/Ableton/Library/Preferences/Ableton/Library/Preferences/Live8Library-Effects/Koritke/Audio Effects/Audio Effect Rack/Mastering &amp; Helper/Mastering Suite.adg"/>
-												<Type Value="2"/>
-												<LivePackName Value=""/>
-												<LivePackId Value=""/>
-												<OriginalFileSize Value="0"/>
-												<OriginalCrc Value="0"/>
-											</FileRef>
-										</FilePresetRef>
-									</Value>
+									<Value/>
 								</LastPresetRef>
 								<LockedScripts/>
 								<IsFolded Value="false"/>
 								<ShouldShowPresetName Value="true"/>
-								<UserName Value="Segno rack"/>
-								<Annotation Value="Combines all essential mastering processing devices in a single rack."/>
+								<UserName Value=""/>
+								<Annotation Value=""/>
 								<SourceContext>
 									<Value/>
 								</SourceContext>
 								<MpePitchBendUsesTuning Value="true"/>
-								<OverwriteProtectionNumber Value="3075"/>
+								<OverwriteProtectionNumber Value="3074"/>
 								<Branches><AudioEffectBranch Id="0">
 										<LomId Value="0"/>
 										<Name>
-											<EffectiveName Value="Chain"/>
-											<UserName Value="Chain"/>
+											<EffectiveName Value="Segno Doubler | Segno Distortion"/>
+											<UserName Value=""/>
 											<Annotation Value=""/>
 											<MemorizedFirstClipName Value=""/>
 										</Name>
@@ -3817,7 +3815,7 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 										<SourceContext>
 											<Value/>
 										</SourceContext>
-										<Color Value="69"/>
+										<Color Value="10"/>
 										<AutoColored Value="true"/>
 										<AutoColorScheme Value="0"/>
 										<SoloActivatedInSessionMixer Value="false"/>
@@ -3830,7 +3828,7 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 											<On>
 												<LomId Value="0"/>
 												<Manual Value="true"/>
-												<AutomationTarget Id="22973">
+												<AutomationTarget Id="23270">
 													<LockEnvelope Value="0"/>
 												</AutomationTarget>
 												<MidiCCOnOffThresholds>
@@ -3840,40 +3838,26 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 											</On>
 											<ModulationSourceCount Value="0"/>
 											<ParametersListWrapper LomId="0"/>
-											<Pointee Id="22974"/>
+											<Pointee Id="23271"/>
 											<LastSelectedTimeableIndex Value="0"/>
 											<LastSelectedClipEnvelopeIndex Value="0"/>
 											<LastPresetRef>
-												<Value>
-													<AbletonDefaultPresetRef Id="0">
-														<FileRef>
-															<RelativePathType Value="1"/>
-															<RelativePath Value="../../../../../../../../../../../../Users/pma/Library/Preferences/Ableton/Library/Preferences/Ableton/Library/Preferences/Ableton/Desktop"/>
-															<Path Value="/../../../../../../Users/pma/Library/Preferences/Ableton/Library/Preferences/Ableton/Library/Preferences/Ableton/Desktop"/>
-															<Type Value="2"/>
-															<LivePackName Value=""/>
-															<LivePackId Value=""/>
-															<OriginalFileSize Value="0"/>
-															<OriginalCrc Value="0"/>
-														</FileRef>
-														<DeviceId Name="AudioBranchMixerDevice"/>
-													</AbletonDefaultPresetRef>
-												</Value>
+												<Value/>
 											</LastPresetRef>
 											<LockedScripts/>
 											<IsFolded Value="false"/>
-											<ShouldShowPresetName Value="false"/>
+											<ShouldShowPresetName Value="true"/>
 											<UserName Value=""/>
 											<Annotation Value=""/>
 											<SourceContext>
 												<Value/>
 											</SourceContext>
 											<MpePitchBendUsesTuning Value="true"/>
-											<OverwriteProtectionNumber Value="3075"/>
+											<OverwriteProtectionNumber Value="3074"/>
 											<Speaker>
 												<LomId Value="0"/>
 												<Manual Value="true"/>
-												<AutomationTarget Id="22975">
+												<AutomationTarget Id="23272">
 													<LockEnvelope Value="0"/>
 												</AutomationTarget>
 												<MidiCCOnOffThresholds>
@@ -3885,13 +3869,13 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 												<LomId Value="0"/>
 												<Manual Value="1"/>
 												<MidiControllerRange>
-													<Min Value="0.00031622799"/>
-													<Max Value="1.99526"/>
+													<Min Value="0.0003162277571"/>
+													<Max Value="1.99526238"/>
 												</MidiControllerRange>
-												<AutomationTarget Id="22976">
+												<AutomationTarget Id="23273">
 													<LockEnvelope Value="0"/>
 												</AutomationTarget>
-												<ModulationTarget Id="22977">
+												<ModulationTarget Id="23274">
 													<LockEnvelope Value="0"/>
 												</ModulationTarget>
 											</Volume>
@@ -3902,10 +3886,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 													<Min Value="-1"/>
 													<Max Value="1"/>
 												</MidiControllerRange>
-												<AutomationTarget Id="22978">
+												<AutomationTarget Id="23275">
 													<LockEnvelope Value="0"/>
 												</AutomationTarget>
-												<ModulationTarget Id="22979">
+												<ModulationTarget Id="23276">
 													<LockEnvelope Value="0"/>
 												</ModulationTarget>
 											</Panorama>
@@ -3930,11 +3914,109 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 								<IsBranchesListVisible Value="false"/>
 								<IsReturnBranchesListVisible Value="false"/>
 								<IsRangesEditorVisible Value="false"/>
-								<AreDevicesVisible Value="false"/>
+								<AreDevicesVisible Value="true"/>
 								<NumVisibleMacroControls Value="8"/>
 								<MacroControls.0>
 									<LomId Value="0"/>
-									<Manual Value="63.5"/>
+									<Manual Value="0"/>
+									<MidiControllerRange>
+										<Min Value="0"/>
+										<Max Value="127"/>
+									</MidiControllerRange>
+									<AutomationTarget Id="23236">
+										<LockEnvelope Value="0"/>
+									</AutomationTarget>
+									<ModulationTarget Id="23237">
+										<LockEnvelope Value="0"/>
+									</ModulationTarget>
+								</MacroControls.0>
+								<MacroControls.1>
+									<LomId Value="0"/>
+									<Manual Value="0"/>
+									<MidiControllerRange>
+										<Min Value="0"/>
+										<Max Value="127"/>
+									</MidiControllerRange>
+									<AutomationTarget Id="23238">
+										<LockEnvelope Value="0"/>
+									</AutomationTarget>
+									<ModulationTarget Id="23239">
+										<LockEnvelope Value="0"/>
+									</ModulationTarget>
+								</MacroControls.1>
+								<MacroControls.2>
+									<LomId Value="0"/>
+									<Manual Value="0"/>
+									<MidiControllerRange>
+										<Min Value="0"/>
+										<Max Value="127"/>
+									</MidiControllerRange>
+									<AutomationTarget Id="23240">
+										<LockEnvelope Value="0"/>
+									</AutomationTarget>
+									<ModulationTarget Id="23241">
+										<LockEnvelope Value="0"/>
+									</ModulationTarget>
+								</MacroControls.2>
+								<MacroControls.3>
+									<LomId Value="0"/>
+									<Manual Value="0"/>
+									<MidiControllerRange>
+										<Min Value="0"/>
+										<Max Value="127"/>
+									</MidiControllerRange>
+									<AutomationTarget Id="23242">
+										<LockEnvelope Value="0"/>
+									</AutomationTarget>
+									<ModulationTarget Id="23243">
+										<LockEnvelope Value="0"/>
+									</ModulationTarget>
+								</MacroControls.3>
+								<MacroControls.4>
+									<LomId Value="0"/>
+									<Manual Value="0"/>
+									<MidiControllerRange>
+										<Min Value="0"/>
+										<Max Value="127"/>
+									</MidiControllerRange>
+									<AutomationTarget Id="23244">
+										<LockEnvelope Value="0"/>
+									</AutomationTarget>
+									<ModulationTarget Id="23245">
+										<LockEnvelope Value="0"/>
+									</ModulationTarget>
+								</MacroControls.4>
+								<MacroControls.5>
+									<LomId Value="0"/>
+									<Manual Value="0"/>
+									<MidiControllerRange>
+										<Min Value="0"/>
+										<Max Value="127"/>
+									</MidiControllerRange>
+									<AutomationTarget Id="23246">
+										<LockEnvelope Value="0"/>
+									</AutomationTarget>
+									<ModulationTarget Id="23247">
+										<LockEnvelope Value="0"/>
+									</ModulationTarget>
+								</MacroControls.5>
+								<MacroControls.6>
+									<LomId Value="0"/>
+									<Manual Value="0"/>
+									<MidiControllerRange>
+										<Min Value="0"/>
+										<Max Value="127"/>
+									</MidiControllerRange>
+									<AutomationTarget Id="23248">
+										<LockEnvelope Value="0"/>
+									</AutomationTarget>
+									<ModulationTarget Id="23249">
+										<LockEnvelope Value="0"/>
+									</ModulationTarget>
+								</MacroControls.6>
+								<MacroControls.7>
+									<LomId Value="0"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -3945,10 +4027,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23251">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.0>
-								<MacroControls.1>
+								</MacroControls.7>
+								<MacroControls.8>
 									<LomId Value="0"/>
-									<Manual Value="63.5"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -3959,10 +4041,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23253">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.1>
-								<MacroControls.2>
+								</MacroControls.8>
+								<MacroControls.9>
 									<LomId Value="0"/>
-									<Manual Value="63.5"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -3973,10 +4055,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23255">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.2>
-								<MacroControls.3>
+								</MacroControls.9>
+								<MacroControls.10>
 									<LomId Value="0"/>
-									<Manual Value="100"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -3987,10 +4069,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23257">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.3>
-								<MacroControls.4>
+								</MacroControls.10>
+								<MacroControls.11>
 									<LomId Value="0"/>
-									<Manual Value="42"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -4001,10 +4083,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23259">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.4>
-								<MacroControls.5>
+								</MacroControls.11>
+								<MacroControls.12>
 									<LomId Value="0"/>
-									<Manual Value="63"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -4015,10 +4097,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23261">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.5>
-								<MacroControls.6>
+								</MacroControls.12>
+								<MacroControls.13>
 									<LomId Value="0"/>
-									<Manual Value="63"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -4029,10 +4111,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23263">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.6>
-								<MacroControls.7>
+								</MacroControls.13>
+								<MacroControls.14>
 									<LomId Value="0"/>
-									<Manual Value="63.5"/>
+									<Manual Value="0"/>
 									<MidiControllerRange>
 										<Min Value="0"/>
 										<Max Value="127"/>
@@ -4043,8 +4125,8 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23265">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.7>
-								<MacroControls.8>
+								</MacroControls.14>
+								<MacroControls.15>
 									<LomId Value="0"/>
 									<Manual Value="0"/>
 									<MidiControllerRange>
@@ -4057,113 +4139,15 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 									<ModulationTarget Id="23267">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
-								</MacroControls.8>
-								<MacroControls.9>
-									<LomId Value="0"/>
-									<Manual Value="0"/>
-									<MidiControllerRange>
-										<Min Value="0"/>
-										<Max Value="127"/>
-									</MidiControllerRange>
-									<AutomationTarget Id="23268">
-										<LockEnvelope Value="0"/>
-									</AutomationTarget>
-									<ModulationTarget Id="23269">
-										<LockEnvelope Value="0"/>
-									</ModulationTarget>
-								</MacroControls.9>
-								<MacroControls.10>
-									<LomId Value="0"/>
-									<Manual Value="0"/>
-									<MidiControllerRange>
-										<Min Value="0"/>
-										<Max Value="127"/>
-									</MidiControllerRange>
-									<AutomationTarget Id="23270">
-										<LockEnvelope Value="0"/>
-									</AutomationTarget>
-									<ModulationTarget Id="23271">
-										<LockEnvelope Value="0"/>
-									</ModulationTarget>
-								</MacroControls.10>
-								<MacroControls.11>
-									<LomId Value="0"/>
-									<Manual Value="0"/>
-									<MidiControllerRange>
-										<Min Value="0"/>
-										<Max Value="127"/>
-									</MidiControllerRange>
-									<AutomationTarget Id="23272">
-										<LockEnvelope Value="0"/>
-									</AutomationTarget>
-									<ModulationTarget Id="23273">
-										<LockEnvelope Value="0"/>
-									</ModulationTarget>
-								</MacroControls.11>
-								<MacroControls.12>
-									<LomId Value="0"/>
-									<Manual Value="0"/>
-									<MidiControllerRange>
-										<Min Value="0"/>
-										<Max Value="127"/>
-									</MidiControllerRange>
-									<AutomationTarget Id="23274">
-										<LockEnvelope Value="0"/>
-									</AutomationTarget>
-									<ModulationTarget Id="23275">
-										<LockEnvelope Value="0"/>
-									</ModulationTarget>
-								</MacroControls.12>
-								<MacroControls.13>
-									<LomId Value="0"/>
-									<Manual Value="0"/>
-									<MidiControllerRange>
-										<Min Value="0"/>
-										<Max Value="127"/>
-									</MidiControllerRange>
-									<AutomationTarget Id="23276">
-										<LockEnvelope Value="0"/>
-									</AutomationTarget>
-									<ModulationTarget Id="23277">
-										<LockEnvelope Value="0"/>
-									</ModulationTarget>
-								</MacroControls.13>
-								<MacroControls.14>
-									<LomId Value="0"/>
-									<Manual Value="0"/>
-									<MidiControllerRange>
-										<Min Value="0"/>
-										<Max Value="127"/>
-									</MidiControllerRange>
-									<AutomationTarget Id="23278">
-										<LockEnvelope Value="0"/>
-									</AutomationTarget>
-									<ModulationTarget Id="23279">
-										<LockEnvelope Value="0"/>
-									</ModulationTarget>
-								</MacroControls.14>
-								<MacroControls.15>
-									<LomId Value="0"/>
-									<Manual Value="0"/>
-									<MidiControllerRange>
-										<Min Value="0"/>
-										<Max Value="127"/>
-									</MidiControllerRange>
-									<AutomationTarget Id="23280">
-										<LockEnvelope Value="0"/>
-									</AutomationTarget>
-									<ModulationTarget Id="23281">
-										<LockEnvelope Value="0"/>
-									</ModulationTarget>
 								</MacroControls.15>
-								<MacroDisplayNames.0 Value="Low Gain"/>
-								<MacroDisplayNames.1 Value="Mid Gain"/>
-								<MacroDisplayNames.2 Value="Hi Gain"/>
-								<MacroDisplayNames.3 Value="Comp Thresh"/>
-								<MacroDisplayNames.4 Value="Comp Ratio"/>
-								<MacroDisplayNames.5 Value="Tone"/>
-								<MacroDisplayNames.6 Value="Stereo Width"/>
-								<MacroDisplayNames.7 Value="Limit Gain"/>
+								<MacroDisplayNames.0 Value="Macro 1"/>
+								<MacroDisplayNames.1 Value="Macro 2"/>
+								<MacroDisplayNames.2 Value="Macro 3"/>
+								<MacroDisplayNames.3 Value="Macro 4"/>
+								<MacroDisplayNames.4 Value="Macro 5"/>
+								<MacroDisplayNames.5 Value="Macro 6"/>
+								<MacroDisplayNames.6 Value="Macro 7"/>
+								<MacroDisplayNames.7 Value="Macro 8"/>
 								<MacroDisplayNames.8 Value="Macro 9"/>
 								<MacroDisplayNames.9 Value="Macro 10"/>
 								<MacroDisplayNames.10 Value="Macro 11"/>
@@ -4220,7 +4204,7 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 								<ForceDisplayGenericValue.13 Value="false"/>
 								<ForceDisplayGenericValue.14 Value="false"/>
 								<ForceDisplayGenericValue.15 Value="false"/>
-								<AreMacroControlsVisible Value="true"/>
+								<AreMacroControlsVisible Value="false"/>
 								<IsAutoSelectEnabled Value="false"/>
 								<ChainSelector>
 									<LomId Value="0"/>
@@ -4229,10 +4213,10 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 										<Min Value="0"/>
 										<Max Value="127"/>
 									</MidiControllerRange>
-									<AutomationTarget Id="23282">
+									<AutomationTarget Id="23268">
 										<LockEnvelope Value="0"/>
 									</AutomationTarget>
-									<ModulationTarget Id="23283">
+									<ModulationTarget Id="23269">
 										<LockEnvelope Value="0"/>
 									</ModulationTarget>
 								</ChainSelector>
@@ -4241,14 +4225,14 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 								<ReturnBranches/>
 								<BranchesSplitterProportion Value="0.5"/>
 								<ShowBranchesInSessionMixer Value="false"/>
-								<MacroColor.0 Value="13"/>
-								<MacroColor.1 Value="13"/>
-								<MacroColor.2 Value="13"/>
-								<MacroColor.3 Value="27"/>
-								<MacroColor.4 Value="27"/>
-								<MacroColor.5 Value="41"/>
-								<MacroColor.6 Value="55"/>
-								<MacroColor.7 Value="69"/>
+								<MacroColor.0 Value="-1"/>
+								<MacroColor.1 Value="-1"/>
+								<MacroColor.2 Value="-1"/>
+								<MacroColor.3 Value="-1"/>
+								<MacroColor.4 Value="-1"/>
+								<MacroColor.5 Value="-1"/>
+								<MacroColor.6 Value="-1"/>
+								<MacroColor.7 Value="-1"/>
 								<MacroColor.8 Value="-1"/>
 								<MacroColor.9 Value="-1"/>
 								<MacroColor.10 Value="-1"/>
@@ -4257,8 +4241,8 @@ const String liveRackDeviceTemplate = r'''<AudioEffectGroupDevice Id="1">
 								<MacroColor.13 Value="-1"/>
 								<MacroColor.14 Value="-1"/>
 								<MacroColor.15 Value="-1"/>
-								<LockId Value="1001"/>
-								<LockSeal Value="-1162621832"/>
+								<LockId Value="0"/>
+								<LockSeal Value="0"/>
 								<ChainsListWrapper LomId="0"/>
 								<ReturnChainsListWrapper LomId="0"/>
 								<MacroVariations>

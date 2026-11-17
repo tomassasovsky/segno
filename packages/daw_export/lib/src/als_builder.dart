@@ -6,6 +6,7 @@ import 'package:daw_export/src/daw_project.dart';
 import 'package:daw_export/src/device_chain.dart';
 import 'package:daw_export/src/live_device_template.dart';
 import 'package:daw_export/src/live_set_template.dart';
+import 'package:daw_export/src/segno_vst3_plugins.dart';
 import 'package:xml/xml.dart';
 
 /// The time of the event Live writes first in every envelope: it holds the
@@ -405,8 +406,8 @@ class _DevicePrototypes {
   }
 
   XmlElement _plugin(DawPluginDevice device, int id) {
-    final element = _copy(plugin, id);
-    _setValue(element.getElement('On')!.getElement('Manual')!, 'true');
+    final element = _copy(_withParameters(plugin, device), id);
+    _setValue(element.getElement('On')!.getElement('Manual')!, '${device.on}');
     final info = element
         .getElement('PluginDesc')!
         .getElement('Vst3PluginInfo')!;
@@ -422,6 +423,67 @@ class _DevicePrototypes {
       device.state.encode(),
     );
     preset.getElement('ControllerState')!.innerText = '';
+    return element;
+  }
+
+  /// [prototype] with its parameter list as Live writes it for [device]'s
+  /// plugin when it loads one fresh: the kind's settings, then the channel
+  /// handling, each in the slot of its place, at the state's values; the
+  /// rest of the 128 slots unassigned. Live shows these parameters on the
+  /// device and offers them for automation; a stepped one's value is in
+  /// steps.
+  XmlElement _withParameters(XmlElement prototype, DawPluginDevice device) {
+    final element = prototype.copy();
+    final list = element.getElement('ParameterList')!;
+    final slots = list.childElements.toList();
+    // The template's plugin has its parameters in its first slots and the
+    // rest unassigned; one of each is the pattern for the others.
+    final assigned = slots.first;
+    final unassigned = slots.last;
+    final state = device.state;
+    final parameters = [
+      for (var p = 0; p < state.params.length; p++)
+        if (p < device.plugin.parameters.length)
+          (p, device.plugin.parameters[p], state.params[p]),
+      for (final MapEntry(key: pid, value: parameter)
+          in segnoChannelParameters.entries)
+        (
+          pid,
+          parameter,
+          switch (pid) {
+            1000 => state.input / 3,
+            1001 => state.output.toDouble(),
+            1002 => (state.placement + 1) / 2,
+            _ => state.level / 4,
+          },
+        ),
+    ];
+    list.children.clear();
+    for (var i = 0; i < slots.length; i++) {
+      if (i >= parameters.length) {
+        list.children.add(unassigned.copy()..setAttribute('Id', '$i'));
+        continue;
+      }
+      final (pid, parameter, normalized) = parameters[i];
+      final steps = parameter.steps;
+      final max = steps > 0 ? steps : 1;
+      final value = steps > 0
+          ? (normalized.clamp(0.0, 1.0) * steps).roundToDouble()
+          : normalized;
+      final slot = assigned.copy()..setAttribute('Id', '$i');
+      _setValue(slot.getElement('ParameterName')!, parameter.name);
+      _setValue(slot.getElement('ParameterId')!, '$pid');
+      _setValue(slot.getElement('VisualIndex')!, '$i');
+      final held = slot.getElement('ParameterValue')!;
+      _setValue(held.getElement('Manual')!, _number(value));
+      final range = held.getElement('MidiControllerRange')!;
+      _setValue(range.getElement('Min')!, '0');
+      _setValue(range.getElement('Max')!, '$max');
+      final user = slot.getElement('LastUserRange')!;
+      _setValue(user.getElement('First')!, '0');
+      _setValue(user.getElement('Last')!, '$max');
+      list.children.add(slot);
+    }
     return element;
   }
 

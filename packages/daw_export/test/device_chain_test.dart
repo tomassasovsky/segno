@@ -33,6 +33,7 @@ void main() {
       expect(delay.plugin, segnoPlugins[3]);
       expect(delay.state.params, [0.35, 0.4, 0.5]);
       expect(delay.state.slot, 0);
+      expect(delay.on, isTrue);
       expect(delay.state.enabled, isTrue);
       expect(delay.state.hopSeed, 64);
       expect(delay.state.clockOffset, 1000);
@@ -40,7 +41,10 @@ void main() {
       final drive = _plugin(devices[1]);
       expect(drive.plugin, segnoPlugins[1]);
       expect(drive.state.slot, 2);
-      expect(drive.state.enabled, isFalse);
+      // Off as a device; the plugin's own switch stays on, so switching the
+      // device on in Live plays it.
+      expect(drive.on, isFalse);
+      expect(drive.state.enabled, isTrue);
       expect(drive.state.input, 3);
       expect(drive.state.output, 1);
       expect(drive.state.placement, -0.5);
@@ -58,7 +62,7 @@ void main() {
         origin: origin,
         chainEnabled: false,
       );
-      expect(_plugin(devices.single).state.enabled, isFalse);
+      expect(_plugin(devices.single).on, isFalse);
     });
 
     test('leaves out hosted plugins and anything that is not a list', () {
@@ -107,7 +111,7 @@ void main() {
       ]);
       final echo = _rack(devices[2]);
       expect(echo.on, isFalse);
-      expect(_plugin(echo.chains.single.devices.single).state.enabled, isTrue);
+      expect(_plugin(echo.chains.single.devices.single).on, isTrue);
     });
 
     test("puts a switched-off rack's modules on, since only their effective "
@@ -122,7 +126,7 @@ void main() {
       ], origin: origin);
       final echo = _rack(devices.single);
       expect(echo.on, isFalse);
-      expect(_plugin(echo.chains.single.devices.single).state.enabled, isTrue);
+      expect(_plugin(echo.chains.single.devices.single).on, isTrue);
     });
 
     test('leaves out a rack with nothing Segno runs in it', () {

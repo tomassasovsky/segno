@@ -175,9 +175,18 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   gains `fx_path_targets` gives the section's Amb-Dub Mix. Hosted plugins
   are left out, as the offline render passes them dry.
 - The devices are copied from a set Live saved with Segno's plugins
-  (`test/corpus/segno_vst3.als`, through
+  (`test/corpus/segno_vst3.als`, built in Live, through
   `lib/src/live_device_template.dart`): a plugin device and a rack with one
-  chain.
+  chain. Each plugin gets its own parameter list, as Live writes one for a
+  plugin loaded fresh (`SegnoPlugin.parameters`, checked against every
+  plugin by the null test), so Live shows and automates its parameters. An
+  entry that was off is the device switched off; the plugin's own switch
+  stays on. A volume lane picks the Mixer after the devices and chain mixers
+  in Live's lane chooser.
+- The plugins start again as at arm whenever the host starts playing or
+  jumps (`segno_fx_slot_rearm`), so a render from the start of the set is
+  the console's: without it, LFOs, noise and octaver hops run on while
+  Live's transport stands.
 - An input recorded raw (#1805) plays its raw recording through its
   monitor chain at arm, as plugins, on `<input> raw` (the hop seed is
   `le_fx_monitor_hop_seed`); the input as heard already has the chain in

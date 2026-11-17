@@ -4,7 +4,11 @@ import 'dart:typed_data';
 /// Live loads for a built-in effect kind.
 class SegnoPlugin {
   /// Creates a [SegnoPlugin].
-  const new({required this.name, required this.processorId});
+  const new({
+    required this.name,
+    required this.processorId,
+    required this.parameters,
+  });
 
   /// The plugin's name in Live.
   final String name;
@@ -13,6 +17,10 @@ class SegnoPlugin {
   /// identity.
   final List<int> processorId;
 
+  /// The kind's settings as the plugin names them, in the engine's order:
+  /// setting p is the plugin's parameter p (`params.h`).
+  final List<SegnoParameter> parameters;
+
   /// The class id as Live's `Uid/Fields.0..3`: each word as a signed 32-bit
   /// integer.
   List<int> get liveUidFields => [
@@ -20,132 +28,309 @@ class SegnoPlugin {
   ];
 }
 
+/// One of a Segno plugin's parameters as a host lists it.
+class SegnoParameter {
+  /// Creates a [SegnoParameter].
+  const new(this.name, {this.steps = 0});
+
+  /// Its name (the engine's key, as `controller.cpp` titles it).
+  final String name;
+
+  /// Its VST3 step count: the positions it snaps to less one, or 0 for a
+  /// continuous one. Live keeps a stepped parameter's value in steps.
+  final int steps;
+}
+
+/// The parameters after a kind's settings that every Segno plugin has: its
+/// channel handling (`params.h`), by id.
+const Map<int, SegnoParameter> segnoChannelParameters = {
+  1000: SegnoParameter('Input', steps: 3),
+  1001: SegnoParameter('Output', steps: 1),
+  1002: SegnoParameter('Balance / Pan'),
+  1003: SegnoParameter('Level'),
+};
+
 /// Segno's plugins by `le_fx_type` code: every built-in kind but none and a
 /// hosted plugin. The ids are `segno_fx_kinds.h`'s, which the tests check.
 const Map<int, SegnoPlugin> segnoPlugins = {
   1: SegnoPlugin(
     name: 'Segno Drive',
     processorId: [0x3B6057BF, 0xB0624797, 0xABA2EBB8, 0x599AAE91],
+    parameters: [SegnoParameter('Drive'), SegnoParameter('Level')],
   ),
   2: SegnoPlugin(
     name: 'Segno Filter',
     processorId: [0x20A68767, 0x71C5463A, 0x92BC2E0C, 0x3A02E613],
+    parameters: [SegnoParameter('Cutoff'), SegnoParameter('Resonance')],
   ),
   3: SegnoPlugin(
     name: 'Segno Delay',
     processorId: [0x6E698A08, 0x1C5445D5, 0xB5C0F9A1, 0xF2543803],
+    parameters: [
+      SegnoParameter('Time'),
+      SegnoParameter('Feedback'),
+      SegnoParameter('Mix'),
+    ],
   ),
   4: SegnoPlugin(
     name: 'Segno Tremolo',
     processorId: [0xD8E602FC, 0x6B25466E, 0xAEB1BB29, 0x337E80CD],
+    parameters: [SegnoParameter('Rate'), SegnoParameter('Depth')],
   ),
   5: SegnoPlugin(
     name: 'Segno Octaver',
     processorId: [0x7486BCEA, 0x59714B95, 0xBFE3C1F1, 0xF344FCFD],
+    parameters: [
+      SegnoParameter('Shift', steps: 48),
+      SegnoParameter('Tone'),
+      SegnoParameter('Mix'),
+      SegnoParameter('Mode', steps: 1),
+      SegnoParameter('Formants', steps: 1),
+    ],
   ),
   6: SegnoPlugin(
     name: 'Segno Echo',
     processorId: [0xDC732855, 0x0021497D, 0x8053CD50, 0x94B592D3],
+    parameters: [
+      SegnoParameter('Time'),
+      SegnoParameter('Feedback'),
+      SegnoParameter('Mix'),
+    ],
   ),
   7: SegnoPlugin(
     name: 'Segno Reverb',
     processorId: [0x6E35F5DA, 0x6D4E406F, 0x8D41A81C, 0xBE7AB75F],
+    parameters: [
+      SegnoParameter('Size'),
+      SegnoParameter('Damping'),
+      SegnoParameter('Mix'),
+    ],
   ),
   9: SegnoPlugin(
     name: 'Segno EQ',
     processorId: [0x5F221E04, 0x34E74839, 0xB988C082, 0xCF758CD5],
+    parameters: [
+      SegnoParameter('Low cut'),
+      SegnoParameter('Low gain'),
+      SegnoParameter('Low freq'),
+      SegnoParameter('Low q'),
+      SegnoParameter('Lo mid gain'),
+      SegnoParameter('Lo mid freq'),
+      SegnoParameter('Lo mid q'),
+      SegnoParameter('Hi mid gain'),
+      SegnoParameter('Hi mid freq'),
+      SegnoParameter('Hi mid q'),
+      SegnoParameter('High gain'),
+      SegnoParameter('High freq'),
+      SegnoParameter('High q'),
+      SegnoParameter('High cut'),
+      SegnoParameter('Layout', steps: 2),
+    ],
   ),
   10: SegnoPlugin(
     name: 'Segno Compressor',
     processorId: [0x093244E1, 0x13BE424A, 0xB523A1F7, 0x1115929D],
+    parameters: [
+      SegnoParameter('Threshold'),
+      SegnoParameter('Ratio'),
+      SegnoParameter('Attack'),
+      SegnoParameter('Release'),
+      SegnoParameter('Makeup'),
+    ],
   ),
   11: SegnoPlugin(
     name: 'Segno Transient',
     processorId: [0xBC421B2B, 0x1B414AEB, 0xA078BCE4, 0x440B9006],
+    parameters: [
+      SegnoParameter('Attack'),
+      SegnoParameter('Attack length'),
+      SegnoParameter('Sustain'),
+    ],
   ),
   12: SegnoPlugin(
     name: 'Segno HP / Gate',
     processorId: [0xBE5C001E, 0xAD0F40C4, 0x81A1AAB7, 0x848F11B5],
+    parameters: [
+      SegnoParameter('Highpass'),
+      SegnoParameter('Gate threshold'),
+      SegnoParameter('Gate release'),
+      SegnoParameter('Gate detector'),
+    ],
   ),
   13: SegnoPlugin(
     name: 'Segno Doubler',
     processorId: [0x18613919, 0xB57F4BE3, 0x8A06BE4B, 0xAB3581C6],
+    parameters: [SegnoParameter('Mix'), SegnoParameter('Separation')],
   ),
   14: SegnoPlugin(
     name: 'Segno Chorus',
     processorId: [0x4CDD90BF, 0xAD6E42B9, 0x9BF7EBBD, 0xA91FF8B3],
+    parameters: [
+      SegnoParameter('Rate'),
+      SegnoParameter('Depth'),
+      SegnoParameter('Mix'),
+    ],
   ),
   15: SegnoPlugin(
     name: 'Segno Wah',
     processorId: [0x27D1F229, 0x8C6944DF, 0xAEE761E0, 0x7DF17039],
+    parameters: [SegnoParameter('Pedal')],
   ),
   16: SegnoPlugin(
     name: 'Segno Overdrive',
     processorId: [0x05F5B34F, 0xA3094E55, 0x80299B01, 0x04C0A5CB],
+    parameters: [
+      SegnoParameter('Drive'),
+      SegnoParameter('Tone'),
+      SegnoParameter('Level'),
+    ],
   ),
   17: SegnoPlugin(
     name: 'Segno Distortion',
     processorId: [0x71C7F461, 0x30A94EDF, 0xA49D96FC, 0x7E81AF28],
+    parameters: [SegnoParameter('Drive'), SegnoParameter('Tone')],
   ),
   18: SegnoPlugin(
     name: 'Segno Vinyl',
     processorId: [0xF03164F2, 0x63044EAA, 0x89609B98, 0x0D51BA07],
+    parameters: [
+      SegnoParameter('Drive'),
+      SegnoParameter('Frequency'),
+      SegnoParameter('Noise'),
+      SegnoParameter('Noise tone'),
+    ],
   ),
   19: SegnoPlugin(
     name: 'Segno Degrade',
     processorId: [0x2C5FF786, 0x56F84B19, 0x81A68856, 0x3644BEE5],
+    parameters: [
+      SegnoParameter('Frequency'),
+      SegnoParameter('Filter'),
+      SegnoParameter('Mix'),
+    ],
   ),
   20: SegnoPlugin(
     name: 'Segno LPF',
     processorId: [0x5ED01649, 0x5706426D, 0x8C5FFD74, 0x36121AF9],
+    parameters: [
+      SegnoParameter('Cutoff'),
+      SegnoParameter('Resonance'),
+      SegnoParameter('Lfo depth'),
+      SegnoParameter('Lfo rate', steps: 15),
+    ],
   ),
   21: SegnoPlugin(
     name: 'Segno Spring reverb',
     processorId: [0x18E14C30, 0x251B4735, 0x8FABA270, 0xADB195C7],
+    parameters: [SegnoParameter('Time'), SegnoParameter('Mix')],
   ),
   22: SegnoPlugin(
     name: 'Segno Dub reverb',
     processorId: [0x7988FD87, 0x94D24BEA, 0xABBA557B, 0xD6F6DF4A],
+    parameters: [SegnoParameter('Decay'), SegnoParameter('Volume')],
   ),
   23: SegnoPlugin(
     name: 'Segno Ambience',
     processorId: [0x77D9FCDC, 0x6CAC42FE, 0x950885BF, 0xB18D91B6],
+    parameters: [
+      SegnoParameter('Decay'),
+      SegnoParameter('Volume'),
+      SegnoParameter('Amb dub mix'),
+    ],
   ),
   24: SegnoPlugin(
     name: 'Segno Whammy',
     processorId: [0x6F56732E, 0x46264E80, 0xA861C6DE, 0x71B23ACD],
+    parameters: [
+      SegnoParameter('Pedal'),
+      SegnoParameter('Whammy range', steps: 1),
+    ],
   ),
   25: SegnoPlugin(
     name: 'Segno Pumper',
     processorId: [0x2F1E61CC, 0x9892403F, 0x939A97CC, 0x33A9B20D],
+    parameters: [
+      SegnoParameter('Pumper rate', steps: 10),
+      SegnoParameter('Depth'),
+    ],
   ),
   26: SegnoPlugin(
     name: 'Segno Slicer',
     processorId: [0x75C5A76B, 0x73B04920, 0xB23C72F3, 0x07E86AB9],
+    parameters: [
+      SegnoParameter('Slicer pattern', steps: 16),
+      SegnoParameter('Slicer step', steps: 8),
+      SegnoParameter('Mix'),
+    ],
   ),
   27: SegnoPlugin(
     name: 'Segno Mode delay',
     processorId: [0xC32C951E, 0x2B9846FA, 0xB77984C9, 0x8418854A],
+    parameters: [
+      SegnoParameter('Delay time', steps: 19),
+      SegnoParameter('Feedback'),
+      SegnoParameter('Mix'),
+      SegnoParameter('Delay mode', steps: 13),
+      SegnoParameter('Delay freq'),
+      SegnoParameter('Damp'),
+      SegnoParameter('Lr ratio'),
+      SegnoParameter('Reso'),
+      SegnoParameter('Res freq'),
+    ],
   ),
   28: SegnoPlugin(
     name: 'Segno Dual octaver',
     processorId: [0x2D7AF1A0, 0x90624EC0, 0x84535B6C, 0x73DC0897],
+    parameters: [
+      SegnoParameter('Oct high mode', steps: 1),
+      SegnoParameter('Octave 1 vol'),
+      SegnoParameter('Mix'),
+      SegnoParameter('Octave 2 vol'),
+    ],
   ),
   29: SegnoPlugin(
     name: 'Segno Amp',
     processorId: [0x5A5E5968, 0xF68F438D, 0xB6CED6FC, 0x89754BC0],
+    parameters: [
+      SegnoParameter('Drive'),
+      SegnoParameter('Bass'),
+      SegnoParameter('Treble'),
+      SegnoParameter('Modern'),
+      SegnoParameter('Cabinet', steps: 11),
+    ],
   ),
   30: SegnoPlugin(
     name: 'Segno Modulation',
     processorId: [0x4DDE94C0, 0xAC4141EE, 0x95F044CC, 0xB6068D34],
+    parameters: [
+      SegnoParameter('Rate'),
+      SegnoParameter('Depth'),
+      SegnoParameter('Mix'),
+      SegnoParameter('Mod mode', steps: 3),
+    ],
   ),
   31: SegnoPlugin(
     name: 'Segno Room reverb',
     processorId: [0x2F3F3017, 0x29694686, 0x854E4D77, 0x1CA55889],
+    parameters: [
+      SegnoParameter('Length'),
+      SegnoParameter('Mix'),
+      SegnoParameter('Room', steps: 15),
+      SegnoParameter('Bright'),
+      SegnoParameter('Lo hi'),
+      SegnoParameter('Tail er'),
+      SegnoParameter('Density'),
+    ],
   ),
   32: SegnoPlugin(
     name: 'Segno Smart Tune',
     processorId: [0x8F8D32E7, 0xD14E4512, 0x82769C58, 0xCAD79196],
+    parameters: [
+      SegnoParameter('Speed'),
+      SegnoParameter('Scale root', steps: 11),
+      SegnoParameter('Scale type', steps: 13),
+      SegnoParameter('Reference'),
+    ],
   ),
 };
 

@@ -12,14 +12,19 @@ sealed class DawDevice {
 @immutable
 final class DawPluginDevice extends DawDevice {
   /// Creates a [DawPluginDevice].
-  const new({required this.plugin, required this.state});
+  const new({required this.plugin, required this.state, this.on = true});
 
   /// The plugin.
   final SegnoPlugin plugin;
 
-  /// Its settings, channel handling and enable bit, and where the take
-  /// stands in time.
+  /// Its settings and channel handling, and where the take stands in time.
   final SegnoPluginState state;
+
+  /// Whether the device is switched on in Live: the entry's enable bit. The
+  /// plugin's own switch stays on, so switching the device on in Live
+  /// plays the effect whether Live drives the plugin's bypass parameter or
+  /// bypasses the device itself.
+  final bool on;
 }
 
 /// A Live Audio Effect Rack: chains that each start from the rack's input,
@@ -121,8 +126,8 @@ const Map<String, int> _kOutputs = {'stereo': 0, 'mono': 1};
 ///
 /// - Each built-in effect becomes its Segno plugin, with its settings and
 ///   channel handling, on the chain slot it held (its index in [effects]).
-///   Its enable bit is the engine's: the entry's own, and off with the whole
-///   chain when [chainEnabled] is false.
+///   The device is on as the engine's enable bit was: the entry's own, and
+///   off with the whole chain when [chainEnabled] is false.
 /// - A run of entries of one rack becomes an Audio Effect Rack named as the
 ///   rack, off when the rack was. Inside it, a run of entries on the Dub
 ///   Rack's two parallel paths becomes a rack of its own with an Amb and a
@@ -248,6 +253,7 @@ DawPluginDevice? _plugin(
       : const <String, dynamic>{};
   return DawPluginDevice(
     plugin: plugin,
+    on: chainEnabled && (on || json['enabled'] != false),
     state: SegnoPluginState(
       type: type!,
       params: _params(json),
@@ -259,7 +265,6 @@ DawPluginDevice? _plugin(
       output: _kOutputs[ch['output']] ?? 0,
       placement: _double(ch['placement']) ?? 0,
       level: _double(ch['level']) ?? 1,
-      enabled: chainEnabled && (on || json['enabled'] != false),
     ),
   );
 }
