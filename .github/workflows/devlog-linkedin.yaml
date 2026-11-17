@@ -1,0 +1,47 @@
+name: Devlog LinkedIn
+
+# Posts each devlog entry's LinkedIn text (site/log/<entry>.linkedin.txt) to
+# Tomás's profile once the merge that adds it reaches the trunk and the
+# entry's page is live. Reports the post link on Telegram. Re-running a
+# successful run posts again, so don't.
+
+on:
+  push:
+    branches: [claude/segno-integration]
+    paths:
+      - 'site/log/*.linkedin.txt'
+  workflow_dispatch:
+    inputs:
+      file:
+        description: 'A site/log/*.linkedin.txt to post now'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devlog-linkedin
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Post to LinkedIn
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            python3 tool/devlog/linkedin_post.py --file "$FILE"
+          else
+            python3 tool/devlog/linkedin_post.py --before "${{ github.event.before }}" --after "${{ github.sha }}"
+          fi
+        env:
+          FILE: ${{ inputs.file }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
+          LINKEDIN_API_VERSION: ${{ vars.LINKEDIN_API_VERSION }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

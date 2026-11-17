@@ -1,0 +1,60 @@
+name: Devlog Telegram
+
+# Asks Tomás on Telegram whether to publish each devlog PR, and acts on his
+# "publish <PR>" or "skip <PR>" reply. Publishing merges the PR, which deploys
+# the site (site.yaml) and posts to LinkedIn (devlog-linkedin.yaml). The
+# scripts are in tool/devlog; setup is in site/README.md, "Publishing".
+#
+# GitHub runs scheduled workflows only from the default branch, so the
+# 10-minute check starts once this file is on it.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    paths:
+      - 'site/log/**'
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  ask:
+    if: >-
+      github.event_name == 'pull_request' &&
+      !github.event.pull_request.draft &&
+      startsWith(github.head_ref, 'claude/devlog-') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Ask on Telegram
+        run: python3 tool/devlog/telegram_notify.py --pr ${{ github.event.pull_request.number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LINKEDIN_TOKEN_EXPIRES_AT: ${{ vars.LINKEDIN_TOKEN_EXPIRES_AT }}
+
+  answer:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: devlog-telegram-answer
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - name: Act on publish and skip replies
+        run: python3 tool/devlog/telegram_approve.py
+        env:
+          # A merge made with the workflow's own token would not start the
+          # deploy and LinkedIn workflows, so this is a fine-grained token
+          # limited to this repository (contents and pull requests: write).
+          GH_TOKEN: ${{ secrets.SEGNO_MERGE_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

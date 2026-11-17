@@ -65,6 +65,66 @@ run the script.
 The Site workflow runs `python3 site/build_log.py --check` and fails when the
 committed output does not match the entries.
 
+## Publishing to LinkedIn
+
+A devlog entry can carry the text of a LinkedIn post in
+`log/YYYY-MM-DD-slug.linkedin.txt`, next to its Markdown. The site does not
+serve it. Plain text, at most 3,000 characters; `#Words` become hashtags.
+
+For a PR from a `claude/devlog-*` branch (the weekly routine opens these):
+
+1. When the PR opens, the Devlog Telegram workflow sends the entry's title,
+   summary, the LinkedIn text and the PR link to the owner's Telegram chat.
+2. The owner replies `publish <PR>` or `skip <PR>`. Every 10 minutes the same
+   workflow reads the replies. It acts only on messages from the owner's own
+   private chat, sent in the last three days, and only on an open
+   `claude/devlog-*` PR into the trunk that changes nothing outside `site/`
+   and carries a `.linkedin.txt`. `publish` also needs green checks; it
+   merges. `skip` closes the PR and deletes its branch.
+3. The merge deploys the site. The Devlog LinkedIn workflow waits until the
+   entry's page answers, then posts the text to the owner's profile with the
+   entry as the link preview, and sends the post's link on Telegram.
+
+Merging such a PR by hand posts it too. Re-running a successful Devlog
+LinkedIn run posts it again. To post an entry that is already live, run the
+Devlog LinkedIn workflow by hand with the path of its `.linkedin.txt`.
+
+The scripts are in `tool/devlog/` (standard library only), with tests the
+Site workflow runs:
+
+```bash
+python3 -m unittest discover -s tool/devlog
+python3 tool/devlog/linkedin_post.py --file site/log/<entry>.linkedin.txt --dry-run
+```
+
+### Setup
+
+Every secret is stored with `gh secret set` by the scripts below, which print
+none of them.
+
+- **Telegram.** Create a bot with @BotFather, then run
+  `python3 tool/devlog/setup_telegram.py`, paste the bot's token and send the
+  bot a message from your own account. It stores `TELEGRAM_BOT_TOKEN` and
+  `TELEGRAM_CHAT_ID`.
+- **LinkedIn.** On <https://www.linkedin.com/developers/apps>, create an app
+  linked to a LinkedIn Page, add the products "Share on LinkedIn" and "Sign In
+  with LinkedIn using OpenID Connect", and add the redirect URL
+  `http://localhost:8765/callback`. Then run
+  `python3 tool/devlog/setup_linkedin.py`. It stores `LINKEDIN_ACCESS_TOKEN`,
+  `LINKEDIN_PERSON_URN` and the variable `LINKEDIN_TOKEN_EXPIRES_AT`. The
+  token lasts 60 days; the Telegram message warns two weeks before it
+  expires, and running the script again renews it.
+- **Merging.** Create a fine-grained token limited to this repository with
+  Contents and Pull requests set to read and write, and store it with
+  `gh secret set SEGNO_MERGE_TOKEN -R tomassasovsky/segno`. A merge made with
+  the workflow's own token would not start the deploy and LinkedIn workflows.
+- **Default branch.** GitHub runs scheduled workflows only from the default
+  branch, so the 10-minute check runs once
+  `.github/workflows/devlog-telegram.yaml` is on it.
+
+Until the Telegram secrets are set, the Telegram steps say so and do nothing.
+Without the LinkedIn secrets, the post fails and names the missing secret.
+
 ## Asset versions
 
 Every reference to a local asset carries `?v=<hash>`, and nginx caches assets
