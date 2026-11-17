@@ -14,8 +14,9 @@ public protocol RecordingRepository {
     progress: @escaping (Int64, String) -> Void
   ) throws -> URL
   /// Downloads `recording`'s Live set and every file it refers to into a
-  /// folder named after the take, or finds the verified copy an earlier call
-  /// left there. `progress` gets the fraction done and what is happening.
+  /// folder named after the take, or reopens the copy an earlier call left
+  /// there, edits included. `progress` gets the fraction done and what is
+  /// happening.
   func downloadLiveSet(
     recording: Recording, destination: URL, connection: Connection, token: CancellationToken,
     progress: @escaping (Double, String) -> Void
@@ -92,14 +93,10 @@ public final class TransferRepository: RecordingRepository {
         "This performance's name cannot be used as a folder name on this Mac. Rename it on the console."
       )
     }
-    progress(0, "Checking for a downloaded copy")
-    if let copy = try LiveSet.verifiedCopy(
-      of: recording, in: destination, named: name, token: token)
-    {
-      // A copy an earlier version of this app downloaded has none. One that
-      // has it, or cannot get it, opens as it is.
-      try? LiveSet.makeProject(copy.folder)
-      return copy
+    progress(0, "Checking the downloaded copy")
+    if let local = LiveSet.localCopy(of: recording, in: destination, named: name) {
+      return try reopen(
+        local, recording: recording, connection: connection, token: token, progress: progress)
     }
     let temporary = try TemporaryDownload(parent: destination)
     defer { temporary.remove() }
@@ -147,6 +144,60 @@ public final class TransferRepository: RecordingRepository {
     return LiveSetCopy(
       folder: URL(fileURLWithPath: published.path, isDirectory: true),
       usesPlugins: contents.usesPlugins, reused: false)
+  }
+
+  /// Checks the recorded files `local`'s set uses against their SHA-256 and
+  /// fetches each one that is missing or does not match again, replacing it
+  /// in place. `project.als` is never touched: it is the user's set. A copy
+  /// that cannot get its Live Project folder opens as it is.
+  private func reopen(
+    _ local: LiveSet.LocalCopy, recording: Recording, connection: Connection,
+    token: CancellationToken, progress: @escaping (Double, String) -> Void
+  ) throws -> LiveSetCopy {
+    var local = local
+    let checked = local.checked
+    let total = max(1, checked.reduce(0) { $0 + $1.bytes })
+    var done: Int64 = 0
+    var bad: [String] = []
+    for (index, entry) in checked.enumerated() {
+      progress(
+        min(1, Double(done) / Double(total)),
+        "Checking \(index + 1) of \(checked.count) · \(entry.path)")
+      let url = local.folder.appendingPathComponent(entry.path)
+      if LiveSet.size(of: url) != entry.bytes
+        || (try? Self.sha256(url, token: token)) != entry.sha256
+      {
+        bad.append(entry.path)
+      }
+      try token.check()
+      done += entry.bytes
+    }
+    for (index, path) in bad.enumerated() {
+      guard let file = recording.files.first(where: { $0.path == path }) else {
+        throw TransferError.message(
+          "The Live set uses \(path), which is missing from the downloaded copy and from the appliance."
+        )
+      }
+      let target = local.folder.appendingPathComponent(path)
+      try FileManager.default.createDirectory(
+        at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let temporary = try TemporaryDownload(parent: local.folder)
+      defer { temporary.remove() }
+      let hash = try fetch(
+        recording: recording, file: file, to: temporary.file, connection: connection, token: token
+      ) { bytes, phase in
+        progress(
+          min(1, Double(bytes) / Double(max(1, file.bytes))),
+          "\(phase) again \(index + 1) of \(bad.count) · \(path)")
+      }
+      try token.check()
+      try temporary.replace(target)
+      try local.record.add(file, at: target, sha256: hash)
+      try local.record.write(in: local.folder)
+    }
+    try? LiveSet.makeProject(local.folder)
+    return LiveSetCopy(
+      folder: local.folder, usesPlugins: local.contents.usesPlugins, reused: true)
   }
 
   /// Fetches `file` into the existing, empty `output` and checks its length
@@ -261,6 +312,13 @@ final class TemporaryDownload {
       return target
     }
     throw TransferError.message("Too many files have this name. Choose a different download name.")
+  }
+
+  /// Moves the downloaded file over `target`, replacing what is there.
+  func replace(_ target: URL) throws {
+    guard rename(file.path, target.path) == 0 else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
   }
 
   func remove() { try? FileManager.default.removeItem(at: directory) }

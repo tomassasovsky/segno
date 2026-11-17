@@ -7,8 +7,9 @@ stream audio with seeking, and download selected files with names you choose.
 
 - **Open in Live** downloads a performance's Live set, with every recording,
   loop and stem it uses, verifies each file and opens it in Ableton Live in one
-  click. A second click opens the verified copy without downloading it again.
-  The folder is a Live Project, so saving in Live writes the set in place.
+  click. The folder is a Live Project, so saving in Live writes the set in
+  place, and a second click reopens your copy with its edits. Only a recording,
+  loop or stem that is missing or fails its SHA-256 check is downloaded again.
 - **Segno plugins included.** The app carries `Segno.vst3`, the console's
   effects with their pedal faces. When a set needs them and they are missing
   or older, **Open in Live** offers to install them into

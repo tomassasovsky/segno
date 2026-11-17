@@ -233,8 +233,8 @@ final class AppModel: ObservableObject {
     return nil
   }
 
-  /// Downloads `recording`'s Live set into the download folder, or finds the
-  /// verified copy already there, and opens it in Live. A cancelled or failed
+  /// Downloads `recording`'s Live set into the download folder, or reopens
+  /// the copy already there with its edits, and opens it in Live. A cancelled or failed
   /// download opens nothing.
   func openInLive(_ recording: Recording) {
     liveApplication = live.application()
