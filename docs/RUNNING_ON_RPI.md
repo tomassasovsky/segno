@@ -188,6 +188,7 @@ segno-wifi-ctl scan
 printf '%s\n' 'your-psk' | segno-wifi-ctl connect 'YourSSID'   # key on stdin, never argv
 ip -4 addr show wlan0
 segno-wifi-ctl disconnect
+segno-wifi-ctl monitor        # one line per NetworkManager change; Ctrl-C ends it
 
 # Brightness (needs a DDC/CI-capable HDMI panel)
 segno-brightness-ctl supported
@@ -195,6 +196,13 @@ segno-brightness-ctl get
 segno-brightness-ctl set 40
 segno-brightness-ctl set 80
 ```
+
+A failed `connect` exits non-zero and prints why on stdout:
+`{"error":"wrong-password"}` only when iwd logged "4-Way handshake failed"
+during the attempt, otherwise `not-found`, `no-address` or `no-connection`;
+stderr names iwd's evidence (`connect-failed, status: 16` is the access point
+timing out the 802.11 authentication, #1816). NetworkManager's `no-secrets`
+is not evidence about the key. A failed join never deletes a saved network.
 
 In the app: Settings → Network (join a network) → Displays (drag brightness
 and confirm the panel dims). Bluetooth is retired (#1199): the image ships no
