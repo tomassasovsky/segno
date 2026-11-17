@@ -1,6 +1,7 @@
 /* #1794: every file a performance take renders fits one file on a FAT32
  * stick (4 GiB less one byte, header included) at the longest take the
- * drain lets run, whatever the take's longest length, rate or master width.
+ * drain lets run, whatever the take's longest length, rate or master width,
+ * and so does every part it records, the raw inputs' included (#1805).
  * The headers are read from a real render, so a wider stem, a wider sample
  * or a longer header fails here, as does a longest take that is no longer
  * held to what one file can hold. Included by test_engine_core.c after
@@ -74,6 +75,44 @@ static void file_limit_check_sealable(void) {
   }
 }
 
+/* The recorded parts (#1198) of a take with a stereo master and one input:
+ * the master, the input as heard (stereo) and raw (mono, #1805). Each
+ * stream rolls to a new part at LE_PERF_PART_BYTES, so a part as full as the
+ * drain fills it, with the header and frame width read from the files the
+ * drain wrote, must fit FAT32 however long the take runs. */
+static void file_limit_check_recorded_parts(void) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 96000, 1, 2, 1000);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(perf_arm_target_for_test(e, perf_test_dir(), 0, NULL, 0) == LE_OK);
+  drain(e);
+  float in[64] = {0}, out[128];
+  le_engine_process(e, out, in, 64);
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+  static const struct {
+    const char* rel;
+    int channels;
+  } parts[] = {{"master-001.wav", 2},
+               {"input-0-001.wav", 2},
+               {"input-raw-0-001.wav", 1}};
+  for (size_t p = 0; p < sizeof(parts) / sizeof(parts[0]); ++p) {
+    uint64_t header_bytes = 0, frame_bytes = 0;
+    int channels = 0;
+    CHECK(file_limit_layout(perf_test_dir(), parts[p].rel, &header_bytes,
+                            &frame_bytes, &channels));
+    CHECK(channels == parts[p].channels);
+    CHECK(header_bytes == LE_PERF_PART_HEADER_BYTES);
+    const uint64_t full =
+        header_bytes +
+        (LE_PERF_PART_BYTES - LE_PERF_PART_HEADER_BYTES) / frame_bytes *
+            frame_bytes;
+    CHECK(full <= LE_PERF_PART_BYTES);
+    CHECK(full <= FL_FAT32_MAX_FILE_BYTES);
+  }
+}
+
 static void test_perf_longest_take_fits_one_fat32_file(void) {
   printf("test_perf_longest_take_fits_one_fat32_file\n");
   static const char* const rels[] = {"stems/dry/track0.wav",
@@ -130,4 +169,5 @@ static void test_perf_longest_take_fits_one_fat32_file(void) {
         93);
   CHECK(le_perf_longest_take_frames(0, 48000, 2) == UINT64_MAX);
   file_limit_check_sealable();
+  file_limit_check_recorded_parts();
 }

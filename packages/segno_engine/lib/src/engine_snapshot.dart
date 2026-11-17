@@ -2352,8 +2352,9 @@ class EngineSnapshot {
   final int perfOvers;
 
   /// The streams the armed take captures, or the next arm would: the first
-  /// enabled output pair plus every monitored input (#1198). 0 when nothing
-  /// could be captured.
+  /// enabled output pair, every monitored input as heard (#1198), and every
+  /// input the device has and every instrument with a patch raw (#1805). 0
+  /// when nothing could be captured.
   final int perfCaptureStreams;
 
   /// The bytes one frame of every [perfCaptureStreams] stream takes.
