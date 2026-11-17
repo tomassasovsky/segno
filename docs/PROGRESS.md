@@ -151,6 +151,9 @@ a take's chains, where it used to hold each effect as it stood at arm.
   3 would make it exact); a type change crossfades over the ramp in Live
   and lets the old effect's tail drain, where the console swaps at once; a
   type set again to the same effect resets its state on the console only;
+  a slot the chain's length leaves out stops at once on the console and
+  comes back where it stopped, where in Live its Enabled goes off, so it
+  ramps out and drains, and comes back fresh once settled;
   a Dub Rack switched off as a whole stops its section in Live, cutting the
   paths' tails, and a change of its Amb-Dub Mix is not replayed in the
   chains' volumes; chains published by a recipe and the Track and All
