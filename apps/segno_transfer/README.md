@@ -32,10 +32,12 @@ Settings → Privacy & Security → Open Anyway** for Segno Transfer and confirm
 The console writes a Live set (`project.als`) for each take when the take
 finishes. **Open in Live** downloads that set and every file it uses (the main
 recording, inputs, loops and stems) into a folder named after the performance in
-the download folder, keeping the layout the set expects. Each file is verified
-with SHA-256 like any download. Then the set opens in Ableton Live. Progress and
-**Cancel** work as they do for **Download**. A cancelled or failed download
-opens nothing and leaves no folder behind.
+the download folder, keeping the layout the set expects. The folder gets an
+empty `Ableton Project Info` folder, which makes it a Live Project, so saving in
+Live writes the set in place. Each file is verified with SHA-256 like any
+download. Then the set opens in Ableton Live. Progress and **Cancel** work as
+they do for **Download**. A cancelled or failed download opens nothing and
+leaves no folder behind.
 
 Clicking **Open in Live** again opens the copy already downloaded, without
 fetching it again, as long as the console's files have not changed, every file

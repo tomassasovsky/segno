@@ -26,6 +26,18 @@ public enum LiveSet {
     "This take has no Live set yet. Write it on the console with Library > Audio > Performances > DAW project."
   /// Written into a copy's folder once every file in it is verified.
   static let recordName = ".segno-transfer.json"
+  /// The folder that makes a copy's folder a Live Project, so Live saves the
+  /// set in place (#1837). Live 12 creates it empty.
+  public static let projectInfoName = "Ableton Project Info"
+
+  /// Makes the existing `folder` a Live Project: adds its empty
+  /// `projectInfoName` folder. Throws when `folder` is gone or already has
+  /// one.
+  static func makeProject(_ folder: URL) throws {
+    try FileManager.default.createDirectory(
+      at: folder.appendingPathComponent(projectInfoName, isDirectory: true),
+      withIntermediateDirectories: false)
+  }
 
   public struct Contents: Equatable {
     /// Every `FileRef`'s relative path, in the set's order, each once.

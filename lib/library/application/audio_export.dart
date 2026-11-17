@@ -40,6 +40,7 @@ class AudioExportPlan {
     required this.folder,
     required this.files,
     this.package = false,
+    this.folders = const [],
     this.earlier,
   });
 
@@ -54,6 +55,10 @@ class AudioExportPlan {
 
   /// Whether the files go into one directory named [name].
   final bool package;
+
+  /// Empty directories a [package] holds besides its [files], by their path
+  /// inside it: a Live Project's `Ableton Project Info` (#1837).
+  final List<String> folders;
 
   /// Entries in [folder] that an earlier export under [name] left and that
   /// `Replace` takes away with the ones it overwrites: a recording exported
@@ -218,6 +223,11 @@ class AudioExporter {
         );
         done += sizes[i];
         onProgress?.call(total == 0 ? 1 : done / total);
+      }
+      if (plan.package) {
+        for (final f in plan.folders) {
+          Directory('$mount/$staging/$name/$f').createSync(recursive: true);
+        }
       }
       if (cancelled?.call() ?? false) throw const AudioExportCancelled();
       _swap(

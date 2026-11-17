@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:daw_export/daw_export.dart';
 
 /// Writes a finished recording's DAW project into its bundle at [dir]:
-/// `project.als` (the Ableton Live Set over the rendered stems) and
-/// `fx-chains.txt`, both read from the bundle's own `performance.json`. No
-/// engine, no render and no audio writes.
+/// `project.als` (the Ableton Live Set over the rendered stems), the empty
+/// [liveProjectInfoFolder] that makes the bundle a Live Project, so Live
+/// saves the set in place (#1837), and `fx-chains.txt`, all read from the
+/// bundle's own `performance.json`. No engine, no render and no audio
+/// writes.
 ///
 /// The one writer of these files (plan D13, #1178 Part 7): the capture
 /// pipeline calls it when a take's render finishes, and the Library's
@@ -32,11 +34,15 @@ Future<List<DawTrack>> writeDawProject(String dir) async {
   final project = DawManifestReader.read(dir);
   // Live cannot open a set with no tracks, so a take with nothing recorded
   // gets no project, and one an earlier version wrote for it is removed.
+  final info = Directory('$dir/$liveProjectInfoFolder');
   if (project != null && project.tracks.isNotEmpty) {
+    // The folder first: a create that fails leaves the project as it was.
+    await info.create();
     await _replace('$dir/project.als', buildAls(project));
   } else if (project != null) {
     final stale = File('$dir/project.als');
     if (stale.existsSync()) await stale.delete();
+    if (info.existsSync()) await info.delete(recursive: true);
   }
   final chains = FxChainsWriter.render(dir);
   if (chains != null) {
