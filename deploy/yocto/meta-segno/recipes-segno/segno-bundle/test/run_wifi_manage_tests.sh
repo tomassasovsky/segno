@@ -63,6 +63,8 @@ case "\$*" in
         printf '%s\n' "\${PRIOR_AC:-yes}"
         ;;
     *"-g connection.autoconnect-priority connection show"*) printf '0\n' ;;
+    *"-g 802-11-wireless.hidden connection show"*) printf '%s\n' "\${HIDDEN:-no}" ;;
+    *"-f SSID device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"-g connection.id connection show"*|*"-g 802-11-wireless.ssid connection show"*)
         name_of "\$last"
         ;;
@@ -119,6 +121,7 @@ run_with_stdin() {
         SAVED="${SAVED:-}" ACTIVE="${ACTIVE:-}" FAIL_UP="${FAIL_UP:-<none>}" \
         LISTING="${LISTING:-}" PRIOR_AC="${PRIOR_AC:-yes}" \
         GENERAL_STATE="${GENERAL_STATE:-30 (disconnected)}" \
+        HIDDEN="${HIDDEN:-no}" LIST="${LIST:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
         STORED_PSK="${STORED_PSK:-}" DEV_AC="${DEV_AC:-yes}" \
         HTTP_CODE="${HTTP_CODE:-200}" CURL_RC="${CURL_RC:-0}" \
         "$TEST_SHELL" "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"
@@ -203,6 +206,22 @@ setup
 SAVED="Rehearsal" FAIL_UP="uuid-Rehearsal" run_with_stdin 'n3w-key' connect Rehearsal
 check "the join with a new key fails" 1 "$rc"
 check "the saved profile is still kept" no "$(has 'connection delete' "$work/nmcli-args")"
+teardown
+
+# A hidden network never shows in a scan under its name; segno-wifi-retry
+# allows for saved ones, and so must a join.
+echo "a saved hidden network is joined without the scan check"
+setup
+SAVED="Backstage" HIDDEN=yes LIST="Studio" run connect Backstage
+check "goes up" yes "$(has 'connection up uuid uuid-Backstage' "$work/nmcli-args")"
+teardown
+
+echo "a saved network that is not hidden and not in the scan is not found"
+setup
+SAVED="Backstage" LIST="Studio" run connect Backstage
+check "fails" 1 "$rc"
+check "as not found" '{"error":"not-found"}' "$(cat "$work/stdout")"
+check "activates nothing" no "$(has 'connection up' "$work/nmcli-args")"
 teardown
 
 echo "a wrong new password for the network that is up brings it back on its old key"

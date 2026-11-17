@@ -157,6 +157,9 @@ next_autoconnect_priority() {
 # ---------- NetworkManager path ----------
 
 JOURNALCTL="${SEGNO_JOURNALCTL:-journalctl}"
+# How long join_failure waits for iwd's lines when the journal has none of
+# them yet: journald stores a line a moment after iwd writes it.
+JOIN_EVIDENCE_WAIT_SECS="${SEGNO_JOIN_EVIDENCE_WAIT:-1}"
 
 # What iwd and NetworkManager logged since <epoch>, the start of this join:
 # never an earlier attempt's lines, which once made a failed join of an open
@@ -188,6 +191,13 @@ join_failure() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
     evidence=$(join_evidence "$2")
+    # iwd logs a handshake failure before the connect failure that ends the
+    # attempt, so either line means the journal has caught up; neither may
+    # mean it has not yet, and a wrong key must not read as no-connection.
+    if ! printf '%s' "$evidence" | grep -qaiE '4-way handshake failed|connect-failed'; then
+        sleep "$JOIN_EVIDENCE_WAIT_SECS"
+        evidence=$(join_evidence "$2")
+    fi
     iwd_said=$(printf '%s\n' "$evidence" \
         | grep -aoiE '4-way handshake failed.*|connect-failed, [a-z]+: [0-9]+' \
         | tail -n1)
@@ -216,7 +226,7 @@ ssid_missing() {
         seen=$(nmcli -t -e no -f SSID device wifi list ifname "$IFACE" \
             --rescan "$rescan" 2>/dev/null) || seen=
         [ -n "$seen" ] || continue
-        if printf '%s\n' "$seen" | grep -qxF "$1"; then
+        if printf '%s\n' "$seen" | grep -qxF -- "$1"; then
             return 1
         fi
     done
@@ -544,7 +554,14 @@ do_connect_nm() {
     nmcli radio wifi on >/dev/null 2>&1 || true
     disable_powersave
 
-    if ssid_missing "$ssid"; then
+    # A saved hidden network never shows in a scan under its name, so it is
+    # tried without the check.
+    hidden=
+    saved_uuid=$(profile_uuid_for_ssid "$ssid")
+    if [ -n "$saved_uuid" ]; then
+        hidden=$(profile_field "$saved_uuid" 802-11-wireless.hidden)
+    fi
+    if [ "$hidden" != yes ] && ssid_missing "$ssid"; then
         log "join failed: not-found ($ssid is not in the scan)"
         printf '{"error":"not-found"}\n'
         return 1

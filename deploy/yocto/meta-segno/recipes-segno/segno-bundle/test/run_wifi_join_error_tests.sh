@@ -44,10 +44,16 @@ exit 0
 STUB
     chmod +x "$work/bin/nmcli"
     : > "$work/journal"
+    # The journal answers $work/journal, or $work/journal-late from the
+    # second read on when that exists: journald storing a line late.
     cat > "$work/bin/journalctl" <<STUB
 #!/bin/sh
 echo "\$@" >> "$work/journalctl-args"
-cat "$work/journal"
+if [ -f "$work/journal-late" ] && [ "\$(wc -l < "$work/journalctl-args")" -gt 1 ]; then
+    cat "$work/journal-late"
+else
+    cat "$work/journal"
+fi
 STUB
     chmod +x "$work/bin/journalctl"
 }
@@ -62,6 +68,7 @@ run_connect() {
     SEGNO_WIFI_IFACE=wlan0 \
     SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SEGNO_WIFI_NM_CONNECT_TIMEOUT=1 \
+    SEGNO_JOIN_EVIDENCE_WAIT=0 \
     LIST="${LIST:-}" UP_ERROR="${UP_ERROR:-}" \
     PATH="$work/bin:$PATH" \
         sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >"$work/stdout"
@@ -158,6 +165,25 @@ check "and only iwd and NetworkManager" yes \
     "$(grep -qF -- '-t iwd -t NetworkManager' "$work/journalctl-args" && echo yes || echo no)"
 teardown
 
+echo "iwd's line reaches the journal a moment late"
+setup
+cat > "$work/journal-late" <<'LOG'
+4-Way handshake failed for ifindex: 3, reason: 15
+LOG
+run_connect
+check "the journal is read again" 2 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+check "and the wrong key is found" wrong-password "$(code)"
+teardown
+
+echo "iwd's lines already there are read once"
+setup
+logged <<'LOG'
+event: connect-failed, status: 16
+LOG
+run_connect
+check "one read" 1 "$(wc -l < "$work/journalctl-args" | tr -d ' ')"
+teardown
+
 echo "the join timed out"
 setup
 UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
@@ -196,6 +222,16 @@ setup
 LIST=$'Studio\nSomeNetwork' run_connect
 check "goes on to join it" yes "$(called_with 'connection add')"
 check "needs no fresh scan" no "$(called_with '--rescan yes')"
+teardown
+
+echo "a network whose name starts with a dash"
+setup
+# grep would read "-guest" as an option without --.
+printf '%s\n' hunter2000 | SEGNO_WIFI_IFACE=wlan0 SEGNO_JOURNALCTL="$work/bin/journalctl" \
+    SEGNO_WIFI_NM_CONNECT_TIMEOUT=1 SEGNO_JOIN_EVIDENCE_WAIT=0 \
+    LIST=$'Studio\n-guest' UP_ERROR= \
+    PATH="$work/bin:$PATH" sh "$CTL" connect '-guest' 2>"$work/stderr" >"$work/stdout"
+check "is found in the scan" yes "$(called_with 'connection add')"
 teardown
 
 echo "an empty scan proves nothing"

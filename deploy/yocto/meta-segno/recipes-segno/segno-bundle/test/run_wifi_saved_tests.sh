@@ -68,7 +68,7 @@ teardown() { rm -rf "$work"; }
 # The key, when a test passes one, goes on stdin the way the app sends it.
 run() { printf '%s' "${KEY:-}" | PATH="$work/bin:$PATH" SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SAVED="${SAVED:-}" PRIORITIES="${PRIORITIES:-}" \
-    UP_RC="${UP_RC:-0}" STORED_PSK="${STORED_PSK:-}" \
+    UP_RC="${UP_RC:-0}" STORED_PSK="${STORED_PSK:-}" SEGNO_JOIN_EVIDENCE_WAIT=0 \
     sh "$CTL" "$@" >"$work/stdout" 2>"$work/stderr"; }
 
 check() {
