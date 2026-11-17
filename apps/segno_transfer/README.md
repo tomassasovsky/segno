@@ -38,8 +38,9 @@ with SHA-256 like any download. Then the set opens in Ableton Live. Progress and
 opens nothing and leaves no folder behind.
 
 Clicking **Open in Live** again opens the copy already downloaded, without
-fetching it again, as long as the console's files have not changed and every
-file in the copy still matches the SHA-256 it was verified with. A set saved over in Live
+fetching it again, as long as the console's files have not changed, every file
+in the copy keeps the length and modification time it was verified with, and
+`project.als` still matches its SHA-256. A set saved over in Live
 no longer matches, so the next click downloads a fresh copy beside it with a
 numbered name.
 

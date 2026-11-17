@@ -31,6 +31,9 @@ final class AppModel: ObservableObject {
   @Published var downloaded: [URL] = []
   @Published var settingsPresented = false
   @Published private(set) var previewTitle: String?
+  /// The Live application sets open in: looked up at launch and on every
+  /// connect, not on every redraw.
+  @Published private(set) var liveApplication: URL?
   let previewPlayer = PreviewPlayer()
   private var preparingPreview = false
   private var token = CancellationToken()
@@ -45,6 +48,7 @@ final class AppModel: ObservableObject {
     self.repository = repository
     self.defaults = defaults
     self.live = live
+    liveApplication = live.application()
     connection =
       defaults.data(forKey: "connection").flatMap {
         try? JSONDecoder().decode(Connection.self, from: $0)
@@ -100,6 +104,7 @@ final class AppModel: ObservableObject {
       self.error = error.localizedDescription
       return
     }
+    liveApplication = live.application()
     busy = true
     error = nil
     status = "Connecting…"
@@ -215,7 +220,7 @@ final class AppModel: ObservableObject {
 
   /// Why `recording`'s Live set cannot be opened, or nil when it can.
   func liveSetUnavailable(_ recording: Recording) -> String? {
-    if live.application() == nil { return "Install Ableton Live to open this take's Live set." }
+    if liveApplication == nil { return "Install Ableton Live to open this take's Live set." }
     if recording.liveSet == nil { return LiveSet.missing }
     return nil
   }
@@ -224,8 +229,9 @@ final class AppModel: ObservableObject {
   /// verified copy already there, and opens it in Live. A cancelled or failed
   /// download opens nothing.
   func openInLive(_ recording: Recording) {
+    liveApplication = live.application()
     guard !busy, connected, liveSetUnavailable(recording) == nil,
-      let application = live.application()
+      let application = liveApplication
     else { return }
     let settings = connection
     let folder = destination

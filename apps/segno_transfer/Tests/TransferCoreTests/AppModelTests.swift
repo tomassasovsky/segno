@@ -325,6 +325,8 @@ final class AppModelTests: XCTestCase {
   func testWithoutLiveTheActionSaysWhyAndDoesNothing() async throws {
     let (model, repository, recording) = try await connectedWithSet()
     fakeLive.installed = false
+    model.connect()
+    try await waitUntilIdle(model)
     XCTAssertEqual(
       model.liveSetUnavailable(recording), "Install Ableton Live to open this take's Live set.")
     model.openInLive(recording)

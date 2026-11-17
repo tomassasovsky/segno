@@ -111,21 +111,28 @@ public enum LiveSet {
     }
   }
 
-  /// What a verified copy holds: each file's appliance version, length and
-  /// SHA-256 when it was downloaded.
+  /// What a verified copy holds: each file's appliance version, length,
+  /// modification time on this Mac and SHA-256 when it was downloaded.
   struct Record: Codable {
     struct Entry: Codable {
       let path: String
       let bytes: Int64
+      let modified: Double
       let version: String
       let sha256: String
     }
     let recording: String
     var files: [Entry]
 
-    mutating func add(_ file: RecordingFile, sha256: String) {
+    /// Records `file`, just downloaded to `local` and verified as `sha256`.
+    mutating func add(_ file: RecordingFile, at local: URL, sha256: String) throws {
+      guard let state = LiveSet.state(of: local) else {
+        throw TransferError.message("The download was incomplete. Try downloading this file again.")
+      }
       files.append(
-        Entry(path: file.path, bytes: file.bytes, version: file.version, sha256: sha256))
+        Entry(
+          path: file.path, bytes: state.bytes, modified: state.modified, version: file.version,
+          sha256: sha256))
     }
 
     func write(in folder: URL) throws {
@@ -135,9 +142,10 @@ public enum LiveSet {
 
   /// The copy of `recording`'s Live set in `destination` that an earlier
   /// download verified, named `name` or a numbered name after it, when the
-  /// appliance's files have not changed since and every file in the copy
-  /// still has its verified length and SHA-256. A set saved over in Live no
-  /// longer matches. Throws only when `token` is cancelled.
+  /// appliance's files have not changed since, every file in the copy still
+  /// has the length and modification time it was verified with, and
+  /// `project.als` still has its SHA-256. A set saved over in Live no longer
+  /// matches. Throws only when `token` is cancelled.
   static func verifiedCopy(
     of recording: Recording, in destination: URL, named name: String, token: CancellationToken
   ) throws -> LiveSetCopy? {
@@ -150,36 +158,37 @@ public enum LiveSet {
     }.sorted { $0.count == $1.count ? $0 < $1 : $0.count < $1.count }
     for candidate in candidates {
       let folder = destination.appendingPathComponent(candidate, isDirectory: true)
+      let project = folder.appendingPathComponent(fileName)
       guard
         let data = try? Data(contentsOf: folder.appendingPathComponent(recordName)),
         let record = try? JSONDecoder().decode(Record.self, from: data),
         record.recording == recording.id,
-        record.files.contains(where: { $0.path == set.path && $0.version == set.version }),
+        let setEntry = record.files.first(where: { $0.path == set.path }),
+        setEntry.version == set.version,
         record.files.allSatisfy({ entry in
-          current[entry.path] == entry.version && isRelative(entry.path)
-            && length(of: folder.appendingPathComponent(entry.path)) == entry.bytes
+          guard current[entry.path] == entry.version, isRelative(entry.path),
+            let state = state(of: folder.appendingPathComponent(entry.path))
+          else { return false }
+          return state.bytes == entry.bytes && state.modified == entry.modified
         }),
-        let contents = try? read(folder.appendingPathComponent(fileName)),
+        let contents = try? read(project),
         Set(contents.references).isSubset(of: record.files.map(\.path))
       else { continue }
-      var intact = true
-      for entry in record.files where intact {
-        let hash = try? TransferRepository.sha256(
-          folder.appendingPathComponent(entry.path), token: token)
-        try token.check()
-        intact = hash == entry.sha256
-      }
-      if intact {
+      let hash = try? TransferRepository.sha256(project, token: token)
+      try token.check()
+      if hash == setEntry.sha256 {
         return LiveSetCopy(folder: folder, usesPlugins: contents.usesPlugins, reused: true)
       }
     }
     return nil
   }
 
-  private static func length(of url: URL) -> Int64? {
+  fileprivate static func state(of url: URL) -> (bytes: Int64, modified: Double)? {
     guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-      attributes[.type] as? FileAttributeType == .typeRegular
+      attributes[.type] as? FileAttributeType == .typeRegular,
+      let bytes = (attributes[.size] as? NSNumber)?.int64Value,
+      let modified = attributes[.modificationDate] as? Date
     else { return nil }
-    return (attributes[.size] as? NSNumber)?.int64Value
+    return (bytes, modified.timeIntervalSinceReferenceDate)
   }
 }

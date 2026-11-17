@@ -100,17 +100,17 @@ public final class TransferRepository: RecordingRepository {
     }
     let temporary = try TemporaryDownload(parent: destination)
     defer { temporary.remove() }
-    let folder = temporary.directory.appendingPathComponent(name, isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+    // The take's folder sits apart from the staging file, whatever its name.
+    let folder = temporary.directory.appendingPathComponent("set", isDirectory: true)
+      .appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     progress(0, "Downloading the Live set")
     let project = folder.appendingPathComponent(LiveSet.fileName)
     var record = LiveSet.Record(recording: recording.id, files: [])
-    record.add(
-      set,
-      sha256: try fetch(
-        recording: recording, file: set, to: TemporaryDownload.emptyFile(project),
-        connection: connection,
-        token: token, progress: { _, _ in }))
+    let setHash = try fetch(
+      recording: recording, file: set, to: TemporaryDownload.emptyFile(project),
+      connection: connection, token: token, progress: { _, _ in })
+    try record.add(set, at: project, sha256: setHash)
     let contents = try LiveSet.read(project)
     let files = try contents.references.map { path in
       guard let file = recording.files.first(where: { $0.path == path }) else {
@@ -126,17 +126,15 @@ public final class TransferRepository: RecordingRepository {
       let target = folder.appendingPathComponent(file.path)
       try FileManager.default.createDirectory(
         at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-      record.add(
-        file,
-        sha256: try fetch(
-          recording: recording, file: file, to: TemporaryDownload.emptyFile(target),
-          connection: connection,
-          token: token
-        ) { bytes, phase in
-          progress(
-            min(1, Double(before + bytes) / Double(total)),
-            "\(phase) \(index + 1) of \(files.count) · \(file.path)")
-        })
+      let hash = try fetch(
+        recording: recording, file: file, to: TemporaryDownload.emptyFile(target),
+        connection: connection, token: token
+      ) { bytes, phase in
+        progress(
+          min(1, Double(before + bytes) / Double(total)),
+          "\(phase) \(index + 1) of \(files.count) · \(file.path)")
+      }
+      try record.add(file, at: target, sha256: hash)
       done += file.bytes
     }
     try record.write(in: folder)
@@ -219,6 +217,11 @@ final class TemporaryDownload {
   static func emptyFile(_ url: URL) throws -> URL {
     let descriptor = Darwin.open(url.path, O_CREAT | O_EXCL | O_WRONLY, 0o600)
     guard descriptor >= 0 else {
+      if errno == EEXIST {
+        throw TransferError.message(
+          "Two files in this take have names that differ only in letter case, which this Mac's folder cannot hold apart: \(url.lastPathComponent)"
+        )
+      }
       throw TransferError.message(
         "Could not create a download in this folder. Choose another folder.")
     }

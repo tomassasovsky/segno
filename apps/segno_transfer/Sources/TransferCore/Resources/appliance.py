@@ -91,9 +91,12 @@ def live_set(directory):
     # never the take's audio.
     path = directory / LIVE_SET
     try:
-        if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+        if path.is_symlink() or not path.is_file():
             return None
-        return {"bytes": path.stat().st_size, "version": version(path)}
+        # One stat, so the length and version describe the same file.
+        current = version(path)
+        size = int(current.split(":")[2])
+        return {"bytes": size, "version": current} if size else None
     except OSError:
         return None
 
