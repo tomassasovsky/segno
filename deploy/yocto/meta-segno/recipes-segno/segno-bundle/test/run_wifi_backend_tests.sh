@@ -38,6 +38,13 @@ case "\$*" in
     *"-f WIFI radio"*) printf 'enabled\n' ;;
     *"GENERAL.CONNECTION device show"*) printf 'GENERAL.CONNECTION:Studio\n' ;;
     *"IP4.ADDRESS device show"*) printf 'IP4.ADDRESS[1]:10.0.0.5/24\n' ;;
+    monitor)
+        # nmcli monitor's banner, then a join's device lines, then an end.
+        printf 'NetworkManager is running\n'
+        printf 'wlan0: connecting (prepare)\n'
+        printf "wlan0: using connection 'Studio \\"5G\\"'\n"
+        printf 'wlan0: connected\n'
+        ;;
     *) : ;;
 esac
 exit 0
@@ -109,6 +116,36 @@ chmod +x "$work/bin/wpa_supplicant" "$work/bin/wpa_cli"
 for verb in status scan disconnect; do run_ctl "$verb"; done
 check "never starts wpa_supplicant" no \
     "$([ -f "$work/supplicant-spawned" ] && echo yes || echo no)"
+teardown
+
+echo "a scan never switches the radio on"
+setup
+# The page scans every few seconds while it is open (#1817); one landing just
+# after the Wi-Fi switch went off must not undo it.
+run_ctl scan
+check "no radio call" no "$(called_with 'radio wifi on')"
+teardown
+
+echo "status says connected and not connecting"
+setup
+run_ctl status
+check "connected" yes \
+    "$(grep -qF '"connected":true,"connecting":false,"ssid":"Studio"' "$work/stdout" && echo yes || echo no)"
+teardown
+
+echo "status names the network an activation is joining"
+setup
+NM_STATE="50 (connecting (configuring))" run_ctl status
+check "connecting to Studio" yes \
+    "$(grep -qF '"connected":false,"connecting":true,"ssid":"Studio"' "$work/stdout" && echo yes || echo no)"
+teardown
+
+echo "monitor streams one JSON event per NetworkManager change"
+setup
+run_ctl monitor
+check "skips the banner, keeps each change, escapes quotes" \
+    "$(printf '%s\n' '{"event":"wlan0: connecting (prepare)"}' '{"event":"wlan0: using connection '"'"'Studio \"5G\"'"'"'"}' '{"event":"wlan0: connected"}')" \
+    "$(cat "$work/stdout")"
 teardown
 
 # --- repairing a console that already shipped with the bug ------------------

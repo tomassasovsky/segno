@@ -9,6 +9,7 @@ class WifiStatus extends Equatable {
     required this.supported,
     required this.enabled,
     required this.connected,
+    this.connecting = false,
     this.ssid = '',
     this.ip = '',
     this.signal = 0,
@@ -21,6 +22,7 @@ class WifiStatus extends Equatable {
     supported: json['supported'] == true,
     enabled: json['enabled'] == true,
     connected: json['connected'] == true,
+    connecting: json['connecting'] == true,
     ssid: '${json['ssid'] ?? ''}',
     ip: '${json['ip'] ?? ''}',
     signal: _asInt(json['signal']),
@@ -49,7 +51,13 @@ class WifiStatus extends Equatable {
   /// Whether associated (wpa_state COMPLETED).
   final bool connected;
 
-  /// Associated SSID (empty when disconnected).
+  /// Whether an activation is in flight on the Wi-Fi device, the app's own
+  /// join or one NetworkManager started by itself; [ssid] then names the
+  /// network it is joining.
+  final bool connecting;
+
+  /// The network the console is on, or while [connecting] the one it is
+  /// joining; empty otherwise.
   final String ssid;
 
   /// IPv4 address when leased (may be empty briefly after connect).
@@ -71,6 +79,7 @@ class WifiStatus extends Equatable {
     supported,
     enabled,
     connected,
+    connecting,
     ssid,
     ip,
     signal,
