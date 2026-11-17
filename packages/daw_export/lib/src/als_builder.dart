@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/live_group_track_template.dart';
 import 'package:daw_export/src/live_set_template.dart';
 import 'package:xml/xml.dart';
 
@@ -32,10 +33,14 @@ const int _kWarpModeRePitch = 3;
 ///
 /// - Arrangement clips are unwarped: each plays its file at its own speed
 ///   whatever the set's tempo, so a capture sounds as it was played.
-/// - Session clips loop their whole file, warped in Re-Pitch with warp
-///   markers at the file's own length in beats at the set's tempo, so at
-///   that tempo they too play the file unchanged. Live only loops a warped
-///   clip.
+/// - A track's loop is a Session clip in the first scene that loops its
+///   whole file, warped in Re-Pitch with warp markers at the file's own
+///   length in beats at the set's tempo, so at that tempo it too plays the
+///   file unchanged. Live only loops a warped clip.
+/// - The tracks of a [DawGroup] sit in a Group track, [liveGroupTrackTemplate]
+///   copied once per group and placed before them, and play into it. They
+///   must be consecutive: a group that comes back after another track
+///   throws [ArgumentError].
 /// - Every `FileRef` is relative to the set's folder, so the capture folder
 ///   can be moved or copied anywhere. An absolute path throws
 ///   [ArgumentError].
@@ -54,25 +59,32 @@ Uint8List buildAls(DawProject project) {
   final nextPointeeId = liveSet.getElement('NextPointeeId')!;
   final ids = _PointeeIds(_intValue(nextPointeeId));
 
-  var sceneCount = 1;
-  for (final track in project.tracks) {
-    for (final clip in track.sessionClips) {
-      if (clip.laneIndex + 1 > sceneCount) sceneCount = clip.laneIndex + 1;
-    }
-  }
-  sceneCount = _ensureListLength(
-    liveSet.getElement('Scenes')!,
-    'Scene',
-    sceneCount,
-  );
-
   final tracks = liveSet.getElement('Tracks')!;
-  for (var i = 0; i < project.tracks.length; i++) {
+  var trackId = prototype.trackId;
+  DawGroup? group;
+  var groupId = -1;
+  final closed = <DawGroup>{};
+  for (final track in project.tracks) {
+    if (!identical(track.group, group)) {
+      if (group != null) closed.add(group);
+      group = track.group;
+      if (group != null) {
+        if (closed.contains(group)) {
+          throw ArgumentError.value(
+            project,
+            'project',
+            'has the tracks of group ${group.name} apart',
+          );
+        }
+        groupId = trackId++;
+        tracks.children.add(_groupTrack(group, trackId: groupId, ids: ids));
+      }
+    }
     tracks.children.add(
       prototype.build(
-        project.tracks[i],
-        trackId: prototype.trackId + i,
-        sceneCount: sceneCount,
+        track,
+        trackId: trackId++,
+        groupId: group == null ? -1 : groupId,
         tempoBpm: project.tempoBpm,
         ids: ids,
       ),
@@ -89,6 +101,28 @@ Uint8List buildAls(DawProject project) {
 
   final xml = document.toXmlString();
   return Uint8List.fromList(GZipCodec().encode(utf8.encode(xml)));
+}
+
+/// A Group track named after [group], with fresh pointee ids. It has one
+/// slot per scene of the set's template, as the template's audio track has
+/// one clip slot per scene.
+XmlElement _groupTrack(
+  DawGroup group, {
+  required int trackId,
+  required _PointeeIds ids,
+}) {
+  final track = XmlDocument.parse(liveGroupTrackTemplate).rootElement.copy()
+    ..setAttribute('Id', '$trackId');
+  for (final element in track.descendantElements) {
+    if (_isPointee(element.name.local)) {
+      element.setAttribute('Id', '${ids.take()}');
+    }
+  }
+  final name = track.getElement('Name')!;
+  _setValue(name.getElement('EffectiveName')!, group.name);
+  _setValue(name.getElement('UserName')!, group.name);
+  _setValue(name.getElement('Annotation')!, group.info);
+  return track;
 }
 
 /// Converts [seconds] to beats at [bpm].
@@ -160,7 +194,7 @@ class _TrackPrototype {
   XmlElement build(
     DawTrack source, {
     required int trackId,
-    required int sceneCount,
+    required int groupId,
     required double tempoBpm,
     required _PointeeIds ids,
   }) {
@@ -177,14 +211,14 @@ class _TrackPrototype {
     _setValue(name.getElement('Annotation')!, source.info);
 
     final deviceChain = track.getElement('DeviceChain')!;
-    for (final sequencer in ['MainSequencer', 'FreezeSequencer']) {
-      _ensureListLength(
-        deviceChain.getElement(sequencer)!.getElement('ClipSlotList')!,
-        'ClipSlot',
-        sceneCount,
-      );
+    if (groupId >= 0) {
+      // A member of a group plays into it, as Live routes one.
+      _setValue(track.getElement('TrackGroupId')!, '$groupId');
+      final output = deviceChain.getElement('AudioOutputRouting')!;
+      _setValue(output.getElement('Target')!, 'AudioOut/GroupTrack');
+      _setValue(output.getElement('UpperDisplayString')!, 'Group');
+      _setValue(output.getElement('LowerDisplayString')!, '');
     }
-
     final clips = source.arrangementClips;
     _arrangerEvents(track).children.addAll([
       for (var i = 0; i < clips.length; i++)
@@ -198,14 +232,14 @@ class _TrackPrototype {
         ),
     ]);
 
-    final slots = _clipSlotValues(track).toList();
-    for (final session in source.sessionClips) {
-      slots[session.laneIndex].children.add(
+    final loop = source.loop;
+    if (loop != null) {
+      _clipSlotValues(track).first.children.add(
         _clip(
           id: 0,
           startBeats: 0,
-          audio: session.audio,
-          name: '${source.name} / Lane ${session.laneIndex + 1}',
+          audio: loop,
+          name: source.name,
           tempoBpm: tempoBpm,
           loop: true,
         ),
@@ -409,17 +443,6 @@ void _zoomToFit(XmlElement liveSet, DawProject project) {
         .getElement('CurrentZoom')!,
     _number(beats / _kFitWidthPixels),
   );
-}
-
-/// Makes [list] hold at least [length] `<name>` children by copying its
-/// last one, numbering each copy's `Id` by its position. Returns the
-/// resulting length.
-int _ensureListLength(XmlElement list, String name, int length) {
-  final members = list.findElements(name).toList();
-  for (var i = members.length; i < length; i++) {
-    list.children.add(members.last.copy()..setAttribute('Id', '$i'));
-  }
-  return members.length > length ? members.length : length;
 }
 
 XmlElement _arrangerEvents(XmlElement track) => track

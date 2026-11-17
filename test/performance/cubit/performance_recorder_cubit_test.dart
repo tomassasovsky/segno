@@ -1204,7 +1204,8 @@ void main() {
       final completed = await waitForCompleted(cubit);
 
       expect(completed.tracks, hasLength(1));
-      expect(completed.tracks.single.name, 'Track 1');
+      expect(completed.tracks.single.name, 'Track 1 L1');
+      expect(completed.tracks.single.group!.name, 'Track 1');
     });
   });
 

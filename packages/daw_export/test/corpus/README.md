@@ -15,6 +15,7 @@ with all of them (#1791).
 | `session_loop_warped.als` | `audio_clips.als` with the Session clip warped and looping, the form `buildAls` gives lane loops. |
 | `vst3.als` | One audio track with a VST3 effect (TAL-Filter-2 3.1.2) as Live stores it: a `PluginDevice` whose `Vst3PluginInfo` names the plugin's class id as four signed 32-bit `Uid` fields, with the plugin's own state in a `Vst3Preset`. Nothing generates devices today (#1587); this is the shape a device chain would need. |
 | `reference_tracks.als` | `automation.als` with the track switched off, a three-line info text, a second Arrangement clip right after the first, and a volume envelope that steps to silence at beat 2 and back at beat 6 (two events at each of those beats). The shapes `buildAls` gives a reference track (#1799). |
+| `group.als` | `automation.als` with its track inside a Group track named `Group` (#1824): the Group track before it, the track's `TrackGroupId` naming the group and its output routed to it (`AudioOut/GroupTrack`, shown as `Group`). The template for Group tracks: `lib/src/live_group_track_template.dart` is its Group track. **Not yet saved by Live**: see below. |
 | `tone.wav` | 2400 frames of a 440 Hz sine, 48 kHz, 16-bit mono (4.8 KB), which the sets reference. |
 
 ## How they were made
@@ -37,6 +38,25 @@ lacks (`ArrangementClipsListWrapper`, `TakeLanesListWrapper`,
 `MpePitchBendUsesTuning`), file sizes and checksums, and for the VST3 set the
 full device. To refresh the corpus for a newer Live, open each set in it, save
 it, copy it back here, and run `dart run tool/generate_live_set_template.dart`.
+
+### `group.als`, owed a Live save
+
+`group.als` was put together from files Live wrote, without Live saving the
+result, because the session that made it could not drive Live (#1824). Its
+Group track is the one in Live 12.2's bundled template
+`Core Library/Templates/Podcast & Radio.als` (saved by Live 12.2d1, the same
+`MinorVersion` as the rest of the corpus), with the template's devices (an
+Audio Effect Rack of mastering devices) taken out of its device chain, its
+lane chooser moved to the mixer, its name set to `Group`, its track id set
+to 9 and its pointee ids renumbered from `automation.als`'s `NextPointeeId`.
+It was inserted before `automation.als`'s audio track, whose `TrackGroupId`
+and `AudioOutputRouting` were set as the template's members have them.
+
+Owed: open `group.als` in Live 12.2.7 from a Live Project folder, make a
+reversible change, save it over itself (as above), copy it back, run
+`dart run tool/generate_live_group_track_template.dart`, and check that the
+tests still pass. Until then, an exported set's Group tracks are checked
+against Live's own Group track, not against one Live saved in this set.
 
 ## What Live checks
 

@@ -77,6 +77,18 @@ abstract final class EffectText {
     return lines.isEmpty ? null : lines.join('\n');
   }
 
+  /// Lane [lane] of looper track [channel]'s chain (#1824).
+  static String? lane(Map<String, dynamic> manifest, int channel, int lane) {
+    for (final t in tracksOf(manifest['armSnapshot'])) {
+      if (_int(t['channel']) != channel) continue;
+      for (final entry in _list(t, 'lanes')) {
+        if ((_int(entry['lane']) ?? 0) != lane) continue;
+        return _chain(entry['effects'], entry['chainEnabled'], false);
+      }
+    }
+    return null;
+  }
+
   /// Hardware input [input]'s monitor chain.
   static String? input(
     Map<String, dynamic> manifest,

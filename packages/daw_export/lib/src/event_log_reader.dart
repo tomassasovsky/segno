@@ -57,21 +57,23 @@ abstract final class EventLogReader {
     return entries;
   }
 
-  /// Extracts channel [channel]'s volume and audibility from [entries], as
-  /// breakpoints in beats at [tempoBpm], with their values at arm.
+  /// Extracts lane [lane] of channel [channel]'s volume and audibility from
+  /// [entries], as breakpoints in beats at [tempoBpm], with their values at
+  /// arm.
   ///
-  /// Volume follows what the offline renderer applies to lane 0
-  /// (`perf_render.c`): the track gain (`LE_CMD_SET_VOLUME`) times lane 0's
-  /// level (`LE_CMD_SET_LANE_VOLUME` with `lane == 0`), each starting from
+  /// Volume follows what the offline renderer applies to the lane
+  /// (`perf_render.c`): the track gain (`LE_CMD_SET_VOLUME`) times the
+  /// lane's level (`LE_CMD_SET_LANE_VOLUME` for [lane]), each starting from
   /// [initialTrackGain] and [initialLaneVolume]. A change to either emits
-  /// their product. Other lanes are ignored, as the renderer's stems do.
+  /// their product.
   ///
   /// Audibility is Live's track activator (1 == audible): `!muted && (no
-  /// track soloed || this track soloed)`, from the lane-0 or track mute
-  /// (`LE_CMD_SET_LANE_MUTE` lane 0, `LE_CMD_SET_MUTE`) and every track's
-  /// solo (`LE_CMD_SET_TRACK_SOLO`), since a solo elsewhere silences this
-  /// track. [initiallyMuted] and [initiallySoloed] seed it from the arm
-  /// snapshot. A breakpoint is emitted only when audibility changes.
+  /// track soloed || this track soloed)`, from the lane's mute
+  /// (`LE_CMD_SET_LANE_MUTE` for [lane], and for lane 0 the track mute
+  /// `LE_CMD_SET_MUTE`, which mutes lane 0) and every track's solo
+  /// (`LE_CMD_SET_TRACK_SOLO`), since a solo elsewhere silences this track.
+  /// [initiallyMuted] and [initiallySoloed] seed it from the arm snapshot. A
+  /// breakpoint is emitted only when audibility changes.
   ///
   /// Entries are sorted by frame first: `events.log`'s two producer
   /// streams are not merged in frame order.
@@ -86,6 +88,7 @@ abstract final class EventLogReader {
     int channel,
     int sampleRate,
     double tempoBpm, {
+    int lane = 0,
     double initialTrackGain = 1,
     double initialLaneVolume = 1,
     bool initiallyMuted = false,
@@ -119,7 +122,7 @@ abstract final class EventLogReader {
           continue;
         case _codeSetLaneVolume:
           if (e.payload.getInt32(0, Endian.little) != channel ||
-              e.payload.getInt32(4, Endian.little) != 0) {
+              e.payload.getInt32(4, Endian.little) != lane) {
             continue;
           }
           laneVolume = e.payload.getFloat32(8, Endian.little);
@@ -131,12 +134,12 @@ abstract final class EventLogReader {
           );
           continue;
         case _codeSetMute:
-          if (e.payload.getInt32(0, Endian.little) == channel) {
+          if (lane == 0 && e.payload.getInt32(0, Endian.little) == channel) {
             muted = e.payload.getFloat32(4, Endian.little) != 0.0;
           }
         case _codeSetLaneMute:
           if (e.payload.getInt32(0, Endian.little) == channel &&
-              e.payload.getInt32(4, Endian.little) == 0) {
+              e.payload.getInt32(4, Endian.little) == lane) {
             muted = e.payload.getFloat32(8, Endian.little) != 0.0;
           }
         case _codeSetTrackSolo:

@@ -19,8 +19,9 @@ class DawProject {
   const new({required this.tracks, double tempoBpm = kFallbackTempoBpm})
     : tempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
 
-  /// One entry per recorded channel. A channel with nothing recorded is left
-  /// out by whoever builds the project.
+  /// The set's audio tracks, in order. Tracks of one [DawGroup] are
+  /// consecutive. A channel with nothing recorded is left out by whoever
+  /// builds the project.
   final List<DawTrack> tracks;
 
   /// The set's tempo in BPM. A capture plays at one tempo from start to
@@ -34,11 +35,13 @@ const double kFallbackTempoBpm = 120;
 
 /// What a [DawTrack] holds.
 enum DawTrackKind {
-  /// A looper track as heard: its wet stem and its lane loops.
-  loop,
+  /// One lane of a looper track (#1824): its dry stem, at unity and before
+  /// its effects, and its clean loop.
+  lane,
 
-  /// A looper track before its effects: its dry stem.
-  dry,
+  /// One lane of a looper track as heard: its wet stem, after its effects
+  /// and mix, and its loop as it played. A reference.
+  laneHeard,
 
   /// A captured input: its raw recording (#1805), or, for a take from
   /// before it, the input as its monitor played it.
@@ -52,6 +55,19 @@ enum DawTrackKind {
   master,
 }
 
+/// A Live Group track: the looper track whose lanes it holds (#1824).
+@immutable
+class DawGroup {
+  /// Creates a [DawGroup].
+  const new({required this.name, this.info = ''});
+
+  /// The group's name in Live: the looper track's.
+  final String name;
+
+  /// The group's info text in Live (the Info View). Empty for none.
+  final String info;
+}
+
 /// One Live audio track: what it plays in the Arrangement and the Session,
 /// whether it plays at all, its volume automation, and its info text.
 @immutable
@@ -59,10 +75,11 @@ class DawTrack {
   /// Creates a [DawTrack].
   const new({
     required this.name,
-    this.kind = DawTrackKind.loop,
+    this.kind = DawTrackKind.lane,
+    this.group,
     this.active = true,
     this.arrangementClips = const [],
-    this.sessionClips = const [],
+    this.loop,
     this.volume,
     this.info = '',
   });
@@ -73,18 +90,23 @@ class DawTrack {
   /// What the track holds.
   final DawTrackKind kind;
 
-  /// Whether the track's activator is on. A reference track (a dry stem, an
-  /// input as heard beside its raw recording, the master as heard) is off,
-  /// so the set does not play the same audio twice; switching it on in Live
-  /// plays it.
+  /// The Group track it sits in, or `null` for none. The tracks of one group
+  /// are the same instance.
+  final DawGroup? group;
+
+  /// Whether the track's activator is on. A reference track (a lane as
+  /// heard, an input as heard beside its raw recording, the master as heard)
+  /// is off, so the set does not play the same audio twice; switching it on
+  /// in Live plays it.
   final bool active;
 
   /// The track's clips in the Arrangement, in timeline order. A long
   /// recording held in several files has one clip per file.
   final List<DawClip> arrangementClips;
 
-  /// One Session clip per lane that exported a loop.
-  final List<DawSessionClip> sessionClips;
+  /// The lane's loop, a Session clip in the first scene that loops over the
+  /// whole file, or `null` for none.
+  final DawAudioFile? loop;
 
   /// The track's volume automation, or `null` when it has none.
   final AutomationLane? volume;
@@ -158,18 +180,4 @@ class DawClip {
 
   /// The clip's start on the Arrangement timeline, in seconds.
   final double startSeconds;
-}
-
-/// A Session clip: one lane's loop, in the clip slot of scene [laneIndex].
-@immutable
-class DawSessionClip {
-  /// Creates a [DawSessionClip].
-  const new({required this.laneIndex, required this.audio});
-
-  /// The lane the loop belongs to (0-based), which is also the scene its
-  /// clip sits in.
-  final int laneIndex;
-
-  /// The loop's file. The clip loops over the whole file.
-  final DawAudioFile audio;
 }

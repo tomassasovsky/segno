@@ -134,6 +134,40 @@ void main() {
       expect(result.mute[1].value, 1.0); // unmuted -> activator on
     });
 
+    test("another lane's volume and mute are its own (#1824): the track "
+        "gain times its level, its lane mute, and never the track's mute, "
+        "which is lane 0's", () {
+      const codeSetVolume = 7;
+      const codeSetMute = 8;
+      const codeSetLaneVolume = 28;
+      const codeSetLaneMute = 29;
+      _writeLog('${dir.path}/events.log', 48000, [
+        (0, codeSetVolume, _generic(0, 0.5)),
+        (100, codeSetLaneVolume, _lanef(0, 0, 0.7)), // lane 0: ignored
+        (200, codeSetLaneVolume, _lanef(0, 1, 0.9)),
+        (300, codeSetMute, _generic(0, 1)), // the track's: lane 0's
+        (400, codeSetLaneMute, _lanef(0, 0, 1)), // lane 0: ignored
+        (500, codeSetLaneMute, _lanef(0, 1, 1)),
+      ]);
+      final result = EventLogReader.readChannelAutomation(
+        EventLogReader.readAll(dir.path)!,
+        0,
+        48000,
+        120,
+        lane: 1,
+        initialLaneVolume: 0.4,
+      );
+      expect(result.initialVolume, closeTo(0.4, 1e-6));
+      expect(
+        [for (final b in result.volume) b.value],
+        [closeTo(0.5 * 0.4, 1e-6), closeTo(0.5 * 0.9, 1e-6)],
+      );
+      expect(
+        [for (final b in result.mute) (b.beat, b.value)],
+        [(500 / 48000 * 2, 0.0)],
+      );
+    });
+
     group('solo', () {
       const codeSetMute = 8;
       const codeSetLaneMute = 29;

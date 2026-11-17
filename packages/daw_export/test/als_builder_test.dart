@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:daw_export/daw_export.dart';
+import 'package:daw_export/src/live_group_track_template.dart';
 import 'package:daw_export/src/live_set_template.dart';
 import 'package:test/test.dart';
 import 'package:xml/xml.dart';
@@ -18,6 +19,9 @@ XmlElement _liveSet(XmlDocument d) => d.rootElement.getElement('LiveSet')!;
 
 List<XmlElement> _audioTracks(XmlDocument d) =>
     _liveSet(d).getElement('Tracks')!.findElements('AudioTrack').toList();
+
+List<XmlElement> _groupTracks(XmlDocument d) =>
+    _liveSet(d).getElement('Tracks')!.findElements('GroupTrack').toList();
 
 XmlElement _at(XmlElement e, String path) {
   var node = e;
@@ -66,7 +70,7 @@ bool _isPointee(String name) =>
     name.startsWith('ControllerTargets.');
 
 const _stem = DawAudioFile(
-  fileRef: 'stems/wet/track0.wav',
+  fileRef: 'stems/dry/track0-lane0.wav',
   sampleRate: 48000,
   frames: 48000 * 10,
 );
@@ -79,10 +83,11 @@ const _loop = DawAudioFile(
 
 /// A track with everything a capture can give it, as the template's track
 /// holds it: an Arrangement clip, a Session clip and a volume envelope.
-DawTrack _fullTrack(String name) => DawTrack(
+DawTrack _fullTrack(String name, {DawGroup? group}) => DawTrack(
   name: name,
+  group: group,
   arrangementClips: const [DawClip(audio: _stem, startSeconds: 0)],
-  sessionClips: const [DawSessionClip(laneIndex: 0, audio: _loop)],
+  loop: _loop,
   volume: const AutomationLane(
     initialValue: 1,
     breakpoints: [
@@ -114,6 +119,17 @@ void main() {
       );
     });
 
+    test('the Group track template is the one in test/corpus/group.als', () {
+      expect(
+        liveGroupTrackTemplate,
+        _liveSet(_corpus('group'))
+            .getElement('Tracks')!
+            .getElement('GroupTrack')!
+            .toXmlString(),
+        reason: 'run `dart run tool/generate_live_group_track_template.dart`',
+      );
+    });
+
     test('were all saved by the same Live version as the template', () {
       final template = XmlDocument.parse(liveSetTemplate).rootElement;
       for (final name in [
@@ -123,6 +139,7 @@ void main() {
         'session_loop_warped',
         'vst3',
         'reference_tracks',
+        'group',
       ]) {
         final root = _corpus(name).rootElement;
         for (final attribute in ['MajorVersion', 'MinorVersion', 'Creator']) {
@@ -286,10 +303,10 @@ void main() {
       ).single;
       expect(_value(track, 'Name/EffectiveName'), 'Track 3');
       expect(_value(track, 'Name/UserName'), 'Track 3');
-      expect(
-        track.findAllElements('AudioClip').map((c) => _value(c, 'Name')),
-        unorderedEquals(['Track 3', 'Track 3 / Lane 1']),
-      );
+      expect(track.findAllElements('AudioClip').map((c) => _value(c, 'Name')), [
+        'Track 3',
+        'Track 3',
+      ]);
     });
 
     test('escapes a name that is not plain text', () {
@@ -372,8 +389,11 @@ void main() {
         );
         final sample = clip.getElement('SampleRef')!;
         expect(_value(sample, 'FileRef/RelativePathType'), '1');
-        expect(_value(sample, 'FileRef/RelativePath'), 'stems/wet/track0.wav');
-        expect(_value(sample, 'FileRef/Path'), 'stems/wet/track0.wav');
+        expect(
+          _value(sample, 'FileRef/RelativePath'),
+          'stems/dry/track0-lane0.wav',
+        );
+        expect(_value(sample, 'FileRef/Path'), 'stems/dry/track0-lane0.wav');
         expect(_value(sample, 'FileRef/Type'), '2');
         expect(_value(sample, 'DefaultDuration'), '480000');
         expect(_value(sample, 'DefaultSampleRate'), '48000');
@@ -412,19 +432,14 @@ void main() {
       }
     });
 
-    test('a Session clip loops its whole file, warped in Re-Pitch at the '
-        "set's tempo", () {
+    test("a track's loop is a Session clip in the first scene, looping its "
+        "whole file, warped in Re-Pitch at the set's tempo", () {
       const tempo = 130.0;
       final track = _audioTracks(
         _build(
           const DawProject(
             tempoBpm: tempo,
-            tracks: [
-              DawTrack(
-                name: 'Track 0',
-                sessionClips: [DawSessionClip(laneIndex: 1, audio: _loop)],
-              ),
-            ],
+            tracks: [DawTrack(name: 'Track 0', loop: _loop)],
           ),
         ),
       ).single;
@@ -432,8 +447,10 @@ void main() {
         track,
         'DeviceChain/MainSequencer/ClipSlotList',
       ).findElements('ClipSlot').toList();
-      expect(_at(slots[0], 'ClipSlot/Value').childElements, isEmpty);
-      final clip = _at(slots[1], 'ClipSlot/Value').getElement('AudioClip')!;
+      for (final slot in slots.skip(1)) {
+        expect(_at(slot, 'ClipSlot/Value').childElements, isEmpty);
+      }
+      final clip = _at(slots[0], 'ClipSlot/Value').getElement('AudioClip')!;
       const beats = 2 * tempo / 60;
       expect(_number(clip, 'CurrentStart'), 0);
       expect(_number(clip, 'CurrentEnd'), closeTo(beats, 1e-9));
@@ -473,12 +490,7 @@ void main() {
         _audioTracks(
           _build(
             const DawProject(
-              tracks: [
-                DawTrack(
-                  name: 'Track 0',
-                  sessionClips: [DawSessionClip(laneIndex: 0, audio: _loop)],
-                ),
-              ],
+              tracks: [DawTrack(name: 'Track 0', loop: _loop)],
             ),
           ),
         ).single,
@@ -486,44 +498,158 @@ void main() {
       expect(_shape(clip), _shape(reference));
     });
 
-    test('every track has one clip slot per scene, and a lane past the '
-        "template's scenes adds scenes", () {
-      final templateScenes = _liveSet(_corpus('automation'))
+    test("every track and group has one slot per scene of the template's", () {
+      final scenes = _liveSet(_corpus('automation'))
           .getElement('Scenes')!
-          .childElements
+          .findElements('Scene')
           .length;
-      final lane = templateScenes + 2;
+      const group = DawGroup(name: 'Group');
       final document = _build(
         DawProject(
           tracks: [
-            DawTrack(
-              name: 'Track 0',
-              sessionClips: [DawSessionClip(laneIndex: lane, audio: _loop)],
-            ),
-            _fullTrack('Track 1'),
+            const DawTrack(name: 'Track 0', loop: _loop),
+            _fullTrack('Track 1', group: group),
           ],
         ),
       );
-      final scenes = _liveSet(document)
-          .getElement('Scenes')!
-          .findElements('Scene')
-          .toList();
-      expect(scenes, hasLength(lane + 1));
-      expect(scenes.map((s) => s.getAttribute('Id')), [
-        for (var i = 0; i <= lane; i++) '$i',
-      ]);
+      expect(
+        _liveSet(document).getElement('Scenes')!.findElements('Scene'),
+        hasLength(scenes),
+      );
       for (final track in _audioTracks(document)) {
         for (final sequencer in ['MainSequencer', 'FreezeSequencer']) {
-          final slots = _at(
-            track,
-            'DeviceChain/$sequencer/ClipSlotList',
-          ).findElements('ClipSlot');
-          expect(slots, hasLength(lane + 1));
-          expect(slots.map((s) => s.getAttribute('Id')), [
-            for (var i = 0; i <= lane; i++) '$i',
-          ]);
+          expect(
+            _at(
+              track,
+              'DeviceChain/$sequencer/ClipSlotList',
+            ).findElements('ClipSlot'),
+            hasLength(scenes),
+          );
         }
       }
+      expect(
+        _at(
+          _groupTracks(document).single,
+          'Slots',
+        ).findElements('GroupTrackSlot'),
+        hasLength(scenes),
+      );
+    });
+
+    group('a looper track as a Group of its lanes (#1824)', () {
+      const group = DawGroup(name: 'Rhythm', info: 'Lane 2: Delay');
+      final project = DawProject(
+        tracks: [
+          _fullTrack('Rhythm L1', group: group),
+          const DawTrack(
+            name: 'Rhythm L1 (as heard)',
+            kind: DawTrackKind.laneHeard,
+            group: group,
+            active: false,
+          ),
+          const DawTrack(name: 'Input 1', kind: DawTrackKind.input),
+        ],
+      );
+
+      test('the Group track has the shape of the one in the reference set, '
+          'and comes before its lanes', () {
+        final document = _build(project);
+        final reference = _groupTracks(_corpus('group')).single;
+        final groupTrack = _groupTracks(document).single;
+        expect(_shape(groupTrack), _shape(reference));
+        final children = _liveSet(document).getElement('Tracks')!.childElements;
+        expect(children.map((e) => e.name.local), [
+          'GroupTrack',
+          'AudioTrack',
+          'AudioTrack',
+          'AudioTrack',
+        ]);
+        expect(_value(groupTrack, 'Name/EffectiveName'), 'Rhythm');
+        expect(_value(groupTrack, 'Name/UserName'), 'Rhythm');
+        expect(_value(groupTrack, 'Name/Annotation'), 'Lane 2: Delay');
+        expect(_value(groupTrack, 'TrackGroupId'), '-1');
+      });
+
+      test('its lanes sit in it and play into it, as the member Live saved '
+          'does; a track outside it plays to the main output', () {
+        final document = _build(project);
+        final groupId = _groupTracks(document).single.getAttribute('Id');
+        final reference = _corpus('group');
+        final member = _audioTracks(reference).single;
+        expect(
+          _value(member, 'TrackGroupId'),
+          _groupTracks(reference).single.getAttribute('Id'),
+        );
+        String routing(XmlElement track) => [
+          for (final field in ['Target', 'UpperDisplayString'])
+            _value(track, 'DeviceChain/AudioOutputRouting/$field'),
+        ].join(' ');
+        final [lane, heard, input] = _audioTracks(document);
+        for (final track in [lane, heard]) {
+          expect(_value(track, 'TrackGroupId'), groupId);
+          expect(routing(track), routing(member));
+          expect(
+            _value(track, 'DeviceChain/AudioOutputRouting/LowerDisplayString'),
+            '',
+          );
+        }
+        expect(_value(input, 'TrackGroupId'), '-1');
+        expect(routing(input), 'AudioOut/Main Master');
+      });
+
+      test('each looper track has its own Group, with ids of its own', () {
+        const other = DawGroup(name: 'Bass');
+        final document = _build(
+          DawProject(
+            tracks: [
+              _fullTrack('Rhythm L1', group: group),
+              _fullTrack('Bass L1', group: other),
+              _fullTrack('Bass L2', group: other),
+            ],
+          ),
+        );
+        final groups = _groupTracks(document);
+        expect(groups.map((g) => _value(g, 'Name/EffectiveName')), [
+          'Rhythm',
+          'Bass',
+        ]);
+        final [rhythm, bass] = [for (final g in groups) g.getAttribute('Id')];
+        expect(rhythm, isNot(bass));
+        expect(_audioTracks(document).map((t) => _value(t, 'TrackGroupId')), [
+          rhythm,
+          bass,
+          bass,
+        ]);
+        final trackIds = [
+          for (final t in _liveSet(
+            document,
+          ).getElement('Tracks')!.childElements)
+            t.getAttribute('Id'),
+        ];
+        expect(trackIds.toSet(), hasLength(trackIds.length));
+        final pointees = [
+          for (final e in document.descendantElements)
+            if (_isPointee(e.name.local)) e.getAttribute('Id'),
+        ];
+        expect(pointees.toSet(), hasLength(pointees.length));
+      });
+
+      test("throws for a group whose tracks are not together, which Live's "
+          'Group cannot hold', () {
+        const other = DawGroup(name: 'Bass');
+        expect(
+          () => buildAls(
+            DawProject(
+              tracks: [
+                _fullTrack('Rhythm L1', group: group),
+                _fullTrack('Bass L1', group: other),
+                _fullTrack('Rhythm L2', group: group),
+              ],
+            ),
+          ),
+          throwsArgumentError,
+        );
+      });
     });
 
     test('writes the tempo where Live keeps it: the main track and its '
@@ -586,12 +712,7 @@ void main() {
       final liveSet = _liveSet(
         _build(
           const DawProject(
-            tracks: [
-              DawTrack(
-                name: 'Track 0',
-                sessionClips: [DawSessionClip(laneIndex: 0, audio: _loop)],
-              ),
-            ],
+            tracks: [DawTrack(name: 'Track 0', loop: _loop)],
           ),
         ),
       );
