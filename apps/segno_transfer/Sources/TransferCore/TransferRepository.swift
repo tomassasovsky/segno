@@ -97,7 +97,7 @@ public final class TransferRepository: RecordingRepository {
       of: recording, in: destination, named: name, token: token)
     {
       // A copy an earlier version of this app downloaded has none. One that
-      // cannot get it still opens, only without saving in place.
+      // has it, or cannot get it, opens as it is.
       try? LiveSet.makeProject(copy.folder)
       return copy
     }

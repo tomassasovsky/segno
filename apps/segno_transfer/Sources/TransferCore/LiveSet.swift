@@ -30,12 +30,13 @@ public enum LiveSet {
   /// set in place (#1837). Live 12 creates it empty.
   public static let projectInfoName = "Ableton Project Info"
 
-  /// Makes `folder` a Live Project: adds its empty `projectInfoName` folder
-  /// when it has none.
+  /// Makes the existing `folder` a Live Project: adds its empty
+  /// `projectInfoName` folder. Throws when `folder` is gone or already has
+  /// one.
   static func makeProject(_ folder: URL) throws {
     try FileManager.default.createDirectory(
       at: folder.appendingPathComponent(projectInfoName, isDirectory: true),
-      withIntermediateDirectories: true)
+      withIntermediateDirectories: false)
   }
 
   public struct Contents: Equatable {
