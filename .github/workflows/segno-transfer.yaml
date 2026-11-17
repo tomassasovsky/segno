@@ -1,12 +1,15 @@
 name: Segno Transfer
 
-# The app carries Segno.vst3 (#1829), so a change to the plugin or to the
-# pedal faces it draws rebuilds the app too.
+# The app carries Segno.vst3 (#1829), so a change to the plugin, the engine
+# code it runs or the app code its pedal faces are drawn from rebuilds the
+# app and tests the bundled plugin too.
 on:
   pull_request:
     paths:
       - 'apps/segno_transfer/**'
       - 'packages/segno_engine/vst3/**'
+      - 'packages/segno_engine/src/**'
+      - 'lib/**'
       - 'test/vst3_faces/**'
       - '.github/workflows/segno-transfer.yaml'
   push:
@@ -15,6 +18,8 @@ on:
     paths:
       - 'apps/segno_transfer/**'
       - 'packages/segno_engine/vst3/**'
+      - 'packages/segno_engine/src/**'
+      - 'lib/**'
       - 'test/vst3_faces/**'
       - '.github/workflows/segno-transfer.yaml'
 
@@ -26,9 +31,6 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
-        with:
-          # Segno.vst3's build number is the history's commit count.
-          fetch-depth: 0
       # Renders the plugins' pedal faces from the console's drawing code.
       - uses: subosito/flutter-action@v2
         with:

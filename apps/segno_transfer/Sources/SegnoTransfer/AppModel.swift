@@ -275,16 +275,17 @@ final class AppModel: ObservableObject {
           progressTitle = ""
           return
         }
-        if copy.usesPlugins, plugins.canInstall(plugins.status()) {
+        let plugins = copy.usesPlugins ? self.plugins.status() : .installed
+        if self.plugins.canInstall(plugins) {
           // The user decides before the set opens (`installPlugins`,
           // `skipPlugins`).
-          pluginOffer = PluginOffer(status: plugins.status(), set: copy, application: application)
+          pluginOffer = PluginOffer(status: plugins, set: copy, application: application)
           status = "Live set downloaded and verified"
           busy = false
           progressTitle = ""
           return
         }
-        try await open(copy, in: application)
+        try await open(copy, in: application, plugins: plugins)
       } catch {
         if !cancellation.isCancelled { self.error = error.localizedDescription }
         status =
@@ -296,29 +297,35 @@ final class AppModel: ObservableObject {
     }
   }
 
-  /// Opens a downloaded set and says what the Segno plugins on this Mac
-  /// mean for its effects.
-  private func open(_ copy: LiveSetCopy, in application: URL) async throws {
+  /// Opens a downloaded set and says what `plugins`, the Segno plugins on
+  /// this Mac, mean for its effects.
+  private func open(
+    _ copy: LiveSetCopy, in application: URL, plugins: SegnoPlugins.Status
+  ) async throws {
     try await live.open(copy.project, application)
     status =
       copy.reused
       ? "Opened the Live set downloaded earlier"
       : "Live set downloaded, verified and opened"
     guard copy.usesPlugins else { return }
-    switch plugins.status() {
+    switch plugins {
     case .missing:
       error =
         "The Segno plugins are not installed on this Mac, so the set's effects open as missing devices."
-    case .olderForAllUsers(let installed, let bundled):
-      error =
-        "An older Segno.vst3 (\(installed)) is installed for every user in /Library/Audio/Plug-Ins/VST3. Segno Transfer does not change that folder; remove it there to install \(bundled) from Plug-ins > Install Segno Plugins."
+    case .olderForAllUsers(let installed, _): error = Self.olderForAllUsers(installed)
     case .installed, .older: break
     }
+  }
+
+  private static func olderForAllUsers(_ installed: PluginVersion) -> String {
+    "An older Segno.vst3 (\(installed)) is installed for every user in /Library/Audio/Plug-Ins/VST3, and Live may load it. Segno Transfer does not change that folder; remove it there, then use Plug-ins > Install Segno Plugins."
   }
 
   /// Offers to install or update the Segno plugins (the Plug-ins menu).
   func offerPlugins() {
     guard !busy else { return }
+    error = nil
+    notice = nil
     let current = plugins.status()
     if plugins.canInstall(current) {
       pluginOffer = PluginOffer(status: current, set: nil, application: nil)
@@ -327,63 +334,75 @@ final class AppModel: ObservableObject {
     switch current {
     case .installed: notice = "The Segno plugins on this Mac are up to date."
     case .missing: error = "This copy of Segno Transfer does not carry the Segno plugins."
-    case .olderForAllUsers(let installed, _):
-      error =
-        "An older Segno.vst3 (\(installed)) is installed for every user in /Library/Audio/Plug-Ins/VST3. Segno Transfer does not change that folder; remove it there, then install from this menu."
+    case .olderForAllUsers(let installed, _): error = Self.olderForAllUsers(installed)
     case .older: break
     }
   }
 
-  /// The offer's title, message and confirming button.
-  var pluginOfferText: (title: String, message: String, action: String)? {
-    guard let offer = pluginOffer else { return nil }
+  /// The title, message, confirming button and declining button (when a
+  /// set waits) for `offer`.
+  func text(for offer: PluginOffer) -> (
+    title: String, message: String, action: String, decline: String?
+  ) {
     let folder = "~/Library/Audio/Plug-Ins/VST3"
-    let effects = offer.set == nil ? "" : " This set's effects need them."
-    switch offer.status {
-    case .older(let installed, let bundled):
+    let waiting = offer.set != nil
+    let effects = waiting ? " This set's effects need them." : ""
+    if case .older(let installed, let bundled) = offer.status {
       return (
         "Update the Segno plugins?",
         "Segno.vst3 \(installed) is installed in \(folder). Replace it with \(bundled), the version this app carries?\(effects)",
-        "Replace"
+        "Replace", waiting ? "Open Without Updating" : nil
       )
-    default:
-      let version = plugins.bundledVersion.map { " \($0)" } ?? ""
-      return (
-        "Install the Segno plugins?",
-        "Segno Transfer can install Segno.vst3\(version) into \(folder), where Live finds it.\(effects)",
-        "Install"
-      )
+    }
+    let version = plugins.bundledVersion.map { " \($0)" } ?? ""
+    return (
+      "Install the Segno plugins?",
+      "Segno Transfer can install Segno.vst3\(version) into \(folder), where Live finds it.\(effects)",
+      "Install", waiting ? "Open Without Plugins" : nil
+    )
+  }
+
+  /// Installs the plugins `offer` names, then opens the set it was made
+  /// for. A failed install opens nothing and says why.
+  func installPlugins(_ offer: PluginOffer) {
+    guard !busy else { return }
+    pluginOffer = nil
+    busy = true
+    error = nil
+    notice = nil
+    progress = 0
+    progressTitle = "Installing the Segno plugins"
+    let plugins = plugins
+    Task {
+      do {
+        try await Task.detached { try plugins.install() }.value
+        notice =
+          "Segno.vst3 is installed. If Live is open, rescan plug-ins (Settings > Plug-Ins > Rescan) or restart Live. If macOS says Segno.vst3 cannot be opened, allow it in System Settings > Privacy & Security."
+        busy = false
+        progressTitle = ""
+        open(offer)
+      } catch {
+        self.error = error.localizedDescription
+        busy = false
+        progressTitle = ""
+      }
     }
   }
 
-  /// Installs the plugins the offer names, then opens the set it was made for.
-  func installPlugins() {
-    guard let offer = pluginOffer else { return }
+  /// Declines `offer` and opens the set it was made for as it is.
+  func skipPlugins(_ offer: PluginOffer) {
     pluginOffer = nil
-    do {
-      try plugins.install()
-      notice =
-        "Segno.vst3 is installed. If Live is open, rescan plug-ins (Settings > Plug-Ins > Rescan) or restart Live. If macOS says Segno.vst3 cannot be opened, allow it in System Settings > Privacy & Security."
-    } catch {
-      self.error = error.localizedDescription
-    }
-    openPending(offer)
-  }
-
-  /// Declines the offer and opens the set it was made for as it is.
-  func skipPlugins() {
-    guard let offer = pluginOffer else { return }
-    pluginOffer = nil
-    openPending(offer)
+    open(offer)
   }
 
   /// Declines the offer and opens nothing.
   func dismissPluginOffer() { pluginOffer = nil }
 
-  private func openPending(_ offer: PluginOffer) {
+  private func open(_ offer: PluginOffer) {
     guard let set = offer.set, let application = offer.application else { return }
+    let plugins = plugins.status()
     Task {
-      do { try await open(set, in: application) } catch {
+      do { try await open(set, in: application, plugins: plugins) } catch {
         self.error = error.localizedDescription
         status = "Could not open the Live set"
       }

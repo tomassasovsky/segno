@@ -82,9 +82,17 @@ final class PluginTests: XCTestCase {
       plugins.status(),
       .older(installed: version("1.0.0", "1.0.0"), bundled: version("1.0.0", "3213")))
     XCTAssertTrue(plugins.canInstall(plugins.status()))
+    // A current copy of the user's own does not hide an older one for
+    // every user, which Live also loads.
     try makePluginBundle(in: userFolder, build: "3213", payload: "same")
+    XCTAssertEqual(
+      plugins.status(),
+      .olderForAllUsers(installed: version("1.0.0", "3000"), bundled: version("1.0.0", "3213")))
+    try FileManager.default.removeItem(at: allUsers.appendingPathComponent("Segno.vst3"))
     XCTAssertEqual(plugins.status(), .installed)
     try makePluginBundle(in: userFolder, build: "4000", payload: "a newer build")
+    XCTAssertEqual(plugins.status(), .installed)
+    try makePluginBundle(in: allUsers, build: "5000", payload: "newer for every user")
     XCTAssertEqual(plugins.status(), .installed)
   }
 

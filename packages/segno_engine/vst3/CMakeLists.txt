@@ -119,12 +119,13 @@ set_target_properties(segno_vst3 PROPERTIES
 
 set(SEGNO_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/Segno.vst3")
 if(APPLE)
-  # The bundle's build number (CFBundleVersion): the commits on the
-  # checkout's history, so a later build of the line it ships from has a
-  # higher number. Segno Transfer compares it to decide whether the copy a
-  # Mac has is older than the one it carries. 0 outside a git checkout.
+  # The bundle's build number (CFBundleVersion): the commit time of the
+  # checkout's HEAD, in seconds since 1970, so a build of later code has a
+  # higher number on any branch, in a shallow clone and after a history
+  # rewrite that keeps dates. Segno Transfer compares it to decide whether
+  # the copy a Mac has is older than the one it carries. 0 outside git.
   execute_process(
-    COMMAND git rev-list --count HEAD
+    COMMAND git log -1 --format=%ct HEAD
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     OUTPUT_VARIABLE SEGNO_VST3_BUILD
     OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -141,17 +142,14 @@ if(APPLE)
     COMMAND ${CMAKE_COMMAND} -E make_directory "${SEGNO_BUNDLE}/Contents/MacOS"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:segno_vst3>"
       "${SEGNO_BUNDLE}/Contents/MacOS/Segno"
-    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
-      "${SEGNO_BUNDLE}/Contents/Info.plist"
     COMMAND /bin/sh -c "printf 'BNDL????' > '${SEGNO_BUNDLE}/Contents/PkgInfo'"
-    # Ad hoc, like Segno Transfer, which carries it (#1829).
-    COMMAND codesign -f -s - "${SEGNO_BUNDLE}"
     COMMENT "Assembling Segno.vst3"
     VERBATIM)
   # The editors' pictures and layout (editor.h), rendered by build.sh into
   # SEGNO_VST3_FACES, and the Info.plist with this configure's build number.
   # Copied on every build, since either changes without the module
-  # relinking, and signed again after.
+  # relinking, then the bundle is signed ad hoc, like Segno Transfer, which
+  # carries it (#1829).
   set(SEGNO_VST3_FACES "" CACHE PATH
     "Rendered pedal faces for the editors (build.sh renders them)")
   set(faces_commands)

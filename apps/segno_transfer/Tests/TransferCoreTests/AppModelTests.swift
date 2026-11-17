@@ -362,11 +362,13 @@ final class AppModelTests: XCTestCase {
     try await waitUntilIdle(model)
     XCTAssertTrue(fakeLive.opened.isEmpty)
     XCTAssertEqual(model.pluginOffer?.status, .missing)
-    XCTAssertEqual(model.pluginOfferText?.action, "Install")
+    let offer = try XCTUnwrap(model.pluginOffer)
+    XCTAssertEqual(model.text(for: offer).action, "Install")
+    XCTAssertEqual(model.text(for: offer).decline, "Open Without Plugins")
     XCTAssertNil(installedBuild())
-    model.installPlugins()
-    XCTAssertEqual(installedBuild(), "3213")
+    model.installPlugins(offer)
     try await waitUntil { fakeLive.opened.count == 1 }
+    XCTAssertEqual(installedBuild(), "3213")
     XCTAssertNil(model.pluginOffer)
     XCTAssertTrue(model.notice?.contains("Rescan") == true)
     XCTAssertNil(model.error)
@@ -379,19 +381,21 @@ final class AppModelTests: XCTestCase {
     repository.liveSetUsesPlugins = true
     model.openInLive(recording)
     try await waitUntilIdle(model)
-    XCTAssertEqual(model.pluginOfferText?.action, "Replace")
-    XCTAssertTrue(model.pluginOfferText?.message.contains("1.0.0 (build 100)") == true)
+    let offer = try XCTUnwrap(model.pluginOffer)
+    XCTAssertEqual(model.text(for: offer).action, "Replace")
+    XCTAssertEqual(model.text(for: offer).decline, "Open Without Updating")
+    XCTAssertTrue(model.text(for: offer).message.contains("1.0.0 (build 100)"))
     // Declined: the set opens with the copy the Mac has.
-    model.skipPlugins()
+    model.skipPlugins(offer)
     try await waitUntil { fakeLive.opened.count == 1 }
     XCTAssertEqual(installedBuild(), "100")
     XCTAssertNil(model.error)
     // Confirmed: replaced, then opened.
     model.openInLive(recording)
     try await waitUntilIdle(model)
-    model.installPlugins()
-    XCTAssertEqual(installedBuild(), "3213")
+    model.installPlugins(try XCTUnwrap(model.pluginOffer))
     try await waitUntil { fakeLive.opened.count == 2 }
+    XCTAssertEqual(installedBuild(), "3213")
   }
 
   func testCancellingTheOfferOpensAndWritesNothing() async throws {
@@ -427,8 +431,11 @@ final class AppModelTests: XCTestCase {
     let (model, _) = fixture()
     model.offerPlugins()
     XCTAssertEqual(model.pluginOffer?.status, .missing)
-    XCTAssertNil(model.pluginOffer?.set)
-    model.installPlugins()
+    let offer = try XCTUnwrap(model.pluginOffer)
+    XCTAssertNil(offer.set)
+    XCTAssertNil(model.text(for: offer).decline)
+    model.installPlugins(offer)
+    try await waitUntilIdle(model)
     XCTAssertEqual(installedBuild(), "3213")
     model.offerPlugins()
     XCTAssertNil(model.pluginOffer)
@@ -496,5 +503,34 @@ final class AppModelTests: XCTestCase {
     XCTAssertEqual(model.downloaded, [model.destination.appendingPathComponent("second")])
     XCTAssertEqual(
       model.status, "Cancelled · the Live set is downloaded and verified but was not opened")
+  }
+
+  func testAFailedInstallSaysWhyAndOpensNothing() async throws {
+    bundlesPlugins = true
+    // A file where the VST3 folder should be: the install cannot create it.
+    try FileManager.default.createDirectory(
+      at: userFolder.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data().write(to: userFolder)
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.liveSetUsesPlugins = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    model.installPlugins(try XCTUnwrap(model.pluginOffer))
+    try await waitUntilIdle(model)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertNotNil(model.error)
+    XCTAssertFalse(model.error?.contains("missing devices") == true)
+    XCTAssertNil(model.notice)
+  }
+
+  func testAnOlderCopyForEveryUserBesideACurrentOneStillWarns() async throws {
+    bundlesPlugins = true
+    try makePluginBundle(in: userFolder, build: "3213", payload: "current")
+    try makePluginBundle(in: allUsers, build: "100", payload: "old")
+    let (model, _) = fixture()
+    model.offerPlugins()
+    XCTAssertNil(model.pluginOffer)
+    XCTAssertTrue(model.error?.contains("/Library/Audio/Plug-Ins/VST3") == true)
   }
 }

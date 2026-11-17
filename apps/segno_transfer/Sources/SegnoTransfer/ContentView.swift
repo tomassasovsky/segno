@@ -29,20 +29,19 @@ struct ContentView: View {
     }
     .sheet(isPresented: $model.settingsPresented) { connectionSettings }
     .alert(
-      model.pluginOfferText?.title ?? "",
+      model.pluginOffer.map { model.text(for: $0).title } ?? "",
       isPresented: Binding(
         get: { model.pluginOffer != nil }, set: { if !$0 { model.dismissPluginOffer() } }),
-      presenting: model.pluginOfferText
-    ) { text in
-      Button(text.action) { model.installPlugins() }.keyboardShortcut(.defaultAction)
-      if model.pluginOffer?.set != nil {
-        Button(text.action == "Replace" ? "Open Without Updating" : "Open Without Plugins") {
-          model.skipPlugins()
-        }
+      presenting: model.pluginOffer
+    ) { offer in
+      let text = model.text(for: offer)
+      Button(text.action) { model.installPlugins(offer) }.keyboardShortcut(.defaultAction)
+      if let decline = text.decline {
+        Button(decline) { model.skipPlugins(offer) }
       }
       Button("Cancel", role: .cancel) { model.dismissPluginOffer() }
-    } message: { text in
-      Text(text.message)
+    } message: { offer in
+      Text(model.text(for: offer).message)
     }
   }
 

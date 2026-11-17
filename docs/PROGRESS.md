@@ -2726,8 +2726,8 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
   `packages/segno_engine/build/vst3`), then installs it in
   `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
   binding test against the installed bundle (`test/run_bundle_tests.sh`).
-  Its `CFBundleVersion` is the checkout's commit count, which Segno
-  Transfer compares with the copy it carries (#1829). After a change to the pedal
+  Its `CFBundleVersion` is the commit time of the checkout's HEAD, which
+  Segno Transfer compares with the copy it carries (#1829). After a change to the pedal
   faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
   --update-goldens test/vst3_faces/vst3_faces_test.dart` rewrites the layout
   the editors read. Live finds it on its next plugin scan (start, or

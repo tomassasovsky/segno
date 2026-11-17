@@ -64,8 +64,9 @@ public struct SegnoPlugins {
     case missing
     /// The user's copy is older than the one Transfer carries.
     case older(installed: PluginVersion, bundled: PluginVersion)
-    /// Only the copy for every user, in `/Library/Audio/Plug-Ins/VST3`,
-    /// which Transfer does not write to, is older.
+    /// The copy for every user, in `/Library/Audio/Plug-Ins/VST3`, which
+    /// Transfer does not write to, is older (the user's own copy, if any,
+    /// is not).
     case olderForAllUsers(installed: PluginVersion, bundled: PluginVersion)
   }
 
@@ -95,14 +96,15 @@ public struct SegnoPlugins {
     let installed = { (url: URL) in
       PluginVersion(bundle: url) ?? PluginVersion(short: "0", build: "0")
     }
-    if exists(user) {
-      guard let bundled = bundledVersion, installed(user) < bundled else { return .installed }
+    let bundled = bundledVersion
+    if exists(user), let bundled, installed(user) < bundled {
       return .older(installed: installed(user), bundled: bundled)
     }
-    if exists(allUsers) {
-      guard let bundled = bundledVersion, installed(allUsers) < bundled else { return .installed }
+    // Live also loads the copy for every user, which has the same class IDs.
+    if exists(allUsers), let bundled, installed(allUsers) < bundled {
       return .olderForAllUsers(installed: installed(allUsers), bundled: bundled)
     }
+    if exists(user) || exists(allUsers) { return .installed }
     return .missing
   }
 
