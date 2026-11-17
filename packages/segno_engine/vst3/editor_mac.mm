@@ -3,25 +3,36 @@
  * draws the face's pictures and turns mouse input into parameter edits.
  *
  * Contents/Resources/faces holds faces.json (the layout, kept by
- * test/vst3_faces) and, for each kind of engine type T, the pictures at 1x
- * and 2x (T@2x.png):
+ * test/vst3_faces), the face its value text is set in, and, for each kind
+ * of engine type T, the pictures at 1x and 2x (T@2x.png):
  *
  *   T.png      the background: the face at its defaults, switched off
  *   T_led.png  the LED lit, at the manifest's "led" rectangle
  *   T_i.png    control i's pictures, in rows of "columns": picture k shows
  *              it at setting k / (frames - 1)
+ *   T_i_q.png  the same for a control drawn by another parameter too
+ *              ("by"), at that parameter's position q
  *
  * A knob turns as it is dragged up or down (200 points end to end, five
- * times finer with Shift), a slider follows the pointer along its track, a
- * button row picks the button pressed, a select opens a menu of its
- * positions' names, and the footswitch switches the bypass. A double click
- * on a knob or a slider sets its default. A stepped parameter moves only to
- * its positions.
+ * times finer with Shift); a knob of a choice only shows it, as the panel's
+ * selector sets it. A slider follows the pointer along its track, a button
+ * row picks the button pressed, a select opens a menu of its positions'
+ * names, and the footswitch switches the bypass. A double click on a knob or
+ * a slider sets its default. A stepped parameter moves only to its
+ * positions.
+ *
+ * Values are printed as the console prints them (the controller's text,
+ * value_text.h): a slider's at its readout, over the picture's (drawn at one
+ * of its settings), and a knob's in a bubble above it while the pointer is
+ * over it or turning it, in the theme the manifest gives (the effect page's
+ * mono face and colours).
  */
 #import <Cocoa/Cocoa.h>
+#import <CoreText/CoreText.h>
 
 #include "editor.h"
 #include "params.h"
+#include "pluginterfaces/base/ustring.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,12 +60,29 @@ struct FaceControl {
   ParamID param;
   NSRect rect;
   int frames = 0;
-  int32 steps = 0;     /* the parameter's step count: 0 when continuous */
-  double initial = 0;  /* its default, which a double click restores */
+  int32 steps = 0;      /* the parameter's step count: 0 when continuous */
+  double initial = 0;   /* its default, which a double click restores */
+  bool display = false; /* shows its parameter, which another control sets */
   NSRect track = NSZeroRect;
+  NSRect readout = NSZeroRect; /* where a slider's value text is */
+  double baseline = 0;         /* the value text's baseline */
+  int32 by = -1;               /* the parameter that picks its sheet, or -1 */
+  int32 byPositions = 0;       /* how many positions [by] has */
   std::vector<NSRect> buttons;
   NSArray<NSString*>* names = nil;
-  NSArray<NSImage*>* pictures = nil; /* by setting, frames of them */
+  /* By [by]'s position (one sheet without it), then by setting. */
+  NSArray<NSArray<NSImage*>*>* pictures = nil;
+};
+
+/* How the editor sets its own text: the effect page's value text and a
+ * card for a knob's bubble. */
+struct Theme {
+  NSFont* font = nil;
+  NSColor* background = nil;
+  NSColor* readout = nil;
+  NSColor* bubble = nil;
+  NSColor* bubbleBorder = nil;
+  NSColor* bubbleText = nil;
 };
 
 struct Face {
@@ -62,17 +90,52 @@ struct Face {
   NSImage* background = nil;
   NSRect led;
   NSImage* ledImage = nil;
+  Theme theme;
   std::vector<FaceControl> controls;
 };
 
 /* Points of the drag that takes a knob from end to end. */
 constexpr double kKnobTravel = 200.0;
 
+/* A knob's bubble: the room around its text, its corners, and its gap from
+ * the knob. */
+constexpr CGFloat kBubblePadX = 6;
+constexpr CGFloat kBubblePadY = 3;
+constexpr CGFloat kBubbleRadius = 5;
+constexpr CGFloat kBubbleGap = 2;
+
 NSRect rectFrom(id json) {
   NSArray* a = json;
   if (![a isKindOfClass:[NSArray class]] || a.count != 4) return NSZeroRect;
   return NSMakeRect([a[0] doubleValue], [a[1] doubleValue], [a[2] doubleValue],
                     [a[3] doubleValue]);
+}
+
+/* "#rrggbbaa" as a colour, or nil. */
+NSColor* colourFrom(id json) {
+  NSString* text = json;
+  if (![text isKindOfClass:[NSString class]] || text.length != 9) return nil;
+  unsigned value = 0;
+  if (![[NSScanner scannerWithString:[text substringFromIndex:1]] scanHexInt:&value]) return nil;
+  return [NSColor colorWithSRGBRed:((value >> 24) & 0xFF) / 255.0
+                             green:((value >> 16) & 0xFF) / 255.0
+                              blue:((value >> 8) & 0xFF) / 255.0
+                             alpha:(value & 0xFF) / 255.0];
+}
+
+/* The face in [file], at [size] points, without registering it in the
+ * host's process. */
+NSFont* fontFrom(NSString* file, CGFloat size) {
+  CFArrayRef descriptors =
+      CTFontManagerCreateFontDescriptorsFromURL((__bridge CFURLRef)[NSURL fileURLWithPath:file]);
+  if (descriptors == nullptr) return nil;
+  NSFont* font = nil;
+  if (CFArrayGetCount(descriptors) > 0) {
+    const auto descriptor = (CTFontDescriptorRef)CFArrayGetValueAtIndex(descriptors, 0);
+    font = (__bridge_transfer NSFont*)CTFontCreateWithFontDescriptor(descriptor, size, nullptr);
+  }
+  CFRelease(descriptors);
+  return font;
 }
 
 /* The 1x and 2x pictures of [name] as one image of [size] points, cut into
@@ -121,7 +184,7 @@ bool infoOf(EditController* controller, ParamID param, ParameterInfo& info) {
 /* The face of engine type [type] from the bundle's faces, or false: also
  * when a control names a parameter [controller] does not have, or its
  * entry cannot be played (a selector with fewer than two positions, a
- * slider without a track). */
+ * slider without a track or a readout). */
 bool loadFace(EditController* controller, int32_t type, Face& face) {
   if (ghInst == nullptr) return false;
   CFURLRef resources = CFBundleCopyResourcesDirectoryURL(ghInst);
@@ -139,6 +202,21 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
     if ([f[@"type"] intValue] == type) entry = f;
   }
   if (entry == nil || columns <= 0) return false;
+
+  NSDictionary* theme = manifest[@"theme"];
+  if (![theme isKindOfClass:[NSDictionary class]]) return false;
+  face.theme.font = fontFrom([dir stringByAppendingPathComponent:theme[@"font"]],
+                             [theme[@"size"] doubleValue]);
+  face.theme.background = colourFrom(theme[@"background"]);
+  face.theme.readout = colourFrom(theme[@"readout"]);
+  face.theme.bubble = colourFrom(theme[@"bubble"]);
+  face.theme.bubbleBorder = colourFrom(theme[@"bubbleBorder"]);
+  face.theme.bubbleText = colourFrom(theme[@"bubbleText"]);
+  if (face.theme.font == nil || face.theme.background == nil || face.theme.readout == nil ||
+      face.theme.bubble == nil || face.theme.bubbleBorder == nil ||
+      face.theme.bubbleText == nil) {
+    return false;
+  }
 
   NSArray* size = entry[@"size"];
   face.size = NSMakeSize([size[0] doubleValue], [size[1] doubleValue]);
@@ -170,19 +248,31 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
     control.param = (ParamID)[c[@"param"] intValue];
     control.rect = rectFrom(c[@"rect"]);
     control.frames = [c[@"frames"] intValue];
+    control.display = [c[@"display"] boolValue];
     if (c[@"track"] != nil) control.track = rectFrom(c[@"track"]);
+    if (c[@"readout"] != nil) {
+      control.readout = rectFrom(c[@"readout"]);
+      control.baseline = [c[@"baseline"] doubleValue];
+    }
     for (id b in c[@"buttons"]) control.buttons.push_back(rectFrom(b));
     control.names = c[@"names"];
     ParameterInfo info{};
     if (!infoOf(controller, control.param, info)) return false;
     control.steps = info.stepCount;
     control.initial = info.defaultNormalizedValue;
+    if (c[@"by"] != nil) {
+      ParameterInfo by{};
+      control.by = [c[@"by"] intValue];
+      if (!infoOf(controller, (ParamID)control.by, by) || by.stepCount == 0) return false;
+      control.byPositions = by.stepCount + 1;
+    }
     const bool playable = [&] {
       switch (control.kind) {
         case ControlKind::knob:
           return control.frames >= 2;
         case ControlKind::slider:
-          return control.frames >= 2 && NSWidth(control.track) > 0;
+          return control.frames >= 2 && NSWidth(control.track) > 0 &&
+                 !NSIsEmptyRect(control.readout);
         case ControlKind::buttons:
           return control.frames >= 2 && control.buttons.size() == (size_t)control.frames;
         case ControlKind::select:
@@ -194,15 +284,27 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
     }();
     if (!playable || NSIsEmptyRect(control.rect)) return false;
     if (control.frames > 0) {
-      control.pictures =
-          loadPictures(dir, [NSString stringWithFormat:@"%@_%d", stem, i], control.rect.size,
-                       control.frames, columns);
-      if (control.pictures == nil) return false;
+      NSMutableArray* sheets = [NSMutableArray array];
+      const int variants = control.by >= 0 ? control.byPositions : 1;
+      for (int q = 0; q < variants; ++q) {
+        NSString* name = control.by >= 0 ? [NSString stringWithFormat:@"%@_%d_%d", stem, i, q]
+                                         : [NSString stringWithFormat:@"%@_%d", stem, i];
+        NSArray<NSImage*>* sheet =
+            loadPictures(dir, name, control.rect.size, control.frames, columns);
+        if (sheet == nil) return false;
+        [sheets addObject:sheet];
+      }
+      control.pictures = sheets;
     }
     face.controls.push_back(control);
     ++i;
   }
   return true;
+}
+
+/* [v]'s position of [positions], as the processor reads it: the nearest. */
+long positionOf(double v, long positions) {
+  return std::clamp(std::lround(v * (double)(positions - 1)), 0L, positions - 1);
 }
 
 }  // namespace
@@ -218,9 +320,11 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   Face _face;
   EditController* _controller; /* outlives the view: the editor holds it */
   const FaceControl* _dragging;
-  double _dragStart; /* the value where the drag's travel is measured from */
+  const FaceControl* _hovering; /* the knob under the pointer */
+  double _dragStart;            /* the value the drag's travel is measured from */
   NSPoint _dragFrom;
-  BOOL _dragFine; /* whether Shift was down at _dragFrom */
+  BOOL _dragFine;     /* whether Shift was down at _dragFrom */
+  NSRect _bubbleRect; /* where the bubble was last drawn, or empty */
 }
 
 - (instancetype)initWithFace:(Face)face controller:(EditController*)controller {
@@ -229,6 +333,14 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
     _face = face;
     _controller = controller;
     _dragging = nullptr;
+    _hovering = nullptr;
+    _bubbleRect = NSZeroRect;
+    [self addTrackingArea:[[NSTrackingArea alloc]
+                              initWithRect:NSZeroRect
+                                   options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited |
+                                           NSTrackingActiveAlways | NSTrackingInVisibleRect
+                                     owner:self
+                                  userInfo:nil]];
   }
   return self;
 }
@@ -245,6 +357,15 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   return _controller->getParamNormalized(param);
 }
 
+/* [param]'s value as the console prints it (the controller's text). */
+- (NSString*)textOf:(ParamID)param {
+  String128 text{};
+  if (_controller->getParamStringByValue(param, [self valueOf:param], text) != kResultOk) {
+    return @"";
+  }
+  return [NSString stringWithCharacters:(const unichar*)text length:strlen16(text)];
+}
+
 /* Moves [param] to [value] as the host expects an editor to: the
  * controller's own value, then the host's (inside a beginEdit/endEdit). */
 - (void)set:(ParamID)param to:(double)value {
@@ -254,12 +375,16 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   _controller->performEdit(param, value);
 }
 
-/* Redraws what shows [param]: its controls, and the LED for the bypass. */
+/* Redraws what shows [param]: its controls and the ones it picks the
+ * pictures of, the LED for the bypass, and the bubble. */
 - (void)redraw:(ParamID)param {
   if (param == segno_vst3::kBypassId) [self setNeedsDisplayInRect:_face.led];
   for (const FaceControl& c : _face.controls) {
-    if (c.param == param && c.pictures != nil) [self setNeedsDisplayInRect:c.rect];
+    if (c.pictures != nil && (c.param == param || c.by == (int32)param)) {
+      [self setNeedsDisplayInRect:c.rect];
+    }
   }
+  [self updateBubble];
 }
 
 /* One edit, from a click. */
@@ -277,6 +402,42 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   return std::round(std::clamp(v, 0.0, 1.0) * last) / last;
 }
 
+/* The knob whose value the bubble shows: the one turning, else the one
+ * under the pointer. */
+- (const FaceControl*)bubbleKnob {
+  if (_dragging != nullptr && _dragging->kind == ControlKind::knob) return _dragging;
+  return _hovering;
+}
+
+/* The bubble's text attributes. */
+- (NSDictionary*)bubbleAttributes {
+  return @{NSFontAttributeName : _face.theme.font,
+           NSForegroundColorAttributeName : _face.theme.bubbleText};
+}
+
+/* Where [c]'s bubble goes for [text]: centred above it, or below it when
+ * the window has no room above, and inside the window. */
+- (NSRect)bubbleRectFor:(const FaceControl&)c text:(NSString*)text {
+  const NSSize size = [text sizeWithAttributes:[self bubbleAttributes]];
+  const CGFloat w = std::ceil(size.width) + 2 * kBubblePadX;
+  const CGFloat h = std::ceil(size.height) + 2 * kBubblePadY;
+  CGFloat y = NSMinY(c.rect) - h - kBubbleGap;
+  if (y < 0) y = NSMaxY(c.rect) + kBubbleGap;
+  const CGFloat x = std::clamp(NSMidX(c.rect) - w / 2, (CGFloat)0, NSWidth(self.bounds) - w);
+  return NSMakeRect(x, y, w, h);
+}
+
+/* Moves the bubble to the knob it now shows, redrawing where it was and
+ * where it goes. */
+- (void)updateBubble {
+  const FaceControl* knob = [self bubbleKnob];
+  const NSRect next =
+      knob == nullptr ? NSZeroRect : [self bubbleRectFor:*knob text:[self textOf:knob->param]];
+  if (!NSIsEmptyRect(_bubbleRect)) [self setNeedsDisplayInRect:_bubbleRect];
+  if (!NSIsEmptyRect(next)) [self setNeedsDisplayInRect:next];
+  _bubbleRect = next;
+}
+
 - (void)drawRect:(NSRect)dirty {
   auto draw = ^(NSImage* image, NSRect rect) {
     [image drawInRect:rect
@@ -288,10 +449,38 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   };
   draw(_face.background, self.bounds);
   if ([self valueOf:segno_vst3::kBypassId] < 0.5) draw(_face.ledImage, _face.led);
+  NSDictionary* readout = @{NSFontAttributeName : _face.theme.font,
+                            NSForegroundColorAttributeName : _face.theme.readout};
   for (const FaceControl& c : _face.controls) {
     if (c.pictures == nil || !NSIntersectsRect(c.rect, dirty)) continue;
-    const long k = std::lround([self valueOf:c.param] * (c.frames - 1));
-    draw(c.pictures[(NSUInteger)std::clamp(k, 0L, (long)c.frames - 1)], c.rect);
+    const long sheet = c.by >= 0 ? positionOf([self valueOf:(ParamID)c.by], c.byPositions) : 0;
+    const long k = positionOf([self valueOf:c.param], c.frames);
+    draw(c.pictures[(NSUInteger)sheet][(NSUInteger)k], c.rect);
+    if (c.kind == ControlKind::slider) {
+      // The exact value, where the picture prints the nearest of its
+      // settings.
+      [_face.theme.background setFill];
+      NSRectFill(c.readout);
+      NSString* text = [self textOf:c.param];
+      const NSSize size = [text sizeWithAttributes:readout];
+      [text drawAtPoint:NSMakePoint(NSMaxX(c.readout) - size.width,
+                                    c.baseline - _face.theme.font.ascender)
+         withAttributes:readout];
+    }
+  }
+  const FaceControl* knob = [self bubbleKnob];
+  if (knob != nullptr && NSIntersectsRect(_bubbleRect, dirty)) {
+    NSBezierPath* card = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(_bubbleRect, 0.5, 0.5)
+                                                         xRadius:kBubbleRadius
+                                                         yRadius:kBubbleRadius];
+    [_face.theme.bubble setFill];
+    [card fill];
+    [_face.theme.bubbleBorder setStroke];
+    [card stroke];
+    [[self textOf:knob->param]
+           drawAtPoint:NSMakePoint(NSMinX(_bubbleRect) + kBubblePadX,
+                                   NSMinY(_bubbleRect) + kBubblePadY)
+        withAttributes:[self bubbleAttributes]];
   }
 }
 
@@ -306,10 +495,25 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   return (p.x - NSMinX(c.track)) / NSWidth(c.track);
 }
 
+- (void)mouseMoved:(NSEvent*)event {
+  const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
+  const FaceControl* c = [self controlAt:p];
+  const FaceControl* knob = c != nullptr && c->kind == ControlKind::knob ? c : nullptr;
+  if (knob == _hovering) return;
+  _hovering = knob;
+  [self updateBubble];
+}
+
+- (void)mouseExited:(NSEvent*)event {
+  if (_hovering == nullptr) return;
+  _hovering = nullptr;
+  [self updateBubble];
+}
+
 - (void)mouseDown:(NSEvent*)event {
   const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
   const FaceControl* c = [self controlAt:p];
-  if (c == nullptr) return;
+  if (c == nullptr || c->display) return;
   switch (c->kind) {
     case ControlKind::footswitch:
       [self edit:c->param to:[self valueOf:c->param] < 0.5 ? 1.0 : 0.0];
@@ -341,6 +545,7 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
       if (c->kind == ControlKind::slider) {
         [self set:c->param to:[self snap:[self sliderValue:*c at:p] control:*c]];
       }
+      [self updateBubble];
       return;
     }
   }
@@ -375,6 +580,8 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
 
 - (void)mouseUp:(NSEvent*)event {
   [self endDrag];
+  // The pointer may have left the knob while turning it.
+  [self mouseMoved:event];
 }
 
 /* Ends a drag's edit: at the mouse's release, or when the editor closes
@@ -383,6 +590,7 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   if (_dragging == nullptr) return;
   _controller->endEdit(_dragging->param);
   _dragging = nullptr;
+  [self updateBubble];
 }
 
 /* A select's menu, its current position ticked, under the control. */
@@ -390,7 +598,7 @@ bool loadFace(EditController* controller, int32_t type, Face& face) {
   NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
   const NSUInteger n = c.names.count;
   if (n < 2) return;
-  const long current = std::lround([self valueOf:c.param] * (double)(n - 1));
+  const long current = positionOf([self valueOf:c.param], (long)n);
   for (NSUInteger k = 0; k < n; ++k) {
     NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:c.names[k]
                                                   action:@selector(picked:)

@@ -97,7 +97,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 - Each plugin's editor is the console's single-effect page in a plugin
   window: the pedal the Effects page draws for its kind, and beside it the
   settings the face has no knob for and every choice, drawn as the effect
-  page draws them (sliders, a row of buttons, or a select). The kinds the
+  page draws them (sliders, a row of buttons, or a select), then the
+  entry's input, output and balance or pan as the effect page's footer
+  draws them, and its level as an effect page slider (the console shows a
+  single effect's level nowhere). The panel takes a second column past
+  seven controls. Every parameter but the bypass has exactly one control:
+  a choice the face has a knob for is set by its selector, the knob only
+  shows it. The kinds the
   console runs only in racks wear the look of the first catalogue module
   that runs on them; Distortion, which no factory rack builds, has no face
   and keeps the host's own controls.
@@ -117,11 +123,21 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   automation, and redraws when the host changes a value. Knobs drag up and
   down (Shift for finer), sliders follow the pointer, a select opens a menu
   of the console's position names, the footswitch is the bypass and the LED
-  shows it. Linux, and a bundle built without the pictures, open no editor.
+  shows it. A slider prints its exact value at its readout, and a knob's
+  value shows in a bubble while the pointer is over it or turning it, in
+  the effect page's mono face and colours (the manifest's theme, the font
+  bundled with the pictures). Linux, and a bundle built without the
+  pictures, open no editor.
+- Every plugin's parameter text is the console's (`value_text.cpp`, a
+  port of `fxParamValueText` and the footer's readouts), so a host's own
+  parameter list reads "348 ms" and "1/8D". `vst3/test/value_texts.json`,
+  which `vst3_faces_test.dart` writes from the Dart, holds the console's
+  text for every parameter of every kind at 41 settings and each position.
 - `test/binding_test.cpp` loads the bundle and checks every control of the
-  layout against its plugin's parameters (CI, in `run_null_test.sh`), and
-  after an install that every plugin with a face opens an editor of the
-  layout's size.
+  layout against its plugin's parameters, that every parameter but the
+  bypass has exactly one control, and every value text against
+  `value_texts.json` (CI, in `run_null_test.sh`); after an install, also
+  that every plugin with a face opens an editor of the layout's size.
 
 ## November 2026 A take records each input raw (#1805)
 
