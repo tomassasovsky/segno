@@ -39,12 +39,15 @@ download. Then the set opens in Ableton Live. Progress and **Cancel** work as
 they do for **Download**. A cancelled or failed download opens nothing and
 leaves no folder behind.
 
-Clicking **Open in Live** again opens the copy already downloaded, without
-fetching it again, as long as the console's files have not changed, every file
-in the copy keeps the length and modification time it was verified with, and
-`project.als` still matches its SHA-256. A set saved over in Live
-no longer matches, so the next click downloads a fresh copy beside it with a
-numbered name.
+Clicking **Open in Live** again reopens that copy, with any edits saved in
+Live: the set is yours once downloaded. Before it opens, every console file the
+set uses is checked against the SHA-256 recorded when it was downloaded. A file
+that is missing or does not match is downloaded again while the console still
+has it; one the console no longer has is left for Live to report as missing.
+`project.als` itself is never replaced, since Live rewrites it on save. Files
+you added to the set are left alone. With several copies of a take, the one
+saved last reopens. A fresh copy is downloaded only when the download folder
+holds none for that take.
 
 The button is disabled, with the reason beside it, when Ableton Live is not
 installed or the take has no Live set. A take whose set is missing (for example
