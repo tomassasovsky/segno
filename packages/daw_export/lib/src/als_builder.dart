@@ -13,11 +13,27 @@ import 'package:xml/xml.dart';
 const double _kBeforeSongTime = -63072000;
 
 /// Where Live's Arrangement lane chooser finds a track's volume envelope,
-/// as Live 12.2.7 numbers it for an audio track with no devices and no
-/// sends: device 1 is the Mixer, and its envelope 2 the volume (0 is the
+/// as Live 12.2.7 numbers it for an audio track with no sends: after
+/// "None" (0), every device in order, a rack followed by each chain's
+/// devices and the chain's mixer, then the track's Mixer
+/// ([_laneMixerDevice]), whose envelope 2 is the volume (0 is the
 /// activator, "Speaker On").
-const int _kLaneMixerDevice = 1;
 const int _kLaneMixerVolume = 2;
+
+/// The lane chooser's number for the Mixer of a track holding [devices].
+int _laneMixerDevice(List<DawDevice> devices) => 1 + _chooserEntries(devices);
+
+/// The entries [devices] take in the lane chooser.
+int _chooserEntries(List<DawDevice> devices) => devices.fold(
+  0,
+  (n, d) =>
+      n +
+      switch (d) {
+        DawPluginDevice() => 1,
+        DawRackDevice(:final chains) =>
+          1 + chains.fold(0, (m, c) => m + _chooserEntries(c.devices) + 1),
+      },
+);
 
 /// Live's `WarpMode` number for Re-Pitch, which at the clip's own tempo plays
 /// the file's samples unchanged.
@@ -149,13 +165,13 @@ class _TrackPrototype {
 
   /// Shows the volume lane of a track with volume automation, so it is
   /// visible when the set opens. A track without keeps the template's lane.
-  void _showVolumeLane(XmlElement track) {
+  void _showVolumeLane(XmlElement track, List<DawDevice> devices) {
     _automationLanes(track).children
       ..clear()
       ..add(
         (lane.copy()..setAttribute('Id', '0'))
           ..getElement('SelectedDevice')!
-              .setAttribute('Value', '$_kLaneMixerDevice')
+              .setAttribute('Value', '${_laneMixerDevice(devices)}')
           ..getElement('SelectedEnvelope')!
               .setAttribute('Value', '$_kLaneMixerVolume'),
       );
@@ -239,7 +255,7 @@ class _TrackPrototype {
           range: _range(parameter),
         ),
       );
-      _showVolumeLane(track);
+      _showVolumeLane(track, source.devices);
     }
     return track;
   }

@@ -956,6 +956,22 @@ void main() {
         );
       });
 
+      test("a volume lane picks the track's Mixer after every device and "
+          'chain mixer in the lane chooser', () {
+        final track = _audioTracks(
+          _build(DawProject(tracks: [_fullTrack('Track 0', devices: _chain)])),
+        ).single;
+        final lane = _at(
+          track,
+          'DeviceChain/AutomationLanes/AutomationLanes',
+        ).childElements.single;
+        // None 0, Delay 1, Dub Rack 2, Filter 3, Amb / Dub 4, Ambience 5,
+        // its chain mixer 6, Dub reverb 7, its chain mixer 8, the Dub
+        // Rack's chain mixer 9, then the Mixer.
+        expect(_value(lane, 'SelectedDevice'), '10');
+        expect(_value(lane, 'SelectedEnvelope'), '2');
+      });
+
       test('a track with no devices has none', () {
         final track = _audioTracks(
           _build(DawProject(tracks: [_fullTrack('Track 0')])),
