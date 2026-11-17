@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
-# Tests for how `segno-wifi-ctl connect` explains a failed join (#466).
+# Tests for how `segno-wifi-ctl connect` explains a failed join (#466, #1817).
 #
-# This is not cosmetic. The console has no keyboard-and-mouse escape hatch: what
-# the Control Center says about a failure is the entire diagnosis a user gets.
-# Saying "check the password" about a correct password sends them to re-enter it
-# forever while the real fault — an access point that accepts the association
-# and never starts the 4-way handshake — stays invisible.
+# This is not cosmetic. The console has no keyboard-and-mouse escape hatch:
+# what the Network page says about a failure is the whole diagnosis the owner
+# gets. On 2026-11-17 a WiFi 6 router timed out the 802.11 authentication
+# (iwd `connect-failed, status: 16`), NetworkManager ended the join as
+# `no-secrets`, the page said "Incorrect password", and the owner forgot two
+# networks whose keys were right.
 #
-# That happened for real (#459) and cost a night at the bench, because
-# NetworkManager reports both cases as `Secrets were required`: on a headless
-# appliance there is no secret agent, so any association timeout ends up asking
-# for secrets, finding nobody, and failing as `no-secrets` — even right after
-# logging "secrets exist, no new secrets needed".
-#
-# So the assertions here are about which of two indistinguishable NM errors we
-# report, given what wpa_supplicant said underneath. nmcli and journalctl are
-# both stubbed; no radio involved.
+# NetworkManager's iwd backend reports every failed activation that asked for
+# secrets as `no-secrets`, so the assertions here are about the code the
+# helper prints on stdout ({"error":<code>}) given what iwd logged during the
+# attempt. nmcli and journalctl are stubbed; no radio involved.
 set -uo pipefail
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -27,28 +23,30 @@ fail=0
 setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/wifi-join-test.XXXXXX")
     mkdir -p "$work/bin"
+    : > "$work/nmcli-args"
+    : > "$work/journalctl-args"
 
-    # nmcli that gets as far as creating the profile and then fails activation
-    # with NM's ambiguous wording — the exact string seen on device.
-    cat > "$work/bin/nmcli" <<'STUB'
+    # nmcli that creates the profile and then fails activation with $UP_ERROR,
+    # NM's wording for this case. `device wifi list` answers $LIST.
+    cat > "$work/bin/nmcli" <<STUB
 #!/bin/sh
-case "$*" in
-    *"radio wifi on"*|*"device set"*|*"connection delete"*|*"connection modify"*)
-        exit 0 ;;
-    *"connection add"*)
-        exit 0 ;;
+echo "\$@" >> "$work/nmcli-args"
+case "\$*" in
+    *"device wifi list"*) [ -n "\${LIST:-}" ] && printf '%s\n' "\$LIST" ;;
     *"connection up"*)
-        echo "Error: Connection activation failed: Secrets were required, but not provided" >&2
+        echo "\${UP_ERROR:-Error: Connection activation failed: Secrets were required, but not provided}" >&2
         exit 4 ;;
     *"-t -f GENERAL.STATE device show"*)
-        echo "GENERAL.STATE:30 (disconnected)"; exit 0 ;;
-    *) exit 0 ;;
+        echo "GENERAL.STATE:30 (disconnected)" ;;
+    *) : ;;
 esac
+exit 0
 STUB
     chmod +x "$work/bin/nmcli"
     : > "$work/journal"
     cat > "$work/bin/journalctl" <<STUB
 #!/bin/sh
+echo "\$@" >> "$work/journalctl-args"
 cat "$work/journal"
 STUB
     chmod +x "$work/bin/journalctl"
@@ -56,17 +54,18 @@ STUB
 
 teardown() { rm -rf "$work"; }
 
-supplicant_logged() { cat > "$work/journal"; }
+logged() { cat > "$work/journal"; }
 
+# Joins SomeNetwork, with a typed key unless KEY is set empty.
 run_connect() {
+    printf '%s\n' "${KEY-hunter2000}" | \
     SEGNO_WIFI_IFACE=wlan0 \
     SEGNO_JOURNALCTL="$work/bin/journalctl" \
     SEGNO_WIFI_NM_CONNECT_TIMEOUT=1 \
-    SEGNO_WIFI_CONNECT_TIMEOUT=1 \
+    LIST="${LIST:-}" UP_ERROR="${UP_ERROR:-}" \
     PATH="$work/bin:$PATH" \
-        sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >/dev/null <<KEY
-hunter2000
-KEY
+        sh "$CTL" connect "SomeNetwork" 2>"$work/stderr" >"$work/stdout"
+    rc=$?
 }
 
 check() {
@@ -76,90 +75,133 @@ check() {
         pass=$((pass + 1))
     else
         echo "  FAIL $label (expected '$expected', got '$actual')"
+        [ -s "$work/stdout" ] && sed 's/^/       > /' "$work/stdout"
         [ -s "$work/stderr" ] && sed 's/^/       | /' "$work/stderr"
         fail=$((fail + 1))
     fi
 }
 
-said() { grep -qi "$1" "$work/stderr" && echo yes || echo no; }
+# The code the helper printed, or empty.
+code() {
+    sed -n 's/.*"error":"\([a-z-]*\)".*/\1/p' "$work/stdout" | head -n1
+}
 
-# --- the distinction that matters ------------------------------------------
+called_with() { grep -qF -- "$1" "$work/nmcli-args" && echo yes || echo no; }
 
-echo "AP accepted the association and never sent EAPOL"
+# --- what the owner hit on 2026-11-17 ---------------------------------------
+
+echo "the access point timed out the 802.11 authentication (iwd status 16)"
 setup
-supplicant_logged <<'LOG'
-Aug 03 03:39:26 pi wpa_supplicant[1020]: wlan0: Trying to associate with 58:11:22:34:39:1c (SSID='SomeNetwork' freq=5200 MHz)
-Aug 03 03:39:26 pi wpa_supplicant[1020]: wlan0: Associated with 58:11:22:34:39:1c
-Aug 03 03:39:36 pi wpa_supplicant[1020]: wlan0: Authentication with 58:11:22:34:39:1c timed out.
+logged <<'LOG'
+event: connect-info, ssid: SomeNetwork, bss: 58:11:22:34:39:1c, signal: -52, load: 0/255
+event: state, old: disconnected, new: connecting
+event: connect-failed, status: 16
+event: state, old: connecting, new: disconnected
+Activation: (wifi) Network.Connect failed: GDBus.Error:net.connman.iwd.Failed: Operation failed
+device (wlan0): state change: config -> failed (reason 'no-secrets', managed-type: 'full')
 LOG
 run_connect
-# NM said "Secrets were required". It is wrong, and saying so would send the
-# user to re-enter a password that was never even tested.
-check "does not blame the password" no "$(said 'wrong password')"
-check "reports the join as not completing" yes "$(said 'timed out waiting for association')"
+# NM said `no-secrets` about a key the access point never tested.
+check "fails" 1 "$rc"
+check "is a failed connection, not a password" no-connection "$(code)"
+check "names iwd's status for the bench" yes \
+    "$(grep -q 'connect-failed, status: 16' "$work/stderr" && echo yes || echo no)"
+teardown
+
+echo "an open network that failed"
+setup
+logged <<'LOG'
+event: connect-failed, status: 16
+LOG
+KEY='' run_connect
+check "is a failed connection" no-connection "$(code)"
 teardown
 
 echo "the key really is wrong"
 setup
-supplicant_logged <<'LOG'
-Aug 03 03:39:26 pi wpa_supplicant[1020]: wlan0: Associated with 58:11:22:34:39:1c
-Aug 03 03:39:27 pi wpa_supplicant[1020]: wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
-Aug 03 03:39:27 pi wpa_supplicant[1020]: wlan0: CTRL-EVENT-SSID-TEMP-DISABLED reason=WRONG_KEY
+logged <<'LOG'
+event: state, old: connecting, new: connected
+4-Way handshake failed for ifindex: 3, reason: 15
+event: disconnect-info, reason: 15
 LOG
 run_connect
-# The AP sent M1 and the MIC did not check out. That IS the password.
-check "blames the password" yes "$(said 'wrong password')"
-check "does not call it a timeout" no "$(said 'timed out waiting')"
+# The access point sent M1 and the MIC did not check out. That IS the key.
+check "is a wrong password" wrong-password "$(code)"
 teardown
 
-echo "no supplicant evidence at all"
+echo "a handshake failure and a later timeout"
 setup
-run_connect
-# Deliberately NOT NM's reading. On a headless appliance there is no secret
-# agent, so `no-secrets` is what EVERY activation failure decays into — it is
-# a statement about the missing agent, not about the key. Absent evidence that
-# a supplicant actually tested the key, the honest answer is that the join did
-# not finish. #459 is what the other choice costs.
-check "does not blame the password" no "$(said 'wrong password')"
-check "reports the join as not completing" yes "$(said 'timed out waiting')"
-# The app knows whether a key was typed moments ago; it can only weigh NM's
-# dead end if it is told which one this was (#829).
-check "passes on that NM wanted secrets" yes "$(said 'secrets were required')"
-teardown
-
-echo "iwd reports a real key failure"
-setup
-# The evidence grep matched only wpa_supplicant until #470 swapped the
-# supplicant out from under it — which silently reclassified every genuine
-# wrong password as a timeout. Whatever drives the radio must be readable here.
-supplicant_logged <<'LOG'
-Aug 03 05:00:00 pi iwd[452]: wlan0: 4-Way Handshake failed - pre-shared key may be incorrect
+logged <<'LOG'
+4-Way handshake failed for ifindex: 3, reason: 15
+event: connect-failed, reason: 15
 LOG
-run_connect
-check "blames the password" yes "$(said 'wrong password')"
+UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
+check "the key failure is the specific fact" wrong-password "$(code)"
 teardown
 
-echo "NetworkManager alone says no-secrets"
+echo "no evidence at all"
 setup
-supplicant_logged <<'LOG'
-Aug 03 05:00:00 pi NetworkManager[614]: <warn> device (wlan0): no secrets: No agents were available for this request.
-Aug 03 05:00:00 pi NetworkManager[614]: <warn> device (wlan0): Activation: (wifi) association took too long
-LOG
 run_connect
-check "reads the association timeout, not the agent" yes "$(said 'timed out waiting')"
-check "does not blame the password" no "$(said 'wrong password')"
+# Absent proof that the access point tested the key, the honest answer is
+# that the join did not finish. NM's `no-secrets` is not that proof.
+check "is a failed connection" no-connection "$(code)"
 teardown
 
-echo "evidence names a handshake failure AND a later timeout"
+echo "only this attempt's evidence is read"
 setup
-supplicant_logged <<'LOG'
-Aug 03 03:39:27 pi wpa_supplicant[1020]: wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
-Aug 03 03:39:47 pi wpa_supplicant[1020]: wlan0: Authentication with 58:11:22:34:39:1c timed out.
-LOG
 run_connect
-# A wrong key produces a timeout too, once the supplicant gives up retrying.
-# The key failure is the more specific fact, so it wins.
-check "prefers the specific failure" yes "$(said 'wrong password')"
+# A window of the last 90 s once let another network's handshake failure
+# (the phone hotspot's, moments earlier) name this join a wrong password.
+check "the journal is read from the attempt's start" yes \
+    "$(grep -qE -- '--since @[0-9]+ ' "$work/journalctl-args" && echo yes || echo no)"
+check "and only iwd and NetworkManager" yes \
+    "$(grep -qF -- '-t iwd -t NetworkManager' "$work/journalctl-args" && echo yes || echo no)"
+teardown
+
+echo "the join timed out"
+setup
+UP_ERROR='Error: Timeout expired (45 seconds)' run_connect
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "no address came"
+setup
+UP_ERROR='Error: Connection activation failed: IP configuration could not be reserved (no available address, timeout, etc.)' \
+    run_connect
+check "is no address" no-address "$(code)"
+teardown
+
+echo "NetworkManager could not find the network"
+setup
+UP_ERROR='Error: Connection activation failed: The Wi-Fi network could not be found' \
+    run_connect
+check "is not found" not-found "$(code)"
+teardown
+
+# --- a network that is not in range -----------------------------------------
+
+echo "a network the scan does not see"
+setup
+LIST=$'Studio\nCafe' run_connect
+check "fails" 1 "$rc"
+check "is not found" not-found "$(code)"
+check "looked again with a fresh scan" yes "$(called_with '--rescan yes')"
+# Nothing changed, so the network that was up stays up.
+check "creates no profile" no "$(called_with 'connection add')"
+check "activates nothing" no "$(called_with 'connection up')"
+teardown
+
+echo "a network the scan sees"
+setup
+LIST=$'Studio\nSomeNetwork' run_connect
+check "goes on to join it" yes "$(called_with 'connection add')"
+check "needs no fresh scan" no "$(called_with '--rescan yes')"
+teardown
+
+echo "an empty scan proves nothing"
+setup
+run_connect
+check "goes on to join" yes "$(called_with 'connection add')"
 teardown
 
 echo

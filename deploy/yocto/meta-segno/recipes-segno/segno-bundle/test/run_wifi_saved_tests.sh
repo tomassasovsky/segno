@@ -45,6 +45,9 @@ case "\$*" in
     *"connection show"*)
         for n in \${SAVED:-}; do printf '%s:802-11-wireless\n' "\$n"; done
         ;;
+    # What connect's in-range check sees: the joins below are of Cafe, which
+    # the scan listing leaves out so that scan can show it out of range.
+    *"-f SSID device wifi list"*) printf 'Studio\nCafe\n' ;;
     *"device wifi list"*) printf 'Studio:70:WPA2\n' ;;
     *"connection up"*)
         exit \${UP_RC:-0} ;;
