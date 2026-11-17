@@ -15,7 +15,7 @@
  *   1000 Input      le_fx_chan_in: stereo, left, right, mono sum (k / 3)
  *   1001 Output     le_fx_chan_out: stereo, mono (k / 1)
  *   1002 Placement  balance or pan, -1..1 as (x + 1) / 2
- *   1003 Level      0..LE_FX_LEVEL_MAX as level / LE_FX_LEVEL_MAX
+ *   1003 Output level  0..LE_FX_LEVEL_MAX as level / LE_FX_LEVEL_MAX
  *   1100 Bypass     the engine's enable bit, inverted (kIsBypass)
  *
  * The bypass runs the engine's own switch: a delay or reverb drains its

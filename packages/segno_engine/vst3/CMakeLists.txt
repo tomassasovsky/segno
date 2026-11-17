@@ -92,8 +92,26 @@ add_library(segno_vst3 MODULE
   "${SEGNO_MODULE_ENTRY}"
   factory.cpp
   processor.cpp
-  controller.cpp)
+  controller.cpp
+  value_text.cpp)
 target_link_libraries(segno_vst3 PRIVATE segno_vst3_sdk segno_fx_island)
+if(APPLE)
+  # The pedal-face editor (editor.h); elsewhere a host shows its own
+  # controls.
+  target_sources(segno_vst3 PRIVATE editor_mac.mm)
+  set_source_files_properties(editor_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  # Names the editor's Objective-C class for this build tree, so two copies
+  # of the bundle in one host process do not share it. Made once per build
+  # tree and kept, so a configure does not rebuild what did not change.
+  if(NOT DEFINED CACHE{SEGNO_VST3_BUILD_ID})
+    string(RANDOM LENGTH 12 ALPHABET "0123456789abcdef" build_id)
+    set(SEGNO_VST3_BUILD_ID "${build_id}" CACHE INTERNAL
+      "Names the editor's Objective-C class")
+  endif()
+  set_property(SOURCE editor_mac.mm APPEND PROPERTY COMPILE_DEFINITIONS
+    "SEGNO_VST3_BUILD_ID=${SEGNO_VST3_BUILD_ID}")
+  target_link_libraries(segno_vst3 PRIVATE "-framework Cocoa")
+endif()
 set_target_properties(segno_vst3 PROPERTIES
   OUTPUT_NAME Segno PREFIX "" SUFFIX ""
   C_VISIBILITY_PRESET hidden CXX_VISIBILITY_PRESET hidden)
@@ -114,6 +132,21 @@ if(APPLE)
     COMMAND codesign -f -s - "${SEGNO_BUNDLE}"
     COMMENT "Assembling Segno.vst3"
     VERBATIM)
+  # The editors' pictures and layout (editor.h), rendered by install.sh into
+  # SEGNO_VST3_FACES. Copied on every build, since the pictures change
+  # without the module relinking, and signed again after.
+  set(SEGNO_VST3_FACES "" CACHE PATH
+    "Rendered pedal faces for the editors (install.sh renders them)")
+  if(SEGNO_VST3_FACES)
+    add_custom_target(segno_vst3_faces ALL
+      COMMAND ${CMAKE_COMMAND} -E rm -rf "${SEGNO_BUNDLE}/Contents/Resources/faces"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory "${SEGNO_VST3_FACES}"
+        "${SEGNO_BUNDLE}/Contents/Resources/faces"
+      COMMAND codesign -f -s - "${SEGNO_BUNDLE}"
+      COMMENT "Bundling the pedal faces"
+      VERBATIM)
+    add_dependencies(segno_vst3_faces segno_vst3)
+  endif()
 else()
   # Segno.vst3/Contents/<machine>-linux/Segno.so, the VST3 bundle layout.
   set(SEGNO_ARCH "${CMAKE_SYSTEM_PROCESSOR}-linux")
@@ -137,9 +170,8 @@ set_source_files_properties("${ENGINE_SRC}/core/engine_fx.c"
   TARGET_DIRECTORY segno_engine
   PROPERTIES COMPILE_OPTIONS
     "-fmath-errno;-include;${ENGINE_SRC}/test/bench/fx_console_libm.h")
-add_executable(segno_vst3_null_test
-  test/null_test.cpp
-  test/capture_log.c
+# What a test needs to load the bundle as a host does.
+add_library(segno_vst3_host STATIC
   "${VST3_SDK}/public.sdk/source/vst/hosting/module.cpp"
   "${VST3_SDK}/public.sdk/source/vst/hosting/hostclasses.cpp"
   "${VST3_SDK}/public.sdk/source/vst/hosting/parameterchanges.cpp"
@@ -148,19 +180,22 @@ add_executable(segno_vst3_null_test
   "${VST3_SDK}/public.sdk/source/vst/utility/stringconvert.cpp"
   "${VST3_SDK}/public.sdk/source/common/commonstringconvert.cpp"
   "${VST3_SDK}/public.sdk/source/common/memorystream.cpp")
-target_link_libraries(segno_vst3_null_test PRIVATE segno_vst3_sdk segno_fx_island
-  segno_engine)
+target_link_libraries(segno_vst3_host PUBLIC segno_vst3_sdk)
 if(APPLE)
-  target_sources(segno_vst3_null_test PRIVATE
+  target_sources(segno_vst3_host PRIVATE
     "${VST3_SDK}/public.sdk/source/vst/hosting/module_mac.mm")
   set_source_files_properties(
     "${VST3_SDK}/public.sdk/source/vst/hosting/module_mac.mm"
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-  target_link_libraries(segno_vst3_null_test PRIVATE "-framework Foundation")
+  target_link_libraries(segno_vst3_host PUBLIC "-framework Foundation")
 else()
-  target_sources(segno_vst3_null_test PRIVATE
+  target_sources(segno_vst3_host PRIVATE
     "${VST3_SDK}/public.sdk/source/vst/hosting/module_linux.cpp")
 endif()
+
+add_executable(segno_vst3_null_test test/null_test.cpp test/capture_log.c)
+target_link_libraries(segno_vst3_null_test PRIVATE segno_vst3_host segno_fx_island
+  segno_engine)
 add_dependencies(segno_vst3_null_test segno_vst3)
 # The export's table of each plugin's parameters, which the test checks
 # every plugin against.
@@ -172,3 +207,13 @@ target_compile_definitions(segno_vst3_null_test PRIVATE
 add_executable(segno_render_capture test/render_capture.c)
 target_link_libraries(segno_render_capture PRIVATE segno_engine)
 target_include_directories(segno_render_capture PRIVATE "${ENGINE_SRC}/core")
+
+# --- the binding test (test/binding_test.cpp) ---------------------------------
+# Every control of the editors' layout (faces/faces.json) drives a parameter
+# its plugin's controller lists.
+add_executable(segno_vst3_binding_test
+  test/binding_test.cpp
+  "${ENGINE_SRC}/core/json_read.c")
+target_include_directories(segno_vst3_binding_test PRIVATE "${ENGINE_SRC}/core")
+target_link_libraries(segno_vst3_binding_test PRIVATE segno_vst3_host)
+add_dependencies(segno_vst3_binding_test segno_vst3)
