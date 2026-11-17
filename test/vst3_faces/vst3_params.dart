@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx/fx_editor_parts.dart';
+import 'package:segno_engine/segno_engine.dart' show kFxLevelMax;
 
 /// The repository root, from the test's working directory (the app's root).
 Directory get repoRoot => Directory.current;
@@ -34,8 +35,8 @@ int get kVst3LevelId => vst3FixedIds['kLevelId']!;
 /// The bypass (`kBypassId`), which the footswitch switches.
 int get kVst3BypassId => vst3FixedIds['kBypassId']!;
 
-/// The highest level (`LE_FX_LEVEL_MAX`), which a level of 1 stands for.
-const double kVst3LevelMax = 4;
+/// The highest level, which a level of 1 stands for.
+const double kVst3LevelMax = kFxLevelMax;
 
 /// The entry's channel handling at the normalized values of [values] (by
 /// parameter id), as `params.h` maps them; an id left out is the default's.

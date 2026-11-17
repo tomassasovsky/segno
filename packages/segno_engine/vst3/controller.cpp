@@ -165,7 +165,7 @@ tresult PLUGIN_API Controller::setParamNormalized(ParamID tag, ParamValue value)
 #ifdef __APPLE__
   if (onEditorThread()) {
     refreshEditors(tag);
-  } else {
+  } else if (editorCount_.load(std::memory_order_relaxed) > 0) {
     // A host that sets a value from another thread: the editors redraw on
     // their own, the controller kept alive until then.
     struct Pending {
@@ -192,10 +192,14 @@ void Controller::refreshEditors(ParamID tag) {
 #endif
 }
 
-void Controller::editorAttached(EditorView* editor) { editors_.push_back(editor); }
+void Controller::editorAttached(EditorView* editor) {
+  editors_.push_back(editor);
+  editorCount_.store((int)editors_.size(), std::memory_order_relaxed);
+}
 
 void Controller::editorRemoved(EditorView* editor) {
   editors_.erase(std::remove(editors_.begin(), editors_.end(), editor), editors_.end());
+  editorCount_.store((int)editors_.size(), std::memory_order_relaxed);
 }
 
 void Controller::editorDestroyed(EditorView* editor) { editorRemoved(editor); }

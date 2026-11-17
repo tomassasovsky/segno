@@ -461,8 +461,8 @@ class FxBlock extends StatelessWidget {
   }
 }
 
-/// The instance's input channel handling, as the pen's dropdown.
-/// Which of the input's channels an effect takes, picked from a select.
+/// Which of the input's channels an effect takes, picked from the pen's
+/// dropdown.
 class FxInputChoice extends StatelessWidget {
   /// Creates an [FxInputChoice].
   const new({required this.value, required this.onChanged, super.key});
@@ -499,7 +499,6 @@ class FxInputChoice extends StatelessWidget {
   }
 }
 
-/// The balance or pan slider, with its ends named.
 /// Whether an effect's output is stereo or mono, as two buttons.
 class FxOutputChoice extends StatelessWidget {
   /// Creates an [FxOutputChoice].
@@ -547,8 +546,9 @@ class FxOutputChoice extends StatelessWidget {
 String fxBalanceText(AppLocalizations l10n, double placement) =>
     placement == 0 ? l10n.fxCentre : placement.toStringAsFixed(2);
 
-/// Where an effect's output sits between left and right: its balance on a
-/// stereo output, its pan on a mono one ([label]).
+/// The balance or pan slider, with its ends named: where an effect's output
+/// sits between left and right, its balance on a stereo output and its pan
+/// on a mono one ([label]).
 class FxBalanceControl extends StatelessWidget {
   /// Creates an [FxBalanceControl].
   const new({

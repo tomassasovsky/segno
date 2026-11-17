@@ -318,7 +318,9 @@ long positionOf(double v, long positions) {
 
 @implementation SegnoFaceView {
   Face _face;
-  EditController* _controller; /* outlives the view: the editor holds it */
+  /* Held by the view too, which a host or an open menu may keep after the
+   * editor goes. */
+  IPtr<EditController> _controller;
   const FaceControl* _dragging;
   const FaceControl* _hovering; /* the knob under the pointer */
   double _dragStart;            /* the value the drag's travel is measured from */
@@ -511,6 +513,9 @@ long positionOf(double v, long positions) {
 }
 
 - (void)mouseDown:(NSEvent*)event {
+  // A drag whose release never came (a host took the mouse) ends here, so
+  // its gesture never stays open.
+  [self endDrag];
   const NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
   const FaceControl* c = [self controlAt:p];
   if (c == nullptr || c->display) return;
@@ -635,6 +640,9 @@ class FaceEditor : public EditorView {
     setRect(r);
   }
 
+  /* A host may release the view without removing it first. */
+  ~FaceEditor() override { detach(); }
+
   tresult PLUGIN_API isPlatformTypeSupported(FIDString type) SMTG_OVERRIDE {
     return std::string(type) == kPlatformTypeNSView ? kResultTrue : kResultFalse;
   }
@@ -646,9 +654,7 @@ class FaceEditor : public EditorView {
   }
 
   void removedFromParent() SMTG_OVERRIDE {
-    [view_ endDrag];
-    [view_ removeFromSuperview];
-    view_ = nil;
+    detach();
     EditorView::removedFromParent();
   }
 
@@ -656,6 +662,13 @@ class FaceEditor : public EditorView {
   void refresh(ParamID param) { [view_ redraw:param]; }
 
  private:
+  /* Ends a drag in the view and takes it out of the host's window. */
+  void detach() {
+    [view_ endDrag];
+    [view_ removeFromSuperview];
+    view_ = nil;
+  }
+
   Face face_;
   SegnoFaceView* view_ = nil;
 };

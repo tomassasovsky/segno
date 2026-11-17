@@ -6,6 +6,7 @@
  */
 #pragma once
 
+#include <atomic>
 #include <vector>
 
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -36,8 +37,10 @@ class Controller : public Steinberg::Vst::EditController {
   void refreshEditors(Steinberg::Vst::ParamID tag);
 
   const FxKind* kind_;
-  /* The open editors, touched only on the editor thread (editor.h). */
+  /* The open editors, touched only on the editor thread (editor.h), and
+   * how many there are, which any thread reads. */
   std::vector<Steinberg::Vst::EditorView*> editors_;
+  std::atomic<int> editorCount_{0};
 };
 
 }  // namespace segno_vst3

@@ -37,6 +37,28 @@ std::string fixed(double x, int digits) {
   return (std::signbit(x) ? "-" : "") + integer + "." + fractionText;
 }
 
+/* [x] to [digits] decimals as Dart's toStringAsFixed prints it: from the
+ * exact decimal expansion of the double, a tie rounded away from zero (the
+ * larger magnitude), whatever the C locale. */
+std::string toFixed(double x, int digits) {
+  char exact[400];
+  std::snprintf(exact, sizeof(exact), "%.300f", std::fabs(x));
+  std::string number(exact);
+  const size_t point = number.find_first_of(".,");
+  std::string kept = number.substr(0, point) + number.substr(point + 1, (size_t)digits);
+  if (number[point + 1 + (size_t)digits] >= '5') {
+    int i = (int)kept.size() - 1;
+    for (; i >= 0 && kept[(size_t)i] == '9'; --i) kept[(size_t)i] = '0';
+    if (i < 0) {
+      kept.insert(0, "1");
+    } else {
+      ++kept[(size_t)i];
+    }
+  }
+  const size_t integerDigits = kept.size() - (size_t)digits;
+  return (x < 0 ? "-" : "") + kept.substr(0, integerDigits) + "." + kept.substr(integerDigits);
+}
+
 /* The shortest decimal that is [f] as a float, as a double: the number
  * the descriptor was written as (0.45 rather than 0.449999988), which is
  * what the console's own table of the descriptors holds. */
@@ -211,9 +233,7 @@ std::string valueText(int32_t type, uint32_t id, double v) {
       // In double, as the console computes it.
       const double placement = v * 2.0 - 1.0;
       if (placement == 0.0) return "Centre";
-      char text[32];
-      std::snprintf(text, sizeof(text), "%.2f", placement);
-      return text;
+      return toFixed(placement, 2);
     }
     case kLevelId: {
       const double level = v * (double)kLevelMax;
