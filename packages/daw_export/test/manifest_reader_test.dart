@@ -780,6 +780,7 @@ void main() {
         Directory('${dir.path}/loops').createSync();
         File('${dir.path}/loops/clean.wav').writeAsBytesSync(_wav(4800));
         File('${dir.path}/loops/heard.wav').writeAsBytesSync(_wav(4800));
+        File('${dir.path}/loops/clean1.wav').writeAsBytesSync(_wav(4800));
         File('${dir.path}/performance.json').writeAsStringSync(
           jsonEncode({
             'sample_rate': 48000,
@@ -790,6 +791,11 @@ void main() {
                   'channel': 1,
                   'name': 'Bass',
                   'lanes': [
+                    {
+                      'lane': 1,
+                      'deferred': false,
+                      'pcmRef': 'loops/clean1.wav',
+                    },
                     {
                       'lane': 0,
                       'deferred': false,
@@ -883,8 +889,13 @@ void main() {
         expect(heard.devices, isEmpty);
         // The plugins process the clean loops; the heard ones stay on the
         // reference.
+        // Lane 1 ran its own chain, which the track's plugins (lane 0's)
+        // are not, so its loop stays on the reference only.
         expect(played.sessionClips.single.audio.fileRef, 'loops/clean.wav');
-        expect(heard.sessionClips.single.audio.fileRef, 'loops/heard.wav');
+        expect(heard.sessionClips.map((c) => c.audio.fileRef), [
+          'loops/heard.wav',
+          'loops/clean1.wav',
+        ]);
         expect(
           heard.info,
           'Effects when the take started:\nTrack: Reverb\nLane 1: Delay',
@@ -1262,6 +1273,13 @@ void _layoutTests() {
       expect(tracks[2].devices, isEmpty);
       expect(tracks[3].devices, isEmpty);
       expect(
+        tracks[1].info,
+        startsWith(
+          'The input as played: before its effects, volume and pan. Its '
+          'effects play here as Segno plugins.',
+        ),
+      );
+      expect(
         tracks[2].arrangementClips.single.audio.fileRef,
         'input-0-001.wav',
       );
@@ -1276,7 +1294,8 @@ void _layoutTests() {
       expect(
         tracks[1].info,
         [
-          'The input as played: before its effects, volume and pan.',
+          'The input as played: before its effects, volume and pan. Its '
+              'effects play here as Segno plugins.',
           'Effects when the take started:',
           'Chorus',
         ].join('\n'),

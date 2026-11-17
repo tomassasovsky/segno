@@ -212,15 +212,20 @@ abstract final class DawManifestReader {
         // The dry stem through the plugins is the track: it plays, under
         // the track's name, and can be edited in Live. The wet stem stays
         // as the reference it is checked against, off.
-        // Its Session clips are the clean loops, which the plugins process
-        // as they process the stem; the heard ones stay on the reference.
+        // Its Session clip is lane 0's clean loop, which its plugins (lane
+        // 0's chain) process as they process the stem; the other lanes ran
+        // other chains, so their loops, and the heard ones, stay on the
+        // reference.
         tracks.add(
           DawTrack(
             name: name,
             // The looper track itself when no wet stem stands for it.
             kind: wet == null ? DawTrackKind.loop : DawTrackKind.dry,
             arrangementClips: [?dry],
-            sessionClips: loops(cleanRefsByChannel[channel]),
+            sessionClips: [
+              for (final clip in loops(cleanRefsByChannel[channel]))
+                if (clip.laneIndex == 0) clip,
+            ],
             volume: volume,
             devices: devices,
             info: info,
@@ -294,14 +299,17 @@ abstract final class DawManifestReader {
         // The raw recording plays through the monitor chain the take
         // started with, as Segno's plugins (#1804); its volume, pan and
         // switching are not replayed yet.
+        final devices = _inputDevices(manifest, input, armTime);
         tracks.add(
           DawTrack(
             name: '$name raw',
             kind: DawTrackKind.input,
             arrangementClips: raw,
-            devices: _inputDevices(manifest, input, armTime),
+            devices: devices,
             info:
-                'The input as played: before its effects, volume and pan.\n'
+                'The input as played: before its effects, volume and pan.'
+                '${devices.isEmpty ? '' : ' Its effects play here as Segno '
+                          'plugins.'}\n'
                 '$effects',
           ),
         );
