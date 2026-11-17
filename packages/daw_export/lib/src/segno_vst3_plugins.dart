@@ -51,7 +51,7 @@ const Map<int, SegnoParameter> segnoChannelParameters = {
   1000: SegnoParameter('Input', steps: 3),
   1001: SegnoParameter('Output', steps: 1),
   1002: SegnoParameter('Balance / Pan', defaultValue: 0.5),
-  1003: SegnoParameter('Level', defaultValue: 0.25),
+  1003: SegnoParameter('Output level', defaultValue: 0.25),
 };
 
 /// Segno's plugins by `le_fx_type` code: every built-in kind but none and a

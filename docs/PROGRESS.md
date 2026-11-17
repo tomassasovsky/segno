@@ -93,6 +93,60 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
+## November 2026 Each Segno plugin draws its pedal (#1815)
+
+- Each plugin's editor is the console's single-effect page in a plugin
+  window: the pedal the Effects page draws for its kind, and beside it the
+  settings the face has no knob for and every choice, drawn as the effect
+  page draws them (sliders, a row of buttons, or a select), then the
+  entry's input, output and balance or pan as the effect page's footer
+  draws them, and its level as an effect page slider (the console shows a
+  single effect's level nowhere). The panel takes a second column past
+  seven controls. Every parameter but the bypass has exactly one control:
+  a choice the face has a knob for is set by its selector, the knob only
+  shows it. The kinds the
+  console runs only in racks wear the look of the first catalogue module
+  that runs on them; Distortion, which no factory rack builds, has no face
+  and keeps the host's own controls.
+- The art cannot drift from the console's: `test/vst3_faces` lays out and
+  renders the faces with the console's own widgets
+  (`lib/looper/view/fx/stomp`, `FxBuiltInParamControl`). The committed
+  layout, `packages/segno_engine/vst3/faces/faces.json`, says where each
+  control is, how it works and which parameter it drives;
+  `vst3_faces_test.dart` fails when it no longer matches the drawing code
+  (`--update-goldens` rewrites it). `install.sh` renders the pictures (a
+  background, the LED lit, and each control at each of its settings, at 1x
+  and 2x) with `vst3_faces_render_test.dart` and the build bundles them in
+  `Contents/Resources/faces`; the pictures are build output, not tracked.
+- The editor (`editor_mac.mm`) is an IPlugView holding an NSView, macOS
+  only: it draws the pictures at the parameters' values, edits through the
+  controller (beginEdit, performEdit, endEdit) so a host records
+  automation, and redraws when the host changes a value. Knobs drag up and
+  down (Shift for finer), sliders follow the pointer, a select opens a menu
+  of the console's position names, the footswitch is the bypass and the LED
+  shows it. Every value is printed all the time, in the effect page's mono
+  face and colours (the manifest's theme, the font bundled with the
+  pictures): a slider's at its readout, at the exact value; a knob's in a
+  chip under its label (nudged, or beside the label, where under it does
+  not fit) where every knob of the face has room clear of the knobs,
+  labels, title, LED and footswitch (the chip may cover the face's
+  painting, the owner's call), and otherwise as read-only rows at the top
+  of the panel. The entry's level is "Output level" in the editor and the
+  host: the console's name for it, Level, is also many effects' own
+  setting. Selects and button
+  rows show their position, the LED the bypass. Linux, and a bundle built
+  without the pictures, open no editor.
+- Every plugin's parameter text is the console's (`value_text.cpp`, a
+  port of `fxParamValueText` and the footer's readouts), so a host's own
+  parameter list reads "348 ms" and "1/8D". `vst3/test/value_texts.json`,
+  which `vst3_faces_test.dart` writes from the Dart, holds the console's
+  text for every parameter of every kind at 41 settings and each position.
+- `test/binding_test.cpp` loads the bundle and checks every control of the
+  layout against its plugin's parameters, that every parameter but the
+  bypass has exactly one control, and every value text against
+  `value_texts.json` (CI, in `run_null_test.sh`); after an install, also
+  that every plugin with a face opens an editor of the layout's size.
+
 ## November 2026 Every lane of a track has its own stems (#1824)
 
 - The performance render rendered lane 0 of each looper track only: what
@@ -2667,10 +2721,15 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
     loader's path, so `segno-kiosk-launch` puts `/opt/segno/lib` on
     `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
 - **Segno.vst3** (#1804), the effects as VST3 plugins for a DAW on the dev
-  Mac: `bash packages/segno_engine/vst3/install.sh` builds it (Release, into
+  Mac: `FLUTTER=/Users/Tomas/development/flutter-3.50/bin/flutter bash
+  packages/segno_engine/vst3/install.sh` renders the editors' pedal faces
+  (#1815, about a minute), builds it (Release, into
   `packages/segno_engine/build/vst3`) and installs it in
-  `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test against
-  the installed bundle. Live finds it on its next plugin scan (start, or
+  `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
+  binding test against the installed bundle. After a change to the pedal
+  faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
+  --update-goldens test/vst3_faces/vst3_faces_test.dart` rewrites the layout
+  the editors read. Live finds it on its next plugin scan (start, or
   Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Not signed, not
   shipped. `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a
   separate tree and runs the null test, as CI does on Linux (clang, CMake,

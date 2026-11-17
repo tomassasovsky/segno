@@ -778,10 +778,11 @@ class _Enclosure {
       );
   }
 
-  void _led(Offset at) {
+  void _led() {
+    final at = fxStompLedCentre(spec.face);
     final colour = spec.led;
     if (led == FxStompLed.on) {
-      canvas.drawCircle(at, 15, _blur(colour, .55, 5));
+      canvas.drawCircle(at, _kLedGlow, _blur(colour, .55, _kLedBlur));
     }
     final lens = switch (led) {
       FxStompLed.on =>
@@ -832,11 +833,11 @@ class _Enclosure {
       ..restore();
   }
 
-  void _stompSwitch(Offset c, [double r = 34]) {
+  void _stompSwitch(Offset c, [double r = _kStompSwitch]) {
     final hex = Path();
     for (var i = 0; i < 6; i++) {
       final a = (30 + 60 * i) * math.pi / 180;
-      final p = c + Offset(math.cos(a), math.sin(a)) * (r + 14);
+      final p = c + Offset(math.cos(a), math.sin(a)) * (r + _kStompNut);
       if (i == 0) {
         hex.moveTo(p.dx, p.dy);
       } else {
@@ -849,7 +850,9 @@ class _Enclosure {
       ..drawPath(
         hex,
         Paint()
-          ..shader = fxStompMetal(Rect.fromCircle(center: c, radius: r + 14)),
+          ..shader = fxStompMetal(
+            Rect.fromCircle(center: c, radius: r + _kStompNut),
+          ),
       )
       ..drawPath(hex, fxStompStroke(Colors.black, 1, .35))
       ..drawCircle(
@@ -878,18 +881,10 @@ class _Enclosure {
       );
   }
 
-  /// The design's `title()`: the name centred on [x], its baseline on [y],
-  /// turned by [tilt] degrees (the spec's own when not given).
-  void _title(double x, double y, {double? tilt}) {
-    final turn = tilt ?? spec.tilt;
-    // The width the name has on its face: across the treadle, box, panel or
-    // module, or along the rocker's side band.
-    final room = switch (spec.face) {
-      FxStompFaceKind.treadle => kFxStompTreadleTitleRoom,
-      FxStompFaceKind.box || FxStompFaceKind.window => 350.0,
-      FxStompFaceKind.module => 330.0,
-      FxStompFaceKind.rocker => 560.0,
-    };
+  /// The design's `title()`: the name on its face's spot
+  /// ([fxStompTitleSpot]), shrunk to the room it has.
+  void _title() {
+    final (:baseline, :room, :tilt) = fxStompTitleSpot(spec, knobs);
     final style = TextStyle(
       fontFamily: spec.font,
       fontSize: spec.size,
@@ -897,9 +892,9 @@ class _Enclosure {
     );
     canvas
       ..save()
-      ..translate(x, y)
-      ..rotate(turn * math.pi / 180)
-      ..translate(-x, -y);
+      ..translate(baseline.dx, baseline.dy)
+      ..rotate(tilt * math.pi / 180)
+      ..translate(-baseline.dx, -baseline.dy);
     final printShadow = Shadow(
       offset: const Offset(0, 1.5),
       // Sigma 0.6, the design's stdDeviation.
@@ -911,7 +906,7 @@ class _Enclosure {
       fxStompPaintText(
         canvas,
         name,
-        Offset(x, y),
+        baseline,
         maxWidth: room,
         style.copyWith(
           foreground: Paint()
@@ -927,7 +922,7 @@ class _Enclosure {
     fxStompPaintText(
       canvas,
       name,
-      Offset(x, y),
+      baseline,
       maxWidth: room,
       style.copyWith(color: ink, shadows: [printShadow]),
     );
@@ -938,7 +933,7 @@ class _Enclosure {
       RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(r));
 
   void _treadle() {
-    const tread = Rect.fromLTWH(32, 298, 386, 334);
+    const tread = _kTread;
     final treadShape = RRect.fromRectAndRadius(
       tread,
       const Radius.circular(22),
@@ -952,14 +947,10 @@ class _Enclosure {
         Paint()..shader = _metalV(jack),
       );
     }
-    _body(
-      const Rect.fromLTWH(24, 14, 402, 626),
-      30,
-      art: const Rect.fromLTWH(24, 14, 402, 284),
-    );
+    _body(const Rect.fromLTWH(24, 14, 402, 626), 30, art: _kTreadleArt);
     _screw(const Offset(52, 44));
     _screw(const Offset(398, 44));
-    _led(const Offset(225, 52));
+    _led();
     canvas
       ..drawRRect(_rounded(30, 292, 390, 8, 4), fxStompFill(Colors.black, .45))
       ..drawRRect(
@@ -977,13 +968,7 @@ class _Enclosure {
       canvas
         ..save()
         ..clipRRect(treadShape);
-      paintFxStompGraphic(
-        canvas,
-        spec.graphic,
-        const Rect.fromLTWH(32, 298, 386, 130),
-        spec,
-        name,
-      );
+      paintFxStompGraphic(canvas, spec.graphic, _kTreadleGraphic, spec, name);
       canvas.restore();
     }
     canvas
@@ -992,7 +977,7 @@ class _Enclosure {
         _rounded(33, 299, 384, 332, 21),
         fxStompStroke(Colors.white, 2, .22),
       );
-    _title(225, spec.titleY ?? kFxStompTreadleTitleY);
+    _title();
     const pad = Rect.fromLTWH(62, 432, 326, 178);
     canvas
       ..drawRRect(
@@ -1030,16 +1015,15 @@ class _Enclosure {
   }
 
   void _box() {
-    const body = Rect.fromLTWH(30, 14, 390, 626);
-    _body(body, 46, art: body);
+    _body(_kBoxBody, 46, art: _kBoxBody);
     _logo(const Offset(225, 58), .7, ink, .9);
-    _led(const Offset(345, 58));
-    _title(225, spec.titleY ?? (knobs > 3 ? 420 : 395));
-    _stompSwitch(const Offset(225, 548));
+    _led();
+    _title();
+    _stompSwitch(_kBoxSwitch);
   }
 
   void _window() {
-    const panel = Rect.fromLTWH(66, 50, 318, 300);
+    const panel = _kWindowPanel;
     final panelShape = RRect.fromRectAndRadius(
       panel,
       const Radius.circular(44),
@@ -1070,9 +1054,9 @@ class _Enclosure {
       )
       ..drawRRect(panelShape, Paint()..shader = _sheen(panel, .7));
     _logo(const Offset(225, 80), .55, spec.panelInk, .7);
-    _title(225, spec.titleY ?? 470);
-    _led(const Offset(225, 525));
-    _stompSwitch(const Offset(225, 632));
+    _title();
+    _led();
+    _stompSwitch(_kWindowSwitch);
   }
 
   void _module() {
@@ -1083,7 +1067,7 @@ class _Enclosure {
       Offset(72, 952),
       Offset(378, 952),
     ].forEach(_screw);
-    _title(225, 122, tilt: 0);
+    _title();
     paintFxStompScreen(
       canvas,
       const Rect.fromLTWH(80, 160, 290, 150),
@@ -1102,17 +1086,13 @@ class _Enclosure {
         );
       }
     }
-    _led(const Offset(225, 860));
-    _domeSwitch(const Offset(225, 912), 24, 19, 2);
+    _led();
+    _domeSwitch(_kModuleSwitch, _kModuleSwitchWell, 19, 2);
     _logo(const Offset(345, 905), .55, ink, .6);
   }
 
   void _rocker() {
-    _body(
-      const Rect.fromLTWH(30, 14, 390, 744),
-      26,
-      art: const Rect.fromLTWH(322, 14, 98, 744),
-    );
+    _body(const Rect.fromLTWH(30, 14, 390, 744), 26, art: _kRockerArt);
     const rubber = Rect.fromLTWH(60, 38, 254, 552);
     canvas
       ..drawRRect(_rounded(58, 40, 262, 560, 20), _blur(Colors.black, .55, 4))
@@ -1141,10 +1121,10 @@ class _Enclosure {
         Paint()..shader = _metalV(bar),
       )
       ..restore();
-    _title(392, 330, tilt: -90);
+    _title();
     _logo(const Offset(372, 640), .9, ink, .85);
-    _led(const Offset(372, 700));
-    _domeSwitch(const Offset(188, 686), 34, 29, 2);
+    _led();
+    _domeSwitch(_kRockerSwitch, _kRockerSwitchWell, 29, 2);
   }
 }
 
@@ -1306,3 +1286,116 @@ List<Rect> fxStompKnobBounds(FxStompFaceKind kind, int count) => [
   for (final spot in _KnobSpot.layout(kind, count))
     Rect.fromCircle(center: spot.centre, radius: spot.radius),
 ];
+
+/// The treadle face's tread, which carries the name and is its footswitch.
+const Rect _kTread = Rect.fromLTWH(32, 298, 386, 334);
+
+/// The stomp switches' centres: a box's and a window's hex-nut switch, a
+/// module's and a rocker's dome.
+const Offset _kBoxSwitch = Offset(225, 548);
+const Offset _kWindowSwitch = Offset(225, 632);
+const Offset _kModuleSwitch = Offset(225, 912);
+const Offset _kRockerSwitch = Offset(188, 686);
+
+/// A hex-nut switch's dome radius, and how far its nut reaches past it.
+const double _kStompSwitch = 34;
+const double _kStompNut = 14;
+
+/// The dark wells the module's and the rocker's domes sit in.
+const double _kModuleSwitchWell = 24;
+const double _kRockerSwitchWell = 34;
+
+/// A lit LED's glow: its radius and its blur.
+const double _kLedGlow = 15;
+const double _kLedBlur = 5;
+
+/// Where a [kind] face's LED sits.
+Offset fxStompLedCentre(FxStompFaceKind kind) => switch (kind) {
+  FxStompFaceKind.treadle => const Offset(225, 52),
+  FxStompFaceKind.box => const Offset(345, 58),
+  FxStompFaceKind.window => const Offset(225, 525),
+  FxStompFaceKind.module => const Offset(225, 860),
+  FxStompFaceKind.rocker => const Offset(372, 700),
+};
+
+/// Everything a [kind] face's LED changes when it lights: its lens and the
+/// glow around it, which fades out within four blurs of its edge.
+Rect fxStompLedBounds(FxStompFaceKind kind) => Rect.fromCircle(
+  center: fxStompLedCentre(kind),
+  radius: _kLedGlow + 4 * _kLedBlur,
+);
+
+/// The part of a [kind] face a foot presses to switch the pedal: a
+/// treadle's tread, a box's or a window's stomp switch with its nut, a
+/// module's or a rocker's dome in its well.
+Rect fxStompSwitchBounds(FxStompFaceKind kind) => switch (kind) {
+  FxStompFaceKind.treadle => _kTread,
+  FxStompFaceKind.box => Rect.fromCircle(
+    center: _kBoxSwitch,
+    radius: _kStompSwitch + _kStompNut,
+  ),
+  FxStompFaceKind.window => Rect.fromCircle(
+    center: _kWindowSwitch,
+    radius: _kStompSwitch + _kStompNut,
+  ),
+  FxStompFaceKind.module => Rect.fromCircle(
+    center: _kModuleSwitch,
+    radius: _kModuleSwitchWell,
+  ),
+  FxStompFaceKind.rocker => Rect.fromCircle(
+    center: _kRockerSwitch,
+    radius: _kRockerSwitchWell,
+  ),
+};
+
+/// Everything a turning knob of a [kind] face holding [count] changes: its
+/// pointer, or a chicken head, whose tip reaches 1.05 times the knob's
+/// radius, with room for the line around it.
+List<Rect> fxStompKnobTurnBounds(FxStompFaceKind kind, int count) => [
+  for (final spot in _KnobSpot.layout(kind, count))
+    Rect.fromCircle(center: spot.centre, radius: spot.radius * 1.05 + 2),
+];
+
+/// Where a face of [spec] holding [knobs] prints its name: the centre of
+/// the name's baseline, the width it may take (a longer name shrinks to
+/// it), and how far it is turned, in degrees. Across the treadle, box,
+/// panel or module, or along the rocker's side band.
+({Offset baseline, double room, double tilt}) fxStompTitleSpot(
+  FxStompSpec spec,
+  int knobs,
+) => switch (spec.face) {
+  FxStompFaceKind.treadle => (
+    baseline: Offset(225, spec.titleY ?? kFxStompTreadleTitleY),
+    room: kFxStompTreadleTitleRoom,
+    tilt: spec.tilt,
+  ),
+  FxStompFaceKind.box => (
+    baseline: Offset(225, spec.titleY ?? (knobs > 3 ? 420 : 395)),
+    room: 350,
+    tilt: spec.tilt,
+  ),
+  FxStompFaceKind.window => (
+    baseline: Offset(225, spec.titleY ?? 470),
+    room: 350,
+    tilt: spec.tilt,
+  ),
+  FxStompFaceKind.module => (
+    baseline: const Offset(225, 122),
+    room: 330,
+    tilt: 0,
+  ),
+  FxStompFaceKind.rocker => (
+    baseline: const Offset(392, 330),
+    room: 560,
+    tilt: -90,
+  ),
+};
+
+/// Where each face paints its picture ([FxStompSpec.graphic]): a treadle's
+/// upper body, or its tread for the pictures that sit on it; a box's whole
+/// body; a window's panel; a rocker's side band.
+const Rect _kTreadleArt = Rect.fromLTWH(24, 14, 402, 284);
+const Rect _kTreadleGraphic = Rect.fromLTWH(32, 298, 386, 130);
+const Rect _kBoxBody = Rect.fromLTWH(30, 14, 390, 626);
+const Rect _kWindowPanel = Rect.fromLTWH(66, 50, 318, 300);
+const Rect _kRockerArt = Rect.fromLTWH(322, 14, 98, 744);
