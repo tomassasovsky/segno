@@ -17,8 +17,8 @@
  * times finer with Shift); a knob of a choice only shows it, as the panel's
  * selector sets it. A slider follows the pointer along its track, a button
  * row picks the button pressed, a select opens a menu of its positions'
- * names, and the footswitch switches the bypass. A double click on a knob or
- * a slider sets its default. A stepped parameter moves only to its
+ * names, and the footswitch switches the effect (Enabled). A double click
+ * on a knob or a slider sets its default. A stepped parameter moves only to its
  * positions.
  *
  * Every value is printed, always, as the console prints it (the
@@ -378,9 +378,9 @@ long positionOf(double v, long positions) {
 }
 
 /* Redraws what shows [param]: its controls, their values, and the ones it
- * picks the pictures of; the LED for the bypass. */
+ * picks the pictures of; the LED for the switch. */
 - (void)redraw:(ParamID)param {
-  if (param == segno_vst3::kBypassId) [self setNeedsDisplayInRect:_face.led];
+  if (param == segno_vst3::kEnabledId) [self setNeedsDisplayInRect:_face.led];
   for (const FaceControl& c : _face.controls) {
     if (c.param == param || c.by == (int32)param) {
       // The footswitch draws nothing of its own: the LED shows it.
@@ -415,7 +415,7 @@ long positionOf(double v, long positions) {
                 hints:nil];
   };
   draw(_face.background, self.bounds);
-  if ([self valueOf:segno_vst3::kBypassId] < 0.5) draw(_face.ledImage, _face.led);
+  if ([self valueOf:segno_vst3::kEnabledId] >= 0.5) draw(_face.ledImage, _face.led);
   NSDictionary* readout = @{NSFontAttributeName : _face.theme.font,
                             NSForegroundColorAttributeName : _face.theme.readout};
   NSDictionary* chipText = @{NSFontAttributeName : _face.theme.faceFont,

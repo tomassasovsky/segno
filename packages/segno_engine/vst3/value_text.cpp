@@ -229,6 +229,8 @@ std::string valueText(int32_t type, uint32_t id, double v) {
     }
     case kOutputId:
       return outputFromNormalized(v) != 0 ? "Mono" : "Stereo";
+    case kEnabledId:
+      return enabledFromNormalized(v) != 0 ? "On" : "Off";
     case kPlacementId: {
       // In double, as the console computes it.
       const double placement = v * 2.0 - 1.0;

@@ -72,7 +72,7 @@ int32_t segno_fx_slot_latency(const segno_fx_slot* s);
 
 /* The kind's facts, any thread: how many settings it reads (0 for an
  * unknown kind), their defaults (LE_FX_PARAMS floats), whether its tail
- * drains after a bypass (a delay or a reverb), and an engine lane's hop
+ * drains after a switch-off (a delay or a reverb), and an engine lane's hop
  * seed. */
 int32_t segno_fx_width(int32_t type);
 void segno_fx_defaults(int32_t type, float* out);

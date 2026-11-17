@@ -183,7 +183,7 @@ class Vst3Face {
     kVst3OutputId: 0,
     kVst3PlacementId: .5,
     kVst3LevelId: 1 / kVst3LevelMax,
-    kVst3BypassId: 0,
+    kVst3EnabledId: 1,
   };
 
   /// The entry at [values] (by parameter id; the defaults where left out).
@@ -192,7 +192,10 @@ class Vst3Face {
     return vst3FaceEffect(
       type,
       params: [for (var p = 0; p < type.params.length; p++) all[p]!],
-    )!.copyWith(enabled: all[kVst3BypassId]! < .5, channels: vst3Channels(all));
+    )!.copyWith(
+      enabled: all[kVst3EnabledId]! >= .5,
+      channels: vst3Channels(all),
+    );
   }
 
   /// How many pictures parameter [id]'s controls have: one per position of
@@ -568,7 +571,7 @@ enum Vst3ControlKind {
   /// A select: opens a menu of [Vst3Control.names].
   select,
 
-  /// The footswitch: switches the bypass. It has no pictures; the LED shows
+  /// The footswitch: switches the effect. It has no pictures; the LED shows
   /// what it did.
   footswitch,
 
@@ -805,7 +808,7 @@ Future<Vst3Layout> layOutVst3Face(WidgetTester tester, Vst3Face face) async {
       ),
     Vst3Control(
       kind: Vst3ControlKind.footswitch,
-      param: kVst3BypassId,
+      param: kVst3EnabledId,
       rect: fxStompSwitchBounds(kind).shift(pedal),
     ),
     for (final (:id, :row) in face.panel)
@@ -947,7 +950,7 @@ Future<void> renderVst3Face(
     final ratio = kVst3Scale * scale;
     final full = Offset.zero & layout.size;
     await tester.runAsync(() async {
-      await pump({kVst3BypassId: 1});
+      await pump({kVst3EnabledId: 0});
       await write(
         '$type$suffix',
         await layer().toImage(full, pixelRatio: ratio),
@@ -974,7 +977,7 @@ Future<void> renderVst3Face(
         final frames = drawn.map((s) => s.$2.frames).fold(0, math.max);
         for (var f = 0; f < frames; f++) {
           final values = <int, double>{
-            kVst3BypassId: 1,
+            kVst3EnabledId: 0,
             for (final (_, c) in drawn)
               if (f < c.frames) c.param: f / (c.frames - 1),
           };

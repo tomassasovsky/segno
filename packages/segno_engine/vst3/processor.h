@@ -89,12 +89,6 @@ class Processor : public Steinberg::Vst::AudioEffect {
   int32_t reported_ = 0;
   std::vector<float> padLine_[2];
   int32_t padPos_ = 0;
-  /* For such a kind, the plugin's own bypass: how far it has crossfaded
-   * to the delayed input (1 bypassed), and the input delayed by
-   * latency_. */
-  float bypassMix_ = 0.0f;
-  std::vector<float> dryLine_[2];
-  int32_t dryPos_ = 0;
   /* The slot's tempo: quarter notes a frame and the time signature. */
   float qpf_ = 0.0f;
   int32_t num_ = 4;
