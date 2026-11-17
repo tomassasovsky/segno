@@ -18,7 +18,17 @@ import 'package:daw_export/daw_export.dart';
 ///
 /// The tempo comes from the manifest (#281): the capture's own disarm-time
 /// tempo (arm-time for a crash salvage), or 120 BPM for a bundle with none.
+///
+/// The set reads the take's stems through their index (#1824). A take with
+/// no index (its render failed, or it was rendered before the lanes had
+/// stems of their own) would get a set with no stems, so when the bundle
+/// already holds a project this throws [StemsNotRendered] and leaves that
+/// project as it is: the caller renders the stems first.
 Future<List<DawTrack>> writeDawProject(String dir) async {
+  if (!File('$dir/stems/stems.json').existsSync() &&
+      File('$dir/project.als').existsSync()) {
+    throw StemsNotRendered(dir);
+  }
   final project = DawManifestReader.read(dir);
   // Live cannot open a set with no tracks, so a take with nothing recorded
   // gets no project, and one an earlier version wrote for it is removed.
@@ -47,4 +57,17 @@ Future<void> _replace(String path, List<int> bytes) async {
     if (temp.existsSync()) temp.deleteSync();
     rethrow;
   }
+}
+
+/// The take in [dir] has no rendered stems, so [writeDawProject] did not
+/// replace its project with one that has none.
+class StemsNotRendered implements Exception {
+  /// Creates a [StemsNotRendered] for the take in [dir].
+  const new(this.dir);
+
+  /// The take's directory.
+  final String dir;
+
+  @override
+  String toString() => 'StemsNotRendered: $dir has no stems/stems.json';
 }

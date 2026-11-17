@@ -240,7 +240,11 @@ float WAV the length of the take:
 ```
 
 Each entry names a lane and the stems of it that rendered; a stem that
-failed is left out, and so is a lane with neither. A reader lists the lane
+failed is left out, and so is a lane with neither. A take with no looper
+track gets an index with no lanes, so a take with no index at all is one
+that was never rendered this way (it failed, or predates #1824): the DAW
+project and the DAW package render its stems before they write its set, and
+never replace its `project.als` with one that has no stems. A reader lists the lane
 stems from the index and never from the file names. A render writes the
 index once it has sealed its stems, under `stems/stems.json.part` and
 renamed into place, so an index on disk always describes one whole render.

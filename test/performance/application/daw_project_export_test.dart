@@ -42,18 +42,18 @@ void main() {
     );
   }
 
+  /// The render's stem index, listing [lanes] (#1824).
+  void writeIndex(List<Map<String, Object>> lanes) =>
+      File('${dir.path}/stems/stems.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode({'lanes': lanes}));
+
   /// A rendered lane stem holding [bytes], and the index that lists it
   /// (#1824).
   File writeStem(List<int> bytes) {
-    File('${dir.path}/stems/stems.json')
-      ..createSync(recursive: true)
-      ..writeAsStringSync(
-        jsonEncode({
-          'lanes': [
-            {'channel': 0, 'lane': 0, 'dry': 'stems/dry/track0-lane0.wav'},
-          ],
-        }),
-      );
+    writeIndex(const [
+      {'channel': 0, 'lane': 0, 'dry': 'stems/dry/track0-lane0.wav'},
+    ]);
     return File('${dir.path}/stems/dry/track0-lane0.wav')
       ..createSync(recursive: true)
       ..writeAsBytesSync(bytes);
@@ -86,10 +86,27 @@ void main() {
   test('removes a project.als an earlier version wrote for a take with no '
       'tracks, which Live refuses', () async {
     writeManifest();
+    writeIndex(const []);
     File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
 
     expect(await writeDawProject(dir.path), isEmpty);
     expect(File('${dir.path}/project.als').existsSync(), isFalse);
+  });
+
+  test('never replaces a project with one that has no stems: a take with '
+      'no stem index leaves its project as it was (#1824)', () async {
+    writeManifest(withTrack: true);
+    File('${dir.path}/project.als').writeAsBytesSync([1, 2, 3]);
+
+    await expectLater(
+      writeDawProject(dir.path),
+      throwsA(isA<StemsNotRendered>()),
+    );
+    expect(File('${dir.path}/project.als').readAsBytesSync(), [1, 2, 3]);
+    expect(
+      const StemsNotRendered('/take').toString(),
+      'StemsNotRendered: /take has no stems/stems.json',
+    );
   });
 
   test('reads the manifest afresh on every call', () async {

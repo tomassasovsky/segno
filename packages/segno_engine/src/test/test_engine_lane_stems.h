@@ -466,7 +466,37 @@ static void test_lane_count_is_logged(void) {
   le_engine_destroy(e);
 }
 
+/* A take with no looper track renders no stems, and its index says so, so
+ * a reader tells it from a take never rendered. */
+static void test_lane_stems_index_without_tracks(void) {
+  printf("test_lane_stems_index_without_tracks\n");
+  const char* dir = render_test_dir("lst-trackless");
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", dir);
+  FILE* f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    fprintf(f, "{\"sample_rate\":48000,\"capture_frames\":480,"
+               "\"armSnapshot\":{\"followOutput\":false,\"captureMask\":1,"
+               "\"tracks\":[]}}");
+    CHECK(fclose(f) == 0);
+  }
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  int32_t done = 0, count = -1;
+  CHECK(le_perf_render_poll(e, &done, NULL, &count) == LE_OK);
+  CHECK(done == 1 && count == 0);
+  snprintf(path, sizeof(path), "%s/stems/stems.json", dir);
+  static char index[256];
+  const size_t n = read_file_for_test(path, index, sizeof(index) - 1);
+  index[n] = '\0';
+  CHECK(strcmp(index, "{\"version\":1,\"lanes\":[]}\n") == 0);
+  le_engine_destroy(e);
+}
+
 static void run_lane_stems_tests(void) {
+  test_lane_stems_index_without_tracks();
   test_lane_stems_match_live();
   test_lane_stems_without_logged_count();
   test_lane_count_is_logged();

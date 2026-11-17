@@ -3652,6 +3652,15 @@ static void le_pr_worker_main(void* arg) {
     le_pr_stem_drop(&master_file);
     le_pr_master_close(master);
     for (int i = 0; i < run_count; ++i) le_pr_channel_close(&runs[i]);
+  } else if (loaded && run_count == 0) {
+    /* A take with no looper track has no stems, and its index says so: a
+     * reader tells it from a take that was never rendered. */
+    char stems_dir[LE_PR_FULL_PATH_MAX];
+    snprintf(stems_dir, sizeof(stems_dir), "%s/stems", r->capture_dir);
+    le_pr_mkdir_recursive(stems_dir);
+    if (!le_pr_write_stem_index(r->capture_dir, NULL, 0)) {
+      status = LE_ERR_DEVICE;
+    }
   }
 
   free(master_buf);

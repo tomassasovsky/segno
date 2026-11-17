@@ -129,6 +129,13 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `test/corpus/group.als`, built from `automation.als` and the Group track of
   Live 12.2's own Podcast & Radio template; opening and saving it in Live is
   owed (the corpus README says how).
+- A take with no stem index (rendered before this, or whose render failed)
+  renders its stems first when the Library writes its DAW project or DAW
+  package (`PerformanceRepository.renderStems`, with the export's progress
+  and cancel), and `writeDawProject` never replaces a `project.als` with a
+  set that has no stems: a failed render leaves it as it was. A lane whose
+  wet render failed keeps its `L<n>` track with its plugins, and the take's
+  render reports the track failed.
 - A live-engine golden test (`test_engine_lane_stems.h`) records one track
   with four lanes, a delay and mute on one, two lanes added while it plays
   and one removed, and four overdub passes, then plays the take again with

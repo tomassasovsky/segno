@@ -791,6 +791,28 @@ void main() {
         }
       });
 
+      test('a lane whose wet render failed keeps its dry track and its '
+          'plugins, and only the reference is left out', () {
+        writeCapture(kinds: {'dry'});
+        final tracks = DawManifestReader.read(dir.path)!.tracks;
+        expect(
+          [for (final t in tracks) (t.name, t.kind, t.active)],
+          [
+            ('Bass L1', DawTrackKind.lane, true),
+            ('Bass L2', DawTrackKind.lane, true),
+          ],
+        );
+        expect(
+          (tracks.first.devices.single as DawPluginDevice).plugin.name,
+          'Segno Delay',
+        );
+        expect(
+          tracks.first.arrangementClips.single.audio.fileRef,
+          'stems/dry/track1-lane0.wav',
+        );
+        expect(tracks.first.loop!.fileRef, 'loops/clean.wav');
+      });
+
       test('a chain that holds nothing Segno runs gives no plugins', () {
         const hosted = {
           'type': 8,
