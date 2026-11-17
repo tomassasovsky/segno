@@ -119,7 +119,9 @@ Uint8List buildAls(DawProject project) {
   _setValue(liveSet.getElement('SelectedDocumentViewInMainWindow')!, '0');
   _zoomToFit(liveSet, project);
   // Automation Mode draws each track's envelopes over its clips.
-  final automated = project.tracks.any((t) => t.volume != null);
+  final automated = project.tracks.any(
+    (t) => t.volume != null || _automates(t.devices),
+  );
   _setValue(liveSet.getElement('AutomationMode')!, '$automated');
 
   final xml = document.toXmlString();
@@ -152,7 +154,7 @@ XmlElement _groupTrack(
       .getElement('DeviceChain')!
       .getElement('Devices')!
       .children
-      .addAll(devices.build(group.devices));
+      .addAll(devices.build(group.devices, []));
   return track;
 }
 
@@ -208,17 +210,16 @@ class _TrackPrototype {
   final XmlElement lane;
   final int trackId;
 
-  /// Shows the volume lane of a track with volume automation, so it is
-  /// visible when the set opens. A track without keeps the template's lane.
-  void _showVolumeLane(XmlElement track, List<DawDevice> devices) {
+  /// Shows envelope [envelope] of lane chooser entry [device] as the
+  /// track's lane, so it is visible when the set opens. A track with no
+  /// automation keeps the template's lane.
+  void _showLane(XmlElement track, int device, int envelope) {
     _automationLanes(track).children
       ..clear()
       ..add(
         (lane.copy()..setAttribute('Id', '0'))
-          ..getElement('SelectedDevice')!
-              .setAttribute('Value', '${_laneMixerDevice(devices)}')
-          ..getElement('SelectedEnvelope')!
-              .setAttribute('Value', '$_kLaneMixerVolume'),
+          ..getElement('SelectedDevice')!.setAttribute('Value', '$device')
+          ..getElement('SelectedEnvelope')!.setAttribute('Value', '$envelope'),
       );
   }
 
@@ -251,11 +252,12 @@ class _TrackPrototype {
       _setValue(output.getElement('UpperDisplayString')!, 'Group');
       _setValue(output.getElement('LowerDisplayString')!, '');
     }
+    final automated = <_DeviceEnvelope>[];
     deviceChain
         .getElement('DeviceChain')!
         .getElement('Devices')!
         .children
-        .addAll(devices.build(source.devices));
+        .addAll(devices.build(source.devices, automated));
     final clips = source.arrangementClips;
     _arrangerEvents(track).children.addAll([
       for (var i = 0; i < clips.length; i++)
@@ -291,31 +293,42 @@ class _TrackPrototype {
     final volume = source.volume;
     if (volume != null) {
       final parameter = mixer.getElement('Volume')!;
-      _envelopes(track).children.add(
-        _envelope(
+      automated.insert(
+        0,
+        _DeviceEnvelope(
           pointeeId: parameter
               .getElement('AutomationTarget')!
               .getAttribute('Id')!,
           lane: volume,
           range: _range(parameter),
+          chooser: (_laneMixerDevice(source.devices), _kLaneMixerVolume),
         ),
       );
-      _showVolumeLane(track, source.devices);
     }
+    // The volume lane, or the first device envelope's.
+    if (automated.firstOrNull?.chooser case (final device, final envelope)) {
+      _showLane(track, device, envelope);
+    }
+    // Every envelope of the track, its devices' and those of the devices
+    // in its racks included, sits on the track, numbered in its list.
+    _envelopes(track).children.addAll([
+      for (var i = 0; i < automated.length; i++)
+        if (automated[i].toggle)
+          _toggleEnvelope(automated[i], i)
+        else
+          _envelope(automated[i], i),
+    ]);
     return track;
   }
 
-  /// A volume envelope for [lane] on the parameter whose automation target
-  /// is [pointeeId], opening with the value before the song starts, as every
-  /// envelope Live writes does. Values are clamped to [range], the Volume
-  /// parameter's own, whose lowest is Live's silence.
-  XmlElement _envelope({
-    required String pointeeId,
-    required AutomationLane lane,
-    required (double, double) range,
-  }) {
+  /// Envelope [id] of a track: [automation]'s lane on the parameter whose
+  /// automation target it names, opening with the value before the song
+  /// starts, as every envelope Live writes does. Values are clamped to the
+  /// parameter's range (the Volume's lowest is Live's silence).
+  XmlElement _envelope(_DeviceEnvelope automation, int id) {
+    final lane = automation.lane;
     String value(double v) {
-      final (min, max) = range;
+      final (min, max) = automation.range;
       return _number(v < min ? min : (v > max ? max : v));
     }
 
@@ -327,10 +340,10 @@ class _TrackPrototype {
       if (lane.breakpoints.first.beat > 0) (0.0, lane.initialValue),
       for (final b in lane.breakpoints) (b.beat, b.value),
     ];
-    final envelope = this.envelope.copy()..setAttribute('Id', '0');
+    final envelope = this.envelope.copy()..setAttribute('Id', '$id');
     _setValue(
       envelope.getElement('EnvelopeTarget')!.getElement('PointeeId')!,
-      pointeeId,
+      automation.pointeeId,
     );
     envelope.getElement('Automation')!.getElement('Events')!.children
       ..clear()
@@ -340,6 +353,33 @@ class _TrackPrototype {
             'Id': '$i',
             'Time': _number(points[i].$1),
             'Value': value(points[i].$2),
+          }),
+      ]);
+    return envelope;
+  }
+
+  /// Envelope [id] of a track: [automation]'s lane on a switch (a device's
+  /// On), as Live writes one: a `BoolEvent` before the song starts with the
+  /// value then, and one at each beat the switch changes at.
+  XmlElement _toggleEnvelope(_DeviceEnvelope automation, int id) {
+    final lane = automation.lane;
+    final events = [(_kBeforeSongTime, lane.initialValue != 0)];
+    for (final b in lane.breakpoints) {
+      if ((b.value != 0) != events.last.$2) events.add((b.beat, b.value != 0));
+    }
+    final envelope = this.envelope.copy()..setAttribute('Id', '$id');
+    _setValue(
+      envelope.getElement('EnvelopeTarget')!.getElement('PointeeId')!,
+      automation.pointeeId,
+    );
+    envelope.getElement('Automation')!.getElement('Events')!.children
+      ..clear()
+      ..addAll([
+        for (var i = 0; i < events.length; i++)
+          _element('BoolEvent', {
+            'Id': '$i',
+            'Time': _number(events[i].$1),
+            'Value': '${events[i].$2}',
           }),
       ]);
     return envelope;
@@ -430,14 +470,25 @@ class _DevicePrototypes {
   /// One chain of it.
   XmlElement get branch => _rackParts.$2;
 
-  /// [devices] as a device list's members, numbered in order.
-  List<XmlElement> build(List<DawDevice> devices) => [
-    for (var i = 0; i < devices.length; i++)
-      switch (devices[i]) {
-        final DawPluginDevice d => _plugin(d, i),
-        final DawRackDevice r => _rack(r, i),
-      },
-  ];
+  /// [devices] as a device list's members, numbered in order. The envelopes
+  /// their automation needs go into [automated], for the track to hold.
+  ///
+  /// [chooser] counts the devices' entries in the track's lane chooser
+  /// ([_chooserEntries]), from the track's first.
+  List<XmlElement> build(
+    List<DawDevice> devices,
+    List<_DeviceEnvelope> automated, [
+    _Chooser? chooser,
+  ]) {
+    final entries = chooser ?? _Chooser();
+    return [
+      for (var i = 0; i < devices.length; i++)
+        switch (devices[i]) {
+          final DawPluginDevice d => _plugin(d, i, automated, entries),
+          final DawRackDevice r => _rack(r, i, automated, entries),
+        },
+    ];
+  }
 
   /// A copy of [prototype] as member [id] of its list, with fresh pointee
   /// ids.
@@ -452,9 +503,21 @@ class _DevicePrototypes {
     return element;
   }
 
-  XmlElement _plugin(DawPluginDevice device, int id) {
-    final element = _withParameters(_copy(plugin, id), device);
-    _setValue(element.getElement('On')!.getElement('Manual')!, '${device.on}');
+  XmlElement _plugin(
+    DawPluginDevice device,
+    int id,
+    List<_DeviceEnvelope> automated,
+    _Chooser chooser,
+  ) {
+    // The device stays on: the plugin's Enabled parameter is the entry's
+    // switch, so it ramps and drains as the engine's does (#1806 D4). Live's
+    // Device On stops the plugin instead, cutting its tail.
+    final element = _withParameters(
+      _copy(plugin, id),
+      device,
+      automated,
+      chooser.next++,
+    );
     final info = element
         .getElement('PluginDesc')!
         .getElement('Vst3PluginInfo')!;
@@ -479,7 +542,12 @@ class _DevicePrototypes {
   /// rest of the 128 slots unassigned. Live shows these parameters on the
   /// device and offers them for automation; a stepped one's value is in
   /// steps.
-  XmlElement _withParameters(XmlElement element, DawPluginDevice device) {
+  XmlElement _withParameters(
+    XmlElement element,
+    DawPluginDevice device,
+    List<_DeviceEnvelope> automated,
+    int chooserEntry,
+  ) {
     final list = element.getElement('ParameterList')!;
     final slots = list.childElements.toList();
     // The template's plugin has its parameters in its first slots and the
@@ -507,7 +575,8 @@ class _DevicePrototypes {
             1000 => state.input / 3,
             1001 => state.output.toDouble(),
             1002 => (state.placement + 1) / 2,
-            _ => state.level / 4,
+            1003 => state.level / 4,
+            _ => state.enabled ? 1.0 : 0.0,
           },
         ),
     ];
@@ -520,17 +589,37 @@ class _DevicePrototypes {
         continue;
       }
       final (pid, parameter, normalized) = parameters[i];
-      final steps = parameter.steps;
+      final steps = parameter.list ? parameter.steps : 0;
       final max = steps > 0 ? steps : 1;
-      final value = steps > 0
-          ? (normalized.clamp(0.0, 1.0) * steps).roundToDouble()
-          : normalized;
+      // Live holds a list's value in steps, every other one normalized.
+      double value(double v) =>
+          steps > 0 ? (v.clamp(0.0, 1.0) * steps).roundToDouble() : v;
       final slot = _renumbered(assigned.copy()..setAttribute('Id', '$i'));
       _setValue(slot.getElement('ParameterName')!, parameter.name);
       _setValue(slot.getElement('ParameterId')!, '$pid');
       _setValue(slot.getElement('VisualIndex')!, '$i');
       final held = slot.getElement('ParameterValue')!;
-      _setValue(held.getElement('Manual')!, _number(value));
+      _setValue(held.getElement('Manual')!, _number(value(normalized)));
+      final lane = pid == kSegnoEnabledParameter
+          ? device.switching
+          : device.parameters[pid];
+      if (lane != null) {
+        automated.add(
+          _DeviceEnvelope(
+            pointeeId: held.getElement('AutomationTarget')!.getAttribute('Id')!,
+            lane: AutomationLane(
+              initialValue: value(lane.initialValue),
+              breakpoints: [
+                for (final b in lane.breakpoints)
+                  AutomationBreakpoint(beat: b.beat, value: value(b.value)),
+              ],
+            ),
+            range: (0, max.toDouble()),
+            // In the lane chooser, after the device's On.
+            chooser: (chooserEntry, 1 + i),
+          ),
+        );
+      }
       final range = held.getElement('MidiControllerRange')!;
       _setValue(range.getElement('Min')!, '0');
       _setValue(range.getElement('Max')!, '$max');
@@ -542,9 +631,28 @@ class _DevicePrototypes {
     return element;
   }
 
-  XmlElement _rack(DawRackDevice device, int id) {
+  XmlElement _rack(
+    DawRackDevice device,
+    int id,
+    List<_DeviceEnvelope> automated,
+    _Chooser chooser,
+  ) {
+    final entry = chooser.next++;
     final element = _copy(rack, id);
-    _setValue(element.getElement('On')!.getElement('Manual')!, '${device.on}');
+    final on = element.getElement('On')!;
+    _setValue(on.getElement('Manual')!, '${device.on}');
+    final switching = device.switching;
+    if (switching != null) {
+      automated.add(
+        _DeviceEnvelope(
+          pointeeId: on.getElement('AutomationTarget')!.getAttribute('Id')!,
+          lane: switching,
+          range: (0, 1),
+          toggle: true,
+          chooser: (entry, 0),
+        ),
+      );
+    }
     _setValue(element.getElement('UserName')!, device.name);
     final branches = element.getElement('Branches')!;
     for (var i = 0; i < device.chains.length; i++) {
@@ -562,7 +670,8 @@ class _DevicePrototypes {
           .getElement('AudioToAudioDeviceChain')!
           .getElement('Devices')!
           .children
-          .addAll(build(chain.devices));
+          .addAll(build(chain.devices, automated, chooser));
+      chooser.next++; // the chain's mixer
       final volume = b.getElement('MixerDevice')!.getElement('Volume')!;
       final (min, max) = _range(volume);
       final v = chain.volume;
@@ -574,6 +683,44 @@ class _DevicePrototypes {
     }
     return element;
   }
+}
+
+/// Whether any of [devices], or a device in their racks, is automated.
+bool _automates(List<DawDevice> devices) => devices.any(
+  (d) => switch (d) {
+    DawPluginDevice(:final switching, :final parameters) =>
+      switching != null || parameters.isNotEmpty,
+    DawRackDevice(:final switching, :final chains) =>
+      switching != null || chains.any((c) => _automates(c.devices)),
+  },
+);
+
+/// An envelope a track holds: [lane] on the parameter whose automation
+/// target is [pointeeId], its values in that parameter's own units and
+/// [range]; a switch's ([toggle]) as Live writes a device's On.
+class _DeviceEnvelope {
+  const new({
+    required this.pointeeId,
+    required this.lane,
+    required this.range,
+    required this.chooser,
+    this.toggle = false,
+  });
+
+  final String pointeeId;
+  final AutomationLane lane;
+  final (double, double) range;
+
+  /// Where the lane chooser offers it: the entry and the envelope in it.
+  final (int, int) chooser;
+  final bool toggle;
+}
+
+/// The next entry of a track's Arrangement lane chooser: after "None" (0),
+/// each device in order, a rack before its chains' devices and each
+/// chain's mixer after them.
+class _Chooser {
+  int next = 1;
 }
 
 /// [bytes] as Live writes a plugin's state: uppercase hex, 80 digits a

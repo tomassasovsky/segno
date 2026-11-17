@@ -88,9 +88,73 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
+| #1836 | A take's effect switching and setting changes as Live automation: the plugin's Enabled (1100) is the engine's switch, every change a step at its frame (#1806 part 6) | in-review | merge-gate | `claude/fx-automation-1836` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 Effect switching and setting changes as Live automation (#1836)
+
+Part 6 of #1806 (decisions D4 to D6): the Live set replays what changed in
+a take's chains, where it used to hold each effect as it stood at arm.
+
+- `ChainTimeline` (`packages/daw_export/lib/src/chain_timeline.dart`) reads
+  `events.log` for each lane's chain and each input's monitor chain and
+  replays it as the offline render replays the lane's wet stem
+  (`le_pr_wet_render`): an entry's switch (310, 312) and the chain's (311,
+  313), each setting (306, 307), each type (20, 31: an actual change puts
+  the new effect at its defaults and on, as the setter does unlogged) and
+  the chain's length (21, 32: a slot past it is not run, one entering it
+  comes on). Entries at one frame all apply before it plays; the two log
+  streams are merged in frame order, ties in file order
+  (`EventLogReader.sortedByFrame`, as `le_pr_frame_cmp`).
+- Every change is a step in a device envelope, two events at the beat of
+  its frame, the value before and the value after, as Live draws a step.
+  Nothing is thinned: the console logs a setting at most once a block, when
+  it moves, and an entry's switch once a press. A switch is automation of
+  the plugin's Enabled; a setting of its parameter, normalized, as Live
+  keeps a setting that is not a list (in steps only for the input, the
+  output and Enabled). A rack switch or an A/B press is its entries'
+  switches (D5), so racks stay on. A slot whose effect changed holds one
+  plugin per effect, side by side, each on while the slot held it (D6). A
+  Dub Rack's Amb / Dub section is on while any entry of the rack runs (the
+  engine fades the section to its input when none does). Every envelope
+  sits on its track, a device in a rack included; the track shows its
+  volume lane or its first device envelope.
+- The plugin's 1100 is now **Enabled**, an ordinary automatable parameter
+  (Off / On, default On), not the VST3 bypass: Live lists no bypass
+  parameter, and its Device On stops the plugin, cutting a delay's echoes
+  and freezing its line until it comes back on (the owner's check of
+  `test/corpus/plugin_automation.als`, Live 12.2.7). Enabled runs the
+  engine's switch for every kind: the 5 ms ramp, a delay's or a reverb's
+  drain, a fresh start on a re-enable from a settled switch-off, and for a
+  kind that delays its output (the octavers, Overdrive, Distortion, Amp)
+  its warm-up and, while off, its input without the delay. The plugin used
+  to switch such a kind to its input delayed by its latency. The pedal's footswitch
+  and LED drive Enabled; an exported device stays on in Live.
+- When the host starts playing, the values it sets at the block's first
+  frame land before the plugin starts again as at arm, so a plugin
+  automated off at the start starts settled off.
+- The null test (`vst3/test/null_test.cpp`) switches through Enabled on a
+  block boundary and inside a block, off and on again 1 ms apart (inside
+  the ramp), and from an entry off at arm that the host turns on; every
+  kind is bit-identical to the engine's offline render at 37-, 128- and
+  512-frame blocks, the latency-bearing kinds included.
+- `test/corpus/plugin_automation.als` is the reference Live saved (see the
+  corpus README); `test/device_automation_test.dart` checks the writer
+  against it and `test/fx_automation_end_to_end_test.dart` runs a synthetic
+  capture with presses, an A/B switch, a replaced effect, knob moves and a
+  monitor switch through to the set.
+- Not reproduced: a switch's frame is the control thread's stamp, within a
+  block of the one the console applied it at (the offline render and so the
+  "as heard" stem use the same stamp; the block-tail observer of #1806 Part
+  3 would make it exact); a type change crossfades over the ramp in Live
+  and lets the old effect's tail drain, where the console swaps at once; a
+  type set again to the same effect resets its state on the console only;
+  a Dub Rack switched off as a whole stops its section in Live, cutting the
+  paths' tails, and a change of its Amb-Dub Mix is not replayed in the
+  chains' volumes; chains published by a recipe and the Track and All
+  tracks stages are not logged yet (#1806 Part 2).
 
 ## November 2026 Each Segno plugin draws its pedal (#1815)
 

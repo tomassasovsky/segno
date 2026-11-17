@@ -1,3 +1,5 @@
+import 'package:daw_export/src/chain_timeline.dart';
+import 'package:daw_export/src/daw_project.dart';
 import 'package:daw_export/src/segno_vst3_plugins.dart';
 import 'package:meta/meta.dart';
 
@@ -8,23 +10,34 @@ sealed class DawDevice {
   const new();
 }
 
-/// One of Segno's plugins with the state it loads with.
+/// One of Segno's plugins with the state it loads with, and what changed
+/// in it during the take.
 @immutable
 final class DawPluginDevice extends DawDevice {
   /// Creates a [DawPluginDevice].
-  const new({required this.plugin, required this.state, this.on = true});
+  const new({
+    required this.plugin,
+    required this.state,
+    this.switching,
+    this.parameters = const {},
+  });
 
   /// The plugin.
   final SegnoPlugin plugin;
 
-  /// Its settings and channel handling, and where the take stands in time.
+  /// Its settings and channel handling, its engine enable bit when the take
+  /// starts ([SegnoPluginState.enabled]), and where the take stands in
+  /// time.
   final SegnoPluginState state;
 
-  /// Whether the device is switched on in Live: the entry's enable bit. The
-  /// plugin's own switch stays on, so switching the device on in Live
-  /// plays the effect whether Live drives the plugin's bypass parameter or
-  /// bypasses the device itself.
-  final bool on;
+  /// Its engine enable bit during the take (1 on, 0 off), a step at each
+  /// change, or `null` when it never changes. The plugin's own switch,
+  /// which ramps and drains as the engine's does.
+  final AutomationLane? switching;
+
+  /// Each setting that changed during the take, by parameter id, as the
+  /// plugin's normalized value: a step at each change.
+  final Map<int, AutomationLane> parameters;
 }
 
 /// A Live Audio Effect Rack: chains that each start from the rack's input,
@@ -32,7 +45,12 @@ final class DawPluginDevice extends DawDevice {
 @immutable
 final class DawRackDevice extends DawDevice {
   /// Creates a [DawRackDevice].
-  const new({required this.name, required this.chains, this.on = true});
+  const new({
+    required this.name,
+    required this.chains,
+    this.on = true,
+    this.switching,
+  });
 
   /// The rack's name in Live.
   final String name;
@@ -40,8 +58,13 @@ final class DawRackDevice extends DawDevice {
   /// Its chains, at least one.
   final List<DawRackChain> chains;
 
-  /// Whether the rack is switched on. Off, it passes its input through.
+  /// Whether the rack is switched on when the take starts. Off, it passes
+  /// its input through.
   final bool on;
+
+  /// Its switch during the take (1 on, 0 off), a step at each change, or
+  /// `null` when it never changes.
+  final AutomationLane? switching;
 }
 
 /// One chain of a [DawRackDevice].
@@ -122,36 +145,58 @@ const Map<String, int> _kInputs = {
 const Map<String, int> _kOutputs = {'stereo': 0, 'mono': 1};
 
 /// [effects], a chain from a capture's arm snapshot (`TrackEffect.toJson`
-/// entries), as Live devices.
+/// entries), as Live devices, with what [timeline] says changed in them
+/// during the take (by default nothing: the chain as it was at arm, on when
+/// [chainEnabled]).
 ///
 /// - Each built-in effect becomes its Segno plugin, with its settings and
-///   channel handling, on the chain slot it held (its index in [effects]).
-///   The device is on as the engine's enable bit was: the entry's own, and
-///   off with the whole chain when [chainEnabled] is false.
+///   channel handling, on the chain slot it held (its index in [effects]),
+///   its engine enable bit the entry's own and the chain's, and its
+///   switching and setting changes as automation. A slot that held other
+///   effects during the take has one plugin for each, next to each other,
+///   each switched on while the slot held it (#1806 D6); one that held
+///   none at arm gets them where it stands in the chain.
 /// - A run of entries of one rack becomes an Audio Effect Rack named as the
-///   rack, off when the rack was. Inside it, a run of entries on the Dub
-///   Rack's two parallel paths becomes a rack of its own with an Amb and a
-///   Dub chain at the gains the section's Amb-Dub Mix gives them, as the
-///   engine sums them (`fx_section_merge`).
+///   rack, always on: a rack switch or an A/B press is its entries'
+///   switches (#1806 D5), and each plugin carries its own. Inside it, a
+///   run of entries on the Dub Rack's two parallel paths becomes a rack of
+///   its own with an Amb and a Dub chain at the gains the section's
+///   Amb-Dub Mix gives them, as the engine sums them (`fx_section_merge`),
+///   switched on while any entry of the rack runs, as the engine fades the
+///   section to its input when none does (`fx_rack_head`).
 /// - A hosted plugin and an empty entry become nothing: the offline render
 ///   passes a hosted plugin through dry, so the set does too.
 List<DawDevice> devicesOfChain(
   Object? effects, {
   required ChainOrigin origin,
   bool chainEnabled = true,
+  ChainTimeline? timeline,
 }) {
-  if (effects is! List) return const [];
+  final times =
+      timeline ??
+      ChainTimeline.atArm(effects: effects, chainEnabled: chainEnabled);
+  final list = effects is List ? effects : const <Object?>[];
+  final slots = times.slots;
+  final length = [
+    list.length,
+    if (slots.isNotEmpty) slots.last + 1,
+  ].reduce((a, b) => a > b ? a : b);
   final entries = [
-    for (var i = 0; i < effects.length; i++)
-      if (effects[i] case final Map<String, dynamic> e) (i, e),
+    for (var i = 0; i < length; i++)
+      (
+        i,
+        switch (i < list.length ? list[i] : null) {
+          final Map<String, dynamic> e => e,
+          _ => const <String, dynamic>{},
+        },
+      ),
   ];
   final devices = <DawDevice>[];
   var k = 0;
   while (k < entries.length) {
     final rack = _rackOf(entries[k].$2);
     if (rack == null) {
-      final plugin = _plugin(entries[k], origin, chainEnabled);
-      if (plugin != null) devices.add(plugin);
+      devices.addAll(_plugins(entries[k], origin, times));
       k++;
       continue;
     }
@@ -159,11 +204,7 @@ List<DawDevice> devicesOfChain(
     while (k < entries.length && _rackOf(entries[k].$2)?.id == rack.id) {
       members.add(entries[k++]);
     }
-    // A switched-off rack's modules are recorded off too (their effective
-    // bit, which the engine runs); their own switches are not recorded. So
-    // they are on in the rack, which is off, and switching the rack on in
-    // Live plays them.
-    final inside = _rackDevices(members, origin, chainEnabled, rack.bypassed);
+    final inside = _rackDevices(members, origin, times);
     // A rack with nothing in it that sounds is nothing: no Segno plugin
     // and no parallel section (whose paths sum their input at their gains
     // even when every entry on them passes it through).
@@ -171,7 +212,6 @@ List<DawDevice> devicesOfChain(
     devices.add(
       DawRackDevice(
         name: rack.name,
-        on: !rack.bypassed,
         chains: [DawRackChain(name: rack.name, devices: inside)],
       ),
     );
@@ -184,15 +224,13 @@ List<DawDevice> devicesOfChain(
 List<DawDevice> _rackDevices(
   List<(int, Map<String, dynamic>)> members,
   ChainOrigin origin,
-  bool chainEnabled,
-  bool bypassed,
+  ChainTimeline timeline,
 ) {
   final devices = <DawDevice>[];
   var k = 0;
   while (k < members.length) {
     if (_path(members[k].$2) == null) {
-      final plugin = _plugin(members[k], origin, chainEnabled, on: bypassed);
-      if (plugin != null) devices.add(plugin);
+      devices.addAll(_plugins(members[k], origin, timeline));
       k++;
       continue;
     }
@@ -210,13 +248,15 @@ List<DawDevice> _rackDevices(
       if (type == _kAmbVerb && mix == null && params.length > 2) {
         mix = params[2];
       }
-      final plugin = _plugin(entry, origin, chainEnabled, on: bypassed);
-      if (plugin != null) (path == 'amb' ? amb : dub).add(plugin);
+      (path == 'amb' ? amb : dub).addAll(_plugins(entry, origin, timeline));
     }
     final (ambGain, dubGain) = pathGains(mix ?? _kAmbDubMixDefault);
+    final runs = timeline.anyRuns(members.map((m) => m.$1));
     devices.add(
       DawRackDevice(
         name: 'Amb / Dub',
+        on: runs.on,
+        switching: runs.lane,
         chains: [
           DawRackChain(name: 'Amb', devices: amb, volume: ambGain),
           DawRackChain(name: 'Dub', devices: dub, volume: dubGain),
@@ -236,39 +276,39 @@ List<DawDevice> _rackDevices(
   return (amb, dub);
 }
 
-/// [entry]'s plugin, or `null` for an entry Segno does not run. [on] puts
-/// the entry on whatever its recorded bit says (a module of a switched-off
-/// rack).
-DawPluginDevice? _plugin(
+/// The plugins [entry]'s slot needs: one for each Segno effect [timeline]
+/// says it held, none for a slot that held none.
+List<DawPluginDevice> _plugins(
   (int, Map<String, dynamic>) entry,
   ChainOrigin origin,
-  bool chainEnabled, {
-  bool on = false,
-}) {
+  ChainTimeline timeline,
+) {
   final (slot, json) = entry;
-  final type = _int(json['type']);
-  final plugin = type == null ? null : segnoPlugins[type];
-  if (plugin == null) return null;
   final channels = json['channels'];
   final ch = channels is Map<String, dynamic>
       ? channels
       : const <String, dynamic>{};
-  return DawPluginDevice(
-    plugin: plugin,
-    on: chainEnabled && (on || json['enabled'] != false),
-    state: SegnoPluginState(
-      type: type!,
-      params: _params(json),
-      slot: slot,
-      hopSeed: origin.hopSeed,
-      clockOffset: origin.clockOffset,
-      beatOffset: origin.beatOffset,
-      input: _kInputs[ch['input']] ?? 0,
-      output: _kOutputs[ch['output']] ?? 0,
-      placement: _double(ch['placement']) ?? 0,
-      level: _double(ch['level']) ?? 1,
-    ),
-  );
+  return [
+    for (final held in timeline.slot(slot))
+      DawPluginDevice(
+        plugin: segnoPlugins[held.type]!,
+        switching: held.switching,
+        parameters: held.parameters,
+        state: SegnoPluginState(
+          type: held.type,
+          params: held.params,
+          slot: slot,
+          hopSeed: origin.hopSeed,
+          clockOffset: origin.clockOffset,
+          beatOffset: origin.beatOffset,
+          input: _kInputs[ch['input']] ?? 0,
+          output: _kOutputs[ch['output']] ?? 0,
+          placement: _double(ch['placement']) ?? 0,
+          level: _double(ch['level']) ?? 1,
+          enabled: held.enabled,
+        ),
+      ),
+  ];
 }
 
 List<double> _params(Map<String, dynamic> json) {
@@ -280,13 +320,13 @@ List<double> _params(Map<String, dynamic> json) {
   ];
 }
 
-({String id, String name, bool bypassed})? _rackOf(Map<String, dynamic> e) {
+({String id, String name})? _rackOf(Map<String, dynamic> e) {
   final rack = e['rack'];
   if (rack is! Map<String, dynamic>) return null;
   final id = rack['id'];
   final name = rack['name'];
   if (id is! String || id.isEmpty || name is! String) return null;
-  return (id: id, name: name, bypassed: rack['bypassed'] == true);
+  return (id: id, name: name);
 }
 
 /// The parallel path an entry is on, `amb` or `dub`, or `null`.
