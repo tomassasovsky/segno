@@ -1041,7 +1041,7 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 16; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
+  const uint32_t version = 17; /* 8: LE_PLOG_SPEED; 9: LE_PLOG_TRANSPOSE (#1179);
                                  * 10: LE_PLOG_LENGTH (#1168);
                                  * 11: LE_PLOG_HEAD_SPAN, LE_PLOG_RETIME;
                                  * 12: LE_PLOG_SOURCE_LEN (#1179);
@@ -1054,7 +1054,10 @@ static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
                                  * 15: LE_PLOG_SOURCE_LEN carries the pitch
                                  *     bridge's flag (#1675);
                                  * 16: LE_PLOG_HEARD_SOURCE, a lane's heard
-                                 *     image source (#1713) */
+                                 *     image source (#1713);
+                                 * 17: LE_CMD_SET_LANE_COUNT, the lanes a
+                                 *     track mixes, at the arm and at
+                                 *     every change (#1824) */
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;
