@@ -1,26 +1,32 @@
 name: Segno Transfer
 
 # The app carries Segno.vst3 (#1829), so a change to the plugin, the engine
-# code it runs or the app code its pedal faces are drawn from rebuilds the
-# app and tests the bundled plugin too.
+# and SDK code it runs, or the app code, packages, fonts and dependencies its
+# pedal faces are drawn from rebuilds the app and tests the bundled plugin.
 on:
   pull_request:
     paths:
       - 'apps/segno_transfer/**'
-      - 'packages/segno_engine/vst3/**'
-      - 'packages/segno_engine/src/**'
+      - 'packages/**'
       - 'lib/**'
+      - 'assets/**'
       - 'test/vst3_faces/**'
+      - 'test/helpers/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
       - '.github/workflows/segno-transfer.yaml'
   push:
     branches: [master]
     tags: ['transfer-v*']
     paths:
       - 'apps/segno_transfer/**'
-      - 'packages/segno_engine/vst3/**'
-      - 'packages/segno_engine/src/**'
+      - 'packages/**'
       - 'lib/**'
+      - 'assets/**'
       - 'test/vst3_faces/**'
+      - 'test/helpers/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
       - '.github/workflows/segno-transfer.yaml'
 
 permissions:

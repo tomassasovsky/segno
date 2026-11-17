@@ -34,6 +34,7 @@ struct SegnoTransferApp: App {
       CommandGroup(replacing: .newItem) {}
       CommandMenu("Plug-ins") {
         Button("Install Segno Plugins…") { model.offerPlugins() }
+          .disabled(model.busy || model.pluginOffer != nil)
       }
     }
   }

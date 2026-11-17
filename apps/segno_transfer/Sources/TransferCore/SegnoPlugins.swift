@@ -54,6 +54,7 @@ public struct PluginVersion: Comparable, CustomStringConvertible {
 /// only into the user's own folder, `~/Library/Audio/Plug-Ins/VST3`.
 public struct SegnoPlugins {
   public static let bundleName = "Segno.vst3"
+  static let stagingPrefix = ".segno-transfer-"
 
   /// What this Mac has, compared with the copy Transfer carries.
   public enum Status: Equatable {
@@ -82,11 +83,14 @@ public struct SegnoPlugins {
     allUsersFolder: URL = URL(fileURLWithPath: "/Library/Audio/Plug-Ins/VST3")
   ) {
     self.bundled = bundled
+    self.bundledVersion = bundled.flatMap { PluginVersion(bundle: $0) }
     self.userFolder = home.appendingPathComponent("Library/Audio/Plug-Ins/VST3")
     self.allUsersFolder = allUsersFolder
   }
 
-  public var bundledVersion: PluginVersion? { bundled.flatMap { PluginVersion(bundle: $0) } }
+  /// The bundled copy's version, read once: it does not change while the
+  /// app runs.
+  public let bundledVersion: PluginVersion?
 
   public func status() -> Status {
     let user = userFolder.appendingPathComponent(Self.bundleName)
@@ -127,18 +131,34 @@ public struct SegnoPlugins {
     }
     let manager = FileManager.default
     try manager.createDirectory(at: userFolder, withIntermediateDirectories: true)
+    // What an install that was cut short (the app quit mid-copy) left.
+    for name in (try? manager.contentsOfDirectory(atPath: userFolder.path)) ?? []
+    where name.hasPrefix(Self.stagingPrefix) {
+      try? manager.removeItem(at: userFolder.appendingPathComponent(name))
+    }
     let target = userFolder.appendingPathComponent(Self.bundleName)
     // Staged without the .vst3 extension, so no host scanning the folder
     // meanwhile takes the half-copied bundle for a plugin.
-    let staged = userFolder.appendingPathComponent(".segno-transfer-" + UUID().uuidString)
+    let staged = userFolder.appendingPathComponent(Self.stagingPrefix + UUID().uuidString)
     defer { try? manager.removeItem(at: staged) }
     try manager.copyItem(at: bundled, to: staged)
-    if renamex_np(staged.path, target.path, UInt32(RENAME_EXCL)) == 0 { return }
-    guard errno == EEXIST,
-      renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0
-    else {
+    var code = renamex_np(staged.path, target.path, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
+    if code == 0 { return }
+    if code == EEXIST {
+      code = renamex_np(staged.path, target.path, UInt32(RENAME_SWAP)) == 0 ? 0 : errno
+    }
+    if code == ENOTSUP || code == EINVAL {
+      // A volume without exclusive or swapping renames.
+      if manager.fileExists(atPath: target.path) {
+        _ = try manager.replaceItemAt(target, withItemAt: staged)
+      } else {
+        try manager.moveItem(at: staged, to: target)
+      }
+      return
+    }
+    guard code == 0 else {
       throw TransferError.message(
-        "Could not install the Segno plugins: \(String(cString: strerror(errno)))")
+        "Could not install the Segno plugins: \(String(cString: strerror(code)))")
     }
     // `staged` now holds the replaced copy, which the defer removes.
   }

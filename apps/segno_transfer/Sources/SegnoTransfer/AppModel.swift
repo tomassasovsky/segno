@@ -323,7 +323,7 @@ final class AppModel: ObservableObject {
 
   /// Offers to install or update the Segno plugins (the Plug-ins menu).
   func offerPlugins() {
-    guard !busy else { return }
+    guard !busy, pluginOffer == nil else { return }
     error = nil
     notice = nil
     let current = plugins.status()
@@ -372,6 +372,9 @@ final class AppModel: ObservableObject {
     notice = nil
     progress = 0
     progressTitle = "Installing the Segno plugins"
+    // The copy itself runs to the end; Cancel keeps the set from opening.
+    token = CancellationToken()
+    let cancellation = token
     let plugins = plugins
     Task {
       do {
@@ -380,6 +383,10 @@ final class AppModel: ObservableObject {
           "Segno.vst3 is installed. If Live is open, rescan plug-ins (Settings > Plug-Ins > Rescan) or restart Live. If macOS says Segno.vst3 cannot be opened, allow it in System Settings > Privacy & Security."
         busy = false
         progressTitle = ""
+        if cancellation.isCancelled {
+          if offer.set != nil { status = "Cancelled · the Live set was not opened" }
+          return
+        }
         open(offer)
       } catch {
         self.error = error.localizedDescription
@@ -399,13 +406,17 @@ final class AppModel: ObservableObject {
   func dismissPluginOffer() { pluginOffer = nil }
 
   private func open(_ offer: PluginOffer) {
-    guard let set = offer.set, let application = offer.application else { return }
+    guard !busy, let set = offer.set, let application = offer.application else { return }
     let plugins = plugins.status()
+    busy = true
+    progressTitle = "Opening the Live set"
     Task {
       do { try await open(set, in: application, plugins: plugins) } catch {
         self.error = error.localizedDescription
         status = "Could not open the Live set"
       }
+      busy = false
+      progressTitle = ""
     }
   }
 

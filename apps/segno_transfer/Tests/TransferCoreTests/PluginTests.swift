@@ -129,6 +129,15 @@ final class PluginTests: XCTestCase {
     XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: allUsers.path), [])
   }
 
+  func testInstallClearsWhatAnInterruptedInstallLeft() throws {
+    let plugins = try plugins()
+    let leftover = userFolder.appendingPathComponent(".segno-transfer-earlier")
+    try FileManager.default.createDirectory(at: leftover, withIntermediateDirectories: true)
+    try plugins.install()
+    XCTAssertEqual(
+      try FileManager.default.contentsOfDirectory(atPath: userFolder.path), ["Segno.vst3"])
+  }
+
   func testInstallReplacesAnOlderCopyWhole() throws {
     let plugins = try plugins()
     let old = try makePluginBundle(in: userFolder, build: "100", payload: "old")

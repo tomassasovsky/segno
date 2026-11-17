@@ -388,6 +388,7 @@ final class AppModelTests: XCTestCase {
     // Declined: the set opens with the copy the Mac has.
     model.skipPlugins(offer)
     try await waitUntil { fakeLive.opened.count == 1 }
+    try await waitUntilIdle(model)
     XCTAssertEqual(installedBuild(), "100")
     XCTAssertNil(model.error)
     // Confirmed: replaced, then opened.
@@ -532,5 +533,20 @@ final class AppModelTests: XCTestCase {
     model.offerPlugins()
     XCTAssertNil(model.pluginOffer)
     XCTAssertTrue(model.error?.contains("/Library/Audio/Plug-Ins/VST3") == true)
+  }
+
+  func testCancellingDuringTheInstallKeepsTheSetClosed() async throws {
+    bundlesPlugins = true
+    let (model, repository, recording) = try await connectedWithSet()
+    repository.liveSetUsesPlugins = true
+    model.openInLive(recording)
+    try await waitUntilIdle(model)
+    model.installPlugins(try XCTUnwrap(model.pluginOffer))
+    model.cancel()
+    try await waitUntilIdle(model)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(installedBuild(), "3213")
+    XCTAssertTrue(fakeLive.opened.isEmpty)
+    XCTAssertEqual(model.status, "Cancelled · the Live set was not opened")
   }
 }
