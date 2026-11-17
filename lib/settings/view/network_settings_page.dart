@@ -297,7 +297,7 @@ class _ConnectionCard extends StatelessWidget {
         ? (
             l10n.networkUnavailableTitle,
             state.errorMessage != null
-                ? wifiErrorMessage(l10n, state.errorMessage)
+                ? l10n.networkActionFailed
                 : l10n.wifiUnsupportedBody,
           )
         : !status.enabled
@@ -324,7 +324,7 @@ class _ConnectionCard extends StatelessWidget {
         : reason != null && failedSsid != null
         ? wifiJoinErrorMessage(l10n, reason, failedSsid)
         : state.errorMessage != null
-        ? wifiErrorMessage(l10n, state.errorMessage)
+        ? l10n.networkActionFailed
         : null;
     // A wrong key goes back to the password sheet; every other failed join
     // can be tried again from here, with the key it was given.

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 part 'wifi_state.dart';
@@ -34,8 +35,14 @@ class WifiCubit extends Cubit<WifiState> {
   /// reported before it is read: a join is a burst of device states.
   static const changeSettle = Duration(milliseconds: 300);
 
-  /// How long a monitor that ended waits before it is started again.
+  /// How long a monitor that ended waits before it is started again. It
+  /// doubles with each monitor that ends without an event, up to
+  /// [monitorRestartMax], so a helper that cannot monitor is not respawned
+  /// every few seconds.
   static const monitorRestart = Duration(seconds: 5);
+
+  /// The longest wait before a monitor is started again.
+  static const monitorRestartMax = Duration(minutes: 1);
 
   /// How often the open page looks at the internet (#1270 D14): one HEAD
   /// request to the update host per period, for one connection.
@@ -89,6 +96,9 @@ class WifiCubit extends Cubit<WifiState> {
   Timer? _scanTimer;
   Timer? _connectivityTimer;
 
+  /// Monitors that ended in a row without an event.
+  int _monitorFailures = 0;
+
   /// Bumped by every emit that changes the status, so a read that started
   /// before a fresher one landed is dropped rather than shown.
   int _statusEpoch = 0;
@@ -117,14 +127,23 @@ class WifiCubit extends Cubit<WifiState> {
   void _watch({bool restarted = false}) {
     if (restarted) _changed();
     _changes = _repository.changes().listen(
-      (_) => _changed(),
-      onError: (Object _) {},
+      (_) {
+        _monitorFailures = 0;
+        _changed();
+      },
+      onError: (Object error) => AppLog.warn('wifi: monitor: $error'),
       onDone: () {
         _changes = null;
         if (isClosed) return;
-        _monitorRestart = Timer(monitorRestart, () {
-          if (!isClosed) _watch(restarted: true);
-        });
+        final wait = monitorRestart * (1 << _monitorFailures.clamp(0, 4));
+        _monitorFailures++;
+        AppLog.warn('wifi: monitor ended; starting it again in $wait');
+        _monitorRestart = Timer(
+          wait > monitorRestartMax ? monitorRestartMax : wait,
+          () {
+            if (!isClosed) _watch(restarted: true);
+          },
+        );
       },
     );
   }
@@ -156,14 +175,33 @@ class WifiCubit extends Cubit<WifiState> {
     // earlier: read again rather than trust either.
     if (epoch != _statusEpoch) return _changed();
     final cameOn = !state.status.enabled && status.enabled;
-    emit(state.copyWith(status: status));
+    emit(_live(status));
     // Switched on from elsewhere: look for networks at once.
     if (cameOn) unawaited(_scanQuietly());
+  }
+
+  /// [state] with [status] read while nothing was running. A connection
+  /// that came up since clears a failed join's message: it was about an
+  /// earlier attempt, and under the new connection it would read as a fault
+  /// of that one.
+  WifiState _live(WifiStatus status) {
+    final now = state.status;
+    final newLink =
+        status.connected && (!now.connected || now.ssid != status.ssid);
+    return state.copyWith(
+      status: status,
+      clearError: newLink && state.joinError != null,
+    );
   }
 
   @override
   void onChange(Change<WifiState> change) {
     super.onChange(change);
+    final error = change.nextState.errorMessage;
+    if (error != null && error != change.currentState.errorMessage) {
+      // The helper's own words, for the bench; the page shows its own.
+      AppLog.warn('wifi: $error');
+    }
     if (change.currentState.status != change.nextState.status) _statusEpoch++;
     if (_changedWhileBusy &&
         change.currentState.busy &&
@@ -214,7 +252,7 @@ class WifiCubit extends Cubit<WifiState> {
   Future<void> scan() async {
     if (!state.supported) return;
     emit(state.copyWith(scanning: true, clearError: true));
-    final error = await (_scan ??= _scanOnce());
+    final error = await (_scan ?? _startScan());
     if (isClosed) return;
     emit(
       state.copyWith(
@@ -239,7 +277,20 @@ class WifiCubit extends Cubit<WifiState> {
         _scan != null) {
       return;
     }
-    await (_scan = _scanOnce());
+    await _startScan();
+  }
+
+  /// Starts [_scanOnce] as [_scan], which it stays until it ends. Cleared
+  /// here rather than inside it: a scan that fails before its first await
+  /// ends before it could be assigned.
+  Future<Object?> _startScan() {
+    final scan = _scan = _scanOnce();
+    unawaited(
+      scan.whenComplete(() {
+        if (identical(_scan, scan)) _scan = null;
+      }),
+    );
+    return scan;
   }
 
   /// One scan and the status after it; the error, or null.
@@ -256,17 +307,11 @@ class WifiCubit extends Cubit<WifiState> {
         final seen = bySsid[n.ssid];
         if (seen == null || n.signal > seen.signal) bySsid[n.ssid] = n;
       }
-      emit(
-        state.copyWith(
-          networks: bySsid.values.toList(),
-          status: epoch == _statusEpoch ? status : null,
-        ),
-      );
+      final next = epoch == _statusEpoch ? _live(status) : state;
+      emit(next.copyWith(networks: bySsid.values.toList()));
       return null;
     } on Object catch (e) {
       return e;
-    } finally {
-      _scan = null;
     }
   }
 
@@ -551,6 +596,9 @@ class WifiCubit extends Cubit<WifiState> {
   /// is on purpose.
   Future<void> forget(String ssid) async {
     if (!state.supported) return;
+    // A scan in flight lands first, so it cannot put the network back.
+    await _scan;
+    if (isClosed) return;
     final forgettingActive =
         state.status.connected && state.status.ssid == ssid;
     emit(

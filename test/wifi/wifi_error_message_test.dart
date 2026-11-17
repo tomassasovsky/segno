@@ -48,18 +48,4 @@ void main() {
       );
     });
   });
-
-  group('any other failed action', () {
-    test('is one plain line, never the helper text', () {
-      expect(
-        wifiErrorMessage(l10n, 'segno-wifi-ctl: no saved network named X'),
-        l10n.networkActionFailed,
-      );
-    });
-
-    test('nothing for no error', () {
-      expect(wifiErrorMessage(l10n, null), isEmpty);
-      expect(wifiErrorMessage(l10n, ''), isEmpty);
-    });
-  });
 }

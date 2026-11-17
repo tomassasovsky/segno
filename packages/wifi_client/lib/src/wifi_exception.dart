@@ -21,8 +21,8 @@ enum WifiJoinError {
   /// The key was never tested.
   noConnection;
 
-  /// The failure the helper named with [code]; [noConnection] for none or
-  /// one this build does not know.
+  /// The failure the helper named with [code]; [noConnection] when it named
+  /// none (it could not reach NetworkManager, or the join never started).
   static WifiJoinError fromCode(String? code) => switch (code) {
     'wrong-password' => wrongPassword,
     'not-found' => notFound,

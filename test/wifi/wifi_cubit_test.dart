@@ -55,12 +55,20 @@ class _FakeWifiClient implements WifiClient {
   }
 
   @override
-  Future<List<WifiNetwork>> scan() async {
+  Future<List<WifiNetwork>> scan() {
     scans++;
+    // A client that throws before it returns a future at all.
+    if (scanThrowsAtOnce) throw StateError('no helper');
+    return _scan();
+  }
+
+  Future<List<WifiNetwork>> _scan() async {
     final gate = scanGate;
     if (gate != null) await gate.future;
     return networks;
   }
+
+  bool scanThrowsAtOnce = false;
 
   /// How many scans ran.
   int scans = 0;
@@ -183,6 +191,19 @@ class _FakeWifiClient implements WifiClient {
 }
 
 WifiRepository _repo(_FakeWifiClient client) => WifiRepository(client: client);
+
+/// A repository whose monitor ends as soon as it is listened to.
+class _EndingMonitorRepository extends WifiRepository {
+  new(_FakeWifiClient client, this._listened) : super(client: client);
+
+  final void Function() _listened;
+
+  @override
+  Stream<void> changes() {
+    _listened();
+    return const Stream.empty();
+  }
+}
 
 /// Waits until the join loop has actually entered its backoff.
 ///
@@ -1358,6 +1379,79 @@ void main() {
           ..flushMicrotasks()
           ..elapse(WifiCubit.changeSettle);
         expect(cubit.state.status.connected, isFalse);
+      });
+    });
+
+    test('a scan that throws at once leaves nothing behind', () {
+      final client = _FakeWifiClient(status: studio)..scanThrowsAtOnce = true;
+      open(client, (async, cubit) {
+        async.elapse(WifiCubit.scanInterval);
+        client.scanThrowsAtOnce = false;
+        final scans = client.scans;
+        async.elapse(WifiCubit.scanInterval);
+        expect(client.scans, scans + 1, reason: 'the next scan runs');
+        unawaited(cubit.connect('Rehearsal'));
+        async.flushMicrotasks();
+        expect(client.connects, [('Rehearsal', null)]);
+      });
+    });
+
+    test('a scan in flight cannot put back a network just forgotten', () {
+      final client = _FakeWifiClient(
+        status: studio,
+        networks: const [
+          WifiNetwork(ssid: 'Old', signal: 50, secured: true, saved: true),
+        ],
+      );
+      open(client, (async, cubit) {
+        client.scanGate = Completer<void>();
+        async.elapse(WifiCubit.scanInterval);
+        unawaited(cubit.forget('Old'));
+        async.flushMicrotasks();
+        client.scanGate!.complete();
+        async.flushMicrotasks();
+        expect(client.forgotten, ['Old']);
+        expect(cubit.state.networks.where((n) => n.ssid == 'Old'), isEmpty);
+      });
+    });
+
+    test('a connection that comes up live clears an earlier failure', () {
+      final client = _FakeWifiClient(status: dropped)
+        ..connectErrors.add(
+          const WifiHelperException(
+            'segno-wifi-ctl: join failed: not-found',
+            join: WifiJoinError.notFound,
+          ),
+        );
+      open(client, (async, cubit) {
+        unawaited(cubit.connect('Rehearsal'));
+        async.flushMicrotasks();
+        expect(cubit.state.failedSsid, 'Rehearsal');
+
+        client.statusValue = studio;
+        client.monitor.add(null);
+        async.elapse(WifiCubit.changeSettle);
+        expect(cubit.state.status.ssid, 'The Studio');
+        expect(cubit.state.failedSsid, isNull);
+        expect(cubit.state.joinError, isNull);
+      });
+    });
+
+    test('a monitor that keeps ending is started again less often', () {
+      final client = _FakeWifiClient(status: studio);
+      fakeAsync((async) {
+        var listens = 0;
+        final repository = _EndingMonitorRepository(client, () => listens++);
+        final cubit = WifiCubit(repository: repository);
+        unawaited(cubit.start());
+        async.flushMicrotasks();
+        expect(listens, 1);
+        async.elapse(const Duration(minutes: 3));
+        // 5, 10, 20, 40 s, then a minute apart: 5 more in three minutes,
+        // not 36.
+        expect(listens, inInclusiveRange(5, 7));
+        unawaited(cubit.close());
+        async.flushMicrotasks();
       });
     });
 

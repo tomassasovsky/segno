@@ -16,9 +16,3 @@ String wifiJoinErrorMessage(
   WifiJoinError.noAddress => l10n.networkJoinNoAddress(ssid),
   WifiJoinError.noConnection => l10n.networkJoinNoConnection(ssid),
 };
-
-/// What the page says when a Wi-Fi action that is not a join failed (a scan,
-/// Disconnect, Forget, the radio switch, the first status read). The
-/// helper's own text is for the log, not the screen.
-String wifiErrorMessage(AppLocalizations l10n, String? raw) =>
-    raw == null || raw.isEmpty ? '' : l10n.networkActionFailed;
