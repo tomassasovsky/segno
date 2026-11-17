@@ -4375,18 +4375,21 @@ LE_EXPORT int32_t le_wav_patch_sizes(const char* path, uint64_t max_frames,
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's
  * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a
- * dedicated worker thread: full-length per-track dry stems (part 7,
- * `stems/dry/track<channel>.wav`), per-track wet (FX-applied) stems and a
- * reconstructed master bus (part 8, `stems/wet/track<channel>.wav` +
- * `stems/wet/master.wav`: track sum + master gain + limiter — this
- * feature's golden-parity guardrail against the live-captured master).
+ * dedicated worker thread: full-length per-lane dry stems (part 7,
+ * `stems/dry/track<channel>-lane<lane>.wav`, #1824), per-lane wet
+ * (FX-applied) stems and a reconstructed master bus (part 8,
+ * `stems/wet/track<channel>-lane<lane>.wav` + `stems/wet/master.wav`: the
+ * lanes' sum + the captured output's stages — this feature's golden-parity
+ * guardrail against the live-captured master), listed in
+ * `stems/stems.json`.
  * Reads exclusively from disk — no live-engine dependency — so a render can
  * run concurrently with live looping, and a crash-salvage render is free. */
 
 /* Starts an offline render of the finalized capture at `capture_dir`: spawns
- * a worker thread that writes `stems/dry/track<channel>.wav` +
- * `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
- * track, and `stems/wet/master.wav`, all a block at a time together (#1747),
+ * a worker thread that writes `stems/dry/track<channel>-lane<lane>.wav` +
+ * `stems/wet/track<channel>-lane<lane>.wav` under `capture_dir` for every
+ * lane of every non-empty track (#1824), `stems/wet/master.wav` and the
+ * index `stems/stems.json`, all a block at a time together (#1747),
  * each published at its path once it seals, with poll-based progress.
  * Returns LE_OK once the worker thread is launched (this call never blocks
  * on the render itself), LE_ERR_INVALID

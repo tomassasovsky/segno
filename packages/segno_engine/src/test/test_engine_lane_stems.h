@@ -301,10 +301,11 @@ static void test_lane_stems_match_live(void) {
   CHECK(test_read_wav_fixed(path, dry, (int32_t)frames) == (int32_t)frames);
   CHECK(lst_peak(dry, 0, 3 * LST_LEN) == 0.0f);
   CHECK(lst_peak(dry, frames - LST_LEN, frames) > 0.1f);
-  /* Lane 3 recorded nothing. */
+  /* Lane 3 never held anything: it has no stems. */
   snprintf(path, sizeof(path), "%s/stems/wet/track0-lane3.wav", dir);
-  CHECK(test_read_wav_fixed(path, wet, (int32_t)frames) == (int32_t)frames);
-  CHECK(lst_peak(wet, 0, frames) == 0.0f);
+  FILE* none = fopen(path, "rb");
+  CHECK(none == NULL);
+  if (none != NULL) fclose(none);
 
   /* The lanes summed through their mix are the track's master. */
   snprintf(path, sizeof(path), "%s/stems/wet/master.wav", dir);
@@ -332,10 +333,7 @@ static void test_lane_stems_match_live(void) {
                "\"wet\":\"stems/wet/track0-lane1.wav\"},"
                "{\"channel\":0,\"lane\":2,"
                "\"dry\":\"stems/dry/track0-lane2.wav\","
-               "\"wet\":\"stems/wet/track0-lane2.wav\"},"
-               "{\"channel\":0,\"lane\":3,"
-               "\"dry\":\"stems/dry/track0-lane3.wav\","
-               "\"wet\":\"stems/wet/track0-lane3.wav\"}]}\n") == 0);
+               "\"wet\":\"stems/wet/track0-lane2.wav\"}]}\n") == 0);
 
 done:
   for (int c = 0; c < LST_INPUTS; ++c) free(alone[c]);
@@ -430,7 +428,8 @@ static void test_lane_stems_without_logged_count(void) {
 static void test_lane_count_is_logged(void) {
   printf("test_lane_count_is_logged\n");
   le_engine* e = le_engine_create();
-  CHECK(le_engine_configure(e, 48000, 2, 1, 48000) == LE_OK);
+  /* One input: process_const feeds a block of one channel. */
+  CHECK(le_engine_configure(e, 48000, 1, 1, 48000) == LE_OK);
   float out[64];
   CHECK(perf_arm_dir(e, perf_test_dir()) == LE_OK);
   drain(e);

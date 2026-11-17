@@ -246,8 +246,10 @@ index once it has sealed its stems, under `stems/stems.json.part` and
 renamed into place, so an index on disk always describes one whole render.
 A render cancelled part way leaves the previous render's stems and index.
 
-The lanes a track renders are every lane either snapshot lists, every lane a
-layer holds, and every lane count the log gives it. The lanes share the
+The lanes a track renders run up to the last lane that holds material: a
+take in either snapshot (`pcmRef`) or a lane of a layer. A lane listed empty
+at the arm, or counted active but never recorded, gets no stems. If the index
+cannot be written, the render reports every track failed. The lanes share the
 track's transport, so every lane is rebuilt from the same facts with its own
 images: lane `l` of each layer and snapshot. A lane a snapshot does not list
 while lane 0 has a take reads as silence there, except for the last pass's

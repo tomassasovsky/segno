@@ -76,9 +76,11 @@
 #if defined(_WIN32)
 #include <direct.h> /* _mkdir */
 #include <windows.h>
+#include <io.h> /* _commit */
 #else
 #include <pthread.h>
 #include <sys/stat.h> /* mkdir */
+#include <unistd.h>   /* fsync */
 #endif
 
 /* ---- tuning ---- */
@@ -564,11 +566,11 @@ static int le_pr_collect_channels(const le_pr_manifest* m,
   return n;
 }
 
-/* How many lanes [channel] renders (#1824): every lane a snapshot lists, a
- * layer holds or the log gives the track, so a lane added during the take
- * renders too. At least lane 0. */
+/* How many lanes [channel] renders (#1824): up to the last lane that holds
+ * material somewhere, a snapshot's take or a layer's lane, so a lane added
+ * during the take renders too, and a lane that never held any (listed empty
+ * at the arm, or counted active) does not. At least lane 0. */
 static int32_t le_pr_channel_lanes(const le_pr_manifest* m,
-                                   const le_pr_log_entry* log, int log_count,
                                    int32_t channel) {
   int32_t n = 1;
   for (int pass = 0; pass < 2; ++pass) {
@@ -576,8 +578,10 @@ static int32_t le_pr_channel_lanes(const le_pr_manifest* m,
         le_pr_find_track(pass == 0 ? m->arm_tracks : m->disarm_tracks, channel);
     const le_json_value* lanes = le_json_get(track, "lanes");
     for (int i = 0; i < le_json_length(lanes); ++i) {
-      const int32_t lane = (int32_t)le_json_number(
-          le_json_get(le_json_at(lanes, i), "lane"), -1);
+      const le_json_value* entry = le_json_at(lanes, i);
+      if (le_json_get(entry, "pcmRef") == NULL) continue;
+      const int32_t lane =
+          (int32_t)le_json_number(le_json_get(entry, "lane"), -1);
       if (lane + 1 > n) n = lane + 1;
     }
   }
@@ -589,12 +593,6 @@ static int32_t le_pr_channel_lanes(const le_pr_manifest* m,
     const int32_t count =
         (int32_t)le_json_number(le_json_get(v, "lane_count"), 1);
     if (count > n) n = count;
-  }
-  for (int i = 0; i < log_count; ++i) {
-    if (log[i].cmd.code == LE_CMD_SET_LANE_COUNT &&
-        log[i].cmd.lanei.channel == channel && log[i].cmd.lanei.value > n) {
-      n = log[i].cmd.lanei.value;
-    }
   }
   return n > LE_MAX_LANES ? LE_MAX_LANES : n;
 }
@@ -3428,10 +3426,11 @@ static void le_pr_channel_seal(le_pr_channel_run* c) {
 /* Writes `stems/stems.json` (#1824, docs/formats/performance-manifest-
  * format.md): every lane stem this render published, by track and lane, so
  * a reader lists them rather than guessing which lanes a track had. Written
- * under `.part` and published like a stem; a render that cannot write it
- * leaves none, and a reader then finds no stems. */
-static void le_pr_write_stem_index(const char* capture_dir,
-                                   const le_pr_channel_run* runs, int count) {
+ * under `.part`, synced and published like a stem. Returns 0 when it could
+ * not be written: then there is none, a reader finds no stems, and the
+ * render reports every track failed. */
+static int le_pr_write_stem_index(const char* capture_dir,
+                                  const le_pr_channel_run* runs, int count) {
   char path[LE_PR_FULL_PATH_MAX];
   char part[LE_PR_FULL_PATH_MAX + 8];
   snprintf(path, sizeof(path), "%s/stems/stems.json", capture_dir);
@@ -3439,7 +3438,7 @@ static void le_pr_write_stem_index(const char* capture_dir,
   FILE* f = fopen(part, "wb");
   if (f == NULL) {
     remove(path);
-    return;
+    return 0;
   }
   int ok = fprintf(f, "{\"version\":1,\"lanes\":[") > 0;
   int first = 1;
@@ -3459,12 +3458,19 @@ static void le_pr_write_stem_index(const char* capture_dir,
     ok = ok && fputc('}', f) != EOF;
     first = 0;
   }
-  ok = ok && fprintf(f, "]}\n") > 0;
+  ok = ok && fprintf(f, "]}\n") > 0 && fflush(f) == 0;
+#if defined(_WIN32)
+  ok = ok && _commit(_fileno(f)) == 0;
+#else
+  ok = ok && fsync(fileno(f)) == 0;
+#endif
   ok = fclose(f) == 0 && ok;
   if (!ok || le_wav_publish(part, path) == 0) {
     remove(part);
     remove(path);
+    return 0;
   }
+  return 1;
 }
 
 static void le_pr_worker_main(void* arg) {
@@ -3493,7 +3499,7 @@ static void le_pr_worker_main(void* arg) {
   int32_t lane_counts[LE_MAX_TRACKS];
   int run_count = 0;
   for (int i = 0; i < channel_count; ++i) {
-    lane_counts[i] = le_pr_channel_lanes(&manifest, log, log_count, channels[i]);
+    lane_counts[i] = le_pr_channel_lanes(&manifest, channels[i]);
     run_count += lane_counts[i];
   }
 
@@ -3613,10 +3619,12 @@ static void le_pr_worker_main(void* arg) {
         le_pr_channel_seal(&runs[i]);
         if (runs[i].summed && !runs[i].ok) le_pr_stem_drop(&master_file);
       }
-      le_pr_write_stem_index(r->capture_dir, runs, run_count);
-      /* A track succeeds when every one of its lanes does. */
+      const int indexed =
+          le_pr_write_stem_index(r->capture_dir, runs, run_count);
+      /* A track succeeds when every one of its lanes does, and the index
+       * names them. */
       for (int i = 0, k = 0; i < channel_count; ++i) {
-        int ok = 1;
+        int ok = indexed;
         for (int32_t l = 0; l < lane_counts[i]; ++l, ++k) ok &= runs[k].ok;
         const int index =
             atomic_load_explicit(&r->track_count, memory_order_relaxed);

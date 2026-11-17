@@ -92,7 +92,7 @@ abstract final class EffectText {
     for (final t in tracksOf(manifest['armSnapshot'])) {
       if (_int(t['channel']) != channel) continue;
       for (final entry in _list(t, 'lanes')) {
-        if ((_int(entry['lane']) ?? 0) != lane) continue;
+        if (_int(entry['lane']) != lane) continue;
         return _chain(entry['effects'], entry['chainEnabled'], false);
       }
     }
