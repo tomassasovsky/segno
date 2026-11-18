@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Tests for segno-wifi-retry (#824, #963, #1326).
+# Tests for segno-wifi-retry (#824, #963, #1326, #1843).
 #
-# The boot backstop used to fire `connection up` into an empty iwd scan cache
+# The boot backstop used to fire `connection up` into an empty scan list
 # (#963), then gave up after three plain `connection up` calls that could
-# never work: after one failure NetworkManager's iwd backend asks secret
-# agents for a new key, and the console runs none (#1326). These assert it
+# never work: after a failure that ended as `no-secrets`, NetworkManager asks
+# secret agents for a new key, and the console runs none (#1326). These assert it
 # rescans first, activates on the stored key (through segno-wifi-ctl
 # activate and a passwd-file), leaves an activation NM already has in flight
 # alone, keeps retrying until connected within its budget, honours the
@@ -270,8 +270,8 @@ check "activates" "up uuid-Cafe" "$(grep '^up ' "$work/events")"
 check "no passwd-file" no "$(called_with 'passwd-file')"
 teardown
 
-# The retry's `connection up` on top of NM's own auto-activation aborted it
-# (net.connman.iwd.Aborted) and threw away the attempt that would have worked.
+# The retry's `connection up` on top of NM's own auto-activation replaced it
+# and threw away the attempt that would have worked (#1326).
 echo "leaves an activation already in flight alone"
 setup
 STATES="connecting connecting connected" RETRY_FOR=60 run_retry

@@ -3,39 +3,42 @@
 # after a drop while the console runs, until one connects or the budget runs
 # out (#824, #963, #1326, #1337).
 #
-# At boot, the first activation can fail for reasons that have nothing to do
-# with the password: iwd autoconnecting off its own store (#824), an empty
-# scan cache (#963), or a handshake that times out while the AP is still
-# settling (#1326: status 16, "Connected BSS not in scan results"). NM maps
-# every one of them to 'no-secrets', blocks autoconnect, and never retries. A
-# console with a perfectly good saved network then sits offline until a human
-# opens the Network page.
+# Raspberry Pi OS has nothing like this, and on Pi OS Lite, which runs no
+# desktop, a console in the same situation stays offline. This is a
+# deliberate deviation (#1843, docs/NETWORK_PARITY.md). NetworkManager retries
+# on its own when a network is missing or times out: it tries a profile four
+# times, then again five minutes later. But several failures that have
+# nothing to do with the password end as `no-secrets`: a drop during the
+# 4-way handshake (a router restarting mid-join), or a join that times out
+# on a profile that has not connected before. NetworkManager then asks a
+# secret agent for a new key (nm-device-wifi.c). A desktop's network applet
+# would answer; a headless console runs none, so the request fails and
+# NetworkManager blocks the profile from autoconnect until an agent registers
+# (nm-policy.c). A console with a good saved network then sits offline until
+# someone opens the Network page. The owner decided it must reconnect by
+# itself, at boot and after a drop (#1326, #1337).
 #
 # A runtime drop gets the same treatment: the NetworkManager dispatcher hook
 # (segno-wifi-dispatch) starts this service when wlan0 goes down.
 #
-# This service is the mechanism-independent backstop: while wlan0 is
-# disconnected, activate a saved network the owner lets auto-join, with
-# backoff, until it connects or RETRY_FOR seconds have passed. It never writes
-# a profile. It stands down for good when the console is online, the radio is
-# off, the owner disconnected by hand, or nothing saved may auto-join.
+# While wlan0 is disconnected, it activates a saved network the owner lets
+# auto-join, with backoff, until it connects or RETRY_FOR seconds have
+# passed. It never writes a profile. It stands down for good when the console
+# is online, the radio is off, the owner disconnected by hand, or nothing
+# saved may auto-join.
 #
 # Rules, each learned from a boot that stayed offline:
 #
 # - Activate on the stored key (segno-wifi-ctl activate, which hands it over
-#   through a passwd-file). NetworkManager's iwd backend gives iwd the stored
-#   PSK only until the profile has a recorded attempt. After one failure it
-#   asks secret agents for a NEW key (REQUEST_NEW in
-#   nm_device_iwd_agent_query), and a headless console runs none, so a plain
-#   `connection up` fails in milliseconds with "No agents were available"
-#   while the key sits in the keyfile (#1326).
+#   through a passwd-file). That makes nmcli the agent that answers
+#   NetworkManager's request for a new key; a plain `connection up` on a
+#   profile blocked for no-secrets fails in milliseconds with "No agents
+#   were available" while the key sits in the keyfile (#1326).
 # - Never start an activation while one is in flight. The retry's own rescan
-#   lets NM auto-activate; a `connection up` on top of that aborts it
-#   (net.connman.iwd.Aborted) and throws away the attempt that would have
-#   worked (#1326).
-# - Rescan and wait for a saved SSID before `connection up`. iwd's periodic
-#   scan is off (DisablePeriodicScan), so the scan cache is empty at boot and
-#   an activation into it fails at prepare (#963).
+#   lets NM auto-activate; a `connection up` on top of that replaces it and
+#   throws away the attempt that would have worked (#1326).
+# - Rescan and wait for a saved SSID before `connection up`: an activation
+#   while the scan list lacks the network fails at once (#963).
 # - Prefer the newest saved network that is in range. The newest one overall
 #   may be at home while the console is at a venue whose network failed once
 #   and is now blocked from NM's own autoconnect.
@@ -87,8 +90,8 @@ in_flight() {
 # Saved WiFi profiles the owner lets auto-join, newest first, one
 # "uuid<TAB>ssid" per line, from a `UUID,TYPE,AUTOCONNECT,TIMESTAMP` listing.
 # UUIDs contain no colons, so nmcli's \:-escaping of names never enters the
-# split. TIMESTAMP is the last successful activation (NM resets it to 0 after
-# a failure), so the network the owner used last comes first.
+# split. TIMESTAMP is the last successful activation (0 for a profile whose
+# first activation failed), so the network the owner used last comes first.
 candidates() {
   printf '%s\n' "$1" \
     | awk -F: '$2 == "802-11-wireless" && $3 == "yes" { print $4 "\t" $1 }' \
@@ -110,8 +113,8 @@ first_in_range() {
   done
 }
 
-# One rescan, then poll the list. iwd fills the list as that scan completes;
-# asking again every second would restart it. Nothing in range is not a
+# One rescan, then poll the list. NetworkManager fills the list as that scan
+# completes; asking again every second would restart it. Nothing in range is not a
 # reason to skip the up -- hidden networks never appear here -- so the newest
 # candidate is the fallback.
 pick() {

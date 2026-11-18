@@ -738,6 +738,16 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install shell-test tools
         run: sudo apt-get update && sudo apt-get install -y jq rauc squashfs-tools
+      # nmcli for the keyfile check in run_network_config_tests.sh, which
+      # reads a keyfile with `nmcli --offline` and needs no daemon. The
+      # policy-rc.d keeps the package from starting NetworkManager, which
+      # would take the runner's own network over.
+      - name: Install nmcli without starting NetworkManager
+        run: |
+          printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d >/dev/null
+          sudo chmod +x /usr/sbin/policy-rc.d
+          sudo apt-get install -y --no-install-recommends network-manager
+          sudo rm -f /usr/sbin/policy-rc.d
       - name: Inspect update bundle test artifacts
         run: bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
       - name: Run bundle collection tests
@@ -758,8 +768,8 @@ jobs:
         run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
       - name: Run usb-ctl tests (dash)
         run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_usb_ctl_tests.sh
-      - name: Run wifi-regdom tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_regdom_tests.sh
+      - name: Run network configuration tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_network_config_tests.sh
       - name: Run wifi-backend ownership tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_backend_tests.sh
       - name: Run wifi join-error classification tests

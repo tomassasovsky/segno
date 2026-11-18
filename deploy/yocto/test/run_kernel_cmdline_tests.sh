@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Wiring tests for the kernel cmdline: the HDMI force-on (#821, #1318, #1591)
-# and the NVMe power-saving switches (#1795).
+# Wiring tests for the kernel cmdline: the HDMI force-on (#821, #1318, #1591),
+# the NVMe power-saving switches (#1795) and the Wi-Fi regulatory domain
+# (#1843).
 #
 # The `D` in `video=HDMI-A-*:...D` keeps both connectors enabled whatever the
 # hotplug line says. A panel that drops HPD for a moment (a sleeping TV, a
@@ -135,6 +136,14 @@ check "no pcie_aspm= (off makes the kernel refuse the policy)" "" \
 check "no CMDLINE:remove or plain CMDLINE assignment in the image's config" 0 \
     "$(grep -rhE '^[[:space:]]*CMDLINE(:remove|:prepend)?[[:space:]]*[?:+.]?=' \
         "$KAS" "$KAS_RPI5" "$here/../meta-segno" | wc -l | tr -d ' ')"
+
+echo
+echo "the cmdline sets the Wi-Fi regulatory domain as Raspberry Pi OS does"
+# raspi-config's do_wifi_country writes cfg80211.ieee80211_regdom= into
+# cmdline.txt (#1843). A second value is as bad as a wrong one: the kernel
+# takes the last it parses.
+check "cfg80211.ieee80211_regdom is AR, set once" AR \
+    "$(arg_values 'cfg80211\.ieee80211_regdom' | paste -sd, -)"
 
 echo
 echo "kernel-cmdline: $pass passed, $fail failed"
