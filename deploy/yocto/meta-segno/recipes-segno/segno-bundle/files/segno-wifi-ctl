@@ -177,9 +177,16 @@ WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJEC
 # Why a join failed, as one code on stdout ({"error":<code>}) for the app to
 # word, with the evidence on stderr:
 #
-#   wrong-password  wpa_supplicant logged "4-Way Handshake failed": the access
-#                   point started the handshake and did not accept the key.
-#                   The only evidence of a wrong key there is.
+#   wrong-password  wpa_supplicant logged "4-Way Handshake failed", and the
+#                   disconnect it reports came from the access point with a
+#                   reason that means the key: 15 (4-way handshake timeout,
+#                   what an access point sends when the station's message 2
+#                   fails its check), 14 (MIC failure) or 23 (802.1X
+#                   authentication failed). wpa_supplicant logs the handshake
+#                   line for any drop during the handshake (events.c,
+#                   could_be_psk_mismatch), so a router restarting mid-join
+#                   or wpa_supplicant's own timeout (locally_generated=1)
+#                   does not count.
 #   not-found       the network is not in range: NetworkManager's
 #                   `ssid-not-found` ("The Wi-Fi network could not be
 #                   found").
@@ -200,6 +207,8 @@ WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJEC
 # so all of these end as `no-secrets` ("Secrets were required, but not
 # provided"), and reading that as a wrong password made the owner forget good
 # networks (#466, #1817).
+# <err> is nmcli's output, <cursor> and <epoch> mark the attempt's start,
+# and <uuid> and <ssid> name the profile it activated.
 join_failure() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
@@ -223,15 +232,33 @@ join_failure() {
         waited=$((waited + 1))
         evidence=$(join_evidence "$2" "$3")
     done
-    # NetworkManager's lines about this interface only: another device's
-    # failure (eth0 with no DHCP server) says nothing about this join.
-    nm_wifi=$(printf '%s\n' "$evidence" | grep -aF "device ($IFACE):" || true)
-    # The line that says most, for the journal: the handshake failure if
-    # there was one, else the last line that ended an attempt.
-    wpa_said=$(printf '%s\n' "$evidence" | grep -aE '4-Way Handshake failed' | tail -n1)
+    # A handshake failure whose disconnect came from the access point for
+    # the key, as "<disconnect line> / <handshake line>", or nothing. The
+    # disconnect line comes first: wpa_supplicant writes it, then the
+    # handshake line, for the same event.
+    refused=$(printf '%s\n' "$evidence" | awk '
+        /CTRL-EVENT-DISCONNECTED/ { d = $0; next }
+        /4-Way Handshake failed/ {
+            if (d !~ /locally_generated=1/ && d ~ / reason=(14|15|23)( |$)/) {
+                print d " / " $0
+                exit
+            }
+        }')
+    # NetworkManager's lines about this join only: from the activation of
+    # this profile on, and about this interface. Another device's failure
+    # (eth0 with no DHCP server), or NM's own attempt at another profile on
+    # wlan0 just before (a hidden network out of range), says nothing
+    # about it.
+    nm_wifi=$(printf '%s\n' "$evidence" | awk -v uuid="($4)" -v name="connection '$5' (" -v dev="device ($IFACE):" '
+        index($0, "Activation: starting connection") && ((uuid != "()" && index($0, uuid)) || index($0, name)) { buf = ""; on = 1 }
+        on && index($0, dev) { buf = buf $0 "\n" }
+        END { printf "%s", buf }')
+    # The line that says most, for the journal: the refused key if it was,
+    # else the last line that ended an attempt.
+    wpa_said=$refused
     [ -n "$wpa_said" ] \
         || wpa_said=$(printf '%s\n' "$evidence" | grep -aE "$WPA_END_RE" | tail -n1)
-    if printf '%s' "$evidence" | grep -qa '4-Way Handshake failed'; then
+    if [ -n "$refused" ]; then
         code=wrong-password
     elif printf '%s' "$lower" | grep -qE 'could not be found|no network with ssid' \
         || printf '%s' "$nm_wifi" | grep -qa "reason 'ssid-not-found'"; then
@@ -690,7 +717,7 @@ do_connect_nm() {
     set -e
     rm -f "$passf"
     if [ "$rc" -ne 0 ]; then
-        join_failure "$(cat "$errf")" "$mark" "$since"
+        join_failure "$(cat "$errf")" "$mark" "$since" "${existing:-$created}" "$ssid"
         rm -f "$errf"
         # A failed attempt leaves nothing behind and takes nothing away. A
         # profile made for it is removed, so the list never shows a network

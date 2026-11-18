@@ -24,8 +24,12 @@ After=data.mount segno-nm-persist.service
 Before=local-fs.target NetworkManager.service
 Conflicts=umount.target
 Before=umount.target
-# A missing /data must cost seconds on the boot path, not the default 90 s.
-# NetworkManager then keeps its state on the root filesystem for this boot.
+# A missing /data must cost seconds on the boot path, not the default 90 s:
+# NetworkManager, and with it SSH over Ethernet, waits for this job. The same
+# bound as the journal and coredump mounts. The cost is on a boot whose /data
+# takes longer than 10 s to mount (a long fsck): NetworkManager then keeps
+# that boot's state on the root filesystem, and the next boot reads the
+# /data copy from before it.
 JobTimeoutSec=10
 
 [Mount]

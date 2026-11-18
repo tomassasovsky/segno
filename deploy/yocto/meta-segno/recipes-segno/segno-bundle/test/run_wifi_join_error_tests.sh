@@ -193,6 +193,7 @@ teardown
 echo "a handshake failure and a later timeout"
 setup
 logged <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=15
 wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="SomeNetwork" auth_failures=2 duration=20 reason=WRONG_KEY
 wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
@@ -236,6 +237,7 @@ teardown
 echo "wpa_supplicant's line reaches the journal a moment late"
 setup
 cat > "$work/journal-late" <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=15
 wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 LOG
 WAIT= run_connect
@@ -263,6 +265,7 @@ teardown
 echo "wpa_supplicant's line reaches the journal two seconds late"
 setup
 cat > "$work/journal-late" <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=15
 wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 wlan0: CTRL-EVENT-SSID-TEMP-DISABLED id=0 ssid="SomeNetwork" auth_failures=1 duration=10 reason=WRONG_KEY
 LOG
@@ -294,6 +297,7 @@ teardown
 echo "a handshake failure is read at once"
 setup
 logged <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=15
 wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 LOG
 WAIT= run_connect
@@ -317,6 +321,56 @@ wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
 LOG
 WAIT= run_connect
 check "is a wrong password" wrong-password "$(code)"
+teardown
+
+echo "NetworkManager's attempt at another profile says nothing about this join"
+setup
+# A saved hidden network out of range: NM tried it by itself just before.
+logged <<'LOG'
+<info>  [1794972300.1000] device (wlan0): Activation: starting connection 'Hidden' (5d1e0f3a-2b4c-4d6e-8f10-111213141516)
+<info>  [1794972305.2000] device (wlan0): state change: config -> failed (reason 'ssid-not-found', managed-type: 'full')
+<info>  [1794972307.2794] device (wlan0): Activation: starting connection 'SomeNetwork' (0a3c55e2-9b1f-4c7e-8d2a-6f4b1e0c9d11)
+wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
+LOG
+run_connect
+check "is a failed connection, not not-found" no-connection "$(code)"
+teardown
+
+echo "wpa_supplicant's own timeout during the handshake is not the key"
+setup
+# could_be_psk_mismatch() writes the handshake line for any drop in the
+# handshake, the station's own deauth included.
+logged <<'LOG'
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: Authentication with 58:11:22:34:39:1c timed out.
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=3 locally_generated=1
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+run_connect
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "a router that restarts mid-handshake is not the key"
+setup
+logged <<'LOG'
+wlan0: Associated with 58:11:22:34:39:1c
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=3
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+run_connect
+check "is a failed connection" no-connection "$(code)"
+teardown
+
+echo "an access point that reports a MIC failure refused the key"
+setup
+logged <<'LOG'
+wlan0: CTRL-EVENT-DISCONNECTED bssid=58:11:22:34:39:1c reason=14
+wlan0: WPA: 4-Way Handshake failed - pre-shared key may be incorrect
+LOG
+run_connect
+check "is a wrong password" wrong-password "$(code)"
+check "names the disconnect and the handshake" yes \
+    "$(has 'reason=14 / wlan0: WPA: 4-Way Handshake failed' "$work/stderr")"
 teardown
 
 echo "another interface's failure says nothing about this join"
@@ -344,6 +398,7 @@ teardown
 echo "NetworkManager logged that the network was not found"
 setup
 logged <<'LOG'
+<info>  [1794972307.2794] device (wlan0): Activation: starting connection 'SomeNetwork' (0a3c55e2-9b1f-4c7e-8d2a-6f4b1e0c9d11)
 <warn>  [1794972327.3010] device (wlan0): Activation: (wifi) association took too long, failing activation
 <info>  [1794972327.3023] device (wlan0): state change: config -> failed (reason 'ssid-not-found', managed-type: 'full')
 LOG
@@ -354,6 +409,7 @@ teardown
 echo "NetworkManager logged that no address came"
 setup
 logged <<'LOG'
+<info>  [1794972307.2794] device (wlan0): Activation: starting connection 'SomeNetwork' (0a3c55e2-9b1f-4c7e-8d2a-6f4b1e0c9d11)
 <info>  [1794972330.1000] device (wlan0): state change: ip-config -> failed (reason 'ip-config-unavailable', managed-type: 'full')
 LOG
 UP_ERROR='Error: Timeout expired (45 seconds)' run_connect

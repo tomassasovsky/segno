@@ -205,7 +205,9 @@ segno-brightness-ctl set 80
 
 A failed `connect` exits non-zero and prints why on stdout:
 `{"error":"wrong-password"}` only when wpa_supplicant logged "WPA: 4-Way
-Handshake failed - pre-shared key may be incorrect" during the attempt,
+Handshake failed - pre-shared key may be incorrect" during the attempt, after
+the access point disconnected it with reason 15, 14 or 23 (wpa_supplicant
+writes the same line for any drop during the handshake),
 otherwise `not-found`, `no-address` or `no-connection`; stderr names
 wpa_supplicant's evidence (`CTRL-EVENT-ASSOC-REJECT ... status_code=16` is
 the access point timing out the 802.11 authentication, #1816;
