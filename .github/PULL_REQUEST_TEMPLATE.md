@@ -13,4 +13,4 @@ Closes #
 - [ ] Native engine tests pass, if the engine changed
 - [ ] The console link contract test passes, if `firmware/` or `packages/pedal_repository` changed
 - [ ] Documentation is updated, if behavior changed
-- [ ] I agree to the [Segno Contributor License Agreement](https://github.com/tomassasovsky/segno/blob/claude/segno-integration/CLA.md), version 1.0
+- [ ] I agree to the [Segno Contributor License Agreement](https://github.com/tomassasovsky/segno/blob/master/CLA.md), version 1.0

@@ -1,6 +1,6 @@
 # Segno Contributor License Agreement
 
-Version 1.0, 17 November 2026
+Version 1.0, 18 November 2026
 
 This agreement is between you and Tomás Sasovsky, who maintains Segno (the
 "maintainer"). It applies to every contribution you submit to any Segno
@@ -38,11 +38,16 @@ licenses you grant below.
 
 ## 3. Copyright license
 
-You grant the maintainer, and everyone who receives Segno from the maintainer,
-a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-license to reproduce, modify, prepare derivative works of, publicly display,
-publicly perform, sublicense and distribute your contributions and those
-derivative works, under any terms, including proprietary and commercial ones.
+You grant the maintainer a perpetual, worldwide, non-exclusive, no-charge,
+royalty-free, irrevocable license to reproduce, modify, prepare derivative
+works of, publicly display, publicly perform, sublicense and distribute your
+contributions and those derivative works, under any terms, including
+proprietary and commercial ones.
+
+Everyone else receives your contributions under the open license of the
+repository you submitted them to, or under the terms of a license the
+maintainer grants them. This section gives no one but the maintainer the right
+to choose other terms.
 
 ## 4. Patent license
 
@@ -62,7 +67,15 @@ The maintainer will keep every contribution available under the open license
 of the repository you submitted it to (or a later version of that license),
 whatever other terms it is also offered under.
 
-## 6. What you confirm
+## 6. If Segno changes hands
+
+The maintainer may assign this agreement, with the licenses you granted and
+the promise in section 5, to a person or organization that takes over the
+maintenance of Segno, for example a company the maintainer forms to offer
+commercial licenses. From then on, "the maintainer" in this agreement means
+them, and section 5 binds them.
+
+## 7. What you confirm
 
 - Each contribution is your original work, or you have the right to submit it
   under this agreement. If it includes someone else's work, you say so and
@@ -72,13 +85,13 @@ whatever other terms it is also offered under.
   under this agreement, or they have waived those rights.
 - You will tell the maintainer if any of this stops being true.
 
-## 7. No warranty, no obligation
+## 8. No warranty, no obligation
 
 You provide your contributions as they are, without warranties or conditions
 of any kind, unless you agree otherwise in writing. The maintainer doesn't have
 to use any contribution.
 
-## 8. How to agree
+## 9. How to agree
 
 Tick the CLA box in the pull request template, or write "I agree to the Segno
 Contributor License Agreement, version 1.0" in your pull request or patch.
