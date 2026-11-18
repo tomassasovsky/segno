@@ -2574,18 +2574,15 @@ void main() {
         return dir;
       }
 
-      /// The arm snapshot the September file reads as: its own values, on
-      /// bus 0 with followOutput false and captureMask 3.
+      /// The manifest holds the September file's snapshot as it was
+      /// written, and reads it on bus 0 with followOutput false and
+      /// captureMask 3.
       void expectSeptemberArm(Map<String, dynamic> sidecar, String slug) {
-        final written = sidecar['armSnapshot'] as Map<String, dynamic>;
-        final september =
-            jsonDecode(consoleArmSnapshot(slug)) as Map<String, dynamic>;
-        expect(written, {
-          ...september,
-          'followOutput': false,
-          'captureMask': 3,
-          'outputEnabledMask': 0xFFFFFFFF,
-        });
+        expect(sidecar['armSnapshot'], jsonDecode(consoleArmSnapshot(slug)));
+        final arm = PerformanceManifest.fromJson(sidecar).armSnapshot!;
+        expect(arm.followOutput, isFalse);
+        expect(arm.captureBus, 0);
+        expect(arm.captureMask, 3);
       }
 
       test('is recovered with it, and its stem render starts', () async {
@@ -2813,8 +2810,7 @@ void main() {
         });
 
         test('leaves a take alone whose manifest already has a snapshot, '
-            'or whose file is not the September shape, or not yet '
-            'finalized', () async {
+            'or whose file is not the September shape', () async {
           final withArm = seedRecoveredWithout('perf-20260910-073238');
           final armed = readSidecar(withArm)
             ..['armSnapshot'] = <String, dynamic>{

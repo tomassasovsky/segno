@@ -356,14 +356,16 @@ The other capture fields take their usual defaults. What those builds did:
 
 The renderer (`perf_render.c`) and `PerformanceArmSnapshot.fromJson` apply
 the same rule. A finalize that folds such an `arm-snapshot.json` into this
-file writes it in the current shape, with the three values above.
+file, or a start that puts it back (see "Crash consistency"), writes it as it
+was written, so every take of this kind keeps the September shape.
 
 These takes were captured after the master gain and limiter, which neither
 current policy includes, and their lanes do not record an output route
 (`outputMask` reads as `3`). A reconstructed master (`stems/wet/master.wav`)
 of such a take is therefore not the captured master when the master gain was
-not unity or a lane was routed elsewhere. The captured master and the lane
-stems are not affected.
+not unity or a lane was routed elsewhere. It is copied only into the DAW
+package; the Live set, the Library's playback and the lane stems use the
+captured master and are not affected.
 
 ### FX stages and the presence-keyed version marker
 
@@ -494,8 +496,9 @@ the take unfinalized, its reason logged, for a build that can read it.
 A build with #1844 (#1842) finalized such a take without `armSnapshot` and
 kept its `arm-snapshot.json`. Each start puts that snapshot back: a finalized
 take, in the exports root or `recovered/`, whose manifest has no
-`armSnapshot` and whose `arm-snapshot.json` has the September shape gets the
-snapshot in its manifest, and the file is removed. A take whose files do not
+`armSnapshot` and whose `arm-snapshot.json` has the September shape and reads
+gets that snapshot in its manifest, as it was written, and the file is
+removed. A take whose files do not
 read keeps them, its reason logged. The take's stems are rendered when the
 Library first needs them.
 

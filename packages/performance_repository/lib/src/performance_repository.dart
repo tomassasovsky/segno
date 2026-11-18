@@ -1077,31 +1077,33 @@ class PerformanceRepository {
       for (final entity in entries) {
         final dir = entity.path;
         final armFile = File('$dir/$_armSnapshotFileName');
-        // A hidden directory is a delete in progress, never a take.
+        // A hidden directory is a delete in progress, never a take; an
+        // unfinalized one is the salvage's.
         if (entity is! Directory ||
             _basename(dir).startsWith('.') ||
             dir == _armedDir ||
-            !armFile.existsSync()) {
+            !armFile.existsSync() ||
+            !_sidecarFinalized(dir)) {
           continue;
         }
         try {
           final json = jsonDecode(
             File('$dir/$manifestName').readAsStringSync(),
           ) as Map<String, dynamic>;
-          if (json['finalized'] != true || json.containsKey('armSnapshot')) {
-            continue;
-          }
+          if (json.containsKey('armSnapshot')) continue;
           final arm =
               jsonDecode(armFile.readAsStringSync()) as Map<String, dynamic>;
           if (!PerformanceArmSnapshot.writtenBeforeDestinations(arm)) {
             continue;
           }
-          // Only the one key is added; the rest of the manifest is written
-          // back as it was read.
-          json['armSnapshot'] = PerformanceArmSnapshot.fromJson(
+          // Read first, so one that does not read stays in its file. Only
+          // the one key is added, as it was written; the rest of the
+          // manifest is written back as it was read.
+          PerformanceArmSnapshot.fromJson(
             arm,
             channelLayout: json['channel_layout'],
-          ).toJson();
+          );
+          json['armSnapshot'] = arm;
           await _publishManifest(dir, json);
         } on Object catch (error) {
           _warn(dir, 'keeps $_armSnapshotFileName unread: $error');
@@ -1833,15 +1835,22 @@ class PerformanceRepository {
     PerformanceDisarmSnapshot? disarmSnapshot,
   ) async {
     var resolvedArm = armSnapshot;
+    Map<String, dynamic>? septemberArm;
     final armFile = File('$dir/$_armSnapshotFileName');
     if (resolvedArm == null && armFile.existsSync()) {
       // A read or a decode that fails throws: the take waits for the next
       // start, and for a build that can read it. One written before capture
-      // destinations reads with the sidecar's channel layout (#1853).
+      // destinations reads with the sidecar's channel layout, and is kept
+      // as it was written (#1853).
+      final json =
+          jsonDecode(await armFile.readAsString()) as Map<String, dynamic>;
       resolvedArm = PerformanceArmSnapshot.fromJson(
-        jsonDecode(await armFile.readAsString()) as Map<String, dynamic>,
+        json,
         channelLayout: native['channel_layout'],
       );
+      if (PerformanceArmSnapshot.writtenBeforeDestinations(json)) {
+        septemberArm = json;
+      }
     }
 
     final manifest = PerformanceManifest(
@@ -1850,11 +1859,12 @@ class PerformanceRepository {
       native: native,
       armSnapshot: resolvedArm,
       disarmSnapshot: disarmSnapshot,
-    );
+    ).toJson();
+    if (septemberArm != null) manifest['armSnapshot'] = septemberArm;
     // A failed directory sync does not undo the finalize: the manifest is
     // in place, and if a power cut takes it back the next start finalizes
     // the take again.
-    await _publishManifest(dir, manifest.toJson());
+    await _publishManifest(dir, manifest);
     if (armFile.existsSync()) armFile.deleteSync();
 
     // Kick off the offline render (dry stems, wet stems, master
