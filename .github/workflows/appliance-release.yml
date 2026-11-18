@@ -164,10 +164,9 @@ jobs:
 
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
-      # ci-caches.yaml saves it on the trunk under this key; this job only
-      # restores it (#1787). A run dispatched from another branch, a tag or
-      # experimental cannot read the trunk's copy and downloads the core,
-      # where a save would put another 856 MB copy under its own ref.
+      # ci-caches.yaml saves it on master under this key, and a run on any
+      # ref restores the default branch's caches. This job only restores it
+      # (#1787): a save would put another 856 MB copy under its own ref.
       - name: Restore the Arduino core and libraries
         id: arduino-cache
         uses: actions/cache/restore@v6
@@ -368,7 +367,7 @@ jobs:
             exit 1
           fi
 
-      # Saved only on the trunk, by the step after the firmware check (#1787):
+      # Saved only on master, by the step after the firmware check (#1787):
       # an entry saved on any other ref could be read only by that ref.
       - name: Restore Yocto sstate + downloads (GitHub-hosted only)
         id: sstate-cache
@@ -448,10 +447,10 @@ jobs:
 
       # After the firmware check, so shared state that handed back a stale
       # package is not saved for later builds to restore.
-      - name: Save Yocto sstate + downloads (GitHub-hosted, trunk only)
+      - name: Save Yocto sstate + downloads (GitHub-hosted, master only)
         if: >-
           inputs.runner != 'self-hosted'
-          && github.ref == 'refs/heads/claude/segno-integration'
+          && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
           && steps.sstate-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:

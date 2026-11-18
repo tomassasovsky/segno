@@ -161,6 +161,36 @@ exit $exitCode
       }
     });
 
+    // The helper's code is the verdict, whatever NetworkManager said (#1843):
+    // here the access point timed out the authentication (status 16) and NM
+    // ended the join as no-secrets, as it does on a console with no agent.
+    test(
+      'NetworkManager saying secrets were missing is no wrong password',
+      () async {
+        helper(
+          stdout: '{"error":"no-connection"}',
+          exitCode: 1,
+          stderr:
+              'segno-wifi-ctl: join failed: no-connection (wlan0: '
+              'CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16; '
+              'nmcli: Error: Connection activation failed: Secrets were '
+              'required, but not provided)',
+        );
+        await expectLater(
+          client.connect('MyHouseWTF_es_2.4G'),
+          throwsA(
+            isA<WifiHelperException>()
+                .having((e) => e.join, 'join', WifiJoinError.noConnection)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('status_code=16'),
+                ),
+          ),
+        );
+      },
+    );
+
     test('a failed join with no code is a failed connection', () async {
       helper(stdout: '', exitCode: 1);
       await expectLater(

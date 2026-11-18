@@ -356,6 +356,35 @@ typedef struct le_pr_manifest {
   int32_t latency_offset;
 } le_pr_manifest;
 
+/* Whether `arm` is an arm snapshot as the builds before capture destinations
+ * (f9d8de318, 2026-10-01) wrote it (#1853): FX stages version 1 and no key
+ * those builds did not write, so no capture policy or mask and no master
+ * chain. The same rule as PerformanceArmSnapshot.writtenBeforeDestinations
+ * (performance_repository). Those builds tapped the first two enabled
+ * outputs after the master gain and limiter, with no destination level or
+ * mute in between: such a snapshot reads as followOutput false on bus 0,
+ * with captureMask 3 when channel_layout says the master is stereo. */
+static int le_pr_arm_before_destinations(const le_json_value* arm) {
+  static const char* const keys[] = {
+      "masterGain", "limiterOn", "limiterCeiling", "latencyOffsetFrames",
+      "tempoBpm",   "fxStagesVersion", "tracks", "monitors", "trackChains"};
+  const le_json_value* stages = le_json_get(arm, "fxStagesVersion");
+  if (stages == NULL || stages->type != LE_JSON_NUMBER ||
+      stages->number_value != 1) {
+    return 0;
+  }
+  for (const le_json_value* m = arm->first_child; m != NULL;
+       m = m->next_sibling) {
+    int known = 0;
+    for (size_t k = 0; k < sizeof(keys) / sizeof(keys[0]) && !known; ++k) {
+      known = (size_t)m->key_len == strlen(keys[k]) &&
+              strncmp(m->key, keys[k], (size_t)m->key_len) == 0;
+    }
+    if (!known) return 0;
+  }
+  return 1;
+}
+
 /* Loads and validates performance.json. Returns LE_OK, LE_ERR_INVALID for a
  * missing, short, unparseable or invalid manifest, or LE_ERR_DEVICE when the
  * worker cannot allocate. The parser arena is sized from the complete text:
@@ -419,8 +448,19 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
   out->capture_frames =
       (uint64_t)le_json_number(le_json_get(root, "capture_frames"), 0);
   const le_json_value* arm = le_json_get(root, "armSnapshot");
+  const int before_destinations = le_pr_arm_before_destinations(arm);
+  if (before_destinations) {
+    const le_json_value* channels = le_json_get(
+        le_json_get(root, "channel_layout"), "master_channels");
+    if (channels == NULL || channels->type != LE_JSON_NUMBER ||
+        channels->number_value != 2) {
+      free(text);
+      return LE_ERR_INVALID;
+    }
+  }
   const le_json_value* policy = le_json_get(arm, "followOutput");
-  if (policy == NULL || policy->type != LE_JSON_BOOL) {
+  if (!before_destinations &&
+      (policy == NULL || policy->type != LE_JSON_BOOL)) {
     free(text);
     return LE_ERR_INVALID;
   }
@@ -434,7 +474,7 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
   out->layers_dropped =
       le_json_number(le_json_get(root, "layers_dropped"), 0) > 0 ||
       le_json_number(le_json_get(root, "layer_overruns"), 0) > 0;
-  out->arm_follow_output = policy->bool_value;
+  out->arm_follow_output = before_destinations ? 0 : policy->bool_value;
   const le_json_value* bus = le_json_get(arm, "captureBus");
   const double bus_number = le_json_number(bus, 0);
   if (bus != NULL && (bus->type != LE_JSON_NUMBER || !isfinite(bus_number) ||
@@ -445,10 +485,11 @@ static int32_t le_pr_load_manifest(const char* dir, char** out_text,
   }
   out->arm_capture_bus = (int32_t)bus_number;
   const le_json_value* mask = le_json_get(arm, "captureMask");
-  const double mask_number = le_json_number(mask, 0);
-  if (mask == NULL || mask->type != LE_JSON_NUMBER || !isfinite(mask_number) ||
-      mask_number < 1 || mask_number > UINT32_MAX ||
-      floor(mask_number) != mask_number) {
+  const double mask_number = before_destinations ? 3 : le_json_number(mask, 0);
+  if (!before_destinations &&
+      (mask == NULL || mask->type != LE_JSON_NUMBER || !isfinite(mask_number) ||
+       mask_number < 1 || mask_number > UINT32_MAX ||
+       floor(mask_number) != mask_number)) {
     free(text);
     return LE_ERR_INVALID;
   }

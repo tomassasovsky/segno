@@ -155,6 +155,9 @@ void main() {
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
       now: () => clock,
+      // Every reason is built, so a malformed one fails the test that
+      // reaches it.
+      log: (_) {},
     );
   });
 
@@ -2055,6 +2058,7 @@ void main() {
 
     PerformanceRepository smallParts({
       StorageIo Function() storageIo = fakeStorageIo,
+      void Function(String message)? log,
     }) => PerformanceRepository(
       storageIo: storageIo,
       guards: GuardRegistry(),
@@ -2063,6 +2067,7 @@ void main() {
       now: () => clock,
       // 84-byte header plus three stereo frames per part.
       partBytes: 84 + 3 * 8,
+      log: log ?? (_) {},
     );
 
     test('is converted into float parts, samples unchanged, and its raw '
@@ -2231,13 +2236,19 @@ void main() {
       final before = files();
       // Four stereo frames in two parts need 32 bytes and two headers.
       engine.freeBytes = 32 + 2 * 84 - 1;
-      final local = smallParts();
+      final lines = <String>[];
+      final local = smallParts(log: lines.add);
       addTearDown(local.dispose);
 
       await local.runBootRecovery();
 
       expect(files(), before);
       expect(local.unrecoveredTakes, [dir]);
+      expect(
+        lines.single,
+        'performance: perf-tight not converted: it needs 200 bytes free and '
+        'the volume has 199',
+      );
 
       // One byte more and the next start converts it.
       engine.freeBytes = 32 + 2 * 84;
@@ -2476,6 +2487,26 @@ void main() {
       expect(File('$dir/master-001.wav').existsSync(), isFalse);
     });
 
+    test(
+      'a sample rate that does not read is left as it is, and said',
+      () async {
+        final dir = seedLegacy('perf-rate');
+        final sidecar = readSidecar(dir)..['sample_rate'] = 'fast';
+        File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+        final lines = <String>[];
+        final local = smallParts(log: lines.add);
+        addTearDown(local.dispose);
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, [dir]);
+        expect(File('$dir/master.pcm').lengthSync(), 32);
+        expect(lines, [
+          'performance: perf-rate not converted: its sample rate does not read',
+        ]);
+      },
+    );
+
     test('a layout no conversion can trust is left as it is', () async {
       final dir = seedLegacy('perf-layout');
       final sidecar = readSidecar(dir)
@@ -2486,6 +2517,365 @@ void main() {
 
       expect(repo.unrecoveredTakes, [dir]);
       expect(File('$dir/master.pcm').lengthSync(), 32);
+    });
+
+    group('whose arm snapshot a build before capture destinations wrote '
+        '(#1853)', () {
+      /// The `arm-snapshot.json` the console still holds for each of the
+      /// two September takes #1842 found unfinalized, byte for byte.
+      String consoleArmSnapshot(String slug) =>
+          File('test/fixtures/september/$slug.arm-snapshot.json')
+              .readAsStringSync();
+
+      /// A take as the console holds it after its conversion: sealed parts
+      /// listed in a sidecar marked converted but not finalized, its raw
+      /// files gone, the September arm snapshot beside it, the marker a
+      /// previous start left, and no checkpoint. The arm snapshot is the
+      /// console's own for [slug] when it has one, else the first take's.
+      String seedConverted(String slug) {
+        final dir = '${tempDir.path}/exports/$slug';
+        Directory(dir).createSync(recursive: true);
+        final master = ramp(6);
+        final input = ramp(3, scale: -1 / 32);
+        writeSealedPart('$dir/master-001.wav', master);
+        writeSealedPart('$dir/input-0-001.wav', input, channels: 1, stream: 1);
+        writeNativeSidecar(
+          dir,
+          sampleRate: 96000,
+          capturedInputs: const [0],
+          captureFrames: 3,
+          takeId: '96827d6e979d08c675eb26280dbf7df4',
+        );
+        Map<String, dynamic> part(String file, int stream, int frames) => {
+          'stream': stream,
+          'index': 1,
+          'file': file,
+          'frames': frames,
+          'bytes': File('$dir/$file').lengthSync(),
+          'overs': 0,
+          'sha256': '0' * 64,
+        };
+        final sidecar = readSidecar(dir)
+          ..['encoding'] = 'f32'
+          ..['overs'] = 0
+          ..['parts'] = [
+            part('master-001.wav', 0, 3),
+            part('input-0-001.wav', 1, 3),
+          ]
+          ..[PerformanceRepository.convertedFromRawKey] = true;
+        File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+        File('$dir/arm-snapshot.json').writeAsStringSync(
+          consoleArmSnapshot(
+            slug.startsWith('perf-202609') ? slug : 'perf-20260910-073238',
+          ),
+        );
+        File('$dir/${PerformanceRepository.recoveryMarkerName}')
+            .writeAsStringSync('');
+        return dir;
+      }
+
+      /// The manifest holds the September file's snapshot as it was
+      /// written, and reads it on bus 0 with followOutput false and
+      /// captureMask 3.
+      void expectSeptemberArm(Map<String, dynamic> sidecar, String slug) {
+        expect(sidecar['armSnapshot'], jsonDecode(consoleArmSnapshot(slug)));
+        final arm = PerformanceManifest.fromJson(sidecar).armSnapshot!;
+        expect(arm.followOutput, isFalse);
+        expect(arm.captureBus, 0);
+        expect(arm.captureMask, 3);
+      }
+
+      test('is recovered with it, and its stem render starts', () async {
+        final dir = seedConverted('perf-20260910-073238');
+        final masterBytes = File('$dir/master-001.wav').readAsBytesSync();
+        final lines = <String>[];
+        final local = PerformanceRepository(
+          storageIo: fakeStorageIo,
+          guards: GuardRegistry(),
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          now: () => clock,
+          log: lines.add,
+        );
+        addTearDown(local.dispose);
+
+        await local.runBootRecovery();
+
+        final recovered =
+            '${tempDir.path}/exports/recovered/perf-20260910-073238';
+        expect(local.unrecoveredTakes, isEmpty);
+        expect(Directory(dir).existsSync(), isFalse);
+        final sidecar = readSidecar(recovered);
+        expect(sidecar['finalized'], isTrue);
+        expectSeptemberArm(sidecar, 'perf-20260910-073238');
+        expect((sidecar['armSnapshot'] as Map)['tempoBpm'], 300.0);
+        expect(sidecar['parts'], hasLength(2));
+        expect(
+          File('$recovered/master-001.wav').readAsBytesSync(),
+          masterBytes,
+        );
+        expect(File('$recovered/arm-snapshot.json').existsSync(), isFalse);
+        expect(engine.lastRenderCaptureDir, dir);
+        expect(lines, isEmpty);
+        final listed = (await local.listCaptures()).single;
+        expect(listed.recovered, isTrue);
+        expect(listed.durationFrames, 3);
+      });
+
+      test('a take still in raw streams is converted and recovered with it '
+          'in one start', () async {
+        final dir = seedLegacy(
+          'perf-20260913-003635',
+          inputs: const [0],
+          master: ramp(8),
+          inputSamples: {0: ramp(4)},
+        );
+        File('$dir/arm-snapshot.json')
+            .writeAsStringSync(consoleArmSnapshot('perf-20260913-003635'));
+        final local = smallParts();
+        addTearDown(local.dispose);
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, isEmpty);
+        final recovered =
+            '${tempDir.path}/exports/recovered/perf-20260913-003635';
+        final sidecar = readSidecar(recovered);
+        expect(sidecar['finalized'], isTrue);
+        expectSeptemberArm(sidecar, 'perf-20260913-003635');
+        expect((sidecar['armSnapshot'] as Map)['tempoBpm'], 90.0);
+        expect(payload('$recovered/input-0-001.wav'), ramp(4));
+      });
+
+      test('with a master that was not captured in stereo, the take is '
+          'kept unfinalized, the file untouched, and the reason '
+          'logged', () async {
+        final dir = seedLegacy('perf-20260913-003635', masterChannels: 1);
+        final september = consoleArmSnapshot('perf-20260913-003635');
+        File('$dir/arm-snapshot.json').writeAsStringSync(september);
+        final lines = <String>[];
+        final local = smallParts(log: lines.add);
+        addTearDown(local.dispose);
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, [dir]);
+        expect(readSidecar(dir)['finalized'], isFalse);
+        expect(File('$dir/arm-snapshot.json').readAsStringSync(), september);
+        expect(lines, [
+          allOf(
+            startsWith('performance: perf-20260913-003635 not recovered: '),
+            contains('stereo master'),
+          ),
+        ]);
+      });
+
+      test('one this build refuses for another reason is kept, and the take '
+          'waits for a build that reads it', () async {
+        final dir = seedConverted('perf-20261201-000000');
+        // A newer build's: it carries the capture fields, and a track state
+        // this build does not know.
+        final newer = jsonEncode({
+          ...jsonDecode(consoleArmSnapshot('perf-20260910-073238'))
+              as Map<String, dynamic>,
+          'followOutput': false,
+          'captureMask': 3,
+          'tracks': [
+            {
+              'channel': 0,
+              'state': 'levitating',
+              'volume': 1.0,
+              'muted': false,
+              'multiple': 1,
+            },
+          ],
+        });
+        File('$dir/arm-snapshot.json').writeAsStringSync(newer);
+        final lines = <String>[];
+        final local = smallParts(log: lines.add);
+        addTearDown(local.dispose);
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, [dir]);
+        expect(readSidecar(dir)['finalized'], isFalse);
+        expect(File('$dir/arm-snapshot.json').readAsStringSync(), newer);
+        expect(lines, [
+          startsWith('performance: perf-20261201-000000 not recovered: '),
+        ]);
+      });
+
+      test('one that does not read as text is kept, and the take waits for '
+          'the next start', () async {
+        final dir = seedConverted('perf-20260910-073238');
+        final bytes = [0xff, 0xfe, 0x00];
+        File('$dir/arm-snapshot.json').writeAsBytesSync(bytes);
+
+        await repo.runBootRecovery();
+
+        expect(repo.unrecoveredTakes, [dir]);
+        expect(readSidecar(dir)['finalized'], isFalse);
+        expect(File('$dir/arm-snapshot.json').readAsBytesSync(), bytes);
+      });
+
+      group('already recovered without it by a build with #1844', () {
+        /// The take as that build leaves it: finalized and moved, with no
+        /// `armSnapshot` in its manifest and the September file kept.
+        String seedRecoveredWithout(
+          String slug, {
+          String? under,
+          String? armOf,
+        }) {
+          final parent = under ?? '${tempDir.path}/exports/recovered';
+          final dir = '$parent/$slug';
+          Directory(dir).createSync(recursive: true);
+          writeSealedPart('$dir/master-001.wav', ramp(6));
+          writeNativeSidecar(
+            dir,
+            sampleRate: 96000,
+            capturedInputs: const [0, 1],
+            captureFrames: 3,
+            takeId: '96827d6e979d08c675eb26280dbf7df4',
+          );
+          final sidecar = readSidecar(dir)
+            ..['slug'] = slug
+            ..['encoding'] = 'f32'
+            ..['parts'] = [
+              {
+                'stream': 0,
+                'index': 1,
+                'file': 'master-001.wav',
+                'frames': 3,
+                'bytes': File('$dir/master-001.wav').lengthSync(),
+                'overs': 0,
+                'sha256': '0' * 64,
+              },
+            ]
+            ..[PerformanceRepository.convertedFromRawKey] = true
+            ..['finalized'] = true;
+          File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+          File('$dir/arm-snapshot.json')
+              .writeAsStringSync(consoleArmSnapshot(armOf ?? slug));
+          File('$dir/${PerformanceRepository.recoveredAtStampName}')
+              .writeAsStringSync('0');
+          return dir;
+        }
+
+        test('gets it back at the next start, and nothing else of its '
+            'manifest changes', () async {
+          final dir = seedRecoveredWithout('perf-20260910-073238');
+          final before = readSidecar(dir);
+          final lines = <String>[];
+          final local = smallParts(log: lines.add);
+          addTearDown(local.dispose);
+
+          await local.runBootRecovery();
+
+          final after = readSidecar(dir);
+          expectSeptemberArm(after, 'perf-20260910-073238');
+          expect(after..remove('armSnapshot'), before);
+          expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+          const reattached =
+              'performance: perf-20260910-073238 has its arm snapshot back '
+              'from arm-snapshot.json';
+          expect(lines, [reattached]);
+          expect(local.unrecoveredTakes, isEmpty);
+          expect((await local.listCaptures()).single.path, dir);
+        });
+
+        test('not in a hidden directory, which is never a take', () async {
+          // A delete hides a take under a dot name before removing it.
+          final hidden = seedRecoveredWithout(
+            '.perf-20260910-073238',
+            armOf: 'perf-20260910-073238',
+          );
+          final manifest = File('$hidden/performance.json').readAsStringSync();
+
+          await repo.runBootRecovery();
+
+          expect(File('$hidden/performance.json').readAsStringSync(), manifest);
+          expect(File('$hidden/arm-snapshot.json').existsSync(), isTrue);
+        });
+
+        test('in the exports root as well as the recovered area', () async {
+          final dir = seedRecoveredWithout(
+            'perf-20260913-003635',
+            under: '${tempDir.path}/exports',
+          );
+
+          await repo.runBootRecovery();
+
+          expectSeptemberArm(readSidecar(dir), 'perf-20260913-003635');
+          expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+        });
+
+        test('leaves a take alone whose manifest already has a snapshot, '
+            'or whose file is not the September shape', () async {
+          final withArm = seedRecoveredWithout('perf-20260910-073238');
+          final armed = readSidecar(withArm)
+            ..['armSnapshot'] = <String, dynamic>{
+              ...jsonDecode(consoleArmSnapshot('perf-20260910-073238'))
+                  as Map<String, dynamic>,
+              'followOutput': true,
+              'captureMask': 1,
+            };
+          File('$withArm/performance.json')
+              .writeAsStringSync(jsonEncode(armed));
+          final newer = seedRecoveredWithout('perf-20260913-003635');
+          final newerArm = jsonEncode({
+            ...jsonDecode(consoleArmSnapshot('perf-20260913-003635'))
+                as Map<String, dynamic>,
+            'captureBus': 0,
+          });
+          File('$newer/arm-snapshot.json').writeAsStringSync(newerArm);
+          final kept = {
+            for (final d in [withArm, newer])
+              d: (
+                File('$d/performance.json').readAsStringSync(),
+                File('$d/arm-snapshot.json').readAsStringSync(),
+              ),
+          };
+          final lines = <String>[];
+          final local = smallParts(log: lines.add);
+          addTearDown(local.dispose);
+
+          await local.runBootRecovery();
+
+          for (final MapEntry(key: d, value: files) in kept.entries) {
+            expect(File('$d/performance.json').readAsStringSync(), files.$1);
+            expect(File('$d/arm-snapshot.json').readAsStringSync(), files.$2);
+          }
+          expect(lines, isEmpty);
+        });
+
+        test('keeps the file when the manifest does not say the master was '
+            'stereo, and logs why', () async {
+          final dir = seedRecoveredWithout('perf-20260910-073238');
+          final mono = readSidecar(dir)
+            ..['channel_layout'] = {
+              'master_channels': 1,
+              'captured_inputs': <int>[],
+            };
+          File('$dir/performance.json').writeAsStringSync(jsonEncode(mono));
+          final lines = <String>[];
+          final local = smallParts(log: lines.add);
+          addTearDown(local.dispose);
+
+          await local.runBootRecovery();
+
+          expect(readSidecar(dir).containsKey('armSnapshot'), isFalse);
+          expect(File('$dir/arm-snapshot.json').existsSync(), isTrue);
+          expect(lines, [
+            allOf(
+              startsWith(
+                'performance: perf-20260910-073238 keeps arm-snapshot.json '
+                'unread: ',
+              ),
+              contains('stereo master'),
+            ),
+          ]);
+        });
+      });
     });
   });
 
@@ -2983,6 +3373,100 @@ void main() {
             .existsSync(),
         isTrue,
       );
+    });
+
+    group('logs why a salvage did not finish (#1842)', () {
+      late List<String> lines;
+
+      PerformanceRepository logging({Future<String> Function()? exportsRoot}) {
+        lines = [];
+        final logged = PerformanceRepository(
+          storageIo: fakeStorageIo,
+          guards: GuardRegistry(),
+          engine: engine,
+          exportsRoot: exportsRoot ?? () async => '${tempDir.path}/exports',
+          now: () => clock,
+          log: lines.add,
+        );
+        addTearDown(logged.dispose);
+        return logged;
+      }
+
+      test('a sidecar that says nothing about the take', () async {
+        final bad = '${tempDir.path}/exports/perf-badshape';
+        Directory(bad).createSync(recursive: true);
+        File('$bad/performance.json').writeAsStringSync('[1, 2, 3]');
+        final local = logging();
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, [bad]);
+        expect(lines, [
+          startsWith(
+            'performance: perf-badshape not finalized: its sidecar and '
+            'checkpoint do not say what the take holds',
+          ),
+        ]);
+      });
+
+      test('a move the filesystem refuses', () async {
+        seedCrashed('perf-crashed');
+        File('${tempDir.path}/exports/recovered').createSync();
+        final local = logging();
+
+        await local.runBootRecovery();
+
+        expect(lines, [
+          allOf(
+            startsWith('performance: perf-crashed not recovered: '),
+            contains('FileSystemException'),
+          ),
+        ]);
+      });
+
+      test('an exports root that cannot be resolved', () async {
+        final local = logging(
+          exportsRoot: () async => throw const FileSystemException('gone'),
+        );
+
+        await local.runBootRecovery();
+
+        expect(lines, [
+          allOf(
+            startsWith('performance: recovery found no exports root: '),
+            contains('gone'),
+          ),
+        ]);
+      });
+
+      test('a take marked failed, once: when it is marked', () async {
+        final dir = seedCrashed('perf-failed');
+        File('$dir/${PerformanceRepository.recoveryAttemptName}')
+            .writeAsStringSync('2\n');
+        final local = logging();
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, [dir]);
+        expect(lines, [
+          startsWith('performance: perf-failed not recovered: the app stopped'),
+        ]);
+
+        lines.clear();
+        await local.runBootRecovery();
+        expect(local.unrecoveredTakes, [dir]);
+        expect(lines, isEmpty);
+      });
+
+      test('nothing is logged for a take that recovers', () async {
+        seedCrashed('perf-crashed');
+        final local = logging();
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, isEmpty);
+        expect(lines, isEmpty);
+      });
     });
 
     test(

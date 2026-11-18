@@ -7,7 +7,7 @@
 # opens its input devices, so a freshly-flashed or freshly-updated slot comes
 # up already calibrated.
 #
-# Same shape as segno-nm-persist / segno-ssh-persist.
+# Same shape as segno-ssh-persist.
 #
 # See https://github.com/tomassasovsky/segno/issues/659
 set -eu

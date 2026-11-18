@@ -1,0 +1,109 @@
+{
+  "sample_rate": 96000,
+  "channel_layout": {
+    "master_channels": 2,
+    "captured_inputs": [
+      0,
+      1
+    ]
+  },
+  "capture_frames": 31027200,
+  "overrun_count": 0,
+  "zero_filled_frames": 0,
+  "overrun_gaps": [],
+  "layers": [
+    {
+      "channel": 2,
+      "slot": 1,
+      "generation": 3,
+      "frame": 5992064,
+      "frame_count": 1091730,
+      "lane_count": 2,
+      "filename": "layer-2-5992064-1.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 3,
+      "generation": 3,
+      "frame": 8174336,
+      "frame_count": 1091730,
+      "lane_count": 2,
+      "filename": "layer-2-8174336-3.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 4,
+      "generation": 3,
+      "frame": 9275328,
+      "frame_count": 1091730,
+      "lane_count": 2,
+      "filename": "layer-2-9275328-4.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 5,
+      "generation": 3,
+      "frame": 15823936,
+      "frame_count": 1091730,
+      "lane_count": 2,
+      "filename": "layer-2-15823936-5.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 6,
+      "generation": 3,
+      "frame": 18007296,
+      "frame_count": 1091730,
+      "lane_count": 2,
+      "filename": "layer-2-18007296-6.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 7,
+      "generation": 3,
+      "frame": 19117760,
+      "frame_count": 1091730,
+      "lane_count": 2,
+      "filename": "layer-2-19117760-7.pcm"
+    }
+  ],
+  "slug": "perf-20260917-002346",
+  "armSnapshot": {
+    "masterGain": 0.4645669162273407,
+    "limiterOn": false,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 574,
+    "tempoBpm": 84.0,
+    "fxStagesVersion": 1,
+    "tracks": [],
+    "monitors": []
+  },
+  "disarmSnapshot": {
+    "tempoBpm": 84.0,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1091730,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav",
+            "takeId": 4
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1091730,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      }
+    ]
+  },
+  "finalized": true
+}

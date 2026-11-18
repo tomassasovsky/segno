@@ -3,9 +3,9 @@ import 'package:wifi_repository/wifi_repository.dart';
 
 /// What the page says about a join of [ssid] that failed for [reason].
 ///
-/// The helper decides [reason] from what iwd logged (#1817), so only a key
-/// the access point refused reads as a wrong password; everything else names
-/// the network and is offered again.
+/// The helper decides [reason] from what wpa_supplicant logged (#1817,
+/// #1843), so only a key the access point refused reads as a wrong password;
+/// everything else names the network and is offered again.
 String wifiJoinErrorMessage(
   AppLocalizations l10n,
   WifiJoinError reason,

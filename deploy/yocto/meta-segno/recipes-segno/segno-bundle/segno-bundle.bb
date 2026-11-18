@@ -45,8 +45,8 @@ SRC_URI = "file://segno.service \
            file://segno-ota-check.timer \
            file://segno-update-ctl \
            file://segno-wifi-ctl \
-           file://segno-nm-persist \
            file://segno-nm-persist.service \
+           file://var-lib-NetworkManager.mount \
            file://segno-ssh-persist \
            file://segno-ssh-persist.service \
            file://segno-mark-good \
@@ -57,16 +57,13 @@ SRC_URI = "file://segno.service \
            file://segno-capture \
            file://segno-touch-persist \
            file://segno-touch-persist.service \
-           file://99-segno-wifi.conf \
-           file://segno-wifi-regdom \
-           file://segno-wifi-regdom.service \
+           file://segno-keyfile-on-data.conf \
+           file://rpi-no-scan-rand-mac-address.conf \
+           file://default-wifi-powersave-off.conf \
+           file://rfkill_default.conf \
            file://segno-wifi-retry \
            file://segno-wifi-retry.service \
            file://segno-wifi-dispatch \
-           file://iwd-main.conf \
-           file://segno-iwd-tame \
-           file://segno-iwd-tame.service \
-           file://wifi-country-default \
            file://brcmfmac.conf \
            file://update-channel \
            file://journald-segno.conf \
@@ -113,12 +110,13 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # runs, so it is named.
 # parted + e2fsprogs-resize2fs: segno-data-grow (expand /data to fill the SD card).
 # coreutils: the app's pedal link configures the pedal UART with stty.
-# iw: segno-wifi-regdom. NOT wireless-regdb — packagegroup-base-wifi already
-# pulls wireless-regdb-static and the two RCONFLICT, so requesting the modern
-# db here fails the rootfs outright. Whether this kernel reads the CRDA
-# regulatory.bin the image has, or the /lib/firmware/regulatory.db it does not,
-# is answered on device: segno-wifi-regdom warns when the latter is missing.
-# networkmanager-nmcli: segno-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
+# iw: as on Raspberry Pi OS, for `iw reg get` and `iw event` on the console.
+# NOT wireless-regdb: packagegroup-base-wifi already pulls
+# wireless-regdb-static (the signed /lib/firmware/regulatory.db the kernel
+# reads for cfg80211.ieee80211_regdom), and the two RCONFLICT, so requesting
+# it here fails the rootfs outright.
+# networkmanager-nmcli: segno-wifi-ctl. networkmanager-wifi: the Wi-Fi plugin,
+# which pulls wpa-supplicant, NetworkManager's backend as on Pi OS (#1843).
 # ddcutil: segno-brightness-ctl. No BlueZ: Bluetooth was retired (#1199).
 # util-linux mount tools: the USB storage service.
 # dosfstools + util-linux-fsck: systemd-fsck checks the FAT /boot before
@@ -145,7 +143,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-touch-persist.service segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount var-lib-systemd-pstore.mount segno-usb-eject.path"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service var-lib-NetworkManager.mount segno-ssh-persist.service segno-touch-persist.service segno-mark-good.service segno-wifi-retry.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount var-lib-systemd-pstore.mount segno-usb-eject.path"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/segno/homescreen.toml \
@@ -156,10 +154,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
                 ${bindir}/segno-wifi-ctl \
-                ${bindir}/segno-nm-persist \
-                ${bindir}/segno-wifi-regdom \
                 ${bindir}/segno-wifi-retry \
-                ${bindir}/segno-iwd-tame \
                 ${bindir}/segno-ssh-persist \
                 ${bindir}/segno-mark-good \
                 ${bindir}/segno-log-check \
@@ -172,24 +167,24 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${systemd_system_unitdir}/segno-usb-mount@.service \
                 ${systemd_system_unitdir}/segno-usb-eject.path \
                 ${systemd_system_unitdir}/segno-usb-eject.service \
-                ${sysconfdir}/NetworkManager/conf.d/99-segno-wifi.conf \
+                ${sysconfdir}/NetworkManager/conf.d/segno-keyfile-on-data.conf \
+                ${sysconfdir}/NetworkManager/conf.d/default-wifi-powersave-off.conf \
+                ${nonarch_libdir}/NetworkManager/conf.d/rpi-no-scan-rand-mac-address.conf \
+                ${sysconfdir}/modprobe.d/rfkill_default.conf \
                 ${sysconfdir}/NetworkManager/dispatcher.d/90-segno-wifi-retry \
                 ${sysconfdir}/systemd/system/dropbear@.service.d/segno.conf \
                 ${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
                 ${sysconfdir}/segno/update-channel ${sysconfdir}/segno/build-version \
-                ${sysconfdir}/segno/wifi-country \
-                ${sysconfdir}/iwd/main.conf \
                 ${systemd_system_unitdir}/segno.service \
                 ${systemd_system_unitdir}/segno-rtirq.service \
                 ${systemd_system_unitdir}/segno-data-grow.service \
                 ${systemd_system_unitdir}/segno-nm-persist.service \
-                ${systemd_system_unitdir}/segno-wifi-regdom.service \
+                ${systemd_system_unitdir}/var-lib-NetworkManager.mount \
                 ${systemd_system_unitdir}/segno-ssh-persist.service \
                 ${systemd_system_unitdir}/segno-touch-persist.service \
                 ${systemd_system_unitdir}/segno-mark-good.service \
                 ${systemd_system_unitdir}/segno-wifi-retry.service \
-                ${systemd_system_unitdir}/segno-iwd-tame.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/segno-ota-check.service \
@@ -205,7 +200,6 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/systemd/coredump.conf.d/10-segno.conf \
                 ${sysconfdir}/tmpfiles.d/10-segno-coredump.conf \
                 ${sysconfdir}/tmpfiles.d/10-segno-pstore.conf \
-                ${sysconfdir}/systemd/system/wpa_supplicant.service \
                 ${sysconfdir}/systemd/system/serial-getty@ttyS0.service \
                 ${sysconfdir}/tmpfiles.d/segno-runtime.conf"
 
@@ -330,18 +324,41 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/98-segno-usb-storage.rules \
         ${D}${sysconfdir}/udev/rules.d/98-segno-usb-storage.rules
 
-    # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
-    # segno-nm-persist: mkdir /data/NetworkManager/system-connections before NM
-    # so keyfile.path (in 99-segno-wifi.conf) survives A/B OTA.
+    # Network configuration: Raspberry Pi OS's, plus what A/B needs (#1843).
+    # docs/NETWORK_PARITY.md lists every piece against Pi OS.
+    #
+    # From Pi OS, verbatim: raspberrypi-net-mods' scan MAC address setting
+    # (/usr/lib, as Pi OS ships it) and raspberrypi-sys-mods' rfkill default.
+    # rfkill_default.conf starts every radio soft-blocked; NetworkManager
+    # lifts the block at start unless Wi-Fi was switched off, and it keeps
+    # that switch in /var/lib/NetworkManager, below. The regulatory domain is
+    # on the kernel command line (cfg80211.ieee80211_regdom, kas), as
+    # raspi-config sets it.
+    install -d ${D}${nonarch_libdir}/NetworkManager/conf.d
+    install -m 0644 ${UNPACKDIR}/rpi-no-scan-rand-mac-address.conf \
+        ${D}${nonarch_libdir}/NetworkManager/conf.d/rpi-no-scan-rand-mac-address.conf
+    install -d ${D}${sysconfdir}/modprobe.d
+    install -m 0644 ${UNPACKDIR}/rfkill_default.conf \
+        ${D}${sysconfdir}/modprobe.d/rfkill_default.conf
+    # Power save off: the file raspi-config writes for "Wi-Fi power save:
+    # disabled" (A12), with its name and contents. Pi OS leaves power save on
+    # unless that option is chosen. The console runs on mains power, and the
+    # radio's power save delays traffic the console receives (SSH, updates,
+    # the internet check) until the radio next wakes.
     install -d ${D}${sysconfdir}/NetworkManager/conf.d
-    install -m 0644 ${UNPACKDIR}/99-segno-wifi.conf \
-        ${D}${sysconfdir}/NetworkManager/conf.d/99-segno-wifi.conf
-    # The world regdom leaves 5 GHz ch 36-48 passive-scan, which lets a 5 GHz
-    # AP associate and then silently fail EAPOL (#459). iw + a signed
-    # regulatory.db are what make `iw reg set` actually take.
-    install -m 0755 ${UNPACKDIR}/segno-wifi-regdom ${D}${bindir}/segno-wifi-regdom
-    install -m 0644 ${UNPACKDIR}/segno-wifi-regdom.service \
-        ${D}${systemd_system_unitdir}/segno-wifi-regdom.service
+    install -m 0644 ${UNPACKDIR}/default-wifi-powersave-off.conf \
+        ${D}${sysconfdir}/NetworkManager/conf.d/default-wifi-powersave-off.conf
+    # A/B: saved networks and NetworkManager's state on /data, which no
+    # update touches. segno-nm-persist.service creates both directories;
+    # each file says what it keeps and why.
+    install -m 0644 ${UNPACKDIR}/segno-keyfile-on-data.conf \
+        ${D}${sysconfdir}/NetworkManager/conf.d/segno-keyfile-on-data.conf
+    install -m 0644 ${UNPACKDIR}/segno-nm-persist.service \
+        ${D}${systemd_system_unitdir}/segno-nm-persist.service
+    install -m 0644 ${UNPACKDIR}/var-lib-NetworkManager.mount \
+        ${D}${systemd_system_unitdir}/var-lib-NetworkManager.mount
+    # The console reconnects by itself after a failed join or a drop (#1326,
+    # #1337), which Pi OS does not do; segno-wifi-retry says why it is needed.
     install -m 0755 ${UNPACKDIR}/segno-wifi-retry ${D}${bindir}/segno-wifi-retry
     install -m 0644 ${UNPACKDIR}/segno-wifi-retry.service \
         ${D}${systemd_system_unitdir}/segno-wifi-retry.service
@@ -350,18 +367,6 @@ do_install() {
     install -d ${D}${sysconfdir}/NetworkManager/dispatcher.d
     install -m 0755 ${UNPACKDIR}/segno-wifi-dispatch \
         ${D}${sysconfdir}/NetworkManager/dispatcher.d/90-segno-wifi-retry
-    install -d ${D}${sysconfdir}/iwd
-    install -m 0644 ${UNPACKDIR}/iwd-main.conf ${D}${sysconfdir}/iwd/main.conf
-    install -m 0755 ${UNPACKDIR}/segno-iwd-tame ${D}${bindir}/segno-iwd-tame
-    install -m 0644 ${UNPACKDIR}/segno-iwd-tame.service \
-        ${D}${systemd_system_unitdir}/segno-iwd-tame.service
-    install -d ${D}${sysconfdir}/segno
-    install -m 0644 ${UNPACKDIR}/wifi-country-default \
-        ${D}${sysconfdir}/segno/wifi-country
-
-    install -m 0755 ${UNPACKDIR}/segno-nm-persist ${D}${bindir}/segno-nm-persist
-    install -m 0644 ${UNPACKDIR}/segno-nm-persist.service \
-        ${D}${systemd_system_unitdir}/segno-nm-persist.service
 
     # Units masked by symlinking to /dev/null. The directory has to exist
     # before anything links into it — putting a mask above this line is what
@@ -372,12 +377,6 @@ do_install() {
     # systemd's 90s device timeout on every boot — 90 seconds of a dark screen
     # on an appliance, for a console nobody uses (#464).
     ln -sf /dev/null ${D}${sysconfdir}/systemd/system/serial-getty@ttyS0.service
-
-    # iwd owns the radio now (#468 step 2). wpa_supplicant is still pulled into
-    # the image by packagegroup-base-wifi, and letting it get dbus-activated
-    # alongside iwd would recreate the two-supplicants bug this release exists
-    # to remove — so mask it rather than trust that nothing activates it.
-    ln -sf /dev/null ${D}${sysconfdir}/systemd/system/wpa_supplicant.service
 
     # meta-rauc's own rauc-mark-good.service is condition-gated on a rauc.slot
     # kernel argument the Pi tryboot backend never sets, so it is skipped every
@@ -400,7 +399,6 @@ do_install() {
 
     # brcmfmac: Raspberry Pi OS's options, roamoff=1 and
     # feature_disable=0x282000. The file says why each one is set.
-    install -d ${D}${sysconfdir}/modprobe.d
     install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
         ${D}${sysconfdir}/modprobe.d/brcmfmac.conf
 

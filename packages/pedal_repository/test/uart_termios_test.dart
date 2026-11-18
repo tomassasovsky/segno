@@ -67,6 +67,8 @@ void main() {
     expect(cflag & 0x30, 0x30, reason: 'CS8');
     expect(cflag & (0x40 | 0x100 | 0x80000000), 0, reason: 'CSTOPB PARENB');
     expect(cflag & 0x800, 0x800, reason: 'CLOCAL');
+    // The kernel's own speed bits, the same on every glibc. cfgetospeed
+    // would not do: it returns 0x1002 before glibc 2.42 and 115200 after.
     expect(cflag & 0x100f, 0x1002, reason: 'B115200');
     expect(mode.getUint32(12, Endian.host) & (0x1 | 0x2 | 0x8), 0);
     expect(mode.getUint8(17 + 6), 0, reason: 'VMIN');

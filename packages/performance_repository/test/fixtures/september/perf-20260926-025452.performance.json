@@ -1,0 +1,104 @@
+{
+  "sample_rate": 96000,
+  "channel_layout": {
+    "master_channels": 2,
+    "captured_inputs": [
+      0,
+      1
+    ]
+  },
+  "capture_frames": 19204032,
+  "overrun_count": 0,
+  "zero_filled_frames": 0,
+  "overrun_gaps": [],
+  "layers": [
+    {
+      "channel": 2,
+      "slot": 4,
+      "generation": 0,
+      "frame": 4887936,
+      "frame_count": 1088210,
+      "lane_count": 2,
+      "filename": "layer-2-4887936-4.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 5,
+      "generation": 0,
+      "frame": 7065216,
+      "frame_count": 1088210,
+      "lane_count": 2,
+      "filename": "layer-2-7065216-5.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 6,
+      "generation": 0,
+      "frame": 8784640,
+      "frame_count": 1088210,
+      "lane_count": 2,
+      "filename": "layer-2-8784640-6.pcm"
+    }
+  ],
+  "slug": "perf-20260926-025452",
+  "armSnapshot": {
+    "masterGain": 1.0,
+    "limiterOn": false,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 574,
+    "tempoBpm": 84.0,
+    "fxStagesVersion": 1,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1088210,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav"
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1088210,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      }
+    ],
+    "monitors": []
+  },
+  "disarmSnapshot": {
+    "tempoBpm": 84.0,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1088210,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav",
+            "takeId": 1
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1088210,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      }
+    ]
+  },
+  "finalized": true
+}

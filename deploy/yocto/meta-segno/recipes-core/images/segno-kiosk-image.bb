@@ -66,6 +66,12 @@ PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # on /data/bluetooth, where a fallback to the previous slot finds them again,
 # until the next update overwrites that slot.
 PACKAGE_EXCLUDE += "bluez5"
+# No iwd (#1843). NetworkManager drives the radio through wpa_supplicant, as
+# on Raspberry Pi OS, which does not ship iwd at all. Nothing in the image
+# asks for it now that the networkmanager bbappend no longer enables
+# PACKAGECONFIG iwd; this exclusion fails the build if anything brings it
+# back, since a second supplicant on wlan0 is the bug #468 removed.
+PACKAGE_EXCLUDE += "iwd"
 # Audio: DIRECT ALSA, no PipeWire/JACK/Pulse. This is a single-app appliance that
 # owns the sound card, so the engine drives ALSA directly (SEGNO_ALSA_ONLY, set by
 # segno-kiosk-launch) for the lowest latency and zero IPC — the textbook mono-app
