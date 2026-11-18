@@ -17,9 +17,8 @@ documentation. Before starting a larger change, open an issue to discuss it.
 
 ## Branches
 
-All work lands on the development branch, `claude/segno-integration`. The
-default branch, `master`, receives it at release. Branch from
-`claude/segno-integration` and open your pull request against it.
+All work lands on `master`. Branch from `master` and open your pull request
+against it.
 
 ## Making a change
 

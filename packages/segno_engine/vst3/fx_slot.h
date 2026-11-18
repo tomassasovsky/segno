@@ -72,7 +72,7 @@ int32_t segno_fx_slot_latency(const segno_fx_slot* s);
 
 /* The kind's facts, any thread: how many settings it reads (0 for an
  * unknown kind), their defaults (LE_FX_PARAMS floats), whether its tail
- * drains after a bypass (a delay or a reverb), and an engine lane's hop
+ * drains after a switch-off (a delay or a reverb), and an engine lane's hop
  * seed. */
 int32_t segno_fx_width(int32_t type);
 void segno_fx_defaults(int32_t type, float* out);
@@ -83,10 +83,11 @@ int32_t segno_fx_lane_hop_seed(int32_t track, int32_t lane);
  * slot made for the question. Allocates. */
 int32_t segno_fx_latency(int32_t type, int32_t sr);
 
-/* The latency a plugin of [type] reports at every rate: the kind's largest
- * at the rates the engine runs its effects at (44.1 to 96 kHz, #1547).
- * Worked out once per kind, any thread. */
-int32_t segno_fx_reported_latency(int32_t type);
+/* The most frames [type] delays its output by at any rate the engine runs
+ * its effects at (44.1 to 96 kHz, #1547): how long its output goes on past
+ * its input whatever rate a host renders at. Worked out once per kind, any
+ * thread. */
+int32_t segno_fx_largest_latency(int32_t type);
 
 /* Flushes denormals on the calling thread, as the engine's threads do
  * before a chain runs (le_flush_denormals), and returns the floating-point

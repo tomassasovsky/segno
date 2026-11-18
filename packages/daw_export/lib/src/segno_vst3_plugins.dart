@@ -31,28 +31,47 @@ class SegnoPlugin {
 /// One of a Segno plugin's parameters as a host lists it.
 class SegnoParameter {
   /// Creates a [SegnoParameter].
-  const new(this.name, {this.steps = 0, this.defaultValue = 0});
+  const new(
+    this.name, {
+    this.steps = 0,
+    this.defaultValue = 0,
+    this.list = false,
+  });
 
   /// Its name (the engine's key, as `controller.cpp` titles it).
   final String name;
 
   /// Its VST3 step count: the positions it snaps to less one, or 0 for a
-  /// continuous one. Live keeps a stepped parameter's value in steps.
+  /// continuous one.
   final int steps;
 
   /// Its value, `0..1`, before anything sets it (`le_fx_defaults`): what
   /// the plugin runs a setting a state leaves out at.
   final double defaultValue;
+
+  /// Whether it is a list of named choices (`kIsList`). Live keeps a list's
+  /// value, and its envelope's, in steps; every other parameter's, a
+  /// stepped one's included, as the plugin's normalized value
+  /// (`test/corpus/plugin_automation.als`).
+  final bool list;
 }
 
-/// The parameters after a kind's settings that every Segno plugin has: its
-/// channel handling (`params.h`), by id.
+/// The parameters after a kind's settings that every Segno plugin has, by
+/// id (`params.h`): its channel handling, then its engine enable bit
+/// ([kSegnoEnabledParameter]).
 const Map<int, SegnoParameter> segnoChannelParameters = {
-  1000: SegnoParameter('Input', steps: 3),
-  1001: SegnoParameter('Output', steps: 1),
+  1000: SegnoParameter('Input', steps: 3, list: true),
+  1001: SegnoParameter('Output', steps: 1, list: true),
   1002: SegnoParameter('Balance / Pan', defaultValue: 0.5),
   1003: SegnoParameter('Output level', defaultValue: 0.25),
+  1100: SegnoParameter('Enabled', steps: 1, defaultValue: 1, list: true),
 };
+
+/// The id of every Segno plugin's Enabled parameter: the engine's enable
+/// bit for the entry, switched as the engine switches it (a delay or a
+/// reverb drains its tail, the rest crossfade over the engine's ramp). The
+/// parameter a take's switching is automation of (#1806 D4).
+const int kSegnoEnabledParameter = 1100;
 
 /// Segno's plugins by `le_fx_type` code: every built-in kind but none and a
 /// hosted plugin. The ids are `segno_fx_kinds.h`'s, which the tests check.

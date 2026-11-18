@@ -38,7 +38,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1832 | Contributor license agreement and trademark policy: `CLA.md`, `TRADEMARKS.md`, README and CONTRIBUTING | in-review | merge-gate | `claude/licensing-1832` |
+| #1850 | Land the trunk on master and retire `claude/segno-integration` | build | merge-gate | `claude/land-trunk-1850` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
@@ -47,7 +47,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1674 | Anti-aliasing under Impeller: ivi-homescreen renders into a 4x MSAA framebuffer and resolves it before each flip | in-review | auto | `claude/ivi-msaa-1674` |
 | #1496 | Split design and hardware into their own repos, slim this one | in-review | merge-gate | `claude/repo-split-1496` |
 | #1367 | Start helper programs with posix_spawn, never fork the app | in-review | merge-gate | `claude/no-fork-1367` |
-| #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | trunk |
+| #887 | Looper X factory racks: all parts merged, Harmonizer parked; Pi benches and by-ear sign-off owed (#1459) | in-review | blocked-verify | `master` |
 | #900, #906 | The audio thread never faults or copies on write (replaces #907, #914) | in-review | blocked-verify | `claude/zero-stall-memory-907-914` |
 | #1299 | Appliance slowdown profiler | in-review | merge-gate | `claude/appliance-responsiveness-08d39b` |
 | #1301 | Idle console redraws at 60 fps | build | merge-gate | `claude/idle-redraw-1301` |
@@ -68,7 +68,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1178 | Library and Sessions redesign | build | merge-gate | `claude/library-1178-*` |
 | #1179 | Pitch and time DSP core | build | merge-gate | `claude/pitch-time-1179-*` |
 | #1197 | Instruments | plan | merge-gate | `claude/instruments-1197-*` |
-| #1198, #1078 | Recording to USB and long recordings: Parts 1-5 and 11 on the trunk; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | merge-gate | `claude/recording-durability-1198-p*` |
+| #1198, #1078 | Recording to USB and long recordings: Parts 1-5 and 11 on master; durability and bounded recovery (Part 8's finalize and recovery, fixes #1078) in build | build | merge-gate | `claude/recording-durability-1198-p*` |
 | #1200 | Backing player | plan | merge-gate | `claude/backing-1200-*` |
 | #1202 | Shared render recipe, Bounce, Save selected | plan | merge-gate | `claude/render-1202-*` |
 | #1228 | MIDI clock | plan | merge-gate | `claude/midi-clock-1228-*` |
@@ -80,7 +80,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1498 | Restart and shut down also wait for RAUC's own install, after an app restart | in-review | blocked-verify | `claude/rauc-power-gate-1498` |
 | #1527 | Reboot warm, with a kernel record, when exec or storage dies while PID 1 lives (segno-freeze-watchdog); device check owed | in-review | auto | `claude/freeze-watchdog-1527` |
 | #1755 | Every effect cheaper without changing its sound: the pitch family merged (#1764); its state out of the mixer's structs so the arm64 mixer gate is back where it was | in-review | auto | `claude/pitch-gate-1755` |
-| #1771 | PR checks in a fraction of the time and job-minutes: native suites built once and run in parallel, ccache, cached packages, path filters, one job for the package suites, ASan in three parts, trunk-saved caches | in-review | auto | `claude/ci-speed-1771` |
+| #1771 | PR checks in a fraction of the time and job-minutes: native suites built once and run in parallel, ccache, cached packages, path filters, one job for the package suites, ASan in three parts, caches saved on master | in-review | auto | `claude/ci-speed-1771` |
 | #1724 | Effects budget from the console's measured headroom: charges at the configured rate and period, share 77 % from the 48 kHz / 32 stress run | in-review | auto | `claude/fx-headroom-1724` |
 | #1755 | Cheaper effects at no loss of quality: the drives and the amp (Overdrive, Distortion, Amp+Cab), bit-identical on the console but for the cabinet's direct taps | in-review | auto | `claude/fx-opt-drives-1755` |
 | #1729 | Track and lane chains on the effects workers (#1515 part 2): engine part 1 and the admission (part 2, kFxTrackJobNs from the console stress) in review | in-review | auto | `claude/fx-track-workers-1729*` |
@@ -89,9 +89,90 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 | #1674 | Screens without anti-aliasing under Impeller, and the 7in readout's colours: the readout palette (decision 3) in review | in-review | auto | `claude/readout-palette-1674` |
 | #1675 | The pitch bridge after a tempo change: a better search for held notes and a shorter wait for the stretch render; owner's listening call | in-review | merge-gate | `claude/pitch-bridge-quality-1675` |
 | #1755 | Cheaper effects, same sound: the reverbs, delays, filters and the rest (pitch and drives are their own threads); bit-identical, guarded by bench_fx_equiv | in-review | auto | `claude/fx-opt-rest-1755` |
+| #1836 | A take's effect switching and setting changes as Live automation: the plugin's Enabled (1100) is the engine's switch, every change a step at its frame (#1806 part 6) | in-review | merge-gate | `claude/fx-automation-1836` |
 | #1816 | Console WiFi against an ASUS RT-AX89X with 802.11ax on: firmware already matches Pi OS; brcmfmac options aligned with Pi OS and a troubleshooting note; failure not reproduced, issue stays open until it recurs | in-review | auto | `claude/wifi-firmware-1816` |
 
 ---
+
+## November 2026 Effect switching and setting changes as Live automation (#1836)
+
+Part 6 of #1806 (decisions D4 to D6): the Live set replays what changed in
+a take's chains, where it used to hold each effect as it stood at arm.
+
+- `ChainTimeline` (`packages/daw_export/lib/src/chain_timeline.dart`) reads
+  `events.log` for each lane's chain and each input's monitor chain and
+  replays it as the offline render replays the lane's wet stem
+  (`le_pr_wet_render`): an entry's switch (310, 312) and the chain's (311,
+  313), each setting (306, 307), each type (20, 31: an actual change puts
+  the new effect at its defaults and on, as the setter does unlogged) and
+  the chain's length (21, 32: a slot past it is not run, one entering it
+  comes on). Entries at one frame all apply before it plays; the two log
+  streams are merged in frame order, ties in file order
+  (`EventLogReader.sortedByFrame`, as `le_pr_frame_cmp`).
+- Every change is a step in a device envelope, two events at the beat of
+  its frame, the value before and the value after, as Live draws a step.
+  Nothing is thinned: the console logs a setting at most once a block, when
+  it moves, and an entry's switch once a press. A switch is automation of
+  the plugin's Enabled; a setting of its parameter, normalized, as Live
+  keeps a setting that is not a list (in steps only for the input, the
+  output and Enabled). A rack switch or an A/B press is its entries'
+  switches (D5), so racks stay on. A slot whose effect changed holds one
+  plugin per effect, side by side, each on while the slot held it (D6). A
+  Dub Rack's Amb / Dub section is on while any entry of the rack runs (the
+  engine fades the section to its input when none does). Every envelope
+  sits on its track, a device in a rack included; the track shows its
+  volume lane or its first device envelope.
+- The plugin's 1100 is now **Enabled**, an ordinary automatable parameter
+  (Off / On, default On), not the VST3 bypass: Live lists no bypass
+  parameter, and its Device On stops the plugin, cutting a delay's echoes
+  and freezing its line until it comes back on (the owner's check of
+  `test/corpus/plugin_automation.als`, Live 12.2.7). Enabled runs the
+  engine's switch for every kind: the 5 ms ramp, a delay's or a reverb's
+  drain, a fresh start on a re-enable from a settled switch-off, and for a
+  kind that delays its output its warm-up and, while off, its input
+  without the delay. The plugin used
+  to switch such a kind to its input delayed by its latency. The pedal's
+  footswitch and LED drive Enabled; an exported device stays on in Live.
+- Every plugin reports no latency (owner call, reversing #1804 part 2's
+  reported latency and its padding to the largest at any rate). The console
+  compensates no effect's latency: a kind that delays its output plays
+  late by it while on and on time while off. The Octaver, Dual octaver,
+  Whammy and Smart Tune delay theirs by 1188 to 2568 frames from 44.1 to
+  96 kHz (about 25 ms); the Amp, Overdrive, Distortion, Vinyl, LPF and
+  Degrade by 2 to 27 frames at some rates (the null test prints each). Unreported, Live plays each lane exactly as the console
+  did in both states, and a render nulls against "as heard" at offset 0
+  for every chain. A plugin added by hand in Live behaves the same: the
+  octaver family sounds about 25 ms late while on, uncompensated. The
+  tail a plugin reports is still its delay, the largest at any of those
+  rates, since a host may not ask again when it renders at another.
+- When the host starts playing, the values it sets at the block's first
+  frame land before the plugin starts again as at arm, so a plugin
+  automated off at the start starts settled off.
+- The null test (`vst3/test/null_test.cpp`) switches through Enabled on a
+  block boundary and inside a block, off and on again 1 ms apart (inside
+  the ramp), and from an entry off at arm that the host turns on; at 44.1,
+  48, 88.2 and 96 kHz, every kind is bit-identical to the engine's offline
+  render at lag 0, the latency-bearing kinds included, and reports no
+  latency: checked at 37-, 128- and 512-frame blocks here; CI runs
+  128-frame blocks.
+- `test/corpus/plugin_automation.als` is the reference Live saved (see the
+  corpus README); `test/device_automation_test.dart` checks the writer
+  against it and `test/fx_automation_end_to_end_test.dart` runs a synthetic
+  capture with presses, an A/B switch, a replaced effect, knob moves and a
+  monitor switch through to the set.
+- Not reproduced: a switch's frame is the control thread's stamp, within a
+  block of the one the console applied it at (the offline render and so the
+  "as heard" stem use the same stamp; the block-tail observer of #1806 Part
+  3 would make it exact); a type change crossfades over the ramp in Live
+  and lets the old effect's tail drain, where the console swaps at once; a
+  type set again to the same effect resets its state on the console only;
+  a slot the chain's length leaves out stops at once on the console and
+  comes back where it stopped, where in Live its Enabled goes off, so it
+  ramps out and drains, and comes back fresh once settled;
+  a Dub Rack switched off as a whole stops its section in Live, cutting the
+  paths' tails, and a change of its Amb-Dub Mix is not replayed in the
+  chains' volumes; chains published by a recipe and the Track and All
+  tracks stages are not logged yet (#1806 Part 2).
 
 ## November 2026 Each Segno plugin draws its pedal (#1815)
 
@@ -299,7 +380,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   whose own is larger), and delays its output by the rest: Live asks for
   the latency at its device's rate and not again when it exports at
   another, so a rate-dependent latency (the octavers, the Amp) was
-  compensated wrongly.
+  compensated wrongly. Superseded by #1836: every plugin reports no
+  latency, so a lane plays as late as the console played it.
 - Checked in Live 12.2.7: an export of `perf-20261112-130713` with a chain
   written in (Compressor, a Dub Rack with its Amb and Dub paths, an Echo
   Rack, an Octaver off) renders the dry track through the plugins within
@@ -349,7 +431,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   input delayed as much, so a host's delay compensation holds either way.
   The engine's settled bypass passes such a kind's input without the
   delay, so the two agree while it is on and differ by the latency while it
-  is off.
+  is off. Superseded by #1836: 1100 is Enabled, the engine's switch for
+  every kind, and no plugin reports a latency.
 - The null test (`vst3/test/null_test.cpp`) writes a one-track capture per
   kind and case (defaults; other settings with a mono output, balance and
   level on chain slot 5; a setting change, a switch off and on again
@@ -2722,17 +2805,21 @@ travel and diffuser bridge anchoring still require validation; #1074 stays
     `LD_LIBRARY_PATH` (ivi-homescreen's run path does not include it).
 - **Segno.vst3** (#1804), the effects as VST3 plugins for a DAW on the dev
   Mac: `FLUTTER=/Users/Tomas/development/flutter-3.50/bin/flutter bash
-  packages/segno_engine/vst3/install.sh` renders the editors' pedal faces
-  (#1815, about a minute), builds it (Release, into
-  `packages/segno_engine/build/vst3`) and installs it in
+  packages/segno_engine/vst3/install.sh` runs `build.sh`, which renders the
+  editors' pedal faces (#1815, about a minute) and builds it (Release, into
+  `packages/segno_engine/build/vst3`), then installs it in
   `~/Library/Audio/Plug-Ins/VST3`; `--test` also runs the null test and the
-  binding test against the installed bundle. After a change to the pedal
-  faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
+  binding test against the installed bundle (`test/run_bundle_tests.sh`).
+  Its `CFBundleVersion` is the commit time of the checkout's HEAD, which
+  Segno Transfer compares with the copy it carries (#1829). After a change
+  to the pedal faces, `/Users/Tomas/development/flutter-3.50/bin/flutter test
   --update-goldens test/vst3_faces/vst3_faces_test.dart` rewrites the layout
   the editors read. Live finds it on its next plugin scan (start, or
-  Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Not signed, not
-  shipped. `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a
-  separate tree and runs the null test, as CI does on Linux (clang, CMake,
+  Settings > Plug-Ins > Rescan) under Plug-Ins > Segno. Signed ad hoc;
+  Segno Transfer's `build-app.sh` builds it the same way and ships it in
+  the app's `Contents/PlugIns`, to install on request (#1829).
+  `bash packages/segno_engine/vst3/test/run_null_test.sh` builds a separate
+  tree and runs the null test, as CI does on Linux (clang, CMake,
   `libasound2-dev`).
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):

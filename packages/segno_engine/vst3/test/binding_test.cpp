@@ -5,15 +5,14 @@
  * Reads the faces' layout (faces/faces.json, which test/vst3_faces keeps
  * current) and loads the built bundle as a host does. For each face, the
  * plugin of its engine type must exist, and each control's parameter must be
- * one its edit controller lists: the footswitch the bypass, a choice's
+ * one its edit controller lists: the footswitch Enabled, a choice's
  * buttons or menu one per position of a stepped parameter, a knob or a slider
  * with one picture per position of a stepped parameter, or the layout's
  * frame count of a continuous one.
  *
- * Every parameter but the bypass must have exactly one control that sets it
- * (a knob of a choice only shows it: the panel's selector sets it), and the
- * bypass exactly one, the footswitch; so no parameter is left out of a
- * window, nor offered twice.
+ * Every parameter must have exactly one control that sets it (a knob of a
+ * choice only shows it: the panel's selector sets it), Enabled the
+ * footswitch; so no parameter is left out of a window, nor offered twice.
  *
  * Every plugin's value text (getParamStringByValue) must be what the console
  * prints (value_text.h): test/value_texts.json holds the console's for every
@@ -42,6 +41,7 @@
 #include "public.sdk/source/vst/hosting/hostclasses.h"
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/utility/stringconvert.h"
+#include "../params.h"
 #include "../segno_fx_kinds.h"
 
 using namespace Steinberg;
@@ -171,7 +171,7 @@ int main(int argc, char** argv) {
       const int positions = info.stepCount + 1;
       const int count = (int)le_json_number(le_json_get(c, "frames"), 0);
       if (std::strcmp(control, "footswitch") == 0) {
-        if ((info.flags & ParameterInfo::kIsBypass) == 0) fail(type, "footswitch not bypass", param);
+        if (info.id != segno_vst3::kEnabledId) fail(type, "footswitch not Enabled", param);
       } else if (std::strcmp(control, "knob") == 0 || std::strcmp(control, "slider") == 0) {
         if (count != (info.stepCount > 0 ? positions : frames)) {
           fail(type, "pictures do not match the parameter's positions", param);

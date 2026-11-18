@@ -32,8 +32,8 @@ int get kVst3OutputId => vst3FixedIds['kOutputId']!;
 int get kVst3PlacementId => vst3FixedIds['kPlacementId']!;
 int get kVst3LevelId => vst3FixedIds['kLevelId']!;
 
-/// The bypass (`kBypassId`), which the footswitch switches.
-int get kVst3BypassId => vst3FixedIds['kBypassId']!;
+/// The entry's switch (`kEnabledId`, 1 on), which the footswitch switches.
+int get kVst3EnabledId => vst3FixedIds['kEnabledId']!;
 
 /// The highest level, which a level of 1 stands for.
 const double kVst3LevelMax = kFxLevelMax;
@@ -129,7 +129,7 @@ String encodeVst3ValueTexts(Map<String, Object> texts) {
 const int kVst3TextSamples = 40;
 
 /// Every plugin's value texts, which `binding_test.cpp` checks each plugin's
-/// own against: for each kind, each parameter but the bypass at
+/// own against: for each kind, each parameter but the switch at
 /// k / [kVst3TextSamples], and a stepped one also at each position.
 Map<String, Object> vst3ValueTexts(AppLocalizations l10n) => {
   'samples': kVst3TextSamples,

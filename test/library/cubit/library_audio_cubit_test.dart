@@ -577,6 +577,12 @@ void main() {
         'Segno/Performances/Evening loop/master-001.wav',
         'Segno/Performances/Evening loop/project.als',
       ]);
+      // A Live Project, which Live saves in place (#1837).
+      final info = Directory(
+        '${drive.mount}/Segno/Performances/Evening loop/Ableton Project Info',
+      );
+      expect(info.existsSync(), isTrue);
+      expect(info.listSync(), isEmpty);
       expect(cubit.state.export, isA<LibraryExportDone>());
 
       // Written again for the next package: one an earlier version left

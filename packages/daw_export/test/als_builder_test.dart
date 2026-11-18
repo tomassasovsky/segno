@@ -204,6 +204,7 @@ void main() {
         'reference_tracks',
         'group',
         'segno_vst3',
+        'plugin_automation',
       ]) {
         final root = _corpus(name).rootElement;
         for (final attribute in ['MajorVersion', 'MinorVersion', 'Creator']) {
@@ -1130,7 +1131,8 @@ void main() {
       });
 
       test('each plugin lists its own parameters as Live lists a plugin it '
-          'loads fresh: its settings, then its channel handling', () {
+          'loads fresh: its settings, then its channel handling and its '
+          'Enabled', () {
         final track = _audioTracks(
           _build(
             DawProject(
@@ -1171,10 +1173,11 @@ void main() {
           _value(e, 'ParameterValue/MidiControllerRange/Max'),
         );
         expect(
-          [for (final e in slots.take(10)) slot(e)],
+          [for (final e in slots.take(11)) slot(e)],
           [
-            // A stepped setting holds its value in steps: Shift 0.25 of 48.
-            ('Shift', '0', '12', '48'),
+            // A stepped setting is normalized, as Live keeps it; only a
+            // list (the input, the output, the switch) is in steps.
+            ('Shift', '0', '0.25', '1'),
             ('Tone', '1', '0.5', '1'),
             ('Mix', '2', '0.75', '1'),
             ('Mode', '3', '1', '1'),
@@ -1183,17 +1186,18 @@ void main() {
             ('Output', '1001', '1', '1'),
             ('Balance / Pan', '1002', '0.25', '1'),
             ('Output level', '1003', '0.5', '1'),
+            ('Enabled', '1100', '1', '1'),
             ('', '-1', '0.1234567687', '1'),
           ],
         );
         expect(
-          [for (final e in slots.take(9)) _value(e, 'VisualIndex')],
-          [for (var i = 0; i < 9; i++) '$i'],
+          [for (final e in slots.take(10)) _value(e, 'VisualIndex')],
+          [for (var i = 0; i < 10; i++) '$i'],
         );
         // As Live saved them: the Delay's channel slots, and an unassigned
         // one.
         expect(_shape(slots[5]), _shape(saved[3]));
-        expect(_shape(slots[9]), _shape(saved.last));
+        expect(_shape(slots[10]), _shape(saved.last));
         expect(slot(saved[3]), ('Input', '1000', '0', '3'));
       });
 
@@ -1261,6 +1265,8 @@ void main() {
           }
         }
         expect(_value(plugin, 'On/Manual'), 'true');
+        // An entry that was off is its plugin's Enabled off; the device
+        // stays on.
         final off = _audioTracks(
           _build(
             DawProject(
@@ -1270,8 +1276,11 @@ void main() {
                   devices: [
                     DawPluginDevice(
                       plugin: segnoPlugins[5]!,
-                      state: const SegnoPluginState(type: 5, params: []),
-                      on: false,
+                      state: const SegnoPluginState(
+                        type: 5,
+                        params: [],
+                        enabled: false,
+                      ),
                     ),
                   ],
                 ),
@@ -1279,7 +1288,15 @@ void main() {
             ),
           ),
         ).single;
-        expect(_value(_devices(off).single, 'On/Manual'), 'false');
+        final device = _devices(off).single;
+        expect(_value(device, 'On/Manual'), 'true');
+        final enabled = device
+            .getElement('ParameterList')!
+            .childElements
+            .firstWhere(
+              (p) => _value(p, 'ParameterId') == '$kSegnoEnabledParameter',
+            );
+        expect(_value(enabled, 'ParameterValue/Manual'), '0');
         final hex = _at(
           info,
           'Preset/Vst3Preset/ProcessorState',

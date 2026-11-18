@@ -13,19 +13,12 @@ struct ContentView: View {
         detail.frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
       }
       if let error = model.error {
-        HStack(alignment: .top, spacing: 10) {
-          Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-          ScrollView {
-            Text(error).font(.callout).textSelection(.enabled).frame(
-              maxWidth: .infinity, alignment: .leading)
-          }
-          .frame(maxHeight: 72)
-          Button {
-            model.error = nil
-          } label: {
-            Image(systemName: "xmark")
-          }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
-        }.padding(14).background(Color.orange.opacity(0.08))
+        MessageBar(text: error, symbol: "exclamationmark.circle", tint: .orange) {
+          model.error = nil
+        }
+      }
+      if let notice = model.notice {
+        MessageBar(text: notice, symbol: "info.circle", tint: .accentColor) { model.notice = nil }
       }
       Divider()
       if let title = model.previewTitle {
@@ -35,6 +28,21 @@ struct ContentView: View {
       downloadBar
     }
     .sheet(isPresented: $model.settingsPresented) { connectionSettings }
+    .alert(
+      model.pluginOffer.map { model.text(for: $0).title } ?? "",
+      isPresented: Binding(
+        get: { model.pluginOffer != nil }, set: { if !$0 { model.dismissPluginOffer() } }),
+      presenting: model.pluginOffer
+    ) { offer in
+      let text = model.text(for: offer)
+      Button(text.action) { model.installPlugins(offer) }.keyboardShortcut(.defaultAction)
+      if let decline = text.decline {
+        Button(decline) { model.skipPlugins(offer) }
+      }
+      Button("Cancel", role: .cancel) { model.dismissPluginOffer() }
+    } message: { offer in
+      Text(model.text(for: offer).message)
+    }
   }
 
   private var connectionBar: some View {
@@ -102,6 +110,7 @@ struct ContentView: View {
 
   @ViewBuilder private var detail: some View {
     if let recording = model.focused {
+      let liveSetUnavailable = model.liveSetUnavailable(recording)
       VStack(alignment: .leading, spacing: 0) {
         VStack(alignment: .leading, spacing: 8) {
           Text(recording.date.formatted(date: .long, time: .shortened)).font(
@@ -117,7 +126,18 @@ struct ContentView: View {
               for file in recording.files { model.toggle(recording, file, selected: true) }
             }
             Spacer()
+            Button("Open in Live") { model.openInLive(recording) }
+              .disabled(!model.connected || liveSetUnavailable != nil)
+              .help(
+                liveSetUnavailable
+                  ?? "Download this take's Live set and the audio it uses, then open it in Ableton Live"
+              )
+              .accessibilityIdentifier("openInLive")
           }.padding(.top, 8).disabled(model.busy)
+          if let reason = liveSetUnavailable {
+            Text(reason).font(.caption).foregroundStyle(.secondary).frame(
+              maxWidth: .infinity, alignment: .trailing)
+          }
         }.padding(24)
         Divider()
         ScrollView {
@@ -247,5 +267,27 @@ private struct AudioFileRow: View {
         }
       }
     }.padding(.vertical, 16)
+  }
+}
+
+/// A dismissible message above the download bar: an error or a notice.
+private struct MessageBar: View {
+  let text: String
+  let symbol: String
+  let tint: Color
+  let dismiss: () -> Void
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: symbol).foregroundStyle(tint)
+      ScrollView {
+        Text(text).font(.callout).textSelection(.enabled).frame(
+          maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(maxHeight: 72)
+      Button(action: dismiss) {
+        Image(systemName: "xmark")
+      }.buttonStyle(.plain).accessibilityLabel("Dismiss message")
+    }.padding(14).background(tint.opacity(0.08))
   }
 }

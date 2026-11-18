@@ -1,6 +1,11 @@
+import 'package:daw_export/src/chain_timeline.dart';
+import 'package:daw_export/src/daw_project.dart';
 import 'package:daw_export/src/device_chain.dart';
+import 'package:daw_export/src/event_log_reader.dart';
 import 'package:daw_export/src/segno_vst3_plugins.dart';
 import 'package:test/test.dart';
+
+import 'helpers/fx_log.dart';
 
 DawPluginDevice _plugin(DawDevice d) => d as DawPluginDevice;
 DawRackDevice _rack(DawDevice d) => d as DawRackDevice;
@@ -33,18 +38,17 @@ void main() {
       expect(delay.plugin, segnoPlugins[3]);
       expect(delay.state.params, [0.35, 0.4, 0.5]);
       expect(delay.state.slot, 0);
-      expect(delay.on, isTrue);
       expect(delay.state.enabled, isTrue);
+      expect(delay.switching, isNull);
+      expect(delay.parameters, isEmpty);
       expect(delay.state.hopSeed, 64);
       expect(delay.state.clockOffset, 1000);
       expect(delay.state.beatOffset, 2.5);
       final drive = _plugin(devices[1]);
       expect(drive.plugin, segnoPlugins[1]);
       expect(drive.state.slot, 2);
-      // Off as a device; the plugin's own switch stays on, so switching the
-      // device on in Live plays it.
-      expect(drive.on, isFalse);
-      expect(drive.state.enabled, isTrue);
+      // Off by its own switch, the plugin's Enabled, as the engine runs it.
+      expect(drive.state.enabled, isFalse);
       expect(drive.state.input, 3);
       expect(drive.state.output, 1);
       expect(drive.state.placement, -0.5);
@@ -62,7 +66,7 @@ void main() {
         origin: origin,
         chainEnabled: false,
       );
-      expect(_plugin(devices.single).on, isFalse);
+      expect(_plugin(devices.single).state.enabled, isFalse);
     });
 
     test('leaves out hosted plugins and anything that is not a list', () {
@@ -109,13 +113,14 @@ void main() {
         1,
         2,
       ]);
+      // A rack is always on: its switch is its entries' (#1806 D5).
       final echo = _rack(devices[2]);
-      expect(echo.on, isFalse);
-      expect(_plugin(echo.chains.single.devices.single).on, isTrue);
+      expect(echo.on, isTrue);
+      expect(echo.switching, isNull);
     });
 
-    test("puts a switched-off rack's modules on, since only their effective "
-        'bit is recorded, so switching the rack on in Live plays them', () {
+    test("switches a switched-off rack's modules off by their recorded "
+        'bit, the one the engine runs, and leaves the rack on', () {
       final devices = devicesOfChain([
         {
           'type': 3,
@@ -125,8 +130,8 @@ void main() {
         },
       ], origin: origin);
       final echo = _rack(devices.single);
-      expect(echo.on, isFalse);
-      expect(_plugin(echo.chains.single.devices.single).on, isTrue);
+      expect(echo.on, isTrue);
+      expect(_plugin(echo.chains.single.devices.single).state.enabled, isFalse);
     });
 
     test('leaves out a rack with nothing Segno runs in it', () {
@@ -236,6 +241,154 @@ void main() {
       expect(ChainOrigin.bus(3).hopSeed, 64);
       expect(ChainOrigin.monitor(0).hopSeed, 64);
       expect(ChainOrigin.monitor(3).hopSeed, 0);
+    });
+  });
+
+  group('devicesOfChain with what changed during the take (#1836)', () {
+    ChainTimeline timeline(List<RawLogEntry> entries, List<Object> effects) =>
+        ChainTimeline.lane(
+          entries,
+          0,
+          0,
+          effects: effects,
+          chainEnabled: true,
+          sampleRate: 48000,
+          tempoBpm: 120,
+        );
+    List<double> values(AutomationLane? lane) => [
+      for (final b in lane!.breakpoints) b.value,
+    ];
+
+    test("carries each plugin's switching and settings as automation", () {
+      final effects = [
+        {
+          'type': 3,
+          'params': [0.35, 0.4, 0.5],
+        },
+      ];
+      final devices = devicesOfChain(
+        effects,
+        origin: origin,
+        timeline: timeline([
+          FxLog.laneEnabled(24000, 0, 0, 0, on: false),
+          FxLog.laneParam(48000, 0, 0, 0, 2, 0.75),
+        ], effects),
+      );
+      final delay = _plugin(devices.single);
+      expect(values(delay.switching), [1, 0]);
+      expect(values(delay.parameters[2]), [0.5, 0.75]);
+      expect(delay.state.hopSeed, 64);
+    });
+
+    test('an A/B press is the switches of both racks, each rack on with its '
+        'modules switched (D5)', () {
+      const a = {'id': 'a', 'name': 'Rack A'};
+      const b = {'id': 'b', 'name': 'Rack B', 'bypassed': true};
+      final effects = [
+        {
+          'type': 1,
+          'params': [0.5, 0.8],
+          'rack': a,
+        },
+        {
+          'type': 17,
+          'params': [0.2, 0.5],
+          'rack': b,
+          'enabled': false,
+        },
+      ];
+      final devices = devicesOfChain(
+        effects,
+        origin: origin,
+        timeline: timeline([
+          FxLog.laneEnabled(24000, 0, 0, 0, on: false),
+          FxLog.laneEnabled(24000, 0, 0, 1, on: true),
+        ], effects),
+      );
+      final [rackA, rackB] = devices.map(_rack).toList();
+      expect([rackA.on, rackB.on], [isTrue, isTrue]);
+      final drive = _plugin(rackA.chains.single.devices.single);
+      final distortion = _plugin(rackB.chains.single.devices.single);
+      expect(drive.state.enabled, isTrue);
+      expect(values(drive.switching), [1, 0]);
+      expect(distortion.state.enabled, isFalse);
+      expect(values(distortion.switching), [0, 1]);
+    });
+
+    test('a slot whose effect changed holds a plugin for each, next to each '
+        'other in its rack (D6)', () {
+      const rack = {'id': 'r', 'name': 'Rack'};
+      final effects = [
+        {
+          'type': 1,
+          'params': [0.5, 0.8],
+          'rack': rack,
+        },
+      ];
+      final devices = devicesOfChain(
+        effects,
+        origin: origin,
+        timeline: timeline([FxLog.laneType(24000, 0, 0, 0, 17)], effects),
+      );
+      final [drive, distortion] = _rack(devices.single).chains.single.devices
+          .map(_plugin)
+          .toList();
+      expect(drive.plugin, segnoPlugins[1]);
+      expect(distortion.plugin, segnoPlugins[17]);
+      expect(distortion.state.slot, 0);
+      expect(distortion.state.enabled, isFalse);
+      expect(values(distortion.switching), [0, 1]);
+      expect(values(drive.switching), [1, 0]);
+    });
+
+    test('a slot past the arm chain gets the plugin that lands on it, in '
+        'place', () {
+      final effects = [
+        {
+          'type': 3,
+          'params': [0.35, 0.4, 0.5],
+        },
+      ];
+      final devices = devicesOfChain(
+        effects,
+        origin: origin,
+        timeline: timeline([
+          FxLog.laneCount(24000, 0, 0, 2),
+          FxLog.laneType(24000, 0, 0, 1, 7),
+        ], effects),
+      );
+      expect(devices.map((d) => _plugin(d).state.slot), [0, 1]);
+      expect(_plugin(devices[1]).plugin, segnoPlugins[7]);
+    });
+
+    test('switches the Amb / Dub section on while any entry of its rack '
+        'runs, as the engine fades it to its input when none does', () {
+      const rack = {'id': 'd', 'name': 'Dub Rack'};
+      final effects = [
+        {
+          'type': 2,
+          'params': [0.5, 0.2],
+          'rack': rack,
+        },
+        {
+          'type': 23,
+          'params': [0.2, 0.4, 0.75],
+          'rack': rack,
+          'rackPath': 'amb',
+        },
+      ];
+      final devices = devicesOfChain(
+        effects,
+        origin: origin,
+        timeline: timeline([
+          FxLog.laneEnabled(24000, 0, 0, 0, on: false),
+          FxLog.laneEnabled(24000, 0, 0, 1, on: false),
+          FxLog.laneEnabled(48000, 0, 0, 1, on: true),
+        ], effects),
+      );
+      final paths = _rack(_rack(devices.single).chains.single.devices[1]);
+      expect(paths.on, isTrue);
+      expect(values(paths.switching), [1, 0, 0, 1]);
     });
   });
 }

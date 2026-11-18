@@ -266,4 +266,340 @@ final class TransferTests: XCTestCase {
     XCTAssertEqual(result.lastPathComponent, "Minimal Python.wav")
     XCTAssertEqual(try Data(contentsOf: result).count, 172)
   }
+
+  // MARK: Live set
+
+  private var takeFolder: URL { root.appendingPathComponent("a 'quoted' take") }
+
+  /// Writes a Live set that refers to `references`, gzipped as Live and the
+  /// console write it, plus a loop and a wet stem for it to use.
+  private func writeLiveSet(
+    _ references: [String] = ["master.wav", "loops/track0-lane0.wav", "stems/wet/track0.wav"],
+    plugin: Bool = true, storeName: Bool = false
+  ) throws {
+    let master = try Data(contentsOf: takeFolder.appendingPathComponent("master.wav"))
+    for path in ["loops/track0-lane0.wav", "stems/wet/track0.wav", "stems/dry/track0.wav"] {
+      let url = takeFolder.appendingPathComponent(path)
+      try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try master.write(to: url)
+    }
+    try Data("chains".utf8).write(to: takeFolder.appendingPathComponent("fx-chains.txt"))
+    let clips = references.map {
+      "<AudioClip><SampleRef><FileRef><RelativePathType Value=\"1\" /><RelativePath Value=\"\($0)\" /><Path Value=\"\($0)\" /></FileRef></SampleRef></AudioClip>"
+    }
+    let device =
+      plugin
+      ? "<PluginDevice><PluginDesc><Vst3PluginInfo Id=\"0\"><Name Value=\"Segno Delay\" /></Vst3PluginInfo></PluginDesc></PluginDevice>"
+      : "<PluginDevice><PluginDesc><Vst3PluginInfo Id=\"0\"><Name Value=\"Pro-Q 3\" /></Vst3PluginInfo></PluginDesc></PluginDevice>"
+    let xml = root.appendingPathComponent("project.als")
+    let head =
+      #"<?xml version="1.0" encoding="UTF-8"?><Ableton><LiveSet><OriginalFileRef/><RelativePath Value="not-a-file-ref.wav" />"#
+    let body: String = clips.joined() + device + "</LiveSet></Ableton>"
+    try Data((head + body).utf8).write(to: xml)
+    let gzip = Process()
+    gzip.executableURL = URL(fileURLWithPath: "/usr/bin/gzip")
+    gzip.arguments = (storeName ? ["-c"] : ["-c", "-n"]) + [xml.path]
+    let output = takeFolder.appendingPathComponent("project.als")
+    FileManager.default.createFile(atPath: output.path, contents: nil)
+    gzip.standardOutput = try FileHandle(forWritingTo: output)
+    try gzip.run()
+    gzip.waitUntilExit()
+    XCTAssertEqual(gzip.terminationStatus, 0)
+    try FileManager.default.removeItem(at: xml)
+  }
+
+  private func files(in folder: URL) throws -> [String] {
+    let enumerator = try XCTUnwrap(
+      FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey]))
+    return enumerator.compactMap { item in
+      let url = item as! URL
+      guard (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+      else { return nil }
+      return String(
+        url.standardizedFileURL.path.dropFirst(folder.standardizedFileURL.path.count + 1))
+    }.sorted()
+  }
+
+  private func downloadLiveSet(
+    _ recording: Recording, token: CancellationToken = CancellationToken(),
+    progress: @escaping (Double, String) -> Void = { _, _ in }
+  ) throws -> LiveSetCopy {
+    try repository.downloadLiveSet(
+      recording: recording, destination: destination, connection: connection, token: token,
+      progress: progress)
+  }
+
+  func testLiveSetDownloadsExactlyWhatTheSetUses() throws {
+    try writeLiveSet()
+    let recording = try take()
+    XCTAssertEqual(recording.liveSet?.path, "project.als")
+    let copy = try downloadLiveSet(recording)
+    XCTAssertEqual(copy.folder.lastPathComponent, "a 'quoted' take")
+    XCTAssertTrue(copy.usesPlugins)
+    XCTAssertFalse(copy.reused)
+    XCTAssertEqual(
+      try files(in: copy.folder),
+      [
+        ".segno-transfer.json", "loops/track0-lane0.wav", "master.wav", "project.als",
+        "stems/wet/track0.wav",
+      ])
+    for path in ["project.als", "master.wav", "loops/track0-lane0.wav", "stems/wet/track0.wav"] {
+      XCTAssertEqual(
+        try Data(contentsOf: copy.folder.appendingPathComponent(path)),
+        try Data(contentsOf: takeFolder.appendingPathComponent(path)), path)
+    }
+    XCTAssertEqual(
+      try FileManager.default.contentsOfDirectory(atPath: destination.path), ["a 'quoted' take"])
+    XCTAssertEqual(
+      try LiveSet.read(copy.project).references,
+      ["master.wav", "loops/track0-lane0.wav", "stems/wet/track0.wav"])
+    // The folder is a Live Project, so Live saves the set in place (#1837).
+    XCTAssertEqual(try projectInfo(in: copy.folder), [])
+  }
+
+  /// What the `Ableton Project Info` folder in `folder` holds.
+  private func projectInfo(in folder: URL) throws -> [String] {
+    try FileManager.default.contentsOfDirectory(
+      atPath: folder.appendingPathComponent(LiveSet.projectInfoName).path)
+  }
+
+  func testAVerifiedCopyWithoutAProjectFolderGetsOne() throws {
+    try writeLiveSet(plugin: false)
+    let recording = try take()
+    let first = try downloadLiveSet(recording)
+    // As a copy downloaded before #1837 left it.
+    try FileManager.default.removeItem(
+      at: first.folder.appendingPathComponent(LiveSet.projectInfoName))
+    let second = try downloadLiveSet(recording)
+    XCTAssertEqual(second, LiveSetCopy(folder: first.folder, usesPlugins: false, reused: true))
+    XCTAssertEqual(try projectInfo(in: second.folder), [])
+  }
+
+  /// Makes the fake appliance log the path of every file it is asked to
+  /// download, one per line, and returns the log.
+  private func logDownloads() throws -> URL {
+    let log = root.appendingPathComponent("downloads.log")
+    try writeExecutable(
+      """
+      #!/usr/bin/python3
+      import os, shlex, sys
+      command = shlex.split(sys.argv[-1])
+      if command[2] == 'download':
+          with open(\(String(reflecting: log.path)), 'a') as log:
+              log.write(command[5] + '\\n')
+      os.execv('/usr/bin/python3', ['/usr/bin/python3'] + command[1:])
+      """)
+    return log
+  }
+
+  private func downloads(_ log: URL) -> [String] {
+    ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+  }
+
+  /// Replaces the copy's set with one that refers to `references`, as Live
+  /// writes it on save, and returns its bytes.
+  private func edit(_ copy: LiveSetCopy, references: [String]) throws -> Data {
+    let console = try Data(contentsOf: takeFolder.appendingPathComponent("project.als"))
+    try writeLiveSet(references, plugin: false)
+    let edited = try Data(contentsOf: takeFolder.appendingPathComponent("project.als"))
+    try console.write(to: takeFolder.appendingPathComponent("project.als"))
+    XCTAssertNotEqual(edited, console)
+    try edited.write(to: copy.project)
+    return edited
+  }
+
+  func testAnEditedSetReopensAsItIs() throws {
+    try writeLiveSet()
+    let recording = try take()
+    let first = try downloadLiveSet(recording)
+    // Saved in Live: its own audio, a file outside the take, a file
+    // collected into the project, and no plugins any more.
+    let edited = try edit(
+      first,
+      references: ["master.wav", "stems/wet/track0.wav", "Samples/Imported/new.wav", "../out.wav"]
+    )
+    let log = try logDownloads()
+    let second = try downloadLiveSet(recording)
+    XCTAssertEqual(second, LiveSetCopy(folder: first.folder, usesPlugins: false, reused: true))
+    XCTAssertEqual(try Data(contentsOf: second.project), edited)
+    XCTAssertEqual(downloads(log), [])
+    XCTAssertEqual(
+      try FileManager.default.contentsOfDirectory(atPath: destination.path), ["a 'quoted' take"])
+    // A set changed on the console since does not replace the user's.
+    try writeLiveSet(["master.wav"])
+    XCTAssertEqual(try downloadLiveSet(try take()).folder, first.folder)
+    XCTAssertEqual(try Data(contentsOf: first.project), edited)
+  }
+
+  func testAMissingOrChangedAudioFileIsFetchedAgainAndTheSetIsKept() throws {
+    try writeLiveSet()
+    let copy = try downloadLiveSet(try take())
+    let edited = try edit(copy, references: ["master.wav", "stems/wet/track0.wav"])
+    try FileManager.default.removeItem(
+      at: copy.folder.appendingPathComponent("stems/wet/track0.wav"))
+    // Changed without changing its length.
+    let master = copy.folder.appendingPathComponent("master.wav")
+    var bytes = try Data(contentsOf: master)
+    bytes[bytes.count - 1] ^= 1
+    try bytes.write(to: master)
+    // Broken too, but the edited set no longer uses it.
+    try Data("x".utf8).write(to: copy.folder.appendingPathComponent("loops/track0-lane0.wav"))
+    let log = try logDownloads()
+
+    // The catalog read again: writing the edit touched the take's files.
+    let reopened = try downloadLiveSet(try take())
+
+    XCTAssertEqual(reopened, LiveSetCopy(folder: copy.folder, usesPlugins: false, reused: true))
+    XCTAssertEqual(downloads(log), ["master.wav", "stems/wet/track0.wav"])
+    XCTAssertEqual(try Data(contentsOf: reopened.project), edited)
+    for path in ["master.wav", "stems/wet/track0.wav"] {
+      XCTAssertEqual(
+        try Data(contentsOf: copy.folder.appendingPathComponent(path)),
+        try Data(contentsOf: takeFolder.appendingPathComponent(path)), path)
+    }
+    XCTAssertEqual(
+      try files(in: copy.folder),
+      [
+        ".segno-transfer.json", "loops/track0-lane0.wav", "master.wav", "project.als",
+        "stems/wet/track0.wav",
+      ])
+    // The record holds the files fetched again: the next open fetches
+    // nothing.
+    _ = try downloadLiveSet(try take())
+    XCTAssertEqual(downloads(log), ["master.wav", "stems/wet/track0.wav"])
+  }
+
+  func testAFileMissingHereAndOnTheApplianceLeavesTheSetToOpen() throws {
+    try writeLiveSet()
+    let copy = try downloadLiveSet(try take())
+    for folder in [copy.folder, takeFolder] {
+      try FileManager.default.removeItem(at: folder.appendingPathComponent("stems/wet/track0.wav"))
+    }
+    try FileManager.default.removeItem(at: copy.folder.appendingPathComponent("master.wav"))
+    let project = try Data(contentsOf: copy.project)
+
+    let reopened = try downloadLiveSet(try take())
+
+    // The file the appliance still has comes back; Live reports the other.
+    XCTAssertEqual(reopened.folder, copy.folder)
+    XCTAssertEqual(
+      try Data(contentsOf: copy.folder.appendingPathComponent("master.wav")),
+      try Data(contentsOf: takeFolder.appendingPathComponent("master.wav")))
+    XCTAssertFalse(
+      FileManager.default.fileExists(
+        atPath: copy.folder.appendingPathComponent("stems/wet/track0.wav").path))
+    XCTAssertEqual(try Data(contentsOf: copy.project), project)
+  }
+
+  func testOfSeveralCopiesTheOneSavedLastReopens() throws {
+    try writeLiveSet()
+    let first = try downloadLiveSet(try take())
+    let other = destination.appendingPathComponent("a 'quoted' take (2)", isDirectory: true)
+    try FileManager.default.copyItem(at: first.folder, to: other)
+    let project = other.appendingPathComponent("project.als")
+    for (newer, older) in [(project, first.project), (first.project, project)] {
+      try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSinceNow: -60)], ofItemAtPath: older.path)
+      try FileManager.default.setAttributes(
+        [.modificationDate: Date()], ofItemAtPath: newer.path)
+      XCTAssertEqual(
+        try downloadLiveSet(try take()).project.standardizedFileURL.path,
+        newer.standardizedFileURL.path)
+    }
+  }
+
+  func testOnlyTheSegnoEffectsCountAsTheSetsPlugins() throws {
+    try writeLiveSet()
+    let copy = try downloadLiveSet(try take())
+    XCTAssertTrue(copy.usesPlugins)
+    // Edited in Live: the Segno effect swapped for another vendor's VST3.
+    _ = try edit(copy, references: ["master.wav"])
+    XCTAssertFalse(try downloadLiveSet(try take()).usesPlugins)
+  }
+
+  func testWithNoLocalCopyAFreshOneIsDownloaded() throws {
+    try writeLiveSet()
+    let recording = try take()
+    // A folder of the take's name that no download left is not a copy.
+    let other = destination.appendingPathComponent("a 'quoted' take", isDirectory: true)
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    let first = try downloadLiveSet(recording)
+    XCTAssertEqual(first.folder.lastPathComponent, "a 'quoted' take (2)")
+    XCTAssertFalse(first.reused)
+    // Nor is one whose set no longer reads.
+    try Data("not a set".utf8).write(to: first.project)
+    let second = try downloadLiveSet(recording)
+    XCTAssertEqual(second.folder.lastPathComponent, "a 'quoted' take (3)")
+    XCTAssertFalse(second.reused)
+    // Once that copy is gone, the next open downloads a fresh one.
+    try FileManager.default.removeItem(at: second.folder)
+    let third = try downloadLiveSet(recording)
+    XCTAssertEqual(third.folder.lastPathComponent, "a 'quoted' take (3)")
+    XCTAssertFalse(third.reused)
+    XCTAssertEqual(try projectInfo(in: third.folder), [])
+  }
+
+  func testALiveSetThatFailsVerificationPublishesNothing() throws {
+    try writeLiveSet()
+    let recording = try take()
+    try writeExecutable(
+      """
+      #!/usr/bin/python3
+      import json, os, shlex, sys
+      command = shlex.split(sys.argv[-1])
+      if command[2] == 'hash' and command[5] != 'project.als':
+          print(json.dumps({'sha256': 'incorrect'}))
+      else:
+          os.execv('/usr/bin/python3', ['/usr/bin/python3'] + command[1:])
+      """)
+    XCTAssertThrowsError(try downloadLiveSet(recording)) { error in
+      XCTAssertTrue(error.localizedDescription.contains("did not match"))
+    }
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), [])
+  }
+
+  func testCancellingALiveSetPublishesNothing() throws {
+    try writeLiveSet()
+    let recording = try take()
+    let token = CancellationToken()
+    XCTAssertThrowsError(
+      try downloadLiveSet(recording, token: token) { _, phase in
+        if phase.contains(" of ") { token.cancel() }
+      }
+    ) { error in
+      guard case .cancelled = error as? TransferError else { return XCTFail("\(error)") }
+    }
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), [])
+  }
+
+  func testALiveSetUsingAFileTheTakeDoesNotOfferIsRefused() throws {
+    for (references, message) in [
+      (["master.wav", "loops/missing.wav"], "missing or still being saved"),
+      (["../outside.wav"], "outside its take"),
+      (["fx-chains.txt"], "missing or still being saved"),
+      ([], "has no audio"),
+    ] {
+      try writeLiveSet(references)
+      XCTAssertThrowsError(try downloadLiveSet(try take()), "\(references)") { error in
+        XCTAssertTrue(error.localizedDescription.contains(message), error.localizedDescription)
+      }
+      XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: destination.path), [])
+    }
+  }
+
+  func testLiveSetReadsAGzipHeaderThatNamesTheFile() throws {
+    try writeLiveSet(["master.wav"], plugin: false, storeName: true)
+    let contents = try LiveSet.read(takeFolder.appendingPathComponent("project.als"))
+    XCTAssertEqual(contents, LiveSet.Contents(references: ["master.wav"], usesPlugins: false))
+    try Data("not gzip".utf8).write(to: takeFolder.appendingPathComponent("project.als"))
+    XCTAssertThrowsError(try LiveSet.read(takeFolder.appendingPathComponent("project.als")))
+  }
+
+  func testATakeWithoutALiveSetHasNone() throws {
+    XCTAssertNil(try take().liveSet)
+    XCTAssertThrowsError(try downloadLiveSet(try take())) { error in
+      XCTAssertEqual(error.localizedDescription, LiveSet.missing)
+    }
+  }
 }

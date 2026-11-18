@@ -27,10 +27,11 @@ import 'package:ffi/ffi.dart';
 /// line waits for its output), so `NativeUartPedalIo.configure` runs this on
 /// an isolate of its own.
 void configureRawUart(String device, int baud) {
-  final speed = _speeds[baud];
-  if (speed == null) {
+  final code = _speeds[baud];
+  if (code == null) {
     throw ArgumentError.value(baud, 'baud', 'is not a standard serial rate');
   }
+  final speed = _speedIsRate ? baud : code;
   final path = device.toNativeUtf8();
   final fd = _open(path, _oRdonly | _oNoctty | _oNonblock | _oCloexec);
   malloc.free(path);
@@ -163,7 +164,16 @@ const _oCloexec = 0x80000;
 const _fGetfl = 3;
 const _fSetfl = 4;
 
-/// The `Bnnn` speed constants for the rates stty accepts by number.
+/// Whether libc's `speed_t` is the rate itself. glibc 2.42 made it so
+/// (`B115200` became 115200) and added `cfsetobaud` in the same release;
+/// older glibc, the appliance's included, takes only the `Bnnn` codes below
+/// and rejects a plain rate. Passing a code to the newer glibc asks for a
+/// custom rate of that many baud (0x1002 is 4098), which the kernel gets as
+/// `BOTHER` rather than `B115200`.
+final bool _speedIsRate = _libc.providesSymbol('cfsetobaud');
+
+/// The `Bnnn` speed constants for the rates stty accepts by number, as
+/// glibc before 2.42 defines them.
 const _speeds = <int, int>{
   1200: 0x9,
   2400: 0xb,

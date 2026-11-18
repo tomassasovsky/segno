@@ -1,7 +1,7 @@
 name: Site
 
-# Builds the static website in site/ into an nginx image. Pushes to the trunk
-# and master publish ghcr.io/tomassasovsky/segno-site:latest; the home server's
+# Builds the static website in site/ into an nginx image. Pushes to master
+# publish ghcr.io/tomassasovsky/segno-site:latest; the home server's
 # watchtower pulls it within five minutes. Pull requests only build it.
 
 on:
@@ -10,7 +10,7 @@ on:
       - 'site/**'
       - '.github/workflows/site.yaml'
   push:
-    branches: [claude/segno-integration, master]
+    branches: [master]
     paths:
       - 'site/**'
       - '.github/workflows/site.yaml'

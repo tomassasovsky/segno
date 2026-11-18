@@ -26,20 +26,35 @@ final class AppModel: ObservableObject {
   @Published var connected = false
   @Published var status = "Connect to your appliance to see its recordings."
   @Published var error: String?
+  /// Information that needs no action, shown like an error but not one.
+  @Published var notice: String?
+  /// An offer to install or update the Segno plugins, waiting for the user.
+  @Published var pluginOffer: PluginOffer?
   @Published var progress: Double = 0
   @Published var progressTitle = ""
   @Published var downloaded: [URL] = []
   @Published var settingsPresented = false
   @Published private(set) var previewTitle: String?
+  /// The Live application sets open in: looked up at launch and on every
+  /// connect, not on every redraw.
+  @Published private(set) var liveApplication: URL?
   let previewPlayer = PreviewPlayer()
   private var preparingPreview = false
   private var token = CancellationToken()
   private let repository: RecordingRepository
   private let defaults: UserDefaults
+  private let live: AbletonLive
+  let plugins: SegnoPlugins
 
-  init(repository: RecordingRepository, defaults: UserDefaults = .standard) {
+  init(
+    repository: RecordingRepository, defaults: UserDefaults = .standard,
+    live: AbletonLive = .system, plugins: SegnoPlugins = .thisApp
+  ) {
     self.repository = repository
     self.defaults = defaults
+    self.live = live
+    self.plugins = plugins
+    liveApplication = live.application()
     connection =
       defaults.data(forKey: "connection").flatMap {
         try? JSONDecoder().decode(Connection.self, from: $0)
@@ -95,8 +110,10 @@ final class AppModel: ObservableObject {
       self.error = error.localizedDescription
       return
     }
+    liveApplication = live.application()
     busy = true
     error = nil
+    notice = nil
     status = "Connecting…"
     progressTitle = "Loading recordings"
     token = CancellationToken()
@@ -168,6 +185,7 @@ final class AppModel: ObservableObject {
     let repository = repository
     busy = true
     error = nil
+    notice = nil
     downloaded = []
     progress = 0
     progressTitle = "Starting download"
@@ -208,6 +226,205 @@ final class AppModel: ObservableObject {
     }
   }
 
+  /// Why `recording`'s Live set cannot be opened, or nil when it can.
+  func liveSetUnavailable(_ recording: Recording) -> String? {
+    if liveApplication == nil { return "Install Ableton Live to open this take's Live set." }
+    if recording.liveSet == nil { return LiveSet.missing }
+    return nil
+  }
+
+  /// Downloads `recording`'s Live set into the download folder, or reopens
+  /// the copy already there with its edits, and opens it in Live. A cancelled or failed
+  /// download opens nothing.
+  func openInLive(_ recording: Recording) {
+    liveApplication = live.application()
+    guard !busy, connected, liveSetUnavailable(recording) == nil,
+      let application = liveApplication
+    else { return }
+    let settings = connection
+    let folder = destination
+    token = CancellationToken()
+    let cancellation = token
+    let repository = repository
+    let live = live
+    busy = true
+    error = nil
+    notice = nil
+    downloaded = []
+    progress = 0
+    progressTitle = "Preparing the Live set · \(recording.name)"
+    Task {
+      do {
+        let copy = try await Task.detached {
+          try repository.downloadLiveSet(
+            recording: recording, destination: folder, connection: settings, token: cancellation
+          ) { fraction, phase in
+            Task { @MainActor in
+              guard self.busy, self.token === cancellation else { return }
+              self.progress = fraction
+              self.progressTitle = phase
+            }
+          }
+        }.value
+        downloaded = [copy.folder]
+        // A cancel that arrives once the copy is verified and in place keeps
+        // the copy but does not open it.
+        if cancellation.isCancelled {
+          status =
+            copy.reused
+            ? "Cancelled · the Live set downloaded earlier was checked but not opened"
+            : "Cancelled · the Live set is downloaded and verified but was not opened"
+          busy = false
+          progressTitle = ""
+          return
+        }
+        let plugins = copy.usesPlugins ? self.plugins.status() : .installed
+        if self.plugins.canInstall(plugins) {
+          // The user decides before the set opens (`installPlugins`,
+          // `skipPlugins`).
+          pluginOffer = PluginOffer(status: plugins, set: copy, application: application)
+          status =
+            copy.reused
+            ? "Checked the Live set downloaded earlier" : "Live set downloaded and verified"
+          busy = false
+          progressTitle = ""
+          return
+        }
+        try await open(copy, in: application, plugins: plugins)
+      } catch {
+        if !cancellation.isCancelled { self.error = error.localizedDescription }
+        status =
+          cancellation.isCancelled
+          ? "Cancelled · the Live set was not opened" : "Could not open the Live set"
+      }
+      busy = false
+      progressTitle = ""
+    }
+  }
+
+  /// Opens a downloaded set and says what `plugins`, the Segno plugins on
+  /// this Mac, mean for its effects.
+  private func open(
+    _ copy: LiveSetCopy, in application: URL, plugins: SegnoPlugins.Status
+  ) async throws {
+    try await live.open(copy.project, application)
+    status =
+      copy.reused
+      ? "Opened the Live set downloaded earlier"
+      : "Live set downloaded, verified and opened"
+    guard copy.usesPlugins else { return }
+    switch plugins {
+    case .missing:
+      error =
+        "The Segno plugins are not installed on this Mac, so the set's effects open as missing devices."
+    case .olderForAllUsers(let installed, _): error = Self.olderForAllUsers(installed)
+    case .installed, .older: break
+    }
+  }
+
+  private static func olderForAllUsers(_ installed: PluginVersion) -> String {
+    "An older Segno.vst3 (\(installed)) is installed for every user in /Library/Audio/Plug-Ins/VST3, and Live may load it. Segno Transfer does not change that folder; remove it there, then use Plug-ins > Install Segno Plugins."
+  }
+
+  /// Offers to install or update the Segno plugins (the Plug-ins menu).
+  func offerPlugins() {
+    guard !busy, pluginOffer == nil else { return }
+    error = nil
+    notice = nil
+    let current = plugins.status()
+    if plugins.canInstall(current) {
+      pluginOffer = PluginOffer(status: current, set: nil, application: nil)
+      return
+    }
+    switch current {
+    case .installed: notice = "The Segno plugins on this Mac are up to date."
+    case .missing: error = "This copy of Segno Transfer does not carry the Segno plugins."
+    case .olderForAllUsers(let installed, _): error = Self.olderForAllUsers(installed)
+    case .older: break
+    }
+  }
+
+  /// The title, message, confirming button and declining button (when a
+  /// set waits) for `offer`.
+  func text(for offer: PluginOffer) -> (
+    title: String, message: String, action: String, decline: String?
+  ) {
+    let folder = "~/Library/Audio/Plug-Ins/VST3"
+    let waiting = offer.set != nil
+    let effects = waiting ? " This set's effects need them." : ""
+    if case .older(let installed, let bundled) = offer.status {
+      return (
+        "Update the Segno plugins?",
+        "Segno.vst3 \(installed) is installed in \(folder). Replace it with \(bundled), the version this app carries?\(effects)",
+        "Replace", waiting ? "Open Without Updating" : nil
+      )
+    }
+    let version = plugins.bundledVersion.map { " \($0)" } ?? ""
+    return (
+      "Install the Segno plugins?",
+      "Segno Transfer can install Segno.vst3\(version) into \(folder), where Live finds it.\(effects)",
+      "Install", waiting ? "Open Without Plugins" : nil
+    )
+  }
+
+  /// Installs the plugins `offer` names, then opens the set it was made
+  /// for. A failed install opens nothing and says why.
+  func installPlugins(_ offer: PluginOffer) {
+    guard !busy else { return }
+    pluginOffer = nil
+    busy = true
+    error = nil
+    notice = nil
+    progress = 0
+    progressTitle = "Installing the Segno plugins"
+    // The copy itself runs to the end; Cancel keeps the set from opening.
+    token = CancellationToken()
+    let cancellation = token
+    let plugins = plugins
+    Task {
+      do {
+        try await Task.detached { try plugins.install() }.value
+        notice =
+          "Segno.vst3 is installed. If Live is open, rescan plug-ins (Settings > Plug-Ins > Rescan) or restart Live. If macOS says Segno.vst3 cannot be opened, allow it in System Settings > Privacy & Security."
+        busy = false
+        progressTitle = ""
+        if cancellation.isCancelled {
+          if offer.set != nil { status = "Cancelled · the Live set was not opened" }
+          return
+        }
+        open(offer)
+      } catch {
+        self.error = error.localizedDescription
+        busy = false
+        progressTitle = ""
+      }
+    }
+  }
+
+  /// Declines `offer` and opens the set it was made for as it is.
+  func skipPlugins(_ offer: PluginOffer) {
+    pluginOffer = nil
+    open(offer)
+  }
+
+  /// Declines the offer and opens nothing.
+  func dismissPluginOffer() { pluginOffer = nil }
+
+  private func open(_ offer: PluginOffer) {
+    guard !busy, let set = offer.set, let application = offer.application else { return }
+    let plugins = plugins.status()
+    busy = true
+    progressTitle = "Opening the Live set"
+    Task {
+      do { try await open(set, in: application, plugins: plugins) } catch {
+        self.error = error.localizedDescription
+        status = "Could not open the Live set"
+      }
+      busy = false
+      progressTitle = ""
+    }
+  }
+
   func cancel() {
     token.cancel()
     if preparingPreview { previewPlayer.stop() }
@@ -228,6 +445,7 @@ final class AppModel: ObservableObject {
     preparingPreview = true
     busy = true
     error = nil
+    notice = nil
     progress = 0
     progressTitle = "Opening stream · \(file.role)"
     Task {
@@ -266,5 +484,23 @@ final class AppModel: ObservableObject {
     } else {
       NSWorkspace.shared.activateFileViewerSelecting(downloaded)
     }
+  }
+}
+
+/// An offer to install the Segno plugins, and the set waiting to open
+/// once the user answers (none when the offer came from the menu).
+struct PluginOffer {
+  let status: SegnoPlugins.Status
+  let set: LiveSetCopy?
+  let application: URL?
+}
+
+extension SegnoPlugins {
+  /// The plugins inside this app (`Contents/PlugIns`), for this user.
+  static var thisApp: SegnoPlugins {
+    let bundled = Bundle.main.builtInPlugInsURL?.appendingPathComponent(bundleName)
+    return SegnoPlugins(
+      bundled: bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil },
+      home: FileManager.default.homeDirectoryForCurrentUser)
   }
 }

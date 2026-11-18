@@ -1,7 +1,7 @@
 name: ci-caches-check
 
 # Runs ci-caches.yaml on a PR that changes it, read-only (#1787): the jobs
-# restore the trunk's caches, or download what they miss, and save nothing.
+# restore master's caches, or download what they miss, and save nothing.
 # A save from a PR would sit under refs/pull/<N>/merge, where only that PR
 # can read it.
 on:

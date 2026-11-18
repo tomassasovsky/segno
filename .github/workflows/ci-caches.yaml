@@ -1,16 +1,15 @@
 name: ci-caches
 
-# Saves, on the trunk, the Actions caches the PR checks restore (#1771).
+# Saves, on master, the Actions caches the PR checks restore (#1771).
 #
-# A pull request restores caches saved on its own ref or on its base branch,
-# but main.yaml runs only on pull requests and on pushes to master. So every
-# PR missed the Flutter SDK cache, downloaded the SDK, and saved its own
-# 1.6 GB copy (and the console firmware job its 0.8 GB Arduino core) under its
-# own ref, where no other PR can read it. A handful of those filled the
-# repository's 10 GB, and from then on no job could save a cache at all
-# ("Unable to reserve cache"): not ccache, not the apt packages. Saved here,
-# under claude/segno-integration, the caches are found by every PR into the
-# trunk, and a job that finds its cache saves nothing.
+# A run restores caches saved on its own ref, on its base branch, or on the
+# default branch. When every PR missed the Flutter SDK cache, it downloaded
+# the SDK and saved its own 1.6 GB copy (and the console firmware job its
+# 0.8 GB Arduino core) under its own ref, where no other PR can read it. A
+# handful of those filled the repository's 10 GB, and from then on no job
+# could save a cache at all ("Unable to reserve cache"): not ccache, not the
+# apt packages. Saved here, on master, the caches are found by every run on
+# any ref, and a job that finds its cache saves nothing.
 #
 # The keys must be the ones the PR jobs compute: subosito/flutter-action's
 # defaults (the packages, design and fuzz jobs), the Very Good workflows' key
@@ -20,10 +19,10 @@ name: ci-caches
 # jobs).
 #
 # This is the only workflow that saves caches for the PR checks: main.yaml
-# runs with cache-mode read (#1787). It saves only on the trunk: a run on any
-# other ref would save under that ref, where no PR into the trunk can read
-# it. A dispatch from the trunk saves the caches without waiting for the
-# next merge; from another branch the jobs are skipped.
+# runs with cache-mode read (#1787). It saves only on master: a run on any
+# other ref would save under that ref, where no other ref can read it. A
+# dispatch from master saves the caches without waiting for the next merge;
+# from another branch the jobs are skipped.
 
 # A PR that changes this file runs it through ci-caches-check.yaml, which
 # calls it with cache-mode read, to prove the jobs still work without saving
@@ -31,8 +30,10 @@ name: ci-caches
 # needs a caller of its own.
 on:
   push:
+    # The default branch. A trigger takes no expression; the jobs' ifs read
+    # the default branch from the event, so a dispatch elsewhere skips them.
     branches:
-      - claude/segno-integration
+      - master
   workflow_dispatch:
   workflow_call:
 
@@ -43,7 +44,7 @@ concurrency:
 jobs:
   flutter:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -67,7 +68,7 @@ jobs:
 
   arduino:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 20
     steps:
       # The key and paths are console-firmware's in main.yaml.
@@ -97,7 +98,7 @@ jobs:
 
   apt:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 10
     steps:
       # The packages and version are the native jobs' in main.yaml.
@@ -111,7 +112,7 @@ jobs:
   # in the job above libasound2-dev is already installed.
   apt-alsa:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/claude/segno-integration' || github.event_name == 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'pull_request'
     timeout-minutes: 10
     steps:
       # The package and version are the Flutter jobs' in main.yaml (#1783).

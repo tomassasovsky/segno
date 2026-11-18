@@ -59,6 +59,18 @@ abstract final class EventLogReader {
     return entries;
   }
 
+  /// [entries] in frame order, entries at one frame kept in file order: the
+  /// one merged timeline of the two producer streams, as the offline render
+  /// sorts it (`le_pr_load_log`).
+  static List<RawLogEntry> sortedByFrame(List<RawLogEntry> entries) {
+    final indexed = [for (var i = 0; i < entries.length; i++) (i, entries[i])]
+      ..sort((a, b) {
+        final byFrame = a.$2.frame.compareTo(b.$2.frame);
+        return byFrame != 0 ? byFrame : a.$1.compareTo(b.$1);
+      });
+    return [for (final (_, e) in indexed) e];
+  }
+
   /// Where the take starts in the engine's time: the engine frame of its
   /// first frame (`LE_PLOG_PERF_ARMED`'s FX clock) and the beat the effects
   /// were on there (the arm's `LE_PLOG_FX_TEMPO` anchor at frame 0). 0 for
@@ -114,7 +126,7 @@ abstract final class EventLogReader {
     bool initiallyMuted = false,
     Set<int> initiallySoloed = const {},
   }) {
-    final sorted = [...entries]..sort((a, b) => a.frame.compareTo(b.frame));
+    final sorted = sortedByFrame(entries);
     final volume = <AutomationBreakpoint>[];
     final mute = <AutomationBreakpoint>[];
 
