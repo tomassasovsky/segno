@@ -8,7 +8,7 @@ concurrency:
 # lives under refs/pull/<N>/merge, where only that PR can read it, and a few
 # Flutter SDK copies (1.7 GB each) fill the repository's 10 GB, after which
 # no job can save anything. The caches the jobs here restore are saved on
-# the trunk by ci-caches.yaml, under the keys these jobs compute. The mode
+# master by ci-caches.yaml, under the keys these jobs compute. The mode
 # is enforced by the cache service, so it also covers the actions that have
 # no restore-only switch (subosito/flutter-action, cache-apt-pkgs-action)
 # and the Very Good workflows called below. A job that misses downloads
@@ -255,9 +255,9 @@ jobs:
           echo "CLANG=$clang" >> "$GITHUB_ENV"
       # ccache (#1771), downloaded from its GitHub release: a TU that several
       # of the run's binaries build with the same flags is compiled once. The
-      # cache is not kept between runs: a PR may not save it (cache-mode
-      # above), and these jobs do not run on the trunk, where it could be
-      # saved for every PR to restore.
+      # cache is not kept between runs: this workflow only restores caches
+      # (cache-mode above), and ci-caches.yaml does not build the native
+      # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
@@ -442,9 +442,9 @@ jobs:
           version: "1"
       # ccache (#1771), downloaded from its GitHub release: a TU that several
       # of the run's binaries build with the same flags is compiled once. The
-      # cache is not kept between runs: a PR may not save it (cache-mode
-      # above), and these jobs do not run on the trunk, where it could be
-      # saved for every PR to restore.
+      # cache is not kept between runs: this workflow only restores caches
+      # (cache-mode above), and ci-caches.yaml does not build the native
+      # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
@@ -502,7 +502,7 @@ jobs:
           echo "$PWD/bin" >> "$GITHUB_PATH"
       # The core download comes from the package server on every run, and its
       # 504s were failing unrelated PRs; a pinned core never changes, so cache it.
-      # ci-caches.yaml saves it on the trunk under the same key, so a PR finds
+      # ci-caches.yaml saves it on master under the same key, so a PR finds
       # it there (#1771); this job only restores it (#1787): change the two
       # keys together.
       - name: Restore the Arduino core and libraries
@@ -590,9 +590,9 @@ jobs:
           version: "1"
       # ccache (#1771), downloaded from its GitHub release: a TU that several
       # of the run's binaries build with the same flags is compiled once. The
-      # cache is not kept between runs: a PR may not save it (cache-mode
-      # above), and these jobs do not run on the trunk, where it could be
-      # saved for every PR to restore.
+      # cache is not kept between runs: this workflow only restores caches
+      # (cache-mode above), and ci-caches.yaml does not build the native
+      # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
@@ -642,9 +642,9 @@ jobs:
           version: "1"
       # ccache (#1771), downloaded from its GitHub release: a TU that several
       # of the run's binaries build with the same flags is compiled once. The
-      # cache is not kept between runs: a PR may not save it (cache-mode
-      # above), and these jobs do not run on the trunk, where it could be
-      # saved for every PR to restore.
+      # cache is not kept between runs: this workflow only restores caches
+      # (cache-mode above), and ci-caches.yaml does not build the native
+      # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
@@ -682,9 +682,9 @@ jobs:
       # NATIVE_TESTS_ONLY skips the suites that link the audio backends.
       # ccache (#1771), downloaded from its GitHub release: a TU that several
       # of the run's binaries build with the same flags is compiled once. The
-      # cache is not kept between runs: a PR may not save it (cache-mode
-      # above), and these jobs do not run on the trunk, where it could be
-      # saved for every PR to restore.
+      # cache is not kept between runs: this workflow only restores caches
+      # (cache-mode above), and ci-caches.yaml does not build the native
+      # suites, so nothing saves it for every PR to restore.
       - name: Install ccache
         uses: hendrikmuhs/ccache-action@v1.2.25
         with:
