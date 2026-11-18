@@ -96,6 +96,9 @@ check "the kernel's regulatory domain" "country AR: DFS-FCC" "\$(iw reg get | se
 check "radios start blocked (raspberrypi-sys-mods rfkill_default)" 0 "\$(cat /sys/module/rfkill/parameters/default_state)"
 check "NetworkManager lifted the block on wlan" 0 "\$(for d in /sys/class/rfkill/rfkill*; do [ "\$(cat \$d/type)" = wlan ] && cat \$d/soft; done | head -1)"
 check "brcmfmac options (firmware-nonfree)" "options brcmfmac roamoff=1 feature_disable=0x282000" "\$(grep -h '^options brcmfmac' /etc/modprobe.d/*.conf)"
+check "no dnsmasq service (Pi OS has only the program)" masked "\$(systemctl is-enabled dnsmasq 2>/dev/null)"
+check "avahi publishes the workstation (pi-gen)" "publish-workstation=yes" "\$(grep '^publish-workstation=' /etc/avahi/avahi-daemon.conf)"
+look "DNS (systemd-resolved; Pi OS has NetworkManager write resolv.conf)" "\$(readlink /etc/resolv.conf) \$(grep '^nameserver' /etc/resolv.conf | tr '\n' ' ')"
 look "saved Wi-Fi networks (name:uuid:autoconnect)" "\$(nmcli -t -f NAME,UUID,TYPE,AUTOCONNECT connection show | awk -F: '\$3 == "802-11-wireless" { print \$1 ":" \$2 ":" \$4 }' | tr '\n' ' ')"
 look "wlan0" "\$(wifi_state)"
 if [ "\$(wifi_state)" = connected ]; then

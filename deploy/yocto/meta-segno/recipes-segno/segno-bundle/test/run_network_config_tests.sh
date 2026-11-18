@@ -67,6 +67,14 @@ check "brcmfmac options" "options brcmfmac roamoff=1 feature_disable=0x282000" \
 check "the regulatory domain is on the kernel command line" yes \
     "$(yesno grep -qE '^[[:space:]]*CMDLINE:append.* cfg80211\.ieee80211_regdom=[A-Z][A-Z]( |")' "$KAS")"
 
+echo "dnsmasq and Avahi are set up as on Pi OS"
+# Pi OS ships dnsmasq-base, the program without a service.
+check "dnsmasq.service is masked" yes \
+    "$(yesno grep -qF 'ln -sf /dev/null ${D}${sysconfdir}/systemd/system/dnsmasq.service' "$RECIPE")"
+# pi-gen stage2/01-sys-tweaks, word for word.
+check "avahi publishes the workstation, with pi-gen's edit" yes \
+    "$(yesno grep -qF "sed -i 's/^#\\?publish-workstation=.*/publish-workstation=yes/'" "$LAYER/recipes-connectivity/avahi/avahi_%.bbappend")"
+
 echo "wpa_supplicant starts as on Pi OS"
 check "the unit's ExecStart is Debian's" \
     'ExecStart=/usr/sbin/wpa_supplicant -u -s -O "DIR=/run/wpa_supplicant GROUP=netdev"' \
