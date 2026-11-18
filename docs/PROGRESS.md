@@ -483,6 +483,11 @@ a take's chains, where it used to hold each effect as it stood at arm.
   it creates the stem folders. No volume sync (#1797's export runs one at
   its end): nothing here needs a volume-wide flush, and none of it runs on
   the audio thread.
+- Not renames, the same window: the lane WAVs written into `loops/` at arm
+  and disarm are now flushed (their own sync writes their size), and
+  `loops/` and the take folder are synced after them; arm syncs the parent
+  of each folder it creates, the take's own first, so a short take pulled
+  right after "Completed" keeps its folder.
 - Not changed: the checkpoint slots are written in place and fsynced, which
   already writes their entries; the drain's live `performance.json` is
   rewritten four times a second while capturing and finalize replaces it,

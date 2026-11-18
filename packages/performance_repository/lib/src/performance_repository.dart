@@ -491,7 +491,7 @@ class PerformanceRepository {
       dir = '$under/$slug';
       suffix++;
     }
-    await Directory(dir).create(recursive: true);
+    await _createDurably(dir);
 
     final snapshot = _engine.snapshot();
     final tracks = _captureSettledLanes(
@@ -1791,6 +1791,7 @@ class PerformanceRepository {
   }) {
     final snapshot = _engine.snapshot();
     final tracks = <PerformanceTrackSnapshot>[];
+    var touchedLoops = false;
     for (var channel = 0; channel < snapshot.tracks.length; channel++) {
       final track = snapshot.tracks[channel];
       final capturing =
@@ -1825,12 +1826,16 @@ class PerformanceRepository {
         final filename = 'loops/track$channel-lane$laneIndex.wav';
         final wavFile = File('$dir/$filename');
         wavFile.parent.createSync(recursive: true);
+        touchedLoops = true;
+        // Flushed: the sync of the file is what writes its size into its
+        // entry on vfat (#1801).
         wavFile.writeAsBytesSync(
           WavCodec.encodeFloat32(
             samples: pcm,
             sampleRate: snapshot.sampleRate,
             channels: 1,
           ),
+          flush: true,
         );
         // What the player heard (#1713): the wet stem plays it where the lane
         // played it. Exported in the same settled window as the clean take,
@@ -1849,6 +1854,7 @@ class PerformanceRepository {
               sampleRate: snapshot.sampleRate,
               channels: 2,
             ),
+            flush: true,
           );
         } else if (heardWav.existsSync()) {
           heardWav.deleteSync();
@@ -1890,6 +1896,18 @@ class PerformanceRepository {
           name: _givenName(names[channel]),
         ),
       );
+    }
+    // The files' entries in `loops/`, and `loops/` itself in the take, are
+    // written back about 30 s later otherwise: a stick pulled before that
+    // loses them (#1801).
+    if (touchedLoops) {
+      try {
+        _io
+          ..syncDirectory('$dir/loops')
+          ..syncDirectory(dir);
+      } on Object {
+        // The loops are in place; a pulled drive may not keep them.
+      }
     }
     return tracks;
   }
@@ -2275,6 +2293,28 @@ class PerformanceRepository {
     } on Object {
       // Whatever failed, the file is already in place.
       return false;
+    }
+  }
+
+  /// Creates the directory at [path] and the parents it is missing, then
+  /// syncs the parent of each directory it created, bottom up: a new
+  /// directory's entry is in its parent, and on vfat the parent's entries
+  /// are written back about 30 s later otherwise, so a short take on a stick
+  /// pulled once it finished could lose its whole folder (#1801). The syncs
+  /// are best effort, as for a renamed directory.
+  Future<void> _createDurably(String path) async {
+    final missing = <String>[];
+    for (var p = path; !Directory(p).existsSync(); p = _dirname(p)) {
+      missing.add(p);
+      if (_dirname(p) == p) break;
+    }
+    await Directory(path).create(recursive: true);
+    try {
+      for (final made in missing) {
+        _io.syncDirectory(_dirname(made));
+      }
+    } on Object {
+      return; // in place; a pulled drive may not keep the new folder
     }
   }
 

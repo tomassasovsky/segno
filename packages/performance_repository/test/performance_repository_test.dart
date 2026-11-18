@@ -222,6 +222,28 @@ void main() {
       expectSyncedBeforeDirectory('$dir/performance.json', dir);
     });
 
+    test('a new take folder is synced in each parent arm created', () async {
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+
+      // The exports root did not exist either: both new entries are synced,
+      // the take's first.
+      final root = '${tempDir.path}/exports';
+      expect(FakeStorageIo.synced, containsAllInOrder([root, tempDir.path]));
+      expect(dir, startsWith('$root/'));
+    });
+
+    test('the loops exported at arm are synced in loops/, then loops/ in '
+        'the take', () async {
+      engine.seedLane(0, 0, Float32List.fromList([1, 1, 1, 1]));
+
+      await repo.arm();
+      final dir = repo.armedDirectory!;
+
+      expect(File('$dir/loops/track0-lane0.wav').existsSync(), isTrue);
+      expect(FakeStorageIo.synced, containsAllInOrder(['$dir/loops', dir]));
+    });
+
     test(
       'writeTakeFile writes the file whole and syncs it, then the take',
       () async {
