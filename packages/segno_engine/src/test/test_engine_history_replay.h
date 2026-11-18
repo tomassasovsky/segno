@@ -400,7 +400,8 @@ static void test_history_restore_then_empty_same_block(void) {
   le_engine_destroy(e);
 }
 
-/* Undo on a STOPPED track: 322 STOPPED at the observed frame (silent), 323
+/* Undo on a STOPPED track: the arm logs the snapshot's Stop (323, image 0)
+ * at frame 0 (#1170), 322 STOPPED at the observed frame (silent), 323
  * PLAYING at Play with the resumed phase. */
 static void test_history_stopped_swap_then_play(void) {
   printf("test_history_stopped_swap_then_play\n");
@@ -423,13 +424,16 @@ static void test_history_stopped_swap_then_play(void) {
   CHECK(live[play_at] != 0);
   le_perf_log_entry facts[8];
   const int n = history_source_facts(dir, 0, facts, 8);
-  CHECK(n == 2);
-  if (n == 2) {
-    CHECK(facts[0].cmd.code == LE_PLOG_SOURCE_APPLIED && facts[0].frame == swap_at);
+  CHECK(n == 3);
+  if (n == 3) {
+    CHECK(facts[0].cmd.code == LE_PLOG_SOURCE_TRANSPORT && facts[0].frame == 0);
+    CHECK(facts[0].cmd.restore_log.image_id == 0);
     CHECK(facts[0].cmd.restore_log.state == LE_TRACK_STOPPED);
-    CHECK(facts[1].cmd.code == LE_PLOG_SOURCE_TRANSPORT && facts[1].frame == play_at);
-    CHECK(facts[1].cmd.restore_log.state == LE_TRACK_PLAYING);
-    CHECK(facts[1].cmd.restore_log.image_id == facts[0].cmd.restore_log.image_id);
+    CHECK(facts[1].cmd.code == LE_PLOG_SOURCE_APPLIED && facts[1].frame == swap_at);
+    CHECK(facts[1].cmd.restore_log.state == LE_TRACK_STOPPED);
+    CHECK(facts[2].cmd.code == LE_PLOG_SOURCE_TRANSPORT && facts[2].frame == play_at);
+    CHECK(facts[2].cmd.restore_log.state == LE_TRACK_PLAYING);
+    CHECK(facts[2].cmd.restore_log.image_id == facts[1].cmd.restore_log.image_id);
   }
   history_render_parity(e, dir, HISTORY_ARM_EMPTY, live, at);
   le_engine_destroy(e);
