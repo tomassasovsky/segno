@@ -38,7 +38,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 | Issue | Thread | Stage | Autonomy | Branch |
 |-------|--------|-------|----------|--------|
-| #1843 | Network stack as on Raspberry Pi OS: NetworkManager on wpa_supplicant (part 1); DNS, dnsmasq and Avahi next (part 2) | in-review | merge-gate | `claude/pios-network-1843` |
+| #1843 | Network stack as on Raspberry Pi OS: NetworkManager on wpa_supplicant, dnsmasq and Avahi (DNS follows in #1849) | in-review | merge-gate | `claude/pios-network-1843` |
 | #1821 | Devlog and RSS feed on segno.aquiles.dev: Markdown entries in `site/log`, built by `site/build_log.py` | in-review | merge-gate | `claude/devlog-1821` |
 | #1795 | NVMe drive drops off the bus mid-recording: the Pi 5 cmdline turns off APST and PCIe ASPM on every link | in-review | blocked-verify | `claude/nvme-power-1795` |
 | #1740 | Penpot: the Effects page frames for the compact single-effect card and the built-in pedal faces (#1754, PR #1756 merged) and the cards' assignment lines (#1757, #1760), the Source-note clean-up and a segno-design snapshot; waits for a connected Penpot MCP tab | build | merge-gate | (none yet) |
@@ -94,7 +94,7 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
 
 ---
 
-## November 2026 The network stack is Raspberry Pi OS's (#1843 part 1)
+## November 2026 The network stack is Raspberry Pi OS's (#1843)
 
 - NetworkManager drives the radio through wpa_supplicant, as on Raspberry Pi
   OS, instead of iwd (#470). docs/NETWORK_PARITY.md lists every network
@@ -109,7 +109,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `rfkill_default.conf`, and the regulatory domain as raspi-config sets it,
   `cfg80211.ieee80211_regdom=AR` on the kernel command line. wpa_supplicant
   is built with Debian's options except PCSC (and the SIM EAP methods),
-  readline and eapol_test.
+  readline and eapol_test. dnsmasq.service is masked (Pi OS ships only the
+  program) and Avahi publishes the workstation, as pi-gen sets it.
 - Removed: the iwd backend and everything only iwd needed
   (`iwd-main.conf`, `segno-iwd-tame`, `wifi.iwd.autoconnect`, the
   wpa_supplicant mask), `segno-wifi-regdom` and `/etc/segno/wifi-country`,
@@ -125,6 +126,8 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   `wrong-password` only after "WPA: 4-Way Handshake failed - pre-shared key
   may be incorrect"; `CTRL-EVENT-ASSOC-REJECT status_code=16` (#1816) and
   "Authentication with ... timed out." (#470) are `no-connection`.
+- Still different: systemd-resolved instead of NetworkManager writing
+  `/etc/resolv.conf` (#1849, which needs a test image).
 - Not built in CI: the image needs an appliance-release run, then
   `verify-network-on-device.sh` on the console.
 

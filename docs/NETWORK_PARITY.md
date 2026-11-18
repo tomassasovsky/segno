@@ -82,9 +82,9 @@ it the same), **deviates** (different, with the reason).
 | Item | Raspberry Pi OS trixie | Image | Status |
 |---|---|---|---|
 | Hostname | `/etc/hostname`, a `127.0.1.1 <name>` line in `/etc/hosts` (PG); NetworkManager sends it in DHCP (`dhcp-send-hostname` defaults to on) | `segno`, the same `/etc/hosts` line, the same DHCP default | matches |
-| DNS | NetworkManager writes `/etc/resolv.conf` itself; no systemd-resolved (IMG) | systemd-resolved runs, NetworkManager hands it the DNS servers, `/etc/resolv.conf` points at resolved's file | deviates: not changed yet, #1843 part 2 |
-| dnsmasq | `dnsmasq-base` only: the binary NetworkManager runs for a shared connection, no service (IMG) | the `dnsmasq` package, its service enabled and running as a DNS forwarder | deviates: not changed yet, #1843 part 2 |
-| Avahi | avahi-daemon, `publish-workstation=yes` (PG) | avahi-daemon, `publish-workstation=no` | deviates: not changed yet, #1843 part 2 |
+| DNS | NetworkManager writes `/etc/resolv.conf` itself; no systemd-resolved (IMG) | systemd-resolved runs, NetworkManager hands it the DNS servers, `/etc/resolv.conf` points at resolved's file | deviates, to change in #1849: in poky, systemd without resolved still links `/etc/resolv.conf` into resolved's directory, so the switch needs more than a PACKAGECONFIG and has to be tested on a built image before it ships. A mistake there leaves the console without DNS. |
+| dnsmasq | `dnsmasq-base` only: the program NetworkManager runs when a connection shares its link, no service (IMG) | the program; `dnsmasq.service` masked | changed to match (the service ran as a DNS forwarder for the local network) |
+| Avahi | avahi-daemon and libnss-mdns; pi-gen sets `publish-workstation=yes` (PG) | the same, with pi-gen's edit (avahi bbappend) | changed to match (was `publish-workstation=no`) |
 | First-boot network setup | Imager: cloud-init and netplan on trixie, `imager_custom set_wlan` on bookworm | none: networks are joined from the app | deviates: there is no Imager customisation for an appliance image |
 
 ## What the console adds on top
