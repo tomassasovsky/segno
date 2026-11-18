@@ -178,10 +178,17 @@ class _NetworkViewState extends State<_NetworkView> {
     final idle = !state.busy && state.connectingSsid == null;
 
     return BlocListener<WifiCubit, WifiState>(
-      // A new connection is checked at once; the timer keeps it fresh.
+      // A new connection is checked at once, and so is the one a join or a
+      // disconnect leaves up, even on the same network (#1860); the timer
+      // keeps it fresh.
       listenWhen: (before, now) =>
           now.status.connected &&
-          (!before.status.connected || before.status.ssid != now.status.ssid),
+          now.connectingSsid == null &&
+          !now.disconnecting &&
+          (!before.status.connected ||
+              before.status.ssid != now.status.ssid ||
+              before.connectingSsid != null ||
+              before.disconnecting),
       listener: (_, _) => unawaited(_cubit.checkConnectivity()),
       child: Scaffold(
         body: LoopSettingsFrame(

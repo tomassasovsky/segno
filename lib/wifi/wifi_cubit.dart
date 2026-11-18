@@ -203,6 +203,14 @@ class WifiCubit extends Cubit<WifiState> {
       AppLog.warn('wifi: $error');
     }
     if (change.currentState.status != change.nextState.status) _statusEpoch++;
+    // The link the last check was about is gone or going (#1860): the
+    // connection that follows, even to the same network, is checked afresh.
+    final next = change.nextState;
+    if (!next.status.connected ||
+        next.connectingSsid != null ||
+        next.disconnecting) {
+      _lastCheck = null;
+    }
     if (_changedWhileBusy &&
         change.currentState.busy &&
         !change.nextState.busy) {
@@ -702,9 +710,23 @@ class WifiCubit extends Cubit<WifiState> {
   /// once per [connectivityInterval] (less [connectivitySlack]) for one
   /// connection (#1270 D14). A new connection is checked at once. A failed
   /// check leaves the answer unknown rather than claiming no internet.
+  ///
+  /// Skipped while anything is joining, disconnecting or busy, as the quiet
+  /// scan is (#1860). The status can still name the old network then while
+  /// the radio is on another, so the request fails, and the answer would
+  /// read as "No internet" on whatever the join leaves connected. An answer
+  /// that comes back after the link dropped or a join started is dropped.
   Future<void> checkConnectivity() async {
     final status = state.status;
-    if (isClosed || !state.supported || !status.connected) return;
+    if (isClosed ||
+        !state.supported ||
+        !status.connected ||
+        status.connecting ||
+        state.busy ||
+        state.connectingSsid != null ||
+        state.disconnecting) {
+      return;
+    }
     final ssid = status.ssid;
     final now = _clock();
     final last = _lastCheck;
@@ -713,10 +735,11 @@ class WifiCubit extends Cubit<WifiState> {
         now.difference(last.at) < connectivityInterval - connectivitySlack) {
       return;
     }
-    _lastCheck = (ssid: ssid, at: now);
+    final check = (ssid: ssid, at: now);
+    _lastCheck = check;
     try {
       final online = await _repository.checkConnectivity();
-      if (isClosed) return;
+      if (isClosed || _lastCheck != check) return;
       emit(state.copyWith(internet: (ssid: ssid, online: online)));
     } on Object {
       return;
