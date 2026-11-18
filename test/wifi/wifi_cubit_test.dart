@@ -1633,6 +1633,86 @@ void main() {
       // Not checked yet: no stale "No internet" carried over.
       expect(cubit.state.noInternet, isFalse);
     });
+
+    test('nothing is checked while a join is in flight (#1860)', () async {
+      final client = _FakeWifiClient(status: connected)
+        ..connectGate = Completer<void>();
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      final join = cubit.connect('Rehearsal', psk: 'goodpass');
+      await pumpEventQueue();
+      // The status still names The Studio while the radio joins Rehearsal.
+      expect(cubit.state.connectingSsid, 'Rehearsal');
+      expect(cubit.state.status.ssid, 'The Studio');
+      await cubit.checkConnectivity();
+      expect(client.connectivityChecks, 0);
+
+      client.connectGate!.complete();
+      await join;
+    });
+
+    test(
+      'a failed check does not stick to the network a failed join brings back '
+      '(#1860)',
+      () async {
+        final now = DateTime(2026, 11, 18, 15);
+        final client = _FakeWifiClient(status: connected)..internet = false;
+        final cubit = WifiCubit(
+          repository: _repo(client),
+          retryDelays: const [],
+          clock: () => now,
+        );
+        addTearDown(cubit.close);
+        await cubit.load();
+        await cubit.checkConnectivity();
+        expect(cubit.state.noInternet, isTrue);
+
+        // The join fails and the helper brings The Studio back: the status
+        // names the same network as before.
+        client.connectErrors.add(
+          const WifiHelperException(
+            'segno-wifi-ctl: join failed: no-connection',
+            restored: 'The Studio',
+            join: WifiJoinError.noConnection,
+          ),
+        );
+        client.internet = true;
+        await cubit.connect('Rehearsal', psk: 'goodpass');
+        expect(cubit.state.status.ssid, 'The Studio');
+        expect(cubit.state.noInternet, isFalse);
+
+        // Checked afresh at once, inside the 30 s window of the old check.
+        await cubit.checkConnectivity();
+        expect(client.connectivityChecks, 2);
+        expect(cubit.state.internet, (ssid: 'The Studio', online: true));
+      },
+    );
+
+    test(
+      'a reconnect to the same network after a drop is checked at once '
+      '(#1860)',
+      () async {
+        final now = DateTime(2026, 11, 18, 15);
+        final client = _FakeWifiClient(status: connected)..internet = false;
+        final cubit = WifiCubit(repository: _repo(client), clock: () => now);
+        addTearDown(cubit.close);
+        await cubit.load();
+        await cubit.checkConnectivity();
+        expect(cubit.state.noInternet, isTrue);
+
+        await cubit.disconnect();
+        expect(cubit.state.internet, isNull);
+
+        client.internet = true;
+        await cubit.connect('The Studio');
+        await cubit.checkConnectivity();
+        expect(client.connectivityChecks, 2);
+        expect(cubit.state.noInternet, isFalse);
+        expect(cubit.state.internet, (ssid: 'The Studio', online: true));
+      },
+    );
   });
 
   group('saved network controls', () {
