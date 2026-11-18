@@ -72,6 +72,12 @@ PACKAGE_EXCLUDE += "bluez5"
 # PACKAGECONFIG iwd; this exclusion fails the build if anything brings it
 # back, since a second supplicant on wlan0 is the bug #468 removed.
 PACKAGE_EXCLUDE += "iwd"
+# No syslog daemon (#1857). kas-segno-common.yml empties
+# VIRTUAL-RUNTIME_base-utils-syslog, which is what keeps packagegroup-core-boot
+# from recommending busybox-syslog; this exclusion fails the build if anything
+# hard-depends on it again. Its syslogd takes /dev/log from journald, and the
+# journal then misses every line logged through syslog().
+PACKAGE_EXCLUDE += "busybox-syslog"
 # Audio: DIRECT ALSA, no PipeWire/JACK/Pulse. This is a single-app appliance that
 # owns the sound card, so the engine drives ALSA directly (SEGNO_ALSA_ONLY, set by
 # segno-kiosk-launch) for the lowest latency and zero IPC — the textbook mono-app
