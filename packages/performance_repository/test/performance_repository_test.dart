@@ -155,6 +155,9 @@ void main() {
       engine: engine,
       exportsRoot: () async => '${tempDir.path}/exports',
       now: () => clock,
+      // Every reason is built, so a malformed one fails the test that
+      // reaches it.
+      log: (_) {},
     );
   });
 
@@ -2064,7 +2067,7 @@ void main() {
       now: () => clock,
       // 84-byte header plus three stereo frames per part.
       partBytes: 84 + 3 * 8,
-      log: log,
+      log: log ?? (_) {},
     );
 
     test('is converted into float parts, samples unchanged, and its raw '
@@ -2483,6 +2486,26 @@ void main() {
       expect(File('$dir/master.pcm').lengthSync(), 32);
       expect(File('$dir/master-001.wav').existsSync(), isFalse);
     });
+
+    test(
+      'a sample rate that does not read is left as it is, and said',
+      () async {
+        final dir = seedLegacy('perf-rate');
+        final sidecar = readSidecar(dir)..['sample_rate'] = 'fast';
+        File('$dir/performance.json').writeAsStringSync(jsonEncode(sidecar));
+        final lines = <String>[];
+        final local = smallParts(log: lines.add);
+        addTearDown(local.dispose);
+
+        await local.runBootRecovery();
+
+        expect(local.unrecoveredTakes, [dir]);
+        expect(File('$dir/master.pcm').lengthSync(), 32);
+        expect(lines, [
+          'performance: perf-rate not converted: its sample rate does not read',
+        ]);
+      },
+    );
 
     test('a layout no conversion can trust is left as it is', () async {
       final dir = seedLegacy('perf-layout');
