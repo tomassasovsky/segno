@@ -59,3 +59,13 @@ Alternatives, rejected:
 - **Parameter automation.** Which effect parameters can be automated on the console, and do our plugins expose the same parameter IDs for Live automation?
 - **Accuracy.** How close must the rebuilt set be to the as-heard master: bit-exact, or within a stated difference? Modulated effects and resampling may never be bit-exact.
 - **Older captures.** They have none of this data. Keep today's layout for them.
+
+## Decisions (2026-11-18)
+
+The owner settled the open questions:
+
+- **Where it stands.** Layers 1 to 3 shipped with the trunk's landing on master (#1850): raw inputs (#1805), our effects as VST3 plugins (#1804), and effect switching and parameters as automation (#1836). Layer 4 is next.
+- **Loop history.** Investigate before planning layer 4: #1856 finds out what a capture keeps of each loop's history and what the engine must add.
+- **Engine processing outside the plugins.** Time-stretch on a tempo change, the master limiter, latency offset and sends stay baked into the reference stems for now.
+- **Accuracy.** Not bit-exact. A rebuilt chain without modulation must null against the as-heard render to -60 dBFS or lower. Modulated chains are checked by ear.
+- **Older captures.** Keep today's layout for them.
