@@ -127,7 +127,16 @@ local_conf_header:
     # threadirqs runs IRQ handlers as schedulable kernel threads so segno-rtirq can
     # raise the USB sound-card IRQ above the audio thread (PREEMPT_RT force-threads
     # them anyway, but keep it explicit so it also holds on a non-RT fallback).
-    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=4 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1024x600@60D video=HDMI-A-2:1920x1080@60D splash plymouth.ignore-serial-consoles cpufreq.default_governor=performance threadirqs"
+    #
+    # cfg80211.ieee80211_regdom=AR is the Wi-Fi regulatory domain, set the way
+    # Raspberry Pi OS sets it: raspi-config's do_wifi_country writes this
+    # argument into cmdline.txt (RPi-Distro/raspi-config, trixie 22cea75e),
+    # and cfg80211 applies it when it loads, before the radio comes up
+    # (#1843). Without a country the kernel keeps the world domain, where
+    # 5 GHz channels 36-48 are passive-scan only (#459). The console ships set
+    # to the owner's country because it has no first-boot setup to ask, as a
+    # Pi OS image built with pi-gen's WPA_COUNTRY does.
+    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=4 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1024x600@60D video=HDMI-A-2:1920x1080@60D splash plymouth.ignore-serial-consoles cpufreq.default_governor=performance threadirqs cfg80211.ieee80211_regdom=AR"
     # Kill the Raspberry Pi firmware's rainbow test square at boot (the plymouth
     # segno splash replaces it). `splash` above triggers plymouth despite `quiet`.
     RPI_EXTRA_CONFIG:append = "\ndisable_splash=1"

@@ -39092,6 +39092,95 @@ static void test_perf_render_requires_explicit_capture_policy(void) {
   le_engine_destroy(e);
 }
 
+/* An arm snapshot as the builds before capture destinations wrote it (#1853,
+ * the console's September takes: no followOutput, captureMask or other
+ * capture keys) renders exactly what the same snapshot with followOutput
+ * false and captureMask 3 renders, when channel_layout says the master is
+ * stereo. Anything else without the two keys is still refused. */
+static void september_render_bytes(le_engine* e, const char* name,
+                                   const char* arm_capture, int32_t want,
+                                   const char* layout, unsigned char* master,
+                                   size_t* master_len) {
+  char dir[600];
+  snprintf(dir, sizeof(dir), "%s", render_test_dir(name));
+  char loops[700];
+  snprintf(loops, sizeof(loops), "%s/loops", dir);
+  test_render_mkdir(loops);
+  const float content[4] = {0.5f, -0.25f, 0.125f, 0.5f};
+  char wav[760];
+  snprintf(wav, sizeof(wav), "%s/track0-lane0.wav", loops);
+  test_write_wav_mono(wav, content, 4, 4800);
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+      "{\"sample_rate\": 4800, \"channel_layout\": %s, \"capture_frames\": 8, "
+      "\"layers\": [], \"slug\": \"perf-20260911-220056\", "
+      "\"armSnapshot\": {\"masterGain\": 0.44, \"limiterOn\": false, "
+      "\"limiterCeiling\": 0.99, \"latencyOffsetFrames\": 574, "
+      "\"tempoBpm\": 120.0, %s\"tracks\": [{\"channel\": 0, "
+      "\"state\": \"playing\", \"volume\": 1.0, \"muted\": false, "
+      "\"multiple\": 1, \"lanes\": [{\"lane\": 0, \"lenFrames\": 4, "
+      "\"deferred\": false, \"pcmRef\": \"loops/track0-lane0.wav\"}]}], "
+      "\"monitors\": []}, \"disarmSnapshot\": {\"tempoBpm\": 120.0, "
+      "\"tracks\": []}, \"finalized\": true}",
+      layout, arm_capture);
+  test_write_manifest(dir, manifest);
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+  int32_t done = 0, count = -1;
+  CHECK(le_perf_render_poll(e, &done, NULL, &count) == want);
+  CHECK(done == 1);
+  if (master == NULL) return;
+  CHECK(count == 1);
+  char path[700];
+  snprintf(path, sizeof(path), "%s/stems/wet/master.wav", dir);
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  *master_len = fread(master, 1, *master_len, f);
+  fclose(f);
+}
+
+static void test_perf_render_reads_a_september_arm_snapshot(void) {
+  printf("test_perf_render_reads_a_september_arm_snapshot\n");
+  test_render_mkdir(perf_test_dir());
+  le_engine* e = le_engine_create();
+  const char* stereo = "{\"master_channels\": 2, \"captured_inputs\": [0, 1]}";
+  unsigned char september[512], current[512];
+  size_t september_len = sizeof(september), current_len = sizeof(current);
+  september_render_bytes(e, "september-arm", "\"fxStagesVersion\": 1, ",
+                         LE_OK, stereo, september, &september_len);
+  september_render_bytes(e, "september-arm-current",
+                         "\"fxStagesVersion\": 1, \"followOutput\": false, "
+                         "\"captureMask\": 3, ",
+                         LE_OK, stereo, current, &current_len);
+  /* A stereo master: 44-byte header, 8 frames of two floats. */
+  CHECK(september_len == 44 + 8 * 2 * sizeof(float));
+  uint16_t channels = 0;
+  memcpy(&channels, september + 22, 2);
+  CHECK(channels == 2);
+  CHECK(september_len == current_len &&
+        memcmp(september, current, september_len) == 0);
+
+  /* Not the September shape, or not a stereo master: refused. */
+  const char* mono = "{\"master_channels\": 1, \"captured_inputs\": []}";
+  september_render_bytes(e, "september-mono", "\"fxStagesVersion\": 1, ",
+                         LE_ERR_INVALID, mono, NULL, NULL);
+  september_render_bytes(e, "september-no-layout", "\"fxStagesVersion\": 1, ",
+                         LE_ERR_INVALID, "null", NULL, NULL);
+  september_render_bytes(e, "september-legacy-stages", "", LE_ERR_INVALID,
+                         stereo, NULL, NULL);
+  september_render_bytes(e, "september-stages-2", "\"fxStagesVersion\": 2, ",
+                         LE_ERR_INVALID, stereo, NULL, NULL);
+  september_render_bytes(e, "september-master-chain",
+                         "\"fxStagesVersion\": 1, \"masterChainEnabled\": "
+                         "false, ",
+                         LE_ERR_INVALID, stereo, NULL, NULL);
+  september_render_bytes(e, "september-capture-bus",
+                         "\"fxStagesVersion\": 1, \"captureBus\": 0, ",
+                         LE_ERR_INVALID, stereo, NULL, NULL);
+  le_engine_destroy(e);
+}
+
 static void test_perf_render_validates_capture_identity(void) {
   const char* identities[] = {
     "\"captureBus\":16,\"captureMask\":1",
@@ -39970,6 +40059,7 @@ int main(void) {
   SHARD(test_perf_disarm_cancels_unpublished_arm);
   SHARD(test_perf_render_cut_erases_lane_and_output_delay_memory);
   SHARD(test_perf_render_requires_explicit_capture_policy);
+  SHARD(test_perf_render_reads_a_september_arm_snapshot);
   SHARD(test_bypass_preserves_sparse_and_long_delay_tails);
   SHARD(test_output_mix_is_atomic);
   SHARD(test_perf_selected_output_chain_pan_parity);

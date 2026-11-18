@@ -131,9 +131,9 @@ check "activates the existing uuid" yes \
     "$(grep -q 'connection up uuid uuid-Cafe' "$work/nmcli-args" && echo yes || echo no)"
 teardown
 
-# After one failure NetworkManager's iwd backend asks secret agents for a NEW
-# key, and the console runs none: a plain up fails in milliseconds while the
-# key sits in the keyfile, and the owner had to re-type it (#1326).
+# After a failure that ended as `no-secrets` NetworkManager asks secret agents
+# for a NEW key, and the console runs none: a plain up fails in milliseconds
+# while the key sits in the keyfile, and the owner had to re-type it (#1326).
 echo "joining a saved network without a password activates on its stored key"
 setup
 SAVED="Cafe" PRIORITIES="Cafe=100" STORED_PSK=stored run connect Cafe

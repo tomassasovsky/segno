@@ -1745,7 +1745,7 @@
     },
     "networkJoinWrongPassword": "The password for {ssid} is wrong.",
     "@networkJoinWrongPassword": {
-        "description": "A join failed because the access point tested the key and refused it (iwd's 4-way handshake failed, #1817). The only failure worded as a password problem.",
+        "description": "A join failed because the access point tested the key and refused it (wpa_supplicant's 4-way handshake failed, #1817, #1843). The only failure worded as a password problem.",
         "placeholders": {
             "ssid": {
                 "type": "String"

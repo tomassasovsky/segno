@@ -24,7 +24,7 @@ class _FakeWifiClient implements WifiClient {
 
   /// Scripted refusals: each [connect] throws the next entry until the list
   /// is exhausted, then succeeds. Lets a test shape the exact stack wording
-  /// (iwd race vs wrong password) and count re-activations.
+  /// (backend failure vs wrong password) and count re-activations.
   final List<Object> connectErrors = [];
   WifiStatus statusValue;
   List<WifiNetwork> networks;
@@ -389,18 +389,24 @@ void main() {
     );
   });
 
-  // On 2026-11-17 a WiFi 6 router timed out the 802.11 authentication (iwd
-  // status 16), NM ended the join as `no-secrets`, and the page said
+  // On 2026-11-17 a WiFi 6 router timed out the 802.11 authentication
+  // (status 16), NM ended the join as `no-secrets`, and the page said
   // "Incorrect password" for a key the access point never tested (#1817). The
   // helper now says why a join failed; the cubit takes its word, retries only
   // a failed connection, and never reads a password into anything else.
   group('why a join failed', () {
     const noConnection = WifiHelperException(
-      'segno-wifi-ctl: join failed: no-connection (connect-failed, status: 16)',
+      'segno-wifi-ctl: join failed: no-connection '
+      '(wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 '
+      'status_code=16; nmcli: Error: Connection activation failed: '
+      'Secrets were required, but not provided)',
       join: WifiJoinError.noConnection,
     );
     const wrongPassword = WifiHelperException(
-      'segno-wifi-ctl: join failed: wrong-password',
+      'segno-wifi-ctl: join failed: wrong-password '
+      '(wlan0: WPA: 4-Way Handshake failed - pre-shared key may be '
+      'incorrect; nmcli: Error: Connection activation failed: Secrets were '
+      'required, but not provided)',
       join: WifiJoinError.wrongPassword,
     );
     const zeroBackoff = [Duration.zero, Duration.zero];

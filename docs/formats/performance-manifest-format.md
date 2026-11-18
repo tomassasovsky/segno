@@ -317,6 +317,56 @@ incomplete arm must not leave plausible but incorrect recovery metadata. The mas
 | `trackChains` | The **Track** stage: one entry per track channel with bus FX or a non-default chain flag. Omitted when there are none. |
 | `outputEffects` / `outputChainEnabled` | The actual captured destination’s output chain and bypass flag, captured by the engine at arm. The chain is applied once by reconstruction to audio before that stage; the already captured top-level master audio is never processed a second time. Empty effects and an engaged chain use the writer’s default omission rule. |
 
+### Snapshots written before capture destinations (#1853)
+
+Builds before the output-destination change (f9d8de318, 2026-10-01) wrote
+the snapshot without `followOutput`, `captureMask` or any other capture
+field. The console's September 2026 takes have it. A reader accepts exactly
+this shape and no other snapshot without the two required fields:
+
+- `fxStagesVersion` is `1`;
+- every key is one of `masterGain`, `limiterOn`, `limiterCeiling`,
+  `latencyOffsetFrames`, `tempoBpm`, `fxStagesVersion`, `tracks`,
+  `monitors` and `trackChains`. Those builds also wrote `masterEffects` and
+  `masterChainEnabled`, but only for a master chain, which this format does
+  not carry, so a snapshot with either key is refused;
+- the sidecar's `channel_layout.master_channels` is `2`.
+
+```jsonc
+{ "masterGain": 0.44, "limiterOn": false, "limiterCeiling": 0.99,
+  "latencyOffsetFrames": 574, "tempoBpm": 120.0, "fxStagesVersion": 1,
+  "tracks": [ /* as below, lanes without volume, pan, muted or outputMask */ ],
+  "monitors": [] }
+```
+
+It reads as `followOutput` `false`, `captureBus` `0` and `captureMask` `3`.
+The other capture fields take their usual defaults. What those builds did:
+
+- Their master tap (`perf_tap_master_frame`, unchanged from 2026-07-08 to
+  f9d8de318) copied the first two enabled output channels
+  (`le_perf_first_enabled_pair`) after the master chain, master gain and
+  limiter. No destination level or mute existed: the engine had no
+  `LE_CMD_SET_OUTPUT_LEVEL` or `LE_CMD_SET_OUTPUT_MUTE`. Nothing that
+  `followOutput` `true` would apply was ever between the chain and the tap,
+  so `false` is what those takes were.
+- `captureBus` is absent, which this format reads as bus 0. On bus 0 the
+  only mask of two captured channels is `3`, and `master_channels` `2` says
+  two were captured. A mono master (one enabled output) does not say which
+  output it was, so it is refused.
+
+The renderer (`perf_render.c`) and `PerformanceArmSnapshot.fromJson` apply
+the same rule. A finalize that folds such an `arm-snapshot.json` into this
+file, or a start that puts it back (see "Crash consistency"), writes it as it
+was written, so every take of this kind keeps the September shape.
+
+These takes were captured after the master gain and limiter, which neither
+current policy includes, and their lanes do not record an output route
+(`outputMask` reads as `3`). A reconstructed master (`stems/wet/master.wav`)
+of such a take is therefore not the captured master when the master gain was
+not unity or a lane was routed elsewhere. It is copied only into the DAW
+package; the Live set, the Library's playback and the lane stems use the
+captured master and are not affected.
+
 ### FX stages and the presence-keyed version marker
 
 The snapshot records all four FX stages of the v3 model, each with its
@@ -438,7 +488,19 @@ were merged into `performance.json` immediately at arm: `performance_repository`
 writes it to its own crash-survival file, `arm-snapshot.json`, right at arm
 time, and only folds it into `performance.json` (deleting `arm-snapshot.json`)
 once finalize actually runs — normal disarm, or `recoverCapture` reading it
-back after a crash.
+back after a crash. An `arm-snapshot.json` written before capture
+destinations reads as described under "Snapshots written before capture
+destinations" above (#1853). Any `arm-snapshot.json` that does not read keeps
+the take unfinalized, its reason logged, for a build that can read it.
+
+A build with #1844 (#1842) finalized such a take without `armSnapshot` and
+kept its `arm-snapshot.json`. Each start puts that snapshot back: a finalized
+take, in the exports root or `recovered/`, whose manifest has no
+`armSnapshot` and whose `arm-snapshot.json` has the September shape and reads
+gets that snapshot in its manifest, as it was written, and the file is
+removed. A take whose files do not
+read keeps them, its reason logged. The take's stems are rendered when the
+Library first needs them.
 
 ## Checkpoints (`checkpoint-a.json`, `checkpoint-b.json`; #1198 D4, #727)
 

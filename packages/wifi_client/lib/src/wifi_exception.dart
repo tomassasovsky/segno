@@ -1,13 +1,14 @@
 /// Why a join failed, as `segno-wifi-ctl connect` reports it on stdout
 /// (`{"error":<code>}`).
 ///
-/// The helper decides from what iwd logged during the attempt, never from
-/// NetworkManager's reason: on a console with no secret agent NM ends every
-/// failed activation that asked for secrets as `no-secrets`, whatever went
-/// wrong (#1817).
+/// The helper decides from what wpa_supplicant logged during the attempt,
+/// never from NetworkManager's reason: on a console with no secret agent NM
+/// ends many failures that never tested the key as `no-secrets` (#1817,
+/// #1843).
 enum WifiJoinError {
-  /// iwd's 4-way handshake failed: the access point tested the key and
-  /// refused it. The only failure that is about the password.
+  /// wpa_supplicant's 4-way handshake failed: the access point started the
+  /// handshake and did not accept the key. The only failure that is about
+  /// the password.
   wrongPassword,
 
   /// The network is not in range.

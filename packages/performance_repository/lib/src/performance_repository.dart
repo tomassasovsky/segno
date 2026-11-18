@@ -49,7 +49,9 @@ class PerformanceRepository {
   /// top-level or static function. [_partBytes] is the size of the parts a
   /// take from before #1198 is converted into (tests pass small sizes).
   /// [_bootId] reads this boot's kernel id, which decides how far recovery
-  /// trusts a take's files ([readBootId]).
+  /// trusts a take's files ([readBootId]). [_log] receives one line for each
+  /// finalize or salvage that does not finish, saying why (#1842), and for
+  /// each arm snapshot a start puts back (#1853).
 
   new({
     required this._engine,
@@ -62,6 +64,7 @@ class PerformanceRepository {
     this._storageIo = NativeStorageIo.new,
     this._partBytes = RecordedPartWriter.defaultPartBytes,
     this._bootId = readBootId,
+    this._log,
   });
 
   final AudioEngine _engine;
@@ -73,6 +76,7 @@ class PerformanceRepository {
   late final StorageIo _io = _storageIo();
   final int _partBytes;
   final String Function() _bootId;
+  final void Function(String message)? _log;
 
   /// How long a take runs with nothing happening (no press, no transport
   /// change, no edit, no input above the playing level) before it stops on
@@ -981,14 +985,18 @@ class PerformanceRepository {
     final String root;
     try {
       root = await _exportsRoot();
-    } on Exception {
-      return; // cannot resolve the root: nothing to recover this boot
+    } on Object catch (error) {
+      // Cannot resolve the root: nothing to recover this boot.
+      _log?.call('performance: recovery found no exports root: $error');
+      return;
     }
     _finishDeletes(root);
+    await _reattachArmSnapshots(root);
     final List<UnfinalizedCapture> unfinalized;
     try {
       unfinalized = await findUnfinalized();
-    } on Exception {
+    } on Object catch (error) {
+      _log?.call('performance: recovery cannot list the takes: $error');
       return;
     }
     // Stranded bundles first (already finalized — the cheapest to finish),
@@ -1014,6 +1022,14 @@ class PerformanceRepository {
       // render, and the bundle would land in the recovered area stemless
       // with its marker gone. Stop; the remainder waits for the next boot.
       if (_armedDir != null || _armInFlight || !renderProgress.done) {
+        final why = [
+          if (_armedDir != null || _armInFlight) 'a take is armed',
+          if (!renderProgress.done) 'a render is running',
+        ].join(' and ');
+        _log?.call(
+          'performance: recovery leaves ${pending.length - i} take(s) for '
+          'the next start: $why',
+        );
         // What this sweep does not reach and was not recovered (counted
         // before, or marked failed) still is not.
         _unrecovered.addAll(
@@ -1041,6 +1057,67 @@ class PerformanceRepository {
       // it. Its files stay; the player is told.
       if (Directory(dir).existsSync() && !_sidecarFinalized(dir)) {
         _unrecovered.add(dir);
+      }
+    }
+  }
+
+  /// Puts back the arm snapshot of every finished take in [root] or its
+  /// recovered area that a build with #1844 finalized without it: its
+  /// manifest has no `armSnapshot`, and its `arm-snapshot.json`, kept in
+  /// the bundle, was written before capture destinations (#1853). The
+  /// snapshot reads with the take's channel layout, as a recovery does, and
+  /// the file is removed once the manifest holds it. A take whose files do
+  /// not read stays as it is, logged.
+  Future<void> _reattachArmSnapshots(String root) async {
+    for (final parent in [root, '$root/$recoveredDirName']) {
+      final List<FileSystemEntity> entries;
+      try {
+        entries = Directory(parent).listSync();
+      } on FileSystemException {
+        continue;
+      }
+      for (final entity in entries) {
+        final dir = entity.path;
+        final armFile = File('$dir/$_armSnapshotFileName');
+        // A hidden directory is a delete in progress, never a take; an
+        // unfinalized one is the salvage's.
+        if (entity is! Directory ||
+            _basename(dir).startsWith('.') ||
+            dir == _armedDir ||
+            !armFile.existsSync() ||
+            !_sidecarFinalized(dir)) {
+          continue;
+        }
+        try {
+          final json = jsonDecode(
+            File('$dir/$manifestName').readAsStringSync(),
+          ) as Map<String, dynamic>;
+          if (json.containsKey('armSnapshot')) continue;
+          final arm =
+              jsonDecode(armFile.readAsStringSync()) as Map<String, dynamic>;
+          if (!PerformanceArmSnapshot.writtenBeforeDestinations(arm)) {
+            continue;
+          }
+          // Read first, so one that does not read stays in its file. Only
+          // the one key is added, as it was written; the rest of the
+          // manifest is written back as it was read.
+          PerformanceArmSnapshot.fromJson(
+            arm,
+            channelLayout: json['channel_layout'],
+          );
+          json['armSnapshot'] = arm;
+          await _publishManifest(dir, json);
+        } on Object catch (error) {
+          _warn(dir, 'keeps $_armSnapshotFileName unread: $error');
+          continue;
+        }
+        _warn(dir, 'has its arm snapshot back from $_armSnapshotFileName');
+        try {
+          armFile.deleteSync();
+        } on FileSystemException {
+          // Read and kept in the manifest: a leftover file is never read
+          // again, since the manifest now has its snapshot.
+        }
       }
     }
   }
@@ -1097,6 +1174,13 @@ class PerformanceRepository {
   bool _salvageFailed(String dir) {
     if (File('$dir/$recoveryFailedName').existsSync()) return true;
     if (_attemptsBegun(dir) < 2) return false;
+    // Said once, when it is marked: the mark stays on disk, and the take is
+    // reported at every start until the player tries again.
+    _warn(
+      dir,
+      'not recovered: the app stopped during its last two salvages; it is '
+      'marked failed and waits for Try again',
+    );
     try {
       File('$dir/$recoveryFailedName').writeAsStringSync('');
       File('$dir/$recoveryAttemptName').deleteSync();
@@ -1129,7 +1213,10 @@ class PerformanceRepository {
     try {
       // Belt to the caller's armed bail: never, under any interleaving,
       // touch the directory the drain thread is writing.
-      if (dir == _armedDir) return;
+      if (dir == _armedDir) {
+        _warn(dir, 'not recovered: it is the take being recorded');
+        return;
+      }
       // Dropped before the finalize, removed only after the move lands (in
       // [_moveToRecovered]): a crash or render timeout between those two
       // points strands a finalized bundle in the exports root, where it is
@@ -1160,6 +1247,12 @@ class PerformanceRepository {
       var waited = Duration.zero;
       while (!renderProgress.done) {
         if (waited >= _bootRecoveryRenderTimeout) {
+          _warn(
+            dir,
+            'not moved: its stem render outlasted '
+            '${_bootRecoveryRenderTimeout.inSeconds} s; the next start '
+            'finishes it',
+          );
           // A wedged render must not park recovery forever. Keep the bundle
           // where it is — marker intact — so the next boot re-salvages it,
           // stem render and all; the caller's loop then stops on the very
@@ -1175,17 +1268,23 @@ class PerformanceRepository {
       }
       // Ended, however it went: the app survived this salvage.
       _endAttempt(dir);
-      if (!_sidecarFinalized(dir)) return; // nothing recovered; retried later
+      // Nothing recovered; retried later. The finalize said why.
+      if (!_sidecarFinalized(dir)) return;
       // Re-checked at the last synchronous moment before the rename: the
       // awaits above suspended this salvage, and the one directory that must
       // never be renamed is the live capture's.
-      if (_armedDir != null || _armInFlight) return;
+      if (_armedDir != null || _armInFlight) {
+        _warn(dir, 'not moved: a take was armed; the next start moves it');
+        return;
+      }
       _moveToRecovered(root, dir);
-    } on Exception {
+    } on Object catch (error) {
       // One capture's failure neither aborts the loop for its siblings nor
-      // escapes the unawaited boot call as an unhandled zone error. The
-      // bundle (and its marker) stay for the next boot; a failure the app
-      // survived is no reason not to try again then.
+      // escapes the unawaited boot call as an unhandled zone error: an
+      // [Error] from a sidecar that decodes to the wrong shape included.
+      // The bundle (and its marker) stay for the next boot; a failure the
+      // app survived is no reason not to try again then.
+      _warn(dir, 'not recovered: $error');
       if (renderProgress.done) _endAttempt(dir);
       return;
     }
@@ -1675,9 +1774,13 @@ class PerformanceRepository {
         // anything short of a complete conversion leaves it unfinalized, its
         // raw files kept, for the next start.
         final streams = streamsOf(native);
-        if (streams == null) return; // a layout no conversion can trust
+        if (streams == null) {
+          // A layout no conversion can trust.
+          _warn(dir, 'not finalized: its channel layout does not read');
+          return;
+        }
         final converted = await _convertLegacy(dir, native, streams);
-        if (converted == null) return;
+        if (converted == null) return; // said by the conversion
         native = converted;
       }
 
@@ -1706,7 +1809,15 @@ class PerformanceRepository {
           storageIo: storageIo(),
         ),
       );
-      if (reconciled == null) return;
+      if (reconciled == null) {
+        _warn(
+          dir,
+          'not finalized: its sidecar and checkpoint do not say what the '
+          'take holds (missing or unreadable, a take id that does not match, '
+          'or a stream the checkpoint does not list)',
+        );
+        return;
+      }
       await _publishFinalized(
         dir,
         _reconciledFields(native, reconciled),
@@ -1729,11 +1840,22 @@ class PerformanceRepository {
     PerformanceDisarmSnapshot? disarmSnapshot,
   ) async {
     var resolvedArm = armSnapshot;
+    Map<String, dynamic>? septemberArm;
     final armFile = File('$dir/$_armSnapshotFileName');
     if (resolvedArm == null && armFile.existsSync()) {
+      // A read or a decode that fails throws: the take waits for the next
+      // start, and for a build that can read it. One written before capture
+      // destinations reads with the sidecar's channel layout, and is kept
+      // as it was written (#1853).
+      final json =
+          jsonDecode(await armFile.readAsString()) as Map<String, dynamic>;
       resolvedArm = PerformanceArmSnapshot.fromJson(
-        jsonDecode(await armFile.readAsString()) as Map<String, dynamic>,
+        json,
+        channelLayout: native['channel_layout'],
       );
+      if (PerformanceArmSnapshot.writtenBeforeDestinations(json)) {
+        septemberArm = json;
+      }
     }
 
     final manifest = PerformanceManifest(
@@ -1742,11 +1864,12 @@ class PerformanceRepository {
       native: native,
       armSnapshot: resolvedArm,
       disarmSnapshot: disarmSnapshot,
-    );
+    ).toJson();
+    if (septemberArm != null) manifest['armSnapshot'] = septemberArm;
     // A failed directory sync does not undo the finalize: the manifest is
     // in place, and if a power cut takes it back the next start finalizes
     // the take again.
-    await _publishManifest(dir, manifest.toJson());
+    await _publishManifest(dir, manifest);
     if (armFile.existsSync()) armFile.deleteSync();
 
     // Kick off the offline render (dry stems, wet stems, master
@@ -1772,6 +1895,11 @@ class PerformanceRepository {
   void _beginRender(String dir) {
     if (_engine.renderBegin(dir).isOk) _renderDir = dir;
   }
+
+  /// Logs [why] about the take in [dir]: why it was not finalized or
+  /// recovered (#1842), or what a start did to it.
+  void _warn(String dir, String why) =>
+      _log?.call('performance: ${_basename(dir)} $why');
 
   /// Exports every currently-settled lane's PCM as a WAV directly into
   /// `<dir>/loops/`, and returns metadata for every active lane at arm, including empty
@@ -2039,7 +2167,10 @@ class PerformanceRepository {
     List<({int stream, int channels})> streams,
   ) async {
     final sampleRate = native['sample_rate'];
-    if (sampleRate is! int || sampleRate < 1) return null;
+    if (sampleRate is! int || sampleRate < 1) {
+      _warn(dir, 'not converted: its sample rate does not read');
+      return null;
+    }
     final takeHex = native['take_id'];
     final takeId = takeHex is String && _takeIdHex.hasMatch(takeHex)
         ? _hexBytes(takeHex)
@@ -2051,7 +2182,9 @@ class PerformanceRepository {
           TakePart.fromJson(entry as Map<String, dynamic>),
       ];
     } on Object {
-      return null; // an interim list that does not read: never guess
+      // An interim list that does not read: never guess.
+      _warn(dir, 'not converted: its listed parts do not read');
+      return null;
     }
 
     final pending = <({int stream, int channels})>[];
@@ -2070,7 +2203,13 @@ class PerformanceRepository {
       } else if (pcm.existsSync()) {
         pending.add(s);
       } else if (listed.isNotEmpty) {
-        return null; // listed parts gone and no raw file: keep for a look
+        // Listed parts gone and no raw file: keep for a look.
+        _warn(
+          dir,
+          'not converted: stream ${s.stream} has neither its listed parts '
+          'nor its raw file',
+        );
+        return null;
       }
     }
 
@@ -2101,6 +2240,11 @@ class PerformanceRepository {
     // volume the console runs from.
     final space = _engine.volumeSpace(dir);
     if (space != null && space.freeBytes < largest + (_reserveBytes ?? 0)) {
+      _warn(
+        dir,
+        'not converted: it needs ${largest + (_reserveBytes ?? 0)} bytes '
+        'free and the volume has ${space.freeBytes}',
+      );
       return null;
     }
 
@@ -2121,8 +2265,10 @@ class PerformanceRepository {
             partBytes: partBytes,
           ),
         );
-      } on Object {
-        return null; // its parts are already gone; the raw file stays
+      } on Object catch (error) {
+        // Its parts are already gone; the raw file stays.
+        _warn(dir, 'not converted: stream ${s.stream} failed: $error');
+        return null;
       }
       try {
         for (final part in written) {
@@ -2160,9 +2306,16 @@ class PerformanceRepository {
         });
         // Listed but perhaps not durably: the parts stand, and so does the
         // raw file, until a later start can make the listing durable.
-        if (!synced) return null;
+        if (!synced) {
+          _warn(dir, 'not converted: its interim sidecar did not sync');
+          return null;
+        }
         out = listed;
-      } on Object {
+      } on Object catch (error) {
+        _warn(
+          dir,
+          'not converted: stream ${s.stream} could not be listed: $error',
+        );
         for (final part in written) {
           final f = File('$dir/${part.file}');
           if (f.existsSync()) f.deleteSync();
