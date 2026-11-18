@@ -982,17 +982,17 @@ class PerformanceRepository {
     final String root;
     try {
       root = await _exportsRoot();
-    } on Exception catch (error) {
+    } on Object catch (error) {
       // Cannot resolve the root: nothing to recover this boot.
-      _log?.call('performance recovery: no exports root: $error');
+      _log?.call('performance: recovery found no exports root: $error');
       return;
     }
     _finishDeletes(root);
     final List<UnfinalizedCapture> unfinalized;
     try {
       unfinalized = await findUnfinalized();
-    } on Exception catch (error) {
-      _log?.call('performance recovery: cannot list takes: $error');
+    } on Object catch (error) {
+      _log?.call('performance: recovery cannot list the takes: $error');
       return;
     }
     // Stranded bundles first (already finalized — the cheapest to finish),
@@ -1018,10 +1018,13 @@ class PerformanceRepository {
       // render, and the bundle would land in the recovered area stemless
       // with its marker gone. Stop; the remainder waits for the next boot.
       if (_armedDir != null || _armInFlight || !renderProgress.done) {
+        final why = [
+          if (_armedDir != null || _armInFlight) 'a take is armed',
+          if (!renderProgress.done) 'a render is running',
+        ].join(' and ');
         _log?.call(
-          'performance recovery: ${pending.length - i} take(s) wait for the '
-          'next start: '
-          '${!renderProgress.done ? 'a render is running' : 'a take is armed'}',
+          'performance: recovery leaves ${pending.length - i} take(s) for '
+          'the next start: $why',
         );
         // What this sweep does not reach and was not recovered (counted
         // before, or marked failed) still is not.
@@ -1771,17 +1774,17 @@ class PerformanceRepository {
     var armRead = true;
     if (resolvedArm == null && armFile.existsSync()) {
       // A read that fails throws: the take waits for the next start.
-      final text = await armFile.readAsString();
+      final bytes = await armFile.readAsBytes();
       try {
         resolvedArm = PerformanceArmSnapshot.fromJson(
-          jsonDecode(text) as Map<String, dynamic>,
+          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
         );
       } on Object catch (error) {
-        // Written by a build whose snapshot this one refuses (#1842: a
-        // September take has no capture policy or mask), or torn by a
-        // crash. The take is finalized without it, as one cut before its
-        // snapshot was written is: its audio is all there, and the stem
-        // render, which needs the snapshot, is refused. The file is kept.
+        // A snapshot this build refuses (#1842: a September take's has no
+        // capture policy or mask). The take is finalized without it, as one
+        // cut before its snapshot was written is: its audio is all there,
+        // and the stem render, which needs the snapshot, is refused. The
+        // file is kept for a person to read; nothing reads it again.
         armRead = false;
         _warn(
           dir,

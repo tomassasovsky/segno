@@ -439,10 +439,10 @@ writes it to its own crash-survival file, `arm-snapshot.json`, right at arm
 time, and only folds it into `performance.json` (deleting `arm-snapshot.json`)
 once finalize actually runs — normal disarm, or `recoverCapture` reading it
 back after a crash. A recovery that finds an `arm-snapshot.json` this build
-cannot read (one written before `followOutput` and `captureMask` existed, or
-torn by the crash) finalizes the take without `armSnapshot`, logs why, and
-keeps the file in the bundle (#1842). The audio is all there; the stem render,
-which needs the snapshot, is refused.
+cannot read (one written before `followOutput` and `captureMask` existed)
+finalizes the take without `armSnapshot`, logs why, and leaves the file in the
+bundle for a person to read; nothing reads it again (#1842). The audio is all
+there; the stem render, which needs the snapshot, is refused.
 
 ## Checkpoints (`checkpoint-a.json`, `checkpoint-b.json`; #1198 D4, #727)
 

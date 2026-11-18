@@ -2596,6 +2596,26 @@ void main() {
         expect(listed.durationFrames, 3);
       });
 
+      test(
+        'an arm snapshot that is not text is left out the same way',
+        () async {
+          final dir = seedConverted('perf-20260910-073238');
+          File('$dir/arm-snapshot.json').writeAsBytesSync([0xff, 0xfe, 0x00]);
+
+          await repo.runBootRecovery();
+
+          expect(repo.unrecoveredTakes, isEmpty);
+          final recovered =
+              '${tempDir.path}/exports/recovered/perf-20260910-073238';
+          expect(readSidecar(recovered)['finalized'], isTrue);
+          expect(File('$recovered/arm-snapshot.json').readAsBytesSync(), [
+            0xff,
+            0xfe,
+            0x00,
+          ]);
+        },
+      );
+
       test('a take still in raw streams is converted and recovered in one '
           'start', () async {
         final dir = seedLegacy(
@@ -3173,7 +3193,7 @@ void main() {
 
         expect(lines, [
           allOf(
-            startsWith('performance recovery: no exports root: '),
+            startsWith('performance: recovery found no exports root: '),
             contains('gone'),
           ),
         ]);
