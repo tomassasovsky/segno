@@ -201,6 +201,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/tmpfiles.d/10-segno-coredump.conf \
                 ${sysconfdir}/tmpfiles.d/10-segno-pstore.conf \
                 ${sysconfdir}/systemd/system/serial-getty@ttyS0.service \
+                ${sysconfdir}/systemd/system/dnsmasq.service \
                 ${sysconfdir}/tmpfiles.d/segno-runtime.conf"
 
 python do_fetch:prepend() {
@@ -377,6 +378,13 @@ do_install() {
     # systemd's 90s device timeout on every boot — 90 seconds of a dark screen
     # on an appliance, for a console nobody uses (#464).
     ln -sf /dev/null ${D}${sysconfdir}/systemd/system/serial-getty@ttyS0.service
+
+    # dnsmasq as on Raspberry Pi OS: the program, for NetworkManager to start
+    # when a connection shares its link, and no service of its own. Pi OS
+    # installs only dnsmasq-base (#1843). The dnsmasq package NetworkManager's
+    # recipe recommends also enables dnsmasq.service, which answered DNS for
+    # the whole local network.
+    ln -sf /dev/null ${D}${sysconfdir}/systemd/system/dnsmasq.service
 
     # meta-rauc's own rauc-mark-good.service is condition-gated on a rauc.slot
     # kernel argument the Pi tryboot backend never sets, so it is skipped every
