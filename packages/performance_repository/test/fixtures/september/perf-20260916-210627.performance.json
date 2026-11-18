@@ -1,0 +1,162 @@
+{
+  "sample_rate": 96000,
+  "channel_layout": {
+    "master_channels": 2,
+    "captured_inputs": [
+      0,
+      1
+    ]
+  },
+  "capture_frames": 26274432,
+  "overrun_count": 0,
+  "zero_filled_frames": 0,
+  "overrun_gaps": [],
+  "layers": [
+    {
+      "channel": 3,
+      "slot": 0,
+      "generation": 1,
+      "frame": 1675712,
+      "frame_count": 1090962,
+      "lane_count": 2,
+      "filename": "layer-3-1675712-0.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 2,
+      "generation": 1,
+      "frame": 7931200,
+      "frame_count": 1090962,
+      "lane_count": 2,
+      "filename": "layer-3-7931200-2.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 1,
+      "generation": 1,
+      "frame": 8085568,
+      "frame_count": 1090962,
+      "lane_count": 2,
+      "filename": "layer-3-8085568-1.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 5,
+      "generation": 1,
+      "frame": 9721024,
+      "frame_count": 1090962,
+      "lane_count": 2,
+      "filename": "layer-3-9721024-5.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 4,
+      "generation": 1,
+      "frame": 10811648,
+      "frame_count": 1090962,
+      "lane_count": 2,
+      "filename": "layer-3-10811648-4.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 6,
+      "generation": 1,
+      "frame": 11903296,
+      "frame_count": 1090962,
+      "lane_count": 2,
+      "filename": "layer-3-11903296-6.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 7,
+      "generation": 1,
+      "frame": 12290816,
+      "frame_count": 1090962,
+      "lane_count": 2,
+      "filename": "layer-3-12290816-7.pcm"
+    }
+  ],
+  "slug": "perf-20260916-210627",
+  "armSnapshot": {
+    "masterGain": 0.4645669162273407,
+    "limiterOn": false,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 574,
+    "tempoBpm": 84.0,
+    "fxStagesVersion": 1,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1090962,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav"
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1090962,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      }
+    ],
+    "monitors": []
+  },
+  "disarmSnapshot": {
+    "tempoBpm": 84.0,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1090962,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav",
+            "takeId": 2
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1090962,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      },
+      {
+        "channel": 3,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1090962,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane0.wav",
+            "takeId": 2
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1090962,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane1.wav"
+          }
+        ]
+      }
+    ]
+  },
+  "finalized": true
+}

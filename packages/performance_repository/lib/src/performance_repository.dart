@@ -50,7 +50,8 @@ class PerformanceRepository {
   /// take from before #1198 is converted into (tests pass small sizes).
   /// [_bootId] reads this boot's kernel id, which decides how far recovery
   /// trusts a take's files ([readBootId]). [_log] receives one line for each
-  /// finalize or salvage that does not finish, saying why (#1842).
+  /// finalize or salvage that does not finish, saying why (#1842), and for
+  /// each arm snapshot a start puts back (#1853).
 
   new({
     required this._engine,
@@ -988,6 +989,7 @@ class PerformanceRepository {
       return;
     }
     _finishDeletes(root);
+    await _reattachArmSnapshots(root);
     final List<UnfinalizedCapture> unfinalized;
     try {
       unfinalized = await findUnfinalized();
@@ -1053,6 +1055,67 @@ class PerformanceRepository {
       // it. Its files stay; the player is told.
       if (Directory(dir).existsSync() && !_sidecarFinalized(dir)) {
         _unrecovered.add(dir);
+      }
+    }
+  }
+
+  /// Puts back the arm snapshot of every finished take in [root] or its
+  /// recovered area that a build with #1844 finalized without it: its
+  /// manifest has no `armSnapshot`, and its `arm-snapshot.json`, kept in
+  /// the bundle, was written before capture destinations (#1853). The
+  /// snapshot reads with the take's channel layout, as a recovery does, and
+  /// the file is removed once the manifest holds it. A take whose files do
+  /// not read stays as it is, logged.
+  Future<void> _reattachArmSnapshots(String root) async {
+    for (final parent in [root, '$root/$recoveredDirName']) {
+      final List<FileSystemEntity> entries;
+      try {
+        entries = Directory(parent).listSync();
+      } on FileSystemException {
+        continue;
+      }
+      for (final entity in entries) {
+        final dir = entity.path;
+        final armFile = File('$dir/$_armSnapshotFileName');
+        // A hidden directory is a delete in progress, never a take; an
+        // unfinalized one is the salvage's.
+        if (entity is! Directory ||
+            _basename(dir).startsWith('.') ||
+            dir == _armedDir ||
+            !armFile.existsSync() ||
+            !_sidecarFinalized(dir)) {
+          continue;
+        }
+        try {
+          final json = jsonDecode(
+            File('$dir/$manifestName').readAsStringSync(),
+          ) as Map<String, dynamic>;
+          if (json.containsKey('armSnapshot')) continue;
+          final arm =
+              jsonDecode(armFile.readAsStringSync()) as Map<String, dynamic>;
+          if (!PerformanceArmSnapshot.writtenBeforeDestinations(arm)) {
+            continue;
+          }
+          // Read first, so one that does not read stays in its file. Only
+          // the one key is added, as it was written; the rest of the
+          // manifest is written back as it was read.
+          PerformanceArmSnapshot.fromJson(
+            arm,
+            channelLayout: json['channel_layout'],
+          );
+          json['armSnapshot'] = arm;
+          await _publishManifest(dir, json);
+        } on Object catch (error) {
+          _warn(dir, 'keeps $_armSnapshotFileName unread: $error');
+          continue;
+        }
+        _warn(dir, 'has its arm snapshot back from $_armSnapshotFileName');
+        try {
+          armFile.deleteSync();
+        } on FileSystemException {
+          // Read and kept in the manifest: a leftover file is never read
+          // again, since the manifest now has its snapshot.
+        }
       }
     }
   }
@@ -1168,8 +1231,7 @@ class PerformanceRepository {
         // A stranded bundle: its finalize already completed on a previous
         // boot, and re-running it would do real damage, not just waste work
         // — [_finalize] resolves the arm snapshot only from the
-        // crash-survival file (deleted by that first finalize, or kept
-        // unread when it predates capture destinations, #1842) and reads
+        // crash-survival file (deleted by that first finalize) and reads
         // only the native fields back, so a second pass would rewrite the
         // manifest with its armSnapshot (the chains/routing the export
         // depends on) stripped. Only the stem render is re-attempted — a
@@ -1773,28 +1835,21 @@ class PerformanceRepository {
     PerformanceDisarmSnapshot? disarmSnapshot,
   ) async {
     var resolvedArm = armSnapshot;
+    Map<String, dynamic>? septemberArm;
     final armFile = File('$dir/$_armSnapshotFileName');
-    var armRead = true;
     if (resolvedArm == null && armFile.existsSync()) {
       // A read or a decode that fails throws: the take waits for the next
-      // start, and for a build that can read it.
+      // start, and for a build that can read it. One written before capture
+      // destinations reads with the sidecar's channel layout, and is kept
+      // as it was written (#1853).
       final json =
           jsonDecode(await armFile.readAsString()) as Map<String, dynamic>;
-      if (_capturedBeforeDestinations(json)) {
-        // A September take's (#1842): this build refuses a snapshot with no
-        // capture policy or mask, and will not guess them. The take is
-        // finalized without it, as one cut before its snapshot was written
-        // is: its audio is all there, and the stem render, which needs the
-        // snapshot, is refused. The file is kept for a person to read;
-        // nothing reads it again.
-        armRead = false;
-        _warn(
-          dir,
-          'finalized without its arm snapshot, written before capture '
-          'destinations (no followOutput or captureMask)',
-        );
-      } else {
-        resolvedArm = PerformanceArmSnapshot.fromJson(json);
+      resolvedArm = PerformanceArmSnapshot.fromJson(
+        json,
+        channelLayout: native['channel_layout'],
+      );
+      if (PerformanceArmSnapshot.writtenBeforeDestinations(json)) {
+        septemberArm = json;
       }
     }
 
@@ -1804,12 +1859,13 @@ class PerformanceRepository {
       native: native,
       armSnapshot: resolvedArm,
       disarmSnapshot: disarmSnapshot,
-    );
+    ).toJson();
+    if (septemberArm != null) manifest['armSnapshot'] = septemberArm;
     // A failed directory sync does not undo the finalize: the manifest is
     // in place, and if a power cut takes it back the next start finalizes
     // the take again.
-    await _publishManifest(dir, manifest.toJson());
-    if (armRead && armFile.existsSync()) armFile.deleteSync();
+    await _publishManifest(dir, manifest);
+    if (armFile.existsSync()) armFile.deleteSync();
 
     // Kick off the offline render (dry stems, wet stems, master
     // reconstruction — parts 7-8, one render session covers all three):
@@ -1835,14 +1891,8 @@ class PerformanceRepository {
     if (_engine.renderBegin(dir).isOk) _renderDir = dir;
   }
 
-  /// Whether [armSnapshot] was written before capture destinations existed:
-  /// neither a capture policy nor a capture mask, which every snapshot
-  /// written since carries.
-  static bool _capturedBeforeDestinations(Map<String, dynamic> armSnapshot) =>
-      !armSnapshot.containsKey('followOutput') &&
-      !armSnapshot.containsKey('captureMask');
-
-  /// Logs why the take in [dir] was not finalized or recovered (#1842).
+  /// Logs [why] about the take in [dir]: why it was not finalized or
+  /// recovered (#1842), or what a start did to it.
   void _warn(String dir, String why) =>
       _log?.call('performance: ${_basename(dir)} $why');
 

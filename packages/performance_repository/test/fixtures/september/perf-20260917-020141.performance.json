@@ -1,0 +1,126 @@
+{
+  "sample_rate": 96000,
+  "channel_layout": {
+    "master_channels": 2,
+    "captured_inputs": [
+      0,
+      1
+    ]
+  },
+  "capture_frames": 33994624,
+  "overrun_count": 0,
+  "zero_filled_frames": 0,
+  "overrun_gaps": [],
+  "layers": [
+    {
+      "channel": 2,
+      "slot": 1,
+      "generation": 4,
+      "frame": 1442752,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-2-1442752-1.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 4,
+      "generation": 4,
+      "frame": 2733696,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-2-2733696-4.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 0,
+      "generation": 2,
+      "frame": 4346112,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-3-4346112-0.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 2,
+      "generation": 2,
+      "frame": 11492800,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-3-11492800-2.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 1,
+      "generation": 2,
+      "frame": 12588096,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-3-12588096-1.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 4,
+      "generation": 2,
+      "frame": 13683648,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-3-13683648-4.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 5,
+      "generation": 2,
+      "frame": 14776768,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-3-14776768-5.pcm"
+    },
+    {
+      "channel": 3,
+      "slot": 6,
+      "generation": 2,
+      "frame": 15765952,
+      "frame_count": 1094546,
+      "lane_count": 2,
+      "filename": "layer-3-15765952-6.pcm"
+    }
+  ],
+  "slug": "perf-20260917-020141",
+  "armSnapshot": {
+    "masterGain": 0.22834645211696625,
+    "limiterOn": false,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 574,
+    "tempoBpm": 84.0,
+    "fxStagesVersion": 1,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1094546,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav"
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1094546,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      }
+    ],
+    "monitors": []
+  },
+  "disarmSnapshot": {
+    "tempoBpm": 84.0,
+    "tracks": []
+  },
+  "finalized": true
+}

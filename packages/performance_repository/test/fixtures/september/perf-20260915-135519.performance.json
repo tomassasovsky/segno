@@ -1,0 +1,147 @@
+{
+  "sample_rate": 96000,
+  "channel_layout": {
+    "master_channels": 2,
+    "captured_inputs": [
+      0,
+      1
+    ]
+  },
+  "capture_frames": 29634752,
+  "overrun_count": 0,
+  "zero_filled_frames": 0,
+  "overrun_gaps": [],
+  "layers": [
+    {
+      "channel": 2,
+      "slot": 4,
+      "generation": 0,
+      "frame": 5367104,
+      "frame_count": 1024384,
+      "lane_count": 2,
+      "filename": "layer-2-5367104-4.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 5,
+      "generation": 0,
+      "frame": 7415616,
+      "frame_count": 1024384,
+      "lane_count": 2,
+      "filename": "layer-2-7415616-5.pcm"
+    },
+    {
+      "channel": 2,
+      "slot": 6,
+      "generation": 0,
+      "frame": 9464512,
+      "frame_count": 1024384,
+      "lane_count": 2,
+      "filename": "layer-2-9464512-6.pcm"
+    }
+  ],
+  "slug": "perf-20260915-135519",
+  "armSnapshot": {
+    "masterGain": 0.7244094610214233,
+    "limiterOn": false,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 574,
+    "tempoBpm": 90.0,
+    "fxStagesVersion": 1,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav"
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      },
+      {
+        "channel": 3,
+        "state": "playing",
+        "volume": 1.0,
+        "muted": false,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane0.wav"
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane1.wav"
+          }
+        ]
+      }
+    ],
+    "monitors": []
+  },
+  "disarmSnapshot": {
+    "tempoBpm": 90.0,
+    "tracks": [
+      {
+        "channel": 2,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": true,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane0.wav",
+            "takeId": 1
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track2-lane1.wav"
+          }
+        ]
+      },
+      {
+        "channel": 3,
+        "state": "stopped",
+        "volume": 1.0,
+        "muted": true,
+        "multiple": 1,
+        "lanes": [
+          {
+            "lane": 0,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane0.wav",
+            "takeId": 1
+          },
+          {
+            "lane": 1,
+            "lenFrames": 1024384,
+            "deferred": false,
+            "pcmRef": "loops/track3-lane1.wav"
+          }
+        ]
+      }
+    ]
+  },
+  "finalized": true
+}
