@@ -122,7 +122,7 @@ behind Nginx Proxy Manager on the home server. Appliances poll
 `/updates/appliance/<channel>/manifest.json` and CI posts to `/hooks/sync`, so
 the site takes over `/` only:
 
-1. A push to `site/` on the trunk or `master` runs `.github/workflows/site.yaml`,
+1. A push to `site/` on `master` runs `.github/workflows/site.yaml`,
    which publishes `ghcr.io/tomassasovsky/segno-site:latest`.
 2. The `segno-updates` stack runs that image as `segno-site`. Its nginx proxies
    `/` to `segno-site:80` and keeps `/updates/`, `/hooks/sync` and `/healthz`.
