@@ -1,0 +1,31 @@
+{
+  "sample_rate": 96000,
+  "channel_layout": {
+    "master_channels": 2,
+    "captured_inputs": [
+      0,
+      1
+    ]
+  },
+  "capture_frames": 194816,
+  "overrun_count": 0,
+  "zero_filled_frames": 0,
+  "overrun_gaps": [],
+  "layers": [],
+  "slug": "perf-20260920-115157",
+  "armSnapshot": {
+    "masterGain": 1.0,
+    "limiterOn": false,
+    "limiterCeiling": 0.99,
+    "latencyOffsetFrames": 574,
+    "tempoBpm": 125.02893829345703,
+    "fxStagesVersion": 1,
+    "tracks": [],
+    "monitors": []
+  },
+  "disarmSnapshot": {
+    "tempoBpm": 125.02893829345703,
+    "tracks": []
+  },
+  "finalized": true
+}

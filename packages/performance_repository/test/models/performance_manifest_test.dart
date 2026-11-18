@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno_engine/segno_engine.dart';
@@ -594,6 +597,141 @@ void main() {
         );
       },
     );
+  });
+
+  group('an arm snapshot written before capture destinations (#1853)', () {
+    /// The console's September files, byte for byte: the manifests of the
+    /// 17 finished takes, and the two recovered takes' `arm-snapshot.json`.
+    List<File> fixtures(String suffix) => [
+      for (final e in Directory('test/fixtures/september').listSync())
+        if (e is File && e.path.endsWith(suffix)) e,
+    ]..sort((a, b) => a.path.compareTo(b.path));
+    Map<String, dynamic> decode(File f) =>
+        jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+    const stereo = {
+      'master_channels': 2,
+      'captured_inputs': [0, 1],
+    };
+
+    test('every finished September take on the console reads, on bus 0 '
+        'with followOutput false and captureMask 3, and keeps its own '
+        'values', () {
+      final takes = fixtures('.performance.json');
+      expect(takes, hasLength(17));
+      for (final file in takes) {
+        final json = decode(file);
+        final september = json['armSnapshot'] as Map<String, dynamic>;
+        expect(
+          PerformanceArmSnapshot.writtenBeforeDestinations(september),
+          isTrue,
+          reason: file.path,
+        );
+        final arm = PerformanceManifest.fromJson(json).armSnapshot!;
+        expect(arm.followOutput, isFalse, reason: file.path);
+        expect(arm.captureBus, 0, reason: file.path);
+        expect(arm.captureMask, 3, reason: file.path);
+        expect(arm.tempoBpm, september['tempoBpm'], reason: file.path);
+        expect(arm.masterGain, september['masterGain'], reason: file.path);
+        expect(
+          arm.tracks,
+          hasLength((september['tracks'] as List).length),
+          reason: file.path,
+        );
+        // Written back in the current shape, which reads the same.
+        final written = arm.toJson();
+        expect(written, {
+          ...september,
+          'tracks': [for (final t in arm.tracks) t.toJson()],
+          'followOutput': false,
+          'captureMask': 3,
+          'outputEnabledMask': 0xFFFFFFFF,
+        }, reason: file.path);
+        expect(
+          PerformanceArmSnapshot.fromJson(written).toJson(),
+          written,
+          reason: file.path,
+        );
+      }
+    });
+
+    test("the two recovered takes' arm-snapshot.json read with their "
+        "sidecar's stereo layout", () {
+      final files = fixtures('.arm-snapshot.json');
+      expect(files, hasLength(2));
+      final tempos = [
+        for (final f in files)
+          PerformanceArmSnapshot.fromJson(
+            decode(f),
+            channelLayout: stereo,
+          ).tempoBpm,
+      ];
+      expect(tempos, [300, 90]);
+    });
+
+    test('needs a sidecar that says the master was captured in stereo', () {
+      final september = decode(fixtures('.arm-snapshot.json').first);
+      for (final layout in <Object?>[
+        null,
+        'stereo',
+        <String, dynamic>{},
+        {'master_channels': 1, 'captured_inputs': <int>[]},
+        {'master_channels': 2.5},
+      ]) {
+        expect(
+          () =>
+              PerformanceArmSnapshot.fromJson(september, channelLayout: layout),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('stereo master'),
+            ),
+          ),
+          reason: '$layout',
+        );
+      }
+      expect(
+        () => PerformanceManifest.fromJson({
+          'sample_rate': 96000,
+          'channel_layout': const {'master_channels': 1},
+          'armSnapshot': september,
+          'finalized': true,
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('is only the shape those builds wrote: anything else without a '
+        'capture policy or mask is refused', () {
+      final september = decode(fixtures('.arm-snapshot.json').first);
+      final variants = <String, Map<String, dynamic>>{
+        'a master chain': {...september, 'masterEffects': <Object>[]},
+        'a bypassed master chain': {...september, 'masterChainEnabled': false},
+        'no FX stages marker': {...september}..remove('fxStagesVersion'),
+        'another FX stages version': {...september, 'fxStagesVersion': 2},
+        'a capture bus': {...september, 'captureBus': 0},
+        'an output level': {...september, 'outputLevel': 1.0},
+        'an enabled-output mask': {
+          ...september,
+          'outputEnabledMask': 0xFFFFFFFF,
+        },
+        'input names': {...september, 'inputs': <Object>[]},
+        'a policy without a mask': {...september, 'followOutput': false},
+        'a mask without a policy': {...september, 'captureMask': 3},
+      };
+      for (final MapEntry(key: what, value: json) in variants.entries) {
+        expect(
+          PerformanceArmSnapshot.writtenBeforeDestinations(json),
+          isFalse,
+          reason: what,
+        );
+        expect(
+          () => PerformanceArmSnapshot.fromJson(json, channelLayout: stereo),
+          throwsFormatException,
+          reason: what,
+        );
+      }
+    });
   });
 
   group('PerformanceTrackChain', () {

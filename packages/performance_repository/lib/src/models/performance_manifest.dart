@@ -314,12 +314,31 @@ class PerformanceArmSnapshot {
   /// is not read: the renderer takes the arm phase from events.log's
   /// `LE_PLOG_PERF_ARMED` fact now (#262), so any such keys in an older bundle
   /// are ignored.
-  factory fromJson(Map<String, dynamic> json) {
+  ///
+  /// A snapshot written before capture destinations
+  /// ([writtenBeforeDestinations]) has no capture policy or mask. Those
+  /// builds tapped the first two enabled outputs after the master gain and
+  /// limiter, with no destination level or mute in between, so it reads as
+  /// [followOutput] `false` on bus 0 with [captureMask] `3`. That holds only
+  /// when [channelLayout], the sidecar's `channel_layout`, says the master
+  /// was captured in stereo; otherwise this throws [FormatException].
+  factory fromJson(Map<String, dynamic> json, {Object? channelLayout}) {
+    final beforeDestinations = writtenBeforeDestinations(json);
+    if (beforeDestinations &&
+        (channelLayout is! Map<String, dynamic> ||
+            channelLayout['master_channels'] != 2)) {
+      throw const FormatException(
+        'an arm snapshot from before capture destinations needs a stereo '
+        'master',
+      );
+    }
     final bus = _captureBus(
       json['captureBus'],
       omitted: !json.containsKey('captureBus'),
     );
-    final mask = _captureMask(json['captureMask'], bus);
+    final mask = beforeDestinations
+        ? 3
+        : _captureMask(json['captureMask'], bus);
     return PerformanceArmSnapshot(
       masterGain: (json['masterGain'] as num).toDouble(),
       limiterEnabled: json['limiterOn'] as bool,
@@ -328,7 +347,8 @@ class PerformanceArmSnapshot {
       tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
       // A capture policy is mandatory; a missing or malformed value is an
       // invalid manifest rather than a request to infer output behavior.
-      followOutput: _requiredCapturePolicy(json['followOutput']),
+      followOutput:
+          !beforeDestinations && _requiredCapturePolicy(json['followOutput']),
       captureBus: bus,
       captureMask: mask,
       outputEnabledMask: _outputEnabledMask(
@@ -373,6 +393,30 @@ class PerformanceArmSnapshot {
       outputChainEnabled: json['outputChainEnabled'] as bool? ?? true,
     );
   }
+
+  /// Every key a snapshot written before capture destinations (f9d8de318,
+  /// 2026-10-01) can carry, without a master chain: those builds wrote
+  /// `masterEffects` and `masterChainEnabled` only for a master chain, which
+  /// this format does not read.
+  static const _beforeDestinationsKeys = {
+    'masterGain',
+    'limiterOn',
+    'limiterCeiling',
+    'latencyOffsetFrames',
+    'tempoBpm',
+    'fxStagesVersion',
+    'tracks',
+    'monitors',
+    'trackChains',
+  };
+
+  /// Whether [json] is an arm snapshot as the builds before capture
+  /// destinations wrote it (#1853): FX stages version 1 and no key those
+  /// builds did not write, so no capture policy or mask. Snapshots with a
+  /// master chain, or from before the FX stages marker, are not.
+  static bool writtenBeforeDestinations(Map<String, dynamic> json) =>
+      json['fxStagesVersion'] == 1 &&
+      json.keys.every(_beforeDestinationsKeys.contains);
 
   /// This snapshot with the captured destination's callback-frozen facts.
   /// The caller records them after arming rather than trusting pre-arm state.
@@ -672,7 +716,10 @@ class PerformanceManifest {
       finalized: json['finalized'] as bool? ?? false,
       native: native,
       armSnapshot: armJson is Map<String, dynamic>
-          ? PerformanceArmSnapshot.fromJson(armJson)
+          ? PerformanceArmSnapshot.fromJson(
+              armJson,
+              channelLayout: json['channel_layout'],
+            )
           : null,
       disarmSnapshot: disarmJson is Map<String, dynamic>
           ? PerformanceDisarmSnapshot.fromJson(disarmJson)
