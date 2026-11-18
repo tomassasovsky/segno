@@ -128,6 +128,8 @@ JOURNALCTL="${SEGNO_JOURNALCTL:-journalctl}"
 # read as no-connection. Read again once a second; only a failure
 # wpa_supplicant never logs pays the whole wait.
 JOIN_EVIDENCE_WAIT_SECS="${SEGNO_JOIN_EVIDENCE_WAIT:-3}"
+# How often up_with_key reads the journal while a join runs, in seconds.
+JOIN_WATCH_INTERVAL="${SEGNO_JOIN_WATCH_INTERVAL:-1}"
 
 # The journal's position now: the cursor of its last entry, or empty.
 join_mark() {
@@ -150,6 +152,53 @@ join_evidence() {
         "$JOURNALCTL" --since "@$2" --no-pager -o cat -t wpa_supplicant -t NetworkManager \
             2>/dev/null || true
     fi
+}
+
+# wpa_supplicant's lines alone since <cursor> (or <epoch>): what the watch in
+# up_with_key reads once a second while a join runs.
+wpa_evidence() {
+    if [ -n "$1" ]; then
+        "$JOURNALCTL" --after-cursor "$1" --no-pager -o cat -t wpa_supplicant 2>/dev/null || true
+    else
+        "$JOURNALCTL" --since "@$2" --no-pager -o cat -t wpa_supplicant 2>/dev/null || true
+    fi
+}
+
+# The access point's refusals of the key in <evidence>, one
+# "<disconnect line> / <handshake line>" each: a disconnect the access point
+# sent (no locally_generated=1) followed by wpa_supplicant's "4-Way Handshake
+# failed". wpa_supplicant writes the disconnect, then the handshake line, for
+# the same event. Android counts the same thing as a wrong password
+# (SupplicantStaIfaceCallbackImpl.onDisconnected: a disconnect during the
+# 4-way handshake that was not locally generated).
+key_refusals() {
+    printf '%s\n' "$1" | awk '
+        /CTRL-EVENT-DISCONNECTED/ { d = $0; next }
+        /4-Way Handshake failed/ {
+            if (d != "" && d !~ /locally_generated=1/) print d " / " $0
+            d = ""
+        }'
+}
+
+# Whether <evidence> proves the key wrong, printing the refusal that does.
+# One refusal is enough when its reason names the key: 15 (4-way handshake
+# timeout, what most access points send when the station's message 2 fails
+# its check), 14 (MIC failure) or 23 (802.1X authentication failed). Other
+# access points send another reason: an ASUS RT-AX89X sends 2, "previous
+# authentication no longer valid" (#1859). Two refusals in one join are
+# enough whatever the reason, while one is not: a router that restarts
+# mid-handshake drops the station once, with a reason of its own, and that
+# once read as a wrong password (#1817). A wrong key is refused on every try,
+# about every 3 s.
+key_wrong() {
+    kw_refusals=$(key_refusals "$1")
+    [ -n "$kw_refusals" ] || return 1
+    kw_line=$(printf '%s\n' "$kw_refusals" | grep -E ' reason=(14|15|23)( |/)' | head -n1)
+    if [ -z "$kw_line" ] && [ "$(printf '%s\n' "$kw_refusals" | wc -l)" -ge 2 ]; then
+        kw_line=$(printf '%s\n' "$kw_refusals" | tail -n1)
+    fi
+    [ -n "$kw_line" ] || return 1
+    printf '%s\n' "$kw_line"
 }
 
 # The wpa_supplicant 2.11 lines that end an attempt, as an ERE. One in the
@@ -177,16 +226,13 @@ WPA_END_RE='4-Way Handshake failed|CTRL-EVENT-ASSOC-REJECT|CTRL-EVENT-AUTH-REJEC
 # Why a join failed, as one code on stdout ({"error":<code>}) for the app to
 # word, with the evidence on stderr:
 #
-#   wrong-password  wpa_supplicant logged "4-Way Handshake failed", and the
-#                   disconnect it reports came from the access point with a
-#                   reason that means the key: 15 (4-way handshake timeout,
-#                   what an access point sends when the station's message 2
-#                   fails its check), 14 (MIC failure) or 23 (802.1X
-#                   authentication failed). wpa_supplicant logs the handshake
+#   wrong-password  the access point refused the key (key_wrong): it ended
+#                   the handshake once with a reason that means the key, or
+#                   twice with any reason. wpa_supplicant logs the handshake
 #                   line for any drop during the handshake (events.c,
-#                   could_be_psk_mismatch), so a router restarting mid-join
-#                   or wpa_supplicant's own timeout (locally_generated=1)
-#                   does not count.
+#                   could_be_psk_mismatch), so its own timeout
+#                   (locally_generated=1) and a single drop with another
+#                   reason, a router restarting mid-join, do not count.
 #   not-found       the network is not in range: NetworkManager's
 #                   `ssid-not-found` ("The Wi-Fi network could not be
 #                   found").
@@ -232,18 +278,9 @@ join_failure() {
         waited=$((waited + 1))
         evidence=$(join_evidence "$2" "$3")
     done
-    # A handshake failure whose disconnect came from the access point for
-    # the key, as "<disconnect line> / <handshake line>", or nothing. The
-    # disconnect line comes first: wpa_supplicant writes it, then the
-    # handshake line, for the same event.
-    refused=$(printf '%s\n' "$evidence" | awk '
-        /CTRL-EVENT-DISCONNECTED/ { d = $0; next }
-        /4-Way Handshake failed/ {
-            if (d !~ /locally_generated=1/ && d ~ / reason=(14|15|23)( |$)/) {
-                print d " / " $0
-                exit
-            }
-        }')
+    # The refusal that proves the key wrong, as "<disconnect line> /
+    # <handshake line>", or nothing.
+    refused=$(key_wrong "$evidence") || refused=
     # NetworkManager's lines about this join only: from the activation of
     # this profile on, and about this interface. Another device's failure
     # (eth0 with no DHCP server), or NM's own attempt at another profile on
@@ -499,6 +536,8 @@ write_passwd_file() {
 up_saved() {
     up_uuid=$1
     up_wait=$2
+    up_cursor=${3:-}
+    up_epoch=${4:-}
     up_key=$(nmcli -s -e no -g 802-11-wireless-security.psk connection show uuid "$up_uuid" 2>/dev/null || true)
     if [ -z "$up_key" ]; then
         nmcli --wait "$up_wait" connection up uuid "$up_uuid"
@@ -508,7 +547,7 @@ up_saved() {
     chmod 600 "$up_keyf"
     write_passwd_file "$up_keyf" "$up_key"
     up_rc=0
-    up_with_key "$up_uuid" "$up_wait" "$up_keyf" || up_rc=$?
+    up_with_key "$up_uuid" "$up_wait" "$up_keyf" "$up_cursor" "$up_epoch" || up_rc=$?
     rm -f "$up_keyf"
     up_keyf=
     return "$up_rc"
@@ -529,13 +568,38 @@ up_saved() {
 # a device that may autoconnect is paused; one the owner disconnected by hand
 # is already blocked. Runtime state only: a reboot undoes an interrupted
 # pause.
+#
+# Given the join's <cursor> and <epoch>, the up is watched: once a second
+# (JOIN_WATCH_INTERVAL) the helper reads what wpa_supplicant logged since the
+# join began, and when
+# the access point has refused the key (key_wrong) it ends the activation
+# instead of waiting out the rest of <secs> (#1859). wpa_supplicant retries a
+# refused key every few seconds until NetworkManager's wait runs out, so
+# without this a wrong password took the full 45 s, and the app's retries
+# made that minutes. A restore passes neither: the journal since the join
+# began holds the failed join's refusals, which say nothing about the
+# network being brought back.
 up_with_key() {
     if [ "$(nmcli -g GENERAL.AUTOCONNECT device show "$IFACE" 2>/dev/null)" = yes ] \
         && nmcli device set "$IFACE" autoconnect no >/dev/null 2>&1; then
         paused_iface=$IFACE
     fi
     uk_rc=0
-    nmcli --wait "$2" connection up uuid "$1" passwd-file "$3" || uk_rc=$?
+    if [ -n "${4:-}${5:-}" ]; then
+        nmcli --wait "$2" connection up uuid "$1" passwd-file "$3" &
+        uk_pid=$!
+        while kill -0 "$uk_pid" 2>/dev/null; do
+            if uk_line=$(key_wrong "$(wpa_evidence "${4:-}" "${5:-}")"); then
+                log "the access point refused the key; ending the join (${uk_line})"
+                nmcli connection down uuid "$1" >/dev/null 2>&1 || true
+                break
+            fi
+            sleep "$JOIN_WATCH_INTERVAL"
+        done
+        wait "$uk_pid" || uk_rc=$?
+    else
+        nmcli --wait "$2" connection up uuid "$1" passwd-file "$3" || uk_rc=$?
+    fi
     resume_autoconnect
     return "$uk_rc"
 }
@@ -667,13 +731,13 @@ do_connect_nm() {
             passf=$(mktemp)
             chmod 600 "$passf"
             write_passwd_file "$passf" "$psk"
-            up_with_key "$existing" "$NM_CONNECT_WAIT_SECS" "$passf" >"$errf" 2>&1
+            up_with_key "$existing" "$NM_CONNECT_WAIT_SECS" "$passf" "$mark" "$since" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
                 persist_psk_and_enable "$existing" "$psk"
             fi
         elif [ "$rc" -eq 0 ]; then
-            up_saved "$existing" "$NM_CONNECT_WAIT_SECS" >"$errf" 2>&1
+            up_saved "$existing" "$NM_CONNECT_WAIT_SECS" "$mark" "$since" >"$errf" 2>&1
             rc=$?
         fi
     elif [ -n "$psk" ]; then
@@ -696,7 +760,7 @@ do_connect_nm() {
             passf=$(mktemp)
             chmod 600 "$passf"
             write_passwd_file "$passf" "$psk"
-            up_with_key "$created" "$NM_CONNECT_WAIT_SECS" "$passf" >"$errf" 2>&1
+            up_with_key "$created" "$NM_CONNECT_WAIT_SECS" "$passf" "$mark" "$since" >"$errf" 2>&1
             rc=$?
             if [ "$rc" -eq 0 ]; then
                 persist_psk_and_enable "$created" "$psk"
