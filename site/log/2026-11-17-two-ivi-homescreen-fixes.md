@@ -47,7 +47,7 @@ The fix leaves the AOT data mapped and lets the process exit release it. After t
 
 Both branches build at ivi-homescreen v3.0 with gcc 14 and clang 19 and pass the project's 44 unit tests, its format, spelling and config-reference checks, and clang-tidy on the changed files. The on-device results above come from Segno's console: a Raspberry Pi 5 running `drm-kms-egl`, with both screens connected.
 
-Both pull requests are waiting for review. Until they're merged, Segno keeps applying the same two patches in its Yocto layer.
+When this entry was first published, both pull requests were waiting for review, and Segno applied the same two patches in its Yocto layer until they were merged.
 
 ## Update, 17 November 2026
 

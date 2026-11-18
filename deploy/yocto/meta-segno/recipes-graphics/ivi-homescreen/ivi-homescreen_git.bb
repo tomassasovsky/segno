@@ -23,7 +23,8 @@ S = "${WORKDIR}/git"
 inherit cmake pkgconfig
 
 # libseat is required at build time even though the Segno config bypasses the
-# seat at runtime (no_seat): drm-cxx's session support is forced on.
+# seat at runtime (no_seat): drm-cxx's session support defaults to required.
+# -DDRM_CXX_SESSION=OFF would build without it; not done here yet.
 # libdisplay-info must be >= 0.2.0 (walnascar's poky carries 0.2.0).
 DEPENDS = "libdrm virtual/libgbm virtual/egl virtual/libgles2 libinput udev \
            libxkbcommon libdisplay-info seatd"

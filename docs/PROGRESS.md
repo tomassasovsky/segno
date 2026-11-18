@@ -517,8 +517,9 @@ the issue labels, which are authoritative; if a row disagrees, fix the row.
   built on. The embedder API only gained members between 3.47 and 3.50
   (Vulkan external textures, frozen-struct notes), and
   `MakeRenderTargetFromBackingStoreImpeller` is unchanged, so ivi-homescreen
-  stays at its pinned revision and its three patches apply as they are,
-  the MSAA framebuffer (#1687) included.
+  needed no change for it. ivi-homescreen is now pinned at upstream v3.0
+  `9eeee89`, which has the pixel-ratio and shutdown fixes (#1834); the MSAA
+  framebuffer (#1687) is the one patch left.
 - Until meta-flutter publishes the 371f772 engine (their build was queued,
   runners offline, on 2026-11-12), both engine digests on the branch are
   from a build of meta-flutter's own workflow on our runner, and only the
